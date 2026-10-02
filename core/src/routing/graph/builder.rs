@@ -1335,14 +1335,19 @@ impl RouteGraph {
             }
             // Ignore toll/tunnel/datex penalties here (same as before); include
             // eco overlay + motor soft so the heuristic stays admissible.
-            let cost = edge_travel_cost(edge, idx, use_eco, &RouteOptions {
-                toll_policy: crate::routing::toll::TollPolicy::Allow,
-                avoid_tunnels: false,
-                datex_impacts: Vec::new(),
-                eco_weights: options.eco_weights.clone(),
-                motor_soft: options.motor_soft,
-                ..RouteOptions::default()
-            });
+            let cost = edge_travel_cost(
+                edge,
+                idx,
+                use_eco,
+                &RouteOptions {
+                    toll_policy: crate::routing::toll::TollPolicy::Allow,
+                    avoid_tunnels: false,
+                    datex_impacts: Vec::new(),
+                    eco_weights: options.eco_weights.clone(),
+                    motor_soft: options.motor_soft,
+                    ..RouteOptions::default()
+                },
+            );
             if cost.is_finite() && cost >= 0.0 {
                 min_ratio = min_ratio.min(cost / chord);
             }

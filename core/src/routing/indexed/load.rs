@@ -72,41 +72,126 @@ fn status_for_planning_pbf(
 /// Uses profile-scoped graph files so a car-only install (foot tiles omitted)
 /// still counts as Ready when planning car — otherwise Trøndelag/Nord-Norge
 /// never join Ostlandet corridors on device.
+///
+/// [`PackStatus::Outdated`] (accepted format behind preferred) still counts as
+/// usable for planning — Tools offers an optional update; never block routes.
 fn stem_pack_ready(data_dir: &Path, man: &NaviManifest, profile: RoutingProfile) -> bool {
+    let usable = |s: PackStatus| matches!(s, PackStatus::Ready | PackStatus::Outdated);
     if server_install_present(data_dir, &man.stem) {
-        return man.status_pack_files_for_profile(data_dir, profile) == PackStatus::Ready;
+        return usable(man.status_pack_files_for_profile(data_dir, profile));
     }
     let packed = data_dir.join(&man.pbf_filename);
     if packed.is_file() {
         // Fingerprint match still uses full-status for the planning PBF; neighbour
         // stems only need the active profile on disk.
-        if man.status_for_pbf(data_dir, &packed) == PackStatus::Ready {
+        if usable(man.status_for_pbf(data_dir, &packed)) {
             return true;
         }
-        return man.status_pack_files_for_profile(data_dir, profile) == PackStatus::Ready;
+        return usable(man.status_pack_files_for_profile(data_dir, profile));
     }
-    man.status_pack_files_for_profile(data_dir, profile) == PackStatus::Ready
+    usable(man.status_pack_files_for_profile(data_dir, profile))
 }
 
-/// First directory among [dirs] where [stem] packs are Ready for [profile].
+/// Geofabrik region ids that already have a Ready pack for [profile] under [dirs].
+fn installed_ready_region_ids(dirs: &[&Path], profile: RoutingProfile) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for d in dirs {
+        let Ok(entries) = fs::read_dir(d) else {
+            continue;
+        };
+        for ent in entries.flatten() {
+            let name = ent.file_name();
+            let name = name.to_string_lossy();
+            let Some(stem) = name.strip_suffix(".navi-manifest.json") else {
+                continue;
+            };
+            let Ok(man) = load_ready_manifest(d, stem) else {
+                continue;
+            };
+            if !stem_pack_ready(d, &man, profile) {
+                continue;
+            }
+            let Some(path) = pbf_stem_to_geofabrik_path(stem) else {
+                continue;
+            };
+            if seen.insert(path.clone()) {
+                out.push(path);
+            }
+        }
+    }
+    out
+}
+
+/// Required corridor regions (origin / destination / densified chord) that lack
+/// a Ready pack for [profile]. Empty when coverage is complete.
+///
+/// Runs before any tile mmap / graph materialize so missing landsdels fail in
+/// milliseconds instead of loading primary-only tiles and spinning on A*.
+pub fn missing_ready_regions_for_trip(
+    dirs: &[&Path],
+    profile: RoutingProfile,
+    route_points: &[(f64, f64)],
+) -> Vec<String> {
+    if route_points.len() < 2 {
+        return Vec::new();
+    }
+    let installed = installed_ready_region_ids(dirs, profile);
+    match crate::long_trip::ordered_needed_regions_for_trip(route_points, &installed, None) {
+        Ok(missing) => missing,
+        Err(_) => {
+            // Catalog PIP hole / unknown point: still name every endpoint leaf
+            // that is not covered by an installed Ready pack.
+            let mut missing = Vec::new();
+            let mut seen = HashSet::new();
+            for &(lat, lon) in route_points {
+                let Some(id) = crate::routing::suggest_geofabrik_path_for_point(lat, lon) else {
+                    continue;
+                };
+                let id = id.to_string();
+                let covered = installed.iter().any(|inst| {
+                    inst == &id
+                        || id.starts_with(&format!("{inst}/"))
+                        || inst.starts_with(&format!("{id}/"))
+                });
+                if !covered && seen.insert(id.clone()) {
+                    missing.push(id);
+                }
+            }
+            missing
+        }
+    }
+}
+
+/// Directory among [dirs] where [stem] packs are Ready for [profile].
+///
+/// When the same stem exists in more than one pack root (legacy `files/` +
+/// `long-trip-packs`), prefer the newest accepted graph format (v9 over v8).
+/// Ties keep the first Ready dir in [dirs] order.
 fn home_dir_for_stem<'a>(
     dirs: &[&'a Path],
     stem: &str,
     profile: RoutingProfile,
 ) -> Option<&'a Path> {
+    let mut best_ready: Option<(&'a Path, u32)> = None;
+    let mut best_any: Option<(&'a Path, u32)> = None;
     for d in dirs {
-        if let Ok(man) = load_ready_manifest(d, stem) {
-            if stem_pack_ready(d, &man, profile) {
-                return Some(*d);
+        let Ok(man) = load_ready_manifest(d, stem) else {
+            continue;
+        };
+        let ver = man.graph_format_version;
+        if stem_pack_ready(d, &man, profile) {
+            match best_ready {
+                Some((_, prev)) if prev >= ver => {}
+                _ => best_ready = Some((*d, ver)),
             }
         }
-    }
-    for d in dirs {
-        if load_ready_manifest(d, stem).is_ok() {
-            return Some(*d);
+        match best_any {
+            Some((_, prev)) if prev >= ver => {}
+            _ => best_any = Some((*d, ver)),
         }
     }
-    None
+    best_ready.or(best_any).map(|(d, _)| d)
 }
 
 /// Resolve a pack-relative file across long-trip + internal pack dirs.
@@ -645,6 +730,10 @@ pub enum PackLoadError {
     Stale,
     #[error("indexed pack version/magic mismatch (rebuild required)")]
     VersionMismatch,
+    /// Required corridor region(s) have no Ready pack for the profile.
+    /// Geofabrik paths in first-crossing order (e.g. `europe/norway/vestlandet`).
+    #[error("missing region packs: {}", .0.join(", "))]
+    MissingRegions(Vec<String>),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("rkyv access failed: {0}")]
@@ -859,15 +948,17 @@ pub fn try_load_graph_for_plan_corridor(
     clip_bbox: Option<[f64; 4]>,
     route_points: Option<&[(f64, f64)]>,
 ) -> Result<RouteGraph, PackLoadError> {
-    Ok(arc_graph_owned(try_load_graph_for_plan_corridor_with_pack_dirs(
-        data_dir,
-        &[],
-        pbf,
-        profile,
-        clip_bbox,
-        route_points,
-        crate::routing::plan_bbox::PlanEdgeClipMode::CorridorBand,
-    )?))
+    Ok(arc_graph_owned(
+        try_load_graph_for_plan_corridor_with_pack_dirs(
+            data_dir,
+            &[],
+            pbf,
+            profile,
+            clip_bbox,
+            route_points,
+            crate::routing::plan_bbox::PlanEdgeClipMode::CorridorBand,
+        )?,
+    ))
 }
 
 /// Like [`try_load_graph_for_plan_corridor`], but also searches [pack_dirs]
@@ -924,6 +1015,23 @@ fn try_load_graph_for_plan_corridor_dirs(
     route_points: Option<&[(f64, f64)]>,
     edge_clip_mode: crate::routing::plan_bbox::PlanEdgeClipMode,
 ) -> Result<std::sync::Arc<RouteGraph>, PackLoadError> {
+    // Fail fast before any tile mmap / materialize when a required region has
+    // no Ready pack (classic Ostlandet-only Raufoss→Bergen hang).
+    if let Some(pts) = route_points {
+        if pts.len() >= 2 {
+            let missing = missing_ready_regions_for_trip(dirs, profile, pts);
+            if !missing.is_empty() {
+                log::info!(
+                    target: "NaviPlan",
+                    "missing_regions_before_load count={} regions={}",
+                    missing.len(),
+                    missing.join(",")
+                );
+                crate::routing::plan_perf::note("missing_regions", missing.join(","));
+                return Err(PackLoadError::MissingRegions(missing));
+            }
+        }
+    }
     let pbf_stem = planning_stem(pbf)?;
     // Chunked long-trip legs still pass the origin PBF; re-home primary to the
     // Ready stem that covers the hop start so we do not merge Sachsen-Anhalt
@@ -931,7 +1039,7 @@ fn try_load_graph_for_plan_corridor_dirs(
     let (stem, man, primary_dir) = pick_primary_manifest(dirs, &pbf_stem, route_points, profile)?;
     if stem == pbf_stem {
         match status_for_planning_pbf(primary_dir, pbf, &man)? {
-            PackStatus::Ready => {}
+            PackStatus::Ready | PackStatus::Outdated => {}
             PackStatus::Missing => return Err(PackLoadError::Missing),
             PackStatus::StalePbf => return Err(PackLoadError::Stale),
             PackStatus::VersionMismatch => return Err(PackLoadError::VersionMismatch),
@@ -1122,10 +1230,7 @@ fn try_load_graph_for_plan_corridor_dirs(
         let names: Vec<&str> = extras.iter().map(|m| m.stem.as_str()).collect();
         crate::routing::plan_perf::note("extra_stem_list", names.join(","));
     }
-    crate::routing::plan_perf::note(
-        "edge_clip_mode",
-        format!("{edge_clip_mode:?}"),
-    );
+    crate::routing::plan_perf::note("edge_clip_mode", format!("{edge_clip_mode:?}"));
     crate::routing::plan_perf::note_u64(
         "edge_clips",
         edge_clips.map(|c| c.len() as u64).unwrap_or(0),
@@ -1162,12 +1267,8 @@ fn try_load_graph_for_plan_corridor_dirs(
         }
     }
     let mut budget = crate::routing::plan_bbox::effective_max_plan_tiles_for_stems(extras.len());
-    let mut tile_files = select_tiles_within_budget(
-        tile_candidates.clone(),
-        route_points,
-        budget,
-        dirs,
-    );
+    let mut tile_files =
+        select_tiles_within_budget(tile_candidates.clone(), route_points, budget, dirs);
     // If a tight budget drops an endpoint (classic Raufoss→Bergen with tiles=6),
     // widen selection before materializing so we never hand A* a disconnected
     // corridor. Memory-aware steps match plan_bbox::next_plan_tile_budget.
@@ -1189,12 +1290,8 @@ fn try_load_graph_for_plan_corridor_dirs(
                 };
                 budget = next;
                 crate::routing::plan_bbox::set_plan_tile_budget_at_least(next);
-                tile_files = select_tiles_within_budget(
-                    tile_candidates.clone(),
-                    route_points,
-                    budget,
-                    dirs,
-                );
+                tile_files =
+                    select_tiles_within_budget(tile_candidates.clone(), route_points, budget, dirs);
                 widen_steps += 1;
                 crate::routing::plan_perf::note_u64("tile_select_widen_to", next as u64);
                 log::info!(
@@ -1259,7 +1356,9 @@ fn try_load_graph_for_plan_corridor_dirs(
                                 tile_files = select_tiles_within_budget(
                                     merged_cands,
                                     route_points,
-                                    crate::routing::plan_bbox::effective_max_plan_tiles_for_stems(extras.len()),
+                                    crate::routing::plan_bbox::effective_max_plan_tiles_for_stems(
+                                        extras.len(),
+                                    ),
                                     dirs,
                                 );
                                 seen = tile_files.iter().cloned().collect();
@@ -1313,7 +1412,9 @@ fn try_load_graph_for_plan_corridor_dirs(
                             tile_files = select_tiles_within_budget(
                                 near_cands,
                                 route_points,
-                                crate::routing::plan_bbox::effective_max_plan_tiles_for_stems(extras.len()),
+                                crate::routing::plan_bbox::effective_max_plan_tiles_for_stems(
+                                    extras.len(),
+                                ),
                                 dirs,
                             );
                         }
@@ -1669,8 +1770,7 @@ fn pick_primary_manifest<'a>(
     route_points: Option<&[(f64, f64)]>,
     profile: RoutingProfile,
 ) -> Result<(String, NaviManifest, &'a Path), PackLoadError> {
-    let primary_dir =
-        home_dir_for_stem(dirs, pbf_stem, profile).ok_or(PackLoadError::Missing)?;
+    let primary_dir = home_dir_for_stem(dirs, pbf_stem, profile).ok_or(PackLoadError::Missing)?;
     let default = load_ready_manifest(primary_dir, pbf_stem)?;
     let Some(pts) = route_points else {
         return Ok((pbf_stem.to_string(), default, primary_dir));
@@ -1836,6 +1936,9 @@ fn load_tiled_graph_files(
         return Ok((hit, true));
     }
     crate::routing::plan_perf::note("corridor_cache", "miss");
+    // Free prior corridors when MemAvailable is tight so materializing this
+    // corridor cannot LMK a 3.5 GiB tablet (Dombås→Bergen RSS swing).
+    super::corridor_cache::corridor_cache_evict_before_load();
 
     // Sequential decode+clip + incremental merge (corridor clips keep tiles small).
     // Parallel decode was tried; it raised peak RSS without beating merge cost on
@@ -1947,7 +2050,7 @@ fn try_load_poi_barrier_for_plan_bbox_dirs(
         pick_primary_manifest(dirs, &pbf_stem, None, RoutingProfile::Car)?;
     if stem == pbf_stem {
         match status_for_planning_pbf(primary_dir, pbf, &man)? {
-            PackStatus::Ready => {}
+            PackStatus::Ready | PackStatus::Outdated => {}
             PackStatus::Missing => return Err(PackLoadError::Missing),
             PackStatus::StalePbf => return Err(PackLoadError::Stale),
             PackStatus::VersionMismatch => return Err(PackLoadError::VersionMismatch),
@@ -2003,8 +2106,7 @@ fn try_load_poi_barrier_for_plan_bbox_dirs(
         if !path.is_file() {
             continue;
         }
-        let Ok((epoi, ebar)) =
-            load_poi_barrier_pack_bbox(&path, bbox, INCLUDE_OVERNIGHT_BUILDINGS)
+        let Ok((epoi, ebar)) = load_poi_barrier_pack_bbox(&path, bbox, INCLUDE_OVERNIGHT_BUILDINGS)
         else {
             continue;
         };
@@ -2116,7 +2218,7 @@ pub fn try_load_wetland_for_plan(
     let stem = planning_stem(pbf)?;
     let man = load_ready_manifest(data_dir, &stem)?;
     match status_for_planning_pbf(data_dir, pbf, &man)? {
-        PackStatus::Ready => {}
+        PackStatus::Ready | PackStatus::Outdated => {}
         PackStatus::Missing => return Err(PackLoadError::Missing),
         PackStatus::StalePbf => return Err(PackLoadError::Stale),
         PackStatus::VersionMismatch => return Err(PackLoadError::VersionMismatch),
@@ -2480,8 +2582,38 @@ mod merge_tile_graphs_tests {
 mod multi_stem_corridor_tests {
     use super::{
         bbox_contained, corridor_needs_extra_for_endpoint_leaves, corridor_needs_extra_stems,
+        home_dir_for_stem,
     };
+    use crate::routing::graph::RoutingProfile;
     use std::fs;
+
+    #[test]
+    fn home_dir_prefers_newer_format_when_stem_duplicated() {
+        // Legacy files/ root (v8) listed before long-trip-packs (v9): planner must
+        // still home on v9.
+        let root = tempfile::tempdir().expect("tmpdir");
+        let v8 = root.path().join("files");
+        let v9 = root.path().join("long-trip-packs");
+        fs::create_dir_all(&v8).unwrap();
+        fs::create_dir_all(&v9).unwrap();
+        let man = |fmt: u32| {
+            format!(
+                r#"{{"schema":1,"stem":"ostlandet-latest","pbf_filename":"ostlandet-latest.osm.pbf","pbf_size_bytes":1,"pbf_modified_unix_secs":1,"graph_files":{{}},"graph_format_version":{fmt},"poi_barrier_file":"ostlandet-latest.navi-poi-barrier.rkyv","poi_barrier_format_version":2,"wetland_format_version":1}}"#
+            )
+        };
+        fs::write(v8.join("ostlandet-latest.navi-manifest.json"), man(8)).unwrap();
+        fs::write(v9.join("ostlandet-latest.navi-manifest.json"), man(9)).unwrap();
+        let home = home_dir_for_stem(
+            &[v8.as_path(), v9.as_path()],
+            "ostlandet-latest",
+            RoutingProfile::Car,
+        );
+        assert_eq!(
+            home.map(|p| p.to_path_buf()),
+            Some(v9),
+            "must prefer v9 long-trip-packs over v8 files/ root"
+        );
+    }
 
     #[test]
     fn bbox_contained_requires_full_inclusion() {
@@ -2536,6 +2668,69 @@ mod multi_stem_corridor_tests {
                 &[dir.path()]
             ),
             "in-stem Ostlandet endpoints must not force foreign extras"
+        );
+    }
+
+    #[test]
+    fn missing_regions_names_vestlandet_before_any_graph_load() {
+        use super::missing_ready_regions_for_trip;
+        use crate::routing::graph::RoutingProfile;
+        // Raufoss (Ostlandet) → Bergen (Vestlandet). No Ready packs installed.
+        let pts = [(60.726_f64, 10.613_f64), (60.3913_f64, 5.3221_f64)];
+        let missing = missing_ready_regions_for_trip(&[], RoutingProfile::Car, &pts);
+        assert!(
+            missing.iter().any(|r| r == "europe/norway/vestlandet"),
+            "expected Vestlandet in missing, got {missing:?}"
+        );
+        // Empty dirs: never spins; returns immediately with named regions.
+        assert!(!missing.is_empty());
+    }
+
+    #[test]
+    fn try_load_fails_fast_when_destination_region_missing() {
+        use super::{try_load_graph_for_plan_corridor_with_pack_dirs, PackLoadError};
+        use crate::routing::graph::RoutingProfile;
+        use crate::routing::plan_bbox::PlanEdgeClipMode;
+        use std::time::Instant;
+
+        let dir = tempfile::tempdir().expect("tmpdir");
+        // Ostlandet-only install: manifest present but not Ready (no tiles) —
+        // coverage still reports Vestlandet missing for Bergen.
+        fs::write(
+            dir.path().join("ostlandet-latest.navi-manifest.json"),
+            r#"{"schema":1,"stem":"ostlandet-latest","pbf_filename":"ostlandet-latest.osm.pbf","graph_files":{},"graph_format_version":9,"poi_barrier_file":"ostlandet-latest.navi-poi-barrier.rkyv","poi_barrier_format_version":2,"wetland_format_version":1}"#,
+        )
+        .unwrap();
+        let pbf = dir.path().join("ostlandet-latest.osm.pbf");
+        fs::write(&pbf, b"stub").unwrap();
+        let pts = [(60.726_f64, 10.613_f64), (60.3913_f64, 5.3221_f64)];
+        let t0 = Instant::now();
+        let result = try_load_graph_for_plan_corridor_with_pack_dirs(
+            dir.path(),
+            &[],
+            &pbf,
+            RoutingProfile::Car,
+            Some([60.0, 5.0, 61.0, 11.0]),
+            Some(&pts),
+            PlanEdgeClipMode::CorridorBand,
+        );
+        let elapsed = t0.elapsed();
+        let err = match result {
+            Ok(_) => panic!("must fail without Vestlandet"),
+            Err(e) => e,
+        };
+        match err {
+            PackLoadError::MissingRegions(regions) => {
+                assert!(
+                    regions.iter().any(|r| r.contains("vestlandet")),
+                    "expected Vestlandet named, got {regions:?}"
+                );
+            }
+            other => panic!("expected MissingRegions, got {other:?}"),
+        }
+        assert!(
+            elapsed.as_secs_f64() < 2.0,
+            "fail-fast must return within 2s, took {elapsed:?}"
         );
     }
 }
@@ -3046,7 +3241,9 @@ mod raufoss_bergen_load_probe {
             Err(e) => (false, e.nearest_m),
         };
         eprintln!("bergen_snap_ok={ok} nearest_m={dist:.0}");
-        assert!(ok && dist < 2000.0, "Bergen not in loaded graph; nearest_m={dist}");
+        assert!(
+            ok && dist < 2000.0,
+            "Bergen not in loaded graph; nearest_m={dist}"
+        );
     }
 }
-

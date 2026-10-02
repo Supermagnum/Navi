@@ -197,18 +197,43 @@ object RegionCoverage {
     }
 
     fun downloadedGeofabrikPaths(dataDir: File): List<String> {
+        return downloadedGeofabrikPaths(dataDir, packDir = null)
+    }
+
+    /**
+     * Geofabrik paths with a local install under [dataDir] and optionally
+     * [packDir] (long-trip-packs / Removable). Manifests count even without a
+     * large PBF (pack-server stubs).
+     */
+    fun downloadedGeofabrikPaths(
+        dataDir: File,
+        packDir: File?,
+    ): List<String> {
+        val roots =
+            buildList {
+                add(dataDir)
+                if (packDir != null && packDir.isDirectory && packDir.absolutePath != dataDir.absolutePath) {
+                    add(packDir)
+                }
+                // Nested long-trip-packs under dataDir (always probed by planner).
+                val nested = File(dataDir, "long-trip-packs")
+                if (nested.isDirectory && nested.absolutePath != packDir?.absolutePath) {
+                    add(nested)
+                }
+            }
         val files =
             buildList {
-                dataDir.listFiles()?.forEach { f ->
-                    if (f.isFile && f.name.endsWith(".osm.pbf") && f.length() > 1_000_000L) {
-                        add(f)
+                for (root in roots) {
+                    root.listFiles()?.forEach { f ->
+                        if (f.isFile && f.name.endsWith(".osm.pbf") && f.length() > 1_000_000L) {
+                            add(f)
+                        }
                     }
-                }
-                // Pack-server installs may have Ready manifests without a large PBF.
-                dataDir.listFiles()?.forEach { f ->
-                    if (f.isFile && f.name.endsWith(".navi-manifest.json")) {
-                        val stem = f.name.removeSuffix(".navi-manifest.json")
-                        add(File(dataDir, "$stem.osm.pbf"))
+                    root.listFiles()?.forEach { f ->
+                        if (f.isFile && f.name.endsWith(".navi-manifest.json")) {
+                            val stem = f.name.removeSuffix(".navi-manifest.json")
+                            add(File(root, "$stem.osm.pbf"))
+                        }
                     }
                 }
                 // Same fixture fallback Plan route can use.
@@ -259,13 +284,17 @@ object RegionCoverage {
      * point. Cross-landsdel trips that are already covered by multiple
      * installed extracts do not prompt — the corridor tile loader sources
      * tiles from each Ready pack in one pass.
+     *
+     * [packDir] is searched in addition to [dataDir] so the region screen and
+     * planner agree on what is installed (long-trip-packs).
      */
     fun missingCoverage(
         waypoints: List<Waypoint>,
         dataDir: File,
+        packDir: File? = null,
     ): MissingRegionCoverage? {
         if (waypoints.isEmpty()) return null
-        val downloaded = downloadedGeofabrikPaths(dataDir)
+        val downloaded = downloadedGeofabrikPaths(dataDir, packDir)
         val uncovered =
             waypoints.filter { wp ->
                 !pointCovered(wp.lat, wp.lon, downloaded)
@@ -288,7 +317,8 @@ object RegionCoverage {
                 suggested == "europe/sweden" ->
                     "$place is in Sweden, which is not downloaded. Download Sweden to plan this trip."
                 else ->
-                    "$place is not in any downloaded area. Download $label to plan here."
+                    "$label is not downloaded. Download $label to plan this trip" +
+                        if (place.isNotBlank() && place != label) " ($place)." else "."
             }
         return MissingRegionCoverage(
             role = first.role,
@@ -298,6 +328,30 @@ object RegionCoverage {
             suggestedGeofabrikPath = suggested,
             crossRegion = crossRegion,
             message = message,
+        )
+    }
+
+    /**
+     * Build a [MissingRegionCoverage] from a planner `missing_regions` failure
+     * (first Geofabrik path). Used when native fail-fast returns before UI
+     * pre-flight, so the same download dialog / deep-link is shown.
+     */
+    fun missingCoverageFromRegionPath(
+        geofabrikPath: String,
+        role: String = "To",
+        placeName: String = "",
+    ): MissingRegionCoverage {
+        val path = geofabrikPath.trim().trim('/')
+        val label = displayName(path)
+        val place = placeName.ifBlank { label }
+        return MissingRegionCoverage(
+            role = role,
+            placeName = place,
+            lat = 0.0,
+            lon = 0.0,
+            suggestedGeofabrikPath = path,
+            crossRegion = false,
+            message = "$label is not downloaded. Download $label to plan this trip.",
         )
     }
 

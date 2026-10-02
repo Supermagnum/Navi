@@ -306,9 +306,11 @@ fn confirm_usable(data_dir: &Path, leaf_stem: &str) -> Result<(), String> {
     let man_path = manifest_path(data_dir, leaf_stem);
     let man = NaviManifest::load(&man_path).map_err(|e| format!("load installed manifest: {e}"))?;
     match man.status_pack_files(data_dir) {
-        PackStatus::Ready => Ok(()),
+        // Outdated = accepted format behind preferred (v8 while client prefers v9):
+        // still a successful install; Tools can offer Refresh.
+        PackStatus::Ready | PackStatus::Outdated => Ok(()),
         other => Err(format!(
-            "installed packs not Ready for {leaf_stem}: {other:?}"
+            "installed packs not usable for {leaf_stem}: {other:?}"
         )),
     }
 }
@@ -967,7 +969,7 @@ mod tests {
             .is_file());
         let man = NaviManifest::load(&dir.path().join("monaco-latest.navi-manifest.json")).unwrap();
         assert_eq!(man.graph_format_version, GRAPH_FORMAT_VERSION_V8);
-        assert_eq!(man.status_pack_files(dir.path()), PackStatus::Ready);
+        assert_eq!(man.status_pack_files(dir.path()), PackStatus::Outdated);
     }
 
     #[test]

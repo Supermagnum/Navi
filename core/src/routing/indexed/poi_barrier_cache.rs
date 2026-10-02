@@ -66,7 +66,10 @@ impl PoiLru {
         }
     }
 
-    fn get(&mut self, key: &PoiBarrierCacheKey) -> Option<(Arc<PoiIndex>, Arc<DangerBarrierIndex>)> {
+    fn get(
+        &mut self,
+        key: &PoiBarrierCacheKey,
+    ) -> Option<(Arc<PoiIndex>, Arc<DangerBarrierIndex>)> {
         if let Some(i) = self.order.iter().position(|k| k == key) {
             let k = self.order.remove(i);
             self.order.push(k);

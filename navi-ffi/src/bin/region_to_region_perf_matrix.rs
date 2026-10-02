@@ -29,12 +29,16 @@ fn main() {
     let ost_pbf = pack_dir.join("ostlandet-latest.osm.pbf");
     let vest_pbf = pack_dir.join("vestlandet-latest.osm.pbf");
     assert!(
-        pack_dir.join("ostlandet-latest.navi-manifest.json").is_file(),
+        pack_dir
+            .join("ostlandet-latest.navi-manifest.json")
+            .is_file(),
         "missing ostlandet manifest in {}",
         pack_dir.display()
     );
     assert!(
-        pack_dir.join("vestlandet-latest.navi-manifest.json").is_file(),
+        pack_dir
+            .join("vestlandet-latest.navi-manifest.json")
+            .is_file(),
         "missing vestlandet manifest in {}",
         pack_dir.display()
     );

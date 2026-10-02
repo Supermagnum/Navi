@@ -2854,7 +2854,8 @@ fn try_widen_tile_budget(
         return false;
     }
     let peak = driver_break_core::routing::plan_perf::peak_rss_mb();
-    let Some(next) = driver_break_core::routing::plan_bbox::next_plan_tile_budget(*tile_budget_used)
+    let Some(next) =
+        driver_break_core::routing::plan_bbox::next_plan_tile_budget(*tile_budget_used)
     else {
         report.push_str(&format!(
             "tile_budget_widen=exhausted at {tile_budget_used} peak_rss_mb={peak:.1}\n"
@@ -3188,10 +3189,7 @@ fn plan_car_route_inner(
                  tile_budget={tile_budget_used}\n",
                 bbox[0], bbox[1], bbox[2], bbox[3]
             ));
-            driver_break_core::routing::plan_perf::note_u64(
-                "tile_budget",
-                tile_budget_used as u64,
-            );
+            driver_break_core::routing::plan_perf::note_u64("tile_budget", tile_budget_used as u64);
 
             driver_break_core::download::progress::set(
                 0,
@@ -3237,6 +3235,37 @@ fn plan_car_route_inner(
             // RouteOptions overlays). PBF fallback: unique Arc so make_mut is free.
             let (mut built, hit, phit) = match pack_try {
                 Ok(g) => (g, false, true),
+                Err(driver_break_core::routing::indexed::PackLoadError::MissingRegions(
+                    regions,
+                )) => {
+                    let names = regions.join(", ");
+                    let labels: Vec<String> = regions
+                        .iter()
+                        .map(|r| {
+                            r.rsplit('/')
+                                .next()
+                                .unwrap_or(r.as_str())
+                                .replace('-', " ")
+                                .replace('_', " ")
+                        })
+                        .collect();
+                    let label_join = labels.join(", ");
+                    report.push_str(&format!(
+                        "FAIL: missing_regions={names}\n\
+                         Install {label_join} to plan this route.\n"
+                    ));
+                    driver_break_core::routing::plan_perf::note("missing_regions", &names);
+                    let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
+                    let mut r = empty(report);
+                    r.toll_policy = toll_policy.as_diag_str().into();
+                    r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
+                    r.search_terminate_reason = "missing_regions".into();
+                    // Diagnostic field: first missing region path for UI deep-link.
+                    if let Some(first) = regions.first() {
+                        r.off_trail_advisory = format!("missing_region:{first}");
+                    }
+                    return r;
+                }
                 Err(e) => {
                     driver_break_core::routing::plan_perf::note(
                         "pack_miss_reason",
@@ -3487,7 +3516,8 @@ fn plan_car_route_inner(
                         &mut tile_widen_attempts,
                         pack_hit,
                     ) {
-                        edge_clip_mode = driver_break_core::routing::plan_bbox::PlanEdgeClipMode::CorridorBand;
+                        edge_clip_mode =
+                            driver_break_core::routing::plan_bbox::PlanEdgeClipMode::CorridorBand;
                         continue;
                     }
                     report.push_str(&format!(
@@ -3829,8 +3859,7 @@ fn plan_car_route_inner(
             let pts: Vec<(f64, f64)> = samples.iter().map(|s| (s.0, s.1)).collect();
             if pts.len() >= 2 {
                 let segs = driver_break_core::routing::plan_bbox::corridor_segment_bboxes(
-                    &pts,
-                    0.15, // ~15 km half-width
+                    &pts, 0.15, // ~15 km half-width
                 );
                 segs.into_iter().reduce(|mut a, b| {
                     a[0] = a[0].min(b[0]);
@@ -3843,8 +3872,12 @@ fn plan_car_route_inner(
                 Some(bbox)
             }
         };
-        let poi_pack_dirs =
-            plan_pack_dirs(pbf, data_dir.to_string_lossy().as_ref(), &pack_dir, long_trip_enabled);
+        let poi_pack_dirs = plan_pack_dirs(
+            pbf,
+            data_dir.to_string_lossy().as_ref(),
+            &pack_dir,
+            long_trip_enabled,
+        );
         match driver_break_core::routing::indexed::try_load_poi_barrier_for_plan_bbox_with_pack_dirs(
             &data_dir,
             &poi_pack_dirs,
@@ -4171,144 +4204,144 @@ fn plan_car_route_inner(
             if !needs_overnight {
                 report.push_str("motor_multi_day: days=1; multi_day=false\n");
             } else {
-            // Profile (host Raufoss→Bergen before skip): ~36 s was spent here on a
-            // dense polyline×5-category nearest scrape — not in A*. For real
-            // multi-day trips, only query near expected overnight kilometre marks
-            // (± search radius along-route), not every Nth vertex of the full line.
-            let samples = sample_polyline_km(&polyline);
-            let overnight_link = RoadNodeIndex::from_path_nodes(&graph, &path);
-            let speed_kmh = if driving_h > 1e-6 {
-                (dist_km / driving_h).max(1.0)
-            } else {
-                70.0
-            };
-            let overnight_targets_km: Vec<f64> = match budget {
-                MotorDailyBudget::Hours(h) => {
-                    let day_km = (h * speed_kmh).max(1.0);
-                    let mut marks = Vec::new();
-                    let mut at = day_km;
-                    while at < dist_km - 1.0 && marks.len() < 40 {
-                        marks.push(at);
-                        at += day_km;
+                // Profile (host Raufoss→Bergen before skip): ~36 s was spent here on a
+                // dense polyline×5-category nearest scrape — not in A*. For real
+                // multi-day trips, only query near expected overnight kilometre marks
+                // (± search radius along-route), not every Nth vertex of the full line.
+                let samples = sample_polyline_km(&polyline);
+                let overnight_link = RoadNodeIndex::from_path_nodes(&graph, &path);
+                let speed_kmh = if driving_h > 1e-6 {
+                    (dist_km / driving_h).max(1.0)
+                } else {
+                    70.0
+                };
+                let overnight_targets_km: Vec<f64> = match budget {
+                    MotorDailyBudget::Hours(h) => {
+                        let day_km = (h * speed_kmh).max(1.0);
+                        let mut marks = Vec::new();
+                        let mut at = day_km;
+                        while at < dist_km - 1.0 && marks.len() < 40 {
+                            marks.push(at);
+                            at += day_km;
+                        }
+                        marks
                     }
-                    marks
-                }
-                MotorDailyBudget::DistanceKm(km) => {
-                    let day_km = km.max(1.0);
-                    let mut marks = Vec::new();
-                    let mut at = day_km;
-                    while at < dist_km - 1.0 && marks.len() < 40 {
-                        marks.push(at);
-                        at += day_km;
+                    MotorDailyBudget::DistanceKm(km) => {
+                        let day_km = km.max(1.0);
+                        let mut marks = Vec::new();
+                        let mut at = day_km;
+                        while at < dist_km - 1.0 && marks.len() < 40 {
+                            marks.push(at);
+                            at += day_km;
+                        }
+                        marks
                     }
-                    marks
-                }
-            };
-            report.push_str(&format!(
-                "motor_overnight_scrape: targets={} window_km={:.1} samples={}\n",
-                overnight_targets_km.len(),
-                (poi_radii.search_radius_m / 1000.0).max(5.0),
-                samples.len()
-            ));
-            let window_km = (poi_radii.search_radius_m / 1000.0).max(5.0);
-            let mut candidates: Vec<MotorOvernightCandidate> = Vec::new();
-            let mut seen_poi = std::collections::HashSet::new();
-            for &target_km in &overnight_targets_km {
-                let (qlat, qlon) = interpolate_at_km(&samples, target_km);
-                // Also sample nearby polyline vertices within the window so a
-                // road-linked POI a few km off the exact day boundary still hits.
-                let mut query_pts: Vec<(f64, f64, f64)> = vec![(qlat, qlon, target_km)];
-                for (lat, lon, km) in &samples {
-                    if (*km - target_km).abs() <= window_km {
-                        query_pts.push((*lat, *lon, *km));
+                };
+                report.push_str(&format!(
+                    "motor_overnight_scrape: targets={} window_km={:.1} samples={}\n",
+                    overnight_targets_km.len(),
+                    (poi_radii.search_radius_m / 1000.0).max(5.0),
+                    samples.len()
+                ));
+                let window_km = (poi_radii.search_radius_m / 1000.0).max(5.0);
+                let mut candidates: Vec<MotorOvernightCandidate> = Vec::new();
+                let mut seen_poi = std::collections::HashSet::new();
+                for &target_km in &overnight_targets_km {
+                    let (qlat, qlon) = interpolate_at_km(&samples, target_km);
+                    // Also sample nearby polyline vertices within the window so a
+                    // road-linked POI a few km off the exact day boundary still hits.
+                    let mut query_pts: Vec<(f64, f64, f64)> = vec![(qlat, qlon, target_km)];
+                    for (lat, lon, km) in &samples {
+                        if (*km - target_km).abs() <= window_km {
+                            query_pts.push((*lat, *lon, *km));
+                        }
                     }
-                }
-                // Cap per overnight mark — avoid reintroducing O(route) cost.
-                if query_pts.len() > 8 {
-                    let step = query_pts.len() / 8;
-                    query_pts = query_pts.into_iter().step_by(step.max(1)).collect();
-                }
-                for (lat, lon, km) in query_pts {
-                    for cat in [
-                        PoiCategory::Lodging,
-                        PoiCategory::OvernightFacility,
-                        PoiCategory::TentSite,
-                        PoiCategory::Cabin,
-                        PoiCategory::RestArea,
-                    ] {
-                        for p in poi_index.nearest(cat, lat, lon, poi_radii.search_radius_m) {
-                            if poi_radii.require_road_link
-                                && !overnight_link.within_road_link(p.lat, p.lon)
-                            {
-                                continue;
+                    // Cap per overnight mark — avoid reintroducing O(route) cost.
+                    if query_pts.len() > 8 {
+                        let step = query_pts.len() / 8;
+                        query_pts = query_pts.into_iter().step_by(step.max(1)).collect();
+                    }
+                    for (lat, lon, km) in query_pts {
+                        for cat in [
+                            PoiCategory::Lodging,
+                            PoiCategory::OvernightFacility,
+                            PoiCategory::TentSite,
+                            PoiCategory::Cabin,
+                            PoiCategory::RestArea,
+                        ] {
+                            for p in poi_index.nearest(cat, lat, lon, poi_radii.search_radius_m) {
+                                if poi_radii.require_road_link
+                                    && !overnight_link.within_road_link(p.lat, p.lon)
+                                {
+                                    continue;
+                                }
+                                if !seen_poi.insert(p.osm_id) {
+                                    continue;
+                                }
+                                let kind = if p.categories.contains(&PoiCategory::Lodging) {
+                                    MotorOvernightKind::Lodging
+                                } else if p.categories.contains(&PoiCategory::TentSite)
+                                    || p.categories.contains(&PoiCategory::OvernightFacility)
+                                    || p.categories.contains(&PoiCategory::Cabin)
+                                {
+                                    MotorOvernightKind::Camping
+                                } else if p.categories.contains(&PoiCategory::RestArea) {
+                                    MotorOvernightKind::RestArea
+                                } else {
+                                    continue;
+                                };
+                                candidates.push(MotorOvernightCandidate {
+                                    along_km: km,
+                                    lat: p.lat,
+                                    lon: p.lon,
+                                    name: p
+                                        .name
+                                        .clone()
+                                        .unwrap_or_else(|| format!("Overnight {}", p.osm_id)),
+                                    kind,
+                                });
                             }
-                            if !seen_poi.insert(p.osm_id) {
-                                continue;
-                            }
-                            let kind = if p.categories.contains(&PoiCategory::Lodging) {
-                                MotorOvernightKind::Lodging
-                            } else if p.categories.contains(&PoiCategory::TentSite)
-                                || p.categories.contains(&PoiCategory::OvernightFacility)
-                                || p.categories.contains(&PoiCategory::Cabin)
-                            {
-                                MotorOvernightKind::Camping
-                            } else if p.categories.contains(&PoiCategory::RestArea) {
-                                MotorOvernightKind::RestArea
-                            } else {
-                                continue;
-                            };
-                            candidates.push(MotorOvernightCandidate {
-                                along_km: km,
-                                lat: p.lat,
-                                lon: p.lon,
-                                name: p
-                                    .name
-                                    .clone()
-                                    .unwrap_or_else(|| format!("Overnight {}", p.osm_id)),
-                                kind,
-                            });
                         }
                     }
                 }
-            }
-            let multi = plan_motor_multi_day(budget, driving_h, dist_km, &candidates);
-            if multi.multi_day || !multi.days.is_empty() {
-                days_json = days_json_from_motor(&multi, travel_profile_report_key(profile));
-            }
-            if multi.multi_day {
-                report.push_str(&format!(
+                let multi = plan_motor_multi_day(budget, driving_h, dist_km, &candidates);
+                if multi.multi_day || !multi.days.is_empty() {
+                    days_json = days_json_from_motor(&multi, travel_profile_report_key(profile));
+                }
+                if multi.multi_day {
+                    report.push_str(&format!(
                     "motor_multi_day: days={}; budget={:?}; total_driving_h={driving_h:.2}; total_km={dist_km:.1}\n",
                     multi.days.len(),
                     multi.budget
                 ));
-                for d in &multi.days {
-                    report.push_str(&format!(
+                    for d in &multi.days {
+                        report.push_str(&format!(
                         "motor_day: idx={}; start_km={:.1}; end_km={:.1}; driving_h={:.2}; distance_km={:.1}\n",
                         d.day_index, d.start_km, d.end_km, d.driving_hours, d.distance_km
                     ));
-                    if let Some(o) = &d.overnight {
-                        let kind_s = match o.kind {
-                            MotorOvernightKind::Lodging => "lodging",
-                            MotorOvernightKind::Camping => "camping",
-                            MotorOvernightKind::RestArea => "rest_area",
-                            MotorOvernightKind::None => "none",
-                        };
-                        report.push_str(&format!(
+                        if let Some(o) = &d.overnight {
+                            let kind_s = match o.kind {
+                                MotorOvernightKind::Lodging => "lodging",
+                                MotorOvernightKind::Camping => "camping",
+                                MotorOvernightKind::RestArea => "rest_area",
+                                MotorOvernightKind::None => "none",
+                            };
+                            report.push_str(&format!(
                             "motor_overnight: kind={kind_s}; poi_found={}; name={:?}; lat={:?}; lon={:?}\n",
                             o.poi_found, o.name, o.lat, o.lon
                         ));
-                        for n in &o.notes {
-                            report.push_str(&format!("motor_overnight_note: {n}\n"));
-                        }
-                        if o.poi_found {
-                            if let (Some(lat), Some(lon)) = (o.lat, o.lon) {
-                                let json_kind = match o.kind {
-                                    MotorOvernightKind::Lodging => "lodging",
-                                    MotorOvernightKind::Camping => "hut",
-                                    MotorOvernightKind::RestArea => "rest_area",
-                                    MotorOvernightKind::None => "amenity",
-                                };
-                                motor_overnight_pins.push(serde_json::json!({
+                            for n in &o.notes {
+                                report.push_str(&format!("motor_overnight_note: {n}\n"));
+                            }
+                            if o.poi_found {
+                                if let (Some(lat), Some(lon)) = (o.lat, o.lon) {
+                                    let json_kind = match o.kind {
+                                        MotorOvernightKind::Lodging => "lodging",
+                                        MotorOvernightKind::Camping => "hut",
+                                        MotorOvernightKind::RestArea => "rest_area",
+                                        MotorOvernightKind::None => "amenity",
+                                    };
+                                    motor_overnight_pins.push(serde_json::json!({
                                     "name": o.name.clone().unwrap_or_else(|| "Overnight".into()),
                                     "lat": lat,
                                     "lon": lon,
@@ -4321,13 +4354,13 @@ fn plan_car_route_inner(
                                     },
                                     "along_km": d.end_km,
                                 }));
+                                }
                             }
                         }
                     }
+                } else {
+                    report.push_str("motor_multi_day: days=1; multi_day=false\n");
                 }
-            } else {
-                report.push_str("motor_multi_day: days=1; multi_day=false\n");
-            }
             } // driving_h > budget
         }
     }
@@ -5552,6 +5585,7 @@ pub fn indexed_maps_status(pbf_path: String, data_dir: String) -> String {
             if server_install_present(&data, &stem) {
                 return match man.status_pack_files(&data) {
                     PackStatus::Ready => "ready\n".into(),
+                    PackStatus::Outdated => "outdated\n".into(),
                     PackStatus::Missing => "missing\n".into(),
                     PackStatus::StalePbf => "stale_pbf\n".into(),
                     PackStatus::VersionMismatch => "version_mismatch\n".into(),
@@ -5565,6 +5599,7 @@ pub fn indexed_maps_status(pbf_path: String, data_dir: String) -> String {
             };
             match man.status_for_pbf(&data, &packed) {
                 PackStatus::Ready => "ready\n".into(),
+                PackStatus::Outdated => "outdated\n".into(),
                 PackStatus::Missing => "missing\n".into(),
                 PackStatus::StalePbf => "stale_pbf\n".into(),
                 PackStatus::VersionMismatch => "version_mismatch\n".into(),

@@ -4,6 +4,7 @@ import android.os.Debug
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import org.json.JSONObject
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -22,6 +23,9 @@ import java.io.File
  * Innlandet is not a separate Geofabrik leaf (hedmark/oppland → Ostlandet).
  * Installed stems expected: ostlandet, vestlandet, trondelag, nord-norge,
  * sorlandet.
+ *
+ * Tablet pass criteria (Follow-up 3): Bergen eco cold &lt;15 s, warm &lt;3 s,
+ * pack_hit, ~459.71 km; eco_reweight_ms &gt; 0 on eco rows.
  */
 @RunWith(AndroidJUnit4::class)
 class RegionToRegionPerfMatrixInstrumentedTest {
@@ -40,10 +44,13 @@ class RegionToRegionPerfMatrixInstrumentedTest {
             "nord-norge-latest",
             "sorlandet-latest",
         )) {
-            assertTrue(
-                "need $stem v9 packs under $packDir",
-                File(packDir, "$stem.navi-manifest.json").isFile,
-            )
+            val manifest = File(packDir, "$stem.navi-manifest.json")
+            assertTrue("need $stem v9 packs under $packDir", manifest.isFile)
+            val fmt =
+                runCatching {
+                    JSONObject(manifest.readText()).optInt("graph_format_version", -1)
+                }.getOrDefault(-1)
+            assertTrue("$stem must be graph_format_version=9 (got $fmt)", fmt == 9)
         }
         val ostPbf = File(packDir, "ostlandet-latest.osm.pbf")
         val vestPbf = File(packDir, "vestlandet-latest.osm.pbf")
@@ -63,7 +70,17 @@ class RegionToRegionPerfMatrixInstrumentedTest {
         val rows = mutableListOf<String>()
         rows +=
             "route\teco\tpack_hit\twall_ms\tplan_ms\tpack_load_ms\teco_reweight_ms\tastar_ms\t" +
-                "expansions\tnodes\tedges\tdistance_km\tpeak_rss_mb\tpeak_native_heap_mb\troute_ok"
+                "expansions\tnodes\tedges\tdistance_km\tpeak_rss_mb\tpeak_native_heap_mb\t" +
+                "mem_avail_before_mb\troute_ok"
+
+        fun memAvailableMb(): String {
+            val line =
+                File("/proc/meminfo")
+                    .useLines { lines -> lines.firstOrNull { it.startsWith("MemAvailable:") } }
+                    ?: return "-"
+            val kb = line.substringAfter(':').trim().substringBefore(' ').toLongOrNull() ?: return "-"
+            return "%.1f".format(kb / 1024.0)
+        }
 
         fun run(
             name: String,
@@ -75,6 +92,7 @@ class RegionToRegionPerfMatrixInstrumentedTest {
             startLon: Double = RAUFOSS_LON,
             longTrip: Boolean = false,
         ) {
+            val memBefore = memAvailableMb()
             val heapBefore = Debug.getNativeHeapAllocatedSize()
             val t0 = System.nanoTime()
             val route =
@@ -127,11 +145,18 @@ class RegionToRegionPerfMatrixInstrumentedTest {
                     "%.2f".format(route.distanceKm),
                     extract(report, "peak_rss_mb"),
                     peakNativeMb,
+                    memBefore,
                     ok.toString(),
                 ).joinToString("\t")
             rows += row
             Log.i(TAG, "PROFILE_ROW $row")
             Log.i(TAG, "PROFILE_REPORT $name\n$report")
+            Log.i(
+                TAG,
+                "PROFILE_MEM $name MemAvailable_before_mb=$memBefore " +
+                    "peak_rss_mb=${extract(report, "peak_rss_mb")} " +
+                    "peak_native_heap_mb=$peakNativeMb",
+            )
             Log.i(
                 TAG,
                 "PROFILE_PACKS $name primary_stem=${extractToken(report, "primary_stem=")} " +
@@ -156,21 +181,32 @@ class RegionToRegionPerfMatrixInstrumentedTest {
         val out = rows.joinToString("\n")
         File(packDir, "region_to_region_perf_matrix.tsv").writeText(out)
         Log.i(TAG, "PROFILE_TABLE\n$out")
-        // Warm (<2 s): Arc corridor + ferry-overlay skip on cache hit.
-        // Cold eco on emulator SD is dominated by tile materialize (~5–6 s for
-        // 11 tiles / ~496k edges); allow SD variance up to 9 s.
+        // Tablet Follow-up 3: cold &lt;15 s, warm &lt;3 s (emulator was tighter).
         assertTrue(
-            "Raufoss→Bergen eco cold must pack-hit and finish under 9s:\n$out",
+            "Raufoss→Bergen eco cold must pack-hit and finish under 15s:\n$out",
             rows.any {
                 it.startsWith("raufoss_bergen\ttrue\ttrue\t") &&
-                    it.split('\t').getOrNull(3)?.toLongOrNull()?.let { ms -> ms < 9_000 } == true
+                    it.split('\t').getOrNull(3)?.toLongOrNull()?.let { ms -> ms < 15_000 } == true
             },
         )
         assertTrue(
-            "Raufoss→Bergen eco warm must finish under 2s:\n$out",
+            "Raufoss→Bergen eco warm must finish under 3s:\n$out",
             rows.any {
                 it.startsWith("raufoss_bergen_warm\ttrue\ttrue\t") &&
-                    it.split('\t').getOrNull(3)?.toLongOrNull()?.let { ms -> ms < 2_000 } == true
+                    it.split('\t').getOrNull(3)?.toLongOrNull()?.let { ms -> ms < 3_000 } == true
+            },
+        )
+        val ecoRows =
+            rows.filter { row ->
+                val cols = row.split('\t')
+                cols.getOrNull(0) != "route" && cols.getOrNull(1) == "true"
+            }
+        assertTrue("expected at least one eco row:\n$out", ecoRows.isNotEmpty())
+        assertTrue(
+            "eco_reweight_ms must be non-zero on eco rows:\n$out",
+            ecoRows.all { row ->
+                val ecoMs = row.split('\t').getOrNull(6)?.toDoubleOrNull()
+                ecoMs != null && ecoMs > 0.0
             },
         )
     }

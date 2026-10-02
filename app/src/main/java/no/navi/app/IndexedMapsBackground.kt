@@ -58,8 +58,9 @@ object IndexedMapsBackground {
     }
 
     /**
-     * Tools process-footer line. Empty when idle — idle "missing/ready" probes must
-     * not appear under "In progress" when nothing is converting.
+     * Tools process-footer line. Empty when idle and packs are ready / missing —
+     * but shows an **outdated** hint when installed format is behind preferred
+     * (v8 vs v9) so Tools can offer Refresh without auto-download.
      */
     @Suppress("UNUSED_PARAMETER")
     fun uiLine(
@@ -67,29 +68,41 @@ object IndexedMapsBackground {
         dataDir: File,
     ): String {
         if (pbf == null || !pbf.isFile) return ""
-        if (!running.get()) return ""
-        val snap =
-            runCatching { convertProgressSnapshot() }.getOrNull()?.takeIf {
-                it.label.isNotBlank()
-            }
-        val prog =
-            if (snap != null && snap.label.isNotBlank()) {
-                val label = annotate(snap.label)
-                val pct =
-                    snap.unitsTotal?.let { tot ->
-                        if (tot > 0uL) {
-                            ((snap.unitsDone.toDouble() * 100.0) / tot.toDouble())
-                                .toInt()
-                                .coerceIn(0, 100)
-                        } else {
-                            null
+        if (running.get()) {
+            val snap =
+                runCatching { convertProgressSnapshot() }.getOrNull()?.takeIf {
+                    it.label.isNotBlank()
+                }
+            val prog =
+                if (snap != null && snap.label.isNotBlank()) {
+                    val label = annotate(snap.label)
+                    val pct =
+                        snap.unitsTotal?.let { tot ->
+                            if (tot > 0uL) {
+                                ((snap.unitsDone.toDouble() * 100.0) / tot.toDouble())
+                                    .toInt()
+                                    .coerceIn(0, 100)
+                            } else {
+                                null
+                            }
                         }
-                    }
-                if (pct != null) "$label $pct%" else label
-            } else {
-                lastStatus.get()
-            }
-        return "Indexed maps (background): $prog"
+                    if (pct != null) "$label $pct%" else label
+                } else {
+                    lastStatus.get()
+                }
+            return "Indexed maps (background): $prog"
+        }
+        // Idle: surface outdated / version_mismatch so Tools can offer update.
+        val st =
+            runCatching { indexedMapsStatus(pbf.absolutePath, dataDir.absolutePath).trim() }
+                .getOrDefault("")
+        return when (st) {
+            "outdated" ->
+                "Indexed maps: outdated pack format — tap Refresh to download the current pack (optional)"
+            "version_mismatch" ->
+                "Indexed maps: outdated / incompatible — tap Refresh to update"
+            else -> ""
+        }
     }
 
     /**
@@ -106,8 +119,9 @@ object IndexedMapsBackground {
         dataDir: File,
         elevDir: File? = null,
         regionId: String? = null,
+        forceRefresh: Boolean = false,
     ) {
-        ensureStarted(pbf, dataDir, elevDir, regionId)
+        ensureStarted(pbf, dataDir, elevDir, regionId, forceRefresh)
     }
 
     fun ensureStarted(
@@ -115,6 +129,8 @@ object IndexedMapsBackground {
         dataDir: File,
         elevDir: File? = null,
         regionId: String? = null,
+        /** When true (Tools Refresh), update even if status is ready/outdated. */
+        forceRefresh: Boolean = false,
     ) {
         if (!OfflineIndexGate.isIndexablePbf(pbf) && !OfflineIndexGate.hasGraphPackMaterial(dataDir)) {
             Log.i(TAG, "skip ensureIndexedMaps: no indexable PBF/packs under ${dataDir.name}")
@@ -174,9 +190,20 @@ object IndexedMapsBackground {
                             Log.e(TAG, "indexedMapsStatus failed", it)
                             "error"
                         }
-                    if (st == "ready") {
-                        lastStatus.set(annotate("ready", rid))
-                        Log.i(TAG, "packs ready; skip refresh pbf=${resolvedPbf.name}")
+                    // Ready: skip. Outdated: skip auto-refresh (user must tap Tools).
+                    // Force Refresh from Tools bypasses both.
+                    if (!forceRefresh && (st == "ready" || st == "outdated")) {
+                        lastStatus.set(
+                            annotate(
+                                if (st == "outdated") {
+                                    "outdated (tap Refresh in Tools to update)"
+                                } else {
+                                    "ready"
+                                },
+                                rid,
+                            ),
+                        )
+                        Log.i(TAG, "packs $st; skip auto refresh pbf=${resolvedPbf.name}")
                         return@withLock false
                     }
                     running.set(true)
@@ -184,7 +211,8 @@ object IndexedMapsBackground {
                     lastStatus.set(annotate("starting ($st) — pack server first", rid))
                     Log.i(
                         TAG,
-                        "start ensureIndexedMaps status=$st pbf=${resolvedPbf.name} regionId=$rid",
+                        "start ensureIndexedMaps status=$st force=$forceRefresh " +
+                            "pbf=${resolvedPbf.name} regionId=$rid",
                     )
                     true
                 }
@@ -221,6 +249,37 @@ object IndexedMapsBackground {
                 )
                 if (report.contains("PASS")) {
                     convertProgressClearSafe()
+                    // Legacy Tools installs left packs under files/; long-trip
+                    // downloads land in files/long-trip-packs. After a successful
+                    // refresh, drop the older root duplicate of this stem.
+                    val stem =
+                        resolvedPbf.name
+                            .removeSuffix(".osm.pbf")
+                            .removeSuffix(".pbf")
+                    if (stem.isNotBlank()) {
+                        val filesRoot =
+                            when {
+                                dataDir.name == LongTripPackStorage.PACKS_SUBDIR ->
+                                    dataDir.parentFile ?: dataDir
+                                else -> dataDir
+                            }
+                        val preferred =
+                            when {
+                                dataDir.name == LongTripPackStorage.PACKS_SUBDIR -> dataDir
+                                File(dataDir, LongTripPackStorage.PACKS_SUBDIR).isDirectory ->
+                                    File(dataDir, LongTripPackStorage.PACKS_SUBDIR)
+                                else -> dataDir
+                            }
+                        runCatching {
+                            DownloadedRegionDelete.removeStaleRootStemDuplicate(
+                                filesRoot,
+                                preferred,
+                                stem,
+                            )
+                        }.onFailure {
+                            Log.w(TAG, "stale root cleanup failed for $stem", it)
+                        }
+                    }
                 }
                 Log.i(TAG, "finished: $report")
             } catch (t: Throwable) {

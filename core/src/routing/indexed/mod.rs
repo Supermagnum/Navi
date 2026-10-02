@@ -24,11 +24,9 @@ pub use crate::routing::region_lock::{
 };
 pub use convert::{convert_region_packs, ConvertOptions, ConvertReport};
 pub use corridor_cache::{
-    corridor_cache_clear, corridor_cache_get, corridor_cache_insert_owned, corridor_cache_stats,
-    corridor_cache_take, CorridorCacheKey, CORRIDOR_CACHE_MAX_BYTES,
-};
-pub use poi_barrier_cache::{
-    poi_barrier_cache_clear, poi_barrier_cache_stats, PoiBarrierCacheKey,
+    corridor_cache_clear, corridor_cache_evict_before_load, corridor_cache_get,
+    corridor_cache_insert_owned, corridor_cache_stats, corridor_cache_take, CorridorCacheKey,
+    CORRIDOR_CACHE_MAX_BYTES,
 };
 pub use graph_pack::{
     graph_format_version_accepted, preferred_graph_format_version, ArchivedFlatGraphPack,
@@ -40,11 +38,12 @@ pub use io::{archive_payload_offset, write_archive_atomic};
 pub use load::{
     fingerprint_pbf_for_packs, load_graph_pack, load_graph_pack_bbox, load_graph_pack_clips,
     load_poi_barrier_pack, load_poi_barrier_pack_bbox, load_wetland_pack, merge_tile_graphs,
-    try_load_graph_for_plan, try_load_graph_for_plan_bbox, try_load_graph_for_plan_corridor,
-    try_load_graph_for_plan_corridor_with_pack_dirs, try_load_poi_barrier_for_plan,
-    try_load_poi_barrier_for_plan_bbox, try_load_poi_barrier_for_plan_bbox_with_pack_dirs,
-    try_load_poi_pack_covering_point, try_load_poi_pack_covering_point_with_pack_dirs,
-    try_load_wetland_for_plan, PackLoadError, PackedPlanData,
+    missing_ready_regions_for_trip, try_load_graph_for_plan, try_load_graph_for_plan_bbox,
+    try_load_graph_for_plan_corridor, try_load_graph_for_plan_corridor_with_pack_dirs,
+    try_load_poi_barrier_for_plan, try_load_poi_barrier_for_plan_bbox,
+    try_load_poi_barrier_for_plan_bbox_with_pack_dirs, try_load_poi_pack_covering_point,
+    try_load_poi_pack_covering_point_with_pack_dirs, try_load_wetland_for_plan, PackLoadError,
+    PackedPlanData,
 };
 pub use manifest::{
     bbox_intersects, graph_pack_filename, graph_tile_filename, manifest_path,
@@ -52,5 +51,6 @@ pub use manifest::{
     wetland_tile_filename, GraphTileEntry, NaviManifest, PackStatus, GRAPH_PROFILE_BICYCLE,
     GRAPH_PROFILE_CAR, GRAPH_PROFILE_FOOT, GRAPH_PROFILE_TRUCK, SERVER_INSTALL_SUFFIX,
 };
+pub use poi_barrier_cache::{poi_barrier_cache_clear, poi_barrier_cache_stats, PoiBarrierCacheKey};
 pub use poi_barrier_pack::{FlatPoiBarrierPack, MAGIC_POI_BARRIER, POI_BARRIER_FORMAT_VERSION};
 pub use wetland_pack::{FlatWetlandPack, MAGIC_WETLAND, WETLAND_FORMAT_VERSION};

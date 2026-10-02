@@ -155,13 +155,12 @@ pub fn effective_max_plan_tiles() -> usize {
 /// [`set_plan_tile_budget_at_least`] can raise above that base so a forced
 /// 6-tile measure still recovers a cross-stem bridge instead of spinning A*.
 pub fn effective_max_plan_tiles_for_stems(extra_stem_count: usize) -> usize {
-    let base = measure_override_usize("NAVI_MEASURE_MAX_PLAN_TILES").unwrap_or_else(|| {
-        if extra_stem_count > 0 {
+    let base =
+        measure_override_usize("NAVI_MEASURE_MAX_PLAN_TILES").unwrap_or(if extra_stem_count > 0 {
             MAX_PLAN_TILES_MULTI_STEM
         } else {
             MAX_PLAN_TILES
-        }
-    });
+        });
     let floor = plan_tile_budget_at_least();
     base.max(floor)
 }

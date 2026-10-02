@@ -7,7 +7,7 @@ use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
-use super::graph_pack::graph_format_version_accepted;
+use super::graph_pack::{graph_format_version_accepted, GRAPH_FORMAT_VERSION};
 use super::poi_barrier_pack::POI_BARRIER_FORMAT_VERSION;
 use super::wetland_pack::WETLAND_FORMAT_VERSION;
 use crate::routing::graph::RoutingProfile;
@@ -123,6 +123,11 @@ pub enum PackStatus {
     Missing,
     StalePbf,
     VersionMismatch,
+    /// Pack files load (accepted format) but graph_format_version is behind the
+    /// client's preferred write version (e.g. installed v8 while preferred is v9).
+    /// Still usable for planning; Tools should offer an optional update — never
+    /// auto-download.
+    Outdated,
 }
 
 impl NaviManifest {
@@ -185,7 +190,7 @@ impl NaviManifest {
                 }
             }
         }
-        self.status_poi_wetland_files(data_dir)
+        self.with_outdated_if_behind(self.status_poi_wetland_files(data_dir))
     }
 
     /// Ready for planning with [`profile`] when that profile's graph tiles (or
@@ -223,7 +228,16 @@ impl NaviManifest {
                 return PackStatus::Missing;
             }
         }
-        self.status_poi_wetland_files(data_dir)
+        self.with_outdated_if_behind(self.status_poi_wetland_files(data_dir))
+    }
+
+    /// Files ready but graph format behind preferred (v8 while client prefers v9).
+    fn with_outdated_if_behind(&self, status: PackStatus) -> PackStatus {
+        if status == PackStatus::Ready && self.graph_format_version < GRAPH_FORMAT_VERSION {
+            PackStatus::Outdated
+        } else {
+            status
+        }
     }
 
     fn status_poi_wetland_files(&self, data_dir: &Path) -> PackStatus {

@@ -359,3 +359,141 @@ No `lowmemorykiller` / `am_kill` / `ANR in` hits attributed to Navi during these
 ### Verdict
 
 **STOP (measurement blocked for matrix).** Install tip `fdd85041` on SM-P613 succeeded; Ostlandet car Ready on v8; full region-to-region matrix and Bergen/Tromsø/Førde cases require pushing **v9** packs for ostlandet+vestlandet(+trondelag+nord-norge[+sorlandet]) onto the tablet (user forbade host pack push this pass). No product-code changes.
+
+## Follow-up 3 (Physical tablet — fail-fast missing pack, stale v8, memory, eco)
+
+Date: 2026-10-02. Branch: `perf/region-to-region-graph-build` (local uncommitted / pending push). Client-only; no `graph_format_version` bump; no merge.
+
+### 1. Missing-pack hang — root cause and fix
+
+**Root cause (confirmed):** Raufoss→Bergen with only Ostlandet installed never had Vestlandet. Corridor load saw `need_extra=false` / `extras=0` because `corridor_needs_extra_for_endpoint_leaves` only looks at **installed Ready** neighbour manifests — so a missing Vestlandet never forced multi-stem. Planner then loaded Ostlandet-only tiles and fell through toward PBF / A* / ferry-ensure paths that could spin for minutes (the original 10+ minute symptom).
+
+**Fix:** Before any tile mmap / graph materialize, `missing_ready_regions_for_trip` resolves origin / destination / densified corridor regions via `ordered_needed_regions_for_trip`. If any required region lacks a Ready (or Outdated-but-usable) pack for the profile, return `PackLoadError::MissingRegions` immediately. FFI maps that to `search_terminate_reason=missing_regions` and **does not** fall through to cold PBF build.
+
+**UI:** Message names the landsdel (`Vestlandet is not downloaded. Download Vestlandet to plan this trip.`) and deep-links Tools → that Geofabrik path (`missingCoverageFromRegionPath` + existing download dialog). Pre-flight `missingCoverage` also searches `long-trip-packs`.
+
+**Host test:** `try_load_fails_fast_when_destination_region_missing` and `missing_regions_names_vestlandet_before_any_graph_load` — Vestlandet named; return well under 2 s.
+
+### 2. Where are the user's regions? (clarified)
+
+User confirmed **Vestlandet was never downloaded** on the tablet. No further filesystem inventory. Installed long-trip stems remain: denmark, detmold-regbez, halland, niedersachsen, ostlandet, schleswig-holstein, skane, vastra_gotaland (all v8). Duplicate Ostlandet also under `files/` root. Planner and region screen now agree on installed coverage via shared packDir scan + named missing-region dialog.
+
+### 3. Stale packs (v8 vs server v9)
+
+Installed v8 remains **loadable** (`graph_format_version_accepted`). New `PackStatus::Outdated` when files are complete but `graph_format_version < preferred (9)`.
+
+- `indexed_maps_status` → `outdated`
+- Tools idle line: “outdated pack format — tap Refresh…”
+- Auto `IndexedMapsBackground` **skips** outdated (no silent download)
+- Tools **Refresh** uses `forceRefresh=true` so user action can pull server v9
+
+### 4. Download v9 + tablet matrix
+
+**Fail-fast UI confirmed on SM-P613** (installed this tip, Ostlandet-only still on device):
+
+- Seeded Raufoss→Bergen (`navi_long_trip=false`, `navi_eco=true`).
+- Dialog: title **Map data needed**; body **Vestlandet is not downloaded. Download Vestlandet to plan this trip (Bergen).**; CTA **Download Vestlandet**.
+- Eco seed logged `settings={eco_mode=true}` (NaviDebugIntent).
+
+**v9 pack install (explicit download/refresh, SM-P613):**
+
+- Freed non-Norway long-trip packs (~9.7G) so `/data` had ~21G free.
+- `NorwayV9PackDownloadInstrumentedTest`: per-region `decideRegionAcquisition(dataDir=long-trip-packs)` (same pack-server fetch as `RegionDownloadBackground` PACKS) + `provisionRegionData` for missing extracts. Ostlandet refreshed by deleting outdated v8 pack files then re-fetching (Tools Refresh intent — no silent auto-update).
+- All five stems Ready at **`graph_format_version: 9`** under `files/long-trip-packs` (~7.4G total with PBFs). Wall ~12 min.
+
+**Pass criteria vs measured (two full matrix runs; second shown):**
+
+| Case | Target | Measured | Result |
+| --- | --- | --- | --- |
+| Raufoss→Bergen eco cold | wall < 15 s, pack_hit, 459.71 km | wall **15809** ms, pack_hit, **459.71** km | **MISS** (~0.8 s over; pack_load≈12.5 s) |
+| Raufoss→Bergen eco warm | wall < 3 s | wall **2514** ms | **PASS** |
+| Controls | distances match; no LMK/ANR | Dombås 206.81; Bergen→Førde 171.01; Tromsø 1766.89; no LMK/ANR | **PASS** |
+
+First run cold was 15735 ms (same miss). Warm both runs &lt;3 s.
+
+#### Instrumented matrix (v9 packs, SM-P613)
+
+| case | eco | pack_hit | wall_ms | pack_load_ms | eco_reweight_ms | astar_ms | distance_km | peak_rss_mb | peak_native_heap_mb | MemAvailable before (MB) | route_ok |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| raufoss_bergen | true | true | 15809 | 12514 | 262 | 1231 | 459.71 | 954.4 | 422.3 | 1280.7 | true |
+| raufoss_bergen | false | true | 2221 | 12 | 0 | 1143 | 485.45 | 954.4 | 422.5 | 757.9 | true |
+| raufoss_bergen_warm | true | true | 2514 | 7 | 240 | 1232 | 459.71 | 954.4 | 422.5 | 802.8 | true |
+| raufoss_dombas | true | true | 7359 | 5284 | 156 | 747 | 206.81 | 954.4 | 422.6 | 781.8 | true |
+| raufoss_dombas | false | true | 1917 | 8 | 0 | 908 | 206.81 | 954.4 | 307.6 | 840.4 | true |
+| bergen_forde | true | true | 7067 | 5353 | 169 | 1052 | 171.01 | 954.4 | 307.7 | 888.9 | true |
+| bergen_forde | false | true | 6538 | 5122 | 0 | 1016 | 171.01 | 954.4 | 304.0 | 964.8 | true |
+| raufoss_tromso | false | true | 50250 | 5673 | 0 | 274 | 1766.89 | 954.4 | 304.0 | 978.2 | true |
+
+Cold eco is pack_load-bound (`primary=ostlandet-latest` + `extra=vestlandet-latest`, corridor cache miss). Warm / non-eco reuse corridor cache (pack_load 7–12 ms).
+
+### 5. Memory (tablet ~3.5 GiB)
+
+Prior Dombås swing MemAvailable ~1497→769 MB. Changes:
+
+- Corridor cache cap from MemAvailable: **15%**, clamp **[64, 512] MiB**, leave ~900 MiB headroom
+- `corridor_cache_evict_before_load` clears cache when MemAvailable < 1.1 GiB before materializing a miss
+- Cap re-clamped on every cache access
+
+**Raufoss→Bergen eco cold (v9):** peak RSS **954.4 MiB**; MemAvailable before plan **1280.7 MB**; peak native heap **422.3 MiB**. After cold, MemAvailable fell to ~758 MB before the non-eco replan (corridor retained). No LMK.
+
+### 6. Eco seeding
+
+Debug trip intent `navi_eco` / `navi_eco_mode` now:
+
+- Writes `CarRestSettings.ecoModeEnabled` via UniFFI
+- Sets `NaviMapTestHooks.requestEcoMode`
+- Trip seed applies `ecoEnabled` in Compose
+- Profile apply **prefers** `requestEcoMode` over `ecoModeDefault` (fixes eco=false after car profile reset)
+
+**Confirmed on matrix:** every eco row has `eco_reweight_ms > 0` (Bergen cold 262, warm 240, Dombås 156, Førde 169). Non-eco rows correctly report 0.
+
+### Code (follow-up 3)
+
+- `core/.../load.rs` — `MissingRegions`, pre-load corridor check, tests
+- `core/.../manifest.rs` — `PackStatus::Outdated`
+- `core/.../corridor_cache.rs` — tighter MemAvailable sizing + evict before load
+- `navi-ffi` — fail-fast return; `outdated` status string
+- Android — RegionCoverage packDir + named message + deep-link; IndexedMapsBackground outdated UI / forceRefresh; NaviDebugIntent eco seed
+- androidTest — `NorwayV9PackDownloadInstrumentedTest`; matrix asserts v9 + tablet 15s/3s + eco_reweight &gt; 0 + MemAvailable column
+
+### Verdict
+
+**Product fixes + v9 Norway packs on SM-P613; commit/push pending approval.** Hang root cause = missing Vestlandet with no fail-fast (fixed). Stale v8 → Outdated + Refresh path (fixed). Eco seeding (fixed). Memory caps live; Bergen peak RSS ~954 MiB.
+
+**Matrix vs pass criteria:** warm **PASS**; eco_reweight **PASS**; cold eco **MISS** by ~0.8 s (15.8 s wall, pack_load-dominated). Tromsø / Førde / Dombås pack_hit OK, no LMK/ANR.
+
+### 7. Duplicate Ostlandet under `files/` root (pre-merge)
+
+**Tablet inventory (SM-P613, 2026-10-02):**
+
+| Path | `graph_format_version` | Notes |
+| --- | --- | --- |
+| `files/ostlandet-latest*` (root, outside long-trip-packs) | **8** | Was present (~Sep 23 Tools/local); **removed** after refresh cleanup |
+| `files/long-trip-packs/ostlandet-latest*` | **9** | Follow-up 3 Norway v9 download (retained) |
+
+**Which copy the planner used before this fix:** `plan_pack_dirs` lists `packDir` / nested `long-trip-packs` before the files root, so the matrix (explicit `packDir=long-trip-packs`) already loaded **v9**. A scan that hit the root first (or a Tools path that preferred `files/*.osm.pbf`) could still bind the **v8** manifest via first-Ready `home_dir_for_stem`.
+
+**Fix:**
+
+- `home_dir_for_stem` prefers the highest accepted `graph_format_version` when the same stem exists in multiple roots (v9 over v8).
+- Tools Refresh prefers the long-trip pack PBF for the selected region; on PASS, `DownloadedRegionDelete.removeStaleRootStemDuplicate` deletes the older/equal root `files/{stem}*` copy.
+- `NorwayV9PackDownloadInstrumentedTest` cleans the root Ostlandet duplicate after v9 install.
+
+**Tablet confirmation (SM-P613, after Follow-up 3 tip install):** with **both** root v8 and long-trip-packs v9 present, Raufoss→Dombås loaded `format=9` tiles (`dirs=…/long-trip-packs;…/files`, `pack_hit=true`). Root `files/ostlandet-latest*` then removed (76 files); long-trip-packs v9 retained.
+
+### 8. Corridor cache: why Bergen→Førde non-eco rematerialized
+
+Matrix order: Raufoss→Bergen (eco/non-eco/warm) → Raufoss→Dombås (eco then non-eco) → Bergen→Førde (eco then non-eco).
+
+| Case | pack_load_ms | Why |
+| --- | --- | --- |
+| Raufoss→Dombås non-eco after eco | **8** | Same corridor key; MemAvailable already low (~840 MB) so the soft cap did not change between insert and get → oversized MRU stayed → hit |
+| Bergen→Førde eco | **5353** | New Vestlandet corridor (expected miss). Prior `corridor_cache_evict_before_load` also wiped cache whenever MemAvailable &lt; **1.1 GiB** |
+| Bergen→Førde non-eco | **5122** | Same tiles as eco, but MemAvailable drifted (~889→965 MB) so `with_cache` re-derived a smaller cap and **evicted the just-inserted MRU** before get |
+
+**Fix:** keep the MRU corridor on soft MemAvailable reclamp; only clear the cache when MemAvailable is near LMK (&lt; **450 MiB**). Soft cap still evicts older LRU entries when more than one corridor is cached.
+
+### Open follow-ups (device)
+
+- Tablet cold `pack_load` **~12.5 s** for Raufoss→Bergen (cold wall ~15.8 s; under-15s target missed by ~0.8 s).
+- Raufoss→Tromsø **~50 s** wall on the tablet (17 densify hops; per-hop pack_load).
