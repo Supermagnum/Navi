@@ -1663,10 +1663,14 @@ enum FerryHopGate {
 /// stubs do not falsely force (or skip) ferry overlay.
 fn ferry_hop_connectivity_gate(graph: &RouteGraph, a: (f64, f64), b: (f64, f64)) -> FerryHopGate {
     use crate::routing::graph::SnapRole;
-    let mut origin_opts = crate::routing::graph::RouteOptions::default();
-    origin_opts.snap_role = SnapRole::Origin;
-    let mut dest_opts = crate::routing::graph::RouteOptions::default();
-    dest_opts.snap_role = SnapRole::Destination;
+    let origin_opts = crate::routing::graph::RouteOptions {
+        snap_role: SnapRole::Origin,
+        ..Default::default()
+    };
+    let dest_opts = crate::routing::graph::RouteOptions {
+        snap_role: SnapRole::Destination,
+        ..Default::default()
+    };
     let tight = crate::routing::max_waypoint_snap_m(graph.profile());
     let loose = crate::routing::plan_bbox::CHUNK_INTERMEDIATE_SNAP_M;
     let mut start = graph.nearest_routable_with_options_max(a.0, a.1, &origin_opts, false, tight);

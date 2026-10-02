@@ -72,8 +72,10 @@ fn main() {
             SnapRole::Destination,
         ),
     ] {
-        let mut opts = RouteOptions::default();
-        opts.snap_role = role;
+        let opts = RouteOptions {
+            snap_role: role,
+            ..Default::default()
+        };
         match graph.nearest_routable_with_options_max(lat, lon, &opts, false, 750.0) {
             Ok((id, dist)) => {
                 let n = &graph.nodes[&id];
@@ -133,8 +135,10 @@ fn main() {
 
     // Dead-end component size for city-centre Any snap (unreachable from main).
     {
-        let mut opts = RouteOptions::default();
-        opts.snap_role = SnapRole::Any;
+        let opts = RouteOptions {
+            snap_role: SnapRole::Any,
+            ..Default::default()
+        };
         if let Ok((dead, _)) = graph.nearest_routable_with_options_max(
             stav_centre.0,
             stav_centre.1,
