@@ -70,15 +70,20 @@ class RegionToRegionPerfMatrixInstrumentedTest {
         val rows = mutableListOf<String>()
         rows +=
             "route\teco\tpack_hit\twall_ms\tplan_ms\tpack_load_ms\teco_reweight_ms\tastar_ms\t" +
-                "expansions\tnodes\tedges\tdistance_km\tpeak_rss_mb\tpeak_native_heap_mb\t" +
-                "mem_avail_before_mb\troute_ok"
+            "expansions\tnodes\tedges\tdistance_km\tpeak_rss_mb\tpeak_native_heap_mb\t" +
+            "mem_avail_before_mb\troute_ok"
 
         fun memAvailableMb(): String {
             val line =
                 File("/proc/meminfo")
                     .useLines { lines -> lines.firstOrNull { it.startsWith("MemAvailable:") } }
                     ?: return "-"
-            val kb = line.substringAfter(':').trim().substringBefore(' ').toLongOrNull() ?: return "-"
+            val kb =
+                line
+                    .substringAfter(':')
+                    .trim()
+                    .substringBefore(' ')
+                    .toLongOrNull() ?: return "-"
             return "%.1f".format(kb / 1024.0)
         }
 
@@ -186,14 +191,22 @@ class RegionToRegionPerfMatrixInstrumentedTest {
             "Raufoss→Bergen eco cold must pack-hit and finish under 15s:\n$out",
             rows.any {
                 it.startsWith("raufoss_bergen\ttrue\ttrue\t") &&
-                    it.split('\t').getOrNull(3)?.toLongOrNull()?.let { ms -> ms < 15_000 } == true
+                    it
+                        .split('\t')
+                        .getOrNull(3)
+                        ?.toLongOrNull()
+                        ?.let { ms -> ms < 15_000 } == true
             },
         )
         assertTrue(
             "Raufoss→Bergen eco warm must finish under 3s:\n$out",
             rows.any {
                 it.startsWith("raufoss_bergen_warm\ttrue\ttrue\t") &&
-                    it.split('\t').getOrNull(3)?.toLongOrNull()?.let { ms -> ms < 3_000 } == true
+                    it
+                        .split('\t')
+                        .getOrNull(3)
+                        ?.toLongOrNull()
+                        ?.let { ms -> ms < 3_000 } == true
             },
         )
         val ecoRows =

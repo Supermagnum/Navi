@@ -48,105 +48,120 @@ fn main() {
         "route\teco\tpack_hit\twall_ms\tplan_ms\tpack_load_ms\teco_reweight_ms\tastar_ms\texpansions\tnodes\tedges\tdistance_km\tpeak_rss_mb\troute_ok"
     );
 
-    let cases: &[(&str, &PathBuf, f64, f64, f64, f64, bool, bool)] = &[
-        (
-            "raufoss_dombas",
-            &ost_pbf,
-            60.7277483,
-            10.6109403,
-            62.0755,
-            9.1278,
-            false,
-            false,
-        ),
-        (
-            "raufoss_dombas_eco",
-            &ost_pbf,
-            60.7277483,
-            10.6109403,
-            62.0755,
-            9.1278,
-            true,
-            false,
-        ),
-        (
-            "bergen_forde",
-            &vest_pbf,
-            60.388144,
-            5.3347434,
-            61.4522,
-            5.8570,
-            false,
-            false,
-        ),
-        (
-            "bergen_forde_eco",
-            &vest_pbf,
-            60.388144,
-            5.3347434,
-            61.4522,
-            5.8570,
-            true,
-            false,
-        ),
-        (
-            "raufoss_bergen",
-            &ost_pbf,
-            60.7277483,
-            10.6109403,
-            60.388144,
-            5.3347434,
-            false,
-            false,
-        ),
-        (
-            "raufoss_bergen_eco",
-            &ost_pbf,
-            60.7277483,
-            10.6109403,
-            60.388144,
-            5.3347434,
-            true,
-            false,
-        ),
-        (
-            "raufoss_bergen_eco_warm",
-            &ost_pbf,
-            60.7277483,
-            10.6109403,
-            60.388144,
-            5.3347434,
-            true,
-            false,
-        ),
-        (
-            "raufoss_tromso",
-            &ost_pbf,
-            60.7277483,
-            10.6109403,
-            69.6492,
-            18.9553,
-            false,
-            true, // densify/chunk across ostlandet+trondelag+nord-norge
-        ),
+    struct Case<'a> {
+        name: &'a str,
+        pbf: &'a PathBuf,
+        slat: f64,
+        slon: f64,
+        elat: f64,
+        elon: f64,
+        eco: bool,
+        /// densify/chunk across ostlandet+trondelag+nord-norge when true
+        long_trip: bool,
+    }
+
+    let cases = [
+        Case {
+            name: "raufoss_dombas",
+            pbf: &ost_pbf,
+            slat: 60.7277483,
+            slon: 10.6109403,
+            elat: 62.0755,
+            elon: 9.1278,
+            eco: false,
+            long_trip: false,
+        },
+        Case {
+            name: "raufoss_dombas_eco",
+            pbf: &ost_pbf,
+            slat: 60.7277483,
+            slon: 10.6109403,
+            elat: 62.0755,
+            elon: 9.1278,
+            eco: true,
+            long_trip: false,
+        },
+        Case {
+            name: "bergen_forde",
+            pbf: &vest_pbf,
+            slat: 60.388144,
+            slon: 5.3347434,
+            elat: 61.4522,
+            elon: 5.8570,
+            eco: false,
+            long_trip: false,
+        },
+        Case {
+            name: "bergen_forde_eco",
+            pbf: &vest_pbf,
+            slat: 60.388144,
+            slon: 5.3347434,
+            elat: 61.4522,
+            elon: 5.8570,
+            eco: true,
+            long_trip: false,
+        },
+        Case {
+            name: "raufoss_bergen",
+            pbf: &ost_pbf,
+            slat: 60.7277483,
+            slon: 10.6109403,
+            elat: 60.388144,
+            elon: 5.3347434,
+            eco: false,
+            long_trip: false,
+        },
+        Case {
+            name: "raufoss_bergen_eco",
+            pbf: &ost_pbf,
+            slat: 60.7277483,
+            slon: 10.6109403,
+            elat: 60.388144,
+            elon: 5.3347434,
+            eco: true,
+            long_trip: false,
+        },
+        Case {
+            name: "raufoss_bergen_eco_warm",
+            pbf: &ost_pbf,
+            slat: 60.7277483,
+            slon: 10.6109403,
+            elat: 60.388144,
+            elon: 5.3347434,
+            eco: true,
+            long_trip: false,
+        },
+        Case {
+            name: "raufoss_tromso",
+            pbf: &ost_pbf,
+            slat: 60.7277483,
+            slon: 10.6109403,
+            elat: 69.6492,
+            elon: 18.9553,
+            eco: false,
+            long_trip: true,
+        },
     ];
 
-    for &(name, pbf, slat, slon, elat, elon, eco, case_long_trip) in cases {
-        if !only.is_empty() && name != only {
+    for case in &cases {
+        if !only.is_empty() && case.name != only {
             continue;
         }
-        let use_long_trip = long_trip || case_long_trip;
-        eprintln!("START case={name} eco={eco} long_trip={use_long_trip}");
+        let use_long_trip = long_trip || case.long_trip;
+        eprintln!(
+            "START case={} eco={} long_trip={use_long_trip}",
+            case.name, case.eco
+        );
         let t0 = Instant::now();
         let r = plan_car_route(
-            pbf.to_string_lossy().into(),
+            case.pbf.to_string_lossy().into(),
             elev.clone(),
             cache.to_string_lossy().into(),
-            slat,
-            slon,
-            elat,
-            elon,
-            eco,
+            case.slat,
+            case.slon,
+            case.elat,
+            case.elon,
+            case.eco,
             TravelProfile::Car,
             false,
             FfiTollPolicy::Allow,
@@ -171,7 +186,9 @@ fn main() {
         let report = &r.report;
         let ok = r.distance_km > 1.0 && !r.route_polyline.is_empty() && !report.contains("FAIL");
         println!(
-            "{name}\t{eco}\t{}\t{wall_ms:.0}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.2}\t{}\t{ok}",
+            "{}\t{}\t{}\t{wall_ms:.0}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.2}\t{}\t{ok}",
+            case.name,
+            case.eco,
             report.contains("pack_hit=true"),
             extract(report, "plan_duration_ms"),
             extract(report, "pack_load_ms"),
@@ -183,7 +200,10 @@ fn main() {
             r.distance_km,
             extract(report, "peak_rss_mb"),
         );
-        eprintln!("--- REPORT {name} eco={eco} wall_ms={wall_ms:.0} ---\n{report}");
+        eprintln!(
+            "--- REPORT {} eco={} wall_ms={wall_ms:.0} ---\n{report}",
+            case.name, case.eco
+        );
     }
 }
 

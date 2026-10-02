@@ -3245,8 +3245,7 @@ fn plan_car_route_inner(
                             r.rsplit('/')
                                 .next()
                                 .unwrap_or(r.as_str())
-                                .replace('-', " ")
-                                .replace('_', " ")
+                                .replace(['-', '_'], " ")
                         })
                         .collect();
                     let label_join = labels.join(", ");
