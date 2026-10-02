@@ -104,9 +104,14 @@ class FerrySidecarBuildInstrumentedTest {
                 allowedCountries = null,
                 viaPoints = emptyList(),
             )
+
         fun fpOf(r: uniffi.navi.CorridorRouteResult): String {
             val matches = Regex("""route_ferry_fp=([^\n;]+)""").findAll(r.report).toList()
-            return matches.lastOrNull()?.groupValues?.getOrNull(1).orEmpty()
+            return matches
+                .lastOrNull()
+                ?.groupValues
+                ?.getOrNull(1)
+                .orEmpty()
         }
         val fpOff = fpOf(off)
         val fpOn = fpOf(on)
@@ -182,11 +187,12 @@ class FerrySidecarBuildInstrumentedTest {
                     viaPoints = emptyList(),
                 )
             lastTerminate = r.searchTerminateReason
-            lastStatus = Regex("""ferry_preparing_status=([^\n]+)""")
-                .find(r.report)
-                ?.groupValues
-                ?.getOrNull(1)
-                .orEmpty()
+            lastStatus =
+                Regex("""ferry_preparing_status=([^\n]+)""")
+                    .find(r.report)
+                    ?.groupValues
+                    ?.getOrNull(1)
+                    .orEmpty()
             Log.i(
                 tag,
                 "FIRST_PLAN_POLL terminate=$lastTerminate status=$lastStatus dist=${r.distanceKm} " +

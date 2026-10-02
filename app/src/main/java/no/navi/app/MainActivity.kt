@@ -3250,14 +3250,15 @@ private fun NaviMapScreen() {
             // Ferry sidecar still building — show progress and auto-retry the plan.
             if (result.searchTerminateReason == "ferry_preparing") {
                 val msg =
-                    result.offTrailAdvisory.ifBlank {
-                        result.report
-                            .lineSequence()
-                            .firstOrNull { it.startsWith("status=") }
-                            ?.removePrefix("status=")
-                            ?.trim()
-                            .orEmpty()
-                    }.ifBlank { "Preparing ferry data…" }
+                    result.offTrailAdvisory
+                        .ifBlank {
+                            result.report
+                                .lineSequence()
+                                .firstOrNull { it.startsWith("status=") }
+                                ?.removePrefix("status=")
+                                ?.trim()
+                                .orEmpty()
+                        }.ifBlank { "Preparing ferry data…" }
                 status = msg
                 RoutingPlanLog.failed(ecoForPlan, durationMs, msg, result)
                 // Auto-continue when the background sidecar finishes.

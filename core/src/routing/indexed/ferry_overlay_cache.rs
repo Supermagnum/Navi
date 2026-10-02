@@ -182,11 +182,7 @@ pub fn ferry_sidecar_progress() -> FerrySidecarProgress {
     let st = build_state();
     let running = st.running.load(Ordering::Relaxed);
     let pct = st.pct.load(Ordering::Relaxed);
-    let message = st
-        .message
-        .lock()
-        .map(|m| m.clone())
-        .unwrap_or_default();
+    let message = st.message.lock().map(|m| m.clone()).unwrap_or_default();
     // Stem stored only while holding build lock start; read best-effort via message.
     let stem = {
         // Recover stem from last ensure call stored in a side slot.
@@ -237,9 +233,7 @@ pub fn ensure_ferry_sidecar(
     if sidecar_fresh(home, stem, profile, pbf) {
         return Ok(true);
     }
-    let _guard = build_lock()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _guard = build_lock().lock().unwrap_or_else(|e| e.into_inner());
     // Re-check after lock (another worker may have finished).
     if sidecar_fresh(home, stem, profile, pbf) {
         return Ok(true);
@@ -254,7 +248,10 @@ pub fn ensure_ferry_sidecar(
     let pbf_bytes = fs::metadata(pbf).map(|m| m.len()).unwrap_or(0);
     crate::routing::plan_perf::note(
         "ferry_pbf",
-        format!("path={};bytes={pbf_bytes};region_build=1;bg=1", pbf.display()),
+        format!(
+            "path={};bytes={pbf_bytes};region_build=1;bg=1",
+            pbf.display()
+        ),
     );
     set_progress(stem, 10, &format!("Preparing ferry data for {label}…"));
     let t_parse = Instant::now();
@@ -300,8 +297,7 @@ pub fn ensure_ferry_sidecar(
 /// Whether a plan may load a ferry overlay for this stem (sidecar fresh).
 /// Does **not** parse PBF.
 pub fn ferry_sidecar_ready(home: &Path, stem: &str, profile: RoutingProfile, pbf: &Path) -> bool {
-    sidecar_fresh(home, stem, profile, pbf)
-        && ferry_sidecar_path(home, stem, profile).is_file()
+    sidecar_fresh(home, stem, profile, pbf) && ferry_sidecar_path(home, stem, profile).is_file()
 }
 
 /// Load ferry+approach overlay for `stem` clipped to `clips` from the sidecar only.
@@ -333,10 +329,7 @@ pub fn ferry_overlay_for_plan(
     let side = ferry_sidecar_path(home, stem, profile);
     if !side.is_file() {
         // Fresh meta with empty=1 (no ferries in region).
-        crate::routing::plan_perf::note(
-            "ferry_sidecar",
-            format!("fresh_empty;stem={stem}"),
-        );
+        crate::routing::plan_perf::note("ferry_sidecar", format!("fresh_empty;stem={stem}"));
         return None;
     }
     let bytes = fs::metadata(&side).map(|m| m.len()).unwrap_or(0);
@@ -364,8 +357,5 @@ pub fn ferry_preparing_status(stem: &str) -> (String, u8) {
     } else {
         0
     };
-    (
-        format!("preparing ferry data for {label}"),
-        pct,
-    )
+    (format!("preparing ferry data for {label}"), pct)
 }

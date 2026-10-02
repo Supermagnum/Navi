@@ -318,8 +318,8 @@ class RegionToRegionPerfMatrixInstrumentedTest {
     }
 
     /** Fallback when native report lacks route_ferry_fp (e.g. dig builds). */
-    private fun ferryFpFromSim(simJson: String): Pair<String, String> {
-        return try {
+    private fun ferryFpFromSim(simJson: String): Pair<String, String> =
+        try {
             val arr = org.json.JSONArray(simJson)
             val legs = mutableListOf<String>()
             var inFerry = false
@@ -327,6 +327,7 @@ class RegionToRegionPerfMatrixInstrumentedTest {
             var meters = 0.0
             var prevLat: Double? = null
             var prevLon: Double? = null
+
             fun flush() {
                 if (inFerry && meters > 50.0) {
                     legs += "%s@%.2f".format(label.replace('|', '/'), meters / 1000.0)
@@ -373,7 +374,6 @@ class RegionToRegionPerfMatrixInstrumentedTest {
         } catch (_: Throwable) {
             "-" to "-"
         }
-    }
 
     private fun sha256Hex(input: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(input.toByteArray(Charsets.UTF_8))

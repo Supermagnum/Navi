@@ -1935,7 +1935,8 @@ fn supplement_pack_ferries_from_pbf_inner(
                 });
             return Err(PackLoadError::FerryPreparing(status, pct));
         }
-        match super::ferry_overlay_cache::ferry_overlay_for_plan(home, stem, profile, &pbf, &clips) {
+        match super::ferry_overlay_cache::ferry_overlay_for_plan(home, stem, profile, &pbf, &clips)
+        {
             Some((fg, mode)) if fg.edges.iter().any(|e| e.is_ferry) => {
                 overlay_mode = mode;
                 log::info!(
@@ -3510,13 +3511,8 @@ mod ferry_overlay_tests {
             ("schleswig-holstein-latest", &sh_pbf),
             ("denmark-latest", &dk_pbf),
         ] {
-            super::super::ferry_overlay_cache::ensure_ferry_sidecar(
-                &dir,
-                stem,
-                profile,
-                pbf,
-            )
-            .expect("ensure ferry sidecar");
+            super::super::ferry_overlay_cache::ensure_ferry_sidecar(&dir, stem, profile, pbf)
+                .expect("ensure ferry sidecar");
         }
         let out = supplement_pack_ferries_from_pbf(
             std::sync::Arc::new(merged),
