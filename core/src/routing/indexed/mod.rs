@@ -5,6 +5,7 @@
 
 mod convert;
 mod corridor_cache;
+mod ferry_overlay_cache;
 mod graph_pack;
 mod graph_pack_v8;
 mod header;
@@ -14,6 +15,7 @@ mod manifest;
 mod poi_barrier_cache;
 mod poi_barrier_extract;
 mod poi_barrier_pack;
+mod tile_cache;
 mod wetland_pack;
 
 pub use crate::routing::region_lock::{

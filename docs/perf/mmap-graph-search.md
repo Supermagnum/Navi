@@ -88,4 +88,120 @@ Next: Step 2a per-tile cache (same edges/clips, reuse materialized tiles across 
 
 ## Step 2 — fixes (cheapest first)
 
-_(pending)_
+### 2-pre-1 — Ferry overlay cheap skip (+ stem sidecar)
+
+**Instrument (Bergen eco cold, before this fix on WIP):** residual was not PBF parse.
+`ferry_overlay=skip_already_connected` with `ferry_snap_probe_ms≈1790` +
+`ferry_skip_probe_ms≈1733` — duplicate 35 km (`CHUNK_INTERMEDIATE_SNAP_M`)
+`nearest_routable` probes (first block + `graph_hop_already_connected`).
+
+**Fix:** one snap + weak-component check. Prefer
+`max_waypoint_snap_m(profile)` (car **750 m**); fall back to 35 km only when
+tight snap fails (densify joints). If connected → return immediately (no second
+probe). Stem ferry sidecar (`*.navi-ferry-overlay-*.rkyv`) still used when an
+overlay must build (Tromsø coastal) — no PBF re-parse once cached.
+
+| Metric | Before (WIP) | After 2-pre-1 |
+| --- | --- | --- |
+| ferry_ms | ~3526 | **263** |
+| ferry_snap_probe_ms | ~1790 | **263** |
+| ferry_skip_probe_ms | ~1733 | **0** |
+| ferry_snap_m | 35000 | **750** |
+| ferry_overlay | skip_already_connected | skip_already_connected |
+| ferry_pbf_parse_ms | (n/a; skip path) | (n/a; skip path) |
+| wall_ms (Bergen eco cold) | ~10326 | see post-pre table |
+| distance_km | 459.71 | **459.71** |
+
+Per-plan: skip/overlay runs once on corridor-cache miss; warm uses
+`ferry_overlay=skip_corridor_cache_hit`. Tromsø densify joints that miss the
+750 m gate correctly fall back to `ferry_snap_m=35000` (observed on several hops).
+
+### 2-pre-2 — Single-pass adjacency
+
+Stop rebuilding adjacency after every tile merge; append all tiles, then
+`RouteGraph::from_parts` once (`pack_merge_mode=single_pass_one_adjacency`).
+
+| Metric | Step 1 baseline | After 2-pre-2 |
+| --- | --- | --- |
+| merge_adj_ms (Bergen eco cold) | **3568** (per-tile rebuilds) | **766** |
+| merge_hash_ms | 1861 | 425 (same run; hash also cheaper once) |
+| pack_merge_wall_ms | (incremental) | **1191** |
+
+### 2-pre-3 — Border-only dedupe
+
+Inspected `FlatGraphPack` v9: nodes are `node_ids` + coords +
+`node_access_blocked` only — **no border-node marks**.
+`v9_border_marks=false`. Merge keeps full OSM-id node `HashMap` + edge-key
+dedupe (`border_stitch=full_node_hash`). No format bump / invented fields.
+
+Measured Bergen eco cold hash (with single-pass): **425 ms** (was 1861 ms at
+Step 1; drop is mostly from not rebuilding adjacency between hash passes, not
+from border-only dedupe).
+
+### Post-pre Bergen eco cold breakdown (before 2a)
+
+Device: SM-P613 `R52TB0JQEDE`, tip with 2-pre-1..3. Instrumented
+`RegionToRegionPerfMatrixInstrumentedTest` (2026-10-02).
+
+| Metric | Value |
+| --- | --- |
+| wall_ms | **6942** |
+| pack_load_ms | **3872** |
+| eco_reweight_ms | 216 |
+| astar_ms | 1205 |
+| distance_km | **459.71** |
+| peak_rss_mb | 821.9 |
+| pack_hit | true |
+| tiles | 11 (~496k edges) |
+
+| Step | ms | Notes |
+| --- | --- | --- |
+| File open / mmap | 2 | lazy map |
+| Page-in I/O | 795 | forced touch when timing on |
+| Decode / validation | 37 | |
+| Per-tile copy | 1530 | clip + allocate |
+| Cross-tile merge hash | **425** | full-node hash; `v9_border_marks=false` |
+| Adjacency rebuild | **766** | **once** after all tiles |
+| Ferry overlay | **263** | snap 750 m; skip_already_connected; skip_probe=0 |
+| **pack_load sum** | **~3872** | |
+
+Warm eco: pack_load **6** ms, wall **2447** ms. Distances: 459.71 / 485.45 /
+206.81 / 171.01 / **1766.89** km. Tromsø: **days=4**, **3 overnight** lodging
+stops (Treetop Ekne, Korgenfjellet Fjellstue, Bardu Hotel).
+
+Next: **2a** per-tile cache (full tile materialize + in-memory clip across hop
+clip changes), then 2b parallel tile load, 2c search on mapped tiles.
+
+### 2a — Per-tile cache (full tile + in-memory clip)
+
+Module `tile_cache.rs`: process-wide LRU of **full** materialized tiles keyed by
+path+profile. On hit, re-clip in memory (same edge predicate as pack hydrate).
+
+**Tablet constraint:** tile LRU soft cap ~64–90 MiB. Ostlandet/Vestlandet tiles
+(often 20–117 MB on disk → hundreds of k edges owned) do **not** fit; full
+materialize then discard regresses Bergen cold (observed wall **9813** /
+pack_load **6601** / copy **2606** before the fit gate).
+
+**Policy now:** if corridor clips are set and the tile is unlikely to fit
+(`file*4 >= cap` or `file >= 12 MiB`), **clip-hydrate** (no full copy). Small
+tiles miss_full + insert for cross-hop reuse.
+
+| Metric | Post-pre | 2a (fit-gated) |
+| --- | --- | --- |
+| wall_ms Bergen eco cold | 6942 | **7247** |
+| pack_load_ms | 3872 | **3998** |
+| copy_ms | 1530 | **1583** |
+| merge_adj_ms | 766 | **749** |
+| ferry_ms | 263 | **251** |
+| distance_km | 459.71 | **459.71** |
+| Tromsø wall_ms | 31806 | **33168** |
+| Tromsø distance / days | 1766.89 / 4 | **1766.89 / 4** |
+
+2a does not move Bergen or Tromsø much under the current RSS budget; real win
+needs larger tile retention or **2c** (search without owned full-tile copy).
+Infrastructure + fit gate kept for small-tile hits.
+
+### Remaining
+
+- **2b** parallel tile load
+- **2c** search on mapped tiles (main path to &lt;5 s Bergen cold)

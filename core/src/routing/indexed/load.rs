@@ -1631,35 +1631,59 @@ fn point_in_bbox(lat: f64, lon: f64, bbox: [f64; 4]) -> bool {
     lat >= bbox[0] && lat <= bbox[2] && lon >= bbox[1] && lon <= bbox[3]
 }
 
-/// True when hop ends `a`→`b` already have an A* path on the pack graph (ferries
-/// allowed). Used to skip Geofabrik pier overlay only when the water gap is
-/// already traversable — orphan or pier-stub-only ferry edges must not suppress
-/// overlay.
+/// Outcome of the ferry-overlay O/D connectivity gate (one snap + component).
+enum FerryHopGate {
+    /// Same weak component — skip overlay.
+    Connected { snap_m: f64 },
+    /// Different components (tile budget) — skip overlay; ferry cannot fix.
+    Disconnected { snap_m: f64 },
+    /// Could not snap even with 35 km — try overlay build.
+    SnapFailed,
+}
+
+/// Snap hop ends for the ferry-overlay connectivity gate.
 ///
-/// Uses weak-component membership first so a truncated corridor (missing bridge
-/// tiles) returns in O(1) instead of exploring the whole origin component with
-/// A* for minutes (observed ~300 s on Raufoss→Bergen with MAX_PLAN_TILES=6).
-fn graph_hop_already_connected(graph: &RouteGraph, a: (f64, f64), b: (f64, f64)) -> bool {
+/// Prefer the plan O/D budget ([`crate::routing::max_waypoint_snap_m`]; car
+/// 750 m). Only fall back to [`CHUNK_INTERMEDIATE_SNAP_M`] (35 km) when a tight
+/// snap fails — that path is for densify joints, not ordinary corridor O/D.
+fn ferry_hop_connectivity_gate(
+    graph: &RouteGraph,
+    a: (f64, f64),
+    b: (f64, f64),
+) -> FerryHopGate {
     let opts = crate::routing::graph::RouteOptions::default();
-    // Densify joints / ferry-overlay probes use the loose 35 km gate. User O/D
-    // snaps in plan_car_route_inner stay at max_waypoint_snap_m (car 750 m)
-    // unless relax_*_snap is set for chunk joints.
-    let snap_m = crate::routing::plan_bbox::CHUNK_INTERMEDIATE_SNAP_M;
-    let Ok((start, _)) = graph.nearest_routable_with_options_max(a.0, a.1, &opts, false, snap_m)
-    else {
-        return false;
-    };
-    let Ok((goal, _)) = graph.nearest_routable_with_options_max(b.0, b.1, &opts, false, snap_m)
-    else {
-        return false;
-    };
-    if start == goal {
-        return true;
+    let tight = crate::routing::max_waypoint_snap_m(graph.profile());
+    let loose = crate::routing::plan_bbox::CHUNK_INTERMEDIATE_SNAP_M;
+    let mut start = graph.nearest_routable_with_options_max(a.0, a.1, &opts, false, tight);
+    let mut goal = graph.nearest_routable_with_options_max(b.0, b.1, &opts, false, tight);
+    let mut snap_m = tight;
+    if start.is_err() || goal.is_err() {
+        snap_m = loose;
+        if start.is_err() {
+            start = graph.nearest_routable_with_options_max(a.0, a.1, &opts, false, loose);
+        }
+        if goal.is_err() {
+            goal = graph.nearest_routable_with_options_max(b.0, b.1, &opts, false, loose);
+        }
     }
-    // Weak-component membership is enough to skip ferry overlay (same as the
-    // pre-A* disconnect gate). A full shortest_path here re-ran ~0.2–1 s on
-    // every warm corridor-cache hit.
-    graph.same_weak_component(start, goal)
+    let (Ok((start, _)), Ok((goal, _))) = (start, goal) else {
+        return FerryHopGate::SnapFailed;
+    };
+    if start == goal || graph.same_weak_component(start, goal) {
+        FerryHopGate::Connected { snap_m }
+    } else {
+        FerryHopGate::Disconnected { snap_m }
+    }
+}
+
+/// True when hop ends `a`→`b` already have an A* path on the pack graph (ferries
+/// allowed). Used by unit tests for the overlay skip gate.
+#[cfg(test)]
+fn graph_hop_already_connected(graph: &RouteGraph, a: (f64, f64), b: (f64, f64)) -> bool {
+    matches!(
+        ferry_hop_connectivity_gate(graph, a, b),
+        FerryHopGate::Connected { .. }
+    )
 }
 
 /// Fallback when hop geometry is unavailable: require a long ferry fully inside
@@ -1784,25 +1808,26 @@ fn supplement_pack_ferries_from_pbf_inner(
     // Modest pad so ferry terminals just outside the corridor band still load.
     let bbox = expand_bbox_deg(bbox, 0.05);
     if let Some(pts) = route_points.filter(|p| p.len() >= 2) {
-        let opts = crate::routing::graph::RouteOptions::default();
-        // Densify joints / corridor connectivity probes use the loose 35 km
-        // gate. User O/D snaps in plan_car_route_inner stay at
-        // max_waypoint_snap_m (car 750 m) unless relax_*_snap is set.
-        let snap_m = crate::routing::plan_bbox::CHUNK_INTERMEDIATE_SNAP_M;
-        if let (Ok((start, _)), Ok((goal, _))) = (
-            graph.nearest_routable_with_options_max(pts[0].0, pts[0].1, &opts, false, snap_m),
-            graph.nearest_routable_with_options_max(
-                pts[pts.len() - 1].0,
-                pts[pts.len() - 1].1,
-                &opts,
-                false,
-                snap_m,
-            ),
-        ) {
-            // Missing land-bridge tiles (tight MAX_PLAN_TILES) leave O/D on
-            // different weak components. Geofabrik ferry download cannot fix
-            // that and was observed to burn ~300 s on stub-PBF ensure.
-            if start != goal && !graph.same_weak_component(start, goal) {
+        let t_snap = std::time::Instant::now();
+        let gate = ferry_hop_connectivity_gate(&graph, pts[0], pts[pts.len() - 1]);
+        let snap_probe_ms = t_snap.elapsed().as_millis() as u64;
+        crate::routing::plan_perf::note_u64("ferry_snap_probe_ms", snap_probe_ms);
+        // No second 35 km probe: one snap + component check decides skip/overlay.
+        crate::routing::plan_perf::note_u64("ferry_skip_probe_ms", 0);
+        match gate {
+            FerryHopGate::Connected { snap_m } => {
+                crate::routing::plan_perf::note_f64("ferry_snap_m", snap_m);
+                crate::routing::plan_perf::note_u64("ferry_connect_check_ms", 0);
+                crate::routing::plan_perf::note("ferry_overlay", "skip_already_connected");
+                crate::routing::plan_perf::note(
+                    "ferry_per_plan",
+                    "once_on_corridor_miss;warm_skipped=corridor_cache_hit",
+                );
+                return graph;
+            }
+            FerryHopGate::Disconnected { snap_m } => {
+                crate::routing::plan_perf::note_f64("ferry_snap_m", snap_m);
+                crate::routing::plan_perf::note_u64("ferry_connect_check_ms", 0);
                 crate::routing::plan_perf::note("ferry_overlay", "skip_disconnected_components");
                 log::info!(
                     target: "NaviPlan",
@@ -1811,15 +1836,26 @@ fn supplement_pack_ferries_from_pbf_inner(
                 );
                 return graph;
             }
+            FerryHopGate::SnapFailed => {
+                crate::routing::plan_perf::note_f64(
+                    "ferry_snap_m",
+                    crate::routing::plan_bbox::CHUNK_INTERMEDIATE_SNAP_M,
+                );
+                crate::routing::plan_perf::note_u64("ferry_connect_check_ms", 0);
+                crate::routing::plan_perf::note("ferry_overlay", "snap_failed_try_overlay");
+            }
         }
-    }
-    let skip_overlay = if let Some(pts) = route_points.filter(|p| p.len() >= 2) {
-        graph_hop_already_connected(&graph, pts[0], pts[pts.len() - 1])
     } else {
-        graph_has_long_ferry_in_bbox(&graph, bbox)
-    };
-    if skip_overlay {
-        return graph;
+        let t_skip = std::time::Instant::now();
+        let skip_overlay = graph_has_long_ferry_in_bbox(&graph, bbox);
+        crate::routing::plan_perf::note_u64(
+            "ferry_skip_probe_ms",
+            t_skip.elapsed().as_millis() as u64,
+        );
+        if skip_overlay {
+            crate::routing::plan_perf::note("ferry_overlay", "skip_long_ferry_in_bbox");
+            return graph;
+        }
     }
     let mut stems = Vec::with_capacity(1 + extras.len());
     stems.push(primary.stem.clone());
@@ -1829,6 +1865,7 @@ fn supplement_pack_ferries_from_pbf_inner(
         }
     }
     let mut overlays = Vec::new();
+    let mut overlay_mode = "none";
     for stem in &stems {
         let Some(home) = home_dir_for_stem(dirs, stem, profile) else {
             continue;
@@ -1836,29 +1873,35 @@ fn supplement_pack_ferries_from_pbf_inner(
         let Some(pbf) = resolve_ferry_overlay_pbf(home, stem, bbox) else {
             continue;
         };
-        match RouteGraph::build_ferry_overlay_from_pbf(&pbf, profile, bbox) {
-            Ok(fg) if fg.edges.iter().any(|e| e.is_ferry) => {
+        match super::ferry_overlay_cache::ferry_overlay_for_plan(home, stem, profile, &pbf, bbox) {
+            Some((fg, mode)) if fg.edges.iter().any(|e| e.is_ferry) => {
+                overlay_mode = mode;
                 log::info!(
                     target: "NaviPlan",
-                    "ferry_overlay stem={stem} ferry_edges={} nodes={} path={}",
+                    "ferry_overlay stem={stem} ferry_edges={} nodes={} mode={mode}",
                     fg.edges.iter().filter(|e| e.is_ferry).count(),
                     fg.nodes.len(),
-                    pbf.display()
                 );
                 overlays.push(fg);
             }
-            Ok(_) => {}
-            Err(e) => {
+            Some(_) => {}
+            None => {
                 log::warn!(
                     target: "NaviPlan",
-                    "ferry_overlay stem={stem} failed: {e:#}"
+                    "ferry_overlay stem={stem} sidecar/build returned empty"
                 );
             }
         }
     }
     if overlays.is_empty() {
+        crate::routing::plan_perf::note("ferry_overlay", "no_overlay_source");
         return graph;
     }
+    crate::routing::plan_perf::note("ferry_overlay", overlay_mode);
+    crate::routing::plan_perf::note(
+        "ferry_per_plan",
+        "once_on_corridor_miss;warm_skipped=corridor_cache_hit",
+    );
     let mut parts = Vec::with_capacity(1 + overlays.len());
     parts.push(arc_graph_owned(graph));
     parts.extend(overlays);
@@ -2005,7 +2048,7 @@ pub fn merge_tile_graphs(graphs: Vec<RouteGraph>, profile: RoutingProfile) -> Ro
             "merge_stage",
             format!(
                 "hash_ms={hash_ms};adj_ms={adj_ms};nodes={n_nodes};edges={n_edges};\
-                 border_stitch=hash_node_id_share;threads=1"
+                 border_stitch=full_node_hash;v9_border_marks=false;threads=1"
             ),
         );
     }
@@ -2061,12 +2104,14 @@ fn load_tiled_graph_files(
     // corridor cannot LMK a 3.5 GiB tablet (Dombås→Bergen RSS swing).
     super::corridor_cache::corridor_cache_evict_before_load();
 
-    // Sequential decode+clip + incremental merge (corridor clips keep tiles small).
-    // Parallel decode was tried; it raised peak RSS without beating merge cost on
-    // the 11-tile Bergen corridor (~496k edges).
+    // Full-tile LRU + in-memory clip, then **one** merge. Tromsø densify hops
+    // change clips every leg but reuse tile files — cache skips mmap/copy on hits.
+    // Single-pass adjacency (not per-tile rebuild) stays in merge_tile_graphs.
     let total = tile_files.len() as u64;
-    let mut merged: Option<RouteGraph> = None;
-    let mut sum_merge_ms = 0u64;
+    let mut parts: Vec<RouteGraph> = Vec::with_capacity(tile_files.len());
+    let mut tile_hits = 0u64;
+    let mut tile_misses = 0u64;
+    super::tile_cache::tile_cache_evict_before_load();
     for (i, file) in tile_files.iter().enumerate() {
         crate::download::progress::set(
             i as u64,
@@ -2080,43 +2125,62 @@ fn load_tiled_graph_files(
             total
         );
         let path = resolve_pack_file(dirs, file).ok_or(PackLoadError::Missing)?;
-        let g = load_graph_pack_clips(&path, profile, clips)?;
+        let key = super::tile_cache::TileCacheKey::new(profile, &path);
+        let g = if let Some(hit) = super::tile_cache::tile_cache_get(&key) {
+            tile_hits = tile_hits.saturating_add(1);
+            crate::routing::plan_perf::note("tile_cache", format!("hit;{file}"));
+            super::tile_cache::clip_route_graph(&hit, clips)
+        } else if clips.is_some() && !super::tile_cache::tile_likely_fits_cache(&path) {
+            // Oversized tiles: clip during hydrate. Full materialize exceeds the
+            // tile LRU (~64–90 MiB) and was discarded after paying extra copy
+            // (Bergen eco cold regress when always loading full).
+            tile_misses = tile_misses.saturating_add(1);
+            crate::routing::plan_perf::note("tile_cache", format!("miss_clip_hydrate;{file}"));
+            load_graph_pack_clips(&path, profile, clips)?
+        } else {
+            // Small tiles (or unclipped): full materialize + LRU, then clip.
+            tile_misses = tile_misses.saturating_add(1);
+            crate::routing::plan_perf::note("tile_cache", format!("miss_full;{file}"));
+            let full = load_graph_pack_clips(&path, profile, None)?;
+            let arc = Arc::new(full);
+            super::tile_cache::tile_cache_insert(key, Arc::clone(&arc));
+            super::tile_cache::clip_route_graph(&arc, clips)
+        };
         if g.edges.is_empty() && g.nodes.is_empty() {
             continue;
         }
-        let t_merge = std::time::Instant::now();
-        merged = Some(match merged {
-            None => g,
-            Some(acc) => merge_tile_graphs(vec![acc, g], profile),
-        });
-        let merge_ms = t_merge.elapsed().as_millis() as u64;
-        sum_merge_ms = sum_merge_ms.saturating_add(merge_ms);
-        if let Some(ref m) = merged {
-            log::info!(
-                target: "NaviPlan",
-                "load_tiled_graph merged after {}/{} edges={} nodes={} merge_ms={}",
-                i + 1,
-                total,
-                m.edges.len(),
-                m.nodes.len(),
-                merge_ms
-            );
-        }
+        parts.push(g);
     }
-    let merged = merged.ok_or(PackLoadError::Missing)?;
+    if parts.is_empty() {
+        return Err(PackLoadError::Missing);
+    }
+    let t_merge = std::time::Instant::now();
+    let merged = merge_tile_graphs(parts, profile);
+    let merge_ms = t_merge.elapsed().as_millis() as u64;
     if merged.edges.is_empty() {
         return Err(PackLoadError::Missing);
     }
     log::info!(
         target: "NaviPlan",
-        "load_tiled_graph done tiles={} edges={} nodes={} merge_wall_ms={}",
+        "load_tiled_graph done tiles={} edges={} nodes={} merge_wall_ms={} merge=single_pass \
+         tile_cache_hits={} misses={}",
         total,
         merged.edges.len(),
         merged.nodes.len(),
-        sum_merge_ms
+        merge_ms,
+        tile_hits,
+        tile_misses
     );
     if crate::routing::plan_perf::enabled() {
-        crate::routing::plan_perf::note_u64("pack_merge_wall_ms", sum_merge_ms);
+        crate::routing::plan_perf::note_u64("pack_merge_wall_ms", merge_ms);
+        crate::routing::plan_perf::note("pack_merge_mode", "single_pass_one_adjacency");
+        crate::routing::plan_perf::note_u64("tile_cache_hits", tile_hits);
+        crate::routing::plan_perf::note_u64("tile_cache_misses", tile_misses);
+        let (cum_hits, cum_misses, bytes, n) = super::tile_cache::tile_cache_stats();
+        crate::routing::plan_perf::note(
+            "tile_cache_stats",
+            format!("cum_hits={cum_hits};cum_misses={cum_misses};bytes={bytes};entries={n}"),
+        );
     }
     let arc = Arc::new(merged);
     super::corridor_cache::corridor_cache_insert(cache_key, Arc::clone(&arc));

@@ -19,13 +19,13 @@ pub const CORRIDOR_CACHE_MAX_BYTES: u64 = 768 * 1024 * 1024;
 /// Floor / ceiling for the memory-derived cache cap.
 /// On ~3.5 GiB tablets, keep the cache small so a Bergen-size materialize
 /// (~0.8–1.0 GiB owned graph) still fits beside the OS.
-const CORRIDOR_CACHE_MIN_BYTES: u64 = 64 * 1024 * 1024;
-const CORRIDOR_CACHE_HARD_MAX_BYTES: u64 = 512 * 1024 * 1024;
+pub const CORRIDOR_CACHE_MIN_BYTES: u64 = 64 * 1024 * 1024;
+pub const CORRIDOR_CACHE_HARD_MAX_BYTES: u64 = 512 * 1024 * 1024;
 
 /// Only wipe / drop the MRU corridor when MemAvailable is near an LMK risk.
 /// The prior 1.1 GiB threshold cleared a just-used Vestlandet corridor on
 /// Bergen→Førde eco→non-eco while the device still had ~900 MiB free.
-const CORRIDOR_CACHE_CRITICAL_AVAIL_BYTES: u64 = 450 * 1024 * 1024;
+pub const CORRIDOR_CACHE_CRITICAL_AVAIL_BYTES: u64 = 450 * 1024 * 1024;
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub struct CorridorCacheKey {
@@ -162,7 +162,7 @@ pub fn corridor_cache_max_bytes_from_mem() -> u64 {
         .min(leave_headroom.max(CORRIDOR_CACHE_MIN_BYTES))
 }
 
-fn read_mem_available_bytes() -> Option<u64> {
+pub fn read_mem_available_bytes() -> Option<u64> {
     let text = std::fs::read_to_string("/proc/meminfo").ok()?;
     for line in text.lines() {
         let Some(rest) = line.strip_prefix("MemAvailable:") else {

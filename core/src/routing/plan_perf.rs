@@ -124,7 +124,7 @@ fn flush_pack_stage_notes() {
         note_u64("pack_stage_ferry_ms", st.ferry);
         note(
             "pack_stage_threads",
-            "single_threaded;merge_rebuilds_adjacency_per_tile",
+            "single_threaded;merge=single_pass_one_adjacency",
         );
         // Short greppable line — Android logcat truncates long PLAN_PERF rows.
         log::info!(
