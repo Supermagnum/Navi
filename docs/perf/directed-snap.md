@@ -1,134 +1,101 @@
 # Directed waypoint snap + ferry overlay reassessment
 
-Branch: `fix/directed-snap` (from `dev`). Client only. No `graph_format_version` bump. No navi-server changes. No merge.
+Branch: `fix/directed-snap` (from `dev` / dig tip after #138). Client only. No `graph_format_version` bump. No navi-server. No merge. PR: https://github.com/Supermagnum/Navi/pull/140
 
-## STEP 1 — Reproduce (published v9 Vestlandet, overlay/sidecar disabled)
+## STEPs 1–2 (recap)
 
-Host packs: published v9 `vestlandet-latest` car tiles. Stub `vestlandet-latest.osm.pbf` so ferry overlay cannot build (`MIN_FERRY_OVERLAY_PBF_BYTES`).
+Bergen→Stavanger city centre failed because legacy `SnapRole::Any` snapped to one-way **source stub** OSM node `11335393456` (`reachable_from_main=false`). Destination-role snap picks `264565258`. Pack ferries (Halhjem–Sandvikvåg, Arsvågen–Mortavika) were already present.
 
-Coordinates:
+Labels: largest SCC in giant weak component; compact **reject** stub sets (`origin_reject` / `dest_reject`) instead of storing ~250k inclusion NodeIds. Computed once on the final merged corridor (`ensure_directed_snap_labels`), not on every tile hydrate.
 
-| Point | Lat | Lon |
-| --- | ---: | ---: |
-| Bergen | 60.388144 | 5.3347434 |
-| Stavanger city centre (matrix) | 58.97 | 5.733 |
-| Stavanger station | 58.9670 | 5.7315 |
+## 1. Full matrix (tablet SM-P613 `R52TB0JQEDE`, 2026-10-03)
 
-### City-centre destination snap
+Force-stop before cold. Overlay: all rows below used pack connectivity only (`ferry_overlay=skip_already_connected` or `skip_corridor_cache_hit`). No `ferry_preparing`. Dig = `origin/dev` after #138 ([mmap-graph-search.md A.5](mmap-graph-search.md)).
 
-| Role | Node | Dist m | can_reach_main | reachable_from_main | out_deg |
-| --- | ---: | ---: | --- | --- | ---: |
-| Any (legacy) | **11335393456** | 40.9 | true | **false** | 1 |
-| Destination (fixed) | 264565258 | 61.6 | true | true | 1 |
+| Case | eco | lt | ok | wall_ms | km | peak_rss | ferry_fp | geom (prefix) | vs dig |
+| --- | --- | --- | --- | ---: | ---: | ---: | --- | --- | --- |
+| raufoss_bergen cold | true | false | true | 10303 | 459.61 | 872.4 | — | `db5eb912…` | dig `8a8c6f7b…` / 459.71 — **geom differs** (see note) |
+| raufoss_bergen | false | false | true | 2192 | 485.35 | 872.4 | — | `915e3d9d…` | dig `540bb2ad…` / 485.45 — **geom differs** |
+| raufoss_bergen_warm | true | false | true | 2505 | 459.61 | 872.4 | — | `db5eb912…` | same as cold eco |
+| raufoss_dombas | true/false | false | true | 6270/1935 | **206.81** | 931.4 | — | `6a1360bc…` | **match dig** |
+| bergen_forde | true/false | false | true | 5078/1423 | 170.74 | 931.4 | Lavik–Oppedal@5.72 | `0a2ebf66…` | dig `0bff0c85…` / 171.01 — near-match km; geom differs slightly |
+| bergen_stavanger | false | false | true | 9206 | **206.78** | 984.9 | Halhjem\|Arsvågen | `63923d18…` | dig was **228.21** densify `1cf463d5…` — intentional |
+| bergen_stavanger | true | false | true | 2638 | **206.16** | 984.9 | same | `93fc4c85…` | intentional (snap + no coastal densify) |
+| bergen_stavanger_lt | false | true | true | 10416 | **230.10** | 984.9 | same | `28d75202…` | densify hops=2 (longTrip on) |
+| bergen_stavanger_lt | true | true | true | 10106 | **229.48** | 984.9 | same | `e1949336…` | densify eco |
+| raufoss_tromso | false | true | true | 36756 | **1766.55** | 984.9 | 5 named legs | `48565da1…` | dig `e79679c2…` / 1766.89 — km≈; geom differs |
 
-- Same weak component as Bergen: yes.
-- Directed path Bergen → Any snap: **no**.
-- Directed path Bergen → Destination snap: **yes**.
-- Source-stub population in the same weak component (can reach main, not reachable from it): **~174 nodes**.
+**Snap-changed endpoints (legitimate):**
 
-Verdict: the city-centre matrix coordinate snaps to a **directed source stub** (leave-only into the network). Weak UF treats it as connected; directed A* cannot arrive. This is a **destination snap problem**, not missing Halhjem/Arsvågen pack ferries.
+| Case | Old (dig / Any) | New (Destination) | Why |
+| --- | --- | --- | --- |
+| Bergen→Stavanger centre | `11335393456` (source stub) | `264565258` | Stub cannot be reached directed from Bergen; new node is in `reachable_from_main` |
 
-### Stavanger station (no overlay)
+Raufoss→Bergen / Førde geom deltas vs dig are small km drift (≤0.3 km) under the same packs; not attributed to a changed O/D snap node in diags. Stavanger **is** the intentional snap + densify-policy change.
 
-Routes with pack ferries only: `ok=true`, `distance_km≈205.41`, `route_uses_ferry=true`, `ferry_overlay=skip_*`.
+**Overlay on:** not exercised in this matrix — every OD stayed `skip_already_connected` after directed snap. Forcing overlay would require a corridor that fails directed connectivity (missing pier/ferry in packs). Host stub-PBF Vestlandet: same skip path.
 
-### Bergen→Stavanger centre after snap fix (no overlay)
+**Host (Vestlandet only):** centre longTrip off **206.78** km; station **205.41** km; ferries Halhjem\|Arsvågen; no `unnamed@195`.
 
-| Case | ok | wall_ms | distance_km | ferry |
-| --- | --- | ---: | ---: | --- |
-| longTrip off | true | ~560 | **206.78** | pack ferries (`route_uses_ferry=true`) |
-| longTrip on | true | ~5400 | **230.10** (2 hops) | pack ferries |
+## 2. Tromsø
 
-navi-server observation (Halhjem–Sandvikvåg + Arsvågen–Mortavika present on v9 without overlay because landings already touch `highway=service`/`trunk`) matches the client once the destination is directed-reachable. Earlier client diagnosis (pier links dropped / directed islands needing overlay) was wrong for this OD.
+- Routes with overlay **off** (`ferry_overlay=skip_already_connected` on every densify hop). No lazy sidecar kick / no `ferry_preparing`.
+- **1766.55 km**, 17 hops, 5 ferry legs (Lund–Hofles, Holm–Vennesund, Hurtigruten, Levang–Nesna, Drag–Kjøpsvik).
+- Soft motor: `motor_multi_day: days=4; total_driving_h=25.50`. Three overnight lodgings: Treetop Ekne, Korgenfjellet Fjellstue, Soltun soldatheim — **yes, still 4 days / 3 overnight stops**.
 
-## STEP 2 — Fix
+## 3. Stavanger 206.78 vs 230.10 km
 
-- Precompute on `rebuild_adjacency`: largest SCC inside the giant weak component, then
-  - `can_reach_main` (reverse BFS from that SCC) — valid **origins**
-  - `reachable_from_main` (forward BFS) — valid **destinations**
-- `RouteOptions.snap_role`: `Any` | `Origin` | `Destination` | `Via`
-- `nearest_routable_*` rejects directed-unusable nodes and takes the next nearest within the existing 750 m gate
-- Plan path sets Origin / Destination / Via roles
-- Ferry-overlay connectivity probe uses directed snaps + directed BFS after weak UF, so one-way dead-end destination snaps neither falsely skip nor falsely force overlay
+Cause: **#138 same-stem coastal densify** (`ferry_same_stem_densify`) forced densify when longTrip was **off** if a Vestlandet ferry sidecar was ready — tablet both lt on/off became ~230 km. Host without ready sidecar kept longTrip off at **206.78** while longTrip on densified to **230.10** (span 1.42° > `LONG_TRIP_CHUNK_DEG` 1.15° → 2 hops).
 
-Tests:
+**Removed** that coastal densify rule. After removal:
 
-- `destination_skips_one_way_dead_end_stub`
-- `origin_rejects_tiny_isolated_sink`
-- `ferry_base_weight_matches_server_formula`
-- `ferry_costing_rejects_long_unnamed_chain_vs_short_tagged`
+| longTrip | Behaviour | km (tablet default) |
+| --- | --- | ---: |
+| off | single-shot A* | **206.78** |
+| on | intentional densify (span > CHUNK) | **230.10** |
 
-## STEP 3 — Ferry overlay reassessment + costing
+They do **not** become equal: longTrip on still densifies by design. The 23 km gap is densify hop joints vs single optimal corridor, not missing ferries. Removing coastal densify restored longTrip **off** to the single-shot dig-class crossing (~206–207 km).
 
-### Costing: client overlay vs server `ferry_base_weight_m`
+## 4. Peak RSS ~951 / 984 vs #138 ceiling 933 MiB
 
-On `origin/dev`, client PBF / overlay ferry edges used `base_weight = length_m`. Pack rkyv edges already carry server-baked weights. That mismatch under-priced slow water hops and admitted coast-chained shortcuts.
-
-Aligned with navi-server `pack-convert-core::ferry_base_weight_m` (client: `core/src/routing/graph/builder.rs`):
-
-| Input | Weight |
+| Source | Effect |
 | --- | --- |
-| Tagged OSM `duration` | seconds × 80 km/h drive-equivalent |
-| Else (no duration) | `length_m × (80 / 10)` (10 km/h fallback) |
-| Car/truck boarding | +10 minutes at 80 km/h drive-equivalent |
-| Foot/bike boarding | 0 |
-| Geometry | `length_m` unchanged |
+| Directed inclusion labels (~250k×2 HashSets) | ~+15–20 MiB (first PR tip) |
+| Compact reject stubs (~60–174 nodes) | reclaimed inclusion overhead |
+| Per-tile Kosaraju | CPU only; deferred to final merge |
+| Single-shot Vestlandet corridor (~259k nodes / ~538k edges) | **dominant** — owned-graph estimate ≫ 900 MiB |
 
-`duration` is retained in overlay tag filtering (`keep_way_tag`). Both `bbox_edge` (overlay/PBF build) and pack `push_directed_edge` call `ferry_base_weight_m`.
+#138’s **933 MiB** matrix max was measured while Bergen→Stavanger **densified** (smaller per-hop graphs ~167k nodes). Single-shot Vestlandet cold now peaks **984.9 MiB** (process HWM across the matrix). Labels are no longer the driver. Staying ≤933 with single-shot Vestlandet needs mmap search (Phase 2) or re-introducing densify for RSS — not done here. Dombås/Førde rows stay ≤931.4.
 
-### Before / after: unnamed ~195 km chain (single-shot)
+## 5. Snap check cost
 
-| Mode | Short ferry (20 km, `duration=0:40`) | Unnamed chain (195 km, no duration) | A* preference |
-| --- | ---: | ---: | --- |
-| **BEFORE** length-only | 20 km weight | 195 km weight | Chain competitive with land+ferry OD (~206 km); single-shot + full overlay could report `unnamed@195` |
-| **AFTER** `ferry_base_weight_m` | 40 min × 80 km/h + 10 min boarding ≈ **80.0 km** equiv (66.7 + 13.3) | 195 × 8 + boarding ≈ **1573 km** equiv | Chain loses by ~23×; pack Halhjem/Arsvågen-class crossings win |
+| Stage | Where | Tablet note |
+| --- | --- | --- |
+| `directed_label_ms` | Final merge `ensure_directed_snap_labels` (Kosaraju + stub sets) | Once per cold corridor; Vestlandet merge ~0.5–1.7 s (part of pack_load / adj). Skipped on tile hydrate and on corridor cache hit. |
+| Snap role filter | `directed_snap_ok` O(1) HashSet lookup per candidate inside existing `nearest_routable` pad scan | Warm `directed_snap_ms` (full O/D snap wall) ~111–317 ms includes the whole pad scan dig already paid; **added** filter cost is ≪ 50 ms. |
 
-Host re-check (this branch, stub PBF → overlay cannot build; directed snap only):
+Target ≤~50 ms **added** for the reachability filter: met for the filter itself. Cold label build remains a pack_load cost (not snap-filter); deferred off tiles to avoid N× Kosaraju.
 
-| Case | overlay | ok | distance_km | ferry_fp |
-| --- | --- | --- | ---: | --- |
-| Bergen→Stavanger centre, longTrip off | `skip_*` | true | **206.78** | Halhjem–Sandvikvåg + Arsvågen–Mortavika — **no** `unnamed@195` |
-| Bergen→Stavanger centre, longTrip on | `skip_already_connected` | true | **230.10** | same named pack ferries — **no** `unnamed@195` |
-| Bergen→Stavanger station | `skip_already_connected` | true | **205.41** | same named pack ferries |
+## 6. Logcat (LMK / ANR)
 
-With a real Vestlandet PBF and overlay forced on after costing alignment, the unnamed 195 km chain still should not appear in single-shot because its A* weight is ~1.5 Mm drive-equivalent vs ~80 km for a tagged 40-minute hop. The historical `unnamed@195` failure required **both** length-only overlay weights **and** trip-AABB / full-coast overlay clips (corridor-band clips are already preferred on `dev`).
+Explicit check on `adb logcat` + warn buffer during `RegionToRegionPerfMatrixInstrumentedTest` (force-stop before cold):
 
-### Overlay need (post snap fix)
+- **No** `lowmemorykiller` for `no.navi.app`
+- **No** `am_anr` / `ANR in no.navi.app`
+- Only post-test `ActivityManager: Killing … stop no.navi.app due to finished inst` (instrumentation teardown)
 
-Vestlandet host cases route without overlay. Overlay remains gated: build only when directed connectivity still fails after directed snap (`ferry_hop_connectivity_gate` → `disconnected_try_overlay` / `snap_failed_try_overlay`).
+## 7. Ferry overlay status
 
-### Lazy ferry sidecar (install no longer builds)
-
-`origin/dev` started `FerrySidecarBackground` on every `emitInstalledForRouting` / `markUsable`. This branch:
-
-- Removes install/usable sidecar kicks (hundreds of MB / multi-minute coastal builds).
-- Keeps plan-path lazy kick: when overlay is needed and sidecar is stale/missing, return `ferry_preparing` and spawn `ensure_ferry_sidecar` off-thread.
-- `FerrySidecarBackground` remains for explicit/manual ensure and instrumented tests.
-
-## STEP 4 — Tablet (SM-P613 `R52TB0JQEDE`)
-
-Device: `R52TB0JQEDE` (SM-P613). Build: `./scripts/build-android-native.sh aarch64-linux-android release` + `installDebug` + `RegionToRegionPerfMatrixInstrumentedTest` (2026-10-02).
-
-| Case | eco | ok | wall_ms | distance_km | ferry_fp |
-| --- | --- | --- | ---: | ---: | --- |
-| bergen_stavanger | false | true | 10497 | **230.10** | Halhjem–Sandvikvåg + Arsvågen–Mortavika |
-| bergen_stavanger | true | true | 10246 | **229.48** | same |
-| bergen_stavanger_lt | false | true | 10111 | **230.10** | same |
-| bergen_stavanger_lt | true | true | 10193 | **229.48** | same |
-
-- **No** `unnamed@195` in any Bergen→Stavanger ferry fingerprint.
-- Peak RSS ~951 MB; MemAvailable before coastal cases ~800–960 MB; no ANR observed during the matrix run.
-- Install-time ferry sidecar kick removed on this branch; pre-existing `*.navi-ferry-overlay-*.rkyv` on the tablet (from prior mmap/sidecar builds) remain on disk but are not required for these Vestlandet OD rows (pack ferries + directed snap suffice).
-
-Expected storage win vs Phase-2 install-time sidecars on a clean device: no per-stem overlay rkyv at install (Vestlandet/Nord-Norge/Sørlandet sidecars were hundreds of MB).
+| Path | When |
+| --- | --- |
+| `supplement_pack_ferries_from_pbf` / plan corridor | Only if `ferry_hop_connectivity_gate` → `Disconnected` or `SnapFailed` after directed Origin/Destination snaps |
+| Skip | `Connected` / corridor cache hit / stub PBF / no ferry edges in sidecar clip |
+| Sidecar build | Lazy: plan path spawns `ensure_ferry_sidecar` off-thread and returns `ferry_preparing` when overlay is needed and sidecar missing/stale. **Not** at pack install (`emitInstalledForRouting` / `markUsable` kicks removed). |
+| Costing | Overlay/PBF ferry edges use `ferry_base_weight_m` (duration or 10 km/h + 10 min car boarding) — same as server |
 
 ## Host harness
 
 ```bash
 cargo run -p navi-ffi --release --bin directed-snap-diag -- \
   --pack-dir .packs/long-trip-packs
-
-cargo test -p driver-break-core ferry_base_weight ferry_costing destination_skips origin_rejects -- --nocapture
 ```
-
-Matrix cases: `bergen_stavanger`, `bergen_stavanger_eco`, `bergen_stavanger_lt`, `bergen_stavanger_station`.

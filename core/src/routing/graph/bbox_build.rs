@@ -1535,7 +1535,7 @@ fn graph_from_raw_ways(
         .filter(|id| nodes.contains_key(id))
         .collect();
     Ok(RouteGraph::from_parts_with_blocks(
-        nodes, edges, profile, blocked,
+        nodes, edges, profile, blocked, true,
     ))
 }
 

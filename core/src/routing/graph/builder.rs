@@ -310,10 +310,15 @@ pub struct RouteGraph {
     component_root: HashMap<NodeId, NodeId>,
     /// Root of the largest weakly-connected component, if any.
     giant_root: Option<NodeId>,
-    /// Nodes that can reach the main directed SCC (valid origins).
-    can_reach_main: HashSet<NodeId>,
-    /// Nodes reachable from the main directed SCC (valid destinations).
-    reachable_from_main: HashSet<NodeId>,
+    /// True after [`Self::recompute_directed_main_labels`] populated stub sets.
+    directed_labels_ready: bool,
+    /// Giant-component nodes that cannot be origins (cannot reach main SCC).
+    /// Kept small vs storing the full can-reach set (~250k → hundreds).
+    origin_reject: HashSet<NodeId>,
+    /// Giant-component nodes that cannot be destinations (not reachable from main).
+    dest_reject: HashSet<NodeId>,
+    /// Count of giant-component nodes (for diagnostics / label sizes).
+    directed_giant_nodes: usize,
     /// Surface strictness for motor snap preference and transition penalties.
     pub surface_routing_mode: SurfaceRoutingMode,
 }
@@ -329,8 +334,10 @@ impl Clone for RouteGraph {
             incident: self.incident.clone(),
             component_root: self.component_root.clone(),
             giant_root: self.giant_root,
-            can_reach_main: self.can_reach_main.clone(),
-            reachable_from_main: self.reachable_from_main.clone(),
+            directed_labels_ready: self.directed_labels_ready,
+            origin_reject: self.origin_reject.clone(),
+            dest_reject: self.dest_reject.clone(),
+            directed_giant_nodes: self.directed_giant_nodes,
             surface_routing_mode: self.surface_routing_mode,
         }
     }
@@ -456,8 +463,10 @@ impl RouteGraph {
             incident: HashSet::new(),
             component_root: HashMap::new(),
             giant_root: None,
-            can_reach_main: HashSet::new(),
-            reachable_from_main: HashSet::new(),
+            directed_labels_ready: false,
+            origin_reject: HashSet::new(),
+            dest_reject: HashSet::new(),
+            directed_giant_nodes: 0,
             surface_routing_mode: SurfaceRoutingMode::default(),
         };
         for edge in filtered {
@@ -542,15 +551,19 @@ impl RouteGraph {
         edges: Vec<GraphEdge>,
         profile: RoutingProfile,
     ) -> Self {
-        Self::from_parts_with_blocks(nodes, edges, profile, HashSet::new())
+        Self::from_parts_with_blocks(nodes, edges, profile, HashSet::new(), true)
     }
 
     /// Like [`from_parts`], with explicit barrier / access-blocked junctions.
+    ///
+    /// When `with_directed_labels` is false (tile hydrate), skip Kosaraju; call
+    /// [`Self::ensure_directed_snap_labels`] on the final merged corridor only.
     pub fn from_parts_with_blocks(
         nodes: HashMap<NodeId, Node>,
         edges: Vec<GraphEdge>,
         profile: RoutingProfile,
         access_blocked_nodes: HashSet<NodeId>,
+        with_directed_labels: bool,
     ) -> Self {
         let mut graph = Self {
             nodes,
@@ -561,11 +574,16 @@ impl RouteGraph {
             incident: HashSet::new(),
             component_root: HashMap::new(),
             giant_root: None,
-            can_reach_main: HashSet::new(),
-            reachable_from_main: HashSet::new(),
+            directed_labels_ready: false,
+            origin_reject: HashSet::new(),
+            dest_reject: HashSet::new(),
+            directed_giant_nodes: 0,
             surface_routing_mode: SurfaceRoutingMode::default(),
         };
         graph.rebuild_adjacency();
+        if with_directed_labels {
+            graph.ensure_directed_snap_labels();
+        }
         graph
     }
 
@@ -1072,14 +1090,24 @@ impl RouteGraph {
         self.incident.clear();
         self.component_root.clear();
         self.giant_root = None;
-        self.can_reach_main.clear();
-        self.reachable_from_main.clear();
+        self.directed_labels_ready = false;
+        self.origin_reject.clear();
+        self.dest_reject.clear();
+        self.directed_giant_nodes = 0;
         for (idx, edge) in self.edges.iter().enumerate() {
             self.adjacency.entry(edge.source).or_default().push(idx);
             self.incident.insert(edge.source);
             self.incident.insert(edge.target);
         }
         self.recompute_weak_components();
+        // Directed stubs: [`Self::ensure_directed_snap_labels`] on final corridor.
+    }
+
+    /// Compute compact directed snap stubs if missing (idempotent).
+    pub fn ensure_directed_snap_labels(&mut self) {
+        if self.directed_labels_ready {
+            return;
+        }
         self.recompute_directed_main_labels();
     }
 
@@ -1105,11 +1133,18 @@ impl RouteGraph {
         self.giant_root = giant.map(|(root, _)| root);
     }
 
-    /// Largest SCC inside the giant weak component, then directed reach labels.
+    /// Largest SCC inside the giant weak component, then compact directed stubs.
+    ///
+    /// Stores only *rejected* giant nodes (one-way source/sink stubs), not the
+    /// full can-reach / reachable-from sets (~250k NodeIds / tens of MiB).
     fn recompute_directed_main_labels(&mut self) {
-        self.can_reach_main.clear();
-        self.reachable_from_main.clear();
+        let t0 = std::time::Instant::now();
+        self.directed_labels_ready = false;
+        self.origin_reject.clear();
+        self.dest_reject.clear();
+        self.directed_giant_nodes = 0;
         let Some(giant) = self.giant_root else {
+            crate::routing::plan_perf::note_u64("directed_label_ms", 0);
             return;
         };
         let giant_nodes: Vec<NodeId> = self
@@ -1119,8 +1154,10 @@ impl RouteGraph {
             .filter(|id| self.component_root.get(id) == Some(&giant))
             .collect();
         if giant_nodes.is_empty() {
+            crate::routing::plan_perf::note_u64("directed_label_ms", 0);
             return;
         }
+        self.directed_giant_nodes = giant_nodes.len();
         let giant_set: HashSet<NodeId> = giant_nodes.iter().copied().collect();
         let mut rev: HashMap<NodeId, Vec<NodeId>> = HashMap::with_capacity(giant_nodes.len());
         for e in &self.edges {
@@ -1128,7 +1165,6 @@ impl RouteGraph {
                 rev.entry(e.target).or_default().push(e.source);
             }
         }
-        // Kosaraju pass 1: finish order on the forward graph.
         let mut visited: HashSet<NodeId> = HashSet::with_capacity(giant_nodes.len());
         let mut order: Vec<NodeId> = Vec::with_capacity(giant_nodes.len());
         let mut stack: Vec<(NodeId, usize)> = Vec::new();
@@ -1151,7 +1187,6 @@ impl RouteGraph {
                 }
             }
         }
-        // Pass 2: SCCs on the reverse graph.
         visited.clear();
         let mut best_scc: Vec<NodeId> = Vec::new();
         let mut rev_stack: Vec<NodeId> = Vec::new();
@@ -1178,13 +1213,13 @@ impl RouteGraph {
             }
         }
         if best_scc.is_empty() {
-            // Degenerate: treat whole giant as main.
             best_scc = giant_nodes.clone();
         }
-        let main: HashSet<NodeId> = best_scc.iter().copied().collect();
-        // reachable_from_main: forward BFS from main SCC.
+        // Temporary inclusion sets; dropped after building compact reject stubs.
+        let mut reach_fwd: HashSet<NodeId> = HashSet::with_capacity(best_scc.len());
+        let mut reach_rev: HashSet<NodeId> = HashSet::with_capacity(best_scc.len());
         let mut q: Vec<NodeId> = best_scc.clone();
-        self.reachable_from_main.extend(best_scc.iter().copied());
+        reach_fwd.extend(best_scc.iter().copied());
         let mut qi = 0usize;
         while qi < q.len() {
             let u = q[qi];
@@ -1192,60 +1227,91 @@ impl RouteGraph {
             if let Some(outs) = self.adjacency.get(&u) {
                 for &idx in outs {
                     let v = self.edges[idx].target;
-                    if giant_set.contains(&v) && self.reachable_from_main.insert(v) {
+                    if giant_set.contains(&v) && reach_fwd.insert(v) {
                         q.push(v);
                     }
                 }
             }
         }
-        // can_reach_main: reverse BFS from main SCC.
         q.clear();
         q.extend(best_scc.iter().copied());
-        self.can_reach_main.extend(best_scc.iter().copied());
+        reach_rev.extend(best_scc.iter().copied());
         qi = 0;
         while qi < q.len() {
             let u = q[qi];
             qi += 1;
             if let Some(preds) = rev.get(&u) {
                 for &p in preds {
-                    if giant_set.contains(&p) && self.can_reach_main.insert(p) {
+                    if giant_set.contains(&p) && reach_rev.insert(p) {
                         q.push(p);
                     }
                 }
             }
         }
-        let _ = main; // labels already seeded from best_scc
+        for &id in &giant_nodes {
+            if !reach_rev.contains(&id) {
+                self.origin_reject.insert(id);
+            }
+            if !reach_fwd.contains(&id) {
+                self.dest_reject.insert(id);
+            }
+        }
+        drop(reach_fwd);
+        drop(reach_rev);
+        drop(rev);
+        drop(visited);
+        drop(giant_set);
+        self.directed_labels_ready = true;
+        let ms = t0.elapsed().as_millis() as u64;
+        crate::routing::plan_perf::note_u64("directed_label_ms", ms);
+        crate::routing::plan_perf::note_u64(
+            "directed_origin_reject",
+            self.origin_reject.len() as u64,
+        );
+        crate::routing::plan_perf::note_u64(
+            "directed_dest_reject",
+            self.dest_reject.len() as u64,
+        );
     }
 
     /// True when `id` is usable for `role` in the directed graph.
     pub fn directed_snap_ok(&self, id: NodeId, role: SnapRole) -> bool {
+        if !self.directed_labels_ready {
+            return true;
+        }
         match role {
             SnapRole::Any => true,
             SnapRole::Origin => {
-                self.can_reach_main.is_empty() || self.can_reach_main.contains(&id)
+                self.in_giant_component(id) && !self.origin_reject.contains(&id)
             }
             SnapRole::Destination => {
-                self.reachable_from_main.is_empty() || self.reachable_from_main.contains(&id)
+                self.in_giant_component(id) && !self.dest_reject.contains(&id)
             }
             SnapRole::Via => {
-                (self.can_reach_main.is_empty() || self.can_reach_main.contains(&id))
-                    && (self.reachable_from_main.is_empty()
-                        || self.reachable_from_main.contains(&id))
+                self.in_giant_component(id)
+                    && !self.origin_reject.contains(&id)
+                    && !self.dest_reject.contains(&id)
             }
         }
     }
 
     /// Size of the directed component label set used for `role` (diagnostics).
     pub fn directed_label_size(&self, role: SnapRole) -> usize {
+        if !self.directed_labels_ready {
+            return match role {
+                SnapRole::Any => self.incident.len(),
+                _ => 0,
+            };
+        }
         match role {
             SnapRole::Any => self.incident.len(),
-            SnapRole::Origin => self.can_reach_main.len(),
-            SnapRole::Destination => self.reachable_from_main.len(),
+            SnapRole::Origin => self.directed_giant_nodes.saturating_sub(self.origin_reject.len()),
+            SnapRole::Destination => {
+                self.directed_giant_nodes.saturating_sub(self.dest_reject.len())
+            }
             SnapRole::Via => self
-                .can_reach_main
-                .iter()
-                .filter(|id| self.reachable_from_main.contains(id))
-                .count(),
+                .directed_giant_nodes
+                .saturating_sub(self.origin_reject.len().max(self.dest_reject.len())),
         }
     }
 
@@ -4402,8 +4468,8 @@ mod tests {
         };
         // Node 5 is a one-way *source* into the network: directed dead-end for
         // arrivals (nothing reaches it). Destination snap must skip it.
-        assert!(!g.reachable_from_main.contains(&NodeId(5)));
-        assert!(g.can_reach_main.contains(&NodeId(5)));
+        assert!(!g.directed_snap_ok(NodeId(5), SnapRole::Destination));
+        assert!(g.directed_snap_ok(NodeId(5), SnapRole::Origin));
         let (d, _) = g
             .nearest_routable_with_options_max(59.999, 10.01, &dest, false, 750.0)
             .expect("dest snap");
@@ -4411,8 +4477,8 @@ mod tests {
         assert!(g.directed_snap_ok(d, SnapRole::Destination));
 
         // Sink 4 is reachable from main — valid destination (but bad origin).
-        assert!(g.reachable_from_main.contains(&NodeId(4)));
-        assert!(!g.can_reach_main.contains(&NodeId(4)));
+        assert!(g.directed_snap_ok(NodeId(4), SnapRole::Destination));
+        assert!(!g.directed_snap_ok(NodeId(4), SnapRole::Origin));
         let origin = RouteOptions {
             snap_role: SnapRole::Origin,
             ..Default::default()
@@ -4426,9 +4492,10 @@ mod tests {
 
     #[test]
     fn origin_rejects_tiny_isolated_sink() {
-        // Main 1 <-> 2. Isolated one-way 3 -> 4 (tiny component, sink at 4 near query).
+        // Main 0 <-> 1 <-> 2 (clearly giant). Isolated one-way 3 -> 4 (sink at 4 near query).
         let mut nodes = HashMap::new();
         for (id, lat, lon) in [
+            (0, 60.0, 9.99),
             (1, 60.0, 10.0),
             (2, 60.0, 10.01),
             (3, 60.0005, 10.005),
@@ -4487,15 +4554,16 @@ mod tests {
                 surface_quality: SurfaceQuality::Good,
             }
         }
-        let edges = vec![
+        let mut edges = vec![
+            e("01", 0, 1, 60.0, 9.99, 60.0, 10.0),
+            e("10", 1, 0, 60.0, 10.0, 60.0, 9.99),
             e("12", 1, 2, 60.0, 10.0, 60.0, 10.01),
             e("21", 2, 1, 60.0, 10.01, 60.0, 10.0),
             e("34", 3, 4, 60.0005, 10.005, 60.0006, 10.005),
         ];
-        // Fix bidirectional flags for main corridor
-        let mut edges = edges;
-        edges[0].is_oneway = false;
-        edges[1].is_oneway = false;
+        for e in &mut edges[..4] {
+            e.is_oneway = false;
+        }
         let g = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
         let origin = RouteOptions {
             snap_role: SnapRole::Origin,
@@ -4505,11 +4573,12 @@ mod tests {
             .nearest_routable_with_options_max(60.0006, 10.005, &origin, false, 750.0)
             .expect("origin snap");
         assert!(
-            o == NodeId(1) || o == NodeId(2),
+            o == NodeId(0) || o == NodeId(1) || o == NodeId(2),
             "origin must snap to main network, got {o:?}"
         );
         assert!(g.directed_snap_ok(o, SnapRole::Origin));
-        assert!(!g.can_reach_main.contains(&NodeId(4)));
+        assert!(!g.directed_snap_ok(NodeId(4), SnapRole::Origin));
+        assert!(!g.directed_snap_ok(NodeId(3), SnapRole::Origin));
     }
 
     #[test]

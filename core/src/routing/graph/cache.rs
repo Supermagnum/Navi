@@ -437,7 +437,7 @@ fn reconstruct_graph(payload: CachedRouteGraph) -> RouteGraph {
         .into_iter()
         .map(NodeId)
         .collect();
-    RouteGraph::from_parts_with_blocks(nodes, edges, payload.profile, blocked)
+    RouteGraph::from_parts_with_blocks(nodes, edges, payload.profile, blocked, true)
 }
 
 #[cfg(test)]

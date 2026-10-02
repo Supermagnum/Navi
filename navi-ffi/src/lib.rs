@@ -2168,9 +2168,9 @@ fn plan_pack_dirs(
 /// Pass `""` only when the PBF already lives next to the packs.
 ///
 /// `long_trip_enabled` gates densify/chunk for spans above [`LONG_TRIP_CHUNK_DEG`].
-/// Ordinary UI plans pass `false` so cross-stem mid trips (Raufoss→Bergen) stay
-/// on one A*. Same-stem coastal ODs with a ready ferry sidecar still densify
-/// when span > CHUNK even if longTrip is off (Bergen→Stavanger A.4).
+/// Ordinary UI plans pass `false` so mid trips (Raufoss→Bergen, Bergen→Stavanger)
+/// stay on one A*. Directed snap + server-aligned ferry costing removed the need
+/// for same-stem coastal densify when longTrip is off.
 ///
 /// `allowed_countries`: when `Some` (non-empty), hard-filters the graph to those
 /// ISO-3166-1 alpha-2 codes ([`RouteOptions::allowed_countries`]). Host "Stay in
@@ -3006,12 +3006,10 @@ fn plan_car_route_inner(
     route_points.push((end_lat, end_lon));
 
     // Long corridors (multi-landsdel) cannot merge every pack tile into one
-    // graph on Automotive RAM. Densify hops and plan each leg separately.
-    // Host long-trip toggle densifies any span > CHUNK. Additionally, a
-    // same-stem coastal OD with a ready ferry sidecar densifies even when
-    // longTrip is off — otherwise single-shot + overlay admits coast-chained
-    // water shortcuts (Bergen→Stavanger `unnamed@195`). Cross-stem mid trips
-    // (Raufoss→Bergen) must NOT densify here: hop joints detour (~572 vs 460 km).
+    // graph on Automotive RAM. Densify hops and plan each leg separately when
+    // the host long-trip toggle is on and span > CHUNK. Same-stem coastal
+    // densify (added in #138 for Bergen→Stavanger overlay shortcuts) is
+    // removed: directed snap + ferry_base_weight_m make single-shot correct.
     let span = driver_break_core::routing::plan_bbox::trip_span_deg(&route_points);
     let pack_dirs_for_densify = plan_pack_dirs(
         std::path::Path::new(pbf_path.trim()),
@@ -3019,50 +3017,7 @@ fn plan_car_route_inner(
         &pack_dir,
         long_trip_enabled,
     );
-    let ferry_same_stem_densify = !long_trip_enabled
-        && !is_chunk_leg
-        && span > driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG
-        && {
-            let (a_lat, a_lon) = route_points[0];
-            let (b_lat, b_lon) = *route_points.last().unwrap();
-            let leaf_a = driver_break_core::long_trip::region_containing(a_lat, a_lon, None);
-            let leaf_b = driver_break_core::long_trip::region_containing(b_lat, b_lon, None);
-            match (leaf_a, leaf_b) {
-                (Some(a), Some(b)) if a == b => {
-                    let leaf = a.rsplit('/').next().unwrap_or(a);
-                    // Inland stems (ostlandet) often have a ferry sidecar for
-                    // fjord stubs; densifying every same-stem OD over CHUNK
-                    // detours Raufoss→Dombås (~302 vs 206 km). Only coastal
-                    // stems where the overlay fixes directed pier gaps.
-                    let coastal = matches!(
-                        leaf,
-                        "vestlandet" | "nord-norge" | "sorlandet" | "troms" | "finnmark"
-                    );
-                    if !coastal {
-                        false
-                    } else {
-                        let stem = format!("{leaf}-latest");
-                        pack_dirs_for_densify.iter().any(|dir| {
-                            let pbf = dir.join(format!("{stem}.osm.pbf"));
-                            let pbf = if pbf.is_file() {
-                                pbf
-                            } else {
-                                dir.join(format!("{stem}.ferry.osm.pbf"))
-                            };
-                            pbf.is_file()
-                                && driver_break_core::routing::indexed::ferry_sidecar_ready(
-                                    dir,
-                                    &stem,
-                                    routing_profile,
-                                    &pbf,
-                                )
-                        })
-                    }
-                }
-                _ => false,
-            }
-        };
-    if (long_trip_enabled || ferry_same_stem_densify)
+    if long_trip_enabled
         && !is_chunk_leg
         && span > driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG
     {
@@ -3075,8 +3030,7 @@ fn plan_car_route_inner(
         );
         log::info!(
             target: "NaviPlan",
-            "long_trip densify span={span:.3} hops={} long_trip_enabled={long_trip_enabled} \
-             ferry_same_stem={ferry_same_stem_densify} dirs={}",
+            "long_trip densify span={span:.3} hops={} long_trip_enabled={long_trip_enabled} dirs={}",
             hops.len(),
             pack_dirs
                 .iter()
@@ -3665,6 +3619,9 @@ fn plan_car_route_inner(
                 }
             }
             snap_ms_acc = snap_ms_acc.saturating_add(t_snap.elapsed().as_millis() as u64);
+            // directed_label_ms was noted during rebuild_adjacency; snap_ms includes
+            // O(1) role-reject checks on candidates (target: <<50 ms vs dig).
+            driver_break_core::routing::plan_perf::note_u64("directed_snap_ms", snap_ms_acc);
             log::info!(
                 target: "NaviPlan",
                 "snap_ok stops={} — starting A*",
