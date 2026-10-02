@@ -265,3 +265,27 @@ Distances match prior tables (459.71 / 485.45 / 206.81 / 171.01 / 1766.89).
 - `load`: return `Arc` from tiled load; skip ferry overlay on cache hit; weak-component ferry probe.
 - `builder` / `reweight`: eco overlay weights; no cached-graph mutation.
 - Instrumented matrix asserts + host `region-to-region-perf-matrix` harness.
+
+## Overnight buildings vs motor overnight stop candidates (PR gate)
+
+These are **two different things**:
+
+| Mechanism | What it is | When skipped |
+| --- | --- | --- |
+| Pack **overnight buildings** (`building_lats` / hiking allemannsretten samples) | ~2M building centroids in Ostlandet POI packs | **Always** skipped on the motor corridor plan hydrate path (`INCLUDE_OVERNIGHT_BUILDINGS=false`). **Not** gated by `MotorDailyBudget`. Unused for soft-break lodging/camping search. |
+| Motor **overnight stop candidates** (lodging / camp / rest at day marks) | `PoiCategory::Lodging` etc. from the same packs | Skipped only when the trip **fits** `MotorDailyBudget` (single-day). Multi-day densify uses `finalize_chunked_motor_soft_breaks`, which loads POI packs at day-boundary points via `load_poi_barrier_pack` (full hydrate, buildings included for that local pack load). |
+
+### Raufoss → Tromsø multi-day overnight (host, this tip)
+
+`region-to-region-perf-matrix --only raufoss_tromso` (long-trip densify, 1766.89 km, ~25.5 h driving):
+
+| Metric | This branch (`15b91e7d`) | Pre-branch expectation (`origin/dev`) |
+| --- | --- | --- |
+| `overnight_candidates` (scrape pool) | **106** | Same path in finalize (not using corridor `INCLUDE_OVERNIGHT_BUILDINGS=false`) |
+| `rest_candidates` | **54** | Same |
+| `motor_multi_day` | **days=4**, `budget=Hours(8.0)` | Same |
+| Day-boundary overnight with `poi_found=true` | **3** (Treetop Ekne; Korgenfjellet Fjellstue; Bardu Hotel) | Same lodging categories |
+
+**Conclusion:** Overnight **stop candidates were not dropped** for multi-day trips. No restore needed. The always-false flag only omits hiking building centroids from the **motor corridor** POI hydrate (the 15 s Ostlandet cost). Day-boundary finalize still loads lodging/camping POIs per mark.
+
+Open follow-ups (not in this PR): cold pack materialize (~5–6 s; search on mmapped tiles); per-hop pack_load on long multi-stem densify (Tromsø).
