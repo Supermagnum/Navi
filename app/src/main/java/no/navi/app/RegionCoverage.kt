@@ -196,9 +196,7 @@ object RegionCoverage {
         return false
     }
 
-    fun downloadedGeofabrikPaths(dataDir: File): List<String> {
-        return downloadedGeofabrikPaths(dataDir, packDir = null)
-    }
+    fun downloadedGeofabrikPaths(dataDir: File): List<String> = downloadedGeofabrikPaths(dataDir, packDir = null)
 
     /**
      * Geofabrik paths with a local install under [dataDir] and optionally
