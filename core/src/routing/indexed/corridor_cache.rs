@@ -19,13 +19,13 @@ pub const CORRIDOR_CACHE_MAX_BYTES: u64 = 768 * 1024 * 1024;
 /// Floor / ceiling for the memory-derived cache cap.
 /// On ~3.5 GiB tablets, keep the cache small so a Bergen-size materialize
 /// (~0.8–1.0 GiB owned graph) still fits beside the OS.
-const CORRIDOR_CACHE_MIN_BYTES: u64 = 64 * 1024 * 1024;
-const CORRIDOR_CACHE_HARD_MAX_BYTES: u64 = 512 * 1024 * 1024;
+pub const CORRIDOR_CACHE_MIN_BYTES: u64 = 64 * 1024 * 1024;
+pub const CORRIDOR_CACHE_HARD_MAX_BYTES: u64 = 512 * 1024 * 1024;
 
 /// Only wipe / drop the MRU corridor when MemAvailable is near an LMK risk.
 /// The prior 1.1 GiB threshold cleared a just-used Vestlandet corridor on
 /// Bergen→Førde eco→non-eco while the device still had ~900 MiB free.
-const CORRIDOR_CACHE_CRITICAL_AVAIL_BYTES: u64 = 450 * 1024 * 1024;
+pub const CORRIDOR_CACHE_CRITICAL_AVAIL_BYTES: u64 = 450 * 1024 * 1024;
 
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub struct CorridorCacheKey {
@@ -114,10 +114,11 @@ impl CorridorLru {
             self.bytes = self.bytes.saturating_sub(old.bytes);
             self.order.retain(|k| k != &key);
         }
-        // Evict older corridors to fit. Always insert the new MRU even when it
-        // alone exceeds the soft cap (eco→non-eco reuse); near-LMK clears via
-        // [`reclamp_keep_mru`].
-        while !self.order.is_empty() && self.bytes.saturating_add(bytes) > self.max_bytes {
+        // Keep at most one corridor (MRU). Soft-cap byte estimates under-count
+        // real owned-graph RSS; retaining Bergen while materializing Dombås
+        // spiked tablet peak RSS ~110 MiB over the #137 baseline.
+        // Same-key replace (above) still supports eco→non-eco Arc reuse.
+        while !self.order.is_empty() {
             let evict = self.order.remove(0);
             if let Some(old) = self.map.remove(&evict) {
                 self.bytes = self.bytes.saturating_sub(old.bytes);
@@ -129,7 +130,8 @@ impl CorridorLru {
     }
 
     /// Shrink to [max_bytes], always keeping the most-recently-used entry
-    /// unless [force_clear_mru] (near-LMK path).
+    /// unless [force_clear_mru] (near-LMK path). Soft reclamp never keeps more
+    /// than one corridor.
     fn reclamp_keep_mru(&mut self, max_bytes: u64, force_clear_mru: bool) {
         self.max_bytes = max_bytes;
         if force_clear_mru {
@@ -138,7 +140,7 @@ impl CorridorLru {
             self.bytes = 0;
             return;
         }
-        while self.order.len() > 1 && self.bytes > self.max_bytes {
+        while self.order.len() > 1 {
             let evict = self.order.remove(0);
             if let Some(old) = self.map.remove(&evict) {
                 self.bytes = self.bytes.saturating_sub(old.bytes);
@@ -162,10 +164,19 @@ pub fn corridor_cache_max_bytes_from_mem() -> u64 {
         .min(leave_headroom.max(CORRIDOR_CACHE_MIN_BYTES))
 }
 
-fn read_mem_available_bytes() -> Option<u64> {
+pub fn read_mem_available_bytes() -> Option<u64> {
+    read_meminfo_bytes("MemAvailable:")
+}
+
+/// Device physical RAM from `/proc/meminfo` `MemTotal` (Android / Linux).
+pub fn read_mem_total_bytes() -> Option<u64> {
+    read_meminfo_bytes("MemTotal:")
+}
+
+fn read_meminfo_bytes(key: &str) -> Option<u64> {
     let text = std::fs::read_to_string("/proc/meminfo").ok()?;
     for line in text.lines() {
-        let Some(rest) = line.strip_prefix("MemAvailable:") else {
+        let Some(rest) = line.strip_prefix(key) else {
             continue;
         };
         let kib: u64 = rest.split_whitespace().next()?.parse().ok()?;
@@ -243,21 +254,17 @@ pub fn corridor_cache_clear() {
     });
 }
 
-/// Evict cached corridors before materializing a new one when MemAvailable is
-/// near an LMK risk. Otherwise only drop older LRU entries and **keep the MRU**
-/// so eco→non-eco of the same corridor stays a hit.
+/// Drop any retained corridor before materializing a **new** one (caller is on
+/// a cache miss). Eco→non-eco of the same corridor is a hit and never reaches
+/// here, so clearing does not hurt warm Arc reuse. Holding the previous MRU
+/// during a miss materialize is what pushed matrix peak RSS above #137.
 pub fn corridor_cache_evict_before_load() {
     let avail = read_mem_available_bytes().unwrap_or(0);
-    let near_lmk = avail > 0 && avail < CORRIDOR_CACHE_CRITICAL_AVAIL_BYTES;
-    if near_lmk {
+    if avail > 0 && avail < CORRIDOR_CACHE_CRITICAL_AVAIL_BYTES {
         crate::routing::plan_perf::note_u64("corridor_cache_evict_avail_mb", avail / (1024 * 1024));
-        corridor_cache_clear();
-        return;
     }
-    with_cache(|c| {
-        let max = corridor_cache_max_bytes_from_mem();
-        c.reclamp_keep_mru(max, false);
-    });
+    crate::routing::plan_perf::note("corridor_cache", "evict_before_miss_load");
+    corridor_cache_clear();
 }
 
 #[cfg(test)]
@@ -287,22 +294,63 @@ mod tests {
     }
 
     #[test]
+    fn insert_keeps_only_one_mru_corridor() {
+        let mut c = CorridorLru::new(100_000);
+        let older = CorridorCacheKey::new(RoutingProfile::Car, vec!["bergen.rkyv".into()], None);
+        let mru = CorridorCacheKey::new(RoutingProfile::Car, vec!["dombas.rkyv".into()], None);
+        c.insert(older.clone(), Arc::new(tiny_graph()), 6_000);
+        c.insert(mru.clone(), Arc::new(tiny_graph()), 6_000);
+        assert_eq!(c.map.len(), 1);
+        assert!(c.map.contains_key(&mru));
+        assert!(!c.map.contains_key(&older));
+    }
+
+    #[test]
     fn reclamp_keeps_mru_when_over_soft_cap() {
         let mut c = CorridorLru::new(10_000);
         let older = CorridorCacheKey::new(RoutingProfile::Car, vec!["older.rkyv".into()], None);
         let mru = CorridorCacheKey::new(RoutingProfile::Car, vec!["mru.rkyv".into()], None);
-        c.insert(older.clone(), Arc::new(tiny_graph()), 6_000);
-        c.insert(mru.clone(), Arc::new(tiny_graph()), 6_000);
-        assert!(c.map.contains_key(&mru));
-        // Soft cap shrink (MemAvailable drift): must keep MRU, may drop older.
+        // Bypass single-MRU insert to seed two entries, then reclamp.
+        c.map.insert(
+            older.clone(),
+            Entry {
+                graph: Arc::new(tiny_graph()),
+                bytes: 6_000,
+            },
+        );
+        c.order.push(older.clone());
+        c.bytes = 6_000;
+        c.map.insert(
+            mru.clone(),
+            Entry {
+                graph: Arc::new(tiny_graph()),
+                bytes: 6_000,
+            },
+        );
+        c.order.push(mru.clone());
+        c.bytes = 12_000;
+        assert_eq!(c.map.len(), 2);
+        // Soft reclamp: keep only MRU (eco→non-eco Arc reuse).
         c.reclamp_keep_mru(100, false);
         assert!(
             c.map.contains_key(&mru),
             "MRU must survive soft reclamp (Bergen→Førde eco→non-eco)"
         );
-        assert!(!c.map.contains_key(&older) || c.order.last() == Some(&mru));
+        assert!(!c.map.contains_key(&older));
+        assert_eq!(c.map.len(), 1);
         // Near-LMK path may clear even the MRU.
         c.reclamp_keep_mru(100, true);
         assert!(c.map.is_empty());
+    }
+
+    #[test]
+    fn evict_before_load_clears_retained_mru() {
+        corridor_cache_clear();
+        let key = CorridorCacheKey::new(RoutingProfile::Car, vec!["bergen.rkyv".into()], None);
+        corridor_cache_insert_owned(key.clone(), tiny_graph());
+        assert!(corridor_cache_get(&key).is_some());
+        corridor_cache_evict_before_load();
+        assert!(corridor_cache_get(&key).is_none());
+        corridor_cache_clear();
     }
 }

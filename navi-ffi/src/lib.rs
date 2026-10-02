@@ -599,10 +599,52 @@ fn append_graph_ferry_edges(report: &mut String, graph: &RouteGraph) {
     report.push_str(&format!("graph_ferry_edges={n}\n"));
 }
 
+/// Path ferry fingerprint: leg count + `name@km` joined by `|` (stable for matrix compare).
+fn append_path_ferry_legs(report: &mut String, graph: &RouteGraph, path_edges: &[usize]) {
+    let legs = graph.path_ferry_legs(path_edges);
+    report.push_str(&format!("route_ferry_legs={}\n", legs.len()));
+    if legs.is_empty() {
+        report.push_str("route_ferry_fp=\n");
+        return;
+    }
+    let fp = legs
+        .iter()
+        .map(|(name, m)| {
+            let safe = name.replace('|', "/").replace(';', ",");
+            format!("{safe}@{:.2}", m / 1000.0)
+        })
+        .collect::<Vec<_>>()
+        .join("|");
+    report.push_str(&format!("route_ferry_fp={fp}\n"));
+}
+
 fn parse_graph_ferry_edges_token(report: &str) -> Option<u64> {
     for part in report.split(['\n', ';', ' ']) {
         if let Some(rest) = part.strip_prefix("graph_ferry_edges=") {
             return rest.parse().ok();
+        }
+    }
+    None
+}
+
+fn parse_u64_token(report: &str, key: &str) -> Option<u64> {
+    for part in report.split(['\n', ';', ' ', '|']) {
+        if let Some(rest) = part.strip_prefix(key) {
+            return rest.parse().ok();
+        }
+    }
+    None
+}
+
+fn parse_token_value(report: &str, key: &str) -> Option<String> {
+    for line in report.lines() {
+        if let Some(rest) = line.strip_prefix(key) {
+            return Some(rest.trim().to_string());
+        }
+        for part in line.split([';', ' ', '|']) {
+            if let Some(rest) = part.strip_prefix(key) {
+                return Some(rest.to_string());
+            }
         }
     }
     None
@@ -2125,10 +2167,10 @@ fn plan_pack_dirs(
 /// Android). Empty: search `data_dir` and `data_dir/long-trip-packs` when present.
 /// Pass `""` only when the PBF already lives next to the packs.
 ///
-/// `long_trip_enabled` gates densify/chunk planning for spans above
-/// [`LONG_TRIP_CHUNK_DEG`]. Ordinary UI plans must pass `false` so mid-length
-/// single-region trips (e.g. Hamar→Dombås) stay on one A* graph; long-trip mode
-/// passes `true` so multi-country corridors still chunk.
+/// `long_trip_enabled` gates densify/chunk for spans above [`LONG_TRIP_CHUNK_DEG`].
+/// Ordinary UI plans pass `false` so cross-stem mid trips (Raufoss→Bergen) stay
+/// on one A*. Same-stem coastal ODs with a ready ferry sidecar still densify
+/// when span > CHUNK even if longTrip is off (Bergen→Stavanger A.4).
 ///
 /// `allowed_countries`: when `Some` (non-empty), hard-filters the graph to those
 /// ISO-3166-1 alpha-2 codes ([`RouteOptions::allowed_countries`]). Host "Stay in
@@ -2304,6 +2346,8 @@ fn plan_car_route_chunked_legs(
     let mut route_uses_tolls = false;
     let mut route_uses_ferry = false;
     let mut graph_ferry_edges: u64 = 0;
+    let mut ferry_fp_parts: Vec<String> = Vec::new();
+    let mut ferry_leg_count: u64 = 0;
     let mut pad_attempts: Vec<f64> = Vec::new();
     let mut priority_share_acc = 0.0;
     let mut priority_share_w = 0.0;
@@ -2358,6 +2402,14 @@ fn plan_car_route_chunked_legs(
         route_uses_ferry = route_uses_ferry || leg.report.contains("route_uses_ferry=true");
         if let Some(n) = parse_graph_ferry_edges_token(&leg.report) {
             graph_ferry_edges = graph_ferry_edges.max(n);
+        }
+        if let Some(n) = parse_u64_token(&leg.report, "route_ferry_legs=") {
+            ferry_leg_count = ferry_leg_count.saturating_add(n);
+        }
+        if let Some(fp) = parse_token_value(&leg.report, "route_ferry_fp=") {
+            if !fp.is_empty() {
+                ferry_fp_parts.push(fp);
+            }
         }
         if leg.distance_km <= 0.0
             || leg.search_terminate_reason == "snap_failed"
@@ -2464,6 +2516,8 @@ fn plan_car_route_chunked_legs(
     report.push_str(&soft_report);
     let _ = break_pois; // per-leg breaks were empty (poi_skipped); replaced above
     report.push_str(&format!("graph_ferry_edges={graph_ferry_edges}\n"));
+    report.push_str(&format!("route_ferry_legs={ferry_leg_count}\n"));
+    report.push_str(&format!("route_ferry_fp={}\n", ferry_fp_parts.join("|")));
     report.push_str(&format!(
         "chunked_distance_km={distance_km:.3}; chunked_eta_min={eta_minutes:.1}; hops={}; route_uses_ferry={route_uses_ferry}\nPASS\n",
         hops.len().saturating_sub(1)
@@ -2953,19 +3007,66 @@ fn plan_car_route_inner(
 
     // Long corridors (multi-landsdel) cannot merge every pack tile into one
     // graph on Automotive RAM. Densify hops and plan each leg separately.
-    // Only when the host long-trip toggle is on — ordinary mid-span trips must
-    // stay on a single bbox A* (nested chunk legs never re-enter; stack overflow).
+    // Host long-trip toggle densifies any span > CHUNK. Additionally, a
+    // same-stem coastal OD with a ready ferry sidecar densifies even when
+    // longTrip is off — otherwise single-shot + overlay admits coast-chained
+    // water shortcuts (Bergen→Stavanger `unnamed@195`). Cross-stem mid trips
+    // (Raufoss→Bergen) must NOT densify here: hop joints detour (~572 vs 460 km).
     let span = driver_break_core::routing::plan_bbox::trip_span_deg(&route_points);
-    if long_trip_enabled
+    let pack_dirs_for_densify = plan_pack_dirs(
+        std::path::Path::new(pbf_path.trim()),
+        &data_dir,
+        &pack_dir,
+        long_trip_enabled,
+    );
+    let ferry_same_stem_densify = !long_trip_enabled
+        && !is_chunk_leg
+        && span > driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG
+        && {
+            let (a_lat, a_lon) = route_points[0];
+            let (b_lat, b_lon) = *route_points.last().unwrap();
+            let leaf_a = driver_break_core::long_trip::region_containing(a_lat, a_lon, None);
+            let leaf_b = driver_break_core::long_trip::region_containing(b_lat, b_lon, None);
+            match (leaf_a, leaf_b) {
+                (Some(a), Some(b)) if a == b => {
+                    let leaf = a.rsplit('/').next().unwrap_or(a);
+                    // Inland stems (ostlandet) often have a ferry sidecar for
+                    // fjord stubs; densifying every same-stem OD over CHUNK
+                    // detours Raufoss→Dombås (~302 vs 206 km). Only coastal
+                    // stems where the overlay fixes directed pier gaps.
+                    let coastal = matches!(
+                        leaf,
+                        "vestlandet" | "nord-norge" | "sorlandet" | "troms" | "finnmark"
+                    );
+                    if !coastal {
+                        false
+                    } else {
+                        let stem = format!("{leaf}-latest");
+                        pack_dirs_for_densify.iter().any(|dir| {
+                            let pbf = dir.join(format!("{stem}.osm.pbf"));
+                            let pbf = if pbf.is_file() {
+                                pbf
+                            } else {
+                                dir.join(format!("{stem}.ferry.osm.pbf"))
+                            };
+                            pbf.is_file()
+                                && driver_break_core::routing::indexed::ferry_sidecar_ready(
+                                    dir,
+                                    &stem,
+                                    routing_profile,
+                                    &pbf,
+                                )
+                        })
+                    }
+                }
+                _ => false,
+            }
+        };
+    if (long_trip_enabled || ferry_same_stem_densify)
         && !is_chunk_leg
         && span > driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG
     {
-        let pack_dirs = plan_pack_dirs(
-            std::path::Path::new(pbf_path.trim()),
-            &data_dir,
-            &pack_dir,
-            long_trip_enabled,
-        );
+        let pack_dirs = pack_dirs_for_densify;
         let pack_dir_refs: Vec<&std::path::Path> = pack_dirs.iter().map(|p| p.as_path()).collect();
         let hops = driver_break_core::routing::plan_bbox::densify_route_points_via_regions_dirs(
             &route_points,
@@ -2974,7 +3075,8 @@ fn plan_car_route_inner(
         );
         log::info!(
             target: "NaviPlan",
-            "long_trip densify span={span:.3} hops={} dirs={}",
+            "long_trip densify span={span:.3} hops={} long_trip_enabled={long_trip_enabled} \
+             ferry_same_stem={ferry_same_stem_densify} dirs={}",
             hops.len(),
             pack_dirs
                 .iter()
@@ -3263,6 +3365,27 @@ fn plan_car_route_inner(
                     if let Some(first) = regions.first() {
                         r.off_trail_advisory = format!("missing_region:{first}");
                     }
+                    return r;
+                }
+                Err(driver_break_core::routing::indexed::PackLoadError::FerryPreparing(
+                    status,
+                    pct,
+                )) => {
+                    report.push_str(&format!(
+                        "ferry_preparing=true\nferry_preparing_pct={pct}\n\
+                         status={status}\nFAIL: {status}\n"
+                    ));
+                    driver_break_core::routing::plan_perf::note("ferry_preparing", &status);
+                    driver_break_core::routing::plan_perf::note_u64(
+                        "ferry_preparing_pct",
+                        pct as u64,
+                    );
+                    let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
+                    let mut r = empty(report);
+                    r.toll_policy = toll_policy.as_diag_str().into();
+                    r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
+                    r.search_terminate_reason = "ferry_preparing".into();
+                    r.off_trail_advisory = status;
                     return r;
                 }
                 Err(e) => {
@@ -3616,20 +3739,10 @@ fn plan_car_route_inner(
                     driver_break_core::routing::plan_bbox::PlanEdgeClipMode::CorridorBand;
                 continue;
             }
-            if last_terminate == "disconnected" && pack_hit {
-                report.push_str(
-                    "FAIL: corridor disconnected after tile-budget widen — origin and \
-                     destination remain unconnected in loaded packs.\n",
-                );
-                driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(0);
-                let mut r = empty(report);
-                r.toll_policy = toll_policy.as_diag_str().into();
-                r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
-                r.search_terminate_reason = "corridor_disconnected".into();
-                return r;
-            }
             // Pad widen does not expand corridor-band materialization. On disconnected,
-            // retry this pad with trip-AABB edge clip before advancing the pad schedule.
+            // retry this pad with trip-AABB edge clip before hard-fail / next pad.
+            // Must run before the pack_hit FAIL return — coastal Vestlandet
+            // (Bergen→Stavanger) needs the trip bbox so ferry terminals stay in-clip.
             if driver_break_core::routing::plan_bbox::should_fallback_to_trip_aabb(
                 edge_clip_mode,
                 last_terminate,
@@ -3639,6 +3752,19 @@ fn plan_car_route_inner(
                     "edge_clip_fallback=trip_aabb after disconnected on stable corridor band\n",
                 );
                 continue;
+            }
+            if last_terminate == "disconnected" && pack_hit {
+                report.push_str(
+                    "FAIL: corridor disconnected after tile-budget widen — origin and \
+                     destination remain unconnected in loaded packs.\n",
+                );
+                let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
+                driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(0);
+                let mut r = empty(report);
+                r.toll_policy = toll_policy.as_diag_str().into();
+                r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
+                r.search_terminate_reason = "corridor_disconnected".into();
+                return r;
             }
             break; // next pad
         } // band/AABB attempts for this pad
@@ -3815,6 +3941,7 @@ fn plan_car_route_inner(
     }
     let route_uses_tolls = graph.path_uses_tolls(&path_edges);
     let route_uses_ferry = graph.path_uses_ferries(&path_edges);
+    append_path_ferry_legs(&mut report, &graph, &path_edges);
     // Keep stage key `astar_ms` for greppable compatibility (= search wall).
     let astar_ms = search_ms_acc;
 
@@ -5335,6 +5462,89 @@ pub struct PlaceHit {
     pub municipality: String,
     /// Geofabrik path this row was indexed under (empty for legacy / synthetic hits).
     pub region_id: String,
+}
+
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiFerrySidecarProgress {
+    pub stem: String,
+    pub region_label: String,
+    pub running: bool,
+    pub pct: u8,
+    pub message: String,
+}
+
+/// Build/refresh `{stem}.navi-ferry-overlay-{profile}.rkyv` from the region PBF.
+/// Call from pack install / refresh background work — not from the plan path.
+#[uniffi::export]
+pub fn ensure_ferry_sidecar(pack_dir: String, stem: String, profile: TravelProfile) -> String {
+    let home = Path::new(pack_dir.trim());
+    let stem = stem.trim();
+    if stem.is_empty() {
+        return "FAIL: empty stem\n".into();
+    }
+    let pbf = home.join(format!("{stem}.osm.pbf"));
+    if !pbf.is_file() {
+        // Also accept ferry-only extract.
+        let ferry_pbf = home.join(format!("{stem}.ferry.osm.pbf"));
+        if !ferry_pbf.is_file() {
+            return format!("FAIL: PBF missing for stem={stem}\n");
+        }
+        return match driver_break_core::routing::indexed::ensure_ferry_sidecar(
+            home,
+            stem,
+            RoutingProfile::from(profile.to_core()),
+            &ferry_pbf,
+        ) {
+            Ok(true) => format!("PASS: ferry sidecar ready stem={stem}\n"),
+            Ok(false) => format!("PASS: no ferry edges stem={stem}\n"),
+            Err(e) => format!("FAIL: ferry sidecar: {e:#}\n"),
+        };
+    }
+    match driver_break_core::routing::indexed::ensure_ferry_sidecar(
+        home,
+        stem,
+        RoutingProfile::from(profile.to_core()),
+        &pbf,
+    ) {
+        Ok(true) => format!("PASS: ferry sidecar ready stem={stem}\n"),
+        Ok(false) => format!("PASS: no ferry edges stem={stem}\n"),
+        Err(e) => format!("FAIL: ferry sidecar: {e:#}\n"),
+    }
+}
+
+/// Progress for an in-flight ferry sidecar build (empty stem when idle).
+#[uniffi::export]
+pub fn ferry_sidecar_progress_snapshot() -> FfiFerrySidecarProgress {
+    let p = driver_break_core::routing::indexed::ferry_sidecar_progress();
+    FfiFerrySidecarProgress {
+        stem: p.stem,
+        region_label: p.region_label,
+        running: p.running,
+        pct: p.pct,
+        message: p.message,
+    }
+}
+
+/// True when the stem ferry sidecar meta matches the on-disk PBF fingerprint.
+#[uniffi::export]
+pub fn ferry_sidecar_is_ready(pack_dir: String, stem: String, profile: TravelProfile) -> bool {
+    let home = Path::new(pack_dir.trim());
+    let stem = stem.trim();
+    let pbf = home.join(format!("{stem}.osm.pbf"));
+    let pbf = if pbf.is_file() {
+        pbf
+    } else {
+        home.join(format!("{stem}.ferry.osm.pbf"))
+    };
+    if !pbf.is_file() {
+        return false;
+    }
+    driver_break_core::routing::indexed::sidecar_fresh(
+        home,
+        stem,
+        RoutingProfile::from(profile.to_core()),
+        &pbf,
+    )
 }
 
 /// Build or open the offline FTS name index for a region PBF.

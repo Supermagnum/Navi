@@ -90,6 +90,7 @@ fn keep_way_tag(key: &str) -> bool {
             | "bicycle"
             | "motor_vehicle:conditional"
             | "access:conditional"
+            | "_ferry_approach_promoted"
     )
 }
 
@@ -414,6 +415,9 @@ fn ferry_approach_tags(
         // access so car/truck overlay edges are materialized for topology merge.
         tags.insert("motor_vehicle".into(), "yes".into());
         tags.insert("foot".into(), "yes".into());
+        // Marker so vacuum can prefer pier promotions without swallowing every
+        // residential road within the terminal radius.
+        tags.insert("_ferry_approach_promoted".into(), "1".into());
     }
     if !tags.contains_key("highway") {
         return None;
@@ -621,205 +625,219 @@ impl RouteGraph {
     /// Approach depth is four hops plus a ~1.5 km terminal-radius vacuum, and
     /// includes `man_made=pier` / platform ways (as service) so collection can
     /// leave the pier onto inland highways.
+    ///
+    /// **Streaming (≤2 PBF reads):** formerly ~10 full-file scans which cost
+    /// ~18 min for Vestlandet on SM-P613. Now: (1) collect ferries + pier /
+    /// footway / platform promotions only, (2) one node pass for coords; BFS +
+    /// terminal-radius vacuum run in memory. Pack highways are not duplicated.
     pub fn build_ferry_overlay_from_pbf(
         path: impl AsRef<Path>,
         profile: RoutingProfile,
         bbox: [f64; 4],
     ) -> anyhow::Result<Self> {
         let path = path.as_ref();
-        let mut in_bbox_ids: HashSet<i64> = HashSet::new();
-        {
-            crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
-                Element::Node(n) => {
-                    if in_bbox(n.lat(), n.lon(), bbox) {
-                        in_bbox_ids.insert(n.id());
-                    }
-                }
-                Element::DenseNode(n) if in_bbox(n.lat(), n.lon(), bbox) => {
-                    in_bbox_ids.insert(n.id());
-                }
-                _ => {}
-            })?;
-        }
+        let t_all = Instant::now();
 
-        let mut ways: Vec<RawWay> = Vec::new();
-        let mut needed: HashSet<i64> = HashSet::new();
-        let mut ferry_nodes: HashSet<i64> = HashSet::new();
-        {
-            crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
-                let Element::Way(way) = element else {
-                    return;
-                };
-                let tags = filter_way_tags(
-                    way.tags()
-                        .map(|(k, v)| (k.to_string(), v.to_string()))
-                        .collect(),
-                );
-                if !tags_indicate_ferry(&tags) {
-                    return;
-                }
+        // Pass 1 — ways only: ferries + pier/footway/platform promotions.
+        // Pack tiles already carry car highways; overlay only needs shared OSM
+        // ids at the pier–road join (BFS over every residential approach was
+        // multi-minute on Østlandet and unnecessary for Halhjem/Arsvågen).
+        let t0 = Instant::now();
+        let mut ferry_ways: Vec<RawWay> = Vec::new();
+        let mut approach_ways: Vec<RawWay> = Vec::new();
+        crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
+            let Element::Way(way) = element else {
+                return;
+            };
+            let tags = filter_way_tags(
+                way.tags()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+            );
+            let refs: Vec<i64> = way.refs().collect();
+            if refs.is_empty() {
+                return;
+            }
+            if tags_indicate_ferry(&tags) {
                 if !way_ok_for_profile(&tags, profile) {
                     return;
                 }
-                let refs: Vec<i64> = way.refs().collect();
-                if refs.is_empty() {
-                    return;
-                }
-                if !refs.iter().any(|id| in_bbox_ids.contains(id)) {
-                    return;
-                }
-                for id in &refs {
-                    needed.insert(*id);
-                    ferry_nodes.insert(*id);
-                }
-                ways.push(RawWay {
+                ferry_ways.push(RawWay {
                     id: way.id(),
                     nodes: refs,
                     tags,
                 });
-            })?;
-        }
-        drop(in_bbox_ids);
+                return;
+            }
+            let Some(tags) = ferry_approach_tags(tags, profile) else {
+                return;
+            };
+            if !tags.contains_key("_ferry_approach_promoted") {
+                return;
+            }
+            approach_ways.push(RawWay {
+                id: way.id(),
+                nodes: refs,
+                tags,
+            });
+        })?;
+        let t_ways_ms = t0.elapsed().as_millis() as u64;
 
-        if ways.is_empty() {
+        if ferry_ways.is_empty() {
+            crate::routing::plan_perf::note(
+                "ferry_overlay_build",
+                format!(
+                    "empty_ferries;ways_ms={t_ways_ms};approaches={};total_ms={}",
+                    approach_ways.len(),
+                    t_all.elapsed().as_millis()
+                ),
+            );
             return Ok(Self::from_parts(HashMap::new(), Vec::new(), profile));
         }
 
-        // Approach ways from ferry terminals into inland pack nodes. Pack tiles
-        // often clip pier tips by a few km; pier / footway boarding links sit
-        // between `route=ferry` terminals and the first car highway, so we
-        // promote those stubs (see [`ferry_approach_tags`]).
-        //
-        // Four dual-purpose hops, then one terminal-radius vacuum pass: any
-        // approach-eligible way with a node within ~1.5 km of a ferry endpoint
-        // is kept even if hop-connectivity missed it (clipped pier grids).
-        let mut attach = ferry_nodes.clone();
+        // node_id → indices into approach_ways for hops from ferry terminals.
+        let mut node_to_approach: HashMap<i64, Vec<usize>> = HashMap::new();
+        for (i, w) in approach_ways.iter().enumerate() {
+            for &id in &w.nodes {
+                node_to_approach.entry(id).or_default().push(i);
+            }
+        }
+
+        // Pass 2 — coords for ferry + pier-approach nodes only.
+        let mut all_ref_ids: HashSet<i64> = HashSet::new();
+        for w in &ferry_ways {
+            all_ref_ids.extend(w.nodes.iter().copied());
+        }
+        for w in &approach_ways {
+            all_ref_ids.extend(w.nodes.iter().copied());
+        }
+
+        const TERMINAL_VACUUM_DEG: f64 = 0.015; // ~1.7 km
+        let t_n = Instant::now();
+        let mut coords: HashMap<i64, (f64, f64)> =
+            HashMap::with_capacity(all_ref_ids.len().min(200_000));
+        crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
+            let (id, lat, lon) = match element {
+                Element::Node(n) => (n.id(), n.lat(), n.lon()),
+                Element::DenseNode(n) => (n.id(), n.lat(), n.lon()),
+                _ => return,
+            };
+            if all_ref_ids.contains(&id) {
+                coords.insert(id, (lat, lon));
+            }
+        })?;
+        drop(all_ref_ids);
+        let t_nodes_ms = t_n.elapsed().as_millis() as u64;
+
+        let ferry_in_bbox = |w: &RawWay| {
+            w.nodes.iter().any(|id| {
+                coords
+                    .get(id)
+                    .is_some_and(|&(lat, lon)| in_bbox(lat, lon, bbox))
+            })
+        };
+        let mut ways: Vec<RawWay> = ferry_ways.into_iter().filter(ferry_in_bbox).collect();
+        if ways.is_empty() {
+            crate::routing::plan_perf::note(
+                "ferry_overlay_build",
+                format!(
+                    "ferries_outside_bbox;ways_ms={t_ways_ms};nodes_ms={t_nodes_ms};total_ms={}",
+                    t_all.elapsed().as_millis()
+                ),
+            );
+            return Ok(Self::from_parts(HashMap::new(), Vec::new(), profile));
+        }
+
+        let t_sel = Instant::now();
+        let mut ferry_nodes: HashSet<i64> = HashSet::new();
+        let mut terminal_ids: HashSet<i64> = HashSet::new();
+        for w in &ways {
+            for &id in &w.nodes {
+                ferry_nodes.insert(id);
+            }
+            if w.nodes.len() >= 2 {
+                terminal_ids.insert(w.nodes[0]);
+                terminal_ids.insert(*w.nodes.last().unwrap());
+            }
+        }
+
+        // Up to 4 hops through pier/footway promotions from ferry terminals.
+        let mut selected_approach: HashSet<usize> = HashSet::new();
+        let mut attach = ferry_nodes;
         for _hop in 0..4 {
             let mut next_attach: HashSet<i64> = HashSet::new();
-            crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
-                let Element::Way(way) = element else {
-                    return;
+            for &nid in &attach {
+                let Some(idxs) = node_to_approach.get(&nid) else {
+                    continue;
                 };
-                if ways.iter().any(|w| w.id == way.id()) {
-                    return;
+                for &i in idxs {
+                    if !selected_approach.insert(i) {
+                        continue;
+                    }
+                    for &id in &approach_ways[i].nodes {
+                        next_attach.insert(id);
+                    }
                 }
-                let tags = filter_way_tags(
-                    way.tags()
-                        .map(|(k, v)| (k.to_string(), v.to_string()))
-                        .collect(),
-                );
-                let Some(tags) = ferry_approach_tags(tags, profile) else {
-                    return;
-                };
-                let refs: Vec<i64> = way.refs().collect();
-                if refs.is_empty() || !refs.iter().any(|id| attach.contains(id)) {
-                    return;
-                }
-                for id in &refs {
-                    needed.insert(*id);
-                    next_attach.insert(*id);
-                }
-                ways.push(RawWay {
-                    id: way.id(),
-                    nodes: refs,
-                    tags,
-                });
-            })?;
+            }
             attach = next_attach;
             if attach.is_empty() {
                 break;
             }
         }
 
-        // Resolve ferry-terminal coordinates for the radius vacuum (endpoints
-        // only — mid-water ferry nodes must not expand the vacuum inland).
-        let mut terminal_coords: Vec<(f64, f64)> = Vec::new();
-        {
-            let mut ends: HashSet<i64> = HashSet::new();
-            for w in &ways {
-                if !tags_indicate_ferry(&w.tags) || w.nodes.len() < 2 {
-                    continue;
-                }
-                ends.insert(w.nodes[0]);
-                ends.insert(*w.nodes.last().unwrap());
+        let mut terminal_coords: Vec<(f64, f64)> = Vec::with_capacity(terminal_ids.len());
+        for id in &terminal_ids {
+            if let Some(&(lat, lon)) = coords.get(id) {
+                terminal_coords.push((lat, lon));
             }
-            crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
-                Element::Node(n) if ends.contains(&n.id()) => {
-                    terminal_coords.push((n.lat(), n.lon()));
-                }
-                Element::DenseNode(n) if ends.contains(&n.id()) => {
-                    terminal_coords.push((n.lat(), n.lon()));
-                }
-                _ => {}
-            })?;
         }
-        const TERMINAL_VACUUM_DEG: f64 = 0.015; // ~1.7 km
         let near_terminal = |lat: f64, lon: f64| -> bool {
             terminal_coords.iter().any(|(tlat, tlon)| {
                 (lat - tlat).abs() <= TERMINAL_VACUUM_DEG
                     && (lon - tlon).abs() <= TERMINAL_VACUUM_DEG
             })
         };
-        let mut near_ids: HashSet<i64> = HashSet::new();
-        {
-            crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
-                Element::Node(n) if near_terminal(n.lat(), n.lon()) => {
-                    near_ids.insert(n.id());
-                }
-                Element::DenseNode(n) if near_terminal(n.lat(), n.lon()) => {
-                    near_ids.insert(n.id());
-                }
-                _ => {}
-            })?;
-        }
-        crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
-            let Element::Way(way) = element else {
-                return;
-            };
-            if ways.iter().any(|w| w.id == way.id()) {
-                return;
+        let mut vacuum_added = 0usize;
+        for (i, w) in approach_ways.iter().enumerate() {
+            if selected_approach.contains(&i) {
+                continue;
             }
-            let tags = filter_way_tags(
-                way.tags()
-                    .map(|(k, v)| (k.to_string(), v.to_string()))
-                    .collect(),
-            );
-            let Some(tags) = ferry_approach_tags(tags, profile) else {
-                return;
-            };
-            let refs: Vec<i64> = way.refs().collect();
-            if refs.is_empty() || !refs.iter().any(|id| near_ids.contains(id)) {
-                return;
-            }
-            for id in &refs {
-                needed.insert(*id);
-            }
-            ways.push(RawWay {
-                id: way.id(),
-                nodes: refs,
-                tags,
+            let near = w.nodes.iter().any(|id| {
+                coords
+                    .get(id)
+                    .is_some_and(|&(lat, lon)| near_terminal(lat, lon))
             });
-        })?;
-
-        let mut coords: HashMap<i64, (f64, f64)> = HashMap::with_capacity(needed.len());
-        let barrier_tags: HashMap<i64, HashMap<String, String>> = HashMap::new();
-        {
-            crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
-                Element::Node(n) => {
-                    if needed.contains(&n.id()) {
-                        coords.insert(n.id(), (n.lat(), n.lon()));
-                    }
-                }
-                Element::DenseNode(n) if needed.contains(&n.id()) => {
-                    coords.insert(n.id(), (n.lat(), n.lon()));
-                }
-                _ => {}
-            })?;
+            if near {
+                selected_approach.insert(i);
+                vacuum_added += 1;
+            }
         }
-        drop(needed);
+        let t_select_ms = t_sel.elapsed().as_millis() as u64;
 
+        let mut kept_approach = 0usize;
+        for i in selected_approach {
+            ways.push(approach_ways[i].clone());
+            kept_approach += 1;
+        }
+        let ferry_count = ways.iter().filter(|w| tags_indicate_ferry(&w.tags)).count();
+
+        let t_g = Instant::now();
+        let barrier_tags: HashMap<i64, HashMap<String, String>> = HashMap::new();
         let arcs: Vec<Arc<RawWay>> = ways.into_iter().map(Arc::new).collect();
-        graph_from_raw_ways(&arcs, &coords, profile, &barrier_tags)
+        let graph = graph_from_raw_ways(&arcs, &coords, profile, &barrier_tags)?;
+        let t_graph_ms = t_g.elapsed().as_millis() as u64;
+
+        crate::routing::plan_perf::note(
+            "ferry_overlay_build",
+            format!(
+                "ferry_ways={ferry_count};approach_ways={kept_approach};vacuum_added={vacuum_added};\
+                 ways_ms={t_ways_ms};select_ms={t_select_ms};nodes_ms={t_nodes_ms};graph_ms={t_graph_ms};\
+                 edges={};total_ms={}",
+                graph.edges.len(),
+                t_all.elapsed().as_millis()
+            ),
+        );
+        Ok(graph)
     }
 
     /// Build graphs for all spatial tiles with **two PBF passes total** (not

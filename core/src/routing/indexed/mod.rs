@@ -5,6 +5,7 @@
 
 mod convert;
 mod corridor_cache;
+mod ferry_overlay_cache;
 mod graph_pack;
 mod graph_pack_v8;
 mod header;
@@ -14,6 +15,7 @@ mod manifest;
 mod poi_barrier_cache;
 mod poi_barrier_extract;
 mod poi_barrier_pack;
+mod tile_cache;
 mod wetland_pack;
 
 pub use crate::routing::region_lock::{
@@ -27,6 +29,10 @@ pub use corridor_cache::{
     corridor_cache_clear, corridor_cache_evict_before_load, corridor_cache_get,
     corridor_cache_insert_owned, corridor_cache_stats, corridor_cache_take, CorridorCacheKey,
     CORRIDOR_CACHE_MAX_BYTES,
+};
+pub use ferry_overlay_cache::{
+    ensure_ferry_sidecar, ferry_overlay_for_plan, ferry_preparing_status, ferry_sidecar_path,
+    ferry_sidecar_progress, ferry_sidecar_ready, sidecar_fresh, FerrySidecarProgress,
 };
 pub use graph_pack::{
     graph_format_version_accepted, preferred_graph_format_version, ArchivedFlatGraphPack,
