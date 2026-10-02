@@ -82,6 +82,8 @@ object NaviMapTestHooks {
         val vias: List<Waypoint> = emptyList(),
         val forceLocalPbf: Boolean = false,
         val avoidFerries: Boolean? = null,
+        /** When non-null, force eco on/off for this seeded trip (UI + UniFFI rest). */
+        val ecoModeEnabled: Boolean? = null,
         val restoreSettingsAfter: Boolean = true,
         /**
          * When true (default for [NaviDebugIntent] trips), pin the GPS mark at
@@ -100,6 +102,10 @@ object NaviMapTestHooks {
      */
     @Volatile
     var forceLocalPbf: Boolean = false
+
+    /** One-shot eco-mode injection (same path as the UI eco toggle). */
+    @Volatile
+    var requestEcoMode: Boolean? = null
 
     /** One-shot avoid-ferries injection (same path as the UI toggle). */
     @Volatile

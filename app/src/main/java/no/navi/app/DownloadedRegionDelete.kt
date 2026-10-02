@@ -280,6 +280,68 @@ object DownloadedRegionDelete {
         return bytes to count
     }
 
+    /**
+     * After a pack refresh into [preferredPackDir], remove a legacy duplicate
+     * of [stem] under the app [filesRoot] when the preferred copy is newer or
+     * equal in `graph_format_version` (tablet leftover: `files/ostlandet-latest*`
+     * v8 beside `files/long-trip-packs` v9).
+     *
+     * No-op when [preferredPackDir] is the files root itself, or when the root
+     * copy is strictly newer.
+     */
+    fun removeStaleRootStemDuplicate(
+        filesRoot: File,
+        preferredPackDir: File,
+        stem: String,
+    ): Pair<Long, Int> {
+        if (stem.isBlank() || !filesRoot.isDirectory || !preferredPackDir.isDirectory) {
+            return 0L to 0
+        }
+        val rootCanon =
+            runCatching { filesRoot.canonicalFile }.getOrElse { filesRoot.absoluteFile }
+        val prefCanon =
+            runCatching { preferredPackDir.canonicalFile }.getOrElse { preferredPackDir.absoluteFile }
+        if (rootCanon == prefCanon) return 0L to 0
+        // Preferred must live under filesRoot (typically files/long-trip-packs).
+        if (!prefCanon.path.startsWith(rootCanon.path + File.separator)) {
+            return 0L to 0
+        }
+        val rootMan = File(filesRoot, "$stem.navi-manifest.json")
+        val prefMan = File(preferredPackDir, "$stem.navi-manifest.json")
+        if (!rootMan.isFile || !prefMan.isFile) return 0L to 0
+        val rootFmt = manifestFormatVersion(rootMan) ?: return 0L to 0
+        val prefFmt = manifestFormatVersion(prefMan) ?: return 0L to 0
+        if (prefFmt < rootFmt) {
+            Log.i(
+                TAG,
+                "keep root $stem fmt=$rootFmt (preferred $prefFmt is older)",
+            )
+            return 0L to 0
+        }
+        val (bytes, count) = deleteStemArtifacts(filesRoot, stem)
+        if (count > 0) {
+            Log.i(
+                TAG,
+                "removed stale root $stem fmt=$rootFmt ($count files, $bytes bytes); " +
+                    "kept ${preferredPackDir.name} fmt=$prefFmt",
+            )
+        }
+        return bytes to count
+    }
+
+    private fun manifestFormatVersion(manifest: File): Int? {
+        if (!manifest.isFile) return null
+        return runCatching {
+            val text = manifest.readText()
+            val key = "\"graph_format_version\""
+            val i = text.indexOf(key)
+            if (i < 0) return null
+            val after = text.substring(i + key.length)
+            val digits = after.dropWhile { !it.isDigit() }.takeWhile { it.isDigit() }
+            digits.toIntOrNull()
+        }.getOrNull()
+    }
+
     internal fun deleteGraphCaches(
         dataDir: File,
         stem: String,

@@ -64,6 +64,14 @@ pub struct PoiIndex {
     overnight_buildings: Vec<(f64, f64)>,
 }
 
+impl Clone for PoiIndex {
+    fn clone(&self) -> Self {
+        let mut out = Self::new();
+        out.extend_from(self);
+        out
+    }
+}
+
 pub struct PoiQuery<'a> {
     pub category: PoiCategory,
     pub lat: f64,

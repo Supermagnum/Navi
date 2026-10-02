@@ -160,8 +160,30 @@ impl FlatPoiBarrierPack {
     }
 
     pub fn to_poi_index(&self) -> PoiIndex {
+        self.to_poi_index_bbox(None, true)
+    }
+
+    /// Hydrate POI records, optionally keeping only points inside `bbox`
+    /// `[min_lat, min_lon, max_lat, max_lon]`.
+    ///
+    /// `include_overnight_buildings`: hiking allemannsretten samples. Motor
+    /// plans should pass `false` — Ostlandet packs store ~2M building centroids
+    /// that dominate hydrate time on emulator SD (~15 s) and are unused for
+    /// soft-break POI search.
+    pub fn to_poi_index_bbox(
+        &self,
+        bbox: Option<[f64; 4]>,
+        include_overnight_buildings: bool,
+    ) -> PoiIndex {
         let mut index = PoiIndex::new();
         for i in 0..self.osm_ids.len() {
+            let lat = self.lats[i];
+            let lon = self.lons[i];
+            if let Some(b) = bbox {
+                if lat < b[0] || lat > b[2] || lon < b[1] || lon > b[3] {
+                    continue;
+                }
+            }
             let a = self.tag_offsets[i] as usize;
             let b = self.tag_offsets[i + 1] as usize;
             let mut tags = HashMap::new();
@@ -175,41 +197,74 @@ impl FlatPoiBarrierPack {
             };
             index.insert_record(PoiRecord {
                 osm_id: self.osm_ids[i],
-                lat: self.lats[i],
-                lon: self.lons[i],
+                lat,
+                lon,
                 categories: cats_from_mask(self.cat_masks[i]),
                 icon_key: self.icon_keys[i].clone(),
                 tags,
                 name,
             });
         }
-        let n = self.building_lats.len().min(self.building_lons.len());
-        let mut buildings = Vec::with_capacity(n);
-        for i in 0..n {
-            buildings.push((self.building_lats[i], self.building_lons[i]));
+        if include_overnight_buildings {
+            let n = self.building_lats.len().min(self.building_lons.len());
+            let mut buildings = Vec::with_capacity(n);
+            for i in 0..n {
+                let lat = self.building_lats[i];
+                let lon = self.building_lons[i];
+                if let Some(b) = bbox {
+                    if lat < b[0] || lat > b[2] || lon < b[1] || lon > b[3] {
+                        continue;
+                    }
+                }
+                buildings.push((lat, lon));
+            }
+            index.set_overnight_buildings(buildings);
         }
-        index.set_overnight_buildings(buildings);
         index
     }
 
     pub fn to_barrier_index(&self) -> DangerBarrierIndex {
-        let segs = (0..self.seg_a_lon.len()).map(|i| {
-            (
-                self.seg_a_lon[i],
-                self.seg_a_lat[i],
-                self.seg_b_lon[i],
-                self.seg_b_lat[i],
-            )
+        self.to_barrier_index_bbox(None)
+    }
+
+    /// Hydrate barrier segments / glaciers, optionally keeping geometry that
+    /// touches `bbox` `[min_lat, min_lon, max_lat, max_lon]`.
+    pub fn to_barrier_index_bbox(&self, bbox: Option<[f64; 4]>) -> DangerBarrierIndex {
+        let segs = (0..self.seg_a_lon.len()).filter_map(|i| {
+            let a_lon = self.seg_a_lon[i];
+            let a_lat = self.seg_a_lat[i];
+            let b_lon = self.seg_b_lon[i];
+            let b_lat = self.seg_b_lat[i];
+            if let Some(b) = bbox {
+                let min_lat = a_lat.min(b_lat);
+                let max_lat = a_lat.max(b_lat);
+                let min_lon = a_lon.min(b_lon);
+                let max_lon = a_lon.max(b_lon);
+                if max_lat < b[0] || min_lat > b[2] || max_lon < b[1] || min_lon > b[3] {
+                    return None;
+                }
+            }
+            Some((a_lon, a_lat, b_lon, b_lat))
         });
         let mut glaciers = Vec::new();
         for g in 0..self.glacier_offsets.len().saturating_sub(1) {
             let a = self.glacier_offsets[g] as usize;
             let b = self.glacier_offsets[g + 1] as usize;
             let mut ring = Vec::with_capacity(b - a);
+            let mut any_in = bbox.is_none();
             for i in a..b {
-                ring.push([self.glacier_lon[i], self.glacier_lat[i]]);
+                let lon = self.glacier_lon[i];
+                let lat = self.glacier_lat[i];
+                if let Some(bb) = bbox {
+                    if lat >= bb[0] && lat <= bb[2] && lon >= bb[1] && lon <= bb[3] {
+                        any_in = true;
+                    }
+                }
+                ring.push([lon, lat]);
             }
-            glaciers.push(ring);
+            if any_in {
+                glaciers.push(ring);
+            }
         }
         DangerBarrierIndex::from_segments(segs, glaciers)
     }

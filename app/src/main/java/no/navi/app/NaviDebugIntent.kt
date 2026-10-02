@@ -61,6 +61,7 @@ object NaviDebugIntent {
         val useNetworkedCabins: Boolean,
         val useUnlockedCabins: Boolean,
         val bikeCapability: String,
+        val ecoModeEnabled: Boolean,
     )
 
     data class AppliedContext(
@@ -139,6 +140,12 @@ object NaviDebugIntent {
             } else {
                 null
             }
+        val ecoMode =
+            when {
+                intent.hasExtra("navi_eco") -> intent.getBooleanExtra("navi_eco", false)
+                intent.hasExtra("navi_eco_mode") -> intent.getBooleanExtra("navi_eco_mode", false)
+                else -> null
+            }
         val restoreAfter =
             !intent.hasExtra("navi_restore_settings") ||
                 intent.getBooleanExtra("navi_restore_settings", true)
@@ -150,10 +157,12 @@ object NaviDebugIntent {
 
         val snapshot =
             runCatching {
+                val car = uniffi.navi.loadCarRestSettings(dataDirPath)
                 SettingsSnapshot(
                     useNetworkedCabins = uniffi.navi.loadUseNetworkedCabins(dataDirPath),
                     useUnlockedCabins = uniffi.navi.loadUseUnlockedCabins(dataDirPath),
                     bikeCapability = uniffi.navi.loadBikeCapability(dataDirPath),
+                    ecoModeEnabled = car.ecoModeEnabled,
                 )
             }.getOrNull()
 
@@ -170,6 +179,23 @@ object NaviDebugIntent {
             runCatching {
                 uniffi.navi.saveBikeCapability(dataDirPath, bikeCap)
             }.onFailure { Log.w(TAG, "saveBikeCapability failed: ${it.message}") }
+        }
+
+        if (ecoMode != null) {
+            runCatching {
+                val cur = uniffi.navi.loadCarRestSettings(dataDirPath)
+                uniffi.navi.saveCarRestSettings(
+                    dataDirPath,
+                    uniffi.navi.FfiCarRestSettings(
+                        breakIntervalHours = cur.breakIntervalHours,
+                        restDurationMinutes = cur.restDurationMinutes,
+                        ecoModeEnabled = ecoMode,
+                        maxHours = cur.maxHours,
+                    ),
+                )
+                applied["eco_mode"] = ecoMode
+                NaviMapTestHooks.requestEcoMode = ecoMode
+            }.onFailure { Log.w(TAG, "saveCarRestSettings eco failed: ${it.message}") }
         }
 
         if (restoreAfter && snapshot != null) {
@@ -199,7 +225,7 @@ object NaviDebugIntent {
             "applied profile=${ctx.profile} bike=${ctx.bikeCapability} " +
                 "graph=${ctx.graph} vias=${ctx.vias.size} " +
                 "settings=${ctx.appliedSettings} ignored=${ctx.ignoredSettings} " +
-                "avoid_ferries=${ctx.avoidFerries} restore=$restoreAfter " +
+                "avoid_ferries=${ctx.avoidFerries} eco=$ecoMode restore=$restoreAfter " +
                 "inject_gps=$injectGps",
         )
 
@@ -217,6 +243,7 @@ object NaviDebugIntent {
             vias = vias,
             forceLocalPbf = forcePbf,
             avoidFerries = avoidFerries,
+            ecoModeEnabled = ecoMode,
             restoreSettingsAfter = restoreAfter,
             injectGpsAtFrom = injectGps,
         )
@@ -229,6 +256,16 @@ object NaviDebugIntent {
             uniffi.navi.saveUseNetworkedCabins(dataDirPath, snap.useNetworkedCabins)
             uniffi.navi.saveUseUnlockedCabins(dataDirPath, snap.useUnlockedCabins)
             uniffi.navi.saveBikeCapability(dataDirPath, snap.bikeCapability)
+            val cur = uniffi.navi.loadCarRestSettings(dataDirPath)
+            uniffi.navi.saveCarRestSettings(
+                dataDirPath,
+                uniffi.navi.FfiCarRestSettings(
+                    breakIntervalHours = cur.breakIntervalHours,
+                    restDurationMinutes = cur.restDurationMinutes,
+                    ecoModeEnabled = snap.ecoModeEnabled,
+                    maxHours = cur.maxHours,
+                ),
+            )
             // Release GPS pin so interactive use is not stuck ignoring live fixes.
             NaviMapTestHooks.ignoreLiveGpsFixes = false
             NaviMapTestHooks.pinGpsAfterPlanLatLon = null
@@ -236,21 +273,31 @@ object NaviDebugIntent {
                 TAG,
                 "restored use_networked_cabins=${snap.useNetworkedCabins} " +
                     "use_unlocked_cabins=${snap.useUnlockedCabins} " +
-                    "bike_capability=${snap.bikeCapability}",
+                    "bike_capability=${snap.bikeCapability} eco=${snap.ecoModeEnabled}",
             )
         }.onFailure { Log.w(TAG, "restore failed: ${it.message}") }
     }
 
-    /** Defaults match first-run UI (networked/unlocked off, trekking bike). */
+    /** Defaults match first-run UI (networked/unlocked off, trekking bike, eco off). */
     private fun resetSettingsToDefaults(dataDirPath: String) {
         runCatching {
             uniffi.navi.saveUseNetworkedCabins(dataDirPath, false)
             uniffi.navi.saveUseUnlockedCabins(dataDirPath, false)
             uniffi.navi.saveBikeCapability(dataDirPath, "trekking")
+            val cur = uniffi.navi.loadCarRestSettings(dataDirPath)
+            uniffi.navi.saveCarRestSettings(
+                dataDirPath,
+                uniffi.navi.FfiCarRestSettings(
+                    breakIntervalHours = cur.breakIntervalHours,
+                    restDurationMinutes = cur.restDurationMinutes,
+                    ecoModeEnabled = false,
+                    maxHours = cur.maxHours,
+                ),
+            )
             Log.i(
                 TAG,
                 "reset to defaults use_networked_cabins=false " +
-                    "use_unlocked_cabins=false bike_capability=trekking",
+                    "use_unlocked_cabins=false bike_capability=trekking eco=false",
             )
         }.onFailure { Log.w(TAG, "reset to defaults failed: ${it.message}") }
     }

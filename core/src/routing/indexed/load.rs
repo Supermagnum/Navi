@@ -67,33 +67,131 @@ fn status_for_planning_pbf(
     Ok(man.status_for_pbf(data_dir, &packed))
 }
 
-/// Ready check for a stem that is not the planning PBF (multi-stem corridor).
-fn stem_pack_ready(data_dir: &Path, man: &NaviManifest) -> bool {
+/// Ready check for a stem under [profile] (multi-stem corridor / primary re-home).
+///
+/// Uses profile-scoped graph files so a car-only install (foot tiles omitted)
+/// still counts as Ready when planning car — otherwise Trøndelag/Nord-Norge
+/// never join Ostlandet corridors on device.
+///
+/// [`PackStatus::Outdated`] (accepted format behind preferred) still counts as
+/// usable for planning — Tools offers an optional update; never block routes.
+fn stem_pack_ready(data_dir: &Path, man: &NaviManifest, profile: RoutingProfile) -> bool {
+    let usable = |s: PackStatus| matches!(s, PackStatus::Ready | PackStatus::Outdated);
     if server_install_present(data_dir, &man.stem) {
-        return man.status_pack_files(data_dir) == PackStatus::Ready;
+        return usable(man.status_pack_files_for_profile(data_dir, profile));
     }
     let packed = data_dir.join(&man.pbf_filename);
     if packed.is_file() {
-        return man.status_for_pbf(data_dir, &packed) == PackStatus::Ready;
+        // Fingerprint match still uses full-status for the planning PBF; neighbour
+        // stems only need the active profile on disk.
+        if usable(man.status_for_pbf(data_dir, &packed)) {
+            return true;
+        }
+        return usable(man.status_pack_files_for_profile(data_dir, profile));
     }
-    man.status_pack_files(data_dir) == PackStatus::Ready
+    usable(man.status_pack_files_for_profile(data_dir, profile))
 }
 
-/// First directory among [dirs] where [stem] packs are Ready (manifest + graphs).
-fn home_dir_for_stem<'a>(dirs: &[&'a Path], stem: &str) -> Option<&'a Path> {
+/// Geofabrik region ids that already have a Ready pack for [profile] under [dirs].
+fn installed_ready_region_ids(dirs: &[&Path], profile: RoutingProfile) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
     for d in dirs {
-        if let Ok(man) = load_ready_manifest(d, stem) {
-            if stem_pack_ready(d, &man) {
-                return Some(*d);
+        let Ok(entries) = fs::read_dir(d) else {
+            continue;
+        };
+        for ent in entries.flatten() {
+            let name = ent.file_name();
+            let name = name.to_string_lossy();
+            let Some(stem) = name.strip_suffix(".navi-manifest.json") else {
+                continue;
+            };
+            let Ok(man) = load_ready_manifest(d, stem) else {
+                continue;
+            };
+            if !stem_pack_ready(d, &man, profile) {
+                continue;
+            }
+            let Some(path) = pbf_stem_to_geofabrik_path(stem) else {
+                continue;
+            };
+            if seen.insert(path.clone()) {
+                out.push(path);
             }
         }
     }
-    for d in dirs {
-        if load_ready_manifest(d, stem).is_ok() {
-            return Some(*d);
+    out
+}
+
+/// Required corridor regions (origin / destination / densified chord) that lack
+/// a Ready pack for [profile]. Empty when coverage is complete.
+///
+/// Runs before any tile mmap / graph materialize so missing landsdels fail in
+/// milliseconds instead of loading primary-only tiles and spinning on A*.
+pub fn missing_ready_regions_for_trip(
+    dirs: &[&Path],
+    profile: RoutingProfile,
+    route_points: &[(f64, f64)],
+) -> Vec<String> {
+    if route_points.len() < 2 {
+        return Vec::new();
+    }
+    let installed = installed_ready_region_ids(dirs, profile);
+    match crate::long_trip::ordered_needed_regions_for_trip(route_points, &installed, None) {
+        Ok(missing) => missing,
+        Err(_) => {
+            // Catalog PIP hole / unknown point: still name every endpoint leaf
+            // that is not covered by an installed Ready pack.
+            let mut missing = Vec::new();
+            let mut seen = HashSet::new();
+            for &(lat, lon) in route_points {
+                let Some(id) = crate::routing::suggest_geofabrik_path_for_point(lat, lon) else {
+                    continue;
+                };
+                let id = id.to_string();
+                let covered = installed.iter().any(|inst| {
+                    inst == &id
+                        || id.starts_with(&format!("{inst}/"))
+                        || inst.starts_with(&format!("{id}/"))
+                });
+                if !covered && seen.insert(id.clone()) {
+                    missing.push(id);
+                }
+            }
+            missing
         }
     }
-    None
+}
+
+/// Directory among [dirs] where [stem] packs are Ready for [profile].
+///
+/// When the same stem exists in more than one pack root (legacy `files/` +
+/// `long-trip-packs`), prefer the newest accepted graph format (v9 over v8).
+/// Ties keep the first Ready dir in [dirs] order.
+fn home_dir_for_stem<'a>(
+    dirs: &[&'a Path],
+    stem: &str,
+    profile: RoutingProfile,
+) -> Option<&'a Path> {
+    let mut best_ready: Option<(&'a Path, u32)> = None;
+    let mut best_any: Option<(&'a Path, u32)> = None;
+    for d in dirs {
+        let Ok(man) = load_ready_manifest(d, stem) else {
+            continue;
+        };
+        let ver = man.graph_format_version;
+        if stem_pack_ready(d, &man, profile) {
+            match best_ready {
+                Some((_, prev)) if prev >= ver => {}
+                _ => best_ready = Some((*d, ver)),
+            }
+        }
+        match best_any {
+            Some((_, prev)) if prev >= ver => {}
+            _ => best_any = Some((*d, ver)),
+        }
+    }
+    best_ready.or(best_any).map(|(d, _)| d)
 }
 
 /// Resolve a pack-relative file across long-trip + internal pack dirs.
@@ -222,14 +320,16 @@ fn extra_corridor_manifests(
     data_dir: &Path,
     primary_stem: &str,
     bbox: [f64; 4],
+    profile: RoutingProfile,
 ) -> Vec<NaviManifest> {
-    extra_corridor_manifests_segs(&[data_dir], primary_stem, &[bbox])
+    extra_corridor_manifests_segs(&[data_dir], primary_stem, &[bbox], profile)
 }
 
 fn extra_corridor_manifests_segs(
     dirs: &[&Path],
     primary_stem: &str,
     segs: &[[f64; 4]],
+    profile: RoutingProfile,
 ) -> Vec<NaviManifest> {
     let mut out = Vec::new();
     let mut seen = HashSet::new();
@@ -246,13 +346,13 @@ fn extra_corridor_manifests_segs(
             if stem == primary_stem || seen.contains(stem) {
                 continue;
             }
-            let Some(home) = home_dir_for_stem(dirs, stem) else {
+            let Some(home) = home_dir_for_stem(dirs, stem, profile) else {
                 continue;
             };
             let Ok(man) = load_ready_manifest(home, stem) else {
                 continue;
             };
-            if !stem_pack_ready(home, &man) {
+            if !stem_pack_ready(home, &man, profile) {
                 continue;
             }
             let Some(path) = pbf_stem_to_geofabrik_path(&man.stem) else {
@@ -630,6 +730,10 @@ pub enum PackLoadError {
     Stale,
     #[error("indexed pack version/magic mismatch (rebuild required)")]
     VersionMismatch,
+    /// Required corridor region(s) have no Ready pack for the profile.
+    /// Geofabrik paths in first-crossing order (e.g. `europe/norway/vestlandet`).
+    #[error("missing region packs: {}", .0.join(", "))]
+    MissingRegions(Vec<String>),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("rkyv access failed: {0}")]
@@ -708,6 +812,7 @@ pub fn load_graph_pack_clips(
     let file = path.file_name().and_then(|s| s.to_str()).unwrap_or("?");
     crate::download::progress::set(0, Some(1), &format!("Building graph {file}…"));
     let t0 = std::time::Instant::now();
+    let bytes = mmap.len() as u64;
     let g = match format_version {
         super::graph_pack::GRAPH_FORMAT_VERSION_V8 => {
             let archived = rkyv::access::<ArchivedFlatGraphPackV8, RkyvError>(body)
@@ -721,26 +826,75 @@ pub fn load_graph_pack_clips(
         }
         _ => return Err(PackLoadError::VersionMismatch),
     };
+    let elapsed_ms = t0.elapsed().as_millis() as u64;
     log::info!(
         target: "NaviPlan",
-        "load_graph_pack_bbox file={file} format={format_version} edges={} nodes={} clips={} elapsed_ms={}",
+        "load_graph_pack_bbox file={file} format={format_version} edges={} nodes={} clips={} elapsed_ms={elapsed_ms}",
         g.edges.len(),
         g.nodes.len(),
         clips.map(|c| c.len()).unwrap_or(0),
-        t0.elapsed().as_millis()
     );
+    crate::routing::plan_perf::note(
+        "tile_load",
+        format!(
+            "{file};format={format_version};bytes={bytes};edges={};nodes={};ms={elapsed_ms};mmap=1",
+            g.edges.len(),
+            g.nodes.len()
+        ),
+    );
+    crate::routing::plan_perf::sample_rss();
     Ok(g)
 }
 
 pub fn load_poi_barrier_pack(path: &Path) -> Result<(PoiIndex, DangerBarrierIndex), PackLoadError> {
+    load_poi_barrier_pack_bbox(path, None, true)
+}
+
+/// Load a POI/barrier pack, optionally clipping records to `bbox`
+/// `[min_lat, min_lon, max_lat, max_lon]` during hydrate (avoids keeping a
+/// whole-region Ostlandet index in RSS for a narrow corridor plan).
+///
+/// `include_overnight_buildings`: see [`FlatPoiBarrierPack::to_poi_index_bbox`].
+pub fn load_poi_barrier_pack_bbox(
+    path: &Path,
+    bbox: Option<[f64; 4]>,
+    include_overnight_buildings: bool,
+) -> Result<(PoiIndex, DangerBarrierIndex), PackLoadError> {
+    let t0 = std::time::Instant::now();
     let mmap = map_file(path)?;
+    let bytes = mmap.len() as u64;
     check_preamble(&mmap, MAGIC_POI_BARRIER, POI_BARRIER_FORMAT_VERSION)?;
     let body = &mmap[archive_payload_offset()..];
     let archived = rkyv::access::<ArchivedFlatPoiBarrierPack, RkyvError>(body)
         .map_err(|e| PackLoadError::Rkyv(e.to_string()))?;
     let pack: FlatPoiBarrierPack = rkyv::deserialize::<FlatPoiBarrierPack, RkyvError>(archived)
         .map_err(|e| PackLoadError::Rkyv(e.to_string()))?;
-    Ok((pack.to_poi_index(), pack.to_barrier_index()))
+    let poi = pack.to_poi_index_bbox(bbox, include_overnight_buildings);
+    let barriers = pack.to_barrier_index_bbox(bbox);
+    let elapsed_ms = t0.elapsed().as_millis() as u64;
+    let file = path
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string());
+    crate::routing::plan_perf::note(
+        "poi_barrier_load",
+        format!(
+            "{file};bytes={bytes};poi={};buildings={};glaciers={};clip={};ms={elapsed_ms}",
+            poi.len(),
+            poi.overnight_buildings().len(),
+            barriers.glacier_ring_count(),
+            bbox.is_some() as u8
+        ),
+    );
+    log::info!(
+        target: "NaviPlan",
+        "load_poi_barrier_pack file={file} bytes={bytes} poi={} buildings={} glaciers={} clip={} elapsed_ms={elapsed_ms}",
+        poi.len(),
+        poi.overnight_buildings().len(),
+        barriers.glacier_ring_count(),
+        bbox.is_some(),
+    );
+    Ok((poi, barriers))
 }
 
 pub fn load_wetland_pack(
@@ -794,15 +948,17 @@ pub fn try_load_graph_for_plan_corridor(
     clip_bbox: Option<[f64; 4]>,
     route_points: Option<&[(f64, f64)]>,
 ) -> Result<RouteGraph, PackLoadError> {
-    try_load_graph_for_plan_corridor_with_pack_dirs(
-        data_dir,
-        &[],
-        pbf,
-        profile,
-        clip_bbox,
-        route_points,
-        crate::routing::plan_bbox::PlanEdgeClipMode::CorridorBand,
-    )
+    Ok(arc_graph_owned(
+        try_load_graph_for_plan_corridor_with_pack_dirs(
+            data_dir,
+            &[],
+            pbf,
+            profile,
+            clip_bbox,
+            route_points,
+            crate::routing::plan_bbox::PlanEdgeClipMode::CorridorBand,
+        )?,
+    ))
 }
 
 /// Like [`try_load_graph_for_plan_corridor`], but also searches [pack_dirs]
@@ -811,6 +967,10 @@ pub fn try_load_graph_for_plan_corridor(
 ///
 /// `edge_clip_mode` selects corridor-band vs trip-AABB edge materialization
 /// ([`crate::routing::plan_bbox::PlanEdgeClipMode`]).
+///
+/// Returns a shared [`std::sync::Arc`] so warm corridor-cache hits do not clone
+/// the owned graph (~1 s / hundreds of MiB). Callers must treat the graph as
+/// read-only (eco / surface soft costs are per-plan overlays).
 pub fn try_load_graph_for_plan_corridor_with_pack_dirs(
     data_dir: &Path,
     pack_dirs: &[PathBuf],
@@ -819,7 +979,7 @@ pub fn try_load_graph_for_plan_corridor_with_pack_dirs(
     clip_bbox: Option<[f64; 4]>,
     route_points: Option<&[(f64, f64)]>,
     edge_clip_mode: crate::routing::plan_bbox::PlanEdgeClipMode,
-) -> Result<RouteGraph, PackLoadError> {
+) -> Result<std::sync::Arc<RouteGraph>, PackLoadError> {
     let mut owned: Vec<PathBuf> = Vec::new();
     for p in pack_dirs {
         if p.as_os_str().is_empty() {
@@ -843,6 +1003,10 @@ pub fn try_load_graph_for_plan_corridor_with_pack_dirs(
     )
 }
 
+fn arc_graph_owned(graph: std::sync::Arc<RouteGraph>) -> RouteGraph {
+    std::sync::Arc::try_unwrap(graph).unwrap_or_else(|a| (*a).clone())
+}
+
 fn try_load_graph_for_plan_corridor_dirs(
     dirs: &[&Path],
     pbf: &Path,
@@ -850,20 +1014,37 @@ fn try_load_graph_for_plan_corridor_dirs(
     clip_bbox: Option<[f64; 4]>,
     route_points: Option<&[(f64, f64)]>,
     edge_clip_mode: crate::routing::plan_bbox::PlanEdgeClipMode,
-) -> Result<RouteGraph, PackLoadError> {
+) -> Result<std::sync::Arc<RouteGraph>, PackLoadError> {
+    // Fail fast before any tile mmap / materialize when a required region has
+    // no Ready pack (classic Ostlandet-only Raufoss→Bergen hang).
+    if let Some(pts) = route_points {
+        if pts.len() >= 2 {
+            let missing = missing_ready_regions_for_trip(dirs, profile, pts);
+            if !missing.is_empty() {
+                log::info!(
+                    target: "NaviPlan",
+                    "missing_regions_before_load count={} regions={}",
+                    missing.len(),
+                    missing.join(",")
+                );
+                crate::routing::plan_perf::note("missing_regions", missing.join(","));
+                return Err(PackLoadError::MissingRegions(missing));
+            }
+        }
+    }
     let pbf_stem = planning_stem(pbf)?;
     // Chunked long-trip legs still pass the origin PBF; re-home primary to the
     // Ready stem that covers the hop start so we do not merge Sachsen-Anhalt
     // tiles into every Norway leg.
-    let (stem, man, primary_dir) = pick_primary_manifest(dirs, &pbf_stem, route_points)?;
+    let (stem, man, primary_dir) = pick_primary_manifest(dirs, &pbf_stem, route_points, profile)?;
     if stem == pbf_stem {
         match status_for_planning_pbf(primary_dir, pbf, &man)? {
-            PackStatus::Ready => {}
+            PackStatus::Ready | PackStatus::Outdated => {}
             PackStatus::Missing => return Err(PackLoadError::Missing),
             PackStatus::StalePbf => return Err(PackLoadError::Stale),
             PackStatus::VersionMismatch => return Err(PackLoadError::VersionMismatch),
         }
-    } else if !stem_pack_ready(primary_dir, &man) {
+    } else if !stem_pack_ready(primary_dir, &man, profile) {
         return Err(PackLoadError::Missing);
     }
 
@@ -900,9 +1081,9 @@ fn try_load_graph_for_plan_corridor_dirs(
         || corridor_needs_extra_for_endpoint_leaves(&stem, route_points, dirs);
     let mut extras = if need_extra {
         if let Some(segs) = segs_ref {
-            extra_corridor_manifests_segs(dirs, &stem, segs)
+            extra_corridor_manifests_segs(dirs, &stem, segs, profile)
         } else if let Some(b) = clip_bbox {
-            extra_corridor_manifests_segs(dirs, &stem, &[b])
+            extra_corridor_manifests_segs(dirs, &stem, &[b], profile)
         } else {
             Vec::new()
         }
@@ -957,13 +1138,13 @@ fn try_load_graph_for_plan_corridor_dirs(
                         if stem == man.stem.as_str() || extras.iter().any(|m| m.stem == stem) {
                             continue;
                         }
-                        let Some(home) = home_dir_for_stem(dirs, stem) else {
+                        let Some(home) = home_dir_for_stem(dirs, stem, profile) else {
                             continue;
                         };
                         let Ok(extra_man) = load_ready_manifest(home, stem) else {
                             continue;
                         };
-                        if !stem_pack_ready(home, &extra_man) {
+                        if !stem_pack_ready(home, &extra_man, profile) {
                             continue;
                         }
                         let Some(path) = pbf_stem_to_geofabrik_path(&extra_man.stem) else {
@@ -1042,6 +1223,18 @@ fn try_load_graph_for_plan_corridor_dirs(
             .collect::<Vec<_>>()
             .join(";")
     );
+    crate::routing::plan_perf::note("primary_stem", &stem);
+    crate::routing::plan_perf::note("pbf_stem", &pbf_stem);
+    crate::routing::plan_perf::note_u64("extra_stems", extras.len() as u64);
+    if !extras.is_empty() {
+        let names: Vec<&str> = extras.iter().map(|m| m.stem.as_str()).collect();
+        crate::routing::plan_perf::note("extra_stem_list", names.join(","));
+    }
+    crate::routing::plan_perf::note("edge_clip_mode", format!("{edge_clip_mode:?}"));
+    crate::routing::plan_perf::note_u64(
+        "edge_clips",
+        edge_clips.map(|c| c.len() as u64).unwrap_or(0),
+    );
     if !extras.is_empty() {
         crate::download::progress::set(0, Some(5), "Combining map data from multiple regions…");
     }
@@ -1073,12 +1266,42 @@ fn try_load_graph_for_plan_corridor_dirs(
             );
         }
     }
-    let mut tile_files = select_tiles_within_budget(
-        tile_candidates.clone(),
-        route_points,
-        crate::routing::plan_bbox::effective_max_plan_tiles(),
-        dirs,
-    );
+    let mut budget = crate::routing::plan_bbox::effective_max_plan_tiles_for_stems(extras.len());
+    let mut tile_files =
+        select_tiles_within_budget(tile_candidates.clone(), route_points, budget, dirs);
+    // If a tight budget drops an endpoint (classic Raufoss→Bergen with tiles=6),
+    // widen selection before materializing so we never hand A* a disconnected
+    // corridor. Memory-aware steps match plan_bbox::next_plan_tile_budget.
+    if let Some(pts) = route_points {
+        if pts.len() >= 2 {
+            let covers = |files: &[String], lat: f64, lon: f64| -> bool {
+                tile_candidates.iter().any(|(f, b)| {
+                    files.iter().any(|x| x == f)
+                        && crate::routing::basemap::bbox_covers_point(*b, lat, lon)
+                })
+            };
+            let mut widen_steps = 0u32;
+            while widen_steps < 4
+                && !(covers(&tile_files, pts[0].0, pts[0].1)
+                    && covers(&tile_files, pts[pts.len() - 1].0, pts[pts.len() - 1].1))
+            {
+                let Some(next) = crate::routing::plan_bbox::next_plan_tile_budget(budget) else {
+                    break;
+                };
+                budget = next;
+                crate::routing::plan_bbox::set_plan_tile_budget_at_least(next);
+                tile_files =
+                    select_tiles_within_budget(tile_candidates.clone(), route_points, budget, dirs);
+                widen_steps += 1;
+                crate::routing::plan_perf::note_u64("tile_select_widen_to", next as u64);
+                log::info!(
+                    target: "NaviPlan",
+                    "tile_select_widen_to={next} files={} (endpoint coverage)",
+                    tile_files.len()
+                );
+            }
+        }
+    }
     // Same-stem short hops (e.g. eastern→western Skåne) need every intersecting
     // primary tile: endpoint tiles may only touch at a corner and A* then reports
     // disconnected under a tight tile budget.
@@ -1133,7 +1356,9 @@ fn try_load_graph_for_plan_corridor_dirs(
                                 tile_files = select_tiles_within_budget(
                                     merged_cands,
                                     route_points,
-                                    crate::routing::plan_bbox::effective_max_plan_tiles(),
+                                    crate::routing::plan_bbox::effective_max_plan_tiles_for_stems(
+                                        extras.len(),
+                                    ),
                                     dirs,
                                 );
                                 seen = tile_files.iter().cloned().collect();
@@ -1187,7 +1412,9 @@ fn try_load_graph_for_plan_corridor_dirs(
                             tile_files = select_tiles_within_budget(
                                 near_cands,
                                 route_points,
-                                crate::routing::plan_bbox::effective_max_plan_tiles(),
+                                crate::routing::plan_bbox::effective_max_plan_tiles_for_stems(
+                                    extras.len(),
+                                ),
                                 dirs,
                             );
                         }
@@ -1200,53 +1427,55 @@ fn try_load_graph_for_plan_corridor_dirs(
         target: "NaviPlan",
         "try_load_graph tile_files={} after primary+extras (budget={})",
         tile_files.len(),
-        crate::routing::plan_bbox::effective_max_plan_tiles()
+        crate::routing::plan_bbox::effective_max_plan_tiles_for_stems(extras.len())
     );
 
     if !tile_files.is_empty() {
-        let mut graphs = vec![load_tiled_graph_files(
-            dirs, tile_files, profile, edge_clips,
-        )?];
+        let (tiled, cache_hit) = load_tiled_graph_files(dirs, tile_files, profile, edge_clips)?;
         // City-state packs (e.g. hamburg) are often a single untiled .rkyv.
         // Merge them whether they are the primary stem or an extra — otherwise
         // a hop that starts on a Hamburg densify anchor loads only neighbour
         // tiles and cannot snap (same 6 km miss as a dropped destination pack).
         let primary_tiled = man.graph_tiles_for(profile).is_some_and(|t| !t.is_empty());
+        let mut extras_mono = Vec::new();
         if !primary_tiled {
             if let Some(pp) = graph_path_in_dirs(&man, dirs, profile) {
-                graphs.push(load_graph_pack_clips(&pp, profile, edge_clips)?);
+                extras_mono.push(load_graph_pack_clips(&pp, profile, edge_clips)?);
             }
         }
         for extra in &extras {
-            let tiled = extra
+            let is_tiled = extra
                 .graph_tiles_for(profile)
                 .is_some_and(|t| !t.is_empty());
-            if tiled {
+            if is_tiled {
                 continue;
             }
             if let Some(ep) = graph_path_in_dirs(extra, dirs, profile) {
-                graphs.push(load_graph_pack_clips(&ep, profile, edge_clips)?);
+                extras_mono.push(load_graph_pack_clips(&ep, profile, edge_clips)?);
             }
         }
-        if graphs.len() == 1 {
-            let g = graphs.pop().unwrap();
-            return Ok(supplement_pack_ferries_from_pbf(
-                g,
-                dirs,
-                &man,
-                &extras,
-                profile,
-                clip_bbox,
-                edge_clips,
-                route_points,
-            ));
-        }
-        let merged = merge_tile_graphs(graphs, profile);
-        if merged.edges.is_empty() {
-            return Err(PackLoadError::Missing);
+        let extras_empty = extras_mono.is_empty();
+        let graph = if extras_empty {
+            // Keep the corridor Arc (shared with cache) — no clone.
+            tiled
+        } else {
+            let mut graphs = vec![arc_graph_owned(tiled)];
+            graphs.extend(extras_mono);
+            let merged = merge_tile_graphs(graphs, profile);
+            if merged.edges.is_empty() {
+                return Err(PackLoadError::Missing);
+            }
+            std::sync::Arc::new(merged)
+        };
+        // Corridor-cache hit: skip ferry overlay. The cached graph was already
+        // used successfully (or packs include ferries); re-running 35 km snaps
+        // + A* probes on a ~500k-edge corridor dominated warm pack_load (~1 s).
+        if cache_hit && extras_empty {
+            crate::routing::plan_perf::note("ferry_overlay", "skip_corridor_cache_hit");
+            return Ok(graph);
         }
         return Ok(supplement_pack_ferries_from_pbf(
-            merged,
+            graph,
             dirs,
             &man,
             &extras,
@@ -1279,16 +1508,13 @@ fn try_load_graph_for_plan_corridor_dirs(
         let extra_files = select_tiles_within_budget(
             extra_candidates,
             route_points,
-            crate::routing::plan_bbox::effective_max_plan_tiles(),
+            crate::routing::plan_bbox::effective_max_plan_tiles_for_stems(extras.len()),
             dirs,
         );
         if !extra_files.is_empty() {
-            graphs.push(load_tiled_graph_files(
-                dirs,
-                extra_files,
-                profile,
-                edge_clips,
-            )?);
+            graphs.push(arc_graph_owned(
+                load_tiled_graph_files(dirs, extra_files, profile, edge_clips)?.0,
+            ));
         }
     }
     let merged = merge_tile_graphs(graphs, profile);
@@ -1296,7 +1522,7 @@ fn try_load_graph_for_plan_corridor_dirs(
         return Err(PackLoadError::Missing);
     }
     Ok(supplement_pack_ferries_from_pbf(
-        merged,
+        std::sync::Arc::new(merged),
         dirs,
         &man,
         &extras,
@@ -1331,20 +1557,31 @@ fn point_in_bbox(lat: f64, lon: f64, bbox: [f64; 4]) -> bool {
 /// allowed). Used to skip Geofabrik pier overlay only when the water gap is
 /// already traversable — orphan or pier-stub-only ferry edges must not suppress
 /// overlay.
+///
+/// Uses weak-component membership first so a truncated corridor (missing bridge
+/// tiles) returns in O(1) instead of exploring the whole origin component with
+/// A* for minutes (observed ~300 s on Raufoss→Bergen with MAX_PLAN_TILES=6).
 fn graph_hop_already_connected(graph: &RouteGraph, a: (f64, f64), b: (f64, f64)) -> bool {
     let opts = crate::routing::graph::RouteOptions::default();
-    let Ok((start, _)) = graph.nearest_routable_with_options_max(a.0, a.1, &opts, false, 25_000.0)
+    // Densify joints / ferry-overlay probes use the loose 35 km gate. User O/D
+    // snaps in plan_car_route_inner stay at max_waypoint_snap_m (car 750 m)
+    // unless relax_*_snap is set for chunk joints.
+    let snap_m = crate::routing::plan_bbox::CHUNK_INTERMEDIATE_SNAP_M;
+    let Ok((start, _)) = graph.nearest_routable_with_options_max(a.0, a.1, &opts, false, snap_m)
     else {
         return false;
     };
-    let Ok((goal, _)) = graph.nearest_routable_with_options_max(b.0, b.1, &opts, false, 25_000.0)
+    let Ok((goal, _)) = graph.nearest_routable_with_options_max(b.0, b.1, &opts, false, snap_m)
     else {
         return false;
     };
     if start == goal {
         return true;
     }
-    graph.shortest_path(start, goal, false).is_some()
+    // Weak-component membership is enough to skip ferry overlay (same as the
+    // pre-A* disconnect gate). A full shortest_path here re-ran ~0.2–1 s on
+    // every warm corridor-cache hit.
+    graph.same_weak_component(start, goal)
 }
 
 /// Fallback when hop geometry is unavailable: require a long ferry fully inside
@@ -1389,10 +1626,11 @@ fn pbf_is_real_extract(path: &Path) -> bool {
 /// Resolve an on-disk PBF usable for ferry overlay (real extract only).
 ///
 /// Prefer `{stem}.ferry.osm.pbf` when present (compact ferry retain), else the
-/// region `{stem}.osm.pbf` when it is not a pack-server stub. When only a stub
-/// exists, download the Geofabrik extract via the same path place-index uses so
-/// OSM `route=ferry` ways can merge into the live graph — no hardcoded crossings.
+/// region `{stem}.osm.pbf` when it is not a pack-server stub. Stub PBFs must
+/// **not** trigger a blocking Geofabrik download during plan (observed ~130–300 s
+/// hangs on Android chunk legs); use a pre-fetched ferry sidecar or real extract.
 fn resolve_ferry_overlay_pbf(home: &Path, stem: &str, bbox: [f64; 4]) -> Option<PathBuf> {
+    let _ = bbox;
     let ferry_sidecar = home.join(format!("{stem}.ferry.osm.pbf"));
     if pbf_is_real_extract(&ferry_sidecar)
         || (ferry_sidecar.is_file()
@@ -1408,44 +1646,13 @@ fn resolve_ferry_overlay_pbf(home: &Path, stem: &str, bbox: [f64; 4]) -> Option<
         return Some(region_pbf);
     }
     if region_pbf.is_file() {
+        crate::routing::plan_perf::note("ferry_overlay", "stub_skip_no_ensure");
         log::info!(
             target: "NaviPlan",
-            "ferry_overlay stub PBF stem={stem} — ensuring Geofabrik extract for OSM ferries"
+            "ferry_overlay stub PBF stem={stem} — skip Geofabrik ensure (no spin)"
         );
     }
-    let region_id = pbf_stem_to_geofabrik_path(stem)?;
-    // Skip download when this stem's catalog bbox cannot meet the hop clip
-    // (avoids pulling all corridor country extracts on one water pad).
-    if let Some(region) = region_bbox(&region_id) {
-        let overlaps = region[0] <= bbox[2]
-            && region[2] >= bbox[0]
-            && region[1] <= bbox[3]
-            && region[3] >= bbox[1];
-        if !overlaps {
-            return None;
-        }
-    }
-    match crate::pack_server::ensure_geofabrik_pbf_for_region(home, &region_id) {
-        Ok((path, bytes, downloaded, _)) => {
-            log::info!(
-                target: "NaviPlan",
-                "ferry_overlay geofabrik stem={stem} path={} bytes={bytes} downloaded={downloaded}",
-                path.display()
-            );
-            if pbf_is_real_extract(&path) {
-                Some(path)
-            } else {
-                None
-            }
-        }
-        Err(e) => {
-            log::warn!(
-                target: "NaviPlan",
-                "ferry_overlay geofabrik ensure failed stem={stem}: {e}"
-            );
-            None
-        }
-    }
+    None
 }
 
 /// When published packs were baked without `route=ferry` ways, merge OSM ferry
@@ -1459,7 +1666,7 @@ fn resolve_ferry_overlay_pbf(home: &Path, stem: &str, bbox: [f64; 4]) -> Option<
 /// long ferry lies fully inside the plan clip. Orphan / pier-stub ferry edges
 /// and unrelated long ferries elsewhere must not suppress pier-approach overlay.
 fn supplement_pack_ferries_from_pbf(
-    graph: RouteGraph,
+    graph: std::sync::Arc<RouteGraph>,
     dirs: &[&Path],
     primary: &NaviManifest,
     extras: &[NaviManifest],
@@ -1467,12 +1674,42 @@ fn supplement_pack_ferries_from_pbf(
     clip_bbox: Option<[f64; 4]>,
     edge_clips: Option<&[[f64; 4]]>,
     route_points: Option<&[(f64, f64)]>,
-) -> RouteGraph {
+) -> std::sync::Arc<RouteGraph> {
     let Some(bbox) = plan_clip_bbox(clip_bbox, edge_clips) else {
         return graph;
     };
     // Modest pad so ferry terminals just outside the corridor band still load.
     let bbox = expand_bbox_deg(bbox, 0.05);
+    if let Some(pts) = route_points.filter(|p| p.len() >= 2) {
+        let opts = crate::routing::graph::RouteOptions::default();
+        // Densify joints / corridor connectivity probes use the loose 35 km
+        // gate. User O/D snaps in plan_car_route_inner stay at
+        // max_waypoint_snap_m (car 750 m) unless relax_*_snap is set.
+        let snap_m = crate::routing::plan_bbox::CHUNK_INTERMEDIATE_SNAP_M;
+        if let (Ok((start, _)), Ok((goal, _))) = (
+            graph.nearest_routable_with_options_max(pts[0].0, pts[0].1, &opts, false, snap_m),
+            graph.nearest_routable_with_options_max(
+                pts[pts.len() - 1].0,
+                pts[pts.len() - 1].1,
+                &opts,
+                false,
+                snap_m,
+            ),
+        ) {
+            // Missing land-bridge tiles (tight MAX_PLAN_TILES) leave O/D on
+            // different weak components. Geofabrik ferry download cannot fix
+            // that and was observed to burn ~300 s on stub-PBF ensure.
+            if start != goal && !graph.same_weak_component(start, goal) {
+                crate::routing::plan_perf::note("ferry_overlay", "skip_disconnected_components");
+                log::info!(
+                    target: "NaviPlan",
+                    "ferry_overlay skip: origin/destination on different components \
+                     (tile budget), not a water gap"
+                );
+                return graph;
+            }
+        }
+    }
     let skip_overlay = if let Some(pts) = route_points.filter(|p| p.len() >= 2) {
         graph_hop_already_connected(&graph, pts[0], pts[pts.len() - 1])
     } else {
@@ -1490,7 +1727,7 @@ fn supplement_pack_ferries_from_pbf(
     }
     let mut overlays = Vec::new();
     for stem in &stems {
-        let Some(home) = home_dir_for_stem(dirs, stem) else {
+        let Some(home) = home_dir_for_stem(dirs, stem, profile) else {
             continue;
         };
         let Some(pbf) = resolve_ferry_overlay_pbf(home, stem, bbox) else {
@@ -1520,9 +1757,9 @@ fn supplement_pack_ferries_from_pbf(
         return graph;
     }
     let mut parts = Vec::with_capacity(1 + overlays.len());
-    parts.push(graph);
+    parts.push(arc_graph_owned(graph));
     parts.extend(overlays);
-    merge_tile_graphs(parts, profile)
+    std::sync::Arc::new(merge_tile_graphs(parts, profile))
 }
 
 /// Choose the Ready manifest for planning: prefer a stem whose region covers
@@ -1531,8 +1768,9 @@ fn pick_primary_manifest<'a>(
     dirs: &[&'a Path],
     pbf_stem: &str,
     route_points: Option<&[(f64, f64)]>,
+    profile: RoutingProfile,
 ) -> Result<(String, NaviManifest, &'a Path), PackLoadError> {
-    let primary_dir = home_dir_for_stem(dirs, pbf_stem).ok_or(PackLoadError::Missing)?;
+    let primary_dir = home_dir_for_stem(dirs, pbf_stem, profile).ok_or(PackLoadError::Missing)?;
     let default = load_ready_manifest(primary_dir, pbf_stem)?;
     let Some(pts) = route_points else {
         return Ok((pbf_stem.to_string(), default, primary_dir));
@@ -1548,9 +1786,9 @@ fn pick_primary_manifest<'a>(
     if let Some(pip_path) = crate::long_trip::region_containing(lat, lon, None) {
         let leaf = pip_path.rsplit('/').next().unwrap_or(pip_path);
         let pip_stem = format!("{leaf}-latest");
-        if let Some(home) = home_dir_for_stem(dirs, &pip_stem) {
+        if let Some(home) = home_dir_for_stem(dirs, &pip_stem, profile) {
             if let Ok(man) = load_ready_manifest(home, &pip_stem) {
-                if stem_pack_ready(home, &man) {
+                if stem_pack_ready(home, &man, profile) {
                     return Ok((man.stem.clone(), man, home));
                 }
             }
@@ -1579,13 +1817,13 @@ fn pick_primary_manifest<'a>(
             if !seen.insert(stem.to_string()) {
                 continue;
             }
-            let Some(home) = home_dir_for_stem(dirs, stem) else {
+            let Some(home) = home_dir_for_stem(dirs, stem, profile) else {
                 continue;
             };
             let Ok(man) = load_ready_manifest(home, stem) else {
                 continue;
             };
-            if !stem_pack_ready(home, &man) {
+            if !stem_pack_ready(home, &man, profile) {
                 continue;
             }
             let Some(path) = pbf_stem_to_geofabrik_path(&man.stem) else {
@@ -1626,10 +1864,20 @@ fn graph_edge_tile_merge_key(edge: &GraphEdge) -> (i64, i64, u64, u64, u64, u64,
 }
 
 /// Merge tile-local graphs into one routable graph (deterministic order).
+///
+/// Takes ownership of tile graphs (no extra full-graph clone). Reserves node /
+/// edge capacity up front so HashMap growth does not temporarily double RSS
+/// during multi-tile corridor merges.
 pub fn merge_tile_graphs(graphs: Vec<RouteGraph>, profile: RoutingProfile) -> RouteGraph {
-    let mut nodes = HashMap::new();
-    let mut edges = Vec::new();
-    let mut seen_edge_keys = HashSet::new();
+    let mut node_cap = 0usize;
+    let mut edge_cap = 0usize;
+    for g in &graphs {
+        node_cap = node_cap.saturating_add(g.nodes.len());
+        edge_cap = edge_cap.saturating_add(g.edges.len());
+    }
+    let mut nodes = HashMap::with_capacity(node_cap);
+    let mut edges = Vec::with_capacity(edge_cap);
+    let mut seen_edge_keys = HashSet::with_capacity(edge_cap);
     for g in graphs {
         for (id, node) in g.nodes {
             nodes.insert(id, node);
@@ -1662,16 +1910,39 @@ fn expand_bbox_deg(b: [f64; 4], pad: f64) -> [f64; 4] {
 
 fn load_tiled_graph_files(
     dirs: &[&Path],
-    mut tile_files: Vec<String>,
+    tile_files: Vec<String>,
     profile: RoutingProfile,
     clips: Option<&[[f64; 4]]>,
-) -> Result<RouteGraph, PackLoadError> {
+) -> Result<(std::sync::Arc<RouteGraph>, bool), PackLoadError> {
+    use std::sync::Arc;
+    let mut tile_files = tile_files;
     if tile_files.is_empty() {
         return Err(PackLoadError::Missing);
     }
     tile_files.sort();
 
-    // Always sequential + incremental merge: never hold all tile graphs in RAM.
+    let cache_key =
+        super::corridor_cache::CorridorCacheKey::new(profile, tile_files.clone(), clips);
+    if let Some(hit) = super::corridor_cache::corridor_cache_get(&cache_key) {
+        crate::routing::plan_perf::note("corridor_cache", "hit");
+        crate::routing::plan_perf::note_u64("tiles", tile_files.len() as u64);
+        log::info!(
+            target: "NaviPlan",
+            "corridor_cache hit tiles={} nodes={} edges={} (arc share, no clone)",
+            tile_files.len(),
+            hit.nodes.len(),
+            hit.edges.len()
+        );
+        return Ok((hit, true));
+    }
+    crate::routing::plan_perf::note("corridor_cache", "miss");
+    // Free prior corridors when MemAvailable is tight so materializing this
+    // corridor cannot LMK a 3.5 GiB tablet (Dombås→Bergen RSS swing).
+    super::corridor_cache::corridor_cache_evict_before_load();
+
+    // Sequential decode+clip + incremental merge (corridor clips keep tiles small).
+    // Parallel decode was tried; it raised peak RSS without beating merge cost on
+    // the 11-tile Bergen corridor (~496k edges).
     let total = tile_files.len() as u64;
     let mut merged: Option<RouteGraph> = None;
     for (i, file) in tile_files.iter().enumerate() {
@@ -1719,7 +1990,9 @@ fn load_tiled_graph_files(
         merged.edges.len(),
         merged.nodes.len()
     );
-    Ok(merged)
+    let arc = Arc::new(merged);
+    super::corridor_cache::corridor_cache_insert(cache_key, Arc::clone(&arc));
+    Ok((arc, false))
 }
 
 pub fn try_load_poi_barrier_for_plan(
@@ -1732,39 +2005,120 @@ pub fn try_load_poi_barrier_for_plan(
 /// Load POI/barrier packs for the planning stem, and when `bbox` spills outside
 /// that stem's region, also merge Ready packs from other installed stems that
 /// intersect the corridor (same gate as graph tile multi-stem load).
+///
+/// When `bbox` is set, records are clipped to that corridor (not whole-region)
+/// and the clipped index is LRU-cached between plans.
 pub fn try_load_poi_barrier_for_plan_bbox(
     data_dir: &Path,
     pbf: &Path,
     bbox: Option<[f64; 4]>,
 ) -> Result<(PoiIndex, DangerBarrierIndex), PackLoadError> {
-    let stem = planning_stem(pbf)?;
-    let man = load_ready_manifest(data_dir, &stem)?;
-    match status_for_planning_pbf(data_dir, pbf, &man)? {
-        PackStatus::Ready => {}
-        PackStatus::Missing => return Err(PackLoadError::Missing),
-        PackStatus::StalePbf => return Err(PackLoadError::Stale),
-        PackStatus::VersionMismatch => return Err(PackLoadError::VersionMismatch),
+    try_load_poi_barrier_for_plan_bbox_with_pack_dirs(data_dir, &[], pbf, bbox)
+}
+
+/// Like [`try_load_poi_barrier_for_plan_bbox`], but also searches [pack_dirs]
+/// (SD / long-trip-packs) for Ready manifests — same roots as graph load.
+pub fn try_load_poi_barrier_for_plan_bbox_with_pack_dirs(
+    data_dir: &Path,
+    pack_dirs: &[PathBuf],
+    pbf: &Path,
+    bbox: Option<[f64; 4]>,
+) -> Result<(PoiIndex, DangerBarrierIndex), PackLoadError> {
+    let mut owned: Vec<PathBuf> = Vec::new();
+    for p in pack_dirs {
+        if p.as_os_str().is_empty() {
+            continue;
+        }
+        if p.is_dir() && !owned.iter().any(|x| x == p) {
+            owned.push(p.clone());
+        }
     }
-    let (mut poi, mut barriers) = load_poi_barrier_pack(&man.poi_barrier_path(data_dir))?;
+    if !owned.iter().any(|x| x.as_path() == data_dir) {
+        owned.push(data_dir.to_path_buf());
+    }
+    let dirs: Vec<&Path> = owned.iter().map(|p| p.as_path()).collect();
+    try_load_poi_barrier_for_plan_bbox_dirs(&dirs, pbf, bbox)
+}
+
+fn try_load_poi_barrier_for_plan_bbox_dirs(
+    dirs: &[&Path],
+    pbf: &Path,
+    bbox: Option<[f64; 4]>,
+) -> Result<(PoiIndex, DangerBarrierIndex), PackLoadError> {
+    let pbf_stem = planning_stem(pbf)?;
+    let (stem, man, primary_dir) =
+        pick_primary_manifest(dirs, &pbf_stem, None, RoutingProfile::Car)?;
+    if stem == pbf_stem {
+        match status_for_planning_pbf(primary_dir, pbf, &man)? {
+            PackStatus::Ready | PackStatus::Outdated => {}
+            PackStatus::Missing => return Err(PackLoadError::Missing),
+            PackStatus::StalePbf => return Err(PackLoadError::Stale),
+            PackStatus::VersionMismatch => return Err(PackLoadError::VersionMismatch),
+        }
+    } else if !stem_pack_ready(primary_dir, &man, RoutingProfile::Car) {
+        return Err(PackLoadError::Missing);
+    }
+
+    let mut path_list = vec![man
+        .poi_barrier_path(primary_dir)
+        .to_string_lossy()
+        .into_owned()];
+    let mut extras = Vec::new();
     if corridor_needs_extra_stems(&stem, bbox) {
         if let Some(b) = bbox {
             // Cap extras: full POI packs are 30–90 MB on disk and inflate peak
             // RSS while the route graph is still live (4 GB Automotive).
-            let mut extras = extra_corridor_manifests(data_dir, &stem, b);
+            extras = extra_corridor_manifests_segs(dirs, &stem, &[b], RoutingProfile::Car);
             extras.truncate(1);
-            for extra in extras {
-                let path = extra.poi_barrier_path(data_dir);
-                if !path.is_file() {
-                    continue;
-                }
-                let Ok((epoi, ebar)) = load_poi_barrier_pack(&path) else {
+            for extra in &extras {
+                let Some(home) = home_dir_for_stem(dirs, &extra.stem, RoutingProfile::Car) else {
                     continue;
                 };
-                poi.extend_from(&epoi);
-                barriers.merge(ebar);
+                path_list.push(extra.poi_barrier_path(home).to_string_lossy().into_owned());
             }
         }
     }
+
+    // Motor plan path: skip overnight building hydrate (hiking-only samples).
+    const INCLUDE_OVERNIGHT_BUILDINGS: bool = false;
+    let cache_key = super::poi_barrier_cache::PoiBarrierCacheKey::new(path_list.clone(), bbox);
+    if let Some((poi, barriers)) = super::poi_barrier_cache::poi_barrier_cache_get(&cache_key) {
+        crate::routing::plan_perf::note("poi_barrier_cache", "hit");
+        log::info!(
+            target: "NaviPlan",
+            "poi_barrier_cache hit paths={} poi={} glaciers={}",
+            path_list.len(),
+            poi.len(),
+            barriers.glacier_ring_count()
+        );
+        return Ok(((*poi).clone(), (*barriers).clone()));
+    }
+    crate::routing::plan_perf::note("poi_barrier_cache", "miss");
+
+    let primary_path = man.poi_barrier_path(primary_dir);
+    let (mut poi, mut barriers) =
+        load_poi_barrier_pack_bbox(&primary_path, bbox, INCLUDE_OVERNIGHT_BUILDINGS)?;
+    for extra in &extras {
+        let Some(home) = home_dir_for_stem(dirs, &extra.stem, RoutingProfile::Car) else {
+            continue;
+        };
+        let path = extra.poi_barrier_path(home);
+        if !path.is_file() {
+            continue;
+        }
+        let Ok((epoi, ebar)) = load_poi_barrier_pack_bbox(&path, bbox, INCLUDE_OVERNIGHT_BUILDINGS)
+        else {
+            continue;
+        };
+        poi.extend_from(&epoi);
+        barriers.merge(ebar);
+    }
+
+    super::poi_barrier_cache::poi_barrier_cache_insert(
+        cache_key,
+        std::sync::Arc::new(poi.clone()),
+        std::sync::Arc::new(barriers.clone()),
+    );
     Ok((poi, barriers))
 }
 
@@ -1826,7 +2180,7 @@ fn try_load_poi_pack_covering_point_dirs(
             let Ok(man) = NaviManifest::load(&ent.path()) else {
                 continue;
             };
-            if !stem_pack_ready(data_dir, &man) {
+            if !stem_pack_ready(data_dir, &man, RoutingProfile::Car) {
                 continue;
             }
             let Some(path) = pbf_stem_to_geofabrik_path(&man.stem) else {
@@ -1864,7 +2218,7 @@ pub fn try_load_wetland_for_plan(
     let stem = planning_stem(pbf)?;
     let man = load_ready_manifest(data_dir, &stem)?;
     match status_for_planning_pbf(data_dir, pbf, &man)? {
-        PackStatus::Ready => {}
+        PackStatus::Ready | PackStatus::Outdated => {}
         PackStatus::Missing => return Err(PackLoadError::Missing),
         PackStatus::StalePbf => return Err(PackLoadError::Stale),
         PackStatus::VersionMismatch => return Err(PackLoadError::VersionMismatch),
@@ -1876,7 +2230,7 @@ pub fn try_load_wetland_for_plan(
     let mut manifests = vec![man];
     if corridor_needs_extra_stems(&stem, bbox) {
         if let Some(b) = bbox {
-            for extra in extra_corridor_manifests(data_dir, &stem, b) {
+            for extra in extra_corridor_manifests(data_dir, &stem, b, RoutingProfile::Car) {
                 if extra.wetland_format_version == WETLAND_FORMAT_VERSION {
                     manifests.push(extra);
                 }
@@ -2228,8 +2582,38 @@ mod merge_tile_graphs_tests {
 mod multi_stem_corridor_tests {
     use super::{
         bbox_contained, corridor_needs_extra_for_endpoint_leaves, corridor_needs_extra_stems,
+        home_dir_for_stem,
     };
+    use crate::routing::graph::RoutingProfile;
     use std::fs;
+
+    #[test]
+    fn home_dir_prefers_newer_format_when_stem_duplicated() {
+        // Legacy files/ root (v8) listed before long-trip-packs (v9): planner must
+        // still home on v9.
+        let root = tempfile::tempdir().expect("tmpdir");
+        let v8 = root.path().join("files");
+        let v9 = root.path().join("long-trip-packs");
+        fs::create_dir_all(&v8).unwrap();
+        fs::create_dir_all(&v9).unwrap();
+        let man = |fmt: u32| {
+            format!(
+                r#"{{"schema":1,"stem":"ostlandet-latest","pbf_filename":"ostlandet-latest.osm.pbf","pbf_size_bytes":1,"pbf_modified_unix_secs":1,"graph_files":{{}},"graph_format_version":{fmt},"poi_barrier_file":"ostlandet-latest.navi-poi-barrier.rkyv","poi_barrier_format_version":2,"wetland_format_version":1}}"#
+            )
+        };
+        fs::write(v8.join("ostlandet-latest.navi-manifest.json"), man(8)).unwrap();
+        fs::write(v9.join("ostlandet-latest.navi-manifest.json"), man(9)).unwrap();
+        let home = home_dir_for_stem(
+            &[v8.as_path(), v9.as_path()],
+            "ostlandet-latest",
+            RoutingProfile::Car,
+        );
+        assert_eq!(
+            home.map(|p| p.to_path_buf()),
+            Some(v9),
+            "must prefer v9 long-trip-packs over v8 files/ root"
+        );
+    }
 
     #[test]
     fn bbox_contained_requires_full_inclusion() {
@@ -2284,6 +2668,69 @@ mod multi_stem_corridor_tests {
                 &[dir.path()]
             ),
             "in-stem Ostlandet endpoints must not force foreign extras"
+        );
+    }
+
+    #[test]
+    fn missing_regions_names_vestlandet_before_any_graph_load() {
+        use super::missing_ready_regions_for_trip;
+        use crate::routing::graph::RoutingProfile;
+        // Raufoss (Ostlandet) → Bergen (Vestlandet). No Ready packs installed.
+        let pts = [(60.726_f64, 10.613_f64), (60.3913_f64, 5.3221_f64)];
+        let missing = missing_ready_regions_for_trip(&[], RoutingProfile::Car, &pts);
+        assert!(
+            missing.iter().any(|r| r == "europe/norway/vestlandet"),
+            "expected Vestlandet in missing, got {missing:?}"
+        );
+        // Empty dirs: never spins; returns immediately with named regions.
+        assert!(!missing.is_empty());
+    }
+
+    #[test]
+    fn try_load_fails_fast_when_destination_region_missing() {
+        use super::{try_load_graph_for_plan_corridor_with_pack_dirs, PackLoadError};
+        use crate::routing::graph::RoutingProfile;
+        use crate::routing::plan_bbox::PlanEdgeClipMode;
+        use std::time::Instant;
+
+        let dir = tempfile::tempdir().expect("tmpdir");
+        // Ostlandet-only install: manifest present but not Ready (no tiles) —
+        // coverage still reports Vestlandet missing for Bergen.
+        fs::write(
+            dir.path().join("ostlandet-latest.navi-manifest.json"),
+            r#"{"schema":1,"stem":"ostlandet-latest","pbf_filename":"ostlandet-latest.osm.pbf","graph_files":{},"graph_format_version":9,"poi_barrier_file":"ostlandet-latest.navi-poi-barrier.rkyv","poi_barrier_format_version":2,"wetland_format_version":1}"#,
+        )
+        .unwrap();
+        let pbf = dir.path().join("ostlandet-latest.osm.pbf");
+        fs::write(&pbf, b"stub").unwrap();
+        let pts = [(60.726_f64, 10.613_f64), (60.3913_f64, 5.3221_f64)];
+        let t0 = Instant::now();
+        let result = try_load_graph_for_plan_corridor_with_pack_dirs(
+            dir.path(),
+            &[],
+            &pbf,
+            RoutingProfile::Car,
+            Some([60.0, 5.0, 61.0, 11.0]),
+            Some(&pts),
+            PlanEdgeClipMode::CorridorBand,
+        );
+        let elapsed = t0.elapsed();
+        let err = match result {
+            Ok(_) => panic!("must fail without Vestlandet"),
+            Err(e) => e,
+        };
+        match err {
+            PackLoadError::MissingRegions(regions) => {
+                assert!(
+                    regions.iter().any(|r| r.contains("vestlandet")),
+                    "expected Vestlandet named, got {regions:?}"
+                );
+            }
+            other => panic!("expected MissingRegions, got {other:?}"),
+        }
+        assert!(
+            elapsed.as_secs_f64() < 2.0,
+            "fail-fast must return within 2s, took {elapsed:?}"
         );
     }
 }
@@ -2520,7 +2967,7 @@ mod ferry_overlay_tests {
         let g = land_only_graph();
         let before = g.edges.len();
         let out = supplement_pack_ferries_from_pbf(
-            g,
+            std::sync::Arc::new(g),
             &[dir.path()],
             &man,
             &[],
@@ -2720,7 +3167,7 @@ mod ferry_overlay_tests {
         };
         let ferry_before = merged.edges.iter().filter(|e| e.is_ferry).count();
         let out = supplement_pack_ferries_from_pbf(
-            merged,
+            std::sync::Arc::new(merged),
             &[&dir],
             &sh_man,
             &[dk_man],
@@ -2750,5 +3197,53 @@ mod ferry_overlay_tests {
         );
         let (_n, edges, _c) = path.unwrap();
         assert!(out.path_uses_ferries(&edges), "path should use a ferry");
+    }
+}
+
+#[cfg(test)]
+mod raufoss_bergen_load_probe {
+    use super::*;
+    use crate::routing::graph::RoutingProfile;
+    use crate::routing::plan_bbox::PlanEdgeClipMode;
+    use std::path::Path;
+    use std::time::Instant;
+
+    #[test]
+    #[ignore = "needs /tmp/navi_pack_install with ostlandet+vestlandet v9 packs"]
+    fn probe_raufoss_bergen_pack_load() {
+        let pack = Path::new("/tmp/navi_pack_install");
+        assert!(pack.join("ostlandet-latest.navi-manifest.json").is_file());
+        assert!(pack.join("vestlandet-latest.navi-manifest.json").is_file());
+        let pbf = pack.join("ostlandet-latest.osm.pbf");
+        let pts = [(60.7277483_f64, 10.6109403_f64), (60.388144, 5.3347434)];
+        let bbox = crate::routing::plan_bbox::trip_bbox_points(&pts, 0.52);
+        eprintln!("bbox={bbox:?}");
+        let t0 = Instant::now();
+        let g = try_load_graph_for_plan_corridor_with_pack_dirs(
+            pack,
+            &[],
+            &pbf,
+            RoutingProfile::Car,
+            Some(bbox),
+            Some(&pts),
+            PlanEdgeClipMode::CorridorBand,
+        )
+        .expect("pack load");
+        eprintln!(
+            "nodes={} edges={} ms={}",
+            g.nodes.len(),
+            g.edges.len(),
+            t0.elapsed().as_millis()
+        );
+        // Destination must be snappable: a node within 2 km of Bergen.
+        let (ok, dist) = match g.nearest_routable(pts[1].0, pts[1].1) {
+            Ok((_, d)) => (true, d),
+            Err(e) => (false, e.nearest_m),
+        };
+        eprintln!("bergen_snap_ok={ok} nearest_m={dist:.0}");
+        assert!(
+            ok && dist < 2000.0,
+            "Bergen not in loaded graph; nearest_m={dist}"
+        );
     }
 }

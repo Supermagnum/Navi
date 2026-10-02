@@ -31,6 +31,18 @@ class ResolvePlanPbfPackDirTest {
         RegionCoverage.Waypoint(role = "From", name = "Hamar", lat = 60.7945, lon = 11.0680)
 
     @Test
+    fun resolvePlanPbf_acceptsPackServerStubBesideManifest() {
+        val dataDir = tmp.newFolder("stub-files")
+        val packDir = File(dataDir, LongTripPackStorage.PACKS_SUBDIR).also { it.mkdirs() }
+        val stub = File(packDir, "ostlandet-latest.osm.pbf")
+        stub.writeBytes(ByteArray(16_384))
+        File(packDir, "ostlandet-latest.navi-manifest.json").writeText("{}")
+        val found = RegionCoverage.resolvePlanPbf(dataDir, listOf(hamar), packDir)
+        assertNotNull(found)
+        assertEquals(stub.absolutePath, found!!.absolutePath)
+    }
+
+    @Test
     fun resolvePlanPbf_findsExtractOnlyUnderLongTripPacks() {
         val dataDir = tmp.newFolder("files")
         val packDir = File(dataDir, LongTripPackStorage.PACKS_SUBDIR).also { it.mkdirs() }
