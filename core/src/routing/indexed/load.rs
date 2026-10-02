@@ -1610,7 +1610,7 @@ fn try_load_graph_for_plan_corridor_dirs(
     if merged.edges.is_empty() {
         return Err(PackLoadError::Missing);
     }
-    Ok(supplement_pack_ferries_from_pbf(
+    supplement_pack_ferries_from_pbf(
         std::sync::Arc::new(merged),
         dirs,
         &man,
@@ -1619,7 +1619,7 @@ fn try_load_graph_for_plan_corridor_dirs(
         clip_bbox,
         edge_clips,
         route_points,
-    )?)
+    )
 }
 
 /// Pack-server installs leave a 16 KiB zero stub beside graph packs. Real
