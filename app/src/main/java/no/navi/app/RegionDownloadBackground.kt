@@ -1714,7 +1714,7 @@ object RegionDownloadBackground {
 
     private fun emitInstalledForRouting(
         path: String,
-        packDir: File,
+        _packDir: File,
     ) {
         val trimmed = path.trim().trim('/')
         if (trimmed.isEmpty()) return
@@ -1722,7 +1722,9 @@ object RegionDownloadBackground {
         lastUsablePath.set(trimmed)
         setStatus("Packs installed — region ready for routing")
         Log.i(TAG, "region installed for routing path=$trimmed")
-        FerrySidecarBackground.ensureForRegionPath(packDir, trimmed)
+        // Ferry sidecar is lazy: plan path kicks ensure_ferry_sidecar only when
+        // directed connectivity still needs overlay (see supplement_pack_ferries).
+        // Do not build hundreds of MB of coastal ferry mesh at every install.
     }
 
     /**
@@ -1783,16 +1785,14 @@ object RegionDownloadBackground {
 
     private fun markUsable(
         path: String,
-        packDir: File? = packDirOverride.get(),
+        _packDir: File? = packDirOverride.get(),
     ) {
         val trimmed = path.trim().trim('/')
         if (trimmed.isEmpty()) return
         lastUsablePath.set(trimmed)
         setStatus("$USABLE_STATUS_PREFIX — region ready for routing and search")
         Log.i(TAG, "region usable for routing/search path=$trimmed")
-        if (packDir != null) {
-            FerrySidecarBackground.ensureForRegionPath(packDir, trimmed)
-        }
+        // No install-time ferry sidecar (lazy on plan corridor miss).
     }
 
     private fun runPlaceIndexLocal(

@@ -90,3 +90,7 @@ path = "src/bin/plan_hop_budget.rs"
 [[bin]]
 name = "region-to-region-perf-matrix"
 path = "src/bin/region_to_region_perf_matrix.rs"
+
+[[bin]]
+name = "directed-snap-diag"
+path = "src/bin/directed_snap_diag.rs"

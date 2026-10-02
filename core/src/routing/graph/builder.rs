@@ -61,6 +61,75 @@ pub struct SnapTooFar {
     pub max_m: f64,
 }
 
+/// Directed-graph usability for waypoint snaps.
+///
+/// Weak (undirected) connectivity is not enough: a one-way dead-end stub sits in
+/// the giant weak component but cannot be used as a destination (unreachable)
+/// or origin (cannot depart into the main network). Labels are precomputed in
+/// [`RouteGraph::rebuild_adjacency`] from the largest SCC of the giant weak
+/// component so plan-time snap stays O(candidates).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SnapRole {
+    /// No directed filter (legacy probes / tests).
+    #[default]
+    Any,
+    /// Must reach the main directed network (origin).
+    Origin,
+    /// Must be reachable from the main directed network (destination).
+    Destination,
+    /// Must reach main and be reachable from it (via).
+    Via,
+}
+
+/// Drive-equivalent speed used to turn a ferry crossing into A* metres.
+/// Matches navi-server `pack-convert-core` [`ferry_base_weight_m`].
+pub const FERRY_DRIVE_EQUIV_KMH: f64 = 80.0;
+/// Assumed ferry speed when OSM `duration` is missing.
+pub const FERRY_FALLBACK_SPEED_KMH: f64 = 10.0;
+/// Extra car/truck boarding cost in minutes, converted at [`FERRY_DRIVE_EQUIV_KMH`].
+pub const FERRY_CAR_BOARDING_PENALTY_MIN: f64 = 10.0;
+
+fn ferry_drive_equiv_m_per_s() -> f64 {
+    FERRY_DRIVE_EQUIV_KMH * 1000.0 / 3600.0
+}
+
+/// Parse OSM `duration` as `H:MM`, `HH:MM`, or `HH:MM:SS`. Minutes must be `< 60`.
+pub(crate) fn parse_osm_duration_secs(raw: &str) -> Option<f64> {
+    let parts: Vec<&str> = raw.trim().split(':').collect();
+    let nums: Vec<f64> = parts
+        .iter()
+        .map(|p| p.trim().parse::<f64>().ok())
+        .collect::<Option<_>>()?;
+    if nums.iter().any(|n| !n.is_finite() || *n < 0.0) {
+        return None;
+    }
+    match *nums.as_slice() {
+        [h, m] if m < 60.0 => Some((h * 60.0 + m) * 60.0),
+        [h, m, s] if m < 60.0 && s < 60.0 => Some(h * 3600.0 + m * 60.0 + s),
+        _ => None,
+    }
+}
+
+/// A* weight in metres for a ferry edge. `length_m` stays the geometric length.
+/// Same formula as navi-server `ferry_base_weight_m`.
+pub fn ferry_base_weight_m(
+    length_m: f64,
+    duration_raw: Option<&str>,
+    profile: RoutingProfile,
+) -> f64 {
+    let travel = match duration_raw.and_then(parse_osm_duration_secs) {
+        Some(secs) => secs * ferry_drive_equiv_m_per_s(),
+        None => length_m * (FERRY_DRIVE_EQUIV_KMH / FERRY_FALLBACK_SPEED_KMH),
+    };
+    let boarding = match profile {
+        RoutingProfile::Car | RoutingProfile::Truck => {
+            FERRY_CAR_BOARDING_PENALTY_MIN * 60.0 * ferry_drive_equiv_m_per_s()
+        }
+        RoutingProfile::Foot | RoutingProfile::Bicycle => 0.0,
+    };
+    travel + boarding
+}
+
 /// Counters from [`RouteGraph::apply_wetland_hazards`].
 #[derive(Debug, Clone, Copy, Default)]
 pub struct WetlandApplyStats {
@@ -200,6 +269,8 @@ pub struct RouteOptions {
     /// Override [`RouteGraph::surface_routing_mode`] for A* / snap without
     /// mutating a shared corridor Arc.
     pub surface_routing_mode: Option<crate::routing::graph::SurfaceRoutingMode>,
+    /// Directed usability filter for waypoint snaps. Ignored by A*.
+    pub snap_role: SnapRole,
 }
 
 /// Outcome of one A* attempt (path may be absent).
@@ -239,6 +310,10 @@ pub struct RouteGraph {
     component_root: HashMap<NodeId, NodeId>,
     /// Root of the largest weakly-connected component, if any.
     giant_root: Option<NodeId>,
+    /// Nodes that can reach the main directed SCC (valid origins).
+    can_reach_main: HashSet<NodeId>,
+    /// Nodes reachable from the main directed SCC (valid destinations).
+    reachable_from_main: HashSet<NodeId>,
     /// Surface strictness for motor snap preference and transition penalties.
     pub surface_routing_mode: SurfaceRoutingMode,
 }
@@ -254,6 +329,8 @@ impl Clone for RouteGraph {
             incident: self.incident.clone(),
             component_root: self.component_root.clone(),
             giant_root: self.giant_root,
+            can_reach_main: self.can_reach_main.clone(),
+            reachable_from_main: self.reachable_from_main.clone(),
             surface_routing_mode: self.surface_routing_mode,
         }
     }
@@ -366,6 +443,7 @@ impl RouteGraph {
             .read_tag("motor_vehicle:conditional")
             .read_tag("access:conditional")
             .read_tag("maxspeed:conditional")
+            .read_tag("duration")
             .read(path.as_ref())
             .map_err(|e| anyhow::anyhow!("osm4routing: {e}"))?;
         let filtered = filter_edges(edges, profile);
@@ -378,6 +456,8 @@ impl RouteGraph {
             incident: HashSet::new(),
             component_root: HashMap::new(),
             giant_root: None,
+            can_reach_main: HashSet::new(),
+            reachable_from_main: HashSet::new(),
             surface_routing_mode: SurfaceRoutingMode::default(),
         };
         for edge in filtered {
@@ -481,6 +561,8 @@ impl RouteGraph {
             incident: HashSet::new(),
             component_root: HashMap::new(),
             giant_root: None,
+            can_reach_main: HashSet::new(),
+            reachable_from_main: HashSet::new(),
             surface_routing_mode: SurfaceRoutingMode::default(),
         };
         graph.rebuild_adjacency();
@@ -644,12 +726,11 @@ impl RouteGraph {
         prefer_better_surface: bool,
         max_m: f64,
     ) -> Result<(NodeId, f64), SnapTooFar> {
+        let role = options.snap_role;
         // Rebuilding Union-Find over a multi-tile Automotive graph (~200k+ nodes)
         // is multi-second work; skip it when RouteOptions do not remove edges.
         let filtered = options_need_filtered_components(options)
             .then(|| self.option_filtered_components(options));
-        // Degree pad for a cheap reject before edge distance (Automotive
-        // multi-tile graphs are 100k–200k nodes / ~450k edges).
         let pad_deg = (max_m / 100_000.0).max(0.02);
         let endpoint_in_pad = |id: NodeId| -> bool {
             self.nodes.get(&id).is_some_and(|n| {
@@ -669,126 +750,113 @@ impl RouteGraph {
                 None => self.in_giant_component(id),
             }
         };
-        // When RouteOptions remove edges (vehicle limits, avoid-*, …), the
-        // filtered Union-Find map keys *are* the allowed-incident set — O(1).
         let has_allowed_incident = |id: NodeId| -> bool {
             match &filtered {
                 Some((filtered_root, _)) => filtered_root.contains_key(&id),
                 None => self.node_has_allowed_incident_unfiltered(id, options),
             }
         };
-        let closer_endpoint = |e: &GraphEdge, require_giant: bool| -> Option<(NodeId, f64)> {
-            let mut best: Option<(NodeId, f64)> = None;
-            for id in [e.source, e.target] {
-                if !has_allowed_incident(id) {
-                    continue;
-                }
-                if require_giant && !in_filtered_giant(id) {
-                    continue;
-                }
-                let Some(n) = self.nodes.get(&id) else {
-                    continue;
-                };
-                let dist = haversine_point_m(lat, lon, n);
-                if best.is_none_or(|(_, d)| dist < d) {
-                    best = Some((id, dist));
-                }
-            }
-            best
-        };
-        let mut nearest_any_edge: Option<(usize, f64)> = None;
-        let mut nearest_giant_edge: Option<(usize, f64)> = None;
+        let directed_ok = |id: NodeId| -> bool { self.directed_snap_ok(id, role) };
+
+        // Collect candidate endpoints within max_m (pad then full scan).
+        // Prefer giant + directed-ok; fall back to next-nearest within the gate.
+        let mut best_any: Option<(NodeId, f64)> = None;
+        let mut best_directed: Option<(NodeId, f64)> = None;
+        let mut best_giant_directed: Option<(NodeId, f64)> = None;
+        let mut seen_pad_hit = false;
         for pass in 0..2 {
-            // Pass 0: pad only. Pass 1: full scan if pad missed.
-            if pass == 1 && nearest_any_edge.is_some() {
+            if pass == 1 && seen_pad_hit {
                 break;
             }
-            for (idx, e) in self.edges.iter().enumerate() {
+            for e in &self.edges {
                 if pass == 0 && !edge_in_pad(e) {
                     continue;
                 }
                 if !edge_allowed_for_options(e, options, self.profile) {
                     continue;
                 }
-                let edge_d = super::edge_distance_m(e, lat, lon);
-                if closer_endpoint(e, false).is_some()
-                    && nearest_any_edge.is_none_or(|(_, d)| edge_d < d)
-                {
-                    nearest_any_edge = Some((idx, edge_d));
+                // Cheap reject: both endpoints outside pad on pass 0 already handled;
+                // still record pad hit when any allowed edge touches the pad.
+                if pass == 0 {
+                    seen_pad_hit = true;
                 }
-                if edge_d <= max_m
-                    && closer_endpoint(e, true).is_some()
-                    && nearest_giant_edge.is_none_or(|(_, d)| edge_d < d)
-                {
-                    nearest_giant_edge = Some((idx, edge_d));
+                for id in [e.source, e.target] {
+                    if !has_allowed_incident(id) {
+                        continue;
+                    }
+                    let Some(n) = self.nodes.get(&id) else {
+                        continue;
+                    };
+                    let dist = haversine_point_m(lat, lon, n);
+                    if dist > max_m {
+                        continue;
+                    }
+                    if best_any.is_none_or(|(_, d)| dist < d) {
+                        best_any = Some((id, dist));
+                    }
+                    if !directed_ok(id) {
+                        continue;
+                    }
+                    if best_directed.is_none_or(|(_, d)| dist < d) {
+                        best_directed = Some((id, dist));
+                    }
+                    if in_filtered_giant(id)
+                        && best_giant_directed.is_none_or(|(_, d)| dist < d)
+                    {
+                        best_giant_directed = Some((id, dist));
+                    }
                 }
             }
         }
-        let Some((best_any_idx, nearest_edge_m)) = nearest_any_edge else {
-            return Err(SnapTooFar {
-                nearest_m: f64::INFINITY,
-                max_m,
-            });
-        };
+
         let use_surface_snap = prefer_better_surface
             && self.surface_routing_mode == SurfaceRoutingMode::Car
             && matches!(self.profile, RoutingProfile::Car | RoutingProfile::Truck);
         if use_surface_snap {
-            // Literal nearest is edge-based; surface preference still compares
-            // *nodes* within slack of that snap so a long Good connector edge
-            // cannot leap to a paved end outside the slack budget.
-            if let Some((idx, _)) = nearest_giant_edge {
-                if let Some((_, nearest_giant_m)) = closer_endpoint(&self.edges[idx], true) {
-                    let surface_limit_m = (nearest_giant_m + SURFACE_VIA_SNAP_SLACK_M).min(max_m);
-                    let surface_pad = (surface_limit_m / 100_000.0).max(0.02);
-                    let mut best_surface_giant: Option<(NodeId, f64)> = None;
-                    for (n_id, n) in &self.nodes {
-                        if (n.coord.y - lat).abs() > surface_pad
-                            || (n.coord.x - lon).abs() > surface_pad
-                        {
-                            continue;
-                        }
-                        if !has_allowed_incident(*n_id) {
-                            continue;
-                        }
-                        let dist = haversine_point_m(lat, lon, n);
-                        if dist > surface_limit_m || !in_filtered_giant(*n_id) {
-                            continue;
-                        }
-                        let sq = worst_incident_surface(self, *n_id);
-                        let replace = match best_surface_giant {
-                            None => true,
-                            Some((prev_id, prev_d)) => {
-                                let prev_sq = worst_incident_surface(self, prev_id);
-                                sq < prev_sq || (sq == prev_sq && dist < prev_d)
-                            }
-                        };
-                        if replace {
-                            best_surface_giant = Some((*n_id, dist));
-                        }
+            if let Some((_, nearest_giant_m)) = best_giant_directed {
+                let surface_limit_m = (nearest_giant_m + SURFACE_VIA_SNAP_SLACK_M).min(max_m);
+                let surface_pad = (surface_limit_m / 100_000.0).max(0.02);
+                let mut best_surface_giant: Option<(NodeId, f64)> = None;
+                for (n_id, n) in &self.nodes {
+                    if (n.coord.y - lat).abs() > surface_pad
+                        || (n.coord.x - lon).abs() > surface_pad
+                    {
+                        continue;
                     }
-                    if let Some((id, dist)) = best_surface_giant {
-                        return Ok((id, dist));
+                    if !has_allowed_incident(*n_id) || !directed_ok(*n_id) {
+                        continue;
                     }
+                    let dist = haversine_point_m(lat, lon, n);
+                    if dist > surface_limit_m || !in_filtered_giant(*n_id) {
+                        continue;
+                    }
+                    let sq = worst_incident_surface(self, *n_id);
+                    let replace = match best_surface_giant {
+                        None => true,
+                        Some((prev_id, prev_d)) => {
+                            let prev_sq = worst_incident_surface(self, prev_id);
+                            sq < prev_sq || (sq == prev_sq && dist < prev_d)
+                        }
+                    };
+                    if replace {
+                        best_surface_giant = Some((*n_id, dist));
+                    }
+                }
+                if let Some((id, dist)) = best_surface_giant {
+                    return Ok((id, dist));
                 }
             }
         }
-        if let Some((idx, _)) = nearest_giant_edge {
-            if let Some((id, dist)) = closer_endpoint(&self.edges[idx], true) {
-                return Ok((id, dist));
-            }
+
+        if let Some((id, dist)) = best_giant_directed {
+            return Ok((id, dist));
         }
-        // Nearest edge exists but no giant-component endpoint within budget.
-        let Some((id, nearest_m)) = closer_endpoint(&self.edges[best_any_idx], false) else {
-            return Err(SnapTooFar {
-                nearest_m: nearest_edge_m,
-                max_m,
-            });
-        };
-        if nearest_m > max_m {
-            return Err(SnapTooFar { nearest_m, max_m });
+        if let Some((id, dist)) = best_directed {
+            return Ok((id, dist));
         }
-        Ok((id, nearest_m))
+        // No directed-usable node within budget.
+        let nearest_m = best_any.map(|(_, d)| d).unwrap_or(f64::INFINITY);
+        Err(SnapTooFar { nearest_m, max_m })
     }
 
     /// Allowed-incident check when `options` do **not** remove edges vs the
@@ -1004,12 +1072,15 @@ impl RouteGraph {
         self.incident.clear();
         self.component_root.clear();
         self.giant_root = None;
+        self.can_reach_main.clear();
+        self.reachable_from_main.clear();
         for (idx, edge) in self.edges.iter().enumerate() {
             self.adjacency.entry(edge.source).or_default().push(idx);
             self.incident.insert(edge.source);
             self.incident.insert(edge.target);
         }
         self.recompute_weak_components();
+        self.recompute_directed_main_labels();
     }
 
     fn recompute_weak_components(&mut self) {
@@ -1032,6 +1103,178 @@ impl RouteGraph {
             }
         }
         self.giant_root = giant.map(|(root, _)| root);
+    }
+
+    /// Largest SCC inside the giant weak component, then directed reach labels.
+    fn recompute_directed_main_labels(&mut self) {
+        self.can_reach_main.clear();
+        self.reachable_from_main.clear();
+        let Some(giant) = self.giant_root else {
+            return;
+        };
+        let giant_nodes: Vec<NodeId> = self
+            .incident
+            .iter()
+            .copied()
+            .filter(|id| self.component_root.get(id) == Some(&giant))
+            .collect();
+        if giant_nodes.is_empty() {
+            return;
+        }
+        let giant_set: HashSet<NodeId> = giant_nodes.iter().copied().collect();
+        let mut rev: HashMap<NodeId, Vec<NodeId>> = HashMap::with_capacity(giant_nodes.len());
+        for e in &self.edges {
+            if giant_set.contains(&e.source) && giant_set.contains(&e.target) {
+                rev.entry(e.target).or_default().push(e.source);
+            }
+        }
+        // Kosaraju pass 1: finish order on the forward graph.
+        let mut visited: HashSet<NodeId> = HashSet::with_capacity(giant_nodes.len());
+        let mut order: Vec<NodeId> = Vec::with_capacity(giant_nodes.len());
+        let mut stack: Vec<(NodeId, usize)> = Vec::new();
+        for &start in &giant_nodes {
+            if visited.contains(&start) {
+                continue;
+            }
+            stack.push((start, 0));
+            visited.insert(start);
+            while let Some((u, ei)) = stack.pop() {
+                let outs = self.adjacency.get(&u).map(|v| v.as_slice()).unwrap_or(&[]);
+                if ei < outs.len() {
+                    stack.push((u, ei + 1));
+                    let v = self.edges[outs[ei]].target;
+                    if giant_set.contains(&v) && visited.insert(v) {
+                        stack.push((v, 0));
+                    }
+                } else {
+                    order.push(u);
+                }
+            }
+        }
+        // Pass 2: SCCs on the reverse graph.
+        visited.clear();
+        let mut best_scc: Vec<NodeId> = Vec::new();
+        let mut rev_stack: Vec<NodeId> = Vec::new();
+        for &start in order.iter().rev() {
+            if visited.contains(&start) {
+                continue;
+            }
+            let mut comp: Vec<NodeId> = Vec::new();
+            rev_stack.clear();
+            rev_stack.push(start);
+            visited.insert(start);
+            while let Some(u) = rev_stack.pop() {
+                comp.push(u);
+                if let Some(preds) = rev.get(&u) {
+                    for &p in preds {
+                        if giant_set.contains(&p) && visited.insert(p) {
+                            rev_stack.push(p);
+                        }
+                    }
+                }
+            }
+            if comp.len() > best_scc.len() {
+                best_scc = comp;
+            }
+        }
+        if best_scc.is_empty() {
+            // Degenerate: treat whole giant as main.
+            best_scc = giant_nodes.clone();
+        }
+        let main: HashSet<NodeId> = best_scc.iter().copied().collect();
+        // reachable_from_main: forward BFS from main SCC.
+        let mut q: Vec<NodeId> = best_scc.clone();
+        self.reachable_from_main.extend(best_scc.iter().copied());
+        let mut qi = 0usize;
+        while qi < q.len() {
+            let u = q[qi];
+            qi += 1;
+            if let Some(outs) = self.adjacency.get(&u) {
+                for &idx in outs {
+                    let v = self.edges[idx].target;
+                    if giant_set.contains(&v) && self.reachable_from_main.insert(v) {
+                        q.push(v);
+                    }
+                }
+            }
+        }
+        // can_reach_main: reverse BFS from main SCC.
+        q.clear();
+        q.extend(best_scc.iter().copied());
+        self.can_reach_main.extend(best_scc.iter().copied());
+        qi = 0;
+        while qi < q.len() {
+            let u = q[qi];
+            qi += 1;
+            if let Some(preds) = rev.get(&u) {
+                for &p in preds {
+                    if giant_set.contains(&p) && self.can_reach_main.insert(p) {
+                        q.push(p);
+                    }
+                }
+            }
+        }
+        let _ = main; // labels already seeded from best_scc
+    }
+
+    /// True when `id` is usable for `role` in the directed graph.
+    pub fn directed_snap_ok(&self, id: NodeId, role: SnapRole) -> bool {
+        match role {
+            SnapRole::Any => true,
+            SnapRole::Origin => {
+                self.can_reach_main.is_empty() || self.can_reach_main.contains(&id)
+            }
+            SnapRole::Destination => {
+                self.reachable_from_main.is_empty() || self.reachable_from_main.contains(&id)
+            }
+            SnapRole::Via => {
+                (self.can_reach_main.is_empty() || self.can_reach_main.contains(&id))
+                    && (self.reachable_from_main.is_empty()
+                        || self.reachable_from_main.contains(&id))
+            }
+        }
+    }
+
+    /// Size of the directed component label set used for `role` (diagnostics).
+    pub fn directed_label_size(&self, role: SnapRole) -> usize {
+        match role {
+            SnapRole::Any => self.incident.len(),
+            SnapRole::Origin => self.can_reach_main.len(),
+            SnapRole::Destination => self.reachable_from_main.len(),
+            SnapRole::Via => self
+                .can_reach_main
+                .iter()
+                .filter(|id| self.reachable_from_main.contains(id))
+                .count(),
+        }
+    }
+
+    /// Unweighted directed reachability (BFS). Used to gate ferry overlay after
+    /// directed snaps without paying full A* cost on every warm cache hit.
+    pub fn directed_path_exists(&self, start: NodeId, goal: NodeId) -> bool {
+        if start == goal {
+            return true;
+        }
+        let mut seen = HashSet::new();
+        let mut q = vec![start];
+        seen.insert(start);
+        let mut qi = 0usize;
+        while qi < q.len() {
+            let u = q[qi];
+            qi += 1;
+            if let Some(outs) = self.adjacency.get(&u) {
+                for &idx in outs {
+                    let v = self.edges[idx].target;
+                    if v == goal {
+                        return true;
+                    }
+                    if seen.insert(v) {
+                        q.push(v);
+                    }
+                }
+            }
+        }
+        false
     }
 
     /// Map overlay polyline (`lon,lat;…`) following each edge’s OSM shape when present.
@@ -1662,6 +1905,8 @@ struct EdgeMeta {
     maxlength_m: Option<f64>,
     is_toll: bool,
     is_ferry: bool,
+    /// OSM `duration` on ferry ways (H:MM / HH:MM:SS), when present.
+    ferry_duration: Option<String>,
     is_tunnel: bool,
     is_boardwalk_crossing: bool,
     is_roundabout: bool,
@@ -1737,6 +1982,11 @@ fn edge_meta(edge: &Edge, profile: RoutingProfile) -> EdgeMeta {
             .map(|s| is_truthy_tag(s))
             .unwrap_or(false)
         || highway.as_deref() == Some("ferry");
+    let ferry_duration = if is_ferry {
+        edge.tags.get("duration").cloned()
+    } else {
+        None
+    };
     let is_tunnel = edge.tags.get("tunnel").is_some_and(|s| is_tunnel_tag(s));
     let is_boardwalk_crossing = tags_indicate_boardwalk(
         edge.tags.get("bridge").map(String::as_str),
@@ -1780,6 +2030,7 @@ fn edge_meta(edge: &Edge, profile: RoutingProfile) -> EdgeMeta {
         maxlength_m,
         is_toll,
         is_ferry,
+        ferry_duration,
         is_tunnel,
         is_boardwalk_crossing,
         is_roundabout,
@@ -1836,12 +2087,21 @@ fn push_directed_edge(
     meta: &EdgeMeta,
 ) {
     let idx = graph.edges.len();
+    let base_weight = if meta.is_ferry {
+        ferry_base_weight_m(
+            length_m,
+            meta.ferry_duration.as_deref(),
+            graph.profile,
+        )
+    } else {
+        length_m
+    };
     graph.edges.push(GraphEdge {
         id,
         source,
         target,
         length_m,
-        base_weight: length_m,
+        base_weight,
         eco_weight: None,
         start_lat,
         start_lon,
@@ -4004,4 +4264,297 @@ mod tests {
         let el_paso_juarez = test_edge(1, 2, 31.7619, -106.4850, 31.6904, -106.4245);
         assert!(!edge_in_allowed_countries(&el_paso_juarez, &["us".into()]));
     }
+
+
+    #[test]
+    fn destination_skips_one_way_dead_end_stub() {
+        // Main bidirectional corridor 1 <-> 2 <-> 3.
+        // One-way spur 2 -> 4 (dead-end sink): reachable, cannot depart.
+        // One-way spur 5 -> 2 (dead-end source): can depart, not reachable.
+        let mut nodes = HashMap::new();
+        for (id, lat, lon) in [
+            (1, 60.0, 10.0),
+            (2, 60.0, 10.01),
+            (3, 60.0, 10.02),
+            (4, 60.001, 10.01), // sink next to 2
+            (5, 59.999, 10.01), // source next to 2
+        ] {
+            nodes.insert(
+                NodeId(id),
+                osm4routing::Node {
+                    id: NodeId(id),
+                    coord: geo_types::Coord { x: lon, y: lat },
+                    uses: 0,
+                },
+            );
+        }
+        let mut edges = vec![
+            GraphEdge {
+                id: "12".into(),
+                source: NodeId(1),
+                target: NodeId(2),
+                length_m: 100.0,
+                base_weight: 100.0,
+                eco_weight: None,
+                start_lat: 60.0,
+                start_lon: 10.0,
+                end_lat: 60.0,
+                end_lon: 10.01,
+                shape: vec![],
+                highway: Some("residential".into()),
+                maxspeed_kmh: None,
+                maxspeed_practical_kmh: None,
+                maxspeed_advisory_kmh: None,
+                maxspeed_type: None,
+                maxspeed_variable: false,
+                minspeed_kmh: None,
+                name: None,
+                road_ref: None,
+                is_motorroad: false,
+                is_expressway: false,
+                is_oneway: false,
+                lanes: None,
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: false,
+                is_ferry: false,
+                is_tunnel: false,
+                is_boardwalk_crossing: false,
+                is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
+                access_forbidden: false,
+                surface_quality: SurfaceQuality::Good,
+            },
+        ];
+        // Clone helper for remaining edges
+        fn e(
+            id: &str,
+            s: i64,
+            t: i64,
+            slat: f64,
+            slon: f64,
+            elat: f64,
+            elon: f64,
+            oneway: bool,
+        ) -> GraphEdge {
+            GraphEdge {
+                id: id.into(),
+                source: NodeId(s),
+                target: NodeId(t),
+                length_m: 100.0,
+                base_weight: 100.0,
+                eco_weight: None,
+                start_lat: slat,
+                start_lon: slon,
+                end_lat: elat,
+                end_lon: elon,
+                shape: vec![],
+                highway: Some("residential".into()),
+                maxspeed_kmh: None,
+                maxspeed_practical_kmh: None,
+                maxspeed_advisory_kmh: None,
+                maxspeed_type: None,
+                maxspeed_variable: false,
+                minspeed_kmh: None,
+                name: None,
+                road_ref: None,
+                is_motorroad: false,
+                is_expressway: false,
+                is_oneway: oneway,
+                lanes: None,
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: false,
+                is_ferry: false,
+                is_tunnel: false,
+                is_boardwalk_crossing: false,
+                is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
+                access_forbidden: false,
+                surface_quality: SurfaceQuality::Good,
+            }
+        }
+        edges = vec![
+            e("12", 1, 2, 60.0, 10.0, 60.0, 10.01, false),
+            e("21", 2, 1, 60.0, 10.01, 60.0, 10.0, false),
+            e("23", 2, 3, 60.0, 10.01, 60.0, 10.02, false),
+            e("32", 3, 2, 60.0, 10.02, 60.0, 10.01, false),
+            e("24", 2, 4, 60.0, 10.01, 60.001, 10.01, true),
+            e("52", 5, 2, 59.999, 10.01, 60.0, 10.01, true),
+        ];
+        let g = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        // Destination next to sink 4 must prefer a reachable main-network node.
+        let dest = RouteOptions {
+            snap_role: SnapRole::Destination,
+            ..Default::default()
+        };
+        // Node 5 is a one-way *source* into the network: directed dead-end for
+        // arrivals (nothing reaches it). Destination snap must skip it.
+        assert!(!g.reachable_from_main.contains(&NodeId(5)));
+        assert!(g.can_reach_main.contains(&NodeId(5)));
+        let (d, _) = g
+            .nearest_routable_with_options_max(59.999, 10.01, &dest, false, 750.0)
+            .expect("dest snap");
+        assert_ne!(d, NodeId(5), "must not snap destination to unreachable one-way source");
+        assert!(g.directed_snap_ok(d, SnapRole::Destination));
+
+        // Sink 4 is reachable from main — valid destination (but bad origin).
+        assert!(g.reachable_from_main.contains(&NodeId(4)));
+        assert!(!g.can_reach_main.contains(&NodeId(4)));
+        let origin = RouteOptions {
+            snap_role: SnapRole::Origin,
+            ..Default::default()
+        };
+        let (o, _) = g
+            .nearest_routable_with_options_max(60.001, 10.01, &origin, false, 750.0)
+            .expect("origin near sink");
+        assert_ne!(o, NodeId(4), "must not snap origin to one-way sink");
+        assert!(g.directed_snap_ok(o, SnapRole::Origin));
+    }
+
+    #[test]
+    fn origin_rejects_tiny_isolated_sink() {
+        // Main 1 <-> 2. Isolated one-way 3 -> 4 (tiny component, sink at 4 near query).
+        let mut nodes = HashMap::new();
+        for (id, lat, lon) in [
+            (1, 60.0, 10.0),
+            (2, 60.0, 10.01),
+            (3, 60.0005, 10.005),
+            (4, 60.0006, 10.005), // sink, nearest to query
+        ] {
+            nodes.insert(
+                NodeId(id),
+                osm4routing::Node {
+                    id: NodeId(id),
+                    coord: geo_types::Coord { x: lon, y: lat },
+                    uses: 0,
+                },
+            );
+        }
+        fn e(id: &str, s: i64, t: i64, slat: f64, slon: f64, elat: f64, elon: f64) -> GraphEdge {
+            GraphEdge {
+                id: id.into(),
+                source: NodeId(s),
+                target: NodeId(t),
+                length_m: 50.0,
+                base_weight: 50.0,
+                eco_weight: None,
+                start_lat: slat,
+                start_lon: slon,
+                end_lat: elat,
+                end_lon: elon,
+                shape: vec![],
+                highway: Some("service".into()),
+                maxspeed_kmh: None,
+                maxspeed_practical_kmh: None,
+                maxspeed_advisory_kmh: None,
+                maxspeed_type: None,
+                maxspeed_variable: false,
+                minspeed_kmh: None,
+                name: None,
+                road_ref: None,
+                is_motorroad: false,
+                is_expressway: false,
+                is_oneway: true,
+                lanes: None,
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: false,
+                is_ferry: false,
+                is_tunnel: false,
+                is_boardwalk_crossing: false,
+                is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
+                access_forbidden: false,
+                surface_quality: SurfaceQuality::Good,
+            }
+        }
+        let edges = vec![
+            e("12", 1, 2, 60.0, 10.0, 60.0, 10.01),
+            e("21", 2, 1, 60.0, 10.01, 60.0, 10.0),
+            e("34", 3, 4, 60.0005, 10.005, 60.0006, 10.005),
+        ];
+        // Fix bidirectional flags for main corridor
+        let mut edges = edges;
+        edges[0].is_oneway = false;
+        edges[1].is_oneway = false;
+        let g = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        let origin = RouteOptions {
+            snap_role: SnapRole::Origin,
+            ..Default::default()
+        };
+        let (o, _) = g
+            .nearest_routable_with_options_max(60.0006, 10.005, &origin, false, 750.0)
+            .expect("origin snap");
+        assert!(
+            o == NodeId(1) || o == NodeId(2),
+            "origin must snap to main network, got {o:?}"
+        );
+        assert!(g.directed_snap_ok(o, SnapRole::Origin));
+        assert!(!g.can_reach_main.contains(&NodeId(4)));
+    }
+
+    #[test]
+    fn ferry_base_weight_matches_server_formula() {
+        let mps = FERRY_DRIVE_EQUIV_KMH * 1000.0 / 3600.0;
+        let boarding = FERRY_CAR_BOARDING_PENALTY_MIN * 60.0 * mps;
+        let tagged = ferry_base_weight_m(1_000.0, Some("0:10"), RoutingProfile::Car);
+        assert!((tagged - (600.0 * mps + boarding)).abs() < 1e-6);
+        let fallback = ferry_base_weight_m(1_000.0, None, RoutingProfile::Car);
+        let expected = 1_000.0 * (FERRY_DRIVE_EQUIV_KMH / FERRY_FALLBACK_SPEED_KMH) + boarding;
+        assert!((fallback - expected).abs() < 1e-6);
+        let foot = ferry_base_weight_m(1_000.0, Some("0:10"), RoutingProfile::Foot);
+        assert!((foot - 600.0 * mps).abs() < 1e-6);
+    }
+
+    /// Length-only ferry weights make a long unnamed coastal chain look competitive
+    /// with a short tagged crossing (Bergen→Stavanger `unnamed@195`). Server costing
+    /// prices the chain ~8× higher so A* keeps the short ferry.
+    #[test]
+    fn ferry_costing_rejects_long_unnamed_chain_vs_short_tagged() {
+        let short_len = 20_000.0;
+        let chain_len = 195_000.0;
+        let short_server =
+            ferry_base_weight_m(short_len, Some("0:40"), RoutingProfile::Car);
+        let chain_server = ferry_base_weight_m(chain_len, None, RoutingProfile::Car);
+        let short_length_only = short_len;
+        let chain_length_only = chain_len;
+        // BEFORE (plain length): chain ≈ short.
+        assert!(
+            (chain_length_only - short_length_only).abs() / short_length_only < 10.0,
+            "length-only: 195 km chain is in the same ballpark as a 20 km hop"
+        );
+        assert!(
+            chain_length_only < short_length_only * 12.0,
+            "length-only admits coast chaining"
+        );
+        // AFTER (server formula): chain is far more expensive than a 40 min ferry.
+        assert!(
+            chain_server > short_server * 5.0,
+            "server costing: chain={chain_server} short={short_server}"
+        );
+        // With length-only weights A* would prefer the chain if land legs were equal;
+        // with server weights the short tagged ferry wins by a wide margin.
+        assert!(short_length_only < chain_length_only);
+        assert!(short_server < chain_server);
+    }
+
 }

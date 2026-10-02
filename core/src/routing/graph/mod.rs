@@ -28,9 +28,11 @@ pub use bike_suitability::{
     BikeCapability,
 };
 pub use builder::{
-    append_seasonal_closure_report, edge_is_motorway_grade, format_route_avoidance_report,
-    highway_is_motorway, max_waypoint_snap_m, profile_locks_avoid_motorways, GraphEdge,
-    PathSearchStats, RouteGraph, RouteOptions, RoutingProfile, SnapTooFar, WetlandApplyStats,
+    append_seasonal_closure_report, edge_is_motorway_grade, ferry_base_weight_m,
+    format_route_avoidance_report, highway_is_motorway, max_waypoint_snap_m,
+    profile_locks_avoid_motorways, GraphEdge, PathSearchStats, RouteGraph, RouteOptions,
+    RoutingProfile, SnapRole, SnapTooFar, WetlandApplyStats, FERRY_CAR_BOARDING_PENALTY_MIN,
+    FERRY_DRIVE_EQUIV_KMH, FERRY_FALLBACK_SPEED_KMH,
 };
 pub use cache::{
     graph_cache_path, load_or_build_reweighted, load_or_build_reweighted_bbox,

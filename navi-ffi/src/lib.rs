@@ -3571,6 +3571,14 @@ fn plan_car_route_inner(
                 } else {
                     format!("via{i}")
                 };
+                let mut snap_opts = route_opts.clone();
+                snap_opts.snap_role = if at_start {
+                    driver_break_core::routing::graph::SnapRole::Origin
+                } else if at_end {
+                    driver_break_core::routing::graph::SnapRole::Destination
+                } else {
+                    driver_break_core::routing::graph::SnapRole::Via
+                };
                 log::info!(
                     target: "NaviPlan",
                     "snap_start stop={label} lat={lat:.5} lon={lon:.5} max_m={snap_max:.0} vehicle={}",
@@ -3580,7 +3588,7 @@ fn plan_car_route_inner(
                 match built.nearest_routable_with_options_max(
                     lat,
                     lon,
-                    &route_opts,
+                    &snap_opts,
                     prefer_better_surface,
                     snap_max,
                 ) {
