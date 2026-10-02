@@ -289,3 +289,73 @@ These are **two different things**:
 **Conclusion:** Overnight **stop candidates were not dropped** for multi-day trips. No restore needed. The always-false flag only omits hiking building centroids from the **motor corridor** POI hydrate (the 15 s Ostlandet cost). Day-boundary finalize still loads lodging/camping POIs per mark.
 
 Open follow-ups (not in this PR): cold pack materialize (~5–6 s; search on mmapped tiles); per-hop pack_load on long multi-stem densify (Tromsø).
+
+## Physical tablet (SM-P613)
+
+Date: 2026-10-02. Branch tip installed: `fdd850412c20e20affa33de4cf5967d676fd1f61`.  
+Build: `./scripts/build-android-native.sh aarch64-linux-android release` + `ANDROID_SERIAL=R52TB0JQEDE ./gradlew :app:installDebug` (native release lib + debug APK; timing via Diagnostic logging → `set_route_plan_timing_enabled(true)`).  
+Device: Samsung SM-P613 (`R52TB0JQEDE`), Android 14, ABI `arm64-v8a`, MemTotal **3590128 kB** (~3.4 GiB), MemAvailable at setup ~1.2–1.5 GiB, free storage `/data` **~11G** available (49G, 77% used). No physical SD — packs live under app-private `files/long-trip-packs` (emulated storage only).
+
+### Pack inventory (STOP — setup confirmation failed)
+
+Installed stems under `files/long-trip-packs` (manifests + car/foot tiles + POI + wetland + stub/real PBF):
+
+| Stem | `graph_format_version` | car tiles | foot tiles | car Ready? |
+| --- | --- | --- | --- | --- |
+| denmark-latest | **8** | 15 | 15 | tiles present |
+| detmold-regbez-latest | **8** | 4 | 4 | tiles present |
+| halland-latest | **8** | 4 | 4 | tiles present |
+| niedersachsen-latest | **8** | 15 | 15 | tiles present |
+| ostlandet-latest | **8** | 24 | 24 | **Ready** (`IndexedMapsBg: packs ready`; also duplicated under `files/` root with same v8 manifest + 24 car tiles) |
+| schleswig-holstein-latest | **8** | 6 | 6 | tiles present |
+| skane-latest | **8** | 6 | 6 | tiles present |
+| vastra_gotaland-latest | **8** | 8 | 8 | tiles present |
+
+`files/ostlandet-latest.navi-manifest.json` (root copy): same stem, **`graph_format_version: 8`**, `poi_barrier_format_version: 2`.
+
+**Missing for matrix (required Norway stems):** `vestlandet-latest`, `trondelag-latest`, `nord-norge-latest`, `sorlandet-latest`.
+
+**v9 gate:** user required all packs **v9**. Device has **all v8** — confirmation **FAIL**. Client still accepts v8 on read (Ostlandet car pack-hit works).
+
+### Instrumented matrix
+
+`RegionToRegionPerfMatrixInstrumentedTest` aborted before any `PROFILE_ROW`:
+
+```
+java.lang.AssertionError: need vestlandet-latest v9 packs under .../files/long-trip-packs
+```
+
+No full matrix numbers. No Tromsø. No Bergen→Førde.
+
+### Ostlandet-only adb UI seed (long-trip OFF)
+
+Diagnostic logging ON (session logs under `/storage/emulated/0/Download/debug/`). Eco toggle via DB write did **not** stick on UI seed path (`planning_start … eco=false` always — profile apply resets to car default). So eco rows were not obtained without product-code/UI-toggle changes (not done).
+
+| case | eco | cold/warm | pack_hit | wall_ms (plan_duration) | pack_load_ms | poi_barrier_ms | eco_reweight_ms | astar_ms | multiday_ms | distance_km | peak_rss_mb | peak_native_heap_mb | route_ok | MemAvailable before cold |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| raufoss_dombas | false | cold | true | 12427 | 9376 | 679 | 0 | 1108 | 0 | **206.81** | — | — | true | 1497108 kB |
+| raufoss_dombas | false | warm | true | 2646 | 4 | 101 | 0 | 1080 | 0 | **206.81** | — | — | true | (warm; ~768604 kB) |
+| raufoss_bergen eco/default | — | cold | — | **no planning_done within 300s** | — | — | — | — | — | — | — | — | false / incomplete | ~1407–1410 MB |
+
+Raufoss→Bergen seeds delivered (`NaviTrip … plan=true`) but never completed a route within 5 minutes. Native load probes showed `need_extra=false extras=0`, `tile_budget=6`, `format=8` Ostlandet-only corridor (2 tiles) — Vestlandet bridge absent. Stopped without product fixes.
+
+UI hand-measure Raufoss→Bergen eco (tap plan → route shown): **not obtained** (same missing Vestlandet / incomplete plan).
+
+### Tablet vs emulator wall (where comparable)
+
+| Case | Tablet wall_ms | Emulator wall_ms (follow-up 2) | Distance match? |
+| --- | --- | --- | --- |
+| raufoss_dombas cold (default) | 12427 | 948 (warm-ish after eco cold in emu table) / host cold 2298 | **206.81 = yes** (host/emu tables) |
+| raufoss_dombas warm | 2646 | — | **206.81 = yes** |
+| raufoss_bergen eco cold | incomplete | 6517 | n/a (no tablet distance) |
+| raufoss_tromso | not run (missing packs) | 29605 | n/a |
+
+Pass criteria for Raufoss→Bergen eco (cold <15s, warm <3s, pack_hit, 459.71 km): **FAIL / blocked** — missing Vestlandet + all packs v8 not v9.
+
+### LMK / ANR
+
+No `lowmemorykiller` / `am_kill` / `ANR in` hits attributed to Navi during these runs. One WindowManager warning (“Application ANR likely to follow”) during splash/transition — no completed ANR dump for `no.navi.app`.
+
+### Verdict
+
+**STOP (measurement blocked for matrix).** Install tip `fdd85041` on SM-P613 succeeded; Ostlandet car Ready on v8; full region-to-region matrix and Bergen/Tromsø/Førde cases require pushing **v9** packs for ostlandet+vestlandet(+trondelag+nord-norge[+sorlandet]) onto the tablet (user forbade host pack push this pass). No product-code changes.
