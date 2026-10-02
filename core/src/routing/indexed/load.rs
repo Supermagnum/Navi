@@ -1647,11 +1647,7 @@ enum FerryHopGate {
 /// Prefer the plan O/D budget ([`crate::routing::max_waypoint_snap_m`]; car
 /// 750 m). Only fall back to [`CHUNK_INTERMEDIATE_SNAP_M`] (35 km) when a tight
 /// snap fails — that path is for densify joints, not ordinary corridor O/D.
-fn ferry_hop_connectivity_gate(
-    graph: &RouteGraph,
-    a: (f64, f64),
-    b: (f64, f64),
-) -> FerryHopGate {
+fn ferry_hop_connectivity_gate(graph: &RouteGraph, a: (f64, f64), b: (f64, f64)) -> FerryHopGate {
     let opts = crate::routing::graph::RouteOptions::default();
     let tight = crate::routing::max_waypoint_snap_m(graph.profile());
     let loose = crate::routing::plan_bbox::CHUNK_INTERMEDIATE_SNAP_M;
@@ -2081,6 +2077,25 @@ fn expand_bbox_deg(b: [f64; 4], pad: f64) -> [f64; 4] {
     [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad]
 }
 
+/// Bounded parallel tile hydrate concurrency.
+///
+/// Default: **2** when MemTotal ≥ 6 GiB, else **1** (tablet ~3.5 GiB paid
+/// +50–80 MiB peak RSS for ~0.3 s). Override with `NAVI_TILE_LOAD_PARALLEL`.
+fn tile_load_parallelism() -> usize {
+    const HIGH_RAM_PARALLEL: usize = 2;
+    const LOW_RAM_PARALLEL: usize = 1;
+    const LOW_RAM_MEM_TOTAL: u64 = 6 * 1024 * 1024 * 1024;
+    if let Ok(v) = std::env::var("NAVI_TILE_LOAD_PARALLEL") {
+        if let Ok(n) = v.trim().parse::<usize>() {
+            return n.clamp(1, 8);
+        }
+    }
+    match super::corridor_cache::read_mem_total_bytes() {
+        Some(total) if total < LOW_RAM_MEM_TOTAL => LOW_RAM_PARALLEL,
+        _ => HIGH_RAM_PARALLEL,
+    }
+}
+
 fn load_tiled_graph_files(
     dirs: &[&Path],
     tile_files: Vec<String>,
@@ -2121,11 +2136,12 @@ fn load_tiled_graph_files(
     //
     // 2b: bounded parallel tile hydrate. Peak RSS matches sequential because we
     // already retain every clipped part until the single merge; concurrency only
-    // overlaps I/O/copy, not extra retained graphs.
-    const TILE_LOAD_PARALLEL: usize = 2;
+    // overlaps I/O/copy, not extra retained graphs. Default concurrency falls to
+    // 1 under 6 GiB MemTotal (see [`tile_load_parallelism`]).
     let total = tile_files.len() as u64;
     crate::download::progress::set(0, Some(total), "Loading map tiles…");
     super::tile_cache::tile_cache_evict_before_load();
+    let tile_cache_on = super::tile_cache::tile_cache_enabled();
 
     let resolved: Result<Vec<(String, PathBuf)>, PackLoadError> = tile_files
         .iter()
@@ -2140,7 +2156,13 @@ fn load_tiled_graph_files(
     let tile_misses = AtomicU64::new(0);
     let fit_rejects = AtomicU64::new(0);
 
-    let n_threads = TILE_LOAD_PARALLEL.min(resolved.len().max(1));
+    let n_threads = tile_load_parallelism().min(resolved.len().max(1));
+    crate::routing::plan_perf::set_tile_load_parallel(n_threads as u64);
+    if let Some(mem_total) = super::corridor_cache::read_mem_total_bytes() {
+        crate::routing::plan_perf::note_u64("mem_total_mb", mem_total / (1024 * 1024));
+    }
+    crate::routing::plan_perf::note_u64("tile_load_parallel", n_threads as u64);
+    crate::routing::plan_perf::note("tile_cache_enabled", if tile_cache_on { "1" } else { "0" });
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(n_threads)
         .build()
@@ -2159,7 +2181,14 @@ fn load_tiled_graph_files(
                 );
                 let key = super::tile_cache::TileCacheKey::new(profile, path);
                 let clips_ref = clips_owned.as_deref();
-                let g = if let Some(hit) = super::tile_cache::tile_cache_get(&key) {
+                let g = if !tile_cache_on {
+                    tile_misses.fetch_add(1, Ordering::Relaxed);
+                    crate::routing::plan_perf::note(
+                        "tile_cache",
+                        format!("disabled;clip_hydrate;{file}"),
+                    );
+                    load_graph_pack_clips(path, profile, clips_ref)?
+                } else if let Some(hit) = super::tile_cache::tile_cache_get(&key) {
                     tile_hits.fetch_add(1, Ordering::Relaxed);
                     crate::routing::plan_perf::note("tile_cache", format!("hit;{file}"));
                     super::tile_cache::clip_route_graph(&hit, clips_ref)
@@ -2211,7 +2240,7 @@ fn load_tiled_graph_files(
     log::info!(
         target: "NaviPlan",
         "load_tiled_graph done tiles={} edges={} nodes={} merge_wall_ms={} merge=single_pass \
-         tile_cache_hits={} misses={} fit_rejects={} parallel={}",
+         tile_cache_hits={} misses={} fit_rejects={} parallel={} tile_cache={}",
         total,
         merged.edges.len(),
         merged.nodes.len(),
@@ -2219,7 +2248,8 @@ fn load_tiled_graph_files(
         tile_hits,
         tile_misses,
         fit_rejects,
-        n_threads
+        n_threads,
+        if tile_cache_on { "on" } else { "off" }
     );
     if crate::routing::plan_perf::enabled() {
         crate::routing::plan_perf::note_u64("pack_merge_wall_ms", merge_ms);
@@ -2227,7 +2257,6 @@ fn load_tiled_graph_files(
         crate::routing::plan_perf::note_u64("tile_cache_hits", tile_hits);
         crate::routing::plan_perf::note_u64("tile_cache_misses", tile_misses);
         crate::routing::plan_perf::note_u64("tile_cache_fit_rejects", fit_rejects);
-        crate::routing::plan_perf::note_u64("tile_load_parallel", n_threads as u64);
         let (cum_hits, cum_misses, bytes, n) = super::tile_cache::tile_cache_stats();
         crate::routing::plan_perf::note(
             "tile_cache_stats",

@@ -163,9 +163,18 @@ pub fn corridor_cache_max_bytes_from_mem() -> u64 {
 }
 
 pub fn read_mem_available_bytes() -> Option<u64> {
+    read_meminfo_bytes("MemAvailable:")
+}
+
+/// Device physical RAM from `/proc/meminfo` `MemTotal` (Android / Linux).
+pub fn read_mem_total_bytes() -> Option<u64> {
+    read_meminfo_bytes("MemTotal:")
+}
+
+fn read_meminfo_bytes(key: &str) -> Option<u64> {
     let text = std::fs::read_to_string("/proc/meminfo").ok()?;
     for line in text.lines() {
-        let Some(rest) = line.strip_prefix("MemAvailable:") else {
+        let Some(rest) = line.strip_prefix(key) else {
             continue;
         };
         let kib: u64 = rest.split_whitespace().next()?.parse().ok()?;

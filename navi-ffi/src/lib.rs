@@ -2517,10 +2517,7 @@ fn plan_car_route_chunked_legs(
     let _ = break_pois; // per-leg breaks were empty (poi_skipped); replaced above
     report.push_str(&format!("graph_ferry_edges={graph_ferry_edges}\n"));
     report.push_str(&format!("route_ferry_legs={ferry_leg_count}\n"));
-    report.push_str(&format!(
-        "route_ferry_fp={}\n",
-        ferry_fp_parts.join("|")
-    ));
+    report.push_str(&format!("route_ferry_fp={}\n", ferry_fp_parts.join("|")));
     report.push_str(&format!(
         "chunked_distance_km={distance_km:.3}; chunked_eta_min={eta_minutes:.1}; hops={}; route_uses_ferry={route_uses_ferry}\nPASS\n",
         hops.len().saturating_sub(1)

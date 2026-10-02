@@ -24,6 +24,7 @@ static STAGE_MERGE_ADJ: AtomicU64 = AtomicU64::new(0);
 static STAGE_FERRY: AtomicU64 = AtomicU64::new(0);
 static STAGE_TILE_BYTES: AtomicU64 = AtomicU64::new(0);
 static STAGE_TILES: AtomicU64 = AtomicU64::new(0);
+static TILE_LOAD_PARALLEL: AtomicU64 = AtomicU64::new(1);
 
 fn clear_pack_stages() {
     STAGE_MMAP.store(0, Ordering::Relaxed);
@@ -96,6 +97,11 @@ pub fn add_ferry_stage_ms(ms: u64) {
     STAGE_FERRY.fetch_add(ms, Ordering::Relaxed);
 }
 
+/// Record the tile-load pool size used for this plan (for PACK_STAGE_SUMMARY).
+pub fn set_tile_load_parallel(n: u64) {
+    TILE_LOAD_PARALLEL.store(n.max(1), Ordering::Relaxed);
+}
+
 fn flush_pack_stage_notes() {
     let tiles = STAGE_TILES.load(Ordering::Relaxed);
     let merge_hash = STAGE_MERGE_HASH.load(Ordering::Relaxed);
@@ -109,6 +115,7 @@ fn flush_pack_stage_notes() {
     let validate = STAGE_VALIDATE.load(Ordering::Relaxed);
     let copy = STAGE_COPY.load(Ordering::Relaxed);
     let merge_adj = STAGE_MERGE_ADJ.load(Ordering::Relaxed);
+    let parallel = TILE_LOAD_PARALLEL.load(Ordering::Relaxed).max(1);
     note_u64("pack_stage_tiles", tiles);
     note_u64("pack_stage_tile_bytes", tile_bytes);
     note_u64("pack_stage_mmap_ms", mmap);
@@ -120,14 +127,14 @@ fn flush_pack_stage_notes() {
     note_u64("pack_stage_ferry_ms", ferry);
     note(
         "pack_stage_threads",
-        "tile_load_parallel=2;merge=single_pass_one_adjacency",
+        format!("tile_load_parallel={parallel};merge=single_pass_one_adjacency"),
     );
     // Short greppable line — Android logcat truncates long PLAN_PERF rows.
     log::info!(
         target: "NaviPlan",
         "PACK_STAGE_SUMMARY tiles={} tile_bytes={} mmap_ms={} pagein_ms={} validate_ms={} \
-         copy_ms={} merge_hash_ms={} merge_adj_ms={} ferry_ms={} threads=2",
-        tiles, tile_bytes, mmap, pagein, validate, copy, merge_hash, merge_adj, ferry
+         copy_ms={} merge_hash_ms={} merge_adj_ms={} ferry_ms={} threads={}",
+        tiles, tile_bytes, mmap, pagein, validate, copy, merge_hash, merge_adj, ferry, parallel
     );
 }
 

@@ -298,8 +298,139 @@ connectivity/overlay gate (~50–370 ms), not route ferry count.
 tile cache; RSS ceiling ~1.15 GB. Stavanger is a permanent matrix case with
 matching default/eco ferry fingerprints.
 
+### Production defaults after 2b (tablet-safe)
+
+Parallel tile load and the full-tile LRU stay in tree for experiments, but
+**device defaults** avoid the RSS cost that did not pay for itself on SM-P613:
+
+| Knob | Default | Override |
+| --- | --- | --- |
+| Tile-load concurrency | **1** when `/proc/meminfo` MemTotal &lt; **6 GiB**; else **2** | `NAVI_TILE_LOAD_PARALLEL=N` (1–8) |
+| Full-tile LRU (`tile_cache.rs`) | **off** | `NAVI_TILE_CACHE=1` (or `true`/`yes`/`on`) |
+
+Rationale: parallel=2 on the tablet raised peak RSS ~50–80 MiB for ~0.3 s wall.
+Tile cache hit share on Tromsø was ~11% with **33** fit-gate rejects per plan —
+not enough to justify retaining full tiles beside the corridor Arc. Code paths
+remain; PLAN_PERF notes `tile_load_parallel`, `mem_total_mb`, and
+`tile_cache_enabled=0|1`.
+
+#### Confirmation matrix (defaults: parallel=1, tile_cache off)
+
+Device: SM-P613 `R52TB0JQEDE`, tip with the defaults above (2026-10-02).
+`tile_load_parallel=1`, `tile_cache_enabled=0`, `mem_total_mb=3505`. No
+`lowmemorykiller` / ANR for `no.navi.app`.
+
+| case | eco | wall_ms | pack_load_ms | distance_km | peak_rss_mb | geom vs dig | ferry |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| raufoss_bergen | true (cold) | **7780** | 4357 | **459.71** | 869.3 | match `8a8c6f7b…` | — |
+| raufoss_bergen | false | 2358 | 6 | **485.45** | 869.3 | match `540bb2ad…` | — |
+| raufoss_bergen_warm | true | 2591 | 6 | **459.71** | 869.3 | match | — |
+| raufoss_dombas | true | 6787 | 4399 | **206.81** | 1064.5 | match `6a1360bc…` | — |
+| bergen_forde | true | 3949 | 2172 | **171.01** | 1064.5 | match `0bff0c85…` | Lavik–Oppedal@5.72 |
+| bergen_stavanger | false | 10496 | 2503 | **228.21** | 1064.5 | dig empty; branch `1cf463d5…` | Halhjem–Sandvikvåg@21.32 \| Arsvågen–Mortavika@9.15 |
+| bergen_stavanger | true | 9850 | 2296 | **228.21** | 1064.5 | same geom/fp as default | same |
+| raufoss_tromso | false | **35220** | (per-hop) | **1766.89** | 1064.5 | match `e79679c2…` | 5 legs |
+
+Cold pack_load cut vs Step 1: Bergen eco **15.6 s → ~7.8 s** wall (pack_load
+~12.4 s → ~4.4 s); Tromsø **~50 s → ~35 s**. Peak RSS matrix max **1064.5** MiB
+(below 2b’s ~1155 with parallel=2). Stavanger ferry fingerprints match
+default/eco.
+
 ### Remaining
 
 - Optional: ship prebuilt `{stem}.navi-ferry-overlay-*.rkyv` with packs so first
   coastal overlay never pays full-PBF `pbf_build`
-- **2c** search on mapped tiles (main path to &lt;5 s Bergen cold)
+- **2c** search on mapped tiles (main path to &lt;5 s Bergen cold) — design note
+  below; **not implemented on this branch**
+
+## Step 2c design note — A* on mapped tiles (no merged owned copy)
+
+Goal: keep Bergen eco cold pack_load near mmap/page-in + ferry gate only
+(~1–2 s class on the tablet), and cut Tromsø rematerialize-per-hop, **without**
+building the merged `RouteGraph` that today costs copy + full-node hash merge +
+adjacency rebuild (~2–3 s of the remaining pack_load after 2-pre).
+
+### Addressing nodes across tiles
+
+Today A* expands integer OSM node ids on one owned adjacency list. Without a
+merged copy, a plan would hold an ordered list of **mapped tile views**
+(`Mmap` + archived `FlatGraphPack`) plus the same corridor clip boxes used now.
+
+- **Node identity** stays the OSM id (stable across tiles in v9).
+- **Local index** inside a tile is the position in that tile’s `node_ids` /
+  coord arrays — not globally dense.
+- Expansion for node `u`: for each mapped tile whose clip may contain `u`, look
+  up `u` in that tile (see border resolution), walk archived outgoing edges,
+  apply the clip predicate, emit neighbour `(v, cost)` with `v` still an OSM id.
+
+No single dense `0..N` renumbering unless a later format adds one. Open-set /
+g-score maps stay keyed by OSM id (same as today after merge).
+
+### Shared border nodes without a full-node hash (v9 has no border marks)
+
+v9 packs do **not** mark border nodes (`v9_border_marks=false`). Shared OSM
+ids still appear in every tile that stores an incident edge.
+
+Without the merge-time `HashMap`:
+
+1. **Per-tile id → local index**: build a compact hashmap (or sorted id +
+   binary search) **once per mapped tile** when the tile is opened for search —
+   O(nodes_in_tile), not O(sum of all corridor nodes twice). Miss ⇒ node not in
+   that tile.
+2. **Cross-tile continuity**: if `u` is only needed as a Steiner point on a
+   clipped edge in tile A, tile B that also stores `u` will find it via (1).
+   A* does not need a separate stitch table as long as every clip-kept edge’s
+   endpoints are present in at least one open tile’s node table (true for v9
+   archives that store both ends with each edge).
+3. **Duplicate edges** across overlapping clips: either accept duplicate
+   relaxations (same `v`, same weight → idempotent) or keep a small
+   `(source,target,length_mm,…)` bloom/set for the corridor — much cheaper than
+   today’s full merge hash over every edge up front.
+
+If (1)+(3) prove too slow or memory-heavy on Tromsø, **v10** should add
+explicit border marks or a stem-level border id list so only border nodes are
+indexed globally (see below).
+
+### Eco / ferry / soft-cost overlays
+
+| Overlay | Attach point under mapped search |
+| --- | --- |
+| Eco reweight | Keep today’s edge-cost function; read archived base attributes from the
+  mapped edge and apply eco multipliers at expand time (no owned edge clone).
+  Warm eco can still cache a **reweighted cost side table** keyed by
+  `(tile_ix, edge_ix)` if profiling shows attribute decode dominates. |
+| Ferry overlay | Same directed connectivity gate + sidecar as 2b. Inject ferry edges as
+  a tiny owned adjacency delta keyed by OSM id (hundreds of edges), consulted
+  after mapped-tile expand — do **not** rewrite tile files. |
+| Soft costs / avoidances | Same as eco: evaluate in the cost fn from archived
+  flags + live overlays; optional sparse side table for mutated weights. |
+
+Corridor cache today stores a merged Arc; under 2c it would store **tile path
+list + clip fingerprint + optional ferry delta**, and reopen mmaps (or keep a
+small mmap LRU) instead of retaining owned nodes/edges.
+
+### Expected tablet impact (order-of-magnitude)
+
+| | Today (2b defaults: parallel=1, tile_cache off) | 2c target |
+| --- | --- | --- |
+| Bergen eco cold wall | ~6.6–7.5 s | **&lt;5 s** (pack_load ~mmap/page-in + ferry ≪ copy/merge) |
+| Tromsø wall | ~33 s | hop pack_load drops toward page-in; wall toward A*+multiday |
+| Peak RSS | ~0.9–1.1 GiB (owned corridor) | **lower**: mapped files + open-set; avoid ~hundreds of MiB owned edges |
+
+Numbers are goals, not measurements — validate on SM-P613 with the same matrix
+and LMK/ANR watch.
+
+### When v9 makes 2c impractical — what v10 needs
+
+Ship a format bump only if mapped expand cannot stay correct/fast:
+
+1. **`node_is_border` bit** (or separate border-id array) per tile so cross-tile
+   index is border-only.
+2. Optional **dense local adjacency CSR** already aligned to archived order
+   (avoid rebuilding adjacency from edge lists at open time).
+3. Optional **corridor slice** or precomputed clip edge-index ranges to skip
+   full edge scans on large tiles.
+4. Stable **graph_format_version** gate; keep v9 readable for one release.
+
+Until then: stay on owned merge for search; 2c remains the follow-up after this
+PR’s ferry fix + pack_load cuts.

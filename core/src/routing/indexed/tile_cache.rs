@@ -4,9 +4,15 @@
 //! files. Caching by stem+tile path+format lets assemble-from-cache skip
 //! mmap/page-in/copy on shared tiles without changing which edges enter the
 //! corridor (clips still applied when assembling).
+//!
+//! **Default: disabled.** On the SM-P613 tablet (~3.5 GiB MemTotal) the fit gate
+//! rejects most Ostlandet/Vestlandet tiles (~11% hit rate, dozens of rejects per
+//! Tromsø plan) so the LRU does not earn its RSS. Re-enable for experiments with
+//! `NAVI_TILE_CACHE=1` (or `true` / `yes` / `on`).
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::routing::graph::{RouteGraph, RoutingProfile};
@@ -117,6 +123,28 @@ impl TileLru {
 }
 
 static CACHE: Mutex<Option<TileLru>> = Mutex::new(None);
+static ENABLED_CACHED: AtomicBool = AtomicBool::new(false);
+static ENABLED_RESOLVED: AtomicBool = AtomicBool::new(false);
+
+/// Whether the full-tile LRU is active. Default off; `NAVI_TILE_CACHE=1` enables.
+pub fn tile_cache_enabled() -> bool {
+    if ENABLED_RESOLVED.load(Ordering::Relaxed) {
+        return ENABLED_CACHED.load(Ordering::Relaxed);
+    }
+    let on = match std::env::var("NAVI_TILE_CACHE") {
+        Ok(v) => {
+            let t = v.trim();
+            t == "1"
+                || t.eq_ignore_ascii_case("true")
+                || t.eq_ignore_ascii_case("yes")
+                || t.eq_ignore_ascii_case("on")
+        }
+        Err(_) => false,
+    };
+    ENABLED_CACHED.store(on, Ordering::Relaxed);
+    ENABLED_RESOLVED.store(true, Ordering::Relaxed);
+    on
+}
 
 fn tile_cache_max_bytes_from_mem() -> u64 {
     // Share the same soft budget as corridor cache, but leave headroom for the
@@ -144,19 +172,31 @@ fn with_cache<R>(f: impl FnOnce(&mut TileLru) -> R) -> R {
 }
 
 pub fn tile_cache_get(key: &TileCacheKey) -> Option<Arc<RouteGraph>> {
+    if !tile_cache_enabled() {
+        return None;
+    }
     with_cache(|c| c.get(key))
 }
 
 pub fn tile_cache_insert(key: TileCacheKey, graph: Arc<RouteGraph>) {
+    if !tile_cache_enabled() {
+        return;
+    }
     let bytes = estimate_graph_bytes(&graph);
     with_cache(|c| c.insert(key, graph, bytes));
 }
 
 pub fn tile_cache_stats() -> (u64, u64, u64, usize) {
+    if !tile_cache_enabled() {
+        return (0, 0, 0, 0);
+    }
     with_cache(|c| (c.hits, c.misses, c.bytes, c.map.len()))
 }
 
 pub fn tile_cache_clear() {
+    if !tile_cache_enabled() {
+        return;
+    }
     with_cache(|c| {
         c.map.clear();
         c.order.clear();
@@ -172,6 +212,9 @@ pub fn tile_cache_max_bytes() -> u64 {
 /// True when an on-disk tile is small enough that a full materialize is likely
 /// to fit in the tile LRU (avoids paying full-tile copy then discarding).
 pub fn tile_likely_fits_cache(path: &Path) -> bool {
+    if !tile_cache_enabled() {
+        return false;
+    }
     let max = tile_cache_max_bytes_from_mem();
     let file_bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(u64::MAX);
     // Owned graph ≫ archive. Only cache-full-tile when the rkyv file is a small
@@ -180,6 +223,10 @@ pub fn tile_likely_fits_cache(path: &Path) -> bool {
 }
 
 pub fn tile_cache_evict_before_load() {
+    if !tile_cache_enabled() {
+        crate::routing::plan_perf::note("tile_cache", "disabled");
+        return;
+    }
     let avail = read_mem_available_bytes().unwrap_or(0);
     let near_lmk = avail > 0 && avail < CORRIDOR_CACHE_CRITICAL_AVAIL_BYTES;
     if near_lmk {
@@ -234,7 +281,10 @@ mod tests {
     }
 
     #[test]
-    fn tile_lru_hit() {
+    fn tile_lru_hit_and_disabled_gate() {
+        // Force-enable for unit coverage of the LRU itself.
+        ENABLED_CACHED.store(true, Ordering::Relaxed);
+        ENABLED_RESOLVED.store(true, Ordering::Relaxed);
         tile_cache_clear();
         let key = TileCacheKey::new(RoutingProfile::Car, Path::new("/tmp/t0.rkyv"));
         assert!(tile_cache_get(&key).is_none());
@@ -244,5 +294,13 @@ mod tests {
         assert!(hits >= 1);
         assert!(misses >= 1);
         tile_cache_clear();
+
+        // Disabled path: insert/get/fit are no-ops (keeps tablet default).
+        ENABLED_CACHED.store(false, Ordering::Relaxed);
+        ENABLED_RESOLVED.store(true, Ordering::Relaxed);
+        let key_off = TileCacheKey::new(RoutingProfile::Car, Path::new("/tmp/t_off.rkyv"));
+        tile_cache_insert(key_off.clone(), Arc::new(tiny()));
+        assert!(tile_cache_get(&key_off).is_none());
+        assert!(!tile_likely_fits_cache(Path::new("/tmp/t_off.rkyv")));
     }
 }
