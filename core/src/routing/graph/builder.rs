@@ -551,7 +551,10 @@ impl RouteGraph {
         edges: Vec<GraphEdge>,
         profile: RoutingProfile,
     ) -> Self {
-        Self::from_parts_with_blocks(nodes, edges, profile, HashSet::new(), true)
+        // Defer Kosaraju until a plan proves dig-style Any snaps are not
+        // directed-reachable (Stavanger stub). Dig-matching ODs never pay the
+        // label working set (~tens of MiB peak that dig never held).
+        Self::from_parts_with_blocks(nodes, edges, profile, HashSet::new(), false)
     }
 
     /// Like [`from_parts`], with explicit barrier / access-blocked junctions.
@@ -749,6 +752,8 @@ impl RouteGraph {
         // is multi-second work; skip it when RouteOptions do not remove edges.
         let filtered = options_need_filtered_components(options)
             .then(|| self.option_filtered_components(options));
+        // Degree pad for a cheap reject before edge distance (Automotive
+        // multi-tile graphs are 100k–200k nodes / ~450k edges).
         let pad_deg = (max_m / 100_000.0).max(0.02);
         let endpoint_in_pad = |id: NodeId| -> bool {
             self.nodes.get(&id).is_some_and(|n| {
@@ -768,6 +773,8 @@ impl RouteGraph {
                 None => self.in_giant_component(id),
             }
         };
+        // When RouteOptions remove edges (vehicle limits, avoid-*, …), the
+        // filtered Union-Find map keys *are* the allowed-incident set — O(1).
         let has_allowed_incident = |id: NodeId| -> bool {
             match &filtered {
                 Some((filtered_root, _)) => filtered_root.contains_key(&id),
@@ -775,106 +782,132 @@ impl RouteGraph {
             }
         };
         let directed_ok = |id: NodeId| -> bool { self.directed_snap_ok(id, role) };
-
-        // Collect candidate endpoints within max_m (pad then full scan).
-        // Prefer giant + directed-ok; fall back to next-nearest within the gate.
-        let mut best_any: Option<(NodeId, f64)> = None;
-        let mut best_directed: Option<(NodeId, f64)> = None;
-        let mut best_giant_directed: Option<(NodeId, f64)> = None;
-        let mut seen_pad_hit = false;
-        for pass in 0..2 {
-            if pass == 1 && seen_pad_hit {
-                break;
-            }
-            for e in &self.edges {
-                if pass == 0 && !edge_in_pad(e) {
-                    continue;
-                }
-                if !edge_allowed_for_options(e, options, self.profile) {
-                    continue;
-                }
-                // Cheap reject: both endpoints outside pad on pass 0 already handled;
-                // still record pad hit when any allowed edge touches the pad.
-                if pass == 0 {
-                    seen_pad_hit = true;
-                }
+        // Same edge-distance choice as dig (`SnapRole::Any`): nearest polyline,
+        // then closer endpoint. Directed filter only rejects an endpoint that
+        // fails the role gate — dig's node is kept whenever it is directed-usable.
+        let closer_endpoint =
+            |e: &GraphEdge, require_giant: bool, require_directed: bool| -> Option<(NodeId, f64)> {
+                let mut best: Option<(NodeId, f64)> = None;
                 for id in [e.source, e.target] {
                     if !has_allowed_incident(id) {
+                        continue;
+                    }
+                    if require_giant && !in_filtered_giant(id) {
+                        continue;
+                    }
+                    if require_directed && !directed_ok(id) {
                         continue;
                     }
                     let Some(n) = self.nodes.get(&id) else {
                         continue;
                     };
                     let dist = haversine_point_m(lat, lon, n);
-                    if dist > max_m {
-                        continue;
+                    if best.is_none_or(|(_, d)| dist < d) {
+                        best = Some((id, dist));
                     }
-                    if best_any.is_none_or(|(_, d)| dist < d) {
-                        best_any = Some((id, dist));
-                    }
-                    if !directed_ok(id) {
-                        continue;
-                    }
-                    if best_directed.is_none_or(|(_, d)| dist < d) {
-                        best_directed = Some((id, dist));
-                    }
-                    if in_filtered_giant(id)
-                        && best_giant_directed.is_none_or(|(_, d)| dist < d)
-                    {
-                        best_giant_directed = Some((id, dist));
-                    }
+                }
+                best
+            };
+        // Collect edges by polyline distance (dig order). Prefer the nearest
+        // edge whose closer directed-ok giant endpoint exists; only then walk
+        // farther edges. Filter never reorders ahead of a dig-usable node.
+        let mut candidates: Vec<(usize, f64)> = Vec::new();
+        let mut nearest_any_edge: Option<(usize, f64)> = None;
+        for pass in 0..2 {
+            if pass == 1 && nearest_any_edge.is_some() {
+                break;
+            }
+            for (idx, e) in self.edges.iter().enumerate() {
+                if pass == 0 && !edge_in_pad(e) {
+                    continue;
+                }
+                if !edge_allowed_for_options(e, options, self.profile) {
+                    continue;
+                }
+                let edge_d = super::edge_distance_m(e, lat, lon);
+                if closer_endpoint(e, false, false).is_some()
+                    && nearest_any_edge.is_none_or(|(_, d)| edge_d < d)
+                {
+                    nearest_any_edge = Some((idx, edge_d));
+                }
+                if edge_d <= max_m && closer_endpoint(e, true, false).is_some() {
+                    candidates.push((idx, edge_d));
                 }
             }
         }
+        let Some((best_any_idx, nearest_edge_m)) = nearest_any_edge else {
+            return Err(SnapTooFar {
+                nearest_m: f64::INFINITY,
+                max_m,
+            });
+        };
+        candidates.sort_by(|a, b| a.1.total_cmp(&b.1));
 
         let use_surface_snap = prefer_better_surface
             && self.surface_routing_mode == SurfaceRoutingMode::Car
             && matches!(self.profile, RoutingProfile::Car | RoutingProfile::Truck);
         if use_surface_snap {
-            if let Some((_, nearest_giant_m)) = best_giant_directed {
-                let surface_limit_m = (nearest_giant_m + SURFACE_VIA_SNAP_SLACK_M).min(max_m);
-                let surface_pad = (surface_limit_m / 100_000.0).max(0.02);
-                let mut best_surface_giant: Option<(NodeId, f64)> = None;
-                for (n_id, n) in &self.nodes {
-                    if (n.coord.y - lat).abs() > surface_pad
-                        || (n.coord.x - lon).abs() > surface_pad
-                    {
-                        continue;
-                    }
-                    if !has_allowed_incident(*n_id) || !directed_ok(*n_id) {
-                        continue;
-                    }
-                    let dist = haversine_point_m(lat, lon, n);
-                    if dist > surface_limit_m || !in_filtered_giant(*n_id) {
-                        continue;
-                    }
-                    let sq = worst_incident_surface(self, *n_id);
-                    let replace = match best_surface_giant {
-                        None => true,
-                        Some((prev_id, prev_d)) => {
-                            let prev_sq = worst_incident_surface(self, prev_id);
-                            sq < prev_sq || (sq == prev_sq && dist < prev_d)
+            // Literal nearest is edge-based; surface preference still compares
+            // *nodes* within slack of that snap so a long Good connector edge
+            // cannot leap to a paved end outside the slack budget.
+            if let Some(&(idx, _)) = candidates.first() {
+                if let Some((_, nearest_giant_m)) =
+                    closer_endpoint(&self.edges[idx], true, true)
+                {
+                    let surface_limit_m = (nearest_giant_m + SURFACE_VIA_SNAP_SLACK_M).min(max_m);
+                    let surface_pad = (surface_limit_m / 100_000.0).max(0.02);
+                    let mut best_surface_giant: Option<(NodeId, f64)> = None;
+                    for (n_id, n) in &self.nodes {
+                        if (n.coord.y - lat).abs() > surface_pad
+                            || (n.coord.x - lon).abs() > surface_pad
+                        {
+                            continue;
                         }
-                    };
-                    if replace {
-                        best_surface_giant = Some((*n_id, dist));
+                        if !has_allowed_incident(*n_id) || !directed_ok(*n_id) {
+                            continue;
+                        }
+                        let dist = haversine_point_m(lat, lon, n);
+                        if dist > surface_limit_m || !in_filtered_giant(*n_id) {
+                            continue;
+                        }
+                        let sq = worst_incident_surface(self, *n_id);
+                        let replace = match best_surface_giant {
+                            None => true,
+                            Some((prev_id, prev_d)) => {
+                                let prev_sq = worst_incident_surface(self, prev_id);
+                                sq < prev_sq || (sq == prev_sq && dist < prev_d)
+                            }
+                        };
+                        if replace {
+                            best_surface_giant = Some((*n_id, dist));
+                        }
                     }
-                }
-                if let Some((id, dist)) = best_surface_giant {
-                    return Ok((id, dist));
+                    if let Some((id, dist)) = best_surface_giant {
+                        return Ok((id, dist));
+                    }
                 }
             }
         }
 
-        if let Some((id, dist)) = best_giant_directed {
-            return Ok((id, dist));
+        for (idx, _) in candidates {
+            if let Some((id, dist)) = closer_endpoint(&self.edges[idx], true, true) {
+                return Ok((id, dist));
+            }
         }
-        if let Some((id, dist)) = best_directed {
-            return Ok((id, dist));
+        // Nearest edge exists but no directed-usable giant endpoint within budget.
+        let Some((id, nearest_m)) = closer_endpoint(&self.edges[best_any_idx], false, false) else {
+            return Err(SnapTooFar {
+                nearest_m: nearest_edge_m,
+                max_m,
+            });
+        };
+        if nearest_m > max_m || !directed_ok(id) {
+            return Err(SnapTooFar {
+                nearest_m,
+                max_m,
+            });
         }
-        // No directed-usable node within budget.
-        let nearest_m = best_any.map(|(_, d)| d).unwrap_or(f64::INFINITY);
-        Err(SnapTooFar { nearest_m, max_m })
+        Ok((id, nearest_m))
     }
 
     /// Allowed-incident check when `options` do **not** remove edges vs the
@@ -1111,6 +1144,11 @@ impl RouteGraph {
         self.recompute_directed_main_labels();
     }
 
+    /// True after [`Self::ensure_directed_snap_labels`] populated stub sets.
+    pub fn directed_labels_ready(&self) -> bool {
+        self.directed_labels_ready
+    }
+
     fn recompute_weak_components(&mut self) {
         let mut parent: HashMap<NodeId, NodeId> = HashMap::new();
         let mut size: HashMap<NodeId, usize> = HashMap::new();
@@ -1137,6 +1175,9 @@ impl RouteGraph {
     ///
     /// Stores only *rejected* giant nodes (one-way source/sink stubs), not the
     /// full can-reach / reachable-from sets (~250k NodeIds / tens of MiB).
+    /// Temporary working sets use dense `Vec<bool>` indexed by giant order so
+    /// Kosaraju does not allocate two ~250k-entry `HashSet<NodeId>` (dig held
+    /// none of this; those sets were the ~10 MiB VmHWM bump vs dig).
     fn recompute_directed_main_labels(&mut self) {
         let t0 = std::time::Instant::now();
         self.directed_labels_ready = false;
@@ -1157,54 +1198,99 @@ impl RouteGraph {
             crate::routing::plan_perf::note_u64("directed_label_ms", 0);
             return;
         }
-        self.directed_giant_nodes = giant_nodes.len();
-        let giant_set: HashSet<NodeId> = giant_nodes.iter().copied().collect();
-        let mut rev: HashMap<NodeId, Vec<NodeId>> = HashMap::with_capacity(giant_nodes.len());
-        for e in &self.edges {
-            if giant_set.contains(&e.source) && giant_set.contains(&e.target) {
-                rev.entry(e.target).or_default().push(e.source);
-            }
+        let n = giant_nodes.len();
+        self.directed_giant_nodes = n;
+        // Dense index via sorted pairs + binary search (avoids HashMap of ~N
+        // NodeIds that dig never allocated — that map alone was several MiB).
+        let mut id_rank: Vec<(NodeId, u32)> = Vec::with_capacity(n);
+        for (i, &id) in giant_nodes.iter().enumerate() {
+            id_rank.push((id, i as u32));
         }
-        let mut visited: HashSet<NodeId> = HashSet::with_capacity(giant_nodes.len());
-        let mut order: Vec<NodeId> = Vec::with_capacity(giant_nodes.len());
-        let mut stack: Vec<(NodeId, usize)> = Vec::new();
-        for &start in &giant_nodes {
-            if visited.contains(&start) {
+        id_rank.sort_unstable_by_key(|(id, _)| id.0);
+        let idx_of = |id: NodeId| -> Option<u32> {
+            id_rank
+                .binary_search_by_key(&id.0, |(nid, _)| nid.0)
+                .ok()
+                .map(|p| id_rank[p].1)
+        };
+        // Flat CSR reverse adjacency (no per-node Vec header tax).
+        let mut rev_deg = vec![0u32; n];
+        let mut giant_edge_count = 0usize;
+        for e in &self.edges {
+            let Some(si) = idx_of(e.source) else {
+                continue;
+            };
+            let Some(ti) = idx_of(e.target) else {
+                continue;
+            };
+            let _ = si;
+            rev_deg[ti as usize] = rev_deg[ti as usize].saturating_add(1);
+            giant_edge_count = giant_edge_count.saturating_add(1);
+        }
+        let mut rev_off = vec![0u32; n + 1];
+        for i in 0..n {
+            rev_off[i + 1] = rev_off[i].saturating_add(rev_deg[i]);
+        }
+        let mut rev_flat = vec![0u32; giant_edge_count];
+        let mut cursor = rev_off.clone();
+        for e in &self.edges {
+            let Some(si) = idx_of(e.source) else {
+                continue;
+            };
+            let Some(ti) = idx_of(e.target) else {
+                continue;
+            };
+            let slot = cursor[ti as usize] as usize;
+            rev_flat[slot] = si;
+            cursor[ti as usize] = cursor[ti as usize].saturating_add(1);
+        }
+        drop(rev_deg);
+        drop(cursor);
+        let mut visited = vec![false; n];
+        let mut order: Vec<u32> = Vec::with_capacity(n);
+        let mut stack: Vec<(u32, usize)> = Vec::new();
+        for start in 0..n as u32 {
+            if visited[start as usize] {
                 continue;
             }
             stack.push((start, 0));
-            visited.insert(start);
+            visited[start as usize] = true;
             while let Some((u, ei)) = stack.pop() {
-                let outs = self.adjacency.get(&u).map(|v| v.as_slice()).unwrap_or(&[]);
+                let uid = giant_nodes[u as usize];
+                let outs = self.adjacency.get(&uid).map(|v| v.as_slice()).unwrap_or(&[]);
                 if ei < outs.len() {
                     stack.push((u, ei + 1));
                     let v = self.edges[outs[ei]].target;
-                    if giant_set.contains(&v) && visited.insert(v) {
-                        stack.push((v, 0));
+                    if let Some(vi) = idx_of(v) {
+                        if !visited[vi as usize] {
+                            visited[vi as usize] = true;
+                            stack.push((vi, 0));
+                        }
                     }
                 } else {
                     order.push(u);
                 }
             }
         }
-        visited.clear();
-        let mut best_scc: Vec<NodeId> = Vec::new();
-        let mut rev_stack: Vec<NodeId> = Vec::new();
+        visited.fill(false);
+        let mut best_scc: Vec<u32> = Vec::new();
+        let mut rev_stack: Vec<u32> = Vec::new();
         for &start in order.iter().rev() {
-            if visited.contains(&start) {
+            if visited[start as usize] {
                 continue;
             }
-            let mut comp: Vec<NodeId> = Vec::new();
+            let mut comp: Vec<u32> = Vec::new();
             rev_stack.clear();
             rev_stack.push(start);
-            visited.insert(start);
+            visited[start as usize] = true;
             while let Some(u) = rev_stack.pop() {
                 comp.push(u);
-                if let Some(preds) = rev.get(&u) {
-                    for &p in preds {
-                        if giant_set.contains(&p) && visited.insert(p) {
-                            rev_stack.push(p);
-                        }
+                let a = rev_off[u as usize] as usize;
+                let b = rev_off[u as usize + 1] as usize;
+                for &p in &rev_flat[a..b] {
+                    if !visited[p as usize] {
+                        visited[p as usize] = true;
+                        rev_stack.push(p);
                     }
                 }
             }
@@ -1213,54 +1299,66 @@ impl RouteGraph {
             }
         }
         if best_scc.is_empty() {
-            best_scc = giant_nodes.clone();
+            best_scc = (0..n as u32).collect();
         }
-        // Temporary inclusion sets; dropped after building compact reject stubs.
-        let mut reach_fwd: HashSet<NodeId> = HashSet::with_capacity(best_scc.len());
-        let mut reach_rev: HashSet<NodeId> = HashSet::with_capacity(best_scc.len());
-        let mut q: Vec<NodeId> = best_scc.clone();
-        reach_fwd.extend(best_scc.iter().copied());
+        let mut reach_fwd = vec![false; n];
+        let mut reach_rev = vec![false; n];
+        let mut q: Vec<u32> = best_scc.clone();
+        for &i in &best_scc {
+            reach_fwd[i as usize] = true;
+        }
         let mut qi = 0usize;
         while qi < q.len() {
             let u = q[qi];
             qi += 1;
-            if let Some(outs) = self.adjacency.get(&u) {
+            let uid = giant_nodes[u as usize];
+            if let Some(outs) = self.adjacency.get(&uid) {
                 for &idx in outs {
                     let v = self.edges[idx].target;
-                    if giant_set.contains(&v) && reach_fwd.insert(v) {
-                        q.push(v);
+                    if let Some(vi) = idx_of(v) {
+                        if !reach_fwd[vi as usize] {
+                            reach_fwd[vi as usize] = true;
+                            q.push(vi);
+                        }
                     }
                 }
             }
         }
         q.clear();
         q.extend(best_scc.iter().copied());
-        reach_rev.extend(best_scc.iter().copied());
+        for &i in &best_scc {
+            reach_rev[i as usize] = true;
+        }
         qi = 0;
         while qi < q.len() {
             let u = q[qi];
             qi += 1;
-            if let Some(preds) = rev.get(&u) {
-                for &p in preds {
-                    if giant_set.contains(&p) && reach_rev.insert(p) {
-                        q.push(p);
-                    }
+            let a = rev_off[u as usize] as usize;
+            let b = rev_off[u as usize + 1] as usize;
+            for &p in &rev_flat[a..b] {
+                if !reach_rev[p as usize] {
+                    reach_rev[p as usize] = true;
+                    q.push(p);
                 }
             }
         }
-        for &id in &giant_nodes {
-            if !reach_rev.contains(&id) {
+        for (i, &id) in giant_nodes.iter().enumerate() {
+            if !reach_rev[i] {
                 self.origin_reject.insert(id);
             }
-            if !reach_fwd.contains(&id) {
+            if !reach_fwd[i] {
                 self.dest_reject.insert(id);
             }
         }
         drop(reach_fwd);
         drop(reach_rev);
-        drop(rev);
+        drop(rev_flat);
+        drop(rev_off);
         drop(visited);
-        drop(giant_set);
+        drop(id_rank);
+        drop(order);
+        drop(best_scc);
+        drop(q);
         self.directed_labels_ready = true;
         let ms = t0.elapsed().as_millis() as u64;
         crate::routing::plan_perf::note_u64("directed_label_ms", ms);
@@ -1272,6 +1370,10 @@ impl RouteGraph {
             "directed_dest_reject",
             self.dest_reject.len() as u64,
         );
+        // Compact stubs only (~8 B/NodeId); dig held none of this.
+        let reject_bytes = (self.origin_reject.len() + self.dest_reject.len())
+            .saturating_mul(std::mem::size_of::<NodeId>());
+        crate::routing::plan_perf::note_u64("directed_label_bytes", reject_bytes as u64);
     }
 
     /// True when `id` is usable for `role` in the directed graph.
@@ -4460,7 +4562,8 @@ mod tests {
             e("24", 2, 4, 60.0, 10.01, 60.001, 10.01, true),
             e("52", 5, 2, 59.999, 10.01, 60.0, 10.01, true),
         ];
-        let g = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        let mut g = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        g.ensure_directed_snap_labels();
         // Destination next to sink 4 must prefer a reachable main-network node.
         let dest = RouteOptions {
             snap_role: SnapRole::Destination,
@@ -4564,7 +4667,8 @@ mod tests {
         for e in &mut edges[..4] {
             e.is_oneway = false;
         }
-        let g = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        let mut g = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        g.ensure_directed_snap_labels();
         let origin = RouteOptions {
             snap_role: SnapRole::Origin,
             ..Default::default()

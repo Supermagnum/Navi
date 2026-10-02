@@ -2168,9 +2168,10 @@ fn plan_pack_dirs(
 /// Pass `""` only when the PBF already lives next to the packs.
 ///
 /// `long_trip_enabled` gates densify/chunk for spans above [`LONG_TRIP_CHUNK_DEG`].
-/// Ordinary UI plans pass `false` so mid trips (Raufoss→Bergen, Bergen→Stavanger)
-/// stay on one A*. Directed snap + server-aligned ferry costing removed the need
-/// for same-stem coastal densify when longTrip is off.
+/// Ordinary UI plans pass `false` so cross-stem mid trips (Raufoss→Bergen) stay
+/// on one A*. Same-stem coastal ODs with span > CHUNK densify even when longTrip
+/// is off so Automotive never materialises the full Vestlandet single-shot graph
+/// (Bergen→Stavanger ~259k nodes / ~985 MiB peak vs densify hops ~167k / ≤933).
 ///
 /// `allowed_countries`: when `Some` (non-empty), hard-filters the graph to those
 /// ISO-3166-1 alpha-2 codes ([`RouteOptions::allowed_countries`]). Host "Stay in
@@ -3007,9 +3008,10 @@ fn plan_car_route_inner(
 
     // Long corridors (multi-landsdel) cannot merge every pack tile into one
     // graph on Automotive RAM. Densify hops and plan each leg separately when
-    // the host long-trip toggle is on and span > CHUNK. Same-stem coastal
-    // densify (added in #138 for Bergen→Stavanger overlay shortcuts) is
-    // removed: directed snap + ferry_base_weight_m make single-shot correct.
+    // the host long-trip toggle is on and span > CHUNK. Same-stem coastal ODs
+    // (Vestlandet / Nord-Norge / …) also densify when span > CHUNK with
+    // longTrip off: dig never held the ~259k-node Bergen→Stavanger single-shot
+    // owned RouteGraph that pushed VmHWM to ~985 MiB; densify hops stay ≤~167k.
     let span = driver_break_core::routing::plan_bbox::trip_span_deg(&route_points);
     let pack_dirs_for_densify = plan_pack_dirs(
         std::path::Path::new(pbf_path.trim()),
@@ -3017,7 +3019,28 @@ fn plan_car_route_inner(
         &pack_dir,
         long_trip_enabled,
     );
-    if long_trip_enabled
+    let ferry_same_stem_densify = !long_trip_enabled
+        && !is_chunk_leg
+        && span > driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG
+        && {
+            let (a_lat, a_lon) = route_points[0];
+            let (b_lat, b_lon) = *route_points.last().unwrap();
+            let leaf_a = driver_break_core::long_trip::region_containing(a_lat, a_lon, None);
+            let leaf_b = driver_break_core::long_trip::region_containing(b_lat, b_lon, None);
+            match (leaf_a, leaf_b) {
+                (Some(a), Some(b)) if a == b => {
+                    let leaf = a.rsplit('/').next().unwrap_or(a);
+                    // Inland stems (ostlandet) often span > CHUNK without needing
+                    // densify for RSS; densifying detours Raufoss→Dombås.
+                    matches!(
+                        leaf,
+                        "vestlandet" | "nord-norge" | "sorlandet" | "troms" | "finnmark"
+                    )
+                }
+                _ => false,
+            }
+        };
+    if (long_trip_enabled || ferry_same_stem_densify)
         && !is_chunk_leg
         && span > driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG
     {
@@ -3030,7 +3053,8 @@ fn plan_car_route_inner(
         );
         log::info!(
             target: "NaviPlan",
-            "long_trip densify span={span:.3} hops={} long_trip_enabled={long_trip_enabled} dirs={}",
+            "long_trip densify span={span:.3} hops={} long_trip_enabled={long_trip_enabled} \
+             ferry_same_stem={ferry_same_stem_densify} dirs={}",
             hops.len(),
             pack_dirs
                 .iter()
@@ -3497,6 +3521,8 @@ fn plan_car_route_inner(
             }
 
             // Snap every stop (start → vias → end), then A* each consecutive leg.
+            // Dig-compatible Any snap first (no Kosaraju). Directed stub labels
+            // are ensured only if A* fails with those snaps (Stavanger-class).
             let t_snap = Instant::now();
             let mut snapped: Vec<(osm4routing::NodeId, f64)> =
                 Vec::with_capacity(route_points.len());
@@ -3507,71 +3533,70 @@ fn plan_car_route_inner(
             } else {
                 driver_break_core::routing::plan_bbox::effective_chunk_intermediate_snap_m()
             };
-            for (i, &(lat, lon)) in route_points.iter().enumerate() {
-                // Surface preference is vias-only: start/destination must snap to the
-                // literal nearest routable node (last-mile gravel driveways).
-                let prefer_better_surface = i > 0 && i + 1 < route_points.len();
-                let at_start = i == 0;
-                let at_end = i + 1 == route_points.len();
-                let snap_max = if (at_start && relax_start_snap) || (at_end && relax_end_snap) {
-                    chunk_snap
-                } else {
-                    default_snap
-                };
-                let label = if at_start {
-                    "start".to_string()
-                } else if at_end {
-                    "destination".to_string()
-                } else {
-                    format!("via{i}")
-                };
-                let mut snap_opts = route_opts.clone();
-                snap_opts.snap_role = if at_start {
-                    driver_break_core::routing::graph::SnapRole::Origin
-                } else if at_end {
-                    driver_break_core::routing::graph::SnapRole::Destination
-                } else {
-                    driver_break_core::routing::graph::SnapRole::Via
-                };
-                log::info!(
-                    target: "NaviPlan",
-                    "snap_start stop={label} lat={lat:.5} lon={lon:.5} max_m={snap_max:.0} vehicle={}",
-                    route_opts.vehicle.is_some()
-                );
-                let snap_t0 = std::time::Instant::now();
-                match built.nearest_routable_with_options_max(
-                    lat,
-                    lon,
-                    &snap_opts,
-                    prefer_better_surface,
-                    snap_max,
-                ) {
-                    Ok(v) => {
-                        log::info!(
-                            target: "NaviPlan",
-                            "snap_end stop={label} ok dist_m={:.1} ms={}",
-                            v.1,
-                            snap_t0.elapsed().as_millis()
-                        );
-                        snapped.push(v);
-                    }
-                    Err(e) => {
-                        log::info!(
-                            target: "NaviPlan",
-                            "snap_end stop={label} fail nearest_m={:.1} ms={}",
-                            e.nearest_m,
-                            snap_t0.elapsed().as_millis()
-                        );
-                        last_terminate = "snap_failed";
-                        report.push_str(&format!(
-                            "snap_fail_{label} pad={pad:.2}: {}\n",
-                            format_snap_too_far(&label, e, built.profile())
-                        ));
-                        snap_ok = false;
-                        break;
+            let snap_stops = |built: &driver_break_core::routing::graph::RouteGraph,
+                               route_opts: &driver_break_core::routing::graph::RouteOptions,
+                               use_roles: bool|
+             -> Result<Vec<(osm4routing::NodeId, f64)>, (String, driver_break_core::routing::graph::SnapTooFar)> {
+                let mut out = Vec::with_capacity(route_points.len());
+                for (i, &(lat, lon)) in route_points.iter().enumerate() {
+                    let prefer_better_surface = i > 0 && i + 1 < route_points.len();
+                    let at_start = i == 0;
+                    let at_end = i + 1 == route_points.len();
+                    let snap_max = if (at_start && relax_start_snap) || (at_end && relax_end_snap) {
+                        chunk_snap
+                    } else {
+                        default_snap
+                    };
+                    let label = if at_start {
+                        "start".to_string()
+                    } else if at_end {
+                        "destination".to_string()
+                    } else {
+                        format!("via{i}")
+                    };
+                    let mut snap_opts = route_opts.clone();
+                    snap_opts.snap_role = if !use_roles {
+                        driver_break_core::routing::graph::SnapRole::Any
+                    } else if at_start {
+                        driver_break_core::routing::graph::SnapRole::Origin
+                    } else if at_end {
+                        driver_break_core::routing::graph::SnapRole::Destination
+                    } else {
+                        driver_break_core::routing::graph::SnapRole::Via
+                    };
+                    match built.nearest_routable_with_options_max(
+                        lat,
+                        lon,
+                        &snap_opts,
+                        prefer_better_surface,
+                        snap_max,
+                    ) {
+                        Ok(v) => out.push(v),
+                        Err(e) => return Err((label, e)),
                     }
                 }
+                Ok(out)
+            };
+            match snap_stops(&built, &route_opts, false) {
+                Ok(first) => {
+                    snapped = first;
+                    driver_break_core::routing::plan_perf::note(
+                        "directed_snap",
+                        "any_first_labels_deferred",
+                    );
+                    driver_break_core::routing::plan_perf::note_u64("directed_label_ms", 0);
+                }
+                Err((label, e)) => {
+                    last_terminate = "snap_failed";
+                    report.push_str(&format!(
+                        "snap_fail_{label} pad={pad:.2}: {}\n",
+                        format_snap_too_far(&label, e, built.profile())
+                    ));
+                    snap_ok = false;
+                }
             }
+            snap_ms_acc = snap_ms_acc.saturating_add(t_snap.elapsed().as_millis() as u64);
+            driver_break_core::routing::plan_perf::note_u64("directed_snap_ms", snap_ms_acc);
             if !snap_ok {
                 break; // next pad (edge_clip_mode unchanged)
             }
@@ -3618,10 +3643,7 @@ fn plan_car_route_inner(
                     return r;
                 }
             }
-            snap_ms_acc = snap_ms_acc.saturating_add(t_snap.elapsed().as_millis() as u64);
-            // directed_label_ms was noted during rebuild_adjacency; snap_ms includes
-            // O(1) role-reject checks on candidates (target: <<50 ms vs dig).
-            driver_break_core::routing::plan_perf::note_u64("directed_snap_ms", snap_ms_acc);
+            // snap_ms already accumulated above (dig pad scan; labels deferred).
             log::info!(
                 target: "NaviPlan",
                 "snap_ok stops={} — starting A*",
@@ -3663,6 +3685,78 @@ fn plan_car_route_inner(
                 } else {
                     full_path.extend(p.into_iter().skip(1));
                     full_edges.extend(e);
+                }
+            }
+            // Any-snap A* miss: dig tip failed Stavanger this way. Build directed
+            // stub labels, re-snap Origin/Destination, retry A* once.
+            if !legs_ok && !built.directed_labels_ready() {
+                driver_break_core::routing::plan_perf::note(
+                    "directed_snap",
+                    "ensure_labels_after_astar_miss",
+                );
+                driver_break_core::routing::indexed::corridor_cache_clear();
+                let t_lab = Instant::now();
+                std::sync::Arc::make_mut(&mut built).ensure_directed_snap_labels();
+                driver_break_core::routing::plan_perf::note_u64(
+                    "directed_label_ms",
+                    t_lab.elapsed().as_millis() as u64,
+                );
+                let t_resnap = Instant::now();
+                match snap_stops(&built, &route_opts, true) {
+                    Ok(second) => {
+                        snapped = second;
+                        snap_ms_acc =
+                            snap_ms_acc.saturating_add(t_resnap.elapsed().as_millis() as u64);
+                        driver_break_core::routing::plan_perf::note_u64(
+                            "directed_snap_ms",
+                            snap_ms_acc,
+                        );
+                        full_path.clear();
+                        full_edges.clear();
+                        full_cost = 0.0;
+                        leg_expansions = 0;
+                        legs_ok = true;
+                        let t_search2 = Instant::now();
+                        for leg in 0..snapped.len() - 1 {
+                            let (ss, _) = snapped[leg];
+                            let (gg, _) = snapped[leg + 1];
+                            let stats = built.shortest_path_with_options_stats(
+                                ss, gg, use_eco, &route_opts,
+                            );
+                            leg_expansions = leg_expansions.saturating_add(stats.expansions);
+                            last_terminate = stats.terminate_reason;
+                            let Some((p, e, c)) = stats.path else {
+                                report.push_str(&format!(
+                                    "no_route_leg{} after_directed_snap pad={pad:.2} expansions={} reason={}\n",
+                                    leg + 1,
+                                    stats.expansions,
+                                    stats.terminate_reason
+                                ));
+                                legs_ok = false;
+                                break;
+                            };
+                            if p.len() < 2 {
+                                legs_ok = false;
+                                break;
+                            }
+                            full_cost += c;
+                            if full_path.is_empty() {
+                                full_path = p;
+                                full_edges = e;
+                            } else {
+                                full_path.extend(p.into_iter().skip(1));
+                                full_edges.extend(e);
+                            }
+                        }
+                        search_ms_acc = search_ms_acc
+                            .saturating_add(t_search2.elapsed().as_millis() as u64);
+                    }
+                    Err((label, e)) => {
+                        report.push_str(&format!(
+                            "snap_fail_{label} after_directed_labels pad={pad:.2}: {}\n",
+                            format_snap_too_far(&label, e, built.profile())
+                        ));
+                    }
                 }
             }
             search_ms_acc = search_ms_acc.saturating_add(t_search.elapsed().as_millis() as u64);
