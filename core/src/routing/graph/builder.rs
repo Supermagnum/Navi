@@ -4,7 +4,6 @@ use std::path::Path;
 use osm4routing::{
     BikeAccessibility, CarAccessibility, Edge, FootAccessibility, Node, NodeId, Reader,
 };
-use pathfinding::directed::astar::astar;
 use serde::{Deserialize, Serialize};
 
 use crate::config::{
@@ -21,9 +20,6 @@ use super::surface_quality::{
     classify_surface_tags, surface_transition_cost_m, worst_incident_surface, SurfaceQuality,
     SurfaceRoutingMode, SNAP_VIRTUAL_APPROACH_SURFACE,
 };
-
-/// Sentinel `incoming_edge` on the A* start state (no prior graph edge).
-const NO_INCOMING_EDGE: usize = usize::MAX;
 
 /// Routing profile derived from travel mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -321,6 +317,15 @@ pub struct RouteGraph {
     directed_giant_nodes: usize,
     /// Surface strictness for motor snap preference and transition penalties.
     pub surface_routing_mode: SurfaceRoutingMode,
+    /// Dense search index (OSM id → 0..N-1), rebuilt with adjacency.
+    pub(crate) dense_ids: Vec<NodeId>,
+    pub(crate) id_to_dense: HashMap<NodeId, u32>,
+    pub(crate) dense_lat: Vec<f64>,
+    pub(crate) dense_lon: Vec<f64>,
+    pub(crate) dense_blocked: Vec<bool>,
+    /// CSR: outgoing edge indices per dense node (`adj_off` length N+1).
+    pub(crate) adj_off: Vec<u32>,
+    pub(crate) adj_edge: Vec<u32>,
 }
 
 impl Clone for RouteGraph {
@@ -339,6 +344,13 @@ impl Clone for RouteGraph {
             dest_reject: self.dest_reject.clone(),
             directed_giant_nodes: self.directed_giant_nodes,
             surface_routing_mode: self.surface_routing_mode,
+            dense_ids: self.dense_ids.clone(),
+            id_to_dense: self.id_to_dense.clone(),
+            dense_lat: self.dense_lat.clone(),
+            dense_lon: self.dense_lon.clone(),
+            dense_blocked: self.dense_blocked.clone(),
+            adj_off: self.adj_off.clone(),
+            adj_edge: self.adj_edge.clone(),
         }
     }
 }
@@ -468,6 +480,13 @@ impl RouteGraph {
             dest_reject: HashSet::new(),
             directed_giant_nodes: 0,
             surface_routing_mode: SurfaceRoutingMode::default(),
+            dense_ids: Vec::new(),
+            id_to_dense: HashMap::new(),
+            dense_lat: Vec::new(),
+            dense_lon: Vec::new(),
+            dense_blocked: Vec::new(),
+            adj_off: Vec::new(),
+            adj_edge: Vec::new(),
         };
         for edge in filtered {
             let start = graph
@@ -582,6 +601,13 @@ impl RouteGraph {
             dest_reject: HashSet::new(),
             directed_giant_nodes: 0,
             surface_routing_mode: SurfaceRoutingMode::default(),
+            dense_ids: Vec::new(),
+            id_to_dense: HashMap::new(),
+            dense_lat: Vec::new(),
+            dense_lon: Vec::new(),
+            dense_blocked: Vec::new(),
+            adj_off: Vec::new(),
+            adj_edge: Vec::new(),
         };
         graph.rebuild_adjacency();
         if with_directed_labels {
@@ -1128,6 +1154,7 @@ impl RouteGraph {
             self.incident.insert(edge.target);
         }
         self.recompute_weak_components();
+        self.rebuild_dense_index();
         // Directed stubs: [`Self::ensure_directed_snap_labels`] on final corridor.
     }
 
@@ -1446,17 +1473,22 @@ impl RouteGraph {
 
     /// Like [`Self::path_overlay_polyline`] using A*-recorded edge indices (preferred).
     pub fn path_overlay_polyline_from_edges(&self, edge_indices: &[usize]) -> String {
-        let mut out = String::new();
+        let mut approx_pts = 0usize;
+        for &idx in edge_indices {
+            approx_pts = approx_pts.saturating_add(2 + self.edges[idx].shape.len());
+        }
+        // "~24 chars per lon,lat;" — pre-size to cut reallocs on long corridors.
+        let mut out = String::with_capacity(approx_pts.saturating_mul(24));
         let mut last: Option<(f64, f64)> = None;
         let mut push = |lon: f64, lat: f64| {
             if last == Some((lon, lat)) {
                 return;
             }
-            if out.is_empty() {
-                out.push_str(&format!("{lon},{lat}"));
-            } else {
-                out.push_str(&format!(";{lon},{lat}"));
+            use std::fmt::Write as _;
+            if !out.is_empty() {
+                out.push(';');
             }
+            let _ = write!(out, "{lon},{lat}");
             last = Some((lon, lat));
         };
         for &idx in edge_indices {
@@ -1624,7 +1656,6 @@ impl RouteGraph {
         options: &RouteOptions,
     ) -> PathSearchStats {
         let plan_id = crate::download::plan_cancel::current_plan_id();
-        let expansions = std::sync::atomic::AtomicU64::new(0);
         let surface_mode = options
             .surface_routing_mode
             .unwrap_or(self.surface_routing_mode);
@@ -1634,128 +1665,34 @@ impl RouteGraph {
         // stays admissible on real OSM (≈1.0×haversine) and on synthetic fixtures.
         let heuristic_per_m = self.astar_heuristic_cost_per_metre(use_eco, options);
 
-        if use_surface_transitions {
-            let result = astar(
-                &(start, Some(SNAP_VIRTUAL_APPROACH_SURFACE), NO_INCOMING_EDGE),
-                |state| {
-                    let (node, prev_surface, _) = *state;
-                    let n = expansions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    if plan_id != 0
-                        && n & 2047 == 0
-                        && crate::download::plan_cancel::is_cancelled_id(plan_id)
-                    {
-                        return Vec::new();
-                    }
-                    if self.access_blocked_nodes.contains(&node) && node != start {
-                        return Vec::new();
-                    }
-                    self.adjacency
-                        .get(&node)
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|&edge_idx| {
-                            let edge = &self.edges[edge_idx];
-                            if !edge_allowed_for_options(edge, options, self.profile) {
-                                return None;
-                            }
-                            let base = edge_travel_cost(edge, edge_idx, use_eco, options);
-                            let transition = surface_transition_cost_m(
-                                prev_surface,
-                                edge.surface_quality,
-                                surface_mode,
-                            );
-                            let cost = cost_to_u64(base + transition);
-                            Some(((edge.target, Some(edge.surface_quality), edge_idx), cost))
-                        })
-                        .collect::<Vec<_>>()
-                },
-                |state| {
-                    cost_to_u64(
-                        self.nodes
-                            .get(&state.0)
-                            .and_then(|n| self.nodes.get(&goal).map(|g| haversine_m(n, g)))
-                            .unwrap_or(0.0)
-                            * heuristic_per_m,
-                    )
-                },
-                |state| state.0 == goal,
-            );
-            let expansions = expansions.load(std::sync::atomic::Ordering::Relaxed);
-            if crate::download::plan_cancel::is_cancelled_id(plan_id) {
-                return PathSearchStats {
-                    path: None,
-                    expansions,
-                    terminate_reason: "cancelled",
-                };
-            }
-            let path = result.map(|(path, cost)| decode_recorded_path(path, cost));
-            return PathSearchStats {
-                terminate_reason: if path.is_some() {
-                    "found"
-                } else {
-                    "disconnected"
-                },
-                path,
-                expansions,
-            };
-        }
+        let found = if use_surface_transitions {
+            self.dense_astar_surface(start, goal, use_eco, options, heuristic_per_m, surface_mode)
+        } else {
+            self.dense_astar_simple(start, goal, use_eco, options, heuristic_per_m)
+        };
 
-        let result = astar(
-            &(start, NO_INCOMING_EDGE),
-            |state| {
-                let (node, _) = *state;
-                let n = expansions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                if plan_id != 0
-                    && n & 2047 == 0
-                    && crate::download::plan_cancel::is_cancelled_id(plan_id)
-                {
-                    return Vec::new();
-                }
-                if self.access_blocked_nodes.contains(&node) && node != start {
-                    return Vec::new();
-                }
-                self.adjacency
-                    .get(&node)
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|&edge_idx| {
-                        let edge = &self.edges[edge_idx];
-                        if !edge_allowed_for_options(edge, options, self.profile) {
-                            return None;
-                        }
-                        let cost = edge_travel_cost(edge, edge_idx, use_eco, options);
-                        Some(((edge.target, edge_idx), cost_to_u64(cost)))
-                    })
-                    .collect::<Vec<_>>()
-            },
-            |state| {
-                cost_to_u64(
-                    self.nodes
-                        .get(&state.0)
-                        .and_then(|n| self.nodes.get(&goal).map(|g| haversine_m(n, g)))
-                        .unwrap_or(0.0)
-                        * heuristic_per_m,
-                )
-            },
-            |(node, _)| *node == goal,
-        );
-        let expansions = expansions.load(std::sync::atomic::Ordering::Relaxed);
         if crate::download::plan_cancel::is_cancelled_id(plan_id) {
+            let expansions = match &found {
+                super::dense_search::DenseSearchOutcome::Found(p) => p.expansions,
+                super::dense_search::DenseSearchOutcome::Failed { expansions } => *expansions,
+            };
             return PathSearchStats {
                 path: None,
                 expansions,
                 terminate_reason: "cancelled",
             };
         }
-        let path = result.map(|(path, cost)| decode_recorded_path_simple(path, cost));
-        PathSearchStats {
-            terminate_reason: if path.is_some() {
-                "found"
-            } else {
-                "disconnected"
+        match found {
+            super::dense_search::DenseSearchOutcome::Found(p) => PathSearchStats {
+                terminate_reason: "found",
+                expansions: p.expansions,
+                path: Some((p.nodes, p.edges, p.cost)),
             },
-            path,
-            expansions,
+            super::dense_search::DenseSearchOutcome::Failed { expansions } => PathSearchStats {
+                terminate_reason: "disconnected",
+                expansions,
+                path: None,
+            },
         }
     }
 
@@ -2436,7 +2373,7 @@ fn options_need_filtered_components(options: &RouteOptions) -> bool {
         || options.departure_local.is_some()
 }
 
-fn edge_allowed_for_options(
+pub(crate) fn edge_allowed_for_options(
     edge: &GraphEdge,
     options: &RouteOptions,
     profile: RoutingProfile,
@@ -2538,7 +2475,7 @@ fn edge_in_allowed_countries(edge: &GraphEdge, allowed: &[String]) -> bool {
     true
 }
 
-fn edge_travel_cost(
+pub(crate) fn edge_travel_cost(
     edge: &GraphEdge,
     edge_idx: usize,
     use_eco: bool,
@@ -2570,24 +2507,6 @@ fn edge_travel_cost(
         cost *= mult;
     }
     cost
-}
-
-fn decode_recorded_path(
-    path: Vec<(NodeId, Option<SurfaceQuality>, usize)>,
-    cost: u64,
-) -> (Vec<NodeId>, Vec<usize>, f64) {
-    let nodes: Vec<NodeId> = path.iter().map(|(n, _, _)| *n).collect();
-    let edges: Vec<usize> = path.iter().skip(1).map(|(_, _, e)| *e).collect();
-    (nodes, edges, cost as f64 / 1000.0)
-}
-
-fn decode_recorded_path_simple(
-    path: Vec<(NodeId, usize)>,
-    cost: u64,
-) -> (Vec<NodeId>, Vec<usize>, f64) {
-    let nodes: Vec<NodeId> = path.iter().map(|(n, _)| *n).collect();
-    let edges: Vec<usize> = path.iter().skip(1).map(|(_, e)| *e).collect();
-    (nodes, edges, cost as f64 / 1000.0)
 }
 
 fn cost_to_u64(cost: f64) -> u64 {
@@ -2671,10 +2590,6 @@ fn load_access_blocked_barrier_nodes(
         }
     })?;
     Ok(blocked)
-}
-
-fn haversine_m(a: &Node, b: &Node) -> f64 {
-    haversine_latlon_m(a.coord.y, a.coord.x, b.coord.y, b.coord.x)
 }
 
 fn haversine_point_m(lat: f64, lon: f64, n: &Node) -> f64 {

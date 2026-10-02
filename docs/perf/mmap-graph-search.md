@@ -580,3 +580,56 @@ do **not** take the ferry densify path.
 | raufoss_tromso | false | 34020 | **1766.89** | `e79679c2…` | 5 legs; **4 days / 3 overnight** |
 
 **STOP — wait for merge of #138. Do not start Phase 2.**
+
+## Phase 2 PART B — time outside pack_load (branch `perf/tile-index-sidecar`)
+
+Merged #138 at `1f5a60b9`. Device SM-P613 `R52TB0JQEDE`.
+
+### B.1 Residual breakdown (Bergen eco cold)
+
+Source: post-RSS-clamp matrix logcat (`/tmp/r2r_rss_fix3_matrix_logcat.txt`),
+tip that became #138. **wall_ms=7142**, **pack_load_ms=4024** → residual
+**~3118 ms** outside pack_load.
+
+`ROUTE_PLAN_STAGES` (sums to ~3066 ms; ~52 ms timer/unaccounted):
+
+| Stage | ms | Notes |
+| --- | ---: | --- |
+| profile_map_ms | 203 | travel-profile / settings map |
+| eco_reweight_ms | 238 | eco edge weights on owned corridor |
+| snap_ms | 233 | start+end nearest_routable |
+| network_pref_ms | 0 | |
+| **astar_ms** | **1222** | pathfinding IndexMap keyed by OSM id (+ surface, edge) |
+| **polyline_ms** | **388** | overlay string from edge shapes |
+| **poi_barrier_ms** | **743** | cold POI pack miss (polyline-clipped) |
+| rest_branch_ms | 1 | |
+| multiday_ms | 0 | single-day |
+| pause_pins_ms | 26 | |
+| report_addons_ms | 12 | |
+| **Sum (excl. pack_load)** | **~3066** | |
+
+Nothing material left unexplained (~1.7% of residual).
+
+### B.2 Dense A* (OSM HashMap → dense CSR + flat arrays)
+
+**Before:** `pathfinding::astar` with `FxIndexMap` states keyed by OSM `NodeId`
+(plus surface + incoming edge on car/truck); `RouteGraph.adjacency` was
+`HashMap<NodeId, Vec<usize>>`; heuristic did `nodes.get` HashMap lookups.
+
+**After:** at adjacency rebuild, build dense `id→u32`, CSR `adj_off`/`adj_edge`,
+flat lat/lon/blocked. Custom A* keys by `node_idx` (×4 surfaces for car/truck);
+parent edge stored in a parallel array (not in the open-set key).
+
+Tablet before/after `astar_ms` (same matrix; distances + geom hashes must match):
+
+| case | eco | astar before | astar after | distance | geom |
+| --- | --- | ---: | ---: | ---: | --- |
+| *(fill after tablet run)* | | | | | |
+
+### B.3 Other stages >300 ms
+
+- **polyline_ms (~388):** pre-size the overlay string + `write!` into it (no
+  per-point `format!` realloc storm).
+- **poi_barrier_ms (~743):** cold miss after the path; needs polyline/corridor
+  clip. Warm is ~155 ms (cache hit). Overlap-with-A* / corridor-clip preload
+  left for a follow-up if residual still blocks &lt;5 s after dense A*.

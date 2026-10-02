@@ -16,6 +16,7 @@ mod bbox_build;
 mod bike_suitability;
 mod builder;
 mod cache;
+mod dense_search;
 mod network_pref;
 mod reweight;
 mod road_near;
