@@ -413,19 +413,50 @@ fn diesel_never_uses_naive_as_result() {
 const DIESEL_TORQUE_ERR_BOUND_PCT: f64 = 20.0;
 
 #[test]
-fn diesel_never_uses_saturated_lambda_as_afr() {
+fn no_saturated_or_not_ready_lambda_as_afr() {
     let rows = scenario_results();
-    for r in rows.iter().filter(|r| r.engine.is_diesel()) {
-        if r.lambda_saturated {
+    for r in &rows {
+        if !r.lambda_state.usable() {
             assert!(
                 r.afr.is_none(),
-                "saturated AFR used {} {}",
+                "unusable lambda used as AFR {} {} {:?}",
                 r.table_id,
-                r.vary_label
+                r.vary_label,
+                r.lambda_state
             );
-            assert_ne!(r.source, FuelRateSource::MafDerived);
+            if r.engine.is_diesel() {
+                assert_ne!(r.source, FuelRateSource::MafDerived);
+            }
         }
     }
+}
+
+#[test]
+fn megasquirt_pw_and_wideband_agree_when_valid() {
+    use driver_break_core::ecu::fuel::MS_WB_DISAGREE_FRAC;
+    let rows = scenario_results();
+    let mut n = 0;
+    for r in rows.iter().filter(|r| r.table_id.contains("MegaSquirt")) {
+        if r.fuel_cut || r.lambda_state != driver_break_core::ecu::fuel::LambdaState::Valid {
+            continue;
+        }
+        if r.vary_label.contains("warm-up") {
+            continue;
+        }
+        let (Some(pw), Some(wb)) = (r.ms_pw_l_h, r.ms_wb_l_h) else {
+            continue;
+        };
+        n += 1;
+        let denom = pw.abs().max(wb.abs()).max(1e-9);
+        let frac = (pw - wb).abs() / denom;
+        assert!(
+            frac <= MS_WB_DISAGREE_FRAC + 1e-6,
+            "{} {} PW {pw} WB {wb} frac {frac}",
+            r.table_id,
+            r.vary_label
+        );
+    }
+    assert!(n > 10, "expected MS cross-check rows, got {n}");
 }
 
 #[test]

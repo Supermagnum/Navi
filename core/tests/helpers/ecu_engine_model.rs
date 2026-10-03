@@ -7,13 +7,17 @@
 
 use driver_break_core::ecu::ambient::baro_kpa_from_altitude_m;
 use driver_break_core::ecu::decode::{
-    apply_j1939_lfe_illustrative, apply_j1939_spn174, decode_elm327_mode01, encode_mode01,
-    IceDecode,
+    apply_j1939_lfe_illustrative, apply_j1939_spn174, apply_megasquirt_telemetry,
+    decode_elm327_mode01, encode_mode01, IceDecode,
 };
 use driver_break_core::ecu::fuel::{
-    fuel_density_kg_l_at, maf_to_fuel_rate_l_h, stoich_afr, torque_pct_for_fuel_l_h,
-    FuelRateQuality, FuelRateSource, IceFuelKind, DEFAULT_LAMBDA_EQ_MAX, DIESEL_STOICH_AFR,
-    PETROL_DENSITY_KG_L, PETROL_STOICH_AFR,
+    fuel_density_kg_l_at, maf_to_fuel_rate_l_h, megasquirt_fuel_rate_l_h, stoich_afr,
+    torque_pct_for_fuel_l_h, FuelRateQuality, FuelRateSource, IceFuelKind, LambdaState,
+    DEFAULT_LAMBDA_EQ_MAX, DIESEL_STOICH_AFR, PETROL_DENSITY_KG_L, PETROL_STOICH_AFR,
+};
+use driver_break_core::ecu::megasquirt::{
+    decode_ms_realtime_wideband, encode_ms_realtime_test, MsFirmwareKind, MsWidebandSettings,
+    MS_WB_AFR_MAX,
 };
 
 const R_AIR: f64 = 287.058;
@@ -137,6 +141,9 @@ pub struct OperatingPoint {
     pub altitude_m: f64,
     pub overrun: bool,
     pub use_j1939: bool,
+    pub use_megasquirt: bool,
+    pub ms_seconds: u16,
+    pub ms_warmup: bool,
     /// When set, PID 52 uses this ethanol % (flex E70 sample).
     pub ethanol_pct_override: Option<f64>,
 }
@@ -164,6 +171,7 @@ pub struct ScenarioResult {
     pub true_afr: Option<f64>,
     pub true_fuel_l_h: Option<f64>,
     pub lambda_saturated: bool,
+    pub lambda_state: LambdaState,
     pub navi_err_pct: Option<f64>,
     pub density: Option<f64>,
     pub fuel_l_h: Option<f64>,
@@ -172,6 +180,9 @@ pub struct ScenarioResult {
     pub quality: FuelRateQuality,
     pub naive_l_h: Option<f64>,
     pub naive_err_pct: Option<f64>,
+    pub ms_pw_l_h: Option<f64>,
+    pub ms_wb_l_h: Option<f64>,
+    pub ms_diff_pct: Option<f64>,
     pub fuel_cut: bool,
     pub example: bool,
     pub elm_lines: Vec<String>,
@@ -328,6 +339,9 @@ pub fn baseline(engine: EngineKind, blend: FuelBlend) -> OperatingPoint {
         altitude_m: 0.0,
         overrun: false,
         use_j1939: false,
+        use_megasquirt: false,
+        ms_seconds: 120,
+        ms_warmup: false,
         ethanol_pct_override: None,
     }
 }
@@ -420,7 +434,7 @@ fn encode_and_decode(op: &OperatingPoint) -> (IceDecode, Vec<String>, bool) {
     if let Some(e) = ethanol {
         push(&mut lines, &mut d, 0x52, &[clamp_u8(e * 255.0 / 100.0)]);
     }
-    if fuel_cut {
+    if fuel_cut && !op.use_megasquirt {
         push(&mut lines, &mut d, 0x5E, &[0x00, 0x00]);
         let lam_raw = if op.engine.is_diesel() || op.coolant_c >= 50.0 {
             0xFFFFu16
@@ -433,18 +447,28 @@ fn encode_and_decode(op: &OperatingPoint) -> (IceDecode, Vec<String>, bool) {
             0x24,
             &[(lam_raw >> 8) as u8, lam_raw as u8],
         );
-    } else if let Some(lam) = lambda {
-        let lam_raw = clamp_u16(lam / DEFAULT_LAMBDA_EQ_MAX * 65536.0);
-        push(
-            &mut lines,
-            &mut d,
-            0x24,
-            &[(lam_raw >> 8) as u8, lam_raw as u8],
-        );
+    } else if !op.use_megasquirt {
+        if let Some(lam) = lambda {
+            let lam_raw = clamp_u16(lam / DEFAULT_LAMBDA_EQ_MAX * 65536.0);
+            push(
+                &mut lines,
+                &mut d,
+                0x24,
+                &[(lam_raw >> 8) as u8, lam_raw as u8],
+            );
+        }
     }
     push(&mut lines, &mut d, 0x4F, &[0x00, 0x00, 0x00, 0x00]);
     let rho = fuel_density_kg_l_at(op.engine.ice_kind(), ethanol, Some(op.fuel_temp_c));
-    let true_fuel = afr_opt.and_then(|a| maf_to_fuel_rate_l_h(maf, a, rho));
+    let maf_d = d.maf_g_s.unwrap_or(maf);
+    let true_afr_mass = afr_opt.map(|a| {
+        if op.engine.is_diesel() {
+            a
+        } else {
+            (a / PETROL_STOICH_AFR) * stoich_afr(IceFuelKind::Petrol, ethanol)
+        }
+    });
+    let true_fuel = true_afr_mass.and_then(|a| maf_to_fuel_rate_l_h(maf_d, a, rho));
     let tq = if fuel_cut {
         0.0
     } else {
@@ -473,6 +497,41 @@ fn encode_and_decode(op: &OperatingPoint) -> (IceDecode, Vec<String>, bool) {
     let ft_raw = clamp_u8(op.fuel_temp_c + 40.0);
     apply_j1939_spn174(&mut d, ft_raw);
     lines.push(format!("J1939 SPN174 raw={ft_raw}"));
+    if op.use_megasquirt {
+        let afr_rep = if fuel_cut {
+            MS_WB_AFR_MAX
+        } else {
+            afr_opt.unwrap_or(PETROL_STOICH_AFR)
+        };
+        let secs = if op.ms_warmup { 10 } else { op.ms_seconds };
+        let block = encode_ms_realtime_test(
+            MsFirmwareKind::Ms3,
+            secs,
+            Some(afr_rep),
+            Some(afr_rep),
+            Some(afr_rep),
+        );
+        let wb = decode_ms_realtime_wideband(
+            "MS3 Format 0262.14",
+            &block,
+            MsWidebandSettings::default(),
+            ethanol,
+            Some(op.rpm),
+            fuel_cut,
+            false,
+        );
+        let pw = if fuel_cut {
+            Some(0.0)
+        } else {
+            true_fuel.map(|r| r * 2_000_000.0 / (op.rpm * 4.0 * 250.0))
+        };
+        apply_megasquirt_telemetry(&mut d, pw, op.rpm, 4, Some(250.0), ethanol, wb, fuel_cut);
+        d.engine_disp_l = Some(op.engine.spec().disp_l);
+        d.ve = Some(ve(op));
+        lines.push(format!(
+            "MS3 realtime AFR={afr_rep:.2} pw={pw:?} secs={secs}"
+        ));
+    }
     if !op.use_j1939 || d.fuel_rate_l_h.is_none() {
         d.finish_fuel_rate(op.engine.ice_kind());
     }
@@ -487,14 +546,20 @@ pub fn run_scenario(sc: &Scenario) -> ScenarioResult {
     let ethanol = sc.op.ethanol_pct_override.or(sc.op.blend.ethanol_pct());
     let baro = baro_kpa_from_altitude_m(sc.op.altitude_m).unwrap_or(101.325);
     let maf_true = maf_g_s_model(&sc.op, baro);
-    let true_afr = model_afr(&sc.op);
+    let true_afr = model_afr(&sc.op).map(|a| {
+        if sc.op.engine.is_diesel() {
+            a
+        } else {
+            (a / PETROL_STOICH_AFR) * stoich_afr(IceFuelKind::Petrol, ethanol)
+        }
+    });
     let rho_true = fuel_density_kg_l_at(sc.op.engine.ice_kind(), ethanol, Some(sc.op.fuel_temp_c));
     let true_fuel = if fuel_cut {
         Some(0.0)
     } else {
         true_afr.and_then(|a| maf_to_fuel_rate_l_h(maf_true, a, rho_true))
     };
-    let afr_used = if fuel_cut || d.lambda_saturated {
+    let afr_used = if fuel_cut || !d.lambda_state.usable() {
         None
     } else {
         d.lambda
@@ -514,11 +579,27 @@ pub fn run_scenario(sc: &Scenario) -> ScenarioResult {
         _ => None,
     };
     let density = match d.fuel_rate_source {
-        FuelRateSource::MafDerived | FuelRateSource::TorqueBsfc => Some(fuel_density_kg_l_at(
-            sc.op.engine.ice_kind(),
-            ethanol,
-            d.fuel_temp_c,
-        )),
+        FuelRateSource::MafDerived | FuelRateSource::TorqueBsfc | FuelRateSource::MegaSquirt => {
+            Some(fuel_density_kg_l_at(
+                sc.op.engine.ice_kind(),
+                ethanol,
+                d.fuel_temp_c,
+            ))
+        }
+        _ => None,
+    };
+    let ms_pw_l_h = if sc.op.use_megasquirt {
+        d.ms_pw_ms
+            .and_then(|pw| megasquirt_fuel_rate_l_h(pw, sc.op.rpm, 4, 250.0))
+            .or(d
+                .fuel_rate_l_h
+                .filter(|_| d.fuel_rate_source == FuelRateSource::MegaSquirt))
+    } else {
+        None
+    };
+    let ms_wb_l_h = d.ms_wb_crosscheck_l_h;
+    let ms_diff_pct = match (ms_pw_l_h, ms_wb_l_h) {
+        (Some(a), Some(b)) if a.abs() > 1e-9 => Some((b - a) / a * 100.0),
         _ => None,
     };
     ScenarioResult {
@@ -534,6 +615,7 @@ pub fn run_scenario(sc: &Scenario) -> ScenarioResult {
         true_afr,
         true_fuel_l_h: true_fuel,
         lambda_saturated: d.lambda_saturated,
+        lambda_state: d.lambda_state,
         navi_err_pct: navi_err,
         density,
         fuel_l_h: d.fuel_rate_l_h,
@@ -542,6 +624,9 @@ pub fn run_scenario(sc: &Scenario) -> ScenarioResult {
         quality: d.fuel_rate_quality,
         naive_l_h: naive,
         naive_err_pct: naive_err,
+        ms_pw_l_h,
+        ms_wb_l_h,
+        ms_diff_pct,
         fuel_cut,
         example: sc.example,
         elm_lines,
@@ -912,6 +997,95 @@ pub fn all_scenarios() -> Vec<Scenario> {
         "",
     ));
 
+    for eng in [EngineKind::NaPetrol, EngineKind::TurboPetrol] {
+        for blend in [FuelBlend::E0, FuelBlend::E10, FuelBlend::E85] {
+            let mut b = baseline(eng, blend);
+            b.use_megasquirt = true;
+            let prefix = format!("{} / MegaSquirt {} ", eng.label(), blend.label());
+            for (lab, load, thr) in [
+                ("load 10%", 10.0, 12.0),
+                ("load 25%", 25.0, 20.0),
+                ("load 50%", 50.0, 35.0),
+                ("load 75%", 75.0, 70.0),
+                ("load 100%", 100.0, 100.0),
+            ] {
+                let mut op = b.clone();
+                op.load_pct = load;
+                op.throttle_pct = thr;
+                out.push(sc(
+                    &format!("{prefix}/ load"),
+                    lab.into(),
+                    op,
+                    lab.contains("50%"),
+                    false,
+                    "",
+                ));
+            }
+            for (lab, thr, ov) in [
+                ("throttle 0% (overrun)", 0.0, true),
+                ("throttle 25%", 25.0, false),
+                ("throttle 50%", 50.0, false),
+                ("throttle 100%", 100.0, false),
+            ] {
+                let mut op = b.clone();
+                op.throttle_pct = thr;
+                op.load_pct = if ov { 8.0 } else { thr.max(10.0) };
+                out.push(sc(
+                    &format!("{prefix}/ throttle"),
+                    lab.into(),
+                    op,
+                    false,
+                    ov,
+                    "",
+                ));
+            }
+            for (lab, c) in [
+                ("coolant -30 C", -30.0),
+                ("coolant 0 C", 0.0),
+                ("coolant 20 C", 20.0),
+                ("coolant 90 C", 90.0),
+            ] {
+                let mut op = b.clone();
+                op.coolant_c = c;
+                op.rpm = 900.0;
+                op.speed_kmh = 0.0;
+                op.load_pct = 20.0;
+                op.throttle_pct = 8.0;
+                out.push(sc(
+                    &format!("{prefix}/ coolant"),
+                    lab.into(),
+                    op,
+                    c == 90.0,
+                    false,
+                    "idle; cold AFR 9-11 stays inside the 7.4-22.4 wideband",
+                ));
+            }
+            let mut wot = b.clone();
+            wot.load_pct = 100.0;
+            wot.throttle_pct = 100.0;
+            wot.rpm = 3500.0;
+            out.push(sc(
+                &format!("{prefix}/ WOT"),
+                "full throttle enrichment".into(),
+                wot,
+                true,
+                false,
+                "",
+            ));
+            let mut wu = b.clone();
+            wu.ms_warmup = true;
+            wu.ms_seconds = 10;
+            out.push(sc(
+                &format!("{prefix}/ warmup"),
+                "sensor warm-up 10 s".into(),
+                wu,
+                false,
+                false,
+                "wideband not ready; pulse width still the rate",
+            ));
+        }
+    }
+
     out
 }
 
@@ -956,7 +1130,7 @@ fn source_cell(r: &ScenarioResult) -> String {
 pub fn render_markdown(rows: &[ScenarioResult]) -> String {
     let mut md = String::new();
     md.push_str("The sensor inputs come from a simplified synthetic engine model built on estimated AFR bands; the decode and fuel-rate numbers are computed by Navi's real code; none of this is measured data from a vehicle.\n\n");
-    md.push_str("Petrol/ethanol stoichiometric AFR is mixed by **mass fraction** (E10 ~14.10, E85 ~9.82). PID 24/34/44 report SAE J1979 **lambda** (AFR/AFRstoich, lean greater than 1), despite the standard's 'equivalence ratio' name. Default maximum is 2 (PID 4F byte A = 0). A reading within 1 % of that cap is saturated and is not used as AFR. Diesel idle/cruise then use torque x BSFC instead of the cap AFR.\n\n");
+    md.push_str("Petrol/ethanol stoichiometric AFR is mixed by **mass fraction** (E10 ~14.10, E85 ~9.82). PID 24/34/44 report SAE J1979 **lambda** (AFR/AFRstoich, lean greater than 1), despite the standard's 'equivalence ratio' name. Default maximum is 2 (PID 4F byte A = 0). A reading within 1 % of either rail is saturated and is not used as AFR. Diesel idle/cruise then use torque x BSFC. MegaSquirt wideband rails are AFR 7.4-22.4 on the ECU's petrol scale; pulse width is never scaled by lambda or ethanol.\n\n");
 
     md.push_str("### Summary (min / max across generated scenarios)\n\n");
     md.push_str("| Engine | Fuel | min L/h | max L/h | min L/100 km | max L/100 km | worst naive-14.7 error % |\n");
@@ -1010,13 +1184,21 @@ pub fn render_markdown(rows: &[ScenarioResult]) -> String {
     for table in tables {
         let subset: Vec<_> = rows.iter().filter(|r| r.table_id == table).collect();
         md.push_str(&format!("### {table}\n\n"));
-        md.push_str("| varied input | rpm | speed km/h | MAF g/s (decoded) | lambda (decoded) | true AFR (model) | AFR used | lambda sat | fuel density kg/L | fuel rate L/h | L/100 km | rate source and quality | Navi vs true % | naive fixed-14.7 L/h | naive vs true % |\n");
-        md.push_str(
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: |\n",
-        );
+        let ms_table = table.contains("MegaSquirt");
+        if ms_table {
+            md.push_str("| varied input | rpm | speed km/h | MAF g/s (decoded) | lambda (decoded) | true AFR (model) | AFR used | lambda state | fuel density kg/L | fuel rate L/h | L/100 km | rate source and quality | Navi vs true % | naive fixed-14.7 L/h | naive vs true % | PW L/h | WB cross-check L/h | PW vs WB % |\n");
+            md.push_str(
+                "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |\n",
+            );
+        } else {
+            md.push_str("| varied input | rpm | speed km/h | MAF g/s (decoded) | lambda (decoded) | true AFR (model) | AFR used | lambda state | fuel density kg/L | fuel rate L/h | L/100 km | rate source and quality | Navi vs true % | naive fixed-14.7 L/h | naive vs true % |\n");
+            md.push_str(
+                "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: |\n",
+            );
+        }
         for r in &subset {
-            md.push_str(&format!(
-                "| {} | {:.0} | {:.0} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
+            let mut line = format!(
+                "| {} | {:.0} | {:.0} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
                 r.vary_label,
                 r.rpm,
                 r.speed_kmh,
@@ -1024,7 +1206,7 @@ pub fn render_markdown(rows: &[ScenarioResult]) -> String {
                 fmt_opt(r.lambda, 3),
                 fmt_opt(r.true_afr, 2),
                 fmt_opt(r.afr, 2),
-                if r.lambda_saturated { "yes" } else { "no" },
+                r.lambda_state.label(),
                 fmt_opt(r.density, 3),
                 fmt_rate(r),
                 fmt_l100(r),
@@ -1032,7 +1214,17 @@ pub fn render_markdown(rows: &[ScenarioResult]) -> String {
                 fmt_err(r.navi_err_pct),
                 fmt_opt(r.naive_l_h, 3),
                 fmt_err(r.naive_err_pct),
-            ));
+            );
+            if ms_table {
+                line.push_str(&format!(
+                    " {} | {} | {} |",
+                    fmt_opt(r.ms_pw_l_h, 3),
+                    fmt_opt(r.ms_wb_l_h, 3),
+                    fmt_err(r.ms_diff_pct),
+                ));
+            }
+            line.push('\n');
+            md.push_str(&line);
         }
         md.push('\n');
         if let Some(ex) = subset.iter().find(|r| r.example) {
@@ -1072,7 +1264,7 @@ pub fn render_markdown(rows: &[ScenarioResult]) -> String {
     md.push_str("- **Intake air temperature:** the MAF reading is already a mass flow. The same decoded MAF and lambda give the same L/h at -30 C and +40 C IAT; IAT only changes L/h because it changes the modelled (then encoded) MAF.\n");
     md.push_str("- **Altitude / barometric pressure:** same rule. MAF is not pressure-corrected in `fuel.rs`. Altitude changes L/h only by changing the encoded MAF (ideal-gas air mass) and, for NA diesel, the smoke-limited AFR.\n");
     md.push_str("- **Throttle vs pedal:** diesels have no throttle plate; PID 5A/49 is recorded and does not enter the MAF formula.\n");
-    md.push_str("- **Saturated lambda:** not used as AFR. Diesel idle/cruise go through torque x BSFC so coolant can still move the rate via the encoded torque.\n");
+    md.push_str("- **Saturated / not-ready lambda:** not used as AFR. Diesel idle/cruise go through torque x BSFC so coolant can still move the rate via the encoded torque. MegaSquirt pulse width is the rate even when the wideband is at a rail or warming up.\n");
     md
 }
 
@@ -1109,6 +1301,15 @@ fn trend_sentence(table: &str, rows: &[&ScenarioResult]) -> String {
                 "Fuel rate from 10% to 100% load goes **{lo:.3}** to **{hi:.3} L/h** at this rpm.\n"
             );
         }
+    }
+    if table.contains("MegaSquirt") && table.contains("warmup") {
+        return "Wideband is not ready for the first 30 s after start. Pulse width remains the reported rate; AFR is not used.\n".into();
+    }
+    if table.contains("MegaSquirt") && table.contains("coolant") {
+        return "Petrol cold idle AFR 9-11 is inside the MegaSquirt 7.4-22.4 window, so the wideband stays valid; pulse width is still the rate.\n".into();
+    }
+    if table.contains("MegaSquirt") {
+        return "Pulse width is the fuel rate (already flexed). Wideband is HUD plus a cross-check; disagreement above 15 % only downgrades quality.\n".into();
     }
     if table.contains("fuel type") {
         return "Same air mass and lambda: E85 uses more litres than E0 because stoich AFR and density both move toward ethanol.\n".into();
