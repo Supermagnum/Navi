@@ -1658,20 +1658,31 @@ enum FerryHopGate {
 /// Prefer the plan O/D budget ([`crate::routing::max_waypoint_snap_m`]; car
 /// 750 m). Only fall back to [`CHUNK_INTERMEDIATE_SNAP_M`] (35 km) when a tight
 /// snap fails — that path is for densify joints, not ordinary corridor O/D.
+///
+/// Snaps use [`SnapRole::Origin`] / [`SnapRole::Destination`] so one-way dead-end
+/// stubs do not falsely force (or skip) ferry overlay.
 fn ferry_hop_connectivity_gate(graph: &RouteGraph, a: (f64, f64), b: (f64, f64)) -> FerryHopGate {
-    let opts = crate::routing::graph::RouteOptions::default();
+    use crate::routing::graph::SnapRole;
+    let origin_opts = crate::routing::graph::RouteOptions {
+        snap_role: SnapRole::Origin,
+        ..Default::default()
+    };
+    let dest_opts = crate::routing::graph::RouteOptions {
+        snap_role: SnapRole::Destination,
+        ..Default::default()
+    };
     let tight = crate::routing::max_waypoint_snap_m(graph.profile());
     let loose = crate::routing::plan_bbox::CHUNK_INTERMEDIATE_SNAP_M;
-    let mut start = graph.nearest_routable_with_options_max(a.0, a.1, &opts, false, tight);
-    let mut goal = graph.nearest_routable_with_options_max(b.0, b.1, &opts, false, tight);
+    let mut start = graph.nearest_routable_with_options_max(a.0, a.1, &origin_opts, false, tight);
+    let mut goal = graph.nearest_routable_with_options_max(b.0, b.1, &dest_opts, false, tight);
     let mut snap_m = tight;
     if start.is_err() || goal.is_err() {
         snap_m = loose;
         if start.is_err() {
-            start = graph.nearest_routable_with_options_max(a.0, a.1, &opts, false, loose);
+            start = graph.nearest_routable_with_options_max(a.0, a.1, &origin_opts, false, loose);
         }
         if goal.is_err() {
-            goal = graph.nearest_routable_with_options_max(b.0, b.1, &opts, false, loose);
+            goal = graph.nearest_routable_with_options_max(b.0, b.1, &dest_opts, false, loose);
         }
     }
     let (Ok((start, _)), Ok((goal, _))) = (start, goal) else {
@@ -1680,19 +1691,20 @@ fn ferry_hop_connectivity_gate(graph: &RouteGraph, a: (f64, f64), b: (f64, f64))
     // Prefer O(1) undirected UF first; only then directed BFS. Coastal packs can
     // be weakly linked via one-way/orphan edges while A* cannot travel O→D —
     // those must try ferry overlay (`disconnected_try_overlay`).
+    let reach_opts = crate::routing::graph::RouteOptions::default();
     if start == goal {
         FerryHopGate::Connected { snap_m }
     } else if !graph.same_weak_component(start, goal) {
         FerryHopGate::Disconnected { snap_m }
-    } else if graph.directed_reachable_with_options(start, goal, &opts) {
+    } else if graph.directed_reachable_with_options(start, goal, &reach_opts) {
         FerryHopGate::Connected { snap_m }
     } else {
         FerryHopGate::Disconnected { snap_m }
     }
 }
 
-/// True when hop ends `a`→`b` already have an A* path on the pack graph (ferries
-/// allowed). Used by unit tests for the overlay skip gate.
+/// True when hop ends `a`→`b` already have a directed path on the pack graph
+/// (ferries allowed). Used by unit tests for the overlay skip gate.
 #[cfg(test)]
 fn graph_hop_already_connected(graph: &RouteGraph, a: (f64, f64), b: (f64, f64)) -> bool {
     matches!(
@@ -1918,11 +1930,11 @@ fn supplement_pack_ferries_from_pbf_inner(
             continue;
         };
         // Plan path: never parse PBF. If sidecar is not ready, surface typed
-        // preparing status and let the background ensure job finish.
+        // preparing status and kick lazy ensure (no install-time sidecar build).
         if !super::ferry_overlay_cache::sidecar_fresh(home, stem, profile, &pbf) {
             let (status, pct) = super::ferry_overlay_cache::ferry_preparing_status(stem);
             crate::routing::plan_perf::note("ferry_overlay", "preparing_sidecar");
-            // Best-effort kick; install/refresh also starts this. Do not block.
+            // Best-effort kick on corridor miss only. Do not block the plan thread.
             let home_b = home.to_path_buf();
             let stem_b = stem.clone();
             let pbf_b = pbf.clone();

@@ -2007,7 +2007,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_place_index_has_entries() and 0xFFFF) != 5969) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_plan_car_route() and 0xFFFF) != 9424) {
+    if ((lib.uniffi_navi_checksum_func_plan_car_route() and 0xFFFF) != 20547) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_plan_car_route_at() and 0xFFFF) != 44788) {
@@ -7119,8 +7119,9 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
          *
          * `long_trip_enabled` gates densify/chunk for spans above [`LONG_TRIP_CHUNK_DEG`].
          * Ordinary UI plans pass `false` so cross-stem mid trips (Raufoss→Bergen) stay
-         * on one A*. Same-stem coastal ODs with a ready ferry sidecar still densify
-         * when span > CHUNK even if longTrip is off (Bergen→Stavanger A.4).
+         * on one A*. Same-stem coastal ODs with span > CHUNK densify even when longTrip
+         * is off so Automotive never materialises the full Vestlandet single-shot graph
+         * (Bergen→Stavanger ~259k nodes / ~985 MiB peak vs densify hops ~167k / ≤933).
          *
          * `allowed_countries`: when `Some` (non-empty), hard-filters the graph to those
          * ISO-3166-1 alpha-2 codes ([`RouteOptions::allowed_countries`]). Host "Stay in

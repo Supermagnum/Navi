@@ -516,7 +516,7 @@ impl FlatGraphPack {
         if self.node_access_blocked.is_empty() {
             // nothing
         }
-        RouteGraph::from_parts_with_blocks(nodes, edges, profile, blocked)
+        RouteGraph::from_parts_with_blocks(nodes, edges, profile, blocked, false)
     }
 
     fn shape_for_edge(&self, i: usize) -> Vec<(f64, f64)> {
@@ -787,7 +787,7 @@ impl ArchivedFlatGraphPack {
                 blocked.insert(NodeId(arch_i64(self.node_ids[i])));
             }
         }
-        RouteGraph::from_parts_with_blocks(nodes, edges, profile, blocked)
+        RouteGraph::from_parts_with_blocks(nodes, edges, profile, blocked, false)
     }
 
     fn shape_for_edge(&self, i: usize) -> Vec<(f64, f64)> {

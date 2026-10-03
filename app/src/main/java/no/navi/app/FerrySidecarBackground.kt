@@ -17,10 +17,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Background ferry-overlay sidecar build at pack install / refresh.
+ * Background ferry-overlay sidecar build, kicked lazily when a plan needs
+ * overlay and the on-disk sidecar is missing/stale (not at pack install).
  *
- * Plans must never parse region PBFs for ferry overlay; they load the sidecar
- * or return `ferry_preparing` until this job finishes.
+ * Plans must never parse region PBFs for ferry overlay on the plan thread;
+ * they load the sidecar or return `ferry_preparing` until ensure finishes
+ * (Rust also spawns `ensure_ferry_sidecar` from the plan path).
  */
 object FerrySidecarBackground {
     private const val TAG = "FerrySidecarBg"

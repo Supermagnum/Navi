@@ -25,7 +25,7 @@ use osmpbf::Element;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use super::builder::{GraphEdge, RouteGraph, RoutingProfile};
+use super::builder::{ferry_base_weight_m, GraphEdge, RouteGraph, RoutingProfile};
 use super::surface_quality::classify_surface_tags;
 use crate::routing::access;
 use crate::routing::wetland::tags_map_indicate_boardwalk;
@@ -91,6 +91,7 @@ fn keep_way_tag(key: &str) -> bool {
             | "motor_vehicle:conditional"
             | "access:conditional"
             | "_ferry_approach_promoted"
+            | "duration"
     )
 }
 
@@ -1370,6 +1371,11 @@ fn graph_from_raw_ways(
             way.tags.get(k).map(String::as_str)
         });
         let is_ferry = tags_indicate_ferry(&way.tags);
+        let ferry_duration = if is_ferry {
+            way.tags.get("duration").cloned()
+        } else {
+            None
+        };
         let is_tunnel = way
             .tags
             .get("tunnel")
@@ -1463,6 +1469,7 @@ fn graph_from_raw_ways(
                 maxlength_m,
                 is_toll,
                 is_ferry,
+                ferry_duration.as_deref(),
                 is_tunnel,
                 is_boardwalk_crossing,
                 is_roundabout,
@@ -1471,6 +1478,7 @@ fn graph_from_raw_ways(
                 maxspeed_conditional.clone(),
                 false,
                 surface_quality,
+                profile,
             ));
             if !forward_only {
                 edges.push(bbox_edge(
@@ -1504,6 +1512,7 @@ fn graph_from_raw_ways(
                     maxlength_m,
                     is_toll,
                     is_ferry,
+                    ferry_duration.as_deref(),
                     is_tunnel,
                     is_boardwalk_crossing,
                     is_roundabout,
@@ -1512,6 +1521,7 @@ fn graph_from_raw_ways(
                     maxspeed_conditional.clone(),
                     false,
                     surface_quality,
+                    profile,
                 ));
             }
             source = Some(tgt);
@@ -1525,7 +1535,7 @@ fn graph_from_raw_ways(
         .filter(|id| nodes.contains_key(id))
         .collect();
     Ok(RouteGraph::from_parts_with_blocks(
-        nodes, edges, profile, blocked,
+        nodes, edges, profile, blocked, true,
     ))
 }
 
@@ -1561,6 +1571,7 @@ fn bbox_edge(
     maxlength_m: Option<f64>,
     is_toll: bool,
     is_ferry: bool,
+    ferry_duration: Option<&str>,
     is_tunnel: bool,
     is_boardwalk_crossing: bool,
     is_roundabout: bool,
@@ -1569,13 +1580,19 @@ fn bbox_edge(
     maxspeed_conditional: Option<String>,
     access_forbidden: bool,
     surface_quality: super::surface_quality::SurfaceQuality,
+    profile: RoutingProfile,
 ) -> GraphEdge {
+    let base_weight = if is_ferry {
+        ferry_base_weight_m(length_m, ferry_duration, profile)
+    } else {
+        length_m
+    };
     GraphEdge {
         id,
         source,
         target,
         length_m,
-        base_weight: length_m,
+        base_weight,
         eco_weight: None,
         start_lat,
         start_lon,
