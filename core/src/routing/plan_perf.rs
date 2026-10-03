@@ -158,13 +158,19 @@ pub fn note_f64(key: &str, value: f64) {
     note(key, format!("{value:.3}"));
 }
 
-/// Sample `/proc/self/status` VmHWM (peak) and VmRSS; keep max HWM seen.
+/// Sample current `/proc/self/status` **VmRSS** and keep the max since
+/// [`begin_plan`].
+///
+/// Prefer VmRSS over VmHWM: `begin_plan` resets the baseline to the current
+/// RSS, but VmHWM is process-lifetime and would immediately re-import prior
+/// plans' peaks — making every later matrix row report the global HWM instead
+/// of this plan's residency. Matrix gate still uses the max across rows.
 pub fn sample_rss() {
     if !enabled() {
         return;
     }
-    let hwm = rss_hwm_kb();
-    let _ = PEAK_RSS_KB.fetch_max(hwm, Ordering::Relaxed);
+    let rss = rss_kb();
+    let _ = PEAK_RSS_KB.fetch_max(rss, Ordering::Relaxed);
 }
 
 pub fn peak_rss_mb() -> f64 {
@@ -196,12 +202,6 @@ pub fn drain_into(report: &mut String) -> f64 {
 
 fn rss_kb() -> u64 {
     read_status_kib("VmRSS:").unwrap_or(0)
-}
-
-fn rss_hwm_kb() -> u64 {
-    read_status_kib("VmHWM:")
-        .or_else(|| read_status_kib("VmRSS:"))
-        .unwrap_or(0)
 }
 
 fn read_status_kib(key: &str) -> Option<u64> {

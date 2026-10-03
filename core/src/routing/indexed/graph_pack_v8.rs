@@ -3,12 +3,13 @@
 //! Live pack-server tiles remain v8 until navi-server flips; the client writes v9
 //! locally ([`super::GRAPH_FORMAT_VERSION`]) but still mmap-materializes v8 packs.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use geo_types::Coord;
 use osm4routing::{Node, NodeId};
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 
+use super::graph_pack::{densify_skeleton_edge, densify_skeleton_only_active};
 use crate::routing::elevation::ElevationService;
 use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile, SurfaceQuality};
 
@@ -290,7 +291,8 @@ impl FlatGraphPackV8 {
         profile: RoutingProfile,
         clips: Option<&[[f64; 4]]>,
     ) -> RouteGraph {
-        let edge_ok = |i: usize| -> bool {
+        let skeleton = densify_skeleton_only_active();
+        let in_clips = |i: usize| -> bool {
             let Some(clips) = clips else {
                 return true;
             };
@@ -307,6 +309,33 @@ impl FlatGraphPackV8 {
             clips
                 .iter()
                 .any(|b| in_box(slat, slon, b) || in_box(elat, elon, b))
+        };
+        let ferry_nodes: HashSet<u32> = if skeleton {
+            let mut s = HashSet::new();
+            for i in 0..self.edge_src.len() {
+                if self.edge_is_ferry.get(i).copied().unwrap_or(0) == 0 || !in_clips(i) {
+                    continue;
+                }
+                s.insert(self.edge_src[i]);
+                s.insert(self.edge_tgt[i]);
+            }
+            s
+        } else {
+            HashSet::new()
+        };
+        let edge_ok = |i: usize| -> bool {
+            if skeleton {
+                let hw = self.edge_highway[i].as_str();
+                let ferry = self.edge_is_ferry.get(i).copied().unwrap_or(0) != 0;
+                let major = densify_skeleton_edge(hw, ferry);
+                let pier = !ferry
+                    && (ferry_nodes.contains(&self.edge_src[i])
+                        || ferry_nodes.contains(&self.edge_tgt[i]));
+                if !major && !pier {
+                    return false;
+                }
+            }
+            in_clips(i)
         };
 
         let mut used_nodes: HashMap<u32, ()> = HashMap::new();
@@ -566,7 +595,8 @@ impl ArchivedFlatGraphPackV8 {
         clips: Option<&[[f64; 4]]>,
     ) -> RouteGraph {
         let n_edges = self.edge_src.len();
-        let edge_ok = |i: usize| -> bool {
+        let skeleton = densify_skeleton_only_active();
+        let in_clips = |i: usize| -> bool {
             let Some(clips) = clips else {
                 return true;
             };
@@ -583,6 +613,34 @@ impl ArchivedFlatGraphPackV8 {
             clips
                 .iter()
                 .any(|b| in_box(slat, slon, b) || in_box(elat, elon, b))
+        };
+        let ferry_nodes: HashSet<u32> = if skeleton {
+            let mut s = HashSet::new();
+            for i in 0..n_edges {
+                if self.edge_is_ferry.get(i).copied().map(arch_u8).unwrap_or(0) == 0 || !in_clips(i)
+                {
+                    continue;
+                }
+                s.insert(arch_u32(self.edge_src[i]));
+                s.insert(arch_u32(self.edge_tgt[i]));
+            }
+            s
+        } else {
+            HashSet::new()
+        };
+        let edge_ok = |i: usize| -> bool {
+            if skeleton {
+                let hw = self.edge_highway[i].as_str();
+                let ferry = self.edge_is_ferry.get(i).copied().map(arch_u8).unwrap_or(0) != 0;
+                let src = arch_u32(self.edge_src[i]);
+                let tgt = arch_u32(self.edge_tgt[i]);
+                let major = densify_skeleton_edge(hw, ferry);
+                let pier = !ferry && (ferry_nodes.contains(&src) || ferry_nodes.contains(&tgt));
+                if !major && !pier {
+                    return false;
+                }
+            }
+            in_clips(i)
         };
 
         let mut used_nodes: HashMap<u32, ()> = HashMap::new();

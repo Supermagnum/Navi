@@ -1460,6 +1460,71 @@ fn points_bounds(points: &[(f64, f64)]) -> (f64, f64, f64, f64) {
     }
 }
 
+/// Sample densify joints along a road polyline so consecutive Chebyshev hops
+/// stay ≤ `max_hop_deg`. Keeps endpoints.
+pub fn sample_densify_joints_along_path(path: &[(f64, f64)], max_hop_deg: f64) -> Vec<(f64, f64)> {
+    if path.len() < 2 || max_hop_deg <= 0.0 {
+        return path.to_vec();
+    }
+    let cheb = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs().max((a.1 - b.1).abs());
+    let mut out = Vec::with_capacity(8);
+    out.push(path[0]);
+    let mut last = path[0];
+    let end = *path.last().unwrap();
+    for &p in &path[1..path.len() - 1] {
+        if cheb(last, p) >= max_hop_deg * 0.85 {
+            out.push(p);
+            last = p;
+        }
+    }
+    // If the remaining hop to the destination is still too long, keep adding
+    // the farthest path vertex that stays within budget until we can finish.
+    while cheb(last, end) > max_hop_deg + 1e-9 {
+        let mut best: Option<(f64, (f64, f64))> = None;
+        for &p in path {
+            let d_from = cheb(last, p);
+            let d_end = cheb(p, end);
+            if d_from < max_hop_deg * 0.4 || d_from > max_hop_deg + 1e-9 {
+                continue;
+            }
+            if d_end >= cheb(last, end) - 1e-9 {
+                continue;
+            }
+            if best.is_none_or(|(bd, _)| d_end < bd) {
+                best = Some((d_end, p));
+            }
+        }
+        let Some((_, nxt)) = best else {
+            // No on-path progress — fall back to geometric densify of remainder.
+            let rem = densify_route_points(&[last, end], max_hop_deg);
+            out.extend(rem.into_iter().skip(1));
+            return out;
+        };
+        out.push(nxt);
+        last = nxt;
+    }
+    if out.last().copied() != Some(end) {
+        out.push(end);
+    }
+    out
+}
+
+/// Build densify hops from a major-road + ferry coarse path on Ready packs.
+/// Returns `None` when the skeleton graph cannot connect O→D.
+pub fn try_densify_joints_via_skeleton_path(
+    path_nodes_latlon: &[(f64, f64)],
+    max_hop_deg: f64,
+) -> Option<Vec<(f64, f64)>> {
+    if path_nodes_latlon.len() < 2 {
+        return None;
+    }
+    let hops = sample_densify_joints_along_path(path_nodes_latlon, max_hop_deg);
+    if hops.len() < 2 {
+        return None;
+    }
+    Some(hops)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
