@@ -44,6 +44,35 @@ pub enum FuelRateQuality {
     TorqueEstimate,
 }
 
+/// Validity of a lambda / AFR reading. Saturated or not-ready values are not AFR.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LambdaState {
+    #[default]
+    NotReady,
+    Valid,
+    SaturatedLean,
+    SaturatedRich,
+}
+
+impl LambdaState {
+    pub fn usable(self) -> bool {
+        matches!(self, Self::Valid)
+    }
+
+    pub fn saturated(self) -> bool {
+        matches!(self, Self::SaturatedLean | Self::SaturatedRich)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::NotReady => "not ready",
+            Self::Valid => "valid",
+            Self::SaturatedLean => "saturated lean",
+            Self::SaturatedRich => "saturated rich",
+        }
+    }
+}
+
 /// Cubic expansion coefficients (1/C) for density(T).
 pub const BETA_PETROL_PER_C: f64 = 0.00095;
 pub const BETA_DIESEL_PER_C: f64 = 0.00083;
@@ -62,6 +91,8 @@ pub const ETHANOL_DENSITY_KG_L: f64 = 0.789;
 
 /// MegaSquirt injector formula denominator (`mathematical-formulas.md`).
 pub const MEGASQUIRT_RATE_DENOM: f64 = 2_000_000.0;
+/// Pulse-width vs wideband air-mass disagreement that downgrades quality.
+pub const MS_WB_DISAGREE_FRAC: f64 = 0.15;
 
 pub fn clamp_ethanol_fraction(ethanol_pct: Option<f64>) -> Option<f64> {
     let pct = ethanol_pct?;
@@ -176,7 +207,7 @@ pub fn effective_afr_ex(
     calc_load_pct: Option<f64>,
 ) -> Option<f64> {
     if let Some(lam) = lambda {
-        if lam.is_finite() && lam >= 0.6 {
+        if lam.is_finite() && lam > 0.0 {
             return Some(lam * stoich_afr(kind, ethanol_pct));
         }
         return None;
@@ -279,10 +310,56 @@ pub fn lambda_from_pid_raw(raw: u16, eq_max: f64) -> f64 {
 }
 
 pub fn lambda_is_saturated(lambda: f64, eq_max: f64) -> bool {
-    lambda.is_finite()
-        && eq_max.is_finite()
-        && eq_max > 0.0
-        && lambda >= eq_max * (1.0 - LAMBDA_SATURATION_FRAC)
+    classify_obd_lambda(lambda, eq_max).saturated()
+}
+
+/// OBD-II PID 24/34/44: range 0 .. eq_max (default 2). Near either rail is saturated.
+pub fn classify_obd_lambda(lambda: f64, eq_max: f64) -> LambdaState {
+    classify_lambda(lambda, 0.0, eq_max)
+}
+
+/// Generic rail test: within `LAMBDA_SATURATION_FRAC` of min (rich) or max (lean).
+pub fn classify_lambda(value: f64, min: f64, max: f64) -> LambdaState {
+    if !value.is_finite() || !min.is_finite() || !max.is_finite() || max <= min {
+        return LambdaState::NotReady;
+    }
+    let band = (max - min) * LAMBDA_SATURATION_FRAC;
+    if value <= min + band {
+        LambdaState::SaturatedRich
+    } else if value >= max - band {
+        LambdaState::SaturatedLean
+    } else {
+        LambdaState::Valid
+    }
+}
+
+pub fn rates_disagree_frac(a: f64, b: f64, frac: f64) -> bool {
+    if !a.is_finite() || !b.is_finite() {
+        return true;
+    }
+    let denom = a.abs().max(b.abs()).max(1e-9);
+    (a - b).abs() / denom > frac
+}
+
+/// Speed-density air mass (g/s) from MAP, displacement, rpm, VE, IAT.
+pub fn map_ve_air_g_s(map_kpa: f64, disp_l: f64, rpm: f64, ve: f64, iat_c: f64) -> Option<f64> {
+    if ![map_kpa, disp_l, rpm, ve, iat_c]
+        .iter()
+        .all(|x| x.is_finite())
+    {
+        return None;
+    }
+    if map_kpa <= 0.0 || disp_l <= 0.0 || rpm <= 0.0 || ve <= 0.0 {
+        return None;
+    }
+    let t_k = iat_c + 273.15;
+    if t_k < 200.0 {
+        return None;
+    }
+    let vd_m3 = disp_l * 0.001;
+    let cycles = rpm / 60.0 / 2.0;
+    let kg_s = (map_kpa * 1000.0) * vd_m3 * cycles * ve / (287.058 * t_k);
+    Some((kg_s * 1000.0).max(0.0))
 }
 
 /// Fuel-cut evidence. Saturated lambda alone is never enough.
@@ -294,9 +371,12 @@ pub struct FuelCutInput {
     pub fuel_rate_direct: Option<f64>,
     pub lambda: Option<f64>,
     pub lambda_saturated: bool,
+    pub lambda_state: LambdaState,
     pub coolant_c: Option<f64>,
     pub throttle_pct: Option<f64>,
     pub actual_torque_pct: Option<f64>,
+    pub ms_pw_ms: Option<f64>,
+    pub ms_overrun_fuel_cut: bool,
 }
 
 /// Fuel cut: `Some(0.0)` not `None`.
@@ -317,9 +397,15 @@ pub fn detect_fuel_cut(
         fuel_rate_direct,
         lambda,
         lambda_saturated: false,
+        lambda_state: match lambda {
+            Some(l) if l.is_finite() => classify_obd_lambda(l, DEFAULT_LAMBDA_EQ_MAX),
+            _ => LambdaState::NotReady,
+        },
         coolant_c,
         throttle_pct: None,
         actual_torque_pct: None,
+        ms_pw_ms: None,
+        ms_overrun_fuel_cut: false,
     })
 }
 
@@ -330,6 +416,9 @@ pub fn detect_fuel_cut_ex(i: FuelCutInput) -> bool {
         return false;
     }
     if i.fuel_rate_direct == Some(0.0) {
+        return true;
+    }
+    if i.ms_pw_ms == Some(0.0) || i.ms_overrun_fuel_cut {
         return true;
     }
     if let Some(t) = i.actual_torque_pct {
@@ -343,10 +432,10 @@ pub fn detect_fuel_cut_ex(i: FuelCutInput) -> bool {
             .map(|c| c >= PETROL_FUEL_CUT_MIN_COOLANT_C)
             .unwrap_or(false);
         let closed = i.throttle_pct.map(|t| t <= 2.0).unwrap_or(false);
-        if i.lambda_saturated && closed && warm {
+        if i.lambda_state == LambdaState::SaturatedLean && closed && warm {
             return true;
         }
-        if !i.lambda_saturated {
+        if i.lambda_state.usable() {
             if let Some(l) = i.lambda {
                 if l.is_finite() && l >= PETROL_LEAN_CUT_LAMBDA && warm {
                     return true;
@@ -672,9 +761,12 @@ mod tests {
             fuel_rate_direct: None,
             lambda: Some(1.999),
             lambda_saturated: true,
+            lambda_state: LambdaState::SaturatedLean,
             coolant_c: Some(90.0),
             throttle_pct: Some(0.0),
             actual_torque_pct: Some(20.0),
+            ms_pw_ms: None,
+            ms_overrun_fuel_cut: false,
         }));
         assert!(detect_fuel_cut_ex(FuelCutInput {
             kind: IceFuelKind::Diesel,
@@ -683,9 +775,12 @@ mod tests {
             fuel_rate_direct: None,
             lambda: Some(1.999),
             lambda_saturated: true,
+            lambda_state: LambdaState::SaturatedLean,
             coolant_c: Some(90.0),
             throttle_pct: Some(0.0),
             actual_torque_pct: Some(0.0),
+            ms_pw_ms: None,
+            ms_overrun_fuel_cut: false,
         }));
         assert!(detect_fuel_cut_ex(FuelCutInput {
             kind: IceFuelKind::Petrol,
@@ -694,9 +789,12 @@ mod tests {
             fuel_rate_direct: None,
             lambda: Some(1.999),
             lambda_saturated: true,
+            lambda_state: LambdaState::SaturatedLean,
             coolant_c: Some(90.0),
             throttle_pct: Some(0.0),
             actual_torque_pct: Some(15.0),
+            ms_pw_ms: None,
+            ms_overrun_fuel_cut: false,
         }));
         assert!(!detect_fuel_cut_ex(FuelCutInput {
             kind: IceFuelKind::Petrol,
@@ -705,9 +803,26 @@ mod tests {
             fuel_rate_direct: None,
             lambda: Some(1.999),
             lambda_saturated: true,
+            lambda_state: LambdaState::SaturatedLean,
             coolant_c: Some(20.0),
             throttle_pct: Some(0.0),
             actual_torque_pct: Some(15.0),
+            ms_pw_ms: None,
+            ms_overrun_fuel_cut: false,
+        }));
+        assert!(detect_fuel_cut_ex(FuelCutInput {
+            kind: IceFuelKind::Petrol,
+            rpm: Some(2200.0),
+            speed_kmh: Some(80.0),
+            fuel_rate_direct: None,
+            lambda: Some(1.524),
+            lambda_saturated: true,
+            lambda_state: LambdaState::SaturatedLean,
+            coolant_c: Some(90.0),
+            throttle_pct: Some(5.0),
+            actual_torque_pct: Some(20.0),
+            ms_pw_ms: Some(0.0),
+            ms_overrun_fuel_cut: false,
         }));
     }
 

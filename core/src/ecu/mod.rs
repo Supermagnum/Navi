@@ -9,6 +9,7 @@
 pub mod ambient;
 pub mod decode;
 pub mod fuel;
+pub mod megasquirt;
 pub mod self_test;
 
 use crate::config::Profile;
