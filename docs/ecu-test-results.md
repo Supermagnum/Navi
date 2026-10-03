@@ -56,7 +56,7 @@ cargo test -p driver-break-core --test ecu_afr_fuel_rate
 |---|---|
 | Live ELM327 / Bluetooth / serial / SocketCAN / MegaSquirt adapter | Not run (no hardware; decode remains adapter-free) |
 | Signed APK install and launch | Not run |
-| `adb logcat -s NaviEcu` on a device or emulator | None captured |
+| `adb logcat -s NaviEcu` on a device or emulator | None captured (`adb devices` empty). Commands below. |
 | Android instrumented `EcuAfrSelfTestInstrumentedTest` | Not re-run |
 | `./gradlew :app:ktlintCheck` | Not re-run |
 | UniFFI `ecu_afr_self_test` / `ecuAfrSelfTest()` on device | Not re-run (Rust `self_test_report_passes` covers the same golden report) |
@@ -66,8 +66,20 @@ cargo test -p driver-break-core --test ecu_afr_fuel_rate
 Host-side ECU decode tests for this SHA: **49 dedicated tests passed** (26 lib
 `ecu::*` + 23 integration), plus the coincidental truck-rest name match.
 
-`compiled/` APKs are refreshed in a later commit on this branch after native
-rebuild for shipped ABIs.
+`compiled/` APKs on this branch were rebuilt for `arm64-v8a` and `x86_64`
+(`./scripts/build-android-native.sh all release`, then
+`:app:assembleRelease` / `:app:assembleDebug`). The release APK is unsigned
+(no upload keystore on this host). No device or emulator was attached.
+
+On a phone or emulator:
+
+```bash
+adb install -r compiled/navi-debug.apk
+adb logcat -c
+adb shell am start -n no.navi.app/.MainActivity
+# After opening Tools / running ecuAfrSelfTest():
+adb logcat -s NaviEcu
+```
 
 **Lambda / fuel-cut:** PID 24/34/44 are decoded as SAE J1979 lambda (lean > 1),
 not phi. A value within 1 % of the PID 4F maximum (default 2) is saturated and
