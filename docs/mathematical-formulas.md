@@ -23,14 +23,15 @@ is missing and lambda (PID `0x44` / `0x24` / `0x34`) is missing **or saturated**
 (within 1 % of the PID `4F` maximum, default 2), do not use MAF-derived AFR.
 Fall back to torque × BSFC, else leave the rate unset.
 
-**Source order:** PID `5E` / J1939 / MegaSquirt volume; then MAF with
-**unsaturated** lambda; then torque × BSFC; then petrol MAF at stoichiometric
-(estimate); else unset.
+**Source order:** PID `5E` / J1939 / MegaSquirt **pulse width**; then MAF (or
+MAP×VE) with a **valid** (unsaturated, ready) lambda from OBD-II or MegaSquirt
+wideband; then torque × BSFC; then petrol MAF at stoichiometric (estimate);
+else unset.
 
-**Fuel cut** (`Some(0.0)`): PID `5E` = 0, or actual torque ≤ 0 % with rpm above
-idle and speed > 0. Saturated lambda alone is not fuel cut. Petrol may
-corroborate overrun cut with saturated lambda **and** closed throttle **and**
-coolant ≥ 50 C.
+**Fuel cut** (`Some(0.0)`): PID `5E` = 0, MegaSquirt pulse width 0 or overrun
+status, or actual torque ≤ 0 % with rpm above idle and speed > 0. Saturated
+lambda alone is not fuel cut. Petrol may corroborate overrun cut with
+**saturated lean** lambda **and** closed throttle **and** coolant ≥ 50 C.
 
 **Flex petrol:** interpolate stoich AFR by **mass fraction** between 14.7 (E0)
 and 9.0 (E100) and density between 0.745 and ~0.789 using PID `0x52`. Use this
@@ -108,7 +109,24 @@ Rationale sketch: pulses/min scale with RPM; each pulse delivers
 cycle. Out-of-range RPM / pulse width / rate updates are skipped.
 
 This expression is what `core/src/ecu/fuel.rs` implements. Do not use the
-conflicting 1200-duty sketch in [`ECU.md`](ECU.md) §3.
+conflicting 1200-duty sketch in [`ECU.md`](ECU.md) §3. Do not multiply this
+rate by lambda or by ethanol fraction (the ECU already flexed the pulse).
+
+## MegaSquirt — wideband AFR scale
+
+The controller reports AFR on its **configured** stoichiometric scale
+(`ecu_stoich`, default 14.7), not the blend in the tank:
+
+$$
+\lambda = \frac{\mathrm{AFR}_{reported}}{\mathrm{ecu\_stoich}}
+\qquad
+\mathrm{AFR}_{real} = \lambda \times \mathrm{stoich}(\mathrm{blend})
+$$
+
+If the firmware reports λ directly, skip the division. Valid petrol-scale
+window 7.4–22.4; within 1 % of either end is saturated. Linear voltage demo:
+`AFR = 7.35 + (22.39-7.35)\times V/5` (2.5 V → 14.87). Cross-check vs pulse
+width uses `AFR_real` and air mass; disagreement > 15 % downgrades quality.
 
 ## Range estimation
 

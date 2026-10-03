@@ -137,7 +137,8 @@ data bytes.
 | `43` | Absolute load | A, B | `((A*256)+B)*100/255` % |
 | `33` | Barometric pressure | A | `A` kPa (ISA altitude in `ambient.rs`) |
 | `0B` | MAP | A | `A` kPa |
-| `44` / `24` / `34` | Equivalence ratio **as lambda** (AFR/AFRstoich; lean > 1) | A, B | `(eq_max) * ((A*256)+B) / 65536`. `eq_max` from PID `4F` byte A, or **2** if A is 0 or the PID is absent. SAE J1979 calls this "equivalence ratio" but values greater than 1 are **lean**, i.e. λ not φ = 1/λ. |
+| `44` | Commanded equivalence ratio (lambda) | A, B | Same scale as 24; stored as `lambda_commanded` when 24/34 is also present |
+| `24` / `34` | Measured wideband lambda | A, B | `(eq_max) * ((A*256)+B) / 65536`. `eq_max` from PID `4F` byte A, or **2** if A is 0 or the PID is absent. SAE J1979 calls this "equivalence ratio" but values greater than 1 are **lean**, i.e. λ not φ = 1/λ. A value within 1 % of 0 is **saturated rich**; within 1 % of `eq_max` is **saturated lean**. |
 | `4F` | Maximum values | A, B, C, D | A = max lambda (0 → default 2). Rescales PID 24/34/44. |
 | `05` | Coolant temp | A | `A - 40` C |
 | `0F` | Intake air temp | A | `A - 40` C |
@@ -362,6 +363,42 @@ Core decode uses the **formulas.md** expression. The 1200-duty sketch is
 **not** implemented. Out-of-range RPM / pulse width / flow → skip (`None`).
 Do **not** apply a second ethanol multiplier on top of flexed pulse width;
 record ethanol % on `IceDecode` only.
+
+### Wideband lambda (MS2 / MS3 / Speeduino)
+
+Realtime AFR bytes are **not** at one shared offset. `MsFirmwareKind` keys
+MS2 Extra, MS3, and Speeduino layouts off the `Q` signature string. The numbers
+in `core/src/ecu/megasquirt.rs` are Navi's test tables, not a TunerStudio
+`.ini` parser.
+
+- Two probes: average valid channels; `0x00` / `0xFF` is a faulted probe.
+- AFR target is the commanded channel (MegaSquirt analogue of PID `44`).
+- Measuring range on the **ECU petrol scale**: AFR 7.4–22.4 (lambda about
+  0.50–1.52 at stoich 14.7). Within 1 % of either rail: saturated rich or
+  saturated lean — not a measurement.
+- Convert: `lambda = afr_reported / ecu_stoich` (default 14.7, from the
+  settings page). If the firmware already reports lambda, skip the division.
+  `afr_real = lambda * stoich_afr(blend)` for the fuel in the tank.
+- 0–5 V controllers: use the ECU's calibration points. Linear demo
+  `0 V = 7.35`, `5 V = 22.39` gives **14.87 at 2.5 V**. Do not hard-code one
+  brand's curve.
+- Not ready: first 30 s after engine start, firmware sensor-warming flag, or
+  a rail value stuck while the engine is running normally.
+
+**How it is used**
+
+1. HUD / log lambda beside the snapshot. Never scale pulse-width litres by
+   lambda or ethanol.
+2. Cross-check: air mass (MAF, or MAP×VE×IAT) / `afr_real` vs pulse-width
+   rate. Disagreement above 15 % **downgrades quality** only.
+3. Fallback rate from air mass + valid wideband when pulse width or injector
+   flow is missing (quality `Estimate`).
+4. Fuel cut: pulse width 0 or firmware overrun status. Saturated lean
+   wideband may corroborate; it is not enough alone.
+
+**Source order:** PID `5E` / J1939 / MegaSquirt pulse width; then air mass with
+a **valid** (unsaturated, ready) lambda from OBD or MS wideband; then torque ×
+BSFC; then petrol air mass at stoichiometric (estimate); else unset.
 
 
 Map the result to `fuel_rate_l_h`. AFR / MAP can refine eco models later but
@@ -632,8 +669,9 @@ sniffing and correlation — there is no universal public spec for that layer.
 | MAF mass-to-litre density(T) | **Present** (petrol/diesel/ethanol beta; volume PIDs unchanged) |
 | Petrol/ethanol stoich AFR | **Mass fraction** (E10 ~14.10, E85 ~9.82) |
 | Petrol no-lambda quality | **Estimate**: cold (<40 C) and ≥90 % load enrichment AFR |
-| Fuel-cut overrun | `Some(0.0)` if PID 5E = 0 or torque ≤ 0 while moving; saturated lambda alone is not cut |
-| PID 4F / 24 / 34 / 44 lambda | **Decoded** as λ (lean > 1); cap from 4F or default 2; saturation flagged |
+| Fuel-cut overrun | `Some(0.0)` if PID 5E = 0, MegaSquirt PW = 0 / overrun flag, or torque ≤ 0 while moving; saturated lambda alone is not cut |
+| PID 4F / 24 / 34 / 44 lambda | **Decoded** as λ (lean > 1); 24/34 measured, 44 commanded; rails → saturated lean/rich |
+| MegaSquirt wideband | **Decoded** from signature-keyed realtime AFR; 7.4–22.4 petrol scale; not applied to pulse width |
 | PID 61 / 62 / 63 torque | **Decoded**; diesel MAF skipped when lambda is saturated |
 | Torque × BSFC fuel estimate | **Present** (lowest quality; not a snapshot field) |
 | OBD-II / J1939 / MegaSquirt **polling** | **Not implemented** |
