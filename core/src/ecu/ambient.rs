@@ -8,6 +8,23 @@ pub const ISA_SEA_LEVEL_KPA: f64 = 101.325;
 const ISA_LAPSE: f64 = 2.25577e-5;
 const ISA_EXP: f64 = 5.25588;
 
+/// ISA station pressure (kPa) from geometric altitude (m).
+pub fn baro_kpa_from_altitude_m(altitude_m: f64) -> Option<f64> {
+    if !altitude_m.is_finite() {
+        return None;
+    }
+    let inner = 1.0 - ISA_LAPSE * altitude_m;
+    if inner <= 0.0 {
+        return None;
+    }
+    let p = ISA_SEA_LEVEL_KPA * inner.powf(ISA_EXP);
+    if p.is_finite() && p > 0.0 {
+        Some(p)
+    } else {
+        None
+    }
+}
+
 /// Standard-atmosphere geometric altitude (m) from station pressure (kPa).
 /// Missing / non-finite / non-positive pressure → `None`.
 pub fn altitude_m_from_baro_kpa(baro_kpa: Option<f64>) -> Option<f64> {
@@ -49,5 +66,17 @@ mod tests {
     fn lower_pressure_is_higher() {
         let h = altitude_m_from_baro_kpa(Some(90.0)).unwrap();
         assert!(h > 800.0 && h < 1200.0);
+    }
+
+    #[test]
+    fn isa_round_trip_and_table() {
+        let p0 = baro_kpa_from_altitude_m(0.0).unwrap();
+        assert!((p0 - ISA_SEA_LEVEL_KPA).abs() < 0.2);
+        let p1 = baro_kpa_from_altitude_m(1000.0).unwrap();
+        assert!((p1 - 89.9).abs() < 0.2);
+        let p2 = baro_kpa_from_altitude_m(2000.0).unwrap();
+        assert!((p2 - 79.5).abs() < 0.2);
+        let h = altitude_m_from_baro_kpa(Some(p1)).unwrap();
+        assert!((h - 1000.0).abs() < 5.0);
     }
 }

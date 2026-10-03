@@ -6,8 +6,8 @@
 
 use super::ambient::altitude_m_from_baro_kpa;
 use super::fuel::{
-    derive_maf_fuel_rate, fuel_current_l, instant_l_per_100km, megasquirt_fuel_rate_l_h,
-    FuelRateSource, IceFuelKind,
+    derive_maf_fuel_rate_ex, detect_fuel_cut, fuel_current_l, instant_l_per_100km,
+    megasquirt_fuel_rate_l_h, FuelRateQuality, FuelRateSource, IceFuelKind,
 };
 use super::LiveEnergySnapshot;
 
@@ -44,7 +44,13 @@ pub struct IceDecode {
     pub map_kpa: Option<f64>,
     pub lambda: Option<f64>,
     pub altitude_m: Option<f64>,
+    pub coolant_c: Option<f64>,
+    pub iat_c: Option<f64>,
+    pub throttle_pct: Option<f64>,
+    pub pedal_pct: Option<f64>,
+    pub fuel_temp_c: Option<f64>,
     pub fuel_rate_source: FuelRateSource,
+    pub fuel_rate_quality: FuelRateQuality,
 }
 
 impl IceDecode {
@@ -65,15 +71,40 @@ impl IceDecode {
     }
 
     /// Prefer PID `5E` / J1939 rate; else MAF derivation (diesel needs lambda).
+    /// Fuel-temp density applies only to the MAF mass-to-litre path.
     pub fn finish_fuel_rate(&mut self, kind: IceFuelKind) {
         self.altitude_m = altitude_m_from_baro_kpa(self.baro_kpa);
-        if self.fuel_rate_l_h.is_some() {
+        if detect_fuel_cut(
+            kind,
+            self.rpm,
+            self.speed_kmh,
+            self.fuel_rate_l_h,
+            self.lambda,
+            self.coolant_c,
+        ) {
+            self.fuel_rate_l_h = Some(0.0);
+            if self.fuel_rate_source == FuelRateSource::None {
+                self.fuel_rate_source = FuelRateSource::Pid5E;
+            }
+            self.fuel_rate_quality = FuelRateQuality::Measured;
             return;
         }
-        if let Some(rate) = derive_maf_fuel_rate(kind, self.maf_g_s, self.lambda, self.ethanol_pct)
-        {
-            self.fuel_rate_l_h = Some(rate);
+        if self.fuel_rate_l_h.is_some() {
+            self.fuel_rate_quality = FuelRateQuality::Measured;
+            return;
+        }
+        if let Some(derived) = derive_maf_fuel_rate_ex(
+            kind,
+            self.maf_g_s,
+            self.lambda,
+            self.ethanol_pct,
+            self.fuel_temp_c,
+            self.coolant_c,
+            self.calc_load_pct,
+        ) {
+            self.fuel_rate_l_h = Some(derived.fuel_l_h);
             self.fuel_rate_source = FuelRateSource::MafDerived;
+            self.fuel_rate_quality = derived.quality;
         }
     }
 }
@@ -197,6 +228,7 @@ pub fn apply_mode01_pid(out: &mut IceDecode, pid: u8, data: &[u8]) {
             if let Some(raw) = u16_ab(data) {
                 out.fuel_rate_l_h = Some(f64::from(raw) / 20.0);
                 out.fuel_rate_source = FuelRateSource::Pid5E;
+                out.fuel_rate_quality = FuelRateQuality::Measured;
             }
         }
         0x52 => {
@@ -222,6 +254,26 @@ pub fn apply_mode01_pid(out: &mut IceDecode, pid: u8, data: &[u8]) {
         0x0B => {
             if let Some(a) = data.first() {
                 out.map_kpa = Some(f64::from(*a));
+            }
+        }
+        0x05 => {
+            if let Some(a) = data.first() {
+                out.coolant_c = Some(f64::from(*a) - 40.0);
+            }
+        }
+        0x0F => {
+            if let Some(a) = data.first() {
+                out.iat_c = Some(f64::from(*a) - 40.0);
+            }
+        }
+        0x11 => {
+            if let Some(a) = data.first() {
+                out.throttle_pct = Some(f64::from(*a) * 100.0 / 255.0);
+            }
+        }
+        0x49 | 0x5A => {
+            if let Some(a) = data.first() {
+                out.pedal_pct = Some(f64::from(*a) * 100.0 / 255.0);
             }
         }
         0x44 | 0x24 => {
@@ -283,6 +335,7 @@ pub fn apply_j1939_spn183(out: &mut IceDecode, raw: u16) {
     out.fuel_rate_l_h = decode_spn183_l_h(raw);
     if out.fuel_rate_l_h.is_some() {
         out.fuel_rate_source = FuelRateSource::J1939Spn183;
+        out.fuel_rate_quality = FuelRateQuality::Measured;
     }
 }
 
@@ -290,11 +343,63 @@ pub fn apply_j1939_lfe_illustrative(out: &mut IceDecode, payload: &[u8]) {
     out.fuel_rate_l_h = decode_pgn_65257_lfe_illustrative(payload);
     if out.fuel_rate_l_h.is_some() {
         out.fuel_rate_source = FuelRateSource::J1939LfeIllustrative;
+        out.fuel_rate_quality = FuelRateQuality::Measured;
     }
 }
 
 pub fn apply_j1939_spn96(out: &mut IceDecode, raw: u8) {
     out.fuel_level_pct = decode_spn96_pct(raw);
+}
+
+/// SPN 174 Fuel Temperature 1, PGN 65262 Engine Temperature 1.
+/// Digital Annex: 1 C/bit, offset −40; byte index 1 of the 8-byte PGN (after
+/// SPN 110 coolant in byte 0). `0xFF` → `None`.
+pub fn decode_spn174_c(raw: u8) -> Option<f64> {
+    if raw == 0xFF {
+        None
+    } else {
+        Some(f64::from(raw) - 40.0)
+    }
+}
+
+pub fn apply_j1939_spn174(out: &mut IceDecode, raw: u8) {
+    out.fuel_temp_c = decode_spn174_c(raw);
+}
+
+/// Flex-fuel composition sensor: ethanol % from frequency (50 Hz = 0 %, 150 Hz = 100 %).
+pub fn decode_flex_ethanol_pct_from_hz(frequency_hz: f64) -> Option<f64> {
+    if !frequency_hz.is_finite() || !(45.0..=155.0).contains(&frequency_hz) {
+        return None;
+    }
+    Some((frequency_hz - 50.0).clamp(0.0, 100.0))
+}
+
+/// Flex-fuel sensor pulse width → fuel temperature.
+/// `fuel_temp_c = -40 + (pulse_ms - 1.0) * 41.25` (1 ms = −40 C, 5 ms = 125 C).
+pub fn decode_flex_fuel_temp_c(pulse_ms: f64) -> Option<f64> {
+    if !pulse_ms.is_finite() || !(1.0..=5.0).contains(&pulse_ms) {
+        return None;
+    }
+    let t = -40.0 + (pulse_ms - 1.0) * 41.25;
+    if !(-40.0..=125.0).contains(&t) {
+        None
+    } else {
+        Some(t)
+    }
+}
+
+pub fn apply_flex_sensor(out: &mut IceDecode, frequency_hz: f64, pulse_ms: f64) {
+    out.ethanol_pct = decode_flex_ethanol_pct_from_hz(frequency_hz);
+    out.fuel_temp_c = decode_flex_fuel_temp_c(pulse_ms);
+}
+
+/// Encode a Mode 01 positive response (no spaces) for tests / self-test.
+pub fn encode_mode01(pid: u8, payload: &[u8]) -> String {
+    let mut s = format!("41{pid:02X}");
+    for b in payload {
+        s.push_str(&format!("{b:02X}"));
+    }
+    s
 }
 
 /// Apply MegaSquirt injector math. Does **not** multiply again by ethanol %
@@ -312,6 +417,7 @@ pub fn apply_megasquirt(
     out.fuel_rate_l_h = megasquirt_fuel_rate_l_h(pw_ms, rpm, n_cyl, flow_cc_min);
     if out.fuel_rate_l_h.is_some() {
         out.fuel_rate_source = FuelRateSource::MegaSquirt;
+        out.fuel_rate_quality = FuelRateQuality::Measured;
     }
 }
 
@@ -361,5 +467,32 @@ mod tests {
     fn spn96_na_is_none() {
         assert_eq!(decode_spn96_pct(0xFF), None);
         assert!((decode_spn96_pct(125).unwrap() - 50.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn pid_temps_throttle_pedal() {
+        let mut d = IceDecode::default();
+        decode_elm327_mode01("41057A", &mut d); // 122-40 = 82 C
+        decode_elm327_mode01("410F3C", &mut d); // 60-40 = 20 C
+        decode_elm327_mode01("411180", &mut d);
+        decode_elm327_mode01("414980", &mut d);
+        assert!((d.coolant_c.unwrap() - 82.0).abs() < 1e-9);
+        assert!((d.iat_c.unwrap() - 20.0).abs() < 1e-9);
+        assert!((d.throttle_pct.unwrap() - 50.196).abs() < 0.02);
+        assert!((d.pedal_pct.unwrap() - 50.196).abs() < 0.02);
+    }
+
+    #[test]
+    fn flex_and_spn174_fuel_temp() {
+        assert_eq!(decode_flex_ethanol_pct_from_hz(50.0), Some(0.0));
+        assert_eq!(decode_flex_ethanol_pct_from_hz(135.0), Some(85.0));
+        assert_eq!(decode_flex_ethanol_pct_from_hz(150.0), Some(100.0));
+        assert_eq!(decode_flex_ethanol_pct_from_hz(40.0), None);
+        assert!((decode_flex_fuel_temp_c(1.0).unwrap() + 40.0).abs() < 1e-9);
+        assert!((decode_flex_fuel_temp_c(2.333).unwrap() - 15.0).abs() < 0.05);
+        assert!((decode_flex_fuel_temp_c(5.0).unwrap() - 125.0).abs() < 1e-9);
+        assert_eq!(decode_flex_fuel_temp_c(0.5), None);
+        assert_eq!(decode_spn174_c(55), Some(15.0));
+        assert_eq!(decode_spn174_c(0xFF), None);
     }
 }
