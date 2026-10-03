@@ -23,6 +23,8 @@ pub enum FuelRateSource {
     J1939LfeIllustrative,
     MafDerived,
     MegaSquirt,
+    /// Shaft power from percent torque × reference torque × rpm, times BSFC.
+    TorqueBsfc,
 }
 
 /// How trustworthy the MAF/stoich path is. Direct volume PIDs stay `Measured`.
@@ -36,6 +38,10 @@ pub enum FuelRateQuality {
     LambdaMaf,
     /// Petrol stoich assumed, and/or cold/high-load enrichment estimate.
     Estimate,
+    /// MAF at the PID 24/34/44 cap; stored as an upper bound, never the rate.
+    LambdaCapBound,
+    /// Torque × BSFC (widest uncertainty; worse at low load).
+    TorqueEstimate,
 }
 
 /// Cubic expansion coefficients (1/C) for density(T).
@@ -248,12 +254,54 @@ pub fn derive_maf_fuel_rate_ex(
 pub const FUEL_CUT_MIN_RPM: f64 = 900.0;
 /// Petrol overrun fuel cut is typically disabled until the engine is warm.
 pub const PETROL_FUEL_CUT_MIN_COOLANT_C: f64 = 50.0;
-/// Wideband lean limit treated as fuel cut (lambda).
+/// Unsaturated petrol wideband lean treated as corroboration (not the PID cap).
 pub const PETROL_LEAN_CUT_LAMBDA: f64 = 1.45;
-pub const DIESEL_LEAN_CUT_LAMBDA: f64 = 4.0;
+/// SAE J1979 default maximum equivalence ratio when PID 4F byte A is 0 or absent.
+pub const DEFAULT_LAMBDA_EQ_MAX: f64 = 2.0;
+/// Within this fraction of the active max, lambda is saturated (at least this lean).
+pub const LAMBDA_SATURATION_FRAC: f64 = 0.01;
+pub const DIESEL_BSFC_G_KWH: f64 = 230.0;
+pub const PETROL_BSFC_G_KWH: f64 = 280.0;
+/// Idle/friction intercept (g/h) at 800 rpm; scaled with rpm. Not used on overrun.
+pub const DIESEL_IDLE_FUEL_G_H: f64 = 220.0;
+pub const PETROL_IDLE_FUEL_G_H: f64 = 180.0;
 
-/// Fuel cut: `Some(0.0)` not `None`. Needs lambda or PID 5E evidence.
-/// Closed throttle / high rpm alone is not enough (cold petrol keeps injecting).
+pub fn lambda_eq_max_from_pid4f_a(a: u8) -> f64 {
+    if a == 0 {
+        DEFAULT_LAMBDA_EQ_MAX
+    } else {
+        f64::from(a)
+    }
+}
+
+pub fn lambda_from_pid_raw(raw: u16, eq_max: f64) -> f64 {
+    eq_max * f64::from(raw) / 65536.0
+}
+
+pub fn lambda_is_saturated(lambda: f64, eq_max: f64) -> bool {
+    lambda.is_finite()
+        && eq_max.is_finite()
+        && eq_max > 0.0
+        && lambda >= eq_max * (1.0 - LAMBDA_SATURATION_FRAC)
+}
+
+/// Fuel-cut evidence. Saturated lambda alone is never enough.
+#[derive(Clone, Copy, Debug)]
+pub struct FuelCutInput {
+    pub kind: IceFuelKind,
+    pub rpm: Option<f64>,
+    pub speed_kmh: Option<f64>,
+    pub fuel_rate_direct: Option<f64>,
+    pub lambda: Option<f64>,
+    pub lambda_saturated: bool,
+    pub coolant_c: Option<f64>,
+    pub throttle_pct: Option<f64>,
+    pub actual_torque_pct: Option<f64>,
+}
+
+/// Fuel cut: `Some(0.0)` not `None`.
+/// Evidence: PID 5E == 0, or actual torque ≤ 0 while moving above idle.
+/// Petrol: unsaturated lean lambda, or (saturated lambda + closed throttle + warm coolant).
 pub fn detect_fuel_cut(
     kind: IceFuelKind,
     rpm: Option<f64>,
@@ -262,28 +310,164 @@ pub fn detect_fuel_cut(
     lambda: Option<f64>,
     coolant_c: Option<f64>,
 ) -> bool {
-    let rpm = rpm.unwrap_or(0.0);
-    let speed = speed_kmh.unwrap_or(0.0);
+    detect_fuel_cut_ex(FuelCutInput {
+        kind,
+        rpm,
+        speed_kmh,
+        fuel_rate_direct,
+        lambda,
+        lambda_saturated: false,
+        coolant_c,
+        throttle_pct: None,
+        actual_torque_pct: None,
+    })
+}
+
+pub fn detect_fuel_cut_ex(i: FuelCutInput) -> bool {
+    let rpm = i.rpm.unwrap_or(0.0);
+    let speed = i.speed_kmh.unwrap_or(0.0);
     if rpm < FUEL_CUT_MIN_RPM || speed <= 0.0 {
         return false;
     }
-    let five_e_zero = fuel_rate_direct == Some(0.0);
-    let lean = match (kind, lambda) {
-        (IceFuelKind::Petrol, Some(l)) => l.is_finite() && l >= PETROL_LEAN_CUT_LAMBDA,
-        (IceFuelKind::Diesel, Some(l)) => l.is_finite() && l >= DIESEL_LEAN_CUT_LAMBDA,
-        _ => false,
-    };
-    if !five_e_zero && !lean {
-        return false;
+    if i.fuel_rate_direct == Some(0.0) {
+        return true;
     }
-    if kind == IceFuelKind::Petrol {
-        if let Some(c) = coolant_c {
-            if c < PETROL_FUEL_CUT_MIN_COOLANT_C && !five_e_zero && !lean {
-                return false;
+    if let Some(t) = i.actual_torque_pct {
+        if t.is_finite() && t <= 0.0 {
+            return true;
+        }
+    }
+    if i.kind == IceFuelKind::Petrol {
+        let warm = i
+            .coolant_c
+            .map(|c| c >= PETROL_FUEL_CUT_MIN_COOLANT_C)
+            .unwrap_or(false);
+        let closed = i.throttle_pct.map(|t| t <= 2.0).unwrap_or(false);
+        if i.lambda_saturated && closed && warm {
+            return true;
+        }
+        if !i.lambda_saturated {
+            if let Some(l) = i.lambda {
+                if l.is_finite() && l >= PETROL_LEAN_CUT_LAMBDA && warm {
+                    return true;
+                }
             }
         }
     }
-    true
+    false
+}
+
+pub fn default_bsfc_g_kwh(kind: IceFuelKind) -> f64 {
+    match kind {
+        IceFuelKind::Diesel => DIESEL_BSFC_G_KWH,
+        IceFuelKind::Petrol => PETROL_BSFC_G_KWH,
+    }
+}
+
+/// Widen BSFC below 25 % torque (low-load inefficiency). 30 % torque is unchanged.
+pub fn bsfc_g_kwh_at_torque(base: f64, torque_pct: f64) -> f64 {
+    let t = (torque_pct / 100.0).clamp(0.0, 1.0);
+    if t >= 0.25 {
+        base
+    } else {
+        base * (1.0 + 0.5 * (0.25 - t) / 0.25)
+    }
+}
+
+pub fn shaft_power_kw(torque_pct: f64, reference_torque_nm: f64, rpm: f64) -> Option<f64> {
+    if !torque_pct.is_finite() || !reference_torque_nm.is_finite() || !rpm.is_finite() {
+        return None;
+    }
+    if reference_torque_nm <= 0.0 || rpm <= 0.0 {
+        return None;
+    }
+    let t = torque_pct / 100.0;
+    Some(t * reference_torque_nm * rpm * 2.0 * std::f64::consts::PI / 60.0 / 1000.0)
+}
+
+fn idle_fuel_g_h(kind: IceFuelKind, rpm: f64) -> f64 {
+    let base = match kind {
+        IceFuelKind::Diesel => DIESEL_IDLE_FUEL_G_H,
+        IceFuelKind::Petrol => PETROL_IDLE_FUEL_G_H,
+    };
+    base * (rpm / 800.0).clamp(0.5, 2.5)
+}
+
+/// Torque-based L/h. Missing reference torque or rpm → `None`.
+/// Torque ≤ 0 while moving is fuel cut (`Some(0.0)`); caller usually handles that first.
+pub fn torque_bsfc_fuel_l_h(
+    kind: IceFuelKind,
+    torque_pct: Option<f64>,
+    reference_torque_nm: Option<f64>,
+    rpm: Option<f64>,
+    speed_kmh: Option<f64>,
+    ethanol_pct: Option<f64>,
+    fuel_temp_c: Option<f64>,
+    bsfc_override: Option<f64>,
+) -> Option<f64> {
+    let rpm = rpm?;
+    let tq = torque_pct?;
+    let refer = reference_torque_nm?;
+    if !rpm.is_finite() || rpm <= 0.0 || !refer.is_finite() || refer <= 0.0 || !tq.is_finite() {
+        return None;
+    }
+    let speed = speed_kmh.unwrap_or(0.0);
+    if tq <= 0.0 && speed > 0.0 && rpm >= FUEL_CUT_MIN_RPM {
+        return Some(0.0);
+    }
+    let power = shaft_power_kw(tq.max(0.0), refer, rpm)?;
+    let base = bsfc_override
+        .filter(|b| b.is_finite() && *b > 0.0)
+        .unwrap_or_else(|| default_bsfc_g_kwh(kind));
+    let bsfc = bsfc_g_kwh_at_torque(base, tq);
+    let mut fuel_g_h = power.max(0.0) * bsfc;
+    if !(tq <= 0.0 && speed > 0.0) {
+        fuel_g_h += idle_fuel_g_h(kind, rpm);
+    }
+    let rho = fuel_density_kg_l_at(kind, ethanol_pct, fuel_temp_c);
+    if !rho.is_finite() || rho <= 0.0 {
+        return None;
+    }
+    Some(fuel_g_h / (rho * 1000.0))
+}
+
+/// Invert `torque_bsfc_fuel_l_h` for the synthetic encoder (same formula).
+pub fn torque_pct_for_fuel_l_h(
+    kind: IceFuelKind,
+    target_l_h: f64,
+    reference_torque_nm: f64,
+    rpm: f64,
+    speed_kmh: f64,
+    ethanol_pct: Option<f64>,
+    fuel_temp_c: Option<f64>,
+) -> Option<f64> {
+    if !target_l_h.is_finite() || target_l_h < 0.0 {
+        return None;
+    }
+    if target_l_h == 0.0 {
+        return Some(0.0);
+    }
+    let mut lo = 0.0;
+    let mut hi = 120.0;
+    for _ in 0..40 {
+        let mid = 0.5 * (lo + hi);
+        let got = torque_bsfc_fuel_l_h(
+            kind,
+            Some(mid),
+            Some(reference_torque_nm),
+            Some(rpm),
+            Some(speed_kmh),
+            ethanol_pct,
+            fuel_temp_c,
+            None,
+        )?;
+        if got > target_l_h {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+    Some(0.5 * (lo + hi))
 }
 
 /// Instant L/100 km. Missing speed or rate, or non-positive speed → `None`.
@@ -481,5 +665,81 @@ mod tests {
             Some(1.5),
             Some(90.0)
         ));
+        assert!(!detect_fuel_cut_ex(FuelCutInput {
+            kind: IceFuelKind::Diesel,
+            rpm: Some(2200.0),
+            speed_kmh: Some(80.0),
+            fuel_rate_direct: None,
+            lambda: Some(1.999),
+            lambda_saturated: true,
+            coolant_c: Some(90.0),
+            throttle_pct: Some(0.0),
+            actual_torque_pct: Some(20.0),
+        }));
+        assert!(detect_fuel_cut_ex(FuelCutInput {
+            kind: IceFuelKind::Diesel,
+            rpm: Some(2200.0),
+            speed_kmh: Some(80.0),
+            fuel_rate_direct: None,
+            lambda: Some(1.999),
+            lambda_saturated: true,
+            coolant_c: Some(90.0),
+            throttle_pct: Some(0.0),
+            actual_torque_pct: Some(0.0),
+        }));
+        assert!(detect_fuel_cut_ex(FuelCutInput {
+            kind: IceFuelKind::Petrol,
+            rpm: Some(2200.0),
+            speed_kmh: Some(80.0),
+            fuel_rate_direct: None,
+            lambda: Some(1.999),
+            lambda_saturated: true,
+            coolant_c: Some(90.0),
+            throttle_pct: Some(0.0),
+            actual_torque_pct: Some(15.0),
+        }));
+        assert!(!detect_fuel_cut_ex(FuelCutInput {
+            kind: IceFuelKind::Petrol,
+            rpm: Some(2200.0),
+            speed_kmh: Some(80.0),
+            fuel_rate_direct: None,
+            lambda: Some(1.999),
+            lambda_saturated: true,
+            coolant_c: Some(20.0),
+            throttle_pct: Some(0.0),
+            actual_torque_pct: Some(15.0),
+        }));
+    }
+
+    #[test]
+    fn torque_check_vector_30pct_210nm_2000rpm() {
+        let kw = shaft_power_kw(30.0, 210.0, 2000.0).unwrap();
+        assert!((kw - 13.2).abs() < 0.05, "kW={kw}");
+        let shaft_g_h = kw * DIESEL_BSFC_G_KWH;
+        let l_h = shaft_g_h / (DIESEL_DENSITY_KG_L * 1000.0);
+        assert!((l_h - 3.6).abs() < 0.08, "L/h before idle={l_h}");
+        let with_idle = torque_bsfc_fuel_l_h(
+            IceFuelKind::Diesel,
+            Some(30.0),
+            Some(210.0),
+            Some(2000.0),
+            Some(90.0),
+            None,
+            Some(15.0),
+            None,
+        )
+        .unwrap();
+        assert!(with_idle > l_h);
+        assert!(torque_bsfc_fuel_l_h(
+            IceFuelKind::Diesel,
+            Some(30.0),
+            None,
+            Some(2000.0),
+            Some(90.0),
+            None,
+            None,
+            None
+        )
+        .is_none());
     }
 }

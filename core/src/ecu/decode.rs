@@ -6,8 +6,10 @@
 
 use super::ambient::altitude_m_from_baro_kpa;
 use super::fuel::{
-    derive_maf_fuel_rate_ex, detect_fuel_cut, fuel_current_l, instant_l_per_100km,
-    megasquirt_fuel_rate_l_h, FuelRateQuality, FuelRateSource, IceFuelKind,
+    derive_maf_fuel_rate_ex, detect_fuel_cut_ex, fuel_current_l, instant_l_per_100km,
+    lambda_eq_max_from_pid4f_a, lambda_from_pid_raw, lambda_is_saturated, maf_to_fuel_rate_l_h,
+    megasquirt_fuel_rate_l_h, stoich_afr, torque_bsfc_fuel_l_h, FuelCutInput, FuelRateQuality,
+    FuelRateSource, IceFuelKind, DEFAULT_LAMBDA_EQ_MAX,
 };
 use super::LiveEnergySnapshot;
 
@@ -43,12 +45,21 @@ pub struct IceDecode {
     pub baro_kpa: Option<f64>,
     pub map_kpa: Option<f64>,
     pub lambda: Option<f64>,
+    pub lambda_raw: Option<u16>,
+    pub lambda_eq_max: Option<f64>,
+    pub lambda_saturated: bool,
     pub altitude_m: Option<f64>,
     pub coolant_c: Option<f64>,
     pub iat_c: Option<f64>,
     pub throttle_pct: Option<f64>,
     pub pedal_pct: Option<f64>,
     pub fuel_temp_c: Option<f64>,
+    pub actual_torque_pct: Option<f64>,
+    pub demand_torque_pct: Option<f64>,
+    pub reference_torque_nm: Option<f64>,
+    /// MAF fuel at the lambda cap; never copied into `fuel_rate_l_h`.
+    pub fuel_rate_cap_l_h: Option<f64>,
+    pub bsfc_g_kwh_override: Option<f64>,
     pub fuel_rate_source: FuelRateSource,
     pub fuel_rate_quality: FuelRateQuality,
 }
@@ -70,41 +81,112 @@ impl IceDecode {
         fuel_current_l(self.fuel_level_pct, tank_capacity_l)
     }
 
-    /// Prefer PID `5E` / J1939 rate; else MAF derivation (diesel needs lambda).
-    /// Fuel-temp density applies only to the MAF mass-to-litre path.
+    /// Source order: 5E/J1939/MegaSquirt, MAF+unsaturated lambda, torque×BSFC,
+    /// petrol MAF stoich estimate, else None.
     pub fn finish_fuel_rate(&mut self, kind: IceFuelKind) {
         self.altitude_m = altitude_m_from_baro_kpa(self.baro_kpa);
-        if detect_fuel_cut(
+        self.refresh_lambda();
+        if detect_fuel_cut_ex(FuelCutInput {
             kind,
-            self.rpm,
-            self.speed_kmh,
-            self.fuel_rate_l_h,
-            self.lambda,
-            self.coolant_c,
-        ) {
+            rpm: self.rpm,
+            speed_kmh: self.speed_kmh,
+            fuel_rate_direct: self.fuel_rate_l_h,
+            lambda: self.lambda,
+            lambda_saturated: self.lambda_saturated,
+            coolant_c: self.coolant_c,
+            throttle_pct: self.throttle_pct.or(self.pedal_pct),
+            actual_torque_pct: self.actual_torque_pct,
+        }) {
+            let from_5e =
+                self.fuel_rate_l_h == Some(0.0) && self.fuel_rate_source == FuelRateSource::Pid5E;
             self.fuel_rate_l_h = Some(0.0);
-            if self.fuel_rate_source == FuelRateSource::None {
-                self.fuel_rate_source = FuelRateSource::Pid5E;
+            if !from_5e && self.fuel_rate_source == FuelRateSource::None {
+                self.fuel_rate_source = if self.actual_torque_pct.map(|t| t <= 0.0) == Some(true) {
+                    FuelRateSource::TorqueBsfc
+                } else {
+                    FuelRateSource::Pid5E
+                };
             }
-            self.fuel_rate_quality = FuelRateQuality::Measured;
+            self.fuel_rate_quality = if from_5e {
+                FuelRateQuality::Measured
+            } else if self.actual_torque_pct.map(|t| t <= 0.0) == Some(true) {
+                FuelRateQuality::TorqueEstimate
+            } else {
+                FuelRateQuality::Measured
+            };
             return;
         }
         if self.fuel_rate_l_h.is_some() {
             self.fuel_rate_quality = FuelRateQuality::Measured;
             return;
         }
-        if let Some(derived) = derive_maf_fuel_rate_ex(
+        if self.lambda_saturated {
+            if let (Some(maf), Some(lam)) = (self.maf_g_s, self.lambda) {
+                let afr = lam * stoich_afr(kind, self.ethanol_pct);
+                let rho =
+                    super::fuel::fuel_density_kg_l_at(kind, self.ethanol_pct, self.fuel_temp_c);
+                self.fuel_rate_cap_l_h = maf_to_fuel_rate_l_h(maf, afr, rho);
+            }
+        }
+        let maf_lambda = if self.lambda_saturated {
+            None
+        } else {
+            self.lambda
+        };
+        if maf_lambda.is_some() {
+            if let Some(derived) = derive_maf_fuel_rate_ex(
+                kind,
+                self.maf_g_s,
+                maf_lambda,
+                self.ethanol_pct,
+                self.fuel_temp_c,
+                self.coolant_c,
+                self.calc_load_pct,
+            ) {
+                self.fuel_rate_l_h = Some(derived.fuel_l_h);
+                self.fuel_rate_source = FuelRateSource::MafDerived;
+                self.fuel_rate_quality = derived.quality;
+                return;
+            }
+        }
+        if let Some(rate) = torque_bsfc_fuel_l_h(
             kind,
-            self.maf_g_s,
-            self.lambda,
+            self.actual_torque_pct,
+            self.reference_torque_nm,
+            self.rpm,
+            self.speed_kmh,
             self.ethanol_pct,
             self.fuel_temp_c,
-            self.coolant_c,
-            self.calc_load_pct,
+            self.bsfc_g_kwh_override,
         ) {
-            self.fuel_rate_l_h = Some(derived.fuel_l_h);
-            self.fuel_rate_source = FuelRateSource::MafDerived;
-            self.fuel_rate_quality = derived.quality;
+            self.fuel_rate_l_h = Some(rate);
+            self.fuel_rate_source = FuelRateSource::TorqueBsfc;
+            self.fuel_rate_quality = FuelRateQuality::TorqueEstimate;
+            return;
+        }
+        if kind == IceFuelKind::Petrol {
+            if let Some(derived) = derive_maf_fuel_rate_ex(
+                kind,
+                self.maf_g_s,
+                None,
+                self.ethanol_pct,
+                self.fuel_temp_c,
+                self.coolant_c,
+                self.calc_load_pct,
+            ) {
+                self.fuel_rate_l_h = Some(derived.fuel_l_h);
+                self.fuel_rate_source = FuelRateSource::MafDerived;
+                self.fuel_rate_quality = derived.quality;
+            }
+        }
+    }
+
+    fn refresh_lambda(&mut self) {
+        let max = self.lambda_eq_max.unwrap_or(DEFAULT_LAMBDA_EQ_MAX);
+        if let Some(raw) = self.lambda_raw {
+            let lam = lambda_from_pid_raw(raw, max);
+            self.lambda = Some(lam);
+            self.lambda_saturated = lambda_is_saturated(lam, max);
         }
     }
 }
@@ -276,9 +358,39 @@ pub fn apply_mode01_pid(out: &mut IceDecode, pid: u8, data: &[u8]) {
                 out.pedal_pct = Some(f64::from(*a) * 100.0 / 255.0);
             }
         }
-        0x44 | 0x24 => {
+        0x44 | 0x24 | 0x34 => {
             if let Some(raw) = u16_ab(data) {
-                out.lambda = Some(f64::from(raw) / 32768.0);
+                out.lambda_raw = Some(raw);
+                let max = out.lambda_eq_max.unwrap_or(DEFAULT_LAMBDA_EQ_MAX);
+                let lam = lambda_from_pid_raw(raw, max);
+                out.lambda = Some(lam);
+                out.lambda_saturated = lambda_is_saturated(lam, max);
+            }
+        }
+        0x4F => {
+            if let Some(a) = data.first() {
+                out.lambda_eq_max = Some(lambda_eq_max_from_pid4f_a(*a));
+                if let Some(raw) = out.lambda_raw {
+                    let max = out.lambda_eq_max.unwrap_or(DEFAULT_LAMBDA_EQ_MAX);
+                    let lam = lambda_from_pid_raw(raw, max);
+                    out.lambda = Some(lam);
+                    out.lambda_saturated = lambda_is_saturated(lam, max);
+                }
+            }
+        }
+        0x61 => {
+            if let Some(a) = data.first() {
+                out.demand_torque_pct = Some(f64::from(*a) - 125.0);
+            }
+        }
+        0x62 => {
+            if let Some(a) = data.first() {
+                out.actual_torque_pct = Some(f64::from(*a) - 125.0);
+            }
+        }
+        0x63 => {
+            if let Some(raw) = u16_ab(data) {
+                out.reference_torque_nm = Some(f64::from(raw));
             }
         }
         _ => {}
@@ -364,6 +476,28 @@ pub fn decode_spn174_c(raw: u8) -> Option<f64> {
 
 pub fn apply_j1939_spn174(out: &mut IceDecode, raw: u8) {
     out.fuel_temp_c = decode_spn174_c(raw);
+}
+
+/// SPN 513 Actual Engine - Percent Torque (1 %/bit, offset −125).
+pub fn decode_spn513_pct(raw: u8) -> f64 {
+    f64::from(raw) - 125.0
+}
+
+pub fn apply_j1939_spn513(out: &mut IceDecode, raw: u8) {
+    out.actual_torque_pct = Some(decode_spn513_pct(raw));
+}
+
+/// SPN 544 Engine Reference Torque (1 Nm/bit). `0xFFFF` → `None`.
+pub fn decode_spn544_nm(raw: u16) -> Option<f64> {
+    if raw == 0xFFFF {
+        None
+    } else {
+        Some(f64::from(raw))
+    }
+}
+
+pub fn apply_j1939_spn544(out: &mut IceDecode, raw: u16) {
+    out.reference_torque_nm = decode_spn544_nm(raw);
 }
 
 /// Flex-fuel composition sensor: ethanol % from frequency (50 Hz = 0 %, 150 Hz = 100 %).
@@ -494,5 +628,43 @@ mod tests {
         assert_eq!(decode_flex_fuel_temp_c(0.5), None);
         assert_eq!(decode_spn174_c(55), Some(15.0));
         assert_eq!(decode_spn174_c(0xFF), None);
+    }
+
+    #[test]
+    fn pid4f_scales_lambda_and_no_data() {
+        let mut d = IceDecode::default();
+        decode_elm327_mode01("4124FFFF", &mut d);
+        assert!((d.lambda.unwrap() - 1.99997).abs() < 0.001);
+        assert!(d.lambda_saturated);
+        decode_elm327_mode01("414F04000000", &mut d);
+        assert_eq!(d.lambda_eq_max, Some(4.0));
+        assert!((d.lambda.unwrap() - 3.9999).abs() < 0.01);
+        assert!(d.lambda_saturated);
+        let mut e = IceDecode::default();
+        decode_elm327_mode01("41248000", &mut e);
+        assert!((e.lambda.unwrap() - 1.0).abs() < 0.002);
+        assert!(!e.lambda_saturated);
+        decode_elm327_mode01("414F00000000", &mut e);
+        assert_eq!(e.lambda_eq_max, Some(2.0));
+        let mut n = IceDecode::default();
+        assert!(!decode_elm327_mode01("NO DATA", &mut n));
+        assert!(n.lambda_eq_max.is_none());
+        assert!(!n.lambda_saturated);
+    }
+
+    #[test]
+    fn pid_torque_and_diesel_rejects_saturated_maf() {
+        let mut d = IceDecode::default();
+        decode_elm327_mode01("410C1F40", &mut d); // 2000 rpm
+        decode_elm327_mode01("410D5A", &mut d);
+        decode_elm327_mode01("411003E8", &mut d); // 10 g/s
+        decode_elm327_mode01("4124FFFF", &mut d);
+        decode_elm327_mode01("41629B", &mut d); // 155-125 = 30 %
+        decode_elm327_mode01("416300D2", &mut d); // 210 Nm
+        d.finish_fuel_rate(IceFuelKind::Diesel);
+        assert!(d.lambda_saturated);
+        assert_eq!(d.fuel_rate_source, FuelRateSource::TorqueBsfc);
+        assert!(d.fuel_rate_l_h.unwrap() > 3.0);
+        assert!(d.fuel_rate_cap_l_h.is_some());
     }
 }

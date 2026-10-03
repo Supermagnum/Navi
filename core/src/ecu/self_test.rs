@@ -283,6 +283,46 @@ pub fn afr_fuel_rate_self_test_report() -> String {
         "None vs 300 km".into(),
     );
 
+    // PID 4F / saturation / torque (lambda cap must not feed diesel MAF).
+    let mut sat = IceDecode::default();
+    decode_elm327_mode01("4124FFFF", &mut sat);
+    check(
+        &mut ok,
+        &mut lines,
+        "pid24_default_cap_saturated",
+        sat.lambda_saturated && sat.lambda.unwrap() > 1.99,
+        format!("lam={:?} sat={}", sat.lambda, sat.lambda_saturated),
+    );
+    decode_elm327_mode01("414F04000000", &mut sat);
+    check(
+        &mut ok,
+        &mut lines,
+        "pid4f_rescales_max",
+        sat.lambda_eq_max == Some(4.0) && sat.lambda.unwrap() > 3.9,
+        format!("max={:?} lam={:?}", sat.lambda_eq_max, sat.lambda),
+    );
+    let mut nodata4f = IceDecode::default();
+    check(
+        &mut ok,
+        &mut lines,
+        "pid4f_no_data",
+        !decode_elm327_mode01("NO DATA", &mut nodata4f) && nodata4f.lambda_eq_max.is_none(),
+        "absent max".into(),
+    );
+    let mut tq = IceDecode::default();
+    decode_elm327_mode01("410C1F40", &mut tq);
+    decode_elm327_mode01("410D5A", &mut tq);
+    decode_elm327_mode01("41629B", &mut tq);
+    decode_elm327_mode01("416300D2", &mut tq);
+    tq.finish_fuel_rate(IceFuelKind::Diesel);
+    check(
+        &mut ok,
+        &mut lines,
+        "diesel_torque_not_maf_at_cap",
+        tq.fuel_rate_source == FuelRateSource::TorqueBsfc && tq.fuel_rate_l_h.unwrap() > 3.2,
+        format!("src={:?} rate={:?}", tq.fuel_rate_source, tq.fuel_rate_l_h),
+    );
+
     if ok {
         lines.push("PASS".into());
     } else {
