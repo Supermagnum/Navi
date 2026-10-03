@@ -741,6 +741,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_elevation_at(
     ): Int
+    external fun uniffi_navi_checksum_func_ensure_ferry_sidecar(
+    ): Int
     external fun uniffi_navi_checksum_func_ensure_indexed_maps(
     ): Int
     external fun uniffi_navi_checksum_func_ensure_live_hazards_loaded(
@@ -749,9 +751,15 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_ensure_place_index(
     ): Int
+    external fun uniffi_navi_checksum_func_ensure_poi_lookahead_covering(
+    ): Int
     external fun uniffi_navi_checksum_func_ensure_poi_lookahead_loaded(
     ): Int
     external fun uniffi_navi_checksum_func_export_saved_route_gpx(
+    ): Int
+    external fun uniffi_navi_checksum_func_ferry_sidecar_is_ready(
+    ): Int
+    external fun uniffi_navi_checksum_func_ferry_sidecar_progress_snapshot(
     ): Int
     external fun uniffi_navi_checksum_func_ffi_linkage_smoke_test(
     ): Int
@@ -1075,6 +1083,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_set_nav_context(
     ): Int
+    external fun uniffi_navi_checksum_func_camping_plugin_set_pack_dirs(
+    ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_set_residency_country(
     ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_set_timezone(
@@ -1082,7 +1092,6 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_camping_plugin_suggest_along_route(
     ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_undo_camp_here_tonight(
-    ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_configure(
     ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_connect_tcp(
@@ -1229,6 +1238,8 @@ internal object UniffiLib {
     ): Byte
     external fun uniffi_navi_fn_func_elevation_at(`elevDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_ensure_ferry_sidecar(`packDir`: RustBuffer.ByValue,`stem`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_ensure_indexed_maps(`pbfPath`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,`progressOnConvertChannel`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_ensure_live_hazards_loaded(`pbfPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1237,9 +1248,15 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_ensure_place_index(`pbfPath`: RustBuffer.ByValue,`indexDbPath`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_ensure_poi_lookahead_covering(`dataDir`: RustBuffer.ByValue,`packDirsJson`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_ensure_poi_lookahead_loaded(`dataDir`: RustBuffer.ByValue,`pbfPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_export_saved_route_gpx(`dataDir`: RustBuffer.ByValue,`routeId`: RustBuffer.ByValue,`routePolyline`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_ferry_sidecar_is_ready(`packDir`: RustBuffer.ByValue,`stem`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_ferry_sidecar_progress_snapshot(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_ffi_linkage_smoke_test(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1563,6 +1580,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_camping_plugin_set_nav_context(`waypointsJson`: RustBuffer.ByValue,`destLat`: RustBuffer.ByValue,`destLon`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,`professionalDriver`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_camping_plugin_set_pack_dirs(`packDirsJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_camping_plugin_set_residency_country(`iso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_camping_plugin_set_timezone(`timezone`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1570,7 +1589,6 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_camping_plugin_suggest_along_route(`maxSuggestions`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_camping_plugin_undo_camp_here_tonight(`lat`: Double,`lon`: Double,`countryIso`: RustBuffer.ByValue,`subdivisionIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_configure(`filesDir`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`timezone`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_navi_fn_func_cat_plugin_connect_tcp(`host`: RustBuffer.ByValue,`port`: Short,`allowBeta`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -1816,6 +1834,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_elevation_at() and 0xFFFF) != 35410) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_ensure_ferry_sidecar() and 0xFFFF) != 516) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_ensure_indexed_maps() and 0xFFFF) != 55582) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1828,10 +1849,19 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_ensure_place_index() and 0xFFFF) != 27043) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_ensure_poi_lookahead_covering() and 0xFFFF) != 9302) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_ensure_poi_lookahead_loaded() and 0xFFFF) != 16850) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_export_saved_route_gpx() and 0xFFFF) != 43605) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_ferry_sidecar_is_ready() and 0xFFFF) != 31014) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_ferry_sidecar_progress_snapshot() and 0xFFFF) != 35556) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_ffi_linkage_smoke_test() and 0xFFFF) != 31862) {
@@ -2023,7 +2053,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_place_index_has_entries() and 0xFFFF) != 5969) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_plan_car_route() and 0xFFFF) != 11367) {
+    if ((lib.uniffi_navi_checksum_func_plan_car_route() and 0xFFFF) != 20547) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_plan_car_route_at() and 0xFFFF) != 44788) {
@@ -2317,6 +2347,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_camping_plugin_set_nav_context() and 0xFFFF) != 46018) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_set_pack_dirs() and 0xFFFF) != 40747) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_camping_plugin_set_residency_country() and 0xFFFF) != 64366) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2570,33 +2603,6 @@ public object FfiConverterUByte: FfiConverter<UByte, Byte> {
 
     override fun write(value: UByte, buf: ByteBuffer) {
         buf.put(value.toByte())
-    }
-}
-
-/**
- * @suppress
- */
-public object FfiConverterUShort: FfiConverter<UShort, Short> {
-    override fun lift(value: Short): UShort {
-        return value.toUShort()
-    }
-
-    fun lift(value: Int): UShort {
-        return value.toUShort()
-    }
-
-    override fun read(buf: ByteBuffer): UShort {
-        return lift(buf.getShort())
-    }
-
-    override fun lower(value: UShort): Short {
-        return value.toShort()
-    }
-
-    override fun allocationSize(value: UShort) = 2UL
-
-    override fun write(value: UShort, buf: ByteBuffer) {
-        buf.putShort(value.toShort())
     }
 }
 
@@ -3705,6 +3711,59 @@ public object FfiConverterTypeFfiEvCarConfig: FfiConverterRustBuffer<FfiEvCarCon
 
     override fun write(value: FfiEvCarConfig, buf: ByteBuffer) {
             FfiConverterOptionalDouble.write(value.`batteryCapacityKwh`, buf)
+    }
+}
+
+
+
+data class FfiFerrySidecarProgress (
+    var `stem`: kotlin.String
+    , 
+    var `regionLabel`: kotlin.String
+    , 
+    var `running`: kotlin.Boolean
+    , 
+    var `pct`: kotlin.UByte
+    , 
+    var `message`: kotlin.String
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiFerrySidecarProgress: FfiConverterRustBuffer<FfiFerrySidecarProgress> {
+    override fun read(buf: ByteBuffer): FfiFerrySidecarProgress {
+        return FfiFerrySidecarProgress(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterUByte.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiFerrySidecarProgress) = (
+            FfiConverterString.allocationSize(value.`stem`) +
+            FfiConverterString.allocationSize(value.`regionLabel`) +
+            FfiConverterBoolean.allocationSize(value.`running`) +
+            FfiConverterUByte.allocationSize(value.`pct`) +
+            FfiConverterString.allocationSize(value.`message`)
+    )
+
+    override fun write(value: FfiFerrySidecarProgress, buf: ByteBuffer) {
+            FfiConverterString.write(value.`stem`, buf)
+            FfiConverterString.write(value.`regionLabel`, buf)
+            FfiConverterBoolean.write(value.`running`, buf)
+            FfiConverterUByte.write(value.`pct`, buf)
+            FfiConverterString.write(value.`message`, buf)
     }
 }
 
@@ -6037,6 +6096,23 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Build/refresh `{stem}.navi-ferry-overlay-{profile}.rkyv` from the region PBF.
+         * Call from pack install / refresh background work — not from the plan path.
+         */ fun `ensureFerrySidecar`(`packDir`: kotlin.String, `stem`: kotlin.String, `profile`: TravelProfile): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_ensure_ferry_sidecar(
+    
+        
+        FfiConverterString.lower(`packDir`),
+        FfiConverterString.lower(`stem`),
+        FfiConverterTypeTravelProfile.lower(`profile`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Build preprocess-once indexed map packs next to a region PBF (graph + POI/barrier).
          *
          * Preference order when packs are missing / stale / format-mismatched:
@@ -6120,6 +6196,25 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Load the Ready POI pack that covers `lat,lon` (long-trip-packs / Removable
+         * roots via `pack_dirs_json`). One pack at a time — never co-resident with a
+         * route graph. Cell key (~0.5°) avoids thrashing when GPS jitters inside a region.
+         */ fun `ensurePoiLookaheadCovering`(`dataDir`: kotlin.String, `packDirsJson`: kotlin.String, `lat`: kotlin.Double, `lon`: kotlin.Double): FfiPoiLookaheadLoadStats {
+            return FfiConverterTypeFfiPoiLookaheadLoadStats.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_ensure_poi_lookahead_covering(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`packDirsJson`),
+        FfiConverterDouble.lower(`lat`),
+        FfiConverterDouble.lower(`lon`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Load POI pack (preferred) or full PBF into the look-ahead store.
          */ fun `ensurePoiLookaheadLoaded`(`dataDir`: kotlin.String, `pbfPath`: kotlin.String): FfiPoiLookaheadLoadStats {
             return FfiConverterTypeFfiPoiLookaheadLoadStats.lift(
@@ -6148,6 +6243,35 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         FfiConverterString.lower(`dataDir`),
         FfiConverterString.lower(`routeId`),
         FfiConverterString.lower(`routePolyline`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * True when the stem ferry sidecar meta matches the on-disk PBF fingerprint.
+         */ fun `ferrySidecarIsReady`(`packDir`: kotlin.String, `stem`: kotlin.String, `profile`: TravelProfile): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_ferry_sidecar_is_ready(
+    
+        
+        FfiConverterString.lower(`packDir`),
+        FfiConverterString.lower(`stem`),
+        FfiConverterTypeTravelProfile.lower(`profile`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Progress for an in-flight ferry sidecar build (empty stem when idle).
+         */ fun `ferrySidecarProgressSnapshot`(): FfiFerrySidecarProgress {
+            return FfiConverterTypeFfiFerrySidecarProgress.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_ferry_sidecar_progress_snapshot(
+    
+        _status)
 }
     )
     }
@@ -7075,10 +7199,11 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
          * Android). Empty: search `data_dir` and `data_dir/long-trip-packs` when present.
          * Pass `""` only when the PBF already lives next to the packs.
          *
-         * `long_trip_enabled` gates densify/chunk planning for spans above
-         * [`LONG_TRIP_CHUNK_DEG`]. Ordinary UI plans must pass `false` so mid-length
-         * single-region trips (e.g. Hamar→Dombås) stay on one A* graph; long-trip mode
-         * passes `true` so multi-country corridors still chunk.
+         * `long_trip_enabled` gates densify/chunk for spans above [`LONG_TRIP_CHUNK_DEG`].
+         * Ordinary UI plans pass `false` so cross-stem mid trips (Raufoss→Bergen) stay
+         * on one A*. Same-stem coastal ODs with span > CHUNK densify even when longTrip
+         * is off so Automotive never materialises the full Vestlandet single-shot graph
+         * (Bergen→Stavanger ~259k nodes / ~985 MiB peak vs densify hops ~167k / ≤933).
          *
          * `allowed_countries`: when `Some` (non-empty), hard-filters the graph to those
          * ISO-3166-1 alpha-2 codes ([`RouteOptions::allowed_countries`]). Host "Stay in
@@ -8553,6 +8678,22 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     )
     }
     
+
+        /**
+         * JSON array of absolute pack roots (e.g. Removable `…/long-trip-packs`).
+         * Cleared on [`camping_plugin_configure`]; host should set after long-trip
+         * volume selection so suggest can see SD-only Ready packs.
+         */ fun `campingPluginSetPackDirs`(`packDirsJson`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_camping_plugin_set_pack_dirs(
+    
+        
+        FfiConverterString.lower(`packDirsJson`),_status)
+}
+    )
+    }
+    
  fun `campingPluginSetResidencyCountry`(`iso`: kotlin.String?): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
@@ -8610,6 +8751,7 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     )
     }
     
+
  fun `catPluginConfigure`(`filesDir`: kotlin.String, `dataDir`: kotlin.String, `timezone`: kotlin.String)
         = 
     uniffiRustCall() { _status ->
@@ -8749,5 +8891,4 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     )
     }
     
-
 

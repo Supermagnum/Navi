@@ -108,6 +108,19 @@ class StatusUiStabilityTest {
     }
 
     @Test
+    fun tools_visible_lines_empty_when_no_process_work() {
+        val lines =
+            StatusUi.toolsVisibleLines(
+                regionDownloadProgress = "",
+                pmtilesProgress = "",
+                placeIndexUiLine = "",
+                indexedMapsUiLine = "",
+                toolsStatusRaw = "",
+            )
+        assertTrue(lines.isEmpty())
+    }
+
+    @Test
     fun toast_min_height_constant_is_stable() {
         assertTrue(StatusUi.TOAST_MIN_HEIGHT_DP >= 40)
         assertTrue(StatusUi.COALESCE_MIN_INTERVAL_MS in 200L..500L)

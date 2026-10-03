@@ -98,6 +98,27 @@ class DownloadedRegionDeleteTest {
     }
 
     @Test
+    fun remove_stale_root_stem_when_long_trip_has_newer_or_equal_format() {
+        val filesRoot = tmp.newFolder("files")
+        val longTrip = File(filesRoot, LongTripPackStorage.PACKS_SUBDIR).also { it.mkdirs() }
+        File(filesRoot, "$stem.navi-manifest.json").writeText(
+            """{"schema":1,"stem":"$stem","graph_format_version":8}""",
+        )
+        File(filesRoot, "$stem.navi-graph-car.t0_0.rkyv").writeBytes(ByteArray(64))
+        File(longTrip, "$stem.navi-manifest.json").writeText(
+            """{"schema":1,"stem":"$stem","graph_format_version":9}""",
+        )
+        File(longTrip, "$stem.navi-graph-car.t0_0.rkyv").writeBytes(ByteArray(64))
+
+        val (_, n) =
+            DownloadedRegionDelete.removeStaleRootStemDuplicate(filesRoot, longTrip, stem)
+        assertTrue("expected root artifacts removed", n >= 2)
+        assertFalse(File(filesRoot, "$stem.navi-manifest.json").exists())
+        assertFalse(File(filesRoot, "$stem.navi-graph-car.t0_0.rkyv").exists())
+        assertTrue(File(longTrip, "$stem.navi-manifest.json").exists())
+    }
+
+    @Test
     fun after_delete_region_is_re_downloadable_clean_slate() {
         val dir = tmp.newFolder("redownload")
         seedInstalled(dir)
@@ -147,6 +168,33 @@ class DownloadedRegionDeleteTest {
         val result = DownloadedRegionDelete.delete(null, dir, region)
         assertFalse(result.ok)
         assertEquals(0, result.filesRemoved)
+    }
+
+    @Test
+    fun block_reason_sees_sd_pack_dir_and_delete_clears_it() {
+        val internal = tmp.newFolder("internal-empty")
+        val sd = tmp.newFolder("sd-long-trip-packs")
+        File(sd, "$stem.navi-manifest.json").writeText("{}")
+        File(sd, "$stem.navi-graph-car.rkyv").writeBytes(ByteArray(2048))
+        File(sd, ".pack-fetch-$stem.partial").mkdirs()
+
+        assertTrue(
+            "SD-only packs must be visible to Tools delete",
+            DownloadedRegionDelete.hasAnyInstall(internal, region, listOf(sd)),
+        )
+        assertEquals(null, DownloadedRegionDelete.blockReason(region, internal, listOf(sd)))
+
+        val result =
+            DownloadedRegionDelete.delete(
+                context = null,
+                dataDir = internal,
+                geofabrikPath = region,
+                extraPackDirs = listOf(sd),
+            )
+        assertTrue(result.message, result.ok)
+        assertFalse(File(sd, "$stem.navi-manifest.json").exists())
+        assertFalse(File(sd, "$stem.navi-graph-car.rkyv").exists())
+        assertFalse(File(sd, ".pack-fetch-$stem.partial").exists())
     }
 
     @Test

@@ -287,8 +287,16 @@ class LongTripCoordinatorPhaseCTest {
             line.contains("Unavailable", ignoreCase = true),
         )
         val plan = LongTripCoordinator.currentPlan()!!
-        assertEquals(LongTripCoordinator.State.Unavailable, plan.states[regions[1]])
-        assertEquals(LongTripCoordinator.State.Indexed, plan.states[regions[0]])
+        assertEquals(
+            "scrub must map mid-write stem to Unavailable; states=${plan.states}",
+            LongTripCoordinator.State.Unavailable,
+            plan.states[regions[1]],
+        )
+        assertEquals(
+            "start region stays Indexed across scrub; states=${plan.states}",
+            LongTripCoordinator.State.Indexed,
+            plan.states[regions[0]],
+        )
         LongTripCoordinator.disableWithDataDir(dir)
     }
 

@@ -688,6 +688,19 @@ object RegionDownloadBackground {
         val path = preferredPath.trim().trim('/')
         if (path.isEmpty()) return null
         if (!PackRegionAvailability.localBakeReady(dataDir, path)) return null
+        // A lone manifest (no graph packs / real PBF) must not synthesize resume work —
+        // that looked like indexing on cold start with nothing downloaded.
+        val hasRealPbf = PackRegionAvailability.resolvePbfForRegion(dataDir, path) != null
+        val stem = PackRegionAvailability.localStem(path)
+        val hasGraph =
+            dataDir.listFiles()?.any { f ->
+                f.isFile &&
+                    f.length() > 0L &&
+                    f.name.startsWith(stem) &&
+                    f.name.contains(".navi-graph-") &&
+                    f.name.endsWith(".rkyv")
+            } == true
+        if (!hasRealPbf && !hasGraph) return null
         // Sweden län share the country extract filename (europe/sweden → sweden-latest).
         val extractPath = GeofabrikDownloadCatalog.extractPathForPbf(path)
         val leaf = extractPath.substringAfterLast('/')
@@ -1498,13 +1511,18 @@ object RegionDownloadBackground {
                     Log.i(TAG, "pack-server PBF provision: ${pbfReport.take(240)}")
                     if (!pbfReport.contains("PASS")) {
                         setStatus("failed (extract download)")
+                        emitPhase(pathForDecision, "failed")
                         lastCompletedPath.set(pathForDecision)
                         return
                     }
-                    // Packs + extract are enough for multi-stem routing and
-                    // rest/overnight POI packs. Do not block the corridor queue
-                    // on basemap or place-index (Phase 0: planning must not wait
-                    // on indexing of non-start regions).
+                    // Sweden län share europe/sweden → sweden-latest.osm.pbf.
+                    // Pack-server still wrote a 16 KiB leaf stub (skane-latest…);
+                    // drop it so Tools / ferry overlay never treat stubs as data.
+                    scrubPackServerLeafStub(packDir, pathForDecision, filename)
+                    // Packs + extract are enough for the download queue to advance
+                    // and for rest/overnight POI packs. Basemap + place-index
+                    // continue in the background; long-trip planning waits for
+                    // Indexed via LongTripCoordinator.corridorReadyForPlanning.
                     emitInstalledForRouting(pathForDecision)
                     handOffBasemapAndPlaceIndex(
                         context = context,
@@ -1563,10 +1581,12 @@ object RegionDownloadBackground {
                                 elevationTarUrl = null,
                             )
                         if (!pbfReport.contains("PASS")) {
-                            setStatus("done (place index failed)")
+                            setStatus("failed (extract download)")
+                            emitPhase(pathForDecision, "failed")
                             lastCompletedPath.set(pathForDecision)
                             return
                         }
+                        scrubPackServerLeafStub(packDir, pathForDecision, filename)
                         runPlaceIndexLocal(dataDir, packDir, filename, pathForDecision)
                     } else {
                         runPlaceIndexLocal(dataDir, packDir, filename, pathForDecision)
@@ -1699,6 +1719,29 @@ object RegionDownloadBackground {
         lastUsablePath.set(trimmed)
         setStatus("Packs installed — region ready for routing")
         Log.i(TAG, "region installed for routing path=$trimmed")
+        // Ferry sidecar is lazy: plan path kicks ensure_ferry_sidecar only when
+        // directed connectivity still needs overlay (see supplement_pack_ferries).
+        // Do not build hundreds of MB of coastal ferry mesh at every install.
+    }
+
+    /**
+     * After a real Geofabrik extract lands (possibly under the country stem for
+     * Sweden län), delete the pack-server 16 KiB `{leaf}-latest.osm.pbf` stub
+     * when it is not the extract filename itself.
+     */
+    internal fun scrubPackServerLeafStub(
+        packDir: File,
+        geofabrikPath: String,
+        extractFilename: String,
+    ) {
+        val leafName = "${PackRegionAvailability.localStem(geofabrikPath)}.osm.pbf"
+        if (leafName.equals(extractFilename, ignoreCase = true)) return
+        val stub = File(packDir, leafName)
+        if (!stub.isFile) return
+        if (stub.length() >= MIN_PBF_BYTES) return
+        if (stub.delete()) {
+            Log.i(TAG, "removed pack-server stub PBF ${stub.name} after real extract $extractFilename")
+        }
     }
 
     /**
@@ -1743,6 +1786,7 @@ object RegionDownloadBackground {
         lastUsablePath.set(trimmed)
         setStatus("$USABLE_STATUS_PREFIX — region ready for routing and search")
         Log.i(TAG, "region usable for routing/search path=$trimmed")
+        // No install-time ferry sidecar (lazy on plan corridor miss).
     }
 
     private fun runPlaceIndexLocal(

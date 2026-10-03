@@ -305,7 +305,7 @@ internet weather overlay.
 | **Proposed caps** | `position_read`, `incident_query` / `incident_write` (new), `log` |
 | **UI** | Map banners + route recalc prompt; never rewrite the `.pbf` silently |
 
-### 4. CAT radio control (`CATS-plugin` / `cat`)
+### 4. CAT radio control (`cat`)
 
 | | |
 |---|---|
@@ -318,7 +318,7 @@ internet weather overlay.
 
 Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 **150 km**, resolve output frequency, shift/offset, and CTCSS/DCS, then program
-**VFO 1** only (reported state returned to UI).
+**VFO 1** only.
 
 Same client/display split as the planned LoRa convoy plugin (Navi does not
 implement the RF/mesh layer): [`plugins/lora-convoy-spec.md`](plugins/lora-convoy-spec.md).
@@ -476,6 +476,8 @@ implement the RF/mesh layer): [`plugins/lora-convoy-spec.md`](plugins/lora-convo
 | `track_upsert` | Push APRS / track stations into host `TrackStore` |
 | `weather_read` | Read cached weather samples near lat/lon |
 | `incident_query` / `incident_write` | Road closures / convoy / accident overlays |
+| `repeater_query` | Nearest NFM repeaters from onboard DB (+ optional RepeaterBook sync) |
+| `cat_vfo_set` | Ask host to program VFO 1 (frequency, offset, tone) |
 | `ecu_read` | Latest `LiveEnergySnapshot` |
 | `ebike_telemetry_read` | Latest DIY `$NAVIPWR` / wired e-bike snapshot (host owns serial) |
 | `voice_speak` / `voice_pack_query` | Queue guidance utterance or list installed voice packs |
@@ -500,15 +502,6 @@ implement the RF/mesh layer): [`plugins/lora-convoy-spec.md`](plugins/lora-convo
 | `accessory_list` / `accessory_open` / `accessory_read` / `accessory_write` / `accessory_close` | Host-mediated **USB** and **Bluetooth** (SPP/BLE) I/O for hardware plugins |
 | `convoy_status_read` | Last-known convoy table (position, speed, fuel/battery, seq, stale) for LoRa convoy UI |
 | `plugin_list` / `plugin_set_enabled` | Host-owned inventory and per-plugin enable/disable (UI + persistence) |
-
-### CAT capabilities (in ABI on `CAT` branch)
-
-| Cap | Purpose |
-|---|---|
-| `cat_status` | Connected, model, gating result, PTT, last reported VFO |
-| `repeater_query` | Nearest NFM/DMR sites from onboard DB (≤ 150 km; RepeaterBook never required) |
-| `cat_vfo_set` | Host programs VFO 1 with read-back; returns **reported** state |
-| `cat_network_follow` | Enable/pin/disable network follow; host loop + interlocks |
 
 Add a capability to `plugin-host` `Capability` enum + HostApi **before** shipping
 any guest that needs it. Until then, host-native services may write into core

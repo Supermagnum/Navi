@@ -3,6 +3,12 @@
 //! Initial pad matches historical `plan_car_route_inner` behaviour; widen doubles
 //! until [`PLAN_BBOX_PAD_CAP_DEG`] so RAM stays bounded on Automotive devices.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// Runtime floor raised by corridor disconnect widen-retry (0 = inactive).
+/// Combined with [`effective_max_plan_tiles_for_stems`] via `max(base, floor)`.
+static PLAN_TILE_BUDGET_AT_LEAST: AtomicUsize = AtomicUsize::new(0);
+
 /// Initial pad: `span * 0.35` clamped to this band (degrees).
 pub const PLAN_BBOX_PAD_MIN_DEG: f64 = 0.35;
 pub const PLAN_BBOX_PAD_INITIAL_MAX_DEG: f64 = 2.5;
@@ -86,9 +92,42 @@ pub const CORRIDOR_BAND_STEP_DEG: f64 = 0.20;
 /// Hard cap on graph tiles merged for one plan/leg on Automotive (4 GB).
 /// Large car tiles are 80–150 MB on disk; rkyv materialization peaks higher.
 /// Endpoint-covering tiles are always kept even if this is exceeded slightly.
-/// Six leaves room for a two-stem border hop once edge clipping is a corridor
-/// band (not a fat diagonal AABB) — count alone no longer dominates RSS.
+/// Six is enough for one-stem corridors once edge clipping is a corridor band.
 pub const MAX_PLAN_TILES: usize = 6;
+
+/// Cross-stem corridors (e.g. Ostlandet→Vestlandet / Raufoss→Bergen) need more
+/// than six tiles so midpoint samples keep a connected bridge; six dropped the
+/// Vestlandet half and left A* exploring a disconnected Ostlandet component
+/// for minutes. Fourteen stays under the ~550 MiB on-disk soft byte cap for
+/// typical car corridor tiles (measured ~900 MiB peak RSS on host).
+pub const MAX_PLAN_TILES_MULTI_STEM: usize = 14;
+
+/// Memory-aware upper bound when widening a disconnected corridor tile budget.
+/// Stays under ~1.5× the multi-stem default; callers must stop and error past this.
+pub const MAX_PLAN_TILES_WIDEN_CAP: usize = 20;
+
+/// Soft RSS ceiling (MiB) used only as a **warning** in widen notes. Widen still
+/// proceeds up to [`MAX_PLAN_TILES_WIDEN_CAP`] so a truncated corridor can recover;
+/// the disconnected graph is dropped before reload.
+pub const PLAN_TILE_WIDEN_RSS_CAP_MB: f64 = 2800.0;
+
+/// Raise the effective tile budget floor for the current plan thread/process.
+/// Pass `0` to clear. Used by disconnect widen-retry so a forced measure budget
+/// of 6 can still recover by loading the Vestlandet bridge.
+pub fn set_plan_tile_budget_at_least(n: usize) {
+    PLAN_TILE_BUDGET_AT_LEAST.store(n, Ordering::Relaxed);
+}
+
+/// Current tile-budget floor (0 when inactive).
+pub fn plan_tile_budget_at_least() -> usize {
+    PLAN_TILE_BUDGET_AT_LEAST.load(Ordering::Relaxed)
+}
+
+/// Next widen step above `current`, or `None` when the memory-aware cap is hit.
+pub fn next_plan_tile_budget(current: usize) -> Option<usize> {
+    const STEPS: &[usize] = &[6, 10, 14, 18, MAX_PLAN_TILES_WIDEN_CAP];
+    STEPS.iter().copied().find(|&s| s > current)
+}
 
 /// How many entries of [`plan_bbox_pad_schedule`] chunked long-trip legs keep.
 /// Full schedule reaches [`PLAN_BBOX_PAD_CAP_DEG`] (5.0°); the default three
@@ -106,7 +145,24 @@ fn measure_override_f64(key: &str) -> Option<f64> {
 
 /// Effective tile budget (see [`MAX_PLAN_TILES`]).
 pub fn effective_max_plan_tiles() -> usize {
-    measure_override_usize("NAVI_MEASURE_MAX_PLAN_TILES").unwrap_or(MAX_PLAN_TILES)
+    let base = measure_override_usize("NAVI_MEASURE_MAX_PLAN_TILES").unwrap_or(MAX_PLAN_TILES);
+    base.max(plan_tile_budget_at_least())
+}
+
+/// Tile budget when `extra_stem_count` neighbour stems join the primary.
+///
+/// Env `NAVI_MEASURE_MAX_PLAN_TILES` sets the **base** (measure campaigns).
+/// [`set_plan_tile_budget_at_least`] can raise above that base so a forced
+/// 6-tile measure still recovers a cross-stem bridge instead of spinning A*.
+pub fn effective_max_plan_tiles_for_stems(extra_stem_count: usize) -> usize {
+    let base =
+        measure_override_usize("NAVI_MEASURE_MAX_PLAN_TILES").unwrap_or(if extra_stem_count > 0 {
+            MAX_PLAN_TILES_MULTI_STEM
+        } else {
+            MAX_PLAN_TILES
+        });
+    let floor = plan_tile_budget_at_least();
+    base.max(floor)
 }
 
 /// Effective corridor-band half-width (see [`CORRIDOR_EDGE_HALF_WIDTH_DEG`]).
@@ -123,8 +179,6 @@ pub fn effective_chunk_pad_schedule_take() -> usize {
 /// Soft cap on on-disk tile bytes merged for one plan/leg. Prefer dropping the
 /// largest non-essential tiles before exceeding this; endpoints always stay.
 /// With corridor-band edge clip, ~280 MB disk stays well under 2.8 GiB RSS.
-/// Soft cap on on-disk tile bytes merged for one plan/leg. Prefer dropping the
-/// largest non-essential tiles before exceeding this; endpoints always stay.
 /// Ostlandet car tiles are ~100–150 MB; a same-stem short hop needs three of
 /// them so the mid bridge is not dropped under a tighter cap.
 pub const MAX_PLAN_TILE_BYTES: u64 = 550 * 1024 * 1024;
@@ -240,7 +294,7 @@ pub fn densify_route_points_via_regions_dirs(
                 continue;
             }
             let c = ((bbox[0] + bbox[2]) * 0.5, (bbox[1] + bbox[3]) * 0.5);
-            let c = prefer_coastal_centroid(c, *bbox, path);
+            let c = prefer_densify_leaf_centroid(c, *bbox, path, &ready);
             let t = progress_t(c);
             if t <= 0.02 || t >= 0.98 {
                 continue;
@@ -363,7 +417,7 @@ fn densify_gaps_with_region_centroids(
         .filter(|(path, _)| !densify_skip_country_when_leaves_ready(path, &ready))
         .map(|(path, b)| {
             let c = ((b[0] + b[2]) * 0.5, (b[1] + b[3]) * 0.5);
-            prefer_coastal_centroid(c, *b, path)
+            prefer_densify_leaf_centroid(c, *b, path, &ready)
         })
         .collect();
     let mut out = Vec::with_capacity(points.len() * 2);
@@ -818,12 +872,13 @@ fn densify_leaf_grid_samples(
     out
 }
 
-// Coastal densify helpers for large landsdel catalog boxes.
-// Catalog centroids for Nord-Norge / Trøndelag sit inland; straight chord mids
-// land on mountain plateaus where chunk snap collapses (`zero_length_leg`) or
-// exceeds CHUNK_INTERMEDIATE_SNAP_M. Pad / tile widening peaks at 2.3–3.3 GiB
-// RSS and still fails — densify must prefer the E6 / coastal-highway spine.
-
+/// Coastal densify helpers for large landsdel catalog boxes.
+///
+/// Catalog centroids for Nord-Norge / Trøndelag sit inland; straight chord mids
+/// land on mountain plateaus where chunk snap collapses (`zero_length_leg`) or
+/// exceeds [`CHUNK_INTERMEDIATE_SNAP_M`]. Pad / tile widening peaks at 2.3–3.3 GiB
+/// RSS and still fails — densify must prefer the E6 / coastal-highway spine.
+///
 /// Northern FI/SE transit packs that unlock the Bugøynes→Østlandet land bridge
 /// (Pajala / Umeå class). Southern leftovers like Västra Götaland must not
 /// match — those previously false-disabled the E6 spine.
@@ -1028,6 +1083,18 @@ fn landsdel_box_needs_coastal_bias(bbox: [f64; 4]) -> bool {
     lat_span >= 2.5 && lon_span >= 4.0
 }
 
+/// Leaf densify centroid after geography-specific soft biases (Norway E6 spine,
+/// Fehmarn entry on SH when Scandinavia packs are Ready).
+fn prefer_densify_leaf_centroid(
+    c: (f64, f64),
+    bbox: [f64; 4],
+    path: &str,
+    ready: &[(String, [f64; 4])],
+) -> (f64, f64) {
+    let c = prefer_coastal_centroid(c, bbox, path);
+    prefer_fehmarn_entry_centroid(c, bbox, path, ready)
+}
+
 /// Move a northern landsdel centroid onto the E6 / coastal-highway spine.
 ///
 /// Uses ~0.55 of a capped lon span from the west edge — not the far-west
@@ -1048,6 +1115,39 @@ fn prefer_coastal_centroid(c: (f64, f64), bbox: [f64; 4], path: &str) -> (f64, f
     let spine_target = bbox[1] + lon_span.min(5.0) * 0.55;
     let floor = c.1 - 6.0;
     (c.0, c.1.min(spine_target).max(floor).max(bbox[1] + 0.5))
+}
+
+/// Schleswig-Holstein AABB center (~9.85°E near Kiel) steers densify onto the
+/// Jutland/Funen Great Belt land bridge. When SE/NO packs are Ready (DE→
+/// Scandinavia densify), bias the SH leaf east toward Fehmarn (~11.2°E) so the
+/// corridor band can materialize the Puttgarden→Rødby ferry instead of a
+/// ~180 km land detour. Pure DK-Jutland corridors (no SE/NO Ready) keep Kiel.
+fn prefer_fehmarn_entry_centroid(
+    c: (f64, f64),
+    bbox: [f64; 4],
+    path: &str,
+    ready: &[(String, [f64; 4])],
+) -> (f64, f64) {
+    if !path.contains("schleswig-holstein") {
+        return c;
+    }
+    let scandinavia = ready.iter().any(|(p, _)| {
+        p.contains("/sweden/")
+            || p.contains("/norway/")
+            || p == "europe/sweden"
+            || p == "europe/norway"
+    });
+    if !scandinavia {
+        return c;
+    }
+    let lon_span = (bbox[3] - bbox[1]).abs();
+    if lon_span < 1.0 {
+        return c;
+    }
+    // ~0.90 of lon span ≈ 11.03°E — east of Kiel, approaching Fehmarn (11.23°E).
+    let east_target = bbox[1] + lon_span * 0.90;
+    let lon = c.1.max(east_target).min(bbox[3] - 0.05);
+    (c.0, lon)
 }
 
 /// For NE gap-fill inside a large landsdel box, climb north while drifting
@@ -1358,6 +1458,71 @@ fn points_bounds(points: &[(f64, f64)]) -> (f64, f64, f64, f64) {
     } else {
         (min_lat, min_lon, max_lat, max_lon)
     }
+}
+
+/// Sample densify joints along a road polyline so consecutive Chebyshev hops
+/// stay ≤ `max_hop_deg`. Keeps endpoints.
+pub fn sample_densify_joints_along_path(path: &[(f64, f64)], max_hop_deg: f64) -> Vec<(f64, f64)> {
+    if path.len() < 2 || max_hop_deg <= 0.0 {
+        return path.to_vec();
+    }
+    let cheb = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs().max((a.1 - b.1).abs());
+    let mut out = Vec::with_capacity(8);
+    out.push(path[0]);
+    let mut last = path[0];
+    let end = *path.last().unwrap();
+    for &p in &path[1..path.len() - 1] {
+        if cheb(last, p) >= max_hop_deg * 0.85 {
+            out.push(p);
+            last = p;
+        }
+    }
+    // If the remaining hop to the destination is still too long, keep adding
+    // the farthest path vertex that stays within budget until we can finish.
+    while cheb(last, end) > max_hop_deg + 1e-9 {
+        let mut best: Option<(f64, (f64, f64))> = None;
+        for &p in path {
+            let d_from = cheb(last, p);
+            let d_end = cheb(p, end);
+            if d_from < max_hop_deg * 0.4 || d_from > max_hop_deg + 1e-9 {
+                continue;
+            }
+            if d_end >= cheb(last, end) - 1e-9 {
+                continue;
+            }
+            if best.is_none_or(|(bd, _)| d_end < bd) {
+                best = Some((d_end, p));
+            }
+        }
+        let Some((_, nxt)) = best else {
+            // No on-path progress — fall back to geometric densify of remainder.
+            let rem = densify_route_points(&[last, end], max_hop_deg);
+            out.extend(rem.into_iter().skip(1));
+            return out;
+        };
+        out.push(nxt);
+        last = nxt;
+    }
+    if out.last().copied() != Some(end) {
+        out.push(end);
+    }
+    out
+}
+
+/// Build densify hops from a major-road + ferry coarse path on Ready packs.
+/// Returns `None` when the skeleton graph cannot connect O→D.
+pub fn try_densify_joints_via_skeleton_path(
+    path_nodes_latlon: &[(f64, f64)],
+    max_hop_deg: f64,
+) -> Option<Vec<(f64, f64)>> {
+    if path_nodes_latlon.len() < 2 {
+        return None;
+    }
+    let hops = sample_densify_joints_along_path(path_nodes_latlon, max_hop_deg);
+    if hops.len() < 2 {
+        return None;
+    }
+    Some(hops)
 }
 
 #[cfg(test)]
@@ -1977,8 +2142,9 @@ mod tests {
             "must not insert SH→Halland Baltic water mid; hops={hops:?}"
         );
         // Must not park hops on the geometric SH→Halland sea chord (the former
-        // failing mid and its recursive halves).
-        let sh = (54.21_f64, 9.845_f64);
+        // failing mid and its recursive halves). Fehmarn entry bias moves the
+        // SH densify joint east (~11.03°E).
+        let sh = (54.21_f64, 11.025_f64);
         let halland = (56.935_f64, 12.7_f64);
         let baltic_chain = [
             (54.89125_f64, 10.55875_f64),
@@ -1996,7 +2162,7 @@ mod tests {
         }
         // Land-bridge must not step south of SH on a northbound corridor.
         let south_of_sh = hops.windows(2).any(|w| {
-            (w[0].0 - sh.0).abs() < 1e-3 && (w[0].1 - sh.1).abs() < 1e-3 && w[1].0 < sh.0 - 0.05
+            (w[0].0 - sh.0).abs() < 1e-3 && (w[0].1 - sh.1).abs() < 0.08 && w[1].0 < sh.0 - 0.05
         });
         assert!(
             !south_of_sh,
@@ -2010,6 +2176,24 @@ mod tests {
             "border-spill leaf proxies (Hovedstaden∩Skåne) must not be densify hops; hops={hops:?}"
         );
         let _ = (sh, halland);
+        // Fehmarn corridor: SH densify must sit east of Kiel (~10.1°E) so the
+        // 0.40° corridor band can reach Puttgarden (~11.23°E). Must not park a
+        // mid-Jutland/Funen Syddanmark hop (lon≲10.8 at 54.5–55.4) that steers
+        // A* onto the Great Belt land bridge (~180 km overshoot vs ferry).
+        let sh_fehmarn = hops
+            .iter()
+            .any(|(lat, lon)| *lat > 53.9 && *lat < 54.6 && *lon > 10.85 && *lon < 11.30);
+        assert!(
+            sh_fehmarn,
+            "SH densify must bias east toward Fehmarn entry; hops={hops:?}"
+        );
+        let jutland_funen_detour = hops
+            .iter()
+            .any(|(lat, lon)| *lat > 54.55 && *lat < 55.45 && *lon > 9.2 && *lon < 10.85);
+        assert!(
+            !jutland_funen_detour,
+            "must not densify through Jutland/Funen west of Fehmarn; hops={hops:?}"
+        );
         let has_skane = hops
             .iter()
             .any(|(lat, lon)| *lat > 55.32 && *lat < 56.50 && *lon > 12.45 && *lon < 14.60);

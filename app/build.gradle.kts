@@ -14,6 +14,27 @@ kotlin {
     }
 }
 
+// Shipped ABIs: one list shared with scripts/build-android-native.sh via
+// gradle.properties `naviAbis` (override with -PnaviAbis=arm64-v8a).
+val naviAllowedAbis = setOf("arm64-v8a", "x86_64")
+val naviAbis: List<String> =
+    providers
+        .gradleProperty("naviAbis")
+        .orElse("arm64-v8a,x86_64")
+        .get()
+        .split(',')
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .also { abis ->
+            require(abis.isNotEmpty()) {
+                "naviAbis must list at least one ABI (arm64-v8a and/or x86_64)"
+            }
+            val unknown = abis.filterNot { it in naviAllowedAbis }
+            require(unknown.isEmpty()) {
+                "Unsupported naviAbis entries: $unknown (allowed: $naviAllowedAbis)"
+            }
+        }
+
 android {
     namespace = "no.navi.app"
     compileSdk = 37
@@ -22,14 +43,15 @@ android {
         applicationId = "no.navi.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 16
-        versionName = "0.4.1-beta"
+        versionCode = 19
+        versionName = "0.3.14-beta"
         testInstrumentationRunner = "no.navi.app.NaviAndroidTestRunner"
-        // Ship only 64-bit ABIs used by device (arm64) and emulator (x86_64).
-        // Dropping armeabi-v7a / x86 / mips MapLibre+JNI copies keeps the
-        // committed debug APK under GitHub's 50 MB soft-size advisory.
+        // Restrict packaging to naviAbis so every lib/<abi>/ folder contains the
+        // same .so set (libnavi + MapLibre + JNA + graphics.path). Strips JNA's
+        // armeabi/mips* and incomplete 32-bit MapLibre folders that lack libnavi.
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters.clear()
+            abiFilters += naviAbis
         }
     }
 

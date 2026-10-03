@@ -1,6 +1,6 @@
 //! Graph archive body (rkyv), promoted from Phase 1c PoC.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use geo_types::Coord;
 use osm4routing::{Node, NodeId};
@@ -46,6 +46,40 @@ pub fn preferred_graph_format_version(candidates: impl IntoIterator<Item = u32>)
         .into_iter()
         .filter(|v| graph_format_version_accepted(*v))
         .max()
+}
+
+/// True for densify joint pre-pass: motorway/trunk/primary (+ links) + ferries.
+/// Secondary is **not** included — on Vestlandet it kept ~259k nodes (≈ full
+/// car corridor) and stacked with densify hops above the tablet 933 MiB budget.
+/// Pier / terminal approaches are kept separately when they touch a ferry node
+/// (see [`FlatGraphPack::to_route_graph_clips`]).
+pub fn densify_skeleton_edge(highway: &str, is_ferry: bool) -> bool {
+    if is_ferry {
+        return true;
+    }
+    matches!(
+        highway,
+        "motorway" | "motorway_link" | "trunk" | "trunk_link" | "primary" | "primary_link"
+    )
+}
+
+/// Process-wide (not thread-local): tiled pack hydrate uses rayon workers, and
+/// a TLS flag stayed false on those threads so "skeleton" loads kept ~259k
+/// Vestlandet nodes — the tablet RSS spike above 933 MiB.
+static DENSIFY_SKELETON_ONLY: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Run `f` so pack→graph materialization keeps only densify-skeleton edges.
+pub fn with_densify_skeleton_only<R>(f: impl FnOnce() -> R) -> R {
+    use std::sync::atomic::Ordering;
+    let prev = DENSIFY_SKELETON_ONLY.swap(true, Ordering::SeqCst);
+    let out = f();
+    DENSIFY_SKELETON_ONLY.store(prev, Ordering::SeqCst);
+    out
+}
+
+pub(crate) fn densify_skeleton_only_active() -> bool {
+    DENSIFY_SKELETON_ONLY.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone)]
@@ -331,7 +365,8 @@ impl FlatGraphPack {
         profile: RoutingProfile,
         clips: Option<&[[f64; 4]]>,
     ) -> RouteGraph {
-        let edge_ok = |i: usize| -> bool {
+        let skeleton = densify_skeleton_only_active();
+        let in_clips = |i: usize| -> bool {
             let Some(clips) = clips else {
                 return true;
             };
@@ -348,6 +383,36 @@ impl FlatGraphPack {
             clips
                 .iter()
                 .any(|b| in_box(slat, slon, b) || in_box(elat, elon, b))
+        };
+        // Ferry terminals often hang off secondary/service stubs. Keep every
+        // clipped edge that touches a ferry endpoint without importing the
+        // whole secondary network (~259k nodes on Vestlandet).
+        let ferry_nodes: HashSet<u32> = if skeleton {
+            let mut s = HashSet::new();
+            for i in 0..self.edge_src.len() {
+                if self.edge_is_ferry.get(i).copied().unwrap_or(0) == 0 || !in_clips(i) {
+                    continue;
+                }
+                s.insert(self.edge_src[i]);
+                s.insert(self.edge_tgt[i]);
+            }
+            s
+        } else {
+            HashSet::new()
+        };
+        let edge_ok = |i: usize| -> bool {
+            if skeleton {
+                let hw = self.edge_highway[i].as_str();
+                let ferry = self.edge_is_ferry.get(i).copied().unwrap_or(0) != 0;
+                let major = densify_skeleton_edge(hw, ferry);
+                let pier = !ferry
+                    && (ferry_nodes.contains(&self.edge_src[i])
+                        || ferry_nodes.contains(&self.edge_tgt[i]));
+                if !major && !pier {
+                    return false;
+                }
+            }
+            in_clips(i)
         };
 
         let mut used_nodes: HashMap<u32, ()> = HashMap::new();
@@ -516,7 +581,7 @@ impl FlatGraphPack {
         if self.node_access_blocked.is_empty() {
             // nothing
         }
-        RouteGraph::from_parts_with_blocks(nodes, edges, profile, blocked)
+        RouteGraph::from_parts_with_blocks(nodes, edges, profile, blocked, false)
     }
 
     fn shape_for_edge(&self, i: usize) -> Vec<(f64, f64)> {
@@ -605,7 +670,8 @@ impl ArchivedFlatGraphPack {
         clips: Option<&[[f64; 4]]>,
     ) -> RouteGraph {
         let n_edges = self.edge_src.len();
-        let edge_ok = |i: usize| -> bool {
+        let skeleton = densify_skeleton_only_active();
+        let in_clips = |i: usize| -> bool {
             let Some(clips) = clips else {
                 return true;
             };
@@ -622,6 +688,34 @@ impl ArchivedFlatGraphPack {
             clips
                 .iter()
                 .any(|b| in_box(slat, slon, b) || in_box(elat, elon, b))
+        };
+        let ferry_nodes: HashSet<u32> = if skeleton {
+            let mut s = HashSet::new();
+            for i in 0..n_edges {
+                if self.edge_is_ferry.get(i).copied().map(arch_u8).unwrap_or(0) == 0 || !in_clips(i)
+                {
+                    continue;
+                }
+                s.insert(arch_u32(self.edge_src[i]));
+                s.insert(arch_u32(self.edge_tgt[i]));
+            }
+            s
+        } else {
+            HashSet::new()
+        };
+        let edge_ok = |i: usize| -> bool {
+            if skeleton {
+                let hw = self.edge_highway[i].as_str();
+                let ferry = self.edge_is_ferry.get(i).copied().map(arch_u8).unwrap_or(0) != 0;
+                let src = arch_u32(self.edge_src[i]);
+                let tgt = arch_u32(self.edge_tgt[i]);
+                let major = densify_skeleton_edge(hw, ferry);
+                let pier = !ferry && (ferry_nodes.contains(&src) || ferry_nodes.contains(&tgt));
+                if !major && !pier {
+                    return false;
+                }
+            }
+            in_clips(i)
         };
 
         let mut used_nodes: HashMap<u32, ()> = HashMap::new();
@@ -787,7 +881,7 @@ impl ArchivedFlatGraphPack {
                 blocked.insert(NodeId(arch_i64(self.node_ids[i])));
             }
         }
-        RouteGraph::from_parts_with_blocks(nodes, edges, profile, blocked)
+        RouteGraph::from_parts_with_blocks(nodes, edges, profile, blocked, false)
     }
 
     fn shape_for_edge(&self, i: usize) -> Vec<(f64, f64)> {

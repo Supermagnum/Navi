@@ -20,11 +20,11 @@ use driver_break_core::routing::elevation::{ElevationCache, ElevationService};
 use driver_break_core::routing::graph::{
     apply_bike_suitability_from_pbf, apply_bike_surface_preference,
     apply_official_network_preference, apply_slow_road_preference, apply_surface_preference,
-    apply_surface_quality_from_pbf, difficulty_notes_for_path, load_official_network_way_ids,
-    load_or_build_reweighted, load_or_build_reweighted_bbox, load_pilgrim_route_way_ids,
-    load_way_difficulty_tags, max_waypoint_snap_m, BikeCapability, MotorSoftCostProfile,
-    OfficialNetworkKind, RoadLabelSticky, RoadNodeIndex, RouteGraph, RouteOptions, RoutingProfile,
-    SnapTooFar, SurfaceRoutingMode,
+    apply_surface_quality_from_pbf, compute_eco_weights, difficulty_notes_for_path,
+    load_official_network_way_ids, load_or_build_reweighted, load_or_build_reweighted_bbox,
+    load_pilgrim_route_way_ids, load_way_difficulty_tags, max_waypoint_snap_m, BikeCapability,
+    MotorSoftCostProfile, OfficialNetworkKind, RoadLabelSticky, RoadNodeIndex, RouteGraph,
+    RouteOptions, RoutingProfile, SnapTooFar, SurfaceRoutingMode,
 };
 use driver_break_core::routing::rest::car_break_interval_hours;
 use driver_break_core::routing::safety::{
@@ -42,7 +42,7 @@ use driver_break_core::routing::{
     hiking_samples_from_coords, max_daily_distance_km, motor_break_interval_km, motor_daily_budget,
     plan_fmcsa_multi_day, plan_hiking_multi_day, plan_motor_multi_day, plan_soft_rest_pauses,
     plan_truck_multi_day, resolve_driving_hours_pack_at, truck_effective_break_parts,
-    uses_motor_multi_day, uses_truck_rest, HikingMultiDayPlan, MotorMultiDayPlan,
+    uses_motor_multi_day, uses_truck_rest, HikingMultiDayPlan, MotorDailyBudget, MotorMultiDayPlan,
     MotorOvernightCandidate, MotorOvernightKind, SoftRestCandidate, TruckMultiDayPlan,
     TruckOvernightKind, TruckOvernightRest, TruckRestCandidate, TruckRestFacility,
 };
@@ -532,6 +532,7 @@ static ROUTE_PLAN_TIMING_ENABLED: AtomicBool = AtomicBool::new(false);
 #[uniffi::export]
 pub fn set_route_plan_timing_enabled(enabled: bool) {
     ROUTE_PLAN_TIMING_ENABLED.store(enabled, Ordering::Relaxed);
+    driver_break_core::routing::plan_perf::set_enabled(enabled);
 }
 
 #[uniffi::export]
@@ -600,10 +601,52 @@ fn append_graph_ferry_edges(report: &mut String, graph: &RouteGraph) {
     report.push_str(&format!("graph_ferry_edges={n}\n"));
 }
 
+/// Path ferry fingerprint: leg count + `name@km` joined by `|` (stable for matrix compare).
+fn append_path_ferry_legs(report: &mut String, graph: &RouteGraph, path_edges: &[usize]) {
+    let legs = graph.path_ferry_legs(path_edges);
+    report.push_str(&format!("route_ferry_legs={}\n", legs.len()));
+    if legs.is_empty() {
+        report.push_str("route_ferry_fp=\n");
+        return;
+    }
+    let fp = legs
+        .iter()
+        .map(|(name, m)| {
+            let safe = name.replace('|', "/").replace(';', ",");
+            format!("{safe}@{:.2}", m / 1000.0)
+        })
+        .collect::<Vec<_>>()
+        .join("|");
+    report.push_str(&format!("route_ferry_fp={fp}\n"));
+}
+
 fn parse_graph_ferry_edges_token(report: &str) -> Option<u64> {
     for part in report.split(['\n', ';', ' ']) {
         if let Some(rest) = part.strip_prefix("graph_ferry_edges=") {
             return rest.parse().ok();
+        }
+    }
+    None
+}
+
+fn parse_u64_token(report: &str, key: &str) -> Option<u64> {
+    for part in report.split(['\n', ';', ' ', '|']) {
+        if let Some(rest) = part.strip_prefix(key) {
+            return rest.parse().ok();
+        }
+    }
+    None
+}
+
+fn parse_token_value(report: &str, key: &str) -> Option<String> {
+    for line in report.lines() {
+        if let Some(rest) = line.strip_prefix(key) {
+            return Some(rest.trim().to_string());
+        }
+        for part in line.split([';', ' ', '|']) {
+            if let Some(rest) = part.strip_prefix(key) {
+                return Some(rest.to_string());
+            }
         }
     }
     None
@@ -2071,9 +2114,11 @@ fn plan_pack_data_dir(pbf: &Path, data_dir: &str) -> PathBuf {
 /// (internal `files/long-trip-packs` or a removable volume's pack root), then
 /// the app data / Tools root so ReuseInternal packs still resolve.
 ///
-/// When `long_trip_enabled` is false, skip the nested `long-trip-packs/` probe so
-/// ordinary single-shot plans only see Tools packs (avoids multi-country tiles
-/// competing for the `MAX_PLAN_TILES` budget and disconnecting mid-span ODs).
+/// When `long_trip_enabled` is false, still probe the nested `long-trip-packs/`
+/// directory when present so Tools downloads on a removable volume remain
+/// visible to ordinary single-shot plans (Raufoss→Bergen with long-trip OFF).
+/// Corridor tile selection already caps neighbour stems; skipping this root
+/// forced pack-miss → on-device PBF rebuild (minutes).
 fn plan_pack_dirs(
     pbf: &Path,
     data_dir: &str,
@@ -2097,13 +2142,13 @@ fn plan_pack_dirs(
         }
     }
     let primary = plan_pack_data_dir(pbf, data_dir);
-    // Long-trip corridor packs under `{dataDir}/long-trip-packs` (Phase B).
-    // Only when long-trip mode is on (or an explicit pack_dir was already added).
-    if long_trip_enabled {
-        let nested = primary.join("long-trip-packs");
-        if nested.is_dir() && !out.iter().any(|d| d == &nested) {
-            out.push(nested);
-        }
+    // Always probe `{dataDir}/long-trip-packs` when present. Long-trip mode used
+    // to be the only gate; that hid SD-card Tools installs from ordinary plans.
+    let nested = primary.join("long-trip-packs");
+    if nested.is_dir() && !out.iter().any(|d| d == &nested) {
+        // Prefer explicit pack_dir first; nested is a secondary root.
+        let _ = long_trip_enabled; // retained for ABI / call sites
+        out.push(nested);
     }
     if !out.iter().any(|d| d == &primary) {
         out.push(primary);
@@ -2124,10 +2169,11 @@ fn plan_pack_dirs(
 /// Android). Empty: search `data_dir` and `data_dir/long-trip-packs` when present.
 /// Pass `""` only when the PBF already lives next to the packs.
 ///
-/// `long_trip_enabled` gates densify/chunk planning for spans above
-/// [`LONG_TRIP_CHUNK_DEG`]. Ordinary UI plans must pass `false` so mid-length
-/// single-region trips (e.g. Hamar→Dombås) stay on one A* graph; long-trip mode
-/// passes `true` so multi-country corridors still chunk.
+/// `long_trip_enabled` gates densify/chunk for spans above [`LONG_TRIP_CHUNK_DEG`].
+/// Ordinary UI plans pass `false` so cross-stem mid trips (Raufoss→Bergen) stay
+/// on one A*. Same-stem coastal ODs with span > CHUNK densify even when longTrip
+/// is off so Automotive never materialises the full Vestlandet single-shot graph
+/// (Bergen→Stavanger ~259k nodes / ~985 MiB peak vs densify hops ~167k / ≤933).
 ///
 /// `allowed_countries`: when `Some` (non-empty), hard-filters the graph to those
 /// ISO-3166-1 alpha-2 codes ([`RouteOptions::allowed_countries`]). Host "Stay in
@@ -2303,6 +2349,8 @@ fn plan_car_route_chunked_legs(
     let mut route_uses_tolls = false;
     let mut route_uses_ferry = false;
     let mut graph_ferry_edges: u64 = 0;
+    let mut ferry_fp_parts: Vec<String> = Vec::new();
+    let mut ferry_leg_count: u64 = 0;
     let mut pad_attempts: Vec<f64> = Vec::new();
     let mut priority_share_acc = 0.0;
     let mut priority_share_w = 0.0;
@@ -2325,6 +2373,11 @@ fn plan_car_route_chunked_legs(
         );
         let relax_start = i > 0;
         let relax_end = i + 2 < hops.len();
+        // Drop the previous hop's owned corridor before materializing the next
+        // so densify never stacks two full hop graphs (tablet ≤933 MiB).
+        if i > 0 {
+            driver_break_core::routing::indexed::corridor_cache_clear();
+        }
         let leg = plan_car_route_inner(
             pbf_path.clone(),
             elev_dir.clone(),
@@ -2357,6 +2410,14 @@ fn plan_car_route_chunked_legs(
         route_uses_ferry = route_uses_ferry || leg.report.contains("route_uses_ferry=true");
         if let Some(n) = parse_graph_ferry_edges_token(&leg.report) {
             graph_ferry_edges = graph_ferry_edges.max(n);
+        }
+        if let Some(n) = parse_u64_token(&leg.report, "route_ferry_legs=") {
+            ferry_leg_count = ferry_leg_count.saturating_add(n);
+        }
+        if let Some(fp) = parse_token_value(&leg.report, "route_ferry_fp=") {
+            if !fp.is_empty() {
+                ferry_fp_parts.push(fp);
+            }
         }
         if leg.distance_km <= 0.0
             || leg.search_terminate_reason == "snap_failed"
@@ -2463,6 +2524,8 @@ fn plan_car_route_chunked_legs(
     report.push_str(&soft_report);
     let _ = break_pois; // per-leg breaks were empty (poi_skipped); replaced above
     report.push_str(&format!("graph_ferry_edges={graph_ferry_edges}\n"));
+    report.push_str(&format!("route_ferry_legs={ferry_leg_count}\n"));
+    report.push_str(&format!("route_ferry_fp={}\n", ferry_fp_parts.join("|")));
     report.push_str(&format!(
         "chunked_distance_km={distance_km:.3}; chunked_eta_min={eta_minutes:.1}; hops={}; route_uses_ferry={route_uses_ferry}\nPASS\n",
         hops.len().saturating_sub(1)
@@ -2836,6 +2899,53 @@ pub fn country_polys_ready() -> bool {
     driver_break_core::routing::elevation::country_polys_ready()
 }
 
+/// Widen pack tile budget after a disconnected corridor. Returns true when the
+/// caller should reload packs with the raised floor. Caps attempts so the
+/// planner never spins on the same truncated graph.
+fn try_widen_tile_budget(
+    report: &mut String,
+    tile_budget_used: &mut usize,
+    tile_widen_attempts: &mut u32,
+    pack_hit: bool,
+) -> bool {
+    if !pack_hit {
+        return false;
+    }
+    if *tile_widen_attempts >= 4 {
+        report.push_str("tile_budget_widen=exhausted attempts\n");
+        return false;
+    }
+    let peak = driver_break_core::routing::plan_perf::peak_rss_mb();
+    let Some(next) =
+        driver_break_core::routing::plan_bbox::next_plan_tile_budget(*tile_budget_used)
+    else {
+        report.push_str(&format!(
+            "tile_budget_widen=exhausted at {tile_budget_used} peak_rss_mb={peak:.1}\n"
+        ));
+        return false;
+    };
+    *tile_widen_attempts = tile_widen_attempts.saturating_add(1);
+    *tile_budget_used = next;
+    driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(next);
+    // Drop cached corridor so the next load materializes the wider tile set.
+    driver_break_core::routing::indexed::corridor_cache_clear();
+    driver_break_core::routing::indexed::poi_barrier_cache_clear();
+    if peak > driver_break_core::routing::plan_bbox::PLAN_TILE_WIDEN_RSS_CAP_MB {
+        report.push_str(&format!(
+            "tile_budget_widen=to {next} attempt={} peak_rss_mb={peak:.1} (above soft cap {})\n",
+            *tile_widen_attempts,
+            driver_break_core::routing::plan_bbox::PLAN_TILE_WIDEN_RSS_CAP_MB
+        ));
+    } else {
+        report.push_str(&format!(
+            "tile_budget_widen=to {next} attempt={} peak_rss_mb={peak:.1}\n",
+            *tile_widen_attempts
+        ));
+    }
+    driver_break_core::routing::plan_perf::note_u64("tile_budget_widen_to", next as u64);
+    true
+}
+
 #[allow(clippy::too_many_arguments)]
 fn plan_car_route_inner(
     pbf_path: String,
@@ -2904,29 +3014,66 @@ fn plan_car_route_inner(
     route_points.push((end_lat, end_lon));
 
     // Long corridors (multi-landsdel) cannot merge every pack tile into one
-    // graph on Automotive RAM. Densify hops and plan each leg separately.
-    // Only when the host long-trip toggle is on — ordinary mid-span trips must
-    // stay on a single bbox A* (nested chunk legs never re-enter; stack overflow).
+    // graph on Automotive RAM. Densify hops and plan each leg separately when
+    // the host long-trip toggle is on and span > CHUNK. Same-stem coastal ODs
+    // (Vestlandet / Nord-Norge / …) also densify when span > CHUNK with
+    // longTrip off: dig never held the ~259k-node Bergen→Stavanger single-shot
+    // owned RouteGraph that pushed VmHWM to ~985 MiB; densify hops stay ≤~167k.
     let span = driver_break_core::routing::plan_bbox::trip_span_deg(&route_points);
-    if long_trip_enabled
+    let pack_dirs_for_densify = plan_pack_dirs(
+        std::path::Path::new(pbf_path.trim()),
+        &data_dir,
+        &pack_dir,
+        long_trip_enabled,
+    );
+    let ferry_same_stem_densify = !long_trip_enabled
+        && !is_chunk_leg
+        && span > driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG
+        && {
+            let (a_lat, a_lon) = route_points[0];
+            let (b_lat, b_lon) = *route_points.last().unwrap();
+            let leaf_a = driver_break_core::long_trip::region_containing(a_lat, a_lon, None);
+            let leaf_b = driver_break_core::long_trip::region_containing(b_lat, b_lon, None);
+            match (leaf_a, leaf_b) {
+                (Some(a), Some(b)) if a == b => {
+                    let leaf = a.rsplit('/').next().unwrap_or(a);
+                    // Inland stems (ostlandet) often span > CHUNK without needing
+                    // densify for RSS; densifying detours Raufoss→Dombås.
+                    matches!(
+                        leaf,
+                        "vestlandet" | "nord-norge" | "sorlandet" | "troms" | "finnmark"
+                    )
+                }
+                _ => false,
+            }
+        };
+    if (long_trip_enabled || ferry_same_stem_densify)
         && !is_chunk_leg
         && span > driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG
     {
-        let pack_dirs = plan_pack_dirs(
-            std::path::Path::new(pbf_path.trim()),
-            &data_dir,
-            &pack_dir,
-            long_trip_enabled,
-        );
+        let pack_dirs = pack_dirs_for_densify;
         let pack_dir_refs: Vec<&std::path::Path> = pack_dirs.iter().map(|p| p.as_path()).collect();
-        let hops = driver_break_core::routing::plan_bbox::densify_route_points_via_regions_dirs(
-            &route_points,
+        let geometric =
+            driver_break_core::routing::plan_bbox::densify_route_points_via_regions_dirs(
+                &route_points,
+                &pack_dir_refs,
+                driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG,
+            );
+        // Prefer joints on a major-road + ferry coarse path (avoids chord mids
+        // that force coastal detours, e.g. Bergen→Stavanger ~+11%).
+        let hops = driver_break_core::routing::indexed::try_densify_hops_via_skeleton(
+            std::path::Path::new(data_dir.trim()),
             &pack_dir_refs,
+            std::path::Path::new(pbf_path.trim()),
+            routing_profile,
+            &route_points,
             driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG,
-        );
+        )
+        .unwrap_or(geometric);
         log::info!(
             target: "NaviPlan",
-            "long_trip densify span={span:.3} hops={} dirs={}",
+            "long_trip densify span={span:.3} hops={} long_trip_enabled={long_trip_enabled} \
+             ferry_same_stem={ferry_same_stem_densify} dirs={}",
             hops.len(),
             pack_dirs
                 .iter()
@@ -2981,7 +3128,7 @@ fn plan_car_route_inner(
         .count();
 
     let allowed_countries_norm = normalize_allowed_countries(allowed_countries);
-    let route_opts = RouteOptions {
+    let mut route_opts = RouteOptions {
         avoid_motorways,
         toll_policy,
         avoid_ferries,
@@ -2990,6 +3137,7 @@ fn plan_car_route_inner(
         departure_local,
         datex_impacts,
         allowed_countries: allowed_countries_norm.clone(),
+        ..RouteOptions::default()
     };
 
     let mut report = String::new();
@@ -3092,6 +3240,10 @@ fn plan_car_route_inner(
     let mut cache_hit = false;
     let mut pack_hit = false;
     let mut build_s = 0.0;
+    let mut pack_load_ms_acc = 0u64;
+    let mut eco_reweight_ms_acc = 0u64;
+    let mut snap_ms_acc = 0u64;
+    let mut search_ms_acc = 0u64;
     let mut path = Vec::new();
     let mut path_edges = Vec::new();
     let mut cost = 0.0;
@@ -3105,21 +3257,38 @@ fn plan_car_route_inner(
     // Corridor-band edge clip ignores pad widen (band is OD-only). After a
     // disconnected A* on that stable materialization, retry with trip-AABB.
     let mut edge_clip_mode = driver_break_core::routing::plan_bbox::PlanEdgeClipMode::CorridorBand;
+    // Tile-budget widen across disconnect retries (forced 6 → 10 → 14 → …).
+    // Cleared on plan exit so later plans do not inherit a raised floor.
+    driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(0);
+    // Prefer multi-stem default so widen steps start from the real corridor budget
+    // (14) unless NAVI_MEASURE_MAX_PLAN_TILES forces a lower base (e.g. 6).
+    let mut tile_budget_used =
+        driver_break_core::routing::plan_bbox::effective_max_plan_tiles_for_stems(1);
+    let mut tile_widen_attempts: u32 = 0;
 
+    driver_break_core::routing::plan_perf::begin_plan();
     let profile_map_ms = timer.lap_ms();
     if driver_break_core::download::plan_cancel::is_cancelled() {
+        driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(0);
         return plan_cancelled_result(report, &timer, &[("profile_map_ms", profile_map_ms)]);
     }
 
     'pads: for &pad in &pad_schedule {
-        // Inner loop: at most band then AABB on the same pad after disconnected.
+        // Inner loop: at most band then AABB on the same pad after disconnected,
+        // plus finite tile-budget widen retries (must never spin).
         loop {
             pad_attempts.push(pad);
+            // Fresh overlays each attempt (pad / tile widen must not reuse stale eco).
+            route_opts.eco_weights = None;
+            route_opts.motor_soft = None;
+            route_opts.surface_routing_mode = None;
             bbox = driver_break_core::routing::plan_bbox::trip_bbox_points(&route_points, pad);
             report.push_str(&format!(
-                "bbox={:.3},{:.3},{:.3},{:.3}; pad={pad:.2}; edge_clip={edge_clip_mode:?}\n",
+                "bbox={:.3},{:.3},{:.3},{:.3}; pad={pad:.2}; edge_clip={edge_clip_mode:?}; \
+                 tile_budget={tile_budget_used}\n",
                 bbox[0], bbox[1], bbox[2], bbox[3]
             ));
+            driver_break_core::routing::plan_perf::note_u64("tile_budget", tile_budget_used as u64);
 
             driver_break_core::download::progress::set(
                 0,
@@ -3128,6 +3297,14 @@ fn plan_car_route_inner(
             );
             let t_graph = Instant::now();
             let pack_dirs = plan_pack_dirs(pbf, &data_dir, &pack_dir, long_trip_enabled);
+            driver_break_core::routing::plan_perf::note(
+                "pack_dirs",
+                pack_dirs
+                    .iter()
+                    .map(|d| d.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(";"),
+            );
             // Empty when `pack_dir` is the debug `__navi_force_pbf__` sentinel
             // (or no pack roots exist): skip pack load and cold-build from PBF.
             let pack_try = match pack_dirs.split_last() {
@@ -3145,50 +3322,132 @@ fn plan_car_route_inner(
                 // Debug `__navi_force_pbf__` (or no pack roots): skip pack load.
                 None => Err(driver_break_core::routing::indexed::PackLoadError::Missing),
             };
+            let pack_load_ms = t_graph.elapsed().as_millis() as u64;
+            pack_load_ms_acc = pack_load_ms_acc.saturating_add(pack_load_ms);
             let _pause_bg = if pack_try.is_err() {
                 Some(driver_break_core::download::ForegroundPlanGuard::acquire())
             } else {
                 None
             };
             let build_data_dir = plan_pack_data_dir(pbf, &data_dir);
+            // Pack-hit: Arc shared with corridor LRU (read-only; eco/surface via
+            // RouteOptions overlays). PBF fallback: unique Arc so make_mut is free.
             let (mut built, hit, phit) = match pack_try {
                 Ok(g) => (g, false, true),
-                Err(_) => match load_or_build_reweighted_bbox(
-                    pbf,
-                    &build_data_dir,
-                    &cache,
-                    routing_profile,
-                    &elevation,
-                    &eco,
-                    bbox,
-                ) {
-                    Ok((g, hit)) => (g, hit, false),
-                    Err(e) if driver_break_core::download::plan_cancel::is_cancel_err(&e) => {
-                        return plan_cancelled_result(
-                            report,
-                            &timer,
-                            &[("profile_map_ms", profile_map_ms)],
-                        );
+                Err(driver_break_core::routing::indexed::PackLoadError::MissingRegions(
+                    regions,
+                )) => {
+                    let names = regions.join(", ");
+                    let labels: Vec<String> = regions
+                        .iter()
+                        .map(|r| {
+                            r.rsplit('/')
+                                .next()
+                                .unwrap_or(r.as_str())
+                                .replace(['-', '_'], " ")
+                        })
+                        .collect();
+                    let label_join = labels.join(", ");
+                    report.push_str(&format!(
+                        "FAIL: missing_regions={names}\n\
+                         Install {label_join} to plan this route.\n"
+                    ));
+                    driver_break_core::routing::plan_perf::note("missing_regions", &names);
+                    let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
+                    let mut r = empty(report);
+                    r.toll_policy = toll_policy.as_diag_str().into();
+                    r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
+                    r.search_terminate_reason = "missing_regions".into();
+                    // Diagnostic field: first missing region path for UI deep-link.
+                    if let Some(first) = regions.first() {
+                        r.off_trail_advisory = format!("missing_region:{first}");
                     }
-                    Err(e) => {
-                        report.push_str(&format!("FAIL: graph build: {e:#}\n"));
-                        let mut r = empty(report);
-                        r.toll_policy = toll_policy.as_diag_str().into();
-                        r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
-                        r.search_terminate_reason = "graph_build".into();
-                        return r;
+                    return r;
+                }
+                Err(driver_break_core::routing::indexed::PackLoadError::FerryPreparing(
+                    status,
+                    pct,
+                )) => {
+                    report.push_str(&format!(
+                        "ferry_preparing=true\nferry_preparing_pct={pct}\n\
+                         status={status}\nFAIL: {status}\n"
+                    ));
+                    driver_break_core::routing::plan_perf::note("ferry_preparing", &status);
+                    driver_break_core::routing::plan_perf::note_u64(
+                        "ferry_preparing_pct",
+                        pct as u64,
+                    );
+                    let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
+                    let mut r = empty(report);
+                    r.toll_policy = toll_policy.as_diag_str().into();
+                    r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
+                    r.search_terminate_reason = "ferry_preparing".into();
+                    r.off_trail_advisory = status;
+                    return r;
+                }
+                Err(e) => {
+                    driver_break_core::routing::plan_perf::note(
+                        "pack_miss_reason",
+                        format!("{e:?}"),
+                    );
+                    match load_or_build_reweighted_bbox(
+                        pbf,
+                        &build_data_dir,
+                        &cache,
+                        routing_profile,
+                        &elevation,
+                        &eco,
+                        bbox,
+                    ) {
+                        Ok((g, hit)) => (std::sync::Arc::new(g), hit, false),
+                        Err(e) if driver_break_core::download::plan_cancel::is_cancel_err(&e) => {
+                            return plan_cancelled_result(
+                                report,
+                                &timer,
+                                &[("profile_map_ms", profile_map_ms)],
+                            );
+                        }
+                        Err(e) => {
+                            report.push_str(&format!("FAIL: graph build: {e:#}\n"));
+                            let mut r = empty(report);
+                            r.toll_policy = toll_policy.as_diag_str().into();
+                            r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
+                            r.search_terminate_reason = "graph_build".into();
+                            return r;
+                        }
                     }
-                },
+                }
             };
-            if phit && use_eco {
-                built.apply_eco_reweighting(&elevation, &eco);
+            let mut eco_reweight_ms = 0u64;
+            if use_eco {
+                let t_eco = Instant::now();
+                if phit {
+                    // Overlay — never write eco_weight into the cached Arc.
+                    let weights = compute_eco_weights(&built, &elevation, &eco);
+                    route_opts.eco_weights = Some(std::sync::Arc::new(weights));
+                } else {
+                    std::sync::Arc::make_mut(&mut built).apply_eco_reweighting(&elevation, &eco);
+                }
+                eco_reweight_ms = t_eco.elapsed().as_millis() as u64;
+                eco_reweight_ms_acc = eco_reweight_ms_acc.saturating_add(eco_reweight_ms);
             }
             build_s = t_graph.elapsed().as_secs_f64();
             cache_hit = hit;
             pack_hit = phit;
+            driver_break_core::routing::plan_perf::note(
+                "graph_ready",
+                format!(
+                    "pack_hit={phit};cache_hit={hit};nodes={};edges={};pack_load_ms={pack_load_ms};\
+                     eco_reweight_ms={eco_reweight_ms};build_s={build_s:.2}",
+                    built.nodes.len(),
+                    built.edges.len()
+                ),
+            );
+            driver_break_core::routing::plan_perf::sample_rss();
             log::info!(
                 target: "NaviPlan",
-                "graph_ready pack_hit={phit} nodes={} edges={} build_s={build_s:.2}",
+                "graph_ready pack_hit={phit} nodes={} edges={} build_s={build_s:.2} \
+                 pack_load_ms={pack_load_ms} eco_reweight_ms={eco_reweight_ms}",
                 built.nodes.len(),
                 built.edges.len()
             );
@@ -3197,7 +3456,7 @@ fn plan_car_route_inner(
                 && prefer_official_networks
             {
                 apply_network_pref_if_requested(
-                    &mut built,
+                    std::sync::Arc::make_mut(&mut built),
                     pbf,
                     OfficialNetworkKind::Cycling,
                     true,
@@ -3217,16 +3476,17 @@ fn plan_car_route_inner(
                     }
                     Err(_) => BikeCapability::Trekking,
                 };
+                let g = std::sync::Arc::make_mut(&mut built);
                 // Hard suitability needs OSM way ids (PBF / bbox cache). Pack edge
                 // ids are node-node-idx — skip on pack hits (same as motor surface refine).
                 if !phit {
-                    let _ = apply_bike_suitability_from_pbf(&mut built, pbf, bike_cap);
+                    let _ = apply_bike_suitability_from_pbf(g, pbf, bike_cap);
                 }
                 // Soft costs use packed highway + surface_quality (works for pack hits).
-                apply_bike_surface_preference(&mut built, bike_cap);
+                apply_bike_surface_preference(g, bike_cap);
                 // Slow-road preference fights Road mode (penalizes fast asphalt).
                 if !matches!(bike_cap, BikeCapability::Road) {
-                    apply_slow_road_preference(&mut built);
+                    apply_slow_road_preference(g);
                 }
             }
             if matches!(routing_profile, RoutingProfile::Car | RoutingProfile::Truck) {
@@ -3248,16 +3508,25 @@ fn plan_car_route_inner(
                         Err(_) => SurfaceRoutingMode::Car,
                     }
                 };
-                built.surface_routing_mode = surface_mode;
-                // Pack-hit graphs already carry classified `surface_quality` (format v8+).
-                // PBF refine is way-id based and must not run on pack edge ids (node-node-idx).
-                if !phit {
-                    let _ = apply_surface_quality_from_pbf(&mut built, pbf);
-                }
-                if let Some(cost_profile) =
-                    MotorSoftCostProfile::from_travel_profile(profile.to_core())
-                {
-                    apply_surface_preference(&mut built, surface_mode, cost_profile);
+                // Overlay surface mode + soft costs on pack-hit (keep Arc shared).
+                route_opts.surface_routing_mode = Some(surface_mode);
+                if phit {
+                    if let Some(cost_profile) =
+                        MotorSoftCostProfile::from_travel_profile(profile.to_core())
+                    {
+                        route_opts.motor_soft = Some((surface_mode, cost_profile));
+                    }
+                } else {
+                    let g = std::sync::Arc::make_mut(&mut built);
+                    g.surface_routing_mode = surface_mode;
+                    // Pack-hit graphs already carry classified `surface_quality` (format v8+).
+                    // PBF refine is way-id based and must not run on pack edge ids (node-node-idx).
+                    let _ = apply_surface_quality_from_pbf(g, pbf);
+                    if let Some(cost_profile) =
+                        MotorSoftCostProfile::from_travel_profile(profile.to_core())
+                    {
+                        apply_surface_preference(g, surface_mode, cost_profile);
+                    }
                 }
             }
 
@@ -3271,6 +3540,9 @@ fn plan_car_route_inner(
             }
 
             // Snap every stop (start → vias → end), then A* each consecutive leg.
+            // Dig-compatible Any snap first (no Kosaraju). Directed stub labels
+            // are ensured only if A* fails with those snaps (Stavanger-class).
+            let t_snap = Instant::now();
             let mut snapped: Vec<(osm4routing::NodeId, f64)> =
                 Vec::with_capacity(route_points.len());
             let mut snap_ok = true;
@@ -3280,66 +3552,120 @@ fn plan_car_route_inner(
             } else {
                 driver_break_core::routing::plan_bbox::effective_chunk_intermediate_snap_m()
             };
-            for (i, &(lat, lon)) in route_points.iter().enumerate() {
-                // Surface preference is vias-only: start/destination must snap to the
-                // literal nearest routable node (last-mile gravel driveways).
-                let prefer_better_surface = i > 0 && i + 1 < route_points.len();
-                let at_start = i == 0;
-                let at_end = i + 1 == route_points.len();
-                let snap_max = if (at_start && relax_start_snap) || (at_end && relax_end_snap) {
-                    chunk_snap
-                } else {
-                    default_snap
-                };
-                let label = if at_start {
-                    "start".to_string()
-                } else if at_end {
-                    "destination".to_string()
-                } else {
-                    format!("via{i}")
-                };
-                log::info!(
-                    target: "NaviPlan",
-                    "snap_start stop={label} lat={lat:.5} lon={lon:.5} max_m={snap_max:.0} vehicle={}",
-                    route_opts.vehicle.is_some()
-                );
-                let snap_t0 = std::time::Instant::now();
-                match built.nearest_routable_with_options_max(
-                    lat,
-                    lon,
-                    &route_opts,
-                    prefer_better_surface,
-                    snap_max,
-                ) {
-                    Ok(v) => {
-                        log::info!(
-                            target: "NaviPlan",
-                            "snap_end stop={label} ok dist_m={:.1} ms={}",
-                            v.1,
-                            snap_t0.elapsed().as_millis()
-                        );
-                        snapped.push(v);
-                    }
-                    Err(e) => {
-                        log::info!(
-                            target: "NaviPlan",
-                            "snap_end stop={label} fail nearest_m={:.1} ms={}",
-                            e.nearest_m,
-                            snap_t0.elapsed().as_millis()
-                        );
-                        last_terminate = "snap_failed";
-                        report.push_str(&format!(
-                            "snap_fail_{label} pad={pad:.2}: {}\n",
-                            format_snap_too_far(&label, e, built.profile())
-                        ));
-                        snap_ok = false;
-                        break;
+            let snap_stops = |built: &driver_break_core::routing::graph::RouteGraph,
+                              route_opts: &driver_break_core::routing::graph::RouteOptions,
+                              use_roles: bool|
+             -> Result<
+                Vec<(osm4routing::NodeId, f64)>,
+                (String, driver_break_core::routing::graph::SnapTooFar),
+            > {
+                let mut out = Vec::with_capacity(route_points.len());
+                for (i, &(lat, lon)) in route_points.iter().enumerate() {
+                    let prefer_better_surface = i > 0 && i + 1 < route_points.len();
+                    let at_start = i == 0;
+                    let at_end = i + 1 == route_points.len();
+                    let snap_max = if (at_start && relax_start_snap) || (at_end && relax_end_snap) {
+                        chunk_snap
+                    } else {
+                        default_snap
+                    };
+                    let label = if at_start {
+                        "start".to_string()
+                    } else if at_end {
+                        "destination".to_string()
+                    } else {
+                        format!("via{i}")
+                    };
+                    let mut snap_opts = route_opts.clone();
+                    snap_opts.snap_role = if !use_roles {
+                        driver_break_core::routing::graph::SnapRole::Any
+                    } else if at_start {
+                        driver_break_core::routing::graph::SnapRole::Origin
+                    } else if at_end {
+                        driver_break_core::routing::graph::SnapRole::Destination
+                    } else {
+                        driver_break_core::routing::graph::SnapRole::Via
+                    };
+                    match built.nearest_routable_with_options_max(
+                        lat,
+                        lon,
+                        &snap_opts,
+                        prefer_better_surface,
+                        snap_max,
+                    ) {
+                        Ok(v) => out.push(v),
+                        Err(e) => return Err((label, e)),
                     }
                 }
+                Ok(out)
+            };
+            match snap_stops(&built, &route_opts, false) {
+                Ok(first) => {
+                    snapped = first;
+                    driver_break_core::routing::plan_perf::note(
+                        "directed_snap",
+                        "any_first_labels_deferred",
+                    );
+                    driver_break_core::routing::plan_perf::note_u64("directed_label_ms", 0);
+                }
+                Err((label, e)) => {
+                    last_terminate = "snap_failed";
+                    report.push_str(&format!(
+                        "snap_fail_{label} pad={pad:.2}: {}\n",
+                        format_snap_too_far(&label, e, built.profile())
+                    ));
+                    snap_ok = false;
+                }
             }
+            snap_ms_acc = snap_ms_acc.saturating_add(t_snap.elapsed().as_millis() as u64);
+            driver_break_core::routing::plan_perf::note_u64("directed_snap_ms", snap_ms_acc);
             if !snap_ok {
                 break; // next pad (edge_clip_mode unchanged)
             }
+            // Fast disconnect: O/D snapped but sit on different weak components
+            // (typical when tile budget dropped the bridge stem). Widen tiles
+            // instead of exploring the whole origin component with A*.
+            if snapped.len() >= 2 {
+                let (ss, _) = snapped[0];
+                let (gg, _) = snapped[snapped.len() - 1];
+                if !built.same_weak_component(ss, gg) {
+                    last_terminate = "disconnected";
+                    report.push_str(
+                        "corridor_components_disconnected before A* (origin/destination \
+                         not connected in loaded tiles)\n",
+                    );
+                    driver_break_core::routing::plan_perf::note(
+                        "corridor_components",
+                        "disconnected",
+                    );
+                    // Free the truncated corridor before reload (RSS / cache).
+                    drop(built);
+                    graph = None;
+                    if try_widen_tile_budget(
+                        &mut report,
+                        &mut tile_budget_used,
+                        &mut tile_widen_attempts,
+                        pack_hit,
+                    ) {
+                        edge_clip_mode =
+                            driver_break_core::routing::plan_bbox::PlanEdgeClipMode::CorridorBand;
+                        continue;
+                    }
+                    report.push_str(&format!(
+                        "pack_hit={pack_hit}; FAIL: corridor disconnected — origin and destination \
+                         are not connected in the loaded map tiles (tile budget exhausted). \
+                         Install the missing region packs or raise the plan tile budget.\n"
+                    ));
+                    let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
+                    driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(0);
+                    let mut r = empty(report);
+                    r.toll_policy = toll_policy.as_diag_str().into();
+                    r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
+                    r.search_terminate_reason = "corridor_disconnected".into();
+                    return r;
+                }
+            }
+            // snap_ms already accumulated above (dig pad scan; labels deferred).
             log::info!(
                 target: "NaviPlan",
                 "snap_ok stops={} — starting A*",
@@ -3347,6 +3673,7 @@ fn plan_car_route_inner(
             );
             driver_break_core::download::progress::set(2, Some(5), "Searching route…");
 
+            let t_search = Instant::now();
             let mut full_path: Vec<osm4routing::NodeId> = Vec::new();
             let mut full_edges: Vec<usize> = Vec::new();
             let mut full_cost = 0.0;
@@ -3382,7 +3709,88 @@ fn plan_car_route_inner(
                     full_edges.extend(e);
                 }
             }
+            // Any-snap A* miss: dig tip failed Stavanger this way. Build directed
+            // stub labels, re-snap Origin/Destination, retry A* once.
+            if !legs_ok && !built.directed_labels_ready() {
+                driver_break_core::routing::plan_perf::note(
+                    "directed_snap",
+                    "ensure_labels_after_astar_miss",
+                );
+                driver_break_core::routing::indexed::corridor_cache_clear();
+                let t_lab = Instant::now();
+                std::sync::Arc::make_mut(&mut built).ensure_directed_snap_labels();
+                driver_break_core::routing::plan_perf::note_u64(
+                    "directed_label_ms",
+                    t_lab.elapsed().as_millis() as u64,
+                );
+                let t_resnap = Instant::now();
+                match snap_stops(&built, &route_opts, true) {
+                    Ok(second) => {
+                        snapped = second;
+                        snap_ms_acc =
+                            snap_ms_acc.saturating_add(t_resnap.elapsed().as_millis() as u64);
+                        driver_break_core::routing::plan_perf::note_u64(
+                            "directed_snap_ms",
+                            snap_ms_acc,
+                        );
+                        full_path.clear();
+                        full_edges.clear();
+                        full_cost = 0.0;
+                        leg_expansions = 0;
+                        legs_ok = true;
+                        let t_search2 = Instant::now();
+                        for leg in 0..snapped.len() - 1 {
+                            let (ss, _) = snapped[leg];
+                            let (gg, _) = snapped[leg + 1];
+                            let stats = built.shortest_path_with_options_stats(
+                                ss,
+                                gg,
+                                use_eco,
+                                &route_opts,
+                            );
+                            leg_expansions = leg_expansions.saturating_add(stats.expansions);
+                            last_terminate = stats.terminate_reason;
+                            let Some((p, e, c)) = stats.path else {
+                                report.push_str(&format!(
+                                    "no_route_leg{} after_directed_snap pad={pad:.2} expansions={} reason={}\n",
+                                    leg + 1,
+                                    stats.expansions,
+                                    stats.terminate_reason
+                                ));
+                                legs_ok = false;
+                                break;
+                            };
+                            if p.len() < 2 {
+                                legs_ok = false;
+                                break;
+                            }
+                            full_cost += c;
+                            if full_path.is_empty() {
+                                full_path = p;
+                                full_edges = e;
+                            } else {
+                                full_path.extend(p.into_iter().skip(1));
+                                full_edges.extend(e);
+                            }
+                        }
+                        search_ms_acc =
+                            search_ms_acc.saturating_add(t_search2.elapsed().as_millis() as u64);
+                    }
+                    Err((label, e)) => {
+                        report.push_str(&format!(
+                            "snap_fail_{label} after_directed_labels pad={pad:.2}: {}\n",
+                            format_snap_too_far(&label, e, built.profile())
+                        ));
+                    }
+                }
+            }
+            search_ms_acc = search_ms_acc.saturating_add(t_search.elapsed().as_millis() as u64);
             last_expansions = leg_expansions;
+            driver_break_core::routing::plan_perf::note_u64("expansions", leg_expansions);
+            driver_break_core::routing::plan_perf::note_u64(
+                "search_ms",
+                t_search.elapsed().as_millis() as u64,
+            );
             if legs_ok && full_path.len() >= 2 {
                 path = full_path;
                 path_edges = full_edges;
@@ -3398,9 +3806,27 @@ fn plan_car_route_inner(
             report.push_str(&format!(
                 "no_route pad={pad:.2} expansions={leg_expansions} reason={last_terminate}\n"
             ));
-            graph = Some(built);
+            // Free truncated corridor before tile-budget widen / next attempt.
+            drop(built);
+            graph = None;
+            // Pack-hit disconnect: widen tile budget (must not pad-spin on the
+            // same truncated corridor — that re-runs multi-minute A*).
+            if last_terminate == "disconnected"
+                && try_widen_tile_budget(
+                    &mut report,
+                    &mut tile_budget_used,
+                    &mut tile_widen_attempts,
+                    pack_hit,
+                )
+            {
+                edge_clip_mode =
+                    driver_break_core::routing::plan_bbox::PlanEdgeClipMode::CorridorBand;
+                continue;
+            }
             // Pad widen does not expand corridor-band materialization. On disconnected,
-            // retry this pad with trip-AABB edge clip before advancing the pad schedule.
+            // retry this pad with trip-AABB edge clip before hard-fail / next pad.
+            // Must run before the pack_hit FAIL return — coastal Vestlandet
+            // (Bergen→Stavanger) needs the trip bbox so ferry terminals stay in-clip.
             if driver_break_core::routing::plan_bbox::should_fallback_to_trip_aabb(
                 edge_clip_mode,
                 last_terminate,
@@ -3411,9 +3837,23 @@ fn plan_car_route_inner(
                 );
                 continue;
             }
+            if last_terminate == "disconnected" && pack_hit {
+                report.push_str(
+                    "FAIL: corridor disconnected after tile-budget widen — origin and \
+                     destination remain unconnected in loaded packs.\n",
+                );
+                let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
+                driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(0);
+                let mut r = empty(report);
+                r.toll_policy = toll_policy.as_diag_str().into();
+                r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
+                r.search_terminate_reason = "corridor_disconnected".into();
+                return r;
+            }
             break; // next pad
         } // band/AABB attempts for this pad
     }
+    driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(0);
 
     // NeverUse last resort: allow tolls (Penalize) on the widest graph so UI can
     // show a route with toll_avoidance_incomplete rather than hard failure.
@@ -3554,13 +3994,19 @@ fn plan_car_route_inner(
     }
 
     let data_dir = plan_pack_data_dir(pbf, &data_dir);
-    let graph_build_ms = timer.lap_ms();
+    // Historical stage name `graph_build_ms` = pack load + eco reweight (not A*).
+    let graph_build_ms = pack_load_ms_acc.saturating_add(eco_reweight_ms_acc);
     let network_pref_ms = 0u64;
+    let _ = timer.lap_ms(); // consume pad-loop wall so later laps stay relative
     report.push_str(&format!(
         "build_s={build_s:.2}; cache_hit={cache_hit}; pack_hit={pack_hit}; nodes={}; edges={}; pad_attempts={:?}\n",
         graph.nodes.len(),
         graph.edges.len(),
         pad_attempts
+    ));
+    report.push_str(&format!(
+        "pack_load_ms={pack_load_ms_acc}; eco_reweight_ms={eco_reweight_ms_acc}; \
+         snap_ms={snap_ms_acc}; search_ms={search_ms_acc}; expansions={last_expansions}\n"
     ));
     append_graph_ferry_edges(&mut report, &graph);
     let seasonal_n = graph.seasonal_closure_excluded_in_graph(&used_opts);
@@ -3579,7 +4025,9 @@ fn plan_car_route_inner(
     }
     let route_uses_tolls = graph.path_uses_tolls(&path_edges);
     let route_uses_ferry = graph.path_uses_ferries(&path_edges);
-    let astar_ms = timer.lap_ms();
+    append_path_ferry_legs(&mut report, &graph, &path_edges);
+    // Keep stage key `astar_ms` for greppable compatibility (= search wall).
+    let astar_ms = search_ms_acc;
 
     let mut distance_m = 0.0;
     for &idx in &path_edges {
@@ -3614,13 +4062,40 @@ fn plan_car_route_inner(
         report.push_str("poi_skipped=chunk_leg\n");
         (PoiIndex::new(), DangerBarrierIndex::default(), false)
     } else {
-        match driver_break_core::routing::indexed::try_load_poi_barrier_for_plan_bbox(
-            &data_dir,
+        // Clip POI to a band around the planned polyline (not the fat trip AABB
+        // that still pulled ~2M Ostlandet overnight buildings).
+        let poi_clip = {
+            let samples = sample_polyline_km(&polyline);
+            let pts: Vec<(f64, f64)> = samples.iter().map(|s| (s.0, s.1)).collect();
+            if pts.len() >= 2 {
+                let segs = driver_break_core::routing::plan_bbox::corridor_segment_bboxes(
+                    &pts, 0.15, // ~15 km half-width
+                );
+                segs.into_iter().reduce(|mut a, b| {
+                    a[0] = a[0].min(b[0]);
+                    a[1] = a[1].min(b[1]);
+                    a[2] = a[2].max(b[2]);
+                    a[3] = a[3].max(b[3]);
+                    a
+                })
+            } else {
+                Some(bbox)
+            }
+        };
+        let poi_pack_dirs = plan_pack_dirs(
             pbf,
-            Some(bbox),
+            data_dir.to_string_lossy().as_ref(),
+            &pack_dir,
+            long_trip_enabled,
+        );
+        match driver_break_core::routing::indexed::try_load_poi_barrier_for_plan_bbox_with_pack_dirs(
+            &data_dir,
+            &poi_pack_dirs,
+            pbf,
+            poi_clip,
         ) {
             Ok((poi, barriers)) => {
-                // Pack is region-wide; nearest queries already radius-limited.
+                // Corridor-clipped pack (cached); nearest queries radius-limited.
                 (poi, barriers, true)
             }
             Err(_) => {
@@ -3930,93 +4405,153 @@ fn plan_car_route_inner(
     if uses_motor_multi_day(core_profile) {
         let driving_h = eta_minutes / 60.0;
         if let Some(budget) = motor_daily_budget(core_profile, &rest.car, &rest.cycling) {
-            let samples = sample_polyline_km(&polyline);
-            let overnight_link = RoadNodeIndex::from_path_nodes(&graph, &path);
-            let mut candidates: Vec<MotorOvernightCandidate> = Vec::new();
-            let mut seen_poi = std::collections::HashSet::new();
-            for (i, (lat, lon, km)) in samples.iter().enumerate() {
-                if i % 4 != 0 && i + 1 != samples.len() {
-                    continue;
-                }
-                for cat in [
-                    PoiCategory::Lodging,
-                    PoiCategory::OvernightFacility,
-                    PoiCategory::TentSite,
-                    PoiCategory::Cabin,
-                    PoiCategory::RestArea,
-                ] {
-                    for p in poi_index.nearest(cat, *lat, *lon, poi_radii.search_radius_m) {
-                        if poi_radii.require_road_link
-                            && !overnight_link.within_road_link(p.lat, p.lon)
-                        {
-                            continue;
+            // Single-day trips need no overnight POI scrape — the polyline×category
+            // nearest loop was ~36 s on Raufoss→Bergen (host) while A* was 0.2 s.
+            let needs_overnight = match budget {
+                MotorDailyBudget::Hours(h) => driving_h > h,
+                MotorDailyBudget::DistanceKm(km) => dist_km > km,
+            };
+            if !needs_overnight {
+                report.push_str("motor_multi_day: days=1; multi_day=false\n");
+            } else {
+                // Profile (host Raufoss→Bergen before skip): ~36 s was spent here on a
+                // dense polyline×5-category nearest scrape — not in A*. For real
+                // multi-day trips, only query near expected overnight kilometre marks
+                // (± search radius along-route), not every Nth vertex of the full line.
+                let samples = sample_polyline_km(&polyline);
+                let overnight_link = RoadNodeIndex::from_path_nodes(&graph, &path);
+                let speed_kmh = if driving_h > 1e-6 {
+                    (dist_km / driving_h).max(1.0)
+                } else {
+                    70.0
+                };
+                let overnight_targets_km: Vec<f64> = match budget {
+                    MotorDailyBudget::Hours(h) => {
+                        let day_km = (h * speed_kmh).max(1.0);
+                        let mut marks = Vec::new();
+                        let mut at = day_km;
+                        while at < dist_km - 1.0 && marks.len() < 40 {
+                            marks.push(at);
+                            at += day_km;
                         }
-                        if !seen_poi.insert(p.osm_id) {
-                            continue;
+                        marks
+                    }
+                    MotorDailyBudget::DistanceKm(km) => {
+                        let day_km = km.max(1.0);
+                        let mut marks = Vec::new();
+                        let mut at = day_km;
+                        while at < dist_km - 1.0 && marks.len() < 40 {
+                            marks.push(at);
+                            at += day_km;
                         }
-                        let kind = if p.categories.contains(&PoiCategory::Lodging) {
-                            MotorOvernightKind::Lodging
-                        } else if p.categories.contains(&PoiCategory::TentSite)
-                            || p.categories.contains(&PoiCategory::OvernightFacility)
-                            || p.categories.contains(&PoiCategory::Cabin)
-                        {
-                            MotorOvernightKind::Camping
-                        } else if p.categories.contains(&PoiCategory::RestArea) {
-                            MotorOvernightKind::RestArea
-                        } else {
-                            continue;
-                        };
-                        candidates.push(MotorOvernightCandidate {
-                            along_km: *km,
-                            lat: p.lat,
-                            lon: p.lon,
-                            name: p
-                                .name
-                                .clone()
-                                .unwrap_or_else(|| format!("Overnight {}", p.osm_id)),
-                            kind,
-                        });
+                        marks
+                    }
+                };
+                report.push_str(&format!(
+                    "motor_overnight_scrape: targets={} window_km={:.1} samples={}\n",
+                    overnight_targets_km.len(),
+                    (poi_radii.search_radius_m / 1000.0).max(5.0),
+                    samples.len()
+                ));
+                let window_km = (poi_radii.search_radius_m / 1000.0).max(5.0);
+                let mut candidates: Vec<MotorOvernightCandidate> = Vec::new();
+                let mut seen_poi = std::collections::HashSet::new();
+                for &target_km in &overnight_targets_km {
+                    let (qlat, qlon) = interpolate_at_km(&samples, target_km);
+                    // Also sample nearby polyline vertices within the window so a
+                    // road-linked POI a few km off the exact day boundary still hits.
+                    let mut query_pts: Vec<(f64, f64, f64)> = vec![(qlat, qlon, target_km)];
+                    for (lat, lon, km) in &samples {
+                        if (*km - target_km).abs() <= window_km {
+                            query_pts.push((*lat, *lon, *km));
+                        }
+                    }
+                    // Cap per overnight mark — avoid reintroducing O(route) cost.
+                    if query_pts.len() > 8 {
+                        let step = query_pts.len() / 8;
+                        query_pts = query_pts.into_iter().step_by(step.max(1)).collect();
+                    }
+                    for (lat, lon, km) in query_pts {
+                        for cat in [
+                            PoiCategory::Lodging,
+                            PoiCategory::OvernightFacility,
+                            PoiCategory::TentSite,
+                            PoiCategory::Cabin,
+                            PoiCategory::RestArea,
+                        ] {
+                            for p in poi_index.nearest(cat, lat, lon, poi_radii.search_radius_m) {
+                                if poi_radii.require_road_link
+                                    && !overnight_link.within_road_link(p.lat, p.lon)
+                                {
+                                    continue;
+                                }
+                                if !seen_poi.insert(p.osm_id) {
+                                    continue;
+                                }
+                                let kind = if p.categories.contains(&PoiCategory::Lodging) {
+                                    MotorOvernightKind::Lodging
+                                } else if p.categories.contains(&PoiCategory::TentSite)
+                                    || p.categories.contains(&PoiCategory::OvernightFacility)
+                                    || p.categories.contains(&PoiCategory::Cabin)
+                                {
+                                    MotorOvernightKind::Camping
+                                } else if p.categories.contains(&PoiCategory::RestArea) {
+                                    MotorOvernightKind::RestArea
+                                } else {
+                                    continue;
+                                };
+                                candidates.push(MotorOvernightCandidate {
+                                    along_km: km,
+                                    lat: p.lat,
+                                    lon: p.lon,
+                                    name: p
+                                        .name
+                                        .clone()
+                                        .unwrap_or_else(|| format!("Overnight {}", p.osm_id)),
+                                    kind,
+                                });
+                            }
+                        }
                     }
                 }
-            }
-            let multi = plan_motor_multi_day(budget, driving_h, dist_km, &candidates);
-            if multi.multi_day || !multi.days.is_empty() {
-                days_json = days_json_from_motor(&multi, travel_profile_report_key(profile));
-            }
-            if multi.multi_day {
-                report.push_str(&format!(
+                let multi = plan_motor_multi_day(budget, driving_h, dist_km, &candidates);
+                if multi.multi_day || !multi.days.is_empty() {
+                    days_json = days_json_from_motor(&multi, travel_profile_report_key(profile));
+                }
+                if multi.multi_day {
+                    report.push_str(&format!(
                     "motor_multi_day: days={}; budget={:?}; total_driving_h={driving_h:.2}; total_km={dist_km:.1}\n",
                     multi.days.len(),
                     multi.budget
                 ));
-                for d in &multi.days {
-                    report.push_str(&format!(
+                    for d in &multi.days {
+                        report.push_str(&format!(
                         "motor_day: idx={}; start_km={:.1}; end_km={:.1}; driving_h={:.2}; distance_km={:.1}\n",
                         d.day_index, d.start_km, d.end_km, d.driving_hours, d.distance_km
                     ));
-                    if let Some(o) = &d.overnight {
-                        let kind_s = match o.kind {
-                            MotorOvernightKind::Lodging => "lodging",
-                            MotorOvernightKind::Camping => "camping",
-                            MotorOvernightKind::RestArea => "rest_area",
-                            MotorOvernightKind::None => "none",
-                        };
-                        report.push_str(&format!(
+                        if let Some(o) = &d.overnight {
+                            let kind_s = match o.kind {
+                                MotorOvernightKind::Lodging => "lodging",
+                                MotorOvernightKind::Camping => "camping",
+                                MotorOvernightKind::RestArea => "rest_area",
+                                MotorOvernightKind::None => "none",
+                            };
+                            report.push_str(&format!(
                             "motor_overnight: kind={kind_s}; poi_found={}; name={:?}; lat={:?}; lon={:?}\n",
                             o.poi_found, o.name, o.lat, o.lon
                         ));
-                        for n in &o.notes {
-                            report.push_str(&format!("motor_overnight_note: {n}\n"));
-                        }
-                        if o.poi_found {
-                            if let (Some(lat), Some(lon)) = (o.lat, o.lon) {
-                                let json_kind = match o.kind {
-                                    MotorOvernightKind::Lodging => "lodging",
-                                    MotorOvernightKind::Camping => "hut",
-                                    MotorOvernightKind::RestArea => "rest_area",
-                                    MotorOvernightKind::None => "amenity",
-                                };
-                                motor_overnight_pins.push(serde_json::json!({
+                            for n in &o.notes {
+                                report.push_str(&format!("motor_overnight_note: {n}\n"));
+                            }
+                            if o.poi_found {
+                                if let (Some(lat), Some(lon)) = (o.lat, o.lon) {
+                                    let json_kind = match o.kind {
+                                        MotorOvernightKind::Lodging => "lodging",
+                                        MotorOvernightKind::Camping => "hut",
+                                        MotorOvernightKind::RestArea => "rest_area",
+                                        MotorOvernightKind::None => "amenity",
+                                    };
+                                    motor_overnight_pins.push(serde_json::json!({
                                     "name": o.name.clone().unwrap_or_else(|| "Overnight".into()),
                                     "lat": lat,
                                     "lon": lon,
@@ -4029,13 +4564,14 @@ fn plan_car_route_inner(
                                     },
                                     "along_km": d.end_km,
                                 }));
+                                }
                             }
                         }
                     }
+                } else {
+                    report.push_str("motor_multi_day: days=1; multi_day=false\n");
                 }
-            } else {
-                report.push_str("motor_multi_day: days=1; multi_day=false\n");
-            }
+            } // driving_h > budget
         }
     }
     let multiday_ms = timer.lap_ms();
@@ -4121,12 +4657,16 @@ fn plan_car_route_inner(
     ));
     let report_addons_ms = timer.lap_ms();
     let plan_duration_ms = timer.total_ms();
+    let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
     append_route_plan_timing(
         &mut report,
         plan_duration_ms,
         &[
             ("profile_map_ms", profile_map_ms),
             ("graph_build_ms", graph_build_ms),
+            ("pack_load_ms", pack_load_ms_acc),
+            ("eco_reweight_ms", eco_reweight_ms_acc),
+            ("snap_ms", snap_ms_acc),
             ("network_pref_ms", network_pref_ms),
             ("astar_ms", astar_ms),
             ("polyline_ms", polyline_ms),
@@ -5008,6 +5548,89 @@ pub struct PlaceHit {
     pub region_id: String,
 }
 
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiFerrySidecarProgress {
+    pub stem: String,
+    pub region_label: String,
+    pub running: bool,
+    pub pct: u8,
+    pub message: String,
+}
+
+/// Build/refresh `{stem}.navi-ferry-overlay-{profile}.rkyv` from the region PBF.
+/// Call from pack install / refresh background work — not from the plan path.
+#[uniffi::export]
+pub fn ensure_ferry_sidecar(pack_dir: String, stem: String, profile: TravelProfile) -> String {
+    let home = Path::new(pack_dir.trim());
+    let stem = stem.trim();
+    if stem.is_empty() {
+        return "FAIL: empty stem\n".into();
+    }
+    let pbf = home.join(format!("{stem}.osm.pbf"));
+    if !pbf.is_file() {
+        // Also accept ferry-only extract.
+        let ferry_pbf = home.join(format!("{stem}.ferry.osm.pbf"));
+        if !ferry_pbf.is_file() {
+            return format!("FAIL: PBF missing for stem={stem}\n");
+        }
+        return match driver_break_core::routing::indexed::ensure_ferry_sidecar(
+            home,
+            stem,
+            RoutingProfile::from(profile.to_core()),
+            &ferry_pbf,
+        ) {
+            Ok(true) => format!("PASS: ferry sidecar ready stem={stem}\n"),
+            Ok(false) => format!("PASS: no ferry edges stem={stem}\n"),
+            Err(e) => format!("FAIL: ferry sidecar: {e:#}\n"),
+        };
+    }
+    match driver_break_core::routing::indexed::ensure_ferry_sidecar(
+        home,
+        stem,
+        RoutingProfile::from(profile.to_core()),
+        &pbf,
+    ) {
+        Ok(true) => format!("PASS: ferry sidecar ready stem={stem}\n"),
+        Ok(false) => format!("PASS: no ferry edges stem={stem}\n"),
+        Err(e) => format!("FAIL: ferry sidecar: {e:#}\n"),
+    }
+}
+
+/// Progress for an in-flight ferry sidecar build (empty stem when idle).
+#[uniffi::export]
+pub fn ferry_sidecar_progress_snapshot() -> FfiFerrySidecarProgress {
+    let p = driver_break_core::routing::indexed::ferry_sidecar_progress();
+    FfiFerrySidecarProgress {
+        stem: p.stem,
+        region_label: p.region_label,
+        running: p.running,
+        pct: p.pct,
+        message: p.message,
+    }
+}
+
+/// True when the stem ferry sidecar meta matches the on-disk PBF fingerprint.
+#[uniffi::export]
+pub fn ferry_sidecar_is_ready(pack_dir: String, stem: String, profile: TravelProfile) -> bool {
+    let home = Path::new(pack_dir.trim());
+    let stem = stem.trim();
+    let pbf = home.join(format!("{stem}.osm.pbf"));
+    let pbf = if pbf.is_file() {
+        pbf
+    } else {
+        home.join(format!("{stem}.ferry.osm.pbf"))
+    };
+    if !pbf.is_file() {
+        return false;
+    }
+    driver_break_core::routing::indexed::sidecar_fresh(
+        home,
+        stem,
+        RoutingProfile::from(profile.to_core()),
+        &pbf,
+    )
+}
+
 /// Build or open the offline FTS name index for a region PBF.
 ///
 /// When `region_id` is non-empty, rows are merged into the shared DB under that
@@ -5255,6 +5878,7 @@ pub fn indexed_maps_status(pbf_path: String, data_dir: String) -> String {
             if server_install_present(&data, &stem) {
                 return match man.status_pack_files(&data) {
                     PackStatus::Ready => "ready\n".into(),
+                    PackStatus::Outdated => "outdated\n".into(),
                     PackStatus::Missing => "missing\n".into(),
                     PackStatus::StalePbf => "stale_pbf\n".into(),
                     PackStatus::VersionMismatch => "version_mismatch\n".into(),
@@ -5268,6 +5892,7 @@ pub fn indexed_maps_status(pbf_path: String, data_dir: String) -> String {
             };
             match man.status_for_pbf(&data, &packed) {
                 PackStatus::Ready => "ready\n".into(),
+                PackStatus::Outdated => "outdated\n".into(),
                 PackStatus::Missing => "missing\n".into(),
                 PackStatus::StalePbf => "stale_pbf\n".into(),
                 PackStatus::VersionMismatch => "version_mismatch\n".into(),
@@ -6605,6 +7230,7 @@ pub fn format_route_avoidance_report(
         departure_local: None,
         datex_impacts: Vec::new(),
         allowed_countries: None,
+        ..Default::default()
     };
     driver_break_core::format_route_avoidance_report(&opts, 0, priority_path_share_pct)
 }
@@ -8877,6 +9503,23 @@ fn poi_lookahead_hits_json(hits: &[driver_break_core::poi::PoiLookaheadHit]) -> 
     .to_string()
 }
 
+fn parse_pack_dirs_json(raw: &str) -> Vec<PathBuf> {
+    let Ok(arr) = serde_json::from_str::<Vec<String>>(raw) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for s in arr {
+        let p = PathBuf::from(s.trim());
+        if p.as_os_str().is_empty() {
+            continue;
+        }
+        if p.is_dir() && !out.iter().any(|x| x == &p) {
+            out.push(p);
+        }
+    }
+    out
+}
+
 /// Load POI pack (preferred) or full PBF into the look-ahead store.
 #[uniffi::export]
 pub fn ensure_poi_lookahead_loaded(data_dir: String, pbf_path: String) -> FfiPoiLookaheadLoadStats {
@@ -8912,6 +9555,73 @@ pub fn ensure_poi_lookahead_loaded(data_dir: String, pbf_path: String) -> FfiPoi
                     };
                 }
             },
+        };
+    let out = FfiPoiLookaheadLoadStats {
+        records: index.len() as u32,
+        cone_m: POI_LOOKAHEAD_CONE_M,
+        half_width_deg: POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG,
+    };
+    if let Ok(mut guard) = POI_LOOKAHEAD_STORE.lock() {
+        *guard = Some(PoiLookaheadStore { key, index });
+    }
+    out
+}
+
+/// Load the Ready POI pack that covers `lat,lon` (long-trip-packs / Removable
+/// roots via `pack_dirs_json`). One pack at a time — never co-resident with a
+/// route graph. Cell key (~0.5°) avoids thrashing when GPS jitters inside a region.
+#[uniffi::export]
+pub fn ensure_poi_lookahead_covering(
+    data_dir: String,
+    pack_dirs_json: String,
+    lat: f64,
+    lon: f64,
+) -> FfiPoiLookaheadLoadStats {
+    use driver_break_core::poi::{POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG, POI_LOOKAHEAD_CONE_M};
+    let cell_lat = (lat * 2.0).round() / 2.0;
+    let cell_lon = (lon * 2.0).round() / 2.0;
+    let pack_dirs = parse_pack_dirs_json(&pack_dirs_json);
+    let key = format!(
+        "cover|{data_dir}|{:.1}|{:.1}|{}",
+        cell_lat,
+        cell_lon,
+        pack_dirs
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(";")
+    );
+    {
+        let guard = POI_LOOKAHEAD_STORE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some(store) = guard.as_ref() {
+            if store.key == key {
+                return FfiPoiLookaheadLoadStats {
+                    records: store.index.len() as u32,
+                    cone_m: POI_LOOKAHEAD_CONE_M,
+                    half_width_deg: POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG,
+                };
+            }
+        }
+    }
+    let data = PathBuf::from(&data_dir);
+    let index =
+        match driver_break_core::routing::indexed::try_load_poi_pack_covering_point_with_pack_dirs(
+            &data, &pack_dirs, lat, lon,
+        ) {
+            Ok((poi, _)) => poi,
+            Err(e) => {
+                log::warn!(
+                    target: "NaviNative",
+                    "poi_lookahead covering load failed at {lat:.4},{lon:.4}: {e:?}"
+                );
+                return FfiPoiLookaheadLoadStats {
+                    records: 0,
+                    cone_m: POI_LOOKAHEAD_CONE_M,
+                    half_width_deg: POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG,
+                };
+            }
         };
     let out = FfiPoiLookaheadLoadStats {
         records: index.len() as u32,

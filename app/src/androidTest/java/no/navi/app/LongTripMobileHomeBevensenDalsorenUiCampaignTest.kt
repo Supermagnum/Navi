@@ -91,6 +91,8 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                 Sit("syn-no-otta", "NO", 61.56436, 9.66331, "Synthetic NO toward Ottadal via"),
             )
 
+        // Corridor + leftover SD stems from prior runs. Delete via Tools UI only;
+        // long-trip Plan auto-downloads the corridor afterward (no manual fetch taps).
         private val REGIONS_TO_DELETE_CANDIDATES =
             listOf(
                 "europe/denmark",
@@ -100,6 +102,13 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                 "europe/sweden/skane",
                 "europe/sweden/vastra-gotaland",
                 "europe/sweden/vastra_gotaland",
+                "europe/sweden/dalarna",
+                "europe/sweden/jamtland",
+                "europe/sweden/vasternorrland",
+                "europe/sweden/vasterbotten",
+                "europe/sweden/norrbotten",
+                "europe/sweden",
+                "europe/finland",
                 "europe/norway/vestlandet",
                 "europe/norway/ostlandet",
                 "europe/norway/nord-norge",
@@ -215,31 +224,47 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         confirmPluginsAndLongTripViaToolsUi()
         screenshot("03_tools_plugins")
 
-        // Delete previously downloaded regions via Tools UI before planning.
-        deleteDownloadedRegionsViaUi()
-        screenshot("03b_regions_deleted")
+        // Hang-fix retest: DO NOT wipe SD packs / index DBs — reuse Indexed corridor
+        // already on removable storage. Long-trip auto-download only fills gaps.
+        // (Cold-wipe path remains in deleteDownloadedRegionsViaUi for full campaigns.)
+        report.put("downloads_mode", "long_trip_reuse_existing_packs")
+        report.put(
+            "downloads_policy",
+            "Reuse existing SD long-trip-packs + place index; no Tools UI wipe; auto-download only if missing",
+        )
+        report.put("regions_deleted_via_ui", org.json.JSONArray())
+        noteUi("packs_policy", "reuse_existing_no_wipe")
+        screenshot("03b_regions_reused")
 
-        // Re-enable long trip after deletes (delete path turns it off when a plan was active).
+        // Ensure long trip stays ON before plan.
         confirmPluginsAndLongTripViaToolsUi()
         openRoutePanel()
         runCatching {
             clickTagSoft("btn_tools")
             settle(500)
             composeRule.onNodeWithTag("toggle_long_trip", useUnmergedTree = true).performScrollTo()
-            val line =
-                runCatching {
-                    composeRule
-                        .onNodeWithTag("long_trip_status_line", useUnmergedTree = true)
-                        .fetchSemanticsNode()
-                        .config[androidx.compose.ui.semantics.SemanticsProperties.Text]
-                        .joinToString(" ") { it.text }
-                }.getOrDefault("")
-            if (line.contains("off", ignoreCase = true) || line.isBlank()) {
+            // Prefer prefs over a blank status line: blank semantics + click would
+            // toggle an already-ON long-trip OFF and stall corridor planning.
+            var line = ""
+            repeat(8) {
+                line =
+                    runCatching {
+                        composeRule
+                            .onNodeWithTag("long_trip_status_line", useUnmergedTree = true)
+                            .fetchSemanticsNode()
+                            .config[androidx.compose.ui.semantics.SemanticsProperties.Text]
+                            .joinToString(" ") { it.text }
+                    }.getOrDefault("")
+                if (line.isNotBlank()) return@repeat
+                settle(250)
+            }
+            val prefsOn = MapHudPrefs.loadLongTripEnabled(composeRule.activity)
+            if (line.contains("off", ignoreCase = true) || (!prefsOn && line.isBlank())) {
                 composeRule.onNodeWithTag("toggle_long_trip", useUnmergedTree = true).performClick()
                 settle(400)
-                noteUi("toggle_long_trip", "forced ON before plan (was: $line)")
+                noteUi("toggle_long_trip", "forced ON before plan (was: '$line' prefsOn=$prefsOn)")
             } else {
-                noteUi("toggle_long_trip", "confirmed ON ($line)")
+                noteUi("toggle_long_trip", "confirmed ON (line='$line' prefsOn=$prefsOn)")
             }
             NaviMapTestHooks.requestCloseTools = true
             settle(300)
@@ -286,6 +311,41 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
             settle(300)
         }
         enableEcoRoutingViaUi()
+
+        // Safety: long trip must stay ON before Plan (blank status must not toggle OFF).
+        runCatching {
+            clickTagSoft("btn_tools")
+            settle(500)
+            composeRule.onNodeWithTag("toggle_long_trip", useUnmergedTree = true).performScrollTo()
+            var line = ""
+            repeat(6) {
+                line =
+                    runCatching {
+                        composeRule
+                            .onNodeWithTag("long_trip_status_line", useUnmergedTree = true)
+                            .fetchSemanticsNode()
+                            .config[androidx.compose.ui.semantics.SemanticsProperties.Text]
+                            .joinToString(" ") { it.text }
+                    }.getOrDefault("")
+                if (line.isNotBlank()) return@repeat
+                settle(200)
+            }
+            val prefsOn = MapHudPrefs.loadLongTripEnabled(composeRule.activity)
+            if (line.contains("off", ignoreCase = true) || !prefsOn) {
+                if (!prefsOn || line.contains("off", ignoreCase = true)) {
+                    composeRule.onNodeWithTag("toggle_long_trip", useUnmergedTree = true).performClick()
+                    settle(400)
+                }
+                noteUi("toggle_long_trip", "re-ON immediately before plan (line='$line' prefsOn=$prefsOn)")
+            } else {
+                noteUi("toggle_long_trip", "still ON before plan (line='$line')")
+            }
+            NaviMapTestHooks.requestCloseTools = true
+            settle(300)
+            clickTagSoft("btn_close_tools")
+            clickTagSoft("btn_save_tools")
+            openRoutePanel()
+        }
 
         // PRIMARY PLAN PATH: visible Plan button.
         composeRule.onNodeWithTag("btn_plan_route", useUnmergedTree = true).performScrollTo()
@@ -703,6 +763,22 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
 
     private fun deleteDownloadedRegionsViaUi() {
         val deleted = JSONArray()
+        // Stop any leftover auto-download/index from a prior plan so Tools delete
+        // is not blocked and does not race the place-index DB (SIGBUS risk).
+        RegionDownloadBackground.cancelPending(dataDir)
+        var idleWait = 0L
+        while ((RegionDownloadBackground.isRunning() || PlaceIndexBackground.isRunning()) &&
+            idleWait < TimeUnit.MINUTES.toMillis(5)
+        ) {
+            noteUi(
+                "download_cancel_wait",
+                "running download=${RegionDownloadBackground.isRunning()} " +
+                    "index=${PlaceIndexBackground.isRunning()} (${idleWait}ms)",
+            )
+            settle(5_000)
+            idleWait += 5_000
+            RegionDownloadBackground.cancelPending(dataDir)
+        }
         clickTagSoft("btn_tools")
         settle(500)
         runCatching {
@@ -725,7 +801,7 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         // sees internal dataDir — SD long-trip-packs are invisible to it, so
         // "Nothing installed" must not skip (packs live on the removable volume).
         for (path in REGIONS_TO_DELETE_CANDIDATES) {
-            var block = DownloadedRegionDelete.blockReason(path, dataDir)
+            var block = DownloadedRegionDelete.blockReason(path, dataDir, listOf(LongTripPackStorage.packDownloadDir(composeRule.activity)))
             var waitedMs = 0L
             // Cap wait: cancelled basemap jobs can leave isRunning stuck.
             while (block != null &&
@@ -734,15 +810,28 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                         block.contains("index", ignoreCase = true) ||
                         block.contains("Long trip", ignoreCase = true)
                 ) &&
-                waitedMs < TimeUnit.MINUTES.toMillis(2)
+                waitedMs < TimeUnit.MINUTES.toMillis(3)
             ) {
                 noteUi("delete_wait", "$path -> $block (${waitedMs}ms)")
-                settle(10_000)
-                waitedMs += 10_000
-                block = DownloadedRegionDelete.blockReason(path, dataDir)
+                RegionDownloadBackground.cancelPending(dataDir)
+                settle(5_000)
+                waitedMs += 5_000
+                block =
+                    DownloadedRegionDelete.blockReason(
+                        path,
+                        dataDir,
+                        listOf(LongTripPackStorage.packDownloadDir(composeRule.activity)),
+                    )
             }
             if (block != null && !block.startsWith("Nothing installed")) {
                 noteUi("delete_block_precheck", "$path -> $block")
+            }
+            // Avoid racing place-index workers during multi-GB SD deletes.
+            var idxWait = 0L
+            while (PlaceIndexBackground.isRunning() && idxWait < TimeUnit.MINUTES.toMillis(2)) {
+                noteUi("delete_index_idle", "$path index still running (${idxWait}ms)")
+                settle(5_000)
+                idxWait += 5_000
             }
             runCatching {
                 setField("field_geofabrik_path", path)
@@ -753,7 +842,7 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                 clickTagSoft("btn_delete_downloaded_region")
                 settle(500)
                 clickTagSoft("btn_confirm_delete_region")
-                settle(1_200)
+                settle(2_500)
                 deleted.put(
                     JSONObject()
                         .put("path", path)
@@ -908,13 +997,63 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         Thread.sleep(ms)
     }
 
+    private fun dismissOverlaySheets() {
+        NaviMapTestHooks.requestCloseTools = true
+        settle(200)
+        clickTagSoft("btn_close_tools")
+        clickTagSoft("btn_save_tools")
+        clickTagSoft("btn_close_vehicle")
+        clickTagSoft("btn_close_drive_settings")
+        // Tools sheet Close / Hide tools only — do not tap bare "Close" (that also
+        // matches btn_close_search and collapses the route panel).
+        runCatching { device.findObject(By.text("Hide tools"))?.click() }
+        settle(300)
+    }
+
     private fun openRoutePanel() {
-        runCatching {
-            composeRule.onNodeWithTag("field_search", useUnmergedTree = true).assertIsDisplayed()
-        }.onFailure {
-            clickTag("btn_open_search")
+        // Prefer existing search field; only dismiss Tools/vehicle sheets when needed.
+        val already =
+            runCatching {
+                composeRule.onNodeWithTag("field_search", useUnmergedTree = true).assertIsDisplayed()
+                true
+            }.getOrDefault(false)
+        if (already) {
+            noteUi("open_route_panel", "field_search already visible")
+            return
+        }
+        dismissOverlaySheets()
+        val afterDismiss =
+            runCatching {
+                composeRule.onNodeWithTag("field_search", useUnmergedTree = true).assertIsDisplayed()
+                true
+            }.getOrDefault(false)
+        if (afterDismiss) {
+            noteUi("open_route_panel", "field_search visible after dismissing sheets")
+            return
+        }
+        // Collapsed planning chrome exposes btn_open_search ("Route").
+        clickTagSoft("btn_open_search")
+        settle(400)
+        runCatching { device.findObject(By.text("Route"))?.click() }
+        settle(500)
+        val deadline = SystemClock.elapsedRealtime() + 8_000
+        while (SystemClock.elapsedRealtime() < deadline) {
+            val ok =
+                runCatching {
+                    composeRule.onNodeWithTag("field_search", useUnmergedTree = true).assertIsDisplayed()
+                    true
+                }.getOrDefault(false)
+            if (ok) {
+                noteUi("open_route_panel", "field_search visible after reopen")
+                return
+            }
+            dismissOverlaySheets()
+            clickTagSoft("btn_open_search")
+            runCatching { device.findObject(By.text("Route"))?.click() }
+            settle(400)
         }
         composeRule.onNodeWithTag("field_search", useUnmergedTree = true).assertIsDisplayed()
+        noteUi("open_route_panel", "field_search visible (final)")
     }
 
     private fun clickTag(tag: String) {

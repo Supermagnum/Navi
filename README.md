@@ -69,9 +69,22 @@ Background indexing is still slow on region-scale extracts, but improved
 ~9% (~38 s; was ~3.6 min of mutex-wrapped re-reads). Those percentages are
 shares of the new total, not a comparison with the old ~41/~24/~34 split of
 10.6 min; POI+barrier dropped in absolute time. You can still plan while
-indexing runs; plans are much faster once packs are ready. Cold /
-missing-pack long-distance planning is still slow (PBF graph build). Pack-hit
-planning is much faster — see [Known issues](#known-issues).
+indexing runs; plans are much faster once packs are ready.
+
+**Long-distance route planning is slow.** Cross-border / multi-region plans
+(especially with **Long trip** enabled, or when packs are still cold) take
+time for the app to compute. The progress label can sit at 0% for a long
+phase while graph build or densify work runs — that is expected, not a hang.
+Pack-hit planning is much faster — see [Known issues](#known-issues).
+**Patience is a virtue**, especially on corridors that touch Swedish län
+(or any country with subregion **packs** but only a **single** country PBF):
+ferry-overlay densify can re-scan the full ~840 MB `sweden-latest.osm.pbf`
+for several minutes per län stem — see the long-distance bullet under
+[Known issues](#known-issues). A request to the team at
+[Geofabrik](https://www.geofabrik.de/) for Sweden extracts split by län
+(and the same for Finland) would remove that shared-country scan; ideally
+every country would publish matching subregion extracts so leaf packs pair
+with leaf PBFs.
 
 # Testers wanted
 
@@ -88,10 +101,10 @@ and radio/baud UI notes (branch `CAT`): [`docs/cat-test.md`](docs/cat-test.md).
 **Install the signed release APK.** Testers should download and sideload
 [`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
 installable release APK** (upload keystore; not the debug build). Current build:
-**v0.4.1-beta** (`versionName` 0.4.1-beta, `versionCode` 16). Download from the
-[`main` branch](https://github.com/Supermagnum/Navi/tree/main/compiled)
+**v0.3.14-beta** (`versionName` 0.3.14-beta, `versionCode` 19). Download from the
+[`dev` branch](https://github.com/Supermagnum/Navi/tree/dev/compiled)
 (latest tester build) or the pinned
-[`v0.4.1-beta` tag](https://github.com/Supermagnum/Navi/tree/v0.4.1-beta). Android
+[`v0.3.14-beta` tag](https://github.com/Supermagnum/Navi/tree/v0.3.14-beta). Android
 validates the APK signature on install; the separate GPG files
 ([`compiled/SHA256SUMS`](compiled/SHA256SUMS),
 [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc)) are optional provenance
@@ -312,6 +325,13 @@ region download), Navi must build the **place index** (search names for From /
 Via / To) and, on the local-bake path, the **indexed routing packs**. Both scan
 the full region file and can run for many minutes on a large extract. That is
 expected; leave the app open or return to it later.
+
+**Nothing to index → no indexing UI.** Cold start and Tools do **not** start
+place-index / pack convert (and do not show an “In progress” indexing footer)
+when there is no real region PBF, no installed graph packs, and no pending
+extract/job. A selected Geofabrik path in the picker alone is not enough.
+(Previously, idle status lines and fixture/stub PBFs could look like indexing
+was running on an empty install.)
 
 ### Download and place-index timing (measured)
 
@@ -1047,7 +1067,7 @@ it as a normal install (not an unsigned or debug-only package).
 
 | Artifact | Role |
 |---|---|
-| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64, `versionName` 0.4.1-beta / tag **v0.4.1-beta**) |
+| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64, `versionName` 0.3.12-beta / tag **v0.3.12-beta**) |
 | [`compiled/SHA256SUMS`](compiled/SHA256SUMS) | SHA-256 checksum for integrity checks |
 | [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc) | Detached GPG provenance signature (not Android APK signing) |
 
@@ -1058,7 +1078,7 @@ You do not need a Rust/NDK toolchain to install it.
 2. Download
    [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/main/compiled/navi-release.apk)
    (latest on `main`) or the pinned
-   [`v0.4.1-beta` tag](https://github.com/Supermagnum/Navi/raw/v0.4.1-beta/compiled/navi-release.apk).
+   [`v0.3.12-beta` tag](https://github.com/Supermagnum/Navi/raw/v0.3.12-beta/compiled/navi-release.apk).
 3. Optional integrity check on a PC:
 
 ```bash
@@ -1161,7 +1181,7 @@ Debug installs use the Android **debug** keystore. A **release** package is what
 you sideload as release, hand to F-Droid-style checks, or smoke-test as an AAB.
 
 A prebuilt upload-key-signed release APK for testers is committed at
-[`compiled/navi-release.apk`](compiled/navi-release.apk) (tag **v0.4.1-beta**;
+[`compiled/navi-release.apk`](compiled/navi-release.apk) (tag **v0.3.12-beta**;
 see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
 
 1. **Native library** for every ABI you ship (store AABs usually need both):
@@ -1212,7 +1232,7 @@ adb shell am start -n no.navi.app/.MainActivity
    [`docs/android-api36-plan.md`](docs/android-api36-plan.md#aab-smoke-host).
 
 Current `versionName` / `versionCode` live in `app/build.gradle.kts`
-(`0.4.1-beta` / `15` at time of writing). Bump those before a real store or tagged
+(`0.3.12-beta` / `17` at time of writing). Bump those before a real store or tagged
 release. F-Droid-style Podman reproducibility:
 [`tools/fdroid-check/README.md`](tools/fdroid-check/README.md). Full shared
 recipe: [`docs/android-build.md`](docs/android-build.md).
@@ -1316,12 +1336,32 @@ Country/region visual extracts can also be prepared with
   bullet above); much longer at the same label usually means memory pressure or
   a competing PBF walk — force-stop and relaunch, or wait for pack-hit before
   planning.
-- **Cold / missing-pack long-distance planning is still slow** (PBF graph build).
-  **Pack-hit planning is much faster:** parallel tile mmap/deserialize cut host
-  warm `graph_build_ms` by roughly **35–47%** on short/medium/long Ostlandet
-  routes; on SM-P613 pack-hit short/medium/long warm walls were about **4.1 /
-  8.4 / 5.4 s** (not the multi-minute PBF fallback). Details and older
-  pack-hit vs pack-miss baselines are in the planning-latency bullet below.
+- **Long-distance route planning is slow.** It takes some time for the app to
+  compute these routes. With **Long trip** on (or cold / missing packs), graph
+  build and related phases can run for many minutes; the UI progress may sit
+  still and look hung even while the process is working. **Patience is a
+  virtue.** Cold / missing-pack planning uses PBF graph build; **pack-hit
+  planning is much faster:** parallel tile mmap/deserialize cut host warm
+  `graph_build_ms` by roughly **35–47%** on short/medium/long Ostlandet routes;
+  on SM-P613 pack-hit short/medium/long warm walls were about **4.1 / 8.4 /
+  5.4 s** (not the multi-minute PBF fallback). Details and older pack-hit vs
+  pack-miss baselines are in the planning-latency bullet below.
+  **Sweden-style single-country PBF (known cost, not a hang):** server packs
+  for Swedish län (Halland, Västra Götaland, Skåne, …) ship `.rkyv` graphs
+  only. Geofabrik has **no leaf extracts** for those regions — only
+  `sweden-latest.osm.pbf` (~840 MB). Place-index and ferry overlay for every
+  län stem share that one country file. When densify needs ferry overlay for a
+  län stem, it walks the full country PBF (typically a few minutes per stem);
+  TripAabb / pad retries can repeat the scan for each stem. The same class of
+  slowdown applies to any country that has subregion **packs** but only a
+  **single** country PBF. A respectful request to the team at
+  [Geofabrik](https://www.geofabrik.de/) for a split of Sweden by län
+  (and the same for Finland) should resolve this ferry-overlay / place-index
+  cost; ideally all countries would be published as their respective
+  subregions so leaf packs have matching leaf PBFs. Evidence:
+  [`docs/bevensen-mobilehome-campaign.md`](docs/bevensen-mobilehome-campaign.md)
+  (post-`corridor_ready` wall dominated by repeated `sweden-latest`
+  `ferry_overlay` scans, not A*).
 - **Plugins:** content add-ons are intentionally not shipped yet, as they have
   not been made.
 - **UI polish:** the screens work but still need visual tidy-up on car displays.

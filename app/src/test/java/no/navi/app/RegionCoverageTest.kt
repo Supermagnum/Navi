@@ -87,6 +87,14 @@ class RegionCoverageTest {
             "Schleswig-Holstein",
             RegionCoverage.displayName("europe/germany/schleswig-holstein"),
         )
+        val fromPath =
+            RegionCoverage.missingCoverageFromRegionPath(
+                "europe/norway/vestlandet",
+                placeName = "Bergen",
+            )
+        assertEquals("europe/norway/vestlandet", fromPath.suggestedGeofabrikPath)
+        assertTrue(fromPath.message.contains("Vestlandet is not downloaded"))
+        assertTrue(fromPath.message.contains("Download Vestlandet"))
     }
 
     @Test

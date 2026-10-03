@@ -870,6 +870,7 @@ fn barrier_node_blocks_through_not_way_wide() {
         vec![ab, bc, ad, dc],
         RoutingProfile::Car,
         blocked,
+        true,
     );
 
     let through = graph

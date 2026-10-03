@@ -231,6 +231,16 @@ Device evidence (2026-08-19): Check → *"New map data is available…"*; Apply 
 *"Download in progress…"*. No `method=`, `reason=`, `USER_VISIBLE=`, or
 `region_meta` strings in on-screen copy.
 
+### OSM update / apply-pending confirmation (2026-10-01, `right-to-roam`)
+
+| Check | Result | What was tested |
+|---|---|---|
+| Core planner + apply path unit tests (`cargo test -p driver-break-core --lib osm_update::`) | **PASS** — 19/19 | `check_for_updates` / `decide_update_plan` / apply edge cases (up-to-date, full redownload, unsupported, catalog generation, osmium skip) |
+| Kotlin user-copy mapping (`OsmUpdateUserCopyTest`) | **PASS** | Check/apply FFI dumps map to plain Tools strings; technical tokens stripped |
+| Empty-install index gate (`OfflineIndexGateTest` + resume tests) | **PASS** | No auto-index without PBF/packs/pending; manifest-only does not synthesize resume |
+| Instrumented UI follow-up (`OsmUpdateCatalogRoutingFollowupTest`) | Prior **PASS** on device (see table above); not re-run this session | Tools Check / Apply tags + plain-language status |
+| UI → UniFFI wiring | **Confirmed by code review** | Tools `btn_check_osm_updates` → `checkOsmUpdates` → `check_for_updates`; `btn_apply_osm_update` → `applyOsmUpdate` → `apply_pending_update`, then place-index + `IndexedMapsBackground` when a local PBF exists |
+
 ### Cross-region / cross-border routing (keyboard entry, car profile)
 
 Fixture: **Ostlandet-only** download (`ostlandet-latest.osm.pbf`). Routes entered
@@ -538,3 +548,20 @@ known gaps): [`bevensen-mobilehome-campaign.md`](bevensen-mobilehome-campaign.md
 Branch: **`dev`** only as of 2026-09-24 (not merged to **`main`**).
 Instrumented: `LongTripMobileHomeBevensenResumePlanTest` (corrected);
 `LongTripMobileHomeBevensenLiveTest` (earlier live path).
+
+**2026-10-01 follow-up (timing, not A*):** after `corridor_ready`, ~17+ min of
+wall with `distance_km=0` was dominated by repeated
+`ferry_overlay` walks of the shared ~840 MB `sweden-latest.osm.pbf` for
+Halland / Västra Götaland stems (Geofabrik has no län leaf extracts; packs are
+`.rkyv` only). Per-stem scans ~3–4 min; TripAabb retries re-scan. A request to
+the team at [Geofabrik](https://www.geofabrik.de/) for Sweden-by-län extracts
+(and the same for Finland) should solve that ferry-overlay / place-index
+slowdown; ideally leaf packs would always have matching leaf PBFs. See
+[Post-corridor Sweden PBF slowdown](bevensen-mobilehome-campaign.md#post-corridor-sweden-pbf-slowdown)
+and README Known issues (long-distance / Sweden-style single-country PBF).
+
+**2026-10-01 night (OUT OF BAND):** same corridor completed a full plan after
+Fehmarn ferry overlay + Rayon hang / Indexed-before-plan fixes —
+**2287.2 km / 35.14 h / 56 maneuvers** vs EXPECTED 1461–1649 km / 17–22 h /
+55–100. Fehmarn leg2 routed with ferry; band fail is long detour geometry.
+See [Latest run](bevensen-mobilehome-campaign.md#latest-run--2026-10-01-night-fail--out-of-band-plan-completed).

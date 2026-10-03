@@ -442,6 +442,38 @@ fn us_cross_country_fixture_a_and_b() {
 }
 
 #[test]
+fn corridor_ready_for_planning_requires_all_indexed() {
+    use driver_break_core::long_trip::{corridor_packs_ready, corridor_ready_for_planning};
+
+    let regions = vec!["a".into(), "b".into(), "c".into()];
+    let mut plan = LongTripPlan::new("a".into(), regions);
+    assert!(!corridor_ready_for_planning(&plan));
+    assert!(!corridor_packs_ready(&plan));
+
+    plan.set_state("a", RegionTripState::Installed);
+    plan.set_state("b", RegionTripState::Installed);
+    plan.set_state("c", RegionTripState::Installed);
+    assert!(
+        corridor_packs_ready(&plan),
+        "Installed packs count as packs-ready"
+    );
+    assert!(
+        !corridor_ready_for_planning(&plan),
+        "Installed alone must not open planning"
+    );
+
+    plan.set_state("b", RegionTripState::Indexing);
+    assert!(corridor_packs_ready(&plan));
+    assert!(!corridor_ready_for_planning(&plan));
+
+    plan.set_state("a", RegionTripState::Indexed);
+    plan.set_state("b", RegionTripState::Indexed);
+    plan.set_state("c", RegionTripState::Indexed);
+    assert!(corridor_packs_ready(&plan));
+    assert!(corridor_ready_for_planning(&plan));
+}
+
+#[test]
 #[ignore = "live dry-run: OPENROUTESERVICE_API_KEY + NAVI_LONG_TRIP_DRY_RUN=1"]
 fn live_us_long_trip_dry_run() {
     assert_eq!(

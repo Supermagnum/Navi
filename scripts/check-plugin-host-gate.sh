@@ -70,7 +70,8 @@ else
   done <<< "$FEATURES"
 fi
 
-if ! grep -F -q 'wasmtime = { version = "48", default-features = false, features = ["cranelift", "runtime"] }' \
+# Allow 48 or 48.0.x patch pins (cargo-deny advisories may require >=48.0.4).
+if ! grep -E -q '^[[:space:]]*wasmtime[[:space:]]*=[[:space:]]*\{[[:space:]]*version[[:space:]]*=[[:space:]]*"48(\.[0-9]+)*",[[:space:]]*default-features[[:space:]]*=[[:space:]]*false,[[:space:]]*features[[:space:]]*=[[:space:]]*\["cranelift",[[:space:]]*"runtime"\][[:space:]]*\}' \
   plugin-host/Cargo.toml; then
   echo "FAIL: plugin-host/Cargo.toml wasmtime pin/features drifted" >&2
   grep -n 'wasmtime' plugin-host/Cargo.toml || true
