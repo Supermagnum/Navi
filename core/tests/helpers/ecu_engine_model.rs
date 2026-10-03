@@ -11,8 +11,9 @@ use driver_break_core::ecu::decode::{
     IceDecode,
 };
 use driver_break_core::ecu::fuel::{
-    maf_to_fuel_rate_l_h, stoich_afr, FuelRateQuality, FuelRateSource, IceFuelKind,
-    DIESEL_STOICH_AFR, PETROL_DENSITY_KG_L, PETROL_STOICH_AFR,
+    fuel_density_kg_l_at, maf_to_fuel_rate_l_h, stoich_afr, torque_pct_for_fuel_l_h,
+    FuelRateQuality, FuelRateSource, IceFuelKind, DEFAULT_LAMBDA_EQ_MAX, DIESEL_STOICH_AFR,
+    PETROL_DENSITY_KG_L, PETROL_STOICH_AFR,
 };
 
 const R_AIR: f64 = 287.058;
@@ -160,6 +161,10 @@ pub struct ScenarioResult {
     pub maf_g_s: Option<f64>,
     pub lambda: Option<f64>,
     pub afr: Option<f64>,
+    pub true_afr: Option<f64>,
+    pub true_fuel_l_h: Option<f64>,
+    pub lambda_saturated: bool,
+    pub navi_err_pct: Option<f64>,
     pub density: Option<f64>,
     pub fuel_l_h: Option<f64>,
     pub l100: Option<f64>,
@@ -417,25 +422,19 @@ fn encode_and_decode(op: &OperatingPoint) -> (IceDecode, Vec<String>, bool) {
     }
     if fuel_cut {
         push(&mut lines, &mut d, 0x5E, &[0x00, 0x00]);
-        if op.engine.is_diesel() {
-            let lam_raw = clamp_u16(5.0 * 32768.0);
-            push(
-                &mut lines,
-                &mut d,
-                0x24,
-                &[(lam_raw >> 8) as u8, lam_raw as u8],
-            );
-        } else if op.coolant_c >= 50.0 {
-            let lam_raw = clamp_u16(1.50 * 32768.0);
-            push(
-                &mut lines,
-                &mut d,
-                0x24,
-                &[(lam_raw >> 8) as u8, lam_raw as u8],
-            );
-        }
+        let lam_raw = if op.engine.is_diesel() || op.coolant_c >= 50.0 {
+            0xFFFFu16
+        } else {
+            clamp_u16(12.0 / PETROL_STOICH_AFR / DEFAULT_LAMBDA_EQ_MAX * 65536.0)
+        };
+        push(
+            &mut lines,
+            &mut d,
+            0x24,
+            &[(lam_raw >> 8) as u8, lam_raw as u8],
+        );
     } else if let Some(lam) = lambda {
-        let lam_raw = clamp_u16(lam * 32768.0);
+        let lam_raw = clamp_u16(lam / DEFAULT_LAMBDA_EQ_MAX * 65536.0);
         push(
             &mut lines,
             &mut d,
@@ -443,6 +442,34 @@ fn encode_and_decode(op: &OperatingPoint) -> (IceDecode, Vec<String>, bool) {
             &[(lam_raw >> 8) as u8, lam_raw as u8],
         );
     }
+    push(&mut lines, &mut d, 0x4F, &[0x00, 0x00, 0x00, 0x00]);
+    let rho = fuel_density_kg_l_at(op.engine.ice_kind(), ethanol, Some(op.fuel_temp_c));
+    let true_fuel = afr_opt.and_then(|a| maf_to_fuel_rate_l_h(maf, a, rho));
+    let tq = if fuel_cut {
+        0.0
+    } else {
+        true_fuel
+            .and_then(|tf| {
+                torque_pct_for_fuel_l_h(
+                    op.engine.ice_kind(),
+                    tf,
+                    if op.engine.is_diesel() { 210.0 } else { 150.0 },
+                    op.rpm,
+                    op.speed_kmh,
+                    ethanol,
+                    Some(op.fuel_temp_c),
+                )
+            })
+            .unwrap_or(op.load_pct.min(99.0))
+    };
+    push(&mut lines, &mut d, 0x61, &[clamp_u8(tq + 125.0)]);
+    push(&mut lines, &mut d, 0x62, &[clamp_u8(tq + 125.0)]);
+    let tref = if op.engine.is_diesel() {
+        210u16
+    } else {
+        150u16
+    };
+    push(&mut lines, &mut d, 0x63, &[(tref >> 8) as u8, tref as u8]);
     let ft_raw = clamp_u8(op.fuel_temp_c + 40.0);
     apply_j1939_spn174(&mut d, ft_raw);
     lines.push(format!("J1939 SPN174 raw={ft_raw}"));
@@ -457,28 +484,42 @@ pub fn run_scenario(sc: &Scenario) -> ScenarioResult {
     let naive = d
         .maf_g_s
         .and_then(|m| maf_to_fuel_rate_l_h(m, PETROL_STOICH_AFR, PETROL_DENSITY_KG_L));
-    let naive_err = match (d.fuel_rate_l_h, naive, fuel_cut) {
-        (_, _, true) => None,
-        (Some(real), Some(n), _) if real.abs() > 1e-9 && n.is_finite() && real.is_finite() => {
-            Some((n - real) / real * 100.0)
-        }
-        _ => None,
-    };
     let ethanol = sc.op.ethanol_pct_override.or(sc.op.blend.ethanol_pct());
-    let afr = if fuel_cut {
+    let baro = baro_kpa_from_altitude_m(sc.op.altitude_m).unwrap_or(101.325);
+    let maf_true = maf_g_s_model(&sc.op, baro);
+    let true_afr = model_afr(&sc.op);
+    let rho_true = fuel_density_kg_l_at(sc.op.engine.ice_kind(), ethanol, Some(sc.op.fuel_temp_c));
+    let true_fuel = if fuel_cut {
+        Some(0.0)
+    } else {
+        true_afr.and_then(|a| maf_to_fuel_rate_l_h(maf_true, a, rho_true))
+    };
+    let afr_used = if fuel_cut || d.lambda_saturated {
         None
     } else {
         d.lambda
             .map(|l| l * stoich_afr(sc.op.engine.ice_kind(), ethanol))
     };
-    let density = if matches!(d.fuel_rate_source, FuelRateSource::MafDerived) {
-        Some(driver_break_core::ecu::fuel::fuel_density_kg_l_at(
+    let naive_err = match (true_fuel, naive) {
+        (Some(t), Some(n)) if t.abs() > 1e-9 && t.is_finite() && n.is_finite() => {
+            Some((n - t) / t * 100.0)
+        }
+        _ => None,
+    };
+    let navi_err = match (true_fuel, d.fuel_rate_l_h) {
+        (Some(t), Some(n)) if t.abs() > 1e-9 && t.is_finite() && n.is_finite() => {
+            Some((n - t) / t * 100.0)
+        }
+        (Some(0.0), Some(0.0)) => Some(0.0),
+        _ => None,
+    };
+    let density = match d.fuel_rate_source {
+        FuelRateSource::MafDerived | FuelRateSource::TorqueBsfc => Some(fuel_density_kg_l_at(
             sc.op.engine.ice_kind(),
-            sc.op.blend.ethanol_pct(),
+            ethanol,
             d.fuel_temp_c,
-        ))
-    } else {
-        None
+        )),
+        _ => None,
     };
     ScenarioResult {
         table_id: sc.table_id.clone(),
@@ -489,7 +530,11 @@ pub fn run_scenario(sc: &Scenario) -> ScenarioResult {
         speed_kmh: d.speed_kmh.unwrap_or(sc.op.speed_kmh),
         maf_g_s: d.maf_g_s,
         lambda: d.lambda,
-        afr,
+        afr: afr_used,
+        true_afr,
+        true_fuel_l_h: true_fuel,
+        lambda_saturated: d.lambda_saturated,
+        navi_err_pct: navi_err,
         density,
         fuel_l_h: d.fuel_rate_l_h,
         l100: d.instant_l_per_100km(),
@@ -911,7 +956,7 @@ fn source_cell(r: &ScenarioResult) -> String {
 pub fn render_markdown(rows: &[ScenarioResult]) -> String {
     let mut md = String::new();
     md.push_str("The sensor inputs come from a simplified synthetic engine model built on estimated AFR bands; the decode and fuel-rate numbers are computed by Navi's real code; none of this is measured data from a vehicle.\n\n");
-    md.push_str("Petrol/ethanol stoichiometric AFR is mixed by **mass fraction** (E10 ~14.10, E85 ~9.82). A volume-linear mix would give E85 ~9.86. Mode 01 PID 24/44 lambda saturates at 65535/32768 (~1.999), so diesel idle/cruise AFR that should be leaner than ~29 is encoded as 29.\n\n");
+    md.push_str("Petrol/ethanol stoichiometric AFR is mixed by **mass fraction** (E10 ~14.10, E85 ~9.82). PID 24/34/44 report SAE J1979 **lambda** (AFR/AFRstoich, lean greater than 1), despite the standard's 'equivalence ratio' name. Default maximum is 2 (PID 4F byte A = 0). A reading within 1 % of that cap is saturated and is not used as AFR. Diesel idle/cruise then use torque x BSFC instead of the cap AFR.\n\n");
 
     md.push_str("### Summary (min / max across generated scenarios)\n\n");
     md.push_str("| Engine | Fuel | min L/h | max L/h | min L/100 km | max L/100 km | worst naive-14.7 error % |\n");
@@ -965,23 +1010,26 @@ pub fn render_markdown(rows: &[ScenarioResult]) -> String {
     for table in tables {
         let subset: Vec<_> = rows.iter().filter(|r| r.table_id == table).collect();
         md.push_str(&format!("### {table}\n\n"));
-        md.push_str("| varied input | rpm | speed km/h | MAF g/s (decoded) | lambda (decoded) | AFR used | fuel density kg/L | fuel rate L/h | L/100 km | rate source and quality | naive fixed-14.7 L/h | naive error % |\n");
+        md.push_str("| varied input | rpm | speed km/h | MAF g/s (decoded) | lambda (decoded) | true AFR (model) | AFR used | lambda sat | fuel density kg/L | fuel rate L/h | L/100 km | rate source and quality | Navi vs true % | naive fixed-14.7 L/h | naive vs true % |\n");
         md.push_str(
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: |\n",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: |\n",
         );
         for r in &subset {
             md.push_str(&format!(
-                "| {} | {:.0} | {:.0} | {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
+                "| {} | {:.0} | {:.0} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
                 r.vary_label,
                 r.rpm,
                 r.speed_kmh,
                 fmt_opt(r.maf_g_s, 2),
                 fmt_opt(r.lambda, 3),
+                fmt_opt(r.true_afr, 2),
                 fmt_opt(r.afr, 2),
+                if r.lambda_saturated { "yes" } else { "no" },
                 fmt_opt(r.density, 3),
                 fmt_rate(r),
                 fmt_l100(r),
                 source_cell(r),
+                fmt_err(r.navi_err_pct),
                 fmt_opt(r.naive_l_h, 3),
                 fmt_err(r.naive_err_pct),
             ));
@@ -1006,7 +1054,13 @@ pub fn render_markdown(rows: &[ScenarioResult]) -> String {
                     "fuel_l_h = {maf:.2} * 3600 / ({afr:.2} * {rho:.3} * 1000) = {rate:.3} L/h\n"
                 ));
             } else if ex.fuel_cut {
-                md.push_str("fuel cut: PID 5E = 0 and/or lean lambda -> Some(0.0) L/h\n");
+                md.push_str(
+                    "fuel cut: PID 5E = 0 and/or torque <= 0 while moving -> Some(0.0) L/h\n",
+                );
+            } else if ex.source == FuelRateSource::TorqueBsfc {
+                md.push_str(
+                    "torque path: power_kW = torque_pct/100 * Tref * rpm * 2*pi/60 / 1000; fuel_g_h = power * BSFC + idle; L/h = fuel_g_h / (rho*1000)\n",
+                );
             }
             md.push_str("```\n\n");
         }
@@ -1018,7 +1072,7 @@ pub fn render_markdown(rows: &[ScenarioResult]) -> String {
     md.push_str("- **Intake air temperature:** the MAF reading is already a mass flow. The same decoded MAF and lambda give the same L/h at -30 C and +40 C IAT; IAT only changes L/h because it changes the modelled (then encoded) MAF.\n");
     md.push_str("- **Altitude / barometric pressure:** same rule. MAF is not pressure-corrected in `fuel.rs`. Altitude changes L/h only by changing the encoded MAF (ideal-gas air mass) and, for NA diesel, the smoke-limited AFR.\n");
     md.push_str("- **Throttle vs pedal:** diesels have no throttle plate; PID 5A/49 is recorded and does not enter the MAF formula.\n");
-    md.push_str("- **Diesel coolant at idle:** the model AFR is 35-100, but PID 24 cannot encode lambda above ~2.0, so decoded diesel idle fuel rate does not move with coolant.\n");
+    md.push_str("- **Saturated lambda:** not used as AFR. Diesel idle/cruise go through torque x BSFC so coolant can still move the rate via the encoded torque.\n");
     md
 }
 
@@ -1066,7 +1120,7 @@ fn trend_sentence(table: &str, rows: &[&ScenarioResult]) -> String {
         return "Decoded MAF falls as intake air warms (ideal gas in the model). With MAF+lambda, L/h tracks that MAF; `fuel.rs` does not apply an extra IAT correction.\n".into();
     }
     if table.contains("coolant") {
-        return "Petrol without a richer lambda still gets a cold-engine estimate AFR below +40 C coolant; diesel L/h follows the modelled (encoded) lambda.\n".into();
+        return "Petrol cold idle encodes a richer lambda (MAF path). Diesel idle lambda is saturated; L/h follows encoded torque from the model AFR, so coolant is no longer a flat column.\n".into();
     }
     if table.contains("throttle") {
         return "Throttle 0% is overrun: diesels and warm petrol encode PID 5E = 0 (Some(0.0)); cold petrol keeps injecting.\n".into();

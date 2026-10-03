@@ -406,6 +406,72 @@ fn diesel_never_uses_naive_as_result() {
     }
 }
 
+/// Torque-path error vs model true rate. PID 62 is 1 %/bit; idle intercept and
+/// low-load BSFC widening are the same function used to encode torque, so the
+/// leftover is quantization. Bound 20 % covers that plus MAF PID rounding on
+/// the true-rate side.
+const DIESEL_TORQUE_ERR_BOUND_PCT: f64 = 20.0;
+
+#[test]
+fn diesel_never_uses_saturated_lambda_as_afr() {
+    let rows = scenario_results();
+    for r in rows.iter().filter(|r| r.engine.is_diesel()) {
+        if r.lambda_saturated {
+            assert!(
+                r.afr.is_none(),
+                "saturated AFR used {} {}",
+                r.table_id,
+                r.vary_label
+            );
+            assert_ne!(r.source, FuelRateSource::MafDerived);
+        }
+    }
+}
+
+#[test]
+fn diesel_idle_and_cruise_torque_error_bound() {
+    let rows = scenario_results();
+    for r in rows.iter().filter(|r| r.engine.is_diesel()) {
+        let idle_or_cruise = r.table_id.contains("/ coolant")
+            || (r.table_id.contains("/ load") && r.vary_label.contains("50%"))
+            || r.vary_label.contains("motorway");
+        if !idle_or_cruise || r.fuel_cut {
+            continue;
+        }
+        if r.source != FuelRateSource::TorqueBsfc && r.lambda_saturated {
+            panic!(
+                "expected torque path when lambda sat: {} {}",
+                r.table_id, r.vary_label
+            );
+        }
+        if r.source == FuelRateSource::TorqueBsfc {
+            let e = r.navi_err_pct.expect("navi vs true");
+            assert!(
+                e.abs() <= DIESEL_TORQUE_ERR_BOUND_PCT,
+                "{} {} error {e}% exceeds {DIESEL_TORQUE_ERR_BOUND_PCT}%",
+                r.table_id,
+                r.vary_label
+            );
+        }
+    }
+}
+
+#[test]
+fn diesel_coolant_sweep_not_flat() {
+    let rows = scenario_results();
+    let rates: Vec<f64> = rows
+        .iter()
+        .filter(|r| r.engine == EngineKind::NaDiesel && r.table_id.contains("/ coolant"))
+        .filter_map(|r| r.fuel_l_h)
+        .collect();
+    let min = rates.iter().cloned().fold(f64::INFINITY, f64::min);
+    let max = rates.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    assert!(
+        max > min * 1.05,
+        "diesel coolant sweep still flat {min}..{max}"
+    );
+}
+
 #[test]
 fn no_nan_or_inf_cells() {
     let rows = scenario_results();
@@ -419,6 +485,9 @@ fn no_nan_or_inf_cells() {
             r.l100,
             r.naive_l_h,
             r.naive_err_pct,
+            r.navi_err_pct,
+            r.true_afr,
+            r.true_fuel_l_h,
         ]
         .into_iter()
         .flatten()
