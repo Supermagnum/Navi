@@ -14,6 +14,7 @@ pub mod indexed;
 pub mod live_hazard;
 pub mod osm_update;
 pub mod plan_bbox;
+pub mod plan_perf;
 pub mod region;
 pub mod region_lock;
 pub mod rest;

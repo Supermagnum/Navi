@@ -974,6 +974,12 @@ private fun NaviMapScreen() {
                     NaviMapTestHooks.restoreAvoidFerriesAfterPlan = avoidFerries
                     avoidFerries = on
                 }
+                trip.ecoModeEnabled?.let { on ->
+                    // driveHud is declared later in this composable; set Compose eco
+                    // state + hook so the profile/eco poll applies ecoActive.
+                    ecoEnabled = on
+                    NaviMapTestHooks.requestEcoMode = on
+                }
                 NaviMapTestHooks.forceLocalPbf = trip.forceLocalPbf
                 if (trip.injectGpsAtFrom) {
                     // Pin puck at from immediately and again after plan so the
@@ -2219,11 +2225,9 @@ private fun NaviMapScreen() {
                                 longTripEnabled = longTripEnabled,
                                 stayInCountry = stayInCountry,
                                 packDir =
-                                    if (longTripEnabled) {
+                                    runCatching {
                                         LongTripPackStorage.packDownloadDir(context).absolutePath
-                                    } else {
-                                        ""
-                                    },
+                                    }.getOrDefault(""),
                                 onProgress = { pct, detail ->
                                     routePlanPct = pct
                                     routePlanProgress = "Recalculating route… $detail"
@@ -2755,8 +2759,14 @@ private fun NaviMapScreen() {
                     ),
                 )
             }
+        val longTripPackDirForCoverage =
+            runCatching { LongTripPackStorage.packDownloadDir(context) }.getOrNull()
         val missing =
-            RegionCoverage.missingCoverage(coverageWaypoints, dataDir)
+            RegionCoverage.missingCoverage(
+                coverageWaypoints,
+                dataDir,
+                longTripPackDirForCoverage,
+            )
         if (missing != null && !longTripEnabled) {
             missingCoveragePrompt = missing
             NaviMapTestHooks.missingCoveragePromptVisible = true
@@ -2809,13 +2819,11 @@ private fun NaviMapScreen() {
                 status = longTripStatusLine
             }
         }
-        // Prefer a single downloaded extract that covers the trip.
+        // Prefer installed packs on the selected volume for *all* plans — not only
+        // long-trip. longTripEnabled still gates densify/chunk; pack visibility must
+        // not. Empty packDir with SD installs caused pack-miss → multi-minute PBF rebuild.
         val longTripPackDir =
-            if (longTripEnabled) {
-                LongTripPackStorage.packDownloadDir(context)
-            } else {
-                null
-            }
+            runCatching { LongTripPackStorage.packDownloadDir(context) }.getOrNull()
         val pbf =
             RegionCoverage.resolvePlanPbf(dataDir, coverageWaypoints, longTripPackDir)
         val planPackDirPath =
@@ -3117,10 +3125,15 @@ private fun NaviMapScreen() {
                                             routeUsesTolls = false,
                                         )
                                     }
+                                    val elevDir =
+                                        listOfNotNull(longTripPackDir, dataDir)
+                                            .map { File(it, "elevation") }
+                                            .firstOrNull { it.isDirectory }
+                                            ?: File(dataDir, "elevation")
                                     val planned =
                                         uniffi.navi.planCarRoute(
                                             pbf.absolutePath,
-                                            File(dataDir, "elevation").absolutePath,
+                                            elevDir.absolutePath,
                                             cacheDir.absolutePath,
                                             start.lat,
                                             start.lon,
@@ -3233,6 +3246,67 @@ private fun NaviMapScreen() {
             NaviMapTestHooks.lastPlanReport = result.report
             NaviMapTestHooks.lastRoutePolylineChars = 0
             NaviMapTestHooks.lastRoutePolyline = ""
+            // Native fail-fast: missing corridor region — same dialog as UI pre-flight.
+            // Ferry sidecar still building — show progress and auto-retry the plan.
+            if (result.searchTerminateReason == "ferry_preparing") {
+                val msg =
+                    result.offTrailAdvisory
+                        .ifBlank {
+                            result.report
+                                .lineSequence()
+                                .firstOrNull { it.startsWith("status=") }
+                                ?.removePrefix("status=")
+                                ?.trim()
+                                .orEmpty()
+                        }.ifBlank { "Preparing ferry data…" }
+                status = msg
+                RoutingPlanLog.failed(ecoForPlan, durationMs, msg, result)
+                // Auto-continue when the background sidecar finishes.
+                kotlinx.coroutines.delay(1_500)
+                if (isActive) {
+                    planKick += 1
+                }
+                return@LaunchedEffect
+            }
+            val missingPath =
+                when {
+                    result.searchTerminateReason == "missing_regions" -> {
+                        result.offTrailAdvisory
+                            .removePrefix("missing_region:")
+                            .trim()
+                            .ifBlank {
+                                Regex("""missing_regions=([^\n]+)""")
+                                    .find(result.report)
+                                    ?.groupValues
+                                    ?.getOrNull(1)
+                                    ?.split(',')
+                                    ?.firstOrNull()
+                                    ?.trim()
+                                    .orEmpty()
+                            }
+                    }
+                    else -> ""
+                }
+            if (missingPath.isNotBlank()) {
+                val missing =
+                    RegionCoverage.missingCoverageFromRegionPath(
+                        missingPath,
+                        role = "To",
+                        placeName = toPoint.name,
+                    )
+                missingCoveragePrompt = missing
+                NaviMapTestHooks.missingCoveragePromptVisible = true
+                NaviMapTestHooks.lastMissingCoveragePath = missing.suggestedGeofabrikPath
+                NaviMapTestHooks.lastMissingCoverageMessage = missing.message
+                status = missing.message
+                RoutingPlanLog.failed(
+                    ecoForPlan,
+                    durationMs,
+                    missing.message,
+                    result,
+                )
+                return@LaunchedEffect
+            }
             if (pendingGpxExportRouteId != null) {
                 pendingGpxExportRouteId = null
                 status =
@@ -4484,7 +4558,16 @@ private fun NaviMapScreen() {
                         if (profileReq != null) {
                             NaviMapTestHooks.requestTravelProfile = null
                             profile = profileReq
-                            ecoEnabled = ecoModeDefault(profileReq)
+                            // Prefer an explicit eco seed (navi_eco / requestEcoMode)
+                            // over the profile default — otherwise car eco rows
+                            // always plan as eco=false after profile apply.
+                            val ecoReq = NaviMapTestHooks.requestEcoMode
+                            if (ecoReq != null) {
+                                NaviMapTestHooks.requestEcoMode = null
+                                ecoEnabled = ecoReq
+                            } else {
+                                ecoEnabled = ecoModeDefault(profileReq)
+                            }
                             driveHud = driveHud.copy(ecoActive = ecoEnabled)
                             if (mapState.polyline.isNotBlank() && driveHud.breakRemindersEnabled) {
                                 val intervalH =
@@ -4500,6 +4583,12 @@ private fun NaviMapScreen() {
                                     )
                             }
                             status = "Profile: ${profileReq.name.lowercase()}"
+                        }
+                        val ecoReqStandalone = NaviMapTestHooks.requestEcoMode
+                        if (ecoReqStandalone != null && profileReq == null) {
+                            NaviMapTestHooks.requestEcoMode = null
+                            ecoEnabled = ecoReqStandalone
+                            driveHud = driveHud.copy(ecoActive = ecoEnabled)
                         }
                         val avoidFerryReq = NaviMapTestHooks.requestAvoidFerries
                         if (avoidFerryReq != null) {
@@ -7486,30 +7575,63 @@ private fun NaviMapScreen() {
                         Button(
                             onClick = {
                                 scope.launch {
-                                    val pbf =
-                                        dataDir.listFiles()?.firstOrNull {
-                                            it.isFile && it.name.endsWith(".osm.pbf")
+                                    val packDir =
+                                        runCatching {
+                                            LongTripPackStorage.packDownloadDir(context)
+                                        }.getOrNull()
+                                    val rid = selectedGeofabrikPath.trim().trim('/')
+                                    val stem =
+                                        if (rid.isNotEmpty()) {
+                                            PackRegionAvailability.localStem(rid)
+                                        } else {
+                                            ""
                                         }
+                                    // Prefer the long-trip pack root PBF when present
+                                    // (Tools Refresh used to pick the first files/*.osm.pbf,
+                                    // which could be a stale root Ostlandet v8 copy).
+                                    val pbf =
+                                        listOfNotNull(packDir, dataDir)
+                                            .asSequence()
+                                            .mapNotNull { dir ->
+                                                if (stem.isNotBlank()) {
+                                                    File(dir, "$stem.osm.pbf").takeIf { it.isFile }
+                                                } else {
+                                                    null
+                                                }
+                                                    ?: dir.listFiles()?.firstOrNull {
+                                                        it.isFile && it.name.endsWith(".osm.pbf")
+                                                    }
+                                            }.firstOrNull()
                                     if (pbf == null) {
                                         status = "No local region PBF to refresh indexed maps from"
                                         return@launch
                                     }
+                                    val refreshDir =
+                                        pbf.parentFile?.takeIf { it.isDirectory } ?: dataDir
                                     val elevDir =
-                                        File(dataDir, "elevation").takeIf { it.isDirectory }
+                                        listOf(
+                                            File(refreshDir, "elevation"),
+                                            File(dataDir, "elevation"),
+                                        ).firstOrNull { it.isDirectory }
                                     val before =
                                         withContext(Dispatchers.IO) {
-                                            indexedMapsStatus(pbf.absolutePath, dataDir.absolutePath)
+                                            indexedMapsStatus(
+                                                pbf.absolutePath,
+                                                refreshDir.absolutePath,
+                                            )
                                         }
                                     IndexedMapsBackground.ensureStarted(
                                         scope,
                                         pbf,
-                                        dataDir,
+                                        refreshDir,
                                         elevDir,
                                         selectedGeofabrikPath.ifBlank { null },
+                                        forceRefresh = true,
                                     )
                                     status =
                                         "indexed before=$before — refresh started (pack server first, " +
-                                        "local rebuild only if server pack unavailable)"
+                                        "local rebuild only if server pack unavailable); " +
+                                        "stale files/ root duplicates removed on PASS"
                                 }
                             },
                             modifier =

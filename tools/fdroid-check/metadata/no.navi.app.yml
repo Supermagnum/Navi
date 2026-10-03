@@ -79,8 +79,8 @@ Builds:
       - export ANDROID_HOME="$$SDK$$"
       - test ! -e ../app/src/main/jniLibs/arm64-v8a/libnavi.so
       - test ! -e ../app/src/main/jniLibs/x86_64/libnavi.so
-      - ../scripts/build-android-native.sh aarch64-linux-android release
-      - ../scripts/build-android-native.sh x86_64-linux-android release
+      # Builds every ABI listed in gradle.properties naviAbis (default both 64-bit).
+      - ../scripts/build-android-native.sh all release
       - test -f ../app/src/main/jniLibs/arm64-v8a/libnavi.so
       - test -f ../app/src/main/jniLibs/x86_64/libnavi.so
       - test -f ../app/src/main/assets/plugins/right_to_roam_camping/plugin.wasm
@@ -95,8 +95,8 @@ MaintainerNotes: |
   Rust 1.98.0 is installed in prebuild as the fdroid build user, with
   aarch64-linux-android, x86_64-linux-android, and wasm32-unknown-unknown.
   rm: repo-root paths to prebuilt libnavi.so only.
-  build: one scripts/build-android-native.sh per ABI, asserts plugin.wasm, then Gradle.
-  Shipped ABIs: arm64-v8a and x86_64.
+  build: scripts/build-android-native.sh all (reads gradle.properties naviAbis),
+  asserts plugin.wasm, then Gradle. Shipped ABIs: naviAbis (default arm64-v8a,x86_64).
 
 ArchivePolicy: 0 versions
 CurrentVersion: 0.3.6-beta

@@ -31,6 +31,16 @@ pub struct DangerBarrierIndex {
     glaciers: Vec<Vec<[f64; 2]>>,
 }
 
+impl Clone for DangerBarrierIndex {
+    fn clone(&self) -> Self {
+        let segs: Vec<BarrierSeg> = self.tree.iter().copied().collect();
+        Self {
+            tree: RTree::bulk_load(segs),
+            glaciers: self.glaciers.clone(),
+        }
+    }
+}
+
 impl Default for DangerBarrierIndex {
     fn default() -> Self {
         Self {

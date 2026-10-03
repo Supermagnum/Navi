@@ -3,6 +3,12 @@
 //! Initial pad matches historical `plan_car_route_inner` behaviour; widen doubles
 //! until [`PLAN_BBOX_PAD_CAP_DEG`] so RAM stays bounded on Automotive devices.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// Runtime floor raised by corridor disconnect widen-retry (0 = inactive).
+/// Combined with [`effective_max_plan_tiles_for_stems`] via `max(base, floor)`.
+static PLAN_TILE_BUDGET_AT_LEAST: AtomicUsize = AtomicUsize::new(0);
+
 /// Initial pad: `span * 0.35` clamped to this band (degrees).
 pub const PLAN_BBOX_PAD_MIN_DEG: f64 = 0.35;
 pub const PLAN_BBOX_PAD_INITIAL_MAX_DEG: f64 = 2.5;
@@ -86,9 +92,42 @@ pub const CORRIDOR_BAND_STEP_DEG: f64 = 0.20;
 /// Hard cap on graph tiles merged for one plan/leg on Automotive (4 GB).
 /// Large car tiles are 80–150 MB on disk; rkyv materialization peaks higher.
 /// Endpoint-covering tiles are always kept even if this is exceeded slightly.
-/// Six leaves room for a two-stem border hop once edge clipping is a corridor
-/// band (not a fat diagonal AABB) — count alone no longer dominates RSS.
+/// Six is enough for one-stem corridors once edge clipping is a corridor band.
 pub const MAX_PLAN_TILES: usize = 6;
+
+/// Cross-stem corridors (e.g. Ostlandet→Vestlandet / Raufoss→Bergen) need more
+/// than six tiles so midpoint samples keep a connected bridge; six dropped the
+/// Vestlandet half and left A* exploring a disconnected Ostlandet component
+/// for minutes. Fourteen stays under the ~550 MiB on-disk soft byte cap for
+/// typical car corridor tiles (measured ~900 MiB peak RSS on host).
+pub const MAX_PLAN_TILES_MULTI_STEM: usize = 14;
+
+/// Memory-aware upper bound when widening a disconnected corridor tile budget.
+/// Stays under ~1.5× the multi-stem default; callers must stop and error past this.
+pub const MAX_PLAN_TILES_WIDEN_CAP: usize = 20;
+
+/// Soft RSS ceiling (MiB) used only as a **warning** in widen notes. Widen still
+/// proceeds up to [`MAX_PLAN_TILES_WIDEN_CAP`] so a truncated corridor can recover;
+/// the disconnected graph is dropped before reload.
+pub const PLAN_TILE_WIDEN_RSS_CAP_MB: f64 = 2800.0;
+
+/// Raise the effective tile budget floor for the current plan thread/process.
+/// Pass `0` to clear. Used by disconnect widen-retry so a forced measure budget
+/// of 6 can still recover by loading the Vestlandet bridge.
+pub fn set_plan_tile_budget_at_least(n: usize) {
+    PLAN_TILE_BUDGET_AT_LEAST.store(n, Ordering::Relaxed);
+}
+
+/// Current tile-budget floor (0 when inactive).
+pub fn plan_tile_budget_at_least() -> usize {
+    PLAN_TILE_BUDGET_AT_LEAST.load(Ordering::Relaxed)
+}
+
+/// Next widen step above `current`, or `None` when the memory-aware cap is hit.
+pub fn next_plan_tile_budget(current: usize) -> Option<usize> {
+    const STEPS: &[usize] = &[6, 10, 14, 18, MAX_PLAN_TILES_WIDEN_CAP];
+    STEPS.iter().copied().find(|&s| s > current)
+}
 
 /// How many entries of [`plan_bbox_pad_schedule`] chunked long-trip legs keep.
 /// Full schedule reaches [`PLAN_BBOX_PAD_CAP_DEG`] (5.0°); the default three
@@ -106,7 +145,24 @@ fn measure_override_f64(key: &str) -> Option<f64> {
 
 /// Effective tile budget (see [`MAX_PLAN_TILES`]).
 pub fn effective_max_plan_tiles() -> usize {
-    measure_override_usize("NAVI_MEASURE_MAX_PLAN_TILES").unwrap_or(MAX_PLAN_TILES)
+    let base = measure_override_usize("NAVI_MEASURE_MAX_PLAN_TILES").unwrap_or(MAX_PLAN_TILES);
+    base.max(plan_tile_budget_at_least())
+}
+
+/// Tile budget when `extra_stem_count` neighbour stems join the primary.
+///
+/// Env `NAVI_MEASURE_MAX_PLAN_TILES` sets the **base** (measure campaigns).
+/// [`set_plan_tile_budget_at_least`] can raise above that base so a forced
+/// 6-tile measure still recovers a cross-stem bridge instead of spinning A*.
+pub fn effective_max_plan_tiles_for_stems(extra_stem_count: usize) -> usize {
+    let base =
+        measure_override_usize("NAVI_MEASURE_MAX_PLAN_TILES").unwrap_or(if extra_stem_count > 0 {
+            MAX_PLAN_TILES_MULTI_STEM
+        } else {
+            MAX_PLAN_TILES
+        });
+    let floor = plan_tile_budget_at_least();
+    base.max(floor)
 }
 
 /// Effective corridor-band half-width (see [`CORRIDOR_EDGE_HALF_WIDTH_DEG`]).
@@ -123,8 +179,6 @@ pub fn effective_chunk_pad_schedule_take() -> usize {
 /// Soft cap on on-disk tile bytes merged for one plan/leg. Prefer dropping the
 /// largest non-essential tiles before exceeding this; endpoints always stay.
 /// With corridor-band edge clip, ~280 MB disk stays well under 2.8 GiB RSS.
-/// Soft cap on on-disk tile bytes merged for one plan/leg. Prefer dropping the
-/// largest non-essential tiles before exceeding this; endpoints always stay.
 /// Ostlandet car tiles are ~100–150 MB; a same-stem short hop needs three of
 /// them so the mid bridge is not dropped under a tighter cap.
 pub const MAX_PLAN_TILE_BYTES: u64 = 550 * 1024 * 1024;
@@ -1404,6 +1458,71 @@ fn points_bounds(points: &[(f64, f64)]) -> (f64, f64, f64, f64) {
     } else {
         (min_lat, min_lon, max_lat, max_lon)
     }
+}
+
+/// Sample densify joints along a road polyline so consecutive Chebyshev hops
+/// stay ≤ `max_hop_deg`. Keeps endpoints.
+pub fn sample_densify_joints_along_path(path: &[(f64, f64)], max_hop_deg: f64) -> Vec<(f64, f64)> {
+    if path.len() < 2 || max_hop_deg <= 0.0 {
+        return path.to_vec();
+    }
+    let cheb = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs().max((a.1 - b.1).abs());
+    let mut out = Vec::with_capacity(8);
+    out.push(path[0]);
+    let mut last = path[0];
+    let end = *path.last().unwrap();
+    for &p in &path[1..path.len() - 1] {
+        if cheb(last, p) >= max_hop_deg * 0.85 {
+            out.push(p);
+            last = p;
+        }
+    }
+    // If the remaining hop to the destination is still too long, keep adding
+    // the farthest path vertex that stays within budget until we can finish.
+    while cheb(last, end) > max_hop_deg + 1e-9 {
+        let mut best: Option<(f64, (f64, f64))> = None;
+        for &p in path {
+            let d_from = cheb(last, p);
+            let d_end = cheb(p, end);
+            if d_from < max_hop_deg * 0.4 || d_from > max_hop_deg + 1e-9 {
+                continue;
+            }
+            if d_end >= cheb(last, end) - 1e-9 {
+                continue;
+            }
+            if best.is_none_or(|(bd, _)| d_end < bd) {
+                best = Some((d_end, p));
+            }
+        }
+        let Some((_, nxt)) = best else {
+            // No on-path progress — fall back to geometric densify of remainder.
+            let rem = densify_route_points(&[last, end], max_hop_deg);
+            out.extend(rem.into_iter().skip(1));
+            return out;
+        };
+        out.push(nxt);
+        last = nxt;
+    }
+    if out.last().copied() != Some(end) {
+        out.push(end);
+    }
+    out
+}
+
+/// Build densify hops from a major-road + ferry coarse path on Ready packs.
+/// Returns `None` when the skeleton graph cannot connect O→D.
+pub fn try_densify_joints_via_skeleton_path(
+    path_nodes_latlon: &[(f64, f64)],
+    max_hop_deg: f64,
+) -> Option<Vec<(f64, f64)>> {
+    if path_nodes_latlon.len() < 2 {
+        return None;
+    }
+    let hops = sample_densify_joints_along_path(path_nodes_latlon, max_hop_deg);
+    if hops.len() < 2 {
+        return None;
+    }
+    Some(hops)
 }
 
 #[cfg(test)]
