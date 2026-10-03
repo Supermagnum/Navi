@@ -2371,6 +2371,11 @@ fn plan_car_route_chunked_legs(
         );
         let relax_start = i > 0;
         let relax_end = i + 2 < hops.len();
+        // Drop the previous hop's owned corridor before materializing the next
+        // so densify never stacks two full hop graphs (tablet ≤933 MiB).
+        if i > 0 {
+            driver_break_core::routing::indexed::corridor_cache_clear();
+        }
         let leg = plan_car_route_inner(
             pbf_path.clone(),
             elev_dir.clone(),

@@ -3726,6 +3726,11 @@ pub fn try_densify_hops_via_skeleton(
     drop(graph);
     super::corridor_cache::corridor_cache_clear();
     super::tile_cache::tile_cache_evict_before_load();
+    // Return freed pages to the OS when the libc supports it (no-op on bionic).
+    #[cfg(all(target_os = "linux", not(target_env = "musl")))]
+    unsafe {
+        libc::malloc_trim(0);
+    }
     if hops.len() < 2 {
         return None;
     }

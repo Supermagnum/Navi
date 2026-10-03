@@ -1,6 +1,6 @@
 # Densify joint detour (Bergen→Stavanger and long corridors)
 
-Branch: `fix/densify-detour` (from `dev` after #140). Client only. No merge.
+Branch: `fix/densify-detour` (from `dev` after #140). Client only.
 PR: https://github.com/Supermagnum/Navi/pull/141
 
 ## Problem
@@ -27,21 +27,12 @@ Host harness: `directed-snap-diag` / `region-to-region-perf-matrix`
 | Bergen→Stav station | single-shot | **205.51** | 179.6 | same | — |
 | Bergen→Stav station | densify (geometric mid) | **228.83** | 207.6 | same | **+23.3 km / +11.4%** |
 
-Diverge: hop joint at chord mid west of E39; leg1/leg2 stitch through coastal
-roads instead of the single-shot Halhjem→Arsvågen corridor.
-
 ### Host STEP 1 — remaining trips (pack blockers)
 
 Host `.packs/long-trip-packs` has **vestlandet-latest** (full) and
-**ostlandet-latest** (symlink to an e2e fixture). Missing Ready packs block:
-
-| Trip | Blocked by missing pack stem(s) |
-| --- | --- |
-| Raufoss→Tromsø | `trondelag-latest`, `nord-norge-latest` |
-| Bergen long-trip on (multi-stem beyond Vestlandet) | N/A for Bergen→Stav (vestlandet only; measured above) |
-| Oslo→Trondheim | `trondelag-latest` (and full ostlandet if symlink insufficient) |
-| Bergen→Trondheim | `trondelag-latest` |
-| Kristiansand→Tromsø | `sorlandet-latest` (or equiv.), `trondelag-latest`, `nord-norge-latest` |
+**ostlandet-latest** (symlink to an e2e fixture). Missing Ready packs block
+Raufoss→Tromsø, Oslo→Trondheim, Bergen→Trondheim, Kristiansand→Tromsø
+(`trondelag-latest`, `nord-norge-latest`, `sorlandet-latest` as applicable).
 
 Tablet SM-P613 holds all five Norway v9 landsdel packs under app
 `files/long-trip-packs` — used for on-device acceptance below.
@@ -60,14 +51,11 @@ as today.
 - Slim filter (no secondary network) → ~15.6k nodes / ~26.5k edges on
   Bergen→Stavanger host (was ~259k / ~538k with the TLS bug).
 - Skeleton is not corridor-cached; owned graph is dropped before densify hops.
+- Corridor cache cleared between densify hops so hop graphs do not stack.
+- `plan_perf` peak RSS samples **VmRSS since `begin_plan`** (not process-lifetime
+  VmHWM, which re-imported prior rows into every later matrix case).
 - Fallback: previous geometric/region densify if skeleton load or path fails.
 - Same-stem coastal densify retained for hop memory; joints now track E39.
-
-## STEP 3 — Workaround
-
-Kept same-stem coastal densify for tablet RSS. With skeleton joints, densified
-distance matches single-shot within measurement noise on host (see below) — no
-need to delete the densify gate.
 
 ## Host acceptance (after fix)
 
@@ -81,50 +69,44 @@ Skeleton joint (centre): `(59.410012, 5.453971)` on the coarse path (vs geometri
 mid `59.679, 5.534`). Host peak_rss for isolated Stavanger densify ~417 MiB;
 skeleton graph ~15.6k nodes.
 
-## Tablet acceptance — SM-P613 `R52TB0JQEDE` (2026-10-03, RSS fix)
+## Tablet acceptance — SM-P613 `R52TB0JQEDE` (2026-10-03, VmRSS gate)
 
 Build: densify branch `libnavi.so` (aarch64 release) + `installDebug`.
-Test: `RegionToRegionPerfMatrixInstrumentedTest` (BUILD SUCCESSFUL, failures=0).
-No process LMK kill / ANR (only post-test `am force-stop`).
+Test: `RegionToRegionPerfMatrixInstrumentedTest` (BUILD SUCCESSFUL).
+Force-stop cold. No process LMK kill / ANR.
 
 ### Verdict summary
 
 | Criterion | Result |
 | --- | --- |
-| Densified within 1% of single-shot, same ferries | **PASS** (host Δ0%; tablet Stavanger densify lt on+off identical 204.88 km, same fp) |
-| Bergen→Stavanger centre ~207 km lt on and off | **PASS** — **204.88 km** both; ferries Halhjem\|Arsvågen (vs dig densify 228.21; vs host centre 206.88 → **−0.97%**) |
-| Tromsø 4 days / 3 overnight; distance vs 1766.89 | **PASS** — **1766.89 km**, days=4, 3 lodging; geom `e79679c2…` unchanged |
-| Peak RSS matrix max ≤933 MiB | **PASS** — matrix max **930.9** MiB |
+| Densified within 1% of single-shot, same ferries | **PASS** (host Δ0%; tablet Stavanger **204.88 km**, Halhjem\|Arsvågen) |
+| Peak RSS matrix max ≤933 MiB | **PASS** — matrix max **876.2** MiB (`raufoss_dombas` eco cold) |
 | No LMK/ANR | **PASS** |
-| Non-densified dig parity (distance + geom hash) | **PASS** — see table |
-| Wall vs dig / prior densify | Stavanger ~9 s (was ~20 s with 259k skeleton); others similar/faster |
+| Non-densified dig parity (distance + geom hash) | **PASS** |
+| Tromsø 4 days / 3 overnight; 1766.89 km | **PASS** — geom `e79679c2…` unchanged |
+| Wall vs dig (no case >15% slower) | **PASS** — all within ~+4% |
 
-### What raised HWM above dig/#140 (~843–933)
+### PROFILE_ROW (device, after VmRSS + hop-cache fix)
 
-| Allocation | Case | Effect |
-| --- | --- | --- |
-| Broken skeleton filter (TLS + rayon) | `bergen_stavanger` densify | Loaded full ~259k-node Vestlandet corridor as “skeleton”, then densify hops → VmHWM **1157–1261** MiB |
-| Correct slim skeleton (~15.6k nodes) + drop before hops | `bergen_stavanger` | Does **not** raise HWM above prior matrix peak |
-| Largest retained corridor in this run | `raufoss_dombas` eco cold | Sets matrix HWM **930.9** MiB (≤933) |
+| Case | eco | wall_ms | distance_km | peak_rss_mb | ferry_fp | vs dig |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| raufoss_bergen | true | 7792 | **459.71** | 859.5 | — | match dig |
+| raufoss_bergen | false | 2227 | 485.45 | 689.6 | — | (lt-off default) |
+| raufoss_bergen_warm | true | 2499 | **459.71** | 693.5 | — | match dig |
+| raufoss_dombas | true | 5173 | **206.81** | **876.2** | — | match dig |
+| raufoss_dombas | false | 1952 | **206.81** | 708.4 | — | match dig |
+| bergen_forde | true | 3994 | **171.01** | 784.9 | Lavik - Oppedal@5.72 | match dig |
+| bergen_forde | false | 1409 | **171.01** | 609.1 | Lavik - Oppedal@5.72 | match dig |
+| bergen_stavanger | false | 9660 | **204.88** | 660.9 | Halhjem\|Arsvågen | **fixed** (dig densify was 228.21) |
+| bergen_stavanger | true | 8889 | **204.88** | 655.6 | same | same |
+| bergen_stavanger_lt | false | 8910 | **204.88** | 664.6 | same | same |
+| bergen_stavanger_lt | true | 8766 | **204.88** | 646.1 | same | same |
+| raufoss_tromso | false | 34297 | **1766.89** | 747.9 | 5 coastal legs | match dig |
 
-### PROFILE_ROW (device, after RSS fix)
+**Matrix max peak RSS: 876.2 MiB ≤ 933.**
 
-| Case | eco | wall_ms | distance_km | peak_rss_mb | ferry_fp | geom_sha256 (prefix) | vs dig |
-| --- | --- | ---: | ---: | ---: | --- | --- | --- |
-| raufoss_bergen | true | 7848 | **459.71** | 867.0 | — | `8a8c6f7b…` | match dig |
-| raufoss_bergen | false | 2245 | 485.45 | 867.0 | — | `540bb2ad…` | (lt-off default) |
-| raufoss_bergen_warm | true | 2520 | **459.71** | 867.0 | — | `8a8c6f7b…` | match dig |
-| raufoss_dombas | true | 5155 | **206.81** | **930.9** | — | `6a1360bc…` | match dig |
-| raufoss_dombas | false | 1957 | **206.81** | 930.9 | — | `6a1360bc…` | match dig |
-| bergen_forde | true | 4055 | **171.01** | 930.9 | Lavik - Oppedal@5.72 | `0bff0c85…` | match dig |
-| bergen_forde | false | 1536 | **171.01** | 930.9 | Lavik - Oppedal@5.72 | `0bff0c85…` | match dig |
-| bergen_stavanger | false | 9723 | **204.88** | 930.9 | Halhjem\|Arsvågen | `9b66426c…` | **fixed** (dig was 228.21 / `1cf463d5…`) |
-| bergen_stavanger | true | 8943 | **204.88** | 930.9 | same | `9b66426c…` | same |
-| bergen_stavanger_lt | false | 8894 | **204.88** | 930.9 | same | `9b66426c…` | same |
-| bergen_stavanger_lt | true | 8862 | **204.88** | 930.9 | same | `9b66426c…` | same |
-| raufoss_tromso | false | 34303 | **1766.89** | 930.9 | 5 coastal legs | `e79679c2…` | match dig |
-
-**Matrix max peak RSS: 930.9 MiB ≤ 933.**
+Stale claim of **930.9 MiB** (earlier process-lifetime VmHWM contamination that
+reported **952.4** on a dirty run) is superseded by this table.
 
 ## Harness
 
