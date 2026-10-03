@@ -34,7 +34,7 @@ fn main() {
     let t0 = Instant::now();
     let graph = try_load_graph_for_plan_corridor_with_pack_dirs(
         &pack_dir,
-        &[pack_dir.clone()],
+        std::slice::from_ref(&pack_dir),
         &pbf,
         RoutingProfile::Car,
         Some(bbox),
