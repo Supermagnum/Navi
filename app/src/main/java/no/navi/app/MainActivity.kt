@@ -694,6 +694,7 @@ private fun NaviMapScreen() {
 
     /** Last plan's `graph_ferry_edges=N`; null until a plan reports it. */
     var graphFerryEdges by remember { mutableStateOf<Int?>(null) }
+    var routePlanStats by remember { mutableStateOf(RoutePlanStats()) }
     var avoidTunnels by remember { mutableStateOf(false) }
     var preferOfficialNetworks by remember { mutableStateOf(false) }
     var preferPilgrimRoutes by remember { mutableStateOf(false) }
@@ -921,6 +922,15 @@ private fun NaviMapScreen() {
                         layerEpoch = mapState.layerEpoch + 1,
                     )
             }
+        }
+    }
+
+    LaunchedEffect(campingSuggestResult, mapState.polyline) {
+        if (mapState.polyline.isBlank()) return@LaunchedEffect
+        val n = wildCampingSiteCount(campingSuggestResult)
+        if (n != routePlanStats.wildCampingSiteCount) {
+            routePlanStats = routePlanStats.copy(wildCampingSiteCount = n)
+            NaviMapTestHooks.lastRoutePlanStatsJson = routePlanStats.toReportJson().toString()
         }
     }
 
@@ -1171,6 +1181,7 @@ private fun NaviMapScreen() {
         NaviMapTestHooks.lastArrivedAtEnd = false
         NaviMapTestHooks.lastCurrentStreet = null
         graphFerryEdges = null
+        routePlanStats = RoutePlanStats()
         status = message
     }
 
@@ -1313,6 +1324,81 @@ private fun NaviMapScreen() {
         remember {
             NaviAppData.resolve(context)
         }
+
+    LaunchedEffect(
+        poiLookaheadEnabled,
+        mapState.polyline,
+        routeSamples,
+        dataDir,
+    ) {
+        if (mapState.polyline.isBlank()) return@LaunchedEffect
+        if (!poiLookaheadEnabled || routeSamples.size < 2) {
+            if (routePlanStats.attractionCount != 0 || routePlanStats.attractionByType.isNotEmpty()) {
+                routePlanStats =
+                    routePlanStats.copy(attractionCount = 0, attractionByType = emptyMap())
+                NaviMapTestHooks.lastRoutePlanStatsJson = routePlanStats.toReportJson().toString()
+            }
+            return@LaunchedEffect
+        }
+        val samples =
+            if (routeSamples.size <= 8) {
+                routeSamples
+            } else {
+                val step = (routeSamples.size / 8).coerceAtLeast(1)
+                routeSamples.filterIndexed { idx, _ -> idx % step == 0 }.take(8)
+            }
+        val packDirs = longTripPackDirsJson()
+        val jsons =
+            withContext(Dispatchers.IO) {
+                val out = ArrayList<String>(samples.size)
+                for (i in samples.indices) {
+                    val s = samples[i]
+                    val heading =
+                        if (i + 1 < samples.size) {
+                            headingBetweenDeg(
+                                s.lat,
+                                s.lon,
+                                samples[i + 1].lat,
+                                samples[i + 1].lon,
+                            )
+                        } else {
+                            null
+                        }
+                    val raw =
+                        runCatching {
+                            val cover =
+                                uniffi.navi.ensurePoiLookaheadCovering(
+                                    dataDir.absolutePath,
+                                    packDirs,
+                                    s.lat,
+                                    s.lon,
+                                )
+                            if (cover.records == 0u) {
+                                val pbf = RouteReplan.resolvePbf(dataDir)
+                                if (pbf != null) {
+                                    uniffi.navi.ensurePoiLookaheadLoaded(
+                                        dataDir.absolutePath,
+                                        pbf.absolutePath,
+                                    )
+                                }
+                            }
+                            uniffi.navi.poiLookaheadQueryJson(
+                                s.lat,
+                                s.lon,
+                                heading,
+                                true,
+                                poiLookaheadStrictHoursUnknown,
+                            )
+                        }.getOrDefault("""{"hits":[]}""")
+                    out.add(raw)
+                }
+                out
+            }
+        val (n, byType) = uniqueAttractionTally(jsons)
+        routePlanStats =
+            routePlanStats.copy(attractionCount = n, attractionByType = byType)
+        NaviMapTestHooks.lastRoutePlanStatsJson = routePlanStats.toReportJson().toString()
+    }
 
     LaunchedEffect(packCatalogEpoch) {
         packCatalogProbing = true
@@ -1588,6 +1674,12 @@ private fun NaviMapScreen() {
             runCatching { pending.maneuversJson }.getOrDefault("[]")
         NaviMapTestHooks.lastSimSamplesJson =
             runCatching { pending.simSamplesJson }.getOrDefault("[]")
+        routePlanStats =
+            routePlanStatsFromPlan(
+                pending.report,
+                runCatching { pending.breakPoisJson }.getOrDefault("[]"),
+            )
+        NaviMapTestHooks.lastRoutePlanStatsJson = routePlanStats.toReportJson().toString()
         runCatching {
             val dir =
                 File(context.getExternalFilesDir(null), "long-trip-ui-report").also { it.mkdirs() }
@@ -1604,6 +1696,7 @@ private fun NaviMapScreen() {
                     .put("start", startLabel)
                     .put("end", endLabel)
                     .put("long_trip_status", LongTripCoordinator.statusLine())
+                    .put("enumerations", routePlanStats.toReportJson())
             File(dir, "route-result.json").writeText(o.toString(2))
         }
         routeSamples =
@@ -5919,6 +6012,12 @@ private fun NaviMapScreen() {
                                         .fillMaxWidth()
                                         .padding(top = 4.dp),
                             )
+                            if (mapState.polyline.isNotBlank()) {
+                                RoutePlanStatsCard(
+                                    stats = routePlanStats,
+                                    modifier = Modifier.padding(top = 4.dp),
+                                )
+                            }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 TextButton(
                                     onClick = {

@@ -378,6 +378,10 @@ object NaviMapTestHooks {
     @Volatile
     var lastBreakPoiCount: Int = 0
 
+    /** Last plan enumerations JSON (tunnels, ferries, rest, attractions, wild camp). */
+    @Volatile
+    var lastRoutePlanStatsJson: String = "{}"
+
     /** Last planned soft-break / overnight POIs JSON (chunk finalize or in-leg). */
     @Volatile
     var lastBreakPoisJson: String = "[]"

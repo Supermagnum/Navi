@@ -457,6 +457,9 @@ object DiagnosticLog {
                 "search_terminate_reason" to result.searchTerminateReason,
                 "toll_avoidance_incomplete" to result.tollAvoidanceIncomplete,
                 "route_uses_tolls" to result.routeUsesTolls,
+                "route_ferry_legs" to parseReportToken(result.report, "route_ferry_legs"),
+                "route_tunnel_count" to parseReportToken(result.report, "route_tunnel_count"),
+                "rest_place_count" to parseReportToken(result.report, "rest_place_count"),
             ).filterValues { it != null },
         )
         logRoutePlanStagesFromReport(result.report)
