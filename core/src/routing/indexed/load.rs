@@ -1569,8 +1569,17 @@ fn try_load_graph_for_plan_corridor_dirs(
         )?;
         // Insert *after* ferry supplement so the LRU holds the planning graph
         // and ferry merge never clones a still-cached pre-ferry Arc (~2× RSS).
+        // Densify skeleton pre-pass must not populate the LRU: hops load full
+        // corridors next and stacking skeleton+hop pushed tablet VmHWM to ~1.2 GiB.
         if let Some(key) = pending_key {
-            super::corridor_cache::corridor_cache_insert(key, std::sync::Arc::clone(&final_graph));
+            if super::graph_pack::densify_skeleton_only_active() {
+                crate::routing::plan_perf::note("corridor_cache", "skip_insert_densify_skeleton");
+            } else {
+                super::corridor_cache::corridor_cache_insert(
+                    key,
+                    std::sync::Arc::clone(&final_graph),
+                );
+            }
         }
         return Ok(final_graph);
     }
@@ -3612,8 +3621,9 @@ mod raufoss_bergen_load_probe {
 /// Coarse densify joint placement: load corridor as major-road + ferry skeleton,
 /// A* O→D, sample joints so Chebyshev hops ≤ `max_hop_deg`.
 ///
-/// Filter runs during tile materialize ([`with_densify_skeleton_only`]) so peak
-/// RSS stays well under a full corridor (tablet ≤933 MiB budget).
+/// Filter runs during tile materialize ([`with_densify_skeleton_only`]). The
+/// skeleton graph is **not** corridor-cached and is dropped before returning so
+/// densify hops do not stack skeleton+full-hop residency (tablet ≤933 MiB).
 pub fn try_densify_hops_via_skeleton(
     data_dir: &Path,
     pack_dirs: &[&Path],
@@ -3643,11 +3653,25 @@ pub fn try_densify_hops_via_skeleton(
             crate::routing::plan_bbox::PlanEdgeClipMode::CorridorBand,
         )
     });
-    let mut graph = match graph {
-        Ok(g) => (*g).clone(),
+    let graph_arc = match graph {
+        Ok(g) => g,
         Err(e) => {
             log::info!(target: "NaviPlan", "densify_skeleton_load_fail err={e}");
             return None;
+        }
+    };
+    // Unique-own without cloning when the skeleton was not corridor-cached
+    // (see skip_insert_densify_skeleton). Fall back to one clone only if an
+    // unexpected extra Arc remains.
+    let mut graph = match std::sync::Arc::try_unwrap(graph_arc) {
+        Ok(g) => g,
+        Err(shared) => {
+            log::info!(
+                target: "NaviPlan",
+                "densify_skeleton_arc_clone nodes={} (unexpected shared Arc)",
+                shared.nodes.len()
+            );
+            (*shared).clone()
         }
     };
     log::info!(
@@ -3656,7 +3680,8 @@ pub fn try_densify_hops_via_skeleton(
         graph.nodes.len(),
         graph.edges.len()
     );
-    // Prefer destination/origin roles when labels are cheap on the reduced graph.
+    // Origin/Destination roles need labels so coarse A* does not start on
+    // one-way stubs (SnapRole::Any fell back to geometric densify → +11%).
     graph.ensure_directed_snap_labels();
     let oopts = crate::routing::graph::RouteOptions {
         snap_role: crate::routing::graph::SnapRole::Origin,
@@ -3690,10 +3715,17 @@ pub fn try_densify_hops_via_skeleton(
     let hops = crate::routing::plan_bbox::sample_densify_joints_along_path(&latlon, max_hop_deg);
     log::info!(
         target: "NaviPlan",
-        "densify_skeleton_hops={} (path_nodes={})",
+        "densify_skeleton_hops={} (path_nodes={}) nodes={} edges={}",
         hops.len(),
-        path.len()
+        path.len(),
+        graph.nodes.len(),
+        graph.edges.len()
     );
+    // Drop skeleton + incidental cache/tile residency before hops load full
+    // corridor bands (dig/#140 densify never held a second OD graph).
+    drop(graph);
+    super::corridor_cache::corridor_cache_clear();
+    super::tile_cache::tile_cache_evict_before_load();
     if hops.len() < 2 {
         return None;
     }
