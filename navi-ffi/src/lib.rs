@@ -3046,11 +3046,23 @@ fn plan_car_route_inner(
     {
         let pack_dirs = pack_dirs_for_densify;
         let pack_dir_refs: Vec<&std::path::Path> = pack_dirs.iter().map(|p| p.as_path()).collect();
-        let hops = driver_break_core::routing::plan_bbox::densify_route_points_via_regions_dirs(
-            &route_points,
+        let geometric =
+            driver_break_core::routing::plan_bbox::densify_route_points_via_regions_dirs(
+                &route_points,
+                &pack_dir_refs,
+                driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG,
+            );
+        // Prefer joints on a major-road + ferry coarse path (avoids chord mids
+        // that force coastal detours, e.g. Bergen→Stavanger ~+11%).
+        let hops = driver_break_core::routing::indexed::try_densify_hops_via_skeleton(
+            std::path::Path::new(data_dir.trim()),
             &pack_dir_refs,
+            std::path::Path::new(pbf_path.trim()),
+            routing_profile,
+            &route_points,
             driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG,
-        );
+        )
+        .unwrap_or(geometric);
         log::info!(
             target: "NaviPlan",
             "long_trip densify span={span:.3} hops={} long_trip_enabled={long_trip_enabled} \

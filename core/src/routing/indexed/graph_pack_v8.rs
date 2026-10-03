@@ -9,6 +9,7 @@ use geo_types::Coord;
 use osm4routing::{Node, NodeId};
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 
+use super::graph_pack::{densify_skeleton_edge, densify_skeleton_only_active};
 use crate::routing::elevation::ElevationService;
 use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile, SurfaceQuality};
 
@@ -290,7 +291,15 @@ impl FlatGraphPackV8 {
         profile: RoutingProfile,
         clips: Option<&[[f64; 4]]>,
     ) -> RouteGraph {
+        let skeleton = densify_skeleton_only_active();
         let edge_ok = |i: usize| -> bool {
+            if skeleton {
+                let hw = self.edge_highway[i].as_str();
+                let ferry = self.edge_is_ferry.get(i).copied().unwrap_or(0) != 0;
+                if !densify_skeleton_edge(hw, ferry) {
+                    return false;
+                }
+            }
             let Some(clips) = clips else {
                 return true;
             };
@@ -566,7 +575,15 @@ impl ArchivedFlatGraphPackV8 {
         clips: Option<&[[f64; 4]]>,
     ) -> RouteGraph {
         let n_edges = self.edge_src.len();
+        let skeleton = densify_skeleton_only_active();
         let edge_ok = |i: usize| -> bool {
+            if skeleton {
+                let hw = self.edge_highway[i].as_str();
+                let ferry = self.edge_is_ferry.get(i).copied().map(arch_u8).unwrap_or(0) != 0;
+                if !densify_skeleton_edge(hw, ferry) {
+                    return false;
+                }
+            }
             let Some(clips) = clips else {
                 return true;
             };

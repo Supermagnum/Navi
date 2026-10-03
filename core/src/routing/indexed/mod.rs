@@ -35,8 +35,9 @@ pub use ferry_overlay_cache::{
     ferry_sidecar_progress, ferry_sidecar_ready, sidecar_fresh, FerrySidecarProgress,
 };
 pub use graph_pack::{
-    graph_format_version_accepted, preferred_graph_format_version, ArchivedFlatGraphPack,
-    FlatGraphPack, GRAPH_FORMAT_VERSION, GRAPH_FORMAT_VERSION_V8, MAGIC_GRAPH,
+    densify_skeleton_edge, graph_format_version_accepted, preferred_graph_format_version,
+    with_densify_skeleton_only, ArchivedFlatGraphPack, FlatGraphPack, GRAPH_FORMAT_VERSION,
+    GRAPH_FORMAT_VERSION_V8, MAGIC_GRAPH,
 };
 pub use graph_pack_v8::{ArchivedFlatGraphPackV8, FlatGraphPackV8};
 pub use header::{read_preamble, Preamble, PREAMBLE_LEN};
@@ -44,12 +45,12 @@ pub use io::{archive_payload_offset, write_archive_atomic};
 pub use load::{
     fingerprint_pbf_for_packs, load_graph_pack, load_graph_pack_bbox, load_graph_pack_clips,
     load_poi_barrier_pack, load_poi_barrier_pack_bbox, load_wetland_pack, merge_tile_graphs,
-    missing_ready_regions_for_trip, try_load_graph_for_plan, try_load_graph_for_plan_bbox,
-    try_load_graph_for_plan_corridor, try_load_graph_for_plan_corridor_with_pack_dirs,
-    try_load_poi_barrier_for_plan, try_load_poi_barrier_for_plan_bbox,
-    try_load_poi_barrier_for_plan_bbox_with_pack_dirs, try_load_poi_pack_covering_point,
-    try_load_poi_pack_covering_point_with_pack_dirs, try_load_wetland_for_plan, PackLoadError,
-    PackedPlanData,
+    missing_ready_regions_for_trip, try_densify_hops_via_skeleton, try_load_graph_for_plan,
+    try_load_graph_for_plan_bbox, try_load_graph_for_plan_corridor,
+    try_load_graph_for_plan_corridor_with_pack_dirs, try_load_poi_barrier_for_plan,
+    try_load_poi_barrier_for_plan_bbox, try_load_poi_barrier_for_plan_bbox_with_pack_dirs,
+    try_load_poi_pack_covering_point, try_load_poi_pack_covering_point_with_pack_dirs,
+    try_load_wetland_for_plan, PackLoadError, PackedPlanData,
 };
 pub use manifest::{
     bbox_intersects, graph_pack_filename, graph_tile_filename, manifest_path,

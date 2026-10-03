@@ -3608,3 +3608,94 @@ mod raufoss_bergen_load_probe {
         );
     }
 }
+
+/// Coarse densify joint placement: load corridor as major-road + ferry skeleton,
+/// A* O→D, sample joints so Chebyshev hops ≤ `max_hop_deg`.
+///
+/// Filter runs during tile materialize ([`with_densify_skeleton_only`]) so peak
+/// RSS stays well under a full corridor (tablet ≤933 MiB budget).
+pub fn try_densify_hops_via_skeleton(
+    data_dir: &Path,
+    pack_dirs: &[&Path],
+    pbf: &Path,
+    profile: crate::routing::graph::RoutingProfile,
+    points: &[(f64, f64)],
+    max_hop_deg: f64,
+) -> Option<Vec<(f64, f64)>> {
+    if points.len() < 2 || max_hop_deg <= 0.0 {
+        return None;
+    }
+    let mut owned_dirs: Vec<PathBuf> = pack_dirs.iter().map(|p| p.to_path_buf()).collect();
+    if !owned_dirs.iter().any(|p| p.as_path() == data_dir) {
+        owned_dirs.push(data_dir.to_path_buf());
+    }
+    let start = points[0];
+    let end = *points.last().unwrap();
+    let bbox = crate::routing::plan_bbox::trip_bbox_points(points, 0.15);
+    let graph = crate::routing::indexed::graph_pack::with_densify_skeleton_only(|| {
+        try_load_graph_for_plan_corridor_with_pack_dirs(
+            data_dir,
+            &owned_dirs,
+            pbf,
+            profile,
+            Some(bbox),
+            Some(points),
+            crate::routing::plan_bbox::PlanEdgeClipMode::CorridorBand,
+        )
+    });
+    let mut graph = match graph {
+        Ok(g) => (*g).clone(),
+        Err(e) => {
+            log::info!(target: "NaviPlan", "densify_skeleton_load_fail err={e}");
+            return None;
+        }
+    };
+    log::info!(
+        target: "NaviPlan",
+        "densify_skeleton_graph nodes={} edges={}",
+        graph.nodes.len(),
+        graph.edges.len()
+    );
+    // Prefer destination/origin roles when labels are cheap on the reduced graph.
+    graph.ensure_directed_snap_labels();
+    let oopts = crate::routing::graph::RouteOptions {
+        snap_role: crate::routing::graph::SnapRole::Origin,
+        ..Default::default()
+    };
+    let dopts = crate::routing::graph::RouteOptions {
+        snap_role: crate::routing::graph::SnapRole::Destination,
+        ..Default::default()
+    };
+    let snap_m = crate::routing::plan_bbox::CHUNK_INTERMEDIATE_SNAP_M;
+    let (sid, _) = graph
+        .nearest_routable_with_options_max(start.0, start.1, &oopts, false, snap_m)
+        .ok()?;
+    let (gid, _) = graph
+        .nearest_routable_with_options_max(end.0, end.1, &dopts, false, snap_m)
+        .ok()?;
+    let (path, _, _) = graph.shortest_path(sid, gid, false)?;
+    if path.len() < 2 {
+        return None;
+    }
+    let mut latlon: Vec<(f64, f64)> = Vec::with_capacity(path.len());
+    for id in &path {
+        let n = graph.nodes.get(id)?;
+        latlon.push((n.coord.y, n.coord.x));
+    }
+    // Force true endpoints into the sample set.
+    latlon[0] = start;
+    if let Some(last) = latlon.last_mut() {
+        *last = end;
+    }
+    let hops = crate::routing::plan_bbox::sample_densify_joints_along_path(&latlon, max_hop_deg);
+    log::info!(
+        target: "NaviPlan",
+        "densify_skeleton_hops={} (path_nodes={})",
+        hops.len(),
+        path.len()
+    );
+    if hops.len() < 2 {
+        return None;
+    }
+    Some(hops)
+}

@@ -48,6 +48,43 @@ pub fn preferred_graph_format_version(candidates: impl IntoIterator<Item = u32>)
         .max()
 }
 
+/// True for densify joint pre-pass: major car roads + ferries only.
+/// Keeps the coarse graph well under a full corridor (tablet RSS headroom).
+pub fn densify_skeleton_edge(highway: &str, is_ferry: bool) -> bool {
+    if is_ferry {
+        return true;
+    }
+    matches!(
+        highway,
+        "motorway"
+            | "motorway_link"
+            | "trunk"
+            | "trunk_link"
+            | "primary"
+            | "primary_link"
+            | "secondary"
+            | "secondary_link"
+    )
+}
+
+thread_local! {
+    static DENSIFY_SKELETON_ONLY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` so pack→graph materialization keeps only densify-skeleton edges.
+pub fn with_densify_skeleton_only<R>(f: impl FnOnce() -> R) -> R {
+    DENSIFY_SKELETON_ONLY.with(|c| {
+        let prev = c.replace(true);
+        let out = f();
+        c.set(prev);
+        out
+    })
+}
+
+pub(crate) fn densify_skeleton_only_active() -> bool {
+    DENSIFY_SKELETON_ONLY.with(|c| c.get())
+}
+
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone)]
 pub struct FlatGraphPack {
     pub has_delta_h: bool,
@@ -331,7 +368,15 @@ impl FlatGraphPack {
         profile: RoutingProfile,
         clips: Option<&[[f64; 4]]>,
     ) -> RouteGraph {
+        let skeleton = densify_skeleton_only_active();
         let edge_ok = |i: usize| -> bool {
+            if skeleton {
+                let hw = self.edge_highway[i].as_str();
+                let ferry = self.edge_is_ferry.get(i).copied().unwrap_or(0) != 0;
+                if !densify_skeleton_edge(hw, ferry) {
+                    return false;
+                }
+            }
             let Some(clips) = clips else {
                 return true;
             };
@@ -605,7 +650,15 @@ impl ArchivedFlatGraphPack {
         clips: Option<&[[f64; 4]]>,
     ) -> RouteGraph {
         let n_edges = self.edge_src.len();
+        let skeleton = densify_skeleton_only_active();
         let edge_ok = |i: usize| -> bool {
+            if skeleton {
+                let hw = self.edge_highway[i].as_str();
+                let ferry = self.edge_is_ferry.get(i).copied().map(arch_u8).unwrap_or(0) != 0;
+                if !densify_skeleton_edge(hw, ferry) {
+                    return false;
+                }
+            }
             let Some(clips) = clips else {
                 return true;
             };
