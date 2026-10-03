@@ -19,11 +19,21 @@ $$
 - **ρ** — fuel density (kg/L, e.g. ~0.745 for petrol)
 
 **Diesel:** do not substitute petrol AFR 14.7. If PID `0x5E` (or J1939 SPN 183)
-is missing and lambda (PID `0x44` / `0x24`) is also missing, leave fuel rate
-unset. With lambda, AFR = λ × diesel stoich (~14.5), then the formula above.
+is missing and lambda (PID `0x44` / `0x24` / `0x34`) is missing **or saturated**
+(within 1 % of the PID `4F` maximum, default 2), do not use MAF-derived AFR.
+Fall back to torque × BSFC, else leave the rate unset.
 
-**Flex petrol:** interpolate stoich AFR between 14.7 (E0) and ~9.0 (E100) and
-density between 0.745 and ~0.789 using PID `0x52` ethanol fraction. Use this
+**Source order:** PID `5E` / J1939 / MegaSquirt volume; then MAF with
+**unsaturated** lambda; then torque × BSFC; then petrol MAF at stoichiometric
+(estimate); else unset.
+
+**Fuel cut** (`Some(0.0)`): PID `5E` = 0, or actual torque ≤ 0 % with rpm above
+idle and speed > 0. Saturated lambda alone is not fuel cut. Petrol may
+corroborate overrun cut with saturated lambda **and** closed throttle **and**
+coolant ≥ 50 C.
+
+**Flex petrol:** interpolate stoich AFR by **mass fraction** between 14.7 (E0)
+and 9.0 (E100) and density between 0.745 and ~0.789 using PID `0x52`. Use this
 only for **MAF** derivation, not as a second scale on MegaSquirt pulse width.
 
 Instant consumption and remaining range (when speed and tank inputs exist):
@@ -39,6 +49,32 @@ Barometric altitude (ISA troposphere, PID `0x33` in kPa):
 $$
 h \approx \frac{1 - (P / 101.325)^{1/5.25588}}{2.25577 \times 10^{-5}}\ \text{(m)}
 $$
+
+## OBD-II — torque-based fuel rate (estimate)
+
+When there is no volume PID and no **usable** (unsaturated) lambda, estimate
+from actual engine percent torque (PID `0x62` / SPN 513), reference torque
+(PID `0x63` / SPN 544), and rpm (PID `0x0C`):
+
+$$
+P_{\mathrm{kW}} = \frac{\tau_{\%}}{100} \times \tau_{\mathrm{ref,Nm}} \times n_{\mathrm{rpm}} \times \frac{2\pi}{60} / 1000
+$$
+
+$$
+\dot{m}_{\mathrm{fuel,g/h}} = P_{\mathrm{kW}} \times \mathrm{BSFC}_{\mathrm{g/kWh}} + \dot{m}_{\mathrm{idle,g/h}}
+$$
+
+$$
+\text{fuel rate (L/h)} = \dot{m}_{\mathrm{fuel,g/h}} / (\rho \times 1000)
+$$
+
+Default BSFC: diesel 230 g/kWh, petrol 280 g/kWh (overridable per vehicle).
+Below 25 % torque the BSFC is widened up to 1.5× so low-load uncertainty is
+visible. Missing reference torque or rpm → no value. Torque ≤ 0 % while moving
+above idle → `Some(0.0)` (fuel cut). This path is quality `TorqueEstimate`.
+
+Worked check (shaft term only): 30 % of 210 Nm at 2000 rpm ≈ 13.2 kW; at
+230 g/kWh and ρ = 0.832 that is ≈ 3.6 L/h before the idle intercept.
 
 ## J1939 — fuel rate and fuel level
 

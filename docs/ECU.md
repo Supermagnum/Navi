@@ -137,7 +137,15 @@ data bytes.
 | `43` | Absolute load | A, B | `((A*256)+B)*100/255` % |
 | `33` | Barometric pressure | A | `A` kPa (ISA altitude in `ambient.rs`) |
 | `0B` | MAP | A | `A` kPa |
-| `44` / `24` | Equivalence ratio (lambda) | A, B | `((A*256)+B)/32768` |
+| `44` / `24` / `34` | Equivalence ratio **as lambda** (AFR/AFRstoich; lean > 1) | A, B | `(eq_max) * ((A*256)+B) / 65536`. `eq_max` from PID `4F` byte A, or **2** if A is 0 or the PID is absent. SAE J1979 calls this "equivalence ratio" but values greater than 1 are **lean**, i.e. λ not φ = 1/λ. |
+| `4F` | Maximum values | A, B, C, D | A = max lambda (0 → default 2). Rescales PID 24/34/44. |
+| `05` | Coolant temp | A | `A - 40` C |
+| `0F` | Intake air temp | A | `A - 40` C |
+| `11` | Throttle position | A | `A * 100 / 255` % |
+| `49` / `5A` | Accelerator pedal | A | `A * 100 / 255` % (diesel; no throttle plate) |
+| `61` | Driver demand torque | A | `A - 125` % |
+| `62` | Actual engine torque | A | `A - 125` % |
+| `63` | Engine reference torque | A, B | `(A*256)+B` Nm |
 
 ### Example: read fuel rate → snapshot
 
@@ -624,7 +632,10 @@ sniffing and correlation — there is no universal public spec for that layer.
 | MAF mass-to-litre density(T) | **Present** (petrol/diesel/ethanol beta; volume PIDs unchanged) |
 | Petrol/ethanol stoich AFR | **Mass fraction** (E10 ~14.10, E85 ~9.82) |
 | Petrol no-lambda quality | **Estimate**: cold (<40 C) and ≥90 % load enrichment AFR |
-| Fuel-cut overrun | `Some(0.0)` with PID 5E / lean evidence; cold petrol keeps injecting |
+| Fuel-cut overrun | `Some(0.0)` if PID 5E = 0 or torque ≤ 0 while moving; saturated lambda alone is not cut |
+| PID 4F / 24 / 34 / 44 lambda | **Decoded** as λ (lean > 1); cap from 4F or default 2; saturation flagged |
+| PID 61 / 62 / 63 torque | **Decoded**; diesel MAF skipped when lambda is saturated |
+| Torque × BSFC fuel estimate | **Present** (lowest quality; not a snapshot field) |
 | OBD-II / J1939 / MegaSquirt **polling** | **Not implemented** |
 | MegaSquirt flex-fuel (composition sensor) | Decode records ethanol % and optional fuel temp; not polled |
 | HostApi `ecu_read` capability | **Not implemented** |
