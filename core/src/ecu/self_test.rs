@@ -323,6 +323,66 @@ pub fn afr_fuel_rate_self_test_report() -> String {
         format!("src={:?} rate={:?}", tq.fuel_rate_source, tq.fuel_rate_l_h),
     );
 
+    use super::fuel::LambdaState;
+    use super::megasquirt::{
+        afr_from_controller_volts, decode_wideband_from_values, ms_afr_to_lambda,
+        MsWidebandSettings, MS_WB_LINEAR_AFR_AT_0V, MS_WB_LINEAR_AFR_AT_5V,
+    };
+    let wb_rich = decode_wideband_from_values(
+        7.4,
+        MsWidebandSettings::default(),
+        None,
+        Some(90.0),
+        Some(2500.0),
+        false,
+        false,
+    );
+    check(
+        &mut ok,
+        &mut lines,
+        "ms_wb_sat_rich",
+        wb_rich.state == LambdaState::SaturatedRich
+            && approx(ms_afr_to_lambda(7.4, 14.7).unwrap(), 0.503, 0.002),
+        format!("{:?}", wb_rich.state),
+    );
+    let wb_lean = decode_wideband_from_values(
+        22.4,
+        MsWidebandSettings::default(),
+        None,
+        Some(90.0),
+        Some(2500.0),
+        false,
+        false,
+    );
+    check(
+        &mut ok,
+        &mut lines,
+        "ms_wb_sat_lean",
+        wb_lean.state == LambdaState::SaturatedLean,
+        format!("{:?}", wb_lean.state),
+    );
+    let v = afr_from_controller_volts(2.5, MS_WB_LINEAR_AFR_AT_0V, MS_WB_LINEAR_AFR_AT_5V).unwrap();
+    check(
+        &mut ok,
+        &mut lines,
+        "ms_wb_2_5v",
+        approx(v, 14.87, 0.02),
+        format!("{v}"),
+    );
+    let mut mscut = IceDecode {
+        speed_kmh: Some(80.0),
+        ..IceDecode::default()
+    };
+    apply_megasquirt(&mut mscut, 0.0, 2200.0, 4, 250.0, None);
+    mscut.finish_fuel_rate(IceFuelKind::Petrol);
+    check(
+        &mut ok,
+        &mut lines,
+        "ms_pw_zero_cut",
+        mscut.fuel_rate_l_h == Some(0.0),
+        format!("{:?}", mscut.fuel_rate_l_h),
+    );
+
     if ok {
         lines.push("PASS".into());
     } else {

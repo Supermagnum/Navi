@@ -6,11 +6,13 @@
 
 use super::ambient::altitude_m_from_baro_kpa;
 use super::fuel::{
-    derive_maf_fuel_rate_ex, detect_fuel_cut_ex, fuel_current_l, instant_l_per_100km,
-    lambda_eq_max_from_pid4f_a, lambda_from_pid_raw, lambda_is_saturated, maf_to_fuel_rate_l_h,
-    megasquirt_fuel_rate_l_h, stoich_afr, torque_bsfc_fuel_l_h, FuelCutInput, FuelRateQuality,
-    FuelRateSource, IceFuelKind, DEFAULT_LAMBDA_EQ_MAX,
+    classify_obd_lambda, derive_maf_fuel_rate_ex, detect_fuel_cut_ex, fuel_current_l,
+    instant_l_per_100km, lambda_eq_max_from_pid4f_a, lambda_from_pid_raw, maf_to_fuel_rate_l_h,
+    map_ve_air_g_s, megasquirt_fuel_rate_l_h, rates_disagree_frac, stoich_afr,
+    torque_bsfc_fuel_l_h, FuelCutInput, FuelRateQuality, FuelRateSource, IceFuelKind, LambdaState,
+    DEFAULT_LAMBDA_EQ_MAX, MS_WB_DISAGREE_FRAC,
 };
+use super::megasquirt::MsWidebandSample;
 use super::LiveEnergySnapshot;
 
 /// J1939 SPN 183 not-available sentinel (two-byte).
@@ -48,6 +50,8 @@ pub struct IceDecode {
     pub lambda_raw: Option<u16>,
     pub lambda_eq_max: Option<f64>,
     pub lambda_saturated: bool,
+    pub lambda_state: LambdaState,
+    pub lambda_commanded: Option<f64>,
     pub altitude_m: Option<f64>,
     pub coolant_c: Option<f64>,
     pub iat_c: Option<f64>,
@@ -62,6 +66,12 @@ pub struct IceDecode {
     pub bsfc_g_kwh_override: Option<f64>,
     pub fuel_rate_source: FuelRateSource,
     pub fuel_rate_quality: FuelRateQuality,
+    pub ms_pw_ms: Option<f64>,
+    pub ms_overrun_fuel_cut: bool,
+    pub ms_wb_crosscheck_l_h: Option<f64>,
+    pub ms_pw_unavailable: bool,
+    pub engine_disp_l: Option<f64>,
+    pub ve: Option<f64>,
 }
 
 impl IceDecode {
@@ -81,8 +91,8 @@ impl IceDecode {
         fuel_current_l(self.fuel_level_pct, tank_capacity_l)
     }
 
-    /// Source order: 5E/J1939/MegaSquirt, MAF+unsaturated lambda, torque×BSFC,
-    /// petrol MAF stoich estimate, else None.
+    /// Source order: 5E / J1939 / MegaSquirt pulse width; MAF+usable lambda
+    /// (OBD or MS wideband); torque×BSFC; petrol MAF stoich estimate; else None.
     pub fn finish_fuel_rate(&mut self, kind: IceFuelKind) {
         self.altitude_m = altitude_m_from_baro_kpa(self.baro_kpa);
         self.refresh_lambda();
@@ -93,21 +103,29 @@ impl IceDecode {
             fuel_rate_direct: self.fuel_rate_l_h,
             lambda: self.lambda,
             lambda_saturated: self.lambda_saturated,
+            lambda_state: self.lambda_state,
             coolant_c: self.coolant_c,
             throttle_pct: self.throttle_pct.or(self.pedal_pct),
             actual_torque_pct: self.actual_torque_pct,
+            ms_pw_ms: self.ms_pw_ms,
+            ms_overrun_fuel_cut: self.ms_overrun_fuel_cut,
         }) {
             let from_5e =
                 self.fuel_rate_l_h == Some(0.0) && self.fuel_rate_source == FuelRateSource::Pid5E;
+            let from_ms = self.ms_pw_ms == Some(0.0)
+                || self.ms_overrun_fuel_cut
+                || self.fuel_rate_source == FuelRateSource::MegaSquirt;
             self.fuel_rate_l_h = Some(0.0);
             if !from_5e && self.fuel_rate_source == FuelRateSource::None {
-                self.fuel_rate_source = if self.actual_torque_pct.map(|t| t <= 0.0) == Some(true) {
+                self.fuel_rate_source = if from_ms {
+                    FuelRateSource::MegaSquirt
+                } else if self.actual_torque_pct.map(|t| t <= 0.0) == Some(true) {
                     FuelRateSource::TorqueBsfc
                 } else {
                     FuelRateSource::Pid5E
                 };
             }
-            self.fuel_rate_quality = if from_5e {
+            self.fuel_rate_quality = if from_5e || from_ms {
                 FuelRateQuality::Measured
             } else if self.actual_torque_pct.map(|t| t <= 0.0) == Some(true) {
                 FuelRateQuality::TorqueEstimate
@@ -117,10 +135,13 @@ impl IceDecode {
             return;
         }
         if self.fuel_rate_l_h.is_some() {
-            self.fuel_rate_quality = FuelRateQuality::Measured;
+            if self.fuel_rate_quality == FuelRateQuality::Unknown {
+                self.fuel_rate_quality = FuelRateQuality::Measured;
+            }
+            self.apply_ms_wideband_crosscheck(kind);
             return;
         }
-        if self.lambda_saturated {
+        if self.lambda_state.saturated() {
             if let (Some(maf), Some(lam)) = (self.maf_g_s, self.lambda) {
                 let afr = lam * stoich_afr(kind, self.ethanol_pct);
                 let rho =
@@ -128,15 +149,15 @@ impl IceDecode {
                 self.fuel_rate_cap_l_h = maf_to_fuel_rate_l_h(maf, afr, rho);
             }
         }
-        let maf_lambda = if self.lambda_saturated {
-            None
-        } else {
+        let maf_lambda = if self.lambda_state.usable() {
             self.lambda
+        } else {
+            None
         };
         if maf_lambda.is_some() {
             if let Some(derived) = derive_maf_fuel_rate_ex(
                 kind,
-                self.maf_g_s,
+                self.air_mass_g_s(),
                 maf_lambda,
                 self.ethanol_pct,
                 self.fuel_temp_c,
@@ -145,7 +166,11 @@ impl IceDecode {
             ) {
                 self.fuel_rate_l_h = Some(derived.fuel_l_h);
                 self.fuel_rate_source = FuelRateSource::MafDerived;
-                self.fuel_rate_quality = derived.quality;
+                self.fuel_rate_quality = if self.ms_pw_unavailable {
+                    FuelRateQuality::Estimate
+                } else {
+                    derived.quality
+                };
                 return;
             }
         }
@@ -167,7 +192,7 @@ impl IceDecode {
         if kind == IceFuelKind::Petrol {
             if let Some(derived) = derive_maf_fuel_rate_ex(
                 kind,
-                self.maf_g_s,
+                self.air_mass_g_s(),
                 None,
                 self.ethanol_pct,
                 self.fuel_temp_c,
@@ -181,13 +206,65 @@ impl IceDecode {
         }
     }
 
+    fn air_mass_g_s(&self) -> Option<f64> {
+        if let Some(m) = self.maf_g_s {
+            return Some(m);
+        }
+        map_ve_air_g_s(
+            self.map_kpa?,
+            self.engine_disp_l?,
+            self.rpm?,
+            self.ve.unwrap_or(0.85),
+            self.iat_c.unwrap_or(20.0),
+        )
+    }
+
+    fn apply_ms_wideband_crosscheck(&mut self, kind: IceFuelKind) {
+        if self.fuel_rate_source != FuelRateSource::MegaSquirt {
+            return;
+        }
+        let Some(pw_rate) = self.fuel_rate_l_h else {
+            return;
+        };
+        if !self.lambda_state.usable() {
+            return;
+        }
+        let Some(derived) = derive_maf_fuel_rate_ex(
+            kind,
+            self.air_mass_g_s(),
+            self.lambda,
+            self.ethanol_pct,
+            self.fuel_temp_c,
+            self.coolant_c,
+            self.calc_load_pct,
+        ) else {
+            return;
+        };
+        self.ms_wb_crosscheck_l_h = Some(derived.fuel_l_h);
+        if rates_disagree_frac(pw_rate, derived.fuel_l_h, MS_WB_DISAGREE_FRAC) {
+            self.fuel_rate_quality = FuelRateQuality::Estimate;
+        }
+    }
+
     fn refresh_lambda(&mut self) {
+        if self.lambda_state != LambdaState::NotReady && self.lambda.is_some() {
+            self.lambda_saturated = self.lambda_state.saturated();
+            return;
+        }
         let max = self.lambda_eq_max.unwrap_or(DEFAULT_LAMBDA_EQ_MAX);
         if let Some(raw) = self.lambda_raw {
             let lam = lambda_from_pid_raw(raw, max);
             self.lambda = Some(lam);
-            self.lambda_saturated = lambda_is_saturated(lam, max);
+            self.lambda_state = classify_obd_lambda(lam, max);
+            self.lambda_saturated = self.lambda_state.saturated();
         }
+    }
+
+    pub fn apply_ms_wideband(&mut self, sample: MsWidebandSample) {
+        self.lambda = sample.lambda;
+        self.lambda_state = sample.state;
+        self.lambda_saturated = sample.state.saturated();
+        self.lambda_commanded = sample.lambda_commanded;
     }
 }
 
@@ -358,13 +435,27 @@ pub fn apply_mode01_pid(out: &mut IceDecode, pid: u8, data: &[u8]) {
                 out.pedal_pct = Some(f64::from(*a) * 100.0 / 255.0);
             }
         }
-        0x44 | 0x24 | 0x34 => {
+        0x44 => {
+            if let Some(raw) = u16_ab(data) {
+                let max = out.lambda_eq_max.unwrap_or(DEFAULT_LAMBDA_EQ_MAX);
+                let lam = lambda_from_pid_raw(raw, max);
+                out.lambda_commanded = Some(lam);
+                if out.lambda_raw.is_none() {
+                    out.lambda_raw = Some(raw);
+                    out.lambda = Some(lam);
+                    out.lambda_state = classify_obd_lambda(lam, max);
+                    out.lambda_saturated = out.lambda_state.saturated();
+                }
+            }
+        }
+        0x24 | 0x34 => {
             if let Some(raw) = u16_ab(data) {
                 out.lambda_raw = Some(raw);
                 let max = out.lambda_eq_max.unwrap_or(DEFAULT_LAMBDA_EQ_MAX);
                 let lam = lambda_from_pid_raw(raw, max);
                 out.lambda = Some(lam);
-                out.lambda_saturated = lambda_is_saturated(lam, max);
+                out.lambda_state = classify_obd_lambda(lam, max);
+                out.lambda_saturated = out.lambda_state.saturated();
             }
         }
         0x4F => {
@@ -374,7 +465,8 @@ pub fn apply_mode01_pid(out: &mut IceDecode, pid: u8, data: &[u8]) {
                     let max = out.lambda_eq_max.unwrap_or(DEFAULT_LAMBDA_EQ_MAX);
                     let lam = lambda_from_pid_raw(raw, max);
                     out.lambda = Some(lam);
-                    out.lambda_saturated = lambda_is_saturated(lam, max);
+                    out.lambda_state = classify_obd_lambda(lam, max);
+                    out.lambda_saturated = out.lambda_state.saturated();
                 }
             }
         }
@@ -548,10 +640,49 @@ pub fn apply_megasquirt(
 ) {
     out.rpm = Some(rpm);
     out.ethanol_pct = ethanol_pct;
+    out.ms_pw_ms = Some(pw_ms);
     out.fuel_rate_l_h = megasquirt_fuel_rate_l_h(pw_ms, rpm, n_cyl, flow_cc_min);
     if out.fuel_rate_l_h.is_some() {
         out.fuel_rate_source = FuelRateSource::MegaSquirt;
         out.fuel_rate_quality = FuelRateQuality::Measured;
+        out.ms_pw_unavailable = false;
+    } else {
+        out.ms_pw_unavailable = true;
+    }
+}
+
+/// Pulse width plus wideband. Does **not** scale PW by lambda or ethanol.
+pub fn apply_megasquirt_telemetry(
+    out: &mut IceDecode,
+    pw_ms: Option<f64>,
+    rpm: f64,
+    n_cyl: u32,
+    flow_cc_min: Option<f64>,
+    ethanol_pct: Option<f64>,
+    wideband: Option<MsWidebandSample>,
+    overrun_fuel_cut: bool,
+) {
+    out.rpm = Some(rpm);
+    out.ethanol_pct = ethanol_pct;
+    out.ms_overrun_fuel_cut = overrun_fuel_cut;
+    if let Some(wb) = wideband {
+        out.apply_ms_wideband(wb);
+        out.lambda_raw = None;
+    }
+    match (pw_ms, flow_cc_min) {
+        (Some(pw), Some(flow)) => {
+            apply_megasquirt(out, pw, rpm, n_cyl, flow, ethanol_pct);
+            if overrun_fuel_cut || pw == 0.0 {
+                out.ms_pw_ms = Some(0.0);
+                out.fuel_rate_l_h = Some(0.0);
+                out.fuel_rate_source = FuelRateSource::MegaSquirt;
+                out.fuel_rate_quality = FuelRateQuality::Measured;
+            }
+        }
+        _ => {
+            out.ms_pw_unavailable = true;
+            out.ms_pw_ms = pw_ms;
+        }
     }
 }
 
@@ -666,5 +797,74 @@ mod tests {
         assert_eq!(d.fuel_rate_source, FuelRateSource::TorqueBsfc);
         assert!(d.fuel_rate_l_h.unwrap() > 3.0);
         assert!(d.fuel_rate_cap_l_h.is_some());
+        assert_eq!(d.lambda_state, LambdaState::SaturatedLean);
+    }
+
+    #[test]
+    fn megasquirt_wideband_hud_not_on_pw() {
+        let mut d = IceDecode {
+            maf_g_s: Some(20.0),
+            ..IceDecode::default()
+        };
+        let wb = crate::ecu::megasquirt::decode_wideband_from_values(
+            12.5,
+            Default::default(),
+            Some(85.0),
+            Some(90.0),
+            Some(3000.0),
+            false,
+            false,
+        );
+        apply_megasquirt_telemetry(
+            &mut d,
+            Some(4.0),
+            3000.0,
+            4,
+            Some(250.0),
+            Some(85.0),
+            Some(wb),
+            false,
+        );
+        let pw = megasquirt_fuel_rate_l_h(4.0, 3000.0, 4, 250.0).unwrap();
+        d.finish_fuel_rate(IceFuelKind::Petrol);
+        assert_eq!(d.fuel_rate_source, FuelRateSource::MegaSquirt);
+        assert!((d.fuel_rate_l_h.unwrap() - pw).abs() < 1e-12);
+        assert!(d.lambda_state.usable());
+        assert!(d.ms_wb_crosscheck_l_h.is_some());
+        assert_eq!(d.fuel_rate_quality, FuelRateQuality::Estimate); // air/AFR vs PW, synthetic MAF
+    }
+
+    #[test]
+    fn megasquirt_pw_zero_is_cut() {
+        let mut d = IceDecode {
+            speed_kmh: Some(80.0),
+            ..IceDecode::default()
+        };
+        apply_megasquirt_telemetry(&mut d, Some(0.0), 2200.0, 4, Some(250.0), None, None, true);
+        d.finish_fuel_rate(IceFuelKind::Petrol);
+        assert_eq!(d.fuel_rate_l_h, Some(0.0));
+        assert_eq!(d.fuel_rate_source, FuelRateSource::MegaSquirt);
+    }
+
+    #[test]
+    fn megasquirt_wideband_fallback_without_pw() {
+        let mut d = IceDecode {
+            maf_g_s: Some(10.0),
+            ..IceDecode::default()
+        };
+        let wb = crate::ecu::megasquirt::decode_wideband_from_values(
+            14.7,
+            Default::default(),
+            None,
+            Some(90.0),
+            Some(2500.0),
+            false,
+            false,
+        );
+        apply_megasquirt_telemetry(&mut d, None, 2500.0, 4, None, None, Some(wb), false);
+        d.finish_fuel_rate(IceFuelKind::Petrol);
+        assert_eq!(d.fuel_rate_source, FuelRateSource::MafDerived);
+        assert_eq!(d.fuel_rate_quality, FuelRateQuality::Estimate);
+        assert!(d.fuel_rate_l_h.unwrap() > 0.0);
     }
 }
