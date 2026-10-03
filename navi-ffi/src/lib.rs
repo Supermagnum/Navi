@@ -200,6 +200,18 @@ pub fn ffi_linkage_smoke_test() -> String {
     )
 }
 
+/// Pure ICE AFR / fuel-rate decode self-test (no live adapter).
+///
+/// Report always contains `TEST_KIND=ECU_AFR_FUEL_RATE` and `DATA_SOURCE=none`.
+/// Hosts should log the string with tag `NaviEcu`.
+#[uniffi::export]
+pub fn ecu_afr_self_test() -> String {
+    ensure_native_logging();
+    let report = driver_break_core::ecu::self_test::afr_fuel_rate_self_test_report();
+    log::info!(target: "NaviEcu", "{report}");
+    report
+}
+
 fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let r = 6_378_100.0;
     let dlat = (lat2 - lat1).to_radians();

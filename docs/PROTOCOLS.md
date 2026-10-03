@@ -15,7 +15,7 @@ position, tracks).
 
 | Document | Topic | Implementation status |
 |---|---|---|
-| [`ECU.md`](ECU.md) | OBD-II (ELM327), SAE J1939, MegaSquirt → `LiveEnergySnapshot` | Extension point only (`driver_break_core::ecu`) |
+| [`ECU.md`](ECU.md) | OBD-II (ELM327), SAE J1939, MegaSquirt → `LiveEnergySnapshot` | Pure ICE decode + `refine_energy_cost` in `driver_break_core::ecu`; **no** live poll |
 | [`ebike-telemetry-diy.md`](ebike-telemetry-diy.md) | DIY wired e-bike `$NAVIPWR` (USB-serial / optional CAN) → live SoC/power | Spec only; plugin not shipped |
 | [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) | Nav state **export** → VSS/Kuksa.val + `navi.cluster.v1` JSON (instrument cluster / AGL), including merged approach warnings | Spec only; host-mediated publish |
 | [`APRS.md`](APRS.md) | APRS information fields; `TrackStore` range filtering | Protocol + display/range; RF ingest not shipped |

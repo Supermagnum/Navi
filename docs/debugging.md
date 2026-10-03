@@ -30,6 +30,8 @@ Application id: `no.navi.app`. Main activity: `no.navi.app/.MainActivity`.
 # Fast focused modules
 cargo test -p driver-break-core poi::
 cargo test -p driver-break-core config::eco -- --nocapture
+cargo test -p driver-break-core ecu -- --nocapture
+cargo test -p driver-break-core --test ecu_afr_fuel_rate -- --nocapture
 
 # Ignored (large) integrations — need fixtures under core/target/…
 cargo test -p driver-break-core --test kongsvinger_lillehammer_integration \
@@ -97,6 +99,7 @@ Useful tags seen in-tree:
 | `HudVerification` | HUD / settings hooks, screenshots, camera errors |
 | `NaviTracks` | Moving-icon / APRS overlay load |
 | `NaviMapTest` | Corridor / map instrumented tests |
+| `NaviEcu` | ICE AFR / fuel-rate self-test (`ecuAfrSelfTest`) |
 | `BearingCrash` | MapLibre bearing isolation tests |
 | `AndroidRuntime` | Java/Kotlin uncaught exceptions |
 | `DEBUG` / tombstones | Native crashes (`libnavi.so`, MapLibre) |

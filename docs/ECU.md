@@ -24,6 +24,31 @@ Until a plugin is loaded, the core uses `NoLiveEnergy` (always `None`). Fuel
 learning falls back to persisted `FuelConfig` (tank capacity / fuel added)
 rather than live rate.
 
+### Pure decode (this branch)
+
+`core/src/ecu/{decode,fuel,ambient}.rs` implement **read-only, adapter-free**
+ICE decode and fuel-rate math so a future plugin can map bytes onto
+`LiveEnergySnapshot.fuel_rate_l_h`. This is **not** live Bluetooth / serial /
+CAN / WASM polling.
+
+| In scope | Out of scope |
+|---|---|
+| ELM327 ASCII Mode 01 PIDs (ICE) | EV/hybrid PID `5B` / SoC, `power_kw` |
+| J1939 SPN 183 / SPN 96 (and ECU.md LFE sketch) | SocketCAN, bus flood, PGN requests |
+| MegaSquirt injector formula from [`mathematical-formulas.md`](mathematical-formulas.md) | TunerStudio session, page burn |
+| AFR-aware MAF, flex ethanol for **MAF** derivation | Double-scaling already-flexed MS pulse width |
+| Unit + `core/tests/ecu_afr_fuel_rate.rs` + UniFFI `ecu_afr_self_test` | Mode `04` clear DTCs, programming |
+
+Public `LiveEnergySnapshot` / `LiveEnergyProvider` / `refine_energy_cost`
+signatures are unchanged. Extra ICE fields (load, ethanol %, baro, L/100 km)
+stay on `IceDecode`, not on the snapshot.
+
+**Optional sensor absent → `None`, not `0`.** A valid all-zero PID payload
+(e.g. `415E0000`) is `Some(0.0)` and is distinct from `NO DATA`.
+
+Android: `ecuAfrSelfTest()` on launch (background thread) and
+`EcuAfrSelfTestInstrumentedTest`. Filter `adb logcat -s NaviEcu`.
+
 ---
 
 ## Snapshot contract (Navi side)
@@ -107,6 +132,12 @@ data bytes.
 | `2F` | Fuel tank level | A | `A * 100 / 255` % |
 | `5B` | Hybrid battery SoC | A | `A * 100 / 255` % |
 | `5E` | Engine fuel rate | A, B | `((A*256)+B)/20` L/h |
+| `52` | Ethanol fuel % | A | `A * 100 / 255` % (flex; MAF AFR/density only) |
+| `04` | Calculated engine load | A | `A * 100 / 255` % |
+| `43` | Absolute load | A, B | `((A*256)+B)*100/255` % |
+| `33` | Barometric pressure | A | `A` kPa (ISA altitude in `ambient.rs`) |
+| `0B` | MAP | A | `A` kPa |
+| `44` / `24` | Equivalence ratio (lambda) | A, B | `((A*256)+B)/32768` |
 
 ### Example: read fuel rate → snapshot
 
@@ -132,18 +163,28 @@ LiveEnergySnapshot {
 
 ### Example: derive approximate L/h from MAF (when PID 5E missing)
 
-Gasoline rule of thumb (stoichiometric AFR ≈ 14.7, density ≈ 0.74 kg/L):
+**Canonical formula** (density **0.745 kg/L**, AFR from fuel type / lambda /
+ethanol): [`mathematical-formulas.md`](mathematical-formulas.md) —
+`fuel_l_h = maf_g_s * 3600 / (AFR * rho * 1000)`.
+
+The sketch below used **0.74 kg/L** and a fixed petrol AFR **14.7**. That
+**disagrees** with the formulas doc and with diesel / flex-fuel. Core decode
+follows the formulas doc.
+
+Gasoline idle-ish example (`0110 → 411000C8`, MAF = 2.00 g/s):
 
 ```text
-maf_g_s = ((A*256)+B)/100
+# formulas.md (implemented): AFR=14.7, rho=0.745
+fuel_l_h = 2.0 * 3600 / (14.7 * 0.745 * 1000) ≈ 0.657 L/h
+
+# this sketch (not implemented): rho=0.74
 fuel_g_s ≈ maf_g_s / 14.7
-fuel_l_h ≈ (fuel_g_s * 3600) / 740
+fuel_l_h ≈ (fuel_g_s * 3600) / 740 ≈ 0.66 L/h
 ```
 
-```text
-0110 → 411000C8     # A=0, B=200 → MAF = 2.00 g/s
-fuel_l_h ≈ (2.0/14.7)*3600/740 ≈ 0.66 L/h  (idle-ish)
-```
+Diesel: **do not** assume AFR 14.7. Without PID `5E` / J1939 rate / measured
+lambda, MAF derivation returns `None`.
+
 
 ### Example: EV / hybrid SoC
 
@@ -224,6 +265,14 @@ Data  64 00  C8 00  FF FF FF FF
 
 Instantaneous raw = `0x0064` = 100 → `100 * 0.05` = **5.0 L/h**.
 
+**Doc contradiction:** [`mathematical-formulas.md`](mathematical-formulas.md)
+places **SPN 183** (0.05 L/h/bit) on **PGN 65266 / FEF2**. This section’s
+illustrative LFE layout on **PGN 65257 / FEE9** uses the same 0.05 scale for
+the worked example. Core decode implements **both** helpers and prefers SPN 183
+/ PGN 65266 as the formulas-doc path. Verify against the SAE Digital Annex
+before a vehicle plugin ships.
+
+
 ```rust
 LiveEnergySnapshot {
     fuel_rate_l_h: Some(5.0),
@@ -294,6 +343,18 @@ pattern, not copy-paste numbers):
 duty = (pw_ms * rpm) / 1200.0          # roughly, 4-stroke
 fuel_l_h ≈ injector_cc_min * duty * n_inj * 0.06 / 1000
 ```
+
+**This sketch conflicts with** [`mathematical-formulas.md`](mathematical-formulas.md):
+
+```text
+fuel_rate_L_h = pw_ms * rpm * n_cyl * flow_cc_min / 2_000_000
+```
+
+Core decode uses the **formulas.md** expression. The 1200-duty sketch is
+**not** implemented. Out-of-range RPM / pulse width / flow → skip (`None`).
+Do **not** apply a second ethanol multiplier on top of flexed pulse width;
+record ethanol % on `IceDecode` only.
+
 
 Map the result to `fuel_rate_l_h`. AFR / MAP can refine eco models later but
 are not required for the first `LiveEnergySnapshot` fill.
@@ -554,10 +615,11 @@ sniffing and correlation — there is no universal public spec for that layer.
 
 | Piece | Status |
 |---|---|
-| `LiveEnergySnapshot` / `LiveEnergyProvider` / `NoLiveEnergy` | Present |
-| `refine_energy_cost` used from graph reweight | Present |
-| OBD-II / J1939 / MegaSquirt polling | **Not implemented** |
-| MegaSquirt flex-fuel (composition sensor) | **Documented** above; not polled yet — plugin should read ethanol % when firmware exposes it |
+| `LiveEnergySnapshot` / `LiveEnergyProvider` / `NoLiveEnergy` | Present (signatures unchanged) |
+| `refine_energy_cost` used from graph reweight | Present (same public fn) |
+| ICE decode (`decode` / `fuel` / `ambient`) + `ecu_afr_self_test` | **Present** (pure, no adapter) |
+| OBD-II / J1939 / MegaSquirt **polling** | **Not implemented** |
+| MegaSquirt flex-fuel (composition sensor) | Decode records ethanol %; not polled |
 | HostApi `ecu_read` capability | **Not implemented** |
 | Android Bluetooth OBD UX | **Not implemented** |
 

@@ -195,6 +195,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         applyNaviLaunchExtras(intent)
         runCatching { uniffi.navi.initNativeLogging() }
+        Thread(
+            {
+                val report =
+                    runCatching { uniffi.navi.ecuAfrSelfTest() }
+                        .getOrElse { "FAIL ecu_afr_self_test ${it.message}" }
+                android.util.Log.i("NaviEcu", report)
+            },
+            "NaviEcuSelfTest",
+        ).apply { isDaemon = true }.start()
         CampingBootstrap.ensureInitialized(this)
         // Natural Earth country grid: never build on the main looper (ANR / seed stall).
         CountryPolysWarm.startBackground()

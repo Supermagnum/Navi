@@ -565,3 +565,22 @@ Fehmarn ferry overlay + Rayon hang / Indexed-before-plan fixes —
 **2287.2 km / 35.14 h / 56 maneuvers** vs EXPECTED 1461–1649 km / 17–22 h /
 55–100. Fehmarn leg2 routed with ferry; band fail is long detour geometry.
 See [Latest run](bevensen-mobilehome-campaign.md#latest-run--2026-10-01-night-fail--out-of-band-plan-completed).
+
+## Item 18 — ICE ECU AFR / fuel-rate self-test (2026-10-03)
+
+Pure decode (no live adapter). Host: `cargo test -p driver-break-core ecu` plus
+UniFFI `ecuAfrSelfTest()`. Android logcat tag **`NaviEcu`**.
+
+| Check | Result |
+|---|---|
+| ELM327 PID `5E` / `NO DATA` / `Some(0.0)` vs `None` | Covered in `ecu_afr_fuel_rate` |
+| J1939 SPN 183 / SPN 96 NA sentinels | Covered |
+| MegaSquirt formula from `mathematical-formulas.md` (not ECU.md 1200-duty) | Covered |
+| AFR-aware MAF; diesel without lambda/`5E` stays `None` | Covered |
+| `refine_energy_cost` public behaviour | Covered |
+| Load / flex / L/100 km / fuel volume / baro altitude | Covered |
+| Live ELM327 / J1939 / MS adapter | **Not run** — still needs hardware |
+
+Instrumented: `EcuAfrSelfTestInstrumentedTest` (requires rebuilt `libnavi.so`).
+Launch also logs the report from `MainActivity` (`adb logcat -s NaviEcu:I`).
+

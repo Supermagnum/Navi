@@ -739,6 +739,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_eco_mode_toggleable(
     ): Int
+    external fun uniffi_navi_checksum_func_ecu_afr_self_test(
+    ): Int
     external fun uniffi_navi_checksum_func_elevation_at(
     ): Int
     external fun uniffi_navi_checksum_func_ensure_ferry_sidecar(
@@ -1213,6 +1215,8 @@ internal object UniffiLib {
     ): Byte
     external fun uniffi_navi_fn_func_eco_mode_toggleable(`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    external fun uniffi_navi_fn_func_ecu_afr_self_test(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_elevation_at(`elevDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_ensure_ferry_sidecar(`packDir`: RustBuffer.ByValue,`stem`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1783,6 +1787,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_eco_mode_toggleable() and 0xFFFF) != 60827) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_ecu_afr_self_test() and 0xFFFF) != 4984) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_elevation_at() and 0xFFFF) != 35410) {
@@ -5992,6 +5999,22 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
         
         FfiConverterTypeTravelProfile.lower(`profile`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Pure ICE AFR / fuel-rate decode self-test (no live adapter).
+         *
+         * Report always contains `TEST_KIND=ECU_AFR_FUEL_RATE` and `DATA_SOURCE=none`.
+         * Hosts should log the string with tag `NaviEcu`.
+         */ fun `ecuAfrSelfTest`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_ecu_afr_self_test(
+    
+        _status)
 }
     )
     }

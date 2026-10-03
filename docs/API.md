@@ -34,6 +34,7 @@ Package / module: `uniffi.navi` on Android.
 | `detected_parallelism` | `detectedParallelism` | `u32` | Detected CPU count |
 | `routing_worker_count` | `routingWorkerCount` | `u32` | Rayon workers reserved for routing |
 | `ffi_linkage_smoke_test` | `ffiLinkageSmokeTest` | `String` | Linkage / pool smoke string |
+| `ecu_afr_self_test` | `ecuAfrSelfTest` | `String` | Pure ICE AFR / fuel-rate decode golden report (`TEST_KIND=ECU_AFR_FUEL_RATE`; logcat tag `NaviEcu`) |
 
 ### 1.2 Region provision and corridor planning
 
@@ -300,7 +301,7 @@ host/Tools actions.
 | Overspeed chrome | `OverspeedHud.isOverspeed` in `OverspeedHud.kt` | Display-only; not an alert engine ([`current-street.md`](current-street.md)) |
 | Adaptive speed warning | Spec only | [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md) |
 | MapLibre camera / style | `MainActivity.kt`, `BasemapStyleResolver.kt` | Host rendering |
-| Live ECU polling | `core/src/ecu` types only | [`ECU.md`](ECU.md) — no UniFFI poll yet |
+| Live ECU polling | `core/src/ecu` decode helpers; no wire | [`ECU.md`](ECU.md) — `ecu_afr_self_test` only |
 | Voice guidance | Spec only | [`voice-guidance.md`](voice-guidance.md) |
 | Voice command | Spec only | [`plugins/voice-command.md`](plugins/voice-command.md) |
 | Documentation languages | `README.md` / `docs/Norwegian.md` | Not in-app i18n ([`plugins/i18n-translation-spec.md`](plugins/i18n-translation-spec.md)) |

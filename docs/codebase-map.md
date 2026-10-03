@@ -71,7 +71,7 @@ Instrumented tests: `app/src/androidTest/java/no/navi/app/`.
 | `storage/` | SQLite schema / migrations | Settings not persisting |
 | `tracks/` | Moving-station store (APRS-style) | Timeout / range filter |
 | `icons/` | SVG → PNG raster | Wrong maneuver / POI glyph |
-| `ecu/` | Live energy types (no live UniFFI poll yet) | See [`ECU.md`](ECU.md) |
+| `ecu/` | `LiveEnergySnapshot` + ICE decode (`decode` / `fuel` / `ambient`); no live poll | See [`ECU.md`](ECU.md) |
 | `download/` | Shared pause / resume / cancel; **per-consumer progress** (`progress.rs`: Download / Plan / Convert / Cone); **PBF priority** (`pbf_priority.rs`: foreground-plan pause for convert/place-index; bbox-build skip/serialize) | Provision / Tools convert; pack-miss plan contention |
 | `sensors/` | Host-side sensor helpers (Linux path) | gpsd / IMU |
 | `bus/` | `WorldSnapshot` (position + profile + energy) | Plugin / future live energy |

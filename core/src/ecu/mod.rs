@@ -1,9 +1,15 @@
 //! Live vehicle telemetry extension point.
 //!
-//! No OBD-II, J1939, or MegaSquirt polling is implemented in this pass.
-//! Future WASM or native plugins may supply snapshots through this trait.
+//! No OBD-II, J1939, or MegaSquirt **polling** is implemented in this pass.
+//! Pure ICE decode / fuel-rate helpers live in [`decode`], [`fuel`], and
+//! [`ambient`] for a future plugin. EV PID `5B` / SoC is out of scope here.
 //!
 //! Wire formats and worked examples: repository `docs/ECU.md`.
+
+pub mod ambient;
+pub mod decode;
+pub mod fuel;
+pub mod self_test;
 
 use crate::config::Profile;
 
@@ -46,4 +52,14 @@ pub fn refine_energy_cost(
         }
     }
     predicted_joules
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_live_energy_is_none() {
+        assert!(NoLiveEnergy.latest(Profile::Car).is_none());
+    }
 }

@@ -332,17 +332,22 @@ HUD verification screenshots from the emulator baseline live under
 
 ## 6. ECU / OBD (when a plugin or adapter is available)
 
-Live ECU polling is not shipped yet (see [`ECU.md`](ECU.md)). If you are
-testing a prototype OBD-II / J1939 / MegaSquirt adapter against the
+Live ECU **polling** is not shipped yet (see [`ECU.md`](ECU.md)). ICE **decode**
+and fuel-rate math are unit-tested (`ecu_afr_self_test` / logcat `NaviEcu`)
+without an adapter.
+
+If you are testing a prototype OBD-II / J1939 / MegaSquirt adapter against the
 `LiveEnergyProvider` hook:
 
-- Confirm snapshots update while driving (fuel rate or SoC changes).
+- Confirm snapshots update while driving (fuel rate changes; ICE only in the
+  current decode helpers).
 - Confirm eco reweight / live cost uses the snapshot (not stale zeros).
+  Missing sensors must stay `None`, not `0` L/h.
 - Confirm ignition-off or adapter disconnect clears live energy rather than
   leaving a stuck L/h value.
-- Log: prefer Diagnostic logging when the plugin writes under
-  Documents/debug; optional full `adb logcat` for the ECU/plugin tag; do not
-  log VIN by default.
+- Confirm Mode `04` / MS burn are never sent.
+- Log: `adb logcat -s NaviEcu`; optional Diagnostic logging; do not log VIN
+  by default.
 
 ## 7. Hydro soft-edge fringe (capture vs live)
 

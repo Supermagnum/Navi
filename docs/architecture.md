@@ -246,8 +246,9 @@ there).
 
 Live OBD-II / J1939 / MegaSquirt polling is **not** in the trusted core. The
 `ecu` module exposes `LiveEnergyProvider` + `LiveEnergySnapshot`; graph reweight
-calls `refine_energy_cost` when a snapshot is present. Protocol details:
-[`docs/ECU.md`](docs/ECU.md).
+calls `refine_energy_cost` when a snapshot is present. ICE decode / fuel-rate
+math (`decode` / `fuel` / `ambient`) is unit-tested without an adapter.
+Protocol details: [`docs/ECU.md`](docs/ECU.md).
 
 ## APRS / tracks (T0 display; RF planned)
 

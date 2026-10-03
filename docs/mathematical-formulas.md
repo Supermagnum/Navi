@@ -18,6 +18,28 @@ $$
   ethanol from PID `0x52`)
 - **ρ** — fuel density (kg/L, e.g. ~0.745 for petrol)
 
+**Diesel:** do not substitute petrol AFR 14.7. If PID `0x5E` (or J1939 SPN 183)
+is missing and lambda (PID `0x44` / `0x24`) is also missing, leave fuel rate
+unset. With lambda, AFR = λ × diesel stoich (~14.5), then the formula above.
+
+**Flex petrol:** interpolate stoich AFR between 14.7 (E0) and ~9.0 (E100) and
+density between 0.745 and ~0.789 using PID `0x52` ethanol fraction. Use this
+only for **MAF** derivation, not as a second scale on MegaSquirt pulse width.
+
+Instant consumption and remaining range (when speed and tank inputs exist):
+
+$$
+\text{L/100 km} = \frac{\text{fuel\_rate\_L\_h} \times 100}{\text{speed\_km/h}}
+$$
+
+Missing speed, or speed ≤ 0, or missing rate → no value (not 0).
+
+Barometric altitude (ISA troposphere, PID `0x33` in kPa):
+
+$$
+h \approx \frac{1 - (P / 101.325)^{1/5.25588}}{2.25577 \times 10^{-5}}\ \text{(m)}
+$$
+
 ## J1939 — fuel rate and fuel level
 
 - **SPN 183** (PGN 65266 / FEEA): 0.05 L/h per bit, offset 0
@@ -48,6 +70,9 @@ $$
 Rationale sketch: pulses/min scale with RPM; each pulse delivers
 `flow_cc_min / 60` cc/s at 100 % duty; duty cycle is `pw_ms / 1000` of the
 cycle. Out-of-range RPM / pulse width / rate updates are skipped.
+
+This expression is what `core/src/ecu/fuel.rs` implements. Do not use the
+conflicting 1200-duty sketch in [`ECU.md`](ECU.md) §3.
 
 ## Range estimation
 

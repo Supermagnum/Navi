@@ -326,11 +326,11 @@ implement the RF/mesh layer): [`plugins/lora-convoy-spec.md`](plugins/lora-convo
 | | |
 |---|---|
 | **Benefit** | Live fuel rate / SoC / power for eco reweight and range UI |
-| **Docs** | [`ECU.md`](ECU.md) — OBD-II, J1939, MegaSquirt examples → `LiveEnergySnapshot` |
-| **ICE** | `fuel_rate_l_h` from PID `5E` / J1939 LFE / MS pulse-width |
-| **EV / hybrid** | `state_of_charge_pct`, `power_kw` (traction / HV), optional remaining range |
+| **Docs** | [`ECU.md`](ECU.md), [`mathematical-formulas.md`](mathematical-formulas.md) — ICE decode tests; live poll still future |
+| **ICE** | `fuel_rate_l_h` from PID `5E` / J1939 SPN 183 / MS pulse-width / AFR-aware MAF |
+| **EV / hybrid** | `state_of_charge_pct`, `power_kw` — **not** in this ICE decode pass |
 | **Host duties** | Bluetooth SPP / USB / SocketCAN; read-only diagnostics; honour plugin enable/disable |
-| **Core effect** | `refine_energy_cost` / `LiveEnergyProvider` on T1 |
+| **Core effect** | `refine_energy_cost` / `LiveEnergyProvider` on T1; `ecu_afr_self_test` (no wire) |
 | **Proposed caps** | `ecu_read` (new), `accessory_*` (USB / Bluetooth), `log` — no DTC clear / programming |
 
 ### 5b. DIY wired e-bike telemetry (`ebike_telemetry`)

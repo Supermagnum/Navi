@@ -2,8 +2,8 @@
 //!
 //! Trusted native Rust modules for elevation download, offline routing with
 //! terrain-aware reweighting, POI spatial indexing, and configurable rest/safety
-//! parameters. Live ECU/OBD telemetry is intentionally out of scope; extension
-//! points exist in [`ecu`] for a future isolated plugin.
+//! parameters. Live ECU/OBD **polling** is out of scope; ICE decode helpers and
+//! extension points exist in [`ecu`] for a future isolated plugin.
 
 pub mod admin_region;
 pub mod admin_subdivision;

@@ -275,6 +275,7 @@ Override packaging with `-PnaviAbis=arm64-v8a`, or native builds with
 | Linker / clang not found | Update `.cargo/config.toml` linker paths to your NDK **host** prebuilt |
 | `UnsatisfiedLinkError` / missing `libnavi` | Re-run native script for the device ABI; confirm `jniLibs/<abi>/libnavi.so` exists |
 | Kotlin UniFFI types missing | Re-run native script (bindgen step) |
+| ECU AFR self-test | `ecuAfrSelfTest()` / `adb logcat -s NaviEcu`; rebuild native after `navi-ffi` export changes |
 | Map crash on rotate (historical GLES) | Prefer current `android-sdk:11.13.5` GLES; re-run `BearingCrashIsolationTest` on AAOS AVD if suspecting regression |
 | Wrong app / yellow border UI | `./scripts/launch-navi-emulator.sh` |
 | Windows: bash script not found | Use **Git Bash** or WSL for `scripts/*.sh` |
