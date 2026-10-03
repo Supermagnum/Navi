@@ -99,10 +99,10 @@ On-device and emulator results:
 **Install the signed release APK.** Testers should download and sideload
 [`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
 installable release APK** (upload keystore; not the debug build). Current build:
-**v0.3.12-beta** (`versionName` 0.3.12-beta, `versionCode` 17). Download from the
-[`main` branch](https://github.com/Supermagnum/Navi/tree/main/compiled)
+**v0.3.14-beta** (`versionName` 0.3.14-beta, `versionCode` 19). Download from the
+[`dev` branch](https://github.com/Supermagnum/Navi/tree/dev/compiled)
 (latest tester build) or the pinned
-[`v0.3.12-beta` tag](https://github.com/Supermagnum/Navi/tree/v0.3.12-beta). Android
+[`v0.3.14-beta` tag](https://github.com/Supermagnum/Navi/tree/v0.3.14-beta). Android
 validates the APK signature on install; the separate GPG files
 ([`compiled/SHA256SUMS`](compiled/SHA256SUMS),
 [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc)) are optional provenance
