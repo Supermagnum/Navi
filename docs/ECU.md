@@ -618,8 +618,15 @@ sniffing and correlation — there is no universal public spec for that layer.
 | `LiveEnergySnapshot` / `LiveEnergyProvider` / `NoLiveEnergy` | Present (signatures unchanged) |
 | `refine_energy_cost` used from graph reweight | Present (same public fn) |
 | ICE decode (`decode` / `fuel` / `ambient`) + `ecu_afr_self_test` | **Present** (pure, no adapter) |
+| PID 05 / 0F / 11 / 49 / 5A (coolant, IAT, throttle, pedal) | **Decoded** into `IceDecode` (no polling) |
+| J1939 SPN 174 fuel temperature | **Decoded** (1 C/bit, offset −40) |
+| Flex sensor pulse width → fuel temperature | **Decoded** (`-40 + (pulse_ms - 1.0) * 41.25`) |
+| MAF mass-to-litre density(T) | **Present** (petrol/diesel/ethanol beta; volume PIDs unchanged) |
+| Petrol/ethanol stoich AFR | **Mass fraction** (E10 ~14.10, E85 ~9.82) |
+| Petrol no-lambda quality | **Estimate**: cold (<40 C) and ≥90 % load enrichment AFR |
+| Fuel-cut overrun | `Some(0.0)` with PID 5E / lean evidence; cold petrol keeps injecting |
 | OBD-II / J1939 / MegaSquirt **polling** | **Not implemented** |
-| MegaSquirt flex-fuel (composition sensor) | Decode records ethanol %; not polled |
+| MegaSquirt flex-fuel (composition sensor) | Decode records ethanol % and optional fuel temp; not polled |
 | HostApi `ecu_read` capability | **Not implemented** |
 | Android Bluetooth OBD UX | **Not implemented** |
 
