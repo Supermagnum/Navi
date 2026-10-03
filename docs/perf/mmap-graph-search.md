@@ -579,4 +579,129 @@ do **not** take the ferry densify path.
 | bergen_stavanger_lt | false/true | ~8.8/8.8 s | **228.21** | same | same |
 | raufoss_tromso | false | 34020 | **1766.89** | `e79679c2…` | 5 legs; **4 days / 3 overnight** |
 
-**STOP — wait for merge of #138. Do not start Phase 2.**
+**#138 merged.** Phase 2 notes below; work archived without merge.
+
+## Phase 2 PART B — time outside pack_load (branch `perf/tile-index-sidecar`)
+
+Merged #138 at `1f5a60b9`. Device SM-P613 `R52TB0JQEDE`.
+
+### B.1 Residual breakdown (Bergen eco cold)
+
+Source: post-RSS-clamp matrix logcat (`/tmp/r2r_rss_fix3_matrix_logcat.txt`),
+tip that became #138. **wall_ms=7142**, **pack_load_ms=4024** → residual
+**~3118 ms** outside pack_load.
+
+`ROUTE_PLAN_STAGES` (sums to ~3066 ms; ~52 ms timer/unaccounted):
+
+| Stage | ms | Notes |
+| --- | ---: | --- |
+| profile_map_ms | 203 | travel-profile / settings map |
+| eco_reweight_ms | 238 | eco edge weights on owned corridor |
+| snap_ms | 233 | start+end nearest_routable |
+| network_pref_ms | 0 | |
+| **astar_ms** | **1222** | pathfinding IndexMap keyed by OSM id (+ surface, edge) |
+| **polyline_ms** | **388** | overlay string from edge shapes |
+| **poi_barrier_ms** | **743** | cold POI pack miss (polyline-clipped) |
+| rest_branch_ms | 1 | |
+| multiday_ms | 0 | single-day |
+| pause_pins_ms | 26 | |
+| report_addons_ms | 12 | |
+| **Sum (excl. pack_load)** | **~3066** | |
+
+Nothing material left unexplained (~1.7% of residual).
+
+### B.2 Dense A* (OSM HashMap → dense CSR + flat arrays)
+
+**Before:** `pathfinding::astar` with `FxIndexMap` states keyed by OSM `NodeId`
+(plus surface + incoming edge on car/truck); `RouteGraph.adjacency` was
+`HashMap<NodeId, Vec<usize>>`; heuristic did `nodes.get` HashMap lookups.
+
+**After:** at adjacency rebuild, build dense `id→u32`, CSR `adj_off`/`adj_edge`,
+flat lat/lon/blocked. Custom A* keys by `node_idx` (×4 surfaces for car/truck);
+parent edge stored in a parallel array (not in the open-set key).
+
+Tablet before/after `astar_ms` (matrix tip `9b0fb703`, force-stopped cold; geom
+hashes unchanged vs dig / #138):
+
+| case | eco | astar before | astar after | distance | geom |
+| --- | --- | ---: | ---: | ---: | --- |
+| raufoss_bergen cold | true | 1222 | **1231** | 459.71 | `8a8c6f7b…` |
+| raufoss_bergen | false | 1169 | **1187** | 485.45 | `540bb2ad…` |
+| raufoss_bergen_warm | true | 1203 | **1216** | 459.71 | same |
+| raufoss_dombas | true | 744 | **755** | 206.81 | `6a1360bc…` |
+| bergen_forde | true | 914 | **928** | 171.01 | `0bff0c85…` |
+| bergen_stavanger | false | 1052 | **1052** | 228.21 | `1cf463d5…` |
+| bergen_stavanger | true | 883 | **874** | 228.21 | same |
+| raufoss_tromso | false | ~280/hop | **269** (hop1) | 1766.89 | `e79679c2…` |
+
+Dense CSR is correct and keeps identical distances/geom, but tablet `astar_ms`
+is unchanged within noise — IndexMap was not the binder; edge-cost / expand
+work dominates. Peak RSS max **928.8** MiB. Tromsø wall **34528** ms. No LMK/ANR.
+
+### B.3 Other stages >300 ms
+
+- **polyline_ms (~388→393):** pre-size + `write!` landed; no measurable win on
+  Bergen (float formatting still dominates).
+- **poi_barrier_ms (~743→864):** cold miss after the path; warm ~160 ms. Not
+  changed this pass — needs overlap with A* or lighter clip preload.
+- **Conclusion:** residual outside pack_load stays ~3.1 s; **Part C** (cut
+  pack_load) is the path to &lt;5 s Bergen cold.
+
+## Phase 2 PART C — mapped tiles + per-tile index sidecars
+
+### C.1 Design answers (before code)
+
+1. **Do v9 tiles partition edges or duplicate?** They **duplicate**. Tile assign
+   writes a way into every expanded tile bbox that contains any of its nodes
+   (`bbox_build` mask). Border-crossing ways (and their nodes) appear in multiple
+   tiles. Merge then hash-dedupes by OSM id / edge key. `v9_border_marks=false`.
+
+2. **How is a node's tile found at expand?** Must be **direct lookup**, not a
+   scan. With sidecars: binary-search `sorted_node_ids` → `local_idx` inside each
+   open corridor tile (O(log N_tile)). For cross-tile continuity, only
+   `border_node_ids` need multi-tile membership; interior nodes live in one tile
+   of the open set. No spatial re-query at expand.
+
+3. **Per-tile index size (biggest Ostlandet / Vestlandet tiles):** From tablet
+   matrix tile files (SM-P613): largest on disk ~**112 MiB**
+   (`ostlandet…t1_3.rkyv`, 117 734 276 B) and ~**72 MiB**
+   (`vestlandet…t2_0.rkyv`, 75 082 152 B; ~110k nodes / ~226k edges). Expected
+   sidecar ≈ `N×8 + (N+1)×4 + E×4 + border×8` ≈ **2–3 MiB** for those tiles
+   (measured at C.2).
+
+### C.2 Per-tile index sidecar
+
+Module `tile_index_sidecar.rs`: versioned `NVTI` archive
+(`TILE_INDEX_FORMAT_VERSION=1`) with sorted id→local, CSR over archived edge
+order, border ids. Builds **v8 and v9** tiles (dual-read). Built from the same
+install/refresh job as ferry (`ensure_ferry_sidecar` also runs
+`ensure_tile_indexes_for_stem`). Meta invalidates with tile bytes+mtime.
+mmap-readable via `MappedTileIndex::open`.
+
+Host release bench (`bench_tile_index`, empty border set, force rebuild):
+
+| tile | format | tile bytes | index bytes | build ms |
+| --- | ---: | ---: | ---: | ---: |
+| `vestlandet…t2_0.rkyv` | v9 | 75 082 152 | **2 793 880** (~2.7 MiB) | **19–29** |
+| `ostlandet…t1_3.rkyv` (host copy) | v8 | 117 209 424 | **4 341 008** (~4.1 MiB) | **34–35** |
+| `ostlandet…t1_3.rkyv` (device copy) | v8 | 117 734 276 | **4 348 248** (~4.1 MiB) | **40–41** |
+
+Well under the seconds/tile gate (tens of ms on host; tablet expected similar order).
+
+### C.3–C.5 Mapped A* prototype / gate
+
+**Status:** Sidecar build path is in; **mapped A* over tiles+sidecars (no owned
+merge) is not yet behind a flag**. Owned-merge remains the only search path.
+
+**C.4 gate:** host pack_load &lt;1.5 s Bergen cold with mapped search is **not
+met** (prototype not runnable — mapped search would be what cuts pack_load;
+sidecar alone does not). **Stop here** — no format bump, no tablet mapped
+matrix, owned-merge stays default. Do **not** merge.
+
+### Archive (2026-10-03) — not continuing
+
+Branch tip `e341b4e3` tagged `archive/tile-index-sidecar`. PR #139 closed without
+merge. Dense A* (Part B) showed no tablet `astar_ms` win; Part C sidecar build
+exists but mapped A* over tiles was never gated. Resume later from the archive
+tag if pack_load still needs to drop below ~1.5 s Bergen cold.
+
