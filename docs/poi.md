@@ -39,7 +39,11 @@ hiking/cycling search): [`poi-search-defaults.md`](poi-search-defaults.md).
 **RestArea**, **General**, **CraftBrewery**, **Fishing**, **Restroom**,
 **OvernightFacility**, and **Cabin** near each sample (road-linked on motor
 profiles). Hiking pauses stay hut/tent-oriented (**NetworkHut** / **Cabin** /
-**TentSite**).
+**TentSite**). Every travel profile's plan report enumerates `route_tunnel_count`,
+`route_ferry_legs` (plus `route_ferry_fp` names), and `rest_place_count`
+(length of `break_pois_json`). Counts are 0 when the path has none. The plan
+UI card also lists nearby-attraction hits when that toggle is on, and wild
+camping site count from the camping plugin (0 when the plugin is off).
 
 ## Hiking rast huts as auto-vias
 
