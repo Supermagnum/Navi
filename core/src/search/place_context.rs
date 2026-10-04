@@ -21,12 +21,13 @@ use crate::tracks::haversine_km;
 /// Schema bump written at the end of a context-aware `load_from_pbf`.
 /// v3: `region_id` column so multi-region indexes are additive.
 /// v4: `building=*` + `name=*` classified as `kind=building` (was `named`).
+/// v5: `search_doc` + FTS on `alt_name` / `loc_name` (display `name` unchanged).
 ///
 /// Bumping this makes [`NameIndex::is_current_schema`] fail on older on-device
 /// DBs so `ensure_place_index` / pack-install rebuild on next open — without a
 /// manual wipe. Stale DBs are deleted before rebuild so multi-region indexes
-/// do not keep pre-v4 `named` building rows after `user_version` advances.
-pub const PLACE_INDEX_SCHEMA_VERSION: i32 = 4;
+/// do not keep pre-bump row kinds / FTS docs after `user_version` advances.
+pub const PLACE_INDEX_SCHEMA_VERSION: i32 = 5;
 
 const SUB_AREA_MAX_M: f64 = 4_000.0;
 const SUB_AREA_VILLAGE_MAX_M: f64 = 2_000.0;

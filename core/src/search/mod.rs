@@ -205,13 +205,8 @@ impl NameIndex {
                 lon REAL NOT NULL,
                 sub_area TEXT NOT NULL DEFAULT '',
                 municipality TEXT NOT NULL DEFAULT '',
-                region_id TEXT NOT NULL DEFAULT ''
-            );
-            CREATE VIRTUAL TABLE IF NOT EXISTS name_fts USING fts5(
-                name,
-                kind,
-                content='name_entries',
-                content_rowid='osm_id'
+                region_id TEXT NOT NULL DEFAULT '',
+                search_doc TEXT NOT NULL DEFAULT ''
             );
             CREATE TABLE IF NOT EXISTS name_index_build (
                 region_id TEXT PRIMARY KEY NOT NULL,
@@ -222,6 +217,7 @@ impl NameIndex {
             ",
         )?;
         Self::ensure_context_columns(conn)?;
+        Self::ensure_search_doc_fts(conn)?;
         Ok(())
     }
 
@@ -258,6 +254,7 @@ impl NameIndex {
         let mut has_sub = false;
         let mut has_muni = false;
         let mut has_region = false;
+        let mut has_search_doc = false;
         let mut stmt = conn.prepare("PRAGMA table_info(name_entries)")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
         for r in rows {
@@ -265,6 +262,7 @@ impl NameIndex {
                 "sub_area" => has_sub = true,
                 "municipality" => has_muni = true,
                 "region_id" => has_region = true,
+                "search_doc" => has_search_doc = true,
                 _ => {}
             }
         }
@@ -286,9 +284,53 @@ impl NameIndex {
                 [],
             )?;
         }
+        if !has_search_doc {
+            conn.execute(
+                "ALTER TABLE name_entries ADD COLUMN search_doc TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+            // Legacy rows: FTS rebuild can use display name until the region is
+            // re-indexed with alt_name / loc_name.
+            conn.execute(
+                "UPDATE name_entries SET search_doc = name WHERE search_doc = ''",
+                [],
+            )?;
+        }
         conn.execute_batch(
             "CREATE INDEX IF NOT EXISTS idx_name_entries_region_id ON name_entries(region_id);",
         )?;
+        Ok(())
+    }
+
+    /// FTS5 external-content table must index `search_doc` (v5). Recreate when
+    /// an older `name`/`kind` FTS definition is still present.
+    fn ensure_search_doc_fts(conn: &Connection) -> SqlResult<()> {
+        let sql: Option<String> = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'name_fts'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        let needs_recreate = match sql.as_deref() {
+            None => true,
+            Some(s) => !s.contains("search_doc"),
+        };
+        if needs_recreate {
+            conn.execute_batch("DROP TABLE IF EXISTS name_fts;")?;
+            conn.execute_batch(
+                "
+                CREATE VIRTUAL TABLE name_fts USING fts5(
+                    search_doc,
+                    kind,
+                    content='name_entries',
+                    content_rowid='osm_id'
+                );
+                ",
+            )?;
+            // Populate from content (search_doc already backfilled to name).
+            let _ = conn.execute_batch("INSERT INTO name_fts(name_fts) VALUES('rebuild');");
+        }
         Ok(())
     }
 
@@ -447,7 +489,8 @@ impl NameIndex {
         let _bg = crate::download::pbf_priority::BackgroundIndexerGuard::enter();
         let path = path.as_ref();
         let region_id = region_id.trim().trim_matches('/').to_string();
-        let mut batch: Vec<(i64, String, String, f64, f64)> = Vec::new();
+        // (osm_id, display_name, search_doc, kind, lat, lon)
+        let mut batch: Vec<(i64, String, String, String, f64, f64)> = Vec::new();
         const PHASES: u64 = 6;
         let interrupted = Self::build_is_interrupted(&self.conn, &region_id);
         let phase_prefix = if interrupted {
@@ -474,7 +517,7 @@ impl NameIndex {
         // (tourism=zoo, amenity areas, etc. are often ways, not nodes).
         crate::download::progress::set(1, Some(PHASES), &format!("{phase_prefix}scanning ways…"));
         let ways_t0 = phase_timing::start("place_index.ways");
-        let mut way_jobs: Vec<(i64, String, String, Vec<i64>)> = Vec::new();
+        let mut way_jobs: Vec<(i64, String, String, String, Vec<i64>)> = Vec::new();
         let mut needed_nodes: std::collections::HashSet<i64> = std::collections::HashSet::new();
         let mut ways_visited = 0usize;
         let mut ways_last_hb = 0usize;
@@ -496,7 +539,7 @@ impl NameIndex {
                     .tags()
                     .map(|(k, v)| (k.to_string(), v.to_string()))
                     .collect();
-                let Some((_, name, kind, _, _)) = classify_named(
+                let Some((_, name, search_doc, kind, _, _)) = classify_named(
                     way.id(),
                     0.0,
                     0.0,
@@ -516,7 +559,7 @@ impl NameIndex {
                 for id in &refs {
                     needed_nodes.insert(*id);
                 }
-                way_jobs.push((way.id(), name, kind, refs));
+                way_jobs.push((way.id(), name, search_doc, kind, refs));
             })?;
         }
         phase_timing::end_detail(
@@ -591,7 +634,7 @@ impl NameIndex {
         let centroids_t0 = phase_timing::start("place_index.way_centroids");
         let mut way_hits = 0usize;
         let centroid_total = way_jobs.len();
-        for (i, (way_id, name, kind, refs)) in way_jobs.into_iter().enumerate() {
+        for (i, (way_id, name, search_doc, kind, refs)) in way_jobs.into_iter().enumerate() {
             let mut sum_lat = 0.0;
             let mut sum_lon = 0.0;
             let mut n = 0usize;
@@ -605,7 +648,14 @@ impl NameIndex {
             if n == 0 {
                 continue;
             }
-            batch.push((way_id, name, kind, sum_lat / n as f64, sum_lon / n as f64));
+            batch.push((
+                way_id,
+                name,
+                search_doc,
+                kind,
+                sum_lat / n as f64,
+                sum_lon / n as f64,
+            ));
             way_hits += 1;
             if (i + 1) % PLACE_INDEX_PROGRESS_HEARTBEAT == 0 {
                 crate::download::progress::set(
@@ -633,7 +683,8 @@ impl NameIndex {
             Ok(routes) => {
                 route_hits = routes.len();
                 for r in routes {
-                    batch.push((r.osm_id, r.name, r.kind, r.lat, r.lon));
+                    let search_doc = r.name.clone();
+                    batch.push((r.osm_id, r.name, search_doc, r.kind, r.lat, r.lon));
                 }
             }
             Err(e) => {
@@ -654,7 +705,7 @@ impl NameIndex {
         let ctx_t0 = phase_timing::start("place_index.resolve_context");
         let sub_areas = batch
             .iter()
-            .filter_map(|(osm_id, name, kind, lat, lon)| {
+            .filter_map(|(osm_id, name, _search_doc, kind, lat, lon)| {
                 place_context::sub_area_pt(*osm_id, name.clone(), kind, *lat, *lon)
             })
             .collect();
@@ -706,7 +757,7 @@ impl NameIndex {
         let mut inserted = skip.len();
         let mut since_commit = 0usize;
         let mut tx = self.conn.unchecked_transaction()?;
-        for (osm_id, name, kind, lat, lon) in &batch {
+        for (osm_id, name, search_doc, kind, lat, lon) in &batch {
             if skip.contains(osm_id) {
                 continue;
             }
@@ -714,12 +765,12 @@ impl NameIndex {
             // osm_id may already exist from another region at a landsdel border —
             // replace and refresh FTS for that id.
             let _ = tx.execute(
-                "INSERT INTO name_fts(name_fts, rowid, name, kind) VALUES('delete', ?1, NULL, NULL)",
+                "INSERT INTO name_fts(name_fts, rowid, search_doc, kind) VALUES('delete', ?1, NULL, NULL)",
                 params![osm_id],
             );
             tx.execute(
-                "INSERT OR REPLACE INTO name_entries(osm_id, name, kind, lat, lon, sub_area, municipality, region_id)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                "INSERT OR REPLACE INTO name_entries(osm_id, name, kind, lat, lon, sub_area, municipality, region_id, search_doc)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
                 params![
                     osm_id,
                     name,
@@ -728,12 +779,13 @@ impl NameIndex {
                     lon,
                     ctx.sub_area,
                     ctx.municipality,
-                    region_id
+                    region_id,
+                    search_doc
                 ],
             )?;
             tx.execute(
-                "INSERT INTO name_fts(rowid, name, kind) VALUES (?1,?2,?3)",
-                params![osm_id, name, kind],
+                "INSERT INTO name_fts(rowid, search_doc, kind) VALUES (?1,?2,?3)",
+                params![osm_id, search_doc, kind],
             )?;
             inserted += 1;
             since_commit += 1;
@@ -803,7 +855,7 @@ impl NameIndex {
             drop(stmt);
             for osm_id in ids {
                 let _ = tx.execute(
-                    "INSERT INTO name_fts(name_fts, rowid, name, kind) VALUES('delete', ?1, NULL, NULL)",
+                    "INSERT INTO name_fts(name_fts, rowid, search_doc, kind) VALUES('delete', ?1, NULL, NULL)",
                     params![osm_id],
                 );
             }
@@ -890,19 +942,30 @@ impl NameIndex {
         municipality: String,
         region_id: String,
     ) -> SqlResult<()> {
+        // Tests / incremental upserts: search_doc mirrors display name.
         self.conn.execute(
-            "INSERT OR REPLACE INTO name_entries(osm_id, name, kind, lat, lon, sub_area, municipality, region_id)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
-            params![osm_id, name, kind, lat, lon, sub_area, municipality, region_id],
+            "INSERT OR REPLACE INTO name_entries(osm_id, name, kind, lat, lon, sub_area, municipality, region_id, search_doc)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+            params![
+                osm_id,
+                &name,
+                &kind,
+                lat,
+                lon,
+                &sub_area,
+                &municipality,
+                &region_id,
+                &name
+            ],
         )?;
         // Rebuild FTS row for this id (delete + insert keeps content sync).
         let _ = self.conn.execute(
-            "INSERT INTO name_fts(name_fts, rowid, name, kind) VALUES('delete', ?1, NULL, NULL)",
+            "INSERT INTO name_fts(name_fts, rowid, search_doc, kind) VALUES('delete', ?1, NULL, NULL)",
             params![osm_id],
         );
         self.conn.execute(
-            "INSERT INTO name_fts(rowid, name, kind) VALUES (?1,?2,?3)",
-            params![osm_id, name, kind],
+            "INSERT INTO name_fts(rowid, search_doc, kind) VALUES (?1,?2,?3)",
+            params![osm_id, &name, &kind],
         )?;
         Ok(())
     }
@@ -1061,13 +1124,47 @@ impl NameIndex {
     }
 }
 
+/// Build the FTS search document from the primary display name plus OSM
+/// `alt_name` / `loc_name` (semicolon-separated values expanded).
+fn place_search_doc(primary: &str, alt_name: Option<&str>, loc_name: Option<&str>) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut push_tag = |raw: &str| {
+        for part in raw.split(';') {
+            let t = part.trim();
+            if t.is_empty() {
+                continue;
+            }
+            let key = t.to_lowercase();
+            if seen.insert(key) {
+                parts.push(t.to_string());
+            }
+        }
+    };
+    push_tag(primary);
+    if let Some(a) = alt_name {
+        push_tag(a);
+    }
+    if let Some(l) = loc_name {
+        push_tag(l);
+    }
+    parts.join(" ")
+}
+
+/// Classify a tagged OSM element for the place index.
+///
+/// Returns `(osm_id, display_name, search_doc, kind, lat, lon)`.
+/// Display prefers `name`, then `loc_name`, then the first `alt_name` part,
+/// then address tags. FTS matches against `search_doc` (primary + alts).
 fn classify_named<'a>(
     osm_id: i64,
     lat: f64,
     lon: f64,
     tags: impl Iterator<Item = (&'a str, &'a str)>,
-) -> Option<(i64, String, String, f64, f64)> {
+) -> Option<(i64, String, String, String, f64, f64)> {
     let mut name = None;
+    let mut alt_name = None;
+    let mut loc_name = None;
     let mut addr_street = None;
     let mut addr_housenumber = None;
     let mut kind = "named".to_string();
@@ -1075,6 +1172,8 @@ fn classify_named<'a>(
     for (k, v) in tags {
         match k {
             "name" => name = Some(v.to_string()),
+            "alt_name" => alt_name = Some(v.to_string()),
+            "loc_name" => loc_name = Some(v.to_string()),
             "addr:street" => addr_street = Some(v.to_string()),
             "addr:housenumber" => addr_housenumber = Some(v.to_string()),
             "place" => kind = format!("place:{v}"),
@@ -1090,14 +1189,22 @@ fn classify_named<'a>(
             _ => {}
         }
     }
-    if name.is_none() {
+    let mut display = name.or_else(|| loc_name.clone()).or_else(|| {
+        alt_name.as_ref().and_then(|a| {
+            a.split(';')
+                .map(str::trim)
+                .find(|p| !p.is_empty())
+                .map(|p| p.to_string())
+        })
+    });
+    if display.is_none() {
         if let (Some(street), Some(num)) = (addr_street.as_ref(), addr_housenumber.as_ref()) {
-            name = Some(format!("{street} {num}"));
+            display = Some(format!("{street} {num}"));
             if kind == "named" {
                 kind = "addr:housenumber".into();
             }
         } else if let Some(street) = addr_street {
-            name = Some(street);
+            display = Some(street);
             if kind == "named" {
                 kind = "addr:street".into();
             }
@@ -1106,13 +1213,15 @@ fn classify_named<'a>(
     if kind == "named" && is_building {
         kind = NAMED_BUILDING_KIND.to_string();
     }
-    name.map(|n| (osm_id, n, kind, lat, lon))
+    let display = display?;
+    let search_doc = place_search_doc(&display, alt_name.as_deref(), loc_name.as_deref());
+    Some((osm_id, display, search_doc, kind, lat, lon))
 }
 
 impl NameIndex {
     /// Named building footprints (`kind = building`) inside a lat/lon bbox.
     ///
-    /// Requires a place index built at schema ≥ v4 ([`PLACE_INDEX_SCHEMA_VERSION`])
+    /// Requires a place index built at current [`PLACE_INDEX_SCHEMA_VERSION`]
     /// so `classify_named` stored buildings as [`NAMED_BUILDING_KIND`]. Older
     /// on-device indexes are discarded and rebuilt on next `ensure_place_index`.
     pub fn named_buildings_in_bbox(
@@ -1806,7 +1915,7 @@ mod tests {
             [("building", "yes"), ("name", "Espedalsvegen 656")].into_iter(),
         )
         .expect("named building");
-        assert_eq!(building.2, NAMED_BUILDING_KIND);
+        assert_eq!(building.3, NAMED_BUILDING_KIND);
         assert_eq!(building.1, "Espedalsvegen 656");
 
         let amenity = classify_named(
@@ -1821,7 +1930,7 @@ mod tests {
             .into_iter(),
         )
         .expect("townhall");
-        assert_eq!(amenity.2, "amenity:townhall");
+        assert_eq!(amenity.3, "amenity:townhall");
 
         assert!(classify_named(
             2,
@@ -1837,7 +1946,7 @@ mod tests {
             [("building", "no"), ("name", "X")].into_iter(),
         )
         .unwrap();
-        assert_eq!(not_building.2, "named");
+        assert_eq!(not_building.3, "named");
     }
 
     /// Espedalsvegen 656 area (OSM way/435718754 coords) round-trips via bbox query.
@@ -1845,7 +1954,7 @@ mod tests {
     fn named_buildings_in_bbox_round_trip_espedal() {
         let mut idx = NameIndex::open_in_memory().expect("mem");
         // Simulate classify_named + upsert for the reported building.
-        let (id, name, kind, lat, lon) = classify_named(
+        let (id, name, _search_doc, kind, lat, lon) = classify_named(
             435718754,
             61.885_475,
             10.737_108,
