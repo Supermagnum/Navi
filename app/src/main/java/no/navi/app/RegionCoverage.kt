@@ -364,9 +364,9 @@ object RegionCoverage {
      * ReuseInternal extracts still live directly under [dataDir].
      *
      * Pack-server installs leave a 16 KiB stub `.osm.pbf` beside Ready graph
-     * packs. Those stubs are accepted when a matching `.navi-manifest.json` (or
-     * `.navi-server-install.json`) is present so planning does not fall through
-     * to `/data/local/tmp` fixtures and cold-build for minutes.
+     * packs. Those stubs are accepted here as a **planning handle** (manifest /
+     * pack lookup) when `.navi-manifest.json` or `.navi-server-install.json` is
+     * present; native code never cold-builds a routing graph from them.
      */
     fun resolvePlanPbf(
         dataDir: File,

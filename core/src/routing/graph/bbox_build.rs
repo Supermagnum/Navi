@@ -518,6 +518,7 @@ impl RouteGraph {
         bbox: [f64; 4],
     ) -> anyhow::Result<Self> {
         let path = path.as_ref();
+        crate::routing::pbf_extract::ensure_pbf_usable_for_graph_build(path)?;
         crate::download::progress::set(0, Some(4), "Planning route: indexing area…");
         // Pass 1: node ids inside bbox (ids only — storing every coord OOMs on large extracts).
         let mut in_bbox_ids: HashSet<i64> = HashSet::new();
