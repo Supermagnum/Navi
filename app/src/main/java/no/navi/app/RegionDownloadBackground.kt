@@ -797,9 +797,10 @@ object RegionDownloadBackground {
     }
 
     /**
-     * Must match core `PLACE_INDEX_SCHEMA_VERSION` (v4 = buildings as `building`).
+     * Must match core `PLACE_INDEX_SCHEMA_VERSION`
+     * (v5 = search_doc FTS for alt_name / loc_name).
      */
-    internal const val PLACE_INDEX_SCHEMA_VERSION = 4
+    internal const val PLACE_INDEX_SCHEMA_VERSION = 5
 
     internal fun placeIndexSchemaCurrent(dbFile: File): Boolean {
         if (!dbFile.isFile) return false

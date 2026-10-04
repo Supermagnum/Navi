@@ -13,6 +13,7 @@ pub mod hiking_hybrid;
 pub mod indexed;
 pub mod live_hazard;
 pub mod osm_update;
+pub mod pbf_extract;
 pub mod plan_bbox;
 pub mod plan_perf;
 pub mod region;
@@ -70,6 +71,7 @@ pub use osm_update::{
     RegionExtractMeta, UpdateApplyResult, UpdatePlan, STALENESS_FULL_REDOWNLOAD_DAYS,
     WEEKLY_CHECK_REMINDER_DAYS,
 };
+pub use pbf_extract::{ensure_pbf_usable_for_graph_build, pbf_is_real_extract, MIN_REAL_PBF_BYTES};
 pub use region::{
     provision_region, provision_region_with_elev_tar, RegionProvision, CORRIDOR_BBOX,
 };

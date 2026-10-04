@@ -43,10 +43,12 @@ object PlaceIndexReady {
         healReadyFromDownloads(dataDir)
         val f = readyFile(dataDir)
         if (f.isFile) {
-            return parseJsonStringArray(f.readText())
-                .map { PackRegionAvailability.normalize(it) }
-                .filter { it.isNotEmpty() }
-                .toSet()
+            val ids: Set<String> =
+                parseJsonStringArray(f.readText())
+                    .map { PackRegionAvailability.normalize(it) }
+                    .filter { it.isNotEmpty() }
+                    .toSet()
+            return ids
         }
         // Legacy installs (no stamp file yet): treat every region_id already in
         // the DB as ready, and persist the stamp so later clears stick.
@@ -367,7 +369,7 @@ object PlaceIndexReady {
                     for (osmId in osmIds) {
                         try {
                             db.execSQL(
-                                "INSERT INTO name_fts(name_fts, rowid, name, kind) " +
+                                "INSERT INTO name_fts(name_fts, rowid, search_doc, kind) " +
                                     "VALUES('delete', ?, NULL, NULL)",
                                 arrayOf(osmId),
                             )

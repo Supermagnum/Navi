@@ -409,6 +409,7 @@ fn wetland_boardwalk_bridges(
 
 impl RouteGraph {
     pub fn build_from_pbf(path: impl AsRef<Path>, profile: RoutingProfile) -> anyhow::Result<Self> {
+        crate::routing::pbf_extract::ensure_pbf_usable_for_graph_build(path.as_ref())?;
         let (nodes, edges) = Reader::new()
             .read_tag("highway")
             .read_tag("maxspeed")

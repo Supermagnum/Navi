@@ -231,38 +231,18 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
         confirmPluginsAndLongTripViaToolsUi()
         screenshot("03_tools_plugins")
 
-        // Delete previously downloaded regions via Tools UI before planning.
-        deleteDownloadedRegionsViaUi()
-        screenshot("03b_regions_deleted")
+        // Pack-server leaf stubs (16 KiB PBF) block place-index + MobileHome plan — UI re-download.
+        repairStubPbfsViaToolsUi(
+            listOf(
+                "europe/norway/nord-norge",
+            ),
+        )
+        screenshot("03c_stub_pbf_repair")
 
-        // Re-enable long trip after deletes (delete path turns it off when a plan was active).
-        confirmPluginsAndLongTripViaToolsUi()
+        // Campaign 2026-10-04: corridor packs already Installed+indexed on SD — skip UI delete.
+        noteUi("regions_delete", "skipped (indexed SD packs preserved)")
+        screenshot("03b_regions_preserved")
         openRoutePanel()
-        // Hard-check long trip is ON before waypoints/plan (prior run stuck "Long trip off").
-        runCatching {
-            clickTagSoft("btn_tools")
-            settle(500)
-            composeRule.onNodeWithTag("toggle_long_trip", useUnmergedTree = true).performScrollTo()
-            val line =
-                runCatching {
-                    composeRule
-                        .onNodeWithTag("long_trip_status_line", useUnmergedTree = true)
-                        .fetchSemanticsNode()
-                        .config[androidx.compose.ui.semantics.SemanticsProperties.Text]
-                        .joinToString(" ") { it.text }
-                }.getOrDefault("")
-            if (line.contains("off", ignoreCase = true) || line.isBlank()) {
-                composeRule.onNodeWithTag("toggle_long_trip", useUnmergedTree = true).performClick()
-                settle(400)
-                noteUi("toggle_long_trip", "forced ON before plan (was: $line)")
-            } else {
-                noteUi("toggle_long_trip", "confirmed ON ($line)")
-            }
-            NaviMapTestHooks.requestCloseTools = true
-            settle(300)
-            clickTagSoft("btn_close_tools")
-            clickTagSoft("btn_save_tools")
-        }
 
         // Profile + vehicle + rest via visible Drive / Route UI.
         configureMobileHomeVehicleAndRestViaUi()
@@ -280,6 +260,9 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
         noteUi("waypoints_summary", waypointSummary())
         report.put("waypoints_summary", waypointSummary())
         writeReport()
+
+        // Keep long-trip pref ON; MainActivity enables corridor on btn_plan_route (LaunchedEffect).
+        ensureLongTripPrefOnViaToolsUi()
 
         // Host ADB injects synthetic DATEX into datex_cache (marker below).
         awaitHostDatexInjection()
@@ -932,6 +915,99 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
                 .put("applied_lon", NaviMapTestHooks.lastAppliedHitLon)
                 .put("applied_name", NaviMapTestHooks.lastAppliedHitName),
         )
+        writeReport()
+    }
+
+    /**
+     * Tools → Download region for paths whose on-disk PBF is a pack-server stub
+     * (&lt; [RegionDownloadBackground.MIN_PBF_BYTES]). Waits for real PBF + place-index.
+     */
+    private fun repairStubPbfsViaToolsUi(paths: List<String>) {
+        val packDir = LongTripPackStorage.packDownloadDir(composeRule.activity)
+        val repaired = JSONArray()
+        for (path in paths) {
+            val leaf = GeofabrikDownloadCatalog.extractPathForPbf(path).substringAfterLast('/')
+            val pbf = File(packDir, "$leaf-latest.osm.pbf")
+            val stubBytes = pbf.takeIf { it.isFile }?.length() ?: 0L
+            if (stubBytes >= RegionDownloadBackground.MIN_PBF_BYTES &&
+                PlaceIndexReady.isReady(dataDir, path)
+            ) {
+                noteUi("stub_pbf_skip", "$path already real+indexed bytes=$stubBytes")
+                continue
+            }
+            noteUi("stub_pbf_repair_start", "$path bytes=$stubBytes")
+            clickTagSoft("btn_tools")
+            settle(500)
+            NaviMapTestHooks.pendingGeofabrikPath = path
+            setField("field_geofabrik_path", path)
+            settle(400)
+            composeRule
+                .onNodeWithTag("btn_download_region", useUnmergedTree = true)
+                .performScrollTo()
+            clickTagSoft("btn_download_region")
+            noteUi("stub_pbf_download_clicked", path)
+            NaviMapTestHooks.requestCloseTools = true
+            clickTagSoft("btn_close_tools")
+            clickTagSoft("btn_save_tools")
+            val deadline = System.currentTimeMillis() + DOWNLOAD_DEADLINE_MS
+            var ok = false
+            while (System.currentTimeMillis() < deadline) {
+                val bytes = pbf.takeIf { it.isFile }?.length() ?: 0L
+                val indexed = PlaceIndexReady.isReady(dataDir, path)
+                if (bytes >= RegionDownloadBackground.MIN_PBF_BYTES && indexed) {
+                    ok = true
+                    break
+                }
+                if (bytes >= RegionDownloadBackground.MIN_PBF_BYTES &&
+                    !RegionDownloadBackground.isRunning() &&
+                    !PlaceIndexBackground.isRunning() &&
+                    !indexed
+                ) {
+                    noteUi("stub_pbf_index_wait", "$path bytes=$bytes")
+                }
+                Thread.sleep(10_000)
+                composeRule.mainClock.advanceTimeBy(10_000)
+            }
+            repaired.put(
+                JSONObject()
+                    .put("path", path)
+                    .put("pbf_bytes", pbf.takeIf { it.isFile }?.length() ?: 0)
+                    .put("indexed", PlaceIndexReady.isReady(dataDir, path))
+                    .put("ok", ok),
+            )
+            noteUi("stub_pbf_repair_done", "$path ok=$ok")
+            assertTrue("Stub PBF repair failed for $path", ok)
+        }
+        report.put("stub_pbf_repairs", repaired)
+        writeReport()
+    }
+
+    /** Ensure long-trip switch ON in Tools without calling disable() (corridor starts on Plan). */
+    private fun ensureLongTripPrefOnViaToolsUi() {
+        MapHudPrefs.saveLongTripEnabled(composeRule.activity, true)
+        clickTagSoft("btn_tools")
+        settle(500)
+        runCatching {
+            composeRule.onNodeWithTag("toggle_long_trip", useUnmergedTree = true).performScrollTo()
+            val line =
+                runCatching {
+                    composeRule
+                        .onNodeWithTag("long_trip_status_line", useUnmergedTree = true)
+                        .fetchSemanticsNode()
+                        .config[androidx.compose.ui.semantics.SemanticsProperties.Text]
+                        .joinToString(" ") { it.text }
+                }.getOrDefault("")
+            if (line.contains("off", ignoreCase = true)) {
+                composeRule.onNodeWithTag("toggle_long_trip", useUnmergedTree = true).performClick()
+                noteUi("toggle_long_trip", "ON after waypoints (was: $line)")
+            } else {
+                noteUi("toggle_long_trip", "already ON ($line)")
+            }
+        }
+        NaviMapTestHooks.requestCloseTools = true
+        settle(300)
+        clickTagSoft("btn_close_tools")
+        clickTagSoft("btn_save_tools")
         writeReport()
     }
 

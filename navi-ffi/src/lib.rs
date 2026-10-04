@@ -3443,6 +3443,18 @@ fn plan_car_route_inner(
                         "pack_miss_reason",
                         format!("{e:?}"),
                     );
+                    if !driver_break_core::routing::pbf_is_real_extract(pbf) {
+                        report.push_str(&format!(
+                            "FAIL: pack miss ({e:?}) and planning PBF is not a real OSM \
+                             extract; install missing region packs\n"
+                        ));
+                        let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
+                        let mut r = empty(report);
+                        r.toll_policy = toll_policy.as_diag_str().into();
+                        r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
+                        r.search_terminate_reason = "missing_packs".into();
+                        return r;
+                    }
                     match load_or_build_reweighted_bbox(
                         pbf,
                         &build_data_dir,
@@ -4906,28 +4918,37 @@ pub fn plan_hiking_route(
     };
     let (mut graph, cache_hit, pack_hit) = match pack_try {
         Ok(g) => (g, false, true),
-        Err(_) => match load_or_build_reweighted_bbox(
-            pbf,
-            &data_dir,
-            &cache,
-            RoutingProfile::Foot,
-            &elevation,
-            &eco,
-            bbox,
-        ) {
-            Ok((g, hit)) => (g, hit, false),
-            Err(e) if driver_break_core::download::plan_cancel::is_cancel_err(&e) => {
-                return plan_cancelled_result(
-                    report,
-                    &timer,
-                    &[("profile_map_ms", profile_map_ms)],
-                );
-            }
-            Err(e) => {
-                report.push_str(&format!("FAIL: foot graph build: {e:#}\n"));
+        Err(pack_err) => {
+            if !driver_break_core::routing::pbf_is_real_extract(pbf) {
+                report.push_str(&format!(
+                    "FAIL: foot pack miss ({pack_err:?}) and planning PBF is not a real OSM \
+                     extract; install missing region packs\n"
+                ));
                 return empty_corridor(report);
             }
-        },
+            match load_or_build_reweighted_bbox(
+                pbf,
+                &data_dir,
+                &cache,
+                RoutingProfile::Foot,
+                &elevation,
+                &eco,
+                bbox,
+            ) {
+                Ok((g, hit)) => (g, hit, false),
+                Err(e) if driver_break_core::download::plan_cancel::is_cancel_err(&e) => {
+                    return plan_cancelled_result(
+                        report,
+                        &timer,
+                        &[("profile_map_ms", profile_map_ms)],
+                    );
+                }
+                Err(e) => {
+                    report.push_str(&format!("FAIL: foot graph build: {e:#}\n"));
+                    return empty_corridor(report);
+                }
+            }
+        }
     };
     let build_s = t_graph.elapsed().as_secs_f64();
     let graph_build_ms = timer.lap_ms();
@@ -8320,6 +8341,9 @@ pub fn road_near_info(
         Some(bbox),
     ) {
         Ok(g) => (g, true),
+        Err(_) if !driver_break_core::routing::pbf_is_real_extract(pbf) => {
+            return empty_road_near_info();
+        }
         Err(_) => match load_or_build_reweighted_bbox(
             pbf,
             &data_dir,
