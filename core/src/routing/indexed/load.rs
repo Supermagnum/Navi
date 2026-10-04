@@ -25,6 +25,7 @@ use super::wetland_pack::{
 use crate::poi::PoiIndex;
 use crate::routing::basemap::{pbf_stem_to_geofabrik_path, region_bbox};
 use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile};
+use crate::routing::pbf_extract::pbf_is_real_extract;
 use crate::routing::safety::DangerBarrierIndex;
 use crate::routing::wetland::WetlandIndex;
 use std::collections::{HashMap, HashSet};
@@ -1631,10 +1632,6 @@ fn try_load_graph_for_plan_corridor_dirs(
     )
 }
 
-/// Pack-server installs leave a 16 KiB zero stub beside graph packs. Real
-/// Geofabrik extracts (and place-index downloads) are >> 1 MiB.
-const MIN_FERRY_OVERLAY_PBF_BYTES: u64 = 1_000_000;
-
 /// Only a real water-crossing length counts as ferry coverage (Fehmarn ~19 km).
 /// Short `ferry=yes` approach roads must not skip the overlay.
 const MIN_LONG_FERRY_M: f64 = 2_000.0;
@@ -1751,14 +1748,6 @@ fn plan_clip_bbox(
             Some(out)
         })
     })
-}
-
-fn pbf_is_real_extract(path: &Path) -> bool {
-    path.is_file()
-        && path
-            .metadata()
-            .map(|m| m.len() >= MIN_FERRY_OVERLAY_PBF_BYTES)
-            .unwrap_or(false)
 }
 
 /// Resolve an on-disk PBF usable for ferry overlay (real extract only).
