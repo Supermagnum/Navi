@@ -25,7 +25,7 @@ use super::wetland_pack::{
 use crate::poi::PoiIndex;
 use crate::routing::basemap::{pbf_stem_to_geofabrik_path, region_bbox};
 use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile};
-use crate::routing::pbf_extract::pbf_is_real_extract;
+use crate::routing::pbf_extract::{pbf_is_real_extract, MIN_REAL_PBF_BYTES};
 use crate::routing::safety::DangerBarrierIndex;
 use crate::routing::wetland::WetlandIndex;
 use std::collections::{HashMap, HashSet};
@@ -1927,23 +1927,39 @@ fn supplement_pack_ferries_from_pbf_inner(
         let Some(pbf) = resolve_ferry_overlay_pbf(home, stem, bbox) else {
             continue;
         };
-        // Plan path: never parse PBF. If sidecar is not ready, surface typed
-        // preparing status and kick lazy ensure (no install-time sidecar build).
+        // Geofabrik-sized extracts: never parse PBF on the plan thread. If the
+        // sidecar is not ready, surface FerryPreparing and kick a background
+        // ensure. Corridor fixtures / small real extracts (BlobHeader, below
+        // 1 MiB) are cheap to parse here so pack load completes (innlandet
+        // host tests, local cuts) instead of spinning on preparing.
         if !super::ferry_overlay_cache::sidecar_fresh(home, stem, profile, &pbf) {
-            let (status, pct) = super::ferry_overlay_cache::ferry_preparing_status(stem);
-            crate::routing::plan_perf::note("ferry_overlay", "preparing_sidecar");
-            // Best-effort kick on corridor miss only. Do not block the plan thread.
-            let home_b = home.to_path_buf();
-            let stem_b = stem.clone();
-            let pbf_b = pbf.clone();
-            let _ = std::thread::Builder::new()
-                .name("ferry-sidecar".into())
-                .spawn(move || {
-                    let _ = super::ferry_overlay_cache::ensure_ferry_sidecar(
-                        &home_b, &stem_b, profile, &pbf_b,
+            let pbf_len = pbf.metadata().map(|m| m.len()).unwrap_or(0);
+            if pbf_is_real_extract(&pbf) && pbf_len < MIN_REAL_PBF_BYTES {
+                crate::routing::plan_perf::note("ferry_overlay", "sync_sidecar_small_extract");
+                if let Err(e) =
+                    super::ferry_overlay_cache::ensure_ferry_sidecar(home, stem, profile, &pbf)
+                {
+                    log::warn!(
+                        target: "NaviPlan",
+                        "ferry_overlay small-extract sidecar failed stem={stem}: {e:#}"
                     );
-                });
-            return Err(PackLoadError::FerryPreparing(status, pct));
+                    continue;
+                }
+            } else {
+                let (status, pct) = super::ferry_overlay_cache::ferry_preparing_status(stem);
+                crate::routing::plan_perf::note("ferry_overlay", "preparing_sidecar");
+                let home_b = home.to_path_buf();
+                let stem_b = stem.clone();
+                let pbf_b = pbf.clone();
+                let _ = std::thread::Builder::new()
+                    .name("ferry-sidecar".into())
+                    .spawn(move || {
+                        let _ = super::ferry_overlay_cache::ensure_ferry_sidecar(
+                            &home_b, &stem_b, profile, &pbf_b,
+                        );
+                    });
+                return Err(PackLoadError::FerryPreparing(status, pct));
+            }
         }
         match super::ferry_overlay_cache::ferry_overlay_for_plan(home, stem, profile, &pbf, &clips)
         {
