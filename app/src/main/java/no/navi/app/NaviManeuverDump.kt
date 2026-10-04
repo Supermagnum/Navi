@@ -95,6 +95,28 @@ object NaviManeuverDump {
                 put("overnight_stops", overnightStops)
                 put("route_uses_ferry", ferryDiag.opt("route_uses_ferry"))
                 put("no_route_without_ferry", ferryDiag.opt("no_route_without_ferry"))
+                put(
+                    "route_ferry_legs",
+                    Regex("""(?:^|[;\s])route_ferry_legs=(\d+)""")
+                        .find(result.report)
+                        ?.groupValues
+                        ?.getOrNull(1)
+                        ?.toIntOrNull() ?: JSONObject.NULL,
+                )
+                put(
+                    "route_tunnel_count",
+                    Regex("""(?:^|[;\s])route_tunnel_count=(\d+)""")
+                        .find(result.report)
+                        ?.groupValues
+                        ?.getOrNull(1)
+                        ?.toIntOrNull() ?: JSONObject.NULL,
+                )
+                put(
+                    "rest_place_count",
+                    runCatching {
+                        JSONArray(result.breakPoisJson.ifBlank { "[]" }).length()
+                    }.getOrDefault(0),
+                )
                 if (dbg != null) {
                     val viasArr = JSONArray()
                     for ((lat, lon) in dbg.vias) {

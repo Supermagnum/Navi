@@ -1860,6 +1860,49 @@ impl RouteGraph {
         legs
     }
 
+    /// Contiguous tunnel-edge runs on the path: `(label, length_m)`.
+    /// Label prefers OSM `name`, else `ref`, else `unnamed`.
+    pub fn path_tunnel_legs(&self, edge_indices: &[usize]) -> Vec<(String, f64)> {
+        let mut legs: Vec<(String, f64)> = Vec::new();
+        let mut cur_label: Option<String> = None;
+        let mut cur_m = 0.0_f64;
+        let flush = |legs: &mut Vec<(String, f64)>, label: &mut Option<String>, m: &mut f64| {
+            if let Some(l) = label.take() {
+                if *m > 0.0 {
+                    legs.push((l, *m));
+                }
+            }
+            *m = 0.0;
+        };
+        for &i in edge_indices {
+            let e = &self.edges[i];
+            if !e.is_tunnel {
+                flush(&mut legs, &mut cur_label, &mut cur_m);
+                continue;
+            }
+            let label = e
+                .name
+                .as_deref()
+                .or(e.road_ref.as_deref())
+                .unwrap_or("unnamed")
+                .to_string();
+            match cur_label.as_ref() {
+                Some(l) if l == &label => cur_m += e.length_m,
+                Some(_) => {
+                    flush(&mut legs, &mut cur_label, &mut cur_m);
+                    cur_label = Some(label);
+                    cur_m = e.length_m;
+                }
+                None => {
+                    cur_label = Some(label);
+                    cur_m = e.length_m;
+                }
+            }
+        }
+        flush(&mut legs, &mut cur_label, &mut cur_m);
+        legs
+    }
+
     /// Count edges excluded specifically by seasonal access conditionals at departure.
     pub fn seasonal_closure_excluded_count(
         &self,
@@ -4718,5 +4761,54 @@ mod tests {
         // with server weights the short tagged ferry wins by a wide margin.
         assert!(short_length_only < chain_length_only);
         assert!(short_server < chain_server);
+    }
+
+    #[test]
+    fn path_ferry_and_tunnel_legs_count_contiguous_runs() {
+        let mut nodes = HashMap::new();
+        for (id, n) in [
+            test_node(1, 60.0, 10.00),
+            test_node(2, 60.0, 10.01),
+            test_node(3, 60.0, 10.02),
+            test_node(4, 60.0, 10.03),
+            test_node(5, 60.0, 10.04),
+            test_node(6, 60.0, 10.05),
+        ] {
+            nodes.insert(id, n);
+        }
+        let mut land_a = test_edge(1, 2, 60.0, 10.00, 60.0, 10.01);
+        land_a.length_m = 100.0;
+        let mut ferry_a = test_edge(2, 3, 60.0, 10.01, 60.0, 10.02);
+        ferry_a.is_ferry = true;
+        ferry_a.name = Some("Horten-Moss".into());
+        ferry_a.length_m = 200.0;
+        let mut ferry_b = test_edge(3, 4, 60.0, 10.02, 60.0, 10.03);
+        ferry_b.is_ferry = true;
+        ferry_b.name = Some("Horten-Moss".into());
+        ferry_b.length_m = 150.0;
+        let mut tunnel_a = test_edge(4, 5, 60.0, 10.03, 60.0, 10.04);
+        tunnel_a.is_tunnel = true;
+        tunnel_a.name = Some("Lærdalstunnelen".into());
+        tunnel_a.length_m = 300.0;
+        let mut tunnel_b = test_edge(5, 6, 60.0, 10.04, 60.0, 10.05);
+        tunnel_b.is_tunnel = true;
+        tunnel_b.name = Some("Lærdalstunnelen".into());
+        tunnel_b.length_m = 50.0;
+        let graph = RouteGraph::from_parts(
+            nodes,
+            vec![land_a, ferry_a, ferry_b, tunnel_a, tunnel_b],
+            RoutingProfile::Car,
+        );
+        let idxs: Vec<usize> = (0..graph.edges.len()).collect();
+        let ferries = graph.path_ferry_legs(&idxs);
+        assert_eq!(ferries.len(), 1);
+        assert_eq!(ferries[0].0, "Horten-Moss");
+        assert!((ferries[0].1 - 350.0).abs() < 1e-9);
+        let tunnels = graph.path_tunnel_legs(&idxs);
+        assert_eq!(tunnels.len(), 1);
+        assert_eq!(tunnels[0].0, "Lærdalstunnelen");
+        assert!((tunnels[0].1 - 350.0).abs() < 1e-9);
+        assert!(graph.path_ferry_legs(&[]).is_empty());
+        assert!(graph.path_tunnel_legs(&[]).is_empty());
     }
 }

@@ -601,10 +601,33 @@ fn append_graph_ferry_edges(report: &mut String, graph: &RouteGraph) {
 
 /// Path ferry fingerprint: leg count + `name@km` joined by `|` (stable for matrix compare).
 fn append_path_ferry_legs(report: &mut String, graph: &RouteGraph, path_edges: &[usize]) {
-    let legs = graph.path_ferry_legs(path_edges);
-    report.push_str(&format!("route_ferry_legs={}\n", legs.len()));
+    append_named_path_legs(
+        report,
+        "route_ferry_legs",
+        "route_ferry_fp",
+        &graph.path_ferry_legs(path_edges),
+    );
+}
+
+/// Path tunnel fingerprint: contiguous tunnel runs (`route_tunnel_count` / `route_tunnel_fp`).
+fn append_path_tunnel_legs(report: &mut String, graph: &RouteGraph, path_edges: &[usize]) {
+    append_named_path_legs(
+        report,
+        "route_tunnel_count",
+        "route_tunnel_fp",
+        &graph.path_tunnel_legs(path_edges),
+    );
+}
+
+fn append_named_path_legs(
+    report: &mut String,
+    count_key: &str,
+    fp_key: &str,
+    legs: &[(String, f64)],
+) {
+    report.push_str(&format!("{count_key}={}\n", legs.len()));
     if legs.is_empty() {
-        report.push_str("route_ferry_fp=\n");
+        report.push_str(&format!("{fp_key}=\n"));
         return;
     }
     let fp = legs
@@ -615,7 +638,14 @@ fn append_path_ferry_legs(report: &mut String, graph: &RouteGraph, path_edges: &
         })
         .collect::<Vec<_>>()
         .join("|");
-    report.push_str(&format!("route_ferry_fp={fp}\n"));
+    report.push_str(&format!("{fp_key}={fp}\n"));
+}
+
+fn append_rest_place_count(report: &mut String, break_pois_json: &str) {
+    let n = serde_json::from_str::<Vec<serde_json::Value>>(break_pois_json)
+        .map(|v| v.len())
+        .unwrap_or(0);
+    report.push_str(&format!("rest_place_count={n}\n"));
 }
 
 fn parse_graph_ferry_edges_token(report: &str) -> Option<u64> {
@@ -2349,6 +2379,8 @@ fn plan_car_route_chunked_legs(
     let mut graph_ferry_edges: u64 = 0;
     let mut ferry_fp_parts: Vec<String> = Vec::new();
     let mut ferry_leg_count: u64 = 0;
+    let mut tunnel_fp_parts: Vec<String> = Vec::new();
+    let mut tunnel_count: u64 = 0;
     let mut pad_attempts: Vec<f64> = Vec::new();
     let mut priority_share_acc = 0.0;
     let mut priority_share_w = 0.0;
@@ -2415,6 +2447,14 @@ fn plan_car_route_chunked_legs(
         if let Some(fp) = parse_token_value(&leg.report, "route_ferry_fp=") {
             if !fp.is_empty() {
                 ferry_fp_parts.push(fp);
+            }
+        }
+        if let Some(n) = parse_u64_token(&leg.report, "route_tunnel_count=") {
+            tunnel_count = tunnel_count.saturating_add(n);
+        }
+        if let Some(fp) = parse_token_value(&leg.report, "route_tunnel_fp=") {
+            if !fp.is_empty() {
+                tunnel_fp_parts.push(fp);
             }
         }
         if leg.distance_km <= 0.0
@@ -2524,6 +2564,9 @@ fn plan_car_route_chunked_legs(
     report.push_str(&format!("graph_ferry_edges={graph_ferry_edges}\n"));
     report.push_str(&format!("route_ferry_legs={ferry_leg_count}\n"));
     report.push_str(&format!("route_ferry_fp={}\n", ferry_fp_parts.join("|")));
+    report.push_str(&format!("route_tunnel_count={tunnel_count}\n"));
+    report.push_str(&format!("route_tunnel_fp={}\n", tunnel_fp_parts.join("|")));
+    append_rest_place_count(&mut report, &break_pois_json);
     report.push_str(&format!(
         "chunked_distance_km={distance_km:.3}; chunked_eta_min={eta_minutes:.1}; hops={}; route_uses_ferry={route_uses_ferry}\nPASS\n",
         hops.len().saturating_sub(1)
@@ -4024,6 +4067,7 @@ fn plan_car_route_inner(
     let route_uses_tolls = graph.path_uses_tolls(&path_edges);
     let route_uses_ferry = graph.path_uses_ferries(&path_edges);
     append_path_ferry_legs(&mut report, &graph, &path_edges);
+    append_path_tunnel_legs(&mut report, &graph, &path_edges);
     // Keep stage key `astar_ms` for greppable compatibility (= search wall).
     let astar_ms = search_ms_acc;
 
@@ -4590,6 +4634,7 @@ fn plan_car_route_inner(
     );
     merge_break_poi_pins(&mut break_pois_json, motor_overnight_pins);
     merge_break_poi_pins(&mut break_pois_json, truck_overnight_pins);
+    append_rest_place_count(&mut report, &break_pois_json);
     let pause_pins_ms = timer.lap_ms();
     // Difficulty metadata on cycling network ways (informational only).
     if (profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric)
@@ -5368,6 +5413,9 @@ pub fn plan_hiking_route(
     let eta_minutes = fixed_pace_minutes(dist_km, HIKING_MIN_PER_KM);
     let hike_path_edges = graph.path_edge_indices_with_options(&full_path, false, &hike_opts);
     let route_uses_ferry = graph.path_uses_ferries(&hike_path_edges);
+    append_path_ferry_legs(&mut report, &graph, &hike_path_edges);
+    append_path_tunnel_legs(&mut report, &graph, &hike_path_edges);
+    append_rest_place_count(&mut report, &break_pois_json);
     report.push_str(&format!(
         "distance_km={dist_km:.3}; eta_min={eta_minutes:.1}; path_nodes={}; break_pois={break_pois_json}; route_uses_ferry={route_uses_ferry}\n",
         full_path.len()
@@ -9344,6 +9392,29 @@ mod hiking_auto_via_tests {
             Some(204)
         );
         assert_eq!(parse_graph_ferry_edges_token("pack_hit=true\n"), None);
+    }
+
+    #[test]
+    fn named_path_legs_and_rest_place_count_emit_zero_and_listed() {
+        let mut empty = String::new();
+        append_named_path_legs(&mut empty, "route_tunnel_count", "route_tunnel_fp", &[]);
+        assert!(empty.contains("route_tunnel_count=0"));
+        assert!(empty.contains("route_tunnel_fp=\n"));
+        let mut listed = String::new();
+        append_named_path_legs(
+            &mut listed,
+            "route_ferry_legs",
+            "route_ferry_fp",
+            &[("Horten-Moss".into(), 3500.0)],
+        );
+        assert!(listed.contains("route_ferry_legs=1"));
+        assert!(listed.contains("Horten-Moss@3.50"));
+        let mut rest = String::new();
+        append_rest_place_count(&mut rest, r#"[{"name":"Services"}]"#);
+        assert!(rest.contains("rest_place_count=1"));
+        let mut none = String::new();
+        append_rest_place_count(&mut none, "[]");
+        assert!(none.contains("rest_place_count=0"));
     }
 
     #[test]
