@@ -465,7 +465,20 @@ object LongTripCoordinator {
                 PackRegionAvailability.regionIdsMatchForCatalog(it, path)
             } ?: return
         when {
-            phase == "queued" -> plan.states[key] = State.Queued
+            phase == "queued" -> {
+                // ensureStarted emits "queued" from a coroutine after enqueue.
+                // That can land after a synthetic/progress phase (downloading /
+                // indexing) when the worker slot is already held — never regress
+                // past Queued.
+                when (plan.states[key]) {
+                    State.Needed,
+                    State.Paused,
+                    State.Failed,
+                    State.Unavailable,
+                    -> plan.states[key] = State.Queued
+                    else -> Unit
+                }
+            }
             phase == "downloading" -> plan.states[key] = State.Downloading
             phase == "installed" -> plan.states[key] = State.Installed
             phase == "indexing" -> {

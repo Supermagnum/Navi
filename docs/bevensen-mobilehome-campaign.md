@@ -43,7 +43,7 @@ Wild camping: `suggestAlongRoute kind=OK` `accepted=116` `rejected=44`
 | Plan | **`terminate=found`** | complete | yes |
 
 Release gate: **open** (in-band + no named DK coast detours + wild camp + DATEX).
-Tag target **v0.3.18-beta** (`versionCode` 23).
+Ship **v0.3.19-beta** (`versionCode` 24): preserves camping PIP re-home and restores `VersionMismatch` surfacing for planted v5 packs (`graph_pack_v5_to_v6_regen`).
 
 ### Wild camp `segment_errors=35` (fixed)
 

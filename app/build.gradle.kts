@@ -43,8 +43,8 @@ android {
         applicationId = "no.navi.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 23
-        versionName = "0.3.18-beta"
+        versionCode = 24
+        versionName = "0.3.19-beta"
         testInstrumentationRunner = "no.navi.app.NaviAndroidTestRunner"
         // Restrict packaging to naviAbis so every lib/<abi>/ folder contains the
         // same .so set (libnavi + MapLibre + JNA + graphics.path). Strips JNA's

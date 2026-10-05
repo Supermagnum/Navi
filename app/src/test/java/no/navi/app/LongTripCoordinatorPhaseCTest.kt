@@ -214,6 +214,17 @@ class LongTripCoordinatorPhaseCTest {
         while (System.currentTimeMillis() < deadline && enqueued.size < 2) {
             Thread.sleep(20)
         }
+        // Wait for async ensureStarted coroutines to emit "queued" before we
+        // advance phases — otherwise a late queued can race synthetic emits.
+        while (System.currentTimeMillis() < deadline) {
+            val st = LongTripCoordinator.currentPlan()?.states ?: break
+            if (st[regions[1]] == LongTripCoordinator.State.Queued &&
+                st[regions[2]] == LongTripCoordinator.State.Queued
+            ) {
+                break
+            }
+            Thread.sleep(20)
+        }
 
         assertTrue(
             "start region finished → planner may use it",

@@ -2100,12 +2100,23 @@ fn pick_primary_manifest<'a>(
     route_points: Option<&[(f64, f64)]>,
     profile: RoutingProfile,
 ) -> Result<(String, NaviManifest, &'a Path), PackLoadError> {
+    // Keep the planning stem whenever its manifest exists — even VersionMismatch /
+    // Stale / incomplete — so try_load can emit the precise PackLoadError instead
+    // of collapsing everything to Missing (see graph_pack_v5_to_v6_regen).
+    // Ready-only re-home still runs first when route points are present so a
+    // country extract without Ready packs (sweden camping corridor) can fall
+    // through to a Ready PIP / covering leaf.
     let pbf_pack = home_dir_for_stem(dirs, pbf_stem, profile).and_then(|home| {
         match load_ready_manifest(home, pbf_stem) {
-            Ok(man) if stem_pack_ready(home, &man, profile) => {
-                Some((pbf_stem.to_string(), man, home))
-            }
+            Ok(man) => Some((pbf_stem.to_string(), man, home)),
             _ => None,
+        }
+    });
+    let pbf_ready = pbf_pack.as_ref().and_then(|(stem, man, home)| {
+        if stem_pack_ready(home, man, profile) {
+            Some((stem.clone(), man.clone(), *home))
+        } else {
+            None
         }
     });
 
@@ -2128,7 +2139,7 @@ fn pick_primary_manifest<'a>(
             }
         }
     }
-    if let Some((stem, man, home)) = &pbf_pack {
+    if let Some((stem, man, home)) = &pbf_ready {
         if let Some(path) = pbf_stem_to_geofabrik_path(stem) {
             if let Some(region) = region_bbox(&path) {
                 if crate::routing::basemap::bbox_covers_point(region, lat, lon) {
@@ -2181,6 +2192,8 @@ fn pick_primary_manifest<'a>(
     if let Some((_, stem, man, home)) = best {
         return Ok((stem, man, home));
     }
+    // No Ready re-home: return the planning stem (any status) so try_load can
+    // surface VersionMismatch / Stale instead of Missing.
     pbf_pack.ok_or(PackLoadError::Missing)
 }
 
