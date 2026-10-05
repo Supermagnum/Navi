@@ -30,7 +30,7 @@ class WaterLiveCompareScreenshotTest {
         dataDir = NaviAppData.resolve(context)
         shell("mkdir -p /data/local/tmp/navi_water_live && chmod 777 /data/local/tmp/navi_water_live")
         NaviMapTestHooks.hideUiChrome = true
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         MapHudPrefs.saveOptIn3d(context, false)
         MapHudPrefs.saveCameraTiltDeg(context, 0.0)
     }
@@ -73,7 +73,7 @@ class WaterLiveCompareScreenshotTest {
     ) {
         runCatching { activityRule.finishActivity() }
         Thread.sleep(500)
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         NaviMapTestHooks.lastBasemapKind = ""
         NaviMapTestHooks.forceOnlineBasemap = forceOnline
         NaviMapTestHooks.pendingCamera = Triple(lat, lon, zoom)

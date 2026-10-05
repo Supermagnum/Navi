@@ -146,7 +146,7 @@ class CameraPitchPreferenceInstrumentedTest {
         activityRule.finishActivity()
         Thread.sleep(1_000)
         NaviMapTestHooks.lastCameraPitch = -1.0
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         MapHudPrefs.saveCameraTiltDeg(context, targetTilt)
         MapHudPrefs.saveOptIn3d(context, true)
 

@@ -1,5 +1,6 @@
 package no.navi.app
 
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -51,7 +52,7 @@ class HudVerificationInstrumentedTest {
             NaviMapTestHooks.gpsBearingDeg = null
             NaviMapTestHooks.gpsAltitudeM = null
             NaviMapTestHooks.pendingCamera = null
-            NaviMapTestHooks.styleReady = false
+            NaviMapTestHooks.resetStyleLoadState()
             val ctx = InstrumentationRegistry.getInstrumentation().targetContext
             MapHudPrefs.saveAutoZoom(ctx, MapHudPrefs.DEFAULT_AUTO_ZOOM_LEVEL, enabled = false)
         }
@@ -84,12 +85,10 @@ class HudVerificationInstrumentedTest {
     }
 
     private fun waitStyle() {
-        val deadline = System.currentTimeMillis() + 25_000
-        while (System.currentTimeMillis() < deadline) {
-            if (NaviMapTestHooks.styleReady) break
-            Thread.sleep(200)
-        }
-        assertTrue("MapLibre style not ready", NaviMapTestHooks.styleReady)
+        assertTrue(
+            "MapLibre style not ready",
+            InstrumentedMapCapture.awaitStyleReady(25_000),
+        )
         NaviMapTestHooks.pendingCamera = Triple(centerLat, centerLon, baseZoom)
         Thread.sleep(3_000)
     }
@@ -678,16 +677,17 @@ class HudVerificationInstrumentedTest {
         Thread.sleep(1_500)
         setBreakReminders(false)
         composeRule
-            .onNodeWithText("Break reminders off", useUnmergedTree = true)
-            .assertIsDisplayed()
-        shot("hud_breaks_off.png")
-        setBreakReminders(true)
-        val breakOffStill =
+            .onAllNodesWithTag("hud_break_countdown", useUnmergedTree = true)
+            .assertCountEquals(0)
+        assertTrue(
+            "Breaks off must hide countdown (not show 'Break reminders off')",
             composeRule
                 .onAllNodesWithText("Break reminders off", useUnmergedTree = true)
                 .fetchSemanticsNodes()
-                .isNotEmpty()
-        assertFalse("Break countdown / interval text should return", breakOffStill)
+                .isEmpty(),
+        )
+        shot("hud_breaks_off.png")
+        setBreakReminders(true)
         composeRule
             .onNodeWithTag("hud_break_countdown", useUnmergedTree = true)
             .assertIsDisplayed()

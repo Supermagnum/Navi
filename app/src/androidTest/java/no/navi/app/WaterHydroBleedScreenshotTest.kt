@@ -54,7 +54,7 @@ class WaterHydroBleedScreenshotTest {
             }
         shell("mkdir -p /data/local/tmp/navi_hydro_bleed && chmod 777 /data/local/tmp/navi_hydro_bleed")
         NaviMapTestHooks.hideUiChrome = true
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         NaviMapTestHooks.forceOnlineBasemap = false
         MapHudPrefs.saveOptIn3d(context, false)
         MapHudPrefs.saveCameraTiltDeg(context, 0.0)
@@ -172,7 +172,7 @@ class WaterHydroBleedScreenshotTest {
     ) {
         runCatching { activityRule.finishActivity() }
         Thread.sleep(400)
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         NaviMapTestHooks.lastBasemapKind = ""
         NaviMapTestHooks.lastTerrainAttached = false
         NaviMapTestHooks.forceOnlineBasemap = forceOnline

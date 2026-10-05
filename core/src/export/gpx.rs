@@ -262,4 +262,12 @@ mod tests {
         assert!(xml.contains("<trkseg>"));
         assert_eq!(count_tag(&xml, "trkpt"), 0);
     }
+
+    #[test]
+    fn parse_route_polyline_bugoynes_is_lon_then_lat() {
+        let track = parse_route_polyline("29.6337571,69.9741435");
+        assert_eq!(track.len(), 1);
+        assert!((track[0].0 - 69.9741435).abs() < 1e-9, "lat");
+        assert!((track[0].1 - 29.6337571).abs() < 1e-9, "lon");
+    }
 }

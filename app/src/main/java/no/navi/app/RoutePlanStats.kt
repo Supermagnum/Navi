@@ -34,6 +34,15 @@ data class RoutePlanStats(
     val attractionCount: Int = 0,
     val attractionByType: Map<String, Int> = emptyMap(),
     val wildCampingSiteCount: Int = 0,
+    /** Distinct from count=0 when plugin off: e.g. UNAVAILABLE / ERROR kind. */
+    val wildCampingStatusKind: String = "",
+    val wildCampingStatusMessage: String = "",
+)
+
+/** Host-side camping suggest outcome kept when result JSON is absent (UNAVAILABLE). */
+data class CampingSuggestStatus(
+    val kind: String,
+    val message: String,
 )
 
 fun parseReportUIntToken(
@@ -93,6 +102,7 @@ fun wildCampingSiteCount(result: CampingSuggestResult?): Int {
 
     fun add(list: CampingSuggestionListModel) {
         for (c in list.cards) {
+            if (!c.accepted) continue
             val id =
                 c.locationId.ifBlank {
                     String.format(Locale.US, "%.5f,%.5f", c.lat, c.lon)
@@ -156,6 +166,8 @@ fun RoutePlanStats.toReportJson(): JSONObject {
         .put("attraction_count", attractionCount)
         .put("attraction_by_type", byType)
         .put("wild_camping_site_count", wildCampingSiteCount)
+        .put("wild_camping_status_kind", wildCampingStatusKind)
+        .put("wild_camping_status_message", wildCampingStatusMessage)
 }
 
 fun formatNamedFpList(fp: String): String {
@@ -187,6 +199,9 @@ fun headingBetweenDeg(
 @Composable
 fun RoutePlanStatsCard(
     stats: RoutePlanStats,
+    breakRemindersEnabled: Boolean = true,
+    campingPluginEnabled: Boolean = false,
+    campingSuggestStatus: CampingSuggestStatus? = null,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -223,17 +238,19 @@ fun RoutePlanStatsCard(
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag("route_plan_stats_ferries"),
             )
-            val restLine =
-                if (stats.restPlaceNames.isNotEmpty()) {
-                    "Rest places: ${stats.restPlaceCount} (${stats.restPlaceNames.take(8).joinToString(", ")})"
-                } else {
-                    "Rest places: ${stats.restPlaceCount}"
-                }
-            Text(
-                restLine,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.testTag("route_plan_stats_rest"),
-            )
+            if (breakRemindersEnabled) {
+                val restLine =
+                    if (stats.restPlaceNames.isNotEmpty()) {
+                        "Rest places: ${stats.restPlaceCount} (${stats.restPlaceNames.take(8).joinToString(", ")})"
+                    } else {
+                        "Rest places: ${stats.restPlaceCount}"
+                    }
+                Text(
+                    restLine,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("route_plan_stats_rest"),
+                )
+            }
             val attrTypes =
                 stats.attractionByType.entries
                     .sortedByDescending { it.value }
@@ -250,10 +267,38 @@ fun RoutePlanStatsCard(
                 modifier = Modifier.testTag("route_plan_stats_attractions"),
             )
             Text(
-                "Wild camping sites: ${stats.wildCampingSiteCount}",
+                formatWildCampingStatsLine(
+                    pluginEnabled = campingPluginEnabled,
+                    siteCount = stats.wildCampingSiteCount,
+                    status = campingSuggestStatus,
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag("route_plan_stats_wild_camping"),
             )
         }
     }
+}
+
+fun formatWildCampingStatsLine(
+    pluginEnabled: Boolean,
+    siteCount: Int,
+    status: CampingSuggestStatus?,
+): String {
+    if (!pluginEnabled) return "Wild camping: plugin off"
+    val kind = status?.kind.orEmpty()
+    if (kind.isNotEmpty() && !kind.equals("OK", ignoreCase = true)) {
+        val msg = status?.message.orEmpty().trim()
+        val short =
+            if (msg.length > 72) {
+                msg.take(69) + "..."
+            } else {
+                msg
+            }
+        return if (short.isNotEmpty()) {
+            "Wild camping: $kind ($short)"
+        } else {
+            "Wild camping: $kind"
+        }
+    }
+    return "Wild camping sites: $siteCount"
 }

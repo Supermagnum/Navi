@@ -20,8 +20,12 @@ pub const CORRIDOR_SEED_RADIUS_M: f64 = 800.0;
 pub enum JunctionRank {
     /// tertiary or unclassified ∩ track
     Preferred = 0,
-    /// service ∩ track (downranked)
-    Service = 1,
+    /// secondary ∩ track (below preferred; major-road corridors often only meet tracks here)
+    Secondary = 1,
+    /// residential ∩ track (local access; below secondary)
+    Residential = 2,
+    /// service ∩ track (downranked; driveway-stub filter applies)
+    Service = 3,
 }
 
 #[derive(Debug, Clone)]
@@ -47,6 +51,8 @@ pub struct ProbePoint {
 fn is_real_road(hw: &str) -> Option<JunctionRank> {
     match hw {
         "tertiary" | "unclassified" => Some(JunctionRank::Preferred),
+        "secondary" => Some(JunctionRank::Secondary),
+        "residential" => Some(JunctionRank::Residential),
         "service" => Some(JunctionRank::Service),
         _ => None,
     }
@@ -110,9 +116,82 @@ fn incident_eis(index: &HashMap<NodeId, Vec<usize>>, node: NodeId) -> &[usize] {
         .unwrap_or(empty_eis())
 }
 
+/// Densify sparse corridor samples (metres) so junctions between host samples
+/// are not skipped by [`near_corridor`]. Pure geometry — does not load graph.
+pub fn densify_corridor_waypoints(waypoints: &[[f64; 2]], spacing_m: f64) -> Vec<[f64; 2]> {
+    if waypoints.len() < 2 || spacing_m <= 1.0 {
+        return waypoints.to_vec();
+    }
+    let mut out = Vec::with_capacity(waypoints.len() * 2);
+    out.push(waypoints[0]);
+    for w in waypoints.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        let seg_m = dist_m((a[0], a[1]), (b[0], b[1]));
+        if seg_m <= spacing_m {
+            out.push(b);
+            continue;
+        }
+        let n = (seg_m / spacing_m).floor() as usize;
+        for i in 1..=n {
+            let t = (i as f64) * spacing_m / seg_m;
+            if t >= 1.0 {
+                break;
+            }
+            out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+        }
+        out.push(b);
+    }
+    out
+}
+
+/// Offset corridor samples ±`offset_m` perpendicular to each segment so seed
+/// search can reach tertiary/unclassified/service∩track a short walk off a
+/// major-road carriageway without inventing geometry (still requires road∩track
+/// in the loaded corridor-band graph).
+pub fn corridor_with_lateral_offsets(waypoints: &[[f64; 2]], offset_m: f64) -> Vec<[f64; 2]> {
+    if waypoints.len() < 2 || offset_m <= 1.0 {
+        return waypoints.to_vec();
+    }
+    let mut out = Vec::with_capacity(waypoints.len() * 3);
+    out.extend_from_slice(waypoints);
+    for w in waypoints.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        let dlat = b[0] - a[0];
+        let dlon = b[1] - a[1];
+        let mid_lat = (a[0] + b[0]) * 0.5;
+        let mid_lon = (a[1] + b[1]) * 0.5;
+        // Metres per degree (approx); easting shrinks with cos(lat).
+        let m_per_deg_lat = 111_320.0;
+        let m_per_deg_lon = (111_320.0 * mid_lat.to_radians().cos()).max(1e-6);
+        let dx = dlon * m_per_deg_lon;
+        let dy = dlat * m_per_deg_lat;
+        let len = (dx * dx + dy * dy).sqrt();
+        if len < 1.0 {
+            continue;
+        }
+        let ux = -dy / len;
+        let uy = dx / len;
+        let olat = offset_m * uy / m_per_deg_lat;
+        let olon = offset_m * ux / m_per_deg_lon;
+        out.push([mid_lat + olat, mid_lon + olon]);
+        out.push([mid_lat - olat, mid_lon - olon]);
+    }
+    out
+}
+
 /// Enumerate road∩track junctions near the corridor. Service seeds are included
 /// only when the track continues ≥ [`SERVICE_TRACK_MIN_CONTINUE_M`].
 pub fn find_road_track_junctions(
+    graph: &RouteGraph,
+    corridor_waypoints: &[[f64; 2]],
+    corridor_radius_m: f64,
+) -> Vec<RoadTrackSeed> {
+    let dense = densify_corridor_waypoints(corridor_waypoints, 1_200.0);
+    let search_pts = corridor_with_lateral_offsets(&dense, 400.0);
+    find_road_track_junctions_at(graph, &search_pts, corridor_radius_m)
+}
+
+fn find_road_track_junctions_at(
     graph: &RouteGraph,
     corridor_waypoints: &[[f64; 2]],
     corridor_radius_m: f64,
@@ -161,7 +240,10 @@ pub fn find_road_track_junctions(
 
         for &tei in &tracks {
             let continues = track_continue_length_m(graph, &incident, node_id, tei);
-            if best_rank == JunctionRank::Service && continues < SERVICE_TRACK_MIN_CONTINUE_M {
+            // Stub filter for service / residential (driveways, cul-de-sac stubs).
+            if matches!(best_rank, JunctionRank::Service | JunctionRank::Residential)
+                && continues < SERVICE_TRACK_MIN_CONTINUE_M
+            {
                 continue;
             }
             let key = (node_id.0, tei);
@@ -334,7 +416,40 @@ mod tests {
 
     #[test]
     fn service_ranks_below_preferred() {
-        assert!(JunctionRank::Preferred < JunctionRank::Service);
+        assert!(JunctionRank::Preferred < JunctionRank::Secondary);
+        assert!(JunctionRank::Secondary < JunctionRank::Residential);
+        assert!(JunctionRank::Residential < JunctionRank::Service);
+    }
+
+    #[test]
+    fn secondary_and_residential_are_seed_roads() {
+        assert_eq!(is_real_road("secondary"), Some(JunctionRank::Secondary));
+        assert_eq!(is_real_road("residential"), Some(JunctionRank::Residential));
+        assert_eq!(is_real_road("primary"), None);
+        assert_eq!(is_real_road("trunk"), None);
+    }
+
+    #[test]
+    fn densify_inserts_midpoints_on_long_legs() {
+        let pts = [[60.0, 10.0], [60.1, 10.0]];
+        let dense = densify_corridor_waypoints(&pts, 2_000.0);
+        assert!(dense.len() > 2, "expected midpoints, got {}", dense.len());
+        assert_eq!(dense.first().copied(), Some(pts[0]));
+        assert_eq!(dense.last().copied(), Some(pts[1]));
+    }
+
+    #[test]
+    fn corridor_samples_are_lat_lon() {
+        let bugoynes = [[69.9741435, 29.6337571]];
+        assert!(near_corridor(69.9741435, 29.6337571, &bugoynes, 50.0));
+        assert!(!near_corridor(29.6337571, 69.9741435, &bugoynes, 50_000.0));
+    }
+
+    #[test]
+    fn lateral_offsets_add_side_samples() {
+        let pts = [[60.0, 10.0], [60.05, 10.0]];
+        let with = corridor_with_lateral_offsets(&pts, 400.0);
+        assert!(with.len() > pts.len());
     }
 
     #[test]

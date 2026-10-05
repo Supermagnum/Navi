@@ -52,7 +52,7 @@ class HouseNumberVisibilityScreenshotTest {
         NaviMapTestHooks.hideSearchChrome = true
         NaviMapTestHooks.disableGpsFollow = true
         NaviMapTestHooks.followGps = false
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         MapHudPrefs.saveOptIn3d(context, false)
         MapHudPrefs.saveCameraTiltDeg(context, 0.0)
     }
@@ -81,11 +81,12 @@ class HouseNumberVisibilityScreenshotTest {
             shoot("online_liberty_z${z.toInt()}", lat, lon, z)
         }
 
-        // Offline Protomaps
+        // Offline Protomaps — wait for a newer style apply, do not hard-reset gens
+        // while the activity is live (that can orphan an in-flight complete).
+        val offlineGate = NaviMapTestHooks.styleReadyGeneration()
         setWifi(false)
         NaviMapTestHooks.forceOnlineBasemap = false
-        NaviMapTestHooks.styleReady = false
-        waitKind("OfflineProtomaps")
+        waitKind("OfflineProtomaps", afterReadyGeneration = offlineGate)
         for (z in listOf(12.0, 13.0, 14.0, 15.0, 16.0, 17.0)) {
             shoot("offline_pm_z${z.toInt()}", lat, lon, z)
         }
@@ -95,10 +96,14 @@ class HouseNumberVisibilityScreenshotTest {
         assertTrue("expected housenumber zoom shots, got $n in $outDir", n >= 10)
     }
 
-    private fun waitKind(prefix: String) {
+    private fun waitKind(
+        prefix: String,
+        afterReadyGeneration: Int = 0,
+    ) {
         val deadline = System.currentTimeMillis() + 90_000
         while (System.currentTimeMillis() < deadline) {
             if (NaviMapTestHooks.styleReady &&
+                NaviMapTestHooks.styleReadyGeneration() > afterReadyGeneration &&
                 NaviMapTestHooks.lastBasemapKind.startsWith(prefix)
             ) {
                 return
@@ -109,6 +114,7 @@ class HouseNumberVisibilityScreenshotTest {
         assertTrue(
             "basemap kind prefix=$prefix got=${NaviMapTestHooks.lastBasemapKind}",
             NaviMapTestHooks.styleReady &&
+                NaviMapTestHooks.styleReadyGeneration() > afterReadyGeneration &&
                 NaviMapTestHooks.lastBasemapKind.startsWith(prefix),
         )
     }

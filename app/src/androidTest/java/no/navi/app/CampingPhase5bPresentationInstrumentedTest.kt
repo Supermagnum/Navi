@@ -6,6 +6,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
+import org.json.JSONArray
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -22,6 +23,7 @@ import uniffi.navi.campingPluginInstallGuest
 import uniffi.navi.campingPluginSetClockYmd
 import uniffi.navi.campingPluginSetEnabled
 import uniffi.navi.campingPluginSetNavContext
+import uniffi.navi.campingPluginSetPackDirs
 import uniffi.navi.campingPluginSetTimezone
 import uniffi.navi.initNativeLogging
 import java.io.File
@@ -74,6 +76,32 @@ class CampingPhase5bPresentationInstrumentedTest {
         }.getOrNull() ?: dest.takeIf { it.isFile }
     }
 
+    /**
+     * Prefer a trimmed app-private Ready pack (files/ostlandet_pack: Lillehammer
+     * car tile only). Full /data/local/tmp packs LMK-kill the 4 GB AVD when all
+     * tiles are unioned into the instrumented process.
+     */
+    private fun ensureOstlandetReadyPackDirs(): String {
+        val candidates =
+            listOf(
+                File(filesDir, "ostlandet_pack"),
+                File("/data/local/tmp/navi-packs"),
+                File("/data/local/tmp/navi_pack_stage"),
+            ).filter {
+                it.isDirectory && File(it, "ostlandet-latest.navi-manifest.json").isFile
+            }
+        assumeTrue(
+            "Ready ostlandet pack required (files/ostlandet_pack or /data/local/tmp/navi-packs)",
+            candidates.isNotEmpty(),
+        )
+        // Single pack root + filesDir (PBF) — do not union every stage dir (RAM).
+        val arr = JSONArray().put(candidates.first().absolutePath).put(dataDir.absolutePath)
+        val json = arr.toString()
+        val status = campingPluginSetPackDirs(json)
+        assumeTrue("campingPluginSetPackDirs: $status", status.startsWith("OK"))
+        return json
+    }
+
     private fun lillehammerSjusjoenWaypoints(): String {
         val wps =
             listOf(
@@ -121,17 +149,43 @@ class CampingPhase5bPresentationInstrumentedTest {
     fun hikingCorridor_disclaimerAndNorwegianFireText() {
         val pbf = regionPbf()
         assumeTrue("ostlandet PBF required for corridor graph", pbf != null)
+        // CAR graph on 4 GB AVD — hiking/foot tiles from stage_full were LMK-killed.
+        val packDirs = ensureOstlandetReadyPackDirs()
         campingPluginClearClockOverride()
-        val parsed =
+        campingPluginSetNavContext(
+            waypointsJson = lillehammerSjusjoenWaypoints(),
+            destLat = 61.1475,
+            destLon = 10.6980,
+            profile = TravelProfile.CAR,
+            professionalDriver = false,
+        )
+        val call =
             kotlinx.coroutines.runBlocking {
-                suggestParsed()
-            } ?: return
+                CampingPluginApi.suggestAlongRoute(12u)
+            }
+        android.util.Log.i("NaviCamping", "hikingCorridor pack_dirs=$packDirs")
+        android.util.Log.i(
+            "NaviCamping",
+            "hikingCorridor kind=${call.kind} message=${call.message} " +
+                "json_bytes=${call.resultJson?.length ?: 0}",
+        )
+        org.junit.Assert.assertEquals(
+            "expected OK seeds/cards on Lillehammer–Sjusjøen corridor: ${call.message}",
+            CampingCallKind.OK,
+            call.kind,
+        )
+        val parsed = parseCampingSuggestResultJson(call.resultJson!!)
         assertTrue(parsed.disclaimer.contains("not legal advice"))
         assertTrue("must evaluate in wasmtime guest", parsed.via == "wasmtime")
         val cards = parsed.list.cards + parsed.onFootFromHere.cards
-        assumeTrue("expected at least one card along Lillehammer corridor", cards.isNotEmpty())
+        android.util.Log.i(
+            "NaviCamping",
+            "hikingCorridor cards=${cards.size} list=${parsed.list.cards.size} " +
+                "on_foot=${parsed.onFootFromHere.cards.size}",
+        )
+        assertTrue("expected at least one card along Lillehammer corridor", cards.isNotEmpty())
         val noCards = cards.filter { it.countryIso.equals("no", ignoreCase = true) }
-        assumeTrue("expected Norwegian cards on this corridor", noCards.isNotEmpty())
+        assertTrue("expected Norwegian cards on this corridor", noCards.isNotEmpty())
         assertTrue(noCards.any { !it.fireText.isNullOrBlank() })
     }
 

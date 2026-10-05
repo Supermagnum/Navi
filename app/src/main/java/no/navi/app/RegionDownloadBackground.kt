@@ -705,11 +705,14 @@ object RegionDownloadBackground {
         val extractPath = GeofabrikDownloadCatalog.extractPathForPbf(path)
         val leaf = extractPath.substringAfterLast('/')
         val filename = "$leaf-latest.osm.pbf"
+        val indexReady = placeIndexLooksReady(dataDir, path)
         val phase =
             when {
+                // Place-index already ready: do not synthesize a multi-hour PMTiles
+                // resume that clears Indexed and blocks long-trip planning.
+                indexReady -> return null
                 !PackRegionAvailability.localPmtilesReady(dataDir, path) -> Phase.BASEMAP
-                !placeIndexLooksReady(dataDir, path) -> Phase.PLACE_INDEX
-                else -> return null
+                else -> Phase.PLACE_INDEX
             }
         // Extract URL for place-index PBF; packs come from the pack server.
         val url =
@@ -907,13 +910,17 @@ object RegionDownloadBackground {
 
     /**
      * Whether pipeline start should wipe `name_entries` for [regionId].
-     * False only for PLACE_INDEX resume with an explicit complete=0 build row.
+     * False for PLACE_INDEX resume with an explicit complete=0 build row, and
+     * always false for BASEMAP (PMTiles must not un-index a corridor region).
      */
     internal fun shouldClearPlaceRowsOnPipelineStart(
         phase: Phase,
         dataDir: File,
         regionId: String,
-    ): Boolean = !(phase == Phase.PLACE_INDEX && placeIndexBuildIncomplete(dataDir, regionId))
+    ): Boolean {
+        if (phase == Phase.BASEMAP) return false
+        return !(phase == Phase.PLACE_INDEX && placeIndexBuildIncomplete(dataDir, regionId))
+    }
 
     /**
      * Native download-slot snapshot as (raw label, formatted "label N% (done / tot)").
@@ -1362,7 +1369,7 @@ object RegionDownloadBackground {
         // PLACE_INDEX resume with name_index_build.complete=0: stamp only —
         // keep partial name_entries so the next ensurePlaceIndex can finish
         // (full PBF reparse is accepted; discarding rows left regions stuck).
-        if (geofabrikPath.isNotBlank()) {
+        if (geofabrikPath.isNotBlank() && startPhase != Phase.BASEMAP) {
             val clearRows =
                 shouldClearPlaceRowsOnPipelineStart(startPhase, dataDir, geofabrikPath)
             PlaceIndexReady.preparePipelineStart(
@@ -1386,7 +1393,13 @@ object RegionDownloadBackground {
                 },
             )
         }
-        emitPhase(geofabrikPath, "downloading")
+        when (startPhase) {
+            Phase.PACKS -> emitPhase(geofabrikPath, "downloading")
+            Phase.PLACE_INDEX -> emitPhase(geofabrikPath, "indexing")
+            Phase.BASEMAP -> {
+                // Keep Indexed/Installed; PMTiles is not a pack re-download.
+            }
+        }
         Log.i(
             TAG,
             "start provision filename=$filename resume_bytes=$already " +

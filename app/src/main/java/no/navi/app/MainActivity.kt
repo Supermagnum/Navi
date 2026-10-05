@@ -803,6 +803,7 @@ private fun NaviMapScreen() {
         mutableStateOf(MapHudPrefs.loadCampingProfessionalDriver(context))
     }
     var campingSuggestResult by remember { mutableStateOf<CampingSuggestResult?>(null) }
+    var campingSuggestStatus by remember { mutableStateOf<CampingSuggestStatus?>(null) }
     var showCampingSheet by remember { mutableStateOf(false) }
     var campingSessionDisableMessage by remember { mutableStateOf<String?>(null) }
     var hideChrome by remember { mutableStateOf(false) }
@@ -846,6 +847,7 @@ private fun NaviMapScreen() {
         campingSessionDisableMessage = uniffi.navi.campingPluginSessionDisabledReason()
         if (!campingPluginEnabled || mapState.polyline.isBlank()) {
             campingSuggestResult = null
+            campingSuggestStatus = null
             if (mapState.campingPins.isNotEmpty()) {
                 mapState =
                     mapState.copy(
@@ -873,9 +875,26 @@ private fun NaviMapScreen() {
         )
         val call = CampingPluginApi.suggestAlongRoute(12u)
         campingSessionDisableMessage = uniffi.navi.campingPluginSessionDisabledReason()
+        campingSuggestStatus =
+            CampingSuggestStatus(
+                kind = call.kind.name,
+                message = call.message,
+            )
+        android.util.Log.i(
+            "NaviCamping",
+            "suggestAlongRoute kind=${call.kind} message=${call.message} " +
+                "json_bytes=${call.resultJson?.length ?: 0}",
+        )
         val json = call.resultJson
         if (json.isNullOrBlank()) {
             campingSuggestResult = null
+            if (mapState.campingPins.isNotEmpty()) {
+                mapState =
+                    mapState.copy(
+                        campingPins = emptyList(),
+                        layerEpoch = mapState.layerEpoch + 1,
+                    )
+            }
             return@LaunchedEffect
         }
         val parsed = runCatching { parseCampingSuggestResultJson(json) }.getOrNull()
@@ -893,11 +912,22 @@ private fun NaviMapScreen() {
         }
     }
 
-    LaunchedEffect(campingSuggestResult, mapState.polyline) {
+    LaunchedEffect(campingSuggestResult, campingSuggestStatus, mapState.polyline) {
         if (mapState.polyline.isBlank()) return@LaunchedEffect
         val n = wildCampingSiteCount(campingSuggestResult)
-        if (n != routePlanStats.wildCampingSiteCount) {
-            routePlanStats = routePlanStats.copy(wildCampingSiteCount = n)
+        val kind = campingSuggestStatus?.kind.orEmpty()
+        val msg = campingSuggestStatus?.message.orEmpty()
+        if (
+            n != routePlanStats.wildCampingSiteCount ||
+            kind != routePlanStats.wildCampingStatusKind ||
+            msg != routePlanStats.wildCampingStatusMessage
+        ) {
+            routePlanStats =
+                routePlanStats.copy(
+                    wildCampingSiteCount = n,
+                    wildCampingStatusKind = kind,
+                    wildCampingStatusMessage = msg,
+                )
             NaviMapTestHooks.lastRoutePlanStatsJson = routePlanStats.toReportJson().toString()
         }
     }
@@ -947,6 +977,7 @@ private fun NaviMapScreen() {
     var toolsProcessReady by remember { mutableStateOf(false) }
     var planningRoute by remember { mutableStateOf(false) }
     var planKick by remember { mutableIntStateOf(0) }
+    var ferryPreparingRetries by remember { mutableIntStateOf(0) }
     var routePlanProgress by remember { mutableStateOf("") }
 
     // Standalone long-trip seed via adb extras (see applyNaviLaunchExtras).
@@ -1003,6 +1034,7 @@ private fun NaviMapScreen() {
                 status = "Trip seeded: ${trip.fromName} → ${trip.toName}"
                 if (trip.autoPlan) {
                     delay(1_200)
+                    ferryPreparingRetries = 0
                     planKick += 1
                 }
             }
@@ -1082,6 +1114,7 @@ private fun NaviMapScreen() {
                 autoZoomLevel = MapHudPrefs.loadAutoZoomLevel(context),
                 autoZoomWhileMoving = MapHudPrefs.loadAutoZoomOn(context),
                 breakAsDistance = MapHudPrefs.loadBreakAsDistance(context),
+                breakRemindersEnabled = MapHudPrefs.loadBreakRemindersEnabled(context),
                 unitSystem = MapHudPrefs.loadUnitSystem(context),
                 optIn3d = MapHudPrefs.loadOptIn3d(context),
                 contoursEnabled = MapHudPrefs.loadContoursEnabled(context),
@@ -3354,10 +3387,31 @@ private fun NaviMapScreen() {
                         }.ifBlank { "Preparing ferry data…" }
                 status = msg
                 RoutingPlanLog.failed(ecoForPlan, durationMs, msg, result)
-                // Auto-continue when the background sidecar finishes.
-                kotlinx.coroutines.delay(1_500)
-                if (isActive) {
+                // Wait for the background sidecar; do not restart densify every 1.5 s.
+                val maxWaitMs = 6 * 60_000L
+                val stepMs = 2_000L
+                var waited = 0L
+                var idle = false
+                while (isActive && waited < maxWaitMs) {
+                    delay(stepMs)
+                    waited += stepMs
+                    val prog =
+                        runCatching { uniffi.navi.ferrySidecarProgressSnapshot() }.getOrNull()
+                    if (prog != null) {
+                        if (prog.message.isNotBlank()) {
+                            status = prog.message
+                        }
+                        if (!prog.running) {
+                            idle = true
+                            break
+                        }
+                    }
+                }
+                if (isActive && idle && ferryPreparingRetries < 3) {
+                    ferryPreparingRetries += 1
                     planKick += 1
+                } else if (isActive) {
+                    status = "$msg (stopped auto-retry)"
                 }
                 return@LaunchedEffect
             }
@@ -3493,6 +3547,7 @@ private fun NaviMapScreen() {
                     minutesToBreak = null,
                     distanceToTurnKm = null,
                     breakAsDistance = MapHudPrefs.loadBreakAsDistance(context),
+                    breakRemindersEnabled = MapHudPrefs.loadBreakRemindersEnabled(context),
                     unitSystem = MapHudPrefs.loadUnitSystem(context),
                 )
         }
@@ -4645,6 +4700,7 @@ private fun NaviMapScreen() {
                         if (breakReq != null) {
                             NaviMapTestHooks.requestBreakReminders = null
                             driveHud = driveHud.copy(breakRemindersEnabled = breakReq)
+                            MapHudPrefs.saveBreakRemindersEnabled(context, breakReq)
                             NaviMapTestHooks.lastBreakRemindersEnabled = breakReq
                         }
                         val profileReq = NaviMapTestHooks.requestTravelProfile
@@ -5101,6 +5157,7 @@ private fun NaviMapScreen() {
             cameraTiltDeg = driveHud.cameraTiltDeg,
             vulkanAvailable = driveHud.vulkanAvailable,
             unitSystem = driveHud.unitSystem,
+            breakRemindersEnabled = driveHud.breakRemindersEnabled,
             styleEpoch = styleEpoch,
             bearingEpoch = bearingApplyEpoch,
             weatherPluginEnabled = weatherPluginEnabled,
@@ -5821,7 +5878,10 @@ private fun NaviMapScreen() {
                                 }
                             }
                             Button(
-                                onClick = { planKick += 1 },
+                                onClick = {
+                                    ferryPreparingRetries = 0
+                                    planKick += 1
+                                },
                                 enabled = !planningRoute,
                                 modifier =
                                     Modifier
@@ -5909,6 +5969,9 @@ private fun NaviMapScreen() {
                             if (mapState.polyline.isNotBlank()) {
                                 RoutePlanStatsCard(
                                     stats = routePlanStats,
+                                    breakRemindersEnabled = driveHud.breakRemindersEnabled,
+                                    campingPluginEnabled = campingPluginEnabled,
+                                    campingSuggestStatus = campingSuggestStatus,
                                     modifier = Modifier.padding(top = 4.dp),
                                 )
                             }
@@ -7315,6 +7378,7 @@ private fun NaviMapScreen() {
                                 if (!on) {
                                     showCampingSheet = false
                                     campingSuggestResult = null
+                                    campingSuggestStatus = null
                                     status = "Camping plugin off"
                                 } else {
                                     status = "Camping plugin on — suggestions when a route is active"
@@ -8288,7 +8352,9 @@ private fun NaviMapScreen() {
                     },
                     onToggleBreakReminders = { on ->
                         DiagnosticLog.logToggle("break_reminders", on)
+                        DiagnosticLog.logSettingSaved("break_reminders", on)
                         driveHud = driveHud.copy(breakRemindersEnabled = on)
+                        MapHudPrefs.saveBreakRemindersEnabled(context, on)
                     },
                     onToggleAutoZoom = { on ->
                         DiagnosticLog.logToggle("auto_zoom", on)
@@ -8523,6 +8589,7 @@ private fun NaviMapScreen() {
                         if (!on) {
                             showCampingSheet = false
                             campingSuggestResult = null
+                            campingSuggestStatus = null
                             status = "Camping plugin off"
                         } else {
                             status = "Camping plugin on — suggestions when a route is active"
@@ -8755,6 +8822,7 @@ private fun CorridorMapView(
     cameraTiltDeg: Double,
     vulkanAvailable: Boolean,
     unitSystem: UnitSystem,
+    breakRemindersEnabled: Boolean = true,
     styleEpoch: Int,
     bearingEpoch: Int = 0,
     weatherPluginEnabled: Boolean = false,
@@ -9019,7 +9087,7 @@ private fun CorridorMapView(
         applyDatexOverlay(style, datexHud)
         applyCameraTilt(map)
         styleReady.value = true
-        NaviMapTestHooks.styleReady = true
+        NaviMapTestHooks.completeStyleApply(applyGen)
         NaviMapTestHooks.lastBasemapKind = currentStyleKind.value?.name ?: resolved.kind.name
         map.triggerRepaint()
     }
@@ -9072,19 +9140,21 @@ private fun CorridorMapView(
                 val contoursMatches = contoursAttached == wantContours
                 if (terrainMatches && tiltMatches && contoursMatches) return@getStyle
                 val applyGen = styleApplyGen.incrementAndGet()
+                NaviMapTestHooks.beginStyleApply(applyGen)
+                styleReady.value = false
                 applyTerrainAndPitch(map, style, resolved, applyGen)
             }
             return
         }
 
         val applyGen = styleApplyGen.incrementAndGet()
+        NaviMapTestHooks.beginStyleApply(applyGen)
         // Tilt is independent of hillshade 3D; apply preferred tilt (0 when no Vulkan).
         applyCameraTilt(map)
         if (!want3d) {
             NaviMapTestHooks.lastTerrainAttached = false
         }
         styleReady.value = false
-        NaviMapTestHooks.styleReady = false
         onStyleNote(resolved.note)
         if (resolved.kind == BasemapStyleResolver.StyleKind.OfflineProtomaps &&
             resolved.note.isNullOrBlank()
@@ -9135,7 +9205,7 @@ private fun CorridorMapView(
                         )
                     } else {
                         styleReady.value = true
-                        NaviMapTestHooks.styleReady = true
+                        NaviMapTestHooks.completeStyleApply(applyGen)
                         NaviMapTestHooks.lastBasemapKind =
                             BasemapStyleResolver.StyleKind.OnlineLiberty.name
                         NaviMapTestHooks.lastCameraPitch = 0.0
@@ -9199,10 +9269,12 @@ private fun CorridorMapView(
             addWp(v.name, v.lat, v.lon)
         }
         addWp(latest.endName, latest.endLat, latest.endLon)
-        for (b in latest.breakPois) {
-            // Peaks/mountains are never pause labels (e.g. Store Ramshøgda).
-            if (b.name.contains("Ramsh", ignoreCase = true)) continue
-            addWp(b.name, b.lat, b.lon)
+        if (breakRemindersEnabled) {
+            for (b in latest.breakPois) {
+                // Peaks/mountains are never pause labels (e.g. Store Ramshøgda).
+                if (b.name.contains("Ramsh", ignoreCase = true)) continue
+                addWp(b.name, b.lat, b.lon)
+            }
         }
         waypointMarks = wps
 
@@ -9635,6 +9707,12 @@ private fun CorridorMapView(
         if (!styleReady.value) return@LaunchedEffect
         val map = mapRef ?: return@LaunchedEffect
         NamedBuildingLabels.scheduleRefresh(map, placeIndexDbPath)
+    }
+
+    LaunchedEffect(breakRemindersEnabled, styleReady.value, state.layerEpoch) {
+        if (!styleReady.value) return@LaunchedEffect
+        val map = mapRef ?: return@LaunchedEffect
+        refreshTrackOverlay(map)
     }
 
     LaunchedEffect(state.cameraLat, state.cameraLon, prefer3d, contoursEnabled, cameraTiltDeg) {

@@ -100,6 +100,26 @@ impl DatexSituation {
         // Require at least one bound so empty validity does not count as forever-active.
         self.valid_from.is_some() || self.valid_to.is_some()
     }
+
+    /// True when the validity window overlaps `[window_start, window_end]`.
+    /// Used at plan time so a sit that becomes active 5–30 min before the
+    /// vehicle would reach it is still applied to A*, not dropped as "not now".
+    pub fn is_active_during(&self, window_start: DateTime<Utc>, window_end: DateTime<Utc>) -> bool {
+        if window_end < window_start {
+            return false;
+        }
+        if let Some(start) = self.valid_from {
+            if window_end < start.with_timezone(&Utc) {
+                return false;
+            }
+        }
+        if let Some(end) = self.valid_to {
+            if window_start > end.with_timezone(&Utc) {
+                return false;
+            }
+        }
+        self.valid_from.is_some() || self.valid_to.is_some()
+    }
 }
 
 /// Parse a full GetSituation XML body into situation records.

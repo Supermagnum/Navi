@@ -78,4 +78,24 @@ class RoutePlanStatsTest {
     fun wildCampingCountIsZeroWithoutPluginResult() {
         assertEquals(0, wildCampingSiteCount(null))
     }
+
+    @Test
+    fun wildCampingStatsLineDistinguishesUnavailableFromPluginOff() {
+        assertEquals("Wild camping: plugin off", formatWildCampingStatsLine(false, 0, null))
+        assertEquals(
+            "Wild camping: UNAVAILABLE (corridor graph segments produced no seeds)",
+            formatWildCampingStatsLine(
+                true,
+                0,
+                CampingSuggestStatus(
+                    kind = "UNAVAILABLE",
+                    message = "corridor graph segments produced no seeds",
+                ),
+            ),
+        )
+        assertEquals(
+            "Wild camping sites: 3",
+            formatWildCampingStatsLine(true, 3, CampingSuggestStatus("OK", "")),
+        )
+    }
 }

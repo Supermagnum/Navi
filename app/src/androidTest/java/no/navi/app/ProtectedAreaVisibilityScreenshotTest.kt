@@ -36,7 +36,7 @@ class ProtectedAreaVisibilityScreenshotTest {
         NaviMapTestHooks.hideSearchChrome = true
         NaviMapTestHooks.disableGpsFollow = true
         NaviMapTestHooks.followGps = false
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         MapHudPrefs.saveOptIn3d(context, false)
         MapHudPrefs.saveCameraTiltDeg(context, 0.0)
     }
@@ -102,7 +102,7 @@ class ProtectedAreaVisibilityScreenshotTest {
     ) {
         runCatching { activityRule.finishActivity() }
         Thread.sleep(500)
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         NaviMapTestHooks.lastBasemapKind = ""
         NaviMapTestHooks.forceOnlineBasemap = forceOnline
         NaviMapTestHooks.pendingCamera = Triple(lat, lon, zoom)

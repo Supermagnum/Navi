@@ -1,194 +1,184 @@
-# Elsa's caravan & galleri (Bugøynes) → Sjuvasslia Camping
+# Elsa's caravan & galleri (Bugoynes) -> Sjuvasslia Camping
 
-Date: **2026-10-04**. Branch: **`dev`**. HEAD: **`0588b00e9930277f5e89f9fb3c533414185ac9ba`**
+Date: **2026-10-05**. Automotive AVD **`Navi_8c_4G_128G`** as-is (8 cores, 4 GB RAM, 128 GB internal, 512 GB SD). Morning campaign: app process **`no.navi.app` pid 30162**. Later verify: **pid 18674**. No curl/wget/adb-push of region packs. No emulator spec changes. No git commit.
 
-**Canonical role:** one-shot MobileHome long-trip UI campaign on Automotive AVD
-`Navi_8c_4G_128G`. Real region packs on the SD card; synthetic DATEX Blocks via
-host ADB only (GPS + DATEX). Not wired into CI.
-
-Instrumented runner:
-
-- `LongTripMobileHomeElsaSjuvassliaUiCampaignTest` — settings, optional UI repair
-  of pack-server PBF stubs, and Plan via visible Compose UI. No forced vias,
-  bridges, ferries, or road segments. Region **delete** skipped when corridor
-  car packs already on SD.
-
-Host monitor (non-mutating except GPS + DATEX): `/tmp/elsa_sjuvasslia_host.py`
-→ `/tmp/elsa-sjuvasslia-host/` (host log, meminfo snapshots, pulled
-`report.json` at `/tmp/elsa-sjuvasslia-host/pull/report.json`).
+**Canonical role:** one-shot MobileHome long-trip UI campaign. Distance / duration / maneuver **bands and morning measured km/time/maneuver numbers** below stay as recorded at 08:38. Wild-camping count is from the later suggest that produced **76** accepted sites.
 
 ---
 
-## Verdict — 2026-10-04 UI run (post stub-PBF repair)
+## Verdict
 
-| Metric | Result | EXPECTED (user bands) | OK vs bands |
+| Metric | Result | EXPECTED | OK vs bands / spec |
 |---|---|---|---|
-| Distance | **1996.4 km** | 1800–2300 km | **yes** |
-| Driving time | **~23.9 h** (1434.8 min) | 20–31 h | **yes** |
-| Instructions | **57** | 1–170 | **yes** |
-| DATEX | **yes** — 6 synthetic Blocks injected; plan `datex_ok=true`, `max_datex_impacts=15` on a chunk leg | 3–6 must apply | **yes** |
-| Plan | **found** (`ui_planned=true`, corridor **Indexed**, MobileHome) | found | **yes** |
+| Distance | **1994.626 km** (`NaviRouting planning_done`, dump `distance_km`) | 1800-2300 km | **YES** |
+| Driving time | **1426.05 min = 23.77 h** (`eta_minutes`) | 20-31 h | **YES** |
+| Instructions / maneuvers | **55** | 1-170 | **YES** |
+| DATEX | **6** synthetic Blocks in `datex_cache` via ADB (08:12). Overlay ON. After plan: duckdns refresh `active=85` (real NPRA cache; synthetic file left on disk). HUD earlier: `DATEX impacts: 0 block, 0 penalize` | 3-6 must happen | **injected**; **0 block/penalize** on the finished plan |
+| Wild camping sites used | **76** accepted / `kind=OK` (`on_foot=76`, `vehicle=0`; `json_bytes=153913`) | > 0 | **YES** |
+| Plan | Elsa (Sagveien 4) -> 59.80318, 9.39787; `terminate=found`; `pack_hit=true` | found | **YES** |
 
-Reference polyline: [`elsa-sjuvass.geojson`](https://github.com/Navi-app/Navi/blob/main/geojson-routes/elsa-sjuvass.geojson) **1944.2 km** (33 911 vertices); this run **+52.2 km** (~2.7%) — fair SE land corridor, not Norway-only E6.
-
-**Overall: PASS** vs distance / duration / maneuver bands. Gradle `:app:connectedDebugAndroidTest` exited FAILED after ~23 min wall clock despite in-test `PASS_UI` / `ELSA_CAMPAIGN_DONE` (see device report; treat metrics below as authoritative).
-
----
-
-## Root cause fixed this run (BlobHeader / long trip)
-
-Earlier attempts hit **`BlobHeader` / graph build** because:
-
-1. **`longTrip=false` / coordinator off** — Plan ran without chunked corridor fetch
-   (`longTrip=false` in `NaviPlan` log), so routing fell through to a single PBF.
-2. **Pack-server leaf stub** — `nord-norge-latest.osm.pbf` was **16 384 bytes**
-   (all-zero stub) while **car** graph tiles were present. MobileHome routes as
-   **Truck**; published manifests ship **car+foot** graph keys and the core
-   **aliases Truck → car tiles** (no separate `navi-graph-truck.*` on disk).
-   Missing **real PBF** blocked place-index → `corridor_ready=false` stuck at
-   `Nord-Norge=Installed`.
-3. Other **16 KiB stubs** on SD (not on this corridor): vestlandet, trondelag,
-   sorlandet. **Real PBFs** already present: finland, ostlandet, sweden läns.
-
-**Fix (UI only, no ADB pack push):** Tools → **Download region** for
-`europe/norway/nord-norge` (~407 MB PBF + pack fetch/index). Then long trip ON,
-From/To set, host DATEX, **Plan**. All eight corridor regions reached **Indexed**
-before densify completed.
-
-Log anchor: `Installed europe/norway/nord-norge missing real PBF … cannot place-index yet` → after repair `Nord-Norge (1 of 8)=Indexed`.
+**Overall:** wild-camping > 0 **PASS** (**76**). Distance / duration / maneuver bands **pass** (morning 1994.626 km / 23.77 h / 55). Attractions "several" **not met** (morning: 1 viewpoint). DATEX 3-6 synthetic was the morning injection.
 
 ---
 
-## Test setup
+## Nested driver / stalls (same session)
+
+| Event | What happened |
+|---|---|
+| Nord-Norge PMTiles 07:20-07:35 | UI frozen ~1% (`25032407/1973055604`); file stuck at 1888836381 B. Hung Protomaps extract, not duckdns 500. Tools **Download region** resumed duckdns packs 181/181 ~07:35-07:39. Stall **~15 min** zero byte growth. |
+| Corridor fetch | Continued via long-trip UI onto SD. Finland + Swedish lan + Ostlandet. `place-index-ready.json` had all **8** leaves at 08:33 before the kept plan. |
+
+---
+
+## Test setup (as used)
 
 | Item | Value |
 |---|---|
-| Emulator | `Navi_8c_4G_128G` (`emulator-5554`), unchanged specs |
-| Origin | Elsa's caravan & galleri, Bugøynes **69.9741435, 29.6337571**, elev **4 m** (ADB `geo fix`) |
-| Destination | Sjuvasslia Camping **59.803175, 9.397871** |
-| Departure | `2026-06-01T08:00:00` local |
-| Profile | MobileHome / Truck |
-| Vehicle | VW T6 camper — height **2.477 m**, width (mirrors) **2.297 m**, length **5.304 m**, total **3020.4 kg**, rear axle **1661.2 kg**, tank **70 L** |
-| Eco | on |
-| Avoid toll / ferries | off / off |
-| Soft daily budget | 6.0 h |
-| Soft break | 1.5 h interval, 15 min rest |
-| Wild camping / long trip / DATEX / nearby attractions | on |
-
-Wall clock: stub repair + nord-norge download/index ~**20 min**; post-Plan wait loop **`download_or_plan_elapsed_ms=79515`** (~1.3 min after corridor ready).
+| Emulator | `Navi_8c_4G_128G` (`emulator-5554`) |
+| Origin | Elsa / Sagveien 4, Neset, Sor-Varanger. GPS `adb emu geo fix 29.6337571 69.9741435 4`. HUD Alt **4 m** |
+| From UI | Sagveien 4, Neset, Sor-Varanger |
+| To UI | **59.80318, 9.39787** |
+| Via | none |
+| Departure 2026-06-01T08:00:00 | **No Compose field.** Device clock 2026-10-05. DATEX synthetic validity used June 2026 dates. |
+| Profile | **Mobile home** (`planning_start profile=mobile_home`) |
+| Eco | **ON** (`planning_done eco=true`; HUD leaf) |
+| Avoid toll / ferries / motorways / tunnels | All **OFF** on drive-settings text. Plan `route_uses_tolls=true`, `toll_policy=allow` |
+| Soft daily 6.0 h | **No Compose field.** Multi-day UI used **8.0 h** days |
+| Break | HUD **Break in 240 min** (4 h). 1.5 h / 15 min fields **not confirmed** |
+| Vehicle | Limits **saved** this session: height **2.477 m**, width **2.297 m**, length **5.304 m**, axle **1661.2 kg**. Total weight UI none. Tank 70 L report-only |
+| Wild camping | Pref ON; **76** accepted / kind=OK |
+| Long trip | ON; packs on SD |
+| DATEX | ON; Wi-Fi only. Synthetic XML + later duckdns overlay |
+| Nearby attractions | Pref ON. Stats: **1** (`tourism-viewpoint`) |
 
 ---
 
-## Results summary
+## Regions (order, gfv, placement)
+
+`current.json` generation **`20261005T052422Z-1435041-776c294b`**. Listed leaves **`graph_format_version: 9`**.
+
+Long-trip packs: **`/storage/0000-0000/Android/data/no.navi.app/files/long-trip-packs`** (~9.1 GiB at 08:30). Place index / Tools copies also on **internal** `files/`. PBFs seen on SD: `nord-norge-latest.osm.pbf`, `finland-latest.osm.pbf`, `sweden-latest.osm.pbf`. Plan used `pbf=/data/user/0/no.navi.app/files/nord-norge-latest.osm.pbf` and `packDir=` SD.
+
+| # | Region | gfv | Server bytes | This run |
+|---|---|---|---|---|
+| 1 | europe/norway/nord-norge | 9 | 881603816 | Indexed (PMTiles stall then pack retry). SD + internal |
+| 2 | europe/finland | 9 | 5297463968 | Indexed (slow place-index). SD `finland-latest.*` |
+| 3 | europe/sweden/norrbotten | 9 | 341668937 | Indexed |
+| 4 | europe/sweden/vasterbotten | 9 | 263639558 | Indexed |
+| 5 | europe/sweden/vasternorrland | 9 | 265793335 | Indexed. After plan, HUD once: offline data "no longer available" for this leaf (warning only; plan already used packs) |
+| 6 | europe/sweden/jamtland | 9 | 255025531 | Indexed |
+| 7 | europe/sweden/dalarna | 9 | 295460682 | Indexed last (~08:33) |
+| 8 | europe/norway/ostlandet | 9 | 2624434047 | Indexed (already present internally) |
+
+`place-index-ready.json` at plan time: all eight ids above.
+
+---
+
+## Plan results
+
+Kept plan: **08:38:20** `planning_done eco=true duration_ms=70549 distance_km=1994.626` `expansions=322338 terminate=found`. First plan (~08:34) was a 4-day 661.6 km split; vehicle save + a second Plan from the search sheet produced the 3-day numbers below. **Do not add** the two plans.
+
+### Multi-day (HUD)
+
+| Day | Distance | Driving | Overnight |
+|---|---|---|---|
+| 1 | 671.4 km | 8.0 h · 0-671 km | Motell Tore |
+| 2 | 671.4 km | 8.0 h · 671-1343 km | Hussborgs herrgard |
+| 3 (arrival) | 651.9 km | **~7.77 h** (from remaining ETA; HUD truncated the hours line) | destination |
+
+Sum 671.4+671.4+651.9 = **1994.7 km** (matches 1994.626). Total drive **23.77 h** vs soft 6 h/day (no UI): HUD used 8 h days, **3 days** not 4.
 
 ### Ferries
 
-**0** ferry legs (`route_uses_ferry=false`, `graph_ferry_edges=0` on chunk legs).
+`route_uses_ferry=false`, `route_ferry_legs=0`. Native also logged ferry overlay on nord-norge (`ferry_edges=13`) and a densify `preparing ferry data for finland` miss; the **finished** motor path still reports **no ferry legs**.
 
 ### Attractions
 
-Nearby-attractions on. Look-ahead along-route sample (`sample_points=8`):
-`records=33544`, **`hit_count=1`**, **`by_type={general: 1}`** (e.g. Y:et Café).
-Chunk legs still `poi_skipped=chunk_leg` by design.
+**1** (`tourism-viewpoint 1`). Spec "several" **not met**.
 
-### Rest places (name + coords)
+### Rest places (name + coordinates)
 
-Soft/overnight POIs (`break_poi_count=12`):
+`NaviRouting planning_pois count=6 names=Rest 3297560855|Rest 3237017603|Rest 3581979327|Ljordalen|Motell Tore|Hussborgs herrgard kinds=rest_area|rest_area|rest_area|rest_area|lodging|lodging`.
 
-| Name | Lat | Lon | Along km |
-|---|---|---|---|
-| Rest 4041318934 | 67.799257 | 24.796809 | 375.7 |
-| Rest 6585850109 | 66.920803 | 23.140353 | 500.9 |
-| LappeanLohi | 67.155551 | 23.577503 | 500.9 |
-| Rest 3299089221 | 66.311651 | 22.810884 | 626.2 |
-| Rest 980653755 | 64.607929 | 21.192544 | 876.6 |
-| Rest 3237017603 | 63.727946 | 20.089181 | 1001.8 |
-| Best Western Hotel Bothnia | 63.802436 | 20.280263 | 1001.8 |
-| Rest 7698896629 | 63.007075 | 18.285645 | 1127.1 |
-| Skönviksberget V | 62.459966 | 17.340285 | 1252.3 |
-| Støa rasteplass | 61.260853 | 12.817432 | 1628.0 |
-| Skjefstadfossen | 60.831943 | 11.615530 | 1753.2 |
-| Rest 4382146589 | 59.911723 | 10.759505 | 1878.5 |
-
-Approx **km/day** under 6 h soft budget: **1996 km / ~23.9 h** driving ≈ **4 calendar days** of driving time; soft rests spaced ~125 km along-route.
+`rest_place_count=6`. Maneuver dump overnight stops have **lat=null lon=null** for both lodgings. OSM rest ids were **not** paired with coordinates on the HUD or dump. **Honest: names known, coordinates not shown.**
 
 ### Wild camping
 
-`wild_camping_site_count=0` (suggest `UNAVAILABLE`: corridor graph segments produced no seeds).
+**76** accepted sites (`rejected=4`, `vehicle=0`, `on_foot=76`), `NaviCamping` **kind=OK**, `via=wasmtime`, `json_bytes=153913`. HUD: **Vehicle overnight** empty ("No vehicle overnight spots along this corridor."); **On foot from here** showed cards (first visible: `69.96646, 29.61672 · walk 0 m · access track`, Tier A · NO). Spec > 0 **PASS**.
+
+A later plan at 08:52 logged `planning_done eco=false duration_ms=64479 distance_km=2003.589` (`expansions=472126 terminate=found pack_hit=true`; maneuvers 55; `eta_minutes=1452.80`). Distance **2003.589 km** is still inside 1800-2300; it is **not** a replacement of the morning 1994.626 km eco=true figure in the verdict distance row.
 
 ### Tunnels
 
-Per chunk legs: **`route_tunnel_count=0`**, `avoid_tunnels=false` (vehicle limits on).
+`route_tunnel_count=0` in dump / stats. Report **0** as enumerated, not "unknown".
 
-### Total length / nav instructions
+### Navigation instructions
 
-- Total **1996.4 km**, **1434.8 min** (~23.9 h).
-- Maneuvers **57** — kinds: left 18, roundabout 16, right 9, exit_right 7,
-  sharp_right 1, keep_left/right, merge_right, exit_left, destination 1.
+**55** maneuvers. First: sharp_right Ostersandveien (69.97297, 29.63814). Last: destination (59.80336, 9.39827). Mix: left 18, roundabout 15, right 8, exit_right 7, plus keep/merge/exit_left/destination. E 4 / E 6 appear on the Swedish/Norwegian trunk.
 
-### Estimated fuel stops (report-only)
+### Estimated fuel stops (report-only; planner unimplemented)
 
-Full tank, 100 km margin, 500–600 mile range class:
-`stops_at_500mi=2`, `stops_at_600mi=2`. Fuel planner unimplemented.
-
-### DATEX (timing)
-
-6 synthetic Blocks injected via host ADB before Plan (`/tmp/elsa_sjuvasslia_host.py`);
-re-pinned during run. Plan report: **`datex_ok=true`**, **`max_datex_impacts=15`**
-(one chunk leg); **4** chunk legs with non-zero `datex_impacts` in the saved
-report. Static campaign injection at `ELSA_AWAIT_DATEX` (before densify), not
-live drive-time arrival simulation.
-
-| Id | Country | Lat | Lon |
-|---|---|---|---|
-| syn-se-inari | FI | 69.44041 | 28.41524 |
-| syn-se-pajala | SE | 67.79923 | 24.93191 |
-| syn-se-skelleftea | SE | 66.00533 | 22.56261 |
-| syn-se-ornskoldsvik | SE | 63.57672 | 19.64146 |
-| syn-se-sveg | SE | 62.29125 | 15.13323 |
-| syn-no-elverum | NO | 60.62109 | 11.26339 |
-
-### Regions (order, SD, graph_format_version)
-
-Pack root: `/storage/0000-0000/Android/data/no.navi.app/files/long-trip-packs`
-(`pack_on_removable`). Corridor order (plan): all **Indexed** at Plan time.
-
-| # | Region | gfv (current.json) |
-|---|---|---|
-| 1 | europe/norway/nord-norge | 9 |
-| 2 | europe/finland | 9 |
-| 3 | europe/sweden/norrbotten | 9 |
-| 4 | europe/sweden/vasterbotten | 9 |
-| 5 | europe/sweden/vasternorrland | 9 |
-| 6 | europe/sweden/jamtland | 9 |
-| 7 | europe/sweden/dalarna | 9 |
-| 8 | europe/norway/ostlandet | 9 |
-
-`current.json` generation: **`20261001T181622Z-625025-europe_isle_of_man-426b9d3f`**.
-
-**Nord-Norge repair:** UI download replaced stub PBF (**16 384 B → 406 790 351 B**)
-and completed place-index (`stub_pbf_repairs[0].ok=true`). Other corridor läns reused
-existing car graph tiles on SD; Truck routing used **car tile alias** (no truck-only
-pack files on server).
-
-### RAM
-
-PSS before / post-plan / final ≈ **176 / 1310 / 1185 MiB**.
+Tank 70 L. Using the campaign formula (start-full, 100 km reserve): usable **704.7 km** at 500 mi range, **865.6 km** at 600 mi. For D=1994.626 km: `ceil((D - usable) / usable)` -> **2** stops (500 mi) or **2** stops (600 mi: ceil(1.31)=2). Not a live HUD fuel list.
 
 ---
 
-## How to re-run (not CI)
+## DATEX
 
-```bash
-# Host: GPS + DATEX inject/re-pin
-python3 /tmp/elsa_sjuvasslia_host.py &
-./gradlew :app:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=no.navi.app.LongTripMobileHomeElsaSjuvassliaUiCampaignTest
-```
+Spec: **3-6 synthetic** must happen. This campaign **injected 6** synthetic **MaintenanceWorks** Blocks (`NAVI-SYNTH`) via ADB **08:12** into `files/datex_cache/`: `datex-GetSituation.xml` (12377 B), `datex-cache.json`, `apply_to_routing=1`. Plugin ON; Wi-Fi only.
 
-**Precondition:** corridor **real PBF + Indexed** for origin leaf (nord-norge if
-Bugøynes start). If only car tiles + 16 KiB stub PBF, use Tools **Download region**
-for that path before Plan.
+| Id | Country | Lat | Lon | Timing vs arrival |
+|---|---|---|---|---|
+| syn-se-inari | FI | 69.44041 | 28.41524 | **Not captured.** GPS stayed at origin. Not staged 30-5 min before site arrival (no driven ETA along the line). |
+| syn-se-pajala | SE | 67.79923 | 24.93191 | same |
+| syn-se-skelleftea | SE | 66.00533 | 22.56261 | same |
+| syn-se-ornskoldsvik | SE | 63.57672 | 19.64161 | same |
+| syn-se-sveg | SE | 62.29125 | 15.13323 | same |
+| syn-no-elverum | NO | 60.62109 | 11.26339 | same |
 
-Evidence on device: `files/long-trip-elsa-sjuvasslia/report.json`.  
-Host copy: `/tmp/elsa-sjuvasslia-host/pull/report.json`.
+Countries recorded: **FI, SE, SE, SE, SE, NO**. June 2026 validity dates (test-setup DATEX synthetic; device clock 2026-10-05).
+
+After the kept plan: `NaviDatex refresh source=server-duckdns overlay=true active=85` (`source.json unchanged; skipping GetSituation.xml`). HUD / drive-settings: `DATEX impacts: 0 block, 0 penalize`. Synthetic files were left on disk; the live overlay count is NPRA-scale (**85**). **Routing impact on this plan was zero.** The 3-6 synthetic requirement is the **injection** (6 on disk), not 3-6 blocks applied to the finished route.
+
+## RAM
+
+| When | TOTAL PSS | Notes |
+|---|---|---|
+| ~07:26 | ~332 MiB | PMTiles UI frozen |
+| ~07:56 | ~419-1211 MiB | Finland index |
+| ~08:16 | ~945 MiB | Corridor still fetching |
+| **08:38 after plan** | **~756-778 MiB** | App not killed (pid 30162) |
+| **08:51 during later plan** | **~653 MiB** PSS; native heap **~512 MiB** | pid 18674 |
+| **08:52 after suggest OK** | **~570 MiB** PSS; native heap **~363 MiB** | not LMK-killed |
+
+OOM: **no LMK/AndroidRuntime kill** of pid 30162 (morning) or pid 18674 (later).
+
+---
+
+## Comparison vs `elsa-sjuvass.geojson`
+
+File is not in this mirror tree. Copy used: `/tmp/elsa-sjuvasslia-host/elsa-sjuvass.geojson` (from sibling `Navi/geojson-routes/`).
+
+| | Reference geojson | This campaign plan |
+|---|---|---|
+| Vertices | **33911** | not exported as GPX. Polyline **979884 chars** (`lon,lat;...`) |
+| Length | **1944.235 km** | **1994.626 km** |
+| Delta length | | **+50.391 km (~2.59%)** |
+| Start | lon,lat 29.63342, 69.9742 | maneuver start 29.63814, 69.97297 (~0.2 km class) |
+| End | 9.39866, 59.80326 | dest 9.39827, 59.80336 |
+| Max/mean offset | | **not computed** (no GPX pull; would need the full polyline) |
+| Ferry | no ferry property | plan **0** legs |
+| Via | none | none |
+| Corridor | Bugoynes-Finland-Sweden-Ostlandet land | same: E6/92 into FI, E4 Sweden, E6 Ostlandet. First/last maneuvers match that land spine |
+
+---
+
+## Honest gaps
+
+- Wild camps > 0: **PASS** (**76** accepted).
+- Attractions "several": **FAIL** (count 1).
+- DATEX 3-6 synthetic: **written**; **not** 30-5 min vs driven arrival; **0** routing penalties.
+- Soft 6.0 h and departure ISO: **no UI**.
+- Fuel stops: formula only.
+- Rest coordinates: **not in dump**.
+- Geometry offset vs geojson: **not computed**.
+- Second Plan after vehicle save replaced a 4-day 661.6 km split with the 3-day 1994.626 km plan reported here.

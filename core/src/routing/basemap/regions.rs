@@ -699,6 +699,14 @@ const PACK_LEAF_PATH_BBOX: &[(&str, [f64; 4])] = &[
         "europe/germany/schleswig-holstein",
         [53.36, 8.37, 55.06, 11.32],
     ),
+    // Geofabrik index-v1 polygon AABB (min_lat, min_lon, max_lat, max_lon).
+    // Bevensen–Vågå–Luster densify names this leaf; without the table entry
+    // `pbf_stem_to_geofabrik_path("mecklenburg-vorpommern-latest")` is none
+    // and a Ready SD pack is ignored.
+    (
+        "europe/germany/mecklenburg-vorpommern",
+        [53.10619, 10.58807, 54.98370, 14.42292],
+    ),
     // NRW Detmold Regierungsbezirk (Geofabrik leaf). Minden sits here — the
     // Niedersachsen extract bbox overlaps but does not carry the city graph.
     (
@@ -1008,6 +1016,15 @@ mod tests {
             Some("europe/germany/schleswig-holstein".into())
         );
         assert_eq!(
+            pbf_stem_to_geofabrik_path("mecklenburg-vorpommern-latest"),
+            Some("europe/germany/mecklenburg-vorpommern".into())
+        );
+        let mv = region_bbox("europe/germany/mecklenburg-vorpommern").unwrap();
+        assert_ne!(mv, region_bbox("europe/germany").unwrap());
+        // Schwerin; Bevensen (53.08, 10.59) stays south of this AABB.
+        assert!(bbox_covers_point(mv, 53.635, 11.401));
+        assert!(!bbox_covers_point(mv, 53.07969, 10.58720));
+        assert_eq!(
             pbf_stem_to_geofabrik_path("syddanmark-latest"),
             Some("europe/denmark/syddanmark".into())
         );
@@ -1056,6 +1073,16 @@ mod tests {
         assert_eq!(
             suggest_geofabrik_path_for_point(69.65, 18.96),
             Some("europe/norway/nord-norge")
+        );
+        // Bugøynes overlay `"29.63,69.97"` (lon,lat). Swapping to lat,lon
+        // is the camping corridor bug (`missing_regions=asia/pakistan`).
+        assert_eq!(
+            suggest_geofabrik_path_for_point(69.9741435, 29.6337571),
+            Some("europe/norway/nord-norge")
+        );
+        assert_eq!(
+            suggest_geofabrik_path_for_point(29.6337571, 69.9741435),
+            Some("asia/pakistan")
         );
         // Bergen — Vestlandet only (Preikestolen sits in Vestlandet∩Sørlandet overlap).
         assert_eq!(

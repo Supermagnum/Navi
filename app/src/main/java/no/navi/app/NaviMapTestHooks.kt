@@ -156,9 +156,71 @@ object NaviMapTestHooks {
     @Volatile
     var toolsOpen: Boolean = false
 
-    /** True after MapLibre style finished loading (basemap ready for overlays). */
-    @Volatile
-    var styleReady: Boolean = false
+    /**
+     * Style-load generation mirrored from MapLibre apply in MainActivity.
+     *
+     * [beginStyleApply] advances the in-flight id; [completeStyleApply] marks ready
+     * only when [applyGen] is still current. Late callbacks for older generations
+     * must not flip ready; a successful apply for the current generation always does.
+     *
+     * Tests that need a hard clear before activity launch should call
+     * [resetStyleLoadState]. Assigning `styleReady = false` is soft: it will not
+     * drop an already-completed signal for the active generation (the classic
+     * reset-after-callback race).
+     */
+    private val styleLoadGen =
+        java.util.concurrent.atomic
+            .AtomicInteger(0)
+    private val styleReadyGen =
+        java.util.concurrent.atomic
+            .AtomicInteger(0)
+
+    /** In-flight / last-started style apply id (0 = none since reset). */
+    fun styleLoadGeneration(): Int = styleLoadGen.get()
+
+    /** Apply id that last completed successfully (0 = never / after reset). */
+    fun styleReadyGeneration(): Int = styleReadyGen.get()
+
+    /** Hard-clear style readiness. Call before activity launch / between activities. */
+    fun resetStyleLoadState() {
+        styleLoadGen.set(0)
+        styleReadyGen.set(0)
+    }
+
+    /** Start a style apply; invalidates readiness until [completeStyleApply] for [applyGen]. */
+    fun beginStyleApply(applyGen: Int) {
+        if (applyGen <= 0) return
+        styleLoadGen.set(applyGen)
+    }
+
+    /** Mark style ready when [applyGen] is still the current load id. */
+    fun completeStyleApply(applyGen: Int) {
+        if (applyGen <= 0) return
+        if (applyGen == styleLoadGen.get()) {
+            styleReadyGen.set(applyGen)
+        }
+    }
+
+    /** True after the current MapLibre style apply finished (basemap ready for overlays). */
+    var styleReady: Boolean
+        get() {
+            val load = styleLoadGen.get()
+            return load != 0 && styleReadyGen.get() == load
+        }
+        set(value) {
+            if (value) {
+                val load = styleLoadGen.get()
+                if (load != 0) {
+                    styleReadyGen.set(load)
+                }
+            } else if (styleLoadGen.get() == 0) {
+                // Already reset; keep ready gen cleared.
+                styleReadyGen.set(0)
+            }
+            // Soft no-op when a load is active or already completed: clearing here
+            // after the style callback is what left instrumented tests stuck on
+            // "MapLibre style not ready". Use resetStyleLoadState() before launch.
+        }
 
     /**
      * When true, [CorridorMapView] pauses/stops the MapView but skips `onDestroy`

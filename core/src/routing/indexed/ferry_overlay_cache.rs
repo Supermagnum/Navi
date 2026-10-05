@@ -46,6 +46,10 @@ fn ferry_sidecar_meta_path(home: &Path, stem: &str, profile: RoutingProfile) -> 
     ))
 }
 
+/// Overlay topology revision. Bump when sidecar contents change independently
+/// of the source PBF (inland highway vacuum so clipped terminals merge).
+const FERRY_SIDECAR_BUILD: u32 = 2;
+
 fn pbf_fingerprint(pbf: &Path) -> Option<String> {
     let meta = fs::metadata(pbf).ok()?;
     let len = meta.len();
@@ -55,7 +59,9 @@ fn pbf_fingerprint(pbf: &Path) -> Option<String> {
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    Some(format!("len={len};mtime={mtime}"))
+    Some(format!(
+        "build={FERRY_SIDECAR_BUILD};len={len};mtime={mtime}"
+    ))
 }
 
 /// True when the on-disk sidecar meta matches the PBF fingerprint.

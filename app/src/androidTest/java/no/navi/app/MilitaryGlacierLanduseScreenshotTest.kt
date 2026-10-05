@@ -36,7 +36,7 @@ class MilitaryGlacierLanduseScreenshotTest {
         NaviMapTestHooks.hideSearchChrome = true
         NaviMapTestHooks.disableGpsFollow = true
         NaviMapTestHooks.followGps = false
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         NaviMapTestHooks.requestOptIn3d = false
         MapHudPrefs.saveOptIn3d(context, false)
         MapHudPrefs.saveCameraTiltDeg(context, 0.0)
@@ -115,7 +115,7 @@ class MilitaryGlacierLanduseScreenshotTest {
     ) {
         runCatching { activityRule.finishActivity() }
         Thread.sleep(500)
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         NaviMapTestHooks.lastBasemapKind = ""
         NaviMapTestHooks.lastTerrainAttached = false
         NaviMapTestHooks.forceOnlineBasemap = forceOnline

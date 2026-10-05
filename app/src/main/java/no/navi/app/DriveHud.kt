@@ -271,7 +271,8 @@ fun formatBreakHudLine(
     cruiseSpeedKmh: Double = MapHudPrefs.BREAK_DISPLAY_SPEED_KMH,
 ): String? {
     if (!routePlanned) return null
-    if (!breakRemindersEnabled) return "Break reminders off"
+    // Breaks off: hide the HUD line entirely (do not show "Break reminders off").
+    if (!breakRemindersEnabled) return null
     val mins = minutesToBreak ?: return null
     return if (breakAsDistance) {
         val km = (mins / 60.0) * cruiseSpeedKmh

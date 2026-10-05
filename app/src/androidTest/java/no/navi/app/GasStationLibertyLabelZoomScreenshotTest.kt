@@ -32,7 +32,7 @@ class GasStationLibertyLabelZoomScreenshotTest {
         NaviMapTestHooks.hideSearchChrome = true
         NaviMapTestHooks.disableGpsFollow = true
         NaviMapTestHooks.followGps = false
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         MapHudPrefs.saveOptIn3d(context, false)
         MapHudPrefs.saveCameraTiltDeg(context, 0.0)
     }
@@ -53,7 +53,7 @@ class GasStationLibertyLabelZoomScreenshotTest {
     fun capture_gas_station_liberty_zoom_ladder() {
         setNetworkEnabled(true)
 
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         NaviMapTestHooks.lastBasemapKind = ""
         NaviMapTestHooks.forceOnlineBasemap = true
         NaviMapTestHooks.pendingCamera = Triple(GAS_LAT, GAS_LON, 12.0)

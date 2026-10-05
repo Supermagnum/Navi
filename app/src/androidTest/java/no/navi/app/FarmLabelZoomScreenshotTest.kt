@@ -39,7 +39,7 @@ class FarmLabelZoomScreenshotTest {
             }
         shell("mkdir -p /data/local/tmp/navi_farm_zoom && chmod 777 /data/local/tmp/navi_farm_zoom")
         NaviMapTestHooks.hideUiChrome = true
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         NaviMapTestHooks.forceOnlineBasemap = false
         MapHudPrefs.saveOptIn3d(context, false)
         MapHudPrefs.saveCameraTiltDeg(context, 0.0)
@@ -60,7 +60,7 @@ class FarmLabelZoomScreenshotTest {
         setNetworkEnabled(false)
         MapHudPrefs.saveOptIn3d(context, false)
 
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         NaviMapTestHooks.lastBasemapKind = ""
         NaviMapTestHooks.forceOnlineBasemap = false
         NaviMapTestHooks.pendingCamera = Triple(FARM_LAT, FARM_LON, 11.0)

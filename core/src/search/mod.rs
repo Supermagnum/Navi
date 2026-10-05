@@ -2114,6 +2114,7 @@ mod tests {
         use std::thread;
         use std::time::Duration;
 
+        let _prog = crate::download::progress::test_lock();
         crate::download::progress::clear();
         let hold = Arc::new(Barrier::new(2));
         let released = Arc::new(Barrier::new(2));

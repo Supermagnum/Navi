@@ -69,10 +69,10 @@ class MovingIconInstrumentedTest {
         assertTrue("300 m edge must be << 50 km (got $dKm km)", dKm < 1.0)
         assertTrue("300 m within display max", dKm <= displayRangeMaxKm())
 
-        // Reset hooks before launch so we do not clear styleReady after the style
-        // callback already fired.
+        // Hard-reset style load gens before launch (never clear styleReady after the
+        // MapLibre callback — that race is what "MapLibre style not ready" flakes on).
         NaviMapTestHooks.hideUiChrome = true
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         NaviMapTestHooks.tracksEpoch = 0
         NaviMapTestHooks.tracksAppliedEpoch = 0
         NaviMapTestHooks.lastTrackIds = emptyList()
@@ -90,12 +90,10 @@ class MovingIconInstrumentedTest {
         assertTrue(activityRule.activity.isFinishing.not())
 
         // Wait for MapLibre style (camera/tracks before styleReady are easy to drop).
-        val styleDeadline = System.currentTimeMillis() + 20_000
-        while (System.currentTimeMillis() < styleDeadline) {
-            if (NaviMapTestHooks.styleReady) break
-            Thread.sleep(200)
-        }
-        assertTrue("MapLibre style not ready", NaviMapTestHooks.styleReady)
+        assertTrue(
+            "MapLibre style not ready",
+            InstrumentedMapCapture.awaitStyleReady(20_000),
+        )
         // Re-pin camera after style load and give tiles a moment (ZoomPoi uses ~4.5s).
         NaviMapTestHooks.pendingCamera = Triple(centerLat, centerLon, zoom)
         Thread.sleep(4_500)

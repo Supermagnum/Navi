@@ -12,6 +12,7 @@ object MapHudPrefs {
     private const val KEY_AUTO_ZOOM_LEVEL = "auto_zoom_level"
     private const val KEY_AUTO_ZOOM_ON = "auto_zoom_on"
     private const val KEY_BREAK_AS_DISTANCE = "break_as_distance"
+    private const val KEY_BREAK_REMINDERS_ENABLED = "break_reminders_enabled"
     private const val KEY_PREFER_METRIC = "prefer_metric"
     private const val KEY_UNIT_SYSTEM = "unit_system"
     private const val KEY_OPT_IN_3D = "opt_in_3d"
@@ -189,6 +190,25 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_BREAK_AS_DISTANCE, asDistance)
+            .apply()
+    }
+
+    /** Drive "Breaks" toggle — default on (match [DriveHudState.breakRemindersEnabled]). */
+    const val BREAK_REMINDERS_DEFAULT_ENABLED = true
+
+    fun loadBreakRemindersEnabled(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_BREAK_REMINDERS_ENABLED, BREAK_REMINDERS_DEFAULT_ENABLED)
+
+    fun saveBreakRemindersEnabled(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_BREAK_REMINDERS_ENABLED, enabled)
             .apply()
     }
 

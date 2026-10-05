@@ -2298,7 +2298,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_camping_plugin_set_enabled() and 0xFFFF) != 4893) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_camping_plugin_set_nav_context() and 0xFFFF) != 46018) {
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_set_nav_context() and 0xFFFF) != 26649) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_camping_plugin_set_pack_dirs() and 0xFFFF) != 40747) {
@@ -8581,6 +8581,10 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
 
         /**
          * Push live navigation context (closes production destination-null).
+         *
+         * `waypoints_json` is `[[lat, lon], …]` — not the MapLibre overlay string
+         * `"lon,lat;lon,lat;…"`. The Android host converts via
+         * `sampleCampingCorridorWaypoints`.
          */ fun `campingPluginSetNavContext`(`waypointsJson`: kotlin.String, `destLat`: kotlin.Double?, `destLon`: kotlin.Double?, `profile`: TravelProfile, `professionalDriver`: kotlin.Boolean): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->

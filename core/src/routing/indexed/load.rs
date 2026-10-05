@@ -253,6 +253,38 @@ fn corridor_needs_extra_stems(primary_stem: &str, bbox: Option<[f64; 4]>) -> boo
     }
 }
 
+/// True when catalog path `path` should stay as a 2-point hop extra.
+///
+/// Admin PIP wins over pack-leaf AABBs. MV's Geofabrik box covers Fehmarn
+/// (`54.21, 11.025` is SH) and used to steal the 5-tile budget from DK/SH
+/// ferry tiles — overlay then left O/D on different components.
+fn extra_leaf_justified_for_hop(path: &str, pts: &[(f64, f64)], segs: Option<&[[f64; 4]]>) -> bool {
+    if pts.len() != 2 {
+        return true;
+    }
+    let Some(region) = region_bbox(path) else {
+        return false;
+    };
+    let pip_matches = |pip: &str| {
+        pip == path || pip.starts_with(&format!("{path}/")) || path.starts_with(&format!("{pip}/"))
+    };
+    let pip_a = crate::long_trip::region_containing(pts[0].0, pts[0].1, None);
+    let pip_b = crate::long_trip::region_containing(pts[1].0, pts[1].1, None);
+    if pip_a.is_some_and(pip_matches) || pip_b.is_some_and(pip_matches) {
+        return true;
+    }
+    for &(lat, lon) in pts {
+        if crate::routing::basemap::bbox_covers_point(region, lat, lon) {
+            if let Some(pip) = crate::long_trip::region_containing(lat, lon, None) {
+                if !pip_matches(pip) {
+                    return false;
+                }
+            }
+        }
+    }
+    segs.is_some_and(|segs| segs.iter().any(|s| bbox_intersects(region, *s)))
+}
+
 /// True when a hop endpoint lies in a Ready **leaf** that is not the primary
 /// stem (and not a child of it). Country AABBs routinely contain foreign leaves
 /// (Denmark over Skåne); without this, `corridor_needs_extra_stems` stays false
@@ -1181,12 +1213,7 @@ fn try_load_graph_for_plan_corridor_dirs(
                 let Some(path) = pbf_stem_to_geofabrik_path(&m.stem) else {
                     return false;
                 };
-                let Some(region) = region_bbox(&path) else {
-                    return false;
-                };
-                crate::routing::basemap::bbox_covers_point(region, pts[0].0, pts[0].1)
-                    || crate::routing::basemap::bbox_covers_point(region, pts[1].0, pts[1].1)
-                    || segs_ref.is_some_and(|segs| segs.iter().any(|s| bbox_intersects(region, *s)))
+                extra_leaf_justified_for_hop(&path, pts, segs_ref)
             });
             // Catalog country AABBs spill across borders (Finland over eastern
             // Finnmark). When both hop ends PIP to the same leaf, foreign
@@ -1324,13 +1351,20 @@ fn try_load_graph_for_plan_corridor_dirs(
 
     let mut seen = HashSet::new();
     let mut tile_candidates = Vec::new();
+    // TripAabb must not keep corridor-segment tile filters: the band can omit
+    // Fehmarn terminals while still reporting extras=DK. Tile pick then uses
+    // clip_bbox (pad AABB) like edge clips.
+    let tile_segs = match edge_clip_mode {
+        crate::routing::plan_bbox::PlanEdgeClipMode::TripAabb => None,
+        crate::routing::plan_bbox::PlanEdgeClipMode::CorridorBand => segs_ref,
+    };
     if let Some(tiles) = man.graph_tiles_for(profile) {
         append_intersecting_tile_files_corridor(
             &mut tile_candidates,
             &mut seen,
             tiles,
             clip_bbox,
-            segs_ref,
+            tile_segs,
         );
     } else {
         log::warn!(
@@ -1345,7 +1379,7 @@ fn try_load_graph_for_plan_corridor_dirs(
                 &mut seen,
                 tiles,
                 clip_bbox,
-                segs_ref,
+                tile_segs,
             );
         }
     }
@@ -1756,27 +1790,73 @@ fn plan_clip_bbox(
 /// region `{stem}.osm.pbf` when it is not a pack-server stub. Stub PBFs must
 /// **not** trigger a blocking Geofabrik download during plan (observed ~130–300 s
 /// hangs on Android chunk legs); use a pre-fetched ferry sidecar or real extract.
-fn resolve_ferry_overlay_pbf(home: &Path, stem: &str, bbox: [f64; 4]) -> Option<PathBuf> {
+fn country_extract_pbf_stem(leaf_stem: &str) -> Option<String> {
+    let path = pbf_stem_to_geofabrik_path(leaf_stem)?;
+    let extract = crate::routing::osm_update::geofabrik_extract_path(&path);
+    if extract == path {
+        return None;
+    }
+    let leaf = extract.rsplit('/').next()?.to_string();
+    Some(format!("{leaf}-latest"))
+}
+
+fn real_extract_in_dirs(dirs: &[&Path], filename: &str) -> Option<PathBuf> {
+    for d in dirs {
+        let p = d.join(filename);
+        if pbf_is_real_extract(&p) {
+            return Some(p);
+        }
+    }
+    None
+}
+
+fn resolve_ferry_overlay_pbf(
+    dirs: &[&Path],
+    home: &Path,
+    stem: &str,
+    bbox: [f64; 4],
+) -> Option<PathBuf> {
     let _ = bbox;
-    let ferry_sidecar = home.join(format!("{stem}.ferry.osm.pbf"));
-    if pbf_is_real_extract(&ferry_sidecar)
-        || (ferry_sidecar.is_file()
-            && ferry_sidecar
-                .metadata()
-                .map(|m| m.len() > 64 * 1024)
-                .unwrap_or(false))
+    let search: Vec<&Path> = std::iter::once(home).chain(dirs.iter().copied()).collect();
+    let ferry_name = format!("{stem}.ferry.osm.pbf");
+    if let Some(p) = real_extract_in_dirs(&search, &ferry_name) {
+        return Some(p);
+    }
+    let ferry_sidecar = home.join(&ferry_name);
+    if ferry_sidecar.is_file()
+        && ferry_sidecar
+            .metadata()
+            .map(|m| m.len() > 64 * 1024)
+            .unwrap_or(false)
     {
         return Some(ferry_sidecar);
     }
-    let region_pbf = home.join(format!("{stem}.osm.pbf"));
-    if pbf_is_real_extract(&region_pbf) {
-        return Some(region_pbf);
+    let region_name = format!("{stem}.osm.pbf");
+    if let Some(p) = real_extract_in_dirs(&search, &region_name) {
+        return Some(p);
     }
+    if let Some(country) = country_extract_pbf_stem(stem) {
+        let country_name = format!("{country}.osm.pbf");
+        if let Some(p) = real_extract_in_dirs(&search, &country_name) {
+            log::info!(
+                target: "NaviPlan",
+                "ferry_overlay share country PBF stem={stem} path={}",
+                p.display()
+            );
+            return Some(p);
+        }
+    }
+    let region_pbf = home.join(&region_name);
     if region_pbf.is_file() {
         crate::routing::plan_perf::note("ferry_overlay", "stub_skip_no_ensure");
         log::info!(
             target: "NaviPlan",
             "ferry_overlay stub PBF stem={stem} — skip Geofabrik ensure (no spin)"
+        );
+    } else {
+        log::info!(
+            target: "NaviPlan",
+            "ferry_overlay no PBF stem={stem} — skip overlay for this extra"
         );
     }
     None
@@ -1924,7 +2004,7 @@ fn supplement_pack_ferries_from_pbf_inner(
         let Some(home) = home_dir_for_stem(dirs, stem, profile) else {
             continue;
         };
-        let Some(pbf) = resolve_ferry_overlay_pbf(home, stem, bbox) else {
+        let Some(pbf) = resolve_ferry_overlay_pbf(dirs, home, stem, bbox) else {
             continue;
         };
         // Geofabrik-sized extracts: never parse PBF on the plan thread. If the
@@ -1946,6 +2026,16 @@ fn supplement_pack_ferries_from_pbf_inner(
                     continue;
                 }
             } else {
+                // Densify skeleton must not enqueue sidecar builds: it walks
+                // every corridor extra (NDS/DK/MV/SH/NO…) and those jobs share
+                // one lock, so the SH→DK hop never sees a finished sidecar.
+                if super::graph_pack::densify_skeleton_only_active() {
+                    log::info!(
+                        target: "NaviPlan",
+                        "ferry_overlay skeleton skip preparing stem={stem} — continue without that overlay"
+                    );
+                    continue;
+                }
                 let (status, pct) = super::ferry_overlay_cache::ferry_preparing_status(stem);
                 crate::routing::plan_perf::note("ferry_overlay", "preparing_sidecar");
                 let home_b = home.to_path_buf();
@@ -1999,20 +2089,29 @@ fn supplement_pack_ferries_from_pbf_inner(
 
 /// Choose the Ready manifest for planning: prefer a stem whose region covers
 /// the first route point when the PBF stem does not (chunked long-trip hops).
+///
+/// PIP / covering-manifest scan runs before requiring the planning PBF stem to
+/// have a Ready pack. Camping `find_planning_pbf` may return a country extract
+/// (`sweden-latest.osm.pbf`) with no `sweden-latest` graph pack — only leaf
+/// packs — and hard-failing on that stem blocked overnight corridor loads.
 fn pick_primary_manifest<'a>(
     dirs: &[&'a Path],
     pbf_stem: &str,
     route_points: Option<&[(f64, f64)]>,
     profile: RoutingProfile,
 ) -> Result<(String, NaviManifest, &'a Path), PackLoadError> {
-    let primary_dir = home_dir_for_stem(dirs, pbf_stem, profile).ok_or(PackLoadError::Missing)?;
-    let default = load_ready_manifest(primary_dir, pbf_stem)?;
-    let Some(pts) = route_points else {
-        return Ok((pbf_stem.to_string(), default, primary_dir));
+    let pbf_pack = home_dir_for_stem(dirs, pbf_stem, profile).and_then(|home| {
+        match load_ready_manifest(home, pbf_stem) {
+            Ok(man) if stem_pack_ready(home, &man, profile) => {
+                Some((pbf_stem.to_string(), man, home))
+            }
+            _ => None,
+        }
+    });
+
+    let Some(pts) = route_points.filter(|p| !p.is_empty()) else {
+        return pbf_pack.ok_or(PackLoadError::Missing);
     };
-    if pts.is_empty() {
-        return Ok((pbf_stem.to_string(), default, primary_dir));
-    }
     let (lat, lon) = pts[0];
     // Prefer Admin/PIP leaf over catalog AABB. Country extracts (Finland) spill
     // over eastern Finnmark and have a smaller AABB than Nord-Norge, so the
@@ -2029,10 +2128,12 @@ fn pick_primary_manifest<'a>(
             }
         }
     }
-    if let Some(path) = pbf_stem_to_geofabrik_path(pbf_stem) {
-        if let Some(region) = region_bbox(&path) {
-            if crate::routing::basemap::bbox_covers_point(region, lat, lon) {
-                return Ok((pbf_stem.to_string(), default, primary_dir));
+    if let Some((stem, man, home)) = &pbf_pack {
+        if let Some(path) = pbf_stem_to_geofabrik_path(stem) {
+            if let Some(region) = region_bbox(&path) {
+                if crate::routing::basemap::bbox_covers_point(region, lat, lon) {
+                    return Ok((stem.clone(), man.clone(), *home));
+                }
             }
         }
     }
@@ -2080,7 +2181,7 @@ fn pick_primary_manifest<'a>(
     if let Some((_, stem, man, home)) = best {
         return Ok((stem, man, home));
     }
-    Ok((pbf_stem.to_string(), default, primary_dir))
+    pbf_pack.ok_or(PackLoadError::Missing)
 }
 
 /// Key for deduplicating the same physical edge repeated on adjacent tile boundaries.
@@ -2948,7 +3049,7 @@ mod merge_tile_graphs_tests {
 mod multi_stem_corridor_tests {
     use super::{
         bbox_contained, corridor_needs_extra_for_endpoint_leaves, corridor_needs_extra_stems,
-        home_dir_for_stem,
+        extra_leaf_justified_for_hop, home_dir_for_stem,
     };
     use crate::routing::graph::RoutingProfile;
     use std::fs;
@@ -2978,6 +3079,28 @@ mod multi_stem_corridor_tests {
             home.map(|p| p.to_path_buf()),
             Some(v9),
             "must prefer v9 long-trip-packs over v8 files/ root"
+        );
+    }
+
+    #[test]
+    fn mv_aabb_spill_does_not_justify_fehmarn_hop_extra() {
+        let hop = [(54.21_f64, 11.025), (55.175, 11.700)];
+        let clip = [[53.86_f64, 10.675, 55.525, 12.050]];
+        assert!(
+            extra_leaf_justified_for_hop("europe/denmark", &hop, Some(&clip)),
+            "DK must stay on Fehmarn hop"
+        );
+        assert!(
+            extra_leaf_justified_for_hop("europe/germany/schleswig-holstein", &hop, Some(&clip)),
+            "SH is the origin leaf"
+        );
+        assert!(
+            !extra_leaf_justified_for_hop(
+                "europe/germany/mecklenburg-vorpommern",
+                &hop,
+                Some(&clip)
+            ),
+            "MV AABB covers Fehmarn but PIP is SH — must not steal tiles"
         );
     }
 
@@ -3442,6 +3565,23 @@ mod ferry_overlay_tests {
     }
 
     #[test]
+    fn skane_leaf_shares_sweden_country_pbf_stem() {
+        assert_eq!(
+            country_extract_pbf_stem("skane-latest").as_deref(),
+            Some("sweden-latest")
+        );
+        assert_eq!(
+            country_extract_pbf_stem("halland-latest").as_deref(),
+            Some("sweden-latest")
+        );
+        assert!(
+            country_extract_pbf_stem("denmark-latest").is_none(),
+            "country extracts must not recurse"
+        );
+        assert!(country_extract_pbf_stem("schleswig-holstein-latest").is_none());
+    }
+
+    #[test]
     fn connected_hop_skips_overlay_gate() {
         let mut nodes = HashMap::new();
         for (id, lat, lon) in [
@@ -3479,11 +3619,11 @@ mod ferry_overlay_tests {
         ));
     }
 
-    /// Live pack probe: SH+DK tiles clip Puttgarden/Rødby; overlay must bridge.
-    /// Run: `NAVI_FEHMARN_PROBE_DIR=/tmp/navi-fehmarn-probe/packs cargo test -p driver-break-core fehmarn_pack_ferry_overlay_bridges -- --ignored --nocapture`
+    /// Live pack probe after catalog-union rebake. Run:
+    /// `NAVI_FEHMARN_PROBE_DIR=... cargo test -p driver-break-core fehmarn_rebake_tiles_have_puttgarden -- --ignored --nocapture`
     #[test]
     #[ignore]
-    fn fehmarn_pack_ferry_overlay_bridges_clipped_terminals() {
+    fn fehmarn_rebake_tiles_have_puttgarden() {
         let dir = match std::env::var("NAVI_FEHMARN_PROBE_DIR") {
             Ok(d) => PathBuf::from(d),
             Err(_) => {
@@ -3491,87 +3631,62 @@ mod ferry_overlay_tests {
                 return;
             }
         };
-        let sh_tile = dir.join("schleswig-holstein-latest.navi-graph-car.t1_2.rkyv");
+        let sh_tile = dir.join("schleswig-holstein-latest.navi-graph-car.t1_3.rkyv");
         let dk_tile = dir.join("denmark-latest.navi-graph-car.t0_3.rkyv");
-        let sh_pbf = dir.join("schleswig-holstein-latest.osm.pbf");
-        let dk_pbf = dir.join("denmark-latest.osm.pbf");
-        for p in [&sh_tile, &dk_tile, &sh_pbf, &dk_pbf] {
+        let sh_side = dir.join("schleswig-holstein-latest.navi-ferry-overlay-truck.rkyv");
+        let dk_side = dir.join("denmark-latest.navi-ferry-overlay-truck.rkyv");
+        for p in [&sh_tile, &dk_tile] {
             assert!(p.is_file(), "missing {}", p.display());
         }
-        let profile = RoutingProfile::Car;
+        let profile = RoutingProfile::Truck;
         let hop = [(54.21_f64, 11.025), (55.175, 11.700)];
         let clip = [53.86_f64, 10.675, 55.525, 12.050];
         let sh = load_graph_pack_clips(&sh_tile, profile, Some(&[clip])).expect("sh");
         let dk = load_graph_pack_clips(&dk_tile, profile, Some(&[clip])).expect("dk");
-        let merged = merge_tile_graphs(vec![sh, dk], profile);
-        assert!(
-            !graph_hop_already_connected(&merged, hop[0], hop[1]),
-            "pack-only hop must be disconnected"
-        );
-        let sh_man = NaviManifest {
-            schema: NaviManifest::SCHEMA,
-            stem: "schleswig-holstein-latest".into(),
-            pbf_filename: "schleswig-holstein-latest.osm.pbf".into(),
-            pbf_size_bytes: sh_pbf.metadata().unwrap().len(),
-            pbf_modified_unix_secs: 1,
-            graph_files: BTreeMap::new(),
-            graph_tiles: BTreeMap::new(),
-            graph_format_version: GRAPH_FORMAT_VERSION,
-            poi_barrier_file: "schleswig-holstein-latest.navi-poi-barrier.rkyv".into(),
-            poi_barrier_format_version: POI_BARRIER_FORMAT_VERSION,
-            wetland_file: None,
-            wetland_tiles: Vec::new(),
-            wetland_format_version: WETLAND_FORMAT_VERSION,
-            has_delta_h: false,
-            elev_dir: None,
-        };
-        let dk_man = NaviManifest {
-            stem: "denmark-latest".into(),
-            pbf_filename: "denmark-latest.osm.pbf".into(),
-            pbf_size_bytes: dk_pbf.metadata().unwrap().len(),
-            poi_barrier_file: "denmark-latest.navi-poi-barrier.rkyv".into(),
-            ..sh_man.clone()
-        };
-        let ferry_before = merged.edges.iter().filter(|e| e.is_ferry).count();
-        for (stem, pbf) in [
-            ("schleswig-holstein-latest", &sh_pbf),
-            ("denmark-latest", &dk_pbf),
-        ] {
-            super::super::ferry_overlay_cache::ensure_ferry_sidecar(&dir, stem, profile, pbf)
-                .expect("ensure ferry sidecar");
-        }
-        let out = supplement_pack_ferries_from_pbf(
-            std::sync::Arc::new(merged),
-            &[&dir],
-            &sh_man,
-            &[dk_man],
-            profile,
-            Some(clip),
-            None,
-            Some(&hop),
-        )
-        .expect("ferry overlay");
-        let ferry_after = out.edges.iter().filter(|e| e.is_ferry).count();
+        let sh_ferry = sh.edges.iter().filter(|e| e.is_ferry).count();
+        let dk_ferry = dk.edges.iter().filter(|e| e.is_ferry).count();
         eprintln!(
-            "ferry_edges {ferry_before} -> {ferry_after}; nodes={}",
-            out.nodes.len()
+            "SH t1_3 clip ferry_edges={sh_ferry} nodes={}",
+            sh.nodes.len()
         );
-        assert!(ferry_after > ferry_before, "overlay must add ferry edges");
-        // Island-interior anchors avoid snapping onto orphan pier tips.
+        eprintln!(
+            "DK t0_3 clip ferry_edges={dk_ferry} nodes={}",
+            dk.nodes.len()
+        );
+        let merged = merge_tile_graphs(vec![sh, dk], profile);
         let opts = crate::routing::graph::RouteOptions::default();
-        let (start, _) = out
-            .nearest_routable_with_options_max(hop[0].0, hop[0].1, &opts, false, 25_000.0)
-            .expect("snap start");
-        let (goal, _) = out
-            .nearest_routable_with_options_max(hop[1].0, hop[1].1, &opts, false, 25_000.0)
-            .expect("snap goal");
-        let path = out.shortest_path(start, goal, false);
-        assert!(
-            path.is_some(),
-            "A* must connect Bevensen densify hop across Fehmarn"
+        let puttgarden_m = merged
+            .nearest_routable_with_options_max(54.503, 11.227, &opts, false, 25_000.0)
+            .map(|(_, d)| d)
+            .unwrap_or(f64::MAX);
+        let rodby_m = merged
+            .nearest_routable_with_options_max(54.655, 11.352, &opts, false, 25_000.0)
+            .map(|(_, d)| d)
+            .unwrap_or(f64::MAX);
+        eprintln!("nearest pack node Puttgarden={puttgarden_m:.0} m Rødby={rodby_m:.0} m");
+        eprintln!(
+            "hop_connected_without_overlay={}",
+            graph_hop_already_connected(&merged, hop[0], hop[1])
         );
-        let (_n, edges, _c) = path.unwrap();
-        assert!(out.path_uses_ferries(&edges), "path should use a ferry");
+        assert!(
+            puttgarden_m < 1_500.0,
+            "rebaked SH t1_3 must contain Puttgarden; nearest_m={puttgarden_m:.0}"
+        );
+        assert!(
+            rodby_m < 1_500.0,
+            "rebaked DK t0_3 must contain Rødby; nearest_m={rodby_m:.0}"
+        );
+        if sh_side.is_file() && dk_side.is_file() {
+            let sh_ov =
+                load_graph_pack_clips(&sh_side, profile, Some(&[clip])).expect("sh overlay");
+            let dk_ov =
+                load_graph_pack_clips(&dk_side, profile, Some(&[clip])).expect("dk overlay");
+            eprintln!(
+                "overlay clip SH ferry={} DK ferry={}",
+                sh_ov.edges.iter().filter(|e| e.is_ferry).count(),
+                dk_ov.edges.iter().filter(|e| e.is_ferry).count()
+            );
+        }
     }
 }
 

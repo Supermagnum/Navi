@@ -41,7 +41,7 @@ class BreakHudGuardInstrumentedTest {
             NaviMapTestHooks.hideSearchChrome = true
             NaviMapTestHooks.pendingRoute = null
             NaviMapTestHooks.requestClearRoute = false
-            NaviMapTestHooks.styleReady = false
+            NaviMapTestHooks.resetStyleLoadState()
         }
     }
 
@@ -62,12 +62,10 @@ class BreakHudGuardInstrumentedTest {
     }
 
     private fun waitStyle() {
-        val deadline = System.currentTimeMillis() + 25_000
-        while (System.currentTimeMillis() < deadline) {
-            if (NaviMapTestHooks.styleReady) break
-            Thread.sleep(200)
-        }
-        assertTrue("MapLibre style not ready", NaviMapTestHooks.styleReady)
+        assertTrue(
+            "MapLibre style not ready",
+            InstrumentedMapCapture.awaitStyleReady(25_000),
+        )
         Thread.sleep(800)
     }
 
@@ -176,6 +174,36 @@ class BreakHudGuardInstrumentedTest {
                 preferMetric = true,
             ),
         )
+        assertNull(
+            formatBreakHudLine(
+                routePlanned = true,
+                breakRemindersEnabled = false,
+                minutesToBreak = 240.0,
+                breakAsDistance = false,
+                preferMetric = true,
+            ),
+        )
+    }
+
+    @Test
+    fun withRoute_breaksOffHidesHudCountdown() {
+        waitStyle()
+        injectRealRoute()
+        composeRule
+            .onNodeWithTag("hud_break_countdown", useUnmergedTree = true)
+            .assertIsDisplayed()
+        NaviMapTestHooks.requestBreakReminders = false
+        Thread.sleep(1_200)
+        assertNoBreakHud()
+        assertFalse(NaviMapTestHooks.lastBreakRemindersEnabled)
+        NaviMapTestHooks.requestBreakReminders = true
+        Thread.sleep(1_200)
+        composeRule
+            .onNodeWithTag("hud_break_countdown", useUnmergedTree = true)
+            .assertIsDisplayed()
+        NaviMapTestHooks.requestClearRoute = true
+        Thread.sleep(1_000)
+        assertNoBreakHud()
     }
 
     @Test

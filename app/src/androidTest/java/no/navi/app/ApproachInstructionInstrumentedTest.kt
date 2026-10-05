@@ -44,7 +44,7 @@ class ApproachInstructionInstrumentedTest {
             NaviMapTestHooks.hideSearchChrome = true
             NaviMapTestHooks.pendingApproachGuidance = null
             NaviMapTestHooks.pendingRoute = null
-            NaviMapTestHooks.styleReady = false
+            NaviMapTestHooks.resetStyleLoadState()
         }
 
         // Grimåsfeltet suburb (OSM place) — FTS has no "2368" housenumber there.
@@ -89,12 +89,10 @@ class ApproachInstructionInstrumentedTest {
     }
 
     private fun waitStyle() {
-        val deadline = System.currentTimeMillis() + 25_000
-        while (System.currentTimeMillis() < deadline) {
-            if (NaviMapTestHooks.styleReady) break
-            Thread.sleep(200)
-        }
-        assertTrue("MapLibre style not ready", NaviMapTestHooks.styleReady)
+        assertTrue(
+            "MapLibre style not ready",
+            InstrumentedMapCapture.awaitStyleReady(25_000),
+        )
         Thread.sleep(1_500)
     }
 

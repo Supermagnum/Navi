@@ -638,6 +638,7 @@ mod tests {
 
     #[test]
     fn load_admin_sets_relations_label_before_missing_pbf() {
+        let _lock = crate::download::progress::test_lock();
         crate::download::progress::clear();
         let err = load_admin_from_pbf("/no/such/region.osm.pbf", "Place index: ");
         assert!(err.is_err());

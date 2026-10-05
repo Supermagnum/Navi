@@ -38,6 +38,32 @@ pub fn graph_format_version_accepted(v: u32) -> bool {
     v == GRAPH_FORMAT_VERSION_V8 || v == GRAPH_FORMAT_VERSION
 }
 
+/// Corridor-band clip: keep an edge when its lat/lon envelope overlaps any clip
+/// square (not only when a terminal sits inside a square).
+///
+/// Endpoint-only clip drops real OSM ferries and long bridges whose terminals
+/// lie outside the 0.40° band while the span still crosses the hop chord
+/// (Øresundsbron on a Zealand→Skåne densify hop; Fehmarn belt similarly).
+#[must_use]
+pub(crate) fn clip_keeps_edge(
+    slat: f64,
+    slon: f64,
+    elat: f64,
+    elon: f64,
+    clips: &[[f64; 4]],
+) -> bool {
+    if clips.is_empty() {
+        return true;
+    }
+    let emin_lat = slat.min(elat);
+    let emax_lat = slat.max(elat);
+    let emin_lon = slon.min(elon);
+    let emax_lon = slon.max(elon);
+    clips
+        .iter()
+        .any(|b| emin_lat <= b[2] && emax_lat >= b[0] && emin_lon <= b[3] && emax_lon >= b[1])
+}
+
 /// Among accepted candidates, prefer the newest (v9 over v8). Used when a region
 /// could ever offer more than one compatible staged pack.
 #[must_use]
@@ -358,8 +384,8 @@ impl FlatGraphPack {
         }
     }
 
-    /// Like [`Self::to_route_graph_bbox`], keeping edges whose endpoints fall in
-    /// **any** clip box (corridor band of small squares along the OD polyline).
+    /// Like [`Self::to_route_graph_bbox`], keeping edges whose lat/lon envelope
+    /// overlaps **any** clip box (corridor band along the OD polyline).
     pub fn to_route_graph_clips(
         &self,
         profile: RoutingProfile,
@@ -370,19 +396,13 @@ impl FlatGraphPack {
             let Some(clips) = clips else {
                 return true;
             };
-            if clips.is_empty() {
-                return true;
-            }
-            let slat = self.edge_start_lat[i];
-            let slon = self.edge_start_lon[i];
-            let elat = self.edge_end_lat[i];
-            let elon = self.edge_end_lon[i];
-            let in_box = |lat: f64, lon: f64, b: &[f64; 4]| {
-                lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3]
-            };
-            clips
-                .iter()
-                .any(|b| in_box(slat, slon, b) || in_box(elat, elon, b))
+            clip_keeps_edge(
+                self.edge_start_lat[i],
+                self.edge_start_lon[i],
+                self.edge_end_lat[i],
+                self.edge_end_lon[i],
+                clips,
+            )
         };
         // Ferry terminals often hang off secondary/service stubs. Keep every
         // clipped edge that touches a ferry endpoint without importing the
@@ -662,8 +682,8 @@ impl ArchivedFlatGraphPack {
         }
     }
 
-    /// Like [`Self::to_route_graph_bbox`], keeping edges whose endpoints fall in
-    /// **any** clip box (corridor band along the OD).
+    /// Like [`Self::to_route_graph_bbox`], keeping edges whose lat/lon envelope
+    /// overlaps **any** clip box (corridor band along the OD).
     pub fn to_route_graph_clips(
         &self,
         profile: RoutingProfile,
@@ -675,19 +695,13 @@ impl ArchivedFlatGraphPack {
             let Some(clips) = clips else {
                 return true;
             };
-            if clips.is_empty() {
-                return true;
-            }
-            let slat = arch_f64(self.edge_start_lat[i]);
-            let slon = arch_f64(self.edge_start_lon[i]);
-            let elat = arch_f64(self.edge_end_lat[i]);
-            let elon = arch_f64(self.edge_end_lon[i]);
-            let in_box = |lat: f64, lon: f64, b: &[f64; 4]| {
-                lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3]
-            };
-            clips
-                .iter()
-                .any(|b| in_box(slat, slon, b) || in_box(elat, elon, b))
+            clip_keeps_edge(
+                arch_f64(self.edge_start_lat[i]),
+                arch_f64(self.edge_start_lon[i]),
+                arch_f64(self.edge_end_lat[i]),
+                arch_f64(self.edge_end_lon[i]),
+                clips,
+            )
         };
         let ferry_nodes: HashSet<u32> = if skeleton {
             let mut s = HashSet::new();
@@ -1247,6 +1261,24 @@ mod tests {
         assert_eq!(preferred_graph_format_version([8, 9, 7]), Some(9));
         assert_eq!(preferred_graph_format_version([8, 8]), Some(8));
         assert_eq!(preferred_graph_format_version([7, 10]), None);
+    }
+
+    #[test]
+    fn clip_keeps_oresund_span_when_terminals_miss_band_square() {
+        // Kastrup / Lernacken-class terminals sit outside a water-only clip
+        // square that still overlaps the bridge envelope.
+        let slat = 55.628_f64;
+        let slon = 12.647;
+        let elat = 55.573;
+        let elon = 12.891;
+        let water = [[55.58, 12.75, 55.62, 12.80]];
+        let in_box = |lat: f64, lon: f64, b: [f64; 4]| {
+            lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3]
+        };
+        assert!(!in_box(slat, slon, water[0]) && !in_box(elat, elon, water[0]));
+        assert!(clip_keeps_edge(slat, slon, elat, elon, &water));
+        let miss = [[56.2, 13.5, 56.3, 13.6]];
+        assert!(!clip_keeps_edge(slat, slon, elat, elon, &miss));
     }
 
     fn tunnel_pair_graph() -> RouteGraph {

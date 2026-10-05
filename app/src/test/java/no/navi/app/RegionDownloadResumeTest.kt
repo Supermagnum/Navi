@@ -221,6 +221,14 @@ class RegionDownloadResumeTest {
                 "europe/germany/hamburg",
             ),
         )
+        assertFalse(
+            "BASEMAP must not wipe place-index for a region already Indexed",
+            RegionDownloadBackground.shouldClearPlaceRowsOnPipelineStart(
+                RegionDownloadBackground.Phase.BASEMAP,
+                dir,
+                "europe/germany/hamburg",
+            ),
+        )
     }
 
     @Test

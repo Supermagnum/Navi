@@ -2315,6 +2315,7 @@ pub fn plan_car_route_at(
             /* relax_start_snap */ false,
             /* relax_end_snap */ false,
             /* tight_intermediate_snap */ false,
+            /* datex_impacts_override */ None,
         )
     })) {
         Ok(result) => result,
@@ -2362,6 +2363,36 @@ fn plan_car_route_chunked_legs(
         hops.len().saturating_sub(1),
         driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG
     ));
+    let datex_impacts = {
+        let dir = data_dir.trim();
+        if dir.is_empty() {
+            Vec::new()
+        } else {
+            driver_break_core::datex::planner_impacts_from_data_dir(
+                std::path::Path::new(dir),
+                hops,
+                chrono::Utc::now(),
+            )
+        }
+    };
+    let datex_blocks = datex_impacts
+        .iter()
+        .filter(|c| c.impact == driver_break_core::datex::DatexImpact::Block)
+        .count();
+    let datex_penalize = datex_impacts
+        .iter()
+        .filter(|c| c.impact == driver_break_core::datex::DatexImpact::Penalize)
+        .count();
+    report.push_str(&format!(
+        "datex_impacts={}; datex_block={datex_blocks}; datex_penalize={datex_penalize}\n",
+        datex_blocks + datex_penalize
+    ));
+    log::info!(
+        target: "NaviDatex",
+        "chunked plan-time DATEX impacts={} block={datex_blocks} penalize={datex_penalize} hops={}",
+        datex_blocks + datex_penalize,
+        hops.len()
+    );
     let mut distance_km = 0.0;
     let mut eta_minutes = 0.0;
     let mut build_s = 0.0;
@@ -2434,6 +2465,7 @@ fn plan_car_route_chunked_legs(
             relax_start,
             relax_end,
             /* tight_intermediate_snap */ false,
+            Some(datex_impacts.clone()),
         );
         report.push_str(&format!("--- leg{} report ---\n", i + 1));
         report.push_str(&leg.report);
@@ -2567,6 +2599,27 @@ fn plan_car_route_chunked_legs(
     report.push_str(&format!("route_tunnel_count={tunnel_count}\n"));
     report.push_str(&format!("route_tunnel_fp={}\n", tunnel_fp_parts.join("|")));
     append_rest_place_count(&mut report, &break_pois_json);
+    report.push_str(&format!(
+        "datex_impacts={}; datex_block={datex_blocks}; datex_penalize={datex_penalize}\n",
+        datex_blocks + datex_penalize
+    ));
+    {
+        let track = driver_break_core::export::parse_route_polyline(&polyline);
+        if track.len() >= 2 {
+            let n = track.len();
+            let idxs = [0, n / 6, n / 3, n / 2, (2 * n) / 3, (5 * n) / 6, n - 1];
+            let mut parts = Vec::new();
+            for i in idxs {
+                let (la, lo) = track[i];
+                parts.push(format!("{la:.5},{lo:.5}"));
+            }
+            log::info!(
+                target: "NaviDatex",
+                "chunked corridor samples n={n} {}",
+                parts.join(" ")
+            );
+        }
+    }
     report.push_str(&format!(
         "chunked_distance_km={distance_km:.3}; chunked_eta_min={eta_minutes:.1}; hops={}; route_uses_ferry={route_uses_ferry}\nPASS\n",
         hops.len().saturating_sub(1)
@@ -3014,6 +3067,7 @@ fn plan_car_route_inner(
     relax_start_snap: bool,
     relax_end_snap: bool,
     tight_intermediate_snap: bool,
+    datex_impacts_override: Option<Vec<driver_break_core::datex::DatexPlannerConstraint>>,
 ) -> CorridorRouteResult {
     let empty = empty_corridor;
     let _cancel_guard = driver_break_core::download::plan_cancel::begin_plan();
@@ -3100,22 +3154,32 @@ fn plan_car_route_inner(
                 &pack_dir_refs,
                 driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG,
             );
-        // Prefer joints on a major-road + ferry coarse path (avoids chord mids
-        // that force coastal detours, e.g. Bergen→Stavanger ~+11%).
-        let hops = driver_break_core::routing::indexed::try_densify_hops_via_skeleton(
-            std::path::Path::new(data_dir.trim()),
-            &pack_dir_refs,
-            std::path::Path::new(pbf_path.trim()),
-            routing_profile,
-            &route_points,
-            driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG,
-        )
-        .unwrap_or(geometric);
+        // Prefer joints on a major-road + ferry coarse path for **same-stem**
+        // coastal ODs (Bergen→Stavanger). Long-trip DE→NO must keep region
+        // densify: skeleton loads a trip AABB of the user pins (pad 0.15°)
+        // that misses Fehmarn/E47, then even-split hops walk Lolland/Kalvehave.
+        let hops = if ferry_same_stem_densify {
+            driver_break_core::routing::indexed::try_densify_hops_via_skeleton(
+                std::path::Path::new(data_dir.trim()),
+                &pack_dir_refs,
+                std::path::Path::new(pbf_path.trim()),
+                routing_profile,
+                &route_points,
+                driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG,
+            )
+            .unwrap_or(geometric)
+        } else {
+            geometric
+        };
         log::info!(
             target: "NaviPlan",
             "long_trip densify span={span:.3} hops={} long_trip_enabled={long_trip_enabled} \
-             ferry_same_stem={ferry_same_stem_densify} dirs={}",
+             ferry_same_stem={ferry_same_stem_densify} hops_latlon={} dirs={}",
             hops.len(),
+            hops.iter()
+                .map(|(la, lo)| format!("{la:.4},{lo:.4}"))
+                .collect::<Vec<_>>()
+                .join(";"),
             pack_dirs
                 .iter()
                 .map(|d| d.display().to_string())
@@ -3147,7 +3211,9 @@ fn plan_car_route_inner(
     // Initial plan only: apply active DATEX from `{data_dir}/datex_cache` when the
     // plugin stamp is present. No UniFFI signature change; mid-nav dynamic
     // reroute remains out of scope.
-    let datex_impacts = {
+    let datex_impacts = if let Some(v) = datex_impacts_override {
+        v
+    } else {
         let dir = data_dir.trim();
         if dir.is_empty() {
             Vec::new()
@@ -3702,6 +3768,21 @@ fn plan_car_route_inner(
                     ) {
                         edge_clip_mode =
                             driver_break_core::routing::plan_bbox::PlanEdgeClipMode::CorridorBand;
+                        continue;
+                    }
+                    // Same as post-A* disconnected: pad widen does not expand
+                    // corridor-band clips. Øresund-class water chords keep the
+                    // bridge but drop the Zealand land approach (Køge xt>0.40°);
+                    // trip-AABB restores that land network without inventing edges.
+                    if driver_break_core::routing::plan_bbox::should_fallback_to_trip_aabb(
+                        edge_clip_mode,
+                        last_terminate,
+                    ) {
+                        edge_clip_mode =
+                            driver_break_core::routing::plan_bbox::PlanEdgeClipMode::TripAabb;
+                        report.push_str(
+                            "edge_clip_fallback=trip_aabb after corridor_components_disconnected\n",
+                        );
                         continue;
                     }
                     report.push_str(&format!(

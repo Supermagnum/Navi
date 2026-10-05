@@ -60,6 +60,12 @@ pub const DATEX_APPLY_TO_ROUTING_STAMP: &str = "apply_to_routing";
 /// cannot silently block a cold-start plan after the incident has cleared.
 pub const DATEX_PLAN_CACHE_MAX_AGE_SECS: i64 = (DATEX_SERVER_SITUATION_POLL_SECS as i64) * 3;
 
+/// Plan-time corridor band (metres). Overlay stays on
+/// [`DatexConfig::corridor_margin_m`]; chunked hops are ~1° chords, so a 1.5 km
+/// overnight band misses sits on the actual road. A* still matches edges at
+/// [`DATEX_IMPACT_RADIUS_M`].
+pub const DATEX_PLAN_CORRIDOR_MARGIN_M: f64 = 25_000.0;
+
 /// Load active DATEX constraints for initial route planning from the on-disk
 /// navi-server cache under `{data_dir}/datex_cache`.
 ///
@@ -97,9 +103,31 @@ pub fn planner_impacts_from_data_dir(
             return Vec::new();
         }
     };
-    let margin = DatexConfig::default().corridor_margin_m();
-    let view = corridor_view(&all, route_lat_lon, margin, now);
-    planner_impacts(&view.active)
+    let span_deg = {
+        let mut min_lat = f64::MAX;
+        let mut max_lat = f64::MIN;
+        let mut min_lon = f64::MAX;
+        let mut max_lon = f64::MIN;
+        for &(la, lo) in route_lat_lon {
+            min_lat = min_lat.min(la);
+            max_lat = max_lat.max(la);
+            min_lon = min_lon.min(lo);
+            max_lon = max_lon.max(lo);
+        }
+        (max_lat - min_lat).max(max_lon - min_lon)
+    };
+    let margin = if span_deg > 3.0 {
+        DATEX_PLAN_CORRIDOR_MARGIN_M
+    } else {
+        DatexConfig::default().corridor_margin_m()
+    };
+    let near = filter_near_route(&all, route_lat_lon, margin);
+    let trip_end = now + chrono::Duration::hours(48);
+    let active: Vec<_> = near
+        .into_iter()
+        .filter(|s| s.is_active_during(now, trip_end))
+        .collect();
+    planner_impacts(&active)
 }
 
 /// Create or remove the plan-time DATEX apply stamp under `datex_cache`.
@@ -292,6 +320,33 @@ pub fn refresh_for_route(
     hydrate_session_from_disk(config);
 
     let now_unix = now.timestamp();
+    if let Some(dir) = config.cache_dir.as_ref() {
+        if let Some((meta, xml, fetched, fp)) = load_disk_cache(dir) {
+            if fp.starts_with("navi-synth")
+                && now_unix.saturating_sub(fetched) <= DATEX_PLAN_CACHE_MAX_AGE_SECS
+            {
+                log::info!(
+                    target: "NaviDatex",
+                    "keeping navi-synth cache age_secs={}; skip NPRA pull",
+                    now_unix.saturating_sub(fetched)
+                );
+                return match parse_situation_publication(&xml) {
+                    Ok(all) => {
+                        let view =
+                            corridor_view(&all, route_lat_lon, config.corridor_margin_m(), now);
+                        view_result(
+                            view,
+                            meta.attribution.or(meta.source),
+                            Some("navi_synth_keep".into()),
+                            PackDataSource::ServerDuckdns,
+                        )
+                    }
+                    Err(e) => empty_result(format!("parse_failed:{e}"), "server-duckdns"),
+                };
+            }
+        }
+    }
+
     let poll_secs = config.effective_poll_interval_secs() as i64;
 
     // Within poll window: re-filter in-memory cache only (no network).

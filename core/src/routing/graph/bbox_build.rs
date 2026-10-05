@@ -332,6 +332,16 @@ fn in_bbox(lat: f64, lon: f64, bbox: [f64; 4]) -> bool {
     lat >= bbox[0] && lat <= bbox[2] && lon >= bbox[1] && lon <= bbox[3]
 }
 
+fn in_chebyshev_vacuum(lat: f64, lon: f64, terminals: &[(f64, f64)], deg: f64) -> bool {
+    terminals
+        .iter()
+        .any(|(tlat, tlon)| (lat - tlat).abs() <= deg && (lon - tlon).abs() <= deg)
+}
+
+/// Chebyshev radius (degrees) for pier/footway promotion vacuum around a
+/// terminal (~1.7 km).
+const TERMINAL_PIER_VACUUM_DEG: f64 = 0.015;
+
 fn car_highway_ok(highway: &str) -> bool {
     matches!(
         highway,
@@ -619,19 +629,11 @@ impl RouteGraph {
     }
 
     /// Ferry overlay from a region `.osm.pbf`: OSM `route=ferry` ways plus
-    /// highway approaches that share terminal nodes with those ferries.
-    /// Approach stubs bridge pier tips that pack tiles may have clipped off
-    /// (e.g. Denmark south of ~54.677 vs Rødby ~54.655) so merge-by-OSM-id
-    /// connects into pack land. No preferential ferry bias — edges use normal
-    /// weights; A* chooses them when competitive and ferries are allowed.
-    /// Approach depth is four hops plus a ~1.5 km terminal-radius vacuum, and
-    /// includes `man_made=pier` / platform ways (as service) so collection can
-    /// leave the pier onto inland highways.
+    /// pier / footway promotions that share terminal nodes.
     ///
-    /// **Streaming (≤2 PBF reads):** formerly ~10 full-file scans which cost
-    /// ~18 min for Vestlandet on SM-P613. Now: (1) collect ferries + pier /
-    /// footway / platform promotions only, (2) one node pass for coords; BFS +
-    /// terminal-radius vacuum run in memory. Pack highways are not duplicated.
+    /// Does not invent water crossings or land hops. Overlay only materializes
+    /// ferries already present in the extract. Pack convert must tile the
+    /// full catalog/PBF extent so those ways are also in loaded graph tiles.
     pub fn build_ferry_overlay_from_pbf(
         path: impl AsRef<Path>,
         profile: RoutingProfile,
@@ -640,10 +642,7 @@ impl RouteGraph {
         let path = path.as_ref();
         let t_all = Instant::now();
 
-        // Pass 1 — ways only: ferries + pier/footway/platform promotions.
-        // Pack tiles already carry car highways; overlay only needs shared OSM
-        // ids at the pier–road join (BFS over every residential approach was
-        // multi-minute on Østlandet and unnecessary for Halhjem/Arsvågen).
+        // Pass 1 — ferries + pier/footway/platform promotions.
         let t0 = Instant::now();
         let mut ferry_ways: Vec<RawWay> = Vec::new();
         let mut approach_ways: Vec<RawWay> = Vec::new();
@@ -714,7 +713,6 @@ impl RouteGraph {
             all_ref_ids.extend(w.nodes.iter().copied());
         }
 
-        const TERMINAL_VACUUM_DEG: f64 = 0.015; // ~1.7 km
         let t_n = Instant::now();
         let mut coords: HashMap<i64, (f64, f64)> =
             HashMap::with_capacity(all_ref_ids.len().min(200_000));
@@ -793,21 +791,15 @@ impl RouteGraph {
                 terminal_coords.push((lat, lon));
             }
         }
-        let near_terminal = |lat: f64, lon: f64| -> bool {
-            terminal_coords.iter().any(|(tlat, tlon)| {
-                (lat - tlat).abs() <= TERMINAL_VACUUM_DEG
-                    && (lon - tlon).abs() <= TERMINAL_VACUUM_DEG
-            })
-        };
         let mut vacuum_added = 0usize;
         for (i, w) in approach_ways.iter().enumerate() {
             if selected_approach.contains(&i) {
                 continue;
             }
             let near = w.nodes.iter().any(|id| {
-                coords
-                    .get(id)
-                    .is_some_and(|&(lat, lon)| near_terminal(lat, lon))
+                coords.get(id).is_some_and(|&(lat, lon)| {
+                    in_chebyshev_vacuum(lat, lon, &terminal_coords, TERMINAL_PIER_VACUUM_DEG)
+                })
             });
             if near {
                 selected_approach.insert(i);

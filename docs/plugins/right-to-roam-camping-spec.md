@@ -116,8 +116,17 @@ exposes) where:
 - one incident way is a **“real road”** in the sense used here:
   - `highway=tertiary`, or
   - `highway=unclassified`, or
+  - `highway=secondary` (ranked below tertiary/unclassified — major-road
+    corridors often only meet tracks at secondary junctions),
+  - `highway=residential` (ranked below secondary; stub-length filter like
+    service),
   - `highway=service` (see weighting below),
 - and another incident way is `highway=track`.
+
+`highway=primary`, `trunk`, and motorway classes remain **out of scope** as
+seed roads (through traffic). The host may densify corridor samples and search
+a short lateral offset off the carriageway so nearby tertiary/secondary∩track
+junctions are not skipped; geometry is still only OSM road∩track, never invented.
 
 **Reasoning:** a track leaving a real road is a common, realistic access point
 to reach a camping area away from through traffic, without inventing geometry
@@ -135,11 +144,13 @@ public access.
 
 Specification requirements:
 
-- Prefer tertiary/unclassified ∩ track over service ∩ track when ranking.
-- Optionally require additional evidence before promoting a service seed (e.g.
-  track continues beyond a short stub; not solely abutting a building footprint
-  query). Exact signals are implementation detail; the requirement is that
-  service seeds are not treated as equal to tertiary/unclassified seeds.
+- Prefer tertiary/unclassified ∩ track over secondary, then residential, then
+  service ∩ track when ranking.
+- Optionally require additional evidence before promoting a service or
+  residential seed (e.g. track continues beyond a short stub; not solely
+  abutting a building footprint query). Exact signals are implementation
+  detail; the requirement is that service/residential seeds are not treated as
+  equal to tertiary/unclassified seeds.
 - Document in UI when a suggestion used a service-road access seed (optional
   transparency).
 
@@ -151,7 +162,8 @@ Algorithm sketch:
 
 1. Enumerate candidate seeds along the route corridor (bounded search distance
    from the route, host-defined).
-2. Rank seeds (tertiary/unclassified ∩ track first; service last / downranked).
+2. Rank seeds (tertiary/unclassified ∩ track first; then secondary; then
+   residential; service last / downranked).
 3. From each seed, **walk a short distance along the track** (away from the
    real road) — host path-follow or sampled points along the track edge —
    generating **probe points**.

@@ -497,7 +497,7 @@ class PmtilesPauseResumeInstrumentedTest {
         NaviMapTestHooks.forceOnlineBasemap = true
         NaviMapTestHooks.requestOptIn3d = false
         NaviMapTestHooks.requestCameraTiltDeg = 0.0
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         NaviMapTestHooks.lastBasemapKind = ""
         NaviMapTestHooks.pendingCamera = Triple(OSLO_LAT, OSLO_LON, 12.0)
         MapHudPrefs.saveOptIn3d(context, false)

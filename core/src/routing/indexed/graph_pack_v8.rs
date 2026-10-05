@@ -9,7 +9,7 @@ use geo_types::Coord;
 use osm4routing::{Node, NodeId};
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 
-use super::graph_pack::{densify_skeleton_edge, densify_skeleton_only_active};
+use super::graph_pack::{clip_keeps_edge, densify_skeleton_edge, densify_skeleton_only_active};
 use crate::routing::elevation::ElevationService;
 use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile, SurfaceQuality};
 
@@ -296,19 +296,13 @@ impl FlatGraphPackV8 {
             let Some(clips) = clips else {
                 return true;
             };
-            if clips.is_empty() {
-                return true;
-            }
-            let slat = self.edge_start_lat[i];
-            let slon = self.edge_start_lon[i];
-            let elat = self.edge_end_lat[i];
-            let elon = self.edge_end_lon[i];
-            let in_box = |lat: f64, lon: f64, b: &[f64; 4]| {
-                lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3]
-            };
-            clips
-                .iter()
-                .any(|b| in_box(slat, slon, b) || in_box(elat, elon, b))
+            clip_keeps_edge(
+                self.edge_start_lat[i],
+                self.edge_start_lon[i],
+                self.edge_end_lat[i],
+                self.edge_end_lon[i],
+                clips,
+            )
         };
         let ferry_nodes: HashSet<u32> = if skeleton {
             let mut s = HashSet::new();
@@ -600,19 +594,13 @@ impl ArchivedFlatGraphPackV8 {
             let Some(clips) = clips else {
                 return true;
             };
-            if clips.is_empty() {
-                return true;
-            }
-            let slat = arch_f64(self.edge_start_lat[i]);
-            let slon = arch_f64(self.edge_start_lon[i]);
-            let elat = arch_f64(self.edge_end_lat[i]);
-            let elon = arch_f64(self.edge_end_lon[i]);
-            let in_box = |lat: f64, lon: f64, b: &[f64; 4]| {
-                lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3]
-            };
-            clips
-                .iter()
-                .any(|b| in_box(slat, slon, b) || in_box(elat, elon, b))
+            clip_keeps_edge(
+                arch_f64(self.edge_start_lat[i]),
+                arch_f64(self.edge_start_lon[i]),
+                arch_f64(self.edge_end_lat[i]),
+                arch_f64(self.edge_end_lon[i]),
+                clips,
+            )
         };
         let ferry_nodes: HashSet<u32> = if skeleton {
             let mut s = HashSet::new();

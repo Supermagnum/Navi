@@ -678,6 +678,80 @@ mod tests {
     }
 
     #[test]
+    fn bevensen_pip_is_niedersachsen_not_mv() {
+        assert_eq!(
+            region_containing(53.07969, 10.58720, None),
+            Some("europe/germany/niedersachsen")
+        );
+        assert_ne!(
+            region_containing(53.07969, 10.58720, None),
+            Some("europe/germany/mecklenburg-vorpommern")
+        );
+        let mv = crate::routing::basemap::region_bbox("europe/germany/mecklenburg-vorpommern")
+            .expect("mv bbox");
+        assert!(
+            53.07969 < mv[0],
+            "Bevensen must sit south of MV min_lat {}: origin={}",
+            mv[0],
+            53.07969
+        );
+    }
+
+    #[test]
+    fn bevensen_ottadal_sd_stems_name_hamburg_if_uninstalled() {
+        // SD campaign stems minus hamburg (not on the 12:22 inventory).
+        let installed = [
+            "europe/germany/niedersachsen",
+            "europe/germany/mecklenburg-vorpommern",
+            "europe/germany/schleswig-holstein",
+            "europe/denmark",
+            "europe/sweden/halland",
+            "europe/sweden/skane",
+            "europe/sweden/vastra_gotaland",
+            "europe/norway/ostlandet",
+            "europe/norway/sorlandet",
+            "europe/norway/vestlandet",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>();
+        let needed = ordered_needed_regions_for_trip(
+            &[
+                (53.079686, 10.587198),
+                (61.8691419, 9.1055130),
+                (61.4433766, 7.4614016),
+            ],
+            &installed,
+            None,
+        )
+        .expect("corridor");
+        assert!(
+            needed.is_empty(),
+            "SD stems should cover the catalog corridor (hamburg is not required): {needed:?}"
+        );
+        let nds_sh = ordered_needed_regions_for_trip(
+            &[(53.079686, 10.587198), (54.21, 11.025)],
+            &["europe/germany/niedersachsen".into()],
+            None,
+        )
+        .expect("nds-sh hop");
+        // Chord samples clip MV AABB; hop-count then walks NDS→MV→SH (Hamburg
+        // is not on that path). Missing hamburg is not a catalog hole.
+        assert!(
+            nds_sh.iter().any(|r| r.contains("mecklenburg-vorpommern")),
+            "Bevensen→Fehmarn entry names MV: {nds_sh:?}"
+        );
+        assert!(
+            nds_sh.iter().any(|r| r.contains("schleswig-holstein")),
+            "Bevensen→Fehmarn entry names SH: {nds_sh:?}"
+        );
+        assert!(
+            nds_sh.iter().all(|r| !r.contains("hamburg")),
+            "adjacency must not require hamburg for this hop: {nds_sh:?}"
+        );
+    }
+
+    #[test]
     fn klecken_and_innlandet_pip() {
         assert_eq!(
             region_containing(53.334, 10.045, None),
@@ -691,6 +765,22 @@ mod tests {
         assert_eq!(
             region_containing(60.792205, 11.085951, None),
             Some("europe/norway/ostlandet")
+        );
+    }
+
+    #[test]
+    fn bugoynes_lon_lat_is_nord_norge_not_pakistan() {
+        // Elsa origin (Bugøynes). Overlay polyline is "lon,lat"; region lookup
+        // is (lat, lon). Treating parts[0] as latitude is not Nord-Norge.
+        let lon = 29.6337571_f64;
+        let lat = 69.9741435_f64;
+        assert_eq!(
+            region_containing(lat, lon, None),
+            Some("europe/norway/nord-norge")
+        );
+        assert_ne!(
+            region_containing(lon, lat, None),
+            Some("europe/norway/nord-norge")
         );
     }
 
