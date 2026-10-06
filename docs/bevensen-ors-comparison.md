@@ -532,3 +532,7 @@ Keep **(a) joints as cuts** and **(c) path≫chord repair**. Do **not** add more
 3. **Coast/Otta (c):** generic repair when path ≥ 2.5 × chord on 8–20 km windows after a connected path exists. Test: Uddevalla km 935 and Otta km 1450 extras fall; `roa-florø.json` must not lose the fjord ferry if flagged `is_ferry`.
 4. **No new named anchors.** Test: `densify_bevensen_vagaa_*` still pass; hop list must not gain Præstø-class points.
 5. **Regression pack:** rebuild polylines only after approval; compare extra-km vs this FU3 table and vs ORS 1440.985 (gap should fall by ~the repaired extras, not by forcing Sjoa).
+
+## Hamburg / Sweden index (approved in principle, skipped this round)
+
+`europe/germany/hamburg` has **no PBF** on the emulator; its `name_entries` are Sweden-scale (bbox ~53.39–69.07). Do **not** wipe or rebuild that slice in place. A full `europe/sweden` extract (~1–4 h) must not run while a route plan is active and would exceed the 4 GB RAM budget if stacked with planning. 2a keeps first osm_id owners so a later Sweden write cannot retag hamburg / niedersachsen / ostlandet / denmark rows. Hamburg-as-Sweden is left as-is until a leaf Hamburg PBF or clip-then-index is chosen.

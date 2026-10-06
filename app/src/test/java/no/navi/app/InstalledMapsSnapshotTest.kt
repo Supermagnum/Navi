@@ -43,21 +43,47 @@ class InstalledMapsSnapshotTest {
         assertTrue(InstalledMaps.packReadyForProfile("europe/norway/ostlandet", "truck"))
     }
 
-    @Test
-    fun auto_build_does_not_start_for_missing_empty_region() {
+    @[Test]
+    fun auto_build_allowlist_only_when_not_intact() {
         val internal = tmp.newFolder("idx")
-        assertFalse(PlaceIndexIntact.isIntact(internal, "europe/denmark"))
         assertFalse(
-            "empty missing must be listed, not auto-built (Denmark 06:50 path)",
+            "protected slices must not auto-build",
             PlaceIndexAutoBuild.mayStart(internal, "europe/denmark"),
         )
-        assertFalse(PlaceIndexAutoBuild.mayStart(internal, "europe/germany/schleswig-holstein"))
-        assertFalse(PlaceIndexAutoBuild.mayStart(internal, "europe/norway/vestlandet"))
-        assertFalse(PlaceIndexAutoBuild.mayStart(internal, "europe/norway/sorlandet"))
         assertFalse(PlaceIndexAutoBuild.mayStart(internal, "europe/sweden"))
-        assertFalse(
-            PlaceIndexAutoBuild.mayStart(internal, "europe/germany/mecklenburg-vorpommern"),
+        assertFalse(PlaceIndexAutoBuild.mayStart(internal, "europe/germany/hamburg"))
+        assertFalse(PlaceIndexAutoBuild.mayStart(internal, "europe/germany/niedersachsen"))
+        assertFalse(PlaceIndexAutoBuild.mayStart(internal, "europe/norway/ostlandet"))
+        assertTrue(PlaceIndexAutoBuild.mayStart(internal, "europe/germany/schleswig-holstein"))
+        assertTrue(PlaceIndexAutoBuild.mayStart(internal, "europe/norway/vestlandet"))
+        assertTrue(PlaceIndexAutoBuild.mayStart(internal, "europe/norway/sorlandet"))
+        assertTrue(PlaceIndexAutoBuild.mayStart(internal, "europe/germany/mecklenburg-vorpommern"))
+        RoutePlanGate.tryBegin()
+        try {
+            assertFalse(
+                PlaceIndexAutoBuild.mayStart(internal, "europe/norway/vestlandet"),
+            )
+        } finally {
+            RoutePlanGate.end()
+        }
+    }
+
+    @Test
+    fun hasInstallForUi_uses_snapshot_partial_fetch_without_listFiles() {
+        val internal = tmp.newFolder("files")
+        val packs = tmp.newFolder("long-trip-packs")
+        File(packs, "schleswig-holstein-latest.navi-manifest.json").writeText(
+            """{"schema":1,"stem":"schleswig-holstein-latest","graph_format_version":9}""",
         )
+        File(packs, "schleswig-holstein-latest.navi-server-install.json").writeText(
+            """{"schema":1,"region_id":"europe/germany/schleswig-holstein","generation":"g1"}""",
+        )
+        File(packs, "schleswig-holstein-latest.navi-graph-car.t0_0.rkyv").writeBytes(ByteArray(64))
+        InstalledMaps.refreshFromDirs(internal, listOf("sd" to packs))
+        assertTrue(
+            InstalledMaps.hasInstallForUi("europe/germany/schleswig-holstein", internal),
+        )
+        assertFalse(InstalledMaps.hasInstallForUi("europe/sweden", internal))
     }
 
     @Test
