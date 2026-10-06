@@ -3883,17 +3883,23 @@ fn plan_car_route_inner(
                         edge_clip_mode,
                         last_terminate,
                     ) {
+                        // One TripAabb reload so a chord-band that missed the
+                        // road between the hop ends can include both leaves.
+                        // Do not keep doubling pads after that.
                         edge_clip_mode =
                             driver_break_core::routing::plan_bbox::PlanEdgeClipMode::TripAabb;
+                        driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(
+                            driver_break_core::routing::plan_bbox::MAX_PLAN_TILES_MULTI_STEM,
+                        );
                         report.push_str(
                             "edge_clip_fallback=trip_aabb after corridor_components_disconnected\n",
                         );
                         continue;
                     }
                     report.push_str(
-                        "corridor_disconnected: next pad (no same-clip tile-budget widen)\n",
+                        "corridor_disconnected: stop after one trip-AABB reload (no further pads, no A*)\n",
                     );
-                    break;
+                    break 'pads;
                 }
             }
             // snap_ms already accumulated above (dig pad scan; labels deferred).

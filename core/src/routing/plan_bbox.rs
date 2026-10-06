@@ -1700,6 +1700,23 @@ pub fn should_fallback_to_trip_aabb(mode: PlanEdgeClipMode, terminate: &str) -> 
     mode == PlanEdgeClipMode::CorridorBand && terminate == "disconnected"
 }
 
+#[cfg(test)]
+mod trip_aabb_fallback_tests {
+    use super::*;
+
+    #[test]
+    fn disconnected_corridor_band_falls_back_once() {
+        assert!(should_fallback_to_trip_aabb(
+            PlanEdgeClipMode::CorridorBand,
+            "disconnected"
+        ));
+        assert!(
+            !should_fallback_to_trip_aabb(PlanEdgeClipMode::TripAabb, "disconnected"),
+            "second fail must not schedule another AABB/pad"
+        );
+    }
+}
+
 /// Perpendicular distance (degrees, Chebyshev-ish) from `point` to the infinite
 /// line through `a`→`b`. Used to classify cross-track detours vs band half-width.
 pub fn cross_track_deg(a: (f64, f64), b: (f64, f64), point: (f64, f64)) -> f64 {

@@ -493,11 +493,25 @@ fn tile_counts_as_endpoint_cover(
     true
 }
 
+#[allow(dead_code)]
 fn select_tiles_within_budget(
     candidates: Vec<(String, [f64; 4])>,
     route_points: Option<&[(f64, f64)]>,
     max_tiles: usize,
     dirs: &[&Path],
+) -> Vec<String> {
+    select_tiles_within_budget_opts(candidates, route_points, max_tiles, dirs, false)
+}
+
+/// `fill_to_budget`: after corridor-band disconnect, TripAabb must keep every
+/// AABB-intersecting candidate up to `max_tiles`. Chord eighth-samples plus two
+/// bridges drop the valley/border tiles that sit between the hop ends.
+fn select_tiles_within_budget_opts(
+    candidates: Vec<(String, [f64; 4])>,
+    route_points: Option<&[(f64, f64)]>,
+    max_tiles: usize,
+    dirs: &[&Path],
+    fill_to_budget: bool,
 ) -> Vec<String> {
     let pts = route_points.unwrap_or(&[]);
     if candidates.is_empty() {
@@ -658,9 +672,13 @@ fn select_tiles_within_budget(
             .then_with(|| file_len(&a.0).cmp(&file_len(&b.0)))
             .then_with(|| a.0.cmp(&b.0))
     });
-    // At most two bridge fillers beyond sample coverage — enough for a corner
-    // gap, not enough to re-pull every Ostlandet corridor tile.
-    let bridge_cap = (selected.len() + 2).min(max_tiles);
+    // Band mode: at most two bridge fillers. TripAabb fallback fills to budget
+    // so off-chord valley tiles inside the trip box are not dropped.
+    let bridge_cap = if fill_to_budget {
+        max_tiles
+    } else {
+        (selected.len() + 2).min(max_tiles)
+    };
     for (name, bbox) in rest {
         if selected.len() >= bridge_cap {
             break;
@@ -1391,9 +1409,18 @@ fn try_load_graph_for_plan_corridor_dirs(
             );
         }
     }
+    let fill_aabb = matches!(
+        edge_clip_mode,
+        crate::routing::plan_bbox::PlanEdgeClipMode::TripAabb
+    );
     let mut budget = crate::routing::plan_bbox::effective_max_plan_tiles_for_stems(extras.len());
-    let mut tile_files =
-        select_tiles_within_budget(tile_candidates.clone(), route_points, budget, dirs);
+    let mut tile_files = select_tiles_within_budget_opts(
+        tile_candidates.clone(),
+        route_points,
+        budget,
+        dirs,
+        fill_aabb,
+    );
     // If a tight budget drops an endpoint (classic Raufoss→Bergen with tiles=6),
     // widen selection before materializing so we never hand A* a disconnected
     // corridor. Memory-aware steps match plan_bbox::next_plan_tile_budget.
@@ -1415,8 +1442,13 @@ fn try_load_graph_for_plan_corridor_dirs(
                 };
                 budget = next;
                 crate::routing::plan_bbox::set_plan_tile_budget_at_least(next);
-                tile_files =
-                    select_tiles_within_budget(tile_candidates.clone(), route_points, budget, dirs);
+                tile_files = select_tiles_within_budget_opts(
+                    tile_candidates.clone(),
+                    route_points,
+                    budget,
+                    dirs,
+                    fill_aabb,
+                );
                 widen_steps += 1;
                 crate::routing::plan_perf::note_u64("tile_select_widen_to", next as u64);
                 log::info!(
@@ -1478,13 +1510,14 @@ fn try_load_graph_for_plan_corridor_dirs(
                                     })
                                     .collect();
                                 merged_cands.append(&mut extras_cands);
-                                tile_files = select_tiles_within_budget(
+                                tile_files = select_tiles_within_budget_opts(
                                     merged_cands,
                                     route_points,
                                     crate::routing::plan_bbox::effective_max_plan_tiles_for_stems(
                                         extras.len(),
                                     ),
                                     dirs,
+                                    fill_aabb,
                                 );
                                 seen = tile_files.iter().cloned().collect();
                             }
@@ -1534,13 +1567,14 @@ fn try_load_graph_for_plan_corridor_dirs(
                             }
                             // Re-apply count + byte budget so near_end cannot
                             // unbounded-grow past MAX_PLAN_TILES / MAX_PLAN_TILE_BYTES.
-                            tile_files = select_tiles_within_budget(
+                            tile_files = select_tiles_within_budget_opts(
                                 near_cands,
                                 route_points,
                                 crate::routing::plan_bbox::effective_max_plan_tiles_for_stems(
                                     extras.len(),
                                 ),
                                 dirs,
+                                fill_aabb,
                             );
                         }
                     }
@@ -1640,17 +1674,18 @@ fn try_load_graph_for_plan_corridor_dirs(
                     &mut extra_seen,
                     tiles,
                     clip_bbox,
-                    segs_ref,
+                    tile_segs,
                 );
             } else if let Some(ep) = graph_path_in_dirs(extra, dirs, profile) {
                 graphs.push(load_graph_pack_clips(&ep, profile, edge_clips)?);
             }
         }
-        let extra_files = select_tiles_within_budget(
+        let extra_files = select_tiles_within_budget_opts(
             extra_candidates,
             route_points,
             crate::routing::plan_bbox::effective_max_plan_tiles_for_stems(extras.len()),
             dirs,
+            fill_aabb,
         );
         if !extra_files.is_empty() {
             graphs.push(arc_graph_owned(
@@ -2131,6 +2166,19 @@ fn pick_primary_manifest<'a>(
     let Some(pts) = route_points.filter(|p| !p.is_empty()) else {
         return pbf_pack.ok_or(PackLoadError::Missing);
     };
+    // Host dest-hop probe / measure only. Empty or unknown stem is ignored.
+    if let Ok(force) = std::env::var("NAVI_FORCE_PRIMARY_STEM") {
+        let force = force.trim();
+        if !force.is_empty() {
+            if let Some(home) = home_dir_for_stem(dirs, force, profile) {
+                if let Ok(man) = load_ready_manifest(home, force) {
+                    if stem_pack_ready(home, &man, profile) {
+                        return Ok((man.stem.clone(), man, home));
+                    }
+                }
+            }
+        }
+    }
     let (lat, lon) = pts[0];
     // Prefer Admin/PIP leaf over catalog AABB. Country extracts (Finland) spill
     // over eastern Finnmark and have a smaller AABB than Nord-Norge, so the
@@ -2807,7 +2855,10 @@ pub fn try_load_wetland_for_plan(
 
 #[cfg(test)]
 mod select_tiles_budget_tests {
-    use super::{select_tiles_within_budget, tile_bboxes_adjacent, tile_counts_as_endpoint_cover};
+    use super::{
+        select_tiles_within_budget, select_tiles_within_budget_opts, tile_bboxes_adjacent,
+        tile_counts_as_endpoint_cover,
+    };
     use std::fs;
     use std::path::Path;
 
@@ -2953,6 +3004,43 @@ mod select_tiles_budget_tests {
             selected.len(),
             4,
             "R4b should stay at 4 tiles (2 samples + 2 bridges); got {selected:?}"
+        );
+    }
+
+    #[test]
+    fn trip_aabb_fill_keeps_off_chord_valley_tile() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        // Start/end on chord tiles; valley tile is south of the chord (covers
+        // neither endpoint nor eighth samples) and is dropped unless fill_to_budget.
+        let start_bb = [61.5_f64, 8.2, 61.9, 8.5];
+        let dest_bb = [61.3_f64, 7.3, 61.6, 7.6];
+        let valley_bb = [61.45_f64, 7.7, 61.65, 8.15];
+        let cands = vec![
+            ("ostlandet-latest.navi-graph-car.t3_1.rkyv".into(), start_bb),
+            ("vestlandet-latest.navi-graph-car.t4_3.rkyv".into(), dest_bb),
+            (
+                "vestlandet-latest.navi-graph-car.t4_2.rkyv".into(),
+                valley_bb,
+            ),
+        ];
+        for (name, bytes) in [
+            ("ostlandet-latest.navi-graph-car.t3_1.rkyv", 50usize),
+            ("vestlandet-latest.navi-graph-car.t4_3.rkyv", 50),
+            ("vestlandet-latest.navi-graph-car.t4_2.rkyv", 40),
+        ] {
+            touch_sized(dir.path(), name, bytes);
+        }
+        let pts = [(61.67732_f64, 8.30020), (61.44338, 7.46140)];
+        let band = select_tiles_within_budget(cands.clone(), Some(&pts), 2, &[dir.path()]);
+        assert!(
+            !band.iter().any(|f| f.contains("t4_2")),
+            "tight chord budget must drop the off-chord valley tile; got {band:?}"
+        );
+        let aabb =
+            select_tiles_within_budget_opts(cands, Some(&pts), 14, &[dir.path()], true);
+        assert!(
+            aabb.iter().any(|f| f.contains("t4_2")),
+            "TripAabb fill_to_budget must keep the valley tile; got {aabb:?}"
         );
     }
 

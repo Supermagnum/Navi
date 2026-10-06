@@ -7,6 +7,9 @@ use std::time::Instant;
 
 use driver_break_core::routing::graph::{RouteGraph, RouteOptions, RoutingProfile};
 use driver_break_core::routing::indexed::{load_graph_pack_clips, merge_tile_graphs};
+use driver_break_core::routing::plan_bbox::{
+    plan_edge_clips, trip_bbox_points, PlanEdgeClipMode,
+};
 use osm4routing::NodeId;
 
 fn haversine_m(alat: f64, alon: f64, blat: f64, blon: f64) -> f64 {
@@ -16,6 +19,72 @@ fn haversine_m(alat: f64, alon: f64, blat: f64, blon: f64) -> f64 {
     let a = (dlat / 2.0).sin().powi(2)
         + alat.to_radians().cos() * blat.to_radians().cos() * (dlon / 2.0).sin().powi(2);
     2.0 * r * a.sqrt().asin()
+}
+
+fn load_stem_clips(
+    dir: &Path,
+    files: &[&str],
+    clips: &[[f64; 4]],
+    profile: RoutingProfile,
+) -> RouteGraph {
+    let mut parts = Vec::new();
+    for f in files {
+        let p = dir.join(f);
+        match load_graph_pack_clips(&p, profile, Some(clips)) {
+            Ok(g) => {
+                eprintln!("  loaded {f} nodes={} edges={}", g.nodes.len(), g.edges.len());
+                parts.push(g);
+            }
+            Err(e) => eprintln!("  skip {f}: {e}"),
+        }
+    }
+    merge_tile_graphs(parts, profile)
+}
+
+fn run_listed_multi(
+    label: &str,
+    dir: &Path,
+    ost_files: &[&str],
+    vest_files: &[&str],
+    primary_vest: bool,
+    start: (f64, f64),
+    dest: (f64, f64),
+    clips: &[[f64; 4]],
+) {
+    println!("=== {label} clips={} primary_vest={primary_vest} ===", clips.len());
+    let t0 = Instant::now();
+    let ost = load_stem_clips(dir, ost_files, clips, RoutingProfile::Car);
+    let vest = load_stem_clips(dir, vest_files, clips, RoutingProfile::Car);
+    let parts = if primary_vest {
+        vec![vest, ost]
+    } else {
+        vec![ost, vest]
+    };
+    let g = merge_tile_graphs(parts, RoutingProfile::Car);
+    let opts = RouteOptions::default();
+    let snap_start = g.nearest_routable_with_options(start.0, start.1, &opts, false);
+    let snap_dest = g.nearest_routable_with_options(dest.0, dest.1, &opts, false);
+    let (Ok((s, sm)), Ok((d, dm))) = (snap_start, snap_dest) else {
+        println!("SNAP FAIL start={snap_start:?} dest={snap_dest:?} nodes={}", g.nodes.len());
+        return;
+    };
+    let weak = g.same_weak_component(s, d);
+    let dir_ok = weak && g.directed_reachable_with_options(s, d, &opts);
+    println!(
+        "nodes={} edges={} snap_start_m={sm:.1} snap_dest_m={dm:.1} weak_ok={weak} directed_ok={dir_ok} load_ms={}",
+        g.nodes.len(),
+        g.edges.len(),
+        t0.elapsed().as_millis()
+    );
+    println!(
+        "result={}",
+        if dir_ok {
+            "directed_ok"
+        } else {
+            "disconnected"
+        }
+    );
+    println!();
 }
 
 fn load_stem(dir: &Path, files: &[&str], clip: [f64; 4], profile: RoutingProfile) -> RouteGraph {
@@ -251,6 +320,148 @@ fn run_cfg(
     println!();
 }
 
+fn dummy_pbf(dir: &Path) -> PathBuf {
+    // try_load only needs the stem from the filename.
+    dir.join("ostlandet-latest.osm.pbf")
+}
+
+fn run_app_corridor(
+    label: &str,
+    dir: &Path,
+    start: (f64, f64),
+    dest: (f64, f64),
+    mode: driver_break_core::routing::plan_bbox::PlanEdgeClipMode,
+    fill_budget: bool,
+) {
+    use driver_break_core::routing::indexed::try_load_graph_for_plan_corridor_with_pack_dirs;
+    use driver_break_core::routing::plan_bbox::{
+        set_plan_tile_budget_at_least, trip_bbox_points, PlanEdgeClipMode,
+        MAX_PLAN_TILES_MULTI_STEM,
+    };
+
+    set_plan_tile_budget_at_least(0);
+    if fill_budget {
+        set_plan_tile_budget_at_least(MAX_PLAN_TILES_MULTI_STEM);
+    }
+    let pts = [start, dest];
+    let pad = 0.35_f64;
+    let bbox = trip_bbox_points(&pts, pad);
+    println!(
+        "=== {label} mode={mode:?} pad={pad} bbox={:.3},{:.3},{:.3},{:.3} ===",
+        bbox[0], bbox[1], bbox[2], bbox[3]
+    );
+    let t0 = Instant::now();
+    let pbf = dummy_pbf(dir);
+    match try_load_graph_for_plan_corridor_with_pack_dirs(
+        dir,
+        &[],
+        &pbf,
+        RoutingProfile::Car,
+        Some(bbox),
+        Some(pts.as_slice()),
+        mode,
+    ) {
+        Ok(g) => {
+            let opts = RouteOptions::default();
+            let snap_start = g.nearest_routable_with_options(start.0, start.1, &opts, false);
+            let snap_dest = g.nearest_routable_with_options(dest.0, dest.1, &opts, false);
+            let (Ok((s, sm)), Ok((d, dm))) = (snap_start, snap_dest) else {
+                println!(
+                    "SNAP FAIL start={snap_start:?} dest={snap_dest:?} nodes={} load_ms={}",
+                    g.nodes.len(),
+                    t0.elapsed().as_millis()
+                );
+                return;
+            };
+            let weak = g.same_weak_component(s, d);
+            let dir_ok = weak && g.directed_reachable_with_options(s, d, &opts);
+            println!(
+                "nodes={} edges={} snap_start_m={sm:.1} snap_dest_m={dm:.1} \
+                 weak_ok={weak} directed_ok={dir_ok} load_ms={}",
+                g.nodes.len(),
+                g.edges.len(),
+                t0.elapsed().as_millis()
+            );
+            println!(
+                "result={}",
+                if dir_ok {
+                    "directed_ok"
+                } else {
+                    "disconnected"
+                }
+            );
+        }
+        Err(e) => println!("LOAD FAIL {e} load_ms={}", t0.elapsed().as_millis()),
+    }
+    set_plan_tile_budget_at_least(0);
+    println!();
+}
+
+fn run_hop_astar(
+    label: &str,
+    dir: &Path,
+    start: (f64, f64),
+    dest: (f64, f64),
+    surface_car: bool,
+) {
+    use driver_break_core::routing::graph::SurfaceRoutingMode;
+    use driver_break_core::routing::indexed::try_load_graph_for_plan_corridor_with_pack_dirs;
+    use driver_break_core::routing::plan_bbox::{
+        set_plan_tile_budget_at_least, trip_bbox_points, PlanEdgeClipMode,
+    };
+
+    set_plan_tile_budget_at_least(0);
+    let pts = [start, dest];
+    let bbox = trip_bbox_points(&pts, 0.35);
+    println!("=== {label} surface_car={surface_car} ===");
+    let t_load = Instant::now();
+    let g = match try_load_graph_for_plan_corridor_with_pack_dirs(
+        dir,
+        &[],
+        &dummy_pbf(dir),
+        RoutingProfile::Car,
+        Some(bbox),
+        Some(pts.as_slice()),
+        PlanEdgeClipMode::CorridorBand,
+    ) {
+        Ok(g) => g,
+        Err(e) => {
+            println!("LOAD FAIL {e}");
+            return;
+        }
+    };
+    let load_ms = t_load.elapsed().as_millis();
+    let mut opts = RouteOptions::default();
+    if surface_car {
+        opts.surface_routing_mode = Some(SurfaceRoutingMode::Car);
+    }
+    let (Ok((s, sm)), Ok((d, dm))) = (
+        g.nearest_routable_with_options(start.0, start.1, &opts, false),
+        g.nearest_routable_with_options(dest.0, dest.1, &opts, false),
+    ) else {
+        println!("SNAP FAIL nodes={}", g.nodes.len());
+        return;
+    };
+    println!(
+        "load_ms={load_ms} nodes={} edges={} snap_start_m={sm:.1} snap_dest_m={dm:.1}",
+        g.nodes.len(),
+        g.edges.len()
+    );
+    let t_ast = Instant::now();
+    let stats = g.shortest_path_with_options_stats(s, d, false, &opts);
+    let astar_ms = t_ast.elapsed().as_millis();
+    let exp = stats.expansions.max(1);
+    println!(
+        "astar_ms={astar_ms} expansions={} terminate={} us_per_expansion={:.1} path={}",
+        stats.expansions,
+        stats.terminate_reason,
+        (astar_ms as f64) * 1000.0 / (exp as f64),
+        stats.path.is_some()
+    );
+    set_plan_tile_budget_at_least(0);
+    println!();
+}
+
 fn main() {
     let dir = PathBuf::from(
         std::env::args()
@@ -271,46 +482,110 @@ fn main() {
         "vestlandet-latest.navi-graph-car.t4_3.rkyv",
         "vestlandet-latest.navi-graph-car.t4_4.rkyv",
     ];
-    // Hop 17 (this densify) and FU3 dest hop (Sognefjell).
-    let hops = [
-        (
-            "hop17",
-            (61.67732, 8.30020),
-            (61.44338, 7.46140),
-        ),
-        (
-            "fu3_sognefjell",
-            (61.61687, 8.04346),
-            (61.44338, 7.46140),
-        ),
-    ];
-    for (name, start, dest) in hops {
-        let clip = [
-            f64::min(start.0, dest.0) - 0.40,
-            f64::min(start.1, dest.1) - 0.40,
-            f64::max(start.0, dest.0) + 0.40,
-            f64::max(start.1, dest.1) + 0.40,
+    let hop17 = (61.67732_f64, 8.30020);
+    let dest = (61.44338_f64, 7.46140);
+    let mode = std::env::var("NAVI_PROBE_MODE").unwrap_or_else(|_| "app".to_string());
+
+    if mode == "aabb" || mode == "all" {
+        // Isolated AABB merge of listed tiles (does not match the emulator).
+        let hops = [
+            ("hop17", hop17, dest),
+            ("fu3_sognefjell", (61.61687, 8.04346), dest),
         ];
-        for primary_vest in [false, true] {
-            let label = format!(
-                "{name} primary={}",
-                if primary_vest {
-                    "vestlandet"
-                } else {
-                    "ostlandet"
-                }
-            );
-            run_cfg(
-                &label,
-                &dir,
-                &ost_files,
-                &vest_files,
-                primary_vest,
-                start,
-                dest,
-                clip,
-                RoutingProfile::Car,
-            );
+        for (name, start, d) in hops {
+            let clip = [
+                f64::min(start.0, d.0) - 0.40,
+                f64::min(start.1, d.1) - 0.40,
+                f64::max(start.0, d.0) + 0.40,
+                f64::max(start.1, d.1) + 0.40,
+            ];
+            for primary_vest in [false, true] {
+                let label = format!(
+                    "{name} primary={}",
+                    if primary_vest {
+                        "vestlandet"
+                    } else {
+                        "ostlandet"
+                    }
+                );
+                run_cfg(
+                    &label,
+                    &dir,
+                    &ost_files,
+                    &vest_files,
+                    primary_vest,
+                    start,
+                    d,
+                    clip,
+                    RoutingProfile::Car,
+                );
+            }
         }
+    }
+
+    if mode == "app" || mode == "all" {
+        use driver_break_core::routing::plan_bbox::PlanEdgeClipMode;
+        let pts = [hop17, dest];
+        let bbox = trip_bbox_points(&pts, 0.35);
+        let band_clips = plan_edge_clips(Some(pts.as_slice()), Some(bbox), PlanEdgeClipMode::CorridorBand)
+            .unwrap_or_default();
+        let aabb_clips =
+            plan_edge_clips(Some(pts.as_slice()), Some(bbox), PlanEdgeClipMode::TripAabb)
+                .unwrap_or_default();
+        println!(
+            "--- listed tiles + emulator corridor-band edge clips (must fail hop 17) ---"
+        );
+        println!("band_clips={}", band_clips.len());
+        run_listed_multi(
+            "hop17_listed_band",
+            &dir,
+            &ost_files,
+            &vest_files,
+            true,
+            hop17,
+            dest,
+            &band_clips,
+        );
+        println!("--- listed tiles + trip-AABB edge clips (must pass) ---");
+        run_listed_multi(
+            "hop17_listed_aabb",
+            &dir,
+            &ost_files,
+            &vest_files,
+            true,
+            hop17,
+            dest,
+            &aabb_clips,
+        );
+        println!("--- try_load CorridorBand vs TripAabb (pack dir as present) ---");
+        run_app_corridor(
+            "hop17_band",
+            &dir,
+            hop17,
+            dest,
+            PlanEdgeClipMode::CorridorBand,
+            false,
+        );
+        run_app_corridor(
+            "hop17_aabb",
+            &dir,
+            hop17,
+            dest,
+            PlanEdgeClipMode::TripAabb,
+            true,
+        );
+    }
+
+    if mode == "astar" || mode == "all" {
+        // Last emulator plan (pid 11623): hop 13 after i=12 success.
+        let hop13_a = (60.64909_f64, 10.52005);
+        let hop13_b = (61.25957_f64, 10.22110);
+        run_hop_astar("hop13_default", &dir, hop13_a, hop13_b, false);
+        run_hop_astar("hop13_surface_car", &dir, hop13_a, hop13_b, true);
+        // Prior densify hop 12 (Oslo → Ostlandet joint) as a second mid-route sample.
+        let hop12_a = (59.9100_f64, 10.7500);
+        let hop12_b = (60.7950_f64, 11.0680);
+        run_hop_astar("hop12_default", &dir, hop12_a, hop12_b, false);
+        run_hop_astar("hop12_surface_car", &dir, hop12_a, hop12_b, true);
     }
 }
