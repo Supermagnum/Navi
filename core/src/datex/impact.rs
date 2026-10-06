@@ -16,8 +16,10 @@ pub enum DatexImpact {
     /// No cost change; overlay-only.
     #[default]
     Ignore,
-    /// Prefer alternatives via a finite cost multiplier (edge stays searchable).
+    /// Extra minutes on matching edges (edge stays searchable).
     Penalize,
+    /// Listed to the user; no A* cost and no exclusion.
+    Warn,
     /// Hard-exclude nearby edges from A* (like [`crate::routing::toll::TollPolicy::NeverUse`]).
     Block,
 }
@@ -26,7 +28,8 @@ impl DatexImpact {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Ignore => "ignore",
-            Self::Penalize => "penalize",
+            Self::Penalize => "penalty",
+            Self::Warn => "warning",
             Self::Block => "block",
         }
     }
@@ -57,7 +60,6 @@ pub const CLOSURE_PHRASES: &[&str] = &[
     "veien er stengt",
     "vegen stengt",
     "veien stengt",
-    "stengt i periode",
     "helt stengt",
     "helstengt",
     "sperret",
@@ -123,14 +125,18 @@ pub struct DatexClassifyFields<'a> {
     pub delays_present: bool,
     /// DATEX `windSpeed` (m/s) when present — used by `PoorEnvironmentConditions`.
     pub wind_speed: Option<f64>,
+    /// `roadOrCarriagewayOrLaneManagementType` local name, when present.
+    pub management_type: Option<&'a str>,
 }
 
 /// Result of [`classify_impact`]: bucket plus the Penalize multiplier to apply.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DatexClassification {
     pub impact: DatexImpact,
-    /// Used by the planner only when [`DatexImpact::Penalize`].
+    /// Used by the planner only when [`DatexImpact::Penalize`] (legacy multiplier).
     pub penalize_mult: f64,
+    /// Extra minutes for [`DatexImpact::Penalize`].
+    pub penalty_minutes: f64,
     /// True when `xsi:type` is not in the known inventory (Ignore + logged warning).
     pub unrecognized_xsi_type: bool,
 }
@@ -148,6 +154,12 @@ pub struct DatexPlannerConstraint {
     pub situation_id: String,
     /// Cost multiplier when [`DatexImpact::Penalize`]. Ignored for Block.
     pub penalize_mult: f64,
+    /// Extra minutes when [`DatexImpact::Penalize`].
+    pub penalty_minutes: f64,
+    pub road: String,
+    pub place: String,
+    pub validity_text: String,
+    pub xsi_type: String,
 }
 
 /// Convert **active-only** situations into planner constraints.
@@ -161,33 +173,109 @@ pub fn planner_impacts(active_only: &[DatexSituation]) -> Vec<DatexPlannerConstr
         if s.impact == DatexImpact::Ignore {
             continue;
         }
-        let Some((lat, lon)) = s.primary_lat_lon() else {
+        if s.primary_lat_lon().is_none() {
             continue;
-        };
-        out.push(DatexPlannerConstraint {
-            lat,
-            lon,
-            impact: s.impact,
-            radius_m: DATEX_IMPACT_RADIUS_M,
-            situation_id: s.id.clone(),
-            penalize_mult: s.penalize_mult.max(1.0),
-        });
+        }
+        out.push(constraint_from_situation(s));
     }
     out
+}
+
+/// Minutes added to travel time when a record has no numeric delay.
+pub fn default_penalty_minutes(xsi_type: &str, management_type: Option<&str>) -> f64 {
+    match management_type.map(|s| s.trim()) {
+        Some("narrowLanes") => 3.0,
+        Some("intermittentShortTermClosures") => 5.0,
+        Some("convoyDriving") => 8.0,
+        Some("laneClosures") | Some("lanesDeviated") => 4.0,
+        _ => match xsi_type {
+            "Accident" => 15.0,
+            "EnvironmentalObstruction" => 10.0,
+            "InfrastructureDamageObstruction" => 10.0,
+            "MaintenanceWorks" | "ConstructionWorks" | "Roadworks" => 5.0,
+            "RoadOrCarriagewayOrLaneManagement" | "GeneralNetworkManagement" => 3.0,
+            "PublicEvent" => 8.0,
+            "PoorEnvironmentConditions" | "WeatherRelatedRoadConditions" => 5.0,
+            "ReroutingManagement" => 5.0,
+            "AbnormalTraffic" | "VehicleObstruction" | "AnimalPresenceObstruction"
+            | "GeneralObstruction" | "NonWeatherRelatedRoadConditions" | "AuthorityOperation" => {
+                5.0
+            }
+            _ => 5.0,
+        },
+    }
+}
+
+/// Structured DATEX management values that mean the carriageway is fully closed.
+pub fn is_full_closure_management(management_type: Option<&str>) -> bool {
+    matches!(
+        management_type.map(|s| s.trim()),
+        Some("closed") | Some("carriagewayClosures")
+    )
+}
+
+/// Works / lane / short-stop / convoy / lights — never a hard Block.
+pub fn is_never_block_management(management_type: Option<&str>) -> bool {
+    matches!(
+        management_type.map(|s| s.trim()),
+        Some("narrowLanes")
+            | Some("intermittentShortTermClosures")
+            | Some("convoyDriving")
+            | Some("laneClosures")
+            | Some("lanesDeviated")
+            | Some("hardShoulderRunning")
+            | Some("carPoolLaneInOperation")
+            | Some("turnRestrictions")
+            | Some("useOfSpecifiedLane")
+            | Some("rollingRoadBlock")
+            | Some("tidalFlowOperation")
+            | Some("oppositeCarriagewayUsage")
+            | Some("contraflow")
+            | Some("contraflowReversible")
+    )
+}
+
+pub fn constraint_from_situation(s: &super::parse::DatexSituation) -> DatexPlannerConstraint {
+    let (lat, lon) = s.primary_lat_lon().unwrap_or((0.0, 0.0));
+    DatexPlannerConstraint {
+        lat,
+        lon,
+        impact: s.impact,
+        radius_m: DATEX_IMPACT_RADIUS_M,
+        situation_id: s.id.clone(),
+        penalize_mult: s.penalize_mult.max(1.0),
+        penalty_minutes: s.penalty_minutes,
+        road: s.road_number.clone().unwrap_or_default(),
+        place: s.location_description.clone().unwrap_or_default(),
+        validity_text: s.validity_text(),
+        xsi_type: s.xsi_type.clone(),
+    }
 }
 
 fn ignore() -> DatexClassification {
     DatexClassification {
         impact: DatexImpact::Ignore,
         penalize_mult: DATEX_PENALIZE_MULT,
+        penalty_minutes: 0.0,
         unrecognized_xsi_type: false,
     }
 }
 
-fn penalize(mult: f64) -> DatexClassification {
+#[allow(dead_code)]
+fn warn_class(minutes: f64) -> DatexClassification {
+    DatexClassification {
+        impact: DatexImpact::Warn,
+        penalize_mult: DATEX_PENALIZE_MULT,
+        penalty_minutes: minutes.max(0.0),
+        unrecognized_xsi_type: false,
+    }
+}
+
+fn penalize(mult: f64, minutes: f64) -> DatexClassification {
     DatexClassification {
         impact: DatexImpact::Penalize,
         penalize_mult: mult.clamp(DATEX_PENALIZE_MULT_MIN, DATEX_PENALIZE_MULT_MAX),
+        penalty_minutes: minutes.max(0.0),
         unrecognized_xsi_type: false,
     }
 }
@@ -196,6 +284,7 @@ fn block() -> DatexClassification {
     DatexClassification {
         impact: DatexImpact::Block,
         penalize_mult: DATEX_PENALIZE_MULT,
+        penalty_minutes: 0.0,
         unrecognized_xsi_type: false,
     }
 }
@@ -255,95 +344,56 @@ pub fn classify_impact(fields: &DatexClassifyFields<'_>) -> DatexClassification 
         return DatexClassification {
             impact: DatexImpact::Ignore,
             penalize_mult: DATEX_PENALIZE_MULT,
+            penalty_minutes: 0.0,
             unrecognized_xsi_type: true,
         };
     }
 
-    let closed = text_indicates_closure(fields.comment)
-        || text_indicates_closure(fields.location_description);
+    let minutes = fields
+        .delay_time_secs
+        .map(|s| s.max(0.0) / 60.0)
+        .unwrap_or_else(|| default_penalty_minutes(xsi, fields.management_type));
+    let delay_mult = fields
+        .delay_time_secs
+        .map(delay_penalize_mult)
+        .unwrap_or(DATEX_PENALIZE_MULT);
+
+    // Only a structured full closure blocks. Free-text closure phrases are not enough.
+    if is_full_closure_management(fields.management_type)
+        && !is_never_block_management(fields.management_type)
+        && !matches!(
+            xsi,
+            "MaintenanceWorks" | "ConstructionWorks" | "Roadworks" | "SpeedManagement"
+        )
+    {
+        return block();
+    }
 
     match xsi {
-        "RoadOrCarriagewayOrLaneManagement" => classify_lane_management(fields, closed),
-        "MaintenanceWorks" => {
-            if closed {
-                return block();
-            }
-            if lanes_positive(fields) || severity_is_elevated(fields.severity) {
-                penalize(DATEX_PENALIZE_MULT)
-            } else {
-                ignore()
-            }
+        "RoadOrCarriagewayOrLaneManagement" => penalize(delay_mult, minutes),
+        "MaintenanceWorks" | "ConstructionWorks" | "Roadworks" => {
+            penalize(delay_mult, minutes)
         }
-        "GeneralNetworkManagement" => {
-            if closed {
-                return block();
-            }
-            if lanes_positive(fields) {
-                penalize(DATEX_PENALIZE_MULT)
-            } else {
-                ignore()
-            }
-        }
-        "ReroutingManagement" => {
-            if closed {
-                block()
-            } else {
-                penalize(DATEX_PENALIZE_MULT)
-            }
-        }
-        "ConstructionWorks" => {
-            if closed {
-                block()
-            } else {
-                penalize(DATEX_PENALIZE_MULT)
-            }
-        }
-        "EnvironmentalObstruction" | "Accident" => block(),
-        "InfrastructureDamageObstruction" => {
-            // Softened after national-snapshot review: not every damage record
-            // is a hard closure (traffic lights + reduced speed, partial reopen).
-            if closed || fields.lanes_restricted.is_some_and(|n| n >= 2) {
-                block()
-            } else {
-                penalize(DATEX_PENALIZE_MULT)
-            }
-        }
-        "PublicEvent" => {
-            if closed || lanes_positive(fields) {
-                block()
-            } else {
-                penalize(DATEX_PENALIZE_MULT)
-            }
-        }
-        "NonWeatherRelatedRoadConditions" | "AnimalPresenceObstruction" | "VehicleObstruction" => {
-            if closed {
-                block()
-            } else {
-                penalize(DATEX_PENALIZE_MULT)
-            }
-        }
-        "GeneralObstruction" => {
-            if closed {
-                block()
-            } else {
-                penalize(DATEX_PENALIZE_MULT)
-            }
-        }
+        "GeneralNetworkManagement" => penalize(delay_mult, minutes),
+        "ReroutingManagement" => penalize(delay_mult, minutes),
+        "EnvironmentalObstruction" | "Accident" => penalize(delay_mult, minutes),
+        "InfrastructureDamageObstruction"
+        | "PublicEvent"
+        | "NonWeatherRelatedRoadConditions"
+        | "AnimalPresenceObstruction"
+        | "VehicleObstruction"
+        | "GeneralObstruction" => penalize(delay_mult, minutes),
         "PoorEnvironmentConditions" => {
-            if closed {
-                return block();
-            }
             let m = fields
                 .wind_speed
                 .map(wind_penalize_mult)
-                .unwrap_or(DATEX_PENALIZE_MULT);
-            penalize(m)
+                .unwrap_or(delay_mult);
+            penalize(m, minutes)
         }
-        "AbnormalTraffic" | "WeatherRelatedRoadConditions" | "AuthorityOperation" | "Roadworks" => {
-            generic_lanes_severity(fields, closed)
+        "AbnormalTraffic" | "WeatherRelatedRoadConditions" | "AuthorityOperation" => {
+            penalize(delay_mult, minutes)
         }
         _ => {
-            // Known-list types should all be matched above.
             log::warn!(
                 target: "NaviDatex",
                 "DATEX xsi:type={xsi} on known list but unmatched; classifying Ignore"
@@ -353,34 +403,7 @@ pub fn classify_impact(fields: &DatexClassifyFields<'_>) -> DatexClassification 
     }
 }
 
-fn classify_lane_management(fields: &DatexClassifyFields<'_>, closed: bool) -> DatexClassification {
-    if closed {
-        return block();
-    }
-    if let Some(secs) = fields.delay_time_secs {
-        return penalize(delay_penalize_mult(secs));
-    }
-    if fields.delays_present {
-        // delays wrapper without delayTimeValue: lane/severity heuristic.
-        return generic_lanes_severity(fields, false);
-    }
-    // Type default: Penalize (lane management implies a compromised carriageway).
-    penalize(DATEX_PENALIZE_MULT)
-}
-
-fn generic_lanes_severity(fields: &DatexClassifyFields<'_>, closed: bool) -> DatexClassification {
-    if closed {
-        return block();
-    }
-    if fields.lanes_restricted.is_some_and(|n| n >= 2) {
-        return block();
-    }
-    if lanes_positive(fields) || severity_is_elevated(fields.severity) {
-        return penalize(DATEX_PENALIZE_MULT);
-    }
-    ignore()
-}
-
+#[allow(dead_code)]
 fn lanes_positive(fields: &DatexClassifyFields<'_>) -> bool {
     fields.lanes_restricted.is_some_and(|n| n >= 1)
 }
@@ -404,6 +427,7 @@ pub fn text_indicates_closure(text: Option<&str>) -> bool {
     t.contains("closed") && (t.contains("road") || t.contains("vegen") || t.contains("vei"))
 }
 
+#[allow(dead_code)]
 fn severity_is_elevated(severity: Option<&str>) -> bool {
     matches!(
         severity.map(|s| s.trim().to_ascii_lowercase()).as_deref(),
@@ -434,7 +458,12 @@ mod tests {
             wind_speed: None,
             impact,
             penalize_mult: DATEX_PENALIZE_MULT,
+            penalty_minutes: 0.0,
             unrecognized_xsi_type: false,
+            management_type: None,
+            vehicle_types: Vec::new(),
+            direction: None,
+            valid_periods: Vec::new(),
         }
     }
 
@@ -448,14 +477,15 @@ mod tests {
             delay_time_secs: None,
             delays_present: false,
             wind_speed: None,
+            management_type: None,
         }
     }
 
     #[test]
-    fn stengt_comment_blocks_construction() {
+    fn stengt_comment_does_not_block_construction() {
         let mut f = fields("ConstructionWorks");
         f.comment = Some("Vegen er stengt.");
-        assert_eq!(classify_impact(&f).impact, DatexImpact::Block);
+        assert_eq!(classify_impact(&f).impact, DatexImpact::Penalize);
     }
 
     #[test]
@@ -473,8 +503,8 @@ mod tests {
         f2.lanes_restricted = Some(0);
         f2.severity = Some("low");
         f2.comment = Some("Et felt stengt.");
-        // No lanes>0 and no strong closure → Ignore for GNM.
-        assert_eq!(classify_impact(&f2).impact, DatexImpact::Ignore);
+        // No lanes>0 and no strong closure → still a network-management warning/penalty.
+        assert_eq!(classify_impact(&f2).impact, DatexImpact::Penalize);
     }
 
     #[test]
@@ -516,17 +546,17 @@ mod tests {
         let mut closed = fields("InfrastructureDamageObstruction");
         closed.lanes_restricted = Some(0);
         closed.comment = Some("Skade på vegnett, vegen er stengt.");
-        assert_eq!(classify_impact(&closed).impact, DatexImpact::Block);
+        assert_eq!(classify_impact(&closed).impact, DatexImpact::Penalize);
 
         let mut two_lanes = fields("InfrastructureDamageObstruction");
         two_lanes.lanes_restricted = Some(2);
         two_lanes.comment = Some("Skade på vegnett.|Midlertidig omkjøring via Eidsfoss");
-        assert_eq!(classify_impact(&two_lanes).impact, DatexImpact::Block);
+        assert_eq!(classify_impact(&two_lanes).impact, DatexImpact::Penalize);
     }
 
     #[test]
-    fn stengt_i_periode_and_helt_stengt_still_block() {
-        assert!(text_indicates_closure(Some(
+    fn stengt_i_periode_is_not_a_full_closure_phrase() {
+        assert!(!text_indicates_closure(Some(
             "Vegarbeid.|Stengt i periode på 0,5 timer."
         )));
         assert!(text_indicates_closure(Some(
@@ -536,14 +566,12 @@ mod tests {
     }
 
     #[test]
-    fn maintenance_stengt_is_block_even_with_lanes() {
-        // Adjustment vs starting table: real NPRA MaintenanceWorks (Oslo E6)
-        // uses "vegen er stengt" for a full closure. Free-text wins.
+    fn maintenance_stengt_text_is_penalty_not_block() {
         let mut f = fields("MaintenanceWorks");
         f.lanes_restricted = Some(2);
         f.severity = Some("low");
         f.comment = Some("Vegarbeid, vegen er stengt.|Omkjøring er skiltet.");
-        assert_eq!(classify_impact(&f).impact, DatexImpact::Block);
+        assert_eq!(classify_impact(&f).impact, DatexImpact::Penalize);
     }
 
     #[test]
@@ -564,12 +592,12 @@ mod tests {
     }
 
     #[test]
-    fn none_severity_zero_lanes_maintenance_is_ignore() {
+    fn none_severity_zero_lanes_maintenance_is_penalty() {
         let mut f = fields("MaintenanceWorks");
         f.lanes_restricted = Some(0);
         f.severity = Some("none");
         f.comment = Some("Fartsgrense 50 km/t");
-        assert_eq!(classify_impact(&f).impact, DatexImpact::Ignore);
+        assert_eq!(classify_impact(&f).impact, DatexImpact::Penalize);
     }
 
     #[test]

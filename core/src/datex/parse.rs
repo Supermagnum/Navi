@@ -1,6 +1,6 @@
 //! Parse navi-server cached DATEX II SituationPublication XML (NPRA v3 shape).
 
-use chrono::{DateTime, FixedOffset, Utc};
+use chrono::{DateTime, Datelike, FixedOffset, NaiveTime, Timelike, Utc, Weekday};
 use roxmltree::Document;
 
 use super::impact::{classify_impact, DatexClassifyFields, DatexImpact};
@@ -76,8 +76,73 @@ pub struct DatexSituation {
     pub impact: DatexImpact,
     /// Cost multiplier used when [`DatexImpact::Penalize`].
     pub penalize_mult: f64,
+    /// Extra minutes used when [`DatexImpact::Penalize`].
+    pub penalty_minutes: f64,
     /// True when `xsi:type` is not in the known inventory (defaults to Ignore).
     pub unrecognized_xsi_type: bool,
+    /// `roadOrCarriagewayOrLaneManagementType` when present.
+    pub management_type: Option<String>,
+    /// DATEX `vehicleType` values (empty = all vehicles).
+    pub vehicle_types: Vec<String>,
+    /// Alert-C / coded direction if present (`positive` / `negative` / `both`).
+    pub direction: Option<String>,
+    /// Recurring validity windows (day + time-of-day). Empty = overall bounds only.
+    pub valid_periods: Vec<DatexValidPeriod>,
+}
+
+/// One DATEX `validPeriod` (optional days + time-of-day, may wrap midnight).
+#[derive(Debug, Clone, PartialEq)]
+pub struct DatexValidPeriod {
+    pub start: Option<DateTime<FixedOffset>>,
+    pub end: Option<DateTime<FixedOffset>>,
+    pub days: Vec<Weekday>,
+    pub tod_start: Option<NaiveTime>,
+    pub tod_end: Option<NaiveTime>,
+}
+
+impl DatexValidPeriod {
+    /// `arrival` in UTC, compared using the period's offset when present, else UTC.
+    pub fn contains_local(&self, arrival: DateTime<Utc>) -> bool {
+        let local = if let Some(start) = self.start {
+            arrival.with_timezone(start.offset())
+        } else if let Some(end) = self.end {
+            arrival.with_timezone(end.offset())
+        } else {
+            arrival.with_timezone(&FixedOffset::east_opt(0).unwrap())
+        };
+        if let Some(start) = self.start {
+            if local < start {
+                return false;
+            }
+        }
+        if let Some(end) = self.end {
+            if local > end {
+                return false;
+            }
+        }
+        if !self.days.is_empty() {
+            let wd = weekday_from_chrono(local.weekday());
+            if !self.days.contains(&wd) {
+                return false;
+            }
+        }
+        match (self.tod_start, self.tod_end) {
+            (Some(a), Some(b)) => {
+                let t = NaiveTime::from_hms_opt(local.hour(), local.minute(), local.second())
+                    .unwrap_or(NaiveTime::MIN);
+                if a <= b {
+                    t >= a && t <= b
+                } else {
+                    t >= a || t <= b
+                }
+            }
+            _ => true,
+        }
+    }
+}
+
+fn weekday_from_chrono(w: Weekday) -> Weekday {
+    w
 }
 
 impl DatexSituation {
@@ -99,6 +164,58 @@ impl DatexSituation {
         }
         // Require at least one bound so empty validity does not count as forever-active.
         self.valid_from.is_some() || self.valid_to.is_some()
+    }
+
+    /// Recurring day/time windows, then overall `[valid_from, valid_to]`.
+    pub fn is_active_at_arrival(&self, arrival: DateTime<Utc>) -> bool {
+        if !self.is_active_at(arrival) && !self.valid_periods.is_empty() {
+            // Overall window may still contain `arrival`; is_active_at already
+            // checked overall bounds. Recurring can only further restrict.
+        }
+        if !self.is_active_at(arrival) {
+            return false;
+        }
+        if self.valid_periods.is_empty() {
+            return true;
+        }
+        self.valid_periods
+            .iter()
+            .any(|p| p.contains_local(arrival))
+    }
+
+    pub fn has_recurring_windows(&self) -> bool {
+        self.valid_periods
+            .iter()
+            .any(|p| !p.days.is_empty() || p.tod_start.is_some() || p.tod_end.is_some())
+    }
+
+    pub fn validity_text(&self) -> String {
+        let mut parts = Vec::new();
+        if let Some(s) = self.valid_from {
+            parts.push(format!("from {}", s));
+        }
+        if let Some(e) = self.valid_to {
+            parts.push(format!("to {}", e));
+        }
+        for p in &self.valid_periods {
+            let days = if p.days.is_empty() {
+                String::new()
+            } else {
+                p.days
+                    .iter()
+                    .map(|d| format!("{d:?}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            };
+            let tod = match (p.tod_start, p.tod_end) {
+                (Some(a), Some(b)) => format!(" {a}-{b}"),
+                _ => String::new(),
+            };
+            if !days.is_empty() || !tod.is_empty() {
+                parts.push(format!("{days}{tod}"));
+            }
+        }
+        parts.join("; ")
     }
 
     /// True when the validity window overlaps `[window_start, window_end]`.
@@ -188,6 +305,13 @@ fn parse_situation_record(node: roxmltree::Node<'_, '_>) -> Option<DatexSituatio
         .descendants()
         .any(|n| local_name(n.tag_name().name()) == "delays");
     let wind_speed = first_text_local(node, "windSpeed").and_then(|s| s.parse::<f64>().ok());
+    let management_type = first_text_local(node, "roadOrCarriagewayOrLaneManagementType")
+        .or_else(|| first_text_local(node, "networkManagementType"));
+    let vehicle_types = collect_local_texts(node, "vehicleType");
+    let direction = first_text_local(node, "alertCDirectionCoded")
+        .or_else(|| first_text_local(node, "directionCoded"))
+        .or_else(|| first_text_local(node, "linearDirection"));
+    let valid_periods = parse_valid_periods(node);
     let classified = classify_impact(&DatexClassifyFields {
         xsi_type: &xsi_type,
         lanes_restricted,
@@ -197,6 +321,7 @@ fn parse_situation_record(node: roxmltree::Node<'_, '_>) -> Option<DatexSituatio
         delay_time_secs,
         delays_present,
         wind_speed,
+        management_type: management_type.as_deref(),
     });
 
     Some(DatexSituation {
@@ -216,7 +341,12 @@ fn parse_situation_record(node: roxmltree::Node<'_, '_>) -> Option<DatexSituatio
         wind_speed,
         impact: classified.impact,
         penalize_mult: classified.penalize_mult,
+        penalty_minutes: classified.penalty_minutes,
         unrecognized_xsi_type: classified.unrecognized_xsi_type,
+        management_type,
+        vehicle_types,
+        direction,
+        valid_periods,
     })
 }
 
@@ -248,6 +378,72 @@ fn first_text_local(node: roxmltree::Node<'_, '_>, local: &str) -> Option<String
         .and_then(|n| n.text())
         .map(|t| t.trim().to_string())
         .filter(|t| !t.is_empty())
+}
+
+fn collect_local_texts(node: roxmltree::Node<'_, '_>, local: &str) -> Vec<String> {
+    node.descendants()
+        .filter(|n| local_name(n.tag_name().name()) == local)
+        .filter_map(|n| n.text().map(|t| t.trim().to_string()))
+        .filter(|t| !t.is_empty())
+        .collect()
+}
+
+fn parse_valid_periods(node: roxmltree::Node<'_, '_>) -> Vec<DatexValidPeriod> {
+    let mut out = Vec::new();
+    for n in node.descendants() {
+        if local_name(n.tag_name().name()) != "validPeriod" {
+            continue;
+        }
+        let mut start = None;
+        let mut end = None;
+        let mut days = Vec::new();
+        let mut tod_start = None;
+        let mut tod_end = None;
+        for c in n.descendants() {
+            match local_name(c.tag_name().name()) {
+                "startOfPeriod" => start = c.text().and_then(parse_datex_time),
+                "endOfPeriod" => end = c.text().and_then(parse_datex_time),
+                "startTimeOfPeriod" => tod_start = c.text().and_then(parse_tod),
+                "endTimeOfPeriod" => tod_end = c.text().and_then(parse_tod),
+                "applicableDay" => {
+                    if let Some(d) = c.text().and_then(parse_weekday) {
+                        days.push(d);
+                    }
+                }
+                _ => {}
+            }
+        }
+        out.push(DatexValidPeriod {
+            start,
+            end,
+            days,
+            tod_start,
+            tod_end,
+        });
+    }
+    out
+}
+
+fn parse_tod(s: &str) -> Option<NaiveTime> {
+    let t = s.trim();
+    let core = t.split(['+', '-']).next().unwrap_or(t);
+    let core = core.trim_end_matches('Z');
+    NaiveTime::parse_from_str(core, "%H:%M:%S%.f")
+        .ok()
+        .or_else(|| NaiveTime::parse_from_str(core, "%H:%M:%S").ok())
+}
+
+fn parse_weekday(s: &str) -> Option<Weekday> {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "monday" => Some(Weekday::Mon),
+        "tuesday" => Some(Weekday::Tue),
+        "wednesday" => Some(Weekday::Wed),
+        "thursday" => Some(Weekday::Thu),
+        "friday" => Some(Weekday::Fri),
+        "saturday" => Some(Weekday::Sat),
+        "sunday" => Some(Weekday::Sun),
+        _ => None,
+    }
 }
 
 fn first_nested_value(node: roxmltree::Node<'_, '_>, wrapper_local: &str) -> Option<String> {

@@ -34,8 +34,10 @@ pub use impact::{
     DatexClassifyFields, DatexImpact, DatexPlannerConstraint, CLOSURE_PHRASES,
     CLOSURE_RISK_EXCLUSIONS, DATEX_IMPACT_RADIUS_M, DATEX_PENALIZE_MULT, DATEX_PENALIZE_MULT_MAX,
     DATEX_PENALIZE_MULT_MIN, NPRA_LIVE_XSI_TYPES, SCHEMA_VALID_UNUSED_XSI_TYPES,
+    constraint_from_situation, default_penalty_minutes, is_full_closure_management,
+    is_never_block_management,
 };
-pub use parse::{parse_situation_publication, DatexSituation, SituationKind};
+pub use parse::{parse_situation_publication, DatexSituation, DatexValidPeriod, SituationKind};
 pub use session::{reset_session_for_tests, with_session, DatexSession};
 
 use chrono::{DateTime, Utc};
@@ -177,16 +179,130 @@ pub fn impacts_near_route(
     margin_m: f64,
     now: DateTime<Utc>,
 ) -> Vec<DatexPlannerConstraint> {
+    impacts_near_route_ctx(
+        all,
+        route_lat_lon,
+        margin_m,
+        DatexHopContext {
+            arrival: now,
+            trip_uncertain: false,
+            hop_bearing_deg: None,
+            truck: true,
+        },
+    )
+}
+
+/// Arrival-aware DATEX apply for one hop.
+#[derive(Debug, Clone, Copy)]
+pub struct DatexHopContext {
+    pub arrival: DateTime<Utc>,
+    /// Multi-day / long remaining ETA: windowed closures warn instead of block.
+    pub trip_uncertain: bool,
+    pub hop_bearing_deg: Option<f64>,
+    pub truck: bool,
+}
+
+pub fn impacts_near_route_ctx(
+    all: &[DatexSituation],
+    route_lat_lon: &[(f64, f64)],
+    margin_m: f64,
+    ctx: DatexHopContext,
+) -> Vec<DatexPlannerConstraint> {
     if route_lat_lon.len() < 2 {
         return Vec::new();
     }
     let near = filter_near_route(all, route_lat_lon, margin_m);
-    let trip_end = now + chrono::Duration::hours(48);
-    let active: Vec<_> = near
-        .into_iter()
-        .filter(|s| s.is_active_during(now, trip_end))
+    let mut out = Vec::new();
+    for mut s in near {
+        if !vehicle_applies(&s, ctx.truck) {
+            continue;
+        }
+        if !direction_applies(&s, ctx.hop_bearing_deg) {
+            continue;
+        }
+        let active = s.is_active_at_arrival(ctx.arrival);
+        if active {
+            if ctx.trip_uncertain && s.has_recurring_windows() && s.impact == DatexImpact::Block {
+                s.impact = DatexImpact::Warn;
+            }
+            out.push(constraint_from_situation(&s));
+            continue;
+        }
+        // Not active at arrival: no block/penalty. Windowed records still warn.
+        if s.has_recurring_windows() && s.impact != DatexImpact::Ignore {
+            s.impact = DatexImpact::Warn;
+            s.penalty_minutes = 0.0;
+            out.push(constraint_from_situation(&s));
+        }
+    }
+    out
+}
+
+fn vehicle_applies(s: &DatexSituation, truck: bool) -> bool {
+    if s.vehicle_types.is_empty() {
+        return true;
+    }
+    let types: Vec<String> = s
+        .vehicle_types
+        .iter()
+        .map(|t| t.to_ascii_lowercase())
         .collect();
-    planner_impacts(&active)
+    if types.iter().any(|t| t == "all" || t == "any") {
+        return true;
+    }
+    if truck {
+        types.iter().any(|t| {
+            t.contains("lorry")
+                || t.contains("hgv")
+                || t.contains("truck")
+                || t.contains("heavy")
+                || t == "car"
+                || t.contains("vehicle")
+        })
+    } else {
+        types.iter().any(|t| t.contains("car") || t.contains("vehicle") || t.contains("motor"))
+    }
+}
+
+fn direction_applies(s: &DatexSituation, hop_bearing_deg: Option<f64>) -> bool {
+    let Some(dir) = s.direction.as_deref() else {
+        return true;
+    };
+    let d = dir.to_ascii_lowercase();
+    if d.contains("both") || d.contains("unknown") {
+        return true;
+    }
+    let Some(hop) = hop_bearing_deg else {
+        return true;
+    };
+    if s.geometry.len() < 2 {
+        return true;
+    }
+    let (a_lat, a_lon) = s.geometry[0];
+    let (b_lat, b_lon) = s.geometry[s.geometry.len() - 1];
+    let sit = bearing_deg(a_lat, a_lon, b_lat, b_lon);
+    let diff = angle_diff_deg(hop, sit);
+    if d.contains("neg") {
+        diff > 60.0
+    } else if d.contains("pos") {
+        diff < 120.0
+    } else {
+        true
+    }
+}
+
+fn bearing_deg(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    let p1 = lat1.to_radians();
+    let p2 = lat2.to_radians();
+    let dl = (lon2 - lon1).to_radians();
+    let y = dl.sin() * p2.cos();
+    let x = p1.cos() * p2.sin() - p1.sin() * p2.cos() * dl.cos();
+    (y.atan2(x).to_degrees() + 360.0) % 360.0
+}
+
+fn angle_diff_deg(a: f64, b: f64) -> f64 {
+    let d = (a - b).abs() % 360.0;
+    d.min(360.0 - d)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

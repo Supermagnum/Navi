@@ -557,6 +557,18 @@ private fun cancelledCorridorResult(): uniffi.navi.CorridorRouteResult =
         routeUsesTolls = false,
     )
 
+private fun formatDatexAffectedStatus(base: String, report: String): String {
+    val lines =
+        report.lineSequence()
+            .filter { it.startsWith("datex_affected ") }
+            .map { it.removePrefix("datex_affected ").trim() }
+            .filter { it.isNotEmpty() }
+            .toList()
+    if (lines.isEmpty()) return base
+    val shown = lines.take(8).joinToString(" · ")
+    return "$base · DATEX: $shown"
+}
+
 private fun userFacingStatus(raw: String): String {
     val t = raw.trim()
     if (t.isEmpty()) return ""
@@ -585,7 +597,8 @@ private fun userFacingStatus(raw: String): String {
                     } else {
                         base
                     }
-                withIndexedPackMissHint(withToll, t)
+                val withDatex = formatDatexAffectedStatus(withIndexedPackMissHint(withToll, t), t)
+                withDatex
             }
             t.contains("PASS") -> withIndexedPackMissHint("Done", t)
             t.lineSequence().any { it.startsWith("FAIL") } -> {
@@ -3625,17 +3638,20 @@ private fun NaviMapScreen() {
         status =
             withIndexedPackMissHint(
                 run {
-                    val base =
+                val withDatex =
+                    formatDatexAffectedStatus(
                         if (result.offTrailAdvisory.isNotBlank()) {
                             "$planStatus · Off-trail: use judgment (terrain advisory)"
                         } else {
                             planStatus
-                        }
-                    if (result.tollAvoidanceIncomplete) {
-                        "$base · could not fully avoid tolls"
-                    } else {
-                        base
-                    }
+                        },
+                        result.report,
+                    )
+                if (result.tollAvoidanceIncomplete) {
+                    "$withDatex · could not fully avoid tolls"
+                } else {
+                    withDatex
+                }
                 },
                 result.report,
             )

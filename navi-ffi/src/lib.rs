@@ -2505,16 +2505,46 @@ fn plan_car_route_chunked_legs(
         if i > 0 {
             driver_break_core::routing::indexed::corridor_cache_clear();
         }
-        let hop_datex = match &datex_all {
-            Some(all) => driver_break_core::datex::impacts_near_route(
+        let hop_bearing = {
+            let p1 = slat.to_radians();
+            let p2 = elat.to_radians();
+            let dl = (elon - slon).to_radians();
+            let y = dl.sin() * p2.cos();
+            let x = p1.cos() * p2.sin() - p1.sin() * p2.cos() * dl.cos();
+            (y.atan2(x).to_degrees() + 360.0) % 360.0
+        };
+        let arrival = datex_now + chrono::Duration::minutes(eta_minutes.round() as i64);
+        let trip_uncertain = eta_minutes > 12.0 * 60.0;
+        let mut hop_datex = match &datex_all {
+            Some(all) => driver_break_core::datex::impacts_near_route_ctx(
                 all,
                 &[(slat, slon), (elat, elon)],
                 driver_break_core::datex::DATEX_HOP_MARGIN_M,
-                datex_now,
+                driver_break_core::datex::DatexHopContext {
+                    arrival,
+                    trip_uncertain,
+                    hop_bearing_deg: Some(hop_bearing),
+                    truck: true,
+                },
             ),
             None => Vec::new(),
         };
-        let leg = plan_car_route_inner(
+        for c in &hop_datex {
+            let line = format!(
+                "datex_affected road={} place={} type={} validity={} effect={} penalty_min={:.0}",
+                c.road.replace('\n', " "),
+                c.place.replace('\n', " ").chars().take(80).collect::<String>(),
+                c.xsi_type,
+                c.validity_text.replace('\n', " "),
+                c.impact.as_str(),
+                c.penalty_minutes
+            );
+            driver_break_core::routing::plan_file_log::line(line.clone());
+            report.push_str(&line);
+            report.push('\n');
+        }
+        let hop_datex_first = hop_datex.clone();
+        let mut leg = plan_car_route_inner(
             pbf_path.clone(),
             elev_dir.clone(),
             cache_dir.clone(),
@@ -2540,8 +2570,73 @@ fn plan_car_route_chunked_legs(
             relax_start,
             relax_end,
             /* tight_intermediate_snap */ false,
-            Some(hop_datex),
+            Some(hop_datex_first),
         );
+        let hop_failed = leg.distance_km <= 0.0
+            || leg.search_terminate_reason == "snap_failed"
+            || leg.search_terminate_reason == "fail"
+            || leg.search_terminate_reason == "graph_build"
+            || leg.search_terminate_reason == "bbox_exhausted"
+            || leg.search_terminate_reason == "disconnected"
+            || leg.search_terminate_reason == "corridor_disconnected"
+            || leg.route_polyline.is_empty();
+        if hop_failed
+            && hop_datex
+                .iter()
+                .any(|c| c.impact == driver_break_core::datex::DatexImpact::Block)
+        {
+            let named: Vec<String> = hop_datex
+                .iter()
+                .filter(|c| c.impact == driver_break_core::datex::DatexImpact::Block)
+                .map(|c| {
+                    format!(
+                        "{} {} {}",
+                        c.road,
+                        c.place.chars().take(60).collect::<String>(),
+                        c.validity_text
+                    )
+                })
+                .collect();
+            driver_break_core::routing::plan_file_log::line(format!(
+                "datex_behind_closure retry_without_block {}",
+                named.join(" | ")
+            ));
+            let mut retry = hop_datex.clone();
+            for c in &mut retry {
+                if c.impact == driver_break_core::datex::DatexImpact::Block {
+                    c.impact = driver_break_core::datex::DatexImpact::Warn;
+                }
+            }
+            driver_break_core::routing::indexed::corridor_cache_clear();
+            leg = plan_car_route_inner(
+                pbf_path.clone(),
+                elev_dir.clone(),
+                cache_dir.clone(),
+                slat,
+                slon,
+                elat,
+                elon,
+                use_eco,
+                profile,
+                avoid_motorways,
+                toll_policy,
+                avoid_ferries,
+                avoid_tunnels,
+                vehicle.clone(),
+                prefer_official_networks,
+                departure_local_iso.clone(),
+                data_dir.clone(),
+                pack_dir.clone(),
+                Vec::new(),
+                false,
+                allowed_countries.clone(),
+                true,
+                relax_start,
+                relax_end,
+                false,
+                Some(retry),
+            );
+        }
         report.push_str(&format!("--- leg{} report ---\n", i + 1));
         report.push_str(&leg.report);
         route_uses_ferry = route_uses_ferry || leg.report.contains("route_uses_ferry=true");
@@ -2616,6 +2711,26 @@ fn plan_car_route_chunked_legs(
                 i + 1,
                 leg.search_terminate_reason
             );
+            let closures: Vec<String> = hop_datex
+                .iter()
+                .filter(|c| c.impact == driver_break_core::datex::DatexImpact::Block)
+                .map(|c| {
+                    format!(
+                        "DATEX closure {} {} {}",
+                        c.road,
+                        c.place.chars().take(80).collect::<String>(),
+                        c.validity_text
+                    )
+                })
+                .collect();
+            if !closures.is_empty() {
+                fail = format!(
+                    "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: {}\nFAIL: chunk_leg{} terminated {}\n",
+                    closures.join("; "),
+                    i + 1,
+                    leg.search_terminate_reason
+                );
+            }
             if avoid_ferries
                 && !fail.contains("no_route_without_ferry=")
                 && !leg.report.contains("no_route_without_ferry=")

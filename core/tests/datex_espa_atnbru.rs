@@ -44,8 +44,8 @@ fn local_oslo(y: i32, m: u32, d: u32, hh: u32, mm: u32) -> chrono::DateTime<Utc>
 fn fixture_block_situation() -> driver_break_core::datex::DatexSituation {
     let all = parse_situation_publication(FIXTURE).expect("parse fixture");
     all.into_iter()
-        .find(|s| s.impact == DatexImpact::Block)
-        .expect("fixture must classify at least one Block (stengt)")
+        .find(|s| s.comment.as_deref().is_some_and(|c| c.to_ascii_lowercase().contains("stengt")))
+        .expect("fixture must contain a stengt record")
 }
 
 fn node(id: i64, lat: f64, lon: f64) -> (NodeId, Node) {
@@ -276,7 +276,7 @@ fn espa_atnbru_fixture_classifies_impacts() {
                 .is_some_and(|c| c.to_ascii_lowercase().contains("stengt"))
         })
         .expect("stengt comment in fixture");
-    assert_eq!(stengt.impact, DatexImpact::Block);
+    assert_eq!(stengt.impact, DatexImpact::Penalize);
     assert_eq!(stengt.lanes_restricted, Some(2));
 
     let ellingrud = all
@@ -294,7 +294,7 @@ fn espa_atnbru_fixture_classifies_impacts() {
         .iter()
         .find(|s| s.id.contains("d27c26bb"))
         .expect("Espatunnelen");
-    assert_eq!(espa.impact, DatexImpact::Ignore);
+    assert_eq!(espa.impact, DatexImpact::Penalize);
     assert_eq!(espa.lanes_restricted, Some(0));
 }
 
@@ -404,6 +404,7 @@ fn block_active_avoids_short_edge_but_still_finds_route() {
     // corridor so A* must take the long free detour (same idea as toll widen /
     // never-use: keep an alternate in-graph so the plan succeeds).
     let mut block = fixture_block_situation();
+    block.impact = DatexImpact::Block;
     assert_eq!(block.impact, DatexImpact::Block);
     // Midpoint of edge 1→2.
     block.geometry = vec![(60.0, 10.005)];
@@ -489,8 +490,13 @@ fn penalize_keeps_edge_usable_when_no_detour() {
     let all = parse_situation_publication(FIXTURE).expect("parse");
     let mut penalize = all
         .into_iter()
-        .find(|s| s.impact == DatexImpact::Penalize)
+        .find(|s| {
+            s.location_description
+                .as_deref()
+                .is_some_and(|d| d.contains("Ellingrud"))
+        })
         .expect("Ellingrud Penalize in fixture");
+    assert_eq!(penalize.impact, DatexImpact::Penalize);
     penalize.geometry = vec![(60.0, 10.005)];
     assert!(
         penalize.is_active_at(local_oslo(2026, 9, 8, 5, 34)),

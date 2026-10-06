@@ -277,7 +277,7 @@ pub struct RouteOptions {
     pub datex_impacts: Vec<crate::datex::DatexPlannerConstraint>,
     /// Per-edge DATEX Block (1) / not (0), parallel to [`RouteGraph::edges`].
     pub datex_edge_block: Option<std::sync::Arc<Vec<u8>>>,
-    /// Per-edge DATEX Penalize multiplier (`1.0` = none), parallel to edges.
+    /// Per-edge DATEX extra metres (`0.0` = none), from penalty minutes at 80 km/h.
     pub datex_edge_penalize: Option<std::sync::Arc<Vec<f64>>>,
     /// When `Some`, only traverse edges whose midpoint falls inside one of these
     /// ISO-3166-1 alpha-2 codes (case-insensitive). `None` keeps historical
@@ -584,10 +584,13 @@ impl RouteGraph {
         }
         let n = self.edges.len();
         let mut block = vec![0u8; n];
-        let mut penalize = vec![1.0f64; n];
+        let mut penalize = vec![0.0f64; n];
         let mut max_radius_m = 250.0_f64;
         for c in &options.datex_impacts {
-            if c.impact == crate::datex::DatexImpact::Ignore {
+            if matches!(
+                c.impact,
+                crate::datex::DatexImpact::Ignore | crate::datex::DatexImpact::Warn
+            ) {
                 continue;
             }
             max_radius_m = max_radius_m.max(c.radius_m);
@@ -597,7 +600,10 @@ impl RouteGraph {
         let mut grid: std::collections::HashMap<(i32, i32), Vec<usize>> =
             std::collections::HashMap::new();
         for (j, c) in options.datex_impacts.iter().enumerate() {
-            if c.impact == crate::datex::DatexImpact::Ignore {
+            if matches!(
+                c.impact,
+                crate::datex::DatexImpact::Ignore | crate::datex::DatexImpact::Warn
+            ) {
                 continue;
             }
             grid.entry(datex_cell(c.lat, c.lon, CELL_DEG))
@@ -636,9 +642,11 @@ impl RouteGraph {
                         match c.impact {
                             crate::datex::DatexImpact::Block => block[i] = 1,
                             crate::datex::DatexImpact::Penalize => {
-                                penalize[i] = penalize[i].max(c.penalize_mult.max(1.0));
+                                let extra = (c.penalty_minutes.max(0.0) * 80_000.0 / 60.0)
+                                    .max(0.0);
+                                penalize[i] = penalize[i].max(extra);
                             }
-                            crate::datex::DatexImpact::Ignore => {}
+                            crate::datex::DatexImpact::Ignore | crate::datex::DatexImpact::Warn => {}
                         }
                     }
                 }
@@ -2600,21 +2608,22 @@ fn edge_blocked_by_datex(edge: &GraphEdge, options: &RouteOptions, edge_idx: Opt
 }
 
 /// Strongest Penalize multiplier among DATEX constraints that hit this edge.
-fn datex_penalize_multiplier(
+fn datex_penalize_extra_m(
     edge: &GraphEdge,
     options: &RouteOptions,
     edge_idx: usize,
 ) -> Option<f64> {
     if let Some(pen) = options.datex_edge_penalize.as_ref() {
         let m = *pen.get(edge_idx)?;
-        return if m > 1.0 + 1e-9 { Some(m) } else { None };
+        return if m > 1e-9 { Some(m) } else { None };
     }
     options
         .datex_impacts
         .iter()
         .filter(|c| c.impact == crate::datex::DatexImpact::Penalize && edge_hit_by_datex(edge, c))
-        .map(|c| c.penalize_mult.max(1.0))
+        .map(|c| (c.penalty_minutes.max(0.0) * 80_000.0 / 60.0).max(0.0))
         .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        .filter(|m| *m > 1e-9)
 }
 
 /// True when `options` can remove edges vs an unrestricted car graph. Snap then
@@ -2782,8 +2791,8 @@ fn edge_travel_cost(
     if options.avoid_tunnels && edge.is_tunnel {
         cost *= crate::routing::toll::TUNNEL_AVOID_PENALTY_MULT;
     }
-    if let Some(mult) = datex_penalize_multiplier(edge, options, edge_idx) {
-        cost *= mult;
+    if let Some(extra) = datex_penalize_extra_m(edge, options, edge_idx) {
+        cost += extra;
     }
     cost
 }
@@ -3033,6 +3042,11 @@ mod tests {
                 radius_m: 250.0,
                 situation_id: format!("far-{i}"),
                 penalize_mult: 50.0,
+                penalty_minutes: 0.0,
+                road: String::new(),
+                place: String::new(),
+                validity_text: String::new(),
+                xsi_type: String::new(),
             });
         }
         far.push(crate::datex::DatexPlannerConstraint {
@@ -3042,6 +3056,11 @@ mod tests {
             radius_m: 250.0,
             situation_id: "near".into(),
             penalize_mult: 50.0,
+            penalty_minutes: 0.0,
+            road: String::new(),
+            place: String::new(),
+            validity_text: String::new(),
+            xsi_type: String::new(),
         });
         let mut opts = RouteOptions {
             datex_impacts: far,
