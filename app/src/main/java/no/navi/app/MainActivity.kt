@@ -1709,8 +1709,6 @@ private fun NaviMapScreen() {
             )
         NaviMapTestHooks.lastRoutePlanStatsJson = routePlanStats.toReportJson().toString()
         runCatching {
-            val dir =
-                File(context.getExternalFilesDir(null), "long-trip-ui-report").also { it.mkdirs() }
             val days = pending.daysJson
             val o =
                 org.json
@@ -1725,12 +1723,26 @@ private fun NaviMapScreen() {
                     .put("end", endLabel)
                     .put("long_trip_status", LongTripCoordinator.statusLine())
                     .put("enumerations", routePlanStats.toReportJson())
-            File(dir, "route-result.json").writeText(o.toString(2))
-            // Debug host pull: full edge polyline for GeoJSON / spike audit.
-            if ((context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
-                pending.routePolyline.isNotBlank()
-            ) {
-                File(dir, "route-polyline.txt").writeText(pending.routePolyline)
+            val hopsSidecar =
+                File(PlanReportStore.internalDir(dataDir), PlanReportStore.HOPS_NAME)
+                    .takeIf { it.isFile }
+                    ?.readText()
+            // Canonical: files/long-trip-ui-report/ (+ external twin). Native hop
+            // log already lives here; polyline must not land in a different folder.
+            if ((context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                PlanReportStore.publishFinishedPlan(
+                    context,
+                    dataDir,
+                    pending.routePolyline,
+                    hopsSidecar,
+                    o.toString(2),
+                )
+            } else {
+                PlanReportStore.writeText(
+                    PlanReportStore.canonicalDir(context, dataDir),
+                    PlanReportStore.RESULT_NAME,
+                    o.toString(2),
+                )
             }
         }
         routeSamples =

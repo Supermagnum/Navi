@@ -2434,6 +2434,7 @@ fn plan_car_route_chunked_legs(
     let mut pad_attempts: Vec<f64> = Vec::new();
     let mut priority_share_acc = 0.0;
     let mut priority_share_w = 0.0;
+    let mut hops_sidecar: Vec<serde_json::Value> = Vec::new();
 
     for (i, w) in hops.windows(2).enumerate() {
         let (slat, slon) = w[0];
@@ -2548,6 +2549,26 @@ fn plan_car_route_chunked_legs(
             r.search_expansions = expansions.saturating_add(leg.search_expansions);
             return r;
         }
+        let hop_ferry = parse_u64_token(&leg.report, "route_ferry_legs=").unwrap_or(0);
+        driver_break_core::routing::plan_file_log::line(format!(
+            "hop_result=success i={} km={:.3} eta_min={:.1} terminate={} \
+             route_ferry_legs={hop_ferry} expansions={}",
+            i + 1,
+            leg.distance_km,
+            leg.eta_minutes,
+            leg.search_terminate_reason,
+            leg.search_expansions
+        ));
+        hops_sidecar.push(serde_json::json!({
+            "i": i + 1,
+            "endpoints": format!("{slat:.5},{slon:.5}->{elat:.5},{elon:.5}"),
+            "km": (leg.distance_km * 1000.0).round() / 1000.0,
+            "eta_min": (leg.eta_minutes * 10.0).round() / 10.0,
+            "terminate": leg.search_terminate_reason,
+            "route_ferry_legs": hop_ferry,
+            "expansions": leg.search_expansions,
+            "result": "success",
+        }));
         distance_km += leg.distance_km;
         eta_minutes += leg.eta_minutes;
         build_s += leg.cold_build_s;
@@ -2653,6 +2674,26 @@ fn plan_car_route_chunked_legs(
         "chunked_distance_km={distance_km:.3}; chunked_eta_min={eta_minutes:.1}; hops={}; route_uses_ferry={route_uses_ferry}\nPASS\n",
         hops.len().saturating_sub(1)
     ));
+    let terminate = if toll_incomplete {
+        "found_with_toll_fallback"
+    } else {
+        "found"
+    };
+    driver_break_core::routing::plan_file_log::line(format!(
+        "plan_summary km={distance_km:.3} eta_min={eta_minutes:.1} \
+         route_ferry_legs={ferry_leg_count} terminate={terminate} hops={}",
+        hops.len().saturating_sub(1)
+    ));
+    if let Ok(body) = serde_json::to_string_pretty(&serde_json::json!({ "hops": hops_sidecar })) {
+        driver_break_core::routing::plan_file_log::write_file(
+            driver_break_core::routing::plan_file_log::HOPS_NAME,
+            body,
+        );
+    }
+    driver_break_core::routing::plan_file_log::write_file(
+        driver_break_core::routing::plan_file_log::POLYLINE_NAME,
+        polyline.as_bytes(),
+    );
     driver_break_core::download::progress::set(5, Some(5), "Planning route: done");
     CorridorRouteResult {
         report,
@@ -4870,6 +4911,16 @@ fn plan_car_route_inner(
         "distance_km={dist_km:.3}; eta_min={eta_minutes:.1}; path_nodes={path_nodes}; path_cost={cost:.0}; polyline_chars={}; break_pois={}; route_uses_ferry={route_uses_ferry}\nPASS\n",
         polyline.len(),
         break_pois_json
+    ));
+    let hop_ferry = parse_u64_token(&report, "route_ferry_legs=").unwrap_or(0);
+    let hop_term = if toll_avoidance_incomplete {
+        "found_with_toll_fallback"
+    } else {
+        "found"
+    };
+    driver_break_core::routing::plan_file_log::line(format!(
+        "hop_result=success km={dist_km:.3} eta_min={eta_minutes:.1} terminate={hop_term} \
+         route_ferry_legs={hop_ferry} nodes={path_nodes} pack_hit={pack_hit} expansions={last_expansions}"
     ));
     driver_break_core::download::progress::set(5, Some(5), "Planning route: done");
 

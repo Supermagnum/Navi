@@ -3,6 +3,7 @@ package no.navi.app
 import android.util.Log
 import org.json.JSONArray
 import uniffi.navi.CorridorRouteResult
+import java.io.File
 
 /**
  * Planning progress visible via `adb logcat -s NaviRouting:I`.
@@ -49,7 +50,8 @@ object RoutingPlanLog {
                 "avoid_tolls=$avoidTolls avoid_ferries=$avoidFerries avoid_tunnels=$avoidTunnels"
         Log.i(TAG, line)
         runCatching {
-            val f = java.io.File(dataDir, "routing-plan.log")
+            val f = File(PlanReportStore.internalDir(dataDir), PlanReportStore.LOG_NAME)
+            f.parentFile?.mkdirs()
             f.appendText(line + "\n")
         }
     }
