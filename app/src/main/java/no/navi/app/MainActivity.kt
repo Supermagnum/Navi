@@ -675,6 +675,7 @@ private fun NaviMapScreen() {
     var packCatalogDataSource by remember { mutableStateOf("local-bake") }
     var packCatalogUnreachable by remember { mutableStateOf<String?>(null) }
     var packCatalogEpoch by remember { mutableIntStateOf(0) }
+    var mapsEpoch by remember { mutableIntStateOf(0) }
     LaunchedEffect(selectedGeofabrikPath) {
         NaviMapTestHooks.lastSelectedGeofabrikPath = selectedGeofabrikPath
     }
@@ -688,7 +689,22 @@ private fun NaviMapScreen() {
                     .writeText(summary)
             }
         }
+        mapsEpoch += 1
     }
+    LaunchedEffect(packCatalogEpoch) {
+        if (packCatalogEpoch == 0) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            runCatching { InstalledMaps.refresh(context) }
+        }
+        mapsEpoch += 1
+    }
+    val selectedLocalReady =
+        remember(selectedGeofabrikPath, mapsEpoch) {
+            InstalledMaps.hasInstallForUi(
+                selectedGeofabrikPath,
+                NaviAppData.resolve(context),
+            )
+        }
     LaunchedEffect(Unit) {
         DiagnosticLog.restoreFromPrefs(context)
         diagnosticLogging = DiagnosticLog.isEnabled()
@@ -2724,9 +2740,8 @@ private fun NaviMapScreen() {
         // synchronously before its IO coroutine, so this check cannot race a
         // just-started resume (PlaceIndexBackground + RegionDownload both
         // calling ensurePlaceIndex on the same DB).
-        // Standalone auto-index only resumes an in-progress build. Missing
-        // empty regions (Denmark, SH, Vestlandet, …) are listed by InstalledMaps
-        // and must not start here — that is how europe/denmark was indexed at 06:50.
+        // Standalone auto-index for allow-listed missing/not-intact regions
+        // (SH, Vestlandet, Sørlandet, MV) only when no plan is running.
         if (OfflineIndexGate.hasMaterialToIndex(dataDir) &&
             !RegionDownloadBackground.isRunning()
         ) {
@@ -7785,32 +7800,6 @@ private fun NaviMapScreen() {
                                 PackRegionAvailability.downloadRegionButtonLabel(selectedServerReady),
                             )
                         }
-                        val packDirForDelete =
-                            runCatching {
-                                LongTripPackStorage.packDownloadDir(context)
-                            }.getOrNull()
-                        val selectedLocalReady =
-                            PackRegionAvailability.localInstalledReady(
-                                dataDir,
-                                selectedGeofabrikPath,
-                            ) ||
-                                PackRegionAvailability.localBakeReady(
-                                    dataDir,
-                                    selectedGeofabrikPath,
-                                ) ||
-                                (
-                                    packDirForDelete != null &&
-                                        PackRegionAvailability.localBakeReady(
-                                            packDirForDelete,
-                                            selectedGeofabrikPath,
-                                        )
-                                ) ||
-                                DownloadedRegionDelete.hasAnyInstall(
-                                    dataDir,
-                                    selectedGeofabrikPath,
-                                    listOfNotNull(packDirForDelete),
-                                ) ||
-                                PlaceIndexReady.isReady(dataDir, selectedGeofabrikPath)
                         Button(
                             onClick = {
                                 val path = selectedGeofabrikPath.trim().trim('/')
@@ -7818,17 +7807,25 @@ private fun NaviMapScreen() {
                                     status = "Select a Geofabrik path first."
                                     return@Button
                                 }
-                                val block =
-                                    DownloadedRegionDelete.blockReason(
-                                        path,
-                                        dataDir,
-                                        listOfNotNull(packDirForDelete),
-                                    )
-                                if (block != null) {
-                                    status = block
-                                    return@Button
+                                scope.launch {
+                                    val block =
+                                        withContext(Dispatchers.IO) {
+                                            val packDirForDelete =
+                                                runCatching {
+                                                    LongTripPackStorage.packDownloadDir(context)
+                                                }.getOrNull()
+                                            DownloadedRegionDelete.blockReason(
+                                                path,
+                                                dataDir,
+                                                listOfNotNull(packDirForDelete),
+                                            )
+                                        }
+                                    if (block != null) {
+                                        status = block
+                                        return@launch
+                                    }
+                                    confirmDeleteRegion = true
                                 }
-                                confirmDeleteRegion = true
                             },
                             enabled = selectedLocalReady,
                             modifier =

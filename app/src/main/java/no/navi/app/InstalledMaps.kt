@@ -59,6 +59,7 @@ object InstalledMaps {
         val generatedAtMs: Long,
         val regions: Map<String, Region>,
         val missingPlaceIndex: List<MissingIndexBuild>,
+        val partialFetchIds: Set<String> = emptySet(),
     )
 
     data class MissingIndexBuild(
@@ -101,6 +102,24 @@ object InstalledMaps {
         return r.tilesLoadFor(profileKey)
     }
 
+    /**
+     * Tools/delete enablement from the last [refresh] snapshot. Does not
+     * [listFiles] — Compose must not call [DownloadedRegionDelete.hasAnyInstall].
+     */
+    fun hasInstallForUi(
+        geofabrikPath: String,
+        dataDir: File,
+    ): Boolean {
+        val n = PackRegionAvailability.normalize(geofabrikPath)
+        if (n.isEmpty()) return false
+        if (!snapshotIsFor(dataDir)) return false
+        if (region(n, dataDir) != null) return true
+        val snap = snapshot.get() ?: return false
+        return snap.partialFetchIds.any {
+            PackRegionAvailability.regionIdsMatchForCatalog(it, n)
+        }
+    }
+
     fun refresh(context: Context) {
         val internal = NaviAppData.resolve(context)
         val extras = mutableListOf<Pair<String, File>>()
@@ -120,11 +139,12 @@ object InstalledMaps {
         val byId = linkedMapOf<String, Region>()
         val scanned = LinkedHashSet<String>()
         val probes = HashMap<String, PlaceIndexIntact.Probe>()
+        val partial = LinkedHashSet<String>()
         fun consider(volumeId: String, dir: File) {
             if (!dir.isDirectory) return
             val key = dir.absolutePath
             if (!scanned.add(key)) return
-            scanDir(internalDataDir, volumeId, dir, byId, probes)
+            scanDir(internalDataDir, volumeId, dir, byId, probes, partial)
         }
         consider(NaviStorageVolumes.INTERNAL_ID, internalDataDir)
         for ((id, dir) in packRoots) {
@@ -157,6 +177,7 @@ object InstalledMaps {
                 generatedAtMs = System.currentTimeMillis(),
                 regions = byId,
                 missingPlaceIndex = missing,
+                partialFetchIds = partial,
             ),
         )
         snapshotRoot.set(internalDataDir.absolutePath)
@@ -198,15 +219,24 @@ object InstalledMaps {
         dir: File,
         into: MutableMap<String, Region>,
         probes: MutableMap<String, PlaceIndexIntact.Probe>,
+        partial: MutableSet<String>,
     ) {
         val files = dir.listFiles() ?: return
+        for (f in files) {
+            val name = f.name
+            if (!name.startsWith(".pack-fetch-")) continue
+            val stem = name.removePrefix(".pack-fetch-").substringBefore('.')
+            if (stem.isEmpty()) continue
+            val rid = regionIdForStem(dir, stem) ?: continue
+            partial.add(PackRegionAvailability.normalize(rid))
+        }
         val manifests = files.filter { it.isFile && it.name.endsWith(".navi-manifest.json") }
         for (man in manifests) {
             val stem = man.name.removeSuffix(".navi-manifest.json")
             val regionId = regionIdForStem(dir, stem) ?: continue
             val nid = PackRegionAvailability.normalize(regionId)
             val parsed = parseManifest(man)
-            val profiles = loadableProfiles(dir, stem)
+            val profiles = loadableProfilesFromNames(files, stem)
             val pbf = File(dir, "$stem.osm.pbf")
             val pbfKind =
                 when {
@@ -223,7 +253,7 @@ object InstalledMaps {
             val tilesFile = File(indexDataDir, "pmtiles/$pmKey.pmtiles")
             val rejectedFile = File(indexDataDir, "pmtiles/$pmKey.pmtiles.rejected")
             val probe = probes.getOrPut(nid) { PlaceIndexIntact.probe(indexDataDir, nid) }
-            val q = indexDataDir.listFiles()?.any { it.name.startsWith("place_index.db.quarantine") } == true
+            val q = File(indexDataDir, "place_index.db.quarantine").isFile
             val indexState =
                 when {
                     probe.intact && probe.legacy -> PlaceIndexState.LEGACY_INTACT
@@ -309,23 +339,19 @@ object InstalledMaps {
         }.getOrDefault(0)
     }
 
-    private fun loadableProfiles(
-        dir: File,
+    private fun loadableProfilesFromNames(
+        files: Array<File>,
         stem: String,
     ): List<String> {
         val keys = listOf("car", "foot", "truck", "bicycle")
-        val out = mutableListOf<String>()
-        for (key in keys) {
-            val mono = File(dir, "$stem.navi-graph-$key.rkyv")
-            val tiled =
-                dir.listFiles()?.any { f ->
-                    f.isFile &&
-                        f.name.startsWith("$stem.navi-graph-$key.") &&
-                        f.name.endsWith(".rkyv")
-                } == true
-            if (mono.isFile || tiled) out.add(key)
+        val names = files.map { it.name }
+        return keys.filter { key ->
+            val prefix = "$stem.navi-graph-$key."
+            names.any { n ->
+                n == "$stem.navi-graph-$key.rkyv" ||
+                    (n.startsWith(prefix) && n.endsWith(".rkyv"))
+            }
         }
-        return out
     }
 
     internal fun regionIdForStem(
