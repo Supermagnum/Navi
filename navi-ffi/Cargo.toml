@@ -94,3 +94,7 @@ path = "src/bin/region_to_region_perf_matrix.rs"
 [[bin]]
 name = "navi-ferry-probe"
 path = "src/bin/navi_ferry_probe.rs"
+
+[[bin]]
+name = "navi-dest-hop-probe"
+path = "src/bin/navi_dest_hop_probe.rs"
