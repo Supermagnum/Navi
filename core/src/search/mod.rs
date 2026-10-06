@@ -6,7 +6,7 @@ use std::sync::{Mutex, MutexGuard, TryLockError};
 use std::time::Duration;
 
 use osmpbf::Element;
-use rusqlite::{params, Connection, Result as SqlResult};
+use rusqlite::{params, Connection, OptionalExtension, Result as SqlResult};
 
 use crate::download::phase_timing;
 use crate::storage::Storage;
@@ -837,8 +837,11 @@ impl NameIndex {
                 continue;
             }
             let ctx = resolver.resolve(*osm_id, name, kind, *lat, *lon);
-            // osm_id may already exist from another region at a landsdel border —
-            // replace and refresh FTS for that id.
+            // Keep the first region that wrote this osm_id. Later regions must
+            // not steal the row (hamburg-as-sweden / leaf vs country clash).
+            if !Self::may_write_osm_id(&tx, *osm_id, &region_id)? {
+                continue;
+            }
             let _ = tx.execute(
                 "INSERT INTO name_fts(name_fts, rowid, search_doc, kind) VALUES('delete', ?1, NULL, NULL)",
                 params![osm_id],
@@ -1006,6 +1009,32 @@ impl NameIndex {
         )
     }
 
+    fn may_write_osm_id(
+        tx: &rusqlite::Transaction<'_>,
+        osm_id: i64,
+        region_id: &str,
+    ) -> SqlResult<bool> {
+        Self::may_write_osm_id_conn(tx, osm_id, region_id)
+    }
+
+    fn may_write_osm_id_conn(
+        conn: &Connection,
+        osm_id: i64,
+        region_id: &str,
+    ) -> SqlResult<bool> {
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT region_id FROM name_entries WHERE osm_id = ?1",
+                params![osm_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        match existing {
+            None => Ok(true),
+            Some(owner) => Ok(owner == region_id),
+        }
+    }
+
     pub fn upsert_entry_with_region(
         &mut self,
         osm_id: i64,
@@ -1017,6 +1046,9 @@ impl NameIndex {
         municipality: String,
         region_id: String,
     ) -> SqlResult<()> {
+        if !Self::may_write_osm_id_conn(&self.conn, osm_id, &region_id)? {
+            return Ok(());
+        }
         // Tests / incremental upserts: search_doc mirrors display name.
         self.conn.execute(
             "INSERT OR REPLACE INTO name_entries(osm_id, name, kind, lat, lon, sub_area, municipality, region_id, search_doc)
@@ -1576,6 +1608,82 @@ mod tests {
         assert!(!ae.is_empty(), "æ/Æ query empty");
         let bj = idx.search("Bjørn", 8).unwrap();
         assert!(bj.iter().any(|h| h.name.contains('ø')), "got {bj:?}");
+    }
+
+    #[test]
+    fn keep_first_region_owner_on_osm_id_clash() {
+        let mut idx = NameIndex::open_in_memory().expect("mem index");
+        idx.upsert_entry_with_region(
+            42,
+            "Border".into(),
+            "place:hamlet".into(),
+            55.0,
+            12.0,
+            String::new(),
+            String::new(),
+            "europe/denmark".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            42,
+            "Stolen".into(),
+            "place:hamlet".into(),
+            53.5,
+            10.0,
+            String::new(),
+            String::new(),
+            "europe/germany/hamburg".into(),
+        )
+        .unwrap();
+        let owner: String = idx
+            .conn
+            .query_row(
+                "SELECT region_id, name FROM name_entries WHERE osm_id = 42",
+                [],
+                |row| {
+                    let rid: String = row.get(0)?;
+                    let name: String = row.get(1)?;
+                    Ok(format!("{rid}|{name}"))
+                },
+            )
+            .unwrap();
+        assert_eq!(owner, "europe/denmark|Border");
+    }
+
+    #[test]
+    fn same_region_osm_id_replace_allowed() {
+        let mut idx = NameIndex::open_in_memory().expect("mem index");
+        idx.upsert_entry_with_region(
+            7,
+            "Old".into(),
+            "place:hamlet".into(),
+            61.0,
+            7.0,
+            String::new(),
+            String::new(),
+            "europe/norway/vestlandet".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            7,
+            "New".into(),
+            "place:village".into(),
+            61.1,
+            7.1,
+            String::new(),
+            String::new(),
+            "europe/norway/vestlandet".into(),
+        )
+        .unwrap();
+        let name: String = idx
+            .conn
+            .query_row(
+                "SELECT name FROM name_entries WHERE osm_id = 7",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(name, "New");
     }
 
     /// Document SQLite FTS5 unicode61 folding: å/ü fold to ASCII bases; æ/ø do not.
