@@ -31,6 +31,8 @@ use driver_break_core::routing::safety::{
     check_overnight_candidate, DangerBarrierIndex, OvernightProximityIndex,
 };
 use driver_break_core::routing::workers::WorkerPoolPlan;
+use driver_break_core::export::parse_route_polyline;
+use driver_break_core::routing::path_repair::{encode_lat_lon_polyline, repair_joint_cuts};
 use driver_break_core::routing::{
     build_maneuvers, build_maneuvers_from_edges_with_vias, build_sim_samples,
     build_sim_samples_from_edges, build_sim_samples_from_lat_lon, maneuvers_to_json,
@@ -2435,9 +2437,12 @@ fn plan_car_route_chunked_legs(
     let mut priority_share_acc = 0.0;
     let mut priority_share_w = 0.0;
     let mut hops_sidecar: Vec<serde_json::Value> = Vec::new();
+    // Densify joints are hop terminals: the next hop starts at the previous hop's
+    // last geometry vertex, not a fresh 35 km snap onto the densify coordinate.
+    let mut hop_start = hops[0];
 
     for (i, w) in hops.windows(2).enumerate() {
-        let (slat, slon) = w[0];
+        let (slat, slon) = hop_start;
         let (elat, elon) = w[1];
         report.push_str(&format!(
             "chunk_leg{}={:.5},{:.5} -> {:.5},{:.5}\n",
@@ -2452,7 +2457,7 @@ fn plan_car_route_chunked_legs(
             Some((hops.len() - 1) as u64),
             &format!("Planning long trip leg {}/{}…", i + 1, hops.len() - 1),
         );
-        let relax_start = i > 0;
+        let relax_start = false;
         let relax_end = i + 2 < hops.len();
         // Drop the previous hop's owned corridor before materializing the next
         // so densify never stacks two full hop graphs (tablet ≤933 MiB).
@@ -2592,6 +2597,11 @@ fn plan_car_route_chunked_legs(
                 polyline.push_str(rest);
             }
         }
+        if let Some(&end_pt) = parse_route_polyline(&leg.route_polyline).last() {
+            hop_start = end_pt;
+        } else {
+            hop_start = w[1];
+        }
         append_json_array_elems(&mut sim_samples, &mut sim_first, &leg.sim_samples_json);
         let mans: Vec<RouteManeuver> =
             serde_json::from_str(&leg.maneuvers_json).unwrap_or_default();
@@ -2611,6 +2621,18 @@ fn plan_car_route_chunked_legs(
             ..
         } = leg;
         drop((leftover_days, leftover_segs, leftover_adv));
+    }
+    if !polyline.is_empty() {
+        let pts = parse_route_polyline(&polyline);
+        let repaired = repair_joint_cuts(&pts);
+        if repaired.len() != pts.len() {
+            polyline = encode_lat_lon_polyline(&repaired);
+            report.push_str(&format!(
+                "joint_cut_repair pts_before={} pts_after={}\n",
+                pts.len(),
+                repaired.len()
+            ));
+        }
     }
     sim_samples.push(']');
     let maneuvers = maneuvers_to_json(&stitch_chunk_leg_maneuvers(&leg_maneuvers));

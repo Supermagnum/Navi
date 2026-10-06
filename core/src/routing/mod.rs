@@ -14,6 +14,7 @@ pub mod indexed;
 pub mod live_hazard;
 pub mod osm_update;
 pub mod pbf_extract;
+pub mod path_repair;
 pub mod plan_bbox;
 pub mod plan_file_log;
 pub mod plan_perf;
