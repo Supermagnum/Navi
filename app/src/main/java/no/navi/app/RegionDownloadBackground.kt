@@ -748,12 +748,17 @@ object RegionDownloadBackground {
             phase =
                 when {
                     !basemapReady -> Phase.BASEMAP
-                    !indexReady -> Phase.PLACE_INDEX
+                    placeIndexBuildIncomplete(dataDir, path) -> Phase.PLACE_INDEX
                     else -> return null
                 }
         }
         if (phase == Phase.BASEMAP && basemapReady) {
-            phase = if (!indexReady) Phase.PLACE_INDEX else return null
+            phase =
+                if (placeIndexBuildIncomplete(dataDir, path)) {
+                    Phase.PLACE_INDEX
+                } else {
+                    return null
+                }
         }
         if (phase == Phase.PLACE_INDEX && indexReady) {
             return null
@@ -903,6 +908,7 @@ object RegionDownloadBackground {
         regionId: String,
     ): Boolean {
         if (phase == Phase.BASEMAP) return false
+        if (PlaceIndexIntact.isIntact(dataDir, regionId)) return false
         return !(phase == Phase.PLACE_INDEX && placeIndexBuildIncomplete(dataDir, regionId))
     }
 

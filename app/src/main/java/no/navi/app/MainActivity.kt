@@ -2724,19 +2724,21 @@ private fun NaviMapScreen() {
         // synchronously before its IO coroutine, so this check cannot race a
         // just-started resume (PlaceIndexBackground + RegionDownload both
         // calling ensurePlaceIndex on the same DB).
-        // Never auto-index from fixtures / empty installs — see OfflineIndexGate.
+        // Standalone auto-index only resumes an in-progress build. Missing
+        // empty regions (Denmark, SH, Vestlandet, …) are listed by InstalledMaps
+        // and must not start here — that is how europe/denmark was indexed at 06:50.
         if (OfflineIndexGate.hasMaterialToIndex(dataDir) &&
             !RegionDownloadBackground.isRunning()
         ) {
-            val pbf =
-                OfflineIndexGate.resolveAutoIndexPbf(dataDir, selectedGeofabrikPath)
-            if (pbf != null && OfflineIndexGate.isIndexablePbf(pbf)) {
-                val rid = selectedGeofabrikPath.trim().trim('/')
-                if (rid.isEmpty() || !PlaceIndexReady.isReady(dataDir, rid)) {
+            val rid = selectedGeofabrikPath.trim().trim('/')
+            if (rid.isNotEmpty() && PlaceIndexAutoBuild.mayStart(dataDir, rid)) {
+                val pbf =
+                    OfflineIndexGate.resolveAutoIndexPbf(dataDir, rid)
+                if (pbf != null && OfflineIndexGate.isIndexablePbf(pbf)) {
                     PlaceIndexBackground.ensureStarted(
                         pbf,
                         placeIndexDbForWrite(),
-                        rid.ifBlank { null },
+                        rid,
                     )
                 }
             }
@@ -2802,23 +2804,15 @@ private fun NaviMapScreen() {
                             else -> ""
                         }
                     if (!regionDownloading && !PlaceIndexBackground.isRunning()) {
-                        // Stamp-only heal — do not open place_index.db here (SQLite
-                        // lock fights Use GPS / nearbyPlaces and ANRs the UI).
-                        // Only real local PBFs (not fixtures / stubs).
-                        val missing =
-                            RegionCoverage
-                                .downloadedGeofabrikPaths(dataDir)
-                                .firstOrNull { path ->
-                                    !PlaceIndexReady.isReady(dataDir, path)
-                                }
-                        if (missing != null) {
-                            val missingPbf =
-                                OfflineIndexGate.resolveAutoIndexPbf(dataDir, missing)
-                            if (missingPbf != null && OfflineIndexGate.isIndexablePbf(missingPbf)) {
+                        val rid = regionPath.trim().trim('/')
+                        if (rid.isNotEmpty() && PlaceIndexAutoBuild.mayStart(dataDir, rid)) {
+                            val resumePbf =
+                                OfflineIndexGate.resolveAutoIndexPbf(dataDir, rid)
+                            if (resumePbf != null && OfflineIndexGate.isIndexablePbf(resumePbf)) {
                                 PlaceIndexBackground.ensureStarted(
-                                    missingPbf,
+                                    resumePbf,
                                     placeIndexDbForWrite(),
-                                    missing,
+                                    rid,
                                 )
                             }
                         }
@@ -8120,6 +8114,12 @@ private fun NaviMapScreen() {
                                             val pathForReady =
                                                 selectedGeofabrikPath.trim().trim('/').ifBlank { null }
                                             withContext(Dispatchers.IO) {
+                                                if (pathForReady != null &&
+                                                    PlaceIndexIntact.isIntact(dataDir, pathForReady)
+                                                ) {
+                                                    PlaceIndexReady.markReady(dataDir, pathForReady)
+                                                    return@withContext
+                                                }
                                                 val report =
                                                     ensurePlaceIndex(
                                                         pbf.absolutePath,

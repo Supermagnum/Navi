@@ -101,9 +101,18 @@ object PlaceIndexBackground {
             return
         }
         val dataDir = indexDb.parentFile
-        if (dataDir != null && !rid.isNullOrBlank() && PlaceIndexIntact.isIntact(dataDir, rid)) {
-            Log.i(TAG, "place index intact for $rid; skip")
-            return
+        if (dataDir != null && !rid.isNullOrBlank()) {
+            if (PlaceIndexIntact.isIntact(dataDir, rid)) {
+                Log.i(TAG, "place index intact for $rid; skip")
+                return
+            }
+            if (!PlaceIndexAutoBuild.mayStart(dataDir, rid)) {
+                Log.i(
+                    TAG,
+                    "place-index missing for $rid; not auto-building (list via InstalledMaps)",
+                )
+                return
+            }
         }
         if (!claimWorker()) {
             Log.i(TAG, "already running; skip")

@@ -44,6 +44,23 @@ class InstalledMapsSnapshotTest {
     }
 
     @Test
+    fun auto_build_does_not_start_for_missing_empty_region() {
+        val internal = tmp.newFolder("idx")
+        assertFalse(PlaceIndexIntact.isIntact(internal, "europe/denmark"))
+        assertFalse(
+            "empty missing must be listed, not auto-built (Denmark 06:50 path)",
+            PlaceIndexAutoBuild.mayStart(internal, "europe/denmark"),
+        )
+        assertFalse(PlaceIndexAutoBuild.mayStart(internal, "europe/germany/schleswig-holstein"))
+        assertFalse(PlaceIndexAutoBuild.mayStart(internal, "europe/norway/vestlandet"))
+        assertFalse(PlaceIndexAutoBuild.mayStart(internal, "europe/norway/sorlandet"))
+        assertFalse(PlaceIndexAutoBuild.mayStart(internal, "europe/sweden"))
+        assertFalse(
+            PlaceIndexAutoBuild.mayStart(internal, "europe/germany/mecklenburg-vorpommern"),
+        )
+    }
+
+    @Test
     fun resolvePlanPbf_prefers_origin_leaf_not_smallest_dest() {
         val dataDir = tmp.newFolder("files")
         val packDir = tmp.newFolder("packs")
