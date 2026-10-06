@@ -429,4 +429,106 @@ Host `navi-ferry-probe` on pulled SH+DK **car** clip tiles + car/truck overlay s
 ## FU3 return
 
 - Branch: `wip/fu3-plan-diag-index-snapshot`
-- Commit: **not made**. Do not push.
+- Local commits: see Follow-up 4. Do not push.
+
+---
+
+# Follow-up 4 (report from existing GeoJSON; densify design only)
+
+Sources: `geojson-routes/bevensen-vagaa-dalsoren-fu3.geojson`, `…-fu3-hops.json`, `…-fu3-polyline.txt`, device `files/routing-plan.log` (5735 bytes, no `hop_result=success`), external `long-trip-ui-report/route-polyline.txt` + `route-result.json`. **No new plan.** ORS / bad-luster reference **1440.985 km**.
+
+Canonical artifacts after Step 2a (not used by the FU3 run): `{filesDir}/long-trip-ui-report/` (`routing-plan.log`, `route-polyline.txt`, `hops.json`, `route-result.json`), mirrored to `getExternalFilesDir()/long-trip-ui-report/` for `adb pull`.
+
+## a) Spike / hair / loop table (full polyline)
+
+Polyline **1616.62 km**, app **1618.42 km**. Gap to ORS **177.44 km**. Sliding windows with path/chord ≥ 2.5 overlap; **non-overlapping extra** from the worst windows is **~91 km**. Hairs are joint out-and-backs (~0.3 km). Loops are the same island/coast/Otta circuits as the large windows (do not add their path length on top of the window extra).
+
+| kind | km | location | roads (campaign) | path km | chord km | extra km | densify hop |
+|---|---|---|---|---|---|---|---|
+| spike+loop | 232 | Fehmarn island `54.443,11.181` | B 207 / local Fehmarn, not the 18.9 km belt ferry | 20.0 (loop 21.5, close 35 m) | 1.01 | **19.0** | hop 3 SH `54.210,11.025 → 54.400,11.364` |
+| spike | 360 | Præstø `55.12,12.02` | Næstvedvej (265) / town vs Farø E47 | 8.2 | 1.31 | **6.9** | hop 4 SH+DK `54.400 → 55.113` |
+| spike+loop | 752–764 | Halland densify `57.57,12.25` | E6 / local Halland | 20.0 | 6.00 | **14.0** | hop 7 Halland `56.935 → 57.595` |
+| spike+loop | 861 | VG/Halland coast `58.231,11.917` | E6 approach / Uddevalla coast | 20.3 | 5.94 | **14.4** | hop 8 Halland+VG `57.595 → 58.255` |
+| spike+loop | 935 | Uddevalla `58.421,11.291` | local VG coast | 20.1 (loop 13.0, close 8.5 m) | 6.11 | **14.0** | hop 9 VG `58.255 → 58.444` |
+| hair | 669.5 | Halland joint `56.936,12.497` | densify vertex out-and-back | 0.18 | ~0 | **0.18** | hop 6/7 Skåne→Halland |
+| hair | 1286.2 | Ostlandet joint `60.795,11.068` | densify vertex out-and-back | 0.11 | ~0 | **0.11** | hop 12/13 |
+| spike+loop | 1450–1461 | Otta `61.78–61.79,9.42` | E6 / Ottadalsvegen junction | 20.0 (loop 9.1, close 99 m) | 7.72 | **12.3** | hop 14 ostlandet `61.115 → 61.772` |
+| spike | 1158 | Oslo densify `59.90,10.76` | local / E6 Oslo | 3.13 | 0.85 | **2.3** | hop 11 |
+| spike | 1587–1596 | Sognefjell `61.50,7.7–7.8` | Rv 55 wiggle | 3.0+3.0 | 0.91+1.08 | **4.0** | hop 18 ostlandet+vestlandet extra |
+| spike | 670 | Halland hair neighbourhood | E6 | 3.24 | 0.79 | (covered by hair) | hop 6 |
+
+**~91 km** of the **177 km** ORS gap is geometric extra (loops/hairs/path≫chord), dominated by Fehmarn island, Zealand Præstø, Halland/VG coast, and Otta.
+
+**Remainder ~86 km** is not a single missed road:
+
+- **Ferry vs land:** Navi crosses the belt on a **13.919 km** unflagged water edge (`54.50709,11.23183 → 54.62456,11.30643` at km 262, hop 4). Overlay ferry is **~18.9 km**. That is not +5 km of extra vs ORS; ORS is the ferry. Island loop + wrong water edge together vs a clean A1/ferry/E47 line is a large share of the German–Danish gap.
+- **Ottadal vs ORS Sjoa:** Otta→Vågå path **29.6 km** vs chord **19.4 km** (Otta loop). Vågå→Lom **29.8 vs 28.3 km** (almost the Rv 15 chord). Staying on Ottadalsvegen instead of a Sjoa/E6-south shortcut is a legal route-choice delta, not a spike table leftover of the same 91 km.
+- **Graph / costing:** DATEX 0 this run; motorway share varies by hop (leg 1 `motorway_share_pct=22.94`); truck/car alias tiles; snap up to **3514 m** on Fehmarn densify.
+- **Polyline vs app:** 1.8 km (measurement vs edge sum).
+
+## b) Otta → Vågå → Lom / Rv 15
+
+Yes: from Otta (`61.775,9.415`, km 1464) through Vågå via (`61.869,9.104`, km 1494) to Lom (`61.838,8.569`, km 1524) the polyline **never drops south of 61.77°** (Sjoa is ~61.70°). Vågå→Lom tracks Ottadalsvegen.
+
+That is **not** an accident of the graph. HEAD densify **hard-codes** Otta `(61.772, 9.420)`, the Vågå via, and Lom `(61.838, 8.569)` in `norway_ottadal_westbound_anchors` (`plan_bbox.rs`) so the hop does not even-split south of Ottadalsvegen. Without those anchors the engine comment states A* leaves Rv 15. The Otta **loop** (9 km) is densify-joint geometry, not a Sjoa excursion.
+
+## c) Ferry count: `is_ferry` on the belt vs `route_ferry_legs=0`
+
+**Geometry:** one polyline edge **13.919 km** on the water (Puttgarden 268 m / Rødby 281 m in FU3 D). Overlay/pack probe (FU3 E): **~18.9 km** `is_ferry=true` crossings in **both** SH and DK **pack tiles and overlay sidecars**.
+
+**Where the count is lost:** not per-chunk summing (each hop report already has `route_ferry_legs=0`; the chunked planner only adds those tokens). Not a missing SH/DK extra on hop 4 (`primary=schleswig-holstein extra=denmark`, `directed_ok=true`). The **chosen path used an unflagged duplicate** (~13.9 km) instead of the flagged ~18.9 km ferry. `path_ferry_legs` / `path_uses_ferries` only look at `edge.is_ferry` (`builder.rs`). Enumerations therefore stay 0.
+
+**13.9 vs 18.9:** different edges (shorter water chord vs named ferry). Overlay ferry was loaded (`graph_ferry_edges` non-zero on other hops; belt overlay listed in Part E) but A* did not ride it.
+
+**ETA / boarding:** ferry duration and boarding cost apply only to `is_ferry` edges. This crossing was costed as ordinary length, **not** as a ferry.
+
+## d) HUD “4 days” vs 19.82 h
+
+`days_json` (device `route-result.json`):
+
+| day | distance_km | driving_hours | overnight |
+|---|---|---|---|
+| 1 | 478.4 | **6.0** | Quality Hotel View |
+| 2 | 478.4 | **6.0** | Hotel Caprifol |
+| 3 | 478.4 | **6.0** | Vertshuset Sinclair |
+| 4 | 183.2 | **2.30** | (final) |
+
+Driving time **20.3 h** (same order as the earlier finished plan **19.82 h** / 1187 min). HUD “4 days” is **car multi-day lodging splits** (`MotorDailyBudget` ~6 h/day), not 96 h of driving. `rest_hours=0` on those overnight rows (lodging, not a 45 min break). Soft-rest POIs are listed separately (`rest_place_count` enum 0 with named Autohof / rest / hotels in `rest_place_names`). **No ferry time** in the ETA (c).
+
+## e) Dest-hop and plan wall-clock (no new plan)
+
+Hop log has **no** `pack_load_ms` / `search_ms` / `hop_result=success` (that is the PASS skip fixed in Step 2a). `route-result.json` truncates `report` to 2000 chars (leg 1 only): `pack_load_ms=15376`, `snap_ms=2261`, `search_ms=271`, `expansions=84278`, `nodes=250046`, `pad_attempts=[0.35]`, `edge_clip=CorridorBand`, `tile_budget=14`.
+
+Dest hop (sidecar): `61.617,8.044 → 61.443,7.461`, **9961 nodes**, `pack_hit=true`, `weak_ok/directed_ok=true`, primary ostlandet, extra vestlandet, snaps 32 m / 17 m. FU2 logcat on the **same 9961-node clip** (disconnected retries) showed `pack_load_ms=1391–1799` **repeated** (~6 loads). FU3 hop log has **one** dest-hop endpoints line (no pad-retry storm). A* on ~10k nodes should be **well under 1 s**; dest-hop wall-clock is **pack load + extra-stem merge + clip (~1.5–2 s) + snap + sub-second search**, not a 40 min search. The 40 min FU2 fail was expansions on a disconnected clip, not 10k A*.
+
+Whole FU3 PASS: hop sequence 18 hops, one endpoints line each; no `hop_fail`. Phase mix from surviving leg-1 + FU2 analogue: **pack load dominates** (2–8 s typical, 15 s on the first 250k-node hop); **search is small** when connected; **no evidence of pad widening** on the successful dest hop.
+
+## f) “Destination pack never becomes primary”
+
+Still **true** on the successful dest hop: primary=`ostlandet-latest`, extra=`vestlandet-latest` only. It **did not** prevent PASS: same weak component, `directed_ok=true`, path found.
+
+FU2 `corridor_disconnected` after Vågå was **not** “vestlandet never primary” as a hard invariant. It was a **too-thin ostlandet clip** (9961 nodes, extra missing or unused, 2.9e6 expansions) plus a **double `am start`**. FU3 with vestlandet extra on that hop connected the component. Preferring dest as primary remains a robustness improvement (cleaner tile band), not the explanation of FU2 vs FU3.
+
+## Step 4 — densify recommendation (do not implement)
+
+Keep **(a) joints as cuts** and **(c) path≫chord repair**. Do **not** add more place-specific anchors.
+
+| spike / hair / loop | (a) cut at joint | (c) path≫chord repair |
+|---|---|---|
+| Fehmarn island 19× / 21.5 km loop | Cut **after** Fehmarn east / before water so hop 3 cannot circuit the island | **Primary:** replace island tour with chord along B 207 / ferry approach |
+| Præstø 6.9 km | Cut on Farø / E47 (HEAD already wants this; this polyline still parked at 55.11) | Repair Næstvedvej loop if a joint still lands in town |
+| Halland hair 56.936 | **Primary:** treat densify vertex as a cut, do not reverse | Tiny |
+| Halland 14 km E6 window | Cut at 57.595 | Repair local E6 service/loop |
+| VG coast 14.4 + Uddevalla 14.0 / 13 km loop | Cut at 58.255 / 58.444 | **Primary:** coast loop vs E6 chord |
+| Ostlandet hair 60.795 | **Primary:** cut | Tiny |
+| Otta 12.3 / 9.1 km loop | **Primary:** cut at Otta so hop 14 cannot loop the E6/Rv15 junction | Repair leftover out-and-back |
+| Oslo 2.3 km | Cut at 59.91 | Optional |
+| Sognefjell 4 km | Leave Rv 55; optional (c) on 3 km windows | Optional |
+
+### Implementation plan (wait for approval)
+
+1. **Cut semantics:** a densify joint is a hop terminal, not a vertex the path may reverse through. Test: FU3 hairs at `56.93600,12.49705` and `60.79531,11.06810` absent on this polyline; same for `elsa-sjuvass.geojson` / `breneriroa-aga.geojson` joint-like 180° turns if present.
+2. **Fehmarn (c):** if path/chord ≥ 2.5 on a 20 km window and the window sits on Fehmarn AABB, replace with the coarse highway/ferry skeleton. Test: FU3 window at km 232 ratio drops below 2.5; `bad-luster.json` ferry geometry unchanged.
+3. **Coast/Otta (c):** generic repair when path ≥ 2.5 × chord on 8–20 km windows after a connected path exists. Test: Uddevalla km 935 and Otta km 1450 extras fall; `roa-florø.json` must not lose the fjord ferry if flagged `is_ferry`.
+4. **No new named anchors.** Test: `densify_bevensen_vagaa_*` still pass; hop list must not gain Præstø-class points.
+5. **Regression pack:** rebuild polylines only after approval; compare extra-km vs this FU3 table and vs ORS 1440.985 (gap should fall by ~the repaired extras, not by forcing Sjoa).
