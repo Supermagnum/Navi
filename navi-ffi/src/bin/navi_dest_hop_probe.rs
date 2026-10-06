@@ -569,11 +569,14 @@ fn run_ablate_matrix(
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| "none".into())
     );
-    for (i, c) in datex.iter().enumerate() {
+    for (i, c) in datex.iter().take(5).enumerate() {
         println!(
             "  datex[{i}] {:?} id={} lat={:.5} lon={:.5} r_m={:.0} mult={}",
             c.impact, c.situation_id, c.lat, c.lon, c.radius_m, c.penalize_mult
         );
+    }
+    if datex.len() > 5 {
+        println!("  ... {} more", datex.len() - 5);
     }
 
     let g_car = match load_corridor_graph(dir, start, dest, RoutingProfile::Car) {
@@ -683,34 +686,24 @@ fn run_ablate_matrix(
     o6.avoid_ferries = false;
     steps.push(("6_app_like_no_avoids", &g_truck, o6.clone()));
 
-    let (h, w, axle, len, wt, dx) = count_option_filters(&g_truck, &o5);
+    let mut o5_count = o5.clone();
+    let t_count = Instant::now();
+    g_truck.bind_datex_overlay(&mut o5_count);
+    let count_bind_ms = t_count.elapsed().as_millis();
+    let dx = o5_count
+        .datex_edge_block
+        .as_ref()
+        .map(|b| b.iter().filter(|x| **x != 0).count())
+        .unwrap_or(0);
+    let (h, w, axle, len, wt, _) = {
+        let mut c = o5.clone();
+        c.datex_impacts.clear();
+        count_option_filters(&g_truck, &c)
+    };
     println!(
-        "filter_edge_counts height={h} width={w} axle={axle} length={len} weight={wt} datex_block={dx}"
+        "filter_edge_counts height={h} width={w} axle={axle} length={len} weight={wt} \
+         datex_block={dx} datex_count_bind_ms={count_bind_ms}"
     );
-    if dx > 0 {
-        for e in &g_truck.edges {
-            let hit = o5.datex_impacts.iter().any(|c| {
-                c.impact == driver_break_core::datex::DatexImpact::Block
-                    && driver_break_core::routing::graph::edge_distance_m(e, c.lat, c.lon)
-                        <= c.radius_m
-            });
-            if !hit {
-                continue;
-            }
-            println!(
-                "  datex_block_edge {}->{} hwy={:?} ref={:?} name={:?} ({:.5},{:.5})-({:.5},{:.5})",
-                e.source.0,
-                e.target.0,
-                e.highway,
-                e.road_ref,
-                e.name,
-                e.start_lat,
-                e.start_lon,
-                e.end_lat,
-                e.end_lon
-            );
-        }
-    }
 
     for (name, g, opts) in &steps {
         run_ablate_one(&format!("{hop_name}/{name}"), g, start, dest, opts);

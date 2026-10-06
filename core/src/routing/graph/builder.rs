@@ -573,6 +573,9 @@ impl RouteGraph {
 
     /// One pass over hop edges: DATEX Block/Penalize become per-edge markers.
     /// Snap and A* only test those markers afterwards.
+    ///
+    /// Impacts are put on a lat/lon grid so each edge is tested only against
+    /// nearby records, not the full list (O(E × D) was 25–32 s on hop 13).
     pub fn bind_datex_overlay(&self, options: &mut RouteOptions) {
         if options.datex_impacts.is_empty() {
             options.datex_edge_block = None;
@@ -582,19 +585,65 @@ impl RouteGraph {
         let n = self.edges.len();
         let mut block = vec![0u8; n];
         let mut penalize = vec![1.0f64; n];
+        let mut max_radius_m = 250.0_f64;
+        for c in &options.datex_impacts {
+            if c.impact == crate::datex::DatexImpact::Ignore {
+                continue;
+            }
+            max_radius_m = max_radius_m.max(c.radius_m);
+        }
+        // ~1 km cells; pad queries by the largest impact radius.
+        const CELL_DEG: f64 = 0.01;
+        let mut grid: std::collections::HashMap<(i32, i32), Vec<usize>> =
+            std::collections::HashMap::new();
+        for (j, c) in options.datex_impacts.iter().enumerate() {
+            if c.impact == crate::datex::DatexImpact::Ignore {
+                continue;
+            }
+            grid.entry(datex_cell(c.lat, c.lon, CELL_DEG))
+                .or_default()
+                .push(j);
+        }
+        let mut seen = vec![0u32; options.datex_impacts.len()];
+        let mut stamp = 1u32;
         for (i, e) in self.edges.iter().enumerate() {
-            for c in &options.datex_impacts {
-                if !edge_hit_by_datex(e, c) {
-                    continue;
-                }
-                match c.impact {
-                    crate::datex::DatexImpact::Block => block[i] = 1,
-                    crate::datex::DatexImpact::Penalize => {
-                        penalize[i] = penalize[i].max(c.penalize_mult.max(1.0));
+            let (min_lat, max_lat, min_lon, max_lon) = edge_latlon_bbox(e);
+            let mid_lat = ((min_lat + max_lat) * 0.5).clamp(-89.0, 89.0);
+            let lat_pad = max_radius_m / 111_320.0;
+            let lon_pad = max_radius_m / (111_320.0 * mid_lat.to_radians().cos().max(0.2));
+            let gi0 = ((min_lat - lat_pad) / CELL_DEG).floor() as i32;
+            let gi1 = ((max_lat + lat_pad) / CELL_DEG).floor() as i32;
+            let gj0 = ((min_lon - lon_pad) / CELL_DEG).floor() as i32;
+            let gj1 = ((max_lon + lon_pad) / CELL_DEG).floor() as i32;
+            if stamp == u32::MAX {
+                seen.fill(0);
+                stamp = 1;
+            }
+            for gi in gi0..=gi1 {
+                for gj in gj0..=gj1 {
+                    let Some(js) = grid.get(&(gi, gj)) else {
+                        continue;
+                    };
+                    for &j in js {
+                        if seen[j] == stamp {
+                            continue;
+                        }
+                        seen[j] = stamp;
+                        let c = &options.datex_impacts[j];
+                        if !edge_hit_by_datex(e, c) {
+                            continue;
+                        }
+                        match c.impact {
+                            crate::datex::DatexImpact::Block => block[i] = 1,
+                            crate::datex::DatexImpact::Penalize => {
+                                penalize[i] = penalize[i].max(c.penalize_mult.max(1.0));
+                            }
+                            crate::datex::DatexImpact::Ignore => {}
+                        }
                     }
-                    crate::datex::DatexImpact::Ignore => {}
                 }
             }
+            stamp = stamp.saturating_add(1);
         }
         options.datex_edge_block = Some(std::sync::Arc::new(block));
         options.datex_edge_penalize = Some(std::sync::Arc::new(penalize));
@@ -2519,6 +2568,27 @@ fn edge_hit_by_datex(edge: &GraphEdge, c: &crate::datex::DatexPlannerConstraint)
     crate::routing::graph::edge_distance_m(edge, c.lat, c.lon) <= c.radius_m
 }
 
+fn datex_cell(lat: f64, lon: f64, cell_deg: f64) -> (i32, i32) {
+    (
+        (lat / cell_deg).floor() as i32,
+        (lon / cell_deg).floor() as i32,
+    )
+}
+
+fn edge_latlon_bbox(e: &GraphEdge) -> (f64, f64, f64, f64) {
+    let mut min_lat = e.start_lat.min(e.end_lat);
+    let mut max_lat = e.start_lat.max(e.end_lat);
+    let mut min_lon = e.start_lon.min(e.end_lon);
+    let mut max_lon = e.start_lon.max(e.end_lon);
+    for &(lon, lat) in &e.shape {
+        min_lat = min_lat.min(lat);
+        max_lat = max_lat.max(lat);
+        min_lon = min_lon.min(lon);
+        max_lon = max_lon.max(lon);
+    }
+    (min_lat, max_lat, min_lon, max_lon)
+}
+
 fn edge_blocked_by_datex(edge: &GraphEdge, options: &RouteOptions, edge_idx: Option<usize>) -> bool {
     if let (Some(bits), Some(i)) = (options.datex_edge_block.as_ref(), edge_idx) {
         return bits.get(i).copied().unwrap_or(0) != 0;
@@ -2884,11 +2954,6 @@ mod tests {
     use crate::routing::graph::{apply_surface_preference, MotorSoftCostProfile};
     use geo_types::Coord;
 
-    #[test]
-    fn profile_mapping() {
-        assert_eq!(RoutingProfile::from(Profile::Hiking), RoutingProfile::Foot);
-    }
-
     fn two_node_foot_graph() -> RouteGraph {
         use geo_types::Coord;
         use std::collections::HashMap;
@@ -2949,6 +3014,43 @@ mod tests {
             surface_quality: SurfaceQuality::Good,
         }];
         RouteGraph::from_parts(nodes, edges, RoutingProfile::Foot)
+    }
+
+    #[test]
+    fn profile_mapping() {
+        assert_eq!(RoutingProfile::from(Profile::Hiking), RoutingProfile::Foot);
+    }
+
+    #[test]
+    fn datex_grid_bind_hits_nearby_edge_and_skips_far_impacts() {
+        let g = two_node_foot_graph();
+        let mut far = Vec::new();
+        for i in 0..200 {
+            far.push(crate::datex::DatexPlannerConstraint {
+                lat: 70.0 + (i as f64) * 0.01,
+                lon: 20.0,
+                impact: crate::datex::DatexImpact::Block,
+                radius_m: 250.0,
+                situation_id: format!("far-{i}"),
+                penalize_mult: 50.0,
+            });
+        }
+        far.push(crate::datex::DatexPlannerConstraint {
+            lat: 60.0,
+            lon: 10.005,
+            impact: crate::datex::DatexImpact::Block,
+            radius_m: 250.0,
+            situation_id: "near".into(),
+            penalize_mult: 50.0,
+        });
+        let mut opts = RouteOptions {
+            datex_impacts: far,
+            ..RouteOptions::default()
+        };
+        g.bind_datex_overlay(&mut opts);
+        let bits = opts.datex_edge_block.as_ref().expect("bits");
+        assert_eq!(bits.len(), 1);
+        assert_eq!(bits[0], 1, "midpoint DATEX must block the only edge");
     }
 
     #[test]

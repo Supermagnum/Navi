@@ -2638,12 +2638,17 @@ fn plan_car_route_chunked_legs(
         let hop_ferry = parse_u64_token(&leg.report, "route_ferry_legs=").unwrap_or(0);
         driver_break_core::routing::plan_file_log::line(format!(
             "hop_result=success i={} km={:.3} eta_min={:.1} terminate={} \
-             route_ferry_legs={hop_ferry} expansions={}",
+             route_ferry_legs={hop_ferry} expansions={} pack_load_ms={} datex_bind_ms={} \
+             snap_ms={} search_ms={}",
             i + 1,
             leg.distance_km,
             leg.eta_minutes,
             leg.search_terminate_reason,
-            leg.search_expansions
+            leg.search_expansions,
+            parse_u64_token(&leg.report, "pack_load_ms=").unwrap_or(0),
+            parse_u64_token(&leg.report, "datex_bind_ms=").unwrap_or(0),
+            parse_u64_token(&leg.report, "snap_ms=").unwrap_or(0),
+            parse_u64_token(&leg.report, "search_ms=").unwrap_or(0),
         ));
         hops_sidecar.push(serde_json::json!({
             "i": i + 1,
@@ -2653,6 +2658,10 @@ fn plan_car_route_chunked_legs(
             "terminate": leg.search_terminate_reason,
             "route_ferry_legs": hop_ferry,
             "expansions": leg.search_expansions,
+            "pack_load_ms": parse_u64_token(&leg.report, "pack_load_ms=").unwrap_or(0),
+            "datex_bind_ms": parse_u64_token(&leg.report, "datex_bind_ms=").unwrap_or(0),
+            "snap_ms": parse_u64_token(&leg.report, "snap_ms=").unwrap_or(0),
+            "search_ms": parse_u64_token(&leg.report, "search_ms=").unwrap_or(0),
             "result": "success",
         }));
         distance_km += leg.distance_km;
@@ -3576,6 +3585,7 @@ fn plan_car_route_inner(
     let mut eco_reweight_ms_acc = 0u64;
     let mut snap_ms_acc = 0u64;
     let mut search_ms_acc = 0u64;
+    let mut datex_bind_ms_acc = 0u64;
     let mut path = Vec::new();
     let mut path_edges = Vec::new();
     let mut cost = 0.0;
@@ -3795,7 +3805,15 @@ fn plan_car_route_inner(
                 built.nodes.len(),
                 built.edges.len()
             );
+            let t_datex_bind = Instant::now();
             built.bind_datex_overlay(&mut route_opts);
+            let datex_bind_ms = t_datex_bind.elapsed().as_millis() as u64;
+            datex_bind_ms_acc = datex_bind_ms_acc.saturating_add(datex_bind_ms);
+            driver_break_core::routing::plan_perf::note_u64("datex_bind_ms", datex_bind_ms);
+            driver_break_core::routing::plan_file_log::line(format!(
+                "datex_bind_ms={datex_bind_ms} impacts={}",
+                route_opts.datex_impacts.len()
+            ));
             driver_break_core::download::progress::set(1, Some(5), "Snapping to road network…");
             if (profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric)
                 && prefer_official_networks
@@ -4374,7 +4392,8 @@ fn plan_car_route_inner(
     ));
     report.push_str(&format!(
         "pack_load_ms={pack_load_ms_acc}; eco_reweight_ms={eco_reweight_ms_acc}; \
-         snap_ms={snap_ms_acc}; search_ms={search_ms_acc}; expansions={last_expansions}\n"
+         datex_bind_ms={datex_bind_ms_acc}; snap_ms={snap_ms_acc}; search_ms={search_ms_acc}; \
+         expansions={last_expansions}\n"
     ));
     append_graph_ferry_edges(&mut report, &graph);
     let seasonal_n = graph.seasonal_closure_excluded_in_graph(&used_opts);
