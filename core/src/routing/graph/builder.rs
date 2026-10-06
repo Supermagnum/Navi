@@ -1669,6 +1669,9 @@ impl RouteGraph {
                 |state| {
                     let (node, prev_surface, _) = *state;
                     let n = expansions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if self.nodes.len() < 15_000 && n > 500_000 {
+                        return Vec::new();
+                    }
                     if plan_id != 0
                         && n & 2047 == 0
                         && crate::download::plan_cancel::is_cancelled_id(plan_id)
@@ -1734,6 +1737,9 @@ impl RouteGraph {
             |state| {
                 let (node, _) = *state;
                 let n = expansions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if self.nodes.len() < 15_000 && n > 500_000 {
+                    return Vec::new();
+                }
                 if plan_id != 0
                     && n & 2047 == 0
                     && crate::download::plan_cancel::is_cancelled_id(plan_id)

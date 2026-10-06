@@ -3876,20 +3876,9 @@ fn plan_car_route_inner(
                     // Free the truncated corridor before reload (RSS / cache).
                     drop(built);
                     graph = None;
-                    if try_widen_tile_budget(
-                        &mut report,
-                        &mut tile_budget_used,
-                        &mut tile_widen_attempts,
-                        pack_hit,
-                    ) {
-                        edge_clip_mode =
-                            driver_break_core::routing::plan_bbox::PlanEdgeClipMode::CorridorBand;
-                        continue;
-                    }
-                    // Same as post-A* disconnected: pad widen does not expand
-                    // corridor-band clips. Øresund-class water chords keep the
-                    // bridge but drop the Zealand land approach (Køge xt>0.40°);
-                    // trip-AABB restores that land network without inventing edges.
+                    // Do not reload the same pad clip via tile-budget widen
+                    // (Bevensen dest hop 18: four identical 0.35° loads).
+                    // One trip-AABB retry on this pad, then the next pad.
                     if driver_break_core::routing::plan_bbox::should_fallback_to_trip_aabb(
                         edge_clip_mode,
                         last_terminate,
@@ -3901,21 +3890,10 @@ fn plan_car_route_inner(
                         );
                         continue;
                     }
-                    report.push_str(&format!(
-                        "pack_hit={pack_hit}; FAIL: corridor disconnected — origin and destination \
-                         are not connected in the loaded map tiles (tile budget exhausted). \
-                         Install the missing region packs or raise the plan tile budget.\n"
-                    ));
-                    driver_break_core::routing::plan_file_log::line(format!(
-                        "hop_result=disconnected pack_hit={pack_hit} nodes_last fail-fast (no A*)"
-                    ));
-                    let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
-                    driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(0);
-                    let mut r = empty(report);
-                    r.toll_policy = toll_policy.as_diag_str().into();
-                    r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
-                    r.search_terminate_reason = "corridor_disconnected".into();
-                    return r;
+                    report.push_str(
+                        "corridor_disconnected: next pad (no same-clip tile-budget widen)\n",
+                    );
+                    break;
                 }
             }
             // snap_ms already accumulated above (dig pad scan; labels deferred).

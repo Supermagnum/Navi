@@ -2137,14 +2137,21 @@ fn pick_primary_manifest<'a>(
     // old "smallest covering bbox" pick made Finland primary for Bugøynes hops
     // and dropped the real Norwegian exit network after same-leaf extras.clear.
     if let Some(pip_path) = crate::long_trip::region_containing(lat, lon, None) {
-        let leaf = pip_path.rsplit('/').next().unwrap_or(pip_path);
-        let pip_stem = format!("{leaf}-latest");
-        if let Some(home) = home_dir_for_stem(dirs, &pip_stem, profile) {
-            if let Ok(man) = load_ready_manifest(home, &pip_stem) {
-                if stem_pack_ready(home, &man, profile) {
-                    return Ok((man.stem.clone(), man, home));
+        // Cross-leaf hops (Sognefjell ostlandet → Dalsøren vestlandet): dest
+        // pack as primary so the tile budget covers the fjord approach. Origin
+        // remains an extra stem; we do not materialize two full graphs.
+        if pts.len() >= 2 {
+            let (dlat, dlon) = pts[pts.len() - 1];
+            if let Some(dest_path) = crate::long_trip::region_containing(dlat, dlon, None) {
+                if hop_prefers_dest_primary(Some(pip_path), Some(dest_path)) {
+                    if let Some(hit) = ready_stem_for_geofabrik(dirs, dest_path, profile) {
+                        return Ok(hit);
+                    }
                 }
             }
+        }
+        if let Some(hit) = ready_stem_for_geofabrik(dirs, pip_path, profile) {
+            return Ok(hit);
         }
     }
     if let Some((stem, man, home)) = &pbf_ready {
@@ -2203,6 +2210,34 @@ fn pick_primary_manifest<'a>(
     // No Ready re-home: return the planning stem (any status) so try_load can
     // surface VersionMismatch / Stale instead of Missing.
     pbf_pack.ok_or(PackLoadError::Missing)
+}
+
+/// Dest leaf as primary when origin and dest PIP to different Geofabrik paths.
+pub(crate) fn hop_prefers_dest_primary(
+    origin_path: Option<&str>,
+    dest_path: Option<&str>,
+) -> bool {
+    match (origin_path, dest_path) {
+        (Some(a), Some(b)) => a != b,
+        (None, Some(_)) => true,
+        _ => false,
+    }
+}
+
+fn ready_stem_for_geofabrik<'a>(
+    dirs: &[&'a Path],
+    geofabrik_path: &str,
+    profile: RoutingProfile,
+) -> Option<(String, NaviManifest, &'a Path)> {
+    let leaf = geofabrik_path.rsplit('/').next().unwrap_or(geofabrik_path);
+    let stem = format!("{leaf}-latest");
+    let home = home_dir_for_stem(dirs, &stem, profile)?;
+    let man = load_ready_manifest(home, &stem).ok()?;
+    if stem_pack_ready(home, &man, profile) {
+        Some((man.stem.clone(), man, home))
+    } else {
+        None
+    }
 }
 
 /// Key for deduplicating the same physical edge repeated on adjacent tile boundaries.
@@ -3879,4 +3914,29 @@ pub fn try_densify_hops_via_skeleton(
         return None;
     }
     Some(hops)
+}
+
+#[cfg(test)]
+mod hop_primary_tests {
+    use super::hop_prefers_dest_primary;
+
+    #[test]
+    fn dest_primary_when_leaves_differ() {
+        assert!(hop_prefers_dest_primary(
+            Some("europe/norway/ostlandet"),
+            Some("europe/norway/vestlandet"),
+        ));
+        assert!(!hop_prefers_dest_primary(
+            Some("europe/norway/ostlandet"),
+            Some("europe/norway/ostlandet"),
+        ));
+        assert!(hop_prefers_dest_primary(
+            None,
+            Some("europe/norway/vestlandet"),
+        ));
+        assert!(!hop_prefers_dest_primary(
+            Some("europe/norway/ostlandet"),
+            None,
+        ));
+    }
 }
