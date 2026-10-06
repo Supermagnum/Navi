@@ -44,20 +44,12 @@ class InstalledMapsSnapshotTest {
     }
 
     @[Test]
-    fun auto_build_allowlist_only_when_not_intact() {
+    fun auto_build_any_missing_region_when_not_intact() {
         val internal = tmp.newFolder("idx")
-        assertFalse(
-            "protected slices must not auto-build",
-            PlaceIndexAutoBuild.mayStart(internal, "europe/denmark"),
-        )
-        assertFalse(PlaceIndexAutoBuild.mayStart(internal, "europe/sweden"))
-        assertFalse(PlaceIndexAutoBuild.mayStart(internal, "europe/germany/hamburg"))
-        assertFalse(PlaceIndexAutoBuild.mayStart(internal, "europe/germany/niedersachsen"))
-        assertFalse(PlaceIndexAutoBuild.mayStart(internal, "europe/norway/ostlandet"))
-        assertTrue(PlaceIndexAutoBuild.mayStart(internal, "europe/germany/schleswig-holstein"))
+        assertTrue(PlaceIndexAutoBuild.mayStart(internal, "europe/denmark"))
+        assertTrue(PlaceIndexAutoBuild.mayStart(internal, "europe/sweden"))
+        assertTrue(PlaceIndexAutoBuild.mayStart(internal, "europe/germany/hamburg"))
         assertTrue(PlaceIndexAutoBuild.mayStart(internal, "europe/norway/vestlandet"))
-        assertTrue(PlaceIndexAutoBuild.mayStart(internal, "europe/norway/sorlandet"))
-        assertTrue(PlaceIndexAutoBuild.mayStart(internal, "europe/germany/mecklenburg-vorpommern"))
         RoutePlanGate.tryBegin()
         try {
             assertFalse(

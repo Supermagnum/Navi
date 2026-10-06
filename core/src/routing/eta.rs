@@ -5,7 +5,9 @@
 
 use osm4routing::NodeId;
 
-use super::graph::{GraphEdge, RouteGraph};
+use super::graph::{
+    GraphEdge, RouteGraph, FERRY_CAR_BOARDING_PENALTY_MIN, FERRY_FALLBACK_SPEED_KMH,
+};
 
 /// Hiking fixed pace: 16 minutes per kilometre (flat; no climb adjustment yet).
 ///
@@ -169,9 +171,19 @@ pub fn fixed_pace_minutes(distance_km: f64, min_per_km: f64) -> f64 {
 /// Sum motor pre-departure time along A*-recorded edge indices.
 pub fn motor_path_minutes_from_edges(graph: &RouteGraph, edge_indices: &[usize]) -> f64 {
     let mut hours = 0.0;
+    let mut on_ferry = false;
     for &idx in edge_indices {
         let e = &graph.edges[idx];
-        hours += hours_for_segment(e.length_m, edge_speed_kmh(e));
+        if e.is_ferry {
+            if !on_ferry {
+                hours += FERRY_CAR_BOARDING_PENALTY_MIN / 60.0;
+                on_ferry = true;
+            }
+            hours += hours_for_segment(e.length_m, FERRY_FALLBACK_SPEED_KMH);
+        } else {
+            on_ferry = false;
+            hours += hours_for_segment(e.length_m, edge_speed_kmh(e));
+        }
     }
     hours * 60.0
 }

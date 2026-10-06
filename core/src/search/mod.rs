@@ -143,11 +143,28 @@ impl NameIndex {
     pub fn open_in_memory() -> SqlResult<Self> {
         let conn = Connection::open_in_memory()?;
         Self::migrate(&conn)?;
+        Self::migrate_region_osm_pk(&conn)?;
         Self::backfill_legacy_complete(&conn)?;
         Ok(Self { conn })
     }
 
     pub fn open(path: impl AsRef<Path>) -> SqlResult<Self> {
+        let path = path.as_ref();
+        let user_peek: i32 =
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .ok()
+                .and_then(|c| {
+                    c.query_row("PRAGMA user_version", [], |row| row.get(0))
+                        .ok()
+                })
+                .unwrap_or(0);
+        if user_peek > 0 && user_peek < PLACE_INDEX_SCHEMA_VERSION && path.is_file() {
+            let bak = path.with_file_name("place_index.db.bak-pk-v6");
+            if !bak.is_file() {
+                std::fs::copy(path, &bak)
+                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+            }
+        }
         let conn = Connection::open(path)?;
         // WAL writers rarely wait on readers; keep a short timeout for checkpoints.
         conn.busy_timeout(Duration::from_secs(5))?;
@@ -169,6 +186,7 @@ impl NameIndex {
         let had_build_table = Self::name_index_build_table_exists(&conn)?;
         let migrate_t0 = phase_timing::start("place_index.open_db.migrate");
         Self::migrate(&conn)?;
+        Self::migrate_region_osm_pk(&conn)?;
         phase_timing::end("place_index.open_db.migrate", migrate_t0);
         let backfill_t0 = phase_timing::start("place_index.open_db.backfill_legacy_complete");
         if !had_build_table {
@@ -225,6 +243,89 @@ impl NameIndex {
         )?;
         Self::ensure_context_columns(conn)?;
         Self::ensure_search_doc_fts(conn)?;
+        Ok(())
+    }
+
+    const PROTECTED_INDEX_REGIONS: [&'static str; 4] = [
+        "europe/germany/hamburg",
+        "europe/germany/niedersachsen",
+        "europe/norway/ostlandet",
+        "europe/denmark",
+    ];
+
+    fn region_row_count(conn: &Connection, region_id: &str) -> SqlResult<i64> {
+        conn.query_row(
+            "SELECT COUNT(*) FROM name_entries WHERE region_id = ?1",
+            params![region_id],
+            |row| row.get(0),
+        )
+    }
+
+    fn name_entries_sql(conn: &Connection) -> SqlResult<Option<String>> {
+        conn.query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='name_entries'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+    }
+
+    /// v6: PRIMARY KEY (region_id, osm_id). Resumable copy into name_entries_pk.
+    fn migrate_region_osm_pk(conn: &Connection) -> SqlResult<()> {
+        let sql = Self::name_entries_sql(conn)?.unwrap_or_default();
+        if sql.contains("PRIMARY KEY (region_id, osm_id)")
+            || sql.contains("PRIMARY KEY(region_id, osm_id)")
+        {
+            return Ok(());
+        }
+        let mut before = [0i64; 4];
+        for (i, rid) in Self::PROTECTED_INDEX_REGIONS.iter().enumerate() {
+            before[i] = Self::region_row_count(conn, rid).unwrap_or(0);
+        }
+        conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS name_entries_pk (
+                region_id TEXT NOT NULL DEFAULT '',
+                osm_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                lat REAL NOT NULL,
+                lon REAL NOT NULL,
+                sub_area TEXT NOT NULL DEFAULT '',
+                municipality TEXT NOT NULL DEFAULT '',
+                search_doc TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY (region_id, osm_id)
+            );
+            INSERT OR IGNORE INTO name_entries_pk(
+                region_id, osm_id, name, kind, lat, lon, sub_area, municipality, search_doc
+            )
+            SELECT region_id, osm_id, name, kind, lat, lon, sub_area, municipality, search_doc
+            FROM name_entries;
+            ",
+        )?;
+        conn.execute_batch(
+            "
+            DROP TABLE name_entries;
+            ALTER TABLE name_entries_pk RENAME TO name_entries;
+            ",
+        )?;
+        conn.execute_batch("DROP TABLE IF EXISTS name_fts;")?;
+        Self::ensure_search_doc_fts(conn)?;
+        for (i, rid) in Self::PROTECTED_INDEX_REGIONS.iter().enumerate() {
+            let after = Self::region_row_count(conn, rid).unwrap_or(0);
+            if after != before[i] {
+                return Err(rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+                    Some(format!(
+                        "place_index pk migrate stopped: {rid} rows {after} != {0}",
+                        before[i]
+                    )),
+                ));
+            }
+        }
+        conn.execute_batch(&format!(
+            "PRAGMA user_version = {PLACE_INDEX_SCHEMA_VERSION};"
+        ))?;
         Ok(())
     }
 
@@ -321,7 +422,7 @@ impl NameIndex {
             .ok();
         let needs_recreate = match sql.as_deref() {
             None => true,
-            Some(s) => !s.contains("search_doc"),
+            Some(s) => !s.contains("search_doc") || !s.contains("content_rowid='rowid'"),
         };
         if needs_recreate {
             conn.execute_batch("DROP TABLE IF EXISTS name_fts;")?;
@@ -331,11 +432,10 @@ impl NameIndex {
                     search_doc,
                     kind,
                     content='name_entries',
-                    content_rowid='osm_id'
+                    content_rowid='rowid'
                 );
                 ",
             )?;
-            // Populate from content (search_doc already backfilled to name).
             let _ = conn.execute_batch("INSERT INTO name_fts(name_fts) VALUES('rebuild');");
         }
         Ok(())
@@ -505,7 +605,13 @@ impl NameIndex {
         match conn.query_row(
             "SELECT complete, written, expected FROM name_index_build WHERE region_id = ?1",
             params![region_id],
-            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?)),
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            },
         ) {
             Ok((complete, written, expected)) => {
                 if complete == 0 {
@@ -837,15 +943,6 @@ impl NameIndex {
                 continue;
             }
             let ctx = resolver.resolve(*osm_id, name, kind, *lat, *lon);
-            // Keep the first region that wrote this osm_id. Later regions must
-            // not steal the row (hamburg-as-sweden / leaf vs country clash).
-            if !Self::may_write_osm_id(&tx, *osm_id, &region_id)? {
-                continue;
-            }
-            let _ = tx.execute(
-                "INSERT INTO name_fts(name_fts, rowid, search_doc, kind) VALUES('delete', ?1, NULL, NULL)",
-                params![osm_id],
-            );
             tx.execute(
                 "INSERT OR REPLACE INTO name_entries(osm_id, name, kind, lat, lon, sub_area, municipality, region_id, search_doc)
                  VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
@@ -861,9 +958,18 @@ impl NameIndex {
                     search_doc
                 ],
             )?;
+            let rowid: i64 = tx.query_row(
+                "SELECT rowid FROM name_entries WHERE region_id = ?1 AND osm_id = ?2",
+                params![region_id, osm_id],
+                |row| row.get(0),
+            )?;
+            let _ = tx.execute(
+                "INSERT INTO name_fts(name_fts, rowid, search_doc, kind) VALUES('delete', ?1, NULL, NULL)",
+                params![rowid],
+            );
             tx.execute(
                 "INSERT INTO name_fts(rowid, search_doc, kind) VALUES (?1,?2,?3)",
-                params![osm_id, search_doc, kind],
+                params![rowid, search_doc, kind],
             )?;
             inserted += 1;
             since_commit += 1;
@@ -920,13 +1026,13 @@ impl NameIndex {
             tx.execute_batch(
                 "
                 DELETE FROM name_entries;
-                INSERT INTO name_fts(name_fts) VALUES('delete-all');
+                INSERT INTO name_fts(name_fts) VALUES('rebuild');
                 ",
             )?;
             return Ok(());
         }
         {
-            let mut stmt = tx.prepare("SELECT osm_id FROM name_entries WHERE region_id = ?1")?;
+            let mut stmt = tx.prepare("SELECT rowid FROM name_entries WHERE region_id = ?1")?;
             let ids: Vec<i64> = stmt
                 .query_map(params![region_id], |row| row.get(0))?
                 .collect::<SqlResult<Vec<_>>>()?;
@@ -942,10 +1048,7 @@ impl NameIndex {
             "DELETE FROM name_entries WHERE region_id = ?1",
             params![region_id],
         )?;
-        // External-content FTS5 can retain orphan index rows when content was
-        // deleted without matching FTS 'delete' commands (e.g. Android framework
-        // SQLite lacking FTS5 cleared name_entries first). Rebuild syncs the
-        // index to the remaining content table so orphans cannot MATCH.
+        // External-content FTS5: rebuild after deleting a region's rows.
         let _ = tx.execute_batch("INSERT INTO name_fts(name_fts) VALUES('rebuild');");
         Ok(())
     }
@@ -1009,32 +1112,6 @@ impl NameIndex {
         )
     }
 
-    fn may_write_osm_id(
-        tx: &rusqlite::Transaction<'_>,
-        osm_id: i64,
-        region_id: &str,
-    ) -> SqlResult<bool> {
-        Self::may_write_osm_id_conn(tx, osm_id, region_id)
-    }
-
-    fn may_write_osm_id_conn(
-        conn: &Connection,
-        osm_id: i64,
-        region_id: &str,
-    ) -> SqlResult<bool> {
-        let existing: Option<String> = conn
-            .query_row(
-                "SELECT region_id FROM name_entries WHERE osm_id = ?1",
-                params![osm_id],
-                |row| row.get(0),
-            )
-            .optional()?;
-        match existing {
-            None => Ok(true),
-            Some(owner) => Ok(owner == region_id),
-        }
-    }
-
     pub fn upsert_entry_with_region(
         &mut self,
         osm_id: i64,
@@ -1046,9 +1123,6 @@ impl NameIndex {
         municipality: String,
         region_id: String,
     ) -> SqlResult<()> {
-        if !Self::may_write_osm_id_conn(&self.conn, osm_id, &region_id)? {
-            return Ok(());
-        }
         // Tests / incremental upserts: search_doc mirrors display name.
         self.conn.execute(
             "INSERT OR REPLACE INTO name_entries(osm_id, name, kind, lat, lon, sub_area, municipality, region_id, search_doc)
@@ -1065,14 +1139,18 @@ impl NameIndex {
                 &name
             ],
         )?;
-        // Rebuild FTS row for this id (delete + insert keeps content sync).
+        let rowid: i64 = self.conn.query_row(
+            "SELECT rowid FROM name_entries WHERE region_id = ?1 AND osm_id = ?2",
+            params![&region_id, osm_id],
+            |row| row.get(0),
+        )?;
         let _ = self.conn.execute(
             "INSERT INTO name_fts(name_fts, rowid, search_doc, kind) VALUES('delete', ?1, NULL, NULL)",
-            params![osm_id],
+            params![rowid],
         );
         self.conn.execute(
             "INSERT INTO name_fts(rowid, search_doc, kind) VALUES (?1,?2,?3)",
-            params![osm_id, &name, &kind],
+            params![rowid, &name, &kind],
         )?;
         Ok(())
     }
@@ -1090,8 +1168,9 @@ impl NameIndex {
             "
             SELECT e.osm_id, e.name, e.kind, e.lat, e.lon, e.sub_area, e.municipality, e.region_id
             FROM name_fts f
-            JOIN name_entries e ON e.osm_id = f.rowid
+            JOIN name_entries e ON e.rowid = f.rowid
             WHERE name_fts MATCH ?1
+            GROUP BY e.osm_id
             LIMIT ?2
             ",
         )?;
@@ -1611,7 +1690,7 @@ mod tests {
     }
 
     #[test]
-    fn keep_first_region_owner_on_osm_id_clash() {
+    fn keep_both_regions_on_osm_id_clash() {
         let mut idx = NameIndex::open_in_memory().expect("mem index");
         idx.upsert_entry_with_region(
             42,
@@ -1635,19 +1714,17 @@ mod tests {
             "europe/germany/hamburg".into(),
         )
         .unwrap();
-        let owner: String = idx
+        let n: i64 = idx
             .conn
             .query_row(
-                "SELECT region_id, name FROM name_entries WHERE osm_id = 42",
+                "SELECT COUNT(*) FROM name_entries WHERE osm_id = 42",
                 [],
-                |row| {
-                    let rid: String = row.get(0)?;
-                    let name: String = row.get(1)?;
-                    Ok(format!("{rid}|{name}"))
-                },
+                |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(owner, "europe/denmark|Border");
+        assert_eq!(n, 2);
+        let hits = idx.search("Stolen", 8).unwrap();
+        assert_eq!(hits.iter().filter(|h| h.osm_id == 42).count(), 1);
     }
 
     #[test]
@@ -2697,10 +2774,15 @@ mod tests {
             .unwrap();
         }
         let _idx = NameIndex::open(&db).expect("open legacy");
-        assert!(
-            NameIndex::region_index_complete(&db, "europe/norway/ostlandet"),
-            "legacy rows must get a complete name_index_build row"
-        );
+        let conn = Connection::open(&db).unwrap();
+        let complete: i64 = conn
+            .query_row(
+                "SELECT complete FROM name_index_build WHERE region_id = 'europe/norway/ostlandet'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("name_index_build row");
+        assert_eq!(complete, 1);
     }
 
     #[test]

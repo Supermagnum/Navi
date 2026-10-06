@@ -29,9 +29,10 @@ pub use bike_suitability::{
 };
 pub use builder::{
     append_seasonal_closure_report, edge_is_motorway_grade, ferry_base_weight_m,
-    format_route_avoidance_report, highway_is_motorway, is_untagged_water_shortcut,
-    max_waypoint_snap_m, profile_locks_avoid_motorways, GraphEdge, PathSearchStats, RouteGraph,
-    RouteOptions, RoutingProfile, SnapRole, SnapTooFar, WetlandApplyStats,
+    format_route_avoidance_report, highway_is_motorway, is_construction_or_proposed_highway,
+    is_untagged_water_shortcut, max_waypoint_snap_m, pack_edge_matches_overlay_ferry,
+    profile_locks_avoid_motorways, stamp_overlay_ferry_costs, GraphEdge, PathSearchStats,
+    RouteGraph, RouteOptions, RoutingProfile, SnapRole, SnapTooFar, WetlandApplyStats,
     FERRY_CAR_BOARDING_PENALTY_MIN, FERRY_DRIVE_EQUIV_KMH, FERRY_FALLBACK_SPEED_KMH,
 };
 pub use cache::{

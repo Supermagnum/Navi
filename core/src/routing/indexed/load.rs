@@ -24,7 +24,10 @@ use super::wetland_pack::{
 };
 use crate::poi::PoiIndex;
 use crate::routing::basemap::{pbf_stem_to_geofabrik_path, region_bbox};
-use crate::routing::graph::{is_untagged_water_shortcut, GraphEdge, RouteGraph, RoutingProfile};
+use crate::routing::graph::{
+    is_construction_or_proposed_highway, is_untagged_water_shortcut, stamp_overlay_ferry_costs,
+    GraphEdge, RouteGraph, RoutingProfile,
+};
 use crate::routing::pbf_extract::{pbf_is_real_extract, MIN_REAL_PBF_BYTES};
 use crate::routing::safety::DangerBarrierIndex;
 use crate::routing::wetland::WetlandIndex;
@@ -1996,12 +1999,7 @@ fn supplement_pack_ferries_from_pbf_inner(
             FerryHopGate::Connected { snap_m } => {
                 crate::routing::plan_perf::note_f64("ferry_snap_m", snap_m);
                 crate::routing::plan_perf::note_u64("ferry_connect_check_ms", 0);
-                crate::routing::plan_perf::note("ferry_overlay", "skip_already_connected");
-                crate::routing::plan_perf::note(
-                    "ferry_per_plan",
-                    "once_on_corridor_miss;warm_skipped=corridor_cache_hit",
-                );
-                return Ok(graph);
+                crate::routing::plan_perf::note("ferry_overlay", "connected_stamp_overlay");
             }
             FerryHopGate::Disconnected { snap_m } => {
                 crate::routing::plan_perf::note_f64("ferry_snap_m", snap_m);
@@ -2118,8 +2116,12 @@ fn supplement_pack_ferries_from_pbf_inner(
         "ferry_per_plan",
         "once_on_corridor_miss;warm_skipped=corridor_cache_hit",
     );
+    let mut pack = arc_graph_owned(graph);
+    for ov in &overlays {
+        stamp_overlay_ferry_costs(&mut pack, ov, profile);
+    }
     let mut parts = Vec::with_capacity(1 + overlays.len());
-    parts.push(arc_graph_owned(graph));
+    parts.push(pack);
     parts.extend(overlays);
     Ok(std::sync::Arc::new(merge_tile_graphs(parts, profile)))
 }
@@ -2255,10 +2257,7 @@ fn pick_primary_manifest<'a>(
 }
 
 /// Dest leaf as primary when origin and dest PIP to different Geofabrik paths.
-pub(crate) fn hop_prefers_dest_primary(
-    origin_path: Option<&str>,
-    dest_path: Option<&str>,
-) -> bool {
+pub(crate) fn hop_prefers_dest_primary(origin_path: Option<&str>, dest_path: Option<&str>) -> bool {
     match (origin_path, dest_path) {
         (Some(a), Some(b)) => a != b,
         (None, Some(_)) => true,
@@ -2319,6 +2318,9 @@ pub fn merge_tile_graphs(graphs: Vec<RouteGraph>, profile: RoutingProfile) -> Ro
             nodes.insert(id, node);
         }
         for e in g.edges {
+            if is_construction_or_proposed_highway(e.highway.as_deref()) {
+                continue;
+            }
             if is_untagged_water_shortcut(&e) {
                 continue;
             }
@@ -3030,8 +3032,7 @@ mod select_tiles_budget_tests {
             !band.iter().any(|f| f.contains("t4_2")),
             "tight chord budget must drop the off-chord valley tile; got {band:?}"
         );
-        let aabb =
-            select_tiles_within_budget_opts(cands, Some(&pts), 14, &[dir.path()], true);
+        let aabb = select_tiles_within_budget_opts(cands, Some(&pts), 14, &[dir.path()], true);
         assert!(
             aabb.iter().any(|f| f.contains("t4_2")),
             "TripAabb fill_to_budget must keep the valley tile; got {aabb:?}"

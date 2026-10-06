@@ -392,6 +392,9 @@ fn way_ok_for_profile(tags: &HashMap<String, String>, profile: RoutingProfile) -
     let Some(highway) = tags.get("highway") else {
         return false;
     };
+    if crate::routing::graph::is_construction_or_proposed_highway(Some(highway.as_str())) {
+        return false;
+    }
     highway_ok_for_profile(highway, profile)
 }
 

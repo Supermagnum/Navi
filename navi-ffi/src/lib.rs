@@ -14,6 +14,7 @@ use driver_break_core::config::{
     RestConfig, SafetyConfig, VehicleLimits, HIKING_MAIN_BREAK_DISTANCE_KM,
     OVERNIGHT_BUILDING_CORRIDOR_MARGIN_M,
 };
+use driver_break_core::export::parse_route_polyline;
 use driver_break_core::icons::{self, IconTheme};
 use driver_break_core::poi::{rest_area_suitable_for_weekly, PoiCategory, PoiIndex, PoiRecord};
 use driver_break_core::routing::elevation::{ElevationCache, ElevationService};
@@ -26,15 +27,14 @@ use driver_break_core::routing::graph::{
     MotorSoftCostProfile, OfficialNetworkKind, RoadLabelSticky, RoadNodeIndex, RouteGraph,
     RouteOptions, RoutingProfile, SnapTooFar, SurfaceRoutingMode,
 };
+use driver_break_core::routing::path_repair::{
+    encode_lat_lon_polyline, repair_joint_cuts, repair_path_much_longer_than_chord,
+};
 use driver_break_core::routing::rest::car_break_interval_hours;
 use driver_break_core::routing::safety::{
     check_overnight_candidate, DangerBarrierIndex, OvernightProximityIndex,
 };
 use driver_break_core::routing::workers::WorkerPoolPlan;
-use driver_break_core::export::parse_route_polyline;
-use driver_break_core::routing::path_repair::{
-    encode_lat_lon_polyline, repair_joint_cuts, repair_path_much_longer_than_chord,
-};
 use driver_break_core::routing::{
     build_maneuvers, build_maneuvers_from_edges_with_vias, build_sim_samples,
     build_sim_samples_from_edges, build_sim_samples_from_lat_lon, maneuvers_to_json,
@@ -663,6 +663,67 @@ fn parse_graph_ferry_edges_token(report: &str) -> Option<u64> {
         }
     }
     None
+}
+
+fn datex_constraint_line(
+    prefix: &str,
+    c: &driver_break_core::datex::DatexPlannerConstraint,
+) -> String {
+    format!(
+        "{prefix} road={} place={} type={} validity={} effect={} penalty_min={:.0}",
+        c.road.replace('\n', " "),
+        c.place
+            .replace('\n', " ")
+            .chars()
+            .take(80)
+            .collect::<String>(),
+        c.xsi_type,
+        c.validity_text.replace('\n', " "),
+        c.impact.as_str(),
+        c.penalty_minutes
+    )
+}
+
+fn datex_hits_polyline(
+    c: &driver_break_core::datex::DatexPlannerConstraint,
+    pts: &[(f64, f64)],
+) -> bool {
+    let r = c
+        .radius_m
+        .max(driver_break_core::datex::DATEX_IMPACT_RADIUS_M);
+    pts.iter().any(|(lat, lon)| {
+        let earth = 6_371_000.0_f64;
+        let p1 = lat.to_radians();
+        let p2 = c.lat.to_radians();
+        let dp = p2 - p1;
+        let dl = (c.lon - lon).to_radians();
+        let h = (dp / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dl / 2.0).sin().powi(2);
+        2.0 * earth * h.sqrt().asin() <= r
+    })
+}
+
+fn log_datex_for_hop_path(
+    report: &mut String,
+    hop_datex: &[driver_break_core::datex::DatexPlannerConstraint],
+    polyline: &str,
+) {
+    let pts = parse_route_polyline(polyline);
+    for c in hop_datex {
+        let ignore = c.impact == driver_break_core::datex::DatexImpact::Ignore
+            || c.xsi_type.eq_ignore_ascii_case("SpeedManagement");
+        let on_path = !pts.is_empty() && datex_hits_polyline(c, &pts);
+        if ignore || !on_path {
+            driver_break_core::routing::plan_file_log::line(datex_constraint_line(
+                "datex_nearby",
+                c,
+            ));
+            continue;
+        }
+        let line = datex_constraint_line("datex_affected", c);
+        driver_break_core::routing::plan_file_log::line(line.clone());
+        report.push_str(&line);
+        report.push('\n');
+    }
 }
 
 fn parse_u64_token(report: &str, key: &str) -> Option<u64> {
@@ -2406,10 +2467,7 @@ fn plan_car_route_chunked_legs(
             driver_break_core::datex::datex_plan_mode(std::path::Path::new(&data_dir))
         ));
     } else {
-        driver_break_core::datex::write_plan_datex_snapshot(
-            std::path::Path::new(&data_dir),
-            &[],
-        );
+        driver_break_core::datex::write_plan_datex_snapshot(std::path::Path::new(&data_dir), &[]);
     }
     let hops_key: String = hops
         .iter()
@@ -2529,20 +2587,6 @@ fn plan_car_route_chunked_legs(
             ),
             None => Vec::new(),
         };
-        for c in &hop_datex {
-            let line = format!(
-                "datex_affected road={} place={} type={} validity={} effect={} penalty_min={:.0}",
-                c.road.replace('\n', " "),
-                c.place.replace('\n', " ").chars().take(80).collect::<String>(),
-                c.xsi_type,
-                c.validity_text.replace('\n', " "),
-                c.impact.as_str(),
-                c.penalty_minutes
-            );
-            driver_break_core::routing::plan_file_log::line(line.clone());
-            report.push_str(&line);
-            report.push('\n');
-        }
         let hop_datex_first = hop_datex.clone();
         let mut leg = plan_car_route_inner(
             pbf_path.clone(),
@@ -2637,6 +2681,7 @@ fn plan_car_route_chunked_legs(
                 Some(retry),
             );
         }
+        log_datex_for_hop_path(&mut report, &hop_datex, &leg.route_polyline);
         report.push_str(&format!("--- leg{} report ---\n", i + 1));
         report.push_str(&leg.report);
         route_uses_ferry = route_uses_ferry || leg.report.contains("route_uses_ferry=true");

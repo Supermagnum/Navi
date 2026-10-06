@@ -29,6 +29,20 @@ class RoutePlanStatsTest {
     }
 
     @Test
+    fun ferryCountPrefersPlanSummaryOverEarlierHopZero() {
+        val report =
+            """
+            hop_result=success i=1 km=1.0 route_ferry_legs=0
+            --- leg1 report ---
+            route_ferry_legs=0
+            hop_result=success i=4 km=10.0 route_ferry_legs=1
+            plan_summary km=11.0 eta_min=20.0 route_ferry_legs=1 terminate=found hops=4
+            """.trimIndent()
+        val stats = routePlanStatsFromPlan(report, "[]")
+        assertEquals(1, stats.ferryLegCount)
+    }
+
+    @Test
     fun parsesCarFerryTunnelAndRestPlaces() {
         val report =
             """

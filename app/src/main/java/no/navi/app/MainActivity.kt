@@ -563,6 +563,10 @@ private fun formatDatexAffectedStatus(base: String, report: String): String {
             .filter { it.startsWith("datex_affected ") }
             .map { it.removePrefix("datex_affected ").trim() }
             .filter { it.isNotEmpty() }
+            .filter {
+                !it.contains("effect=ignore") &&
+                    !it.contains("type=SpeedManagement")
+            }
             .toList()
     if (lines.isEmpty()) return base
     val shown = lines.take(8).joinToString(" · ")
@@ -2753,12 +2757,14 @@ private fun NaviMapScreen() {
         // synchronously before its IO coroutine, so this check cannot race a
         // just-started resume (PlaceIndexBackground + RegionDownload both
         // calling ensurePlaceIndex on the same DB).
-        // Standalone auto-index for allow-listed missing/not-intact regions
-        // (SH, Vestlandet, Sørlandet, MV) only when no plan is running.
+        // Standalone auto-index for any missing/not-intact region (Vestlandet
+        // first) only when no plan is running and schema is current.
         if (OfflineIndexGate.hasMaterialToIndex(dataDir) &&
             !RegionDownloadBackground.isRunning()
         ) {
-            val rid = selectedGeofabrikPath.trim().trim('/')
+            val rid =
+                PlaceIndexAutoBuild.nextRegion(dataDir)
+                    ?: selectedGeofabrikPath.trim().trim('/')
             if (rid.isNotEmpty() && PlaceIndexAutoBuild.mayStart(dataDir, rid)) {
                 val pbf =
                     OfflineIndexGate.resolveAutoIndexPbf(dataDir, rid)
@@ -2832,7 +2838,9 @@ private fun NaviMapScreen() {
                             else -> ""
                         }
                     if (!regionDownloading && !PlaceIndexBackground.isRunning()) {
-                        val rid = regionPath.trim().trim('/')
+                        val rid =
+                            PlaceIndexAutoBuild.nextRegion(dataDir)
+                                ?: regionPath.trim().trim('/')
                         if (rid.isNotEmpty() && PlaceIndexAutoBuild.mayStart(dataDir, rid)) {
                             val resumePbf =
                                 OfflineIndexGate.resolveAutoIndexPbf(dataDir, rid)

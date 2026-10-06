@@ -110,15 +110,38 @@ pub(crate) fn parse_osm_duration_secs(raw: &str) -> Option<f64> {
     }
 }
 
-/// True when a pack edge is a long non-ferry, non-motorway chord (Fehmarn Belt
-/// 13.9 km water duplicate). Those must not stay routable as ordinary length:
-/// A* prefers them over the tagged `route=ferry` overlay, `route_ferry_legs`
-/// stays 0, and avoid-ferries cannot drop them.
+fn endpoint_haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    let r = 6_371_000.0_f64;
+    let p1 = lat1.to_radians();
+    let p2 = lat2.to_radians();
+    let dp = p2 - p1;
+    let dl = (lon2 - lon1).to_radians();
+    let h = (dp / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dl / 2.0).sin().powi(2);
+    2.0 * r * h.sqrt().asin()
+}
+
+/// OSM `highway=construction` / `highway=proposed` (and the same values with
+/// a `;` suffix). Must never be routable.
+pub fn is_construction_or_proposed_highway(highway: Option<&str>) -> bool {
+    let Some(raw) = highway else {
+        return false;
+    };
+    raw.split(';').any(|part| {
+        matches!(
+            part.trim().to_ascii_lowercase().as_str(),
+            "construction" | "proposed"
+        )
+    })
+}
+
+/// True when a pack edge is a non-ferry chord with no interior shape (Fehmarn
+/// Belt water duplicate). This is not a water-polygon test: empty `shape`, not
+/// ferry/tunnel, not motorway/trunk/primary. There is no length floor.
 pub fn is_untagged_water_shortcut(edge: &GraphEdge) -> bool {
     if edge.is_ferry || edge.is_tunnel {
         return false;
     }
-    if edge.length_m < 8_000.0 {
+    if !edge.shape.is_empty() {
         return false;
     }
     match edge.highway.as_deref() {
@@ -126,6 +149,54 @@ pub fn is_untagged_water_shortcut(edge: &GraphEdge) -> bool {
             "motorway" | "motorway_link" | "trunk" | "trunk_link" | "primary" | "primary_link",
         ) => false,
         _ => true,
+    }
+}
+
+const OVERLAY_FERRY_MATCH_M: f64 = 2_500.0;
+
+/// Pack edge whose endpoints match an overlay `route=ferry` (either direction).
+pub fn pack_edge_matches_overlay_ferry(pack: &GraphEdge, ferry: &GraphEdge) -> bool {
+    if !ferry.is_ferry {
+        return false;
+    }
+    let same = endpoint_haversine_m(
+        pack.start_lat,
+        pack.start_lon,
+        ferry.start_lat,
+        ferry.start_lon,
+    ) < OVERLAY_FERRY_MATCH_M
+        && endpoint_haversine_m(pack.end_lat, pack.end_lon, ferry.end_lat, ferry.end_lon)
+            < OVERLAY_FERRY_MATCH_M;
+    let rev = endpoint_haversine_m(pack.start_lat, pack.start_lon, ferry.end_lat, ferry.end_lon)
+        < OVERLAY_FERRY_MATCH_M
+        && endpoint_haversine_m(pack.end_lat, pack.end_lon, ferry.start_lat, ferry.start_lon)
+            < OVERLAY_FERRY_MATCH_M;
+    same || rev
+}
+
+/// Stamp pack edges that match overlay ferries: `is_ferry` plus ferry A* cost.
+pub fn stamp_overlay_ferry_costs(
+    graph: &mut RouteGraph,
+    overlay: &RouteGraph,
+    profile: RoutingProfile,
+) {
+    let ferries: Vec<&GraphEdge> = overlay.edges.iter().filter(|e| e.is_ferry).collect();
+    if ferries.is_empty() {
+        return;
+    }
+    for e in graph.edges.iter_mut() {
+        let hit = ferries
+            .iter()
+            .copied()
+            .find(|f| pack_edge_matches_overlay_ferry(e, f));
+        let Some(f) = hit else {
+            continue;
+        };
+        e.is_ferry = true;
+        if e.name.is_none() {
+            e.name = f.name.clone();
+        }
+        e.base_weight = ferry_base_weight_m(e.length_m, None, profile);
     }
 }
 
@@ -642,11 +713,11 @@ impl RouteGraph {
                         match c.impact {
                             crate::datex::DatexImpact::Block => block[i] = 1,
                             crate::datex::DatexImpact::Penalize => {
-                                let extra = (c.penalty_minutes.max(0.0) * 80_000.0 / 60.0)
-                                    .max(0.0);
+                                let extra = (c.penalty_minutes.max(0.0) * 80_000.0 / 60.0).max(0.0);
                                 penalize[i] = penalize[i].max(extra);
                             }
-                            crate::datex::DatexImpact::Ignore | crate::datex::DatexImpact::Warn => {}
+                            crate::datex::DatexImpact::Ignore | crate::datex::DatexImpact::Warn => {
+                            }
                         }
                     }
                 }
@@ -2597,7 +2668,11 @@ fn edge_latlon_bbox(e: &GraphEdge) -> (f64, f64, f64, f64) {
     (min_lat, max_lat, min_lon, max_lon)
 }
 
-fn edge_blocked_by_datex(edge: &GraphEdge, options: &RouteOptions, edge_idx: Option<usize>) -> bool {
+fn edge_blocked_by_datex(
+    edge: &GraphEdge,
+    options: &RouteOptions,
+    edge_idx: Option<usize>,
+) -> bool {
     if let (Some(bits), Some(i)) = (options.datex_edge_block.as_ref(), edge_idx) {
         return bits.get(i).copied().unwrap_or(0) != 0;
     }
@@ -5003,7 +5078,78 @@ mod tests {
         motorway.length_m = 18_000.0;
         assert!(!is_untagged_water_shortcut(&motorway));
         water.length_m = 3_000.0;
+        assert!(is_untagged_water_shortcut(&water));
+        water.shape.push((11.25, 54.56));
         assert!(!is_untagged_water_shortcut(&water));
+        let mut proposed = test_edge(1, 2, 54.5, 11.2, 54.6, 11.3);
+        proposed.highway = Some("proposed".into());
+        assert!(is_construction_or_proposed_highway(
+            proposed.highway.as_deref()
+        ));
+        proposed.highway = Some("construction".into());
+        assert!(is_construction_or_proposed_highway(
+            proposed.highway.as_deref()
+        ));
+        proposed.highway = Some("motorway".into());
+        assert!(!is_construction_or_proposed_highway(
+            proposed.highway.as_deref()
+        ));
+    }
+
+    fn named_ferry(
+        s: i64,
+        t: i64,
+        slat: f64,
+        slon: f64,
+        elat: f64,
+        elon: f64,
+        name: &str,
+    ) -> GraphEdge {
+        let mut e = test_edge(s, t, slat, slon, elat, elon);
+        e.is_ferry = true;
+        e.name = Some(name.into());
+        e.highway = None;
+        e
+    }
+
+    #[test]
+    fn overlay_ferry_stamp_puttgarden_kinsarvik_oresund_gedser() {
+        let crossings = [
+            (54.50709, 11.23183, 54.62456, 11.30643, "Puttgarden-Rodby"),
+            (60.391, 6.721, 60.425, 6.621, "Kinsarvik-Utne"),
+            (56.034, 12.617, 56.043, 12.691, "Helsingor-Helsingborg"),
+            (54.574, 11.926, 54.079, 12.135, "Rostock-Gedser"),
+        ];
+        for (i, (slat, slon, elat, elon, name)) in crossings.iter().enumerate() {
+            let id = (i as i64 + 1) * 10;
+            let mut pack = test_edge(id, id + 1, *slat, *slon, *elat, *elon);
+            pack.highway = Some("unclassified".into());
+            pack.length_m = 13_000.0;
+            let ferry = named_ferry(id + 2, id + 3, *slat, *slon, *elat, *elon, name);
+            assert!(pack_edge_matches_overlay_ferry(&pack, &ferry), "{name}");
+            let mut nodes = HashMap::new();
+            for (nid, n) in [test_node(id, *slat, *slon), test_node(id + 1, *elat, *elon)] {
+                nodes.insert(nid, n);
+            }
+            let mut g = RouteGraph::from_parts(nodes, vec![pack], RoutingProfile::Car);
+            let mut onodes = HashMap::new();
+            for (nid, n) in [
+                test_node(id + 2, *slat, *slon),
+                test_node(id + 3, *elat, *elon),
+            ] {
+                onodes.insert(nid, n);
+            }
+            let overlay = RouteGraph::from_parts(onodes, vec![ferry], RoutingProfile::Car);
+            stamp_overlay_ferry_costs(&mut g, &overlay, RoutingProfile::Car);
+            assert!(g.edges[0].is_ferry, "{name}");
+            assert_eq!(g.edges[0].name.as_deref(), Some(*name));
+            let mut avoid = RouteOptions::default();
+            avoid.avoid_ferries = true;
+            assert!(
+                !edge_allowed_for_options(&g.edges[0], &avoid, RoutingProfile::Car),
+                "avoid_ferries must drop {name}"
+            );
+        }
     }
 
     #[test]

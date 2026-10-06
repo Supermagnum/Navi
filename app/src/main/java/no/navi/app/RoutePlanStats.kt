@@ -50,8 +50,8 @@ fun parseReportUIntToken(
     key: String,
 ): Int? {
     val prefix = "$key="
-    for (line in report.lineSequence()) {
-        val trimmed = line.trim()
+    fun parseFrom(hay: String): Int? {
+        val trimmed = hay.trim()
         if (trimmed.startsWith(prefix)) {
             return trimmed
                 .removePrefix(prefix)
@@ -64,8 +64,18 @@ fun parseReportUIntToken(
                 return part.removePrefix(prefix).toIntOrNull()
             }
         }
+        return null
     }
-    return null
+    var last: Int? = null
+    var summary: Int? = null
+    for (line in report.lineSequence()) {
+        val trimmed = line.trim()
+        if (trimmed.startsWith("plan_summary")) {
+            summary = parseFrom(trimmed)
+        }
+        parseFrom(trimmed)?.let { last = it }
+    }
+    return summary ?: last
 }
 
 fun parseReportTokenValue(

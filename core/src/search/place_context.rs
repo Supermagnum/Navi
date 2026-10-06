@@ -22,11 +22,12 @@ use crate::tracks::haversine_km;
 /// v3: `region_id` column so multi-region indexes are additive.
 /// v4: `building=*` + `name=*` classified as `kind=building` (was `named`).
 /// v5: `search_doc` + FTS on `alt_name` / `loc_name` (display `name` unchanged).
+/// v6: PRIMARY KEY (region_id, osm_id); search still one hit per osm_id.
 ///
 /// Bumping this makes [`NameIndex::is_current_schema`] fail on older on-device
 /// DBs so `ensure_place_index` migrates in place on next writer open. The shared
 /// file is never deleted for a schema bump.
-pub const PLACE_INDEX_SCHEMA_VERSION: i32 = 5;
+pub const PLACE_INDEX_SCHEMA_VERSION: i32 = 6;
 
 const SUB_AREA_MAX_M: f64 = 4_000.0;
 const SUB_AREA_VILLAGE_MAX_M: f64 = 2_000.0;
