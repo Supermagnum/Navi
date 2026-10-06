@@ -105,6 +105,65 @@ pub fn repair_joint_cuts(pts: &[(f64, f64)]) -> Vec<(f64, f64)> {
     collapse_near_loops(&trim_joint_hairs(pts))
 }
 
+fn path_len_m(pts: &[(f64, f64)]) -> f64 {
+    pts.windows(2).map(|w| haversine_m(w[0], w[1])).sum()
+}
+
+fn window_max_seg_m(pts: &[(f64, f64)]) -> f64 {
+    pts.windows(2)
+        .map(|w| haversine_m(w[0], w[1]))
+        .fold(0.0, f64::max)
+}
+
+/// Replace 8–20 km windows whose path is ≥ 2.5× the chord with the window
+/// endpoints, unless a single segment is ≥ 3 km (likely a ferry; keep it).
+pub fn repair_path_much_longer_than_chord(pts: &[(f64, f64)]) -> Vec<(f64, f64)> {
+    if pts.len() < 4 {
+        return pts.to_vec();
+    }
+    let n = pts.len();
+    let mut cum = vec![0.0; n];
+    for i in 1..n {
+        cum[i] = cum[i - 1] + haversine_m(pts[i - 1], pts[i]);
+    }
+    let mut drop = vec![false; n];
+    let mut i = 0usize;
+    while i < n {
+        let mut j = i + 1;
+        let mut used = false;
+        while j < n {
+            let path = cum[j] - cum[i];
+            if path < 8_000.0 {
+                j += 1;
+                continue;
+            }
+            if path > 20_000.0 {
+                break;
+            }
+            let chord = haversine_m(pts[i], pts[j]);
+            if chord > 1.0 && path / chord >= 2.5 {
+                let max_seg = window_max_seg_m(&pts[i..=j]);
+                if max_seg < 3_000.0 {
+                    for k in (i + 1)..j {
+                        drop[k] = true;
+                    }
+                    i = j;
+                    used = true;
+                    break;
+                }
+            }
+            j += 1;
+        }
+        if !used {
+            i += 1;
+        }
+    }
+    pts.iter()
+        .enumerate()
+        .filter_map(|(idx, p)| if drop[idx] { None } else { Some(*p) })
+        .collect()
+}
+
 /// Encode `(lat, lon)` points as Navi `"lon,lat;…"`.
 pub fn encode_lat_lon_polyline(pts: &[(f64, f64)]) -> String {
     let mut s = String::new();
@@ -181,5 +240,36 @@ mod tests {
         let back = parse_route_polyline(&s);
         assert_eq!(back.len(), 2);
         assert!((back[0].0 - 53.08).abs() < 1e-6);
+    }
+
+    #[test]
+    fn path_much_longer_than_chord_collapses_detour_keeps_ferry() {
+        // ~12 km zigzag, ~4 km chord → ratio ≥ 2.5, all segs short.
+        let mut detour = vec![(58.40, 11.29)];
+        for i in 0..40 {
+            let lon = 11.29 + 0.002 * i as f64;
+            let lat = 58.40 + if i % 2 == 0 { 0.008 } else { 0.0 };
+            detour.push((lat, lon));
+        }
+        let path = path_len_m(&detour);
+        let chord = haversine_m(detour[0], *detour.last().unwrap());
+        assert!(path / chord >= 2.5, "path={path} chord={chord}");
+        let repaired = repair_path_much_longer_than_chord(&detour);
+        assert!(
+            repaired.len() < detour.len() / 2,
+            "detour collapsed; before={} after={}",
+            detour.len(),
+            repaired.len()
+        );
+
+        // Long water/ferry segment in the window must survive (roa-florø class).
+        let ferry = vec![
+            (60.37, 6.72),
+            (60.38, 6.70),
+            (60.42, 6.62), // ~8 km skip
+            (60.43, 6.60),
+        ];
+        let kept = repair_path_much_longer_than_chord(&ferry);
+        assert_eq!(kept.len(), ferry.len(), "ferry vertices must remain");
     }
 }

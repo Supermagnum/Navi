@@ -32,7 +32,9 @@ use driver_break_core::routing::safety::{
 };
 use driver_break_core::routing::workers::WorkerPoolPlan;
 use driver_break_core::export::parse_route_polyline;
-use driver_break_core::routing::path_repair::{encode_lat_lon_polyline, repair_joint_cuts};
+use driver_break_core::routing::path_repair::{
+    encode_lat_lon_polyline, repair_joint_cuts, repair_path_much_longer_than_chord,
+};
 use driver_break_core::routing::{
     build_maneuvers, build_maneuvers_from_edges_with_vias, build_sim_samples,
     build_sim_samples_from_edges, build_sim_samples_from_lat_lon, maneuvers_to_json,
@@ -2624,7 +2626,8 @@ fn plan_car_route_chunked_legs(
     }
     if !polyline.is_empty() {
         let pts = parse_route_polyline(&polyline);
-        let repaired = repair_joint_cuts(&pts);
+        let mut repaired = repair_joint_cuts(&pts);
+        repaired = repair_path_much_longer_than_chord(&repaired);
         if repaired.len() != pts.len() {
             polyline = encode_lat_lon_polyline(&repaired);
             report.push_str(&format!(
