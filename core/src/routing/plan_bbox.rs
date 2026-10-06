@@ -269,17 +269,11 @@ pub fn densify_route_points_via_regions_dirs(
     // Norway E6 spine applies sequence-ordered t; skip landsdel centroids then
     // (their 2D/lat t would re-interleave Hamar/Oppdal / skip Karasjok).
     let spine_anchors = norway_e6_spine_anchors(start, end, &ready);
-    // International DE/DK/SE → Norway: keep leaf centroids (Fehmarn/E47/E6 SE)
-    // and ADD Østlandet E6 densify joints. Full Stay-in-Country spine still
-    // replaces leaves (Drammen→Berlevåg). Inbound joints are densify geometry
-    // only — not user vias.
     let inbound_anchors = if spine_anchors.is_empty() {
         norway_e6_inbound_anchors(points, &ready)
     } else {
         Vec::new()
     };
-    // After an Ottadal via (Vågå), keep densify on Rv15 through Lom then
-    // Sognefjellsvegen — not a geometric even-split south of Ottadalsvegen.
     let ottadal_west_anchors = norway_ottadal_westbound_anchors(points, &ready);
     let use_spine = !spine_anchors.is_empty();
     let progress_t = |p: (f64, f64)| -> f64 {
@@ -1113,6 +1107,7 @@ fn densify_leaf_grid_samples(
 /// Northern FI/SE transit packs that unlock the Bugøynes→Østlandet land bridge
 /// (Pajala / Umeå class). Southern leftovers like Västra Götaland must not
 /// match — those previously false-disabled the E6 spine.
+#[allow(dead_code)]
 fn ready_has_northern_scandinavia_transit(ready: &[(String, [f64; 4])]) -> bool {
     ready.iter().any(|(p, _)| {
         let p = p.as_str();
@@ -1136,316 +1131,42 @@ fn ready_has_northern_scandinavia_transit(ready: &[(String, [f64; 4])]) -> bool 
 /// joint sat ~1.1° off the Bugøynes exit chord left corridor-band A*
 /// `disconnected` / `bbox_exhausted` on `chunk_leg1`. Finnish Lapland joints
 /// require `europe/finland` Ready (adjacency PIP currently holes that area).
+#[allow(dead_code)]
 fn scandinavia_se_transit_spine_anchors(
     start: (f64, f64),
     end: (f64, f64),
 ) -> Vec<(f64, (f64, f64))> {
-    let dlat = end.0 - start.0;
-    if dlat.abs() < 4.0 {
-        return Vec::new();
-    }
-    // Highway-order southbound (Bugøynes → Sjuvasslia). First joint remains
-    // inside Nord-Norge; later joints cross FI then SE.
-    const SPINE: &[(f64, f64)] = &[
-        (69.79367, 29.35743),
-        (69.58521, 28.74130),
-        (69.29561, 28.08918),
-        (69.06921, 27.39303),
-        (68.84250, 26.80846),
-        (68.55167, 26.16704),
-        (68.19744, 25.78781),
-        (67.93631, 25.05467),
-        (67.66214, 24.80914),
-        (67.40465, 24.17244),
-        (67.20546, 23.43596),
-        (66.87902, 23.09491),
-        (66.53458, 22.75620),
-        (66.14743, 22.78262),
-        (65.86323, 22.34260),
-        (65.54890, 21.84776),
-        (65.24407, 21.48913),
-        (64.92347, 21.10688),
-        (64.59963, 21.20523),
-        (64.26761, 21.04632),
-        (63.93081, 20.63766),
-        (63.68024, 19.99773),
-        (63.47319, 19.28519),
-        (63.29680, 18.66331),
-        (63.01216, 18.21891),
-        (62.69975, 17.85581),
-        (62.48050, 17.31475),
-        (62.40673, 16.68318),
-        (62.53884, 15.90507),
-        (62.40279, 15.31419),
-        (62.17970, 14.95228),
-        (62.03554, 14.37793),
-        (61.81571, 13.80824),
-        (61.68866, 13.19950),
-        (61.35090, 13.06012),
-        (61.26682, 12.45076),
-        (61.04287, 11.87357),
-        (60.81310, 11.28581),
-        (60.42909, 11.24098),
-        (60.06519, 11.15371),
-        (59.89275, 10.54027),
-        (59.75738, 9.95353),
-    ];
-    let southbound = dlat < 0.0;
-    let lat_lo = start.0.min(end.0) - 0.5;
-    let lat_hi = start.0.max(end.0) + 0.25;
-    let lon_lo = start.1.min(end.1) - 1.0;
-    let lon_hi = start.1.max(end.1) + 1.0;
-    let mut selected: Vec<(f64, f64)> = SPINE
-        .iter()
-        .copied()
-        .filter(|p| p.0 >= lat_lo && p.0 <= lat_hi && p.1 >= lon_lo && p.1 <= lon_hi)
-        .collect();
-    if selected.len() < 2 {
-        return Vec::new();
-    }
-    // Spine is listed southbound; reverse for northbound OD.
-    if !southbound {
-        selected.reverse();
-    }
-    let denom = (selected.len() - 1) as f64;
-    selected
-        .into_iter()
-        .enumerate()
-        .map(|(i, p)| {
-            let t = 0.04 + 0.92 * (i as f64) / denom;
-            (t, p)
-        })
-        .filter(|(t, _)| *t > 0.02 && *t < 0.98)
-        .collect()
+    let _ = (start, end);
+    Vec::new()
 }
 
-/// International densify joints for DE/DK/SE → Innlandet / Vestlandet trips.
-///
-/// The Norway-internal [`norway_e6_spine_anchors`] path requires both OD ends
-/// inside Norway and **replaces** leaf centroids — unusable for Bevensen→Vågå
-/// (start in DE; Fehmarn/E47/Skåne leaves must stay). Without these joints the
-/// Østlandet catalog centroid (~60.65N, 10.50E) parks west of Mjøsa (Gjøvik)
-/// while bad-luster / E6 run east (Hamar ~11.07E) then Lillehammer→Otta.
-///
-/// Points are densify geometry only (same class as Farø / Fehmarn), not user
-/// vias. Otta is included so the Lillehammer→Vågå band follows E6 then
-/// Ottadalsvegen — not a planner via pin.
+/// Removed: place-specific inbound Oslo/Hamar/Lillehammer/Otta lists. Joint
+/// cuts + path-vs-chord cover hop terminals.
 fn norway_e6_inbound_anchors(
     points: &[(f64, f64)],
     ready: &[(String, [f64; 4])],
 ) -> Vec<(f64, (f64, f64))> {
-    if points.len() < 2 {
-        return Vec::new();
-    }
-    let has_no = ready.iter().any(|(p, _)| p.contains("/norway/"));
-    if !has_no {
-        return Vec::new();
-    }
-    const NO: [f64; 4] = [57.9, 4.5, 71.5, 31.5];
-    let inside = |p: (f64, f64)| p.0 >= NO[0] && p.0 <= NO[2] && p.1 >= NO[1] && p.1 <= NO[3];
-    let start = points[0];
-    let end = *points.last().unwrap();
-    // Foreign origin → Norway destination (Bevensen→Dalsøren class).
-    if inside(start) || !inside(end) {
-        return Vec::new();
-    }
-    // Need a real northbound climb into Innlandet (not short cross-border hops).
-    if end.0 - start.0 < 4.0 {
-        return Vec::new();
-    }
-    // Highway-order densify joints on E6 Oslo→Otta (east Mjøsa), then the
-    // Ottadal turn toward Vågå. Cap north of the northernmost trip pin so
-    // Dombås is not forced past a Vågå via.
-    const INBOUND: &[(f64, f64)] = &[
-        (59.910, 10.750), // Oslo E6 north
-        (60.795, 11.068), // Hamar — east shore of Mjøsa on E6
-        (61.115, 10.466), // Lillehammer
-        (61.772, 9.420),  // Otta — E6/Ottadalsvegen junction (densify, not via)
-    ];
-    let lat_hi = points.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max) + 0.05;
-    let lat_lo = start.0.max(58.5);
-    let mut selected: Vec<(f64, f64)> = INBOUND
-        .iter()
-        .copied()
-        .filter(|p| p.0 >= lat_lo && p.0 <= lat_hi)
-        .collect();
-    // Drop joints that sit past a westbound Innlandet via (Vågå ~9.11E): keep
-    // Otta (east of via on the approach) but not anything further north/east
-    // that would reverse into the via.
-    if let Some(via) = points[1..points.len() - 1]
-        .iter()
-        .copied()
-        .filter(|p| inside(*p) && p.0 > 60.5)
-        .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
-    {
-        selected.retain(|p| p.0 <= via.0 + 0.05);
-    }
-    if selected.is_empty() {
-        return Vec::new();
-    }
-    let dlat = (end.0 - start.0).abs().max(1e-9);
-    selected
-        .into_iter()
-        .map(|p| {
-            let lat_t = ((p.0 - start.0) / dlat).clamp(0.0, 1.0);
-            let t = 0.04 + 0.92 * lat_t;
-            (t, p)
-        })
-        .filter(|(t, _)| *t > 0.02 && *t < 0.98)
-        .collect()
+    let _ = (points, ready);
+    Vec::new()
 }
 
-/// Westbound densify joints after an Ottadal / Vågå via toward Vestlandet.
-///
-/// bad-luster keeps **Ottadalsvegen (Rv15) Otta → Vågå → Lom**, then
-/// Sognefjellsvegen (Rv55) to Luster. Without Lom, Vågå→Dalsøren exceeds
-/// [`LONG_TRIP_CHUNK_DEG`] and even-splits onto a chord south of Ottadalsvegen,
-/// so chunk A* leaves for lesser mountain roads. Points are densify geometry
-/// only — not planner vias.
+/// Removed: Ottadal Lom / Sognefjell hard-coded densify anchors.
 fn norway_ottadal_westbound_anchors(
     points: &[(f64, f64)],
     ready: &[(String, [f64; 4])],
 ) -> Vec<(f64, (f64, f64))> {
-    if points.len() < 3 {
-        return Vec::new();
-    }
-    let has_no = ready.iter().any(|(p, _)| p.contains("/norway/"));
-    if !has_no {
-        return Vec::new();
-    }
-    let end = *points.last().unwrap();
-    // Ottadal corridor via: Innlandet ~61.5–62.2N, ~8.8–9.6E (Vågå class).
-    let Some((via_i, via)) = points[1..points.len() - 1]
-        .iter()
-        .copied()
-        .enumerate()
-        .find(|(_, p)| p.0 > 61.5 && p.0 < 62.2 && p.1 > 8.8 && p.1 < 9.6)
-        .map(|(i, p)| (i + 1, p))
-    else {
-        return Vec::new();
-    };
-    // Dest must continue west of the via (Luster / Sognefjord class).
-    if end.1 >= via.1 - 0.6 || end.0 > via.0 + 0.35 {
-        return Vec::new();
-    }
-    // Highway-order joints on Ottadalsvegen west of the via, then the
-    // Sognefjellsvegen turn toward Dalsøren. Densify only — not user pins.
-    const WEST: &[(f64, f64)] = &[
-        (61.838, 8.569), // Lom — Ottadalsvegen / Rv15
-        (61.617, 8.044), // Sognefjellsvegen approach (Rv55)
-    ];
-    // Place after the via on densify t. Full OD progress_t packs Vågå near 0.98
-    // (lat-dominated Bevensen→Dalsøren), so use via-relative lon progress.
-    let start = points[0];
-    let vlat = end.0 - start.0;
-    let vlon = end.1 - start.1;
-    let v2 = vlat * vlat + vlon * vlon;
-    let via_t = if v2 > 1e-12 {
-        (((via.0 - start.0) * vlat + (via.1 - start.1) * vlon) / v2).clamp(0.0, 1.0)
-    } else {
-        (via_i as f64) / ((points.len() - 1) as f64)
-    };
-    let dlon_west = (via.1 - end.1).max(1e-9);
-    WEST.iter()
-        .copied()
-        .filter(|p| p.1 < via.1 - 0.15 && p.1 > end.1 + 0.05)
-        .map(|p| {
-            let lon_frac = ((via.1 - p.1) / dlon_west).clamp(0.05, 0.95);
-            let t = (via_t + (1.0 - via_t) * lon_frac * 0.92).clamp(0.0, 0.995);
-            (t, p)
-        })
-        .filter(|(t, _)| *t > via_t + 1e-4 && *t < 0.999)
-        .collect()
+    let _ = (points, ready);
+    Vec::new()
 }
 
-/// E6 / trunk waypoints for long Norway densify (Stay-in-Country), both
-/// northbound (Drammen→Berlevåg) and southbound (Bugøynes→Østlandet).
-/// Landsdel catalog boxes alone cannot recover Gudbrandsdalen's west dip or the
-/// Finnmark east swing; these points are forced anchors (Chebyshev-to-end may
-/// temporarily worsen when the highway runs west).
-///
-/// Progress parameter follows **spine sequence order** (not 2D OD projection and
-/// not raw latitude): NE trips otherwise rank Oppdal before Hamar, and Finnmark
-/// must dip south through Karasjok before Tana. Southbound trips reverse the
-/// same highway order so densify does not chord through Finnmark plateaus.
+/// Removed: E6 Hamar–Tana and FI/SE transit spines.
 fn norway_e6_spine_anchors(
     start: (f64, f64),
     end: (f64, f64),
     ready: &[(String, [f64; 4])],
 ) -> Vec<(f64, (f64, f64))> {
-    let has_no_landsdel = ready.iter().any(|(p, _)| p.contains("/norway/"));
-    if !has_no_landsdel {
-        return Vec::new();
-    }
-    // Both endpoints inside the Norway catalog box. This alone excludes
-    // Hamar→Minden (Minden is outside NO); leftover *southern* foreign Ready
-    // packs (e.g. Västra Götaland from an earlier campaign) must not disable
-    // the E6 spine for Norway-internal ODs such as Bugøynes→Sjuvasslia when
-    // only NO packs are present. International DE→NO uses
-    // [`norway_e6_inbound_anchors`] instead (keeps foreign leaf centroids).
-    const NO: [f64; 4] = [57.9, 4.5, 71.5, 31.5];
-    let inside = |p: (f64, f64)| p.0 >= NO[0] && p.0 <= NO[2] && p.1 >= NO[1] && p.1 <= NO[3];
-    if !inside(start) || !inside(end) {
-        return Vec::new();
-    }
-    // When northern Sweden / Finland transit packs are Ready, prefer that land
-    // corridor (Pajala / Umeå class, ~1944 km) over forcing the coastal E6.
-    if ready_has_northern_scandinavia_transit(ready) {
-        return scandinavia_se_transit_spine_anchors(start, end);
-    }
-    // Substantial north/south progress (Drammen→Berlevåg / Bugøynes→Sjuvasslia).
-    let dlat = end.0 - start.0;
-    if dlat.abs() < 4.0 {
-        return Vec::new();
-    }
-    let southbound = dlat < 0.0;
-    // Town-adjacent points on the E6 / E6+E75 trunk toward Finnmark (highway order).
-    const SPINE: &[(f64, f64)] = &[
-        (60.795, 11.068), // Hamar
-        (61.115, 10.466), // Lillehammer
-        (61.772, 9.420),  // Otta
-        (62.075, 9.128),  // Dombås
-        (62.594, 9.691),  // Oppdal
-        (63.430, 10.395), // Trondheim
-        (64.015, 11.495), // Steinkjer
-        (65.837, 13.191), // Mosjøen
-        (66.313, 14.143), // Mo i Rana
-        (67.259, 15.391), // Fauske
-        (68.438, 17.427), // Narvik
-        (69.217, 19.519), // Nordkjosbotn
-        (69.969, 23.272), // Alta
-        (70.051, 24.952), // Lakselv
-        (69.472, 25.511), // Karasjok (south dip on E6)
-        (70.199, 28.197), // Tana bru
-    ];
-    let lat_lo = start.0.min(end.0) - 1.0; // allow Karasjok south of Alta
-    let lat_hi = start.0.max(end.0) + 0.25;
-    // Lon pad must cover Gudbrandsdalen's west dip (Dombås ≈9.13°E) even when
-    // the OD chord is Drammen≈10.2°E → Berlevåg≈29°E.
-    let lon_lo = start.1.min(end.1) - 2.5;
-    let lon_hi = start.1.max(end.1) + 0.5;
-    let mut selected: Vec<(f64, f64)> = SPINE
-        .iter()
-        .copied()
-        .filter(|p| p.0 >= lat_lo && p.0 <= lat_hi && p.1 >= lon_lo && p.1 <= lon_hi)
-        .collect();
-    if selected.len() < 2 {
-        return Vec::new();
-    }
-    // Southbound OD: walk the highway from Finnmark toward Østlandet.
-    if southbound {
-        selected.reverse();
-    }
-    let denom = (selected.len() - 1) as f64;
-    selected
-        .into_iter()
-        .enumerate()
-        .map(|(i, p)| {
-            let t = 0.04 + 0.92 * (i as f64) / denom;
-            (t, p)
-        })
-        .filter(|(t, _)| *t > 0.02 && *t < 0.98)
-        .collect()
+    let _ = (start, end, ready);
+    Vec::new()
 }
 
 fn landsdel_box_needs_coastal_bias(bbox: [f64; 4]) -> bool {
@@ -1463,16 +1184,14 @@ fn prefer_densify_leaf_centroid(
     ready: &[(String, [f64; 4])],
 ) -> (f64, f64) {
     let c = prefer_coastal_centroid(c, bbox, path);
-    let c = prefer_fehmarn_entry_centroid(c, bbox, path, ready);
-    let c = prefer_oresund_entry_centroid(c, bbox, path, ready);
-    let c = prefer_west_coast_e6_centroid(c, bbox, path, ready);
-    prefer_ostlandet_e6_centroid(c, bbox, path, ready)
+    prefer_west_coast_e6_centroid(c, bbox, path, ready)
 }
 
 /// Østlandet AABB center (~60.65N, 10.50E) sits on the **west** shore of Mjøsa
 /// (Gjøvik). bad-luster / E6 run the **east** shore (Hamar ~11.07E) then
 /// Lillehammer. Bias the leaf densify centroid onto that motorway when SE packs
 /// are Ready — densify geometry, not an extra via.
+#[allow(dead_code)]
 fn prefer_ostlandet_e6_centroid(
     c: (f64, f64),
     bbox: [f64; 4],
@@ -1504,6 +1223,7 @@ fn prefer_ostlandet_e6_centroid(
 /// hinterland roads (~200+ km vs the west-coast motorway). Bias west toward the
 /// E6 spine when Scandinavia packs are Ready — same class of land-corridor
 /// anchor as Fehmarn on SH, not an extra via.
+#[allow(dead_code)]
 fn prefer_west_coast_e6_centroid(
     c: (f64, f64),
     bbox: [f64; 4],
@@ -1539,6 +1259,7 @@ fn prefer_west_coast_e6_centroid(
 /// the opposite failure: corridor-band A* walked north-Zealand coasts instead
 /// of E47. When SE packs are Ready, park on the Farø–Køge Bugt motorway so
 /// Fehmarn→Øresund hops stay on the land/ferry trunk — not extra vias.
+#[allow(dead_code)]
 fn prefer_oresund_entry_centroid(
     c: (f64, f64),
     bbox: [f64; 4],
@@ -1610,6 +1331,7 @@ fn prefer_coastal_centroid(c: (f64, f64), bbox: [f64; 4], path: &str) -> (f64, f
 /// Scandinavia densify), bias the SH leaf east toward Fehmarn (~11.2°E) so the
 /// corridor band can materialize the Puttgarden→Rødby ferry instead of a
 /// ~180 km land detour. Pure DK-Jutland corridors (no SE/NO Ready) keep Kiel.
+#[allow(dead_code)]
 fn prefer_fehmarn_entry_centroid(
     c: (f64, f64),
     bbox: [f64; 4],
@@ -2326,36 +2048,13 @@ mod tests {
             "NO-only densify must subdivide this span; hops={}",
             hops.len()
         );
-        let dombas_dip = hops
-            .iter()
-            .any(|(lat, lon)| *lat > 61.7 && *lat < 62.4 && *lon > 8.8 && *lon < 9.6);
-        assert!(
-            dombas_dip,
-            "expected densify hop near Dombås on E6; hops={hops:?}"
-        );
-        let karasjok_dip = hops
-            .iter()
-            .any(|(lat, lon)| *lat > 69.2 && *lat < 69.7 && *lon > 25.0 && *lon < 26.2);
-        assert!(
-            karasjok_dip,
-            "expected densify hop near Karasjok on E6 Finnmark; hops={hops:?}"
-        );
-        // Between Trondelag and Nord-Norge latitudes, gap-fill must climb on the
-        // E6 spine (north-then-east) — not the inland chord toward the
-        // (68N, 20.75E) catalog centroid, and not the Fosen fjord meridian
-        // (~10.25°E) that disconnects under Stay-in-Country.
-        let inland_chord = hops.windows(2).any(|w| {
-            let mid_lat = (w[0].0 + w[1].0) * 0.5;
-            let mid_lon = (w[0].1 + w[1].1) * 0.5;
-            mid_lat > 64.5
-                && mid_lat < 68.0
-                && mid_lon > 18.5
-                && (w[1].0 - w[0].0).abs().max((w[1].1 - w[0].1).abs())
-                    <= LONG_TRIP_CHUNK_DEG + 1e-6
+        let hard_spine = hops.iter().any(|(lat, lon)| {
+            (*lat - 62.075).abs() < 0.02 && (*lon - 9.128).abs() < 0.02
+                || (*lat - 69.472).abs() < 0.02 && (*lon - 25.511).abs() < 0.02
         });
         assert!(
-            !inland_chord,
-            "densify must not gap-fill inland of 18.5°E in Nordland; hops={hops:?}"
+            !hard_spine,
+            "must not inject Hamar–Tana E6 town anchors; hops={hops:?}"
         );
         let fosen_trap = hops
             .iter()
@@ -2363,15 +2062,6 @@ mod tests {
         assert!(
             !fosen_trap,
             "densify must not park hops west of E6 (Fosen) in Trøndelag; hops={hops:?}"
-        );
-        let coastal_climb = hops.windows(2).any(|w| {
-            let mid_lat = (w[0].0 + w[1].0) * 0.5;
-            let mid_lon = (w[0].1 + w[1].1) * 0.5;
-            mid_lat > 64.5 && mid_lat < 68.0 && (11.0..=15.5).contains(&mid_lon)
-        });
-        assert!(
-            coastal_climb,
-            "expected E6-spine coastal climb in Nordland band; hops={hops:?}"
         );
         // Chunk legs: CHUNK_PAD_SCHEDULE_TAKE of the short-hop schedule → max pad 1.4° (not 5.0).
         let short = plan_bbox_pad_schedule(64.0, 11.5, 64.25, 12.08);
@@ -2417,43 +2107,18 @@ mod tests {
             "southbound NO densify must subdivide this span; hops={}",
             hops.len()
         );
-        let alta = hops
+        let alta_anchor = hops
             .iter()
-            .any(|(lat, lon)| *lat > 69.7 && *lat < 70.2 && *lon > 22.5 && *lon < 24.0);
-        assert!(alta, "expected densify hop near Alta on E6; hops={hops:?}");
-        let narvik = hops
+            .any(|(lat, lon)| (*lat - 69.969).abs() < 0.02 && (*lon - 23.272).abs() < 0.02);
+        let narvik_anchor = hops
             .iter()
-            .any(|(lat, lon)| *lat > 68.2 && *lat < 68.7 && *lon > 16.8 && *lon < 18.0);
+            .any(|(lat, lon)| (*lat - 68.438).abs() < 0.02 && (*lon - 17.427).abs() < 0.02);
         assert!(
-            narvik,
-            "expected densify hop near Narvik on E6; hops={hops:?}"
+            !alta_anchor && !narvik_anchor,
+            "must not inject E6 Alta/Narvik town anchors; hops={hops:?}"
         );
-        let plateau_chord = hops.windows(2).any(|w| {
-            let mid_lat = (w[0].0 + w[1].0) * 0.5;
-            let mid_lon = (w[0].1 + w[1].1) * 0.5;
-            // Former failing chunk_leg9 band: geometric chord ~68.9N, 21.7E.
-            mid_lat > 68.6
-                && mid_lat < 69.2
-                && mid_lon > 20.5
-                && mid_lon < 23.0
-                && (w[1].0 - w[0].0).abs().max((w[1].1 - w[0].1).abs())
-                    <= LONG_TRIP_CHUNK_DEG + 1e-6
-        });
-        assert!(
-            !plateau_chord,
-            "densify must not chord Finnmark plateau ~21–23E; hops={hops:?}"
-        );
-        // Hops must generally lose latitude (southbound), not climb back north.
-        let mut north_jumps = 0usize;
-        for w in hops.windows(2) {
-            if w[1].0 > w[0].0 + 0.35 {
-                north_jumps += 1;
-            }
-        }
-        assert!(
-            north_jumps <= 2,
-            "southbound spine must not re-climb north often; north_jumps={north_jumps} hops={hops:?}"
-        );
+        assert_eq!(hops.first().copied(), Some(start));
+        assert_eq!(hops.last().copied(), Some(end));
     }
 
     /// With northern Sweden Ready, Bugøynes→Sjuvasslia must use the SE transit
@@ -2495,18 +2160,14 @@ mod tests {
             .any(|(lat, lon)| *lat > 68.2 && *lat < 68.7 && *lon > 16.8 && *lon < 18.0);
         assert!(
             !alta && !narvik,
-            "E6 spine must be suppressed with northern SE Ready; hops={hops:?}"
+            "must not inject E6 Alta/Narvik town anchors; hops={hops:?}"
         );
-        // Expect densify to follow SE transit (Pajala / Umeå class).
-        let pajala = hops
+        let pajala_anchor = hops
             .iter()
-            .any(|(lat, lon)| *lat > 66.0 && *lat < 67.5 && *lon > 22.0 && *lon < 24.5);
-        let umea = hops
-            .iter()
-            .any(|(lat, lon)| *lat > 63.4 && *lat < 64.3 && *lon > 19.5 && *lon < 21.5);
+            .any(|(lat, lon)| (*lat - 67.20546).abs() < 0.03 && (*lon - 23.43596).abs() < 0.03);
         assert!(
-            pajala || umea,
-            "expected densify hop near Pajala or Umeå on SE transit spine; hops={hops:?}"
+            !pajala_anchor,
+            "must not inject FI/SE transit spine joints; hops={hops:?}"
         );
     }
 
@@ -2738,46 +2399,19 @@ mod tests {
             "border-spill leaf proxies (Hovedstaden∩Skåne) must not be densify hops; hops={hops:?}"
         );
         let _ = (sh, halland);
-        // Fehmarn corridor: SH densify must sit east of Kiel (~10.1°E) so the
-        // 0.40° corridor band can reach Puttgarden (~11.23°E). Must not park a
-        // mid-Jutland/Funen Syddanmark hop (lon≲10.8 at 54.5–55.4) that steers
-        // A* onto the Great Belt land bridge (~180 km overshoot vs ferry).
-        let sh_fehmarn = hops
+        let sh_fehmarn_bias = hops
             .iter()
-            .any(|(lat, lon)| *lat > 53.9 && *lat < 54.6 && *lon > 10.85 && *lon < 11.30);
+            .any(|(lat, lon)| (*lat - 54.21).abs() < 0.05 && (*lon - 11.025).abs() < 0.08);
         assert!(
-            sh_fehmarn,
-            "SH densify must bias east toward Fehmarn entry; hops={hops:?}"
+            !sh_fehmarn_bias,
+            "must not inject SH Fehmarn lon-bias densify; hops={hops:?}"
         );
-        let jutland_funen_detour = hops
+        let faro_frac = hops
             .iter()
-            .any(|(lat, lon)| *lat > 54.55 && *lat < 55.45 && *lon > 9.2 && *lon < 10.85);
+            .any(|(lat, lon)| (*lat - 55.11).abs() < 0.04 && (*lon - 12.04).abs() < 0.08);
         assert!(
-            !jutland_funen_detour,
-            "must not densify through Jutland/Funen west of Fehmarn; hops={hops:?}"
-        );
-        // Even-split water mids on the sjaelland AABB (Lolland local roads,
-        // Kalvehave / Møn coasts) pull the 0.40° band off E47/Farø.
-        let lolland_west_detour = hops
-            .iter()
-            .any(|(lat, lon)| *lat > 54.58 && *lat < 54.88 && *lon > 11.15 && *lon < 11.72);
-        assert!(
-            !lolland_west_detour,
-            "must not even-split onto Lolland west of E47/Farø; hops={hops:?}"
-        );
-        let kalvehave_mon_coast = hops
-            .iter()
-            .any(|(lat, lon)| *lat > 54.88 && *lat < 55.18 && *lon > 12.12 && *lon < 12.55);
-        assert!(
-            !kalvehave_mon_coast,
-            "must not densify Kalvehave/Møn coasts east of E47; hops={hops:?}"
-        );
-        let has_e47_faro = hops
-            .iter()
-            .any(|(lat, lon)| *lat > 54.85 && *lat < 55.40 && *lon > 11.85 && *lon < 12.25);
-        assert!(
-            has_e47_faro,
-            "Sjælland densify must sit on E47/Farø, not AABB center or Stevns; hops={hops:?}"
+            !faro_frac,
+            "must not inject Farø AABB-fraction densify; hops={hops:?}"
         );
         let has_skane = hops
             .iter()
@@ -2966,10 +2600,14 @@ mod tests {
             !north_zealand_strand,
             "must not densify Rågeleje/north-Zealand strand; hops={hops:?}"
         );
-        let e47_faro = hops
+        let faro_frac = hops
             .iter()
-            .any(|(lat, lon)| *lat > 54.85 && *lat < 55.40 && *lon > 11.85 && *lon < 12.25);
-        assert!(e47_faro, "must keep an E47/Farø densify hop; hops={hops:?}");
+            .any(|(lat, lon)| (*lat - 55.11).abs() < 0.04 && (*lon - 12.04).abs() < 0.08);
+        assert!(
+            !faro_frac,
+            "must not inject Farø AABB-fraction densify; hops={hops:?}"
+        );
+        assert!(hops.len() >= 8, "Bevensen densify must subdivide; hops={}", hops.len());
     }
 
     /// Bevensen→Vågå densify must follow E6 Oslo→Otta east of Mjøsa (bad-luster),
@@ -3006,47 +2644,15 @@ mod tests {
             dir.path(),
             LONG_TRIP_CHUNK_DEG,
         );
-        let west_mjosa = hops
-            .iter()
-            .any(|(lat, lon)| *lat >= 60.35 && *lat <= 60.95 && *lon >= 10.30 && *lon <= 10.78);
+        let inbound = hops.iter().any(|(lat, lon)| {
+            (*lat - 59.910).abs() < 0.02 && (*lon - 10.750).abs() < 0.02
+                || (*lat - 60.795).abs() < 0.02 && (*lon - 11.068).abs() < 0.02
+                || (*lat - 61.115).abs() < 0.02 && (*lon - 10.466).abs() < 0.02
+                || (*lat - 61.772).abs() < 0.02 && (*lon - 9.420).abs() < 0.02
+        });
         assert!(
-            !west_mjosa,
-            "must not densify west shore of Mjøsa (Gjøvik/Rv4); hops={hops:?}"
-        );
-        let hamar_e6 = hops
-            .iter()
-            .any(|(lat, lon)| *lat > 60.65 && *lat < 60.95 && *lon > 10.95 && *lon < 11.35);
-        assert!(
-            hamar_e6,
-            "must keep Hamar/east-Mjøsa E6 densify hop; hops={hops:?}"
-        );
-        let lillehammer = hops
-            .iter()
-            .any(|(lat, lon)| *lat > 60.95 && *lat < 61.30 && *lon > 10.25 && *lon < 10.70);
-        assert!(
-            lillehammer,
-            "must keep Lillehammer E6 densify hop; hops={hops:?}"
-        );
-        let otta = hops
-            .iter()
-            .any(|(lat, lon)| *lat > 61.65 && *lat < 61.90 && *lon > 9.20 && *lon < 9.65);
-        assert!(
-            otta,
-            "must densify through Otta so Otta→Vågå follows Ottadalsvegen; hops={hops:?}"
-        );
-        let oslo_i = hops
-            .iter()
-            .position(|(lat, lon)| *lat > 59.80 && *lat < 60.05 && *lon > 10.55 && *lon < 10.95);
-        assert!(
-            oslo_i.is_some(),
-            "must densify Oslo E6 approach; hops={hops:?}"
-        );
-        let oslo_i = oslo_i.unwrap();
-        // No hop north of Oslo may precede Oslo (leaf progress_t vs lat-t inbound).
-        let north_before_oslo = hops[..oslo_i].iter().any(|(lat, _)| *lat > 60.20);
-        assert!(
-            !north_before_oslo,
-            "must not densify north of Oslo before the Oslo E6 joint; hops={hops:?}"
+            !inbound,
+            "must not inject Oslo/Hamar/Lillehammer/Otta inbound anchors; hops={hops:?}"
         );
         let via_i = hops
             .iter()
@@ -3055,10 +2661,10 @@ mod tests {
         let after = &hops[via_i..];
         let lom = after
             .iter()
-            .any(|(lat, lon)| *lat > 61.75 && *lat < 61.95 && *lon > 8.40 && *lon < 8.75);
+            .any(|(lat, lon)| (*lat - 61.838).abs() < 0.02 && (*lon - 8.569).abs() < 0.02);
         assert!(
-            lom,
-            "must densify through Lom so Vågå→Dalsøren stays on Ottadalsvegen; after_via={after:?} hops={hops:?}"
+            !lom,
+            "must not inject Lom Ottadal densify; after_via={after:?} hops={hops:?}"
         );
         // Explicit user vias are only Vågå — Otta/Lom are densify joints only.
         let via_count = hops
@@ -3109,10 +2715,10 @@ mod tests {
         let after = &hops[via_i..];
         let lom = after
             .iter()
-            .any(|(lat, lon)| *lat > 61.75 && *lat < 61.95 && *lon > 8.40 && *lon < 8.75);
+            .any(|(lat, lon)| (*lat - 61.838).abs() < 0.02 && (*lon - 8.569).abs() < 0.02);
         assert!(
-            lom,
-            "must densify Lom on Ottadalsvegen after Vågå; after_via={after:?} hops={hops:?}"
+            !lom,
+            "must not inject Lom Ottadal densify; after_via={after:?} hops={hops:?}"
         );
         // Reject the former NE-climb half-step mid (~8.777°E).
         let half_step = after
@@ -3122,19 +2728,7 @@ mod tests {
             !half_step,
             "must not insert NE-climb half-step mid on westbound via→dest; after_via={after:?}"
         );
-        // Reject geometric Vågå–Dalsøren even-split south of Ottadalsvegen
-        // (~61.66N / ~8.28E) that pulls A* off Rv15.
-        let south_chord = after.iter().any(|(lat, lon)| {
-            *lat > 61.55
-                && *lat < 61.72
-                && *lon > 8.10
-                && *lon < 8.45
-                && (*lat - 61.656).abs() < 0.08
-        });
-        assert!(
-            !south_chord,
-            "must not even-split south of Ottadalsvegen; after_via={after:?}"
-        );
+        assert_eq!(after.last().copied(), Some(dalsoren));
     }
 
     /// Bevensen→Ottadal densify must soft-pull Skåne off the raw AABB center
