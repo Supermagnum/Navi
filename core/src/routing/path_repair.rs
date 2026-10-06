@@ -1,9 +1,10 @@
-//! Post-plan densify geometry repair: joints as cuts (hairs / loops).
+//! Post-plan densify geometry helpers.
 //!
-//! Chunked hops are concatenated at densify joints. A 35 km snap at both sides of
-//! a joint used to produce 180-degree out-and-backs. [`repair_joint_cuts`] drops
-//! those hairs and near-closed loops so the joint is a hop terminal, not a vertex
-//! the path may reverse through.
+//! FU13: cosmetic vertex deletion ([`repair_joint_cuts`],
+//! [`repair_path_much_longer_than_chord`], [`trim_joint_hairs`]) is **not**
+//! applied to the exported route. Hop continuity is enforced by starting the
+//! next hop at the previous hop's end node; the drawn line, distance, ETA and
+//! maneuvers must all describe the search path.
 
 /// Earth radius for local haversine (metres).
 fn haversine_m(a: (f64, f64), b: (f64, f64)) -> f64 {
@@ -34,7 +35,8 @@ fn turn_deg(a: (f64, f64), b: (f64, f64), c: (f64, f64)) -> f64 {
     d.abs()
 }
 
-/// Drop 180-degree out-and-backs at densify joints (legs 40 m–2.5 km).
+/// Unused in planning (FU13): cosmetic hair trim. Hop continuity uses the
+/// previous hop end node instead.
 pub fn trim_joint_hairs(pts: &[(f64, f64)]) -> Vec<(f64, f64)> {
     if pts.len() < 3 {
         return pts.to_vec();
@@ -105,9 +107,31 @@ pub fn repair_joint_cuts(pts: &[(f64, f64)]) -> Vec<(f64, f64)> {
     collapse_near_loops(&trim_joint_hairs(pts))
 }
 
+/// Sum of consecutive haversine segments along a `(lat, lon)` polyline (metres).
+pub fn polyline_length_m(pts: &[(f64, f64)]) -> f64 {
+    pts.windows(2).map(|w| haversine_m(w[0], w[1])).sum()
+}
+
 #[cfg(test)]
 fn path_len_m(pts: &[(f64, f64)]) -> f64 {
-    pts.windows(2).map(|w| haversine_m(w[0], w[1])).sum()
+    polyline_length_m(pts)
+}
+
+/// True when hop edge-sum distance and polyline length agree within `max_rel`
+/// (e.g. 0.005 = 0.5 %). Degenerate empty/zero cases fail.
+pub fn hop_distance_agrees_with_polyline(
+    distance_m: f64,
+    polyline_pts: &[(f64, f64)],
+    max_rel: f64,
+) -> bool {
+    if distance_m <= 0.0 || polyline_pts.len() < 2 {
+        return false;
+    }
+    let poly_m = polyline_length_m(polyline_pts);
+    if poly_m <= 0.0 {
+        return false;
+    }
+    ((poly_m - distance_m).abs() / distance_m) <= max_rel
 }
 
 fn window_max_seg_m(pts: &[(f64, f64)]) -> f64 {
@@ -241,6 +265,17 @@ mod tests {
         let back = parse_route_polyline(&s);
         assert_eq!(back.len(), 2);
         assert!((back[0].0 - 53.08).abs() < 1e-6);
+    }
+
+    #[test]
+    fn hop_polyline_length_agrees_with_distance_within_half_percent() {
+        // Straight ~11.1 km east at lat 60: lon delta ≈ 0.2°.
+        let pts = vec![(60.0, 10.0), (60.0, 10.2)];
+        let poly_m = polyline_length_m(&pts);
+        assert!(hop_distance_agrees_with_polyline(poly_m, &pts, 0.005));
+        assert!(hop_distance_agrees_with_polyline(poly_m * 1.004, &pts, 0.005));
+        assert!(!hop_distance_agrees_with_polyline(poly_m * 1.01, &pts, 0.005));
+        assert!(!hop_distance_agrees_with_polyline(0.0, &pts, 0.005));
     }
 
     #[test]

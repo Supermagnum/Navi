@@ -134,29 +134,15 @@ pub fn is_construction_or_proposed_highway(highway: Option<&str>) -> bool {
     })
 }
 
-/// True when a pack edge is a non-ferry chord with no interior shape (Fehmarn
-/// Belt water duplicate). This is not a water-polygon test: empty `shape`, not
-/// ferry/tunnel, not motorway/trunk/primary. There is no length floor.
-pub fn is_untagged_water_shortcut(edge: &GraphEdge) -> bool {
-    if edge.is_ferry || edge.is_tunnel {
-        return false;
-    }
-    if !edge.shape.is_empty() {
-        return false;
-    }
-    match edge.highway.as_deref() {
-        Some(
-            "motorway" | "motorway_link" | "trunk" | "trunk_link" | "primary" | "primary_link",
-        ) => false,
-        _ => true,
-    }
-}
-
+/// Endpoint tolerance when matching a pack edge to an overlay ferry terminal
+/// pair. Both ends must match (same or reversed). Ordinary roads and bridges
+/// near one terminal do not match the other terminal.
 const OVERLAY_FERRY_MATCH_M: f64 = 2_500.0;
 
 /// Pack edge whose endpoints match an overlay `route=ferry` (either direction).
+/// The pack edge itself must not already be a tagged ferry.
 pub fn pack_edge_matches_overlay_ferry(pack: &GraphEdge, ferry: &GraphEdge) -> bool {
-    if !ferry.is_ferry {
+    if pack.is_ferry || !ferry.is_ferry {
         return false;
     }
     let same = endpoint_haversine_m(
@@ -174,30 +160,28 @@ pub fn pack_edge_matches_overlay_ferry(pack: &GraphEdge, ferry: &GraphEdge) -> b
     same || rev
 }
 
-/// Stamp pack edges that match overlay ferries: `is_ferry` plus ferry A* cost.
-pub fn stamp_overlay_ferry_costs(
+/// Drop non-ferry pack edges that join the same terminals as an overlay ferry.
+/// The overlay edge (geometry, duration, ferry cost) is kept at merge time;
+/// pack edges are not stamped as ferries.
+pub fn drop_pack_edges_replaced_by_overlay_ferry(
     graph: &mut RouteGraph,
     overlay: &RouteGraph,
-    profile: RoutingProfile,
 ) {
     let ferries: Vec<&GraphEdge> = overlay.edges.iter().filter(|e| e.is_ferry).collect();
     if ferries.is_empty() {
         return;
     }
-    for e in graph.edges.iter_mut() {
-        let hit = ferries
-            .iter()
-            .copied()
-            .find(|f| pack_edge_matches_overlay_ferry(e, f));
-        let Some(f) = hit else {
-            continue;
-        };
-        e.is_ferry = true;
-        if e.name.is_none() {
-            e.name = f.name.clone();
-        }
-        e.base_weight = ferry_base_weight_m(e.length_m, None, profile);
-    }
+    let profile = graph.profile();
+    let nodes = std::mem::take(&mut graph.nodes);
+    let edges: Vec<GraphEdge> = std::mem::take(&mut graph.edges)
+        .into_iter()
+        .filter(|e| {
+            !ferries
+                .iter()
+                .any(|f| pack_edge_matches_overlay_ferry(e, f))
+        })
+        .collect();
+    *graph = RouteGraph::from_parts(nodes, edges, profile);
 }
 
 /// A* weight in metres for a ferry edge. `length_m` stays the geometric length.
@@ -2727,6 +2711,7 @@ fn edge_allowed_at(
     edge_allowed_core(edge, options, profile, Some(edge_idx))
 }
 
+#[cfg(test)]
 fn edge_allowed_for_options(
     edge: &GraphEdge,
     options: &RouteOptions,
@@ -5063,24 +5048,7 @@ mod tests {
     }
 
     #[test]
-    fn untagged_water_shortcut_matches_fehmarn_belt_duplicate() {
-        let mut water = test_edge(1, 2, 54.50709, 11.23183, 54.62456, 11.30643);
-        water.length_m = 13_919.0;
-        water.highway = Some("unclassified".into());
-        water.is_ferry = false;
-        assert!(is_untagged_water_shortcut(&water));
-        let mut ferry = water.clone();
-        ferry.is_ferry = true;
-        ferry.length_m = 18_900.0;
-        assert!(!is_untagged_water_shortcut(&ferry));
-        let mut motorway = water.clone();
-        motorway.highway = Some("motorway".into());
-        motorway.length_m = 18_000.0;
-        assert!(!is_untagged_water_shortcut(&motorway));
-        water.length_m = 3_000.0;
-        assert!(is_untagged_water_shortcut(&water));
-        water.shape.push((11.25, 54.56));
-        assert!(!is_untagged_water_shortcut(&water));
+    fn construction_or_proposed_highway_detected() {
         let mut proposed = test_edge(1, 2, 54.5, 11.2, 54.6, 11.3);
         proposed.highway = Some("proposed".into());
         assert!(is_construction_or_proposed_highway(
@@ -5113,7 +5081,7 @@ mod tests {
     }
 
     #[test]
-    fn overlay_ferry_stamp_puttgarden_kinsarvik_oresund_gedser() {
+    fn overlay_ferry_replaces_pack_edge_not_stamp() {
         let crossings = [
             (54.50709, 11.23183, 54.62456, 11.30643, "Puttgarden-Rodby"),
             (60.391, 6.721, 60.425, 6.621, "Kinsarvik-Utne"),
@@ -5125,7 +5093,9 @@ mod tests {
             let mut pack = test_edge(id, id + 1, *slat, *slon, *elat, *elon);
             pack.highway = Some("unclassified".into());
             pack.length_m = 13_000.0;
-            let ferry = named_ferry(id + 2, id + 3, *slat, *slon, *elat, *elon, name);
+            let mut ferry = named_ferry(id + 2, id + 3, *slat, *slon, *elat, *elon, name);
+            ferry.length_m = 18_900.0;
+            ferry.shape = vec![(*slon + 0.01, *slat + 0.01)];
             assert!(pack_edge_matches_overlay_ferry(&pack, &ferry), "{name}");
             let mut nodes = HashMap::new();
             for (nid, n) in [test_node(id, *slat, *slon), test_node(id + 1, *elat, *elon)] {
@@ -5139,17 +5109,63 @@ mod tests {
             ] {
                 onodes.insert(nid, n);
             }
-            let overlay = RouteGraph::from_parts(onodes, vec![ferry], RoutingProfile::Car);
-            stamp_overlay_ferry_costs(&mut g, &overlay, RoutingProfile::Car);
-            assert!(g.edges[0].is_ferry, "{name}");
-            assert_eq!(g.edges[0].name.as_deref(), Some(*name));
+            let overlay = RouteGraph::from_parts(onodes, vec![ferry.clone()], RoutingProfile::Car);
+            drop_pack_edges_replaced_by_overlay_ferry(&mut g, &overlay);
+            assert!(
+                g.edges.is_empty(),
+                "{name}: non-ferry pack edge joining terminals must be removed"
+            );
+            let merged = crate::routing::indexed::merge_tile_graphs(
+                vec![g, overlay],
+                RoutingProfile::Car,
+            );
+            assert_eq!(merged.edges.len(), 1, "{name}");
+            assert!(merged.edges[0].is_ferry, "{name}");
+            assert_eq!(merged.edges[0].name.as_deref(), Some(*name));
+            assert_eq!(merged.edges[0].shape.len(), 1, "{name}: overlay geometry");
+            assert!((merged.edges[0].length_m - 18_900.0).abs() < 1e-6);
             let mut avoid = RouteOptions::default();
             avoid.avoid_ferries = true;
             assert!(
-                !edge_allowed_for_options(&g.edges[0], &avoid, RoutingProfile::Car),
+                !edge_allowed_for_options(&merged.edges[0], &avoid, RoutingProfile::Car),
                 "avoid_ferries must drop {name}"
             );
         }
+    }
+
+    #[test]
+    fn overlay_ferry_match_skips_oresund_and_storebaelt_bridges() {
+        // Helsingør–Helsingborg ferry terminals.
+        let ferry = named_ferry(1, 2, 56.034, 12.617, 56.043, 12.691, "Helsingor-Helsingborg");
+        // Øresund bridge (Copenhagen–Malmö): neither end is a ferry terminal.
+        let mut oresund = test_edge(10, 11, 55.573, 12.568, 55.574, 12.892);
+        oresund.highway = Some("motorway".into());
+        oresund.length_m = 16_000.0;
+        assert!(
+            !pack_edge_matches_overlay_ferry(&oresund, &ferry),
+            "Øresund bridge must stay a road"
+        );
+        // Storebælt bridge (Zealand–Funen): far from Helsingør terminals.
+        let mut storebaelt = test_edge(12, 13, 55.341, 10.970, 55.341, 11.200);
+        storebaelt.highway = Some("motorway".into());
+        storebaelt.length_m = 18_000.0;
+        assert!(
+            !pack_edge_matches_overlay_ferry(&storebaelt, &ferry),
+            "Storebælt bridge must stay a road"
+        );
+        // Local road near Helsingør only — other end is not Helsingborg.
+        let mut local = test_edge(14, 15, 56.034, 12.617, 56.040, 12.630);
+        local.highway = Some("secondary".into());
+        local.length_m = 1_200.0;
+        assert!(
+            !pack_edge_matches_overlay_ferry(&local, &ferry),
+            "ordinary road near one terminal must not match"
+        );
+        // True water-chord between the same terminals is replaced.
+        let mut chord = test_edge(16, 17, 56.034, 12.617, 56.043, 12.691);
+        chord.highway = Some("unclassified".into());
+        chord.length_m = 4_500.0;
+        assert!(pack_edge_matches_overlay_ferry(&chord, &ferry));
     }
 
     #[test]

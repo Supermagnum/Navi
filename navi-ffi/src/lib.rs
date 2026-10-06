@@ -27,9 +27,6 @@ use driver_break_core::routing::graph::{
     MotorSoftCostProfile, OfficialNetworkKind, RoadLabelSticky, RoadNodeIndex, RouteGraph,
     RouteOptions, RoutingProfile, SnapTooFar, SurfaceRoutingMode,
 };
-use driver_break_core::routing::path_repair::{
-    encode_lat_lon_polyline, repair_joint_cuts, repair_path_much_longer_than_chord,
-};
 use driver_break_core::routing::rest::car_break_interval_hours;
 use driver_break_core::routing::safety::{
     check_overnight_candidate, DangerBarrierIndex, OvernightProximityIndex,
@@ -2796,12 +2793,30 @@ fn plan_car_route_chunked_legs(
             return r;
         }
         let hop_ferry = parse_u64_token(&leg.report, "route_ferry_legs=").unwrap_or(0);
+        let hop_poly_pts = parse_route_polyline(&leg.route_polyline);
+        let hop_poly_km =
+            driver_break_core::routing::path_repair::polyline_length_m(&hop_poly_pts) / 1000.0;
+        let hop_dist_m = leg.distance_km * 1000.0;
+        let hop_poly_agree =
+            driver_break_core::routing::path_repair::hop_distance_agrees_with_polyline(
+                hop_dist_m,
+                &hop_poly_pts,
+                0.005,
+            );
+        let hop_poly_rel = if hop_dist_m > 0.0 {
+            ((hop_poly_km * 1000.0 - hop_dist_m).abs() / hop_dist_m) * 100.0
+        } else {
+            0.0
+        };
         driver_break_core::routing::plan_file_log::line(format!(
-            "hop_result=success i={} km={:.3} eta_min={:.1} terminate={} \
-             route_ferry_legs={hop_ferry} expansions={} pack_load_ms={} datex_bind_ms={} \
-             snap_ms={} search_ms={}",
+            "hop_result=success i={} km={:.3} poly_km={:.3} poly_agree_0_5pct={} \
+             poly_rel_pct={:.3} eta_min={:.1} terminate={} route_ferry_legs={hop_ferry} \
+             expansions={} pack_load_ms={} datex_bind_ms={} snap_ms={} search_ms={}",
             i + 1,
             leg.distance_km,
+            hop_poly_km,
+            hop_poly_agree,
+            hop_poly_rel,
             leg.eta_minutes,
             leg.search_terminate_reason,
             leg.search_expansions,
@@ -2810,10 +2825,21 @@ fn plan_car_route_chunked_legs(
             parse_u64_token(&leg.report, "snap_ms=").unwrap_or(0),
             parse_u64_token(&leg.report, "search_ms=").unwrap_or(0),
         ));
+        report.push_str(&format!(
+            "hop{}_poly_km={:.3}; hop{}_km={:.3}; hop{}_poly_agree_0_5pct={}\n",
+            i + 1,
+            hop_poly_km,
+            i + 1,
+            leg.distance_km,
+            i + 1,
+            hop_poly_agree
+        ));
         hops_sidecar.push(serde_json::json!({
             "i": i + 1,
             "endpoints": format!("{slat:.5},{slon:.5}->{elat:.5},{elon:.5}"),
             "km": (leg.distance_km * 1000.0).round() / 1000.0,
+            "poly_km": (hop_poly_km * 1000.0).round() / 1000.0,
+            "poly_agree_0_5pct": hop_poly_agree,
             "eta_min": (leg.eta_minutes * 10.0).round() / 10.0,
             "terminate": leg.search_terminate_reason,
             "route_ferry_legs": hop_ferry,
@@ -2888,19 +2914,9 @@ fn plan_car_route_chunked_legs(
         } = leg;
         drop((leftover_days, leftover_segs, leftover_adv));
     }
-    if !polyline.is_empty() {
-        let pts = parse_route_polyline(&polyline);
-        let mut repaired = repair_joint_cuts(&pts);
-        repaired = repair_path_much_longer_than_chord(&repaired);
-        if repaired.len() != pts.len() {
-            polyline = encode_lat_lon_polyline(&repaired);
-            report.push_str(&format!(
-                "joint_cut_repair pts_before={} pts_after={}\n",
-                pts.len(),
-                repaired.len()
-            ));
-        }
-    }
+    // FU13: do not delete vertices from the exported line. Distance, ETA,
+    // maneuvers and GeoJSON must describe the path the search chose; every
+    // point must lie on a road or ferry. Cosmetic joint/chord repair is off.
     sim_samples.push(']');
     let maneuvers = maneuvers_to_json(&stitch_chunk_leg_maneuvers(&leg_maneuvers));
     let priority_path_share_pct = if priority_share_w > 0.0 {

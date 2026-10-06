@@ -25,7 +25,7 @@ use super::wetland_pack::{
 use crate::poi::PoiIndex;
 use crate::routing::basemap::{pbf_stem_to_geofabrik_path, region_bbox};
 use crate::routing::graph::{
-    is_construction_or_proposed_highway, is_untagged_water_shortcut, stamp_overlay_ferry_costs,
+    drop_pack_edges_replaced_by_overlay_ferry, is_construction_or_proposed_highway,
     GraphEdge, RouteGraph, RoutingProfile,
 };
 use crate::routing::pbf_extract::{pbf_is_real_extract, MIN_REAL_PBF_BYTES};
@@ -1999,7 +1999,7 @@ fn supplement_pack_ferries_from_pbf_inner(
             FerryHopGate::Connected { snap_m } => {
                 crate::routing::plan_perf::note_f64("ferry_snap_m", snap_m);
                 crate::routing::plan_perf::note_u64("ferry_connect_check_ms", 0);
-                crate::routing::plan_perf::note("ferry_overlay", "connected_stamp_overlay");
+                crate::routing::plan_perf::note("ferry_overlay", "connected_replace_overlay");
             }
             FerryHopGate::Disconnected { snap_m } => {
                 crate::routing::plan_perf::note_f64("ferry_snap_m", snap_m);
@@ -2118,7 +2118,7 @@ fn supplement_pack_ferries_from_pbf_inner(
     );
     let mut pack = arc_graph_owned(graph);
     for ov in &overlays {
-        stamp_overlay_ferry_costs(&mut pack, ov, profile);
+        drop_pack_edges_replaced_by_overlay_ferry(&mut pack, ov);
     }
     let mut parts = Vec::with_capacity(1 + overlays.len());
     parts.push(pack);
@@ -2319,9 +2319,6 @@ pub fn merge_tile_graphs(graphs: Vec<RouteGraph>, profile: RoutingProfile) -> Ro
         }
         for e in g.edges {
             if is_construction_or_proposed_highway(e.highway.as_deref()) {
-                continue;
-            }
-            if is_untagged_water_shortcut(&e) {
                 continue;
             }
             if seen_edge_keys.insert(graph_edge_tile_merge_key(&e)) {
