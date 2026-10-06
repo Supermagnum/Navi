@@ -24,7 +24,7 @@ use super::wetland_pack::{
 };
 use crate::poi::PoiIndex;
 use crate::routing::basemap::{pbf_stem_to_geofabrik_path, region_bbox};
-use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile};
+use crate::routing::graph::{is_untagged_water_shortcut, GraphEdge, RouteGraph, RoutingProfile};
 use crate::routing::pbf_extract::{pbf_is_real_extract, MIN_REAL_PBF_BYTES};
 use crate::routing::safety::DangerBarrierIndex;
 use crate::routing::wetland::WetlandIndex;
@@ -2242,6 +2242,9 @@ pub fn merge_tile_graphs(graphs: Vec<RouteGraph>, profile: RoutingProfile) -> Ro
             nodes.insert(id, node);
         }
         for e in g.edges {
+            if is_untagged_water_shortcut(&e) {
+                continue;
+            }
             if seen_edge_keys.insert(graph_edge_tile_merge_key(&e)) {
                 edges.push(e);
             }

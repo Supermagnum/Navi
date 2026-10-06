@@ -110,6 +110,25 @@ pub(crate) fn parse_osm_duration_secs(raw: &str) -> Option<f64> {
     }
 }
 
+/// True when a pack edge is a long non-ferry, non-motorway chord (Fehmarn Belt
+/// 13.9 km water duplicate). Those must not stay routable as ordinary length:
+/// A* prefers them over the tagged `route=ferry` overlay, `route_ferry_legs`
+/// stays 0, and avoid-ferries cannot drop them.
+pub fn is_untagged_water_shortcut(edge: &GraphEdge) -> bool {
+    if edge.is_ferry || edge.is_tunnel {
+        return false;
+    }
+    if edge.length_m < 8_000.0 {
+        return false;
+    }
+    match edge.highway.as_deref() {
+        Some(
+            "motorway" | "motorway_link" | "trunk" | "trunk_link" | "primary" | "primary_link",
+        ) => false,
+        _ => true,
+    }
+}
+
 /// A* weight in metres for a ferry edge. `length_m` stays the geometric length.
 /// Same formula as navi-server `ferry_base_weight_m`.
 pub fn ferry_base_weight_m(
@@ -4771,6 +4790,25 @@ mod tests {
         // with server weights the short tagged ferry wins by a wide margin.
         assert!(short_length_only < chain_length_only);
         assert!(short_server < chain_server);
+    }
+
+    #[test]
+    fn untagged_water_shortcut_matches_fehmarn_belt_duplicate() {
+        let mut water = test_edge(1, 2, 54.50709, 11.23183, 54.62456, 11.30643);
+        water.length_m = 13_919.0;
+        water.highway = Some("unclassified".into());
+        water.is_ferry = false;
+        assert!(is_untagged_water_shortcut(&water));
+        let mut ferry = water.clone();
+        ferry.is_ferry = true;
+        ferry.length_m = 18_900.0;
+        assert!(!is_untagged_water_shortcut(&ferry));
+        let mut motorway = water.clone();
+        motorway.highway = Some("motorway".into());
+        motorway.length_m = 18_000.0;
+        assert!(!is_untagged_water_shortcut(&motorway));
+        water.length_m = 3_000.0;
+        assert!(!is_untagged_water_shortcut(&water));
     }
 
     #[test]
