@@ -32,6 +32,13 @@ object PlaceIndexReady {
 
     fun readyFile(dataDir: File): File = File(dataDir, READY_FILE)
 
+    /**
+     * No place-index SQLite (clear rows, FTS/WAL, ensurePlaceIndex) while a
+     * route plan holds [RoutePlanGate] or a pending debug trip is about to plan.
+     */
+    fun deferWritesDuringPlan(): Boolean =
+        RoutePlanGate.isRunning() || NaviMapTestHooks.pendingTripPlan != null
+
     /** Drop the search-allowed region cache (call after stamp mutations). */
     fun invalidateAllowedRegionsCache() {
         allowedCacheDataDir = null
@@ -68,6 +75,7 @@ object PlaceIndexReady {
      * are not stamped ready early.
      */
     fun healReadyFromDownloads(dataDir: File) {
+        if (deferWritesDuringPlan()) return
         if (RegionDownloadBackground.isRunning()) return
         if (PlaceIndexBackground.isRunning()) return
         val f = readyFile(dataDir)
@@ -129,6 +137,10 @@ object PlaceIndexReady {
     ) {
         val id = PackRegionAvailability.normalize(regionId)
         if (id.isEmpty()) return
+        if (deferWritesDuringPlan()) {
+            Log.i(TAG, "skip clearReady during plan region=$id")
+            return
+        }
         val next = loadStampOnly(dataDir).toMutableSet()
         next.remove(id)
         // Always persist so the stamp file becomes authoritative (even as []).
@@ -167,6 +179,10 @@ object PlaceIndexReady {
         regionId: String,
         preserveIncompleteRows: Boolean,
     ) {
+        if (deferWritesDuringPlan()) {
+            Log.i(TAG, "skip preparePipelineStart during plan region=$regionId")
+            return
+        }
         if (preserveIncompleteRows) {
             clearReadyStampOnly(dataDir, regionId)
         } else {
@@ -321,6 +337,10 @@ object PlaceIndexReady {
         dataDir: File,
         regionId: String,
     ) {
+        if (deferWritesDuringPlan()) {
+            Log.i(TAG, "skip clearRegionRows during plan region=$regionId")
+            return
+        }
         val dbFile = File(dataDir, "place_index.db")
         if (!dbFile.isFile) return
         // Same PLACE_INDEX_BUILD_LOCK as ensure_place_index (Task 4/5). Prefer

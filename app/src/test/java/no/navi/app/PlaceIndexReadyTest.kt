@@ -1,13 +1,27 @@
 package no.navi.app
 
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import uniffi.navi.PlaceHit
 import java.io.File
 
 class PlaceIndexReadyTest {
+    @Before
+    fun releasePlanGate() {
+        RoutePlanGate.end()
+        NaviMapTestHooks.pendingTripPlan = null
+    }
+
+    @After
+    fun tearDown() {
+        RoutePlanGate.end()
+        NaviMapTestHooks.pendingTripPlan = null
+    }
+
     @Test
     fun prioritize_without_gps_keeps_request_order() {
         val paths =
@@ -47,10 +61,9 @@ class PlaceIndexReadyTest {
             // Seed an empty stamp so load() does not try Android SQLite.
             PlaceIndexReady.readyFile(dir).writeText("[]")
             PlaceIndexReady.markReady(dir, "europe/norway/ostlandet")
-            assertTrue(PlaceIndexReady.isReady(dir, "europe/norway/ostlandet"))
-            assertFalse(PlaceIndexReady.isReady(dir, "europe/norway/vestlandet"))
+            assertTrue(PlaceIndexReady.load(dir).contains("europe/norway/ostlandet"))
+            assertFalse(PlaceIndexReady.load(dir).contains("europe/norway/vestlandet"))
             PlaceIndexReady.clearReady(dir, "europe/norway/ostlandet")
-            assertFalse(PlaceIndexReady.isReady(dir, "europe/norway/ostlandet"))
             assertEquals(emptySet<String>(), PlaceIndexReady.load(dir))
         } finally {
             dir.deleteRecursively()
@@ -89,7 +102,7 @@ class PlaceIndexReadyTest {
             }
         try {
             PlaceIndexReady.readyFile(dir).writeText("""["europe/norway/ostlandet"]""")
-            assertTrue(PlaceIndexReady.isReady(dir, "europe/norway/ostlandet"))
+            assertTrue(PlaceIndexReady.load(dir).contains("europe/norway/ostlandet"))
             PlaceIndexReady.clearReady(dir, "europe/norway/ostlandet")
             assertFalse(PlaceIndexReady.isReady(dir, "europe/norway/ostlandet"))
             assertEquals("[]", PlaceIndexReady.readyFile(dir).readText().trim())
@@ -147,7 +160,7 @@ class PlaceIndexReadyTest {
             }
         try {
             PlaceIndexReady.readyFile(dir).writeText("""["europe/norway/ostlandet"]""")
-            assertTrue(PlaceIndexReady.isReady(dir, "europe/norway/ostlandet"))
+            assertTrue(PlaceIndexReady.load(dir).contains("europe/norway/ostlandet"))
             PlaceIndexReady.clearReadyStampOnly(dir, "europe/norway/ostlandet")
             assertFalse(PlaceIndexReady.isReady(dir, "europe/norway/ostlandet"))
             assertEquals("[]", PlaceIndexReady.readyFile(dir).readText().trim())
@@ -173,6 +186,35 @@ class PlaceIndexReadyTest {
             assertFalse(PlaceIndexReady.isReady(dir, "europe/germany/hamburg"))
             assertEquals("[]", PlaceIndexReady.readyFile(dir).readText().trim())
         } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun plan_in_flight_skips_clear_rows_pipeline_start_and_auto_index() {
+        val dir =
+            File.createTempFile("place-ready-plan", "dir").apply {
+                delete()
+                mkdirs()
+            }
+        val claimed = RoutePlanGate.tryBegin()
+        try {
+            assertTrue(claimed)
+            assertTrue(PlaceIndexReady.deferWritesDuringPlan())
+            PlaceIndexReady.readyFile(dir).writeText("""["europe/germany/hamburg"]""")
+            PlaceIndexReady.clearReady(dir, "europe/germany/hamburg")
+            PlaceIndexReady.preparePipelineStart(
+                dir,
+                "europe/germany/hamburg",
+                preserveIncompleteRows = false,
+            )
+            assertEquals(
+                """["europe/germany/hamburg"]""",
+                PlaceIndexReady.readyFile(dir).readText().trim(),
+            )
+            assertFalse(PlaceIndexAutoBuild.mayStart(dir, "europe/norway/vestlandet"))
+        } finally {
+            if (claimed) RoutePlanGate.end()
             dir.deleteRecursively()
         }
     }

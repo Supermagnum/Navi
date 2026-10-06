@@ -94,6 +94,10 @@ object PlaceIndexBackground {
             Log.i(TAG, "region pipeline already running; skip standalone ensurePlaceIndex")
             return
         }
+        if (PlaceIndexReady.deferWritesDuringPlan()) {
+            Log.i(TAG, "skip ensurePlaceIndex: route plan in flight")
+            return
+        }
         val rid = regionId?.trim()?.trim('/')?.ifBlank { null }
         if (rid != null && !GeofabrikDownloadCatalog.isKnownPackRegionId(rid)) {
             Log.e(TAG, "refusing ensurePlaceIndex under unknown region_id=$rid")

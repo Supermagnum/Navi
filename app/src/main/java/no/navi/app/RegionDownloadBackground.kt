@@ -1317,6 +1317,11 @@ object RegionDownloadBackground {
         dataDir: File,
     ) {
         while (true) {
+            if (PlaceIndexReady.deferWritesDuringPlan()) {
+                setStatus("Paused — waiting for route plan to finish")
+                Log.i(TAG, "drainQueue deferred: route plan in flight")
+                break
+            }
             if (requireUnmeteredGate.get() && !NetworkUnmetered.isWifiOrEthernet(context)) {
                 setStatus("Paused — waiting for Wi-Fi/Ethernet")
                 Log.i(TAG, "drainQueue paused: unmetered gate")
@@ -1345,6 +1350,13 @@ object RegionDownloadBackground {
         val url = incoming.url
         val filename = incoming.filename
         val geofabrikPath = incoming.geofabrikPath.trim().trim('/')
+        if (PlaceIndexReady.deferWritesDuringPlan()) {
+            Log.i(TAG, "runOneRegion deferred: plan in flight path=$geofabrikPath")
+            mutex.withLock {
+                enqueueJobLocked(dataDir, incoming, null, null)
+            }
+            return
+        }
         if (geofabrikPath.isNotBlank()) {
             activeRegionPath.set(geofabrikPath)
         }
@@ -1360,6 +1372,13 @@ object RegionDownloadBackground {
         // keep partial name_entries so the next ensurePlaceIndex can finish
         // (full PBF reparse is accepted; discarding rows left regions stuck).
         if (geofabrikPath.isNotBlank() && startPhase != Phase.BASEMAP) {
+            if (PlaceIndexReady.deferWritesDuringPlan()) {
+                Log.i(TAG, "skip preparePipelineStart during plan path=$geofabrikPath")
+                mutex.withLock {
+                    enqueueJobLocked(dataDir, incoming, null, null)
+                }
+                return
+            }
             val clearRows =
                 shouldClearPlaceRowsOnPipelineStart(startPhase, dataDir, geofabrikPath)
             PlaceIndexReady.preparePipelineStart(
@@ -1802,6 +1821,10 @@ object RegionDownloadBackground {
         val pbf = File(pbfDir, filename)
         if (!pbf.isFile || pbf.length() < MIN_PBF_BYTES) return false
         val rid = regionId.trim().trim('/')
+        if (PlaceIndexReady.deferWritesDuringPlan()) {
+            Log.i(TAG, "skip ensurePlaceIndex during plan region=$rid")
+            return false
+        }
         if (rid.isEmpty() || !GeofabrikDownloadCatalog.isKnownPackRegionId(rid)) {
             Log.e(
                 TAG,

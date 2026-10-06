@@ -27,8 +27,7 @@ object PlaceIndexAutoBuild {
     ): Boolean {
         val rid = PackRegionAvailability.normalize(regionId)
         if (rid.isEmpty()) return false
-        if (RoutePlanGate.isRunning()) return false
-        if (NaviMapTestHooks.pendingTripPlan != null) return false
+        if (PlaceIndexReady.deferWritesDuringPlan()) return false
         if (PlaceIndexIntact.isIntact(dataDir, rid)) return false
         if (rid !in AUTO_INDEX_REGIONS) return false
         if (!ENABLE_MISSING_REGION_AUTO_INDEX) return false
