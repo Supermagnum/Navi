@@ -195,9 +195,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         applyNaviLaunchExtras(intent)
         runCatching { uniffi.navi.initNativeLogging() }
-        CampingBootstrap.ensureInitialized(this)
         // Natural Earth country grid: never build on the main looper (ANR / seed stall).
+        // CampingBootstrap.configure also touches country_polys; keep it off-main.
         CountryPolysWarm.startBackground()
+        Thread(
+            {
+                runCatching { CampingBootstrap.ensureInitialized(this@MainActivity) }
+            },
+            "CampingBootstrap",
+        ).start()
         setContent {
             var showMap by remember { mutableStateOf(false) }
             MaterialTheme {

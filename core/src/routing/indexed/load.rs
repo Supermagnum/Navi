@@ -2117,7 +2117,7 @@ fn supplement_pack_ferries_from_pbf_inner(
         "once_on_corridor_miss;warm_skipped=corridor_cache_hit",
     );
     let mut pack = arc_graph_owned(graph);
-    for ov in &overlays {
+    for ov in &mut overlays {
         drop_pack_edges_replaced_by_overlay_ferry(&mut pack, ov);
     }
     let mut parts = Vec::with_capacity(1 + overlays.len());

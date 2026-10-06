@@ -160,26 +160,77 @@ pub fn pack_edge_matches_overlay_ferry(pack: &GraphEdge, ferry: &GraphEdge) -> b
     same || rev
 }
 
-/// Drop non-ferry pack edges that join the same terminals as an overlay ferry.
-/// The overlay edge (geometry, duration, ferry cost) is kept at merge time;
-/// pack edges are not stamped as ferries.
+/// Drop non-ferry pack edges that join the same terminals as an overlay ferry,
+/// and rewire that overlay ferry onto the pack edge's node ids.
+///
+/// The overlay keeps its geometry, duration and ferry cost; the pack edge is
+/// not stamped as a ferry. Rewiring is required because pack road endpoints and
+/// overlay pier/ferry OSM ids often differ even when coordinates match within
+/// [`OVERLAY_FERRY_MATCH_M`] — without it, merge leaves a floating ferry and the
+/// hop goes `disconnected` (Fehmarnbelt after drop-not-stamp).
 pub fn drop_pack_edges_replaced_by_overlay_ferry(
     graph: &mut RouteGraph,
-    overlay: &RouteGraph,
+    overlay: &mut RouteGraph,
 ) {
-    let ferries: Vec<&GraphEdge> = overlay.edges.iter().filter(|e| e.is_ferry).collect();
-    if ferries.is_empty() {
+    if !overlay.edges.iter().any(|e| e.is_ferry) {
         return;
     }
     let profile = graph.profile();
+    let mut drop_ids: HashSet<String> = HashSet::new();
+    let pack_edges = graph.edges.clone();
+    for ferry in overlay.edges.iter_mut().filter(|e| e.is_ferry) {
+        let Some(pack) = pack_edges
+            .iter()
+            .find(|e| pack_edge_matches_overlay_ferry(e, ferry))
+        else {
+            continue;
+        };
+        drop_ids.insert(pack.id.clone());
+        let same = endpoint_haversine_m(
+            pack.start_lat,
+            pack.start_lon,
+            ferry.start_lat,
+            ferry.start_lon,
+        ) < OVERLAY_FERRY_MATCH_M
+            && endpoint_haversine_m(pack.end_lat, pack.end_lon, ferry.end_lat, ferry.end_lon)
+                < OVERLAY_FERRY_MATCH_M;
+        ferry.source = pack.source;
+        ferry.target = pack.target;
+        ferry.start_lat = pack.start_lat;
+        ferry.start_lon = pack.start_lon;
+        ferry.end_lat = pack.end_lat;
+        ferry.end_lon = pack.end_lon;
+        if !same {
+            ferry.shape.reverse();
+        }
+        if let Some(n) = graph.nodes.get(&pack.source) {
+            overlay.nodes.insert(
+                pack.source,
+                Node {
+                    id: n.id,
+                    coord: n.coord,
+                    uses: n.uses,
+                },
+            );
+        }
+        if let Some(n) = graph.nodes.get(&pack.target) {
+            overlay.nodes.insert(
+                pack.target,
+                Node {
+                    id: n.id,
+                    coord: n.coord,
+                    uses: n.uses,
+                },
+            );
+        }
+    }
+    if drop_ids.is_empty() {
+        return;
+    }
     let nodes = std::mem::take(&mut graph.nodes);
     let edges: Vec<GraphEdge> = std::mem::take(&mut graph.edges)
         .into_iter()
-        .filter(|e| {
-            !ferries
-                .iter()
-                .any(|f| pack_edge_matches_overlay_ferry(e, f))
-        })
+        .filter(|e| !drop_ids.contains(&e.id))
         .collect();
     *graph = RouteGraph::from_parts(nodes, edges, profile);
 }
@@ -5101,7 +5152,22 @@ mod tests {
             for (nid, n) in [test_node(id, *slat, *slon), test_node(id + 1, *elat, *elon)] {
                 nodes.insert(nid, n);
             }
-            let mut g = RouteGraph::from_parts(nodes, vec![pack], RoutingProfile::Car);
+            // Land stubs so the rewired ferry must stay on pack node ids.
+            let mut land_a = test_edge(id - 2, id, *slat - 0.01, *slon, *slat, *slon);
+            land_a.length_m = 800.0;
+            let mut land_b = test_edge(id + 1, id + 4, *elat, *elon, *elat + 0.01, *elon);
+            land_b.length_m = 800.0;
+            for (nid, n) in [
+                test_node(id - 2, *slat - 0.01, *slon),
+                test_node(id + 4, *elat + 0.01, *elon),
+            ] {
+                nodes.insert(nid, n);
+            }
+            let mut g = RouteGraph::from_parts(
+                nodes,
+                vec![land_a, pack, land_b],
+                RoutingProfile::Car,
+            );
             let mut onodes = HashMap::new();
             for (nid, n) in [
                 test_node(id + 2, *slat, *slon),
@@ -5109,25 +5175,39 @@ mod tests {
             ] {
                 onodes.insert(nid, n);
             }
-            let overlay = RouteGraph::from_parts(onodes, vec![ferry.clone()], RoutingProfile::Car);
-            drop_pack_edges_replaced_by_overlay_ferry(&mut g, &overlay);
-            assert!(
-                g.edges.is_empty(),
-                "{name}: non-ferry pack edge joining terminals must be removed"
+            let mut overlay =
+                RouteGraph::from_parts(onodes, vec![ferry.clone()], RoutingProfile::Car);
+            drop_pack_edges_replaced_by_overlay_ferry(&mut g, &mut overlay);
+            assert_eq!(
+                g.edges.len(),
+                2,
+                "{name}: only the water-chord pack edge is removed"
             );
+            assert!(g.edges.iter().all(|e| !e.is_ferry), "{name}");
             let merged = crate::routing::indexed::merge_tile_graphs(
                 vec![g, overlay],
                 RoutingProfile::Car,
             );
-            assert_eq!(merged.edges.len(), 1, "{name}");
-            assert!(merged.edges[0].is_ferry, "{name}");
-            assert_eq!(merged.edges[0].name.as_deref(), Some(*name));
-            assert_eq!(merged.edges[0].shape.len(), 1, "{name}: overlay geometry");
-            assert!((merged.edges[0].length_m - 18_900.0).abs() < 1e-6);
+            let ferry_e = merged
+                .edges
+                .iter()
+                .find(|e| e.is_ferry)
+                .unwrap_or_else(|| panic!("{name}: overlay ferry missing after merge"));
+            assert_eq!(ferry_e.name.as_deref(), Some(*name));
+            assert_eq!(ferry_e.shape.len(), 1, "{name}: overlay geometry");
+            assert!((ferry_e.length_m - 18_900.0).abs() < 1e-6);
+            assert_eq!(ferry_e.source, NodeId(id), "{name}: rewired to pack source");
+            assert_eq!(ferry_e.target, NodeId(id + 1), "{name}: rewired to pack target");
+            // Land → ferry → land must be one weak component.
+            assert_eq!(
+                merged.weak_component_id(NodeId(id - 2)),
+                merged.weak_component_id(NodeId(id + 4)),
+                "{name}: rewired ferry must join land approaches"
+            );
             let mut avoid = RouteOptions::default();
             avoid.avoid_ferries = true;
             assert!(
-                !edge_allowed_for_options(&merged.edges[0], &avoid, RoutingProfile::Car),
+                !edge_allowed_for_options(ferry_e, &avoid, RoutingProfile::Car),
                 "avoid_ferries must drop {name}"
             );
         }

@@ -98,9 +98,11 @@ object FerrySidecarBackground {
             if (!r.ferrySidecarCar) {
                 ensureStarted(r.packDir, r.stem, TravelProfile.CAR)
             }
-            if (r.profilesLoadable.any { it.equals("truck", ignoreCase = true) } &&
-                !r.ferrySidecarTruck
-            ) {
+            // Truck / mobile_home plans load car packs when a region has no truck
+            // graph, but still request the truck ferry sidecar. Build it whenever
+            // the car sidecar is needed or the truck file is missing — not only
+            // when a truck graph pack is loadable.
+            if (!r.ferrySidecarTruck) {
                 ensureStarted(r.packDir, r.stem, TravelProfile.TRUCK)
             }
         }
