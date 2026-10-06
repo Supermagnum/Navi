@@ -276,6 +276,7 @@ class MainActivity : ComponentActivity() {
         val dataDirPath = filesDir.absolutePath
         val debugTrip =
             NaviDebugIntent.consumeTripExtras(this, intent, dataDirPath)
+                ?: NaviDebugIntent.consumePendingTripFile(this, dataDirPath)
         if (debugTrip != null) {
             NaviMapTestHooks.pendingTripPlan = debugTrip
             debugTrip.profile?.let { NaviMapTestHooks.requestTravelProfile = it }
@@ -559,12 +560,21 @@ private fun cancelledCorridorResult(): uniffi.navi.CorridorRouteResult =
 private fun userFacingStatus(raw: String): String {
     val t = raw.trim()
     if (t.isEmpty()) return ""
-    if (OsmUpdateUserCopy.looksTechnical(t)) {
-        return OsmUpdateUserCopy.sanitize(t)
-    }
-    if (t.contains("TEST_KIND=") || t.contains("detected_cores=") || t.contains("DATA_SOURCE=")) {
+    if (t.contains("TEST_KIND=") || t.contains("detected_cores=") || t.contains("DATA_SOURCE=") ||
+        t.contains("pack_hit=") || t.contains("search_terminate_reason=")
+    ) {
         return when {
             planReportIsCancelled(t) -> "Planning cancelled"
+            t.contains("FAIL: plan already running") -> "Already planning a route"
+            t.lineSequence().any { it.startsWith("FAIL") } -> {
+                val failLine =
+                    t
+                        .lineSequence()
+                        .first { it.startsWith("FAIL") }
+                        .removePrefix("FAIL:")
+                        .trim()
+                failLine.take(160)
+            }
             t.contains("PASS") && t.contains("distance_km=") -> {
                 val km = Regex("""distance_km=([0-9.]+)""").find(t)?.groupValues?.getOrNull(1)
                 val base =
@@ -596,6 +606,9 @@ private fun userFacingStatus(raw: String): String {
             }
             else -> ""
         }
+    }
+    if (OsmUpdateUserCopy.looksTechnical(t)) {
+        return OsmUpdateUserCopy.sanitize(t)
     }
     return t.take(120)
 }
@@ -664,6 +677,17 @@ private fun NaviMapScreen() {
     var packCatalogEpoch by remember { mutableIntStateOf(0) }
     LaunchedEffect(selectedGeofabrikPath) {
         NaviMapTestHooks.lastSelectedGeofabrikPath = selectedGeofabrikPath
+    }
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            runCatching { InstalledMaps.refresh(context) }
+            val summary = InstalledMaps.summaryText()
+            android.util.Log.i("InstalledMaps", summary)
+            runCatching {
+                java.io.File(NaviAppData.resolve(context), "installed-maps-snapshot.txt")
+                    .writeText(summary)
+            }
+        }
     }
     LaunchedEffect(Unit) {
         DiagnosticLog.restoreFromPrefs(context)
@@ -1021,6 +1045,9 @@ private fun NaviMapScreen() {
                     ecoEnabled = on
                     NaviMapTestHooks.requestEcoMode = on
                 }
+                campingPluginEnabled = false
+                uniffi.navi.campingPluginSetEnabled(false)
+                MapHudPrefs.saveCampingPluginEnabled(context, false)
                 NaviMapTestHooks.forceLocalPbf = trip.forceLocalPbf
                 if (trip.injectGpsAtFrom) {
                     // Pin puck at from immediately and again after plan so the
@@ -1699,6 +1726,12 @@ private fun NaviMapScreen() {
                     .put("long_trip_status", LongTripCoordinator.statusLine())
                     .put("enumerations", routePlanStats.toReportJson())
             File(dir, "route-result.json").writeText(o.toString(2))
+            // Debug host pull: full edge polyline for GeoJSON / spike audit.
+            if ((context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
+                pending.routePolyline.isNotBlank()
+            ) {
+                File(dir, "route-polyline.txt").writeText(pending.routePolyline)
+            }
         }
         routeSamples =
             parseRouteSimSamples(
@@ -2922,10 +2955,8 @@ private fun NaviMapScreen() {
                     }
                 status = longTripStatusLine.ifBlank { status }
             }
-            // Wait until every corridor region is Indexed (place-index ready).
-            // Starting plan while a region is still Installed/Indexing contends
-            // with place-index PBF scans and can deadlock or stall graph-build.
-            while (isActive && !LongTripCoordinator.corridorReadyForPlanning()) {
+            // Wait until corridor graph packs load. Place-index is not a plan gate.
+            while (isActive && !LongTripCoordinator.corridorPacksReady()) {
                 val line =
                     LongTripCoordinator
                         .statusLine()
@@ -2986,6 +3017,29 @@ private fun NaviMapScreen() {
             }
         val ecoForPlan =
             if (ecoModeToggleable(profile)) ecoEnabled else true
+        RoutingPlanLog.logPlanSettings(
+            dataDir = dataDir,
+            ecoEnabled = ecoForPlan,
+            campingPluginEnabled = campingPluginEnabled,
+            professionalDriver = campingProfessionalDriver,
+            avoidMotorways = avoidMotorways,
+            avoidTolls = avoidTolls,
+            avoidFerries = avoidFerries,
+            avoidTunnels = avoidTunnels,
+        )
+        val settingsOk =
+            !(ecoModeToggleable(profile) && ecoForPlan) &&
+                !campingPluginEnabled
+        if (!settingsOk) {
+            val why =
+                "FAIL: plan_settings abort eco=$ecoForPlan camping_plugin=$campingPluginEnabled " +
+                    "avoid_mw=$avoidMotorways avoid_tolls=$avoidTolls avoid_ferries=$avoidFerries " +
+                    "avoid_tunnels=$avoidTunnels"
+            android.util.Log.e("NaviRouting", why)
+            RoutingPlanLog.failed(ecoForPlan, 0, why, null)
+            status = why
+            return@LaunchedEffect
+        }
         planAbort.set(false)
         val planStarted = System.currentTimeMillis()
         RoutingPlanLog.start(
@@ -3177,6 +3231,16 @@ private fun NaviMapScreen() {
                                             "longTrip=$longTripEnabled " +
                                             "from=${start.lat},${start.lon} to=${toPoint.lat},${toPoint.lon}",
                                     )
+                                    RoutingPlanLog.logPlanSettings(
+                                        dataDir = dataDir,
+                                        ecoEnabled = ecoForPlan,
+                                        campingPluginEnabled = campingPluginEnabled,
+                                        professionalDriver = campingProfessionalDriver,
+                                        avoidMotorways = avoidMotorways,
+                                        avoidTolls = avoidTolls,
+                                        avoidFerries = avoidFerries,
+                                        avoidTunnels = avoidTunnels,
+                                    )
                                     val ffiVias =
                                         viaPoints.map { v ->
                                             uniffi.navi.FfiLatLon(lat = v.lat, lon = v.lon)
@@ -3256,33 +3320,66 @@ private fun NaviMapScreen() {
                                             .map { File(it, "elevation") }
                                             .firstOrNull { it.isDirectory }
                                             ?: File(dataDir, "elevation")
-                                    val planned =
-                                        uniffi.navi.planCarRoute(
-                                            pbf.absolutePath,
-                                            elevDir.absolutePath,
-                                            cacheDir.absolutePath,
-                                            start.lat,
-                                            start.lon,
-                                            toPoint.lat,
-                                            toPoint.lon,
-                                            ecoForPlan,
-                                            profile,
-                                            avoidMotorways,
-                                            if (avoidTolls) {
-                                                uniffi.navi.FfiTollPolicy.PENALIZE
-                                            } else {
-                                                uniffi.navi.FfiTollPolicy.ALLOW
-                                            },
-                                            avoidFerries,
-                                            avoidTunnels,
-                                            loadVehicleLimits(dataDir.absolutePath),
-                                            preferOfficialNetworks,
-                                            dataDir.absolutePath,
-                                            planPackDirPath,
-                                            longTripEnabled = longTripEnabled,
-                                            allowedCountries = allowedCountries,
-                                            viaPoints = ffiVias,
+                                    if (!RoutePlanGate.tryBegin()) {
+                                        return@runCatching uniffi.navi.CorridorRouteResult(
+                                            report =
+                                                "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: plan already running\n",
+                                            distanceKm = 0.0,
+                                            etaMinutes = 0.0,
+                                            cacheHit = false,
+                                            coldBuildS = 0.0,
+                                            warmLoadS = 0.0,
+                                            routePolyline = "",
+                                            poiLat = 0.0,
+                                            poiLon = 0.0,
+                                            poiName = "",
+                                            poiIconKey = "",
+                                            breakPoisJson = "[]",
+                                            daysJson = "[]",
+                                            simSamplesJson = "[]",
+                                            maneuversJson = "[]",
+                                            priorityPathSharePct = 0.0,
+                                            routeSegmentsJson = "[]",
+                                            offTrailAdvisory = "",
+                                            tollPolicy = "allow",
+                                            padAttemptsJson = "[]",
+                                            searchExpansions = 0u,
+                                            searchTerminateReason = "busy",
+                                            tollAvoidanceIncomplete = false,
+                                            routeUsesTolls = false,
                                         )
+                                    }
+                                    val planned =
+                                        try {
+                                            uniffi.navi.planCarRoute(
+                                                pbf.absolutePath,
+                                                elevDir.absolutePath,
+                                                cacheDir.absolutePath,
+                                                start.lat,
+                                                start.lon,
+                                                toPoint.lat,
+                                                toPoint.lon,
+                                                ecoForPlan,
+                                                profile,
+                                                avoidMotorways,
+                                                if (avoidTolls) {
+                                                    uniffi.navi.FfiTollPolicy.PENALIZE
+                                                } else {
+                                                    uniffi.navi.FfiTollPolicy.ALLOW
+                                                },
+                                                avoidFerries,
+                                                avoidTunnels,
+                                                loadVehicleLimits(dataDir.absolutePath),
+                                                preferOfficialNetworks,
+                                                dataDir.absolutePath,
+                                                planPackDirPath,
+                                                longTripEnabled = longTripEnabled,
+                                                allowedCountries = allowedCountries,
+                                                viaPoints = ffiVias,
+                                            )
+                                        } finally {
+                                            RoutePlanGate.end()
+                                        }
                                     RoutingPlanLog.progress(
                                         90,
                                         ecoForPlan,

@@ -1339,6 +1339,14 @@ fn try_load_graph_for_plan_corridor_dirs(
     if !extras.is_empty() {
         let names: Vec<&str> = extras.iter().map(|m| m.stem.as_str()).collect();
         crate::routing::plan_perf::note("extra_stem_list", names.join(","));
+        crate::routing::plan_file_log::line(format!(
+            "stems primary={stem} pbf_stem={pbf_stem} extra={}",
+            names.join(",")
+        ));
+    } else {
+        crate::routing::plan_file_log::line(format!(
+            "stems primary={stem} pbf_stem={pbf_stem} extra="
+        ));
     }
     crate::routing::plan_perf::note("edge_clip_mode", format!("{edge_clip_mode:?}"));
     crate::routing::plan_perf::note_u64(

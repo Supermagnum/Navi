@@ -388,40 +388,14 @@ object LongTripCoordinator {
         regionId: String,
         states: MutableMap<String, State>,
     ) {
-        if (PlaceIndexReady.isReady(internal, regionId)) {
+        if (PlaceIndexIntact.isIntact(internal, regionId)) {
             states[regionId] = State.Indexed
             refreshStatusLine()
             return
         }
-        val packPath = GeofabrikDownloadCatalog.canonicalizePath(regionId)
-        val extractPath = GeofabrikDownloadCatalog.extractPathForPbf(packPath)
-        val leaf = extractPath.substringAfterLast('/')
-        val filename = "$leaf-latest.osm.pbf"
-        val pbf = File(packDir, filename)
-        if (!pbf.isFile || pbf.length() < RegionDownloadBackground.MIN_PBF_BYTES) {
-            Log.w(
-                TAG,
-                "Installed $regionId missing real PBF (${pbf.name}); cannot place-index yet",
-            )
-            return
-        }
-        // No Context in JVM unit tests — leave Installed; tests emit phases.
-        if (context == null) {
-            return
-        }
-        states[regionId] = State.Indexing
-        refreshStatusLine()
-        val url = runCatching { geofabrikLatestPbfUrl(packPath) }.getOrDefault("")
-        Log.i(TAG, "kick place-index for Installed region=$packPath pbf=${pbf.absolutePath}")
-        RegionDownloadBackground.ensureStarted(
-            context = context,
-            dataDir = internal,
-            url = url,
-            filename = filename,
-            geofabrikPath = packPath,
-            startPhase = RegionDownloadBackground.Phase.PLACE_INDEX,
-            packDir = packDir,
-            requireUnmetered = true,
+        Log.i(
+            TAG,
+            "place-index missing for $regionId; not auto-building (list via InstalledMaps)",
         )
     }
 
@@ -591,15 +565,11 @@ object LongTripCoordinator {
     }
 
     /**
-     * True when every corridor region is Indexed (place-index ready). Planning
-     * must not start while any required region is still Installed/Indexing —
-     * concurrent place-index + graph-build contends on Rayon/PBF IO.
+     * True when every corridor region has loadable graph packs. Place-index is
+     * not required for routing; empty stamped slices stay missing until a later
+     * explicit build.
      */
-    fun corridorReadyForPlanning(): Boolean {
-        val plan = planRef.get() ?: return false
-        if (plan.regionsInOrder.isEmpty()) return false
-        return plan.regionsInOrder.all { regionReadyForPlanning(it) }
-    }
+    fun corridorReadyForPlanning(): Boolean = corridorPacksReady()
 
     /** Reset listeners/providers between host tests. */
     fun resetForTests() {

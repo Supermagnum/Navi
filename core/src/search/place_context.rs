@@ -24,9 +24,8 @@ use crate::tracks::haversine_km;
 /// v5: `search_doc` + FTS on `alt_name` / `loc_name` (display `name` unchanged).
 ///
 /// Bumping this makes [`NameIndex::is_current_schema`] fail on older on-device
-/// DBs so `ensure_place_index` / pack-install rebuild on next open — without a
-/// manual wipe. Stale DBs are deleted before rebuild so multi-region indexes
-/// do not keep pre-bump row kinds / FTS docs after `user_version` advances.
+/// DBs so `ensure_place_index` migrates in place on next writer open. The shared
+/// file is never deleted for a schema bump.
 pub const PLACE_INDEX_SCHEMA_VERSION: i32 = 5;
 
 const SUB_AREA_MAX_M: f64 = 4_000.0;

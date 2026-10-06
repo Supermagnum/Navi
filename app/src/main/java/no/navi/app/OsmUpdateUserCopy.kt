@@ -25,7 +25,6 @@ object OsmUpdateUserCopy {
             t.contains("local_sequence=") ||
             t.contains("remote_sequence=") ||
             t.contains("method=") ||
-            t.contains("reason=") ||
             t.contains("days_behind=") ||
             t.contains("geofabrik") ||
             t.contains("osc.gz") ||
@@ -35,7 +34,10 @@ object OsmUpdateUserCopy {
             t.contains("full_redownload") ||
             t.contains("osm update check unsupported") ||
             t.contains("confirm apply") ||
-            (t.contains("pass") && t.contains("method"))
+            t.lineSequence().any { line ->
+                val s = line.trim()
+                s.startsWith("reason=") || s.contains(" reason=")
+            }
     }
 
     fun forCheckReport(raw: String): String {
@@ -57,27 +59,46 @@ object OsmUpdateUserCopy {
 
     fun forApplyReport(raw: String): String {
         val t = raw.lowercase()
+        if (t.lineSequence().any { it.trim().startsWith("fail") }) return FAILED
         if (t.contains("already up to date") || (t.contains("up to date") && t.contains("nothing"))) {
             return UP_TO_DATE
         }
         if (t.contains("cannot apply") || t.contains("unsupported")) return NO_BINDING
-        if (t.lineSequence().any { it.trim().startsWith("fail") }) return FAILED
-        if (t.contains("pass")) return UPDATED
+        if (osmApplyPassed(raw)) return UPDATED
         return if (looksTechnical(raw)) FAILED else raw.trim().ifBlank { FAILED }
     }
 
     /** Safety net for any status string that might still carry planner dump text. */
     fun sanitize(raw: String): String {
-        if (!looksTechnical(raw)) return raw
         val t = raw.lowercase()
+        if (t.contains("test_kind=") || t.contains("search_terminate_reason=") || t.contains("pack_hit=")) {
+            if (t.lineSequence().any { it.trim().startsWith("fail") } ||
+                t.contains("corridor disconnected") ||
+                t.contains("disconnected")
+            ) {
+                return FAILED
+            }
+            return raw
+        }
+        if (!looksTechnical(raw)) return raw
+        if (t.lineSequence().any { it.trim().startsWith("fail") }) return FAILED
         if (t.contains("already up to date") || t.contains("nothing applied")) return UP_TO_DATE
         if (t.contains("up to date")) return UP_TO_DATE
         if (t.contains("unsupported") || t.contains("no region_meta")) return NO_REGION
-        if (t.contains("pass")) return UPDATED
+        if (osmApplyPassed(raw)) return UPDATED
         if (t.contains("update available") || t.contains("full re-download") || t.contains("full_redownload")) {
             return AVAILABLE
         }
-        if (t.lineSequence().any { it.trim().startsWith("fail") }) return FAILED
         return FAILED
+    }
+
+    /** OSM apply success is a `PASS` line, not `pack_hit` / `compass`. */
+    private fun osmApplyPassed(raw: String): Boolean {
+        return raw.lineSequence().any { line ->
+            val s = line.trim()
+            s.equals("PASS", ignoreCase = true) ||
+                s.startsWith("PASS\n") ||
+                s.startsWith("pass method=", ignoreCase = true)
+        } || raw.lowercase().contains("pass\nmethod=")
     }
 }

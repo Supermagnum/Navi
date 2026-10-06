@@ -4,7 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.util.Log
+import org.json.JSONObject
 import uniffi.navi.TravelProfile
+import java.io.File
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -246,6 +248,86 @@ object NaviDebugIntent {
             ecoModeEnabled = ecoMode,
             restoreSettingsAfter = restoreAfter,
             injectGpsAtFrom = injectGps,
+        )
+    }
+
+    /**
+     * One-shot trip seed from `{dataDir}/pending-debug-trip.json` so a plan can
+     * start on the APK-install restart without a second `am start`.
+     */
+    fun consumePendingTripFile(
+        context: Context,
+        dataDirPath: String,
+    ): NaviMapTestHooks.PendingTripPlan? {
+        if (!debugBuild(context)) return null
+        val f = File(dataDirPath, "pending-debug-trip.json")
+        if (!f.isFile) return null
+        val text =
+            runCatching { f.readText() }.getOrElse {
+                Log.w(TAG, "pending-debug-trip.json read failed: ${it.message}")
+                return null
+            }
+        runCatching { f.delete() }
+        val o =
+            runCatching { JSONObject(text) }.getOrElse {
+                Log.w(TAG, "pending-debug-trip.json parse failed: ${it.message}")
+                return null
+            }
+        val fromLat = o.optDouble("from_lat", Double.NaN)
+        val fromLon = o.optDouble("from_lon", Double.NaN)
+        val toLat = o.optDouble("to_lat", Double.NaN)
+        val toLon = o.optDouble("to_lon", Double.NaN)
+        if (fromLat.isNaN() || fromLon.isNaN() || toLat.isNaN() || toLon.isNaN()) {
+            Log.w(TAG, "pending-debug-trip.json missing from/to")
+            return null
+        }
+        val viaLat = o.optDouble("via1_lat", Double.NaN)
+        val viaLon = o.optDouble("via1_lon", Double.NaN)
+        val vias =
+            if (!viaLat.isNaN() && !viaLon.isNaN()) {
+                listOf(
+                    Waypoint(
+                        name = o.optString("via1_name").ifBlank { formatCoordWaypointName(viaLat, viaLon) },
+                        lat = viaLat,
+                        lon = viaLon,
+                    ),
+                )
+            } else {
+                emptyList()
+            }
+        val eco = if (o.has("eco")) o.optBoolean("eco", false) else false
+        runCatching {
+            MapHudPrefs.saveCampingPluginEnabled(context, false)
+            uniffi.navi.campingPluginSetEnabled(false)
+            val cur = uniffi.navi.loadCarRestSettings(dataDirPath)
+            uniffi.navi.saveCarRestSettings(
+                dataDirPath,
+                uniffi.navi.FfiCarRestSettings(
+                    breakIntervalHours = cur.breakIntervalHours,
+                    restDurationMinutes = cur.restDurationMinutes,
+                    ecoModeEnabled = eco,
+                    maxHours = cur.maxHours,
+                ),
+            )
+        }
+        Log.i(TAG, "consumed pending-debug-trip.json eco=$eco camping_plugin=false")
+        return NaviMapTestHooks.PendingTripPlan(
+            fromName = o.optString("from_name").ifBlank { formatCoordWaypointName(fromLat, fromLon) },
+            fromLat = fromLat,
+            fromLon = fromLon,
+            toName = o.optString("to_name").ifBlank { formatCoordWaypointName(toLat, toLon) },
+            toLat = toLat,
+            toLon = toLon,
+            enableLongTrip = o.optBoolean("long_trip", true),
+            autoPlan = o.optBoolean("auto_plan", true),
+            profile = parseProfile(o.optString("profile", "car")),
+            bikeCapability = null,
+            vias = vias,
+            forceLocalPbf = false,
+            avoidFerries = o.optBoolean("avoid_ferries", false),
+            ecoModeEnabled = eco,
+            restoreSettingsAfter = o.optBoolean("restore_settings", false),
+            injectGpsAtFrom = o.optBoolean("inject_gps", true),
         )
     }
 

@@ -154,6 +154,13 @@ impl NameIndex {
         let pragmas_t0 = phase_timing::start("place_index.open_db.pragmas");
         Self::apply_file_pragmas(&conn)?;
         phase_timing::end("place_index.open_db.pragmas", pragmas_t0);
+        let user_version: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap_or(0);
+        // Already at current schema: no DDL, no FTS drop/rebuild.
+        if user_version >= PLACE_INDEX_SCHEMA_VERSION {
+            return Ok(Self { conn });
+        }
         // GROUP BY over name_entries on every open dominated reopen (~383 ms of
         // 384 ms for 2.1M rows in the ignored timing test; tablet open_db ~7 s).
         // Production writers (`load_from_pbf_for_region` → `upsert_build_progress`)
@@ -371,8 +378,11 @@ impl NameIndex {
     }
 
     /// True when this DB was built by a context-aware `load_from_pbf`.
+    /// Read-only: never creates or migrates the file.
     pub fn is_current_schema(path: impl AsRef<Path>) -> bool {
-        let Ok(conn) = Connection::open(path.as_ref()) else {
+        let Ok(conn) =
+            Connection::open_with_flags(path.as_ref(), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        else {
             return false;
         };
         let v: i32 = conn
@@ -381,38 +391,71 @@ impl NameIndex {
         v >= PLACE_INDEX_SCHEMA_VERSION
     }
 
-    /// Delete an on-device index whose `user_version` is below
-    /// [`PLACE_INDEX_SCHEMA_VERSION`].
+    /// Schema bumps must migrate in place. Never delete the shared multi-region DB.
     ///
-    /// Used before rebuild so a multi-region DB cannot keep pre-bump row kinds
-    /// (e.g. buildings as `named`) after only one region is re-indexed and the
-    /// pragma advances. Returns true when a file was removed.
+    /// Returns false always (no file removed). Callers that cannot migrate must
+    /// stop and ask — they must not wipe sibling regions.
     pub fn discard_if_schema_stale(path: impl AsRef<Path>) -> bool {
         let path = path.as_ref();
         if !path.is_file() || Self::is_current_schema(path) {
             return false;
         }
-        match std::fs::remove_file(path) {
+        log::warn!(
+            target: "NaviSearch",
+            "place-index: schema older than v{PLACE_INDEX_SCHEMA_VERSION} at {} — \
+             migrate in place, not delete",
+            path.display()
+        );
+        false
+    }
+
+    /// Rename a DB that cannot be opened so the next open sees "missing" without
+    /// destroying the bytes. WAL/SHM sidecars stay next to the quarantine name.
+    pub fn quarantine_unreadable(path: impl AsRef<Path>) -> Option<PathBuf> {
+        let path = path.as_ref();
+        if !path.is_file() {
+            return None;
+        }
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let file_name = path.file_name()?.to_string_lossy();
+        let dest = path.with_file_name(format!("{file_name}.quarantine-{ts}"));
+        match std::fs::rename(path, &dest) {
             Ok(()) => {
-                Self::remove_wal_sidecars(path);
-                log::info!(
+                for suffix in ["-wal", "-shm"] {
+                    let src = {
+                        let mut s = path.as_os_str().to_os_string();
+                        s.push(suffix);
+                        PathBuf::from(s)
+                    };
+                    if src.is_file() {
+                        let mut d = dest.as_os_str().to_os_string();
+                        d.push(suffix);
+                        let _ = std::fs::rename(&src, PathBuf::from(d));
+                    }
+                }
+                log::error!(
                     target: "NaviSearch",
-                    "place-index: discarded stale schema DB {}",
-                    path.display()
+                    "place-index: quarantined unreadable DB {} -> {}",
+                    path.display(),
+                    dest.display()
                 );
-                true
+                Some(dest)
             }
             Err(e) => {
-                log::warn!(
+                log::error!(
                     target: "NaviSearch",
-                    "place-index: failed to discard stale schema DB {}: {e}",
+                    "place-index: quarantine failed for {}: {e}",
                     path.display()
                 );
-                false
+                None
             }
         }
     }
 
+    #[allow(dead_code)]
     fn remove_wal_sidecars(path: &Path) {
         for suffix in ["-wal", "-shm"] {
             let mut sidecar = path.as_os_str().to_os_string();
@@ -421,14 +464,23 @@ impl NameIndex {
         }
     }
 
-    /// True when this region's index finished a write (not a mid-build partial).
+    /// True when this region's index finished a write **and** has a plausible
+    /// row count (not `complete=1` with 0 or a handful of rows vs a million written).
     ///
-    /// Missing `name_index_build` table (never opened with this code) falls back
-    /// to [`has_entries_for_region`] / [`has_entries`] so legacy DBs still cache-hit.
-    pub fn region_index_complete(path: impl AsRef<Path>, region_id: &str) -> bool {
+    /// Missing `name_index_build` with real rows is legacy intact. Complete with
+    /// zero rows is **not** intact.
+    pub fn region_index_intact(path: impl AsRef<Path>, region_id: &str) -> bool {
         let path = path.as_ref();
         let region_id = region_id.trim().trim_matches('/');
         if !path.is_file() {
+            return false;
+        }
+        if let Ok(meta) = std::fs::metadata(path) {
+            if meta.len() < 10_000 {
+                return false;
+            }
+        }
+        if !Self::is_current_schema(path) {
             return false;
         }
         let Ok(conn) =
@@ -436,20 +488,43 @@ impl NameIndex {
         else {
             return false;
         };
-        match conn.query_row(
-            "SELECT complete FROM name_index_build WHERE region_id = ?1",
-            params![region_id],
-            |row| row.get::<_, i64>(0),
-        ) {
-            Ok(v) => v != 0,
-            Err(_) => {
-                if region_id.is_empty() {
-                    Self::has_entries(path)
-                } else {
-                    Self::has_entries_for_region(path, region_id)
-                }
-            }
+        let count: i64 = if region_id.is_empty() {
+            conn.query_row("SELECT COUNT(*) FROM name_entries", [], |row| row.get(0))
+                .unwrap_or(0)
+        } else {
+            conn.query_row(
+                "SELECT COUNT(*) FROM name_entries WHERE region_id = ?1",
+                params![region_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0)
+        };
+        if count <= 0 {
+            return false;
         }
+        match conn.query_row(
+            "SELECT complete, written, expected FROM name_index_build WHERE region_id = ?1",
+            params![region_id],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?)),
+        ) {
+            Ok((complete, written, expected)) => {
+                if complete == 0 {
+                    return false;
+                }
+                let refer = if written > 0 { written } else { expected };
+                refer <= 0 || (count as f64) >= (refer as f64) * 0.10
+            }
+            Err(_) => true, // legacy: rows exist, no build row / table
+        }
+    }
+
+    /// True when this region's index finished a write (not a mid-build partial).
+    ///
+    /// Missing `name_index_build` table (never opened with this code) falls back
+    /// to [`has_entries_for_region`] / [`has_entries`] so legacy DBs still cache-hit.
+    /// Prefers [`region_index_intact`] so empty complete flags are not treated as ready.
+    pub fn region_index_complete(path: impl AsRef<Path>, region_id: &str) -> bool {
+        Self::region_index_intact(path, region_id)
     }
 
     fn build_is_interrupted(conn: &Connection, region_id: &str) -> bool {
@@ -1223,7 +1298,8 @@ impl NameIndex {
     ///
     /// Requires a place index built at current [`PLACE_INDEX_SCHEMA_VERSION`]
     /// so `classify_named` stored buildings as [`NAMED_BUILDING_KIND`]. Older
-    /// on-device indexes are discarded and rebuilt on next `ensure_place_index`.
+    /// on-device indexes migrate in place on the next writer open — the shared
+    /// file is never discarded.
     pub fn named_buildings_in_bbox(
         &self,
         min_lat: f64,
@@ -1759,8 +1835,11 @@ mod tests {
             .unwrap();
         }
         assert!(!NameIndex::is_current_schema(&db));
-        assert!(NameIndex::discard_if_schema_stale(&db));
-        assert!(!db.is_file());
+        assert!(
+            !NameIndex::discard_if_schema_stale(&db),
+            "must not delete the shared DB on schema mismatch"
+        );
+        assert!(db.is_file());
         assert!(!NameIndex::discard_if_schema_stale(&db));
     }
 

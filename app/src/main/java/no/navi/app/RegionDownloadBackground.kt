@@ -708,11 +708,12 @@ object RegionDownloadBackground {
         val indexReady = placeIndexLooksReady(dataDir, path)
         val phase =
             when {
-                // Place-index already ready: do not synthesize a multi-hour PMTiles
-                // resume that clears Indexed and blocks long-trip planning.
                 indexReady -> return null
+                // Incomplete in-progress index may resume. Empty stamped regions
+                // are missing but must not auto-synthesize a multi-hour PLACE_INDEX.
+                placeIndexBuildIncomplete(dataDir, path) -> Phase.PLACE_INDEX
                 !PackRegionAvailability.localPmtilesReady(dataDir, path) -> Phase.BASEMAP
-                else -> Phase.PLACE_INDEX
+                else -> return null
             }
         // Extract URL for place-index PBF; packs come from the pack server.
         val url =
@@ -775,28 +776,11 @@ object RegionDownloadBackground {
     ): Boolean {
         val rid = regionId.trim().trim('/')
         if (rid.isEmpty()) return false
-        val dbFile = File(dataDir, "place_index.db")
-        if (!dbFile.isFile || dbFile.length() < 10_000L) return false
-        if (!placeIndexSchemaCurrent(dbFile)) {
-            // Drop stamps so heal cannot re-adopt pre-wipe region ids as ready
-            // while ensure_place_index discards the stale DB.
-            runCatching { PlaceIndexReady.readyFile(dataDir).delete() }
-            return false
+        InstalledMaps.region(rid, dataDir)?.let { snap ->
+            return snap.placeIndex == InstalledMaps.PlaceIndexState.INTACT ||
+                snap.placeIndex == InstalledMaps.PlaceIndexState.LEGACY_INTACT
         }
-        if (PlaceIndexReady.isReady(dataDir, rid)) {
-            // Stamp alone is not enough after a schema wipe removed other regions.
-            return placeIndexHasRowsForRegion(dbFile, rid) && placeIndexBuildComplete(dbFile, rid)
-        }
-        // Once a stamp file exists it is authoritative — do not treat partial
-        // mid-build rows as ready (clearReady leaves an updated stamp).
-        if (PlaceIndexReady.readyFile(dataDir).isFile) return false
-        val hasRows = placeIndexHasRowsForRegion(dbFile, rid)
-        if (hasRows) {
-            if (!placeIndexBuildComplete(dbFile, rid)) return false
-            // Legacy DB rows without a ready stamp — adopt them once.
-            PlaceIndexReady.markReady(dataDir, rid)
-        }
-        return hasRows
+        return PlaceIndexIntact.isIntact(dataDir, rid)
     }
 
     /**
@@ -1835,6 +1819,17 @@ object RegionDownloadBackground {
         }
         emitPhase(rid, "indexing")
         setStatus("Place index: starting… 0% (0 / 6)")
+        if (PlaceIndexIntact.isIntact(indexDataDir, rid)) {
+            Log.i(TAG, "place-index gate: $rid intact — skip rebuild")
+            setStatus("Place index ready 100% (6 / 6)")
+            emitPhase(rid, "indexed")
+            PlaceIndexReady.markReady(indexDataDir, rid)
+            InstalledMaps.refreshFromDirs(
+                indexDataDir,
+                listOf(NaviStorageVolumes.INTERNAL_ID to pbfDir),
+            )
+            return true
+        }
         // Native `ensure_place_index` single-flights discard/open/load so a
         // concurrent PlaceIndexBackground caller waits then cache-hits
         // (PLACE_INDEX_BUILD_LOCK in core).
@@ -1853,6 +1848,11 @@ object RegionDownloadBackground {
         if (placeReport.contains("PASS")) {
             setStatus("Place index ready 100% (6 / 6)")
             emitPhase(rid, "indexed")
+            PlaceIndexReady.markReady(indexDataDir, rid)
+            InstalledMaps.refreshFromDirs(
+                indexDataDir,
+                listOf(NaviStorageVolumes.INTERNAL_ID to pbfDir),
+            )
         }
         return placeReport.contains("PASS")
     }

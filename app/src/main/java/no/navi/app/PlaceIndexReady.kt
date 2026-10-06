@@ -80,6 +80,8 @@ object PlaceIndexReady {
             } else {
                 null
             }
+        // Never rewrite a non-empty stamp because of schema or heal. Stamp is
+        // derived from DB rows via [isReady]; the file is not the source of truth.
         if (stamped != null && stamped.isNotEmpty()) return
 
         val downloaded =
@@ -178,9 +180,11 @@ object PlaceIndexReady {
     ): Boolean {
         val id = PackRegionAvailability.normalize(regionId)
         if (id.isEmpty()) return false
-        return load(dataDir).any {
-            PackRegionAvailability.regionIdsMatchForCatalog(it, id)
+        InstalledMaps.region(id, dataDir)?.let { r ->
+            return r.placeIndex == InstalledMaps.PlaceIndexState.INTACT ||
+                r.placeIndex == InstalledMaps.PlaceIndexState.LEGACY_INTACT
         }
+        return PlaceIndexIntact.isIntact(dataDir, id)
     }
 
     /**
@@ -195,7 +199,17 @@ object PlaceIndexReady {
         if (cachedDir == key && now - allowedCacheAtMs < ALLOWED_CACHE_TTL_MS) {
             return allowedCacheValue
         }
-        val ready = load(dataDir)
+        val snapReady = InstalledMaps.current()?.takeIf { InstalledMaps.snapshotIsFor(dataDir) }
+        val ready =
+            snapReady
+                ?.regions
+                ?.values
+                ?.filter {
+                    it.placeIndex == InstalledMaps.PlaceIndexState.INTACT ||
+                        it.placeIndex == InstalledMaps.PlaceIndexState.LEGACY_INTACT
+                }?.map { it.regionId }
+                ?.toSet()
+                ?: load(dataDir).filter { PlaceIndexIntact.isIntact(dataDir, it) }.toSet()
         val computed =
             if (ready.isEmpty()) {
                 emptySet()

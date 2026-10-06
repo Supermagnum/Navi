@@ -33,6 +33,27 @@ object RoutingPlanLog {
         DiagnosticLog.logRoutePlanStart(profile, startLat, startLon, endLat, endLon)
     }
 
+    fun logPlanSettings(
+        dataDir: java.io.File,
+        ecoEnabled: Boolean,
+        campingPluginEnabled: Boolean,
+        professionalDriver: Boolean,
+        avoidMotorways: Boolean,
+        avoidTolls: Boolean,
+        avoidFerries: Boolean,
+        avoidTunnels: Boolean,
+    ) {
+        val line =
+            "plan_settings eco=$ecoEnabled camping_plugin=$campingPluginEnabled " +
+                "professional_driver=$professionalDriver avoid_motorways=$avoidMotorways " +
+                "avoid_tolls=$avoidTolls avoid_ferries=$avoidFerries avoid_tunnels=$avoidTunnels"
+        Log.i(TAG, line)
+        runCatching {
+            val f = java.io.File(dataDir, "routing-plan.log")
+            f.appendText(line + "\n")
+        }
+    }
+
     fun progress(
         pct: Int,
         ecoEnabled: Boolean,

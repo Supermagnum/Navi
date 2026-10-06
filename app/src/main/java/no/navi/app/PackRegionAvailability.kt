@@ -149,6 +149,9 @@ object PackRegionAvailability {
         dataDir: File,
         geofabrikPath: String,
     ): Boolean {
+        InstalledMaps.region(geofabrikPath, dataDir)?.let { r ->
+            return r.tilesLoadFor("car")
+        }
         val candidates =
             buildList {
                 add(normalize(geofabrikPath))

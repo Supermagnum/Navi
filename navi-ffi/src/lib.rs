@@ -56,6 +56,10 @@ uniffi::setup_scaffolding!();
 mod camping_plugin;
 pub use camping_plugin::*;
 
+/// One native `plan_car_route` at a time (second Activity / am start must not
+/// spawn a second planner thread).
+static PLAN_CAR_ROUTE_FLIGHT: Mutex<()> = Mutex::new(());
+
 fn ensure_native_logging() {
     #[cfg(target_os = "android")]
     {
@@ -2285,6 +2289,21 @@ pub fn plan_car_route_at(
     allowed_countries: Option<Vec<String>>,
     via_points: Vec<FfiLatLon>,
 ) -> CorridorRouteResult {
+    ensure_native_logging();
+    driver_break_core::routing::plan_file_log::set_data_dir(&data_dir);
+    let _flight = match PLAN_CAR_ROUTE_FLIGHT.try_lock() {
+        Ok(g) => g,
+        Err(std::sync::TryLockError::WouldBlock) => {
+            driver_break_core::routing::plan_file_log::line(
+                "FAIL: plan already running (single-flight)",
+            );
+            return empty_corridor(
+                "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: plan already running\nsearch_terminate_reason=busy\n"
+                    .into(),
+            );
+        }
+        Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner(),
+    };
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ch = driver_break_core::download::progress::ChannelGuard::enter(
             driver_break_core::download::progress::ProgressChannel::Plan,
@@ -2495,8 +2514,18 @@ fn plan_car_route_chunked_legs(
             || leg.search_terminate_reason == "graph_build"
             || leg.search_terminate_reason == "bbox_exhausted"
             || leg.search_terminate_reason == "disconnected"
+            || leg.search_terminate_reason == "corridor_disconnected"
             || leg.route_polyline.is_empty()
         {
+            driver_break_core::routing::plan_file_log::line(format!(
+                "hop_fail i={} terminate={} a={:.5},{:.5} b={:.5},{:.5}",
+                i + 1,
+                leg.search_terminate_reason,
+                slat,
+                slon,
+                elat,
+                elon
+            ));
             // Put the failing leg first so truncated logs still show the cause.
             let mut fail = format!(
                 "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: chunk_leg{} terminated {}\n",
@@ -3745,9 +3774,26 @@ fn plan_car_route_inner(
             // (typical when tile budget dropped the bridge stem). Widen tiles
             // instead of exploring the whole origin component with A*.
             if snapped.len() >= 2 {
-                let (ss, _) = snapped[0];
-                let (gg, _) = snapped[snapped.len() - 1];
-                if !built.same_weak_component(ss, gg) {
+                let (ss, snap_a_m) = snapped[0];
+                let (gg, snap_b_m) = snapped[snapped.len() - 1];
+                let snap_a = built.node_lat_lon(ss).unwrap_or((start_lat, start_lon));
+                let snap_b = built.node_lat_lon(gg).unwrap_or((end_lat, end_lon));
+                let comp_a = built.weak_component_id(ss);
+                let comp_b = built.weak_component_id(gg);
+                let weak_ok = built.same_weak_component(ss, gg);
+                let dir_ok = weak_ok && built.directed_reachable_with_options(ss, gg, &route_opts);
+                driver_break_core::routing::plan_file_log::line(format!(
+                    "hop endpoints={start_lat:.5},{start_lon:.5}->{end_lat:.5},{end_lon:.5} \
+                     snap_a={:.5},{:.5} snap_a_m={snap_a_m:.1} snap_b={:.5},{:.5} snap_b_m={snap_b_m:.1} \
+                     nodes={} pack_hit={pack_hit} comp_a={comp_a} comp_b={comp_b} \
+                     weak_ok={weak_ok} directed_ok={dir_ok}",
+                    snap_a.0,
+                    snap_a.1,
+                    snap_b.0,
+                    snap_b.1,
+                    built.nodes.len()
+                ));
+                if !dir_ok {
                     last_terminate = "disconnected";
                     report.push_str(
                         "corridor_components_disconnected before A* (origin/destination \
@@ -3755,7 +3801,11 @@ fn plan_car_route_inner(
                     );
                     driver_break_core::routing::plan_perf::note(
                         "corridor_components",
-                        "disconnected",
+                        if weak_ok {
+                            "directed_unreachable"
+                        } else {
+                            "disconnected"
+                        },
                     );
                     // Free the truncated corridor before reload (RSS / cache).
                     drop(built);
@@ -3789,6 +3839,9 @@ fn plan_car_route_inner(
                         "pack_hit={pack_hit}; FAIL: corridor disconnected — origin and destination \
                          are not connected in the loaded map tiles (tile budget exhausted). \
                          Install the missing region packs or raise the plan tile budget.\n"
+                    ));
+                    driver_break_core::routing::plan_file_log::line(format!(
+                        "hop_result=disconnected pack_hit={pack_hit} nodes_last fail-fast (no A*)"
                     ));
                     let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
                     driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(0);
@@ -5812,24 +5865,13 @@ pub fn ensure_place_index(
     // the cache / open SQLite.
     progress::set(0, Some(6), "Place index: starting…");
     let prep_t0 = driver_break_core::download::phase_timing::start("place_index.prep_cache_check");
-    // Schema bumps (e.g. v4 building kind) must rebuild; wipe first so other
-    // regions are not left with pre-bump row kinds after user_version advances.
+    // Schema bumps migrate in place. Never delete the shared multi-region DB.
     driver_break_core::search::NameIndex::discard_if_schema_stale(db);
-    // Reuse existing index when this region (or any rows for legacy empty id)
-    // is already present at the current schema.
+    // Reuse existing index when this region is intact at the current schema.
     if db.is_file() {
         if let Ok(meta) = std::fs::metadata(db) {
-            let region_ok = if region.is_empty() {
-                meta.len() > 10_000
-                    && driver_break_core::search::NameIndex::is_current_schema(db)
-                    && driver_break_core::search::NameIndex::has_entries(db)
-                    && driver_break_core::search::NameIndex::region_index_complete(db, "")
-            } else {
-                meta.len() > 10_000
-                    && driver_break_core::search::NameIndex::is_current_schema(db)
-                    && driver_break_core::search::NameIndex::has_entries_for_region(db, &region)
-                    && driver_break_core::search::NameIndex::region_index_complete(db, &region)
-            };
+            let region_ok = meta.len() > 10_000
+                && driver_break_core::search::NameIndex::region_index_intact(db, &region);
             if region_ok {
                 driver_break_core::download::phase_timing::end(
                     "place_index.prep_cache_check",
@@ -5856,7 +5898,15 @@ pub fn ensure_place_index(
         }
         Err(e) => {
             driver_break_core::download::phase_timing::end("place_index.open_db", open_t0);
-            format!("FAIL: open index: {e}\n")
+            let q = driver_break_core::search::NameIndex::quarantine_unreadable(db);
+            let qpath = q
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "rename_failed".into());
+            format!(
+                "FAIL: open index (quarantined to {qpath}): {e}\n\
+                 Place index could not be opened. The file was moved aside; regions will show as missing until rebuilt.\n"
+            )
         }
     }
 }

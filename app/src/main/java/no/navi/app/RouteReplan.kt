@@ -154,34 +154,66 @@ object RouteReplan {
                 } else {
                     null
                 }
-            val result =
-                planCarRoute(
-                    pbfPath = pbf.absolutePath,
-                    elevDir = elev,
-                    cacheDir = cacheDir.absolutePath,
-                    startLat = start.lat,
-                    startLon = start.lon,
-                    endLat = end.lat,
-                    endLon = end.lon,
-                    useEco = useEco,
-                    profile = profile,
-                    avoidMotorways = avoidMotorways,
-                    tollPolicy =
-                        if (avoidTolls) {
-                            FfiTollPolicy.PENALIZE
-                        } else {
-                            FfiTollPolicy.ALLOW
-                        },
-                    avoidFerries = avoidFerries,
-                    avoidTunnels = avoidTunnels,
-                    vehicle = vehicle,
-                    preferOfficialNetworks = preferOfficialNetworks,
-                    dataDir = dataDir.absolutePath,
-                    packDir = packDir,
-                    longTripEnabled = longTripEnabled,
-                    allowedCountries = allowedCountries,
-                    viaPoints = vias,
+            if (!RoutePlanGate.tryBegin()) {
+                return@withContext CorridorRouteResult(
+                    report = "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: plan already running\n",
+                    distanceKm = 0.0,
+                    etaMinutes = 0.0,
+                    cacheHit = false,
+                    coldBuildS = 0.0,
+                    warmLoadS = 0.0,
+                    routePolyline = "",
+                    poiLat = 0.0,
+                    poiLon = 0.0,
+                    poiName = "",
+                    poiIconKey = "",
+                    breakPoisJson = "[]",
+                    daysJson = "[]",
+                    simSamplesJson = "[]",
+                    maneuversJson = "[]",
+                    priorityPathSharePct = 0.0,
+                    routeSegmentsJson = "[]",
+                    offTrailAdvisory = "",
+                    tollPolicy = "allow",
+                    padAttemptsJson = "[]",
+                    searchExpansions = 0u,
+                    searchTerminateReason = "busy",
+                    tollAvoidanceIncomplete = false,
+                    routeUsesTolls = false,
                 )
+            }
+            val result =
+                try {
+                    planCarRoute(
+                        pbfPath = pbf.absolutePath,
+                        elevDir = elev,
+                        cacheDir = cacheDir.absolutePath,
+                        startLat = start.lat,
+                        startLon = start.lon,
+                        endLat = end.lat,
+                        endLon = end.lon,
+                        useEco = useEco,
+                        profile = profile,
+                        avoidMotorways = avoidMotorways,
+                        tollPolicy =
+                            if (avoidTolls) {
+                                FfiTollPolicy.PENALIZE
+                            } else {
+                                FfiTollPolicy.ALLOW
+                            },
+                        avoidFerries = avoidFerries,
+                        avoidTunnels = avoidTunnels,
+                        vehicle = vehicle,
+                        preferOfficialNetworks = preferOfficialNetworks,
+                        dataDir = dataDir.absolutePath,
+                        packDir = packDir,
+                        longTripEnabled = longTripEnabled,
+                        allowedCountries = allowedCountries,
+                        viaPoints = vias,
+                    )
+                } finally {
+                    RoutePlanGate.end()
+                }
             onProgress(100, "done")
             if (!result.report.contains("PASS") || result.routePolyline.isBlank()) {
                 return@withContext result

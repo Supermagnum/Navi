@@ -251,9 +251,13 @@ object LongTripPackStorage {
                     }
                     is NaviStorageVolumes.Event.Unmounted -> {
                         val stems = handleVolumeUnavailable(context, event.volumeId)
+                        runCatching { InstalledMaps.refresh(context) }
                         onUnavailable(event.volumeId, stems)
                     }
-                    is NaviStorageVolumes.Event.Mounted -> onMounted(event.volumeId)
+                    is NaviStorageVolumes.Event.Mounted -> {
+                        runCatching { InstalledMaps.refresh(context) }
+                        onMounted(event.volumeId)
+                    }
                 }
             }
         volumeWatch.set(watch)

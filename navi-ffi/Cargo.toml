@@ -92,5 +92,5 @@ name = "region-to-region-perf-matrix"
 path = "src/bin/region_to_region_perf_matrix.rs"
 
 [[bin]]
-name = "directed-snap-diag"
-path = "src/bin/directed_snap_diag.rs"
+name = "navi-ferry-probe"
+path = "src/bin/navi_ferry_probe.rs"

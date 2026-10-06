@@ -980,6 +980,15 @@ impl RouteGraph {
         }
     }
 
+    /// Union-find root for diagnostics (`-1` when the node is not in the graph).
+    pub fn weak_component_id(&self, id: NodeId) -> i64 {
+        self.component_root.get(&id).map(|r| r.0).unwrap_or(-1)
+    }
+
+    pub fn node_lat_lon(&self, id: NodeId) -> Option<(f64, f64)> {
+        self.nodes.get(&id).map(|n| (n.coord.y, n.coord.x))
+    }
+
     /// True when `goal` is reachable from `start` on directed edges allowed by
     /// `options` (ferries/one-ways/access). Prefer this over
     /// [`Self::same_weak_component`] when deciding whether a ferry overlay is

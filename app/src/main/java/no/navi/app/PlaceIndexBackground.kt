@@ -101,8 +101,8 @@ object PlaceIndexBackground {
             return
         }
         val dataDir = indexDb.parentFile
-        if (dataDir != null && !rid.isNullOrBlank() && PlaceIndexReady.isReady(dataDir, rid)) {
-            Log.i(TAG, "place index already ready for $rid; skip")
+        if (dataDir != null && !rid.isNullOrBlank() && PlaceIndexIntact.isIntact(dataDir, rid)) {
+            Log.i(TAG, "place index intact for $rid; skip")
             return
         }
         if (!claimWorker()) {
