@@ -1742,9 +1742,12 @@ object RegionDownloadBackground {
         lastUsablePath.set(trimmed)
         setStatus("Packs installed — region ready for routing")
         Log.i(TAG, "region installed for routing path=$trimmed")
-        // Ferry sidecar is lazy: plan path kicks ensure_ferry_sidecar only when
-        // directed connectivity still needs overlay (see supplement_pack_ferries).
-        // Do not build hundreds of MB of coastal ferry mesh at every install.
+        runCatching {
+            val r = InstalledMaps.region(trimmed)
+            if (r != null) {
+                FerrySidecarBackground.ensureForRegionPath(r.packDir, trimmed)
+            }
+        }
     }
 
     /**

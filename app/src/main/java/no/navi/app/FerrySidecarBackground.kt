@@ -17,12 +17,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Background ferry-overlay sidecar build, kicked lazily when a plan needs
- * overlay and the on-disk sidecar is missing/stale (not at pack install).
- *
- * Plans must never parse region PBFs for ferry overlay on the plan thread;
- * they load the sidecar or return `ferry_preparing` until ensure finishes
- * (Rust also spawns `ensure_ferry_sidecar` from the plan path).
+ * Background ferry-overlay sidecar build. Kicked while idle from
+ * [InstalledMaps] (and from a plan that surfaces `ferry_preparing`).
+ * Plans must never parse region PBFs for overlay on the plan thread.
  */
 object FerrySidecarBackground {
     private const val TAG = "FerrySidecarBg"
@@ -91,6 +88,22 @@ object FerrySidecarBackground {
         val stem = PackRegionAvailability.localStem(geofabrikPath).trim()
         if (stem.isEmpty()) return
         ensureStarted(packDir, stem)
+    }
+
+    /** Idle enqueue for every installed region whose sidecar is missing. */
+    fun ensureFromInstalledMaps() {
+        if (RoutePlanGate.isRunning()) return
+        val snap = InstalledMaps.current() ?: return
+        for (r in snap.regions.values) {
+            if (!r.ferrySidecarCar) {
+                ensureStarted(r.packDir, r.stem, TravelProfile.CAR)
+            }
+            if (r.profilesLoadable.any { it.equals("truck", ignoreCase = true) } &&
+                !r.ferrySidecarTruck
+            ) {
+                ensureStarted(r.packDir, r.stem, TravelProfile.TRUCK)
+            }
+        }
     }
 
     private fun drain() {

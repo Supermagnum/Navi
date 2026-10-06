@@ -272,7 +272,13 @@ pub struct RouteOptions {
     pub departure_local: Option<chrono::NaiveDateTime>,
     /// Active DATEX planner constraints (empty = no DATEX effect). Prefer
     /// [`crate::datex::planner_impacts`] on the active corridor slice only.
+    /// A* / snap must not scan this on the hot path — call
+    /// [`RouteGraph::bind_datex_overlay`] after the hop graph is loaded.
     pub datex_impacts: Vec<crate::datex::DatexPlannerConstraint>,
+    /// Per-edge DATEX Block (1) / not (0), parallel to [`RouteGraph::edges`].
+    pub datex_edge_block: Option<std::sync::Arc<Vec<u8>>>,
+    /// Per-edge DATEX Penalize multiplier (`1.0` = none), parallel to edges.
+    pub datex_edge_penalize: Option<std::sync::Arc<Vec<f64>>>,
     /// When `Some`, only traverse edges whose midpoint falls inside one of these
     /// ISO-3166-1 alpha-2 codes (case-insensitive). `None` keeps historical
     /// behaviour (no country filter). Hard constraint — never soft-penalize.
@@ -565,6 +571,35 @@ impl RouteGraph {
         self.profile
     }
 
+    /// One pass over hop edges: DATEX Block/Penalize become per-edge markers.
+    /// Snap and A* only test those markers afterwards.
+    pub fn bind_datex_overlay(&self, options: &mut RouteOptions) {
+        if options.datex_impacts.is_empty() {
+            options.datex_edge_block = None;
+            options.datex_edge_penalize = None;
+            return;
+        }
+        let n = self.edges.len();
+        let mut block = vec![0u8; n];
+        let mut penalize = vec![1.0f64; n];
+        for (i, e) in self.edges.iter().enumerate() {
+            for c in &options.datex_impacts {
+                if !edge_hit_by_datex(e, c) {
+                    continue;
+                }
+                match c.impact {
+                    crate::datex::DatexImpact::Block => block[i] = 1,
+                    crate::datex::DatexImpact::Penalize => {
+                        penalize[i] = penalize[i].max(c.penalize_mult.max(1.0));
+                    }
+                    crate::datex::DatexImpact::Ignore => {}
+                }
+            }
+        }
+        options.datex_edge_block = Some(std::sync::Arc::new(block));
+        options.datex_edge_penalize = Some(std::sync::Arc::new(penalize));
+    }
+
     /// Build a graph from pre-built nodes/edges (tests and synthetic fixtures).
     pub fn from_parts(
         nodes: HashMap<NodeId, Node>,
@@ -628,7 +663,7 @@ impl RouteGraph {
         let mut best: Option<(usize, u64)> = None;
         for &idx in self.outgoing_edge_indices(from) {
             let edge = &self.edges[idx];
-            if edge.target != to || !edge_allowed_for_options(edge, options, self.profile) {
+            if edge.target != to || !edge_allowed_at(edge, idx, options, self.profile) {
                 continue;
             }
             let base = edge_travel_cost(edge, idx, use_eco, options);
@@ -841,7 +876,7 @@ impl RouteGraph {
                 if pass == 0 && !edge_in_pad(e) {
                     continue;
                 }
-                if !edge_allowed_for_options(e, options, self.profile) {
+                if !edge_allowed_at(e, idx, options, self.profile) {
                     continue;
                 }
                 let edge_d = super::edge_distance_m(e, lat, lon);
@@ -934,7 +969,7 @@ impl RouteGraph {
             .get(&id)
             .into_iter()
             .flatten()
-            .any(|&idx| edge_allowed_for_options(&self.edges[idx], options, self.profile))
+            .any(|&idx| edge_allowed_at(&self.edges[idx], idx, options, self.profile))
         {
             return true;
         }
@@ -950,8 +985,8 @@ impl RouteGraph {
         let mut parent: HashMap<NodeId, NodeId> = HashMap::new();
         let mut size: HashMap<NodeId, usize> = HashMap::new();
         let mut incident: HashSet<NodeId> = HashSet::new();
-        for edge in &self.edges {
-            if !edge_allowed_for_options(edge, options, self.profile) {
+        for (idx, edge) in self.edges.iter().enumerate() {
+            if !edge_allowed_at(edge, idx, options, self.profile) {
                 continue;
             }
             incident.insert(edge.source);
@@ -961,8 +996,8 @@ impl RouteGraph {
             parent.insert(id, id);
             size.insert(id, 1);
         }
-        for edge in &self.edges {
-            if !edge_allowed_for_options(edge, options, self.profile) {
+        for (idx, edge) in self.edges.iter().enumerate() {
+            if !edge_allowed_at(edge, idx, options, self.profile) {
                 continue;
             }
             uf_union(&mut parent, &mut size, edge.source, edge.target);
@@ -1028,7 +1063,7 @@ impl RouteGraph {
         while let Some(u) = q.pop_front() {
             for &idx in self.outgoing_edge_indices(u) {
                 let e = &self.edges[idx];
-                if !edge_allowed_for_options(e, options, self.profile) {
+                if !edge_allowed_at(e, idx, options, self.profile) {
                     continue;
                 }
                 let v = e.target;
@@ -1687,7 +1722,7 @@ impl RouteGraph {
                         .flatten()
                         .filter_map(|&edge_idx| {
                             let edge = &self.edges[edge_idx];
-                            if !edge_allowed_for_options(edge, options, self.profile) {
+                            if !edge_allowed_at(edge, edge_idx, options, self.profile) {
                                 return None;
                             }
                             let base = edge_travel_cost(edge, edge_idx, use_eco, options);
@@ -1755,7 +1790,7 @@ impl RouteGraph {
                     .flatten()
                     .filter_map(|&edge_idx| {
                         let edge = &self.edges[edge_idx];
-                        if !edge_allowed_for_options(edge, options, self.profile) {
+                        if !edge_allowed_at(edge, edge_idx, options, self.profile) {
                             return None;
                         }
                         let cost = edge_travel_cost(edge, edge_idx, use_eco, options);
@@ -1838,7 +1873,7 @@ impl RouteGraph {
     pub fn restricted_edge_count(&self, edge_indices: &[usize], options: &RouteOptions) -> usize {
         edge_indices
             .iter()
-            .filter(|&&i| !edge_allowed_for_options(&self.edges[i], options, self.profile))
+            .filter(|&&i| !edge_allowed_at(&self.edges[i], i, options, self.profile))
             .count()
     }
 
@@ -2484,7 +2519,10 @@ fn edge_hit_by_datex(edge: &GraphEdge, c: &crate::datex::DatexPlannerConstraint)
     crate::routing::graph::edge_distance_m(edge, c.lat, c.lon) <= c.radius_m
 }
 
-fn edge_blocked_by_datex(edge: &GraphEdge, options: &RouteOptions) -> bool {
+fn edge_blocked_by_datex(edge: &GraphEdge, options: &RouteOptions, edge_idx: Option<usize>) -> bool {
+    if let (Some(bits), Some(i)) = (options.datex_edge_block.as_ref(), edge_idx) {
+        return bits.get(i).copied().unwrap_or(0) != 0;
+    }
     options
         .datex_impacts
         .iter()
@@ -2492,7 +2530,15 @@ fn edge_blocked_by_datex(edge: &GraphEdge, options: &RouteOptions) -> bool {
 }
 
 /// Strongest Penalize multiplier among DATEX constraints that hit this edge.
-fn datex_penalize_multiplier(edge: &GraphEdge, options: &RouteOptions) -> Option<f64> {
+fn datex_penalize_multiplier(
+    edge: &GraphEdge,
+    options: &RouteOptions,
+    edge_idx: usize,
+) -> Option<f64> {
+    if let Some(pen) = options.datex_edge_penalize.as_ref() {
+        let m = *pen.get(edge_idx)?;
+        return if m > 1.0 + 1e-9 { Some(m) } else { None };
+    }
     options
         .datex_impacts
         .iter()
@@ -2509,15 +2555,37 @@ fn options_need_filtered_components(options: &RouteOptions) -> bool {
         || options.avoid_tunnels
         || options.toll_policy != crate::routing::toll::TollPolicy::Allow
         || options.vehicle.is_some()
-        || !options.datex_impacts.is_empty()
+        || options
+            .datex_edge_block
+            .as_ref()
+            .is_some_and(|b| b.iter().any(|&v| v != 0))
+        || (options.datex_edge_block.is_none() && !options.datex_impacts.is_empty())
         || options.allowed_countries.is_some()
         || options.departure_local.is_some()
+}
+
+fn edge_allowed_at(
+    edge: &GraphEdge,
+    edge_idx: usize,
+    options: &RouteOptions,
+    profile: RoutingProfile,
+) -> bool {
+    edge_allowed_core(edge, options, profile, Some(edge_idx))
 }
 
 fn edge_allowed_for_options(
     edge: &GraphEdge,
     options: &RouteOptions,
     profile: RoutingProfile,
+) -> bool {
+    edge_allowed_core(edge, options, profile, None)
+}
+
+fn edge_allowed_core(
+    edge: &GraphEdge,
+    options: &RouteOptions,
+    profile: RoutingProfile,
+    edge_idx: Option<usize>,
 ) -> bool {
     if edge.access_forbidden {
         return false;
@@ -2528,7 +2596,7 @@ fn edge_allowed_for_options(
     if options.toll_policy == crate::routing::toll::TollPolicy::NeverUse && edge.is_toll {
         return false;
     }
-    if edge_blocked_by_datex(edge, options) {
+    if edge_blocked_by_datex(edge, options, edge_idx) {
         return false;
     }
     if options.avoid_ferries && edge.is_ferry {
@@ -2644,7 +2712,7 @@ fn edge_travel_cost(
     if options.avoid_tunnels && edge.is_tunnel {
         cost *= crate::routing::toll::TUNNEL_AVOID_PENALTY_MULT;
     }
-    if let Some(mult) = datex_penalize_multiplier(edge, options) {
+    if let Some(mult) = datex_penalize_multiplier(edge, options, edge_idx) {
         cost *= mult;
     }
     cost

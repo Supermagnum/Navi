@@ -280,9 +280,9 @@ class MainActivity : ComponentActivity() {
         if (debugTrip != null) {
             NaviMapTestHooks.pendingTripPlan = debugTrip
             debugTrip.profile?.let { NaviMapTestHooks.requestTravelProfile = it }
-            if (debugTrip.vias.isNotEmpty()) {
-                NaviMapTestHooks.pendingViaPoints = debugTrip.vias
-            }
+            // Always replace vias so a leftover via from the previous trip
+            // cannot leak into a debug OD that has none.
+            NaviMapTestHooks.pendingViaPoints = debugTrip.vias
             NaviMapTestHooks.forceLocalPbf = debugTrip.forceLocalPbf
             debugTrip.avoidFerries?.let { NaviMapTestHooks.requestAvoidFerries = it }
             debugTrip.bikeCapability?.let { NaviMapTestHooks.requestBikeCapability = it }
@@ -682,6 +682,7 @@ private fun NaviMapScreen() {
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             runCatching { InstalledMaps.refresh(context) }
+            runCatching { FerrySidecarBackground.ensureFromInstalledMaps() }
             val summary = InstalledMaps.summaryText()
             android.util.Log.i("InstalledMaps", summary)
             runCatching {
@@ -695,6 +696,7 @@ private fun NaviMapScreen() {
         if (packCatalogEpoch == 0) return@LaunchedEffect
         withContext(Dispatchers.IO) {
             runCatching { InstalledMaps.refresh(context) }
+            runCatching { FerrySidecarBackground.ensureFromInstalledMaps() }
         }
         mapsEpoch += 1
     }
@@ -1041,9 +1043,7 @@ private fun NaviMapScreen() {
                         lat = trip.toLat,
                         lon = trip.toLon,
                     )
-                if (trip.vias.isNotEmpty()) {
-                    viaPoints = trip.vias
-                }
+                viaPoints = trip.vias
                 // Profile / eco / driveHud: applyNaviLaunchExtras already set
                 // requestTravelProfile; the later hook poll updates Compose state
                 // after driveHud is in scope.

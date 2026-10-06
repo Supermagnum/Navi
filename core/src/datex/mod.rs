@@ -60,74 +60,169 @@ pub const DATEX_APPLY_TO_ROUTING_STAMP: &str = "apply_to_routing";
 /// cannot silently block a cold-start plan after the incident has cleared.
 pub const DATEX_PLAN_CACHE_MAX_AGE_SECS: i64 = (DATEX_SERVER_SITUATION_POLL_SECS as i64) * 3;
 
-/// Plan-time corridor band (metres). Overlay stays on
-/// [`DatexConfig::corridor_margin_m`]; chunked hops are ~1° chords, so a 1.5 km
-/// overnight band misses sits on the actual road. A* still matches edges at
-/// [`DATEX_IMPACT_RADIUS_M`].
-pub const DATEX_PLAN_CORRIDOR_MARGIN_M: f64 = 25_000.0;
+/// Plan-time corridor band (metres) for a **single hop** (bbox + small margin).
+/// Long-trip densify must not load DATEX for the whole Bevensen→Dalsøren chord.
+pub const DATEX_HOP_MARGIN_M: f64 = 5_000.0;
 
-/// Load active DATEX constraints for initial route planning from the on-disk
-/// navi-server cache under `{data_dir}/datex_cache`.
+/// Debug plan mode: `none` (no DATEX), `saved` (use cache, ignore TTL), `live` (TTL).
+pub const DATEX_PLAN_MODE_FILE: &str = "datex_plan_mode";
+
+/// On-disk GetSituation body (under `datex_cache/`). Copied next to routing-plan.log.
+pub const DATEX_CACHE_XML_FILE: &str = "datex-GetSituation.xml";
+
+/// Load active DATEX constraints for the **current hop** (bbox + [`DATEX_HOP_MARGIN_M`]).
 ///
 /// Soft / no-op when the plugin stamp is missing, the cache is empty/stale, or
 /// parse fails — routing must not fail open-blocked because DATEX is unavailable.
-/// Does not change UniFFI plan signatures; call from plan paths that already
-/// receive `data_dir`.
 pub fn planner_impacts_from_data_dir(
     data_dir: &Path,
     route_lat_lon: &[(f64, f64)],
     now: DateTime<Utc>,
 ) -> Vec<DatexPlannerConstraint> {
-    if route_lat_lon.len() < 2 {
+    let Some(all) = load_plan_datex_situations(data_dir, now) else {
         return Vec::new();
+    };
+    impacts_near_route(&all, route_lat_lon, DATEX_HOP_MARGIN_M, now)
+}
+
+/// Parse the on-disk snapshot when the apply stamp is present.
+///
+/// `datex_plan_mode` / `NAVI_DATEX_MODE`: `none` skips, `saved` ignores TTL,
+/// `live` (default) drops caches older than [`DATEX_PLAN_CACHE_MAX_AGE_SECS`].
+pub fn load_plan_datex_situations(data_dir: &Path, now: DateTime<Utc>) -> Option<Vec<DatexSituation>> {
+    if datex_plan_mode(data_dir) == DatexPlanMode::None {
+        return Some(Vec::new());
     }
     let cache_dir = data_dir.join("datex_cache");
     if !cache_dir.join(DATEX_APPLY_TO_ROUTING_STAMP).is_file() {
-        return Vec::new();
+        return None;
     }
     let Some((_meta, xml, fetched_unix, _fp)) = load_disk_cache(&cache_dir) else {
-        return Vec::new();
+        return None;
     };
-    let age_secs = now.timestamp().saturating_sub(fetched_unix);
-    if age_secs > DATEX_PLAN_CACHE_MAX_AGE_SECS {
-        log::info!(
-            target: "NaviDatex",
-            "plan-time DATEX cache stale age_secs={age_secs} max={DATEX_PLAN_CACHE_MAX_AGE_SECS}; skipping"
-        );
-        return Vec::new();
+    let ignore_ttl = datex_plan_mode(data_dir) == DatexPlanMode::Saved;
+    if !ignore_ttl {
+        let age_secs = now.timestamp().saturating_sub(fetched_unix);
+        if age_secs > DATEX_PLAN_CACHE_MAX_AGE_SECS {
+            log::info!(
+                target: "NaviDatex",
+                "plan-time DATEX cache stale age_secs={age_secs} max={DATEX_PLAN_CACHE_MAX_AGE_SECS}; skipping"
+            );
+            return Some(Vec::new());
+        }
     }
-    let all = match parse_situation_publication(&xml) {
-        Ok(v) => v,
+    match parse_situation_publication(&xml) {
+        Ok(v) => Some(v),
         Err(e) => {
             log::warn!(target: "NaviDatex", "plan-time DATEX parse failed: {e}");
-            return Vec::new();
+            None
         }
+    }
+}
+
+/// Copy the XML the planner actually opened, plus a JSON index of parsed sits.
+pub fn copy_plan_datex_xml(data_dir: &Path) {
+    let cache_xml = data_dir.join("datex_cache").join(DATEX_CACHE_XML_FILE);
+    if let Ok(xml) = std::fs::read(&cache_xml) {
+        crate::routing::plan_file_log::write_file(
+            crate::routing::plan_file_log::DATEX_SNAPSHOT_XML,
+            xml,
+        );
+    }
+}
+
+/// Copy the XML the planner actually opened, plus a JSON index of parsed sits.
+pub fn write_plan_datex_snapshot(data_dir: &Path, sits: &[DatexSituation]) {
+    copy_plan_datex_xml(data_dir);
+    let mode = match datex_plan_mode(data_dir) {
+        DatexPlanMode::Live => "live",
+        DatexPlanMode::Saved => "saved",
+        DatexPlanMode::None => "none",
     };
-    let span_deg = {
-        let mut min_lat = f64::MAX;
-        let mut max_lat = f64::MIN;
-        let mut min_lon = f64::MAX;
-        let mut max_lon = f64::MIN;
-        for &(la, lo) in route_lat_lon {
-            min_lat = min_lat.min(la);
-            max_lat = max_lat.max(la);
-            min_lon = min_lon.min(lo);
-            max_lon = max_lon.max(lo);
+    let mut body = format!("{{\n  \"mode\": \"{mode}\",\n  \"situations\": [\n");
+    for (i, s) in sits.iter().enumerate() {
+        if i > 0 {
+            body.push_str(",\n");
         }
-        (max_lat - min_lat).max(max_lon - min_lon)
-    };
-    let margin = if span_deg > 3.0 {
-        DATEX_PLAN_CORRIDOR_MARGIN_M
-    } else {
-        DatexConfig::default().corridor_margin_m()
-    };
-    let near = filter_near_route(&all, route_lat_lon, margin);
+        let (lat, lon) = s.primary_lat_lon().unwrap_or((0.0, 0.0));
+        let vf = s
+            .valid_from
+            .map(|t| t.to_rfc3339())
+            .unwrap_or_default();
+        let vt = s.valid_to.map(|t| t.to_rfc3339()).unwrap_or_default();
+        body.push_str(&format!(
+            "    {{\"id\":\"{}\",\"xsi\":\"{}\",\"kind\":\"{}\",\"impact\":\"{}\",\"lat\":{:.5},\"lon\":{:.5},\"road\":\"{}\",\"valid_from\":\"{}\",\"valid_to\":\"{}\"}}",
+            s.id.replace('"', ""),
+            s.xsi_type.replace('"', ""),
+            s.kind.as_str(),
+            s.impact.as_str(),
+            lat,
+            lon,
+            s.road_number.clone().unwrap_or_default().replace('"', ""),
+            vf.replace('"', ""),
+            vt.replace('"', ""),
+        ));
+    }
+    body.push_str("\n  ]\n}\n");
+    crate::routing::plan_file_log::write_file(
+        crate::routing::plan_file_log::DATEX_SNAPSHOT_JSON,
+        body,
+    );
+}
+
+/// Filter parsed situations to a hop corridor and classify planner impacts.
+pub fn impacts_near_route(
+    all: &[DatexSituation],
+    route_lat_lon: &[(f64, f64)],
+    margin_m: f64,
+    now: DateTime<Utc>,
+) -> Vec<DatexPlannerConstraint> {
+    if route_lat_lon.len() < 2 {
+        return Vec::new();
+    }
+    let near = filter_near_route(all, route_lat_lon, margin_m);
     let trip_end = now + chrono::Duration::hours(48);
     let active: Vec<_> = near
         .into_iter()
         .filter(|s| s.is_active_during(now, trip_end))
         .collect();
     planner_impacts(&active)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DatexPlanMode {
+    Live,
+    Saved,
+    None,
+}
+
+pub fn datex_plan_mode(data_dir: &Path) -> DatexPlanMode {
+    let env = std::env::var("NAVI_DATEX_MODE").unwrap_or_default();
+    parse_datex_plan_mode(&env).or_else(|| {
+        std::fs::read_to_string(data_dir.join(DATEX_PLAN_MODE_FILE))
+            .ok()
+            .and_then(|s| parse_datex_plan_mode(s.trim()))
+    })
+    .unwrap_or(DatexPlanMode::Live)
+}
+
+pub fn set_datex_plan_mode(data_dir: &Path, mode: DatexPlanMode) {
+    let path = data_dir.join(DATEX_PLAN_MODE_FILE);
+    let body = match mode {
+        DatexPlanMode::Live => "live",
+        DatexPlanMode::Saved => "saved",
+        DatexPlanMode::None => "none",
+    };
+    let _ = std::fs::write(path, body);
+}
+
+fn parse_datex_plan_mode(s: &str) -> Option<DatexPlanMode> {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "none" | "off" | "0" => Some(DatexPlanMode::None),
+        "saved" | "snapshot" | "cache" => Some(DatexPlanMode::Saved),
+        "live" | "ttl" => Some(DatexPlanMode::Live),
+        _ => None,
+    }
 }
 
 /// Create or remove the plan-time DATEX apply stamp under `datex_cache`.

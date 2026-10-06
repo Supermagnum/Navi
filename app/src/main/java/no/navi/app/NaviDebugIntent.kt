@@ -157,6 +157,14 @@ object NaviDebugIntent {
             !intent.hasExtra("navi_inject_gps") ||
                 intent.getBooleanExtra("navi_inject_gps", true)
 
+        if (intent.hasExtra("navi_datex")) {
+            val mode = intent.getStringExtra("navi_datex").orEmpty().trim().ifBlank { "live" }
+            runCatching {
+                File(dataDirPath, "datex_plan_mode").writeText(mode.lowercase())
+            }.onFailure { Log.w(TAG, "datex_plan_mode write failed: ${it.message}") }
+            Log.i(TAG, "datex_plan_mode=$mode")
+        }
+
         val snapshot =
             runCatching {
                 val car = uniffi.navi.loadCarRestSettings(dataDirPath)
@@ -311,6 +319,11 @@ object NaviDebugIntent {
             )
         }
         Log.i(TAG, "consumed pending-debug-trip.json eco=$eco camping_plugin=false")
+        if (o.has("datex")) {
+            runCatching {
+                File(dataDirPath, "datex_plan_mode").writeText(o.optString("datex", "live").lowercase())
+            }
+        }
         return NaviMapTestHooks.PendingTripPlan(
             fromName = o.optString("from_name").ifBlank { formatCoordWaypointName(fromLat, fromLon) },
             fromLat = fromLat,
@@ -397,6 +410,7 @@ object NaviDebugIntent {
                 "navi_avoid_ferries",
                 "navi_bike_capability",
                 "navi_bike_mode",
+                "navi_datex",
             )
         return keys.any { intent.hasExtra(it) }
     }

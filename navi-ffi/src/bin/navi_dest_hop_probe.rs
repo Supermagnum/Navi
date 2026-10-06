@@ -325,6 +325,419 @@ fn dummy_pbf(dir: &Path) -> PathBuf {
     dir.join("ostlandet-latest.osm.pbf")
 }
 
+fn campaign_vehicle() -> driver_break_core::config::VehicleLimits {
+    driver_break_core::config::VehicleLimits {
+        axle_weight_kg: Some(1661.2),
+        bogie_weight_kg: None,
+        height_m: Some(2.477),
+        width_m: Some(2.297),
+        length_m: Some(5.304),
+        total_weight_kg: Some(3020.4),
+    }
+}
+
+fn load_corridor_graph(
+    dir: &Path,
+    start: (f64, f64),
+    dest: (f64, f64),
+    profile: RoutingProfile,
+) -> Option<std::sync::Arc<RouteGraph>> {
+    use driver_break_core::routing::indexed::try_load_graph_for_plan_corridor_with_pack_dirs;
+    use driver_break_core::routing::plan_bbox::{
+        set_plan_tile_budget_at_least, trip_bbox_points, PlanEdgeClipMode,
+    };
+
+    set_plan_tile_budget_at_least(0);
+    let pts = [start, dest];
+    let bbox = trip_bbox_points(&pts, 0.35);
+    let g = try_load_graph_for_plan_corridor_with_pack_dirs(
+        dir,
+        &[],
+        &dummy_pbf(dir),
+        profile,
+        Some(bbox),
+        Some(pts.as_slice()),
+        PlanEdgeClipMode::CorridorBand,
+    )
+    .ok()?;
+    set_plan_tile_budget_at_least(0);
+    Some(g)
+}
+
+fn count_option_filters(g: &RouteGraph, opts: &RouteOptions) -> (u64, u64, u64, u64, u64, u64) {
+    let mut h = 0u64;
+    let mut w = 0u64;
+    let mut axle = 0u64;
+    let mut len = 0u64;
+    let mut wt = 0u64;
+    let mut datex = 0u64;
+    let Some(ref lim) = opts.vehicle else {
+        let datex_n = g
+            .edges
+            .iter()
+            .filter(|e| {
+                opts.datex_impacts.iter().any(|c| {
+                    c.impact == driver_break_core::datex::DatexImpact::Block
+                        && driver_break_core::routing::graph::edge_distance_m(e, c.lat, c.lon)
+                            <= c.radius_m
+                })
+            })
+            .count() as u64;
+        return (0, 0, 0, 0, 0, datex_n);
+    };
+    for e in &g.edges {
+        if let (Some(vh), Some(max)) = (lim.height_m, e.maxheight_m) {
+            if vh > max {
+                h += 1;
+            }
+        }
+        if let (Some(vw), Some(max)) = (lim.width_m, e.maxwidth_m) {
+            if vw > max {
+                w += 1;
+            }
+        }
+        if let (Some(ax), Some(max)) = (lim.axle_weight_kg, e.maxaxleload_t) {
+            if ax / 1000.0 > max {
+                axle += 1;
+            }
+        }
+        if let (Some(l), Some(max)) = (lim.length_m, e.maxlength_m) {
+            if l > max {
+                len += 1;
+            }
+        }
+        if let (Some(tw), Some(max)) = (lim.total_weight_kg, e.maxweight_t) {
+            if tw / 1000.0 > max {
+                wt += 1;
+            }
+        }
+        if opts.datex_impacts.iter().any(|c| {
+            c.impact == driver_break_core::datex::DatexImpact::Block
+                && driver_break_core::routing::graph::edge_distance_m(e, c.lat, c.lon) <= c.radius_m
+        }) {
+            datex += 1;
+        }
+    }
+    (h, w, axle, len, wt, datex)
+}
+
+fn dest_block_sample(g: &RouteGraph, dest: NodeId, opts: &RouteOptions, n: usize) {
+    let mut shown = 0usize;
+    for e in &g.edges {
+        if e.target != dest && e.source != dest {
+            continue;
+        }
+        let lim = opts.vehicle.as_ref();
+        let mut reasons: Vec<&str> = Vec::new();
+        if e.access_forbidden {
+            reasons.push("access_forbidden");
+        }
+        if let Some(lim) = lim {
+            if let (Some(vh), Some(max)) = (lim.height_m, e.maxheight_m) {
+                if vh > max {
+                    reasons.push("height");
+                }
+            }
+            if let (Some(vw), Some(max)) = (lim.width_m, e.maxwidth_m) {
+                if vw > max {
+                    reasons.push("width");
+                }
+            }
+            if let (Some(ax), Some(max)) = (lim.axle_weight_kg, e.maxaxleload_t) {
+                if ax / 1000.0 > max {
+                    reasons.push("axle");
+                }
+            }
+            if let (Some(l), Some(max)) = (lim.length_m, e.maxlength_m) {
+                if l > max {
+                    reasons.push("length");
+                }
+            }
+            if let (Some(tw), Some(max)) = (lim.total_weight_kg, e.maxweight_t) {
+                if tw / 1000.0 > max {
+                    reasons.push("weight");
+                }
+            }
+        }
+        if reasons.is_empty() {
+            continue;
+        }
+        println!(
+            "  dest_incident_blocked {}->{} hwy={:?} ref={:?} name={:?} \
+             maxh={:?} maxw={:?} maxaxle={:?} maxweight={:?} maxlength={:?} reasons={:?}",
+            e.source.0,
+            e.target.0,
+            e.highway,
+            e.road_ref,
+            e.name,
+            e.maxheight_m,
+            e.maxwidth_m,
+            e.maxaxleload_t,
+            e.maxweight_t,
+            e.maxlength_m,
+            reasons
+        );
+        shown += 1;
+        if shown >= n {
+            break;
+        }
+    }
+}
+
+fn run_ablate_one(
+    label: &str,
+    g: &RouteGraph,
+    start: (f64, f64),
+    dest: (f64, f64),
+    opts: &RouteOptions,
+) {
+    let t_bind = Instant::now();
+    let mut opts = opts.clone();
+    g.bind_datex_overlay(&mut opts);
+    let bind_ms = t_bind.elapsed().as_millis();
+    let t_snap = Instant::now();
+    let (Ok((s, sm)), Ok((d, dm))) = (
+        g.nearest_routable_with_options(start.0, start.1, &opts, false),
+        g.nearest_routable_with_options(dest.0, dest.1, &opts, false),
+    ) else {
+        println!("{label} SNAP FAIL nodes={} bind_ms={bind_ms}", g.nodes.len());
+        return;
+    };
+    let snap_ms = t_snap.elapsed().as_millis();
+    let t_dir = Instant::now();
+    let weak = g.same_weak_component(s, d);
+    let dir_ok = weak && g.directed_reachable_with_options(s, d, &opts);
+    let dir_ms = t_dir.elapsed().as_millis();
+    let t_ast = Instant::now();
+    let stats = g.shortest_path_with_options_stats(s, d, false, &opts);
+    let astar_ms = t_ast.elapsed().as_millis();
+    let exp = stats.expansions.max(1);
+    let us = (astar_ms as f64) * 1000.0 / (exp as f64);
+    println!(
+        "{label} nodes={} edges={} bind_ms={bind_ms} snap_m={sm:.1}/{dm:.1} snap_ms={snap_ms} \
+         weak={weak} directed_ok={dir_ok} dir_ms={dir_ms} astar_ms={astar_ms} \
+         expansions={} terminate={} us_per_expansion={us:.1} path={}",
+        g.nodes.len(),
+        g.edges.len(),
+        stats.expansions,
+        stats.terminate_reason,
+        stats.path.is_some()
+    );
+    if !dir_ok {
+        dest_block_sample(g, d, &opts, 12);
+    }
+}
+
+fn run_ablate_matrix(
+    dir: &Path,
+    data_dir: Option<&Path>,
+    hop_name: &str,
+    start: (f64, f64),
+    dest: (f64, f64),
+) {
+    use driver_break_core::routing::graph::{MotorSoftCostProfile, SurfaceRoutingMode};
+
+    println!("===== ablate {hop_name} =====");
+    let datex = if let Some(dd) = data_dir {
+        let now = chrono::Utc::now();
+        match driver_break_core::datex::load_plan_datex_situations(dd, now) {
+            Some(all) => {
+                // Reconstruct the long-plan ~53 list: 25 km of the campaign
+                // corridor (not hop-local 5 km, not nationwide). Overlay bind
+                // is still O(E x that list) once; A* must stay ~2 us/exp.
+                let corridor: Vec<(f64, f64)> = vec![
+                    (53.079686, 10.587198),
+                    (53.55, 10.0),
+                    (55.3, 9.5),
+                    (59.91, 10.75),
+                    (61.75, 9.54),
+                    (61.86914, 9.10551),
+                    (61.67732, 8.30020),
+                    (61.44338, 7.46140),
+                ];
+                driver_break_core::datex::impacts_near_route(&all, &corridor, 25_000.0, now)
+            }
+            None => Vec::new(),
+        }
+    } else {
+        Vec::new()
+    };
+    println!(
+        "datex_impacts={} data_dir={}",
+        datex.len(),
+        data_dir
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "none".into())
+    );
+    for (i, c) in datex.iter().enumerate() {
+        println!(
+            "  datex[{i}] {:?} id={} lat={:.5} lon={:.5} r_m={:.0} mult={}",
+            c.impact, c.situation_id, c.lat, c.lon, c.radius_m, c.penalize_mult
+        );
+    }
+
+    let g_car = match load_corridor_graph(dir, start, dest, RoutingProfile::Car) {
+        Some(g) => g,
+        None => {
+            println!("{hop_name} LOAD FAIL car");
+            return;
+        }
+    };
+    let g_truck = match load_corridor_graph(dir, start, dest, RoutingProfile::Truck) {
+        Some(g) => g,
+        None => {
+            println!("{hop_name} LOAD FAIL truck");
+            return;
+        }
+    };
+    println!(
+        "loaded car_nodes={} truck_nodes={} car_edges={} truck_edges={}",
+        g_car.nodes.len(),
+        g_truck.nodes.len(),
+        g_car.edges.len(),
+        g_truck.edges.len()
+    );
+
+    let mut steps: Vec<(&str, &RouteGraph, RouteOptions)> = Vec::new();
+
+    let o0 = RouteOptions::default();
+    steps.push(("0_car_default", &g_car, o0.clone()));
+
+    let o1 = RouteOptions::default();
+    steps.push(("1_truck_graph_default_opts", &g_truck, o1.clone()));
+
+    let mut o2 = RouteOptions::default();
+    o2.surface_routing_mode = Some(SurfaceRoutingMode::Car);
+    steps.push(("2_truck+surface_car", &g_truck, o2.clone()));
+
+    let mut o3 = o2.clone();
+    o3.motor_soft = Some((SurfaceRoutingMode::Car, MotorSoftCostProfile::MobileHome));
+    steps.push(("3_+motor_soft_mobile_home", &g_truck, o3.clone()));
+
+    let mut o4 = o3.clone();
+    o4.vehicle = Some(campaign_vehicle());
+    steps.push(("4_+vehicle_campaign", &g_truck, o4.clone()));
+
+    let mut o4h = o3.clone();
+    o4h.vehicle = Some(driver_break_core::config::VehicleLimits {
+        axle_weight_kg: None,
+        bogie_weight_kg: None,
+        height_m: Some(2.477),
+        width_m: None,
+        length_m: None,
+        total_weight_kg: None,
+    });
+    steps.push(("4a_height_only", &g_truck, o4h.clone()));
+
+    let mut o4w = o3.clone();
+    o4w.vehicle = Some(driver_break_core::config::VehicleLimits {
+        axle_weight_kg: None,
+        bogie_weight_kg: None,
+        height_m: None,
+        width_m: Some(2.297),
+        length_m: None,
+        total_weight_kg: None,
+    });
+    steps.push(("4b_width_only", &g_truck, o4w.clone()));
+
+    let mut o4x = o3.clone();
+    o4x.vehicle = Some(driver_break_core::config::VehicleLimits {
+        axle_weight_kg: Some(1661.2),
+        bogie_weight_kg: None,
+        height_m: None,
+        width_m: None,
+        length_m: None,
+        total_weight_kg: None,
+    });
+    steps.push(("4c_axle_only", &g_truck, o4x.clone()));
+
+    let mut o4l = o3.clone();
+    o4l.vehicle = Some(driver_break_core::config::VehicleLimits {
+        axle_weight_kg: None,
+        bogie_weight_kg: None,
+        height_m: None,
+        width_m: None,
+        length_m: Some(5.304),
+        total_weight_kg: None,
+    });
+    steps.push(("4d_length_only", &g_truck, o4l.clone()));
+
+    let mut o4t = o3.clone();
+    o4t.vehicle = Some(driver_break_core::config::VehicleLimits {
+        axle_weight_kg: None,
+        bogie_weight_kg: None,
+        height_m: None,
+        width_m: None,
+        length_m: None,
+        total_weight_kg: Some(3020.4),
+    });
+    steps.push(("4e_weight_only", &g_truck, o4t.clone()));
+
+    let mut o5 = o4.clone();
+    o5.datex_impacts = datex.clone();
+    steps.push(("5_+datex", &g_truck, o5.clone()));
+
+    let mut o6 = o5.clone();
+    o6.avoid_tunnels = false;
+    o6.avoid_motorways = false;
+    o6.avoid_ferries = false;
+    steps.push(("6_app_like_no_avoids", &g_truck, o6.clone()));
+
+    let (h, w, axle, len, wt, dx) = count_option_filters(&g_truck, &o5);
+    println!(
+        "filter_edge_counts height={h} width={w} axle={axle} length={len} weight={wt} datex_block={dx}"
+    );
+    if dx > 0 {
+        for e in &g_truck.edges {
+            let hit = o5.datex_impacts.iter().any(|c| {
+                c.impact == driver_break_core::datex::DatexImpact::Block
+                    && driver_break_core::routing::graph::edge_distance_m(e, c.lat, c.lon)
+                        <= c.radius_m
+            });
+            if !hit {
+                continue;
+            }
+            println!(
+                "  datex_block_edge {}->{} hwy={:?} ref={:?} name={:?} ({:.5},{:.5})-({:.5},{:.5})",
+                e.source.0,
+                e.target.0,
+                e.highway,
+                e.road_ref,
+                e.name,
+                e.start_lat,
+                e.start_lon,
+                e.end_lat,
+                e.end_lon
+            );
+        }
+    }
+
+    for (name, g, opts) in &steps {
+        run_ablate_one(&format!("{hop_name}/{name}"), g, start, dest, opts);
+    }
+
+    println!("{hop_name}/7_begin_plan_cancel_checks (same as 5, with plan_id)");
+    let _guard = driver_break_core::download::plan_cancel::begin_plan();
+    run_ablate_one(
+        &format!("{hop_name}/7_with_plan_id"),
+        &g_truck,
+        start,
+        dest,
+        &o5,
+    );
+    drop(_guard);
+
+    println!("{hop_name}/8_nice+5");
+    driver_break_core::routing::workers::WorkerPoolPlan::lower_current_thread_priority();
+    run_ablate_one(
+        &format!("{hop_name}/8_after_nice"),
+        &g_truck,
+        start,
+        dest,
+        &o5,
+    );
+}
+
 fn run_app_corridor(
     label: &str,
     dir: &Path,
@@ -587,5 +1000,20 @@ fn main() {
         let hop12_b = (60.7950_f64, 11.0680);
         run_hop_astar("hop12_default", &dir, hop12_a, hop12_b, false);
         run_hop_astar("hop12_surface_car", &dir, hop12_a, hop12_b, true);
+    }
+
+    if mode == "ablate" || mode == "all" {
+        let data_dir = std::env::var("NAVI_PROBE_DATA_DIR")
+            .ok()
+            .map(PathBuf::from);
+        let hop13_a = (60.64909_f64, 10.52005);
+        let hop13_b = (61.25957_f64, 10.22110);
+        let which = std::env::var("NAVI_PROBE_HOP").unwrap_or_else(|_| "both".into());
+        if which == "both" || which == "13" {
+            run_ablate_matrix(&dir, data_dir.as_deref(), "hop13", hop13_a, hop13_b);
+        }
+        if which == "both" || which == "17" {
+            run_ablate_matrix(&dir, data_dir.as_deref(), "hop17", hop17, dest);
+        }
     }
 }

@@ -2081,16 +2081,10 @@ fn supplement_pack_ferries_from_pbf_inner(
                 }
                 let (status, pct) = super::ferry_overlay_cache::ferry_preparing_status(stem);
                 crate::routing::plan_perf::note("ferry_overlay", "preparing_sidecar");
-                let home_b = home.to_path_buf();
-                let stem_b = stem.clone();
-                let pbf_b = pbf.clone();
-                let _ = std::thread::Builder::new()
-                    .name("ferry-sidecar".into())
-                    .spawn(move || {
-                        let _ = super::ferry_overlay_cache::ensure_ferry_sidecar(
-                            &home_b, &stem_b, profile, &pbf_b,
-                        );
-                    });
+                log::info!(
+                    target: "NaviPlan",
+                    "ferry_overlay preparing stem={stem} — sidecar idle job, not plan thread"
+                );
                 return Err(PackLoadError::FerryPreparing(status, pct));
             }
         }

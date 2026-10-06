@@ -122,12 +122,22 @@ pub fn dist_point_to_segment_m(
 
 /// Distance (m) from a fix to the edge’s real polyline (shape), not the chord
 /// between graph endpoints alone.
+///
+/// When `shape` is present the endpoint chord is **not** a match surface: a
+/// DATEX point sitting on a long tunnel/fjord chord would otherwise hit the
+/// road even though the geometry is kilometres away.
 pub fn edge_distance_m(e: &GraphEdge, lat: f64, lon: f64) -> f64 {
-    let mut best =
-        dist_point_to_segment_m(lat, lon, e.start_lat, e.start_lon, e.end_lat, e.end_lon);
     if e.shape.is_empty() {
-        return best;
+        return dist_point_to_segment_m(
+            lat,
+            lon,
+            e.start_lat,
+            e.start_lon,
+            e.end_lat,
+            e.end_lon,
+        );
     }
+    let mut best = f64::INFINITY;
     let mut prev_lat = e.start_lat;
     let mut prev_lon = e.start_lon;
     for &(slon, slat) in &e.shape {
@@ -719,6 +729,52 @@ mod tests {
         assert_eq!(
             nearest_road_label(&graph, mid_lat, mid_lon, 80.0).as_deref(),
             Some("Bent Road")
+        );
+    }
+
+    #[test]
+    fn shaped_edge_ignores_endpoint_chord_near_miss() {
+        // Endpoints at same latitude; geometry detours 1 km north. A DATEX
+        // point on the chord must not match the road.
+        let mut nodes = HashMap::new();
+        nodes.insert(
+            NodeId(1),
+            Node {
+                id: NodeId(1),
+                coord: Coord { x: 11.0, y: 60.85 },
+                uses: 0,
+            },
+        );
+        nodes.insert(
+            NodeId(2),
+            Node {
+                id: NodeId(2),
+                coord: Coord { x: 11.02, y: 60.85 },
+                uses: 0,
+            },
+        );
+        let edges = vec![edge(
+            "tunnel",
+            1,
+            2,
+            60.85,
+            11.0,
+            60.85,
+            11.02,
+            "trunk",
+            Some("Fodnes"),
+            None,
+            vec![(11.01, 60.86)],
+        )];
+        let graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        let chord_mid_lat = 60.85;
+        let chord_mid_lon = 11.01;
+        let chord = dist_point_to_segment_m(chord_mid_lat, chord_mid_lon, 60.85, 11.0, 60.85, 11.02);
+        let shaped = edge_distance_m(&graph.edges[0], chord_mid_lat, chord_mid_lon);
+        assert!(chord < 5.0, "chord={chord}");
+        assert!(
+            shaped > 250.0,
+            "shape distance must exceed DATEX radius, shaped={shaped}"
         );
     }
 

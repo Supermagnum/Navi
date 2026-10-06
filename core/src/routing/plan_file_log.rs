@@ -22,6 +22,9 @@ pub const REPORT_DIR: &str = "long-trip-ui-report";
 pub const LOG_NAME: &str = "routing-plan.log";
 pub const HOPS_NAME: &str = "hops.json";
 pub const POLYLINE_NAME: &str = "route-polyline.txt";
+pub const DATEX_SNAPSHOT_JSON: &str = "datex-plan-snapshot.json";
+pub const DATEX_SNAPSHOT_XML: &str = "datex-plan-snapshot.xml";
+pub const HOPS_PARTIAL_NAME: &str = "hops-partial.json";
 
 static REPORT_ROOT: Mutex<Option<PathBuf>> = Mutex::new(None);
 
@@ -65,6 +68,18 @@ pub fn write_file(name: &str, body: impl AsRef<[u8]>) {
     let _ = std::fs::create_dir_all(&root);
     let path = root.join(name);
     let _ = std::fs::write(path, body);
+}
+
+pub fn read_file(name: &str) -> Option<Vec<u8>> {
+    let root = report_root()?;
+    std::fs::read(root.join(name)).ok()
+}
+
+pub fn remove_file(name: &str) {
+    let Some(root) = report_root() else {
+        return;
+    };
+    let _ = std::fs::remove_file(root.join(name));
 }
 
 #[cfg(test)]

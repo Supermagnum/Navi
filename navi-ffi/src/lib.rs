@@ -2386,36 +2386,36 @@ fn plan_car_route_chunked_legs(
         hops.len().saturating_sub(1),
         driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG
     ));
-    let datex_impacts = {
+    let datex_all = {
         let dir = data_dir.trim();
         if dir.is_empty() {
-            Vec::new()
+            None
         } else {
-            driver_break_core::datex::planner_impacts_from_data_dir(
+            driver_break_core::datex::load_plan_datex_situations(
                 std::path::Path::new(dir),
-                hops,
                 chrono::Utc::now(),
             )
         }
     };
-    let datex_blocks = datex_impacts
+    let datex_now = chrono::Utc::now();
+    if let Some(all) = datex_all.as_ref() {
+        driver_break_core::datex::write_plan_datex_snapshot(std::path::Path::new(&data_dir), all);
+        driver_break_core::routing::plan_file_log::line(format!(
+            "datex_snapshot sits={} mode={:?}",
+            all.len(),
+            driver_break_core::datex::datex_plan_mode(std::path::Path::new(&data_dir))
+        ));
+    } else {
+        driver_break_core::datex::write_plan_datex_snapshot(
+            std::path::Path::new(&data_dir),
+            &[],
+        );
+    }
+    let hops_key: String = hops
         .iter()
-        .filter(|c| c.impact == driver_break_core::datex::DatexImpact::Block)
-        .count();
-    let datex_penalize = datex_impacts
-        .iter()
-        .filter(|c| c.impact == driver_break_core::datex::DatexImpact::Penalize)
-        .count();
-    report.push_str(&format!(
-        "datex_impacts={}; datex_block={datex_blocks}; datex_penalize={datex_penalize}\n",
-        datex_blocks + datex_penalize
-    ));
-    log::info!(
-        target: "NaviDatex",
-        "chunked plan-time DATEX impacts={} block={datex_blocks} penalize={datex_penalize} hops={}",
-        datex_blocks + datex_penalize,
-        hops.len()
-    );
+        .map(|(a, b)| format!("{a:.5},{b:.5}"))
+        .collect::<Vec<_>>()
+        .join(";");
     let mut distance_km = 0.0;
     let mut eta_minutes = 0.0;
     let mut build_s = 0.0;
@@ -2442,8 +2442,47 @@ fn plan_car_route_chunked_legs(
     // Densify joints are hop terminals: the next hop starts at the previous hop's
     // last geometry vertex, not a fresh 35 km snap onto the densify coordinate.
     let mut hop_start = hops[0];
+    let mut skip_until = 0usize;
+    if let Some(raw) = driver_break_core::routing::plan_file_log::read_file(
+        driver_break_core::routing::plan_file_log::HOPS_PARTIAL_NAME,
+    ) {
+        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&raw) {
+            let key = v.get("key").and_then(|x| x.as_str()).unwrap_or("");
+            let completed = v.get("completed").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
+            if key == hops_key && completed > 0 && completed < hops.len() {
+                skip_until = completed;
+                polyline = v
+                    .get("polyline")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                distance_km = v.get("distance_km").and_then(|x| x.as_f64()).unwrap_or(0.0);
+                eta_minutes = v.get("eta_minutes").and_then(|x| x.as_f64()).unwrap_or(0.0);
+                expansions = v.get("expansions").and_then(|x| x.as_u64()).unwrap_or(0);
+                ferry_leg_count = v
+                    .get("ferry_leg_count")
+                    .and_then(|x| x.as_u64())
+                    .unwrap_or(0);
+                if let Some(arr) = v.get("hops").and_then(|x| x.as_array()) {
+                    hops_sidecar = arr.clone();
+                }
+                if let Some(&end_pt) = parse_route_polyline(&polyline).last() {
+                    hop_start = end_pt;
+                }
+                driver_break_core::routing::plan_file_log::line(format!(
+                    "hop_resume skip_until={skip_until} km={distance_km:.3}"
+                ));
+                report.push_str(&format!(
+                    "hop_resume=true; skip_until={skip_until}; resumed_km={distance_km:.3}\n"
+                ));
+            }
+        }
+    }
 
     for (i, w) in hops.windows(2).enumerate() {
+        if i < skip_until {
+            continue;
+        }
         let (slat, slon) = hop_start;
         let (elat, elon) = w[1];
         report.push_str(&format!(
@@ -2466,6 +2505,15 @@ fn plan_car_route_chunked_legs(
         if i > 0 {
             driver_break_core::routing::indexed::corridor_cache_clear();
         }
+        let hop_datex = match &datex_all {
+            Some(all) => driver_break_core::datex::impacts_near_route(
+                all,
+                &[(slat, slon), (elat, elon)],
+                driver_break_core::datex::DATEX_HOP_MARGIN_M,
+                datex_now,
+            ),
+            None => Vec::new(),
+        };
         let leg = plan_car_route_inner(
             pbf_path.clone(),
             elev_dir.clone(),
@@ -2492,7 +2540,7 @@ fn plan_car_route_chunked_legs(
             relax_start,
             relax_end,
             /* tight_intermediate_snap */ false,
-            Some(datex_impacts.clone()),
+            Some(hop_datex),
         );
         report.push_str(&format!("--- leg{} report ---\n", i + 1));
         report.push_str(&leg.report);
@@ -2515,6 +2563,34 @@ fn plan_car_route_chunked_legs(
             if !fp.is_empty() {
                 tunnel_fp_parts.push(fp);
             }
+        }
+        if leg.search_terminate_reason == "ferry_preparing" {
+            let partial = serde_json::json!({
+                "key": hops_key,
+                "completed": i,
+                "polyline": polyline,
+                "distance_km": distance_km,
+                "eta_minutes": eta_minutes,
+                "expansions": expansions,
+                "ferry_leg_count": ferry_leg_count,
+                "hops": hops_sidecar,
+            });
+            driver_break_core::routing::plan_file_log::write_file(
+                driver_break_core::routing::plan_file_log::HOPS_PARTIAL_NAME,
+                partial.to_string(),
+            );
+            driver_break_core::routing::plan_file_log::line(format!(
+                "hop_ferry_preparing i={} completed={i} km={distance_km:.3}",
+                i + 1
+            ));
+            let mut r = empty_corridor(report);
+            r.search_terminate_reason = "ferry_preparing".into();
+            r.off_trail_advisory = leg.off_trail_advisory;
+            r.search_expansions = expansions.saturating_add(leg.search_expansions);
+            r.route_polyline = polyline;
+            r.distance_km = distance_km;
+            r.eta_minutes = eta_minutes;
+            return r;
         }
         if leg.distance_km <= 0.0
             || leg.search_terminate_reason == "snap_failed"
@@ -2549,6 +2625,9 @@ fn plan_car_route_chunked_legs(
                 );
             }
             fail.push_str(&report);
+            driver_break_core::routing::plan_file_log::remove_file(
+                driver_break_core::routing::plan_file_log::HOPS_PARTIAL_NAME,
+            );
             let mut r = empty_corridor(fail);
             r.search_terminate_reason = leg.search_terminate_reason;
             r.toll_policy = leg.toll_policy;
@@ -2603,6 +2682,22 @@ fn plan_car_route_chunked_legs(
             hop_start = end_pt;
         } else {
             hop_start = w[1];
+        }
+        {
+            let partial = serde_json::json!({
+                "key": hops_key,
+                "completed": i + 1,
+                "polyline": polyline,
+                "distance_km": distance_km,
+                "eta_minutes": eta_minutes,
+                "expansions": expansions,
+                "ferry_leg_count": ferry_leg_count,
+                "hops": hops_sidecar,
+            });
+            driver_break_core::routing::plan_file_log::write_file(
+                driver_break_core::routing::plan_file_log::HOPS_PARTIAL_NAME,
+                partial.to_string(),
+            );
         }
         append_json_array_elems(&mut sim_samples, &mut sim_first, &leg.sim_samples_json);
         let mans: Vec<RouteManeuver> =
@@ -2675,8 +2770,8 @@ fn plan_car_route_chunked_legs(
     report.push_str(&format!("route_tunnel_fp={}\n", tunnel_fp_parts.join("|")));
     append_rest_place_count(&mut report, &break_pois_json);
     report.push_str(&format!(
-        "datex_impacts={}; datex_block={datex_blocks}; datex_penalize={datex_penalize}\n",
-        datex_blocks + datex_penalize
+        "datex_plan_sits={}\n",
+        datex_all.as_ref().map(|v| v.len()).unwrap_or(0)
     ));
     {
         let track = driver_break_core::export::parse_route_polyline(&polyline);
@@ -2718,6 +2813,9 @@ fn plan_car_route_chunked_legs(
     driver_break_core::routing::plan_file_log::write_file(
         driver_break_core::routing::plan_file_log::POLYLINE_NAME,
         polyline.as_bytes(),
+    );
+    driver_break_core::routing::plan_file_log::remove_file(
+        driver_break_core::routing::plan_file_log::HOPS_PARTIAL_NAME,
     );
     driver_break_core::download::progress::set(5, Some(5), "Planning route: done");
     CorridorRouteResult {
@@ -3306,6 +3404,7 @@ fn plan_car_route_inner(
     // Initial plan only: apply active DATEX from `{data_dir}/datex_cache` when the
     // plugin stamp is present. No UniFFI signature change; mid-nav dynamic
     // reroute remains out of scope.
+    let datex_from_override = datex_impacts_override.is_some();
     let datex_impacts = if let Some(v) = datex_impacts_override {
         v
     } else {
@@ -3364,6 +3463,37 @@ fn plan_car_route_inner(
         "datex_impacts={}; datex_block={datex_blocks}; datex_penalize={datex_penalize}\n",
         datex_blocks + datex_penalize
     ));
+    {
+        let mut snap = String::from("{\n  \"impacts\": [\n");
+        for (i, c) in route_opts.datex_impacts.iter().enumerate() {
+            if i > 0 {
+                snap.push_str(",\n");
+            }
+            snap.push_str(&format!(
+                "    {{\"id\":\"{}\",\"impact\":\"{}\",\"lat\":{:.5},\"lon\":{:.5},\"r_m\":{:.0},\"mult\":{}}}",
+                c.situation_id.replace('"', ""),
+                c.impact.as_str(),
+                c.lat,
+                c.lon,
+                c.radius_m,
+                c.penalize_mult
+            ));
+        }
+        snap.push_str("\n  ]\n}\n");
+        if !datex_from_override {
+            driver_break_core::routing::plan_file_log::write_file(
+                driver_break_core::routing::plan_file_log::DATEX_SNAPSHOT_JSON,
+                snap,
+            );
+            if !data_dir.trim().is_empty() {
+                driver_break_core::datex::copy_plan_datex_xml(Path::new(data_dir.trim()));
+            }
+            driver_break_core::routing::plan_file_log::line(format!(
+                "datex_snapshot impacts={} block={datex_blocks} penalize={datex_penalize}",
+                route_opts.datex_impacts.len()
+            ));
+        }
+    }
     report.push_str(&format!(
         "eco_regen={:.3}\n",
         eco_for_travel_profile(profile).regen_efficiency
@@ -3665,6 +3795,7 @@ fn plan_car_route_inner(
                 built.nodes.len(),
                 built.edges.len()
             );
+            built.bind_datex_overlay(&mut route_opts);
             driver_break_core::download::progress::set(1, Some(5), "Snapping to road network…");
             if (profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric)
                 && prefer_official_networks
