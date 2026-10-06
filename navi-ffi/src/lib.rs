@@ -2592,14 +2592,14 @@ fn plan_car_route_chunked_legs(
         }
         // Polyline: skip duplicate joint vertex on subsequent legs.
         if polyline.is_empty() {
-            polyline = leg.route_polyline;
+            polyline = leg.route_polyline.clone();
         } else if let Some((_, rest)) = leg.route_polyline.split_once(';') {
             if !rest.is_empty() {
                 polyline.push(';');
                 polyline.push_str(rest);
             }
         }
-        if let Some(&end_pt) = parse_route_polyline(&leg.route_polyline).last() {
+        if let Some(&end_pt) = parse_route_polyline(&polyline).last() {
             hop_start = end_pt;
         } else {
             hop_start = w[1];

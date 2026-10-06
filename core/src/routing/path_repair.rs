@@ -105,6 +105,7 @@ pub fn repair_joint_cuts(pts: &[(f64, f64)]) -> Vec<(f64, f64)> {
     collapse_near_loops(&trim_joint_hairs(pts))
 }
 
+#[cfg(test)]
 fn path_len_m(pts: &[(f64, f64)]) -> f64 {
     pts.windows(2).map(|w| haversine_m(w[0], w[1])).sum()
 }
