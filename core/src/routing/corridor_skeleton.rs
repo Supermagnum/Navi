@@ -223,6 +223,12 @@ pub const FERRY_APPROACH_MAX_HOPS: usize = 12;
 /// intervening service chain is missing from pack+overlay, so 750 m was too tight.
 pub const FERRY_STITCH_MAX_M: f64 = 2_500.0;
 
+/// Dual-carriageway motorway/trunk pairs sit about this far apart. Snaps that
+/// land on the opposing oneway force multi-ten-km ring detours in directed
+/// coarse search; stitch a short bidirectional link when headings oppose.
+pub const OPPOSITE_CARRIAGEWAY_MIN_M: f64 = 8.0;
+pub const OPPOSITE_CARRIAGEWAY_MAX_M: f64 = 45.0;
+
 /// Build skeleton membership for one flat pack tile/region.
 ///
 /// Pass 1: motorway/trunk/primary + ferry (same as densify skeleton).
@@ -440,6 +446,11 @@ pub fn build_skeleton_from_pack(
         edge_is_toll,
     };
     stitch_orphaned_ferry_terminals(&mut skel, FERRY_STITCH_MAX_M);
+    stitch_opposite_carriageways(
+        &mut skel,
+        OPPOSITE_CARRIAGEWAY_MIN_M,
+        OPPOSITE_CARRIAGEWAY_MAX_M,
+    );
     skel
 }
 
@@ -527,6 +538,188 @@ pub fn stitch_orphaned_ferry_terminals(skel: &mut CorridorSkeletonFile, max_m: f
     stitched
 }
 
+fn is_dual_carriageway_highway(hw: &str) -> bool {
+    matches!(hw, "motorway" | "trunk")
+}
+
+fn normalize_road_ref(raw: &str) -> String {
+    raw.split(';')
+        .next()
+        .unwrap_or("")
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .flat_map(|c| c.to_lowercase())
+        .collect()
+}
+
+fn bearing_rad(lat0: f64, lon0: f64, lat1: f64, lon1: f64) -> f64 {
+    let dlon = (lon1 - lon0).to_radians();
+    let la0 = lat0.to_radians();
+    let la1 = lat1.to_radians();
+    let y = dlon.sin() * la1.cos();
+    let x = la0.cos() * la1.sin() - la0.sin() * la1.cos() * dlon.cos();
+    y.atan2(x)
+}
+
+fn headings_oppose(a: f64, b: f64) -> bool {
+    let mut d = (a - b).abs();
+    if d > std::f64::consts::PI {
+        d = 2.0 * std::f64::consts::PI - d;
+    }
+    // > ~100° apart ⇒ opposing carriageways, not the same-direction lane.
+    d > 100.0_f64.to_radians()
+}
+
+/// Link opposite oneway motorway/trunk carriageways that lie within
+/// `[min_m, max_m]`. Place-agnostic: any dual carriageway where a snap lands on
+/// the wrong oneway otherwise forces ring-road detours in directed search.
+pub fn stitch_opposite_carriageways(
+    skel: &mut CorridorSkeletonFile,
+    min_m: f64,
+    max_m: f64,
+) -> u32 {
+    let n = skel.node_ids.len();
+    if n < 2 || skel.edge_src.is_empty() {
+        return 0;
+    }
+    // Outbound heading + road ref for motorway/trunk endpoints (oneway only).
+    let mut heading: Vec<Option<f64>> = vec![None; n];
+    let mut node_ref: Vec<String> = vec![String::new(); n];
+    let mut dual_nodes: Vec<usize> = Vec::new();
+    let mut already: HashSet<(u32, u32)> = HashSet::new();
+    for i in 0..skel.edge_src.len() {
+        let hw = skel.edge_highway.get(i).map(|s| s.as_str()).unwrap_or("");
+        if !is_dual_carriageway_highway(hw) {
+            continue;
+        }
+        let s = skel.edge_src[i] as usize;
+        let t = skel.edge_tgt[i] as usize;
+        already.insert((s as u32, t as u32));
+        let r = normalize_road_ref(skel.edge_road_ref.get(i).map(|s| s.as_str()).unwrap_or(""));
+        if r.is_empty() {
+            continue;
+        }
+        let oneway = skel.edge_is_oneway.get(i).copied().unwrap_or(0) != 0;
+        if !oneway {
+            continue;
+        }
+        let br = bearing_rad(
+            skel.node_lats[s],
+            skel.node_lons[s],
+            skel.node_lats[t],
+            skel.node_lons[t],
+        );
+        // Travel heading applies at both ends of the oneway (traffic continues
+        // through the destination). Destinations need a heading so they can
+        // pair with the opposite carriageway ~20 m away.
+        for &n in &[s, t] {
+            if heading[n].is_none() {
+                heading[n] = Some(br);
+                dual_nodes.push(n);
+            }
+            if node_ref[n].is_empty() {
+                node_ref[n] = r.clone();
+            }
+        }
+    }
+    if dual_nodes.len() < 2 {
+        return 0;
+    }
+    // Grid bucket ~ max_m so candidates share a cell or neighbour.
+    let cell = max_m.max(1.0);
+    let mut grid: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
+    for &idx in &dual_nodes {
+        // Approximate metres: 1° lat ≈ 111_320 m; lon scaled by cos(lat).
+        let lat = skel.node_lats[idx];
+        let lon = skel.node_lons[idx];
+        let y = (lat * 111_320.0 / cell).floor() as i32;
+        let x = (lon * 111_320.0 * lat.to_radians().cos() / cell).floor() as i32;
+        grid.entry((x, y)).or_default().push(idx);
+    }
+    let mut pairs: Vec<(usize, usize, f64)> = Vec::new();
+    let mut paired: HashSet<(u32, u32)> = HashSet::new();
+    for &a in &dual_nodes {
+        let Some(ha) = heading[a] else {
+            continue;
+        };
+        let ra = node_ref[a].as_str();
+        if ra.is_empty() {
+            continue;
+        }
+        let lat = skel.node_lats[a];
+        let lon = skel.node_lons[a];
+        let y0 = (lat * 111_320.0 / cell).floor() as i32;
+        let x0 = (lon * 111_320.0 * lat.to_radians().cos() / cell).floor() as i32;
+        let mut best: Option<(f64, usize)> = None;
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                let Some(bucket) = grid.get(&(x0 + dx, y0 + dy)) else {
+                    continue;
+                };
+                for &b in bucket {
+                    if b <= a {
+                        continue;
+                    }
+                    if node_ref[b] != ra {
+                        continue;
+                    }
+                    let Some(hb) = heading[b] else {
+                        continue;
+                    };
+                    if !headings_oppose(ha, hb) {
+                        continue;
+                    }
+                    let d = haversine_m(lat, lon, skel.node_lats[b], skel.node_lons[b]);
+                    if d < min_m || d > max_m {
+                        continue;
+                    }
+                    if already.contains(&(a as u32, b as u32))
+                        || already.contains(&(b as u32, a as u32))
+                    {
+                        continue;
+                    }
+                    if best.map(|(bd, _)| d < bd).unwrap_or(true) {
+                        best = Some((d, b));
+                    }
+                }
+            }
+        }
+        if let Some((d, b)) = best {
+            let key = if a < b {
+                (a as u32, b as u32)
+            } else {
+                (b as u32, a as u32)
+            };
+            if paired.insert(key) {
+                pairs.push((a, b, d));
+            }
+        }
+    }
+    let mut stitched = 0u32;
+    for (a, b, len_m) in pairs {
+        // Slight penalty vs true ramps so existing motorway_link stays preferred.
+        let weight = len_m * 1.25;
+        for (s, t) in [(a as u32, b as u32), (b as u32, a as u32)] {
+            skel.edge_src.push(s);
+            skel.edge_tgt.push(t);
+            skel.edge_length_m.push(len_m);
+            skel.edge_base_weight.push(weight);
+            skel.edge_highway.push("motorway_link".into());
+            skel.edge_name.push("skeleton_carriageway_link".into());
+            skel.edge_road_ref.push(String::new());
+            skel.edge_is_oneway.push(0);
+            skel.edge_is_ferry.push(0);
+            skel.edge_is_tunnel.push(0);
+            skel.edge_is_toll.push(0);
+        }
+        stitched += 1;
+    }
+    if stitched > 0 {
+        skel.edge_count = skel.edge_src.len() as u32;
+    }
+    stitched
+}
+
 /// Merge several skeleton fragments (e.g. per-tile) that share the same region.
 pub fn merge_skeleton_files(parts: Vec<CorridorSkeletonFile>) -> Option<CorridorSkeletonFile> {
     if parts.is_empty() {
@@ -535,6 +728,11 @@ pub fn merge_skeleton_files(parts: Vec<CorridorSkeletonFile>) -> Option<Corridor
     if parts.len() == 1 {
         let mut skel = parts.into_iter().next().unwrap();
         stitch_orphaned_ferry_terminals(&mut skel, FERRY_STITCH_MAX_M);
+        stitch_opposite_carriageways(
+            &mut skel,
+            OPPOSITE_CARRIAGEWAY_MIN_M,
+            OPPOSITE_CARRIAGEWAY_MAX_M,
+        );
         return Some(skel);
     }
     let first = &parts[0];
@@ -684,6 +882,11 @@ pub fn merge_skeleton_files(parts: Vec<CorridorSkeletonFile>) -> Option<Corridor
     skel.border_node_count = skel.node_is_border.iter().filter(|&&b| b != 0).count() as u32;
     skel.build_ms = build_ms;
     stitch_orphaned_ferry_terminals(&mut skel, FERRY_STITCH_MAX_M);
+    stitch_opposite_carriageways(
+        &mut skel,
+        OPPOSITE_CARRIAGEWAY_MIN_M,
+        OPPOSITE_CARRIAGEWAY_MAX_M,
+    );
     Some(skel)
 }
 
@@ -1458,5 +1661,89 @@ mod tests {
         assert!(joints.iter().any(|j| j.joint_type == "start"));
         assert!(!joints.iter().any(|j| j.joint_type == "hop_deg"));
         let _ = &mut g;
+    }
+
+    #[test]
+    fn opposite_oneway_carriageways_get_stitch_link() {
+        // Two parallel oneway motorways ~20 m apart, opposite headings, same ref.
+        // Without a stitch, directed travel cannot leave the southbound line.
+        let n_e = 2;
+        let pack = FlatGraphPack {
+            has_delta_h: false,
+            node_ids: vec![1, 2, 3, 4],
+            // Southbound (north→south): nodes 0→1. Northbound: 2→3.
+            node_lats: vec![55.4700, 55.4600, 55.4600, 55.4700],
+            node_lons: vec![12.1200, 12.1200, 12.12025, 12.12025],
+            edge_src: vec![0, 2],
+            edge_tgt: vec![1, 3],
+            edge_length_m: vec![1113.0, 1113.0],
+            edge_base_weight: vec![1113.0, 1113.0],
+            edge_delta_h_m: vec![],
+            edge_start_lat: vec![55.4700, 55.4600],
+            edge_start_lon: vec![12.1200, 12.12025],
+            edge_end_lat: vec![55.4600, 55.4700],
+            edge_end_lon: vec![12.1200, 12.12025],
+            edge_highway: vec!["motorway".into(), "motorway".into()],
+            edge_maxspeed_kmh: nan_f64(n_e),
+            edge_maxspeed_practical_kmh: nan_f64(n_e),
+            edge_maxspeed_advisory_kmh: nan_f64(n_e),
+            edge_maxspeed_type: empty_str(n_e),
+            edge_maxspeed_variable: zeros_u8(n_e),
+            edge_minspeed_kmh: nan_f64(n_e),
+            edge_name: empty_str(n_e),
+            edge_road_ref: vec!["E 47".into(), "E 47".into()],
+            edge_is_motorroad: zeros_u8(n_e),
+            edge_is_expressway: zeros_u8(n_e),
+            edge_is_oneway: vec![1, 1],
+            edge_lanes: zeros_u8(n_e),
+            edge_maxweight_t: nan_f64(n_e),
+            edge_maxaxleload_t: nan_f64(n_e),
+            edge_maxbogieweight_t: nan_f64(n_e),
+            edge_maxheight_m: nan_f64(n_e),
+            edge_maxwidth_m: nan_f64(n_e),
+            edge_maxlength_m: nan_f64(n_e),
+            edge_is_toll: zeros_u8(n_e),
+            edge_is_ferry: zeros_u8(n_e),
+            edge_is_tunnel: zeros_u8(n_e),
+            edge_is_roundabout: zeros_u8(n_e),
+            edge_is_boardwalk: zeros_u8(n_e),
+            edge_shape_offsets: vec![0; n_e + 1],
+            edge_shape_lons: vec![],
+            edge_shape_lats: vec![],
+            edge_motor_vehicle_conditional: empty_str(n_e),
+            edge_access_conditional: empty_str(n_e),
+            edge_maxspeed_conditional: empty_str(n_e),
+            edge_access_forbidden: zeros_u8(n_e),
+            edge_surface_quality: zeros_u8(n_e),
+            node_access_blocked: zeros_u8(4),
+        };
+        let skel =
+            build_skeleton_from_pack(&pack, "europe/test", "test-cw", "car", &HashSet::new());
+        let links = skel
+            .edge_name
+            .iter()
+            .filter(|n| n.as_str() == "skeleton_carriageway_link")
+            .count();
+        assert!(
+            links >= 2,
+            "expected bidirectional carriageway stitch, got {links}"
+        );
+        let g = skeleton_to_route_graph(&skel, RoutingProfile::Car);
+        // From southbound mid (osm 2) should reach northbound far (osm 4) via stitch.
+        let from = NodeId(2);
+        let to = NodeId(4);
+        let path = g.shortest_path_with_options(
+            from,
+            to,
+            false,
+            &RouteOptions {
+                surface_routing_mode: Some(SurfaceRoutingMode::Offroad),
+                ..RouteOptions::default()
+            },
+        );
+        assert!(
+            path.is_some(),
+            "directed path must cross opposite carriageway stitch"
+        );
     }
 }
