@@ -104,6 +104,18 @@ object PlaceIndexBackground {
             lastStatus.set(annotate("failed (unknown region)", rid))
             return
         }
+        if (!rid.isNullOrBlank() &&
+            !PackRegionAvailability.pbfMatchesRegionForPlaceIndex(pbf, rid)
+        ) {
+            Log.e(
+                TAG,
+                "FAIL: refusing place index under wrong PBF region_id=$rid pbf=${pbf.name} " +
+                    "expected_stem=${PackRegionAvailability.localStem(rid)} — " +
+                    OfflineIndexGate.CANNOT_INDEX_YET,
+            )
+            lastStatus.set(annotate(OfflineIndexGate.CANNOT_INDEX_YET, rid))
+            return
+        }
         val dataDir = indexDb.parentFile
         if (dataDir != null && !rid.isNullOrBlank()) {
             if (PlaceIndexIntact.isIntact(dataDir, rid)) {

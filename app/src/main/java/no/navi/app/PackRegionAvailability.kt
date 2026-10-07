@@ -68,19 +68,14 @@ object PackRegionAvailability {
     /**
      * True when [pbf]'s leaf stem matches [geofabrikPath] (e.g. `vestlandet-latest.osm.pbf`
      * for `europe/norway/vestlandet`). Alias pairs (Västra Götaland) are accepted.
-     * Sweden län may use the country extract (`sweden-latest.osm.pbf`) because
-     * Geofabrik no longer publishes län PBFs.
+     * Sweden län may use the country extract (`sweden-latest.osm.pbf`) for ferry
+     * overlay / download paths — not for place-index (see [pbfMatchesRegionForPlaceIndex]).
      */
     fun pbfMatchesRegion(
         pbf: File,
         geofabrikPath: String,
     ): Boolean {
-        val got =
-            pbf.name
-                .removeSuffix(".osm.pbf")
-                .removeSuffix(".pbf")
-                .lowercase()
-        if (got.isEmpty()) return false
+        val got = pbfStem(pbf) ?: return false
         val rid = GeofabrikDownloadCatalog.canonicalizePath(geofabrikPath)
         val candidates =
             buildList {
@@ -94,6 +89,37 @@ object PackRegionAvailability {
         }
     }
 
+    /**
+     * Place-index only: the PBF leaf stem must match the region id (plus catalog
+     * aliases). Never accept a parent-country extract under a subregion id
+     * (Hamburg must not index from `sweden-latest`; Finland must not either;
+     * Sweden län need a clipped `{lan}-latest.osm.pbf`).
+     */
+    fun pbfMatchesRegionForPlaceIndex(
+        pbf: File,
+        geofabrikPath: String,
+    ): Boolean {
+        val got = pbfStem(pbf) ?: return false
+        val rid = GeofabrikDownloadCatalog.canonicalizePath(geofabrikPath)
+        val candidates =
+            buildList {
+                add(rid)
+                addAll(packCatalogRegionIdAliases(rid))
+            }
+        return candidates.any { path ->
+            localStem(path).equals(got, ignoreCase = true)
+        }
+    }
+
+    private fun pbfStem(pbf: File): String? {
+        val got =
+            pbf.name
+                .removeSuffix(".osm.pbf")
+                .removeSuffix(".pbf")
+                .lowercase()
+        return got.ifEmpty { null }
+    }
+
     /** On-disk PBF for [geofabrikPath] under [dataDir], or null if missing. */
     fun resolvePbfForRegion(
         dataDir: File,
@@ -103,9 +129,30 @@ object PackRegionAvailability {
             buildList {
                 add(normalize(geofabrikPath))
                 addAll(packCatalogRegionIdAliases(geofabrikPath))
-                // Sweden län share the country extract filename.
+                // Sweden län share the country extract filename for ferry/download.
                 val extract = GeofabrikDownloadCatalog.extractPathForPbf(geofabrikPath)
                 if (extract != normalize(geofabrikPath)) add(extract)
+            }
+        for (path in candidates) {
+            val f = File(dataDir, "${localStem(path)}.osm.pbf")
+            if (f.isFile && f.length() >= RegionDownloadBackground.MIN_PBF_BYTES) return f
+        }
+        return null
+    }
+
+    /**
+     * Place-index PBF for [geofabrikPath]: leaf stem (+ aliases) only.
+     * Does **not** fall back to a parent-country extract. Missing/stub → null
+     * ("cannot index yet").
+     */
+    fun resolvePlaceIndexPbf(
+        dataDir: File,
+        geofabrikPath: String,
+    ): File? {
+        val candidates =
+            buildList {
+                add(normalize(geofabrikPath))
+                addAll(packCatalogRegionIdAliases(geofabrikPath))
             }
         for (path in candidates) {
             val f = File(dataDir, "${localStem(path)}.osm.pbf")

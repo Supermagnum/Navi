@@ -2806,25 +2806,29 @@ private fun NaviMapScreen() {
                     if (!OfflineIndexGate.hasMaterialToIndex(dataDir)) {
                         return@withContext BgTick("", "", false, false, false)
                     }
-                    val pbf = OfflineIndexGate.resolveAutoIndexPbf(dataDir, regionPath)
-                    if (pbf == null) {
-                        return@withContext BgTick("", "", false, false, false)
-                    }
+                    // Indexed-maps may use ferry/download PBF resolution (Sweden
+                    // country extract). Place-index is leaf-only — never fall back.
+                    val indexedPbf =
+                        when {
+                            regionPath.isNotEmpty() ->
+                                PackRegionAvailability.resolvePbfForRegion(dataDir, regionPath)
+                            else -> null
+                        }
                     val elev = File(dataDir, "elevation").takeIf { it.isDirectory }
                     val regionDownloading = RegionDownloadBackground.isRunning()
-                    if (!regionDownloading) {
+                    if (!regionDownloading && indexedPbf != null) {
                         IndexedMapsBackground.ensureStarted(
-                            pbf,
+                            indexedPbf,
                             dataDir,
                             elev,
                             regionPath.ifBlank { null },
                         )
                     }
                     val indexedLine =
-                        if (regionDownloading) {
+                        if (regionDownloading || indexedPbf == null) {
                             ""
                         } else {
-                            IndexedMapsBackground.uiLine(pbf, dataDir)
+                            IndexedMapsBackground.uiLine(indexedPbf, dataDir)
                         }
                     val placeLine =
                         when {

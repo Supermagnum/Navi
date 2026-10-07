@@ -52,34 +52,30 @@ object OfflineIndexGate {
     }
 
     /**
-     * PBF to use for automatic background index/convert. Prefers [regionPath]
-     * when it resolves to a real local extract; never returns fixture files.
-     * Pack-server installs may only have a small stub PBF beside graph packs —
-     * those stubs are returned only when [hasGraphPackMaterial] is true.
+     * PBF to use for automatic place-index. Prefers [regionPath] when it
+     * resolves to that region's **own** leaf extract; never returns fixture
+     * files or another region's PBF (e.g. hamburg/finland must not pick
+     * `sweden-latest`). Missing/stub leaf → null ("cannot index yet").
+     *
+     * When [regionPath] is blank, returns null — callers must name a region
+     * rather than indexing the largest file on disk.
      */
     fun resolveAutoIndexPbf(
         dataDir: File,
         regionPath: String,
     ): File? {
         val rid = regionPath.trim().trim('/')
-        if (rid.isNotEmpty()) {
-            PackRegionAvailability.resolvePbfForRegion(dataDir, rid)?.let { pbf ->
-                if (isIndexablePbf(pbf)) return pbf
+        if (rid.isEmpty()) return null
+        PackRegionAvailability.resolvePlaceIndexPbf(dataDir, rid)?.let { pbf ->
+            if (isIndexablePbf(pbf) &&
+                PackRegionAvailability.pbfMatchesRegionForPlaceIndex(pbf, rid)
+            ) {
+                return pbf
             }
-            // Never fall back to another region's extract (e.g. finland → sweden).
-            if (!hasGraphPackMaterial(dataDir)) return null
-            val stub = File(dataDir, "${PackRegionAvailability.localStem(rid)}.osm.pbf")
-            if (stub.isFile && !isFixturePath(stub) && isIndexablePbf(stub)) return stub
-            return null
         }
-        dataDir
-            .listFiles()
-            ?.filter { isIndexablePbf(it) }
-            ?.maxByOrNull { it.length() }
-            ?.let { return it }
-        if (!hasGraphPackMaterial(dataDir)) return null
-        return dataDir.listFiles()?.firstOrNull { f ->
-            f.isFile && f.name.endsWith(".osm.pbf") && !isFixturePath(f)
-        }
+        return null
     }
+
+    /** Stable status when a region has packs but no indexable leaf extract. */
+    const val CANNOT_INDEX_YET = "cannot index yet"
 }

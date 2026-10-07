@@ -1840,13 +1840,14 @@ object RegionDownloadBackground {
             TAG,
             "local-bake pbf resolved region_id=$rid pbf=${pbf.absolutePath} expected_prefix=$rid",
         )
-        if (!PackRegionAvailability.pbfMatchesRegion(pbf, rid)) {
+        if (!PackRegionAvailability.pbfMatchesRegionForPlaceIndex(pbf, rid)) {
             Log.e(
                 TAG,
                 "FAIL: PBF/region mismatch for place index region_id=$rid pbf=${pbf.name} " +
-                    "expected_stem=${PackRegionAvailability.localStem(rid)}",
+                    "expected_stem=${PackRegionAvailability.localStem(rid)} — " +
+                    OfflineIndexGate.CANNOT_INDEX_YET,
             )
-            setStatus("failed (pbf/region mismatch)")
+            setStatus(OfflineIndexGate.CANNOT_INDEX_YET)
             return false
         }
         emitPhase(rid, "indexing")

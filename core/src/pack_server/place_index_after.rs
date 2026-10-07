@@ -61,16 +61,19 @@ impl PackPlaceIndexReport {
 }
 
 fn pbf_filename_for_region(region_id: &str) -> String {
-    // Sweden län keep pack region ids but Geofabrik only publishes the country
-    // extract — share `sweden-latest.osm.pbf` across län (no per-län stubs).
-    let extract = crate::routing::geofabrik_extract_path(region_id);
-    format!("{}.osm.pbf", leaf_stem_for_region_id(&extract))
+    // Place-index always uses the leaf stem file (e.g. halland-latest.osm.pbf).
+    // Never fall back to a parent-country extract under a subregion id.
+    format!("{}.osm.pbf", leaf_stem_for_region_id(region_id))
 }
 
 /// Ensure `data_dir/<leaf>-latest.osm.pbf` is a real Geofabrik extract.
 ///
 /// Replaces pack-server stubs (< [`MIN_REAL_PBF_BYTES`]). Uses the same
 /// [`download_file`] resume path as [`crate::routing::region::provision_region`].
+///
+/// When Geofabrik only publishes a parent extract (Sweden län), a missing leaf
+/// file is **not** replaced by the country PBF — returns a clear
+/// "cannot index yet" error so callers clip first.
 pub fn ensure_geofabrik_pbf_for_region(
     data_dir: &Path,
     region_id: &str,
@@ -82,8 +85,26 @@ pub fn ensure_geofabrik_pbf_for_region(
     fs::create_dir_all(data_dir).map_err(|e| e.to_string())?;
     let filename = pbf_filename_for_region(&region_id);
     let pbf_path = data_dir.join(&filename);
-    let url = geofabrik_latest_pbf_url(&region_id);
+    let extract = crate::routing::geofabrik_extract_path(&region_id);
     let existing = pbf_path.metadata().map(|m| m.len()).unwrap_or(0);
+    // Parent-country extract path differs from the leaf region id (Sweden län).
+    // Place-index requires a clipped/own leaf file — never index sweden-latest
+    // under europe/sweden/halland (or hamburg/finland from the wrong file).
+    if extract != region_id {
+        if pbf_path.is_file() && existing >= MIN_REAL_PBF_BYTES {
+            log::info!(
+                target: "NaviPack",
+                "place-index: reusing leaf PBF region={region_id} path={} bytes={existing}",
+                pbf_path.display()
+            );
+            return Ok((pbf_path, existing, false, 0.0));
+        }
+        return Err(format!(
+            "cannot index yet: missing leaf extract {filename} for {region_id} \
+             (parent extract {extract} must be clipped to this region first)"
+        ));
+    }
+    let url = geofabrik_latest_pbf_url(&region_id);
     let need = !pbf_path.is_file() || existing < MIN_REAL_PBF_BYTES;
     let t0 = crate::download::phase_timing::start("geofabrik_pbf.download");
     let (bytes, downloaded) = if need {
@@ -99,8 +120,9 @@ pub fn ensure_geofabrik_pbf_for_region(
         let n =
             download_file(&url, &pbf_path).map_err(|e| format!("Geofabrik PBF download: {e:#}"))?;
         if n < MIN_REAL_PBF_BYTES {
+            let _ = fs::remove_file(&pbf_path);
             return Err(format!(
-                "Geofabrik PBF too small ({n} bytes) for {region_id} from {url}"
+                "cannot index yet: Geofabrik PBF too small ({n} bytes) for {region_id} from {url}"
             ));
         }
         (n, true)
@@ -237,8 +259,34 @@ mod tests {
         );
         assert_eq!(
             pbf_filename_for_region("europe/sweden/gotland"),
-            "sweden-latest.osm.pbf"
+            "gotland-latest.osm.pbf"
         );
+        assert_eq!(
+            pbf_filename_for_region("europe/germany/hamburg"),
+            "hamburg-latest.osm.pbf"
+        );
+    }
+
+    #[test]
+    fn sweden_lan_without_leaf_pbf_cannot_index_yet() {
+        let dir = std::env::temp_dir().join(format!(
+            "navi-place-index-se-lan-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        // Country extract present must not authorize indexing a län leaf.
+        {
+            let f = fs::File::create(dir.join("sweden-latest.osm.pbf")).unwrap();
+            f.set_len(MIN_REAL_PBF_BYTES).unwrap();
+        }
+        let err = ensure_geofabrik_pbf_for_region(&dir, "europe/sweden/halland").unwrap_err();
+        assert!(
+            err.contains("cannot index yet"),
+            "expected cannot-index-yet, got {err}"
+        );
+        assert!(err.contains("halland-latest.osm.pbf"), "{err}");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

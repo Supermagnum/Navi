@@ -154,20 +154,26 @@ object InstalledMaps {
             if (r.placeIndex == PlaceIndexState.INTACT || r.placeIndex == PlaceIndexState.LEGACY_INTACT) {
                 return@mapNotNull null
             }
-            val pbf = r.pbfPath
+            val leafPbf =
+                PackRegionAvailability.resolvePlaceIndexPbf(r.packDir, r.regionId)
+                    ?: PackRegionAvailability.resolvePlaceIndexPbf(internalDataDir, r.regionId)
+            val pbf = leafPbf ?: r.pbfPath
             val note =
                 when {
-                    pbf == null -> "no PBF on this volume"
-                    r.pbfKind == PbfKind.STUB -> "stub PBF only; need real extract"
+                    leafPbf == null ->
+                        OfflineIndexGate.CANNOT_INDEX_YET +
+                            " (need ${PackRegionAvailability.localStem(r.regionId)}.osm.pbf)"
+                    r.pbfKind == PbfKind.STUB && leafPbf.length() < RegionDownloadBackground.MIN_PBF_BYTES ->
+                        OfflineIndexGate.CANNOT_INDEX_YET + "; stub PBF only"
                     else -> {
-                        val mb = pbf.length() / 1_000_000L
+                        val mb = leafPbf.length() / 1_000_000L
                         val hours =
                             when {
                                 mb >= 400 -> "about 1-4 hours on-device"
                                 mb >= 100 -> "about 30-90 minutes on-device"
                                 else -> "under 30 minutes on-device"
                             }
-                        "would index ${pbf.name} (${pbf.length()} bytes); not started; $hours"
+                        "would index ${leafPbf.name} (${leafPbf.length()} bytes); not started; $hours"
                     }
                 }
             MissingIndexBuild(r.regionId, pbf, r.pbfKind, note)

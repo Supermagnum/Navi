@@ -2,6 +2,7 @@ package no.navi.app
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -119,6 +120,43 @@ class PackRegionAvailabilityTest {
             File(dir, "skane-latest.osm.pbf").writeBytes(ByteArray(16_384))
             val got = PackRegionAvailability.resolvePbfForRegion(dir, "europe/sweden/skane")
             assertEquals(country.canonicalFile, got?.canonicalFile)
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun resolvePlaceIndexPbf_sweden_lan_requires_leaf_not_country() {
+        val dir = createTempDirectory("navi-se-place").toFile()
+        try {
+            val country = File(dir, "sweden-latest.osm.pbf")
+            java.io.RandomAccessFile(country, "rw").use { raf ->
+                raf.setLength(RegionDownloadBackground.MIN_PBF_BYTES)
+            }
+            assertNull(
+                PackRegionAvailability.resolvePlaceIndexPbf(dir, "europe/sweden/skane"),
+            )
+            val leaf = File(dir, "skane-latest.osm.pbf")
+            java.io.RandomAccessFile(leaf, "rw").use { raf ->
+                raf.setLength(RegionDownloadBackground.MIN_PBF_BYTES)
+            }
+            assertEquals(
+                leaf.canonicalFile,
+                PackRegionAvailability.resolvePlaceIndexPbf(dir, "europe/sweden/skane")
+                    ?.canonicalFile,
+            )
+            assertFalse(
+                PackRegionAvailability.pbfMatchesRegionForPlaceIndex(
+                    country,
+                    "europe/sweden/skane",
+                ),
+            )
+            assertTrue(
+                PackRegionAvailability.pbfMatchesRegionForPlaceIndex(
+                    leaf,
+                    "europe/sweden/skane",
+                ),
+            )
         } finally {
             dir.deleteRecursively()
         }
