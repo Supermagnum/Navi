@@ -81,17 +81,52 @@ pub enum SnapRole {
     Via,
 }
 
-/// Drive-equivalent speed used to turn a ferry crossing into A* metres.
+/// Drive-equivalent speed used to turn travel time into A* metres.
 /// Matches navi-server `pack-convert-core` [`ferry_base_weight_m`].
+/// Roads and ferries share this scale so A* minimises time, not distance.
 pub const FERRY_DRIVE_EQUIV_KMH: f64 = 80.0;
 /// Assumed ferry speed when OSM `duration` is missing.
 pub const FERRY_FALLBACK_SPEED_KMH: f64 = 10.0;
-/// Extra car/truck boarding cost in minutes, converted at [`FERRY_DRIVE_EQUIV_KMH`].
-pub const FERRY_CAR_BOARDING_PENALTY_MIN: f64 = 10.0;
+/// Floor for expected ferry wait (minutes) when no timetable interval is known.
+pub const FERRY_WAIT_FLOOR_MIN: f64 = 10.0;
+/// Fraction of crossing duration used as expected wait when OSM `interval` is absent.
+pub const FERRY_WAIT_CROSSING_FRACTION: f64 = 0.25;
+/// Deprecated alias: flat boarding was replaced by [`ferry_wait_minutes`].
+pub const FERRY_CAR_BOARDING_PENALTY_MIN: f64 = FERRY_WAIT_FLOOR_MIN;
 
 /// Drive-equivalent metres per second used by [`ferry_base_weight_m`] and ETA invert.
 pub fn ferry_drive_equiv_m_per_s() -> f64 {
     FERRY_DRIVE_EQUIV_KMH * 1000.0 / 3600.0
+}
+
+/// Expected ferry wait in minutes (no per-ferry constants).
+///
+/// - When OSM `interval` (minutes between departures) is known: half the interval,
+///   floored at [`FERRY_WAIT_FLOOR_MIN`].
+/// - Otherwise: [`FERRY_WAIT_CROSSING_FRACTION`] of the crossing duration, floored
+///   at [`FERRY_WAIT_FLOOR_MIN`]. Longer crossings therefore wait longer.
+pub fn ferry_wait_minutes(crossing_min: f64, interval_min: Option<f64>) -> f64 {
+    let crossing = if crossing_min.is_finite() && crossing_min > 0.0 {
+        crossing_min
+    } else {
+        0.0
+    };
+    if let Some(iv) = interval_min.filter(|v| v.is_finite() && *v > 0.0) {
+        (iv * 0.5).max(FERRY_WAIT_FLOOR_MIN)
+    } else {
+        (crossing * FERRY_WAIT_CROSSING_FRACTION).max(FERRY_WAIT_FLOOR_MIN)
+    }
+}
+
+/// A* weight in drive-equivalent metres for a timed road segment.
+pub fn road_base_weight_m(length_m: f64, speed_kmh: f64) -> f64 {
+    let speed = if speed_kmh.is_finite() && speed_kmh > 0.0 {
+        speed_kmh
+    } else {
+        1.0
+    };
+    let secs = (length_m.max(0.0) / 1000.0) / speed * 3600.0;
+    secs * ferry_drive_equiv_m_per_s()
 }
 
 /// Parse OSM `duration` as `H:MM`, `HH:MM`, or `HH:MM:SS`. Minutes must be `< 60`.
@@ -236,24 +271,50 @@ pub fn drop_pack_edges_replaced_by_overlay_ferry(
     *graph = RouteGraph::from_parts(nodes, edges, profile);
 }
 
-/// A* weight in metres for a ferry edge. `length_m` stays the geometric length.
-/// Same formula as navi-server `ferry_base_weight_m`.
+/// Crossing duration in minutes from OSM `duration` or the 10 km/h fallback.
+pub fn ferry_crossing_minutes(length_m: f64, duration_raw: Option<&str>) -> f64 {
+    match duration_raw.and_then(parse_osm_duration_secs) {
+        Some(secs) if secs.is_finite() && secs > 0.0 => secs / 60.0,
+        _ => {
+            let speed = FERRY_FALLBACK_SPEED_KMH.max(1.0);
+            (length_m.max(0.0) / 1000.0) / speed * 60.0
+        }
+    }
+}
+
+/// A* weight in drive-equivalent metres for a ferry edge.
+/// `length_m` stays the geometric length. Cost = crossing time + expected wait
+/// (from OSM `interval` when known, else growing with crossing), converted at
+/// [`FERRY_DRIVE_EQUIV_KMH`]. Foot/bike: crossing only (no vehicle wait).
 pub fn ferry_base_weight_m(
     length_m: f64,
     duration_raw: Option<&str>,
     profile: RoutingProfile,
 ) -> f64 {
-    let travel = match duration_raw.and_then(parse_osm_duration_secs) {
-        Some(secs) => secs * ferry_drive_equiv_m_per_s(),
-        None => length_m * (FERRY_DRIVE_EQUIV_KMH / FERRY_FALLBACK_SPEED_KMH),
-    };
-    let boarding = match profile {
+    ferry_base_weight_m_with_interval(length_m, duration_raw, None, profile)
+}
+
+/// Like [`ferry_base_weight_m`] with an optional OSM departure `interval` (minutes).
+///
+/// Packed weight always embeds [`FERRY_WAIT_FLOOR_MIN`] so crossing can be
+/// inverted from `base_weight` on load. Search applies the full
+/// [`ferry_wait_minutes`] (interval or crossing fraction) via
+/// [`time_base_weight_for_edge`].
+pub fn ferry_base_weight_m_with_interval(
+    length_m: f64,
+    duration_raw: Option<&str>,
+    _interval_min: Option<f64>,
+    profile: RoutingProfile,
+) -> f64 {
+    let crossing_min = ferry_crossing_minutes(length_m, duration_raw);
+    let travel = crossing_min * 60.0 * ferry_drive_equiv_m_per_s();
+    let wait = match profile {
         RoutingProfile::Car | RoutingProfile::Truck => {
-            FERRY_CAR_BOARDING_PENALTY_MIN * 60.0 * ferry_drive_equiv_m_per_s()
+            FERRY_WAIT_FLOOR_MIN * 60.0 * ferry_drive_equiv_m_per_s()
         }
         RoutingProfile::Foot | RoutingProfile::Bicycle => 0.0,
     };
-    travel + boarding
+    travel + wait
 }
 
 /// Counters from [`RouteGraph::apply_wetland_hazards`].
@@ -2529,7 +2590,18 @@ fn push_directed_edge(
     let base_weight = if meta.is_ferry {
         ferry_base_weight_m(length_m, meta.ferry_duration.as_deref(), graph.profile)
     } else {
-        length_m
+        // Time cost (drive-equiv metres), same scale as ferries — never raw length.
+        let speed = meta
+            .maxspeed_practical_kmh
+            .or(meta.maxspeed_kmh)
+            .or(meta.maxspeed_advisory_kmh)
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .unwrap_or_else(|| crate::routing::eta::highway_fallback_kmh(meta.highway.as_deref()));
+        let floor = meta
+            .minspeed_kmh
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .unwrap_or(0.0);
+        road_base_weight_m(length_m, speed.max(floor))
     };
     graph.edges.push(GraphEdge {
         id,
@@ -2887,9 +2959,11 @@ fn edge_travel_cost(
             .as_ref()
             .and_then(|w| w.get(edge_idx).copied())
             .or(edge.eco_weight)
-            .unwrap_or(edge.base_weight)
+            .unwrap_or_else(|| time_base_weight_for_edge(edge))
     } else {
-        edge.base_weight
+        // Always time (drive-equiv metres). Packs may still store length as
+        // `base_weight` for roads; recompute so A* matches ferry time scale.
+        time_base_weight_for_edge(edge)
     };
     if let Some((mode, profile)) = options.motor_soft {
         let mult = crate::routing::graph::edge_motor_soft_multiplier(edge, mode, profile);
@@ -2907,6 +2981,39 @@ fn edge_travel_cost(
         cost += extra;
     }
     cost
+}
+
+/// Time-based A* weight for any edge (road or ferry), drive-equivalent metres.
+///
+/// Roads: `length / speed` using the same speed model as pre-departure ETA.
+/// Ferries: crossing minutes inverted from the packed weight (which baked the
+/// historical flat wait floor) plus [`ferry_wait_minutes`] with no interval
+/// available on loaded packs.
+pub fn time_base_weight_for_edge(edge: &GraphEdge) -> f64 {
+    if edge.is_ferry {
+        let (crossing_min, wait_min) = ferry_crossing_and_wait_min(edge);
+        (crossing_min + wait_min) * 60.0 * ferry_drive_equiv_m_per_s()
+    } else {
+        let speed = crate::routing::eta::edge_speed_kmh(edge);
+        road_base_weight_m(edge.length_m, speed)
+    }
+}
+
+/// Crossing and expected-wait minutes for a ferry edge already on a loaded graph.
+pub fn ferry_crossing_and_wait_min(edge: &GraphEdge) -> (f64, f64) {
+    let drive = ferry_drive_equiv_m_per_s();
+    let packed_min = if drive > 0.0 && edge.base_weight.is_finite() {
+        edge.base_weight / drive / 60.0
+    } else {
+        0.0
+    };
+    // Packs baked flat FERRY_WAIT_FLOOR_MIN into base_weight; peel it off.
+    let mut crossing = (packed_min - FERRY_WAIT_FLOOR_MIN).max(0.0);
+    if crossing < 0.5 {
+        crossing = ferry_crossing_minutes(edge.length_m, None);
+    }
+    let wait = ferry_wait_minutes(crossing, None);
+    (crossing, wait)
 }
 
 fn decode_recorded_path(

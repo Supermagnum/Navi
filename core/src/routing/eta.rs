@@ -5,10 +5,7 @@
 
 use osm4routing::NodeId;
 
-use super::graph::{
-    ferry_drive_equiv_m_per_s, GraphEdge, RouteGraph, FERRY_CAR_BOARDING_PENALTY_MIN,
-    FERRY_FALLBACK_SPEED_KMH,
-};
+use super::graph::{GraphEdge, RouteGraph};
 
 /// Hiking fixed pace: 16 minutes per kilometre (flat; no climb adjustment yet).
 ///
@@ -169,33 +166,20 @@ pub fn fixed_pace_minutes(distance_km: f64, min_per_km: f64) -> f64 {
     distance_km * min_per_km
 }
 
-/// Ferry crossing + boarding hours from the edge's A* weight.
+/// Ferry crossing + expected-wait hours.
 ///
-/// [`crate::routing::graph::ferry_base_weight_m`] stores OSM `duration` (or the
-/// 10 km/h fallback) plus boarding as drive-equivalent metres in `base_weight`.
-/// Invert that so ETA matches the overlay duration tag; never re-apply the
-/// 10 km/h fallback when duration was already baked into the weight.
+/// Crossing comes from the packed duration (peeled from `base_weight`); wait
+/// uses [`crate::routing::graph::ferry_wait_minutes`]. Consecutive ferry edges
+/// count wait once.
 fn ferry_edge_hours(edge: &GraphEdge, already_on_ferry: bool) -> f64 {
-    let drive = ferry_drive_equiv_m_per_s();
-    if drive <= 0.0 {
-        return hours_for_segment(edge.length_m, FERRY_FALLBACK_SPEED_KMH);
-    }
-    let boarding_m = FERRY_CAR_BOARDING_PENALTY_MIN * 60.0 * drive;
-    let weight_m = if already_on_ferry {
-        // Consecutive ferry edges each embed boarding; count boarding once.
-        (edge.base_weight - boarding_m).max(0.0)
+    let (crossing_min, wait_min) =
+        crate::routing::graph::ferry_crossing_and_wait_min(edge);
+    let mins = if already_on_ferry {
+        crossing_min
     } else {
-        edge.base_weight.max(0.0)
+        crossing_min + wait_min
     };
-    // If weight looks like an unweighted road length (overlay missing), fall back.
-    if weight_m + 1.0 < edge.length_m {
-        let mut h = hours_for_segment(edge.length_m, FERRY_FALLBACK_SPEED_KMH);
-        if !already_on_ferry {
-            h += FERRY_CAR_BOARDING_PENALTY_MIN / 60.0;
-        }
-        return h;
-    }
-    weight_m / drive / 3600.0
+    mins / 60.0
 }
 
 /// Sum motor pre-departure time along A*-recorded edge indices.
@@ -575,8 +559,9 @@ mod tests {
         edge.base_weight = ferry_base_weight_m(length_m, Some("0:45"), RoutingProfile::Truck);
         let graph = RouteGraph::from_parts(nodes, vec![edge], RoutingProfile::Truck);
         let mins = motor_path_minutes_from_edges(&graph, &[0]);
-        // 45 min crossing + 10 min boarding.
-        assert!((mins - 55.0).abs() < 0.05, "got {mins}");
+        // 45 min crossing + wait = max(10, 0.25*45) = 11.25.
+        let expect = 45.0 + crate::routing::graph::ferry_wait_minutes(45.0, None);
+        assert!((mins - expect).abs() < 0.05, "got {mins} expect {expect}");
     }
 
     #[test]
@@ -588,7 +573,8 @@ mod tests {
         edge.base_weight = ferry_base_weight_m(length_m, None, RoutingProfile::Truck);
         let graph = RouteGraph::from_parts(nodes, vec![edge], RoutingProfile::Truck);
         let mins = motor_path_minutes_from_edges(&graph, &[0]);
-        let expect = length_m / 1000.0 / FERRY_FALLBACK_SPEED_KMH * 60.0 + FERRY_CAR_BOARDING_PENALTY_MIN;
+        let cross = length_m / 1000.0 / crate::routing::graph::FERRY_FALLBACK_SPEED_KMH * 60.0;
+        let expect = cross + crate::routing::graph::ferry_wait_minutes(cross, None);
         assert!((mins - expect).abs() < 0.05, "got {mins} expect {expect}");
     }
 }
