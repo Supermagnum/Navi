@@ -427,24 +427,42 @@ fn main() {
         "directed travel-time coarse on persistent skeletons; joints=border+ferry+via",
     );
 
-    // Forced: A1 corridor + Puttgarden–Rødby. Tight snap so terminals do not
-    // collapse onto each other (19 km apart; 35 km snap was unsafe).
+    // Forced: A1 + Puttgarden–Rødby + Zealand/Øresund land bridge (ORS profile).
+    // Without Øresund vias, time-cost A* prefers HH ferry (~+3 km-eq to Göteborg)
+    // even though Farø/E47/E20/Øresund edges exist — not a land disconnect.
+    // Tight snap so ferry terminals do not collapse (19 km apart; 35 km unsafe).
     let a1_near_lubeck = (53.87, 10.69);
     let puttgarden = (54.5028164, 11.2282207);
     let rodby = (54.6543072, 11.3508124);
+    let faro = (54.95, 11.99);
+    let koege_e47 = (55.45, 12.12);
+    let cph_e20 = (55.62, 12.52);
+    let oresund = (55.57, 12.85);
+    let e6_gothenburg = (57.70, 12.00);
     let forced_fehmarn = run_named_snap(
         "forced_a1_puttgarden_rodby",
         &mut graph,
-        &[bevensen, a1_near_lubeck, puttgarden, rodby, vaga, dalsoren],
+        &[
+            bevensen,
+            a1_near_lubeck,
+            puttgarden,
+            rodby,
+            faro,
+            koege_e47,
+            cph_e20,
+            oresund,
+            e6_gothenburg,
+            vaga,
+            dalsoren,
+        ],
         &border_osm,
-        "forced via A1/Lübeck and Puttgarden–Rødby ferry terminals",
+        "forced via A1/Lübeck, Puttgarden–Rødby, Farø/E47, E20/Øresund, E6",
         8_000.0,
     );
 
     // Forced: Jutland + Storebælt + Øresund bridge
     let padborg = (54.82, 9.36);
     let storebaelt = (55.34, 10.97);
-    let oresund = (55.57, 12.85);
     let forced_oresund = run_named(
         "forced_jutland_storebaelt_oresund",
         &mut graph,
@@ -463,11 +481,7 @@ fn main() {
         "forced via Padborg, Storebælt, Helsingør (HH ferry)",
     );
 
-    // Forced ORS corridor: A1, Puttgarden–Rødby, E47, E20, Øresund bridge, E6.
-    let faro = (54.95, 11.99);
-    let koege_e47 = (55.45, 12.12);
-    let cph_e20 = (55.62, 12.52);
-    let e6_gothenburg = (57.70, 12.00);
+    // Forced ORS corridor (same Zealand/Øresund vias as forced_fehmarn).
     let forced_ors = run_named_snap(
         "forced_ors_corridor",
         &mut graph,
