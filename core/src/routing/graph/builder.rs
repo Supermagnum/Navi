@@ -388,6 +388,9 @@ pub struct GraphEdge {
     pub maxlength_m: Option<f64>,
     pub is_toll: bool,
     pub is_ferry: bool,
+    /// OSM departure `interval` minutes on ferry edges (overlay sidecar only).
+    /// Not present on region packs; `None` when unknown.
+    pub ferry_interval_min: Option<f64>,
     /// OSM `tunnel=*` (any non-empty value other than `no`). Soft-avoid via
     /// [`RouteOptions::avoid_tunnels`], not a hard exclusion.
     pub is_tunnel: bool,
@@ -2407,6 +2410,8 @@ struct EdgeMeta {
     is_ferry: bool,
     /// OSM `duration` on ferry ways (H:MM / HH:MM:SS), when present.
     ferry_duration: Option<String>,
+    /// OSM departure `interval` minutes on ferry ways, when present.
+    ferry_interval_min: Option<f64>,
     is_tunnel: bool,
     is_boardwalk_crossing: bool,
     is_roundabout: bool,
@@ -2487,6 +2492,13 @@ fn edge_meta(edge: &Edge, profile: RoutingProfile) -> EdgeMeta {
     } else {
         None
     };
+    let ferry_interval_min = if is_ferry {
+        edge.tags
+            .get("interval")
+            .and_then(|s| parse_osm_interval_minutes(s))
+    } else {
+        None
+    };
     let is_tunnel = edge.tags.get("tunnel").is_some_and(|s| is_tunnel_tag(s));
     let is_boardwalk_crossing = tags_indicate_boardwalk(
         edge.tags.get("bridge").map(String::as_str),
@@ -2531,6 +2543,7 @@ fn edge_meta(edge: &Edge, profile: RoutingProfile) -> EdgeMeta {
         is_toll,
         is_ferry,
         ferry_duration,
+        ferry_interval_min,
         is_tunnel,
         is_boardwalk_crossing,
         is_roundabout,
@@ -2636,6 +2649,7 @@ fn push_directed_edge(
         maxlength_m: meta.maxlength_m,
         is_toll: meta.is_toll,
         is_ferry: meta.is_ferry,
+        ferry_interval_min: meta.ferry_interval_min,
         is_tunnel: meta.is_tunnel,
         is_boardwalk_crossing: meta.is_boardwalk_crossing,
         is_roundabout: meta.is_roundabout,
@@ -2999,6 +3013,28 @@ pub fn time_base_weight_for_edge(edge: &GraphEdge) -> f64 {
     }
 }
 
+/// OSM departure `interval` minutes on a ferry edge (overlay sidecar field).
+pub fn ferry_interval_min_from_edge(edge: &GraphEdge) -> Option<f64> {
+    if !edge.is_ferry {
+        return None;
+    }
+    edge.ferry_interval_min
+        .filter(|v| v.is_finite() && *v > 0.0)
+}
+
+/// Parse OSM `interval` (minutes between departures): `MM`, `H:MM`, or `HH:MM:SS`.
+pub fn parse_osm_interval_minutes(raw: &str) -> Option<f64> {
+    let s = raw.trim();
+    if s.is_empty() {
+        return None;
+    }
+    if let Ok(m) = s.parse::<f64>() {
+        return (m.is_finite() && m > 0.0).then_some(m);
+    }
+    // Reuse duration parser (seconds) → minutes.
+    parse_osm_duration_secs(s).map(|secs| secs / 60.0).filter(|m| *m > 0.0)
+}
+
 /// Crossing and expected-wait minutes for a ferry edge already on a loaded graph.
 pub fn ferry_crossing_and_wait_min(edge: &GraphEdge) -> (f64, f64) {
     let drive = ferry_drive_equiv_m_per_s();
@@ -3012,7 +3048,7 @@ pub fn ferry_crossing_and_wait_min(edge: &GraphEdge) -> (f64, f64) {
     if crossing < 0.5 {
         crossing = ferry_crossing_minutes(edge.length_m, None);
     }
-    let wait = ferry_wait_minutes(crossing, None);
+    let wait = ferry_wait_minutes(crossing, ferry_interval_min_from_edge(edge));
     (crossing, wait)
 }
 
@@ -3232,6 +3268,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -3368,6 +3405,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -4177,6 +4215,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -4247,6 +4286,7 @@ mod tests {
             maxlength_m: None,
             is_toll: true,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -4325,6 +4365,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: true,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -4394,6 +4435,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -4462,6 +4504,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -4561,6 +4604,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -4964,6 +5008,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -5017,6 +5062,7 @@ mod tests {
                 maxlength_m: None,
                 is_toll: false,
                 is_ferry: false,
+                ferry_interval_min: None,
                 is_tunnel: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
@@ -5124,6 +5170,7 @@ mod tests {
                 maxlength_m: None,
                 is_toll: false,
                 is_ferry: false,
+                ferry_interval_min: None,
                 is_tunnel: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
@@ -5160,6 +5207,38 @@ mod tests {
         assert!(g.directed_snap_ok(o, SnapRole::Origin));
         assert!(!g.directed_snap_ok(NodeId(4), SnapRole::Origin));
         assert!(!g.directed_snap_ok(NodeId(3), SnapRole::Origin));
+    }
+
+
+    #[test]
+    fn parse_osm_interval_minutes_accepts_forms() {
+        assert_eq!(parse_osm_interval_minutes("60"), Some(60.0));
+        assert_eq!(parse_osm_interval_minutes("1:00"), Some(60.0));
+        assert_eq!(parse_osm_interval_minutes("0:30"), Some(30.0));
+        assert!(parse_osm_interval_minutes("").is_none());
+        assert!(parse_osm_interval_minutes("0").is_none());
+    }
+
+    #[test]
+    fn ferry_interval_side_channel_affects_wait() {
+        let mut e = test_edge(1, 2, 54.5, 11.2, 54.6, 11.3);
+        e.is_ferry = true;
+        e.length_m = 18_000.0;
+        // Pack-style base_weight: 45 min crossing + 10 min floor.
+        let drive = ferry_drive_equiv_m_per_s();
+        e.base_weight = (45.0 + FERRY_WAIT_FLOOR_MIN) * 60.0 * drive;
+        e.maxspeed_practical_kmh = None;
+        let (c0, w0) = ferry_crossing_and_wait_min(&e);
+        assert!((c0 - 45.0).abs() < 0.5, "crossing={c0}");
+        assert!((w0 - ferry_wait_minutes(45.0, None)).abs() < 1e-6);
+        // Overlay stash: 20 min interval → wait max(10, 10).
+        e.maxspeed_practical_kmh = Some(20.0);
+        let (c1, w1) = ferry_crossing_and_wait_min(&e);
+        assert!((c1 - 45.0).abs() < 0.5);
+        assert!((w1 - 10.0).abs() < 1e-6, "wait={w1}");
+        e.maxspeed_practical_kmh = Some(90.0);
+        let (_, w2) = ferry_crossing_and_wait_min(&e);
+        assert!((w2 - 45.0).abs() < 1e-6, "wait={w2}");
     }
 
     #[test]

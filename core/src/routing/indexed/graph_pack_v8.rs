@@ -437,6 +437,7 @@ impl FlatGraphPackV8 {
                 maxlength_m: unpack_opt_metric(&self.edge_maxlength_m, i),
                 is_toll: self.edge_is_toll[i] != 0,
                 is_ferry: self.edge_is_ferry[i] != 0,
+                ferry_interval_min: None,
                 // Not in v8 pack wire format (pending navi-server v9 sign-off).
                 // Soft-avoid still works for graphs built from PBF in-process.
                 is_tunnel: false,
@@ -744,6 +745,7 @@ impl ArchivedFlatGraphPackV8 {
                 maxlength_m: archived_opt_metric_at(&self.edge_maxlength_m, i),
                 is_toll: arch_u8(self.edge_is_toll[i]) != 0,
                 is_ferry: arch_u8(self.edge_is_ferry[i]) != 0,
+                ferry_interval_min: None,
                 is_tunnel: false,
                 is_boardwalk_crossing: arch_u8(self.edge_is_boardwalk[i]) != 0,
                 is_roundabout: arch_u8(self.edge_is_roundabout[i]) != 0,

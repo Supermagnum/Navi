@@ -1010,6 +1010,7 @@ pub fn skeleton_to_route_graph(skel: &CorridorSkeletonFile, profile: RoutingProf
             maxlength_m: None,
             is_toll: skel.edge_is_toll.get(i).copied().unwrap_or(0) != 0,
             is_ferry: ferry,
+            ferry_interval_min: None,
             is_tunnel: skel.edge_is_tunnel.get(i).copied().unwrap_or(0) != 0,
             is_boardwalk_crossing: false,
             is_roundabout: false,

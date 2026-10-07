@@ -1,10 +1,12 @@
 //! Stem-level ferry overlay sidecar: build once from PBF at pack install /
 //! refresh (background), reuse at plan time.
 //!
-//! **No PBF parsing may happen inside a plan.** The sidecar is a v9
-//! [`FlatGraphPack`] of ferry + pier-approach edges for the stem's region bbox,
-//! invalidated when the source PBF size/mtime changes. If a plan needs the
-//! overlay before the sidecar is ready, the load path returns
+//! **No PBF parsing may happen inside a plan.** The sidecar is a dedicated
+//! [`FerryOverlayPack`] (own magic + format version) of ferry + pier-approach
+//! edges for the stem's region bbox, including OSM departure `interval` minutes.
+//! Invalidated when the source PBF size/mtime changes or
+//! [`FERRY_SIDECAR_BUILD`] / [`FERRY_OVERLAY_FORMAT_VERSION`] bumps. If a plan
+//! needs the overlay before the sidecar is ready, the load path returns
 //! [`super::PackLoadError::FerryPreparing`].
 
 use std::fs;
@@ -15,13 +17,55 @@ use std::time::Instant;
 
 use memmap2::Mmap;
 use rkyv::rancor::Error as RkyvError;
+use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 
 use crate::routing::graph::{RouteGraph, RoutingProfile};
 use crate::routing::indexed::graph_pack::{
-    ArchivedFlatGraphPack, FlatGraphPack, GRAPH_FORMAT_VERSION, MAGIC_GRAPH,
+    pack_opt_metric, ArchivedFlatGraphPack, FlatGraphPack,
 };
 use crate::routing::indexed::header::Preamble;
 use crate::routing::indexed::io::{archive_payload_offset, write_archive_atomic};
+
+/// Little-endian ASCII "NVFY" — ferry overlay sidecar (not a region graph pack).
+pub const MAGIC_FERRY_OVERLAY: u32 = 0x4E_56_46_59;
+/// Ferry overlay archive body version (`FlatGraphPack` + per-edge interval).
+pub const FERRY_OVERLAY_FORMAT_VERSION: u32 = 1;
+
+/// Overlay topology / schema revision in the `.meta` fingerprint. Bump when
+/// sidecar contents or wire format change independently of the source PBF so
+/// idle apps rebuild stale sidecars.
+const FERRY_SIDECAR_BUILD: u32 = 3;
+
+/// Ferry overlay archive: region [`FlatGraphPack`] plus OSM departure intervals.
+///
+/// Kept separate from region pack format so interval storage never bumps
+/// [`super::GRAPH_FORMAT_VERSION`].
+#[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone)]
+pub struct FerryOverlayPack {
+    pub graph: FlatGraphPack,
+    /// NaN = none. OSM `interval` minutes; meaningful only when the edge is a ferry.
+    pub edge_ferry_interval_min: Vec<f64>,
+}
+
+impl FerryOverlayPack {
+    pub fn from_route_graph(graph: &RouteGraph) -> Self {
+        let edge_ferry_interval_min = graph
+            .edges
+            .iter()
+            .map(|e| {
+                if e.is_ferry {
+                    pack_opt_metric(e.ferry_interval_min)
+                } else {
+                    f64::NAN
+                }
+            })
+            .collect();
+        Self {
+            graph: FlatGraphPack::from_route_graph(graph, None),
+            edge_ferry_interval_min,
+        }
+    }
+}
 
 fn profile_slug(profile: RoutingProfile) -> &'static str {
     match profile {
@@ -46,10 +90,6 @@ fn ferry_sidecar_meta_path(home: &Path, stem: &str, profile: RoutingProfile) -> 
     ))
 }
 
-/// Overlay topology revision. Bump when sidecar contents change independently
-/// of the source PBF (inland highway vacuum so clipped terminals merge).
-const FERRY_SIDECAR_BUILD: u32 = 2;
-
 fn pbf_fingerprint(pbf: &Path) -> Option<String> {
     let meta = fs::metadata(pbf).ok()?;
     let len = meta.len();
@@ -60,7 +100,7 @@ fn pbf_fingerprint(pbf: &Path) -> Option<String> {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     Some(format!(
-        "build={FERRY_SIDECAR_BUILD};len={len};mtime={mtime}"
+        "build={FERRY_SIDECAR_BUILD};fmt={FERRY_OVERLAY_FORMAT_VERSION};len={len};mtime={mtime}"
     ))
 }
 
@@ -81,14 +121,14 @@ pub fn sidecar_fresh(home: &Path, stem: &str, profile: RoutingProfile, pbf: &Pat
 fn write_sidecar(home: &Path, stem: &str, profile: RoutingProfile, pbf: &Path, graph: &RouteGraph) {
     let side = ferry_sidecar_path(home, stem, profile);
     let meta_path = ferry_sidecar_meta_path(home, stem, profile);
-    let pack = FlatGraphPack::from_route_graph(graph, None);
+    let pack = FerryOverlayPack::from_route_graph(graph);
     let Ok(payload) = rkyv::to_bytes::<RkyvError>(&pack) else {
         log::warn!(target: "NaviPlan", "ferry_sidecar serialize failed stem={stem}");
         return;
     };
     if let Err(e) = write_archive_atomic(
         &side,
-        Preamble::new(MAGIC_GRAPH, GRAPH_FORMAT_VERSION),
+        Preamble::new(MAGIC_FERRY_OVERLAY, FERRY_OVERLAY_FORMAT_VERSION),
         &payload,
     ) {
         log::warn!(target: "NaviPlan", "ferry_sidecar write failed stem={stem}: {e:#}");
@@ -116,12 +156,27 @@ fn load_sidecar_clipped(
     let file = std::fs::File::open(path).ok()?;
     let mmap = unsafe { Mmap::map(&file).ok()? };
     let p = Preamble::from_bytes(&mmap)?;
-    if p.magic != MAGIC_GRAPH || p.format_version != GRAPH_FORMAT_VERSION {
+    if p.magic != MAGIC_FERRY_OVERLAY || p.format_version != FERRY_OVERLAY_FORMAT_VERSION {
         return None;
     }
     let body = &mmap[archive_payload_offset()..];
-    let archived = rkyv::access::<ArchivedFlatGraphPack, RkyvError>(body).ok()?;
-    Some(archived.to_route_graph_clips(profile, clips))
+    let archived = rkyv::access::<ArchivedFerryOverlayPack, RkyvError>(body).ok()?;
+    let intervals: Vec<f64> = archived
+        .edge_ferry_interval_min
+        .iter()
+        .map(|v| {
+            use rkyv::rend::f64_le;
+            // Archived f64 may be little-endian wrapper.
+            let _: &f64_le = v;
+            f64::from(*v)
+        })
+        .collect();
+    let graph_arch: &ArchivedFlatGraphPack = &archived.graph;
+    Some(graph_arch.to_route_graph_clips_with_ferry_intervals(
+        profile,
+        clips,
+        Some(intervals.as_slice()),
+    ))
 }
 
 fn stem_region_bbox(stem: &str) -> [f64; 4] {

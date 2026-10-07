@@ -91,6 +91,7 @@ fn edge(
         maxlength_m: None,
         is_toll: false,
         is_ferry: false,
+        ferry_interval_min: None,
         is_tunnel: false,
         is_boardwalk_crossing: false,
         is_roundabout: false,

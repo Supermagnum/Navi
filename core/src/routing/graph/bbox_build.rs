@@ -92,6 +92,7 @@ fn keep_way_tag(key: &str) -> bool {
             | "access:conditional"
             | "_ferry_approach_promoted"
             | "duration"
+            | "interval"
     )
 }
 
@@ -1372,6 +1373,13 @@ fn graph_from_raw_ways(
         } else {
             None
         };
+        let ferry_interval_min = if is_ferry {
+            way.tags
+                .get("interval")
+                .and_then(|v| super::builder::parse_osm_interval_minutes(v))
+        } else {
+            None
+        };
         let is_tunnel = way
             .tags
             .get("tunnel")
@@ -1465,6 +1473,7 @@ fn graph_from_raw_ways(
                 maxlength_m,
                 is_toll,
                 is_ferry,
+                ferry_interval_min,
                 ferry_duration.as_deref(),
                 is_tunnel,
                 is_boardwalk_crossing,
@@ -1508,6 +1517,7 @@ fn graph_from_raw_ways(
                     maxlength_m,
                     is_toll,
                     is_ferry,
+                    ferry_interval_min,
                     ferry_duration.as_deref(),
                     is_tunnel,
                     is_boardwalk_crossing,
@@ -1567,6 +1577,7 @@ fn bbox_edge(
     maxlength_m: Option<f64>,
     is_toll: bool,
     is_ferry: bool,
+    ferry_interval_min: Option<f64>,
     ferry_duration: Option<&str>,
     is_tunnel: bool,
     is_boardwalk_crossing: bool,
@@ -1616,6 +1627,7 @@ fn bbox_edge(
         maxlength_m,
         is_toll,
         is_ferry,
+        ferry_interval_min,
         is_tunnel,
         is_boardwalk_crossing,
         is_roundabout,

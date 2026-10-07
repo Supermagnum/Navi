@@ -182,12 +182,12 @@ pub struct FlatGraphPack {
 }
 
 /// Pack optional finite metric; `None` / non-finite → NaN (matches `edge_maxspeed_kmh`).
-fn pack_opt_metric(v: Option<f64>) -> f64 {
+pub(crate) fn pack_opt_metric(v: Option<f64>) -> f64 {
     v.filter(|x| x.is_finite()).unwrap_or(f64::NAN)
 }
 
 /// Unpack NaN-sentinel metric vector entry.
-fn unpack_opt_metric(vals: &[f64], i: usize) -> Option<f64> {
+pub(crate) fn unpack_opt_metric(vals: &[f64], i: usize) -> Option<f64> {
     vals.get(i).copied().filter(|v| v.is_finite())
 }
 
@@ -391,6 +391,17 @@ impl FlatGraphPack {
         profile: RoutingProfile,
         clips: Option<&[[f64; 4]]>,
     ) -> RouteGraph {
+        self.to_route_graph_clips_with_ferry_intervals(profile, clips, None)
+    }
+
+    /// Like [`Self::to_route_graph_clips`], applying optional per-edge ferry
+    /// departure intervals (ferry overlay sidecar only; region packs pass `None`).
+    pub fn to_route_graph_clips_with_ferry_intervals(
+        &self,
+        profile: RoutingProfile,
+        clips: Option<&[[f64; 4]]>,
+        ferry_intervals: Option<&[f64]>,
+    ) -> RouteGraph {
         let skeleton = densify_skeleton_only_active();
         let in_clips = |i: usize| -> bool {
             let Some(clips) = clips else {
@@ -540,6 +551,9 @@ impl FlatGraphPack {
                 maxlength_m: unpack_opt_metric(&self.edge_maxlength_m, i),
                 is_toll: self.edge_is_toll[i] != 0,
                 is_ferry: self.edge_is_ferry[i] != 0,
+                ferry_interval_min: ferry_intervals
+                    .and_then(|v| unpack_opt_metric(v, i))
+                    .filter(|_| self.edge_is_ferry[i] != 0),
                 is_tunnel: self.edge_is_tunnel[i] != 0,
                 is_boardwalk_crossing: self.edge_is_boardwalk[i] != 0,
                 is_roundabout: self.edge_is_roundabout[i] != 0,
@@ -688,6 +702,17 @@ impl ArchivedFlatGraphPack {
         &self,
         profile: RoutingProfile,
         clips: Option<&[[f64; 4]]>,
+    ) -> RouteGraph {
+        self.to_route_graph_clips_with_ferry_intervals(profile, clips, None)
+    }
+
+    /// Like [`Self::to_route_graph_clips`], applying optional per-edge ferry
+    /// departure intervals (ferry overlay sidecar only).
+    pub fn to_route_graph_clips_with_ferry_intervals(
+        &self,
+        profile: RoutingProfile,
+        clips: Option<&[[f64; 4]]>,
+        ferry_intervals: Option<&[f64]>,
     ) -> RouteGraph {
         let n_edges = self.edge_src.len();
         let skeleton = densify_skeleton_only_active();
@@ -845,6 +870,9 @@ impl ArchivedFlatGraphPack {
                 maxlength_m: archived_opt_metric_at(&self.edge_maxlength_m, i),
                 is_toll: arch_u8(self.edge_is_toll[i]) != 0,
                 is_ferry: arch_u8(self.edge_is_ferry[i]) != 0,
+                ferry_interval_min: ferry_intervals
+                    .and_then(|v| unpack_opt_metric(v, i))
+                    .filter(|_| arch_u8(self.edge_is_ferry[i]) != 0),
                 is_tunnel: arch_u8(self.edge_is_tunnel[i]) != 0,
                 is_boardwalk_crossing: arch_u8(self.edge_is_boardwalk[i]) != 0,
                 is_roundabout: arch_u8(self.edge_is_roundabout[i]) != 0,
@@ -983,6 +1011,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -1119,6 +1148,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
