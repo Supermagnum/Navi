@@ -121,7 +121,10 @@ object InstalledMaps {
     }
 
     fun refresh(context: Context) {
+        PlaceIndexStorage.ensureOnPackVolume(context)
         val internal = NaviAppData.resolve(context)
+        val placeIndexDir =
+            PlaceIndexStorage.indexDir(context) ?: internal
         val extras = mutableListOf<Pair<String, File>>()
         extras.add(NaviStorageVolumes.INTERNAL_ID to File(internal, LongTripPackStorage.PACKS_SUBDIR))
         for (vol in NaviStorageVolumes.list(context)) {
@@ -129,12 +132,14 @@ object InstalledMaps {
             if (!vol.mounted) continue
             extras.add(vol.id to File(app, LongTripPackStorage.PACKS_SUBDIR))
         }
-        refreshFromDirs(internal, extras)
+        refreshFromDirs(internal, extras, placeIndexDir, PlaceIndexStorage.locationSummary(context))
     }
 
     fun refreshFromDirs(
         internalDataDir: File,
         packRoots: List<Pair<String, File>>,
+        placeIndexDir: File = internalDataDir,
+        placeIndexLocationLine: String? = null,
     ) {
         val byId = linkedMapOf<String, Region>()
         val scanned = LinkedHashSet<String>()
@@ -144,15 +149,25 @@ object InstalledMaps {
             if (!dir.isDirectory) return
             val key = dir.absolutePath
             if (!scanned.add(key)) return
-            scanDir(internalDataDir, volumeId, dir, byId, probes, partial)
+            scanDir(internalDataDir, placeIndexDir, volumeId, dir, byId, probes, partial)
         }
         consider(NaviStorageVolumes.INTERNAL_ID, internalDataDir)
         for ((id, dir) in packRoots) {
             consider(id, dir)
         }
+        val indexUnavailable =
+            placeIndexLocationLine?.contains("UNAVAILABLE") == true
         val missing = byId.values.mapNotNull { r ->
             if (r.placeIndex == PlaceIndexState.INTACT || r.placeIndex == PlaceIndexState.LEGACY_INTACT) {
                 return@mapNotNull null
+            }
+            if (indexUnavailable) {
+                return@mapNotNull MissingIndexBuild(
+                    r.regionId,
+                    r.pbfPath,
+                    r.pbfKind,
+                    "place index unavailable on pack volume (not building elsewhere)",
+                )
             }
             val leafPbf =
                 PackRegionAvailability.resolvePlaceIndexPbf(r.packDir, r.regionId)
@@ -188,12 +203,19 @@ object InstalledMaps {
         )
         snapshotRoot.set(internalDataDir.absolutePath)
         runCatching {
-            File(internalDataDir, "installed-maps-snapshot.txt").writeText(summaryText())
+            val body =
+                buildString {
+                    appendLine(summaryText())
+                    if (placeIndexLocationLine != null) {
+                        appendLine(placeIndexLocationLine)
+                    }
+                }
+            File(internalDataDir, "installed-maps-snapshot.txt").writeText(body)
         }
         Log.i(
             TAG,
             "snapshot regions=${byId.size} missing_index=${missing.size} " +
-                "ids=${byId.keys.sorted()}",
+                "ids=${byId.keys.sorted()} ${placeIndexLocationLine ?: ""}",
         )
     }
 
@@ -220,7 +242,8 @@ object InstalledMaps {
     }
 
     private fun scanDir(
-        indexDataDir: File,
+        tilesDataDir: File,
+        placeIndexDir: File,
         volumeId: String,
         dir: File,
         into: MutableMap<String, Region>,
@@ -256,10 +279,10 @@ object InstalledMaps {
                     if (install.isFile) JSONObject(install.readText()).optString("generation") else ""
                 }.getOrDefault("")
             val pmKey = PackRegionAvailability.geofabrikPathToRegionKey(nid)
-            val tilesFile = File(indexDataDir, "pmtiles/$pmKey.pmtiles")
-            val rejectedFile = File(indexDataDir, "pmtiles/$pmKey.pmtiles.rejected")
-            val probe = probes.getOrPut(nid) { PlaceIndexIntact.probe(indexDataDir, nid) }
-            val q = File(indexDataDir, "place_index.db.quarantine").isFile
+            val tilesFile = File(tilesDataDir, "pmtiles/$pmKey.pmtiles")
+            val rejectedFile = File(tilesDataDir, "pmtiles/$pmKey.pmtiles.rejected")
+            val probe = probes.getOrPut(nid) { PlaceIndexIntact.probe(placeIndexDir, nid) }
+            val q = File(placeIndexDir, "place_index.db.quarantine").isFile
             val indexState =
                 when {
                     probe.intact && probe.legacy -> PlaceIndexState.LEGACY_INTACT
@@ -297,7 +320,7 @@ object InstalledMaps {
             val regionId = regionIdForStem(dir, stem) ?: continue
             val nid = PackRegionAvailability.normalize(regionId)
             if (into.containsKey(nid)) continue
-            val probe = probes.getOrPut(nid) { PlaceIndexIntact.probe(indexDataDir, nid) }
+            val probe = probes.getOrPut(nid) { PlaceIndexIntact.probe(placeIndexDir, nid) }
             val pbfKind =
                 if (f.length() < RegionDownloadBackground.MIN_PBF_BYTES) PbfKind.STUB else PbfKind.REAL
             into[nid] =
@@ -313,8 +336,8 @@ object InstalledMaps {
                     pbfPath = f,
                     ferrySidecarCar = File(dir, "$stem.navi-ferry-overlay-car.rkyv").isFile,
                     ferrySidecarTruck = File(dir, "$stem.navi-ferry-overlay-truck.rkyv").isFile,
-                    tilesPresent = File(indexDataDir, "pmtiles/${PackRegionAvailability.geofabrikPathToRegionKey(nid)}.pmtiles").isFile,
-                    tilesRejected = File(indexDataDir, "pmtiles/${PackRegionAvailability.geofabrikPathToRegionKey(nid)}.pmtiles.rejected").isFile,
+                    tilesPresent = File(tilesDataDir, "pmtiles/${PackRegionAvailability.geofabrikPathToRegionKey(nid)}.pmtiles").isFile,
+                    tilesRejected = File(tilesDataDir, "pmtiles/${PackRegionAvailability.geofabrikPathToRegionKey(nid)}.pmtiles.rejected").isFile,
                     placeIndex =
                         if (probe.intact) {
                             if (probe.legacy) PlaceIndexState.LEGACY_INTACT else PlaceIndexState.INTACT

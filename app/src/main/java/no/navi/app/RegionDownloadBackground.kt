@@ -1836,9 +1836,27 @@ object RegionDownloadBackground {
             setStatus("failed (unknown region)")
             return false
         }
+        // Place index lives on the pack volume (parent of long-trip-packs).
+        // Do not fall back to internal when that volume is unwritable.
+        val placeDir =
+            if (pbfDir.name == LongTripPackStorage.PACKS_SUBDIR) {
+                pbfDir.parentFile ?: indexDataDir
+            } else {
+                indexDataDir
+            }
+        if (!NaviStorageVolumes.probeWritable(placeDir)) {
+            Log.e(
+                TAG,
+                "FAIL: place index unavailable on pack volume dir=${placeDir.absolutePath} " +
+                    "(not building elsewhere)",
+            )
+            setStatus("place index unavailable on pack volume")
+            return false
+        }
         Log.i(
             TAG,
-            "local-bake pbf resolved region_id=$rid pbf=${pbf.absolutePath} expected_prefix=$rid",
+            "local-bake pbf resolved region_id=$rid pbf=${pbf.absolutePath} expected_prefix=$rid " +
+                "place_index_dir=${placeDir.absolutePath}",
         )
         if (!PackRegionAvailability.pbfMatchesRegionForPlaceIndex(pbf, rid)) {
             Log.e(
@@ -1852,14 +1870,17 @@ object RegionDownloadBackground {
         }
         emitPhase(rid, "indexing")
         setStatus("Place index: starting… 0% (0 / 6)")
-        if (PlaceIndexIntact.isIntact(indexDataDir, rid)) {
+        if (PlaceIndexIntact.isIntact(placeDir, rid)) {
             Log.i(TAG, "place-index gate: $rid intact — skip rebuild")
             setStatus("Place index ready 100% (6 / 6)")
             emitPhase(rid, "indexed")
-            PlaceIndexReady.markReady(indexDataDir, rid)
+            PlaceIndexReady.markReady(placeDir, rid)
             InstalledMaps.refreshFromDirs(
                 indexDataDir,
                 listOf(NaviStorageVolumes.INTERNAL_ID to pbfDir),
+                placeIndexDir = placeDir,
+                placeIndexLocationLine =
+                    "place_index vol=pack-dir path=${File(placeDir, "place_index.db").absolutePath}",
             )
             return true
         }
@@ -1870,7 +1891,7 @@ object RegionDownloadBackground {
             runCatching {
                 ensurePlaceIndex(
                     pbf.absolutePath,
-                    File(indexDataDir, "place_index.db").absolutePath,
+                    File(placeDir, "place_index.db").absolutePath,
                     rid,
                 )
             }.getOrElse { t ->
@@ -1881,10 +1902,13 @@ object RegionDownloadBackground {
         if (placeReport.contains("PASS")) {
             setStatus("Place index ready 100% (6 / 6)")
             emitPhase(rid, "indexed")
-            PlaceIndexReady.markReady(indexDataDir, rid)
+            PlaceIndexReady.markReady(placeDir, rid)
             InstalledMaps.refreshFromDirs(
                 indexDataDir,
                 listOf(NaviStorageVolumes.INTERNAL_ID to pbfDir),
+                placeIndexDir = placeDir,
+                placeIndexLocationLine =
+                    "place_index vol=pack-dir path=${File(placeDir, "place_index.db").absolutePath}",
             )
         }
         return placeReport.contains("PASS")

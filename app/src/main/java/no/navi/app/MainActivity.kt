@@ -2076,11 +2076,29 @@ private fun NaviMapScreen() {
         }
     }
 
-    fun placeIndexDbForWrite(): File = File(dataDir, "place_index.db")
+    fun placeIndexDbForWrite(): File {
+        // Follow pack volume; never silently create on a different volume.
+        PlaceIndexStorage.ensureOnPackVolume(context)
+        return when (val s = PlaceIndexStorage.status(context)) {
+            is PlaceIndexStorage.Status.Ready -> s.dbFile
+            is PlaceIndexStorage.Status.Unavailable -> {
+                android.util.Log.w(
+                    "PlaceIndexStorage",
+                    "place_index unavailable vol=${s.volumeId} reason=${s.reason}",
+                )
+                // Path under the selected volume (may be unmounted); callers must
+                // treat missing/unwritable as unavailable — do not rebuild elsewhere.
+                File(
+                    "/storage/${s.volumeId.removePrefix("uuid:")}/Android/data/" +
+                        "${context.packageName}/files/place_index.db",
+                )
+            }
+        }
+    }
 
     fun resolvePlaceIndexDb(): File {
         val preferred = placeIndexDbForWrite()
-        // Prefer the app-local copy. /data/local/tmp may look readable (canRead)
+        // Prefer the pack-volume copy. /data/local/tmp may look readable (canRead)
         // on the AVD but SQLite open still fails under the app sandbox.
         if (preferred.isFile && preferred.length() > 10_000L) {
             return preferred
