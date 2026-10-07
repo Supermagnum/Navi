@@ -2420,6 +2420,44 @@ fn parse_departure_local(iso: Option<&str>) -> Option<chrono::NaiveDateTime> {
         .ok()
 }
 
+/// Stable pack identity for hop-resume keys: sorted manifest name + size + mtime.
+fn long_trip_pack_fingerprint(pack_dir: &str) -> String {
+    use std::collections::BTreeMap;
+    use std::time::UNIX_EPOCH;
+    let dir = pack_dir.trim();
+    if dir.is_empty() {
+        return "none".into();
+    }
+    let path = std::path::Path::new(dir);
+    let Ok(rd) = std::fs::read_dir(path) else {
+        return "missing".into();
+    };
+    let mut map = BTreeMap::new();
+    for ent in rd.flatten() {
+        let name = ent.file_name().to_string_lossy().into_owned();
+        if !name.ends_with(".navi-manifest.json") {
+            continue;
+        }
+        let Ok(meta) = ent.metadata() else {
+            continue;
+        };
+        let mtime = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        map.insert(name, format!("{}:{}", meta.len(), mtime));
+    }
+    if map.is_empty() {
+        return "empty".into();
+    }
+    map.into_iter()
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
 fn plan_car_route_chunked_legs(
     pbf_path: String,
     elev_dir: String,
@@ -2466,11 +2504,21 @@ fn plan_car_route_chunked_legs(
     } else {
         driver_break_core::datex::write_plan_datex_snapshot(std::path::Path::new(&data_dir), &[]);
     }
-    let hops_key: String = hops
+    // Resume only when waypoints, options, DATEX mode, packs and native build match.
+    // Waypoint-only keys reused hops from older APKs/packs (fu13 baseline).
+    let datex_mode = driver_break_core::datex::datex_plan_mode(std::path::Path::new(&data_dir));
+    let pack_fp = long_trip_pack_fingerprint(&pack_dir);
+    let hops_coords: String = hops
         .iter()
         .map(|(a, b)| format!("{a:.5},{b:.5}"))
         .collect::<Vec<_>>()
         .join(";");
+    let hops_key = format!(
+        "v2;native={};profile={profile:?};eco={use_eco};mw={avoid_motorways};toll={toll_policy:?};\
+         avoid_ferry={avoid_ferries};avoid_tunnel={avoid_tunnels};datex={datex_mode:?};\
+         pack={pack_fp};hops={hops_coords}",
+        env!("CARGO_PKG_VERSION"),
+    );
     let mut distance_km = 0.0;
     let mut eta_minutes = 0.0;
     let mut build_s = 0.0;
@@ -2530,6 +2578,14 @@ fn plan_car_route_chunked_legs(
                 report.push_str(&format!(
                     "hop_resume=true; skip_until={skip_until}; resumed_km={distance_km:.3}\n"
                 ));
+            } else if !key.is_empty() {
+                driver_break_core::routing::plan_file_log::remove_file(
+                    driver_break_core::routing::plan_file_log::HOPS_PARTIAL_NAME,
+                );
+                driver_break_core::routing::plan_file_log::line(
+                    "hop_resume discarded: key mismatch (apk/packs/options/datex/waypoints)",
+                );
+                report.push_str("hop_resume=discarded; reason=key_mismatch\n");
             }
         }
     }

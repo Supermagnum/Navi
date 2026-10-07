@@ -43,13 +43,13 @@ class InstalledMapsSnapshotTest {
         assertTrue(InstalledMaps.packReadyForProfile("europe/norway/ostlandet", "truck"))
     }
 
-    @[Test]
-    fun auto_build_any_missing_region_when_not_intact() {
+    @Test
+    fun auto_build_refuses_empty_db_and_defers_during_plan() {
         val internal = tmp.newFolder("idx")
-        assertTrue(PlaceIndexAutoBuild.mayStart(internal, "europe/denmark"))
-        assertTrue(PlaceIndexAutoBuild.mayStart(internal, "europe/sweden"))
-        assertTrue(PlaceIndexAutoBuild.mayStart(internal, "europe/germany/hamburg"))
-        assertTrue(PlaceIndexAutoBuild.mayStart(internal, "europe/norway/vestlandet"))
+        // Missing / stub DB: never start a missing-region build.
+        assertFalse(PlaceIndexAutoBuild.dbReadyForMissingRegionBuilds(internal))
+        assertFalse(PlaceIndexAutoBuild.mayStart(internal, "europe/denmark"))
+        assertFalse(PlaceIndexAutoBuild.mayStart(internal, "europe/norway/vestlandet"))
         RoutePlanGate.tryBegin()
         try {
             assertFalse(

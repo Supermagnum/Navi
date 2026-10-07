@@ -7,43 +7,21 @@ import java.io.File
  * regions that are missing or not intact. One region at a time; never the main
  * thread; never while [RoutePlanGate] holds a plan.
  *
- * General rule: any installed region that is not intact. Schema upgrades run
- * in-place in native [ensurePlaceIndex] open first. While user_version is old,
- * kick a writer open on a region that already has rows (cache-hit after migrate)
- * so a missing-region PBF rebuild cannot start until the PK migration finishes.
- * Vestlandet is offered first when several regions are missing and schema is current.
+ * General rules (no product hard-coding of test corridor region ids):
+ * - Schema upgrades run in-place in native [ensurePlaceIndex] open first.
+ * - While user_version is old, kick a writer open on any region that already
+ *   has rows so a missing-region PBF rebuild cannot race the PK migration.
+ * - Never start a missing-region build while migration is incomplete or the DB
+ *   fails a basic integrity check (empty/stub/unreadable/schema-old).
  */
 object PlaceIndexAutoBuild {
     const val ENABLE_MISSING_REGION_AUTO_INDEX = true
-    const val FIRST_MISSING_REGION = "europe/norway/vestlandet"
-
-    /**
-     * After Vestlandet, index corridor leaves before alphabetically-first extras
-     * (finland / nord-norge / mecklenburg) that are not on the Bevensen trip.
-     */
-    private val CORRIDOR_INDEX_ORDER =
-        listOf(
-            "europe/germany/schleswig-holstein",
-            "europe/norway/sorlandet",
-            "europe/sweden/skane",
-            "europe/sweden/halland",
-            "europe/sweden/vastra_gotaland",
-        )
-
-    /** Prefer an already-populated region so migrate-then-cache-hit does not rebuild. */
-    private val MIGRATE_KICKOFF_REGIONS =
-        listOf(
-            "europe/norway/ostlandet",
-            "europe/denmark",
-            "europe/germany/niedersachsen",
-            "europe/germany/hamburg",
-        )
 
     fun schemaNeedsMigrate(dataDir: File): Boolean {
         val dbFile = File(dataDir, "place_index.db")
-        if (!dbFile.isFile) return false
-        val probe = PlaceIndexIntact.probe(dataDir, "europe/norway/ostlandet")
-        return probe.userVersion in 1 until PlaceIndexIntact.SCHEMA_VERSION
+        if (!dbFile.isFile || dbFile.length() < PlaceIndexIntact.MIN_DB_BYTES) return false
+        val v = readUserVersion(dataDir) ?: return false
+        return v in 1 until PlaceIndexIntact.SCHEMA_VERSION
     }
 
     fun mayStart(
@@ -55,64 +33,126 @@ object PlaceIndexAutoBuild {
         if (PlaceIndexReady.deferWritesDuringPlan()) return false
         if (schemaNeedsMigrate(dataDir)) {
             // Only the migrate kickoff region — open() migrates; post-open cache
-            // check must not rebuild protected rows.
+            // check must not rebuild while schema is still old.
             return rid == migrateKickoffRegion(dataDir)
         }
-        // Never index a missing region onto an empty/stub DB (post-quarantine).
-        if (!protectedSlicesPresent(dataDir)) return false
+        if (!dbReadyForMissingRegionBuilds(dataDir)) return false
         if (PlaceIndexIntact.isIntact(dataDir, rid)) return false
         if (!ENABLE_MISSING_REGION_AUTO_INDEX) return false
         return true
     }
 
-    /** First missing/not-intact installed region; Vestlandet before others. */
+    /** First missing/not-intact installed region (stable sorted order). */
     fun nextRegion(dataDir: File): String? {
         if (PlaceIndexReady.deferWritesDuringPlan()) return null
         if (schemaNeedsMigrate(dataDir)) {
             return migrateKickoffRegion(dataDir)
         }
-        if (!protectedSlicesPresent(dataDir)) return null
+        if (!dbReadyForMissingRegionBuilds(dataDir)) return null
         val ids =
-            InstalledMaps.current()?.regions?.keys?.toList().orEmpty().ifEmpty {
-                return null
-            }
-        val normalized = ids.map { PackRegionAvailability.normalize(it) }.distinct()
-        val ordered =
-            listOf(FIRST_MISSING_REGION) +
-                CORRIDOR_INDEX_ORDER +
-                normalized
-                    .filter {
-                        it != FIRST_MISSING_REGION && it !in CORRIDOR_INDEX_ORDER
-                    }.sorted()
-        return ordered.distinct().firstOrNull { mayStart(dataDir, it) }
+            InstalledMaps.current()?.regions?.keys?.map { PackRegionAvailability.normalize(it) }
+                ?.filter { it.isNotEmpty() }
+                ?.distinct()
+                ?.sorted()
+                .orEmpty()
+        if (ids.isEmpty()) return null
+        return ids.firstOrNull { mayStart(dataDir, it) }
     }
 
+    /**
+     * Any installed region that already has rows (or any populated region_id in
+     * the DB when the install list is empty). Used only to open() for migrate.
+     */
     private fun migrateKickoffRegion(dataDir: File): String? {
         val installed =
             InstalledMaps.current()?.regions?.keys?.map { PackRegionAvailability.normalize(it) }
-                ?.toSet()
+                ?.filter { it.isNotEmpty() }
+                ?.distinct()
                 .orEmpty()
-        for (rid in MIGRATE_KICKOFF_REGIONS) {
-            if (installed.isNotEmpty() && rid !in installed) continue
+        for (rid in installed) {
             val pbf = OfflineIndexGate.resolveAutoIndexPbf(dataDir, rid) ?: continue
             if (!OfflineIndexGate.isIndexablePbf(pbf)) continue
-            val probe = PlaceIndexIntact.probe(dataDir, rid)
-            // schema_old probe has rowCount 0; check rows directly when version is old.
-            if (probe.userVersion in 1 until PlaceIndexIntact.SCHEMA_VERSION) {
-                if (regionHasRows(dataDir, rid)) return rid
-            } else if (probe.rowCount > 0L) {
-                return rid
-            }
+            if (regionHasRows(dataDir, rid)) return rid
         }
-        return null
+        // Fallback: any region_id already present in the DB.
+        return firstPopulatedRegionId(dataDir)?.takeIf { rid ->
+            OfflineIndexGate.resolveAutoIndexPbf(dataDir, rid)?.let {
+                OfflineIndexGate.isIndexablePbf(it)
+            } == true
+        }
     }
 
-    /** True when all four protected regions still have rows (post-migrate safety). */
-    fun protectedSlicesPresent(dataDir: File): Boolean {
-        for (rid in MIGRATE_KICKOFF_REGIONS) {
-            if (!regionHasRows(dataDir, rid)) return false
-        }
-        return true
+    /**
+     * True when the shared DB is at the current schema, has the PK table, and
+     * is not an empty quarantine stub. Does not name any product/test region.
+     */
+    fun dbReadyForMissingRegionBuilds(dataDir: File): Boolean {
+        val dbFile = File(dataDir, "place_index.db")
+        if (!dbFile.isFile || dbFile.length() < PlaceIndexIntact.MIN_DB_BYTES) return false
+        return runCatching {
+            android.database.sqlite.SQLiteDatabase
+                .openDatabase(
+                    dbFile.absolutePath,
+                    null,
+                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
+                ).use { db ->
+                    val userVersion =
+                        db.rawQuery("PRAGMA user_version", null).use { c ->
+                            if (c.moveToFirst()) c.getInt(0) else 0
+                        }
+                    if (userVersion < PlaceIndexIntact.SCHEMA_VERSION) return@use false
+                    val hasPk =
+                        db
+                            .rawQuery(
+                                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+                                arrayOf("name_entries_pk"),
+                            ).use { it.moveToFirst() }
+                    if (!hasPk) return@use false
+                    db.rawQuery("SELECT 1 FROM name_entries LIMIT 1", null).use { it.moveToFirst() }
+                }
+        }.getOrDefault(false)
+    }
+
+    /** @deprecated Use [dbReadyForMissingRegionBuilds]. Kept for existing call sites/tests. */
+    fun protectedSlicesPresent(dataDir: File): Boolean = dbReadyForMissingRegionBuilds(dataDir)
+
+    private fun readUserVersion(dataDir: File): Int? {
+        val dbFile = File(dataDir, "place_index.db")
+        if (!dbFile.isFile) return null
+        return runCatching {
+            android.database.sqlite.SQLiteDatabase
+                .openDatabase(
+                    dbFile.absolutePath,
+                    null,
+                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
+                ).use { db ->
+                    db.rawQuery("PRAGMA user_version", null).use { c ->
+                        if (c.moveToFirst()) c.getInt(0) else 0
+                    }
+                }
+        }.getOrNull()
+    }
+
+    private fun firstPopulatedRegionId(dataDir: File): String? {
+        val dbFile = File(dataDir, "place_index.db")
+        if (!dbFile.isFile) return null
+        return runCatching {
+            android.database.sqlite.SQLiteDatabase
+                .openDatabase(
+                    dbFile.absolutePath,
+                    null,
+                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
+                ).use { db ->
+                    db
+                        .rawQuery(
+                            "SELECT region_id FROM name_entries WHERE region_id IS NOT NULL " +
+                                "AND length(region_id) > 0 LIMIT 1",
+                            null,
+                        ).use { c ->
+                            if (c.moveToFirst()) c.getString(0) else null
+                        }
+                }
+        }.getOrNull()
     }
 
     private fun regionHasRows(

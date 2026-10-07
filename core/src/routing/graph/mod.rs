@@ -29,11 +29,12 @@ pub use bike_suitability::{
 };
 pub use builder::{
     append_seasonal_closure_report, drop_pack_edges_replaced_by_overlay_ferry,
-    edge_is_motorway_grade, ferry_base_weight_m, format_route_avoidance_report, highway_is_motorway,
-    is_construction_or_proposed_highway, max_waypoint_snap_m, pack_edge_matches_overlay_ferry,
-    profile_locks_avoid_motorways, GraphEdge, PathSearchStats, RouteGraph, RouteOptions,
-    RoutingProfile, SnapRole, SnapTooFar, WetlandApplyStats, FERRY_CAR_BOARDING_PENALTY_MIN,
-    FERRY_DRIVE_EQUIV_KMH, FERRY_FALLBACK_SPEED_KMH,
+    edge_is_motorway_grade, ferry_base_weight_m, ferry_drive_equiv_m_per_s,
+    format_route_avoidance_report, highway_is_motorway, is_construction_or_proposed_highway,
+    max_waypoint_snap_m, pack_edge_matches_overlay_ferry, profile_locks_avoid_motorways, GraphEdge,
+    PathSearchStats, RouteGraph, RouteOptions, RoutingProfile, SnapRole, SnapTooFar,
+    WetlandApplyStats, FERRY_CAR_BOARDING_PENALTY_MIN, FERRY_DRIVE_EQUIV_KMH,
+    FERRY_FALLBACK_SPEED_KMH,
 };
 pub use cache::{
     graph_cache_path, load_or_build_reweighted, load_or_build_reweighted_bbox,

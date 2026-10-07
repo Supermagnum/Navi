@@ -89,7 +89,8 @@ pub const FERRY_FALLBACK_SPEED_KMH: f64 = 10.0;
 /// Extra car/truck boarding cost in minutes, converted at [`FERRY_DRIVE_EQUIV_KMH`].
 pub const FERRY_CAR_BOARDING_PENALTY_MIN: f64 = 10.0;
 
-fn ferry_drive_equiv_m_per_s() -> f64 {
+/// Drive-equivalent metres per second used by [`ferry_base_weight_m`] and ETA invert.
+pub fn ferry_drive_equiv_m_per_s() -> f64 {
     FERRY_DRIVE_EQUIV_KMH * 1000.0 / 3600.0
 }
 
