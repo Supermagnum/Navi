@@ -83,8 +83,9 @@ object PlaceIndexAutoBuild {
     }
 
     /**
-     * True when the shared DB is at the current schema, has the PK table, and
-     * is not an empty quarantine stub. Does not name any product/test region.
+     * True when the shared DB is at the current schema, name_entries already has
+     * the (region_id, osm_id) primary key (migrate finished), and the DB is not
+     * an empty quarantine stub. Does not name any product/test region.
      */
     fun dbReadyForMissingRegionBuilds(dataDir: File): Boolean {
         val dbFile = File(dataDir, "place_index.db")
@@ -101,12 +102,19 @@ object PlaceIndexAutoBuild {
                             if (c.moveToFirst()) c.getInt(0) else 0
                         }
                     if (userVersion < PlaceIndexIntact.SCHEMA_VERSION) return@use false
-                    val hasPk =
+                    // After migrate, name_entries_pk is renamed away; require the
+                    // live table DDL to carry the composite PK instead.
+                    val ddl =
                         db
                             .rawQuery(
-                                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
-                                arrayOf("name_entries_pk"),
-                            ).use { it.moveToFirst() }
+                                "SELECT sql FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+                                arrayOf("name_entries"),
+                            ).use { c ->
+                                if (c.moveToFirst()) c.getString(0).orEmpty() else ""
+                            }
+                    val hasPk =
+                        ddl.contains("PRIMARY KEY (region_id, osm_id)") ||
+                            ddl.contains("PRIMARY KEY(region_id, osm_id)")
                     if (!hasPk) return@use false
                     db.rawQuery("SELECT 1 FROM name_entries LIMIT 1", null).use { it.moveToFirst() }
                 }

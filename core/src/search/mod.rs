@@ -248,19 +248,21 @@ impl NameIndex {
         Ok(())
     }
 
-    const PROTECTED_INDEX_REGIONS: [&'static str; 4] = [
-        "europe/germany/hamburg",
-        "europe/germany/niedersachsen",
-        "europe/norway/ostlandet",
-        "europe/denmark",
-    ];
-
     fn region_row_count(conn: &Connection, region_id: &str) -> SqlResult<i64> {
         conn.query_row(
             "SELECT COUNT(*) FROM name_entries WHERE region_id = ?1",
             params![region_id],
             |row| row.get(0),
         )
+    }
+
+    /// Per-region row counts already present (no hard-coded product/test region ids).
+    fn region_row_counts(conn: &Connection) -> SqlResult<Vec<(String, i64)>> {
+        let mut stmt = conn.prepare(
+            "SELECT region_id, COUNT(*) FROM name_entries GROUP BY region_id ORDER BY region_id",
+        )?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect()
     }
 
     fn name_entries_sql(conn: &Connection) -> SqlResult<Option<String>> {
@@ -280,10 +282,7 @@ impl NameIndex {
         {
             return Ok(());
         }
-        let mut before = [0i64; 4];
-        for (i, rid) in Self::PROTECTED_INDEX_REGIONS.iter().enumerate() {
-            before[i] = Self::region_row_count(conn, rid).unwrap_or(0);
-        }
+        let before = Self::region_row_counts(conn)?;
         conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS name_entries_pk (
@@ -313,14 +312,13 @@ impl NameIndex {
         )?;
         conn.execute_batch("DROP TABLE IF EXISTS name_fts;")?;
         Self::ensure_search_doc_fts(conn)?;
-        for (i, rid) in Self::PROTECTED_INDEX_REGIONS.iter().enumerate() {
+        for (rid, n) in &before {
             let after = Self::region_row_count(conn, rid).unwrap_or(0);
-            if after != before[i] {
+            if after != *n {
                 return Err(rusqlite::Error::SqliteFailure(
                     rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
                     Some(format!(
-                        "place_index pk migrate stopped: {rid} rows {after} != {0}",
-                        before[i]
+                        "place_index pk migrate stopped: {rid} rows {after} != {n}"
                     )),
                 ));
             }
