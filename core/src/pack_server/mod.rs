@@ -52,8 +52,9 @@ pub use corridor_regions::{
 };
 pub use fetch::{try_fetch_region_packs, ServerInstallStamp};
 pub use place_index_after::{
-    ensure_geofabrik_pbf_for_region, ensure_place_index_after_pack_install, PackPlaceIndexReport,
-    MIN_REAL_PBF_BYTES, PLACE_INDEX_DB_NAME,
+    build_place_index_from_pbf, ensure_geofabrik_pbf_for_region,
+    ensure_place_index_after_pack_install, PackPlaceIndexReport, MIN_REAL_PBF_BYTES,
+    PLACE_INDEX_DB_NAME,
 };
 pub use region_plan::{
     ensure_corridor_regions_installed, region_plan_error_from_snap_or_no_route,
