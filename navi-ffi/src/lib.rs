@@ -10009,6 +10009,28 @@ mod hiking_auto_via_tests {
     use super::*;
 
     #[test]
+    fn long_trip_pack_fingerprint_changes_with_manifest_bytes() {
+        let dir = std::env::temp_dir().join(format!(
+            "navi-pack-fp-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let a = long_trip_pack_fingerprint(dir.to_str().unwrap());
+        assert_eq!(a, "empty");
+        std::fs::write(dir.join("denmark-latest.navi-manifest.json"), b"{\"x\":1}").unwrap();
+        let b = long_trip_pack_fingerprint(dir.to_str().unwrap());
+        assert!(b.contains("denmark-latest.navi-manifest.json="), "{b}");
+        std::fs::write(dir.join("denmark-latest.navi-manifest.json"), b"{\"x\":12}").unwrap();
+        let c = long_trip_pack_fingerprint(dir.to_str().unwrap());
+        assert_ne!(b, c);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn parse_graph_ferry_edges_token_reads_report_line() {
         assert_eq!(
             parse_graph_ferry_edges_token("pack_hit=true\ngraph_ferry_edges=0\n"),
