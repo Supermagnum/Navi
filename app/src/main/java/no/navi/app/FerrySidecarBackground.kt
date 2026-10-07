@@ -90,21 +90,19 @@ object FerrySidecarBackground {
         ensureStarted(packDir, stem)
     }
 
-    /** Idle enqueue for every installed region whose sidecar is missing. */
+    /**
+     * Idle enqueue for every installed region whose sidecar is missing or
+     * stale (PBF / [FERRY_SIDECAR_BUILD] fingerprint). Always probe UniFFI
+     * readiness — file presence alone is not enough after a build bump.
+     */
     fun ensureFromInstalledMaps() {
         if (RoutePlanGate.isRunning()) return
         val snap = InstalledMaps.current() ?: return
         for (r in snap.regions.values) {
-            if (!r.ferrySidecarCar) {
-                ensureStarted(r.packDir, r.stem, TravelProfile.CAR)
-            }
+            ensureStarted(r.packDir, r.stem, TravelProfile.CAR)
             // Truck / mobile_home plans load car packs when a region has no truck
-            // graph, but still request the truck ferry sidecar. Build it whenever
-            // the car sidecar is needed or the truck file is missing — not only
-            // when a truck graph pack is loadable.
-            if (!r.ferrySidecarTruck) {
-                ensureStarted(r.packDir, r.stem, TravelProfile.TRUCK)
-            }
+            // graph, but still request the truck ferry sidecar.
+            ensureStarted(r.packDir, r.stem, TravelProfile.TRUCK)
         }
     }
 
