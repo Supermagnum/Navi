@@ -95,13 +95,34 @@ pub fn densify_skeleton_edge(highway: &str, is_ferry: bool) -> bool {
 static DENSIFY_SKELETON_ONLY: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+/// Exclusive hydrate gate: densify-skeleton builds and plan pack loads must not
+/// interleave. A process-wide densify flag would otherwise make the plan load
+/// keep only skeleton edges (FU22 Elsa snap_failed under concurrent rebuild).
+fn pack_hydrate_lock() -> &'static std::sync::Mutex<()> {
+    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| std::sync::Mutex::new(()))
+}
+
 /// Run `f` so pack→graph materialization keeps only densify-skeleton edges.
 pub fn with_densify_skeleton_only<R>(f: impl FnOnce() -> R) -> R {
     use std::sync::atomic::Ordering;
+    let _gate = pack_hydrate_lock()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let prev = DENSIFY_SKELETON_ONLY.swap(true, Ordering::SeqCst);
     let out = f();
     DENSIFY_SKELETON_ONLY.store(prev, Ordering::SeqCst);
     out
+}
+
+/// Run `f` with densify-skeleton filtering guaranteed off (waits for any
+/// in-flight [`with_densify_skeleton_only`] tile load).
+pub fn with_plan_pack_hydrate<R>(f: impl FnOnce() -> R) -> R {
+    let _gate = pack_hydrate_lock()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    debug_assert!(!densify_skeleton_only_active());
+    f()
 }
 
 pub(crate) fn densify_skeleton_only_active() -> bool {

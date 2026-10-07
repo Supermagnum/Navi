@@ -1133,14 +1133,18 @@ pub fn try_load_graph_for_plan_corridor_with_pack_dirs(
         owned.push(data_dir.to_path_buf());
     }
     let dirs: Vec<&Path> = owned.iter().map(|p| p.as_path()).collect();
-    try_load_graph_for_plan_corridor_dirs(
-        &dirs,
-        pbf,
-        profile,
-        clip_bbox,
-        route_points,
-        edge_clip_mode,
-    )
+    // Serialize vs densify-skeleton tile loads so the process-wide densify
+    // filter cannot starve a plan hydrate (FU22).
+    super::graph_pack::with_plan_pack_hydrate(|| {
+        try_load_graph_for_plan_corridor_dirs(
+            &dirs,
+            pbf,
+            profile,
+            clip_bbox,
+            route_points,
+            edge_clip_mode,
+        )
+    })
 }
 
 fn arc_graph_owned(graph: std::sync::Arc<RouteGraph>) -> RouteGraph {

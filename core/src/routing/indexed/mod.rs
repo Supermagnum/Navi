@@ -43,8 +43,8 @@ pub use ferry_overlay_cache::{
 };
 pub use graph_pack::{
     densify_skeleton_edge, graph_format_version_accepted, preferred_graph_format_version,
-    with_densify_skeleton_only, ArchivedFlatGraphPack, FlatGraphPack, GRAPH_FORMAT_VERSION,
-    GRAPH_FORMAT_VERSION_V8, MAGIC_GRAPH,
+    with_densify_skeleton_only, with_plan_pack_hydrate, ArchivedFlatGraphPack, FlatGraphPack,
+    GRAPH_FORMAT_VERSION, GRAPH_FORMAT_VERSION_V8, MAGIC_GRAPH,
 };
 pub use graph_pack_v8::{ArchivedFlatGraphPackV8, FlatGraphPackV8};
 pub use header::{read_preamble, Preamble, PREAMBLE_LEN};

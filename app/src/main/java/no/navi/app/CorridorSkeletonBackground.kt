@@ -4,6 +4,7 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -108,7 +109,16 @@ object CorridorSkeletonBackground {
             mutex.withLock {
                 try {
                     while (true) {
+                        // Never build during a plan (same idle rule as ferry).
+                        while (RoutePlanGate.isRunning()) {
+                            lastStatus.set("Corridor skeleton paused (planning)…")
+                            delay(500)
+                        }
                         val job = queue.poll() ?: break
+                        if (RoutePlanGate.isRunning()) {
+                            queue.offer(job)
+                            continue
+                        }
                         val label = job.stem.removeSuffix("-latest").replace('-', ' ')
                         lastStatus.set("Preparing corridor skeleton for $label…")
                         Log.i(
