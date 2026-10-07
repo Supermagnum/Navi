@@ -6253,6 +6253,8 @@ pub fn ensure_place_index(
     let prep_t0 = driver_break_core::download::phase_timing::start("place_index.prep_cache_check");
     // Schema bumps migrate in place. Never delete the shared multi-region DB.
     driver_break_core::search::NameIndex::discard_if_schema_stale(db);
+    // Empty stub after a failed quarantine: put the pre-migrate bak back first.
+    let _ = driver_break_core::search::NameIndex::restore_from_bak_pk_v6(db);
     // Reuse existing index when this region is intact at the current schema.
     if db.is_file() {
         if let Ok(meta) = std::fs::metadata(db) {
@@ -6272,9 +6274,28 @@ pub fn ensure_place_index(
     }
     driver_break_core::download::phase_timing::end("place_index.prep_cache_check", prep_t0);
     let open_t0 = driver_break_core::download::phase_timing::start("place_index.open_db");
-    match driver_break_core::search::NameIndex::open(db) {
+    let open_once = || driver_break_core::search::NameIndex::open(db);
+    let mut open_res = open_once();
+    if open_res.is_err() {
+        // Locking-protocol / busy from a concurrent probe: restore bak and retry
+        // once. Never quarantine while a bak-pk-v6 exists — that wiped protected
+        // rows when a migrate was interrupted.
+        let restored = driver_break_core::search::NameIndex::restore_from_bak_pk_v6(db);
+        if restored {
+            open_res = open_once();
+        }
+    }
+    match open_res {
         Ok(mut idx) => {
             driver_break_core::download::phase_timing::end("place_index.open_db", open_t0);
+            // open() may have just migrated v5→v6. Re-check on the same connection
+            // before a PBF rebuild so migrate kickoff returns cache_hit.
+            if !region.is_empty() && idx.region_intact_on_conn(&region) {
+                progress::set(6, Some(6), "Place index ready");
+                return format!(
+                    "PASS\ncache_hit=true\nmigrated_open=true\nregion_id={region}\nindex_db={index_db_path}\n"
+                );
+            }
             match idx.load_from_pbf_for_region(pbf, &region) {
                 Ok(n) => format!(
                     "PASS\ncache_hit=false\nindexed={n}\nregion_id={region}\nindex_db={index_db_path}\n"
@@ -6284,6 +6305,15 @@ pub fn ensure_place_index(
         }
         Err(e) => {
             driver_break_core::download::phase_timing::end("place_index.open_db", open_t0);
+            let bak = driver_break_core::search::NameIndex::bak_pk_v6_path(db);
+            if bak.is_file() {
+                // Keep the live file and bak; do not quarantine while recovery exists.
+                return format!(
+                    "FAIL: open index (bak kept at {}): {e}\n\
+                     Place index open failed; pre-migrate backup was not quarantined.\n",
+                    bak.display()
+                );
+            }
             let q = driver_break_core::search::NameIndex::quarantine_unreadable(db);
             let qpath = q
                 .as_ref()

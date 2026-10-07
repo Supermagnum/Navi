@@ -66,6 +66,11 @@ object OfflineIndexGate {
             PackRegionAvailability.resolvePbfForRegion(dataDir, rid)?.let { pbf ->
                 if (isIndexablePbf(pbf)) return pbf
             }
+            // Never fall back to another region's extract (e.g. finland → sweden).
+            if (!hasGraphPackMaterial(dataDir)) return null
+            val stub = File(dataDir, "${PackRegionAvailability.localStem(rid)}.osm.pbf")
+            if (stub.isFile && !isFixturePath(stub) && isIndexablePbf(stub)) return stub
+            return null
         }
         dataDir
             .listFiles()
@@ -73,10 +78,6 @@ object OfflineIndexGate {
             ?.maxByOrNull { it.length() }
             ?.let { return it }
         if (!hasGraphPackMaterial(dataDir)) return null
-        if (rid.isNotEmpty()) {
-            val stub = File(dataDir, "${PackRegionAvailability.localStem(rid)}.osm.pbf")
-            if (stub.isFile && !isFixturePath(stub)) return stub
-        }
         return dataDir.listFiles()?.firstOrNull { f ->
             f.isFile && f.name.endsWith(".osm.pbf") && !isFixturePath(f)
         }

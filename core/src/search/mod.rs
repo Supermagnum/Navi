@@ -167,7 +167,9 @@ impl NameIndex {
         }
         let conn = Connection::open(path)?;
         // WAL writers rarely wait on readers; keep a short timeout for checkpoints.
-        conn.busy_timeout(Duration::from_secs(5))?;
+        // PK migrate copies millions of rows — allow a long busy wait so a stray
+        // readonly probe cannot abort the writer with SQLITE_BUSY / locking protocol.
+        conn.busy_timeout(Duration::from_secs(120))?;
         let pragmas_t0 = phase_timing::start("place_index.open_db.pragmas");
         Self::apply_file_pragmas(&conn)?;
         phase_timing::end("place_index.open_db.pragmas", pragmas_t0);
@@ -507,6 +509,103 @@ impl NameIndex {
             path.display()
         );
         false
+    }
+
+    /// Path of the one-shot v5→v6 pre-migrate copy next to `place_index.db`.
+    pub fn bak_pk_v6_path(path: impl AsRef<Path>) -> PathBuf {
+        path.as_ref().with_file_name("place_index.db.bak-pk-v6")
+    }
+
+    /// Restore `place_index.db` from [`bak_pk_v6_path`] when the live file is
+    /// missing, tiny, or was replaced by an empty post-quarantine stub.
+    ///
+    /// Returns true when a restore ran. Never deletes the bak file.
+    pub fn restore_from_bak_pk_v6(path: impl AsRef<Path>) -> bool {
+        let path = path.as_ref();
+        let bak = Self::bak_pk_v6_path(path);
+        if !bak.is_file() {
+            return false;
+        }
+        let bak_len = std::fs::metadata(&bak).map(|m| m.len()).unwrap_or(0);
+        if bak_len < 10_000 {
+            return false;
+        }
+        let live_len = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        let need = !path.is_file() || live_len < 10_000 || live_len + 1_000_000 < bak_len;
+        if !need {
+            return false;
+        }
+        for suffix in ["-wal", "-shm"] {
+            let mut s = path.as_os_str().to_os_string();
+            s.push(suffix);
+            let _ = std::fs::remove_file(PathBuf::from(s));
+        }
+        match std::fs::copy(&bak, path) {
+            Ok(_) => {
+                log::warn!(
+                    target: "NaviSearch",
+                    "place-index: restored {} ({} bytes) from {}",
+                    path.display(),
+                    bak_len,
+                    bak.display()
+                );
+                true
+            }
+            Err(e) => {
+                log::error!(
+                    target: "NaviSearch",
+                    "place-index: restore from {} failed: {e}",
+                    bak.display()
+                );
+                false
+            }
+        }
+    }
+
+    /// Intact check on an already-open writer (no second connection).
+    pub fn region_intact_on_conn(&self, region_id: &str) -> bool {
+        let region_id = region_id.trim().trim_matches('/');
+        if region_id.is_empty() {
+            return false;
+        }
+        let user_version: i32 = self
+            .conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap_or(0);
+        if user_version < PLACE_INDEX_SCHEMA_VERSION {
+            return false;
+        }
+        let count: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM name_entries WHERE region_id = ?1",
+                params![region_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        if count <= 0 {
+            return false;
+        }
+        match self.conn.query_row(
+            "SELECT complete, written, expected FROM name_index_build WHERE region_id = ?1",
+            params![region_id],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            },
+        ) {
+            Ok((complete, written, expected)) => {
+                if complete == 0 {
+                    return false;
+                }
+                let refer = if written > 0 { written } else { expected };
+                refer <= 0 || (count as f64) >= (refer as f64) * 0.10
+            }
+            Err(_) => true,
+        }
     }
 
     /// Rename a DB that cannot be opened so the next open sees "missing" without

@@ -3,6 +3,7 @@
 pub mod access;
 pub mod basemap;
 pub mod conditional;
+pub mod corridor_skeleton;
 pub mod dnt_winter;
 pub mod ebike_route;
 pub mod elevation;
