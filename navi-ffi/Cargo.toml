@@ -106,3 +106,7 @@ path = "src/bin/navi_corridor_coarse.rs"
 [[bin]]
 name = "navi-dest-hop-probe"
 path = "src/bin/navi_dest_hop_probe.rs"
+
+[[bin]]
+name = "navi-place-index"
+path = "src/bin/navi_place_index.rs"
