@@ -2841,6 +2841,7 @@ fn plan_car_route_chunked_legs(
             driver_break_core::routing::plan_file_log::remove_file(
                 driver_break_core::routing::plan_file_log::HOPS_PARTIAL_NAME,
             );
+            driver_break_core::routing::plan_bbox::set_stage_b_active(false);
             let mut r = empty_corridor(fail);
             r.search_terminate_reason = leg.search_terminate_reason;
             r.toll_policy = leg.toll_policy;
@@ -3058,6 +3059,7 @@ fn plan_car_route_chunked_legs(
     driver_break_core::routing::plan_file_log::remove_file(
         driver_break_core::routing::plan_file_log::HOPS_PARTIAL_NAME,
     );
+    driver_break_core::routing::plan_bbox::set_stage_b_active(false);
     driver_break_core::download::progress::set(5, Some(5), "Planning route: done");
     CorridorRouteResult {
         report,
@@ -3582,6 +3584,17 @@ fn plan_car_route_inner(
     {
         let pack_dirs = pack_dirs_for_densify;
         let pack_dir_refs: Vec<&std::path::Path> = pack_dirs.iter().map(|p| p.as_path()).collect();
+        // Stage B (long-trip): persistent skeleton joints (border/ferry/via) +
+        // near-equal ferry exclusion. Centroid densify / hop_deg sampling off.
+        let stage_b = if long_trip_enabled {
+            driver_break_core::routing::corridor_skeleton::try_stage_b_densify_from_skeletons(
+                &pack_dir_refs,
+                &route_points,
+                routing_profile,
+            )
+        } else {
+            None
+        };
         let geometric =
             driver_break_core::routing::plan_bbox::densify_route_points_via_regions_dirs(
                 &route_points,
@@ -3589,10 +3602,16 @@ fn plan_car_route_inner(
                 driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG,
             );
         // Prefer joints on a major-road + ferry coarse path for **same-stem**
-        // coastal ODs (Bergen→Stavanger). Long-trip DE→NO must keep region
-        // densify: skeleton loads a trip AABB of the user pins (pad 0.15°)
-        // that misses Fehmarn/E47, then even-split hops walk Lolland/Kalvehave.
-        let hops = if ferry_same_stem_densify {
+        // coastal ODs (Bergen→Stavanger). Long-trip DE→NO uses Stage B when
+        // skeletons are installed; else falls back to region densify.
+        let hops = if let Some(ref sb) = stage_b {
+            driver_break_core::routing::plan_bbox::set_stage_b_active(true);
+            driver_break_core::routing::plan_bbox::set_stage_b_coarse_path(
+                sb.coarse_path.clone(),
+            );
+            log::info!(target: "NaviPlan", "stage_b densify {}", sb.note);
+            sb.hops.clone()
+        } else if ferry_same_stem_densify {
             driver_break_core::routing::indexed::try_densify_hops_via_skeleton(
                 std::path::Path::new(data_dir.trim()),
                 &pack_dir_refs,
@@ -3608,8 +3627,9 @@ fn plan_car_route_inner(
         log::info!(
             target: "NaviPlan",
             "long_trip densify span={span:.3} hops={} long_trip_enabled={long_trip_enabled} \
-             ferry_same_stem={ferry_same_stem_densify} hops_latlon={} dirs={}",
+             ferry_same_stem={ferry_same_stem_densify} stage_b={} hops_latlon={} dirs={}",
             hops.len(),
+            stage_b.is_some(),
             hops.iter()
                 .map(|(la, lo)| format!("{la:.4},{lo:.4}"))
                 .collect::<Vec<_>>()
@@ -3833,7 +3853,10 @@ fn plan_car_route_inner(
     let mut edge_clip_mode = driver_break_core::routing::plan_bbox::PlanEdgeClipMode::CorridorBand;
     // Tile-budget widen across disconnect retries (forced 6 → 10 → 14 → …).
     // Cleared on plan exit so later plans do not inherit a raised floor.
-    driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(0);
+    // Stage B keeps the raised floor (coarse-path tiles; no chord budget).
+    if !driver_break_core::routing::plan_bbox::stage_b_active() {
+        driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(0);
+    }
     // Prefer multi-stem default so widen steps start from the real corridor budget
     // (14) unless NAVI_MEASURE_MAX_PLAN_TILES forces a lower base (e.g. 6).
     let mut tile_budget_used =
@@ -3856,11 +3879,26 @@ fn plan_car_route_inner(
             route_opts.eco_weights = None;
             route_opts.motor_soft = None;
             route_opts.surface_routing_mode = None;
-            bbox = driver_break_core::routing::plan_bbox::trip_bbox_points(&route_points, pad);
+            // Stage B: tiles follow the coarse path (plus pad), not the O–D chord.
+            let corridor_pts: Vec<(f64, f64)> = if is_chunk_leg
+                && driver_break_core::routing::plan_bbox::stage_b_active()
+            {
+                driver_break_core::routing::plan_bbox::stage_b_hop_corridor_points(
+                    (start_lat, start_lon),
+                    (end_lat, end_lon),
+                )
+            } else {
+                route_points.clone()
+            };
+            bbox = driver_break_core::routing::plan_bbox::trip_bbox_points(&corridor_pts, pad);
             report.push_str(&format!(
                 "bbox={:.3},{:.3},{:.3},{:.3}; pad={pad:.2}; edge_clip={edge_clip_mode:?}; \
-                 tile_budget={tile_budget_used}\n",
-                bbox[0], bbox[1], bbox[2], bbox[3]
+                 tile_budget={tile_budget_used}; corridor_pts={}\n",
+                bbox[0],
+                bbox[1],
+                bbox[2],
+                bbox[3],
+                corridor_pts.len()
             ));
             driver_break_core::routing::plan_perf::note_u64("tile_budget", tile_budget_used as u64);
 
@@ -3889,7 +3927,7 @@ fn plan_car_route_inner(
                         pbf,
                         routing_profile,
                         Some(bbox),
-                        Some(route_points.as_slice()),
+                        Some(corridor_pts.as_slice()),
                         edge_clip_mode,
                     )
                 }

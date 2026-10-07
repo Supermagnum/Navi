@@ -3,11 +3,95 @@
 //! Initial pad matches historical `plan_car_route_inner` behaviour; widen doubles
 //! until [`PLAN_BBOX_PAD_CAP_DEG`] so RAM stays bounded on Automotive devices.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::cell::RefCell;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 /// Runtime floor raised by corridor disconnect widen-retry (0 = inactive).
 /// Combined with [`effective_max_plan_tiles_for_stems`] via `max(base, floor)`.
 static PLAN_TILE_BUDGET_AT_LEAST: AtomicUsize = AtomicUsize::new(0);
+
+/// Stage B: skip chord-only tile budget caps; select tiles covering the coarse path.
+static STAGE_B_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+thread_local! {
+    /// Full coarse path (lat, lon) for Stage B hop corridor tile selection.
+    static STAGE_B_COARSE_PATH: RefCell<Option<Vec<(f64, f64)>>> = const { RefCell::new(None) };
+}
+
+/// Enable/disable Stage B densify mode for the current plan.
+pub fn set_stage_b_active(on: bool) {
+    STAGE_B_ACTIVE.store(on, Ordering::Relaxed);
+    if !on {
+        clear_stage_b_coarse_path();
+        set_plan_tile_budget_at_least(0);
+    } else {
+        // No tile-budget truncation: raise floor to the widen cap so every
+        // coarse-path-covering tile can load.
+        set_plan_tile_budget_at_least(MAX_PLAN_TILES_WIDEN_CAP);
+    }
+}
+
+pub fn stage_b_active() -> bool {
+    STAGE_B_ACTIVE.load(Ordering::Relaxed)
+}
+
+pub fn set_stage_b_coarse_path(path: Vec<(f64, f64)>) {
+    STAGE_B_COARSE_PATH.with(|c| *c.borrow_mut() = Some(path));
+}
+
+pub fn clear_stage_b_coarse_path() {
+    STAGE_B_COARSE_PATH.with(|c| *c.borrow_mut() = None);
+}
+
+/// Coarse-path samples between hop endpoints (inclusive), for Stage B tile/edge
+/// corridor. Falls back to `[start, end]` when Stage B path is unset.
+pub fn stage_b_hop_corridor_points(start: (f64, f64), end: (f64, f64)) -> Vec<(f64, f64)> {
+    STAGE_B_COARSE_PATH.with(|c| {
+        let borrow = c.borrow();
+        let Some(path) = borrow.as_ref() else {
+            return vec![start, end];
+        };
+        if path.len() < 2 {
+            return vec![start, end];
+        }
+        // Indices nearest to start/end along the coarse polyline.
+        let nearest = |p: (f64, f64)| -> usize {
+            path.iter()
+                .enumerate()
+                .min_by(|(_, a), (_, b)| {
+                    let da = (a.0 - p.0).hypot(a.1 - p.1);
+                    let db = (b.0 - p.0).hypot(b.1 - p.1);
+                    da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .map(|(i, _)| i)
+                .unwrap_or(0)
+        };
+        let mut i0 = nearest(start);
+        let mut i1 = nearest(end);
+        if i0 > i1 {
+            std::mem::swap(&mut i0, &mut i1);
+        }
+        let mut out: Vec<(f64, f64)> = path[i0..=i1].to_vec();
+        if out.first().copied() != Some(start) {
+            out.insert(0, start);
+        }
+        if out.last().copied() != Some(end) {
+            out.push(end);
+        }
+        // Decimate very dense paths (~every ~0.15°) to keep tile sample cost bounded.
+        if out.len() > 64 {
+            let step = (out.len() / 48).max(1);
+            let mut dec: Vec<_> = out.iter().step_by(step).copied().collect();
+            if dec.last() != out.last() {
+                if let Some(l) = out.last().copied() {
+                    dec.push(l);
+                }
+            }
+            out = dec;
+        }
+        out
+    })
+}
 
 /// Initial pad: `span * 0.35` clamped to this band (degrees).
 pub const PLAN_BBOX_PAD_MIN_DEG: f64 = 0.35;
