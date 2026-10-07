@@ -200,7 +200,17 @@ object PlaceIndexReady {
             return r.placeIndex == InstalledMaps.PlaceIndexState.INTACT ||
                 r.placeIndex == InstalledMaps.PlaceIndexState.LEGACY_INTACT
         }
-        return PlaceIndexIntact.isIntact(dataDir, id)
+        // When a place_index.db exists, stamp alone is not enough (incomplete /
+        // empty complete=1 slices must stay unsearchable). When the DB is
+        // absent — host fixtures, pre-index installs — the ready stamp remains
+        // the readiness signal (pre-c14408fc contract).
+        val dbFile = File(dataDir, "place_index.db")
+        if (dbFile.isFile) {
+            return PlaceIndexIntact.isIntact(dataDir, id)
+        }
+        return load(dataDir).any {
+            PackRegionAvailability.regionIdsMatchForCatalog(it, id)
+        }
     }
 
     /**
@@ -225,7 +235,15 @@ object PlaceIndexReady {
                         it.placeIndex == InstalledMaps.PlaceIndexState.LEGACY_INTACT
                 }?.map { it.regionId }
                 ?.toSet()
-                ?: load(dataDir).filter { PlaceIndexIntact.isIntact(dataDir, it) }.toSet()
+                ?: run {
+                    val stamped = load(dataDir)
+                    val dbFile = File(dataDir, "place_index.db")
+                    if (!dbFile.isFile) {
+                        stamped
+                    } else {
+                        stamped.filter { PlaceIndexIntact.isIntact(dataDir, it) }.toSet()
+                    }
+                }
         val computed =
             if (ready.isEmpty()) {
                 emptySet()

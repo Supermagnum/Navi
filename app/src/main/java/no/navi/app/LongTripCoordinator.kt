@@ -388,7 +388,7 @@ object LongTripCoordinator {
         regionId: String,
         states: MutableMap<String, State>,
     ) {
-        if (PlaceIndexIntact.isIntact(internal, regionId)) {
+        if (PlaceIndexReady.isReady(internal, regionId)) {
             states[regionId] = State.Indexed
             refreshStatusLine()
             return
