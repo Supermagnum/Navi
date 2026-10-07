@@ -409,6 +409,21 @@ pub fn ferry_overlay_for_plan(
     Some((g, "sidecar"))
 }
 
+/// Load the full ferry overlay as a [`FlatGraphPack`] for corridor-skeleton merge.
+/// Returns `None` when the sidecar is missing or unreadable (not a graph pack).
+pub fn load_ferry_overlay_as_flat(
+    home: &Path,
+    stem: &str,
+    profile: RoutingProfile,
+) -> Option<FlatGraphPack> {
+    let side = ferry_sidecar_path(home, stem, profile);
+    if !side.is_file() {
+        return None;
+    }
+    let g = load_sidecar_clipped(&side, profile, None)?;
+    Some(FlatGraphPack::from_route_graph(&g, None))
+}
+
 /// Human-readable status when a plan is blocked on ferry sidecar build.
 pub fn ferry_preparing_status(stem: &str) -> (String, u8) {
     let label = region_label(stem);

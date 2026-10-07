@@ -792,6 +792,10 @@ pub enum PackLoadError {
     /// `(region_label, progress_pct)`.
     #[error("preparing ferry data for {0}")]
     FerryPreparing(String, u8),
+    /// Corridor skeleton is building in the background; retry the plan.
+    /// `(region_label, progress_pct)`.
+    #[error("preparing corridor skeleton for {0}")]
+    SkeletonPreparing(String, u8),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("rkyv access failed: {0}")]

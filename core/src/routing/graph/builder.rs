@@ -1920,8 +1920,23 @@ impl RouteGraph {
     ) -> PathSearchStats {
         let plan_id = crate::download::plan_cancel::current_plan_id();
         let expansions = std::sync::atomic::AtomicU64::new(0);
-        // Hard wall so a disconnected densify hop fails in seconds, not minutes.
-        let search_deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+        // Expansion abort (no wall-clock deadline): fail fast on runaway A* while
+        // still allowing large connected graphs. Threshold =
+        // max(ASTAR_MIN_EXPANSION_ABORT, nodes × ASTAR_EXPANSION_PER_NODE).
+        const ASTAR_MIN_EXPANSION_ABORT: u64 = 500_000;
+        const ASTAR_EXPANSION_PER_NODE: u64 = 32;
+        let expansion_limit = ASTAR_MIN_EXPANSION_ABORT
+            .max((self.nodes.len() as u64).saturating_mul(ASTAR_EXPANSION_PER_NODE));
+        let expansion_aborted = std::sync::atomic::AtomicBool::new(false);
+        // Directed reachability after snap: disconnected O/D returns immediately
+        // instead of expanding until the old 8s wall-clock deadline.
+        if !self.directed_reachable_with_options(start, goal, options) {
+            return PathSearchStats {
+                path: None,
+                expansions: 0,
+                terminate_reason: "disconnected",
+            };
+        }
         let surface_mode = options
             .surface_routing_mode
             .unwrap_or(self.surface_routing_mode);
@@ -1937,10 +1952,9 @@ impl RouteGraph {
                 |state| {
                     let (node, prev_surface, _) = *state;
                     let n = expansions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    if std::time::Instant::now() >= search_deadline {
-                        return Vec::new();
-                    }
-                    if self.nodes.len() < 15_000 && n > 500_000 {
+                    if n > expansion_limit {
+                        expansion_aborted
+                            .store(true, std::sync::atomic::Ordering::Relaxed);
                         return Vec::new();
                     }
                     if plan_id != 0
@@ -1996,6 +2010,8 @@ impl RouteGraph {
             return PathSearchStats {
                 terminate_reason: if path.is_some() {
                     "found"
+                } else if expansion_aborted.load(std::sync::atomic::Ordering::Relaxed) {
+                    "expansion_limit"
                 } else {
                     "disconnected"
                 },
@@ -2009,10 +2025,8 @@ impl RouteGraph {
             |state| {
                 let (node, _) = *state;
                 let n = expansions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                if std::time::Instant::now() >= search_deadline {
-                    return Vec::new();
-                }
-                if self.nodes.len() < 15_000 && n > 500_000 {
+                if n > expansion_limit {
+                    expansion_aborted.store(true, std::sync::atomic::Ordering::Relaxed);
                     return Vec::new();
                 }
                 if plan_id != 0
@@ -2062,6 +2076,8 @@ impl RouteGraph {
         PathSearchStats {
             terminate_reason: if path.is_some() {
                 "found"
+            } else if expansion_aborted.load(std::sync::atomic::Ordering::Relaxed) {
+                "expansion_limit"
             } else {
                 "disconnected"
             },

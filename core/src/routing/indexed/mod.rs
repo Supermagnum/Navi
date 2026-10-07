@@ -5,6 +5,7 @@
 
 mod convert;
 mod corridor_cache;
+mod corridor_skeleton_cache;
 mod ferry_overlay_cache;
 mod graph_pack;
 mod graph_pack_v8;
@@ -30,9 +31,15 @@ pub use corridor_cache::{
     corridor_cache_insert_owned, corridor_cache_stats, corridor_cache_take, CorridorCacheKey,
     CORRIDOR_CACHE_MAX_BYTES,
 };
+pub use corridor_skeleton_cache::{
+    corridor_skeleton_preparing_status, corridor_skeleton_progress, corridor_skeleton_ready,
+    ensure_corridor_skeleton, skeleton_fresh, stems_missing_corridor_skeleton,
+    CorridorSkeletonProgress, CORRIDOR_SKELETON_BUILD, SKELETON_BUILD_SOFT_RSS_MB,
+};
 pub use ferry_overlay_cache::{
     ensure_ferry_sidecar, ferry_overlay_for_plan, ferry_preparing_status, ferry_sidecar_path,
-    ferry_sidecar_progress, ferry_sidecar_ready, sidecar_fresh, FerrySidecarProgress,
+    ferry_sidecar_progress, ferry_sidecar_ready, load_ferry_overlay_as_flat, sidecar_fresh,
+    FerrySidecarProgress,
 };
 pub use graph_pack::{
     densify_skeleton_edge, graph_format_version_accepted, preferred_graph_format_version,

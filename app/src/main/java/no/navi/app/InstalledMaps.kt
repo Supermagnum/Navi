@@ -7,9 +7,9 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Inventory of installed map packs, extracts, tiles, ferry sidecars, and
- * place-index state. Router, place-index gate, and download UI read this
- * snapshot instead of ad-hoc directory probes.
+ * Inventory of installed map packs, extracts, tiles, ferry sidecars,
+ * corridor skeletons, and place-index state. Router, place-index gate, and
+ * download UI read this snapshot instead of ad-hoc directory probes.
  *
  * Refresh on download / delete / SD insert-remove — no process restart.
  */
@@ -42,6 +42,7 @@ object InstalledMaps {
         val pbfPath: File?,
         val ferrySidecarCar: Boolean,
         val ferrySidecarTruck: Boolean,
+        val corridorSkeleton: Boolean,
         val tilesPresent: Boolean,
         val tilesRejected: Boolean,
         val placeIndex: PlaceIndexState,
@@ -228,6 +229,7 @@ object InstalledMaps {
                     "${r.regionId} vol=${r.volumeId} gen=${r.generation.ifBlank { "-" }} " +
                         "fmt=${r.graphFormat} profiles=${r.profilesLoadable.joinToString(",")} " +
                         "pbf=${r.pbfKind} ferry_car=${r.ferrySidecarCar} ferry_truck=${r.ferrySidecarTruck} " +
+                        "corridor_skel=${r.corridorSkeleton} " +
                         "tiles=${r.tilesPresent} rejected=${r.tilesRejected} " +
                         "index=${r.placeIndex} rows=${r.placeIndexRows}",
                 )
@@ -303,6 +305,7 @@ object InstalledMaps {
                     pbfPath = pbf.takeIf { it.isFile },
                     ferrySidecarCar = File(dir, "$stem.navi-ferry-overlay-car.rkyv").isFile,
                     ferrySidecarTruck = File(dir, "$stem.navi-ferry-overlay-truck.rkyv").isFile,
+                    corridorSkeleton = File(dir, "$stem.navi-corridor-skeleton.json").isFile,
                     tilesPresent = tilesFile.isFile,
                     tilesRejected = rejectedFile.isFile,
                     placeIndex = indexState,
@@ -336,6 +339,7 @@ object InstalledMaps {
                     pbfPath = f,
                     ferrySidecarCar = File(dir, "$stem.navi-ferry-overlay-car.rkyv").isFile,
                     ferrySidecarTruck = File(dir, "$stem.navi-ferry-overlay-truck.rkyv").isFile,
+                    corridorSkeleton = File(dir, "$stem.navi-corridor-skeleton.json").isFile,
                     tilesPresent = File(tilesDataDir, "pmtiles/${PackRegionAvailability.geofabrikPathToRegionKey(nid)}.pmtiles").isFile,
                     tilesRejected = File(tilesDataDir, "pmtiles/${PackRegionAvailability.geofabrikPathToRegionKey(nid)}.pmtiles.rejected").isFile,
                     placeIndex =

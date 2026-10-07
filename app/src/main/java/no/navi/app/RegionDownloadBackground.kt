@@ -1746,6 +1746,7 @@ object RegionDownloadBackground {
             val r = InstalledMaps.region(trimmed)
             if (r != null) {
                 FerrySidecarBackground.ensureForRegionPath(r.packDir, trimmed)
+                CorridorSkeletonBackground.ensureForRegionPath(r.packDir, trimmed)
             }
         }
     }

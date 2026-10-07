@@ -695,6 +695,10 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_convert_progress_snapshot(
     ): Int
+    external fun uniffi_navi_checksum_func_corridor_skeleton_is_ready(
+    ): Int
+    external fun uniffi_navi_checksum_func_corridor_skeleton_progress_snapshot(
+    ): Int
     external fun uniffi_navi_checksum_func_country_iso_at(
     ): Int
     external fun uniffi_navi_checksum_func_country_polys_ready(
@@ -740,6 +744,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_eco_mode_toggleable(
     ): Int
     external fun uniffi_navi_checksum_func_elevation_at(
+    ): Int
+    external fun uniffi_navi_checksum_func_ensure_corridor_skeleton(
     ): Int
     external fun uniffi_navi_checksum_func_ensure_ferry_sidecar(
     ): Int
@@ -1169,6 +1175,10 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_navi_fn_func_convert_progress_snapshot(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_corridor_skeleton_is_ready(`packDir`: RustBuffer.ByValue,`stem`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_corridor_skeleton_progress_snapshot(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_country_iso_at(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_country_polys_ready(uniffi_out_err: UniffiRustCallStatus, 
@@ -1214,6 +1224,8 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_eco_mode_toggleable(`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_navi_fn_func_elevation_at(`elevDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_ensure_corridor_skeleton(`packDir`: RustBuffer.ByValue,`stem`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_ensure_ferry_sidecar(`packDir`: RustBuffer.ByValue,`stem`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1719,6 +1731,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_convert_progress_snapshot() and 0xFFFF) != 28171) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_corridor_skeleton_is_ready() and 0xFFFF) != 20842) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_corridor_skeleton_progress_snapshot() and 0xFFFF) != 31391) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_country_iso_at() and 0xFFFF) != 819) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1786,6 +1804,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_elevation_at() and 0xFFFF) != 35410) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_ensure_corridor_skeleton() and 0xFFFF) != 13552) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_ensure_ferry_sidecar() and 0xFFFF) != 516) {
@@ -3496,6 +3517,59 @@ public object FfiConverterTypeFfiCarRestSettings: FfiConverterRustBuffer<FfiCarR
             FfiConverterUInt.write(value.`restDurationMinutes`, buf)
             FfiConverterBoolean.write(value.`ecoModeEnabled`, buf)
             FfiConverterDouble.write(value.`maxHours`, buf)
+    }
+}
+
+
+
+data class FfiCorridorSkeletonProgress (
+    var `stem`: kotlin.String
+    , 
+    var `regionLabel`: kotlin.String
+    , 
+    var `running`: kotlin.Boolean
+    , 
+    var `pct`: kotlin.UByte
+    , 
+    var `message`: kotlin.String
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiCorridorSkeletonProgress: FfiConverterRustBuffer<FfiCorridorSkeletonProgress> {
+    override fun read(buf: ByteBuffer): FfiCorridorSkeletonProgress {
+        return FfiCorridorSkeletonProgress(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterUByte.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiCorridorSkeletonProgress) = (
+            FfiConverterString.allocationSize(value.`stem`) +
+            FfiConverterString.allocationSize(value.`regionLabel`) +
+            FfiConverterBoolean.allocationSize(value.`running`) +
+            FfiConverterUByte.allocationSize(value.`pct`) +
+            FfiConverterString.allocationSize(value.`message`)
+    )
+
+    override fun write(value: FfiCorridorSkeletonProgress, buf: ByteBuffer) {
+            FfiConverterString.write(value.`stem`, buf)
+            FfiConverterString.write(value.`regionLabel`, buf)
+            FfiConverterBoolean.write(value.`running`, buf)
+            FfiConverterUByte.write(value.`pct`, buf)
+            FfiConverterString.write(value.`message`, buf)
     }
 }
 
@@ -5674,6 +5748,35 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * True when the stem corridor skeleton meta matches pack + neighbor fingerprints.
+         */ fun `corridorSkeletonIsReady`(`packDir`: kotlin.String, `stem`: kotlin.String, `profile`: TravelProfile): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_corridor_skeleton_is_ready(
+    
+        
+        FfiConverterString.lower(`packDir`),
+        FfiConverterString.lower(`stem`),
+        FfiConverterTypeTravelProfile.lower(`profile`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Progress for an in-flight corridor skeleton build (empty stem when idle).
+         */ fun `corridorSkeletonProgressSnapshot`(): FfiCorridorSkeletonProgress {
+            return FfiConverterTypeFfiCorridorSkeletonProgress.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_corridor_skeleton_progress_snapshot(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
          * Offline ISO-3166-1 alpha-2 for a WGS84 point (Natural Earth Admin-0).
          *
          * Safe to call from a background thread. Avoid the Android main looper —
@@ -6008,6 +6111,23 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         FfiConverterString.lower(`elevDir`),
         FfiConverterDouble.lower(`lat`),
         FfiConverterDouble.lower(`lon`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Build/refresh `{stem}.navi-corridor-skeleton.json` from installed graph packs.
+         * Call from pack install / idle background work — not from the plan path.
+         */ fun `ensureCorridorSkeleton`(`packDir`: kotlin.String, `stem`: kotlin.String, `profile`: TravelProfile): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_ensure_corridor_skeleton(
+    
+        
+        FfiConverterString.lower(`packDir`),
+        FfiConverterString.lower(`stem`),
+        FfiConverterTypeTravelProfile.lower(`profile`),_status)
 }
     )
     }

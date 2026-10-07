@@ -706,6 +706,7 @@ private fun NaviMapScreen() {
         withContext(Dispatchers.IO) {
             runCatching { InstalledMaps.refresh(context) }
             runCatching { FerrySidecarBackground.ensureFromInstalledMaps() }
+            runCatching { CorridorSkeletonBackground.ensureFromInstalledMaps() }
             val summary = InstalledMaps.summaryText()
             android.util.Log.i("InstalledMaps", summary)
             runCatching {
@@ -720,6 +721,7 @@ private fun NaviMapScreen() {
         withContext(Dispatchers.IO) {
             runCatching { InstalledMaps.refresh(context) }
             runCatching { FerrySidecarBackground.ensureFromInstalledMaps() }
+            runCatching { CorridorSkeletonBackground.ensureFromInstalledMaps() }
         }
         mapsEpoch += 1
     }
@@ -1043,6 +1045,7 @@ private fun NaviMapScreen() {
     var planningRoute by remember { mutableStateOf(false) }
     var planKick by remember { mutableIntStateOf(0) }
     var ferryPreparingRetries by remember { mutableIntStateOf(0) }
+    var skeletonPreparingRetries by remember { mutableIntStateOf(0) }
     var routePlanProgress by remember { mutableStateOf("") }
 
     // Standalone long-trip seed via adb extras (see applyNaviLaunchExtras).
@@ -1101,6 +1104,7 @@ private fun NaviMapScreen() {
                 if (trip.autoPlan) {
                     delay(1_200)
                     ferryPreparingRetries = 0
+                    skeletonPreparingRetries = 0
                     planKick += 1
                 }
             }
@@ -3540,7 +3544,7 @@ private fun NaviMapScreen() {
             NaviMapTestHooks.lastRoutePolylineChars = 0
             NaviMapTestHooks.lastRoutePolyline = ""
             // Native fail-fast: missing corridor region — same dialog as UI pre-flight.
-            // Ferry sidecar still building — show progress and auto-retry the plan.
+            // Ferry sidecar / corridor skeleton still building — show progress and auto-retry.
             if (result.searchTerminateReason == "ferry_preparing") {
                 val msg =
                     result.offTrailAdvisory
@@ -3576,6 +3580,54 @@ private fun NaviMapScreen() {
                 }
                 if (isActive && idle && ferryPreparingRetries < 3) {
                     ferryPreparingRetries += 1
+                    planKick += 1
+                } else if (isActive) {
+                    status = "$msg (stopped auto-retry)"
+                }
+                return@LaunchedEffect
+            }
+            if (result.searchTerminateReason == "skeleton_preparing") {
+                runCatching { CorridorSkeletonBackground.ensureFromInstalledMaps() }
+                val msg =
+                    result.offTrailAdvisory
+                        .ifBlank {
+                            result.report
+                                .lineSequence()
+                                .firstOrNull { it.startsWith("status=") }
+                                ?.removePrefix("status=")
+                                ?.trim()
+                                .orEmpty()
+                        }.ifBlank { "Preparing corridor skeleton…" }
+                status = msg
+                RoutingPlanLog.failed(ecoForPlan, durationMs, msg, result)
+                val maxWaitMs = 30 * 60_000L
+                val stepMs = 2_000L
+                var waited = 0L
+                var idle = false
+                while (isActive && waited < maxWaitMs) {
+                    delay(stepMs)
+                    waited += stepMs
+                    val prog =
+                        runCatching {
+                            uniffi.navi.corridorSkeletonProgressSnapshot()
+                        }.getOrNull()
+                    if (prog != null) {
+                        if (prog.message.isNotBlank()) {
+                            status =
+                                if (prog.pct.toInt() > 0) {
+                                    "${prog.message} ${prog.pct}%"
+                                } else {
+                                    prog.message
+                                }
+                        }
+                        if (!prog.running) {
+                            idle = true
+                            break
+                        }
+                    }
+                }
+                if (isActive && idle && skeletonPreparingRetries < 3) {
+                    skeletonPreparingRetries += 1
                     planKick += 1
                 } else if (isActive) {
                     status = "$msg (stopped auto-retry)"
@@ -6050,6 +6102,7 @@ private fun NaviMapScreen() {
                             Button(
                                 onClick = {
                                     ferryPreparingRetries = 0
+                                    skeletonPreparingRetries = 0
                                     planKick += 1
                                 },
                                 enabled = !planningRoute,
