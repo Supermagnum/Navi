@@ -14,8 +14,8 @@
 use crate::routing::elevation::country_iso_at;
 use crate::routing::eta::motor_path_minutes_from_edges;
 use crate::routing::graph::{
-    ferry_drive_equiv_m_per_s, GraphEdge, RouteGraph, RouteOptions, RoutingProfile, SurfaceQuality,
-    SurfaceRoutingMode, FERRY_CAR_BOARDING_PENALTY_MIN,
+    ferry_crossing_and_wait_min, time_base_weight_for_edge, GraphEdge, RouteGraph, RouteOptions,
+    RoutingProfile, SurfaceQuality, SurfaceRoutingMode,
 };
 use crate::routing::indexed::{densify_skeleton_edge, FlatGraphPack, GRAPH_FORMAT_VERSION};
 use geo_types::Coord;
@@ -1120,16 +1120,8 @@ fn ferry_terminal_names(e: &GraphEdge) -> (String, String) {
 }
 
 fn ferry_minutes(e: &GraphEdge) -> (f64, f64, f64) {
-    let boarding = FERRY_CAR_BOARDING_PENALTY_MIN;
-    let drive = ferry_drive_equiv_m_per_s();
-    let boarding_m = boarding * 60.0 * drive;
-    let crossing_m = (e.base_weight - boarding_m).max(0.0);
-    let crossing = if drive > 0.0 {
-        crossing_m / drive / 60.0
-    } else {
-        0.0
-    };
-    (crossing, boarding, crossing + boarding)
+    let (crossing, wait) = ferry_crossing_and_wait_min(e);
+    (crossing, wait, crossing + wait)
 }
 
 /// Extract joints: user vias + region border crossings + ferry terminals on path.
@@ -1255,7 +1247,7 @@ pub fn build_coarse_route_report(
     let mut on_ferry = false;
     for &idx in edge_indices {
         let e = &graph.edges[idx];
-        astar_cost_m += e.base_weight;
+        astar_cost_m += time_base_weight_for_edge(e);
         let km = e.length_m / 1000.0;
         total_km += km;
         let iso = country_iso_for_edge(e);
@@ -1427,6 +1419,249 @@ pub fn inter_region_ferry_edges(
         }
     }
     out
+}
+
+/// Stage B densify result: hop joints + full coarse path for tile selection.
+#[derive(Debug, Clone)]
+pub struct StageBDensify {
+    /// Ordered hop waypoints: origin, joints (border/ferry/via), destination.
+    pub hops: Vec<(f64, f64)>,
+    /// Full coarse path node lat/lon (for corridor tiles + pad).
+    pub coarse_path: Vec<(f64, f64)>,
+    pub total_min: f64,
+    pub total_km: f64,
+    pub ferries: Vec<String>,
+    pub note: String,
+}
+
+fn load_skeletons_from_dirs(dirs: &[&Path]) -> Vec<CorridorSkeletonFile> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for dir in dirs {
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        let mut paths: Vec<PathBuf> = rd
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.ends_with(".navi-corridor-skeleton.json"))
+            })
+            .collect();
+        paths.sort();
+        for p in paths {
+            let Ok(s) = read_skeleton_file(&p) else {
+                continue;
+            };
+            if seen.insert(s.leaf_stem.clone()) {
+                out.push(s);
+            }
+        }
+    }
+    out
+}
+
+fn forbid_ferry_edges_matching_leg(graph: &mut RouteGraph, leg: &CoarseFerryLeg, match_m: f64) {
+    for e in graph.edges.iter_mut() {
+        if !e.is_ferry {
+            continue;
+        }
+        let fwd = haversine_m(e.start_lat, e.start_lon, leg.from_lat, leg.from_lon) < match_m
+            && haversine_m(e.end_lat, e.end_lon, leg.to_lat, leg.to_lon) < match_m;
+        let rev = haversine_m(e.start_lat, e.start_lon, leg.to_lat, leg.to_lon) < match_m
+            && haversine_m(e.end_lat, e.end_lon, leg.from_lat, leg.from_lon) < match_m;
+        if fwd || rev {
+            e.access_forbidden = true;
+        }
+    }
+}
+
+fn clear_access_forbidden(graph: &mut RouteGraph) {
+    for e in &mut graph.edges {
+        e.access_forbidden = false;
+    }
+}
+
+fn path_latlon(graph: &RouteGraph, path: &[NodeId]) -> Vec<(f64, f64)> {
+    path.iter()
+        .filter_map(|id| graph.nodes.get(id).map(|n| (n.coord.y, n.coord.x)))
+        .collect()
+}
+
+fn hops_from_report(report: &CoarseRouteReport, start: (f64, f64), end: (f64, f64)) -> Vec<(f64, f64)> {
+    let mut hops = Vec::new();
+    hops.push(start);
+    for j in &report.joints {
+        if j.joint_type == "start" || j.joint_type == "end" {
+            continue;
+        }
+        // Keep border, ferry terminal, and via joints only.
+        if matches!(
+            j.joint_type.as_str(),
+            "border_crossing" | "ferry_terminal" | "via"
+        ) {
+            let p = (j.lat, j.lon);
+            if hops
+                .last()
+                .is_none_or(|&q| haversine_m(q.0, q.1, p.0, p.1) > 500.0)
+            {
+                hops.push(p);
+            }
+        }
+    }
+    if hops
+        .last()
+        .is_none_or(|&q| haversine_m(q.0, q.1, end.0, end.1) > 500.0)
+    {
+        hops.push(end);
+    } else if let Some(last) = hops.last_mut() {
+        *last = end;
+    }
+    hops
+}
+
+/// Stage B: densify from persistent corridor skeletons.
+///
+/// Free travel-time coarse path, then ferry-exclusion alternatives + 2% near-equal
+/// (fewer km wins). Hop joints = border crossings, ferry terminals, user vias.
+/// No centroid densify and no even hop_deg sampling.
+pub fn try_stage_b_densify_from_skeletons(
+    pack_dirs: &[&Path],
+    waypoints: &[(f64, f64)],
+    profile: RoutingProfile,
+) -> Option<StageBDensify> {
+    if waypoints.len() < 2 {
+        return None;
+    }
+    let skels = load_skeletons_from_dirs(pack_dirs);
+    if skels.is_empty() {
+        log::info!(target: "NaviPlan", "stage_b densify: no persistent skeletons");
+        return None;
+    }
+    let border_osm = border_osm_from_skeletons(&skels);
+    let mut graph = merge_skeletons_to_route_graph(&skels, profile);
+    let snap_m = 35_000.0;
+    let (path, edges, _) = coarse_shortest_path(&mut graph, waypoints, snap_m)?;
+    let vias = &waypoints[1..waypoints.len().saturating_sub(1)];
+    let free = build_coarse_route_report(
+        "stage_b_free",
+        &graph,
+        &path,
+        &edges,
+        &border_osm,
+        vias,
+        0,
+        0,
+        "stage_b free",
+    );
+
+    // Candidates: free + exclude each ferry + no ferries.
+    let mut candidates: Vec<(String, CoarseRouteReport, Vec<NodeId>, Vec<usize>)> = Vec::new();
+    candidates.push(("free".into(), free.clone(), path.clone(), edges.clone()));
+
+    for leg in &free.ferries {
+        clear_access_forbidden(&mut graph);
+        forbid_ferry_edges_matching_leg(&mut graph, leg, 3_000.0);
+        if let Some((p, e, _)) = coarse_shortest_path(&mut graph, waypoints, snap_m) {
+            let r = build_coarse_route_report(
+                "stage_b_excl",
+                &graph,
+                &p,
+                &e,
+                &border_osm,
+                vias,
+                0,
+                0,
+                &format!("excl {}→{}", leg.from_terminal, leg.to_terminal),
+            );
+            candidates.push((
+                format!("excl_{}_{}", leg.from_terminal, leg.to_terminal),
+                r,
+                p,
+                e,
+            ));
+        }
+    }
+    clear_access_forbidden(&mut graph);
+    for e in graph.edges.iter_mut().filter(|e| e.is_ferry) {
+        e.access_forbidden = true;
+    }
+    if let Some((p, e, _)) = coarse_shortest_path(&mut graph, waypoints, snap_m) {
+        let r = build_coarse_route_report(
+            "stage_b_no_ferry",
+            &graph,
+            &p,
+            &e,
+            &border_osm,
+            vias,
+            0,
+            0,
+            "no ferries",
+        );
+        candidates.push(("no_ferries".into(), r, p, e));
+    }
+    clear_access_forbidden(&mut graph);
+
+    let best_min = candidates
+        .iter()
+        .map(|(_, r, _, _)| r.total_min)
+        .fold(f64::INFINITY, f64::min);
+    let near: Vec<_> = candidates
+        .iter()
+        .filter(|(_, r, _, _)| r.total_min <= best_min * 1.02)
+        .collect();
+    let pick = near
+        .into_iter()
+        .min_by(|a, b| {
+            a.1.total_km
+                .partial_cmp(&b.1.total_km)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| {
+                    a.1.total_min
+                        .partial_cmp(&b.1.total_min)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+        })?;
+
+    let start = waypoints[0];
+    let end = *waypoints.last().unwrap();
+    let hops = hops_from_report(&pick.1, start, end);
+    let coarse_path = path_latlon(&graph, &pick.2);
+    let ferries: Vec<String> = pick
+        .1
+        .ferries
+        .iter()
+        .map(|f| format!("{}→{}", f.from_terminal, f.to_terminal))
+        .collect();
+    let note = format!(
+        "stage_b pick={} km={:.1} min={:.1} hops={} skels={} near_equal_2pct",
+        pick.0,
+        pick.1.total_km,
+        pick.1.total_min,
+        hops.len().saturating_sub(1),
+        skels.len()
+    );
+    log::info!(target: "NaviPlan", "{note} ferries={ferries:?}");
+    Some(StageBDensify {
+        hops,
+        coarse_path,
+        total_min: pick.1.total_min,
+        total_km: pick.1.total_km,
+        ferries,
+        note,
+    })
+}
+
+/// True when a detailed (pack) graph would never carry synthetic skeleton stitch
+/// edges — those exist only in [`build_skeleton_from_pack`] under the name
+/// `skeleton_carriageway_link`.
+pub fn detailed_graph_has_skeleton_carriageway_link(graph: &RouteGraph) -> bool {
+    graph
+        .edges
+        .iter()
+        .any(|e| e.name.as_deref() == Some("skeleton_carriageway_link"))
 }
 
 #[cfg(test)]
@@ -1744,6 +1979,37 @@ mod tests {
         assert!(
             path.is_some(),
             "directed path must cross opposite carriageway stitch"
+        );
+    }
+
+    #[test]
+    fn detailed_pack_never_carries_skeleton_carriageway_link_name() {
+        // Synthetic stitch edges are created only inside build_skeleton_from_pack.
+        // Installed packs keep OSM names; Stage B hop graphs load packs only, so
+        // skeleton_carriageway_link must never appear on a detailed RouteGraph.
+        let pack = tiny_pack();
+        assert!(
+            pack.edge_name
+                .iter()
+                .all(|n| n.as_str() != "skeleton_carriageway_link"),
+            "pack edge names must not include skeleton_carriageway_link"
+        );
+        // Opposite-carriageway fixture adds stitch only in the skeleton builder.
+        let skel =
+            build_skeleton_from_pack(&pack, "europe/test", "test-pack-names", "car", &HashSet::new());
+        let stitch_in_skel = skel
+            .edge_name
+            .iter()
+            .any(|n| n.as_str() == "skeleton_carriageway_link");
+        let g = skeleton_to_route_graph(&skel, RoutingProfile::Car);
+        // tiny_pack has no parallel carriageways → no stitch → detailed stays clean.
+        assert!(
+            !stitch_in_skel,
+            "tiny_pack fixture must not invent carriageway stitch"
+        );
+        assert!(
+            !detailed_graph_has_skeleton_carriageway_link(&g),
+            "detailed hop graph must never expose skeleton_carriageway_link"
         );
     }
 }
