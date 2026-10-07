@@ -85,6 +85,179 @@ fn run_named(
     run_named_snap(name, graph, waypoints, border_osm, note, 35_000.0)
 }
 
+/// All ferry edges for the same crossing as `leg` (parallel piers / both dirs).
+/// Endpoints must match either orientation within `match_m` (Fehmarn has two
+/// Rødby OSM terminals ~100 m apart that share a name but not coordinates).
+fn ferry_edge_indices_for_leg(
+    graph: &driver_break_core::routing::graph::RouteGraph,
+    leg: &driver_break_core::routing::corridor_skeleton::CoarseFerryLeg,
+    match_m: f64,
+) -> Vec<usize> {
+    graph
+        .edges
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| {
+            if !e.is_ferry {
+                return false;
+            }
+            let fwd = haversine_m(e.start_lat, e.start_lon, leg.from_lat, leg.from_lon) < match_m
+                && haversine_m(e.end_lat, e.end_lon, leg.to_lat, leg.to_lon) < match_m;
+            let rev = haversine_m(e.start_lat, e.start_lon, leg.to_lat, leg.to_lon) < match_m
+                && haversine_m(e.end_lat, e.end_lon, leg.from_lat, leg.from_lon) < match_m;
+            fwd || rev
+        })
+        .map(|(i, _)| i)
+        .collect()
+}
+
+fn all_ferry_edge_indices(graph: &driver_break_core::routing::graph::RouteGraph) -> Vec<usize> {
+    graph
+        .edges
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.is_ferry)
+        .map(|(i, _)| i)
+        .collect()
+}
+
+fn with_forbidden_edges<R>(
+    graph: &mut driver_break_core::routing::graph::RouteGraph,
+    indices: &[usize],
+    f: impl FnOnce(&mut driver_break_core::routing::graph::RouteGraph) -> R,
+) -> R {
+    let mut saved = Vec::with_capacity(indices.len());
+    for &i in indices {
+        if let Some(e) = graph.edges.get_mut(i) {
+            saved.push((i, e.access_forbidden));
+            e.access_forbidden = true;
+        }
+    }
+    let out = f(graph);
+    for (i, prev) in saved {
+        if let Some(e) = graph.edges.get_mut(i) {
+            e.access_forbidden = prev;
+        }
+    }
+    out
+}
+
+/// Near-equal rule: among candidates within 2% of best total_min, fewest km wins.
+fn near_equal_pick<'a>(
+    candidates: &'a [(&'a str, &'a CoarseRouteReport)],
+) -> Option<(&'a str, &'a CoarseRouteReport)> {
+    let best_min = candidates
+        .iter()
+        .map(|(_, r)| r.total_min)
+        .fold(f64::INFINITY, f64::min);
+    if !best_min.is_finite() {
+        return None;
+    }
+    let near: Vec<_> = candidates
+        .iter()
+        .copied()
+        .filter(|(_, r)| r.total_min <= best_min * 1.02)
+        .collect();
+    near.into_iter()
+        .min_by(|a, b| {
+            a.1.total_km
+                .partial_cmp(&b.1.total_km)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| {
+                    a.1.total_min
+                        .partial_cmp(&b.1.total_min)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+        })
+}
+
+/// Step 2: re-search excluding each ferry on the free path, then no ferries.
+fn ferry_exclusion_alts(
+    label_prefix: &str,
+    graph: &mut driver_break_core::routing::graph::RouteGraph,
+    waypoints: &[(f64, f64)],
+    border_osm: &std::collections::HashSet<i64>,
+    free: &CoarseRouteReport,
+) -> Vec<(String, CoarseRouteReport)> {
+    let mut out = Vec::new();
+    let mut seen_sigs = std::collections::HashSet::new();
+    for (fi, leg) in free.ferries.iter().enumerate() {
+        // 3 km covers parallel pier OSM nodes on the same named crossing.
+        let idxs = ferry_edge_indices_for_leg(graph, leg, 3_000.0);
+        if idxs.is_empty() {
+            println!(
+                "{label_prefix} exclude_ferry[{fi}]: no matching edge for {}→{}",
+                leg.from_terminal, leg.to_terminal
+            );
+            continue;
+        }
+        let mut sig: Vec<usize> = idxs.clone();
+        sig.sort_unstable();
+        if !seen_sigs.insert(sig) {
+            continue;
+        }
+        let name = format!(
+            "{label_prefix}_excl_{}_{}",
+            leg.from_terminal.replace(' ', "_"),
+            leg.to_terminal.replace(' ', "_")
+        );
+        let note = format!(
+            "exclude ferry {}→{} ({} edges)",
+            leg.from_terminal, leg.to_terminal, idxs.len()
+        );
+        let t0 = Instant::now();
+        let report = with_forbidden_edges(graph, &idxs, |g| {
+            run_named_snap(&name, g, waypoints, border_osm, &note, 35_000.0)
+        });
+        let wall_ms = t0.elapsed().as_millis();
+        match report {
+            Some(r) => {
+                println!(
+                    "STEP2 {label_prefix} excl ferry {}→{}: km={:.3} total_min={:.1} \
+                     search_ms={} wall_ms={} ferries={}",
+                    leg.from_terminal,
+                    leg.to_terminal,
+                    r.total_km,
+                    r.total_min,
+                    r.search_ms,
+                    wall_ms,
+                    r.ferries.len()
+                );
+                out.push((name, r));
+            }
+            None => println!(
+                "STEP2 {label_prefix} excl ferry {}→{}: NO PATH wall_ms={wall_ms}",
+                leg.from_terminal, leg.to_terminal
+            ),
+        }
+    }
+    let all_ferry = all_ferry_edge_indices(graph);
+    let name = format!("{label_prefix}_no_ferries");
+    let t0 = Instant::now();
+    let report = with_forbidden_edges(graph, &all_ferry, |g| {
+        run_named_snap(
+            &name,
+            g,
+            waypoints,
+            border_osm,
+            &format!("no ferries ({} edges forbidden)", all_ferry.len()),
+            35_000.0,
+        )
+    });
+    let wall_ms = t0.elapsed().as_millis();
+    match report {
+        Some(r) => {
+            println!(
+                "STEP2 {label_prefix} no_ferries: km={:.3} total_min={:.1} search_ms={} wall_ms={}",
+                r.total_km, r.total_min, r.search_ms, wall_ms
+            );
+            out.push((name, r));
+        }
+        None => println!("STEP2 {label_prefix} no_ferries: NO PATH wall_ms={wall_ms}"),
+    }
+    out
+}
+
 fn run_named_snap(
     name: &str,
     graph: &mut driver_break_core::routing::graph::RouteGraph,
@@ -122,17 +295,15 @@ fn run_named_snap(
         let Some(e) = graph.edges.get(ei) else {
             continue;
         };
+        let tw = driver_break_core::routing::graph::time_base_weight_for_edge(e);
         if e.is_ferry {
-            ferry_astar_m += e.base_weight;
-            let drive = driver_break_core::routing::graph::ferry_drive_equiv_m_per_s();
-            let board_m =
-                driver_break_core::routing::graph::FERRY_CAR_BOARDING_PENALTY_MIN * 60.0 * drive;
-            // Consecutive ferry edges: boarding counted in report ferries; here
-            // sum embedded boarding from each ferry edge weight.
-            ferry_boarding_min += driver_break_core::routing::graph::FERRY_CAR_BOARDING_PENALTY_MIN;
-            ferry_crossing_min += ((e.base_weight - board_m).max(0.0) / drive / 60.0).max(0.0);
+            ferry_astar_m += tw;
+            let (cross, wait) =
+                driver_break_core::routing::graph::ferry_crossing_and_wait_min(e);
+            ferry_boarding_min += wait;
+            ferry_crossing_min += cross;
         } else {
-            road_astar_m += e.base_weight;
+            road_astar_m += tw;
             road_length_m += e.length_m;
         }
         if e.is_toll {
@@ -363,6 +534,17 @@ fn probe_aga_ferries(pack_dir: Option<&Path>, skels: &[CorridorSkeletonFile]) {
 }
 
 #[derive(Serialize)]
+struct NearEqualOutcome {
+    pick_name: String,
+    pick_km: f64,
+    pick_total_min: f64,
+    best_time_min: f64,
+    within_2pct: Vec<String>,
+    ferries: Vec<String>,
+    note: String,
+}
+
+#[derive(Serialize)]
 struct OutFile {
     note: String,
     peak_rss_mb: u64,
@@ -372,9 +554,13 @@ struct OutFile {
     bevensen_forced_jutland_oresund: Option<CoarseRouteReport>,
     bevensen_forced_jutland_hh: Option<CoarseRouteReport>,
     bevensen_forced_ors_corridor: Option<CoarseRouteReport>,
+    bevensen_ferry_exclusion_alts: Vec<CoarseRouteReport>,
+    bevensen_near_equal: Option<NearEqualOutcome>,
     aga: Option<CoarseRouteReport>,
     aga_force_kvanndal_utne: Option<CoarseRouteReport>,
     aga_force_kinsarvik_utne: Option<CoarseRouteReport>,
+    aga_ferry_exclusion_alts: Vec<CoarseRouteReport>,
+    aga_near_equal: Option<NearEqualOutcome>,
 }
 
 fn main() {
@@ -531,6 +717,108 @@ fn main() {
         "forced Kinsarvik–Utne",
     );
 
+    // Step 2: ferry-exclusion alternatives + near-equal (2% time → fewer km).
+    let bevensen_excl = if let Some(ref free) = chosen {
+        ferry_exclusion_alts(
+            "bevensen",
+            &mut graph,
+            &[bevensen, vaga, dalsoren],
+            &border_osm,
+            free,
+        )
+    } else {
+        Vec::new()
+    };
+    let aga_excl = if let Some(ref free) = aga_report {
+        ferry_exclusion_alts(
+            "aga",
+            &mut graph,
+            &[breneriroa, aga],
+            &border_osm,
+            free,
+        )
+    } else {
+        Vec::new()
+    };
+
+    let bevensen_near_equal = {
+        let mut cands: Vec<(&str, &CoarseRouteReport)> = Vec::new();
+        if let Some(ref r) = chosen {
+            cands.push(("free", r));
+        }
+        for (n, r) in &bevensen_excl {
+            cands.push((n.as_str(), r));
+        }
+        near_equal_pick(&cands).map(|(name, r)| {
+            let best_time = cands
+                .iter()
+                .map(|(_, x)| x.total_min)
+                .fold(f64::INFINITY, f64::min);
+            let within: Vec<String> = cands
+                .iter()
+                .filter(|(_, x)| x.total_min <= best_time * 1.02)
+                .map(|(n, x)| format!("{n} km={:.1} min={:.1}", x.total_km, x.total_min))
+                .collect();
+            let ferries: Vec<String> = r
+                .ferries
+                .iter()
+                .map(|f| format!("{}→{}", f.from_terminal, f.to_terminal))
+                .collect();
+            println!(
+                "NEAR_EQUAL bevensen pick={name} km={:.3} total_min={:.1} ferries={ferries:?}",
+                r.total_km, r.total_min
+            );
+            NearEqualOutcome {
+                pick_name: name.to_string(),
+                pick_km: r.total_km,
+                pick_total_min: r.total_min,
+                best_time_min: best_time,
+                within_2pct: within,
+                ferries,
+                note: "within 2% of best total_min → fewer km; whole-alt compare".into(),
+            }
+        })
+    };
+
+    let aga_near_equal = {
+        let mut cands: Vec<(&str, &CoarseRouteReport)> = Vec::new();
+        if let Some(ref r) = aga_report {
+            cands.push(("free", r));
+        }
+        for (n, r) in &aga_excl {
+            cands.push((n.as_str(), r));
+        }
+        near_equal_pick(&cands).map(|(name, r)| {
+            let best_time = cands
+                .iter()
+                .map(|(_, x)| x.total_min)
+                .fold(f64::INFINITY, f64::min);
+            let within: Vec<String> = cands
+                .iter()
+                .filter(|(_, x)| x.total_min <= best_time * 1.02)
+                .map(|(n, x)| format!("{n} km={:.1} min={:.1}", x.total_km, x.total_min))
+                .collect();
+            let ferries: Vec<String> = r
+                .ferries
+                .iter()
+                .map(|f| format!("{}→{}", f.from_terminal, f.to_terminal))
+                .collect();
+            println!(
+                "NEAR_EQUAL aga pick={name} km={:.3} total_min={:.1} ferries={ferries:?}",
+                r.total_km, r.total_min
+            );
+            NearEqualOutcome {
+                pick_name: name.to_string(),
+                pick_km: r.total_km,
+                pick_total_min: r.total_min,
+                best_time_min: best_time,
+                within_2pct: within,
+                ferries,
+                note: "within 2% of best total_min → fewer km; whole-alt compare".into(),
+            }
+        })
+    };
+
     let print_report = |label: &str, r: &CoarseRouteReport| {
         println!(
             "{label}: km={:.3} drive_min={:.1} ferry_min={:.1} total_min={:.1} \
@@ -591,8 +879,13 @@ fn main() {
         }
     }
 
+    let bevensen_ferry_exclusion_alts: Vec<CoarseRouteReport> =
+        bevensen_excl.into_iter().map(|(_, r)| r).collect();
+    let aga_ferry_exclusion_alts: Vec<CoarseRouteReport> =
+        aga_excl.into_iter().map(|(_, r)| r).collect();
+
     let out = OutFile {
-        note: "FU16 Stage A directed travel-time coarse; Stage B not started".into(),
+        note: "FU19 travel-time coarse + ferry-exclusion near-equal; Stage B gated".into(),
         peak_rss_mb: peak_rss_mb(),
         inter_region_ferries_sample: inter.len(),
         bevensen_chosen: chosen,
@@ -600,9 +893,13 @@ fn main() {
         bevensen_forced_jutland_oresund: forced_oresund,
         bevensen_forced_jutland_hh: forced_hh,
         bevensen_forced_ors_corridor: forced_ors,
+        bevensen_ferry_exclusion_alts,
+        bevensen_near_equal,
         aga: aga_report,
         aga_force_kvanndal_utne: aga_via_kvan,
         aga_force_kinsarvik_utne: aga_via_kins,
+        aga_ferry_exclusion_alts,
+        aga_near_equal,
     };
     let f = std::fs::File::create(&out_json).expect("create out");
     serde_json::to_writer_pretty(f, &out).expect("write json");
