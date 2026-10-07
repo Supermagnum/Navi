@@ -82,11 +82,22 @@ fn run_named(
     border_osm: &std::collections::HashSet<i64>,
     note: &str,
 ) -> Option<CoarseRouteReport> {
+    run_named_snap(name, graph, waypoints, border_osm, note, 35_000.0)
+}
+
+fn run_named_snap(
+    name: &str,
+    graph: &mut driver_break_core::routing::graph::RouteGraph,
+    waypoints: &[(f64, f64)],
+    border_osm: &std::collections::HashSet<i64>,
+    note: &str,
+    snap_m: f64,
+) -> Option<CoarseRouteReport> {
     let t0 = Instant::now();
-    let (path, edges, _cost) = coarse_shortest_path(graph, waypoints, 35_000.0)?;
+    let (path, edges, _cost) = coarse_shortest_path(graph, waypoints, snap_m)?;
     let search_ms = t0.elapsed().as_millis() as u64;
     let vias = &waypoints[1..waypoints.len().saturating_sub(1)];
-    Some(build_coarse_route_report(
+    let mut report = build_coarse_route_report(
         name,
         graph,
         &path,
@@ -96,7 +107,54 @@ fn run_named(
         search_ms,
         peak_rss_mb(),
         note,
-    ))
+    );
+    // Non-travel-time cost terms (tolls/tunnels allowed → no extra A* penalty).
+    let mut ferry_boarding_min = 0.0;
+    let mut ferry_crossing_min = 0.0;
+    let mut ferry_astar_m = 0.0;
+    let mut road_astar_m = 0.0;
+    let mut road_length_m = 0.0;
+    let mut toll_edges = 0u32;
+    let mut tunnel_edges = 0u32;
+    let mut toll_length_m = 0.0;
+    let mut tunnel_length_m = 0.0;
+    for &ei in &edges {
+        let Some(e) = graph.edges.get(ei) else {
+            continue;
+        };
+        if e.is_ferry {
+            ferry_astar_m += e.base_weight;
+            let drive = driver_break_core::routing::graph::ferry_drive_equiv_m_per_s();
+            let board_m =
+                driver_break_core::routing::graph::FERRY_CAR_BOARDING_PENALTY_MIN * 60.0 * drive;
+            // Consecutive ferry edges: boarding counted in report ferries; here
+            // sum embedded boarding from each ferry edge weight.
+            ferry_boarding_min += driver_break_core::routing::graph::FERRY_CAR_BOARDING_PENALTY_MIN;
+            ferry_crossing_min += ((e.base_weight - board_m).max(0.0) / drive / 60.0).max(0.0);
+        } else {
+            road_astar_m += e.base_weight;
+            road_length_m += e.length_m;
+        }
+        if e.is_toll {
+            toll_edges += 1;
+            toll_length_m += e.length_m;
+        }
+        if e.is_tunnel {
+            tunnel_edges += 1;
+            tunnel_length_m += e.length_m;
+        }
+    }
+    report.note = format!(
+        "{}; cost_terms: road_astar_m={road_astar_m:.0} ferry_astar_m={ferry_astar_m:.0} \
+         ferry_board_min_embedded={ferry_boarding_min:.0} ferry_cross_min={ferry_crossing_min:.1} \
+         road_km={:.2} toll_edges={toll_edges} toll_km={:.2} tunnel_edges={tunnel_edges} \
+         tunnel_km={:.2} toll_tunnel_astar_penalty=0 (allowed)",
+        note,
+        road_length_m / 1000.0,
+        toll_length_m / 1000.0,
+        tunnel_length_m / 1000.0
+    );
+    Some(report)
 }
 
 fn connectivity_checks(skels: &[CorridorSkeletonFile]) {
@@ -150,6 +208,63 @@ fn connectivity_checks(skels: &[CorridorSkeletonFile]) {
     println!(
         "connectivity: SH-DK shared_osm={} padborg_shared≈{padborg_n} fehmarn_join={fehmarn}",
         common.len()
+    );
+
+    // Land inbound to Puttgarden ferry terminals (must exist after pier-stub keep).
+    let mut putt_ferry_nodes = Vec::new();
+    for i in 0..sh.node_ids.len() {
+        if haversine_m(sh.node_lats[i], sh.node_lons[i], 54.5028, 11.2282) < 500.0 {
+            let is_term = sh.node_is_ferry_terminal.get(i).copied().unwrap_or(0) != 0;
+            if is_term {
+                putt_ferry_nodes.push(i);
+            }
+        }
+    }
+    let mut land_in = 0u32;
+    for &term in &putt_ferry_nodes {
+        for i in 0..sh.edge_src.len() {
+            if sh.edge_is_ferry.get(i).copied().unwrap_or(0) != 0 {
+                continue;
+            }
+            if sh.edge_tgt[i] as usize == term || sh.edge_src[i] as usize == term {
+                land_in += 1;
+            }
+        }
+    }
+    println!(
+        "connectivity: Puttgarden ferry_terminal_nodes={} land_touch_edges={}",
+        putt_ferry_nodes.len(),
+        land_in
+    );
+
+    // Landmark presence on DK skeleton (Farø / E47–E20 / Øresund).
+    let mut faro = 0u32;
+    let mut e47e20 = 0u32;
+    let mut oresund = 0u32;
+    for i in 0..dk.edge_src.len() {
+        let s = dk.edge_src[i] as usize;
+        let t = dk.edge_tgt[i] as usize;
+        let midlat = (dk.node_lats[s] + dk.node_lats[t]) / 2.0;
+        let midlon = (dk.node_lons[s] + dk.node_lons[t]) / 2.0;
+        let reff = dk.edge_road_ref.get(i).map(|s| s.as_str()).unwrap_or("");
+        if (54.90..=55.05).contains(&midlat) && (11.85..=12.15).contains(&midlon) {
+            if reff.contains("E 47") || reff.contains("E47") {
+                faro += 1;
+            }
+        }
+        if (55.55..=55.70).contains(&midlat) && (12.40..=12.70).contains(&midlon) {
+            if reff.contains("E 20") || reff.contains("E20") {
+                e47e20 += 1;
+            }
+        }
+        if (55.50..=55.65).contains(&midlat) && (12.70..=13.05).contains(&midlon) {
+            if dk.edge_highway.get(i).map(|s| s.as_str()) == Some("motorway") {
+                oresund += 1;
+            }
+        }
+    }
+    println!(
+        "connectivity: DK Farø_E47_edges≈{faro} CPH_E20_edges≈{e47e20} Øresund_mw_edges≈{oresund}"
     );
 }
 
@@ -256,6 +371,7 @@ struct OutFile {
     bevensen_forced_fehmarn_a1: Option<CoarseRouteReport>,
     bevensen_forced_jutland_oresund: Option<CoarseRouteReport>,
     bevensen_forced_jutland_hh: Option<CoarseRouteReport>,
+    bevensen_forced_ors_corridor: Option<CoarseRouteReport>,
     aga: Option<CoarseRouteReport>,
     aga_force_kvanndal_utne: Option<CoarseRouteReport>,
     aga_force_kinsarvik_utne: Option<CoarseRouteReport>,
@@ -311,17 +427,18 @@ fn main() {
         "directed travel-time coarse on persistent skeletons; joints=border+ferry+via",
     );
 
-    // Forced: A1 corridor + Puttgarden–Rødby. Use exact ferry terminal
-    // coordinates (known connected by the Fehmarn edge at cost 73333).
+    // Forced: A1 corridor + Puttgarden–Rødby. Tight snap so terminals do not
+    // collapse onto each other (19 km apart; 35 km snap was unsafe).
     let a1_near_lubeck = (53.87, 10.69);
     let puttgarden = (54.5028164, 11.2282207);
     let rodby = (54.6543072, 11.3508124);
-    let forced_fehmarn = run_named(
+    let forced_fehmarn = run_named_snap(
         "forced_a1_puttgarden_rodby",
         &mut graph,
         &[bevensen, a1_near_lubeck, puttgarden, rodby, vaga, dalsoren],
         &border_osm,
         "forced via A1/Lübeck and Puttgarden–Rødby ferry terminals",
+        8_000.0,
     );
 
     // Forced: Jutland + Storebælt + Øresund bridge
@@ -344,6 +461,32 @@ fn main() {
         &[bevensen, padborg, storebaelt, helsingor, vaga, dalsoren],
         &border_osm,
         "forced via Padborg, Storebælt, Helsingør (HH ferry)",
+    );
+
+    // Forced ORS corridor: A1, Puttgarden–Rødby, E47, E20, Øresund bridge, E6.
+    let faro = (54.95, 11.99);
+    let koege_e47 = (55.45, 12.12);
+    let cph_e20 = (55.62, 12.52);
+    let e6_gothenburg = (57.70, 12.00);
+    let forced_ors = run_named_snap(
+        "forced_ors_corridor",
+        &mut graph,
+        &[
+            bevensen,
+            a1_near_lubeck,
+            puttgarden,
+            rodby,
+            faro,
+            koege_e47,
+            cph_e20,
+            oresund,
+            e6_gothenburg,
+            vaga,
+            dalsoren,
+        ],
+        &border_osm,
+        "forced ORS corridor: A1, Puttgarden–Rødby, E47, E20, Øresund, E6",
+        8_000.0,
     );
 
     // Breneriroa → Aga (FU14 waypoints); ferry naming on Hardanger.
@@ -422,6 +565,7 @@ fn main() {
         ("fehmarn", &forced_fehmarn),
         ("oresund", &forced_oresund),
         ("hh", &forced_hh),
+        ("ors", &forced_ors),
         ("aga", &aga_report),
         ("aga_kvan", &aga_via_kvan),
         ("aga_kins", &aga_via_kins),
@@ -441,6 +585,7 @@ fn main() {
         bevensen_forced_fehmarn_a1: forced_fehmarn,
         bevensen_forced_jutland_oresund: forced_oresund,
         bevensen_forced_jutland_hh: forced_hh,
+        bevensen_forced_ors_corridor: forced_ors,
         aga: aga_report,
         aga_force_kvanndal_utne: aga_via_kvan,
         aga_force_kinsarvik_utne: aga_via_kins,

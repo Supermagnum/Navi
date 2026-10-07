@@ -1,9 +1,11 @@
 //! Persistent major-road corridor skeleton (Follow-up 13/16 Stage A).
 //!
 //! Built from installed graph packs: motorway, trunk, primary, ferries, plus
-//! secondary only when needed to reach a ferry terminal or a border-crossing
-//! node. Skeletons join across regions on shared OSM node ids (land borders)
-//! and on ferries whose terminals lie in two different regions.
+//! pier/approach edges that touch a ferry terminal (any highway class — same
+//! rule as pack densify pier stubs), secondary that touch a ferry terminal or
+//! border-crossing node, and secondary approaches to borders. Skeletons join
+//! across regions on shared OSM node ids (land borders) and on ferries whose
+//! terminals lie in two different regions.
 //!
 //! Coarse search uses the same [`crate::routing::graph::RouteOptions`] as the
 //! detailed profile (directed edges, `base_weight` travel time, ferries from
@@ -19,7 +21,7 @@ use crate::routing::indexed::{densify_skeleton_edge, FlatGraphPack, GRAPH_FORMAT
 use geo_types::Coord;
 use osm4routing::{Node, NodeId};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -161,6 +163,21 @@ pub fn secondary_connects_anchor(
     anchors.contains(&src) || anchors.contains(&tgt)
 }
 
+/// True when a non-ferry edge touches a ferry terminal (pier / harbour approach).
+/// Matches pack densify: keep the stub regardless of highway class so terminals
+/// are not left reachable only via the water edge.
+pub fn pier_connects_ferry_terminal(
+    is_ferry: bool,
+    src: u32,
+    tgt: u32,
+    ferry_terminals: &HashSet<u32>,
+) -> bool {
+    if is_ferry {
+        return false;
+    }
+    ferry_terminals.contains(&src) || ferry_terminals.contains(&tgt)
+}
+
 /// OSM ids of nodes that appear in at least two region id-sets (land borders
 /// and shared ferry terminals).
 pub fn shared_osm_ids_across_regions(region_node_ids: &[HashSet<i64>]) -> HashSet<i64> {
@@ -195,11 +212,24 @@ pub fn major_node_osm_ids(pack: &FlatGraphPack) -> HashSet<i64> {
     out
 }
 
+/// Max land hops when growing pier approaches from a ferry terminal to the
+/// major (motorway/trunk/primary) skeleton. Harbour stubs are often 2–4 edges
+/// of service/unclassified before they meet a primary.
+pub const FERRY_APPROACH_MAX_HOPS: usize = 12;
+
+/// If a ferry terminal still has no land path to a major road after pier growth,
+/// stitch a synthetic approach to the nearest major node within this radius.
+/// Puttgarden pier OSM nodes sit ~1.5 km from B 207 / Fährhafenstraße when the
+/// intervening service chain is missing from pack+overlay, so 750 m was too tight.
+pub const FERRY_STITCH_MAX_M: f64 = 2_500.0;
+
 /// Build skeleton membership for one flat pack tile/region.
 ///
 /// Pass 1: motorway/trunk/primary + ferry (same as densify skeleton).
 /// Pass 2: mark ferry terminals and nodes whose OSM ids are in `border_osm_ids`.
-/// Pass 3: add secondary edges that touch those anchors.
+/// Pass 3: grow land approaches from each ferry terminal through any non-ferry
+///         highway until a major-skeleton node is reached (hop-capped).
+/// Pass 4: secondary edges that touch ferry or border anchors.
 pub fn select_skeleton_edge_indices(
     pack: &FlatGraphPack,
     border_osm_ids: &HashSet<i64>,
@@ -207,6 +237,7 @@ pub fn select_skeleton_edge_indices(
     let n = pack.edge_src.len();
     let mut major: HashSet<usize> = HashSet::new();
     let mut ferry_terminals: HashSet<u32> = HashSet::new();
+    let mut major_nodes: HashSet<u32> = HashSet::new();
     for i in 0..n {
         let hw = pack.edge_highway[i].as_str();
         let ferry = pack.edge_is_ferry.get(i).copied().unwrap_or(0) != 0;
@@ -215,6 +246,9 @@ pub fn select_skeleton_edge_indices(
             if ferry {
                 ferry_terminals.insert(pack.edge_src[i]);
                 ferry_terminals.insert(pack.edge_tgt[i]);
+            } else {
+                major_nodes.insert(pack.edge_src[i]);
+                major_nodes.insert(pack.edge_tgt[i]);
             }
         }
     }
@@ -227,6 +261,63 @@ pub fn select_skeleton_edge_indices(
     let mut anchors = ferry_terminals.clone();
     anchors.extend(border_nodes.iter().copied());
     let mut keep = major;
+
+    // Undirected adjacency of low-class pier approaches only (service /
+    // unclassified / residential / tertiary / …). Do not grow through
+    // secondary — those use the explicit anchor rule below.
+    let mut land_adj: HashMap<u32, Vec<(u32, usize)>> = HashMap::new();
+    for i in 0..n {
+        if pack.edge_is_ferry.get(i).copied().unwrap_or(0) != 0 {
+            continue;
+        }
+        let hw = pack.edge_highway[i].as_str();
+        if densify_skeleton_edge(hw, false) || matches!(hw, "secondary" | "secondary_link") {
+            continue;
+        }
+        let s = pack.edge_src[i];
+        let t = pack.edge_tgt[i];
+        land_adj.entry(s).or_default().push((t, i));
+        land_adj.entry(t).or_default().push((s, i));
+    }
+    // BFS from each ferry terminal through land edges until major nodes.
+    for &term in &ferry_terminals {
+        let mut visited: HashSet<u32> = HashSet::from([term]);
+        let mut queue: VecDeque<(u32, usize)> = VecDeque::from([(term, 0usize)]);
+        while let Some((u, hops)) = queue.pop_front() {
+            if hops >= FERRY_APPROACH_MAX_HOPS {
+                continue;
+            }
+            let Some(neigh) = land_adj.get(&u) else {
+                continue;
+            };
+            for &(v, ei) in neigh {
+                keep.insert(ei);
+                if major_nodes.contains(&v) {
+                    // Reached the densify skeleton; stop along this branch.
+                    continue;
+                }
+                if visited.insert(v) {
+                    queue.push_back((v, hops + 1));
+                }
+            }
+        }
+    }
+    // Still keep one-hop pier stubs explicitly (covers terminals with no major
+    // within hop budget that only have a single approach edge).
+    for i in 0..n {
+        if keep.contains(&i) {
+            continue;
+        }
+        let ferry = pack.edge_is_ferry.get(i).copied().unwrap_or(0) != 0;
+        if pier_connects_ferry_terminal(
+            ferry,
+            pack.edge_src[i],
+            pack.edge_tgt[i],
+            &ferry_terminals,
+        ) {
+            keep.insert(i);
+        }
+    }
     for i in 0..n {
         if keep.contains(&i) {
             continue;
@@ -318,7 +409,7 @@ pub fn build_skeleton_from_pack(
         edge_is_toll.push(pack.edge_is_toll.get(i).copied().unwrap_or(0));
     }
     let build_ms = t0.elapsed().as_millis() as u64;
-    CorridorSkeletonFile {
+    let mut skel = CorridorSkeletonFile {
         format_version: CORRIDOR_SKELETON_FORMAT_VERSION,
         pack_format_version: GRAPH_FORMAT_VERSION,
         region_id: region_id.to_string(),
@@ -347,7 +438,93 @@ pub fn build_skeleton_from_pack(
         edge_is_ferry,
         edge_is_tunnel,
         edge_is_toll,
+    };
+    stitch_orphaned_ferry_terminals(&mut skel, FERRY_STITCH_MAX_M);
+    skel
+}
+
+/// When pier stubs never meet motorway/trunk/primary (common at ferry harbours
+/// where overlay approaches and pack primaries share no OSM id), add a short
+/// synthetic land edge from the terminal to the nearest major node.
+pub fn stitch_orphaned_ferry_terminals(skel: &mut CorridorSkeletonFile, max_m: f64) -> u32 {
+    let n = skel.node_ids.len();
+    if n == 0 || skel.edge_src.is_empty() {
+        return 0;
     }
+    let mut major_nodes: HashSet<usize> = HashSet::new();
+    let mut land_und: HashMap<usize, Vec<usize>> = HashMap::new();
+    for i in 0..skel.edge_src.len() {
+        let s = skel.edge_src[i] as usize;
+        let t = skel.edge_tgt[i] as usize;
+        let fer = skel.edge_is_ferry.get(i).copied().unwrap_or(0) != 0;
+        if !fer {
+            land_und.entry(s).or_default().push(t);
+            land_und.entry(t).or_default().push(s);
+            let hw = skel.edge_highway.get(i).map(|s| s.as_str()).unwrap_or("");
+            if densify_skeleton_edge(hw, false) {
+                major_nodes.insert(s);
+                major_nodes.insert(t);
+            }
+        }
+    }
+    let terms: Vec<usize> = (0..n)
+        .filter(|&i| skel.node_is_ferry_terminal.get(i).copied().unwrap_or(0) != 0)
+        .collect();
+    let mut stitched = 0u32;
+    for &term in &terms {
+        // Land BFS: already reaches a major?
+        let mut seen = HashSet::from([term]);
+        let mut q = VecDeque::from([term]);
+        let mut reaches_major = major_nodes.contains(&term);
+        while let Some(u) = q.pop_front() {
+            if major_nodes.contains(&u) {
+                reaches_major = true;
+                break;
+            }
+            for &v in land_und.get(&u).into_iter().flatten() {
+                if seen.insert(v) {
+                    q.push_back(v);
+                }
+            }
+        }
+        if reaches_major {
+            continue;
+        }
+        let tlat = skel.node_lats[term];
+        let tlon = skel.node_lons[term];
+        let mut best: Option<(f64, usize)> = None;
+        for &mj in &major_nodes {
+            let d = haversine_m(tlat, tlon, skel.node_lats[mj], skel.node_lons[mj]);
+            if d <= max_m && best.map(|(bd, _)| d < bd).unwrap_or(true) {
+                best = Some((d, mj));
+            }
+        }
+        let Some((len_m, mj)) = best else {
+            continue;
+        };
+        // Bidirectional synthetic approach (service).
+        for (s, t) in [(term as u32, mj as u32), (mj as u32, term as u32)] {
+            skel.edge_src.push(s);
+            skel.edge_tgt.push(t);
+            skel.edge_length_m.push(len_m);
+            skel.edge_base_weight.push(len_m);
+            skel.edge_highway.push("service".into());
+            skel.edge_name.push("ferry_terminal_stitch".into());
+            skel.edge_road_ref.push(String::new());
+            skel.edge_is_oneway.push(0);
+            skel.edge_is_ferry.push(0);
+            skel.edge_is_tunnel.push(0);
+            skel.edge_is_toll.push(0);
+        }
+        land_und.entry(term).or_default().push(mj);
+        land_und.entry(mj).or_default().push(term);
+        stitched += 1;
+    }
+    if stitched > 0 {
+        skel.edge_count = skel.edge_src.len() as u32;
+        skel.node_count = skel.node_ids.len() as u32;
+    }
+    stitched
 }
 
 /// Merge several skeleton fragments (e.g. per-tile) that share the same region.
@@ -356,7 +533,9 @@ pub fn merge_skeleton_files(parts: Vec<CorridorSkeletonFile>) -> Option<Corridor
         return None;
     }
     if parts.len() == 1 {
-        return parts.into_iter().next();
+        let mut skel = parts.into_iter().next().unwrap();
+        stitch_orphaned_ferry_terminals(&mut skel, FERRY_STITCH_MAX_M);
+        return Some(skel);
     }
     let first = &parts[0];
     let mut pack = FlatGraphPack {
@@ -504,6 +683,7 @@ pub fn merge_skeleton_files(parts: Vec<CorridorSkeletonFile>) -> Option<Corridor
     }
     skel.border_node_count = skel.node_is_border.iter().filter(|&&b| b != 0).count() as u32;
     skel.build_ms = build_ms;
+    stitch_orphaned_ferry_terminals(&mut skel, FERRY_STITCH_MAX_M);
     Some(skel)
 }
 
@@ -1129,6 +1309,102 @@ mod tests {
             !keep.contains(&3),
             "secondary far from ferry/border must drop"
         );
+    }
+
+    #[test]
+    fn unclassified_pier_stub_to_ferry_kept() {
+        let mut pack = tiny_pack();
+        // Replace far secondary with an unclassified pier on the ferry terminal.
+        pack.edge_highway[3] = "unclassified".into();
+        pack.edge_src[3] = 1; // ferry terminal
+        pack.edge_tgt[3] = 3;
+        let (keep, ferry_term, _) = select_skeleton_edge_indices(&pack, &HashSet::new());
+        assert!(ferry_term.contains(&1));
+        assert!(
+            keep.contains(&3),
+            "unclassified pier touching ferry terminal must stay"
+        );
+    }
+
+    #[test]
+    fn multi_hop_service_chain_to_primary_kept() {
+        // ferry terminal --service--> mid --unclassified--> primary network
+        let n_e = 4;
+        let pack = FlatGraphPack {
+            has_delta_h: false,
+            node_ids: vec![100, 101, 102, 103],
+            node_lats: vec![54.50, 54.501, 54.502, 54.51],
+            node_lons: vec![11.22, 11.221, 11.222, 11.25],
+            edge_src: vec![0, 1, 1, 2],
+            edge_tgt: vec![1, 0, 2, 3],
+            edge_length_m: vec![50.0, 50.0, 80.0, 200.0],
+            edge_base_weight: vec![50.0, 50.0, 80.0, 200.0],
+            edge_delta_h_m: vec![],
+            edge_start_lat: vec![54.50, 54.501, 54.501, 54.502],
+            edge_start_lon: vec![11.22, 11.221, 11.221, 11.222],
+            edge_end_lat: vec![54.501, 54.50, 54.502, 54.51],
+            edge_end_lon: vec![11.221, 11.22, 11.222, 11.25],
+            edge_highway: vec![
+                "primary".into(), // unused major elsewhere? use as ferry below
+                "primary".into(),
+                "service".into(),
+                "unclassified".into(),
+            ],
+            edge_maxspeed_kmh: nan_f64(n_e),
+            edge_maxspeed_practical_kmh: nan_f64(n_e),
+            edge_maxspeed_advisory_kmh: nan_f64(n_e),
+            edge_maxspeed_type: empty_str(n_e),
+            edge_maxspeed_variable: zeros_u8(n_e),
+            edge_minspeed_kmh: nan_f64(n_e),
+            edge_name: empty_str(n_e),
+            edge_road_ref: empty_str(n_e),
+            edge_is_motorroad: zeros_u8(n_e),
+            edge_is_expressway: zeros_u8(n_e),
+            edge_is_oneway: zeros_u8(n_e),
+            edge_lanes: zeros_u8(n_e),
+            edge_maxweight_t: nan_f64(n_e),
+            edge_maxaxleload_t: nan_f64(n_e),
+            edge_maxbogieweight_t: nan_f64(n_e),
+            edge_maxheight_m: nan_f64(n_e),
+            edge_maxwidth_m: nan_f64(n_e),
+            edge_maxlength_m: nan_f64(n_e),
+            edge_is_toll: zeros_u8(n_e),
+            // edge0 primary 0-1, edge1 ferry 1-0 (terminals 0,1), edge2 service 1-2, edge3 unclass 2-3
+            // Wait: need primary that is NOT the ferry. Restructure:
+            // nodes: 0=ferry_term, 1=mid, 2=primary_a, 3=primary_b
+            // Actually rebuild below via mutation after — keep simple assert on tiny_pack growth.
+            edge_is_ferry: vec![0, 1, 0, 0],
+            edge_is_tunnel: zeros_u8(n_e),
+            edge_is_roundabout: zeros_u8(n_e),
+            edge_is_boardwalk: zeros_u8(n_e),
+            edge_shape_offsets: vec![0; n_e + 1],
+            edge_shape_lons: vec![],
+            edge_shape_lats: vec![],
+            edge_motor_vehicle_conditional: empty_str(n_e),
+            edge_access_conditional: empty_str(n_e),
+            edge_maxspeed_conditional: empty_str(n_e),
+            edge_access_forbidden: zeros_u8(n_e),
+            edge_surface_quality: zeros_u8(n_e),
+            node_access_blocked: zeros_u8(4),
+        };
+        // Fix topology: edge0 = primary between 2-3 (major), edge1 = ferry 0-X need partner
+        // Use: 0 ferry_term, 3 ferry other; 0-1 service, 1-2 unclass, 2-3 primary
+        let mut pack = pack;
+        pack.edge_src = vec![2, 0, 0, 1];
+        pack.edge_tgt = vec![3, 3, 1, 2];
+        pack.edge_highway = vec![
+            "primary".into(),
+            "".into(), // ferry
+            "service".into(),
+            "unclassified".into(),
+        ];
+        pack.edge_is_ferry = vec![0, 1, 0, 0];
+        let (keep, ferry_term, _) = select_skeleton_edge_indices(&pack, &HashSet::new());
+        assert!(ferry_term.contains(&0));
+        assert!(keep.contains(&0), "primary must stay");
+        assert!(keep.contains(&1), "ferry must stay");
+        assert!(keep.contains(&2), "service approach hop must stay");
+        assert!(keep.contains(&3), "unclassified hop to primary must stay");
     }
 
     #[test]

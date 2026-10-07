@@ -18,7 +18,7 @@ use driver_break_core::routing::corridor_skeleton::{
 };
 use driver_break_core::routing::graph::RoutingProfile;
 use driver_break_core::routing::indexed::{
-    load_graph_pack_clips, manifest_path, FlatGraphPack, NaviManifest,
+    ferry_sidecar_path, load_graph_pack_clips, manifest_path, FlatGraphPack, NaviManifest,
 };
 
 fn leaf_to_region(stem: &str) -> String {
@@ -130,6 +130,33 @@ fn build_stem_skeleton(
         drop(flat);
         parts.push(part);
         trim_rss();
+    }
+    // Ferry overlay sidecar carries pier/approach stubs that pack tiles may
+    // omit; without them ferry terminals are water-only and Forced Fehmarn
+    // cannot enter from land.
+    let side = ferry_sidecar_path(pack_dir, stem, profile);
+    if side.is_file() {
+        match load_flat_tile(&side, profile) {
+            Some(flat) => {
+                let ferry_n = flat
+                    .edge_is_ferry
+                    .iter()
+                    .filter(|&&v| v != 0)
+                    .count();
+                println!(
+                    "  overlay stem={stem} nodes={} edges={} ferry_edges≈{ferry_n}",
+                    flat.node_ids.len(),
+                    flat.edge_src.len()
+                );
+                let part = build_skeleton_from_pack(&flat, &region, stem, prof, border_osm);
+                drop(flat);
+                parts.push(part);
+                trim_rss();
+            }
+            None => eprintln!("  skip overlay {}: load failed", side.display()),
+        }
+    } else {
+        println!("  overlay stem={stem}: no sidecar at {}", side.display());
     }
     merge_skeleton_files(parts)
 }
