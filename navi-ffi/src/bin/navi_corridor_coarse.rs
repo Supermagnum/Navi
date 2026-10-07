@@ -311,16 +311,17 @@ fn main() {
         "directed travel-time coarse on persistent skeletons; joints=border+ferry+via",
     );
 
-    // Forced: A1 + Puttgarden–Rødby
-    let a1_lubeck = (53.87, 10.69);
-    let puttgarden = (54.5028, 11.2282);
-    let rodby = (54.6543, 11.3508);
+    // Forced: A1 corridor + Puttgarden–Rødby. Use exact ferry terminal
+    // coordinates (known connected by the Fehmarn edge at cost 73333).
+    let a1_near_lubeck = (53.87, 10.69);
+    let puttgarden = (54.5028164, 11.2282207);
+    let rodby = (54.6543072, 11.3508124);
     let forced_fehmarn = run_named(
         "forced_a1_puttgarden_rodby",
         &mut graph,
-        &[bevensen, a1_lubeck, puttgarden, rodby, vaga, dalsoren],
+        &[bevensen, a1_near_lubeck, puttgarden, rodby, vaga, dalsoren],
         &border_osm,
-        "forced via A1/Lübeck and Puttgarden–Rødby",
+        "forced via A1/Lübeck and Puttgarden–Rødby ferry terminals",
     );
 
     // Forced: Jutland + Storebælt + Øresund bridge
@@ -337,15 +338,12 @@ fn main() {
 
     // Forced: Jutland + Storebælt + Helsingør–Helsingborg
     let helsingor = (56.033, 12.616);
-    let helsingborg = (56.043, 12.692);
     let forced_hh = run_named(
         "forced_jutland_storebaelt_hh",
         &mut graph,
-        &[
-            bevensen, padborg, storebaelt, helsingor, helsingborg, vaga, dalsoren,
-        ],
+        &[bevensen, padborg, storebaelt, helsingor, vaga, dalsoren],
         &border_osm,
-        "forced via Padborg, Storebælt, Helsingør–Helsingborg",
+        "forced via Padborg, Storebælt, Helsingør (HH ferry)",
     );
 
     // Breneriroa → Aga (FU14 waypoints); ferry naming on Hardanger.

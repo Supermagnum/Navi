@@ -13,7 +13,7 @@ use crate::routing::elevation::country_iso_at;
 use crate::routing::eta::motor_path_minutes_from_edges;
 use crate::routing::graph::{
     ferry_drive_equiv_m_per_s, GraphEdge, RouteGraph, RouteOptions, RoutingProfile, SurfaceQuality,
-    FERRY_CAR_BOARDING_PENALTY_MIN,
+    SurfaceRoutingMode, FERRY_CAR_BOARDING_PENALTY_MIN,
 };
 use crate::routing::indexed::{densify_skeleton_edge, FlatGraphPack, GRAPH_FORMAT_VERSION};
 use geo_types::Coord;
@@ -818,13 +818,24 @@ pub fn extract_coarse_joints(
                 push(&mut out, arrive, "border_crossing");
             }
         }
-        if let Some(n) = graph.nodes.get(&arrive) {
-            for &(vlat, vlon) in vias {
-                if haversine_m(n.coord.y, n.coord.x, vlat, vlon) <= via_snap_m {
-                    push(&mut out, arrive, "via");
-                    break;
-                }
+    }
+    // One joint per user via: nearest path node within snap radius.
+    for &(vlat, vlon) in vias {
+        let mut best: Option<(NodeId, f64)> = None;
+        for &id in path {
+            let Some(n) = graph.nodes.get(&id) else {
+                continue;
+            };
+            let d = haversine_m(n.coord.y, n.coord.x, vlat, vlon);
+            if d > via_snap_m {
+                continue;
             }
+            if best.is_none_or(|(_, bd)| d < bd) {
+                best = Some((id, d));
+            }
+        }
+        if let Some((id, _)) = best {
+            push(&mut out, id, "via");
         }
     }
     if let Some(&last) = path.last() {
@@ -947,7 +958,13 @@ pub fn coarse_shortest_path(
         return None;
     }
     graph.ensure_directed_snap_labels();
-    let opts = RouteOptions::default();
+    // Coarse corridor must match detailed profile costing (tolls/tunnels allowed)
+    // but without car surface-transition state: on a major-road skeleton that
+    // state bloated expansions and steered free A* off Fehmarn onto HH.
+    let opts = RouteOptions {
+        surface_routing_mode: Some(SurfaceRoutingMode::Offroad),
+        ..RouteOptions::default()
+    };
     let mut full_path: Vec<NodeId> = Vec::new();
     let mut full_edges: Vec<usize> = Vec::new();
     let mut total_cost = 0.0;
