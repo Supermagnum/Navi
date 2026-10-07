@@ -1914,12 +1914,14 @@ fn resolve_ferry_overlay_pbf(
 /// particular crossing — A* chooses ferries under the normal cost model when
 /// `avoid_ferries` is off.
 ///
-/// Overlay is skipped only when hop ends are already A*-connected on the pack
+/// Overlay is skipped when hop ends are already directed-connected on the pack
 /// graph (`route_points`, ferries allowed), or — without hop geometry — when a
-/// long ferry lies fully inside the plan clip. Disconnected hop ends still try
-/// overlay (coastal packs often omit ferry/pier ways). Orphan / pier-stub ferry
-/// edges and unrelated long ferries elsewhere must not suppress pier-approach
-/// overlay.
+/// long ferry lies fully inside the plan clip. Disconnected / snap-failed hop
+/// ends try overlay, but only for stems whose region bbox intersects the hop
+/// clips (a stem that cannot contain a ferry for this hop is not loaded). Each
+/// stem sidecar is materialized at most once per supplement call. Orphan /
+/// pier-stub ferry edges and unrelated long ferries elsewhere must not suppress
+/// pier-approach overlay.
 fn supplement_pack_ferries_from_pbf(
     graph: std::sync::Arc<RouteGraph>,
     dirs: &[&Path],
@@ -1999,7 +2001,15 @@ fn supplement_pack_ferries_from_pbf_inner(
             FerryHopGate::Connected { snap_m } => {
                 crate::routing::plan_perf::note_f64("ferry_snap_m", snap_m);
                 crate::routing::plan_perf::note_u64("ferry_connect_check_ms", 0);
-                crate::routing::plan_perf::note("ferry_overlay", "connected_replace_overlay");
+                crate::routing::plan_perf::note("ferry_overlay", "skip_already_connected");
+                crate::routing::plan_perf::note(
+                    "ferry_per_plan",
+                    "once_on_corridor_miss;warm_skipped=corridor_cache_hit",
+                );
+                // Pack already has a directed O→D path (incl. pack ferries).
+                // Replacing every hop with every stem's sidecar was ~10× pack_load
+                // and ballooned graphs (~10× snap). Load overlay only when needed.
+                return Ok(graph);
             }
             FerryHopGate::Disconnected { snap_m } => {
                 crate::routing::plan_perf::note_f64("ferry_snap_m", snap_m);
@@ -2041,7 +2051,21 @@ fn supplement_pack_ferries_from_pbf_inner(
     }
     let mut overlays = Vec::new();
     let mut overlay_mode = "none";
+    let mut stems_loaded: Vec<String> = Vec::new();
     for stem in &stems {
+        // Sidecar only when this region's bbox can intersect the hop clips
+        // (otherwise it cannot contribute a ferry for this hop).
+        let region = crate::routing::basemap::pbf_stem_to_geofabrik_path(stem)
+            .and_then(|path| crate::routing::basemap::region_bbox(&path));
+        if let Some(rb) = region {
+            if !clips.iter().any(|c| bbox_intersects(rb, *c)) {
+                crate::routing::plan_perf::note(
+                    "ferry_overlay",
+                    format!("skip_stem_no_clip_intersect;stem={stem}"),
+                );
+                continue;
+            }
+        }
         let Some(home) = home_dir_for_stem(dirs, stem, profile) else {
             continue;
         };
@@ -2086,10 +2110,18 @@ fn supplement_pack_ferries_from_pbf_inner(
                 return Err(PackLoadError::FerryPreparing(status, pct));
             }
         }
+        if stems_loaded.iter().any(|s| s == stem) {
+            crate::routing::plan_perf::note(
+                "ferry_overlay",
+                format!("skip_stem_already_loaded;stem={stem}"),
+            );
+            continue;
+        }
         match super::ferry_overlay_cache::ferry_overlay_for_plan(home, stem, profile, &pbf, &clips)
         {
             Some((fg, mode)) if fg.edges.iter().any(|e| e.is_ferry) => {
                 overlay_mode = mode;
+                stems_loaded.push(stem.clone());
                 log::info!(
                     target: "NaviPlan",
                     "ferry_overlay stem={stem} ferry_edges={} nodes={} mode={mode}",
@@ -2098,7 +2130,9 @@ fn supplement_pack_ferries_from_pbf_inner(
                 );
                 overlays.push(fg);
             }
-            Some(_) => {}
+            Some(_) => {
+                stems_loaded.push(stem.clone());
+            }
             None => {
                 log::info!(
                     target: "NaviPlan",
@@ -2114,7 +2148,10 @@ fn supplement_pack_ferries_from_pbf_inner(
     crate::routing::plan_perf::note("ferry_overlay", overlay_mode);
     crate::routing::plan_perf::note(
         "ferry_per_plan",
-        "once_on_corridor_miss;warm_skipped=corridor_cache_hit",
+        format!(
+            "once_per_needed_stem;stems={};warm_skipped=corridor_cache_hit",
+            stems_loaded.join(",")
+        ),
     );
     let mut pack = arc_graph_owned(graph);
     for ov in &mut overlays {
