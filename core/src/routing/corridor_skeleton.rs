@@ -962,6 +962,7 @@ pub fn skeleton_to_route_graph(skel: &CorridorSkeletonFile, profile: RoutingProf
             target: tgt,
             length_m: skel.edge_length_m[i],
             base_weight: skel.edge_base_weight[i],
+            cost_mult: 1.0,
             eco_weight: Some(skel.edge_base_weight[i]),
             start_lat: skel.node_lats[skel.edge_src[i] as usize],
             start_lon: skel.node_lons[skel.edge_src[i] as usize],
@@ -1323,22 +1324,31 @@ pub fn build_coarse_route_report(
     }
 }
 
-/// Directed travel-time coarse path through optional vias (same cost rules as
-/// detailed search: default [`RouteOptions`], `use_eco=false`).
+/// Directed travel-time coarse path through optional vias.
+///
+/// Applies the caller's avoid flags (ferries / tolls / tunnels / motorways) so
+/// the Stage B corridor matches detailed hop planning. Surface-transition state
+/// stays off: on a major-road skeleton it bloated expansions and steered free
+/// A* off Fehmarn onto HH.
 pub fn coarse_shortest_path(
     graph: &mut RouteGraph,
     waypoints: &[(f64, f64)],
     snap_m: f64,
+    route_options: &RouteOptions,
 ) -> Option<(Vec<NodeId>, Vec<usize>, f64)> {
     if waypoints.len() < 2 {
         return None;
     }
     graph.ensure_directed_snap_labels();
-    // Coarse corridor must match detailed profile costing (tolls/tunnels allowed)
-    // but without car surface-transition state: on a major-road skeleton that
-    // state bloated expansions and steered free A* off Fehmarn onto HH.
     let opts = RouteOptions {
         surface_routing_mode: Some(SurfaceRoutingMode::Offroad),
+        avoid_motorways: route_options.avoid_motorways,
+        toll_policy: route_options.toll_policy,
+        avoid_ferries: route_options.avoid_ferries,
+        avoid_tunnels: route_options.avoid_tunnels,
+        vehicle: route_options.vehicle.clone(),
+        departure_local: route_options.departure_local,
+        allowed_countries: route_options.allowed_countries.clone(),
         ..RouteOptions::default()
     };
     let mut full_path: Vec<NodeId> = Vec::new();
@@ -1525,13 +1535,15 @@ fn hops_from_report(report: &CoarseRouteReport, start: (f64, f64), end: (f64, f6
 
 /// Stage B: densify from persistent corridor skeletons.
 ///
-/// Free travel-time coarse path, then ferry-exclusion alternatives + 2% near-equal
-/// (fewer km wins). Hop joints = border crossings, ferry terminals, user vias.
-/// No centroid densify and no even hop_deg sampling.
+/// Coarse path uses the active [`RouteOptions`] (avoid ferries/tolls/tunnels/
+/// motorways). When ferries are allowed: ferry-exclusion alternatives + 2%
+/// near-equal (fewer km wins). Hop joints = border crossings, ferry terminals,
+/// user vias. No centroid densify and no even hop_deg sampling.
 pub fn try_stage_b_densify_from_skeletons(
     pack_dirs: &[&Path],
     waypoints: &[(f64, f64)],
     profile: RoutingProfile,
+    route_options: &RouteOptions,
 ) -> Option<StageBDensify> {
     if waypoints.len() < 2 {
         return None;
@@ -1544,7 +1556,7 @@ pub fn try_stage_b_densify_from_skeletons(
     let border_osm = border_osm_from_skeletons(&skels);
     let mut graph = merge_skeletons_to_route_graph(&skels, profile);
     let snap_m = 35_000.0;
-    let (path, edges, _) = coarse_shortest_path(&mut graph, waypoints, snap_m)?;
+    let (path, edges, _) = coarse_shortest_path(&mut graph, waypoints, snap_m, route_options)?;
     let vias = &waypoints[1..waypoints.len().saturating_sub(1)];
     let free = build_coarse_route_report(
         "stage_b_free",
@@ -1558,16 +1570,44 @@ pub fn try_stage_b_densify_from_skeletons(
         "stage_b free",
     );
 
-    // Candidates: free + exclude each ferry + no ferries.
+    // Candidates: free + (when ferries allowed) exclude each ferry + no ferries.
     let mut candidates: Vec<(String, CoarseRouteReport, Vec<NodeId>, Vec<usize>)> = Vec::new();
     candidates.push(("free".into(), free.clone(), path.clone(), edges.clone()));
 
-    for leg in &free.ferries {
+    if !route_options.avoid_ferries {
+        for leg in &free.ferries {
+            clear_access_forbidden(&mut graph);
+            forbid_ferry_edges_matching_leg(&mut graph, leg, 3_000.0);
+            if let Some((p, e, _)) =
+                coarse_shortest_path(&mut graph, waypoints, snap_m, route_options)
+            {
+                let r = build_coarse_route_report(
+                    "stage_b_excl",
+                    &graph,
+                    &p,
+                    &e,
+                    &border_osm,
+                    vias,
+                    0,
+                    0,
+                    &format!("excl {}→{}", leg.from_terminal, leg.to_terminal),
+                );
+                candidates.push((
+                    format!("excl_{}_{}", leg.from_terminal, leg.to_terminal),
+                    r,
+                    p,
+                    e,
+                ));
+            }
+        }
         clear_access_forbidden(&mut graph);
-        forbid_ferry_edges_matching_leg(&mut graph, leg, 3_000.0);
-        if let Some((p, e, _)) = coarse_shortest_path(&mut graph, waypoints, snap_m) {
+        for e in graph.edges.iter_mut().filter(|e| e.is_ferry) {
+            e.access_forbidden = true;
+        }
+        if let Some((p, e, _)) = coarse_shortest_path(&mut graph, waypoints, snap_m, route_options)
+        {
             let r = build_coarse_route_report(
-                "stage_b_excl",
+                "stage_b_no_ferry",
                 &graph,
                 &p,
                 &e,
@@ -1575,35 +1615,12 @@ pub fn try_stage_b_densify_from_skeletons(
                 vias,
                 0,
                 0,
-                &format!("excl {}→{}", leg.from_terminal, leg.to_terminal),
+                "no ferries",
             );
-            candidates.push((
-                format!("excl_{}_{}", leg.from_terminal, leg.to_terminal),
-                r,
-                p,
-                e,
-            ));
+            candidates.push(("no_ferries".into(), r, p, e));
         }
+        clear_access_forbidden(&mut graph);
     }
-    clear_access_forbidden(&mut graph);
-    for e in graph.edges.iter_mut().filter(|e| e.is_ferry) {
-        e.access_forbidden = true;
-    }
-    if let Some((p, e, _)) = coarse_shortest_path(&mut graph, waypoints, snap_m) {
-        let r = build_coarse_route_report(
-            "stage_b_no_ferry",
-            &graph,
-            &p,
-            &e,
-            &border_osm,
-            vias,
-            0,
-            0,
-            "no ferries",
-        );
-        candidates.push(("no_ferries".into(), r, p, e));
-    }
-    clear_access_forbidden(&mut graph);
 
     let best_min = candidates
         .iter()
@@ -2012,5 +2029,188 @@ mod tests {
             !detailed_graph_has_skeleton_carriageway_link(&g),
             "detailed hop graph must never expose skeleton_carriageway_link"
         );
+    }
+
+    /// Two parallel corridors A→D: short flagged edge vs longer plain primary.
+    /// `land_seg_m` is each land-corridor segment length (three segments).
+    fn avoid_options_fixture(
+        short_hwy: &str,
+        short_ferry: bool,
+        short_toll: bool,
+        short_tunnel: bool,
+        land_seg_m: f64,
+    ) -> RouteGraph {
+        use geo_types::Coord;
+        use osm4routing::Node;
+        use std::collections::HashMap;
+
+        let mut nodes = HashMap::new();
+        let coords = [
+            (1i64, 60.0, 10.0),
+            (2, 60.01, 10.01),
+            (3, 60.02, 10.02),
+            (4, 60.03, 10.03),
+            (5, 60.015, 10.0),
+            (6, 60.025, 10.0),
+        ];
+        for (id, lat, lon) in coords {
+            nodes.insert(
+                NodeId(id),
+                Node {
+                    id: NodeId(id),
+                    coord: Coord { x: lon, y: lat },
+                    uses: 0,
+                },
+            );
+        }
+        let mk = |id: &str,
+                  s: i64,
+                  t: i64,
+                  len: f64,
+                  hwy: &str,
+                  ferry: bool,
+                  toll: bool,
+                  tunnel: bool|
+         -> GraphEdge {
+            let sn = nodes[&NodeId(s)].coord;
+            let tn = nodes[&NodeId(t)].coord;
+            GraphEdge {
+                id: id.into(),
+                source: NodeId(s),
+                target: NodeId(t),
+                length_m: len,
+                base_weight: len,
+                cost_mult: 1.0,
+                eco_weight: None,
+                start_lat: sn.y,
+                start_lon: sn.x,
+                end_lat: tn.y,
+                end_lon: tn.x,
+                shape: Vec::new(),
+                highway: Some(hwy.into()),
+                maxspeed_kmh: Some(80.0),
+                maxspeed_practical_kmh: None,
+                maxspeed_advisory_kmh: None,
+                maxspeed_type: None,
+                maxspeed_variable: false,
+                minspeed_kmh: None,
+                name: None,
+                road_ref: None,
+                is_motorroad: false,
+                is_expressway: false,
+                is_oneway: false,
+                lanes: None,
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: toll,
+                is_ferry: ferry,
+                ferry_interval_min: None,
+                is_tunnel: tunnel,
+                is_boardwalk_crossing: false,
+                is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
+                access_forbidden: false,
+                surface_quality: crate::routing::graph::SurfaceQuality::Good,
+            }
+        };
+        // Short corridor: 1→2→3→4 with middle edge flagged.
+        // Long corridor: 1→5→6→4 (plain primary, longer).
+        let edges = vec![
+            mk("s1", 1, 2, 1_000.0, "primary", false, false, false),
+            mk(
+                "short",
+                2,
+                3,
+                1_000.0,
+                short_hwy,
+                short_ferry,
+                short_toll,
+                short_tunnel,
+            ),
+            mk("s3", 3, 4, 1_000.0, "primary", false, false, false),
+            mk("l1", 1, 5, land_seg_m, "primary", false, false, false),
+            mk("l2", 5, 6, land_seg_m, "primary", false, false, false),
+            mk("l3", 6, 4, land_seg_m, "primary", false, false, false),
+        ];
+        RouteGraph::from_parts(nodes, edges, RoutingProfile::Car)
+    }
+
+    fn path_uses_edge(graph: &RouteGraph, edges: &[usize], id: &str) -> bool {
+        edges.iter().any(|&i| graph.edges[i].id == id)
+    }
+
+    #[test]
+    fn coarse_avoid_ferries_skips_ferry_corridor() {
+        // Land must beat ferry wait when ferries are forbidden (~10+ min wait).
+        let mut g = avoid_options_fixture("ferry", true, false, false, 80_000.0);
+        let wps = &[(60.0, 10.0), (60.03, 10.03)];
+        let free = coarse_shortest_path(&mut g, wps, 5_000.0, &RouteOptions::default())
+            .expect("free path");
+        assert!(
+            path_uses_edge(&g, &free.1, "short"),
+            "default should prefer short ferry corridor"
+        );
+        let avoid = RouteOptions {
+            avoid_ferries: true,
+            ..Default::default()
+        };
+        let alt = coarse_shortest_path(&mut g, wps, 5_000.0, &avoid).expect("land path");
+        assert!(
+            !path_uses_edge(&g, &alt.1, "short"),
+            "avoid_ferries must not use ferry edge"
+        );
+        assert!(path_uses_edge(&g, &alt.1, "l2"));
+    }
+
+    #[test]
+    fn coarse_avoid_tolls_never_use_skips_toll_corridor() {
+        let mut g = avoid_options_fixture("primary", false, true, false, 4_000.0);
+        let wps = &[(60.0, 10.0), (60.03, 10.03)];
+        let avoid = RouteOptions {
+            toll_policy: crate::routing::toll::TollPolicy::NeverUse,
+            ..Default::default()
+        };
+        let alt = coarse_shortest_path(&mut g, wps, 5_000.0, &avoid).expect("toll-free path");
+        assert!(!path_uses_edge(&g, &alt.1, "short"));
+        assert!(path_uses_edge(&g, &alt.1, "l2"));
+    }
+
+    #[test]
+    fn coarse_avoid_tunnels_prefers_surface_corridor() {
+        // Soft ×50 on 1 km tunnel beats ~12 km surface land; free still takes tunnel.
+        let mut g = avoid_options_fixture("primary", false, false, true, 4_000.0);
+        let wps = &[(60.0, 10.0), (60.03, 10.03)];
+        let free = coarse_shortest_path(&mut g, wps, 5_000.0, &RouteOptions::default())
+            .expect("free path");
+        assert!(path_uses_edge(&g, &free.1, "short"));
+        let avoid = RouteOptions {
+            avoid_tunnels: true,
+            ..Default::default()
+        };
+        let alt = coarse_shortest_path(&mut g, wps, 5_000.0, &avoid).expect("surface path");
+        assert!(
+            !path_uses_edge(&g, &alt.1, "short"),
+            "tunnel penalty must push search onto the longer surface corridor"
+        );
+        assert!(path_uses_edge(&g, &alt.1, "l2"));
+    }
+
+    #[test]
+    fn coarse_avoid_motorways_skips_motorway_corridor() {
+        let mut g = avoid_options_fixture("motorway", false, false, false, 4_000.0);
+        let wps = &[(60.0, 10.0), (60.03, 10.03)];
+        let avoid = RouteOptions {
+            avoid_motorways: true,
+            ..Default::default()
+        };
+        let alt = coarse_shortest_path(&mut g, wps, 5_000.0, &avoid).expect("non-motorway path");
+        assert!(!path_uses_edge(&g, &alt.1, "short"));
+        assert!(path_uses_edge(&g, &alt.1, "l2"));
     }
 }

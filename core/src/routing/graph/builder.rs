@@ -347,6 +347,9 @@ pub struct GraphEdge {
     pub target: NodeId,
     pub length_m: f64,
     pub base_weight: f64,
+    /// Soft preference multiplier applied on top of travel-time cost (bike /
+    /// surface / network / wetland). Default `1.0`. Not stored in region packs.
+    pub cost_mult: f64,
     pub eco_weight: Option<f64>,
     pub start_lat: f64,
     pub start_lon: f64,
@@ -894,7 +897,7 @@ impl RouteGraph {
             if edge.target != to || !edge_allowed_at(edge, idx, options, self.profile) {
                 continue;
             }
-            let base = edge_travel_cost(edge, idx, use_eco, options);
+            let base = edge_travel_cost(edge, idx, use_eco, options, self.profile);
             let transition = if use_surface_transitions {
                 surface_transition_cost_m(prev_surface, edge.surface_quality, surface_mode)
             } else {
@@ -1358,7 +1361,7 @@ impl RouteGraph {
                 }
                 Some(WetlandClass::SoftAvoid) => {
                     soft += 1;
-                    edge.base_weight *= WETLAND_SOFT_COST_MULT;
+                    edge.cost_mult *= WETLAND_SOFT_COST_MULT;
                     if let Some(w) = edge.eco_weight.as_mut() {
                         *w *= WETLAND_SOFT_COST_MULT;
                     }
@@ -1379,7 +1382,7 @@ impl RouteGraph {
             for (i, mut edge) in hard_candidates.into_iter().enumerate() {
                 if use_bridge[i] {
                     soft += 1;
-                    edge.base_weight *= WETLAND_SOFT_COST_MULT;
+                    edge.cost_mult *= WETLAND_SOFT_COST_MULT;
                     if let Some(w) = edge.eco_weight.as_mut() {
                         *w *= WETLAND_SOFT_COST_MULT;
                     }
@@ -1917,6 +1920,8 @@ impl RouteGraph {
     ) -> PathSearchStats {
         let plan_id = crate::download::plan_cancel::current_plan_id();
         let expansions = std::sync::atomic::AtomicU64::new(0);
+        // Hard wall so a disconnected densify hop fails in seconds, not minutes.
+        let search_deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
         let surface_mode = options
             .surface_routing_mode
             .unwrap_or(self.surface_routing_mode);
@@ -1932,6 +1937,9 @@ impl RouteGraph {
                 |state| {
                     let (node, prev_surface, _) = *state;
                     let n = expansions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if std::time::Instant::now() >= search_deadline {
+                        return Vec::new();
+                    }
                     if self.nodes.len() < 15_000 && n > 500_000 {
                         return Vec::new();
                     }
@@ -1953,7 +1961,8 @@ impl RouteGraph {
                             if !edge_allowed_at(edge, edge_idx, options, self.profile) {
                                 return None;
                             }
-                            let base = edge_travel_cost(edge, edge_idx, use_eco, options);
+                            let base =
+                                edge_travel_cost(edge, edge_idx, use_eco, options, self.profile);
                             let transition = surface_transition_cost_m(
                                 prev_surface,
                                 edge.surface_quality,
@@ -2000,6 +2009,9 @@ impl RouteGraph {
             |state| {
                 let (node, _) = *state;
                 let n = expansions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if std::time::Instant::now() >= search_deadline {
+                    return Vec::new();
+                }
                 if self.nodes.len() < 15_000 && n > 500_000 {
                     return Vec::new();
                 }
@@ -2021,7 +2033,8 @@ impl RouteGraph {
                         if !edge_allowed_at(edge, edge_idx, options, self.profile) {
                             return None;
                         }
-                        let cost = edge_travel_cost(edge, edge_idx, use_eco, options);
+                        let cost =
+                            edge_travel_cost(edge, edge_idx, use_eco, options, self.profile);
                         Some(((edge.target, edge_idx), cost_to_u64(cost)))
                     })
                     .collect::<Vec<_>>()
@@ -2085,6 +2098,7 @@ impl RouteGraph {
                     motor_soft: options.motor_soft,
                     ..RouteOptions::default()
                 },
+                self.profile,
             );
             if cost.is_finite() && cost >= 0.0 {
                 min_ratio = min_ratio.min(cost / chord);
@@ -2622,6 +2636,7 @@ fn push_directed_edge(
         target,
         length_m,
         base_weight,
+        cost_mult: 1.0,
         eco_weight: None,
         start_lat,
         start_lon,
@@ -2966,6 +2981,7 @@ fn edge_travel_cost(
     edge_idx: usize,
     use_eco: bool,
     options: &RouteOptions,
+    profile: RoutingProfile,
 ) -> f64 {
     let mut cost = if use_eco {
         options
@@ -2975,10 +2991,25 @@ fn edge_travel_cost(
             .or(edge.eco_weight)
             .unwrap_or_else(|| time_base_weight_for_edge(edge))
     } else {
-        // Always time (drive-equiv metres). Packs may still store length as
-        // `base_weight` for roads; recompute so A* matches ferry time scale.
-        time_base_weight_for_edge(edge)
+        match profile {
+            // Motor: travel time so ferries compete fairly with roads.
+            RoutingProfile::Car | RoutingProfile::Truck => time_base_weight_for_edge(edge),
+            // Bike/foot soft prefs are tuned in length-metres; fixed-pace ETA
+            // still applies on the finished path. Ferries keep time weight.
+            RoutingProfile::Bicycle | RoutingProfile::Foot => {
+                if edge.is_ferry {
+                    time_base_weight_for_edge(edge)
+                } else {
+                    edge.length_m.max(0.0)
+                }
+            }
+        }
     };
+    // Soft preference layers (bike / surface / network / wetland) scale
+    // `cost_mult` without mutating travel-time `base_weight`.
+    if edge.cost_mult.is_finite() && edge.cost_mult > 0.0 && (edge.cost_mult - 1.0).abs() > 1e-12 {
+        cost *= edge.cost_mult;
+    }
     if let Some((mode, profile)) = options.motor_soft {
         let mult = crate::routing::graph::edge_motor_soft_multiplier(edge, mode, profile);
         if mult > 1.0 + 1e-9 {
@@ -3241,6 +3272,7 @@ mod tests {
             target: NodeId(2),
             length_m: 500.0,
             base_weight: 500.0,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: 60.0,
             start_lon: 10.0,
@@ -3378,6 +3410,7 @@ mod tests {
             target: NodeId(target),
             length_m: 100.0,
             base_weight: 100.0,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: slat,
             start_lon: slon,
@@ -4188,6 +4221,7 @@ mod tests {
             target: NodeId(t),
             length_m: 1000.0,
             base_weight: 1000.0,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: lat0,
             start_lon: lon0,
@@ -4259,6 +4293,7 @@ mod tests {
             target: NodeId(2),
             length_m: 100.0,
             base_weight: 100.0,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: 0.0,
             start_lon: 0.0,
@@ -4338,6 +4373,7 @@ mod tests {
             target: NodeId(2),
             length_m: 100.0,
             base_weight: 100.0,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: 0.0,
             start_lon: 0.0,
@@ -4383,8 +4419,8 @@ mod tests {
             edge_allowed_for_options(&edge, &avoid, RoutingProfile::Car),
             "tunnels must stay searchable under soft avoid"
         );
-        let base = edge_travel_cost(&edge, 0, false, &RouteOptions::default());
-        let penalized = edge_travel_cost(&edge, 0, false, &avoid);
+        let base = edge_travel_cost(&edge, 0, false, &RouteOptions::default(), RoutingProfile::Car);
+        let penalized = edge_travel_cost(&edge, 0, false, &avoid, RoutingProfile::Car);
         assert!(
             (penalized - base * crate::routing::toll::TUNNEL_AVOID_PENALTY_MULT).abs() < 1e-9,
             "base={base} penalized={penalized}"
@@ -4395,8 +4431,8 @@ mod tests {
         assert!(!is_tunnel_tag(""));
         edge.is_tunnel = false;
         assert_eq!(
-            edge_travel_cost(&edge, 0, false, &avoid),
-            edge_travel_cost(&edge, 0, false, &RouteOptions::default())
+            edge_travel_cost(&edge, 0, false, &avoid, RoutingProfile::Car),
+            edge_travel_cost(&edge, 0, false, &RouteOptions::default(), RoutingProfile::Car)
         );
     }
 
@@ -4408,6 +4444,7 @@ mod tests {
             target: NodeId(2),
             length_m: 100.0,
             base_weight: 100.0,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: 0.0,
             start_lon: 0.0,
@@ -4477,6 +4514,7 @@ mod tests {
             target: NodeId(2),
             length_m: 100.0,
             base_weight: 100.0,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: 61.9,
             start_lon: 10.0,
@@ -4577,6 +4615,7 @@ mod tests {
             target: NodeId(2),
             length_m: 100.0,
             base_weight: 100.0,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: 0.0,
             start_lon: 0.0,
@@ -4981,6 +5020,7 @@ mod tests {
             target: NodeId(2),
             length_m: 100.0,
             base_weight: 100.0,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: 60.0,
             start_lon: 10.0,
@@ -5035,6 +5075,7 @@ mod tests {
                 target: NodeId(t),
                 length_m: 100.0,
                 base_weight: 100.0,
+                cost_mult: 1.0,
                 eco_weight: None,
                 start_lat: slat,
                 start_lon: slon,
@@ -5143,6 +5184,7 @@ mod tests {
                 target: NodeId(t),
                 length_m: 50.0,
                 base_weight: 50.0,
+                cost_mult: 1.0,
                 eco_weight: None,
                 start_lat: slat,
                 start_lon: slon,

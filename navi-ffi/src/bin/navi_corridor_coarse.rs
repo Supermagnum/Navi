@@ -15,7 +15,7 @@ use driver_break_core::routing::corridor_skeleton::{
     inter_region_ferry_edges, merge_skeletons_to_route_graph, read_skeleton_file,
     CorridorSkeletonFile, CoarseRouteReport,
 };
-use driver_break_core::routing::graph::RoutingProfile;
+use driver_break_core::routing::graph::{RouteOptions, RoutingProfile};
 use driver_break_core::routing::indexed::{ferry_sidecar_path, load_graph_pack_clips};
 use serde::Serialize;
 
@@ -267,7 +267,8 @@ fn run_named_snap(
     snap_m: f64,
 ) -> Option<CoarseRouteReport> {
     let t0 = Instant::now();
-    let (path, edges, _cost) = coarse_shortest_path(graph, waypoints, snap_m)?;
+    let (path, edges, _cost) =
+        coarse_shortest_path(graph, waypoints, snap_m, &RouteOptions::default())?;
     let search_ms = t0.elapsed().as_millis() as u64;
     let vias = &waypoints[1..waypoints.len().saturating_sub(1)];
     let mut report = build_coarse_route_report(

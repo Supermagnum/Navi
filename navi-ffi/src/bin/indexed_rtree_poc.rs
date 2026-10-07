@@ -274,6 +274,7 @@ fn load_graph_from_rtree(db: &Path, bbox: [f64; 4]) -> RouteGraph {
                 target: NodeId(row.2),
                 length_m: row.3,
                 base_weight: row.4,
+                cost_mult: 1.0,
                 eco_weight: Some(row.4),
                 start_lat: row.5,
                 start_lon: row.6,

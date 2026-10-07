@@ -449,6 +449,7 @@ mod tests {
             target: NodeId(t),
             length_m: 100.0,
             base_weight: 100.0,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: lat0,
             start_lon: lon0,

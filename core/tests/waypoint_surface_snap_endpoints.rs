@@ -64,6 +64,7 @@ fn edge(
         target: NodeId(target),
         length_m,
         base_weight: length_m,
+        cost_mult: 1.0,
         eco_weight: None,
         start_lat: slat,
         start_lon: slon,

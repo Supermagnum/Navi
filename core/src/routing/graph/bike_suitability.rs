@@ -428,7 +428,7 @@ pub fn apply_bike_surface_preference(graph: &mut RouteGraph, cap: BikeCapability
     graph.edges.par_iter_mut().for_each(|edge| {
         let mult = edge_bike_soft_multiplier(edge, cap);
         if mult > 1.0 + 1e-9 {
-            edge.base_weight *= mult;
+            edge.cost_mult *= mult;
             if let Some(ref mut eco) = edge.eco_weight {
                 *eco *= mult;
             }
@@ -485,6 +485,7 @@ mod tests {
             target: osm4routing::NodeId(tgt),
             length_m,
             base_weight: length_m,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: 60.0,
             start_lon: 10.0,

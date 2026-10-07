@@ -466,7 +466,7 @@ pub fn apply_surface_preference(
     graph.edges.iter_mut().for_each(|edge| {
         let mult = edge_motor_soft_multiplier(edge, mode, cost_profile);
         if mult > 1.0 + 1e-9 {
-            edge.base_weight *= mult;
+            edge.cost_mult *= mult;
             if let Some(ref mut eco) = edge.eco_weight {
                 *eco *= mult;
             }
@@ -719,6 +719,7 @@ mod tests {
             target: NodeId(2),
             length_m: 100.0,
             base_weight: 100.0,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: 60.0,
             start_lon: 10.0,
@@ -817,6 +818,7 @@ mod tests {
             target: NodeId(target),
             length_m,
             base_weight: length_m,
+            cost_mult: 1.0,
             eco_weight: Some(length_m),
             start_lat: 60.0,
             start_lon: 10.0,
@@ -1305,9 +1307,11 @@ mod tests {
             .shortest_path(NodeId(1), NodeId(2), false)
             .expect("legacy Good edge must not crash soft costs");
         assert_eq!(path, vec![NodeId(1), NodeId(2)]);
-        let expected = length_m * HIGHWAY_CLASS_TERTIARY; // surface mult 1.0
+        // Travel-time A*: cost = road_base_weight(length, 60) × tertiary class.
+        let expected = crate::routing::graph::road_base_weight_m(length_m, 60.0)
+            * HIGHWAY_CLASS_TERTIARY;
         assert!(
-            (cost - expected).abs() < 1e-6,
+            (cost - expected).abs() < 1e-3,
             "legacy baked Good stays Good (× tertiary class only); expected {expected}, got {cost}"
         );
     }

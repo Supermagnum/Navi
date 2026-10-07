@@ -27,6 +27,7 @@ fn edge(id: &str, source: i64, target: i64, length_m: f64, highway: &str) -> Gra
         target: NodeId(target),
         length_m,
         base_weight: length_m,
+        cost_mult: 1.0,
         eco_weight: Some(length_m),
         start_lat: 60.0,
         start_lon: 10.0,
