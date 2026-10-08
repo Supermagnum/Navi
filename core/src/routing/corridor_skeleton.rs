@@ -1137,22 +1137,292 @@ pub fn merge_skeletons_to_route_graph(
     skels: &[CorridorSkeletonFile],
     profile: RoutingProfile,
 ) -> RouteGraph {
-    let graphs: Vec<RouteGraph> = skels
-        .iter()
-        .map(|s| skeleton_to_route_graph(s, profile))
-        .collect();
-    let mut graph = crate::routing::indexed::merge_tile_graphs(graphs, profile);
-    let n_intra =
-        stitch_intra_skeleton_component_gaps(&mut graph, skels, INTRA_SKELETON_STITCH_MAX_M);
-    let n_adj = stitch_adjacent_skeleton_gaps(&mut graph, skels, ADJACENT_SKELETON_STITCH_MAX_M);
-    if n_intra + n_adj > 0 {
-        log::info!(
-            target: "NaviPlan",
-            "skeleton_adjacent_stitch intra={n_intra} adjacent={n_adj} \
-             adj_max_m={ADJACENT_SKELETON_STITCH_MAX_M} intra_max_m={INTRA_SKELETON_STITCH_MAX_M}"
-        );
+    let mut b = CoarseGraphBuilder::new(true);
+    for s in skels {
+        b.add(s);
     }
-    graph
+    b.finish(profile).graph
+}
+
+/// Node arrays of one region skeleton, kept after its edges are merged (border
+/// marks and gap stitching need them; edge arrays and strings do not stay).
+pub struct SkeletonRegionNodes {
+    pub region_id: String,
+    pub leaf_stem: String,
+    pub node_ids: Vec<i64>,
+    pub node_lats: Vec<f64>,
+    pub node_lons: Vec<f64>,
+    pub node_is_border: Vec<u8>,
+}
+
+impl From<&CorridorSkeletonFile> for SkeletonRegionNodes {
+    fn from(s: &CorridorSkeletonFile) -> Self {
+        Self {
+            region_id: s.region_id.clone(),
+            leaf_stem: s.leaf_stem.clone(),
+            node_ids: s.node_ids.clone(),
+            node_lats: s.node_lats.clone(),
+            node_lons: s.node_lons.clone(),
+            node_is_border: s.node_is_border.clone(),
+        }
+    }
+}
+
+/// Road names and refs of the merged skeleton edges, kept beside the graph and
+/// put on an edge only when it lies on a reported path.
+#[derive(Default)]
+pub struct CoarseEdgeNames {
+    strings: Vec<String>,
+    edge: Vec<(u32, u32)>,
+}
+
+impl CoarseEdgeNames {
+    /// Give the edges in `edge_indices` their name and ref.
+    pub fn apply(&self, graph: &mut RouteGraph, edge_indices: &[usize]) {
+        for &i in edge_indices {
+            let Some(&(name, road_ref)) = self.edge.get(i) else {
+                continue;
+            };
+            let e = &mut graph.edges[i];
+            if name != 0 && e.name.is_none() {
+                e.name = Some(self.strings[name as usize].clone());
+            }
+            if road_ref != 0 && e.road_ref.is_none() {
+                e.road_ref = Some(self.strings[road_ref as usize].clone());
+            }
+        }
+    }
+}
+
+/// Merged coarse graph with the per-region node arrays and edge names.
+pub struct CoarseGraph {
+    pub graph: RouteGraph,
+    pub regions: Vec<SkeletonRegionNodes>,
+    pub names: CoarseEdgeNames,
+}
+
+struct CoarseEdge {
+    source: i64,
+    target: i64,
+    start_lat: f64,
+    start_lon: f64,
+    end_lat: f64,
+    end_lon: f64,
+    length_m: f64,
+    base_weight: f64,
+    highway: u32,
+    name: u32,
+    road_ref: u32,
+    is_oneway: bool,
+    is_ferry: bool,
+    is_tunnel: bool,
+    is_toll: bool,
+}
+
+/// Room for synthetic stitch edges so pushing them never regrows the edge array.
+const STITCH_EDGE_HEADROOM: usize = 1024;
+
+/// Builds the merged coarse graph one region skeleton at a time.
+///
+/// Same nodes, edges and edge order as converting every skeleton to its own
+/// graph and merging them with [`crate::routing::indexed::merge_tile_graphs`]:
+/// regions in load order, edges in file order, the first copy of a repeated
+/// edge kept, construction/proposed highways dropped, the last region's copy
+/// of a shared node kept. Edges carry no id or shape (a skeleton edge is a
+/// straight chord); names and refs stay in [`CoarseEdgeNames`] unless
+/// `keep_names` is set.
+struct CoarseGraphBuilder {
+    keep_names: bool,
+    nodes: HashMap<NodeId, Node>,
+    edges: Vec<CoarseEdge>,
+    seen: HashSet<(i64, i64, u64, u64, u64, u64, u64)>,
+    strings: Vec<String>,
+    string_ix: HashMap<String, u32>,
+    regions: Vec<SkeletonRegionNodes>,
+}
+
+impl CoarseGraphBuilder {
+    fn new(keep_names: bool) -> Self {
+        Self {
+            keep_names,
+            nodes: HashMap::new(),
+            edges: Vec::new(),
+            seen: HashSet::new(),
+            strings: vec![String::new()],
+            string_ix: HashMap::new(),
+            regions: Vec::new(),
+        }
+    }
+
+    fn intern(&mut self, s: &str) -> u32 {
+        if s.is_empty() {
+            return 0;
+        }
+        if let Some(&i) = self.string_ix.get(s) {
+            return i;
+        }
+        let i = self.strings.len() as u32;
+        self.strings.push(s.to_string());
+        self.string_ix.insert(s.to_string(), i);
+        i
+    }
+
+    fn add(&mut self, s: &CorridorSkeletonFile) {
+        self.nodes.reserve(s.node_ids.len());
+        for i in 0..s.node_ids.len() {
+            let id = NodeId(s.node_ids[i]);
+            self.nodes.insert(
+                id,
+                Node {
+                    id,
+                    coord: Coord {
+                        x: s.node_lons[i],
+                        y: s.node_lats[i],
+                    },
+                    uses: 2,
+                },
+            );
+        }
+        for i in 0..s.edge_src.len() {
+            let hw = s.edge_highway.get(i).map(|s| s.as_str()).unwrap_or("");
+            if crate::routing::graph::is_construction_or_proposed_highway(
+                (!hw.is_empty()).then_some(hw),
+            ) {
+                continue;
+            }
+            let si = s.edge_src[i] as usize;
+            let ti = s.edge_tgt[i] as usize;
+            let e = CoarseEdge {
+                source: s.node_ids[si],
+                target: s.node_ids[ti],
+                start_lat: s.node_lats[si],
+                start_lon: s.node_lons[si],
+                end_lat: s.node_lats[ti],
+                end_lon: s.node_lons[ti],
+                length_m: s.edge_length_m[i],
+                base_weight: s.edge_base_weight[i],
+                highway: 0,
+                name: 0,
+                road_ref: 0,
+                is_oneway: s.edge_is_oneway.get(i).copied().unwrap_or(0) != 0,
+                is_ferry: s.edge_is_ferry.get(i).copied().unwrap_or(0) != 0,
+                is_tunnel: s.edge_is_tunnel.get(i).copied().unwrap_or(0) != 0,
+                is_toll: s.edge_is_toll.get(i).copied().unwrap_or(0) != 0,
+            };
+            let key = (
+                e.source,
+                e.target,
+                e.length_m.to_bits(),
+                e.start_lat.to_bits(),
+                e.start_lon.to_bits(),
+                e.end_lat.to_bits(),
+                e.end_lon.to_bits(),
+            );
+            if !self.seen.insert(key) {
+                continue;
+            }
+            let highway = self.intern(hw);
+            let name = self.intern(s.edge_name.get(i).map(|s| s.as_str()).unwrap_or(""));
+            let road_ref = self.intern(s.edge_road_ref.get(i).map(|s| s.as_str()).unwrap_or(""));
+            self.edges.push(CoarseEdge {
+                highway,
+                name,
+                road_ref,
+                ..e
+            });
+        }
+        self.regions.push(SkeletonRegionNodes::from(s));
+    }
+
+    fn finish(self, profile: RoutingProfile) -> CoarseGraph {
+        let Self {
+            keep_names,
+            nodes,
+            edges: compact,
+            seen,
+            strings,
+            string_ix,
+            regions,
+        } = self;
+        drop(seen);
+        drop(string_ix);
+        let text = |i: u32| (i != 0).then(|| strings[i as usize].clone());
+        let mut edges = Vec::with_capacity(compact.len() + STITCH_EDGE_HEADROOM);
+        let mut names = Vec::with_capacity(if keep_names { 0 } else { compact.len() });
+        for e in &compact {
+            let (name, road_ref) = if keep_names {
+                (text(e.name), text(e.road_ref))
+            } else {
+                names.push((e.name, e.road_ref));
+                (None, None)
+            };
+            edges.push(GraphEdge {
+                id: String::new(),
+                source: NodeId(e.source),
+                target: NodeId(e.target),
+                length_m: e.length_m,
+                base_weight: e.base_weight,
+                cost_mult: 1.0,
+                eco_weight: Some(e.base_weight),
+                start_lat: e.start_lat,
+                start_lon: e.start_lon,
+                end_lat: e.end_lat,
+                end_lon: e.end_lon,
+                shape: Vec::new(),
+                highway: text(e.highway),
+                maxspeed_kmh: None,
+                maxspeed_practical_kmh: None,
+                maxspeed_advisory_kmh: None,
+                maxspeed_type: None,
+                maxspeed_variable: false,
+                minspeed_kmh: None,
+                name,
+                road_ref,
+                is_motorroad: false,
+                is_expressway: false,
+                is_oneway: e.is_oneway,
+                lanes: None,
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: e.is_toll,
+                is_ferry: e.is_ferry,
+                ferry_interval_min: None,
+                is_tunnel: e.is_tunnel,
+                is_boardwalk_crossing: false,
+                is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
+                access_forbidden: false,
+                surface_quality: SurfaceQuality::Good,
+            });
+        }
+        drop(compact);
+        let mut graph = RouteGraph::from_parts(nodes, edges, profile);
+        let n_intra =
+            stitch_intra_skeleton_component_gaps(&mut graph, &regions, INTRA_SKELETON_STITCH_MAX_M);
+        let n_adj =
+            stitch_adjacent_skeleton_gaps(&mut graph, &regions, ADJACENT_SKELETON_STITCH_MAX_M);
+        if n_intra + n_adj > 0 {
+            log::info!(
+                target: "NaviPlan",
+                "skeleton_adjacent_stitch intra={n_intra} adjacent={n_adj} \
+                 adj_max_m={ADJACENT_SKELETON_STITCH_MAX_M} intra_max_m={INTRA_SKELETON_STITCH_MAX_M}"
+            );
+        }
+        CoarseGraph {
+            graph,
+            regions,
+            names: CoarseEdgeNames {
+                strings: if keep_names { Vec::new() } else { strings },
+                edge: names,
+            },
+        }
+    }
 }
 
 /// Push a bidirectional trunk-equivalent stitch edge pair onto `graph.edges`.
@@ -1231,7 +1501,7 @@ fn rebuild_graph_adjacency(graph: &mut RouteGraph) {
 /// / Geofabrik edge drops). Only links components with ≥10 nodes each.
 fn stitch_intra_skeleton_component_gaps(
     graph: &mut RouteGraph,
-    skels: &[CorridorSkeletonFile],
+    skels: &[SkeletonRegionNodes],
     max_m: f64,
 ) -> u32 {
     let mut added = 0u32;
@@ -1350,7 +1620,7 @@ fn stitch_intra_skeleton_component_gaps(
 /// `max_m` and not already the same OSM id, add a bidirectional link.
 fn stitch_adjacent_skeleton_gaps(
     graph: &mut RouteGraph,
-    skels: &[CorridorSkeletonFile],
+    skels: &[SkeletonRegionNodes],
     max_m: f64,
 ) -> u32 {
     if skels.len() < 2 {
@@ -1467,18 +1737,36 @@ fn stitch_adjacent_skeleton_gaps(
 
 /// Union of OSM ids marked as border nodes across skeletons.
 pub fn border_osm_from_skeletons(skels: &[CorridorSkeletonFile]) -> HashSet<i64> {
+    border_osm_from_node_arrays(
+        skels
+            .iter()
+            .map(|s| (&s.node_ids[..], &s.node_is_border[..])),
+    )
+}
+
+/// [`border_osm_from_skeletons`] on the node arrays kept after a merge.
+pub fn border_osm_from_regions(regions: &[SkeletonRegionNodes]) -> HashSet<i64> {
+    border_osm_from_node_arrays(
+        regions
+            .iter()
+            .map(|r| (&r.node_ids[..], &r.node_is_border[..])),
+    )
+}
+
+fn border_osm_from_node_arrays<'a>(
+    regions: impl Iterator<Item = (&'a [i64], &'a [u8])> + Clone,
+) -> HashSet<i64> {
     let mut out = HashSet::new();
-    for s in skels {
-        for (i, &oid) in s.node_ids.iter().enumerate() {
-            if s.node_is_border.get(i).copied().unwrap_or(0) != 0 {
+    for (ids, border) in regions.clone() {
+        for (i, &oid) in ids.iter().enumerate() {
+            if border.get(i).copied().unwrap_or(0) != 0 {
                 out.insert(oid);
             }
         }
     }
     // Also treat OSM ids present in ≥2 skeletons as borders even if unmarked.
-    let sets: Vec<HashSet<i64>> = skels
-        .iter()
-        .map(|s| s.node_ids.iter().copied().collect())
+    let sets: Vec<HashSet<i64>> = regions
+        .map(|(ids, _)| ids.iter().copied().collect())
         .collect();
     out.extend(shared_osm_ids_across_regions(&sets));
     out
@@ -2035,6 +2323,7 @@ struct LegAlternative {
 /// returns a path without ferries, that path is also the no-ferries optimum.
 fn leg_alternatives(
     graph: &mut RouteGraph,
+    names: &CoarseEdgeNames,
     border_osm: &HashSet<i64>,
     from: NodeId,
     to: NodeId,
@@ -2042,7 +2331,7 @@ fn leg_alternatives(
 ) -> Vec<LegAlternative> {
     let opts = coarse_route_options(route_options);
     let mut out: Vec<LegAlternative> = Vec::new();
-    let push = |graph: &RouteGraph, name: String, note: &str, out: &mut Vec<LegAlternative>| {
+    let push = |graph: &mut RouteGraph, name: String, note: &str, out: &mut Vec<LegAlternative>| {
         let t = std::time::Instant::now();
         let Some((path, edges, _)) = graph.shortest_path_with_options(from, to, false, &opts)
         else {
@@ -2052,6 +2341,7 @@ fn leg_alternatives(
         if path.first() != Some(&from) || path.last() != Some(&to) {
             return;
         }
+        names.apply(graph, &edges);
         let report =
             build_coarse_route_report(&name, graph, &path, &edges, border_osm, &[], 0, 0, note);
         out.push(LegAlternative {
@@ -2098,6 +2388,7 @@ struct StageBPlan {
 
 fn stage_b_plan_on_graph(
     graph: &mut RouteGraph,
+    names: &CoarseEdgeNames,
     border_osm: &HashSet<i64>,
     waypoints: &[(f64, f64)],
     snap_m: f64,
@@ -2109,7 +2400,7 @@ fn stage_b_plan_on_graph(
     let mut legs = Vec::with_capacity(snaps.len() - 1);
     let mut picks = Vec::with_capacity(snaps.len() - 1);
     for (li, w) in snaps.windows(2).enumerate() {
-        let mut alts = leg_alternatives(graph, border_osm, w[0], w[1], route_options);
+        let mut alts = leg_alternatives(graph, names, border_osm, w[0], w[1], route_options);
         let summary: Vec<(f64, usize, f64)> = alts
             .iter()
             .map(|a| {
@@ -2161,23 +2452,37 @@ fn stage_b_plan_on_graph(
     })
 }
 
-fn load_skeletons_from_dirs(dirs: &[&Path], profile: RoutingProfile) -> Vec<CorridorSkeletonFile> {
-    load_skeletons_from_dirs_filtered(dirs, None, profile)
-}
-
-/// Load skeletons; when `only_stems` is set, skip every other region file.
+/// Merge the fresh skeletons of `dirs` into one coarse graph, reading and
+/// dropping one region file at a time; when `only_stems` is set, every other
+/// region is skipped. `None` when no skeleton is fresh. Adds file read time
+/// to `load_ms`.
 ///
 /// A skeleton is used only when its meta matches the current build, format,
 /// pack and neighbour-pack fingerprint ([`skeleton_fresh`]), the same test the
 /// app's idle builder uses, so a skeleton from another build is never read.
 ///
 /// [`skeleton_fresh`]: crate::routing::indexed::skeleton_fresh
-fn load_skeletons_from_dirs_filtered(
+fn load_coarse_graph(
     dirs: &[&Path],
     only_stems: Option<&HashSet<String>>,
     profile: RoutingProfile,
-) -> Vec<CorridorSkeletonFile> {
-    let mut out = Vec::new();
+    load_ms: &mut u128,
+) -> Option<CoarseGraph> {
+    let mut b = CoarseGraphBuilder::new(false);
+    for_each_fresh_skeleton(dirs, only_stems, profile, load_ms, |s| b.add(&s));
+    if b.regions.is_empty() {
+        return None;
+    }
+    Some(b.finish(profile))
+}
+
+fn for_each_fresh_skeleton(
+    dirs: &[&Path],
+    only_stems: Option<&HashSet<String>>,
+    profile: RoutingProfile,
+    load_ms: &mut u128,
+    mut f: impl FnMut(CorridorSkeletonFile),
+) {
     let mut seen = HashSet::new();
     for dir in dirs {
         let Ok(rd) = std::fs::read_dir(dir) else {
@@ -2198,6 +2503,7 @@ fn load_skeletons_from_dirs_filtered(
             if only_stems.is_some_and(|want| !want.contains(&stem)) || seen.contains(&stem) {
                 continue;
             }
+            let t = Instant::now();
             if !crate::routing::indexed::skeleton_fresh(dir, &stem, profile) {
                 log::warn!(target: "NaviPlan", "stage_b skip stale skeleton stem={stem}");
                 continue;
@@ -2208,11 +2514,11 @@ fn load_skeletons_from_dirs_filtered(
             let Ok(s) = read_skeleton_file(&p) else {
                 continue;
             };
+            *load_ms += t.elapsed().as_millis();
             seen.insert(stem);
-            out.push(s);
+            f(s);
         }
     }
-    out
 }
 
 /// Stems for Stage B: direct-corridor regions plus one-hop adjacency neighbours.
@@ -2488,30 +2794,35 @@ pub fn try_stage_b_densify_from_skeletons(
     // Trip-local first: corridor + neighbours. Widen to every installed skeleton
     // only when the coarse search finds no route on that subset.
     let local_stems = trip_local_skeleton_stems(waypoints);
-    let mut skels = match &local_stems {
+    let t = std::time::Instant::now();
+    let coarse = match &local_stems {
         Some(stems) => {
-            let s = load_skeletons_from_dirs_filtered(pack_dirs, Some(stems), profile);
+            let c = load_coarse_graph(pack_dirs, Some(stems), profile, &mut load_ms);
             log::info!(
                 target: "NaviPlan",
                 "stage_b trip_local stems={} loaded={}",
                 stems.len(),
-                s.len()
+                c.as_ref().map_or(0, |c| c.regions.len())
             );
-            s
+            c
         }
-        None => load_skeletons_from_dirs(pack_dirs, profile),
+        None => load_coarse_graph(pack_dirs, None, profile, &mut load_ms),
     };
-    load_ms += t0.elapsed().as_millis();
-    if skels.is_empty() {
+    graph_ms += t.elapsed().as_millis().saturating_sub(load_ms);
+    let Some(mut coarse) = coarse else {
         log::info!(target: "NaviPlan", "stage_b densify: no fresh persistent skeletons");
         return None;
-    }
+    };
+    let mut border_osm = border_osm_from_regions(&coarse.regions);
     let t = std::time::Instant::now();
-    let mut border_osm = border_osm_from_skeletons(&skels);
-    let mut graph = merge_skeletons_to_route_graph(&skels, profile);
-    graph_ms += t.elapsed().as_millis();
-    let t = std::time::Instant::now();
-    let mut plan = stage_b_plan_on_graph(&mut graph, &border_osm, waypoints, snap_m, route_options);
+    let mut plan = stage_b_plan_on_graph(
+        &mut coarse.graph,
+        &coarse.names,
+        &border_osm,
+        waypoints,
+        snap_m,
+        route_options,
+    );
     plan_ms += t.elapsed().as_millis();
     if plan.is_none() && local_stems.is_some() {
         log::info!(
@@ -2519,51 +2830,93 @@ pub fn try_stage_b_densify_from_skeletons(
             "stage_b trip_local miss; widening to all installed skeletons"
         );
         widened = true;
+        drop(coarse);
         let t = std::time::Instant::now();
-        skels = load_skeletons_from_dirs(pack_dirs, profile);
-        load_ms += t.elapsed().as_millis();
-        if skels.is_empty() {
-            return None;
-        }
+        let load_before = load_ms;
+        coarse = load_coarse_graph(pack_dirs, None, profile, &mut load_ms)?;
+        graph_ms += t
+            .elapsed()
+            .as_millis()
+            .saturating_sub(load_ms - load_before);
+        border_osm = border_osm_from_regions(&coarse.regions);
         let t = std::time::Instant::now();
-        border_osm = border_osm_from_skeletons(&skels);
-        graph = merge_skeletons_to_route_graph(&skels, profile);
-        graph_ms += t.elapsed().as_millis();
-        let t = std::time::Instant::now();
-        plan = stage_b_plan_on_graph(&mut graph, &border_osm, waypoints, snap_m, route_options);
+        plan = stage_b_plan_on_graph(
+            &mut coarse.graph,
+            &coarse.names,
+            &border_osm,
+            waypoints,
+            snap_m,
+            route_options,
+        );
         plan_ms += t.elapsed().as_millis();
     }
     let plan = plan?;
     let snap_ms = plan.snap_ms;
     let t = std::time::Instant::now();
-    let mut out = assemble_stage_b(plan, &graph, waypoints, pack_dirs, profile, skels.len());
+    let skels = coarse.regions.len();
+    let mut out = assemble_stage_b(plan, &coarse.graph, waypoints, pack_dirs, profile, skels);
     let assemble_ms = t.elapsed().as_millis();
+    let (graph_nodes, graph_edges) = (coarse.graph.nodes.len(), coarse.graph.edges.len());
+    let hwm_mb = vm_hwm_mb();
+    let rss_before_mb = vm_rss_mb();
+    drop(coarse);
+    drop(border_osm);
+    release_free_heap();
+    let rss_after_mb = vm_rss_mb();
     out.timing = format!(
-        "stage_b_timing skels={} widened={widened} graph_nodes={} graph_edges={} \
-         load_ms={load_ms} graph_ms={graph_ms} plan_ms={plan_ms} snap_ms={snap_ms} \
-         assemble_ms={assemble_ms} \
-         total_ms={} vm_hwm_mb={}",
-        skels.len(),
-        graph.nodes.len(),
-        graph.edges.len(),
+        "stage_b_timing skels={skels} widened={widened} graph_nodes={graph_nodes} \
+         graph_edges={graph_edges} load_ms={load_ms} graph_ms={graph_ms} plan_ms={plan_ms} \
+         snap_ms={snap_ms} assemble_ms={assemble_ms} total_ms={} vm_hwm_mb={hwm_mb}\n\
+         stage_b_release rss_before_mb={rss_before_mb} rss_after_mb={rss_after_mb}",
         t0.elapsed().as_millis(),
-        vm_hwm_mb()
     );
     log::info!(target: "NaviPlan", "{}", out.timing);
     Some(out)
 }
 
-/// Process peak resident set (VmHWM) in MiB; 0 where `/proc` is unavailable.
-pub fn vm_hwm_mb() -> u64 {
+/// Return freed heap pages to the system so the first detailed hop does not
+/// start on top of the corridor stage's footprint.
+fn release_free_heap() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    unsafe {
+        libc::malloc_trim(0);
+    }
+    #[cfg(target_os = "android")]
+    {
+        extern "C" {
+            fn mallopt(param: libc::c_int, value: libc::c_int) -> libc::c_int;
+        }
+        // Bionic M_PURGE_ALL (API 34+), else M_PURGE.
+        const M_PURGE_ALL: libc::c_int = -104;
+        const M_PURGE: libc::c_int = -101;
+        unsafe {
+            if mallopt(M_PURGE_ALL, 0) == 0 {
+                mallopt(M_PURGE, 0);
+            }
+        }
+    }
+}
+
+fn proc_status_mb(key: &str) -> u64 {
     std::fs::read_to_string("/proc/self/status")
         .ok()
         .and_then(|s| {
             s.lines()
-                .find_map(|l| l.strip_prefix("VmHWM:"))
+                .find_map(|l| l.strip_prefix(key))
                 .and_then(|v| v.split_whitespace().next()?.parse::<u64>().ok())
         })
         .map(|kb| kb / 1024)
         .unwrap_or(0)
+}
+
+/// Process resident set (VmRSS) in MiB; 0 where `/proc` is unavailable.
+pub fn vm_rss_mb() -> u64 {
+    proc_status_mb("VmRSS:")
+}
+
+/// Process peak resident set (VmHWM) in MiB; 0 where `/proc` is unavailable.
+pub fn vm_hwm_mb() -> u64 {
+    proc_status_mb("VmHWM:")
 }
 
 /// Join the per-leg picks into one hop chain. Each leg's hops run from its exact
@@ -3073,7 +3426,14 @@ mod tests {
         let border = HashSet::new();
         let mut ferry_legs = 0;
         for w in snaps.windows(2) {
-            let alts = leg_alternatives(&mut g, &border, w[0], w[1], &opts);
+            let alts = leg_alternatives(
+                &mut g,
+                &CoarseEdgeNames::default(),
+                &border,
+                w[0],
+                w[1],
+                &opts,
+            );
             assert!(!alts.is_empty(), "every leg has a free alternative");
             if alts[0].report.ferries.is_empty() {
                 assert_eq!(
@@ -3134,6 +3494,7 @@ mod tests {
         );
         let plan = stage_b_plan_on_graph(
             &mut g,
+            &CoarseEdgeNames::default(),
             &HashSet::new(),
             &VIA_TRIP,
             5_000.0,
@@ -3479,6 +3840,154 @@ mod tests {
         let alt = coarse_shortest_path(&mut g, wps, 5_000.0, &avoid).expect("non-motorway path");
         assert!(!path_uses_edge(&g, &alt.1, "short"));
         assert!(path_uses_edge(&g, &alt.1, "l2"));
+    }
+
+    fn merge_fixture(
+        stem: &str,
+        ids: Vec<i64>,
+        lons: Vec<f64>,
+        edges: &[(u32, u32, &str, &str, &str, u8)],
+    ) -> CorridorSkeletonFile {
+        let n = ids.len();
+        let length: Vec<f64> = edges
+            .iter()
+            .map(|e| 1_000.0 + ids[e.0 as usize] as f64)
+            .collect();
+        let weight: Vec<f64> = edges
+            .iter()
+            .map(|e| 900.0 + ids[e.1 as usize] as f64)
+            .collect();
+        CorridorSkeletonFile {
+            format_version: CORRIDOR_SKELETON_FORMAT_VERSION,
+            pack_format_version: GRAPH_FORMAT_VERSION,
+            region_id: format!("test/{stem}"),
+            leaf_stem: stem.into(),
+            profile: "car".into(),
+            node_count: n as u32,
+            edge_count: edges.len() as u32,
+            ferry_edge_count: 0,
+            secondary_edge_count: 0,
+            border_node_count: 0,
+            ferry_terminal_count: 0,
+            build_ms: 0,
+            node_ids: ids,
+            node_lats: vec![60.0; n],
+            node_lons: lons,
+            node_is_border: vec![0; n],
+            node_is_ferry_terminal: vec![0; n],
+            edge_src: edges.iter().map(|e| e.0).collect(),
+            edge_tgt: edges.iter().map(|e| e.1).collect(),
+            edge_length_m: length,
+            edge_base_weight: weight,
+            edge_highway: edges.iter().map(|e| e.2.to_string()).collect(),
+            edge_name: edges.iter().map(|e| e.3.to_string()).collect(),
+            edge_road_ref: edges.iter().map(|e| e.4.to_string()).collect(),
+            edge_is_oneway: vec![1; edges.len()],
+            edge_is_ferry: edges.iter().map(|e| e.5).collect(),
+            edge_is_tunnel: vec![0; edges.len()],
+            edge_is_toll: vec![0; edges.len()],
+        }
+    }
+
+    #[test]
+    fn streaming_merge_matches_per_region_merge() {
+        // Two regions share node 2 and the edge 1-2; region a also carries a
+        // construction edge, which must not be routable.
+        let a = merge_fixture(
+            "a",
+            vec![1, 2, 3],
+            vec![10.0, 10.1, 10.2],
+            &[
+                (0, 1, "primary", "Storgata", "E6", 0),
+                (1, 2, "construction", "", "", 0),
+                (1, 0, "primary", "Storgata", "", 0),
+                (2, 1, "", "Fjord - Kai", "", 1),
+            ],
+        );
+        let b = merge_fixture(
+            "b",
+            vec![2, 1, 4],
+            vec![10.1, 10.0, 10.3],
+            &[
+                (1, 0, "primary", "Storgata", "E6", 0),
+                (0, 2, "trunk", "", "E39", 0),
+            ],
+        );
+        let skels = [a, b];
+        let old = crate::routing::indexed::merge_tile_graphs(
+            skels
+                .iter()
+                .map(|s| skeleton_to_route_graph(s, RoutingProfile::Car))
+                .collect(),
+            RoutingProfile::Car,
+        );
+        let mut builder = CoarseGraphBuilder::new(false);
+        for s in &skels {
+            builder.add(s);
+        }
+        let mut new = builder.finish(RoutingProfile::Car);
+        let all: Vec<usize> = (0..new.graph.edges.len()).collect();
+        new.names.apply(&mut new.graph, &all);
+        let key = |e: &GraphEdge| {
+            (
+                e.source,
+                e.target,
+                e.length_m.to_bits(),
+                e.base_weight.to_bits(),
+                e.start_lon.to_bits(),
+                e.end_lon.to_bits(),
+                e.highway.clone(),
+                e.name.clone(),
+                e.road_ref.clone(),
+                (e.is_oneway, e.is_ferry, e.is_tunnel, e.is_toll),
+            )
+        };
+        let old_edges: Vec<_> = old.edges.iter().map(key).collect();
+        let new_edges: Vec<_> = new.graph.edges.iter().map(key).collect();
+        assert_eq!(
+            old_edges.len(),
+            4,
+            "construction edge and repeated 1-2 dropped"
+        );
+        assert_eq!(new_edges, old_edges);
+        let mut old_nodes: Vec<_> = old
+            .nodes
+            .values()
+            .map(|n| (n.id, n.coord.x.to_bits()))
+            .collect();
+        let mut new_nodes: Vec<_> = new
+            .graph
+            .nodes
+            .values()
+            .map(|n| (n.id, n.coord.x.to_bits()))
+            .collect();
+        old_nodes.sort();
+        new_nodes.sort();
+        assert_eq!(new_nodes, old_nodes);
+        assert_eq!(new.regions.len(), 2);
+        assert!(new
+            .graph
+            .edges
+            .iter()
+            .all(|e| e.id.is_empty() && e.shape.is_empty()));
+    }
+
+    #[test]
+    fn coarse_names_stay_off_the_graph_until_applied() {
+        let a = merge_fixture(
+            "a",
+            vec![1, 2],
+            vec![10.0, 10.1],
+            &[(0, 1, "primary", "Storgata", "E6", 0)],
+        );
+        let mut builder = CoarseGraphBuilder::new(false);
+        builder.add(&a);
+        let mut c = builder.finish(RoutingProfile::Car);
+        assert_eq!(c.graph.edges[0].name, None);
+        assert_eq!(c.graph.edges[0].road_ref, None);
+        c.names.apply(&mut c.graph, &[0]);
+        assert_eq!(c.graph.edges[0].name.as_deref(), Some("Storgata"));
+        assert_eq!(c.graph.edges[0].road_ref.as_deref(), Some("E6"));
     }
 
     #[test]
