@@ -204,10 +204,7 @@ pub fn pack_edge_matches_overlay_ferry(pack: &GraphEdge, ferry: &GraphEdge) -> b
 /// overlay pier/ferry OSM ids often differ even when coordinates match within
 /// [`OVERLAY_FERRY_MATCH_M`] — without it, merge leaves a floating ferry and the
 /// hop goes `disconnected` (Fehmarnbelt after drop-not-stamp).
-pub fn drop_pack_edges_replaced_by_overlay_ferry(
-    graph: &mut RouteGraph,
-    overlay: &mut RouteGraph,
-) {
+pub fn drop_pack_edges_replaced_by_overlay_ferry(graph: &mut RouteGraph, overlay: &mut RouteGraph) {
     if !overlay.edges.iter().any(|e| e.is_ferry) {
         return;
     }
@@ -1953,8 +1950,7 @@ impl RouteGraph {
                     let (node, prev_surface, _) = *state;
                     let n = expansions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     if n > expansion_limit {
-                        expansion_aborted
-                            .store(true, std::sync::atomic::Ordering::Relaxed);
+                        expansion_aborted.store(true, std::sync::atomic::Ordering::Relaxed);
                         return Vec::new();
                     }
                     if plan_id != 0
@@ -2047,8 +2043,7 @@ impl RouteGraph {
                         if !edge_allowed_at(edge, edge_idx, options, self.profile) {
                             return None;
                         }
-                        let cost =
-                            edge_travel_cost(edge, edge_idx, use_eco, options, self.profile);
+                        let cost = edge_travel_cost(edge, edge_idx, use_eco, options, self.profile);
                         Some(((edge.target, edge_idx), cost_to_u64(cost)))
                     })
                     .collect::<Vec<_>>()
@@ -2146,8 +2141,58 @@ impl RouteGraph {
     }
 
     /// Contiguous ferry-edge runs on the path: `(label, length_m)`.
-    /// Label prefers OSM `name`, else `ref`, else `unnamed`.
+    /// Label is terminal names (`A - B`) from OSM name / ref, known terminals,
+    /// else coordinates — never an empty fingerprint stem.
     pub fn path_ferry_legs(&self, edge_indices: &[usize]) -> Vec<(String, f64)> {
+        fn known_terminal(lat: f64, lon: f64) -> Option<&'static str> {
+            // Coarse harbour labels for route_ferry_fp (metres).
+            const KNOWN: &[(&str, f64, f64, f64)] = &[
+                ("Puttgarden", 54.5028, 11.2282, 3_000.0),
+                ("Rodby", 54.6543, 11.3508, 3_000.0),
+                ("Helsingor", 56.0330, 12.6160, 3_000.0),
+                ("Helsingborg", 56.0433, 12.6915, 3_000.0),
+                ("Mannheller", 61.1435, 7.3239, 4_000.0),
+                ("Fodnes", 61.0863, 7.3742, 4_000.0),
+                ("Kinsarvik", 60.3750, 6.7200, 4_000.0),
+                ("Utne", 60.4241, 6.6218, 3_000.0),
+                ("Kvanndal", 60.4718, 6.6124, 3_000.0),
+            ];
+            let mut best: Option<(&'static str, f64)> = None;
+            for (name, kla, klo, rad) in KNOWN {
+                let d = haversine_latlon_m(lat, lon, *kla, *klo);
+                if d <= *rad && best.is_none_or(|(_, bd)| d < bd) {
+                    best = Some((*name, d));
+                }
+            }
+            best.map(|(n, _)| n)
+        }
+        fn ferry_leg_label(e: &GraphEdge) -> String {
+            let raw = e
+                .name
+                .as_deref()
+                .or(e.road_ref.as_deref())
+                .unwrap_or("")
+                .trim();
+            for sep in [" – ", " - ", " — ", "–"] {
+                if let Some((a, b)) = raw.split_once(sep) {
+                    let a = a.trim();
+                    let b = b.trim();
+                    if !a.is_empty() && !b.is_empty() {
+                        return format!("{a} - {b}");
+                    }
+                }
+            }
+            if !raw.is_empty() {
+                return raw.to_string();
+            }
+            let a = known_terminal(e.start_lat, e.start_lon)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("{:.5},{:.5}", e.start_lat, e.start_lon));
+            let b = known_terminal(e.end_lat, e.end_lon)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("{:.5},{:.5}", e.end_lat, e.end_lon));
+            format!("{a} - {b}")
+        }
         let mut legs: Vec<(String, f64)> = Vec::new();
         let mut cur_label: Option<String> = None;
         let mut cur_m = 0.0_f64;
@@ -2165,12 +2210,7 @@ impl RouteGraph {
                 flush(&mut legs, &mut cur_label, &mut cur_m);
                 continue;
             }
-            let label = e
-                .name
-                .as_deref()
-                .or(e.road_ref.as_deref())
-                .unwrap_or("unnamed")
-                .to_string();
+            let label = ferry_leg_label(e);
             match cur_label.as_ref() {
                 Some(l) if l == &label => cur_m += e.length_m,
                 Some(_) => {
@@ -3079,7 +3119,9 @@ pub fn parse_osm_interval_minutes(raw: &str) -> Option<f64> {
         return (m.is_finite() && m > 0.0).then_some(m);
     }
     // Reuse duration parser (seconds) → minutes.
-    parse_osm_duration_secs(s).map(|secs| secs / 60.0).filter(|m| *m > 0.0)
+    parse_osm_duration_secs(s)
+        .map(|secs| secs / 60.0)
+        .filter(|m| *m > 0.0)
 }
 
 /// Crossing and expected-wait minutes for a ferry edge already on a loaded graph.
@@ -4435,7 +4477,13 @@ mod tests {
             edge_allowed_for_options(&edge, &avoid, RoutingProfile::Car),
             "tunnels must stay searchable under soft avoid"
         );
-        let base = edge_travel_cost(&edge, 0, false, &RouteOptions::default(), RoutingProfile::Car);
+        let base = edge_travel_cost(
+            &edge,
+            0,
+            false,
+            &RouteOptions::default(),
+            RoutingProfile::Car,
+        );
         let penalized = edge_travel_cost(&edge, 0, false, &avoid, RoutingProfile::Car);
         assert!(
             (penalized - base * crate::routing::toll::TUNNEL_AVOID_PENALTY_MULT).abs() < 1e-9,
@@ -4448,7 +4496,13 @@ mod tests {
         edge.is_tunnel = false;
         assert_eq!(
             edge_travel_cost(&edge, 0, false, &avoid, RoutingProfile::Car),
-            edge_travel_cost(&edge, 0, false, &RouteOptions::default(), RoutingProfile::Car)
+            edge_travel_cost(
+                &edge,
+                0,
+                false,
+                &RouteOptions::default(),
+                RoutingProfile::Car
+            )
         );
     }
 
@@ -5267,7 +5321,6 @@ mod tests {
         assert!(!g.directed_snap_ok(NodeId(3), SnapRole::Origin));
     }
 
-
     #[test]
     fn parse_osm_interval_minutes_accepts_forms() {
         assert_eq!(parse_osm_interval_minutes("60"), Some(60.0));
@@ -5285,16 +5338,16 @@ mod tests {
         // Pack-style base_weight: 45 min crossing + 10 min floor.
         let drive = ferry_drive_equiv_m_per_s();
         e.base_weight = (45.0 + FERRY_WAIT_FLOOR_MIN) * 60.0 * drive;
-        e.maxspeed_practical_kmh = None;
+        e.ferry_interval_min = None;
         let (c0, w0) = ferry_crossing_and_wait_min(&e);
         assert!((c0 - 45.0).abs() < 0.5, "crossing={c0}");
         assert!((w0 - ferry_wait_minutes(45.0, None)).abs() < 1e-6);
-        // Overlay stash: 20 min interval → wait max(10, 10).
-        e.maxspeed_practical_kmh = Some(20.0);
+        // Overlay interval: 20 min between departures → wait max(10, 10).
+        e.ferry_interval_min = Some(20.0);
         let (c1, w1) = ferry_crossing_and_wait_min(&e);
         assert!((c1 - 45.0).abs() < 0.5);
         assert!((w1 - 10.0).abs() < 1e-6, "wait={w1}");
-        e.maxspeed_practical_kmh = Some(90.0);
+        e.ferry_interval_min = Some(90.0);
         let (_, w2) = ferry_crossing_and_wait_min(&e);
         assert!((w2 - 45.0).abs() < 1e-6, "wait={w2}");
     }
@@ -5408,11 +5461,8 @@ mod tests {
             ] {
                 nodes.insert(nid, n);
             }
-            let mut g = RouteGraph::from_parts(
-                nodes,
-                vec![land_a, pack, land_b],
-                RoutingProfile::Car,
-            );
+            let mut g =
+                RouteGraph::from_parts(nodes, vec![land_a, pack, land_b], RoutingProfile::Car);
             let mut onodes = HashMap::new();
             for (nid, n) in [
                 test_node(id + 2, *slat, *slon),
@@ -5429,10 +5479,8 @@ mod tests {
                 "{name}: only the water-chord pack edge is removed"
             );
             assert!(g.edges.iter().all(|e| !e.is_ferry), "{name}");
-            let merged = crate::routing::indexed::merge_tile_graphs(
-                vec![g, overlay],
-                RoutingProfile::Car,
-            );
+            let merged =
+                crate::routing::indexed::merge_tile_graphs(vec![g, overlay], RoutingProfile::Car);
             let ferry_e = merged
                 .edges
                 .iter()
@@ -5442,15 +5490,21 @@ mod tests {
             assert_eq!(ferry_e.shape.len(), 1, "{name}: overlay geometry");
             assert!((ferry_e.length_m - 18_900.0).abs() < 1e-6);
             assert_eq!(ferry_e.source, NodeId(id), "{name}: rewired to pack source");
-            assert_eq!(ferry_e.target, NodeId(id + 1), "{name}: rewired to pack target");
+            assert_eq!(
+                ferry_e.target,
+                NodeId(id + 1),
+                "{name}: rewired to pack target"
+            );
             // Land → ferry → land must be one weak component.
             assert_eq!(
                 merged.weak_component_id(NodeId(id - 2)),
                 merged.weak_component_id(NodeId(id + 4)),
                 "{name}: rewired ferry must join land approaches"
             );
-            let mut avoid = RouteOptions::default();
-            avoid.avoid_ferries = true;
+            let avoid = RouteOptions {
+                avoid_ferries: true,
+                ..Default::default()
+            };
             assert!(
                 !edge_allowed_for_options(ferry_e, &avoid, RoutingProfile::Car),
                 "avoid_ferries must drop {name}"
@@ -5461,7 +5515,15 @@ mod tests {
     #[test]
     fn overlay_ferry_match_skips_oresund_and_storebaelt_bridges() {
         // Helsingør–Helsingborg ferry terminals.
-        let ferry = named_ferry(1, 2, 56.034, 12.617, 56.043, 12.691, "Helsingor-Helsingborg");
+        let ferry = named_ferry(
+            1,
+            2,
+            56.034,
+            12.617,
+            56.043,
+            12.691,
+            "Helsingor-Helsingborg",
+        );
         // Øresund bridge (Copenhagen–Malmö): neither end is a ferry terminal.
         let mut oresund = test_edge(10, 11, 55.573, 12.568, 55.574, 12.892);
         oresund.highway = Some("motorway".into());

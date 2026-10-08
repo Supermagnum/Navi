@@ -146,7 +146,11 @@ object InstalledMaps {
         val scanned = LinkedHashSet<String>()
         val probes = HashMap<String, PlaceIndexIntact.Probe>()
         val partial = LinkedHashSet<String>()
-        fun consider(volumeId: String, dir: File) {
+
+        fun consider(
+            volumeId: String,
+            dir: File,
+        ) {
             if (!dir.isDirectory) return
             val key = dir.absolutePath
             if (!scanned.add(key)) return
@@ -158,42 +162,43 @@ object InstalledMaps {
         }
         val indexUnavailable =
             placeIndexLocationLine?.contains("UNAVAILABLE") == true
-        val missing = byId.values.mapNotNull { r ->
-            if (r.placeIndex == PlaceIndexState.INTACT || r.placeIndex == PlaceIndexState.LEGACY_INTACT) {
-                return@mapNotNull null
-            }
-            if (indexUnavailable) {
-                return@mapNotNull MissingIndexBuild(
-                    r.regionId,
-                    r.pbfPath,
-                    r.pbfKind,
-                    "place index unavailable on pack volume (not building elsewhere)",
-                )
-            }
-            val leafPbf =
-                PackRegionAvailability.resolvePlaceIndexPbf(r.packDir, r.regionId)
-                    ?: PackRegionAvailability.resolvePlaceIndexPbf(internalDataDir, r.regionId)
-            val pbf = leafPbf ?: r.pbfPath
-            val note =
-                when {
-                    leafPbf == null ->
-                        OfflineIndexGate.CANNOT_INDEX_YET +
-                            " (need ${PackRegionAvailability.localStem(r.regionId)}.osm.pbf)"
-                    r.pbfKind == PbfKind.STUB && leafPbf.length() < RegionDownloadBackground.MIN_PBF_BYTES ->
-                        OfflineIndexGate.CANNOT_INDEX_YET + "; stub PBF only"
-                    else -> {
-                        val mb = leafPbf.length() / 1_000_000L
-                        val hours =
-                            when {
-                                mb >= 400 -> "about 1-4 hours on-device"
-                                mb >= 100 -> "about 30-90 minutes on-device"
-                                else -> "under 30 minutes on-device"
-                            }
-                        "would index ${leafPbf.name} (${leafPbf.length()} bytes); not started; $hours"
-                    }
+        val missing =
+            byId.values.mapNotNull { r ->
+                if (r.placeIndex == PlaceIndexState.INTACT || r.placeIndex == PlaceIndexState.LEGACY_INTACT) {
+                    return@mapNotNull null
                 }
-            MissingIndexBuild(r.regionId, pbf, r.pbfKind, note)
-        }
+                if (indexUnavailable) {
+                    return@mapNotNull MissingIndexBuild(
+                        r.regionId,
+                        r.pbfPath,
+                        r.pbfKind,
+                        "place index unavailable on pack volume (not building elsewhere)",
+                    )
+                }
+                val leafPbf =
+                    PackRegionAvailability.resolvePlaceIndexPbf(r.packDir, r.regionId)
+                        ?: PackRegionAvailability.resolvePlaceIndexPbf(internalDataDir, r.regionId)
+                val pbf = leafPbf ?: r.pbfPath
+                val note =
+                    when {
+                        leafPbf == null ->
+                            OfflineIndexGate.CANNOT_INDEX_YET +
+                                " (need ${PackRegionAvailability.localStem(r.regionId)}.osm.pbf)"
+                        r.pbfKind == PbfKind.STUB && leafPbf.length() < RegionDownloadBackground.MIN_PBF_BYTES ->
+                            OfflineIndexGate.CANNOT_INDEX_YET + "; stub PBF only"
+                        else -> {
+                            val mb = leafPbf.length() / 1_000_000L
+                            val hours =
+                                when {
+                                    mb >= 400 -> "about 1-4 hours on-device"
+                                    mb >= 100 -> "about 30-90 minutes on-device"
+                                    else -> "under 30 minutes on-device"
+                                }
+                            "would index ${leafPbf.name} (${leafPbf.length()} bytes); not started; $hours"
+                        }
+                    }
+                MissingIndexBuild(r.regionId, pbf, r.pbfKind, note)
+            }
         snapshot.set(
             Snapshot(
                 generatedAtMs = System.currentTimeMillis(),
@@ -305,7 +310,9 @@ object InstalledMaps {
                     pbfPath = pbf.takeIf { it.isFile },
                     ferrySidecarCar = File(dir, "$stem.navi-ferry-overlay-car.rkyv").isFile,
                     ferrySidecarTruck = File(dir, "$stem.navi-ferry-overlay-truck.rkyv").isFile,
-                    corridorSkeleton = File(dir, "$stem.navi-corridor-skeleton.json").isFile,
+                    corridorSkeleton =
+                        File(dir, "$stem.navi-corridor-skeleton.bin").isFile ||
+                            File(dir, "$stem.navi-corridor-skeleton.json").isFile,
                     tilesPresent = tilesFile.isFile,
                     tilesRejected = rejectedFile.isFile,
                     placeIndex = indexState,
@@ -339,7 +346,9 @@ object InstalledMaps {
                     pbfPath = f,
                     ferrySidecarCar = File(dir, "$stem.navi-ferry-overlay-car.rkyv").isFile,
                     ferrySidecarTruck = File(dir, "$stem.navi-ferry-overlay-truck.rkyv").isFile,
-                    corridorSkeleton = File(dir, "$stem.navi-corridor-skeleton.json").isFile,
+                    corridorSkeleton =
+                        File(dir, "$stem.navi-corridor-skeleton.bin").isFile ||
+                            File(dir, "$stem.navi-corridor-skeleton.json").isFile,
                     tilesPresent = File(tilesDataDir, "pmtiles/${PackRegionAvailability.geofabrikPathToRegionKey(nid)}.pmtiles").isFile,
                     tilesRejected = File(tilesDataDir, "pmtiles/${PackRegionAvailability.geofabrikPathToRegionKey(nid)}.pmtiles.rejected").isFile,
                     placeIndex =
@@ -366,11 +375,10 @@ object InstalledMaps {
         return a.volumeId != NaviStorageVolumes.INTERNAL_ID && b.volumeId == NaviStorageVolumes.INTERNAL_ID
     }
 
-    private fun parseManifest(man: File): Int {
-        return runCatching {
+    private fun parseManifest(man: File): Int =
+        runCatching {
             JSONObject(man.readText()).optInt("graph_format_version", 0)
         }.getOrDefault(0)
-    }
 
     private fun loadableProfilesFromNames(
         files: Array<File>,

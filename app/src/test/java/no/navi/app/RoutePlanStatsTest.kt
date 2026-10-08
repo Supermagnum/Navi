@@ -43,6 +43,24 @@ class RoutePlanStatsTest {
     }
 
     @Test
+    fun ferryFpPrefersLastNonEmptyOverEarlierEmptyHop() {
+        val report =
+            """
+            --- leg1 report ---
+            route_ferry_legs=0
+            route_ferry_fp=
+            --- leg6 report ---
+            route_ferry_legs=1
+            route_ferry_fp=Puttgarden - Rodby@18.90
+            route_ferry_legs=1
+            route_ferry_fp=Puttgarden - Rodby@18.90
+            """.trimIndent()
+        val stats = routePlanStatsFromPlan(report, "[]")
+        assertEquals(1, stats.ferryLegCount)
+        assertEquals("Puttgarden - Rodby@18.90", stats.ferryFp)
+    }
+
+    @Test
     fun parsesCarFerryTunnelAndRestPlaces() {
         val report =
             """

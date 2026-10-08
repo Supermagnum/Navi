@@ -23,21 +23,31 @@ use osm4routing::{Node, NodeId};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Write};
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 /// On-disk skeleton format version (independent of pack GRAPH_FORMAT_VERSION).
 /// v2 adds road ref/name, oneway, and per-node border/ferry flags.
-pub const CORRIDOR_SKELETON_FORMAT_VERSION: u32 = 2;
+/// v3: binary sidecar (bincode) + border-crossing rim (no full AABB rim keep).
+pub const CORRIDOR_SKELETON_FORMAT_VERSION: u32 = 3;
 
-/// Filename stem written next to region packs: `{stem}.navi-corridor-skeleton.json`.
+/// Filename written next to region packs: `{stem}.navi-corridor-skeleton.bin`.
 pub fn skeleton_filename(leaf_stem: &str) -> String {
+    format!("{leaf_stem}.navi-corridor-skeleton.bin")
+}
+
+/// Legacy JSON filename (read-only migration; idle rebuild writes binary).
+pub fn skeleton_filename_json(leaf_stem: &str) -> String {
     format!("{leaf_stem}.navi-corridor-skeleton.json")
 }
 
 pub fn skeleton_path(dir: &Path, leaf_stem: &str) -> PathBuf {
     dir.join(skeleton_filename(leaf_stem))
+}
+
+pub fn skeleton_path_json(dir: &Path, leaf_stem: &str) -> PathBuf {
+    dir.join(skeleton_filename_json(leaf_stem))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -229,18 +239,6 @@ pub const FERRY_STITCH_MAX_M: f64 = 2_500.0;
 pub const OPPOSITE_CARRIAGEWAY_MIN_M: f64 = 8.0;
 pub const OPPOSITE_CARRIAGEWAY_MAX_M: f64 = 45.0;
 
-/// Degrees inward from the region AABB where secondary roads are kept so
-/// landsdel / län cuts that lack shared primary OSM ids still meet (FU23
-/// jamtland↔dalarna ~25 km primary-only gap).
-pub const BORDER_BAND_SECONDARY_DEG: f64 = 0.40;
-
-fn node_near_region_rim(lat: f64, lon: f64, bbox: [f64; 4], band: f64) -> bool {
-    lat <= bbox[0] + band
-        || lat >= bbox[2] - band
-        || lon <= bbox[1] + band
-        || lon >= bbox[3] - band
-}
-
 /// Build skeleton membership for one flat pack tile/region.
 ///
 /// Pass 1: motorway/trunk/primary + ferry (same as densify skeleton).
@@ -338,12 +336,8 @@ pub fn select_skeleton_edge_indices_for_region(
             continue;
         }
         let ferry = pack.edge_is_ferry.get(i).copied().unwrap_or(0) != 0;
-        if pier_connects_ferry_terminal(
-            ferry,
-            pack.edge_src[i],
-            pack.edge_tgt[i],
-            &ferry_terminals,
-        ) {
+        if pier_connects_ferry_terminal(ferry, pack.edge_src[i], pack.edge_tgt[i], &ferry_terminals)
+        {
             keep.insert(i);
         }
     }
@@ -356,48 +350,71 @@ pub fn select_skeleton_edge_indices_for_region(
             keep.insert(i);
         }
     }
-    // Pass 5: rim secondary — keep secondary near the region AABB so adjacent
-    // packs meet when primary networks do not share OSM ids at the cut.
-    if let Some(rid) = region_id {
-        if let Some(bbox) = crate::routing::basemap::region_bbox(rid) {
-            for i in 0..n {
-                if keep.contains(&i) {
+    // Pass 5: border-crossing approaches only. Keep secondary/tertiary/
+    // unclassified/residential solely on a short path from a real border node
+    // to the major skeleton (both sides of a Geofabrik cut). Do not keep every
+    // minor road near the region AABB — that bloated Hamburg/SH/Niedersachsen.
+    let _ = region_id; // bbox rim band no longer used for keep-all
+    let mut minor_adj: HashMap<u32, Vec<(u32, usize)>> = HashMap::new();
+    for i in 0..n {
+        if pack.edge_is_ferry.get(i).copied().unwrap_or(0) != 0 {
+            continue;
+        }
+        let hw = pack.edge_highway[i].as_str();
+        if !matches!(
+            hw,
+            "secondary"
+                | "secondary_link"
+                | "tertiary"
+                | "tertiary_link"
+                | "unclassified"
+                | "residential"
+        ) {
+            continue;
+        }
+        let s = pack.edge_src[i];
+        let t = pack.edge_tgt[i];
+        minor_adj.entry(s).or_default().push((t, i));
+        minor_adj.entry(t).or_default().push((s, i));
+    }
+    const BORDER_APPROACH_MAX_HOPS: usize = 12;
+    for &bn in &border_nodes {
+        if major_nodes.contains(&bn) {
+            continue; // already on major skeleton
+        }
+        let mut visited: HashSet<u32> = HashSet::from([bn]);
+        let mut queue: VecDeque<(u32, usize)> = VecDeque::from([(bn, 0usize)]);
+        let mut parent: HashMap<u32, (u32, usize)> = HashMap::new();
+        let mut reached_major: Option<u32> = None;
+        while let Some((u, hops)) = queue.pop_front() {
+            if hops >= BORDER_APPROACH_MAX_HOPS {
+                continue;
+            }
+            let Some(neigh) = minor_adj.get(&u) else {
+                continue;
+            };
+            for &(v, ei) in neigh {
+                if !visited.insert(v) {
                     continue;
                 }
-                if pack.edge_is_ferry.get(i).copied().unwrap_or(0) != 0 {
-                    continue;
+                parent.insert(v, (u, ei));
+                if major_nodes.contains(&v) {
+                    reached_major = Some(v);
+                    break;
                 }
-                let hw = pack.edge_highway[i].as_str();
-                // Include secondary/tertiary/unclassified/residential on the rim
-                // so Geofabrik cuts that omit shared primary OSM ids still meet
-                // within metres (jamtland↔dalarna was ~7 km primary-only).
-                if !matches!(
-                    hw,
-                    "secondary"
-                        | "secondary_link"
-                        | "tertiary"
-                        | "tertiary_link"
-                        | "unclassified"
-                        | "residential"
-                ) {
-                    continue;
-                }
-                let s = pack.edge_src[i] as usize;
-                let t = pack.edge_tgt[i] as usize;
-                let near = node_near_region_rim(
-                    pack.node_lats[s],
-                    pack.node_lons[s],
-                    bbox,
-                    BORDER_BAND_SECONDARY_DEG,
-                ) || node_near_region_rim(
-                    pack.node_lats[t],
-                    pack.node_lons[t],
-                    bbox,
-                    BORDER_BAND_SECONDARY_DEG,
-                );
-                if near {
-                    keep.insert(i);
-                }
+                queue.push_back((v, hops + 1));
+            }
+            if reached_major.is_some() {
+                break;
+            }
+        }
+        if let Some(mut cur) = reached_major {
+            while cur != bn {
+                let Some(&(prev, ei)) = parent.get(&cur) else {
+                    break;
+                };
+                keep.insert(ei);
+                cur = prev;
             }
         }
     }
@@ -465,18 +482,8 @@ pub fn build_skeleton_from_pack(
             ferry_edge_count += 1;
         }
         edge_highway.push(hw);
-        edge_name.push(
-            pack.edge_name
-                .get(i)
-                .cloned()
-                .unwrap_or_default(),
-        );
-        edge_road_ref.push(
-            pack.edge_road_ref
-                .get(i)
-                .cloned()
-                .unwrap_or_default(),
-        );
+        edge_name.push(pack.edge_name.get(i).cloned().unwrap_or_default());
+        edge_road_ref.push(pack.edge_road_ref.get(i).cloned().unwrap_or_default());
         edge_is_oneway.push(pack.edge_is_oneway.get(i).copied().unwrap_or(0));
         edge_is_ferry.push(ferry);
         edge_is_tunnel.push(pack.edge_is_tunnel.get(i).copied().unwrap_or(0));
@@ -881,23 +888,19 @@ pub fn merge_skeleton_files(parts: Vec<CorridorSkeletonFile>) -> Option<Corridor
             pack.edge_tgt.push(t);
             pack.edge_length_m.push(part.edge_length_m[e]);
             pack.edge_base_weight.push(part.edge_base_weight[e]);
-            pack.edge_start_lat.push(part.node_lats[part.edge_src[e] as usize]);
-            pack.edge_start_lon.push(part.node_lons[part.edge_src[e] as usize]);
-            pack.edge_end_lat.push(part.node_lats[part.edge_tgt[e] as usize]);
-            pack.edge_end_lon.push(part.node_lons[part.edge_tgt[e] as usize]);
+            pack.edge_start_lat
+                .push(part.node_lats[part.edge_src[e] as usize]);
+            pack.edge_start_lon
+                .push(part.node_lons[part.edge_src[e] as usize]);
+            pack.edge_end_lat
+                .push(part.node_lats[part.edge_tgt[e] as usize]);
+            pack.edge_end_lon
+                .push(part.node_lons[part.edge_tgt[e] as usize]);
             pack.edge_highway.push(part.edge_highway[e].clone());
-            pack.edge_name.push(
-                part.edge_name
-                    .get(e)
-                    .cloned()
-                    .unwrap_or_default(),
-            );
-            pack.edge_road_ref.push(
-                part.edge_road_ref
-                    .get(e)
-                    .cloned()
-                    .unwrap_or_default(),
-            );
+            pack.edge_name
+                .push(part.edge_name.get(e).cloned().unwrap_or_default());
+            pack.edge_road_ref
+                .push(part.edge_road_ref.get(e).cloned().unwrap_or_default());
             pack.edge_is_oneway
                 .push(part.edge_is_oneway.get(e).copied().unwrap_or(0));
             pack.edge_is_ferry
@@ -941,10 +944,8 @@ pub fn merge_skeleton_files(parts: Vec<CorridorSkeletonFile>) -> Option<Corridor
     );
     // Re-mark borders from union (build_skeleton_from_pack only sees pack-local indices).
     for (i, oid) in skel.node_ids.iter().enumerate() {
-        if border_osm.contains(oid) {
-            if i < skel.node_is_border.len() {
-                skel.node_is_border[i] = 1;
-            }
+        if border_osm.contains(oid) && i < skel.node_is_border.len() {
+            skel.node_is_border[i] = 1;
         }
     }
     skel.border_node_count = skel.node_is_border.iter().filter(|&&b| b != 0).count() as u32;
@@ -960,17 +961,39 @@ pub fn merge_skeleton_files(parts: Vec<CorridorSkeletonFile>) -> Option<Corridor
 
 pub fn write_skeleton_file(dir: &Path, skel: &CorridorSkeletonFile) -> std::io::Result<u64> {
     let path = skeleton_path(dir, &skel.leaf_stem);
-    let f = File::create(&path)?;
-    let mut w = BufWriter::new(f);
-    serde_json::to_writer(&mut w, skel).map_err(std::io::Error::other)?;
-    w.flush()?;
+    let payload = bincode::serialize(skel).map_err(std::io::Error::other)?;
+    {
+        let f = File::create(&path)?;
+        let mut w = BufWriter::new(f);
+        w.write_all(&payload)?;
+        w.flush()?;
+    }
+    // Drop legacy JSON so idle rebuilds do not leave a stale twin.
+    let json = skeleton_path_json(dir, &skel.leaf_stem);
+    let _ = std::fs::remove_file(json);
     Ok(std::fs::metadata(path)?.len())
 }
 
 pub fn read_skeleton_file(path: &Path) -> std::io::Result<CorridorSkeletonFile> {
-    let f = File::open(path)?;
-    let r = BufReader::new(f);
-    serde_json::from_reader(r).map_err(std::io::Error::other)
+    let bytes = std::fs::read(path)?;
+    // Binary (v3+) first; fall back to JSON for pre-FU25 sidecars still on disk.
+    if let Ok(skel) = bincode::deserialize::<CorridorSkeletonFile>(&bytes) {
+        return Ok(skel);
+    }
+    serde_json::from_slice(&bytes).map_err(std::io::Error::other)
+}
+
+/// Resolve on-disk skeleton path: prefer `.bin`, else legacy `.json`.
+pub fn resolve_skeleton_path(dir: &Path, leaf_stem: &str) -> Option<PathBuf> {
+    let bin = skeleton_path(dir, leaf_stem);
+    if bin.is_file() {
+        return Some(bin);
+    }
+    let json = skeleton_path_json(dir, leaf_stem);
+    if json.is_file() {
+        return Some(json);
+    }
+    None
 }
 
 /// Build + write one region skeleton; returns stats for the Stage A report.
@@ -1216,11 +1239,7 @@ fn stitch_intra_skeleton_component_gaps(
     const MIN_COMP_NODES: usize = 50;
     for skel in skels {
         let skel_set: HashSet<i64> = skel.node_ids.iter().copied().collect();
-        let mut parent: HashMap<i64, i64> = skel
-            .node_ids
-            .iter()
-            .map(|&oid| (oid, oid))
-            .collect();
+        let mut parent: HashMap<i64, i64> = skel.node_ids.iter().map(|&oid| (oid, oid)).collect();
         fn find(parent: &mut HashMap<i64, i64>, x: i64) -> i64 {
             let mut root = x;
             while parent[&root] != root {
@@ -1347,9 +1366,17 @@ fn stitch_adjacent_skeleton_gaps(
             continue;
         }
         let min_lat = s.node_lats.iter().copied().fold(f64::INFINITY, f64::min);
-        let max_lat = s.node_lats.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let max_lat = s
+            .node_lats
+            .iter()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max);
         let min_lon = s.node_lons.iter().copied().fold(f64::INFINITY, f64::min);
-        let max_lon = s.node_lons.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let max_lon = s
+            .node_lons
+            .iter()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max);
         bboxes[i] = Some([min_lat, min_lon, max_lat, max_lon]);
     }
     let mut added = 0u32;
@@ -1473,10 +1500,13 @@ fn road_label(e: &GraphEdge) -> String {
         (false, false) => format!("{r} ({n})"),
         (false, true) => r.to_string(),
         (true, false) => n.to_string(),
-        (true, true) => e
-            .highway
-            .clone()
-            .unwrap_or_else(|| if e.is_ferry { "ferry".into() } else { "?".into() }),
+        (true, true) => e.highway.clone().unwrap_or_else(|| {
+            if e.is_ferry {
+                "ferry".into()
+            } else {
+                "?".into()
+            }
+        }),
     }
 }
 
@@ -1491,6 +1521,8 @@ fn terminal_label(lat: f64, lon: f64, edge_name: Option<&str>) -> String {
         ("Rodby", 54.6543, 11.3508, 2500.0),
         ("Helsingor", 56.0330, 12.6160, 2500.0),
         ("Helsingborg", 56.0433, 12.6915, 2500.0),
+        ("Mannheller", 61.1435, 7.3239, 4000.0),
+        ("Fodnes", 61.0863, 7.3742, 4000.0),
         ("Kvanndal", 60.4718, 6.6124, 2500.0),
         ("Utne", 60.4241, 6.6218, 2500.0),
         ("Kinsarvik", 60.3750, 6.7200, 4000.0),
@@ -1505,8 +1537,13 @@ fn terminal_label(lat: f64, lon: f64, edge_name: Option<&str>) -> String {
 
 /// Split an OSM ferry name "A - B" / "A – B" into terminals matching travel direction.
 fn ferry_terminal_names(e: &GraphEdge) -> (String, String) {
-    let raw = e.name.as_deref().unwrap_or("").trim();
-    for sep in [" – ", " - ", " — ", "–", "-"] {
+    let raw = e
+        .name
+        .as_deref()
+        .or(e.road_ref.as_deref())
+        .unwrap_or("")
+        .trim();
+    for sep in [" – ", " - ", " — ", "–"] {
         if let Some((a, b)) = raw.split_once(sep) {
             let a = a.trim();
             let b = b.trim();
@@ -1625,7 +1662,7 @@ fn country_iso_for_edge(e: &GraphEdge) -> String {
     let lat = (e.start_lat + e.end_lat) * 0.5;
     let lon = (e.start_lon + e.end_lon) * 0.5;
     country_iso_at(lat, lon)
-        .unwrap_or_else(|| "XX".into())
+        .unwrap_or("XX")
         .to_ascii_uppercase()
 }
 
@@ -1653,7 +1690,9 @@ pub fn build_coarse_route_report(
         let km = e.length_m / 1000.0;
         total_km += km;
         let iso = country_iso_for_edge(e);
-        let ent = by_iso.entry(iso).or_insert_with(|| (0.0, 0.0, 0.0, Vec::new()));
+        let ent = by_iso
+            .entry(iso)
+            .or_insert_with(|| (0.0, 0.0, 0.0, Vec::new()));
         ent.0 += km;
         let label = road_label(e);
         if ent.3.last().map(|s| s.as_str()) != Some(label.as_str()) {
@@ -1724,12 +1763,48 @@ pub fn build_coarse_route_report(
     }
 }
 
+/// True when `path` visits each via in order (nearest node within `snap_m`).
+///
+/// Stage B alternatives are computed with the full waypoint list (origin, vias,
+/// destination) leg-by-leg in [`coarse_shortest_path`]. This check rejects any
+/// candidate whose merged path still misses a via (e.g. bad snap).
+pub fn path_visits_vias_in_order(
+    graph: &RouteGraph,
+    path: &[NodeId],
+    vias: &[(f64, f64)],
+    snap_m: f64,
+) -> bool {
+    if vias.is_empty() {
+        return true;
+    }
+    if path.is_empty() {
+        return false;
+    }
+    let mut from = 0usize;
+    for &(vlat, vlon) in vias {
+        let hit = path.iter().enumerate().skip(from).find_map(|(i, nid)| {
+            let n = graph.nodes.get(nid)?;
+            let d = haversine_m(vlat, vlon, n.coord.y, n.coord.x);
+            (d <= snap_m).then_some(i)
+        });
+        match hit {
+            Some(i) => from = i.saturating_add(1),
+            None => return false,
+        }
+    }
+    true
+}
+
 /// Directed travel-time coarse path through optional vias.
 ///
 /// Applies the caller's avoid flags (ferries / tolls / tunnels / motorways) so
 /// the Stage B corridor matches detailed hop planning. Surface-transition state
 /// stays off: on a major-road skeleton it bloated expansions and steered free
 /// A* off Fehmarn onto HH.
+///
+/// User vias in `waypoints` are applied to every call: each consecutive pair is
+/// routed as its own leg, so free / ferry-exclusion / no-ferry alternatives all
+/// pass every via in order.
 pub fn coarse_shortest_path(
     graph: &mut RouteGraph,
     waypoints: &[(f64, f64)],
@@ -1814,7 +1889,9 @@ pub fn inter_region_ferry_edges(
             let t_osm = s.node_ids[s.edge_tgt[i] as usize];
             let rs = osm_region.get(&s_osm).cloned().unwrap_or_default();
             let rt = osm_region.get(&t_osm).cloned().unwrap_or_default();
-            let multi = rs.contains('|') || rt.contains('|') || (rs != rt && !rs.is_empty() && !rt.is_empty());
+            let multi = rs.contains('|')
+                || rt.contains('|')
+                || (rs != rt && !rs.is_empty() && !rt.is_empty());
             if !multi {
                 continue;
             }
@@ -1846,6 +1923,14 @@ pub struct StageBDensify {
 }
 
 fn load_skeletons_from_dirs(dirs: &[&Path]) -> Vec<CorridorSkeletonFile> {
+    load_skeletons_from_dirs_filtered(dirs, None)
+}
+
+/// Load skeletons; when `only_stems` is set, skip every other region file.
+fn load_skeletons_from_dirs_filtered(
+    dirs: &[&Path],
+    only_stems: Option<&HashSet<String>>,
+) -> Vec<CorridorSkeletonFile> {
     let mut out = Vec::new();
     let mut seen = HashSet::new();
     for dir in dirs {
@@ -1856,9 +1941,10 @@ fn load_skeletons_from_dirs(dirs: &[&Path]) -> Vec<CorridorSkeletonFile> {
             .flatten()
             .map(|e| e.path())
             .filter(|p| {
-                p.file_name()
-                    .and_then(|n| n.to_str())
-                    .is_some_and(|n| n.ends_with(".navi-corridor-skeleton.json"))
+                p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                    n.ends_with(".navi-corridor-skeleton.bin")
+                        || n.ends_with(".navi-corridor-skeleton.json")
+                })
             })
             .collect();
         paths.sort();
@@ -1866,12 +1952,39 @@ fn load_skeletons_from_dirs(dirs: &[&Path]) -> Vec<CorridorSkeletonFile> {
             let Ok(s) = read_skeleton_file(&p) else {
                 continue;
             };
+            if let Some(want) = only_stems {
+                if !want.contains(&s.leaf_stem) {
+                    continue;
+                }
+            }
             if seen.insert(s.leaf_stem.clone()) {
                 out.push(s);
             }
         }
     }
     out
+}
+
+/// Stems for Stage B: direct-corridor regions plus one-hop adjacency neighbours.
+/// Returns `None` when the corridor cannot be resolved (caller loads all).
+fn trip_local_skeleton_stems(waypoints: &[(f64, f64)]) -> Option<HashSet<String>> {
+    let corridor = crate::long_trip::direct_corridor_regions_for_trip(waypoints, None).ok()?;
+    if corridor.is_empty() {
+        return None;
+    }
+    let mut region_ids: HashSet<String> = HashSet::new();
+    for id in &corridor {
+        region_ids.insert(id.clone());
+        for n in crate::long_trip::adjacent_region_ids(id) {
+            region_ids.insert(n.to_string());
+        }
+    }
+    Some(
+        region_ids
+            .into_iter()
+            .map(|id| crate::pack_server::leaf_stem_for_region_id(&id))
+            .collect(),
+    )
 }
 
 fn forbid_ferry_edges_matching_leg(graph: &mut RouteGraph, leg: &CoarseFerryLeg, match_m: f64) {
@@ -1901,7 +2014,11 @@ fn path_latlon(graph: &RouteGraph, path: &[NodeId]) -> Vec<(f64, f64)> {
         .collect()
 }
 
-fn hops_from_report(report: &CoarseRouteReport, start: (f64, f64), end: (f64, f64)) -> Vec<(f64, f64)> {
+fn hops_from_report(
+    report: &CoarseRouteReport,
+    start: (f64, f64),
+    end: (f64, f64),
+) -> Vec<(f64, f64)> {
     let mut hops = Vec::new();
     hops.push(start);
     for j in &report.joints {
@@ -2046,9 +2163,9 @@ pub fn split_hops_by_path_tile_budget(
             trial.extend(cover.iter().cloned());
             let trial_nodes: usize = trial.iter().map(|n| tile_est_nodes(&tiles, n)).sum();
             let min_gap = crate::routing::plan_bbox::MIN_HOP_SPLIT_GAP_M;
-            let gap_ok = out.last().is_none_or(|&q| {
-                haversine_m(q.0, q.1, last_emit.0, last_emit.1) >= min_gap
-            });
+            let gap_ok = out
+                .last()
+                .is_none_or(|&q| haversine_m(q.0, q.1, last_emit.0, last_emit.1) >= min_gap);
             if trial_nodes > max_nodes && !active.is_empty() && gap_ok {
                 // Emit joint at previous coarse node (exact path continuity).
                 out.push(last_emit);
@@ -2089,9 +2206,10 @@ pub fn count_path_covering_tiles(
 /// Stage B: densify from persistent corridor skeletons.
 ///
 /// Coarse path uses the active [`RouteOptions`] (avoid ferries/tolls/tunnels/
-/// motorways). When ferries are allowed: ferry-exclusion alternatives + 2%
-/// near-equal (fewest ferries, then fewer km). Hop joints = border crossings,
-/// ferry terminals, user vias. No centroid densify and no even hop_deg sampling.
+/// motorways). When ferries are allowed: free + per-ferry-exclusion + no-ferry
+/// alternatives, all routed through the same waypoints. Near-equal pick: within
+/// 2% of fastest time and no more ferries than the fastest; then fewer km.
+/// Hop joints = border crossings, ferry terminals, user vias.
 pub fn try_stage_b_densify_from_skeletons(
     pack_dirs: &[&Path],
     waypoints: &[(f64, f64)],
@@ -2101,15 +2219,47 @@ pub fn try_stage_b_densify_from_skeletons(
     if waypoints.len() < 2 {
         return None;
     }
-    let skels = load_skeletons_from_dirs(pack_dirs);
+    // Trip-local first: corridor + neighbours. Widen to every installed skeleton
+    // only when the coarse search finds no route on that subset.
+    let local_stems = trip_local_skeleton_stems(waypoints);
+    let mut skels = match &local_stems {
+        Some(stems) => {
+            let s = load_skeletons_from_dirs_filtered(pack_dirs, Some(stems));
+            log::info!(
+                target: "NaviPlan",
+                "stage_b trip_local stems={} loaded={}",
+                stems.len(),
+                s.len()
+            );
+            s
+        }
+        None => load_skeletons_from_dirs(pack_dirs),
+    };
     if skels.is_empty() {
         log::info!(target: "NaviPlan", "stage_b densify: no persistent skeletons");
         return None;
     }
-    let border_osm = border_osm_from_skeletons(&skels);
+    let mut border_osm = border_osm_from_skeletons(&skels);
     let mut graph = merge_skeletons_to_route_graph(&skels, profile);
     let snap_m = 35_000.0;
-    let (path, edges, _) = coarse_shortest_path(&mut graph, waypoints, snap_m, route_options)?;
+    let free_path = coarse_shortest_path(&mut graph, waypoints, snap_m, route_options);
+    let (path, edges, _) = match free_path {
+        Some(v) => v,
+        None if local_stems.is_some() => {
+            log::info!(
+                target: "NaviPlan",
+                "stage_b trip_local miss; widening to all installed skeletons"
+            );
+            skels = load_skeletons_from_dirs(pack_dirs);
+            if skels.is_empty() {
+                return None;
+            }
+            border_osm = border_osm_from_skeletons(&skels);
+            graph = merge_skeletons_to_route_graph(&skels, profile);
+            coarse_shortest_path(&mut graph, waypoints, snap_m, route_options)?
+        }
+        None => return None,
+    };
     let vias = &waypoints[1..waypoints.len().saturating_sub(1)];
     let free = build_coarse_route_report(
         "stage_b_free",
@@ -2124,8 +2274,17 @@ pub fn try_stage_b_densify_from_skeletons(
     );
 
     // Candidates: free + (when ferries allowed) exclude each ferry + no ferries.
+    // Every candidate is routed through the same waypoints (vias included).
+    let via_snap_m = 2_500.0;
     let mut candidates: Vec<(String, CoarseRouteReport, Vec<NodeId>, Vec<usize>)> = Vec::new();
-    candidates.push(("free".into(), free.clone(), path.clone(), edges.clone()));
+    if path_visits_vias_in_order(&graph, &path, vias, via_snap_m) {
+        candidates.push(("free".into(), free.clone(), path.clone(), edges.clone()));
+    } else {
+        log::warn!(
+            target: "NaviPlan",
+            "stage_b drop free: path misses a user via"
+        );
+    }
 
     if !route_options.avoid_ferries {
         for leg in &free.ferries {
@@ -2134,6 +2293,15 @@ pub fn try_stage_b_densify_from_skeletons(
             if let Some((p, e, _)) =
                 coarse_shortest_path(&mut graph, waypoints, snap_m, route_options)
             {
+                if !path_visits_vias_in_order(&graph, &p, vias, via_snap_m) {
+                    log::warn!(
+                        target: "NaviPlan",
+                        "stage_b drop excl {}→{}: path misses a user via",
+                        leg.from_terminal,
+                        leg.to_terminal
+                    );
+                    continue;
+                }
                 let r = build_coarse_route_report(
                     "stage_b_excl",
                     &graph,
@@ -2159,28 +2327,37 @@ pub fn try_stage_b_densify_from_skeletons(
         }
         if let Some((p, e, _)) = coarse_shortest_path(&mut graph, waypoints, snap_m, route_options)
         {
-            let r = build_coarse_route_report(
-                "stage_b_no_ferry",
-                &graph,
-                &p,
-                &e,
-                &border_osm,
-                vias,
-                0,
-                0,
-                "no ferries",
-            );
-            candidates.push(("no_ferries".into(), r, p, e));
+            if path_visits_vias_in_order(&graph, &p, vias, via_snap_m) {
+                let r = build_coarse_route_report(
+                    "stage_b_no_ferry",
+                    &graph,
+                    &p,
+                    &e,
+                    &border_osm,
+                    vias,
+                    0,
+                    0,
+                    "no ferries",
+                );
+                candidates.push(("no_ferries".into(), r, p, e));
+            } else {
+                log::warn!(
+                    target: "NaviPlan",
+                    "stage_b drop no_ferries: path misses a user via"
+                );
+            }
         }
         clear_access_forbidden(&mut graph);
     }
 
-    // Among free + per-ferry-exclusion alts (not the full no_ferries detour):
-    // competitive band 15% of best time, then fewest ferries, then 2% time, then
-    // km. This drops Mannheller when a 1-ferry excl alt is only a few minutes
-    // slower, without letting a modest Sweden land-only detour win on ferry
-    // count=0. Prefer no_ferries when it is within 2% of best time, or when the
-    // ferry pick is a clear distance blow-out (>15% more km than land).
+    if candidates.is_empty() {
+        log::warn!(target: "NaviPlan", "stage_b densify: no candidates pass all vias");
+        return None;
+    }
+
+    // FU25 near-equal rule (only): eligible iff total_min within 2% of the
+    // fastest candidate and ferry count ≤ that of the fastest; among eligible,
+    // fewer km wins.
     for (name, r, _, _) in &candidates {
         log::info!(
             target: "NaviPlan",
@@ -2190,65 +2367,43 @@ pub fn try_stage_b_densify_from_skeletons(
             r.ferries.len()
         );
     }
-    let best_min_all = candidates
+    let best_min = candidates
         .iter()
         .map(|(_, r, _, _)| r.total_min)
         .fold(f64::INFINITY, f64::min);
-    let ferry_alts: Vec<_> = candidates
+    // Ferry count of the fastest candidate(s): if several share best_min, use
+    // the minimum ferry count among them as the eligibility ceiling.
+    let fastest_ferries = candidates
         .iter()
-        .filter(|(name, _, _, _)| name.as_str() != "no_ferries")
-        .collect();
-    let competitive: Vec<_> = ferry_alts
+        .filter(|(_, r, _, _)| r.total_min <= best_min + 1e-9)
+        .map(|(_, r, _, _)| r.ferries.len())
+        .min()
+        .unwrap_or(0);
+    let eligible: Vec<_> = candidates
         .iter()
-        .copied()
-        .filter(|(_, r, _, _)| r.total_min <= best_min_all * 1.15)
+        .filter(|(_, r, _, _)| r.total_min <= best_min * 1.02 && r.ferries.len() <= fastest_ferries)
         .collect();
-    let pick = if competitive.is_empty() {
-        candidates
-            .iter()
-            .min_by(|a, b| {
+    for (name, r, _, _) in &candidates {
+        let ok = r.total_min <= best_min * 1.02 && r.ferries.len() <= fastest_ferries;
+        log::info!(
+            target: "NaviPlan",
+            "stage_b eligible={ok} name={name} km={:.1} min={:.1} ferries={} \
+             best_min={best_min:.1} fastest_ferries={fastest_ferries}",
+            r.total_km,
+            r.total_min,
+            r.ferries.len()
+        );
+    }
+    let pick = eligible.into_iter().min_by(|a, b| {
+        a.1.total_km
+            .partial_cmp(&b.1.total_km)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
                 a.1.total_min
                     .partial_cmp(&b.1.total_min)
                     .unwrap_or(std::cmp::Ordering::Equal)
-            })?
-    } else {
-        let min_ferries = competitive.iter().map(|(_, r, _, _)| r.ferries.len()).min()?;
-        let fewest: Vec<_> = competitive
-            .into_iter()
-            .filter(|(_, r, _, _)| r.ferries.len() == min_ferries)
-            .collect();
-        let best_min = fewest
-            .iter()
-            .map(|(_, r, _, _)| r.total_min)
-            .fold(f64::INFINITY, f64::min);
-        let near: Vec<_> = fewest
-            .into_iter()
-            .filter(|(_, r, _, _)| r.total_min <= best_min * 1.02)
-            .collect();
-        let ferry_pick = near
-            .into_iter()
-            .min_by(|a, b| {
-                a.1.total_km
-                    .partial_cmp(&b.1.total_km)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-                    .then_with(|| {
-                        a.1.total_min
-                            .partial_cmp(&b.1.total_min)
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
-            })?;
-        if let Some(nf) = candidates.iter().find(|(n, _, _, _)| n == "no_ferries") {
-            let near_time = nf.1.total_min <= best_min_all * 1.02;
-            let ferry_blowout = ferry_pick.1.total_km > nf.1.total_km * 1.15;
-            if (near_time || ferry_blowout) && nf.1.total_km < ferry_pick.1.total_km {
-                nf
-            } else {
-                ferry_pick
-            }
-        } else {
-            ferry_pick
-        }
-    };
+            })
+    })?;
 
     let start = waypoints[0];
     let end = *waypoints.last().unwrap();
@@ -2481,7 +2636,10 @@ mod tests {
         borders.insert(103);
         let (keep, _, border_nodes) = select_skeleton_edge_indices(&pack, &borders);
         assert!(border_nodes.contains(&3));
-        assert!(keep.contains(&3), "secondary touching border node must stay");
+        assert!(
+            keep.contains(&3),
+            "secondary touching border node must stay"
+        );
     }
 
     #[test]
@@ -2493,7 +2651,7 @@ mod tests {
     }
 
     #[test]
-    fn roundtrip_json_counts() {
+    fn roundtrip_binary_counts() {
         let pack = tiny_pack();
         let skel = build_skeleton_from_pack(&pack, "europe/test", "test", "truck", &HashSet::new());
         assert_eq!(skel.format_version, CORRIDOR_SKELETON_FORMAT_VERSION);
@@ -2504,12 +2662,106 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let n = write_skeleton_file(dir.path(), &skel).unwrap();
         assert!(n > 100);
-        let loaded = read_skeleton_file(&skeleton_path(dir.path(), "test")).unwrap();
+        let path = skeleton_path(dir.path(), "test");
+        assert!(path.extension().and_then(|e| e.to_str()) == Some("bin"));
+        let loaded = read_skeleton_file(&path).unwrap();
         assert_eq!(loaded.node_count, skel.node_count);
         assert_eq!(loaded.edge_count, skel.edge_count);
         let g = skeleton_to_route_graph(&loaded, RoutingProfile::Car);
         assert_eq!(g.nodes.len(), loaded.node_count as usize);
         assert_eq!(g.edges.len(), loaded.edge_count as usize);
+    }
+
+    #[test]
+    fn stage_b_alternative_must_visit_every_via_in_order() {
+        // Synthetic: origin → via → dest on a straight primary; a shortcut
+        // edge skips the via. path_visits_vias_in_order must reject the skip.
+        use geo_types::Coord;
+        use osm4routing::Node;
+        use std::collections::HashMap;
+
+        let mut nodes = HashMap::new();
+        for (id, lat, lon) in [
+            (1i64, 60.0, 10.0),
+            (2, 60.5, 10.0), // via
+            (3, 61.0, 10.0),
+            (4, 60.5, 10.5), // off-via diversion
+        ] {
+            nodes.insert(
+                NodeId(id),
+                Node {
+                    id: NodeId(id),
+                    coord: Coord { x: lon, y: lat },
+                    uses: 0,
+                },
+            );
+        }
+        let mk = |id: &str, s: i64, t: i64, len: f64| -> GraphEdge {
+            let sn = nodes[&NodeId(s)].coord;
+            let tn = nodes[&NodeId(t)].coord;
+            GraphEdge {
+                id: id.into(),
+                source: NodeId(s),
+                target: NodeId(t),
+                length_m: len,
+                base_weight: len,
+                cost_mult: 1.0,
+                eco_weight: None,
+                start_lat: sn.y,
+                start_lon: sn.x,
+                end_lat: tn.y,
+                end_lon: tn.x,
+                shape: Vec::new(),
+                highway: Some("primary".into()),
+                maxspeed_kmh: Some(80.0),
+                maxspeed_practical_kmh: None,
+                maxspeed_advisory_kmh: None,
+                maxspeed_type: None,
+                maxspeed_variable: false,
+                minspeed_kmh: None,
+                name: None,
+                road_ref: None,
+                is_motorroad: false,
+                is_expressway: false,
+                is_oneway: false,
+                lanes: None,
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: false,
+                is_ferry: false,
+                ferry_interval_min: None,
+                is_tunnel: false,
+                is_boardwalk_crossing: false,
+                is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
+                access_forbidden: false,
+                surface_quality: crate::routing::graph::SurfaceQuality::Good,
+            }
+        };
+        let edges = vec![
+            mk("a", 1, 2, 50_000.0),
+            mk("b", 2, 3, 50_000.0),
+            mk("skip", 1, 4, 40_000.0),
+            mk("skip2", 4, 3, 40_000.0),
+        ];
+        let g = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        let via = (60.5, 10.0);
+        let through_via = vec![NodeId(1), NodeId(2), NodeId(3)];
+        let misses_via = vec![NodeId(1), NodeId(4), NodeId(3)];
+        assert!(
+            path_visits_vias_in_order(&g, &through_via, &[via], 2_500.0),
+            "path through the via node must pass"
+        );
+        assert!(
+            !path_visits_vias_in_order(&g, &misses_via, &[via], 2_500.0),
+            "Stage B alternative that skips a user via must fail"
+        );
     }
 
     #[test]
@@ -2624,8 +2876,13 @@ mod tests {
             "pack edge names must not include skeleton_carriageway_link"
         );
         // Opposite-carriageway fixture adds stitch only in the skeleton builder.
-        let skel =
-            build_skeleton_from_pack(&pack, "europe/test", "test-pack-names", "car", &HashSet::new());
+        let skel = build_skeleton_from_pack(
+            &pack,
+            "europe/test",
+            "test-pack-names",
+            "car",
+            &HashSet::new(),
+        );
         let stitch_in_skel = skel
             .edge_name
             .iter()
@@ -2879,7 +3136,8 @@ mod tests {
             skel.edge_tgt.push(attach);
             skel.edge_length_m.extend([100.0, 100.0]);
             skel.edge_base_weight.extend([100.0, 100.0]);
-            skel.edge_highway.extend(["primary".into(), "primary".into()]);
+            skel.edge_highway
+                .extend(["primary".into(), "primary".into()]);
             skel.edge_name.extend([String::new(), String::new()]);
             skel.edge_road_ref.extend([String::new(), String::new()]);
             skel.edge_is_oneway.extend([0, 0]);

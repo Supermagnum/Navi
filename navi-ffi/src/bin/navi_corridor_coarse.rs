@@ -13,7 +13,7 @@ use std::time::Instant;
 use driver_break_core::routing::corridor_skeleton::{
     border_osm_from_skeletons, build_coarse_route_report, coarse_shortest_path,
     inter_region_ferry_edges, merge_skeletons_to_route_graph, read_skeleton_file,
-    CorridorSkeletonFile, CoarseRouteReport,
+    CoarseRouteReport, CorridorSkeletonFile,
 };
 use driver_break_core::routing::graph::{RouteOptions, RoutingProfile};
 use driver_break_core::routing::indexed::{ferry_sidecar_path, load_graph_pack_clips};
@@ -45,9 +45,10 @@ fn load_all_skeletons(dir: &Path) -> Vec<CorridorSkeletonFile> {
         .flatten()
         .map(|e| e.path())
         .filter(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.ends_with(".navi-corridor-skeleton.json"))
+            p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                n.ends_with(".navi-corridor-skeleton.bin")
+                    || n.ends_with(".navi-corridor-skeleton.json")
+            })
         })
         .collect();
     paths.sort();
@@ -158,17 +159,16 @@ fn near_equal_pick<'a>(
         .copied()
         .filter(|(_, r)| r.total_min <= best_min * 1.02)
         .collect();
-    near.into_iter()
-        .min_by(|a, b| {
-            a.1.total_km
-                .partial_cmp(&b.1.total_km)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| {
-                    a.1.total_min
-                        .partial_cmp(&b.1.total_min)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
-        })
+    near.into_iter().min_by(|a, b| {
+        a.1.total_km
+            .partial_cmp(&b.1.total_km)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                a.1.total_min
+                    .partial_cmp(&b.1.total_min)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+    })
 }
 
 /// Step 2: re-search excluding each ferry on the free path, then no ferries.
@@ -203,7 +203,9 @@ fn ferry_exclusion_alts(
         );
         let note = format!(
             "exclude ferry {}→{} ({} edges)",
-            leg.from_terminal, leg.to_terminal, idxs.len()
+            leg.from_terminal,
+            leg.to_terminal,
+            idxs.len()
         );
         let t0 = Instant::now();
         let report = with_forbidden_edges(graph, &idxs, |g| {
@@ -299,8 +301,7 @@ fn run_named_snap(
         let tw = driver_break_core::routing::graph::time_base_weight_for_edge(e);
         if e.is_ferry {
             ferry_astar_m += tw;
-            let (cross, wait) =
-                driver_break_core::routing::graph::ferry_crossing_and_wait_min(e);
+            let (cross, wait) = driver_break_core::routing::graph::ferry_crossing_and_wait_min(e);
             ferry_boarding_min += wait;
             ferry_crossing_min += cross;
         } else {
@@ -419,20 +420,23 @@ fn connectivity_checks(skels: &[CorridorSkeletonFile]) {
         let midlat = (dk.node_lats[s] + dk.node_lats[t]) / 2.0;
         let midlon = (dk.node_lons[s] + dk.node_lons[t]) / 2.0;
         let reff = dk.edge_road_ref.get(i).map(|s| s.as_str()).unwrap_or("");
-        if (54.90..=55.05).contains(&midlat) && (11.85..=12.15).contains(&midlon) {
-            if reff.contains("E 47") || reff.contains("E47") {
-                faro += 1;
-            }
+        if (54.90..=55.05).contains(&midlat)
+            && (11.85..=12.15).contains(&midlon)
+            && (reff.contains("E 47") || reff.contains("E47"))
+        {
+            faro += 1;
         }
-        if (55.55..=55.70).contains(&midlat) && (12.40..=12.70).contains(&midlon) {
-            if reff.contains("E 20") || reff.contains("E20") {
-                e47e20 += 1;
-            }
+        if (55.55..=55.70).contains(&midlat)
+            && (12.40..=12.70).contains(&midlon)
+            && (reff.contains("E 20") || reff.contains("E20"))
+        {
+            e47e20 += 1;
         }
-        if (55.50..=55.65).contains(&midlat) && (12.70..=13.05).contains(&midlon) {
-            if dk.edge_highway.get(i).map(|s| s.as_str()) == Some("motorway") {
-                oresund += 1;
-            }
+        if (55.50..=55.65).contains(&midlat)
+            && (12.70..=13.05).contains(&midlon)
+            && dk.edge_highway.get(i).map(|s| s.as_str()) == Some("motorway")
+        {
+            oresund += 1;
         }
     }
     println!(
@@ -465,11 +469,7 @@ fn probe_aga_ferries(pack_dir: Option<&Path>, skels: &[CorridorSkeletonFile]) {
         let board_m =
             driver_break_core::routing::graph::FERRY_CAR_BOARDING_PENALTY_MIN * 60.0 * drive;
         let cross_min = ((vest.edge_base_weight[i] - board_m).max(0.0) / drive / 60.0).max(0.0);
-        let name = vest
-            .edge_name
-            .get(i)
-            .map(|s| s.as_str())
-            .unwrap_or("");
+        let name = vest.edge_name.get(i).map(|s| s.as_str()).unwrap_or("");
         println!(
             "aga skeleton ferry near Utne: {:.5},{:.5} -> {:.5},{:.5} len_m={:.0} \
              crossing_min≈{cross_min:.1} boarding=10 name={name:?}",
@@ -731,13 +731,7 @@ fn main() {
         Vec::new()
     };
     let aga_excl = if let Some(ref free) = aga_report {
-        ferry_exclusion_alts(
-            "aga",
-            &mut graph,
-            &[breneriroa, aga],
-            &border_osm,
-            free,
-        )
+        ferry_exclusion_alts("aga", &mut graph, &[breneriroa, aga], &border_osm, free)
     } else {
         Vec::new()
     };

@@ -18,15 +18,15 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
-use crate::routing::corridor_skeleton::{
-    build_skeleton_from_pack, major_node_osm_ids, merge_skeleton_files, read_skeleton_file,
-    skeleton_path, write_skeleton_file, CorridorSkeletonFile, CORRIDOR_SKELETON_FORMAT_VERSION,
-};
-use crate::routing::graph::RoutingProfile;
 use super::ferry_overlay_cache::{ferry_sidecar_path, load_ferry_overlay_as_flat};
 use super::graph_pack::{with_corridor_skeleton_hydrate, FlatGraphPack};
 use super::load::load_graph_pack_clips;
 use super::manifest::{manifest_path, NaviManifest};
+use crate::routing::corridor_skeleton::{
+    build_skeleton_from_pack, major_node_osm_ids, merge_skeleton_files, read_skeleton_file,
+    write_skeleton_file, CorridorSkeletonFile, CORRIDOR_SKELETON_FORMAT_VERSION,
+};
+use crate::routing::graph::RoutingProfile;
 
 /// Soft peak RSS (VmRSS) after a single densify-only tile load. Above this the
 /// tile is skipped with a warn; other tiles still build. Densify-only keep the
@@ -38,7 +38,8 @@ pub const SKELETON_BUILD_SOFT_RSS_MB: u64 = 1800;
 /// Bumped when border detection / rim-secondary selection changes so installed
 /// skeletons rebuild (FU23: jamtland↔dalarna had a 25 km major-only gap).
 /// FU24: bump when rim secondary/tertiary/unclassified/residential selection changes.
-pub const CORRIDOR_SKELETON_BUILD: u32 = 4;
+/// FU25: binary skeleton + border-crossing-only rim (no full AABB rim keep).
+pub const CORRIDOR_SKELETON_BUILD: u32 = 5;
 
 fn profile_slug(profile: RoutingProfile) -> &'static str {
     match profile {
@@ -160,7 +161,10 @@ fn neighbor_fingerprint(home: &Path, stem: &str) -> String {
     for ent in rd.flatten() {
         let name = ent.file_name();
         let name = name.to_string_lossy();
-        let Some(other) = name.strip_suffix(".navi-corridor-skeleton.json") else {
+        let other = name
+            .strip_suffix(".navi-corridor-skeleton.bin")
+            .or_else(|| name.strip_suffix(".navi-corridor-skeleton.json"));
+        let Some(other) = other else {
             continue;
         };
         if other == stem {
@@ -186,11 +190,13 @@ fn want_fingerprint(home: &Path, stem: &str, profile: RoutingProfile) -> String 
     )
 }
 
-/// True when skeleton JSON + meta match the current pack / neighbor fingerprint.
+/// True when skeleton binary/JSON + meta match the current pack / neighbor fingerprint.
 pub fn skeleton_fresh(home: &Path, stem: &str, profile: RoutingProfile) -> bool {
-    let json = skeleton_path(home, stem);
+    let Some(skel) = crate::routing::corridor_skeleton::resolve_skeleton_path(home, stem) else {
+        return false;
+    };
     let meta_path = skeleton_meta_path(home, stem);
-    if !json.is_file() || !meta_path.is_file() {
+    if !skel.is_file() || !meta_path.is_file() {
         return false;
     }
     let want = want_fingerprint(home, stem, profile);
@@ -198,9 +204,9 @@ pub fn skeleton_fresh(home: &Path, stem: &str, profile: RoutingProfile) -> bool 
     got.trim() == want
 }
 
-/// Whether a plan may use this stem's corridor skeleton (fresh JSON on disk).
+/// Whether a plan may use this stem's corridor skeleton (fresh sidecar on disk).
 pub fn corridor_skeleton_ready(home: &Path, stem: &str, profile: RoutingProfile) -> bool {
-    skeleton_fresh(home, stem, profile) && skeleton_path(home, stem).is_file()
+    skeleton_fresh(home, stem, profile)
 }
 
 fn tile_paths(home: &Path, stem: &str, profile: RoutingProfile) -> Vec<PathBuf> {
@@ -225,7 +231,11 @@ fn tile_paths(home: &Path, stem: &str, profile: RoutingProfile) -> Vec<PathBuf> 
 /// Load one pack tile for corridor-skeleton build (major + secondary), convert
 /// to flat, drop RouteGraph. Returns `None` when load fails or soft RSS is
 /// exceeded (tile skipped).
-fn load_flat_tile_bounded(path: &Path, profile: RoutingProfile, stem: &str) -> Option<FlatGraphPack> {
+fn load_flat_tile_bounded(
+    path: &Path,
+    profile: RoutingProfile,
+    stem: &str,
+) -> Option<FlatGraphPack> {
     let g = match with_corridor_skeleton_hydrate(|| load_graph_pack_clips(path, profile, None)) {
         Ok(g) => g,
         Err(e) => {
@@ -303,19 +313,19 @@ fn border_osm_from_neighbor_packs(
             continue;
         }
         let other_region = leaf_to_region(other);
-        let adjacent = match (
-            my_bbox,
-            crate::routing::basemap::region_bbox(&other_region),
-        ) {
+        let adjacent = match (my_bbox, crate::routing::basemap::region_bbox(&other_region)) {
             (Some(a), Some(b)) => crate::long_trip::regions_bbox_adjacent(&a, &b, 0.15),
             _ => true,
         };
         if adjacent {
             neighbor_nodes.extend(collect_major_ids(home, other, profile));
         } else {
-            let skel_path = skeleton_path(home, other);
-            if let Ok(skel) = read_skeleton_file(&skel_path) {
-                neighbor_nodes.extend(skel.node_ids.iter().copied());
+            if let Some(skel_path) =
+                crate::routing::corridor_skeleton::resolve_skeleton_path(home, other)
+            {
+                if let Ok(skel) = read_skeleton_file(&skel_path) {
+                    neighbor_nodes.extend(skel.node_ids.iter().copied());
+                }
             }
         }
     }
@@ -463,7 +473,7 @@ pub fn corridor_skeleton_preparing_status(stem: &str) -> (String, u8) {
     (format!("preparing corridor skeleton for {label}"), pct)
 }
 
-/// Build or refresh `{stem}.navi-corridor-skeleton.json` from installed packs.
+/// Build or refresh `{stem}.navi-corridor-skeleton.bin` from installed packs.
 /// Safe to call from a background job at pack install / idle refresh.
 pub fn ensure_corridor_skeleton(
     home: &Path,
@@ -481,13 +491,25 @@ pub fn ensure_corridor_skeleton(
     st.running.store(true, Ordering::Relaxed);
     set_active_stem(stem);
     let label = region_label(stem);
-    set_progress(stem, 0, &format!("Preparing corridor skeleton for {label}…"));
+    set_progress(
+        stem,
+        0,
+        &format!("Preparing corridor skeleton for {label}…"),
+    );
     let t0 = Instant::now();
     let hwm_before = peak_rss_mb();
 
-    set_progress(stem, 15, &format!("Preparing corridor skeleton for {label}…"));
+    set_progress(
+        stem,
+        15,
+        &format!("Preparing corridor skeleton for {label}…"),
+    );
     let major = collect_major_ids(home, stem, profile);
-    set_progress(stem, 45, &format!("Preparing corridor skeleton for {label}…"));
+    set_progress(
+        stem,
+        45,
+        &format!("Preparing corridor skeleton for {label}…"),
+    );
     let border = border_osm_from_neighbor_packs(home, stem, profile, &major);
     log::info!(
         target: "NaviPlan",
@@ -498,13 +520,21 @@ pub fn ensure_corridor_skeleton(
     );
     drop(major);
 
-    set_progress(stem, 55, &format!("Preparing corridor skeleton for {label}…"));
+    set_progress(
+        stem,
+        55,
+        &format!("Preparing corridor skeleton for {label}…"),
+    );
     let Some(skel) = build_stem_skeleton(home, stem, profile, &border) else {
         st.running.store(false, Ordering::Relaxed);
         set_progress(stem, 0, &format!("Corridor skeleton failed for {label}"));
         anyhow::bail!("corridor skeleton build produced no output stem={stem}");
     };
-    set_progress(stem, 90, &format!("Preparing corridor skeleton for {label}…"));
+    set_progress(
+        stem,
+        90,
+        &format!("Preparing corridor skeleton for {label}…"),
+    );
     let file_bytes = write_skeleton_file(home, &skel).map_err(|e| {
         st.running.store(false, Ordering::Relaxed);
         anyhow::anyhow!("write skeleton stem={stem}: {e}")
@@ -568,7 +598,8 @@ pub fn stems_missing_corridor_skeleton(
             continue;
         }
         let Some(home) = pack_dirs.iter().find(|d| {
-            manifest_path(d, &stem).is_file() || skeleton_path(d, &stem).is_file()
+            manifest_path(d, &stem).is_file()
+                || crate::routing::corridor_skeleton::resolve_skeleton_path(d, &stem).is_some()
         }) else {
             continue;
         };

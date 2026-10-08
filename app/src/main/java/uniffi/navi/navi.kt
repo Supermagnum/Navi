@@ -1810,7 +1810,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_elevation_at() and 0xFFFF) != 35410) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_ensure_corridor_skeleton() and 0xFFFF) != 13552) {
+    if ((lib.uniffi_navi_checksum_func_ensure_corridor_skeleton() and 0xFFFF) != 12784) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_ensure_ferry_sidecar() and 0xFFFF) != 32373) {
@@ -6124,7 +6124,7 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
-         * Build/refresh `{stem}.navi-corridor-skeleton.json` from installed graph packs.
+         * Build/refresh `{stem}.navi-corridor-skeleton.bin` from installed graph packs.
          * Call from pack install / idle background work — not from the plan path.
          */ fun `ensureCorridorSkeleton`(`packDir`: kotlin.String, `stem`: kotlin.String, `profile`: TravelProfile): kotlin.String {
             return FfiConverterString.lift(

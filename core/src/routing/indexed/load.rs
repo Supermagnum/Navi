@@ -25,8 +25,8 @@ use super::wetland_pack::{
 use crate::poi::PoiIndex;
 use crate::routing::basemap::{pbf_stem_to_geofabrik_path, region_bbox};
 use crate::routing::graph::{
-    drop_pack_edges_replaced_by_overlay_ferry, is_construction_or_proposed_highway,
-    GraphEdge, RouteGraph, RoutingProfile,
+    drop_pack_edges_replaced_by_overlay_ferry, is_construction_or_proposed_highway, GraphEdge,
+    RouteGraph, RoutingProfile,
 };
 use crate::routing::pbf_extract::{pbf_is_real_extract, MIN_REAL_PBF_BYTES};
 use crate::routing::safety::DangerBarrierIndex;
@@ -323,9 +323,9 @@ fn corridor_needs_extra_for_endpoint_leaves(
             let Some(path) = pbf_stem_to_geofabrik_path(stem) else {
                 continue;
             };
-            if path.matches('/').count() < 2 {
-                continue;
-            }
+            // Include country extracts (europe/finland) and leaves
+            // (europe/sweden/norrbotten). Skipping country extracts left
+            // Finnmark→Lapland hops on nord-norge alone → snap_failed.
             if path == primary_path || path.starts_with(&primary_prefix) {
                 continue;
             }
@@ -339,6 +339,13 @@ fn corridor_needs_extra_for_endpoint_leaves(
                 return true;
             }
         }
+    }
+    // PIP hole: endpoint has no catalog region but a Ready pack AABB covers it.
+    for &(lat, lon) in pts {
+        if crate::long_trip::region_containing(lat, lon, None).is_some() {
+            continue;
+        }
+        return true;
     }
     false
 }
@@ -1260,18 +1267,18 @@ fn try_load_graph_for_plan_corridor_dirs(
             // Finnmark). When both hop ends PIP to the same leaf, foreign
             // extras that only match via AABB steal the plan tile budget and
             // disconnect the real leaf network (Bugøynes→first SE densify hop).
-            if let (Some(a), Some(b)) = (
-                crate::long_trip::region_containing(pts[0].0, pts[0].1, None),
-                crate::long_trip::region_containing(pts[1].0, pts[1].1, None),
-            ) {
+            // Do not clear when either end has a PIP hole — the hole fill below
+            // must keep finland/norrbotten for Finnmark→Lapland hops.
+            let pip_a = crate::long_trip::region_containing(pts[0].0, pts[0].1, None);
+            let pip_b = crate::long_trip::region_containing(pts[1].0, pts[1].1, None);
+            if let (Some(a), Some(b)) = (pip_a, pip_b) {
                 if a == b {
                     extras.clear();
                 }
             }
-            // PIP holes (Finnish Lapland) still need the Ready country extract:
-            // Nord-Norge AABB covers the point but has no connecting roads.
-            // Force-retain covering Ready extras that were cleared or never
-            // matched the same-leaf rule.
+            // PIP holes (Finnish Lapland) still need the Ready pack that covers
+            // the point: Nord-Norge AABB may contain it but has no roads there.
+            // Force-retain covering Ready country extracts and leaves.
             for &(lat, lon) in pts {
                 if crate::long_trip::region_containing(lat, lon, None).is_some() {
                     continue;
@@ -1301,11 +1308,6 @@ fn try_load_graph_for_plan_corridor_dirs(
                         let Some(path) = pbf_stem_to_geofabrik_path(&extra_man.stem) else {
                             continue;
                         };
-                        // Country extracts only (leaf count < 2) — hole fills
-                        // like europe/finland, not every spill leaf.
-                        if path.matches('/').count() != 1 {
-                            continue;
-                        }
                         let Some(region) = region_bbox(&path) else {
                             continue;
                         };
@@ -1892,11 +1894,7 @@ pub fn resolve_ferry_overlay_pbf_for_stem(home: &Path, stem: &str) -> Option<Pat
     resolve_ferry_overlay_pbf_in_dirs(&[], home, stem)
 }
 
-fn resolve_ferry_overlay_pbf_in_dirs(
-    dirs: &[&Path],
-    home: &Path,
-    stem: &str,
-) -> Option<PathBuf> {
+fn resolve_ferry_overlay_pbf_in_dirs(dirs: &[&Path], home: &Path, stem: &str) -> Option<PathBuf> {
     let search: Vec<&Path> = std::iter::once(home).chain(dirs.iter().copied()).collect();
     let ferry_name = format!("{stem}.ferry.osm.pbf");
     if let Some(p) = real_extract_in_dirs(&search, &ferry_name) {
@@ -3338,6 +3336,27 @@ mod multi_stem_corridor_tests {
         ));
         // No bbox → never pull extras.
         assert!(!corridor_needs_extra_stems("ostlandet-latest", None));
+    }
+
+    #[test]
+    fn corridor_needs_extra_when_endpoint_has_pip_hole() {
+        // Finnmark→Lapland densify hop: dest PIP is None (Finnish Lapland hole)
+        // but a Ready finland extract covers it — must force extras.
+        let dir = tempfile::tempdir().expect("tmpdir");
+        fs::write(
+            dir.path().join("finland-latest.navi-manifest.json"),
+            r#"{"schema":1,"stem":"finland-latest","pbf_filename":"finland-latest.osm.pbf","graph_files":{},"graph_format_version":9}"#,
+        )
+        .unwrap();
+        let pts = [(69.67551_f64, 29.14187_f64), (65.70041_f64, 24.66393_f64)];
+        assert!(
+            corridor_needs_extra_for_endpoint_leaves(
+                "nord-norge-latest",
+                Some(&pts),
+                &[dir.path()]
+            ),
+            "PIP-hole endpoint must force multi-stem load"
+        );
     }
 
     #[test]

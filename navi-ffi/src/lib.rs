@@ -2631,7 +2631,7 @@ fn plan_car_route_chunked_legs(
         };
         let arrival = datex_now + chrono::Duration::minutes(eta_minutes.round() as i64);
         let trip_uncertain = eta_minutes > 12.0 * 60.0;
-        let mut hop_datex = match &datex_all {
+        let hop_datex = match &datex_all {
             Some(all) => driver_break_core::datex::impacts_near_route_ctx(
                 all,
                 &[(slat, slon), (elat, elon)],
@@ -3017,8 +3017,8 @@ fn plan_car_route_chunked_legs(
     );
     report.push_str(&soft_report);
     let _ = break_pois; // per-leg breaks were empty (poi_skipped); replaced above
-    // Unique ferry services across hops: pier densify hop + water hop for the
-    // same crossing share a label (`name@km`); count once by label stem.
+                        // Unique ferry services across hops: pier densify hop + water hop for the
+                        // same crossing share a label (`name@km`); count once by label stem.
     {
         let mut seen = std::collections::BTreeSet::new();
         let mut deduped = Vec::new();
@@ -3042,8 +3042,7 @@ fn plan_car_route_chunked_legs(
         datex_all.as_ref().map(|v| v.len()).unwrap_or(0)
     ));
     let track = driver_break_core::export::parse_route_polyline(&polyline);
-    let total_poly_km =
-        driver_break_core::routing::path_repair::polyline_length_m(&track) / 1000.0;
+    let total_poly_km = driver_break_core::routing::path_repair::polyline_length_m(&track) / 1000.0;
     let total_poly_agree =
         driver_break_core::routing::path_repair::total_distance_agrees_with_polyline(
             distance_km * 1000.0,
@@ -3635,12 +3634,11 @@ fn plan_car_route_inner(
         let pack_dirs = pack_dirs_for_densify;
         let pack_dir_refs: Vec<&std::path::Path> = pack_dirs.iter().map(|p| p.as_path()).collect();
         // Direct-corridor preflight: name uninstalled regions on the outline path.
-        let missing_direct =
-            driver_break_core::routing::indexed::missing_ready_regions_for_trip(
-                &pack_dir_refs,
-                routing_profile,
-                &route_points,
-            );
+        let missing_direct = driver_break_core::routing::indexed::missing_ready_regions_for_trip(
+            &pack_dir_refs,
+            routing_profile,
+            &route_points,
+        );
         if !missing_direct.is_empty() {
             log::info!(
                 target: "NaviPlan",
@@ -3766,18 +3764,15 @@ fn plan_car_route_inner(
                 );
             }
         } else {
-            let missing_skel =
-                driver_break_core::routing::indexed::stems_missing_corridor_skeleton(
-                    &pack_dir_refs,
-                    &route_points,
-                    routing_profile,
-                );
+            let missing_skel = driver_break_core::routing::indexed::stems_missing_corridor_skeleton(
+                &pack_dir_refs,
+                &route_points,
+                routing_profile,
+            );
             if !missing_skel.is_empty() {
                 let stem = missing_skel[0].1.clone();
                 let (status, pct) =
-                    driver_break_core::routing::indexed::corridor_skeleton_preparing_status(
-                        &stem,
-                    );
+                    driver_break_core::routing::indexed::corridor_skeleton_preparing_status(&stem);
                 log::info!(
                     target: "NaviPlan",
                     "skeleton_preparing stems={} first={stem}",
@@ -3816,9 +3811,8 @@ fn plan_car_route_inner(
                 target: "NaviPlan",
                 "stage_b densify failed with skeletons present; no centroid fallback"
             );
-            let mut r = empty(
-                "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: stage_b densify unavailable\n".into(),
-            );
+            let mut r =
+                empty("TEST_KIND=PLAN_CAR_ROUTE\nFAIL: stage_b densify unavailable\n".into());
             r.search_terminate_reason = "stage_b_unavailable".into();
             return r;
         }
@@ -4042,16 +4036,15 @@ fn plan_car_route_inner(
             route_opts.motor_soft = None;
             route_opts.surface_routing_mode = None;
             // Stage B: tiles follow the coarse path (plus pad), not the O–D chord.
-            let corridor_pts: Vec<(f64, f64)> = if is_chunk_leg
-                && driver_break_core::routing::plan_bbox::stage_b_active()
-            {
-                driver_break_core::routing::plan_bbox::stage_b_hop_corridor_points(
-                    (start_lat, start_lon),
-                    (end_lat, end_lon),
-                )
-            } else {
-                route_points.clone()
-            };
+            let corridor_pts: Vec<(f64, f64)> =
+                if is_chunk_leg && driver_break_core::routing::plan_bbox::stage_b_active() {
+                    driver_break_core::routing::plan_bbox::stage_b_hop_corridor_points(
+                        (start_lat, start_lon),
+                        (end_lat, end_lon),
+                    )
+                } else {
+                    route_points.clone()
+                };
             bbox = driver_break_core::routing::plan_bbox::trip_bbox_points(&corridor_pts, pad);
             report.push_str(&format!(
                 "bbox={:.3},{:.3},{:.3},{:.3}; pad={pad:.2}; edge_clip={edge_clip_mode:?}; \
@@ -6432,18 +6425,15 @@ pub fn ensure_ferry_sidecar(pack_dir: String, stem: String, profile: TravelProfi
         return "FAIL: empty stem\n".into();
     }
     let rp = RoutingProfile::from(profile.to_core());
-    let pbf = match driver_break_core::routing::indexed::resolve_ferry_overlay_pbf_for_stem(
-        home, stem,
-    ) {
-        Some(p) => p,
-        None => return format!("FAIL: PBF missing for stem={stem}\n"),
-    };
+    let pbf =
+        match driver_break_core::routing::indexed::resolve_ferry_overlay_pbf_for_stem(home, stem) {
+            Some(p) => p,
+            None => return format!("FAIL: PBF missing for stem={stem}\n"),
+        };
     match driver_break_core::routing::indexed::ensure_ferry_sidecar(home, stem, rp, &pbf) {
         Ok(true) => format!(
             "PASS: ferry sidecar ready stem={stem} pbf={}\n",
-            pbf.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("?")
+            pbf.file_name().and_then(|n| n.to_str()).unwrap_or("?")
         ),
         Ok(false) => format!("PASS: no ferry edges stem={stem}\n"),
         Err(e) => format!("FAIL: ferry sidecar: {e:#}\n"),
@@ -6491,7 +6481,7 @@ pub struct FfiCorridorSkeletonProgress {
     pub message: String,
 }
 
-/// Build/refresh `{stem}.navi-corridor-skeleton.json` from installed graph packs.
+/// Build/refresh `{stem}.navi-corridor-skeleton.bin` from installed graph packs.
 /// Call from pack install / idle background work — not from the plan path.
 #[uniffi::export]
 pub fn ensure_corridor_skeleton(pack_dir: String, stem: String, profile: TravelProfile) -> String {

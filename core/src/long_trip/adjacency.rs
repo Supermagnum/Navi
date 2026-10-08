@@ -311,6 +311,16 @@ pub fn adjacency_named_links() -> Vec<(&'static str, &'static str, &'static str)
         .collect()
 }
 
+/// One-hop adjacency neighbours of `region_id` (undirected catalog graph).
+pub fn adjacent_region_ids(region_id: &str) -> Vec<&'static str> {
+    let g = graph();
+    let id = normalize_region_id(region_id);
+    let Some(i) = g.regions.iter().position(|r| r.id == id) else {
+        return Vec::new();
+    };
+    g.adj[i].iter().map(|&j| g.id_static[j]).collect()
+}
+
 fn country_catalog_prefix(iso: &str) -> String {
     match iso.trim().to_ascii_lowercase().as_str() {
         "us" | "usa" => "north-america/us".into(),
@@ -834,8 +844,8 @@ mod tests {
         .map(String::from)
         .collect::<Vec<_>>();
         let all = direct_corridor_regions_for_trip(&[elsa, sjuvass], None).expect("corridor");
-        let missing = ordered_needed_regions_for_trip(&[elsa, sjuvass], &installed, None)
-            .expect("missing");
+        let missing =
+            ordered_needed_regions_for_trip(&[elsa, sjuvass], &installed, None).expect("missing");
         eprintln!("ALL={all:?}");
         eprintln!("MISSING={missing:?}");
         assert_eq!(
@@ -896,7 +906,8 @@ mod tests {
     fn fu24_vestlandet_fjord_ratios_never_absurd_when_installed() {
         use crate::routing::plan_bbox::{is_absurd_installed_detour, waypoints_straight_km};
         // Short Vestlandet corridors that go around a fjord (road ≫ straight).
-        let cases: &[(&str, f64, [(f64, f64); 2])] = &[
+        type FjordCase = (&'static str, f64, [(f64, f64); 2]);
+        let cases: &[FjordCase] = &[
             // Odda area → across Sørfjorden / Hardanger: ~90 km road / ~28 km straight.
             ("odda_sorfjord", 90.0, [(60.069, 6.546), (60.2987, 6.60322)]),
             // Lavik–Brekke side of Sognefjord land loop (no ferry): ~110 / ~18.
@@ -917,11 +928,7 @@ mod tests {
             );
             // Same road with a missing region still absurd when ratio >2.
             assert!(
-                is_absurd_installed_detour(
-                    *road_km,
-                    wp,
-                    &["europe/norway/vestlandet".into()]
-                ),
+                is_absurd_installed_detour(*road_km, wp, &["europe/norway/vestlandet".into()]),
                 "{name}: missing region + ratio>2 must trigger"
             );
             eprintln!("fu24 fjord {name}: road={road_km} straight={straight:.1} ratio={ratio:.2}");

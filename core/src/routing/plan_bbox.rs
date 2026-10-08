@@ -279,7 +279,9 @@ pub const ABSURD_DETOUR_RATIO: f64 = 2.0;
 /// Soft cap on estimated packed graph nodes loaded for one densify hop
 /// (path tiles + pad). Replaces a raw tile count: tiles vary hugely by region.
 /// Density ≈ archive bytes / 200 (packed car-graph). ~500k nodes ≈ ~1 GiB peak.
-pub const MAX_PATH_NODES_PER_HOP: usize = 500_000;
+/// Estimated packed nodes per densify hop. Sized so a single hop's pack load
+/// stays near the ~1 GB planning peak target when skeletons are already warm.
+pub const MAX_PATH_NODES_PER_HOP: usize = 900_000;
 
 /// Refuse micro-splits: never insert a hop joint closer than this (metres) even
 /// when the node budget is exceeded (overlapping large tiles along a dense
@@ -300,8 +302,7 @@ pub fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     );
     let dlat = lat2 - lat1;
     let dlon = lon2 - lon1;
-    let a = (dlat * 0.5).sin().powi(2)
-        + lat1.cos() * lat2.cos() * (dlon * 0.5).sin().powi(2);
+    let a = (dlat * 0.5).sin().powi(2) + lat1.cos() * lat2.cos() * (dlon * 0.5).sin().powi(2);
     2.0 * R * a.sqrt().min(1.0).asin()
 }
 
@@ -684,8 +685,14 @@ mod tests {
         let spine = format!("fn norway_e6_spine{}", "_anchors");
         let bias = format!("fn prefer_densify_leaf{}", "_centroid");
         assert!(!src.contains(&via), "centroid densify must stay deleted");
-        assert!(!src.contains(&spine), "hard-coded E6 densify anchors must stay deleted");
-        assert!(!src.contains(&bias), "densify centroid biases must stay deleted");
+        assert!(
+            !src.contains(&spine),
+            "hard-coded E6 densify anchors must stay deleted"
+        );
+        assert!(
+            !src.contains(&bias),
+            "densify centroid biases must stay deleted"
+        );
     }
 
     use super::*;
@@ -843,5 +850,4 @@ mod tests {
             "snap_failed"
         ));
     }
-
 }
