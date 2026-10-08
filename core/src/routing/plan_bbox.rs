@@ -292,6 +292,105 @@ pub fn trip_span_deg(points: &[(f64, f64)]) -> f64 {
     (max_lat - min_lat).abs().max((max_lon - min_lon).abs())
 }
 
+
+/// Coarse-route / straight-line ratio above which an installed-only path is an
+/// absurd detour when the direct corridor has missing regions. Chosen so
+/// Elsa→Sjuvass (~2.57×) is blocked while Bevensen (~1.52×), Aga (~1.47×) and
+/// Florø (~1.58×) stay accepted.
+pub const ABSURD_DETOUR_RATIO: f64 = 2.0;
+
+/// Max path-covering graph tiles allowed in one densify hop (before pad).
+/// Hop2 Elsa loaded 22 tiles / ~591k nodes and disconnected under the widen
+/// cap; 10 tiles keeps merged nodes ~≤250k (~1.2 GiB peak with pad).
+pub const MAX_PATH_TILES_PER_HOP: usize = 10;
+
+/// Great-circle distance in km between two WGS84 points.
+pub fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    const R: f64 = 6371.0;
+    let (lat1, lon1, lat2, lon2) = (
+        lat1.to_radians(),
+        lon1.to_radians(),
+        lat2.to_radians(),
+        lon2.to_radians(),
+    );
+    let dlat = lat2 - lat1;
+    let dlon = lon2 - lon1;
+    let a = (dlat * 0.5).sin().powi(2)
+        + lat1.cos() * lat2.cos() * (dlon * 0.5).sin().powi(2);
+    2.0 * R * a.sqrt().min(1.0).asin()
+}
+
+/// Straight-line km along consecutive waypoints (sum of legs).
+pub fn waypoints_straight_km(waypoints: &[(f64, f64)]) -> f64 {
+    waypoints
+        .windows(2)
+        .map(|w| haversine_km(w[0].0, w[0].1, w[1].0, w[1].1))
+        .sum()
+}
+
+/// True when `coarse_km` is much longer than the crow-flies corridor.
+///
+/// Typical cause: the natural corridor crosses uninstalled regions, so the
+/// coarse search silently detours through whatever packs are Ready. Callers
+/// must not present that path as the route; they name [`missing_direct_regions`]
+/// (or the full direct corridor when packs are present but the coarse path is
+/// still absurd) and may offer the detour only as an explicit choice
+/// (`NAVI_ACCEPT_ABSURD_DETOUR=1` or future UI accept flag).
+///
+/// Threshold [`ABSURD_DETOUR_RATIO`] (2.0): Elsa→Sjuvass coarse ~2.57× is
+/// blocked; Bevensen ~1.52×, Aga ~1.47×, Florø ~1.58× stay accepted.
+pub fn is_absurd_installed_detour(
+    coarse_km: f64,
+    waypoints: &[(f64, f64)],
+    _missing_direct_regions: &[String],
+) -> bool {
+    if coarse_km <= 0.0 || waypoints.len() < 2 {
+        return false;
+    }
+    let straight = waypoints_straight_km(waypoints);
+    if straight < 1.0 {
+        return false;
+    }
+    coarse_km / straight > ABSURD_DETOUR_RATIO
+}
+
+/// Env override: accept an absurd installed-only detour explicitly.
+pub fn accept_absurd_detour_env() -> bool {
+    matches!(
+        std::env::var("NAVI_ACCEPT_ABSURD_DETOUR")
+            .ok()
+            .as_deref()
+            .map(str::trim),
+        Some("1") | Some("true") | Some("yes")
+    )
+}
+
+/// Snap budget for densify hop endpoints (region centroids), not user stops.
+/// Centroids can sit several km offshore / inland of the nearest clearance-legal
+/// road (SH→DK water approaches needed ~11–22 km). Same-stem tile fill prevents
+/// the false Skåne→Halland component jump that a large snap used to cause.
+///
+/// This constant affects **snap search only** (pad ≈ max_m/1e5 degrees). It does
+/// **not** widen tile selection or edge materialization — those use
+/// [`CORRIDOR_TILE_PAD_DEG`] / [`CORRIDOR_EDGE_HALF_WIDTH_DEG`].
+pub const CHUNK_INTERMEDIATE_SNAP_M: f64 = 35_000.0;
+
+/// Effective densify-joint snap budget (see [`CHUNK_INTERMEDIATE_SNAP_M`]).
+pub fn effective_chunk_intermediate_snap_m() -> f64 {
+    measure_override_f64("NAVI_MEASURE_CHUNK_INTERMEDIATE_SNAP_M")
+        .unwrap_or(CHUNK_INTERMEDIATE_SNAP_M)
+}
+
+/// Tighter densify snap when both hop ends lie in the same catalog region.
+pub const CHUNK_SAME_REGION_SNAP_M: f64 = 8_000.0;
+
+/// Chebyshev-ish span of the point set (max of lat/lon ranges).
+pub fn trip_span_deg(points: &[(f64, f64)]) -> f64 {
+    let (min_lat, min_lon, max_lat, max_lon) = points_bounds(points);
+    (max_lat - min_lat).abs().max((max_lon - min_lon).abs())
+}
+
+/// Insert linear midpoints so each consecutive hop's span is ≤ `max_hop_deg`.
 /// Insert linear midpoints so each consecutive hop's span is ≤ `max_hop_deg`.
 /// Prefer [`densify_route_points_via_regions`] for cross-sea corridors.
 pub fn densify_route_points(points: &[(f64, f64)], max_hop_deg: f64) -> Vec<(f64, f64)> {

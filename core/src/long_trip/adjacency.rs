@@ -495,18 +495,13 @@ fn densify_trip_waypoints(waypoints: &[(f64, f64)], step_km: f64) -> Vec<(f64, f
     out
 }
 
-/// Default long-trip corridor: densify the waypoint chord, PIP each sample,
-/// then adjacency hop-path between consecutive distinct regions.
+/// Regions on the direct corridor between consecutive waypoints (catalog
+/// outlines + adjacency hop-path). Includes installed regions.
 ///
-/// Densifying matters for long chords that leave the start country (e.g.
-/// Bugøynes→Sjuvasslia crosses Sweden) where endpoint-only adjacency would
-/// stay on Norway landsdel neighbours. Intermediate samples with no catalog
-/// cover are skipped; original endpoints must still resolve.
-///
-/// Installed regions are dropped from the result (same contract as densify).
-pub fn ordered_needed_regions_for_trip(
+/// Used for preflight naming, absurd-detour checks, and the long-trip
+/// "download regions along route" list.
+pub fn direct_corridor_regions_for_trip(
     waypoints: &[(f64, f64)],
-    installed: &[String],
     country_iso: Option<&str>,
 ) -> Result<Vec<String>, MissingCorridor> {
     if waypoints.is_empty() {
@@ -547,9 +542,6 @@ pub fn ordered_needed_regions_for_trip(
     let mut out: Vec<String> = Vec::new();
     let mut seen = BTreeSet::new();
     let push = |id: &str, out: &mut Vec<String>, seen: &mut BTreeSet<String>| {
-        if is_installed(id, installed) {
-            return;
-        }
         if seen.insert(id.to_string()) {
             out.push(id.to_string());
         }
@@ -557,6 +549,7 @@ pub fn ordered_needed_regions_for_trip(
 
     if region_ids.len() == 1 {
         push(&region_ids[0], &mut out, &mut seen);
+        inject_finland_for_eastern_finnmark_se_bridge(waypoints, &mut out, &mut seen);
         return Ok(out);
     }
 
@@ -586,15 +579,35 @@ pub fn ordered_needed_regions_for_trip(
     // and the fair Bugøynes→Sjuvasslia land path never requests Finland.
     // Inject it when eastern Finnmark → Østlandet already selected northern
     // Sweden — densify spine joints and DATEX sits need the FI pack Ready.
-    inject_finland_for_eastern_finnmark_se_bridge(waypoints, installed, &mut out, &mut seen);
+    inject_finland_for_eastern_finnmark_se_bridge(waypoints, &mut out, &mut seen);
     Ok(out)
 }
 
-/// When Bugøynes-class eastern Finnmark trips already need northern Sweden,
-/// also download Finland (fair ~1944 km path crosses Lapland).
-fn inject_finland_for_eastern_finnmark_se_bridge(
+/// Default long-trip corridor: densify the waypoint chord, PIP each sample,
+/// then adjacency hop-path between consecutive distinct regions.
+///
+/// Densifying matters for long chords that leave the start country (e.g.
+/// Bugøynes→Sjuvasslia crosses Sweden) where endpoint-only adjacency would
+/// stay on Norway landsdel neighbours. Intermediate samples with no catalog
+/// cover are skipped; original endpoints must still resolve.
+///
+/// Installed regions are dropped from the result (same contract as densify).
+pub fn ordered_needed_regions_for_trip(
     waypoints: &[(f64, f64)],
     installed: &[String],
+    country_iso: Option<&str>,
+) -> Result<Vec<String>, MissingCorridor> {
+    let all = direct_corridor_regions_for_trip(waypoints, country_iso)?;
+    Ok(all
+        .into_iter()
+        .filter(|id| !is_installed(id, installed))
+        .collect())
+}
+
+/// When Bugøynes-class eastern Finnmark trips already need northern Sweden,
+/// also include Finland (fair ~1944 km path crosses Lapland).
+fn inject_finland_for_eastern_finnmark_se_bridge(
+    waypoints: &[(f64, f64)],
     out: &mut Vec<String>,
     seen: &mut BTreeSet<String>,
 ) {
@@ -620,7 +633,7 @@ fn inject_finland_for_eastern_finnmark_se_bridge(
     if !has_northern_se {
         return;
     }
-    if out.iter().any(|r| r.contains("finland")) || is_installed("europe/finland", installed) {
+    if out.iter().any(|r| r.contains("finland")) {
         return;
     }
     let fi = "europe/finland";
@@ -790,5 +803,88 @@ mod tests {
             ordered_needed_regions_for_trip(&[(57.63, 18.29), (59.33, 18.07)], &[], Some("se"))
                 .unwrap_err();
         assert!(matches!(err, MissingCorridor::NoPath { .. }), "got {err}");
+    }
+
+    #[test]
+    fn fu23_elsa_direct_corridor_and_missing() {
+        let elsa = (69.9742_f64, 29.63342_f64);
+        let sjuvass = (59.80326_f64, 9.39866_f64);
+        // Emulator long-trip-packs inventory (18 stems).
+        let installed = [
+            "europe/sweden/dalarna",
+            "europe/denmark",
+            "europe/finland",
+            "europe/sweden/halland",
+            "europe/germany/hamburg",
+            "europe/sweden/jamtland",
+            "europe/germany/mecklenburg-vorpommern",
+            "europe/germany/niedersachsen",
+            "europe/norway/nord-norge",
+            "europe/sweden/norrbotten",
+            "europe/norway/ostlandet",
+            "europe/germany/schleswig-holstein",
+            "europe/sweden/skane",
+            "europe/norway/sorlandet",
+            "europe/sweden/vasterbotten",
+            "europe/sweden/vasternorrland",
+            "europe/sweden/vastra_gotaland",
+            "europe/norway/vestlandet",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>();
+        let all = direct_corridor_regions_for_trip(&[elsa, sjuvass], None).expect("corridor");
+        let missing = ordered_needed_regions_for_trip(&[elsa, sjuvass], &installed, None)
+            .expect("missing");
+        eprintln!("ALL={all:?}");
+        eprintln!("MISSING={missing:?}");
+        assert_eq!(
+            all,
+            [
+                "europe/norway/nord-norge",
+                "europe/finland",
+                "europe/sweden/norrbotten",
+                "europe/sweden/vasterbotten",
+                "europe/sweden/vasternorrland",
+                "europe/sweden/jamtland",
+                "europe/sweden/dalarna",
+                "europe/norway/ostlandet",
+            ]
+        );
+        assert!(
+            missing.is_empty(),
+            "emulator 18-pack set covers Elsa direct corridor: missing={missing:?}"
+        );
+        // Without dalarna the absurd-detour gate must name it.
+        let without_dalarna: Vec<String> = installed
+            .iter()
+            .filter(|r| !r.contains("dalarna"))
+            .cloned()
+            .collect();
+        let miss2 = ordered_needed_regions_for_trip(&[elsa, sjuvass], &without_dalarna, None)
+            .expect("missing2");
+        assert_eq!(miss2, vec!["europe/sweden/dalarna".to_string()]);
+    }
+
+    #[test]
+    fn fu23_detour_ratios_elsa_vs_working() {
+        use crate::routing::plan_bbox::{is_absurd_installed_detour, waypoints_straight_km};
+        let elsa_wp = [(69.9742, 29.63342), (59.80326, 9.39866)];
+        let bev = [(53.079686, 10.587198), (61.4433766, 7.4614016)];
+        let aga = [(60.82718, 11.30278), (60.2987, 6.60322)];
+        let floro = [(60.827063, 11.303025), (61.60145, 5.02658)];
+        let missing_dummy = vec!["europe/sweden/jamtland".into()];
+        assert!(is_absurd_installed_detour(3771.9, &elsa_wp, &missing_dummy));
+        assert!(!is_absurd_installed_detour(1445.8, &bev, &[]));
+        assert!(!is_absurd_installed_detour(1445.8, &bev, &missing_dummy)); // 1.52 < 2.0
+        assert!(!is_absurd_installed_detour(386.7, &aga, &missing_dummy));
+        assert!(!is_absurd_installed_detour(547.4, &floro, &missing_dummy));
+        eprintln!(
+            "straight elsa={:.1} bev={:.1} aga={:.1} floro={:.1}",
+            waypoints_straight_km(&elsa_wp),
+            waypoints_straight_km(&bev),
+            waypoints_straight_km(&aga),
+            waypoints_straight_km(&floro),
+        );
     }
 }

@@ -41,7 +41,8 @@ pub(crate) fn pace_preliminary_network() {
 
 pub use adjacency::{
     adjacency_edge_count, adjacency_isolates, adjacency_named_links, adjacency_region_count,
-    ordered_needed_regions_for_trip, region_containing, warm_region_adjacency, MissingCorridor,
+    direct_corridor_regions_for_trip, ordered_needed_regions_for_trip, region_containing,
+    warm_region_adjacency, MissingCorridor,
 };
 pub use brouter::{
     build_brouter_url, count_ferry_segments_in_messages, parse_brouter_geojson,
