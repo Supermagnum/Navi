@@ -96,11 +96,18 @@ object CorridorSkeletonBackground {
      * newly appeared neighbor skeleton can trigger a border rebuild.
      */
     fun ensureFromInstalledMaps() {
-        if (RoutePlanGate.isRunning()) return
+        // Never enqueue (or continue) builds while a plan is running or about to.
+        if (RoutePlanGate.isRunning() || NaviMapTestHooks.pendingTripPlan != null) return
         val snap = InstalledMaps.current() ?: return
         for (r in snap.regions.values) {
             ensureStarted(r.packDir, r.stem, TravelProfile.CAR)
         }
+    }
+
+    /** Drop queued builds when a plan starts (in-flight native build finishes current stem). */
+    fun clearQueueForPlan() {
+        queue.clear()
+        lastStatus.set("Corridor skeleton paused (planning)…")
     }
 
     private fun drain() {

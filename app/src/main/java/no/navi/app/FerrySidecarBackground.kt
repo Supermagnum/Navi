@@ -93,8 +93,7 @@ object FerrySidecarBackground {
      * readiness — file presence alone is not enough after a build bump.
      */
     fun ensureFromInstalledMaps() {
-        // Allow enqueue while a plan is ending on ferry_preparing; drain() still
-        // waits for RoutePlanGate to clear before parsing PBFs.
+        if (RoutePlanGate.isRunning() || NaviMapTestHooks.pendingTripPlan != null) return
         val snap = InstalledMaps.current() ?: return
         for (r in snap.regions.values) {
             ensureStarted(r.packDir, r.stem, TravelProfile.CAR)
@@ -102,6 +101,11 @@ object FerrySidecarBackground {
             // graph, but still request the truck ferry sidecar.
             ensureStarted(r.packDir, r.stem, TravelProfile.TRUCK)
         }
+    }
+
+    fun clearQueueForPlan() {
+        queue.clear()
+        lastStatus.set("Ferry data paused (planning)…")
     }
 
     private fun drain() {

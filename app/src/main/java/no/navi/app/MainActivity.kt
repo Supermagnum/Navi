@@ -3427,6 +3427,8 @@ private fun NaviMapScreen() {
                                             routeUsesTolls = false,
                                         )
                                     }
+                                    CorridorSkeletonBackground.clearQueueForPlan()
+                                    FerrySidecarBackground.clearQueueForPlan()
                                     val planned =
                                         try {
                                             uniffi.navi.planCarRoute(
