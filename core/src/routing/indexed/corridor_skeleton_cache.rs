@@ -39,7 +39,8 @@ pub const SKELETON_BUILD_SOFT_RSS_MB: u64 = 1800;
 /// skeletons rebuild (FU23: jamtland↔dalarna had a 25 km major-only gap).
 /// FU24: bump when rim secondary/tertiary/unclassified/residential selection changes.
 /// FU25: binary skeleton + border-crossing-only rim (no full AABB rim keep).
-pub const CORRIDOR_SKELETON_BUILD: u32 = 5;
+/// FU27: neighbour fingerprint by installed pack identity, not skeleton mtime.
+pub const CORRIDOR_SKELETON_BUILD: u32 = 6;
 
 fn profile_slug(profile: RoutingProfile) -> &'static str {
     match profile {
@@ -150,39 +151,35 @@ fn primary_graph_path(home: &Path, stem: &str, profile: RoutingProfile) -> Optio
     man.graph_files.get(key).map(|rel| home.join(rel))
 }
 
-/// Neighbor skeleton fingerprints: other stems in `home` that already have a
-/// skeleton JSON. When a neighbor appears or its mtime changes, this stem's
-/// meta no longer matches and rebuilds (border OSM ids need refresh).
-fn neighbor_fingerprint(home: &Path, stem: &str) -> String {
-    let mut parts: Vec<(String, u64)> = Vec::new();
+/// Pack identity (generation, PBF size, PBF time) of every other installed pack
+/// in `home`. Border OSM ids come from those packs
+/// ([`border_osm_from_neighbor_packs`]), so this stem rebuilds when a neighbour
+/// pack is installed, removed or updated. Skeleton files are not part of it:
+/// rebuilding one skeleton must not invalidate the others.
+fn neighbor_fingerprint(home: &Path, stem: &str, profile: RoutingProfile) -> String {
+    let mut parts: Vec<String> = Vec::new();
     let Ok(rd) = fs::read_dir(home) else {
         return String::new();
     };
     for ent in rd.flatten() {
         let name = ent.file_name();
         let name = name.to_string_lossy();
-        let other = name
-            .strip_suffix(".navi-corridor-skeleton.bin")
-            .or_else(|| name.strip_suffix(".navi-corridor-skeleton.json"));
-        let Some(other) = other else {
+        let Some(other) = name.strip_suffix(".navi-manifest.json") else {
             continue;
         };
         if other == stem {
             continue;
         }
-        parts.push((other.to_string(), file_mtime_secs(&ent.path())));
+        let (len, mtime, gen) = pack_fingerprint_parts(home, other, profile);
+        parts.push(format!("{other}:{gen}:{len}:{mtime}"));
     }
-    parts.sort_by(|a, b| a.0.cmp(&b.0));
-    parts
-        .into_iter()
-        .map(|(s, m)| format!("{s}:{m}"))
-        .collect::<Vec<_>>()
-        .join(",")
+    parts.sort();
+    parts.join(",")
 }
 
 fn want_fingerprint(home: &Path, stem: &str, profile: RoutingProfile) -> String {
     let (len, mtime, gen) = pack_fingerprint_parts(home, stem, profile);
-    let neighbors = neighbor_fingerprint(home, stem);
+    let neighbors = neighbor_fingerprint(home, stem, profile);
     format!(
         "build={CORRIDOR_SKELETON_BUILD};skel_fmt={CORRIDOR_SKELETON_FORMAT_VERSION};\
          profile={};gen={gen};len={len};mtime={mtime};neighbors={neighbors}",
@@ -207,26 +204,6 @@ pub fn skeleton_fresh(home: &Path, stem: &str, profile: RoutingProfile) -> bool 
 /// Whether a plan may use this stem's corridor skeleton (fresh sidecar on disk).
 pub fn corridor_skeleton_ready(home: &Path, stem: &str, profile: RoutingProfile) -> bool {
     skeleton_fresh(home, stem, profile)
-}
-
-/// True when the skeleton on disk was built by this code (build, format,
-/// profile) from the installed pack (generation, PBF size and time).
-///
-/// Unlike [`skeleton_fresh`] the neighbour part of the meta is not compared:
-/// it records other skeleton files' mtimes, so one neighbour rebuild would make
-/// every installed skeleton unusable for planning until all are rebuilt.
-pub fn skeleton_built_for_pack(home: &Path, stem: &str, profile: RoutingProfile) -> bool {
-    let Some(skel) = crate::routing::corridor_skeleton::resolve_skeleton_path(home, stem) else {
-        return false;
-    };
-    let meta_path = skeleton_meta_path(home, stem);
-    if !skel.is_file() || !meta_path.is_file() {
-        return false;
-    }
-    let want = want_fingerprint(home, stem, profile);
-    let got = fs::read_to_string(&meta_path).unwrap_or_default();
-    let pack_part = |s: &str| s.split(";neighbors=").next().unwrap_or("").to_string();
-    !want.is_empty() && pack_part(got.trim()) == pack_part(&want)
 }
 
 fn tile_paths(home: &Path, stem: &str, profile: RoutingProfile) -> Vec<PathBuf> {
@@ -589,8 +566,8 @@ pub fn ensure_corridor_skeleton(
     Ok(())
 }
 
-/// Stems among `pack_dirs` that are on the trip corridor but lack a skeleton
-/// built for the installed pack by this code ([`skeleton_built_for_pack`]).
+/// Stems among `pack_dirs` that are on the trip corridor but lack a fresh
+/// skeleton ([`skeleton_fresh`]).
 pub fn stems_missing_corridor_skeleton(
     pack_dirs: &[&Path],
     route_points: &[(f64, f64)],
@@ -624,9 +601,64 @@ pub fn stems_missing_corridor_skeleton(
         }) else {
             continue;
         };
-        if !skeleton_built_for_pack(home, &stem, profile) {
+        if !skeleton_fresh(home, &stem, profile) {
             out.push(((*home).to_path_buf(), stem));
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn install(home: &Path, stem: &str, pbf_bytes: &[u8]) {
+        fs::write(home.join(format!("{stem}.navi-manifest.json")), "{}").unwrap();
+        fs::write(home.join(format!("{stem}.osm.pbf")), pbf_bytes).unwrap();
+    }
+
+    fn write_skeleton(home: &Path, stem: &str) {
+        fs::write(
+            home.join(format!("{stem}.navi-corridor-skeleton.bin")),
+            b"x",
+        )
+        .unwrap();
+        let fp = want_fingerprint(home, stem, RoutingProfile::Car);
+        fs::write(skeleton_meta_path(home, stem), fp).unwrap();
+    }
+
+    #[test]
+    fn rebuilding_a_neighbour_skeleton_keeps_this_skeleton_fresh() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        install(home, "a-latest", b"pack a");
+        install(home, "b-latest", b"pack b");
+        write_skeleton(home, "a-latest");
+        write_skeleton(home, "b-latest");
+        assert!(skeleton_fresh(home, "a-latest", RoutingProfile::Car));
+
+        fs::remove_file(home.join("b-latest.navi-corridor-skeleton.bin")).unwrap();
+        write_skeleton(home, "b-latest");
+        assert!(skeleton_fresh(home, "a-latest", RoutingProfile::Car));
+        assert!(skeleton_fresh(home, "b-latest", RoutingProfile::Car));
+    }
+
+    #[test]
+    fn neighbour_pack_change_makes_this_skeleton_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        install(home, "a-latest", b"pack a");
+        install(home, "b-latest", b"pack b");
+        write_skeleton(home, "a-latest");
+        assert!(skeleton_fresh(home, "a-latest", RoutingProfile::Car));
+
+        install(home, "b-latest", b"pack b, new extract");
+        assert!(!skeleton_fresh(home, "a-latest", RoutingProfile::Car));
+
+        install(home, "c-latest", b"pack c");
+        write_skeleton(home, "a-latest");
+        assert!(skeleton_fresh(home, "a-latest", RoutingProfile::Car));
+        fs::remove_file(home.join("c-latest.navi-manifest.json")).unwrap();
+        assert!(!skeleton_fresh(home, "a-latest", RoutingProfile::Car));
+    }
 }

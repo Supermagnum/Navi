@@ -2135,11 +2135,11 @@ fn load_skeletons_from_dirs(dirs: &[&Path], profile: RoutingProfile) -> Vec<Corr
 
 /// Load skeletons; when `only_stems` is set, skip every other region file.
 ///
-/// A skeleton is used only when its meta says it was built by this code from
-/// the installed pack ([`skeleton_built_for_pack`]), so a skeleton from another
-/// build is never read.
+/// A skeleton is used only when its meta matches the current build, format,
+/// pack and neighbour-pack fingerprint ([`skeleton_fresh`]), the same test the
+/// app's idle builder uses, so a skeleton from another build is never read.
 ///
-/// [`skeleton_built_for_pack`]: crate::routing::indexed::skeleton_built_for_pack
+/// [`skeleton_fresh`]: crate::routing::indexed::skeleton_fresh
 fn load_skeletons_from_dirs_filtered(
     dirs: &[&Path],
     only_stems: Option<&HashSet<String>>,
@@ -2166,7 +2166,7 @@ fn load_skeletons_from_dirs_filtered(
             if only_stems.is_some_and(|want| !want.contains(&stem)) || seen.contains(&stem) {
                 continue;
             }
-            if !crate::routing::indexed::skeleton_built_for_pack(dir, &stem, profile) {
+            if !crate::routing::indexed::skeleton_fresh(dir, &stem, profile) {
                 log::warn!(target: "NaviPlan", "stage_b skip stale skeleton stem={stem}");
                 continue;
             }
