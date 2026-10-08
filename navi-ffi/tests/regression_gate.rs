@@ -1,0 +1,826 @@
+//! Host regression gate for long-trip car planning against real packs.
+//!
+//! Calls `navi::plan_car_route` with the same arguments `MainActivity` passes
+//! (eco off, toll allow, long trip on, no country limit, vias as `FfiLatLon`),
+//! so the planner, its skeleton freshness check and its options are the app's.
+//!
+//! Environment:
+//! - `NAVI_GATE_PACKS` (required): long-trip pack dir (manifests, graph tiles,
+//!   corridor skeletons, `elevation/`), same layout as the device
+//!   `long-trip-packs` dir.
+//! - `NAVI_GATE_REFS` (required): dir with the reference lines
+//!   (`bad-luster.json`, `breneriroa-aga.geojson`, `roa-florø.json`,
+//!   `elsa-sjuvass.geojson`).
+//! - `NAVI_GATE_WORK`: scratch dir for data/cache dirs and the result JSON
+//!   (default: `target/navi-gate-work`).
+//! - `NAVI_GATE_BASELINE`: baseline JSON (default: `tests/regression_gate_baseline.json`).
+//! - `NAVI_GATE_WRITE_BASELINE=1`: write this run's wall time and peak memory as
+//!   the baseline instead of comparing.
+//! - `NAVI_GATE_CASES`: comma list of case ids to run (default: all).
+//!
+//! Run: `cargo test --release -p navi-ffi --test regression_gate -- --ignored --nocapture`
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::time::Instant;
+
+use navi::{plan_car_route, FfiLatLon, FfiTollPolicy, FfiVehicleLimits, TravelProfile};
+
+const VIA_MAX_M: f64 = 50.0;
+const POLY_DISTANCE_TOL: f64 = 0.005;
+const SPIKE_RATIO: f64 = 2.5;
+const SPIKE_MIN_EXTRA_KM: f64 = 1.5;
+const SPIKE_WINDOWS_KM: [f64; 4] = [3.0, 6.0, 12.0, 25.0];
+const SPIKE_REF_MATCH_M: f64 = 1000.0;
+const RESAMPLE_M: f64 = 100.0;
+const BASELINE_REGRESSION: f64 = 1.25;
+
+const BEVENSEN: (f64, f64) = (53.079686, 10.587198);
+const VAGAAVEGEN_80: (f64, f64) = (61.8691419, 9.1055130);
+const DALSOREN: (f64, f64) = (61.4433766, 7.4614016);
+const BRENNERIROA_AGA: (f64, f64) = (60.82718, 11.30278);
+const AGA: (f64, f64) = (60.29870, 6.60322);
+const BRENNERIROA_FLORO: (f64, f64) = (60.82712, 11.30249);
+const GROTLI: (f64, f64) = (62.013569, 7.630359);
+const FLORO: (f64, f64) = (61.60145, 5.02658);
+const ELSA: (f64, f64) = (69.9742, 29.63342);
+const SJUVASS: (f64, f64) = (59.80326, 9.39866);
+
+const OTTA: (f64, f64) = (61.7727, 9.5404);
+const LOM: (f64, f64) = (61.8381, 8.5676);
+const TOWN_PASS_M: f64 = 1500.0;
+const RV15_MIN_SHARE: f64 = 0.90;
+/// OSM name of Rv 15 between Otta and Lom; sim-sample street labels prefer the
+/// name over the ref.
+const RV15_OTTA_LOM_NAME: &str = "Ottadalsvegen";
+
+struct Case {
+    id: &'static str,
+    start: (f64, f64),
+    vias: &'static [(f64, f64)],
+    end: (f64, f64),
+    pbf_stem: &'static str,
+    avoid_ferries: bool,
+    /// Exact ferry count and the terminal names each ferry must contain.
+    ferries: &'static [&'static [&'static str]],
+    /// (reference km, relative tolerance).
+    distance: Option<(f64, f64)>,
+    rv15_otta_vaga_lom: bool,
+    reference: Option<&'static str>,
+    expected_fail: Option<&'static str>,
+}
+
+const CASES: &[Case] = &[
+    Case {
+        id: "a_bevensen_vaga_dalsoren",
+        start: BEVENSEN,
+        vias: &[VAGAAVEGEN_80],
+        end: DALSOREN,
+        pbf_stem: "vestlandet-latest",
+        avoid_ferries: false,
+        ferries: &[&["puttgarden", "rødby"]],
+        distance: Some((1440.985, 0.02)),
+        rv15_otta_vaga_lom: true,
+        reference: Some("bad-luster.json"),
+        expected_fail: None,
+    },
+    Case {
+        id: "b_brenneriroa_aga",
+        start: BRENNERIROA_AGA,
+        vias: &[],
+        end: AGA,
+        pbf_stem: "vestlandet-latest",
+        avoid_ferries: false,
+        ferries: &[&["kinsarvik", "utne"]],
+        distance: None,
+        rv15_otta_vaga_lom: false,
+        reference: Some("breneriroa-aga.geojson"),
+        expected_fail: None,
+    },
+    Case {
+        id: "c_brenneriroa_grotli_floro",
+        start: BRENNERIROA_FLORO,
+        vias: &[GROTLI],
+        end: FLORO,
+        pbf_stem: "vestlandet-latest",
+        avoid_ferries: false,
+        ferries: &[],
+        distance: Some((524.2, 0.05)),
+        rv15_otta_vaga_lom: false,
+        reference: Some("roa-florø.json"),
+        expected_fail: None,
+    },
+    Case {
+        id: "d_bevensen_vaga_dalsoren_avoid_ferries",
+        start: BEVENSEN,
+        vias: &[VAGAAVEGEN_80],
+        end: DALSOREN,
+        pbf_stem: "vestlandet-latest",
+        avoid_ferries: true,
+        ferries: &[],
+        distance: None,
+        rv15_otta_vaga_lom: false,
+        // Same destination as case a; shared roads keep their own spikes.
+        reference: Some("bad-luster.json"),
+        expected_fail: None,
+    },
+    Case {
+        id: "e_elsa_sjuvass",
+        start: ELSA,
+        vias: &[],
+        end: SJUVASS,
+        pbf_stem: "ostlandet-latest",
+        avoid_ferries: false,
+        ferries: &[],
+        distance: None,
+        rv15_otta_vaga_lom: false,
+        reference: Some("elsa-sjuvass.geojson"),
+        expected_fail: Some(
+            "open since follow-up 24: Finland and Norrbotten hops fail (hop_fail / snap_fail), \
+             route is about +345 km against the reference when it completes",
+        ),
+    },
+];
+
+#[derive(Default)]
+struct Outcome {
+    pass: bool,
+    failures: Vec<String>,
+    distance_km: f64,
+    poly_km: f64,
+    eta_min: f64,
+    ferries: Vec<String>,
+    via_m: Vec<f64>,
+    spikes: Vec<String>,
+    wall_s: f64,
+    peak_mb: f64,
+    terminate: String,
+}
+
+fn empty_vehicle() -> FfiVehicleLimits {
+    FfiVehicleLimits {
+        axle_weight_kg: None,
+        bogie_weight_kg: None,
+        height_m: None,
+        width_m: None,
+        length_m: None,
+        total_weight_kg: None,
+    }
+}
+
+fn haversine_m(a: (f64, f64), b: (f64, f64)) -> f64 {
+    let r = 6_371_008.8_f64;
+    let (la1, lo1) = (a.0.to_radians(), a.1.to_radians());
+    let (la2, lo2) = (b.0.to_radians(), b.1.to_radians());
+    let h = ((la2 - la1) / 2.0).sin().powi(2)
+        + la1.cos() * la2.cos() * ((lo2 - lo1) / 2.0).sin().powi(2);
+    2.0 * r * h.sqrt().asin()
+}
+
+/// Distance from `p` to segment `a`-`b`, local equirectangular projection.
+fn point_segment_m(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
+    let k = p.0.to_radians().cos();
+    let m_per_deg = 111_195.0;
+    let ax = (a.1 - p.1) * k * m_per_deg;
+    let ay = (a.0 - p.0) * m_per_deg;
+    let bx = (b.1 - p.1) * k * m_per_deg;
+    let by = (b.0 - p.0) * m_per_deg;
+    let (dx, dy) = (bx - ax, by - ay);
+    let len2 = dx * dx + dy * dy;
+    let t = if len2 > 0.0 {
+        (-(ax * dx + ay * dy) / len2).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let (cx, cy) = (ax + t * dx, ay + t * dy);
+    (cx * cx + cy * cy).sqrt()
+}
+
+/// `"lon,lat;lon,lat;..."` to `(lat, lon)` points.
+fn parse_polyline(s: &str) -> Vec<(f64, f64)> {
+    s.split(';')
+        .filter_map(|p| {
+            let mut it = p.split(',');
+            let lon: f64 = it.next()?.trim().parse().ok()?;
+            let lat: f64 = it.next()?.trim().parse().ok()?;
+            Some((lat, lon))
+        })
+        .collect()
+}
+
+fn line_length_m(pts: &[(f64, f64)]) -> f64 {
+    pts.windows(2).map(|w| haversine_m(w[0], w[1])).sum()
+}
+
+/// Nearest distance from `p` to the line, with the index of the segment start.
+fn nearest_on_line(p: (f64, f64), pts: &[(f64, f64)]) -> (f64, usize) {
+    let mut best = (f64::INFINITY, 0usize);
+    for (i, w) in pts.windows(2).enumerate() {
+        let d = point_segment_m(p, w[0], w[1]);
+        if d < best.0 {
+            best = (d, i);
+        }
+    }
+    best
+}
+
+/// First LineString `coordinates` array found in a GeoJSON or ORS export.
+fn reference_line(path: &Path) -> Result<Vec<(f64, f64)>, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let v: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+    fn find(v: &serde_json::Value) -> Option<Vec<(f64, f64)>> {
+        match v {
+            serde_json::Value::Object(m) => {
+                if m.get("type").and_then(|t| t.as_str()) == Some("LineString") {
+                    if let Some(serde_json::Value::Array(cs)) = m.get("coordinates") {
+                        let pts: Vec<(f64, f64)> = cs
+                            .iter()
+                            .filter_map(|c| {
+                                let a = c.as_array()?;
+                                Some((a.get(1)?.as_f64()?, a.first()?.as_f64()?))
+                            })
+                            .collect();
+                        if pts.len() > 1 {
+                            return Some(pts);
+                        }
+                    }
+                }
+                m.values().find_map(find)
+            }
+            serde_json::Value::Array(a) => a.iter().find_map(find),
+            _ => None,
+        }
+    }
+    find(&v).ok_or_else(|| format!("{}: no LineString", path.display()))
+}
+
+/// Points every `step_m` along the line with their cumulative distance.
+fn resample(pts: &[(f64, f64)], step_m: f64) -> Vec<((f64, f64), f64)> {
+    let mut out = Vec::new();
+    if pts.is_empty() {
+        return out;
+    }
+    out.push((pts[0], 0.0));
+    let mut cum = 0.0;
+    let mut next = step_m;
+    for w in pts.windows(2) {
+        let seg = haversine_m(w[0], w[1]);
+        while seg > 0.0 && cum + seg >= next {
+            let t = (next - cum) / seg;
+            let p = (
+                w[0].0 + (w[1].0 - w[0].0) * t,
+                w[0].1 + (w[1].1 - w[0].1) * t,
+            );
+            out.push((p, next));
+            next += step_m;
+        }
+        cum += seg;
+    }
+    if let Some(last) = pts.last() {
+        out.push((*last, cum));
+    }
+    out
+}
+
+struct Spike {
+    from_km: f64,
+    to_km: f64,
+    path_km: f64,
+    chord_km: f64,
+    a: (f64, f64),
+    /// Midpoint (by path) of the worst window.
+    mid: (f64, f64),
+    /// Resampled points over the merged span.
+    span: Vec<(f64, f64)>,
+}
+
+/// Windows where path over chord is at or above `SPIKE_RATIO` with at least
+/// `SPIKE_MIN_EXTRA_KM` extra; overlapping windows merge into one spike that
+/// keeps its worst window.
+fn find_spikes(pts: &[(f64, f64)]) -> Vec<Spike> {
+    let rs = resample(pts, RESAMPLE_M);
+    let mut raw: Vec<Spike> = Vec::new();
+    for w_km in SPIKE_WINDOWS_KM {
+        let w_m = w_km * 1000.0;
+        let mut j = 0usize;
+        for i in 0..rs.len() {
+            if j < i {
+                j = i;
+            }
+            while j + 1 < rs.len() && rs[j].1 - rs[i].1 < w_m {
+                j += 1;
+            }
+            let path = rs[j].1 - rs[i].1;
+            if path < w_m * 0.99 {
+                break;
+            }
+            let chord = haversine_m(rs[i].0, rs[j].0);
+            if path >= SPIKE_RATIO * chord && path - chord >= SPIKE_MIN_EXTRA_KM * 1000.0 {
+                let half = rs[i].1 + path / 2.0;
+                let mid = rs[i..=j]
+                    .iter()
+                    .find(|p| p.1 >= half)
+                    .map(|p| p.0)
+                    .unwrap_or(rs[j].0);
+                raw.push(Spike {
+                    from_km: rs[i].1 / 1000.0,
+                    to_km: rs[j].1 / 1000.0,
+                    path_km: path / 1000.0,
+                    chord_km: chord / 1000.0,
+                    a: rs[i].0,
+                    mid,
+                    span: Vec::new(),
+                });
+            }
+        }
+    }
+    raw.sort_by(|x, y| x.from_km.total_cmp(&y.from_km));
+    let mut merged: Vec<Spike> = Vec::new();
+    for s in raw {
+        if let Some(m) = merged.last_mut() {
+            if s.from_km <= m.to_km {
+                let worse = s.path_km - s.chord_km > m.path_km - m.chord_km;
+                let from = m.from_km.min(s.from_km);
+                let to = m.to_km.max(s.to_km);
+                if worse {
+                    *m = s;
+                }
+                m.from_km = from;
+                m.to_km = to;
+                continue;
+            }
+        }
+        merged.push(s);
+    }
+    for m in &mut merged {
+        m.span = rs
+            .iter()
+            .filter(|p| p.1 >= m.from_km * 1000.0 && p.1 <= m.to_km * 1000.0)
+            .map(|p| p.0)
+            .collect();
+    }
+    merged
+}
+
+/// True when the reference line has its own spike (same rule) within
+/// `SPIKE_REF_MATCH_M` of this spike's worst window.
+fn reference_has_spike(s: &Spike, reference_spikes: &[Spike]) -> bool {
+    reference_spikes.iter().any(|r| {
+        r.span
+            .iter()
+            .any(|&p| haversine_m(p, s.mid) <= SPIKE_REF_MATCH_M)
+    })
+}
+
+/// Distinct ferries in the report: every `route_ferry_fp=` entry (hop and
+/// trip lines), deduped by the unordered terminal pair, plus one unnamed entry
+/// per report section that counts ferry legs without a fingerprint.
+fn ferries_from_report(report: &str) -> Vec<String> {
+    let mut named: BTreeMap<String, String> = BTreeMap::new();
+    let mut unnamed = 0usize;
+    let mut section_legs: Option<u64> = None;
+    let mut section_fp: Option<String> = None;
+    fn close(legs: &mut Option<u64>, fp: &mut Option<String>, unnamed: &mut usize) {
+        if legs.unwrap_or(0) > 0 && fp.as_deref().map(str::is_empty).unwrap_or(true) {
+            *unnamed += 1;
+        }
+        *legs = None;
+        *fp = None;
+    }
+    for line in report.lines() {
+        if line.starts_with("--- leg") {
+            close(&mut section_legs, &mut section_fp, &mut unnamed);
+            continue;
+        }
+        if let Some(v) = line.strip_prefix("route_ferry_legs=") {
+            if section_legs.is_none() {
+                section_legs = v.trim().parse().ok();
+            }
+        }
+        if let Some(v) = line.strip_prefix("route_ferry_fp=") {
+            if section_fp.is_none() {
+                section_fp = Some(v.trim().to_string());
+            }
+            for part in v.split('|') {
+                let label = part.split('@').next().unwrap_or("").trim();
+                if label.is_empty() {
+                    continue;
+                }
+                let mut ends: Vec<String> = label
+                    .split(" - ")
+                    .map(|e| e.trim().to_lowercase())
+                    .collect();
+                ends.sort();
+                named
+                    .entry(ends.join(" | "))
+                    .or_insert_with(|| label.to_string());
+            }
+        }
+    }
+    close(&mut section_legs, &mut section_fp, &mut unnamed);
+    let mut out: Vec<String> = named.into_values().collect();
+    // The trip summary repeats hop fingerprints; an unnamed hop is only extra
+    // when no named ferry explains it.
+    for i in 0..unnamed.saturating_sub(out.len()) {
+        out.push(format!("unnamed ferry {}", i + 1));
+    }
+    out
+}
+
+/// Street labels by sample distance between the samples nearest Otta and Lom.
+fn rv15_share(sim_samples_json: &str) -> Result<(f64, Vec<(String, f64)>), String> {
+    let v: serde_json::Value =
+        serde_json::from_str(sim_samples_json).map_err(|e| format!("sim_samples_json: {e}"))?;
+    let arr = v.as_array().ok_or("sim_samples_json is not an array")?;
+    let samples: Vec<((f64, f64), f64, String)> = arr
+        .iter()
+        .filter_map(|s| {
+            Some((
+                (s.get("lat")?.as_f64()?, s.get("lon")?.as_f64()?),
+                s.get("cum_m")?.as_f64()?,
+                s.get("street")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            ))
+        })
+        .collect();
+    if samples.len() < 2 {
+        return Err("no sim samples".into());
+    }
+    let nearest = |p: (f64, f64)| {
+        samples
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (haversine_m(p, s.0), i))
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .unwrap()
+    };
+    let (d_otta, i_otta) = nearest(OTTA);
+    let (d_lom, i_lom) = nearest(LOM);
+    if d_otta > TOWN_PASS_M || d_lom > TOWN_PASS_M || i_otta >= i_lom {
+        return Err(format!(
+            "route does not pass Otta then Lom (Otta {d_otta:.0} m idx {i_otta}, Lom {d_lom:.0} m idx {i_lom})"
+        ));
+    }
+    let mut by_label: BTreeMap<String, f64> = BTreeMap::new();
+    let mut total = 0.0;
+    let mut rv15 = 0.0;
+    for w in samples[i_otta..=i_lom].windows(2) {
+        let d = (w[1].1 - w[0].1).max(0.0);
+        total += d;
+        *by_label.entry(w[0].2.clone()).or_default() += d;
+        let on_15 = w[0].2 == RV15_OTTA_LOM_NAME
+            || w[0]
+                .2
+                .split(['/', ';', ',', ' '])
+                .any(|t| t == "15" || t.eq_ignore_ascii_case("Rv15"));
+        if on_15 {
+            rv15 += d;
+        }
+    }
+    let mut labels: Vec<(String, f64)> = by_label.into_iter().collect();
+    labels.sort_by(|a, b| b.1.total_cmp(&a.1));
+    Ok((if total > 0.0 { rv15 / total } else { 0.0 }, labels))
+}
+
+fn read_proc_kb(key: &str) -> Option<f64> {
+    let s = std::fs::read_to_string("/proc/self/status").ok()?;
+    s.lines()
+        .find(|l| l.starts_with(key))?
+        .split_whitespace()
+        .nth(1)?
+        .parse()
+        .ok()
+}
+
+fn reset_peak_rss() {
+    let _ = std::fs::write("/proc/self/clear_refs", "5");
+}
+
+fn run_case(case: &Case, packs: &Path, refs: &Path, work: &Path) -> Outcome {
+    let mut o = Outcome::default();
+    let data_dir = work.join(format!("data-{}", case.id));
+    let cache_dir = work.join(format!("cache-{}", case.id));
+    let _ = std::fs::create_dir_all(&data_dir);
+    let _ = std::fs::create_dir_all(&cache_dir);
+    let elev = packs.join("elevation");
+    let pbf = packs.join(format!("{}.osm.pbf", case.pbf_stem));
+    let vias: Vec<FfiLatLon> = case
+        .vias
+        .iter()
+        .map(|v| FfiLatLon { lat: v.0, lon: v.1 })
+        .collect();
+
+    reset_peak_rss();
+    let t0 = Instant::now();
+    let r = plan_car_route(
+        pbf.display().to_string(),
+        elev.display().to_string(),
+        cache_dir.display().to_string(),
+        case.start.0,
+        case.start.1,
+        case.end.0,
+        case.end.1,
+        false,
+        TravelProfile::Car,
+        false,
+        FfiTollPolicy::Allow,
+        case.avoid_ferries,
+        false,
+        empty_vehicle(),
+        false,
+        data_dir.display().to_string(),
+        packs.display().to_string(),
+        true,
+        None,
+        vias,
+    );
+    o.wall_s = t0.elapsed().as_secs_f64();
+    o.peak_mb = read_proc_kb("VmHWM:").unwrap_or(0.0) / 1024.0;
+    o.distance_km = r.distance_km;
+    o.eta_min = r.eta_minutes;
+    o.terminate = r.search_terminate_reason.clone();
+    let _ = std::fs::write(work.join(format!("{}.report.txt", case.id)), &r.report);
+    let _ = std::fs::write(
+        work.join(format!("{}.polyline.txt", case.id)),
+        &r.route_polyline,
+    );
+
+    let line = parse_polyline(&r.route_polyline);
+    if !r.report.contains("PASS") || line.len() < 2 {
+        o.failures.push(format!(
+            "plan did not pass (terminate={}, points={})",
+            r.search_terminate_reason,
+            line.len()
+        ));
+        return o;
+    }
+
+    for (k, v) in case.vias.iter().enumerate() {
+        let (d, _) = nearest_on_line(*v, &line);
+        o.via_m.push(d);
+        if d > VIA_MAX_M {
+            o.failures.push(format!(
+                "via {} at {:.6},{:.6} is {:.0} m from the route (max {VIA_MAX_M:.0} m)",
+                k + 1,
+                v.0,
+                v.1,
+                d
+            ));
+        }
+    }
+
+    o.poly_km = line_length_m(&line) / 1000.0;
+    if o.poly_km > 0.0 {
+        let rel = (o.distance_km - o.poly_km).abs() / o.poly_km;
+        if rel > POLY_DISTANCE_TOL {
+            o.failures.push(format!(
+                "reported {:.1} km vs polyline {:.1} km ({:.2} %, max {:.1} %)",
+                o.distance_km,
+                o.poly_km,
+                rel * 100.0,
+                POLY_DISTANCE_TOL * 100.0
+            ));
+        }
+    }
+
+    o.ferries = ferries_from_report(&r.report);
+    if o.ferries.len() != case.ferries.len() {
+        o.failures.push(format!(
+            "{} ferries {:?}, expected {}",
+            o.ferries.len(),
+            o.ferries,
+            case.ferries.len()
+        ));
+    } else {
+        for want in case.ferries {
+            let hit = o.ferries.iter().any(|f| {
+                let f = f.to_lowercase();
+                want.iter().all(|w| f.contains(w))
+            });
+            if !hit {
+                o.failures
+                    .push(format!("no ferry matching {want:?} in {:?}", o.ferries));
+            }
+        }
+    }
+
+    if let Some((ref_km, tol)) = case.distance {
+        let rel = (o.distance_km - ref_km).abs() / ref_km;
+        if rel > tol {
+            o.failures.push(format!(
+                "distance {:.1} km is {:.2} % from {ref_km} km (max {:.0} %)",
+                o.distance_km,
+                rel * 100.0,
+                tol * 100.0
+            ));
+        }
+    }
+
+    if case.rv15_otta_vaga_lom {
+        let (dv, iv) = nearest_on_line(VAGAAVEGEN_80, &line);
+        let (dotta, iotta) = nearest_on_line(OTTA, &line);
+        let (dlom, ilom) = nearest_on_line(LOM, &line);
+        if dotta > TOWN_PASS_M
+            || dlom > TOWN_PASS_M
+            || dv > TOWN_PASS_M
+            || !(iotta <= iv && iv <= ilom)
+        {
+            o.failures.push(format!(
+                "route does not run Otta ({dotta:.0} m) then Vaga ({dv:.0} m) then Lom ({dlom:.0} m) in order"
+            ));
+        }
+        match rv15_share(&r.sim_samples_json) {
+            Ok((share, labels)) => {
+                let top: Vec<String> = labels
+                    .iter()
+                    .take(6)
+                    .map(|(l, m)| format!("{l:?} {:.1} km", m / 1000.0))
+                    .collect();
+                eprintln!(
+                    "[gate] {} Otta-Lom on ref 15: {:.1} %; labels {}",
+                    case.id,
+                    share * 100.0,
+                    top.join(", ")
+                );
+                if share < RV15_MIN_SHARE {
+                    o.failures.push(format!(
+                        "Otta to Lom only {:.1} % on Rv 15 (min {:.0} %): {}",
+                        share * 100.0,
+                        RV15_MIN_SHARE * 100.0,
+                        top.join(", ")
+                    ));
+                }
+            }
+            Err(e) => o.failures.push(format!("Rv 15 check: {e}")),
+        }
+    }
+
+    let reference = case.reference.map(|f| reference_line(&refs.join(f)));
+    let reference = match reference {
+        Some(Ok(l)) => Some(l),
+        Some(Err(e)) => {
+            o.failures.push(format!("reference line: {e}"));
+            None
+        }
+        None => None,
+    };
+    let reference_spikes = reference.as_deref().map(find_spikes).unwrap_or_default();
+    for s in find_spikes(&line) {
+        let shared = reference_has_spike(&s, &reference_spikes);
+        let desc = format!(
+            "km {:.1}-{:.1} path {:.2} km chord {:.2} km at {:.5},{:.5}{}",
+            s.from_km,
+            s.to_km,
+            s.path_km,
+            s.chord_km,
+            s.a.0,
+            s.a.1,
+            if shared { " (reference too)" } else { "" }
+        );
+        if !shared {
+            o.failures.push(format!("spike {desc}"));
+        }
+        o.spikes.push(desc);
+    }
+
+    o.pass = o.failures.is_empty();
+    o
+}
+
+fn load_baseline(path: &Path) -> serde_json::Value {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| serde_json::json!({ "cases": {} }))
+}
+
+#[test]
+#[ignore = "needs NAVI_GATE_PACKS (device long-trip packs) and NAVI_GATE_REFS (reference lines)"]
+fn long_trip_regression_gate() {
+    let packs = PathBuf::from(std::env::var("NAVI_GATE_PACKS").expect("set NAVI_GATE_PACKS"));
+    let refs = PathBuf::from(std::env::var("NAVI_GATE_REFS").expect("set NAVI_GATE_REFS"));
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let work = std::env::var("NAVI_GATE_WORK")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| manifest.join("../target/navi-gate-work"));
+    let baseline_path = std::env::var("NAVI_GATE_BASELINE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| manifest.join("tests/regression_gate_baseline.json"));
+    let write_baseline = std::env::var("NAVI_GATE_WRITE_BASELINE").as_deref() == Ok("1");
+    let only: Option<Vec<String>> = std::env::var("NAVI_GATE_CASES")
+        .ok()
+        .map(|s| s.split(',').map(|x| x.trim().to_string()).collect());
+    std::fs::create_dir_all(&work).expect("work dir");
+
+    let baseline = load_baseline(&baseline_path);
+    let mut new_baseline = serde_json::Map::new();
+    let mut results = Vec::new();
+    let mut gate_failures = Vec::new();
+
+    for case in CASES {
+        if let Some(ref only) = only {
+            if !only.iter().any(|c| c == case.id) {
+                continue;
+            }
+        }
+        eprintln!("[gate] {} ...", case.id);
+        let mut o = run_case(case, &packs, &refs, &work);
+
+        let base = &baseline["cases"][case.id];
+        if !write_baseline {
+            if let (Some(bw), Some(bm)) = (base["wall_s"].as_f64(), base["peak_mb"].as_f64()) {
+                if o.wall_s > bw * BASELINE_REGRESSION {
+                    o.failures.push(format!(
+                        "wall {:.1} s vs baseline {:.1} s (+{:.0} %)",
+                        o.wall_s,
+                        bw,
+                        (o.wall_s / bw - 1.0) * 100.0
+                    ));
+                }
+                if o.peak_mb > bm * BASELINE_REGRESSION {
+                    o.failures.push(format!(
+                        "peak {:.0} MB vs baseline {:.0} MB (+{:.0} %)",
+                        o.peak_mb,
+                        bm,
+                        (o.peak_mb / bm - 1.0) * 100.0
+                    ));
+                }
+                o.pass = o.failures.is_empty();
+            } else {
+                eprintln!("[gate] {}: no baseline entry", case.id);
+            }
+        }
+        // Only a run that produced a route is a timing reference.
+        if o.poly_km > 0.0 {
+            new_baseline.insert(
+                case.id.to_string(),
+                serde_json::json!({ "wall_s": o.wall_s, "peak_mb": o.peak_mb }),
+            );
+        }
+
+        let status = match (o.pass, case.expected_fail) {
+            (true, None) => "PASS",
+            (false, None) => "FAIL",
+            (false, Some(_)) => "XFAIL",
+            (true, Some(_)) => "XPASS",
+        };
+        eprintln!(
+            "[gate] {} {status}: {:.1} km (polyline {:.1}), {:.0} min, ferries {:?}, vias {:?} m, \
+             wall {:.1} s, peak {:.0} MB, terminate {}",
+            case.id,
+            o.distance_km,
+            o.poly_km,
+            o.eta_min,
+            o.ferries,
+            o.via_m.iter().map(|d| d.round()).collect::<Vec<_>>(),
+            o.wall_s,
+            o.peak_mb,
+            o.terminate
+        );
+        for f in &o.failures {
+            eprintln!("[gate]   - {f}");
+        }
+        if let Some(why) = case.expected_fail {
+            eprintln!("[gate]   expected fail: {why}");
+        } else if !o.pass {
+            gate_failures.push(case.id);
+        }
+        results.push(serde_json::json!({
+            "id": case.id,
+            "status": status,
+            "distance_km": o.distance_km,
+            "polyline_km": o.poly_km,
+            "eta_min": o.eta_min,
+            "ferries": o.ferries,
+            "via_m": o.via_m,
+            "spikes": o.spikes,
+            "wall_s": o.wall_s,
+            "peak_mb": o.peak_mb,
+            "terminate": o.terminate,
+            "failures": o.failures,
+            "expected_fail": case.expected_fail,
+        }));
+    }
+
+    let _ = std::fs::write(
+        work.join("gate-results.json"),
+        serde_json::to_string_pretty(&serde_json::json!({ "results": results })).unwrap(),
+    );
+    if write_baseline {
+        let mut cases = baseline["cases"].as_object().cloned().unwrap_or_default();
+        cases.extend(new_baseline);
+        std::fs::write(
+            &baseline_path,
+            serde_json::to_string_pretty(&serde_json::json!({ "cases": cases })).unwrap() + "\n",
+        )
+        .expect("write baseline");
+        eprintln!("[gate] baseline written to {}", baseline_path.display());
+    }
+    assert!(
+        gate_failures.is_empty(),
+        "regression gate failed: {gate_failures:?}"
+    );
+}

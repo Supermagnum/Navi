@@ -1,0 +1,16 @@
+{
+  "cases": {
+    "a_bevensen_vaga_dalsoren": {
+      "peak_mb": 1851.75390625,
+      "wall_s": 35.597084228
+    },
+    "b_brenneriroa_aga": {
+      "peak_mb": 1329.23046875,
+      "wall_s": 4.662137106
+    },
+    "c_brenneriroa_grotli_floro": {
+      "peak_mb": 1224.171875,
+      "wall_s": 4.758159508
+    }
+  }
+}
