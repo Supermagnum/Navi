@@ -5,7 +5,9 @@
 //! so the planner, its skeleton freshness check and its options are the app's.
 //! Before planning, stale corridor skeletons are rebuilt with
 //! `navi::ensure_corridor_skeleton`, the call the app's idle builder makes, so
-//! the plans read skeletons of the current build (outside the timed plans).
+//! the plans read skeletons of the current build, and the country polygon index
+//! is warmed with `navi::warm_country_polys` as the app does at process start.
+//! Both run outside the timed plans.
 //!
 //! Environment:
 //! - `NAVI_GATE_PACKS` (required): long-trip pack dir (manifests, graph tiles,
@@ -28,8 +30,8 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use navi::{
-    corridor_skeleton_is_ready, ensure_corridor_skeleton, plan_car_route, FfiLatLon, FfiTollPolicy,
-    FfiVehicleLimits, TravelProfile,
+    corridor_skeleton_is_ready, ensure_corridor_skeleton, plan_car_route, warm_country_polys,
+    FfiLatLon, FfiTollPolicy, FfiVehicleLimits, TravelProfile,
 };
 
 const VIA_MAX_M: f64 = 50.0;
@@ -828,6 +830,12 @@ fn long_trip_regression_gate() {
     std::fs::create_dir_all(&work).expect("work dir");
 
     prepare_skeletons(&packs);
+    let t0 = Instant::now();
+    let country_bytes = warm_country_polys();
+    eprintln!(
+        "[gate] country polygons warm: {:.1} s, {country_bytes} bytes",
+        t0.elapsed().as_secs_f64()
+    );
     let baseline = load_baseline(&baseline_path);
     let mut new_baseline = serde_json::Map::new();
     let mut results = Vec::new();
