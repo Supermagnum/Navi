@@ -246,8 +246,8 @@ pub const OPPOSITE_CARRIAGEWAY_MAX_M: f64 = 45.0;
 /// Pass 3: grow land approaches from each ferry terminal through any non-ferry
 ///         highway until a major-skeleton node is reached (hop-capped).
 /// Pass 4: secondary edges that touch ferry or border anchors.
-/// Pass 5: secondary edges with an endpoint in the region-rim band (closes
-///         pack cuts where primary networks do not share OSM ids).
+/// Pass 5: minor roads only on the short path from a shared border node to the
+///         major skeleton, so a real border crossing reaches it on both sides.
 pub fn select_skeleton_edge_indices(
     pack: &FlatGraphPack,
     border_osm_ids: &HashSet<i64>,
@@ -1948,23 +1948,27 @@ pub struct StageBDensify {
     pub note: String,
     /// Per-leg alternatives with eligibility and pick (one entry per leg).
     pub legs: Vec<Vec<StageBLegCandidate>>,
+    /// `stage_b_timing ...` line: phase wall times, graph size, VmHWM.
+    pub timing: String,
 }
 
 impl StageBDensify {
     /// One report line per leg alternative.
     pub fn alternatives_report(&self) -> String {
-        let mut out = String::new();
+        let mut out = format!("{}\n", self.timing);
         for (li, leg) in self.legs.iter().enumerate() {
             for c in leg {
                 out.push_str(&format!(
-                    "stage_b_leg={} alt={} km={:.1} min={:.1} ferries={} eligible={} pick={}\n",
+                    "stage_b_leg={} alt={} km={:.1} min={:.1} ferries={} eligible={} pick={} \
+                     search_ms={}\n",
                     li + 1,
                     c.name,
                     c.km,
                     c.min,
                     c.ferries,
                     c.eligible,
-                    c.picked
+                    c.picked,
+                    c.search_ms
                 ));
             }
         }
@@ -1981,6 +1985,7 @@ pub struct StageBLegCandidate {
     pub ferries: usize,
     pub eligible: bool,
     pub picked: bool,
+    pub search_ms: u128,
 }
 
 /// Approved near-equal rule. Input per alternative: `(total_min, ferries, km)`.
@@ -2017,11 +2022,17 @@ struct LegAlternative {
     name: String,
     report: CoarseRouteReport,
     path: Vec<NodeId>,
+    search_ms: u128,
 }
 
 /// Alternatives for one leg `from` to `to`: free, each ferry of the free path
 /// excluded, and no ferries (the last two only when ferries are allowed).
 /// Every alternative starts at `from` and ends at `to`.
+///
+/// A search whose result is already known is not run: with no ferry on the free
+/// path there is nothing to exclude and no-ferries is the free path; an
+/// exclusion that forbids no edge is the free path; and once an exclusion
+/// returns a path without ferries, that path is also the no-ferries optimum.
 fn leg_alternatives(
     graph: &mut RouteGraph,
     border_osm: &HashSet<i64>,
@@ -2032,30 +2043,42 @@ fn leg_alternatives(
     let opts = coarse_route_options(route_options);
     let mut out: Vec<LegAlternative> = Vec::new();
     let push = |graph: &RouteGraph, name: String, note: &str, out: &mut Vec<LegAlternative>| {
+        let t = std::time::Instant::now();
         let Some((path, edges, _)) = graph.shortest_path_with_options(from, to, false, &opts)
         else {
             return;
         };
+        let search_ms = t.elapsed().as_millis();
         if path.first() != Some(&from) || path.last() != Some(&to) {
             return;
         }
         let report =
             build_coarse_route_report(&name, graph, &path, &edges, border_osm, &[], 0, 0, note);
-        out.push(LegAlternative { name, report, path });
+        out.push(LegAlternative {
+            name,
+            report,
+            path,
+            search_ms,
+        });
     };
     push(graph, "free".into(), "stage_b free", &mut out);
-    if route_options.avoid_ferries || out.is_empty() {
+    if route_options.avoid_ferries || out.is_empty() || out[0].report.ferries.is_empty() {
         return out;
     }
     let free_ferries = out[0].report.ferries.clone();
     for leg in &free_ferries {
         clear_access_forbidden(graph);
-        forbid_ferry_edges_matching_leg(graph, leg, 3_000.0);
+        if forbid_ferry_edges_matching_leg(graph, leg, 3_000.0) == 0 {
+            continue;
+        }
         let name = format!("excl_{}_{}", leg.from_terminal, leg.to_terminal);
         let note = format!("excl {}→{}", leg.from_terminal, leg.to_terminal);
         push(graph, name, &note, &mut out);
     }
     clear_access_forbidden(graph);
+    if out.iter().any(|a| a.report.ferries.is_empty()) {
+        return out;
+    }
     for e in graph.edges.iter_mut().filter(|e| e.is_ferry) {
         e.access_forbidden = true;
     }
@@ -2070,6 +2093,7 @@ struct StageBPlan {
     snaps: Vec<NodeId>,
     legs: Vec<Vec<StageBLegCandidate>>,
     picks: Vec<LegAlternative>,
+    snap_ms: u128,
 }
 
 fn stage_b_plan_on_graph(
@@ -2079,7 +2103,9 @@ fn stage_b_plan_on_graph(
     snap_m: f64,
     route_options: &RouteOptions,
 ) -> Option<StageBPlan> {
+    let t = std::time::Instant::now();
     let snaps = snap_coarse_waypoints(graph, waypoints, snap_m, route_options)?;
+    let snap_ms = t.elapsed().as_millis();
     let mut legs = Vec::with_capacity(snaps.len() - 1);
     let mut picks = Vec::with_capacity(snaps.len() - 1);
     for (li, w) in snaps.windows(2).enumerate() {
@@ -2108,6 +2134,7 @@ fn stage_b_plan_on_graph(
                 ferries: a.report.ferries.len(),
                 eligible: eligible[i],
                 picked: i == pick,
+                search_ms: a.search_ms,
             })
             .collect();
         for c in &table {
@@ -2126,7 +2153,12 @@ fn stage_b_plan_on_graph(
         legs.push(table);
         picks.push(alts.swap_remove(pick));
     }
-    Some(StageBPlan { snaps, legs, picks })
+    Some(StageBPlan {
+        snaps,
+        legs,
+        picks,
+        snap_ms,
+    })
 }
 
 fn load_skeletons_from_dirs(dirs: &[&Path], profile: RoutingProfile) -> Vec<CorridorSkeletonFile> {
@@ -2205,7 +2237,13 @@ fn trip_local_skeleton_stems(waypoints: &[(f64, f64)]) -> Option<HashSet<String>
     )
 }
 
-fn forbid_ferry_edges_matching_leg(graph: &mut RouteGraph, leg: &CoarseFerryLeg, match_m: f64) {
+/// Forbid the ferry edges of `leg` (either direction); returns how many.
+fn forbid_ferry_edges_matching_leg(
+    graph: &mut RouteGraph,
+    leg: &CoarseFerryLeg,
+    match_m: f64,
+) -> usize {
+    let mut n = 0;
     for e in graph.edges.iter_mut() {
         if !e.is_ferry {
             continue;
@@ -2216,8 +2254,10 @@ fn forbid_ferry_edges_matching_leg(graph: &mut RouteGraph, leg: &CoarseFerryLeg,
             && haversine_m(e.end_lat, e.end_lon, leg.from_lat, leg.from_lon) < match_m;
         if fwd || rev {
             e.access_forbidden = true;
+            n += 1;
         }
     }
+    n
 }
 
 fn clear_access_forbidden(graph: &mut RouteGraph) {
@@ -2440,6 +2480,11 @@ pub fn try_stage_b_densify_from_skeletons(
         return None;
     }
     let snap_m = 35_000.0;
+    let t0 = std::time::Instant::now();
+    let mut load_ms = 0u128;
+    let mut graph_ms = 0u128;
+    let mut plan_ms = 0u128;
+    let mut widened = false;
     // Trip-local first: corridor + neighbours. Widen to every installed skeleton
     // only when the coarse search finds no route on that subset.
     let local_stems = trip_local_skeleton_stems(waypoints);
@@ -2456,35 +2501,69 @@ pub fn try_stage_b_densify_from_skeletons(
         }
         None => load_skeletons_from_dirs(pack_dirs, profile),
     };
+    load_ms += t0.elapsed().as_millis();
     if skels.is_empty() {
         log::info!(target: "NaviPlan", "stage_b densify: no fresh persistent skeletons");
         return None;
     }
+    let t = std::time::Instant::now();
     let mut border_osm = border_osm_from_skeletons(&skels);
     let mut graph = merge_skeletons_to_route_graph(&skels, profile);
+    graph_ms += t.elapsed().as_millis();
+    let t = std::time::Instant::now();
     let mut plan = stage_b_plan_on_graph(&mut graph, &border_osm, waypoints, snap_m, route_options);
+    plan_ms += t.elapsed().as_millis();
     if plan.is_none() && local_stems.is_some() {
         log::info!(
             target: "NaviPlan",
             "stage_b trip_local miss; widening to all installed skeletons"
         );
+        widened = true;
+        let t = std::time::Instant::now();
         skels = load_skeletons_from_dirs(pack_dirs, profile);
+        load_ms += t.elapsed().as_millis();
         if skels.is_empty() {
             return None;
         }
+        let t = std::time::Instant::now();
         border_osm = border_osm_from_skeletons(&skels);
         graph = merge_skeletons_to_route_graph(&skels, profile);
+        graph_ms += t.elapsed().as_millis();
+        let t = std::time::Instant::now();
         plan = stage_b_plan_on_graph(&mut graph, &border_osm, waypoints, snap_m, route_options);
+        plan_ms += t.elapsed().as_millis();
     }
     let plan = plan?;
-    Some(assemble_stage_b(
-        plan,
-        &graph,
-        waypoints,
-        pack_dirs,
-        profile,
+    let snap_ms = plan.snap_ms;
+    let t = std::time::Instant::now();
+    let mut out = assemble_stage_b(plan, &graph, waypoints, pack_dirs, profile, skels.len());
+    let assemble_ms = t.elapsed().as_millis();
+    out.timing = format!(
+        "stage_b_timing skels={} widened={widened} graph_nodes={} graph_edges={} \
+         load_ms={load_ms} graph_ms={graph_ms} plan_ms={plan_ms} snap_ms={snap_ms} \
+         assemble_ms={assemble_ms} \
+         total_ms={} vm_hwm_mb={}",
         skels.len(),
-    ))
+        graph.nodes.len(),
+        graph.edges.len(),
+        t0.elapsed().as_millis(),
+        vm_hwm_mb()
+    );
+    log::info!(target: "NaviPlan", "{}", out.timing);
+    Some(out)
+}
+
+/// Process peak resident set (VmHWM) in MiB; 0 where `/proc` is unavailable.
+pub fn vm_hwm_mb() -> u64 {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .find_map(|l| l.strip_prefix("VmHWM:"))
+                .and_then(|v| v.split_whitespace().next()?.parse::<u64>().ok())
+        })
+        .map(|kb| kb / 1024)
+        .unwrap_or(0)
 }
 
 /// Join the per-leg picks into one hop chain. Each leg's hops run from its exact
@@ -2551,6 +2630,7 @@ fn assemble_stage_b(
         ferries,
         note,
         legs: plan.legs,
+        timing: String::new(),
     }
 }
 
@@ -2991,10 +3071,33 @@ mod tests {
         let snaps = snap_coarse_waypoints(&mut g, &VIA_TRIP, 5_000.0, &opts).expect("snaps");
         assert_eq!(snaps, vec![NodeId(1), NodeId(2), NodeId(3)]);
         let border = HashSet::new();
-        let mut total = 0;
+        let mut ferry_legs = 0;
         for w in snaps.windows(2) {
             let alts = leg_alternatives(&mut g, &border, w[0], w[1], &opts);
             assert!(!alts.is_empty(), "every leg has a free alternative");
+            if alts[0].report.ferries.is_empty() {
+                assert_eq!(
+                    alts.len(),
+                    1,
+                    "no ferry on the free path: nothing else to search"
+                );
+            } else {
+                ferry_legs += 1;
+                assert!(
+                    alts.len() >= 2,
+                    "a ferry leg also has a ferry-free alternative"
+                );
+            }
+            for (i, a) in alts.iter().enumerate() {
+                assert!(
+                    alts[..i]
+                        .iter()
+                        .all(|b| b.path != a.path
+                            || b.report.ferries.len() != a.report.ferries.len()),
+                    "{} repeats an earlier alternative",
+                    a.name
+                );
+            }
             for a in &alts {
                 assert_eq!(
                     a.path.first(),
@@ -3014,12 +3117,8 @@ mod tests {
                     a.name
                 );
             }
-            total += alts.len();
         }
-        assert!(
-            total >= 4,
-            "free and no-ferry alternatives on both legs, got {total}"
-        );
+        assert_eq!(ferry_legs, 1, "the via trip graph has one ferry leg");
     }
 
     #[test]

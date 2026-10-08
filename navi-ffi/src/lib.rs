@@ -2932,7 +2932,8 @@ fn plan_car_route_chunked_legs(
         driver_break_core::routing::plan_file_log::line(format!(
             "hop_result=success i={} km={:.3} poly_km={:.3} poly_agree_0_5pct={} \
              poly_rel_pct={:.3} eta_min={:.1} terminate={} route_ferry_legs={hop_ferry} \
-             expansions={} pack_load_ms={} datex_bind_ms={} snap_ms={} search_ms={}",
+             expansions={} pack_load_ms={} datex_bind_ms={} snap_ms={} search_ms={} \
+             nodes={} vm_hwm_mb={}",
             i + 1,
             leg.distance_km,
             hop_poly_km,
@@ -2945,6 +2946,8 @@ fn plan_car_route_chunked_legs(
             parse_u64_token(&leg.report, "datex_bind_ms=").unwrap_or(0),
             parse_u64_token(&leg.report, "snap_ms=").unwrap_or(0),
             parse_u64_token(&leg.report, "search_ms=").unwrap_or(0),
+            parse_u64_token(&leg.report, "nodes=").unwrap_or(0),
+            driver_break_core::routing::corridor_skeleton::vm_hwm_mb(),
         ));
         report.push_str(&format!(
             "hop{}_poly_km={:.3}; hop{}_km={:.3}; hop{}_poly_agree_0_5pct={}\n",
