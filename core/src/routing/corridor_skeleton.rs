@@ -2889,15 +2889,92 @@ fn tile_est_nodes(tiles: &[(String, [f64; 4], usize)], name: &str) -> usize {
 }
 
 fn nearest_coarse_index(path: &[(f64, f64)], p: (f64, f64)) -> usize {
-    path.iter()
-        .enumerate()
-        .min_by(|(_, a), (_, b)| {
-            let da = (a.0 - p.0).hypot(a.1 - p.1);
-            let db = (b.0 - p.0).hypot(b.1 - p.1);
-            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .map(|(i, _)| i)
-        .unwrap_or(0)
+    nearest_coarse_path_node(path, p).0
+}
+
+/// Nearest coarse-path vertex to `p` and the haversine distance in metres.
+pub fn nearest_coarse_path_node(path: &[(f64, f64)], p: (f64, f64)) -> (usize, f64) {
+    let mut best = (0usize, f64::MAX);
+    for (i, &q) in path.iter().enumerate() {
+        let d = haversine_m(p.0, p.1, q.0, q.1);
+        if d < best.1 {
+            best = (i, d);
+        }
+    }
+    best
+}
+
+/// Every intermediate hop end must be a coarse-path node (within `match_m`).
+/// User start/end of the chain are left as given (planner snaps those later).
+pub fn ensure_hops_on_coarse_path(
+    hops: &[(f64, f64)],
+    coarse_path: &[(f64, f64)],
+    match_m: f64,
+) -> Result<Vec<(f64, f64)>, String> {
+    if hops.len() < 2 || coarse_path.len() < 2 {
+        return Ok(hops.to_vec());
+    }
+    let mut out = Vec::with_capacity(hops.len());
+    for (i, &h) in hops.iter().enumerate() {
+        let user_od = i == 0 || i + 1 == hops.len();
+        if user_od {
+            out.push(h);
+            continue;
+        }
+        let (idx, d) = nearest_coarse_path_node(coarse_path, h);
+        if d > match_m {
+            return Err(format!(
+                "hop joint {:.5},{:.5} is {d:.1} m from the coarse path (limit {match_m} m)",
+                h.0, h.1
+            ));
+        }
+        out.push(coarse_path[idx]);
+    }
+    Ok(out)
+}
+
+/// Graph node at `p` within `match_m`, if that exact neighbourhood is loaded.
+fn graph_node_near_point(
+    graph: &RouteGraph,
+    p: (f64, f64),
+    match_m: f64,
+) -> Option<osm4routing::NodeId> {
+    let opts = crate::routing::graph::RouteOptions::default();
+    graph
+        .nearest_routable_with_options_max(p.0, p.1, &opts, false, match_m)
+        .ok()
+        .map(|(id, _)| id)
+}
+
+/// Last coarse-path vertex after `start_id` that sits in the start node's
+/// weak component. Walks the path and checks components; does not search for
+/// a nearest off-path node.
+pub fn last_reachable_coarse_path_node(
+    graph: &RouteGraph,
+    start_id: osm4routing::NodeId,
+    coarse_path: &[(f64, f64)],
+    intended_end: (f64, f64),
+    match_m: f64,
+) -> Option<(osm4routing::NodeId, (f64, f64))> {
+    if coarse_path.len() < 2 {
+        return None;
+    }
+    let start_ll = graph.node_lat_lon(start_id)?;
+    let i0 = nearest_coarse_index(coarse_path, start_ll);
+    let i1 = nearest_coarse_index(coarse_path, intended_end);
+    if i1 <= i0 {
+        return None;
+    }
+    let mut last = None;
+    for &p in &coarse_path[i0 + 1..=i1] {
+        let Some(nid) = graph_node_near_point(graph, p, match_m) else {
+            continue;
+        };
+        if graph.same_weak_component(start_id, nid) {
+            last = Some((nid, p));
+        }
+    }
+    last
 }
 
 /// Split long hops so estimated packed nodes for path-covering tiles stay
@@ -3152,12 +3229,32 @@ fn assemble_stage_b(
         let leg_end = waypoints[li + 1];
         let path = collapse_node_retraces(&pick.path);
         let leg_coarse = collapse_coord_retraces(&path_latlon(graph, &path));
-        let leg_hops = split_hops_by_path_tile_budget(
+        let raw_hops = split_hops_by_path_tile_budget(
             hops_from_report(&pick.report, leg_start, leg_end),
             &leg_coarse,
             pack_dirs,
             profile,
         );
+        let match_m = crate::routing::plan_bbox::HOP_END_MATCH_M;
+        let leg_hops = match ensure_hops_on_coarse_path(&raw_hops, &leg_coarse, match_m) {
+            Ok(h) => h,
+            Err(e) => {
+                log::error!(target: "NaviPlan", "hop_chain {e}");
+                // Never keep an off-path leftover as a hop end: pin to the path.
+                raw_hops
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &h)| {
+                        if i == 0 || i + 1 == raw_hops.len() {
+                            h
+                        } else {
+                            let (idx, _) = nearest_coarse_path_node(&leg_coarse, h);
+                            leg_coarse[idx]
+                        }
+                    })
+                    .collect()
+            }
+        };
         let skip = usize::from(!hops.is_empty());
         hops.extend(leg_hops.into_iter().skip(skip));
         let skip = usize::from(!coarse_path.is_empty());
@@ -4137,6 +4234,158 @@ mod tests {
         );
     }
 
+    #[test]
+    fn hop_end_far_from_coarse_path_is_rejected() {
+        let path = vec![(60.0, 10.0), (60.1, 10.0), (60.2, 10.0)];
+        let hops = vec![(60.0, 10.0), (60.15, 10.5), (60.2, 10.0)];
+        let err = ensure_hops_on_coarse_path(
+            &hops,
+            &path,
+            crate::routing::plan_bbox::HOP_END_MATCH_M,
+        )
+        .expect_err("joint 0.5° off the path must fail");
+        assert!(
+            err.contains("from the coarse path"),
+            "expected a hop-end tolerance failure, got {err}"
+        );
+        let on_path = vec![(60.0, 10.0), (60.1, 10.0), (60.2, 10.0)];
+        assert!(ensure_hops_on_coarse_path(
+            &on_path,
+            &path,
+            crate::routing::plan_bbox::HOP_END_MATCH_M
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn last_reachable_coarse_node_skips_disconnected_joint() {
+        // 1-2-3 connected; 4-5 a separate component. Intended end is 5.
+        let g = linear_joint_graph(&[
+            (1, 60.00, 10.00),
+            (2, 60.01, 10.00),
+            (3, 60.02, 10.00),
+        ]);
+        let mut nodes = g.nodes.clone();
+        let mut edges = g.edges.clone();
+        for &(id, lat, lon) in &[(4i64, 60.03, 10.00), (5, 60.04, 10.00)] {
+            nodes.insert(
+                NodeId(id),
+                osm4routing::Node {
+                    id: NodeId(id),
+                    coord: geo_types::Coord { x: lon, y: lat },
+                    uses: 2,
+                },
+            );
+        }
+        let len = haversine_m(60.03, 10.00, 60.04, 10.00);
+        edges.push(GraphEdge {
+            id: "iso:NO-4-5".into(),
+            source: NodeId(4),
+            target: NodeId(5),
+            length_m: len,
+            base_weight: len,
+            cost_mult: 1.0,
+            eco_weight: None,
+            start_lat: 60.03,
+            start_lon: 10.00,
+            end_lat: 60.04,
+            end_lon: 10.00,
+            shape: Vec::new(),
+            highway: Some("primary".into()),
+            maxspeed_kmh: None,
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
+            name: None,
+            road_ref: None,
+            is_motorroad: false,
+            is_expressway: false,
+            is_oneway: false,
+            lanes: None,
+            maxweight_t: None,
+            maxaxleload_t: None,
+            maxbogieweight_t: None,
+            maxheight_m: None,
+            maxwidth_m: None,
+            maxlength_m: None,
+            is_toll: false,
+            is_ferry: false,
+            ferry_interval_min: None,
+            is_tunnel: false,
+            is_boardwalk_crossing: false,
+            is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
+            access_forbidden: false,
+            surface_quality: SurfaceQuality::Good,
+        });
+        edges.push(GraphEdge {
+            id: "iso:NO-5-4".into(),
+            source: NodeId(5),
+            target: NodeId(4),
+            length_m: len,
+            base_weight: len,
+            cost_mult: 1.0,
+            eco_weight: None,
+            start_lat: 60.04,
+            start_lon: 10.00,
+            end_lat: 60.03,
+            end_lon: 10.00,
+            shape: Vec::new(),
+            highway: Some("primary".into()),
+            maxspeed_kmh: None,
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
+            name: None,
+            road_ref: None,
+            is_motorroad: false,
+            is_expressway: false,
+            is_oneway: false,
+            lanes: None,
+            maxweight_t: None,
+            maxaxleload_t: None,
+            maxbogieweight_t: None,
+            maxheight_m: None,
+            maxwidth_m: None,
+            maxlength_m: None,
+            is_toll: false,
+            is_ferry: false,
+            ferry_interval_min: None,
+            is_tunnel: false,
+            is_boardwalk_crossing: false,
+            is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
+            access_forbidden: false,
+            surface_quality: SurfaceQuality::Good,
+        });
+        let g = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        assert!(!g.same_weak_component(NodeId(1), NodeId(5)));
+        let path = vec![
+            (60.00, 10.00),
+            (60.01, 10.00),
+            (60.02, 10.00),
+            (60.03, 10.00),
+            (60.04, 10.00),
+        ];
+        let got = last_reachable_coarse_path_node(
+            &g,
+            NodeId(1),
+            &path,
+            (60.04, 10.00),
+            crate::routing::plan_bbox::HOP_END_MATCH_M,
+        )
+        .expect("node 3 is still in the start component");
+        assert_eq!(got.0, NodeId(3));
+        assert!((got.1.0 - 60.02).abs() < 1e-6);
+    }
 
     #[test]
     fn opposite_oneway_carriageways_get_stitch_link() {

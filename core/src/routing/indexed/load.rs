@@ -795,6 +795,80 @@ fn select_tiles_within_budget_opts(
     files
 }
 
+fn all_ready_graph_tiles(
+    dirs: &[&Path],
+    profile: RoutingProfile,
+) -> Vec<(String, [f64; 4])> {
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for dir in dirs {
+        let Ok(rd) = fs::read_dir(dir) else {
+            continue;
+        };
+        for ent in rd.flatten() {
+            let path = ent.path();
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let Some(stem) = name.strip_suffix(".navi-manifest.json") else {
+                continue;
+            };
+            let Ok(man) = load_ready_manifest(dir, stem) else {
+                continue;
+            };
+            if !stem_pack_ready(dir, &man, profile) {
+                continue;
+            }
+            let Some(tiles) = man.graph_tiles_for(profile) else {
+                continue;
+            };
+            for t in tiles {
+                if seen.insert(t.file.clone()) {
+                    out.push((t.file.clone(), t.bbox));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Stage B: the hop must contain every Ready tile that covers the start, the
+/// end, or any coarse-path sample. Tiles are added, never dropped. Fails if
+/// no Ready tile covers the hop end.
+fn ensure_coarse_path_tiles(
+    tile_files: &mut Vec<String>,
+    all_ready: &[(String, [f64; 4])],
+    pts: &[(f64, f64)],
+) -> Result<(), PackLoadError> {
+    if !crate::routing::plan_bbox::stage_b_active() || pts.len() < 2 {
+        return Ok(());
+    }
+    let mut have: HashSet<String> = tile_files.iter().cloned().collect();
+    for &(lat, lon) in pts {
+        for (name, bbox) in all_ready {
+            if !crate::routing::basemap::bbox_covers_point(*bbox, lat, lon) {
+                continue;
+            }
+            if have.insert(name.clone()) {
+                log::info!(
+                    target: "NaviPlan",
+                    "stage_b_path_tile_include {name} lat={lat:.5} lon={lon:.5}"
+                );
+                tile_files.push(name.clone());
+            }
+        }
+    }
+    let (elat, elon) = pts[pts.len() - 1];
+    let end_covered = all_ready.iter().any(|(name, bbox)| {
+        tile_files.iter().any(|f| f == name)
+            && crate::routing::basemap::bbox_covers_point(*bbox, elat, elon)
+    });
+    if !end_covered {
+        return Err(PackLoadError::MissingEndTile(format!(
+            "{elat:.5},{elon:.5}"
+        )));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Error)]
 pub enum PackLoadError {
     #[error("indexed pack missing or incomplete")]
@@ -815,6 +889,9 @@ pub enum PackLoadError {
     /// `(region_label, progress_pct)`.
     #[error("preparing corridor skeleton for {0}")]
     SkeletonPreparing(String, u8),
+    /// Hop graph was selected without a Ready tile that covers the hop end.
+    #[error("hop built without end-node tile at {0}")]
+    MissingEndTile(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("rkyv access failed: {0}")]
@@ -1604,6 +1681,14 @@ fn try_load_graph_for_plan_corridor_dirs(
                         }
                     }
                 }
+            }
+        }
+    }
+    if crate::routing::plan_bbox::stage_b_active() {
+        if let Some(pts) = route_points {
+            if pts.len() >= 2 {
+                let all_ready = all_ready_graph_tiles(dirs, profile);
+                ensure_coarse_path_tiles(&mut tile_files, &all_ready, pts)?;
             }
         }
     }
@@ -2918,8 +3003,8 @@ pub fn try_load_wetland_for_plan(
 #[cfg(test)]
 mod select_tiles_budget_tests {
     use super::{
-        select_tiles_within_budget, select_tiles_within_budget_opts, tile_bboxes_adjacent,
-        tile_counts_as_endpoint_cover,
+        ensure_coarse_path_tiles, select_tiles_within_budget, select_tiles_within_budget_opts,
+        tile_bboxes_adjacent, tile_counts_as_endpoint_cover, PackLoadError,
     };
     use std::fs;
     use std::path::Path;
@@ -3146,6 +3231,59 @@ mod select_tiles_budget_tests {
             "Espa→Atnbrua must keep t2_3; got {selected:?}"
         );
         assert!(selected.len() <= 6);
+    }
+
+    #[test]
+    fn hop_end_tile_outside_first_selection_is_forced_in() {
+        crate::routing::plan_bbox::set_stage_b_active(true);
+        let first = vec![
+            "leaf-latest.navi-graph-car.t0_0.rkyv".to_string(),
+            "leaf-latest.navi-graph-car.t0_1.rkyv".to_string(),
+        ];
+        let mut selected = first.clone();
+        // First budget kept only the start tiles; the joint lives in t1_0.
+        let all_ready = vec![
+            (
+                "leaf-latest.navi-graph-car.t0_0.rkyv".into(),
+                [60.0_f64, 10.0, 60.2, 10.2],
+            ),
+            (
+                "leaf-latest.navi-graph-car.t0_1.rkyv".into(),
+                [60.0_f64, 10.2, 60.2, 10.4],
+            ),
+            (
+                "leaf-latest.navi-graph-car.t1_0.rkyv".into(),
+                [60.2_f64, 10.0, 60.4, 10.2],
+            ),
+        ];
+        let pts = [(60.1_f64, 10.1), (60.25, 10.05), (60.35, 10.10)];
+        ensure_coarse_path_tiles(&mut selected, &all_ready, &pts).expect("end tile exists");
+        crate::routing::plan_bbox::set_stage_b_active(false);
+        assert!(
+            selected
+                .iter()
+                .any(|f| f.contains("navi-graph-car.t1_0.rkyv")),
+            "joint tile t1_0 must be added; got {selected:?}"
+        );
+        assert!(selected.len() > first.len());
+    }
+
+    #[test]
+    fn hop_without_end_tile_fails_loudly() {
+        crate::routing::plan_bbox::set_stage_b_active(true);
+        let mut selected = vec!["leaf-latest.navi-graph-car.t0_0.rkyv".to_string()];
+        let all_ready = vec![(
+            "leaf-latest.navi-graph-car.t0_0.rkyv".into(),
+            [60.0_f64, 10.0, 60.2, 10.2],
+        )];
+        let pts = [(60.1_f64, 10.1), (61.0, 12.0)];
+        let err = ensure_coarse_path_tiles(&mut selected, &all_ready, &pts)
+            .expect_err("end is outside every Ready tile");
+        crate::routing::plan_bbox::set_stage_b_active(false);
+        assert!(
+            matches!(err, PackLoadError::MissingEndTile(_)),
+            "got {err:?}"
+        );
     }
 }
 

@@ -81,17 +81,8 @@ pub fn stage_b_hop_corridor_points(start: (f64, f64), end: (f64, f64)) -> Vec<(f
         if out.last().copied() != Some(end) {
             out.push(end);
         }
-        // Decimate very dense paths (~every ~0.15°) to keep tile sample cost bounded.
-        if out.len() > 64 {
-            let step = (out.len() / 48).max(1);
-            let mut dec: Vec<_> = out.iter().step_by(step).copied().collect();
-            if dec.last() != out.last() {
-                if let Some(l) = out.last().copied() {
-                    dec.push(l);
-                }
-            }
-            out = dec;
-        }
+        // Do not decimate: a skipped sample drops that tile from the hop graph
+        // (follow-up 23: every coarse-path tile stays; hops split if too large).
         out
     })
 }
@@ -360,6 +351,11 @@ pub fn accept_absurd_detour() -> bool {
     ACCEPT_ABSURD_DETOUR.swap(false, Ordering::SeqCst) || accept_absurd_detour_env()
 }
 
+/// Metres a densify hop end may differ from the intended coarse-path joint.
+/// Absorbs printed-coordinate rounding (1e-5° ≈ 1.1 m) and pack vs skeleton
+/// float noise. This is not a search radius: a hop end is never moved farther.
+pub const HOP_END_MATCH_M: f64 = 50.0;
+
 /// Snap budget for densify hop endpoints (region centroids), not user stops.
 /// Centroids can sit several km offshore / inland of the nearest clearance-legal
 /// road (SH→DK water approaches needed ~11–22 km). Same-stem tile fill prevents
@@ -368,6 +364,7 @@ pub fn accept_absurd_detour() -> bool {
 /// This constant affects **snap search only** (pad ≈ max_m/1e5 degrees). It does
 /// **not** widen tile selection or edge materialization — those use
 /// [`CORRIDOR_TILE_PAD_DEG`] / [`CORRIDOR_EDGE_HALF_WIDTH_DEG`].
+/// Intermediate densify hop ends use [`HOP_END_MATCH_M`] instead of this value.
 pub const CHUNK_INTERMEDIATE_SNAP_M: f64 = 35_000.0;
 
 /// Effective densify-joint snap budget (see [`CHUNK_INTERMEDIATE_SNAP_M`]).

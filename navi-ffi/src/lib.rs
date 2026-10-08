@@ -2733,6 +2733,8 @@ fn plan_car_route_chunked_legs(
             || leg.search_terminate_reason == "bbox_exhausted"
             || leg.search_terminate_reason == "disconnected"
             || leg.search_terminate_reason == "corridor_disconnected"
+            || leg.search_terminate_reason == "hop_end_tile_missing"
+            || leg.search_terminate_reason == "hop_end_unreachable"
             || leg.route_polyline.is_empty();
         if hop_failed
             && hop_datex
@@ -2856,6 +2858,8 @@ fn plan_car_route_chunked_legs(
             || leg.search_terminate_reason == "bbox_exhausted"
             || leg.search_terminate_reason == "disconnected"
             || leg.search_terminate_reason == "corridor_disconnected"
+            || leg.search_terminate_reason == "hop_end_tile_missing"
+            || leg.search_terminate_reason == "hop_end_unreachable"
             || leg.route_polyline.is_empty()
         {
             driver_break_core::routing::plan_file_log::line(format!(
@@ -4215,6 +4219,20 @@ fn plan_car_route_inner(
                     r.off_trail_advisory = status;
                     return r;
                 }
+                Err(driver_break_core::routing::indexed::PackLoadError::MissingEndTile(
+                    at,
+                )) => {
+                    report.push_str(&format!(
+                        "FAIL: hop built without end-node tile at {at}\n"
+                    ));
+                    driver_break_core::routing::plan_perf::note("hop_end_tile_missing", &at);
+                    let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
+                    let mut r = empty(report);
+                    r.toll_policy = toll_policy.as_diag_str().into();
+                    r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
+                    r.search_terminate_reason = "hop_end_tile_missing".into();
+                    return r;
+                }
                 Err(driver_break_core::routing::indexed::PackLoadError::SkeletonPreparing(
                     status,
                     pct,
@@ -4436,7 +4454,10 @@ fn plan_car_route_inner(
                     let prefer_better_surface = i > 0 && i + 1 < route_points.len();
                     let at_start = i == 0;
                     let at_end = i + 1 == route_points.len();
-                    let snap_max = if (at_start && relax_start_snap) || (at_end && relax_end_snap) {
+                    let snap_max = if at_end && is_chunk_leg && relax_end_snap {
+                        // Intermediate hop ends match the intended joint only.
+                        driver_break_core::routing::plan_bbox::HOP_END_MATCH_M
+                    } else if (at_start && relax_start_snap) || (at_end && relax_end_snap) {
                         chunk_snap
                     } else {
                         default_snap
@@ -4481,17 +4502,86 @@ fn plan_car_route_inner(
                     driver_break_core::routing::plan_perf::note_u64("directed_label_ms", 0);
                 }
                 Err((label, e)) => {
-                    last_terminate = "snap_failed";
-                    report.push_str(&format!(
-                        "snap_fail_{label} pad={pad:.2}: {}\n",
-                        format_snap_too_far(&label, e, built.profile())
-                    ));
-                    snap_ok = false;
+                    let try_fb = is_chunk_leg
+                        && relax_end_snap
+                        && driver_break_core::routing::plan_bbox::stage_b_active()
+                        && label == "destination";
+                    if try_fb {
+                        let start_opts = {
+                            let mut o = route_opts.clone();
+                            o.snap_role = driver_break_core::routing::graph::SnapRole::Origin;
+                            o
+                        };
+                        match built.nearest_routable_with_options_max(
+                            start_lat,
+                            start_lon,
+                            &start_opts,
+                            false,
+                            default_snap,
+                        ) {
+                            Ok((ss, sm)) => {
+                                let coarse = driver_break_core::routing::plan_bbox::stage_b_hop_corridor_points(
+                                    (start_lat, start_lon),
+                                    (end_lat, end_lon),
+                                );
+                                match driver_break_core::routing::corridor_skeleton::last_reachable_coarse_path_node(
+                                    &built,
+                                    ss,
+                                    &coarse,
+                                    (end_lat, end_lon),
+                                    driver_break_core::routing::plan_bbox::HOP_END_MATCH_M,
+                                ) {
+                                    Some((nid, ll)) => {
+                                        let dist = driver_break_core::routing::plan_bbox::haversine_km(
+                                            end_lat, end_lon, ll.0, ll.1,
+                                        ) * 1000.0;
+                                        report.push_str(&format!(
+                                            "hop_end_fallback={:.5},{:.5} reason=intended_end_not_in_graph \
+                                             intended={end_lat:.5},{end_lon:.5}\n",
+                                            ll.0, ll.1
+                                        ));
+                                        log::info!(
+                                            target: "NaviPlan",
+                                            "hop_end_fallback={:.5},{:.5} reason=intended_end_not_in_graph",
+                                            ll.0, ll.1
+                                        );
+                                        snapped = vec![(ss, sm), (nid, dist)];
+                                    }
+                                    None => {
+                                        last_terminate = "hop_end_unreachable";
+                                        report.push_str(
+                                            "FAIL: no coarse-path node beyond the start is reachable \
+                                             (intended end not in graph)\n",
+                                        );
+                                        snap_ok = false;
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                last_terminate = "snap_failed";
+                                report.push_str(&format!(
+                                    "snap_fail_{label} pad={pad:.2}: {}\n",
+                                    format_snap_too_far(&label, e, built.profile())
+                                ));
+                                snap_ok = false;
+                            }
+                        }
+                    } else {
+                        last_terminate = "snap_failed";
+                        report.push_str(&format!(
+                            "snap_fail_{label} pad={pad:.2}: {}\n",
+                            format_snap_too_far(&label, e, built.profile())
+                        ));
+                        snap_ok = false;
+                    }
                 }
             }
             snap_ms_acc = snap_ms_acc.saturating_add(t_snap.elapsed().as_millis() as u64);
             driver_break_core::routing::plan_perf::note_u64("directed_snap_ms", snap_ms_acc);
             if !snap_ok {
+                if last_terminate == "hop_end_unreachable" {
+                    break 'pads;
+                }
                 break; // next pad (edge_clip_mode unchanged)
             }
             // Fast disconnect: O/D snapped but sit on different weak components
@@ -4518,6 +4608,79 @@ fn plan_car_route_inner(
                     built.nodes.len()
                 ));
                 if !dir_ok {
+                    let stage_b = driver_break_core::routing::plan_bbox::stage_b_active();
+                    if is_chunk_leg && stage_b && !weak_ok {
+                        let coarse = driver_break_core::routing::plan_bbox::stage_b_hop_corridor_points(
+                            (start_lat, start_lon),
+                            (end_lat, end_lon),
+                        );
+                        match driver_break_core::routing::corridor_skeleton::last_reachable_coarse_path_node(
+                            &built,
+                            ss,
+                            &coarse,
+                            (end_lat, end_lon),
+                            driver_break_core::routing::plan_bbox::HOP_END_MATCH_M,
+                        ) {
+                            Some((nid, ll)) if nid != gg => {
+                                let dist = driver_break_core::routing::plan_bbox::haversine_km(
+                                    end_lat, end_lon, ll.0, ll.1,
+                                ) * 1000.0;
+                                report.push_str(&format!(
+                                    "hop_end_fallback={:.5},{:.5} \
+                                     reason=intended_end_not_in_start_component \
+                                     intended={end_lat:.5},{end_lon:.5}\n",
+                                    ll.0, ll.1
+                                ));
+                                log::info!(
+                                    target: "NaviPlan",
+                                    "hop_end_fallback={:.5},{:.5} \
+                                     reason=intended_end_not_in_start_component",
+                                    ll.0, ll.1
+                                );
+                                let last = snapped.len() - 1;
+                                snapped[last] = (nid, dist);
+                            }
+                            None => {
+                                last_terminate = "hop_end_unreachable";
+                                report.push_str(
+                                    "FAIL: no coarse-path node beyond the start is reachable \
+                                     (intended end disconnected)\n",
+                                );
+                                break 'pads;
+                            }
+                            _ => {
+                                last_terminate = "disconnected";
+                                report.push_str(
+                                    "corridor_components_disconnected before A* (origin/destination \
+                                     not connected in loaded tiles)\n",
+                                );
+                                driver_break_core::routing::plan_perf::note(
+                                    "corridor_components",
+                                    "directed_unreachable",
+                                );
+                                drop(built);
+                                graph = None;
+                                if driver_break_core::routing::plan_bbox::should_fallback_to_trip_aabb(
+                                    edge_clip_mode,
+                                    last_terminate,
+                                ) {
+                                    edge_clip_mode =
+                                        driver_break_core::routing::plan_bbox::PlanEdgeClipMode::TripAabb;
+                                    driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(
+                                        driver_break_core::routing::plan_bbox::MAX_PLAN_TILES_MULTI_STEM,
+                                    );
+                                    report.push_str(
+                                        "edge_clip_fallback=trip_aabb after corridor_components_disconnected\n",
+                                    );
+                                    continue;
+                                }
+                                report.push_str(
+                                    "corridor_disconnected: stop after one trip-AABB reload (no further pads, no A*)\n",
+                                );
+                                break 'pads;
+                            }
+                        }
+                    } else {
                     last_terminate = "disconnected";
                     report.push_str(
                         "corridor_components_disconnected before A* (origin/destination \
@@ -4558,6 +4721,7 @@ fn plan_car_route_inner(
                         "corridor_disconnected: stop after one trip-AABB reload (no further pads, no A*)\n",
                     );
                     break 'pads;
+                    }
                 }
             }
             // snap_ms already accumulated above (dig pad scan; labels deferred).

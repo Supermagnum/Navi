@@ -165,10 +165,11 @@ const CASES: &[Case] = &[
         rv15_otta_vaga_lom: false,
         reference: Some("elsa-sjuvass.geojson"),
         expected_fail: Some(
-            "plans since follow-up 30 (0 ferry, ~2273 km / 1720 min) but +17 % vs the \
+            "plans since follow-up 32 (0 ferry, ~2241 km / 1619 min) but +15 % vs the \
              1944 km reference; Stage B's only land alt is 2404 km / 1873 min. About 363 km \
              of the reference (Finnish Lapland) is more than 2.5 km from the skeleton. \
-             Five spikes the reference does not share",
+             Four path-over-chord windows the reference does not share; the 25 km \
+             out-and-back at 68.65, 23.00 is gone",
         ),
         timing_runs: 1,
     },
