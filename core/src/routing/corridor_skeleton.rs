@@ -2175,6 +2175,12 @@ pub fn try_stage_b_densify_from_skeletons(
         clear_access_forbidden(&mut graph);
     }
 
+    // Among free + per-ferry-exclusion alts (not the full no_ferries detour):
+    // competitive band 15% of best time, then fewest ferries, then 2% time, then
+    // km. This drops Mannheller when a 1-ferry excl alt is only a few minutes
+    // slower, without letting a modest Sweden land-only detour win on ferry
+    // count=0. Prefer no_ferries when it is within 2% of best time, or when the
+    // ferry pick is a clear distance blow-out (>15% more km than land).
     for (name, r, _, _) in &candidates {
         log::info!(
             target: "NaviPlan",
@@ -2184,26 +2190,65 @@ pub fn try_stage_b_densify_from_skeletons(
             r.ferries.len()
         );
     }
-    let best_min = candidates
+    let best_min_all = candidates
         .iter()
         .map(|(_, r, _, _)| r.total_min)
         .fold(f64::INFINITY, f64::min);
-    let near: Vec<_> = candidates
+    let ferry_alts: Vec<_> = candidates
         .iter()
-        .filter(|(_, r, _, _)| r.total_min <= best_min * 1.02)
+        .filter(|(name, _, _, _)| name.as_str() != "no_ferries")
         .collect();
-    let pick = near
-        .into_iter()
-        .min_by(|a, b| {
-            a.1.total_km
-                .partial_cmp(&b.1.total_km)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| {
-                    a.1.total_min
-                        .partial_cmp(&b.1.total_min)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
-        })?;
+    let competitive: Vec<_> = ferry_alts
+        .iter()
+        .copied()
+        .filter(|(_, r, _, _)| r.total_min <= best_min_all * 1.15)
+        .collect();
+    let pick = if competitive.is_empty() {
+        candidates
+            .iter()
+            .min_by(|a, b| {
+                a.1.total_min
+                    .partial_cmp(&b.1.total_min)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })?
+    } else {
+        let min_ferries = competitive.iter().map(|(_, r, _, _)| r.ferries.len()).min()?;
+        let fewest: Vec<_> = competitive
+            .into_iter()
+            .filter(|(_, r, _, _)| r.ferries.len() == min_ferries)
+            .collect();
+        let best_min = fewest
+            .iter()
+            .map(|(_, r, _, _)| r.total_min)
+            .fold(f64::INFINITY, f64::min);
+        let near: Vec<_> = fewest
+            .into_iter()
+            .filter(|(_, r, _, _)| r.total_min <= best_min * 1.02)
+            .collect();
+        let ferry_pick = near
+            .into_iter()
+            .min_by(|a, b| {
+                a.1.total_km
+                    .partial_cmp(&b.1.total_km)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| {
+                        a.1.total_min
+                            .partial_cmp(&b.1.total_min)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+            })?;
+        if let Some(nf) = candidates.iter().find(|(n, _, _, _)| n == "no_ferries") {
+            let near_time = nf.1.total_min <= best_min_all * 1.02;
+            let ferry_blowout = ferry_pick.1.total_km > nf.1.total_km * 1.15;
+            if (near_time || ferry_blowout) && nf.1.total_km < ferry_pick.1.total_km {
+                nf
+            } else {
+                ferry_pick
+            }
+        } else {
+            ferry_pick
+        }
+    };
 
     let start = waypoints[0];
     let end = *waypoints.last().unwrap();
