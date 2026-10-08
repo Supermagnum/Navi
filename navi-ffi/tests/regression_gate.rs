@@ -24,9 +24,17 @@
 //! - `NAVI_GATE_CASES`: comma list of case ids to run (default: all).
 //! - `NAVI_GATE_EMU`: output dir of `scripts/emulator-long-trip-plan.py` for
 //!   this build. Its wall time and planning peak memory are stored with the run;
-//!   the peak is checked against [`EMU_PEAK_LIMIT_MB`]. The place index on the
-//!   pack volume must exist, be non-empty, pass `quick_check`, and keep every
-//!   region and row count in `tests/regression_gate_place_index.json`.
+//!   the peak is checked against [`EMU_PEAK_LIMIT_MB`]. Case e also stores an
+//!   emulator wall/peak baseline (25 %). Host/emu time rose from 7.3 s / 36.5 s
+//!   when corridor decimation was removed. The place index on the pack volume
+//!   must exist, be non-empty, pass `quick_check`, and keep every region and
+//!   row count in `tests/regression_gate_place_index.json`.
+//!
+//! Case e (Elsa to Sjuvass) must pass: the plan completes, 0 ferries,
+//! `unexplained_out_and_backs` empty, intermediate hop ends within 50 m of the
+//! coarse-path joint (or an on-path fallback), and exactly the four accepted
+//! path-over-chord windows. Distance vs the 1944.2 km reference is a known
+//! failure, not a gate fail.
 //!
 //! Run: `cargo test --release -p navi-ffi --test regression_gate -- --ignored --nocapture`
 
@@ -90,6 +98,10 @@ struct Case {
     rv15_otta_vaga_lom: bool,
     reference: Option<&'static str>,
     expected_fail: Option<&'static str>,
+    /// Path-over-chord windows at these points are required and accepted.
+    accepted_spikes: &'static [(f64, f64)],
+    /// If set, a miss vs [`Case::distance`] is tracked, not a gate failure.
+    known_distance: Option<&'static str>,
     /// Cold runs timed; the wall-time check uses their median.
     timing_runs: usize,
 }
@@ -107,6 +119,8 @@ const CASES: &[Case] = &[
         rv15_otta_vaga_lom: true,
         reference: Some("bad-luster.json"),
         expected_fail: None,
+        accepted_spikes: &[],
+        known_distance: None,
         timing_runs: 3,
     },
     Case {
@@ -122,6 +136,8 @@ const CASES: &[Case] = &[
         // Approved Navi route (Kinsarvik - Utne, 375.3 km).
         reference: Some("gate:brenneriroa-aga-fu20.geojson"),
         expected_fail: None,
+        accepted_spikes: &[],
+        known_distance: None,
         timing_runs: 1,
     },
     Case {
@@ -136,6 +152,8 @@ const CASES: &[Case] = &[
         rv15_otta_vaga_lom: false,
         reference: Some("roa-florø.json"),
         expected_fail: None,
+        accepted_spikes: &[],
+        known_distance: None,
         timing_runs: 1,
     },
     Case {
@@ -151,6 +169,8 @@ const CASES: &[Case] = &[
         // Same destination as case a; shared roads keep their own spikes.
         reference: Some("bad-luster.json"),
         expected_fail: None,
+        accepted_spikes: &[],
+        known_distance: None,
         timing_runs: 1,
     },
     Case {
@@ -161,16 +181,17 @@ const CASES: &[Case] = &[
         pbf_stem: "ostlandet-latest",
         avoid_ferries: false,
         ferries: &[],
-        distance: None,
+        distance: Some((1944.2, 0.02)),
         rv15_otta_vaga_lom: false,
         reference: Some("elsa-sjuvass.geojson"),
-        expected_fail: Some(
-            "plans since follow-up 32 (0 ferry, ~2241 km / 1619 min) but +15 % vs the \
-             1944 km reference; Stage B's only land alt is 2404 km / 1873 min. About 363 km \
-             of the reference (Finnish Lapland) is more than 2.5 km from the skeleton. \
-             Four path-over-chord windows the reference does not share; the 25 km \
-             out-and-back at 68.65, 23.00 is gone",
-        ),
+        expected_fail: None,
+        accepted_spikes: &[
+            (70.17, 28.26),
+            (66.82, 19.88),
+            (61.28, 14.03),
+            (60.73, 8.98),
+        ],
+        known_distance: Some("distance against the 1944.2 km reference"),
         timing_runs: 1,
     },
 ];
@@ -581,6 +602,53 @@ fn reset_peak_rss() {
     let _ = std::fs::write("/proc/self/clear_refs", "5");
 }
 
+fn snap_end_dist_m(leg: &str) -> Option<f64> {
+    let after = leg.split_once("snap_end=")?.1;
+    let rest = after.split_once("dist_m=")?.1;
+    let end = rest
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(rest.len());
+    rest[..end].parse().ok()
+}
+
+/// Intermediate hop ends must stay within 50 m of the intended joint, or log
+/// an on-path component fallback. The last hop is the user destination.
+fn check_intermediate_hop_ends(report: &str, o: &mut Outcome) {
+    let mut legs = Vec::new();
+    let mut rest = report;
+    while let Some(i) = rest.find("--- leg") {
+        let from = i;
+        let search = &rest[from + 7..];
+        if let Some(j) = search.find("--- leg") {
+            legs.push(&rest[from..from + 7 + j]);
+            rest = &rest[from + 7 + j..];
+        } else {
+            legs.push(&rest[from..]);
+            break;
+        }
+    }
+    if legs.len() < 2 {
+        return;
+    }
+    for (i, leg) in legs.iter().enumerate() {
+        if i + 1 == legs.len() {
+            continue;
+        }
+        let fallback = leg.contains("hop_end_fallback=");
+        let Some(dist) = snap_end_dist_m(leg) else {
+            o.failures
+                .push(format!("hop {} missing snap_end", i + 1));
+            continue;
+        };
+        if dist > 50.0 && !fallback {
+            o.failures.push(format!(
+                "hop {} end snapped {dist:.0} m (max 50 m, no on-path fallback)",
+                i + 1
+            ));
+        }
+    }
+}
+
 fn run_case(case: &Case, packs: &Path, refs: &Path, work: &Path) -> Outcome {
     let mut o = Outcome::default();
     let data_dir = work.join(format!("data-{}", case.id));
@@ -693,14 +761,21 @@ fn run_case(case: &Case, packs: &Path, refs: &Path, work: &Path) -> Outcome {
     if let Some((ref_km, tol)) = case.distance {
         let rel = (o.distance_km - ref_km).abs() / ref_km;
         if rel > tol {
-            o.failures.push(format!(
+            let msg = format!(
                 "distance {:.1} km is {:.2} % from {ref_km} km (max {:.0} %)",
                 o.distance_km,
                 rel * 100.0,
                 tol * 100.0
-            ));
+            );
+            if let Some(why) = case.known_distance {
+                o.known.push(format!("{msg}; {why}"));
+            } else {
+                o.failures.push(msg);
+            }
         }
     }
+
+    check_intermediate_hop_ends(&r.report, &mut o);
 
     if case.rv15_otta_vaga_lom {
         let (dv, iv) = nearest_on_line(VAGAAVEGEN_80, &line);
@@ -757,8 +832,15 @@ fn run_case(case: &Case, packs: &Path, refs: &Path, work: &Path) -> Outcome {
         None => None,
     };
     let reference_spikes = reference.as_deref().map(find_spikes).unwrap_or_default();
+    let mut accepted_hit = vec![false; case.accepted_spikes.len()];
     for s in find_spikes(&line) {
         let shared = reference_has_spike(&s, &reference_spikes);
+        let accepted_at = case.accepted_spikes.iter().position(|&p| {
+            haversine_m(s.a, p) <= 8_000.0 || haversine_m(s.mid, p) <= 8_000.0
+        });
+        if let Some(i) = accepted_at {
+            accepted_hit[i] = true;
+        }
         let desc = format!(
             "km {:.1}-{:.1} path {:.2} km chord {:.2} km at {:.5},{:.5}{}",
             s.from_km,
@@ -769,10 +851,20 @@ fn run_case(case: &Case, packs: &Path, refs: &Path, work: &Path) -> Outcome {
             s.a.1,
             if shared { " (reference too)" } else { "" }
         );
-        if !shared {
+        if !shared && accepted_at.is_none() {
             o.failures.push(format!("spike {desc}"));
         }
         o.spikes.push(desc);
+    }
+    if !case.accepted_spikes.is_empty() {
+        for (i, &p) in case.accepted_spikes.iter().enumerate() {
+            if !accepted_hit[i] {
+                o.failures.push(format!(
+                    "accepted path-over-chord window at {:.2},{:.2} is missing",
+                    p.0, p.1
+                ));
+            }
+        }
     }
 
     let vias: Vec<(f64, f64)> = case.vias.to_vec();
@@ -819,8 +911,14 @@ fn prepare_skeletons(packs: &Path) {
 
 /// Emulator figures for this build from the harness `result.json` in `dir`:
 /// wall time and planning peak memory, with the peak checked against
-/// [`EMU_PEAK_LIMIT_MB`].
-fn emulator_check(dir: &Path, gate_failures: &mut Vec<&'static str>) -> serde_json::Value {
+/// [`EMU_PEAK_LIMIT_MB`]. Case e also has a stored emu wall/peak baseline
+/// (25 %); host/emu time rose from 7.3 s / 36.5 s when corridor decimation
+/// was removed.
+fn emulator_check(
+    dir: &Path,
+    gate_failures: &mut Vec<&'static str>,
+    baseline: &serde_json::Value,
+) -> serde_json::Value {
     let path = dir.join("result.json");
     let r: serde_json::Value = match std::fs::read_to_string(&path)
         .ok()
@@ -846,6 +944,23 @@ fn emulator_check(dir: &Path, gate_failures: &mut Vec<&'static str>) -> serde_js
         failures.push(format!(
             "planning peak {peak_mb:.0} MB vs limit {EMU_PEAK_LIMIT_MB:.0} MB"
         ));
+    }
+    if r["trip"].as_str() == Some("elsa") {
+        let base = &baseline["cases"]["e_elsa_sjuvass"];
+        if let (Some(bw), Some(bm)) = (base["emu_wall_s"].as_f64(), base["emu_peak_mb"].as_f64()) {
+            if wall_s > bw * BASELINE_REGRESSION {
+                failures.push(format!(
+                    "emu wall {wall_s:.1} s vs baseline {bw:.1} s (+{:.0} %)",
+                    (wall_s / bw - 1.0) * 100.0
+                ));
+            }
+            if peak_mb > bm * BASELINE_REGRESSION {
+                failures.push(format!(
+                    "emu peak {peak_mb:.0} MB vs baseline {bm:.0} MB (+{:.0} %)",
+                    (peak_mb / bm - 1.0) * 100.0
+                ));
+            }
+        }
     }
     failures.extend(place_index_failures(&r["place_index"]));
     let status = if failures.is_empty() { "PASS" } else { "FAIL" };
@@ -1084,7 +1199,7 @@ fn long_trip_regression_gate() {
 
     let emulator = std::env::var("NAVI_GATE_EMU")
         .ok()
-        .map(|d| emulator_check(Path::new(&d), &mut gate_failures));
+        .map(|d| emulator_check(Path::new(&d), &mut gate_failures, &baseline));
     if emulator.is_none() {
         eprintln!("[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)");
     }
