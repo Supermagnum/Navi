@@ -22,6 +22,9 @@
 //! - `NAVI_GATE_WRITE_BASELINE=1`: write this run's wall time and peak memory as
 //!   the baseline instead of comparing.
 //! - `NAVI_GATE_CASES`: comma list of case ids to run (default: all).
+//! - `NAVI_GATE_EMU`: output dir of `scripts/emulator-long-trip-plan.py` for
+//!   this build. Its wall time and planning peak memory are stored with the run;
+//!   the peak is checked against [`EMU_PEAK_TARGET_MB`].
 //!
 //! Run: `cargo test --release -p navi-ffi --test regression_gate -- --ignored --nocapture`
 
@@ -44,6 +47,12 @@ const RESAMPLE_M: f64 = 100.0;
 const BASELINE_REGRESSION: f64 = 1.25;
 /// Stored reference lines under `tests/regression_gate_refs/`.
 const GATE_REF_PREFIX: &str = "gate:";
+
+/// Planning peak memory target on the emulator (app running, sidecars ready).
+const EMU_PEAK_TARGET_MB: f64 = 1024.0;
+/// Reason the emulator peak check is a known failure: reported, not failing.
+const EMU_PEAK_KNOWN: Option<&str> =
+    Some("heaviest detailed hop alone exceeds 1 GB on the emulator; hop memory round pending");
 
 /// Tests outside the gate that already fail on `fu20-known-good`; listed in
 /// every gate report.
@@ -92,8 +101,6 @@ struct Case {
     rv15_otta_vaga_lom: bool,
     reference: Option<&'static str>,
     expected_fail: Option<&'static str>,
-    /// Reason the wall time check is a known failure: reported, not failing.
-    known_slow: Option<&'static str>,
 }
 
 const CASES: &[Case] = &[
@@ -109,7 +116,6 @@ const CASES: &[Case] = &[
         rv15_otta_vaga_lom: true,
         reference: Some("bad-luster.json"),
         expected_fail: None,
-        known_slow: Some("per-leg alternatives, speed round pending"),
     },
     Case {
         id: "b_brenneriroa_aga",
@@ -124,7 +130,6 @@ const CASES: &[Case] = &[
         // Approved Navi route (Kinsarvik - Utne, 375.3 km).
         reference: Some("gate:brenneriroa-aga-fu20.geojson"),
         expected_fail: None,
-        known_slow: None,
     },
     Case {
         id: "c_brenneriroa_grotli_floro",
@@ -138,7 +143,6 @@ const CASES: &[Case] = &[
         rv15_otta_vaga_lom: false,
         reference: Some("roa-florø.json"),
         expected_fail: None,
-        known_slow: None,
     },
     Case {
         id: "d_bevensen_vaga_dalsoren_avoid_ferries",
@@ -153,7 +157,6 @@ const CASES: &[Case] = &[
         // Same destination as case a; shared roads keep their own spikes.
         reference: Some("bad-luster.json"),
         expected_fail: None,
-        known_slow: None,
     },
     Case {
         id: "e_elsa_sjuvass",
@@ -170,7 +173,6 @@ const CASES: &[Case] = &[
             "open since follow-up 24: Finland and Norrbotten hops fail (hop_fail / snap_fail), \
              route is about +345 km against the reference when it completes",
         ),
-        known_slow: None,
     },
 ];
 
@@ -804,6 +806,70 @@ fn prepare_skeletons(packs: &Path) {
     }
 }
 
+/// Emulator figures for this build from the harness `result.json` in `dir`:
+/// wall time and planning peak memory, with the peak checked against
+/// [`EMU_PEAK_TARGET_MB`].
+fn emulator_check(dir: &Path, gate_failures: &mut Vec<&'static str>) -> serde_json::Value {
+    let path = dir.join("result.json");
+    let r: serde_json::Value = match std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+    {
+        Some(r) => r,
+        None => {
+            eprintln!("[gate] emulator FAIL: cannot read {}", path.display());
+            gate_failures.push("emulator");
+            return serde_json::json!({ "status": "FAIL", "failures": ["no result.json"] });
+        }
+    };
+    let mut failures = Vec::new();
+    let mut known = Vec::new();
+    if r["accepted"].as_bool() != Some(true) || r["status"].as_str() != Some("done") {
+        failures.push(format!(
+            "run not accepted (status {}, mismatch {})",
+            r["status"], r["input_mismatch"]
+        ));
+    }
+    let wall_s = r["wall_s"].as_f64().unwrap_or(0.0);
+    let peak_mb = r["plan_peak_mb"].as_f64().unwrap_or(f64::INFINITY);
+    if peak_mb > EMU_PEAK_TARGET_MB {
+        let msg = format!("planning peak {peak_mb:.0} MB vs target {EMU_PEAK_TARGET_MB:.0} MB");
+        match EMU_PEAK_KNOWN {
+            Some(why) => known.push(format!("{msg}: known failure, {why}")),
+            None => failures.push(msg),
+        }
+    }
+    let status = if failures.is_empty() { "PASS" } else { "FAIL" };
+    eprintln!(
+        "[gate] emulator {status}: trip {}, {:.1} km, ferries {}, hops {}, wall {wall_s:.1} s, \
+         planning peak {peak_mb:.0} MB",
+        r["trip"],
+        r["distance_km"].as_f64().unwrap_or(0.0),
+        r["ferries"],
+        r["hops"]
+    );
+    for m in failures.iter().chain(&known) {
+        eprintln!("[gate]   - {m}");
+    }
+    if !failures.is_empty() {
+        gate_failures.push("emulator");
+    }
+    serde_json::json!({
+        "status": status,
+        "source": path,
+        "trip": r["trip"],
+        "datex": r["datex"],
+        "distance_km": r["distance_km"],
+        "ferries": r["ferries"],
+        "via_m": r["via_m"],
+        "hops": r["hops"],
+        "wall_s": wall_s,
+        "plan_peak_mb": peak_mb,
+        "failures": failures,
+        "known_failures": known,
+    })
+}
+
 fn load_baseline(path: &Path) -> serde_json::Value {
     std::fs::read_to_string(path)
         .ok()
@@ -854,16 +920,12 @@ fn long_trip_regression_gate() {
         if !write_baseline {
             if let (Some(bw), Some(bm)) = (base["wall_s"].as_f64(), base["peak_mb"].as_f64()) {
                 if o.wall_s > bw * BASELINE_REGRESSION {
-                    let msg = format!(
+                    o.failures.push(format!(
                         "wall {:.1} s vs baseline {:.1} s (+{:.0} %)",
                         o.wall_s,
                         bw,
                         (o.wall_s / bw - 1.0) * 100.0
-                    );
-                    match case.known_slow {
-                        Some(why) => o.known.push(format!("{msg}: known failure, {why}")),
-                        None => o.failures.push(msg),
-                    }
+                    ));
                 }
                 if o.peak_mb > bm * BASELINE_REGRESSION {
                     o.failures.push(format!(
@@ -934,6 +996,13 @@ fn long_trip_regression_gate() {
         }));
     }
 
+    let emulator = std::env::var("NAVI_GATE_EMU")
+        .ok()
+        .map(|d| emulator_check(Path::new(&d), &mut gate_failures));
+    if emulator.is_none() {
+        eprintln!("[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)");
+    }
+
     for (test, why) in KNOWN_TEST_FAILURES {
         eprintln!("[gate] known test failure outside the gate: {test}: {why}");
     }
@@ -943,9 +1012,11 @@ fn long_trip_regression_gate() {
         .collect();
     let _ = std::fs::write(
         work.join("gate-results.json"),
-        serde_json::to_string_pretty(
-            &serde_json::json!({ "results": results, "known_test_failures": known_tests }),
-        )
+        serde_json::to_string_pretty(&serde_json::json!({
+            "results": results,
+            "emulator": emulator,
+            "known_test_failures": known_tests,
+        }))
         .unwrap(),
     );
     if write_baseline {
