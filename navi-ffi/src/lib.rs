@@ -2263,11 +2263,10 @@ fn plan_pack_dirs(
 /// Android). Empty: search `data_dir` and `data_dir/long-trip-packs` when present.
 /// Pass `""` only when the PBF already lives next to the packs.
 ///
-/// `long_trip_enabled` gates densify/chunk for spans above [`LONG_TRIP_CHUNK_DEG`].
-/// Ordinary UI plans pass `false` so cross-stem mid trips (Raufoss→Bergen) stay
-/// on one A*. Same-stem coastal ODs with span > CHUNK densify even when longTrip
-/// is off so Automotive never materialises the full Vestlandet single-shot graph
-/// (Bergen→Stavanger ~259k nodes / ~985 MiB peak vs densify hops ~167k / ≤933).
+/// `long_trip_enabled` controls region download-along-route only (Kotlin
+/// LongTripCoordinator). Corridor densify runs for every multi-region trip and
+/// for same-stem coastal spans above CHUNK — independent of this flag. Inland
+/// same-stem ODs (ostlandet) stay single-shot so Hamar→Dombås is not detoured.
 ///
 /// `allowed_countries`: when `Some` (non-empty), hard-filters the graph to those
 /// ISO-3166-1 alpha-2 codes ([`RouteOptions::allowed_countries`]). Host "Stay in
@@ -3565,12 +3564,10 @@ fn plan_car_route_inner(
     }
     route_points.push((end_lat, end_lon));
 
-    // Long corridors (multi-landsdel) cannot merge every pack tile into one
-    // graph on Automotive RAM. Densify hops and plan each leg separately when
-    // the host long-trip toggle is on and span > CHUNK. Same-stem coastal ODs
-    // (Vestlandet / Nord-Norge / …) also densify when span > CHUNK with
-    // longTrip off: dig never held the ~259k-node Bergen→Stavanger single-shot
-    // owned RouteGraph that pushed VmHWM to ~985 MiB; densify hops stay ≤~167k.
+    // Corridor densify whenever the trip needs more than one region or more
+    // tiles than one hop may hold (span > CHUNK). `long_trip_enabled` only
+    // controls downloading regions along a route (Kotlin LongTripCoordinator);
+    // it must not gate Stage B / hop planning.
     let span = driver_break_core::routing::plan_bbox::trip_span_deg(&route_points);
     let pack_dirs_for_densify = plan_pack_dirs(
         std::path::Path::new(pbf_path.trim()),
@@ -3578,205 +3575,140 @@ fn plan_car_route_inner(
         &pack_dir,
         long_trip_enabled,
     );
-    let ferry_same_stem_densify = !long_trip_enabled
-        && !is_chunk_leg
-        && span > driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG
-        && {
-            let (a_lat, a_lon) = route_points[0];
-            let (b_lat, b_lon) = *route_points.last().unwrap();
-            let leaf_a = driver_break_core::long_trip::region_containing(a_lat, a_lon, None);
-            let leaf_b = driver_break_core::long_trip::region_containing(b_lat, b_lon, None);
-            match (leaf_a, leaf_b) {
-                (Some(a), Some(b)) if a == b => {
-                    let leaf = a.rsplit('/').next().unwrap_or(a);
-                    // Inland stems (ostlandet) often span > CHUNK without needing
-                    // densify for RSS; densifying detours Raufoss→Dombås.
-                    matches!(
-                        leaf,
-                        "vestlandet" | "nord-norge" | "sorlandet" | "troms" | "finnmark"
-                    )
-                }
-                _ => false,
-            }
-        };
-    if (long_trip_enabled || ferry_same_stem_densify)
-        && !is_chunk_leg
-        && span > driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG
-    {
+    let (leaf_a, leaf_b) = {
+        let (a_lat, a_lon) = route_points[0];
+        let (b_lat, b_lon) = *route_points.last().unwrap();
+        (
+            driver_break_core::long_trip::region_containing(a_lat, a_lon, None),
+            driver_break_core::long_trip::region_containing(b_lat, b_lon, None),
+        )
+    };
+    let multi_region = match (leaf_a, leaf_b) {
+        (Some(a), Some(b)) => a != b,
+        _ => true,
+    };
+    // Same-stem coastal ODs still need hop split when span > CHUNK (ferry RSS).
+    // Inland stems (ostlandet) often span > CHUNK without needing densify —
+    // densifying detours Hamar→Dombås / Raufoss→Dombås.
+    let same_stem_needs_split = match (leaf_a, leaf_b) {
+        (Some(a), Some(b))
+            if a == b && span > driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG =>
+        {
+            let leaf = a.rsplit('/').next().unwrap_or(a);
+            matches!(
+                leaf,
+                "vestlandet" | "nord-norge" | "sorlandet" | "troms" | "finnmark"
+            )
+        }
+        _ => false,
+    };
+    let needs_corridor = !is_chunk_leg && (multi_region || same_stem_needs_split);
+    if needs_corridor {
+        // Panic if any path still reaches centroid densify during corridor plans.
+        let _forbid_centroid =
+            driver_break_core::routing::plan_bbox::ForbidCentroidDensify::enter();
         let pack_dirs = pack_dirs_for_densify;
         let pack_dir_refs: Vec<&std::path::Path> = pack_dirs.iter().map(|p| p.as_path()).collect();
-        // Fail fast when a corridor region pack is missing (name it; do not densify).
-        if long_trip_enabled {
-            let missing =
-                driver_break_core::routing::indexed::missing_ready_regions_for_trip(
-                    &pack_dir_refs,
-                    routing_profile,
-                    &route_points,
-                );
-            if !missing.is_empty() {
-                let named = missing.join(",");
-                log::warn!(target: "NaviPlan", "missing_regions_before_densify {named}");
-                let mut r = empty(format!(
-                    "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: missing_regions={named}\n"
-                ));
-                r.search_terminate_reason = "missing_regions".into();
-                r.off_trail_advisory = format!("missing_region:{}", missing[0]);
-                return r;
-            }
+        // Direct-corridor preflight: name uninstalled regions on the outline path.
+        let missing_direct =
+            driver_break_core::routing::indexed::missing_ready_regions_for_trip(
+                &pack_dir_refs,
+                routing_profile,
+                &route_points,
+            );
+        if !missing_direct.is_empty() {
+            log::info!(
+                target: "NaviPlan",
+                "direct_corridor_missing={}",
+                missing_direct.join(",")
+            );
         }
-        // Stage B (long-trip): persistent skeleton joints (border/ferry/via) +
-        // near-equal ferry exclusion. Centroid densify is not used when
-        // long_trip_enabled (FU22): missing skeletons → skeleton_preparing.
-        let stage_b = if long_trip_enabled {
-            let stage_b_opts = driver_break_core::routing::graph::RouteOptions {
-                avoid_motorways,
-                toll_policy,
-                avoid_ferries,
-                avoid_tunnels,
-                vehicle: vehicle_limits.clone(),
-                departure_local,
-                allowed_countries: allowed_countries.clone(),
-                ..Default::default()
-            };
+        // When every direct-corridor region is missing coverage and no installed
+        // path can be attempted yet, fail naming the installs (fail-fast).
+        // If some packs are Ready, Stage B may still find an installed-only
+        // detour — absurd-detour gate below decides whether to present it.
+        if !missing_direct.is_empty() && !long_trip_enabled {
+            // Without long-trip download, missing packs cannot be fetched mid-plan.
+            // Still allow Stage B when *some* corridor packs exist (detour case).
+        }
+
+        let stage_b_opts = driver_break_core::routing::graph::RouteOptions {
+            avoid_motorways,
+            toll_policy,
+            avoid_ferries,
+            avoid_tunnels,
+            vehicle: vehicle_limits.clone(),
+            departure_local,
+            allowed_countries: allowed_countries.clone(),
+            ..Default::default()
+        };
+        let stage_b =
             driver_break_core::routing::corridor_skeleton::try_stage_b_densify_from_skeletons(
                 &pack_dir_refs,
                 &route_points,
                 routing_profile,
                 &stage_b_opts,
-            )
-        } else {
-            None
-        };
-        if long_trip_enabled {
-            if let Some(ref sb) = stage_b {
-                driver_break_core::routing::plan_bbox::set_stage_b_active(true);
-                driver_break_core::routing::plan_bbox::set_stage_b_coarse_path(
-                    sb.coarse_path.clone(),
-                );
-                log::info!(target: "NaviPlan", "stage_b densify {}", sb.note);
-                let hops = sb.hops.clone();
-                log::info!(
-                    target: "NaviPlan",
-                    "long_trip densify span={span:.3} hops={} long_trip_enabled=true \
-                     ferry_same_stem=false stage_b=true hops_latlon={} dirs={}",
-                    hops.len(),
-                    hops.iter()
-                        .map(|(la, lo)| format!("{la:.4},{lo:.4}"))
-                        .collect::<Vec<_>>()
-                        .join(";"),
-                    pack_dirs
-                        .iter()
-                        .map(|d| d.display().to_string())
-                        .collect::<Vec<_>>()
-                        .join(";")
-                );
-                if hops.len() > 2 {
-                    return plan_car_route_chunked_legs(
-                        pbf_path,
-                        elev_dir,
-                        cache_dir,
-                        use_eco,
-                        profile,
-                        avoid_motorways,
-                        ffi_toll_policy,
-                        avoid_ferries,
-                        avoid_tunnels,
-                        vehicle,
-                        prefer_official_networks,
-                        departure_local_iso,
-                        data_dir,
-                        pack_dir,
-                        &hops,
-                        allowed_countries,
-                    );
-                }
-            } else {
-                let missing =
-                    driver_break_core::routing::indexed::stems_missing_corridor_skeleton(
-                        &pack_dir_refs,
-                        &route_points,
-                        routing_profile,
-                    );
-                if !missing.is_empty() {
-                    let stem = missing[0].1.clone();
-                    let (status, pct) =
-                        driver_break_core::routing::indexed::corridor_skeleton_preparing_status(
-                            &stem,
-                        );
-                    // Do not build skeletons on the plan thread or a spawn while
-                    // planning (same idle rule as ferry sidecars). Kotlin waits
-                    // and CorridorSkeletonBackground builds after RoutePlanGate.
-                    log::info!(
-                        target: "NaviPlan",
-                        "skeleton_preparing stems={} first={stem}",
-                        missing
-                            .iter()
-                            .map(|(_, s)| s.as_str())
-                            .collect::<Vec<_>>()
-                            .join(",")
-                    );
-                    let mut r = empty(format!(
-                        "TEST_KIND=PLAN_CAR_ROUTE\n\
-                         skeleton_preparing=true\nskeleton_preparing_pct={pct}\n\
-                         status={status}\nFAIL: {status}\n"
-                    ));
-                    driver_break_core::routing::plan_perf::note("skeleton_preparing", &status);
-                    driver_break_core::routing::plan_perf::note_u64(
-                        "skeleton_preparing_pct",
-                        pct as u64,
-                    );
-                    r.search_terminate_reason = "skeleton_preparing".into();
-                    r.off_trail_advisory = status;
-                    return r;
-                }
-                // Skeletons present but Stage B could not densify — do not fall
-                // back to centroid densify (FU22 Step 1).
+            );
+        if let Some(ref sb) = stage_b {
+            // Absurd installed-only detour: coarse path ≫ crow-flies.
+            if driver_break_core::routing::plan_bbox::is_absurd_installed_detour(
+                sb.total_km,
+                &route_points,
+                &missing_direct,
+            ) && !driver_break_core::routing::plan_bbox::accept_absurd_detour_env()
+            {
+                let straight =
+                    driver_break_core::routing::plan_bbox::waypoints_straight_km(&route_points);
+                let ratio = if straight > 0.0 {
+                    sb.total_km / straight
+                } else {
+                    0.0
+                };
+                let direct = driver_break_core::long_trip::direct_corridor_regions_for_trip(
+                    &route_points,
+                    None,
+                )
+                .unwrap_or_default();
+                let named_missing = missing_direct.join(",");
+                let named_direct = direct.join(",");
+                let install_line = if missing_direct.is_empty() {
+                    format!("expected_direct_corridor={named_direct}")
+                } else {
+                    format!("missing_regions={named_missing}\ninstall_regions_to_plan_direct={named_missing}")
+                };
                 log::warn!(
                     target: "NaviPlan",
-                    "stage_b densify failed with skeletons present; no centroid fallback"
+                    "absurd_detour coarse_km={:.1} straight_km={:.1} ratio={:.2} \
+                     missing_regions={named_missing} direct={named_direct} \
+                     detour_available=true",
+                    sb.total_km,
+                    straight,
+                    ratio
                 );
-                let mut r = empty(
-                    "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: stage_b densify unavailable\n".into(),
-                );
-                r.search_terminate_reason = "stage_b_unavailable".into();
+                let mut r = empty(format!(
+                    "TEST_KIND=PLAN_CAR_ROUTE\n\
+                     FAIL: absurd_detour coarse_km={:.1} straight_km={:.1} ratio={:.2}\n\
+                     {install_line}\n\
+                     detour_available=true detour_km={:.1} detour_min={:.1}\n\
+                     accept_hint=NAVI_ACCEPT_ABSURD_DETOUR=1\n",
+                    sb.total_km, straight, ratio, sb.total_km, sb.total_min
+                ));
+                r.search_terminate_reason = "absurd_detour".into();
+                r.off_trail_advisory = if missing_direct.is_empty() {
+                    "absurd_detour".into()
+                } else {
+                    format!("missing_region:{}", missing_direct[0])
+                };
                 return r;
             }
-        } else if ferry_same_stem_densify {
-            // Same-stem coastal ODs: pack densify, then geometric fallback.
-            let geometric =
-                driver_break_core::routing::plan_bbox::densify_route_points_via_regions_dirs(
-                    &route_points,
-                    &pack_dir_refs,
-                    driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG,
-                );
-            let mut densify_fallback_reason: Option<&'static str> = None;
-            let hops = match driver_break_core::routing::indexed::try_densify_hops_via_skeleton(
-                std::path::Path::new(data_dir.trim()),
-                &pack_dir_refs,
-                std::path::Path::new(pbf_path.trim()),
-                routing_profile,
-                &route_points,
-                driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG,
-            ) {
-                Some(h) if h.len() > 2 => h,
-                _ => {
-                    densify_fallback_reason = Some("pack_skeleton_densify_unavailable");
-                    geometric
-                }
-            };
-            if let Some(reason) = densify_fallback_reason {
-                log::warn!(
-                    target: "NaviPlan",
-                    "fallback_planner=centroid_densify reason={reason}"
-                );
-                driver_break_core::routing::plan_file_log::line(format!(
-                    "fallback_planner=centroid_densify reason={reason}"
-                ));
-            }
+            driver_break_core::routing::plan_bbox::set_stage_b_active(true);
+            driver_break_core::routing::plan_bbox::set_stage_b_coarse_path(sb.coarse_path.clone());
+            log::info!(target: "NaviPlan", "stage_b densify {}", sb.note);
+            let hops = sb.hops.clone();
             log::info!(
                 target: "NaviPlan",
-                "long_trip densify span={span:.3} hops={} long_trip_enabled=false \
-                 ferry_same_stem=true stage_b=false hops_latlon={} dirs={}",
+                "corridor densify span={span:.3} hops={} multi_region={multi_region} \
+                 long_trip_enabled={long_trip_enabled} stage_b=true hops_latlon={} dirs={}",
                 hops.len(),
                 hops.iter()
                     .map(|(la, lo)| format!("{la:.4},{lo:.4}"))
@@ -3789,7 +3721,7 @@ fn plan_car_route_inner(
                     .join(";")
             );
             if hops.len() > 2 {
-                let mut chunked = plan_car_route_chunked_legs(
+                return plan_car_route_chunked_legs(
                     pbf_path,
                     elev_dir,
                     cache_dir,
@@ -3807,13 +3739,63 @@ fn plan_car_route_inner(
                     &hops,
                     allowed_countries,
                 );
-                if let Some(reason) = densify_fallback_reason {
-                    chunked.report.push_str(&format!(
-                        "fallback_planner=centroid_densify\nfallback_planner_reason={reason}\n"
-                    ));
-                }
-                return chunked;
             }
+        } else {
+            let missing_skel =
+                driver_break_core::routing::indexed::stems_missing_corridor_skeleton(
+                    &pack_dir_refs,
+                    &route_points,
+                    routing_profile,
+                );
+            if !missing_skel.is_empty() {
+                let stem = missing_skel[0].1.clone();
+                let (status, pct) =
+                    driver_break_core::routing::indexed::corridor_skeleton_preparing_status(
+                        &stem,
+                    );
+                log::info!(
+                    target: "NaviPlan",
+                    "skeleton_preparing stems={} first={stem}",
+                    missing_skel
+                        .iter()
+                        .map(|(_, s)| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(",")
+                );
+                let mut r = empty(format!(
+                    "TEST_KIND=PLAN_CAR_ROUTE\n\
+                     skeleton_preparing=true\nskeleton_preparing_pct={pct}\n\
+                     status={status}\nFAIL: {status}\n"
+                ));
+                driver_break_core::routing::plan_perf::note("skeleton_preparing", &status);
+                driver_break_core::routing::plan_perf::note_u64(
+                    "skeleton_preparing_pct",
+                    pct as u64,
+                );
+                r.search_terminate_reason = "skeleton_preparing".into();
+                r.off_trail_advisory = status;
+                return r;
+            }
+            if !missing_direct.is_empty() {
+                let named = missing_direct.join(",");
+                log::warn!(target: "NaviPlan", "missing_regions_before_densify {named}");
+                let mut r = empty(format!(
+                    "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: missing_regions={named}\n"
+                ));
+                r.search_terminate_reason = "missing_regions".into();
+                r.off_trail_advisory = format!("missing_region:{}", missing_direct[0]);
+                return r;
+            }
+            // Skeletons present but Stage B could not densify — no centroid fallback.
+            log::warn!(
+                target: "NaviPlan",
+                "stage_b densify failed with skeletons present; no centroid fallback"
+            );
+            let mut r = empty(
+                "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: stage_b densify unavailable\n".into(),
+            );
+            r.search_terminate_reason = "stage_b_unavailable".into();
+            return r;
         }
     }
 
@@ -6414,7 +6396,8 @@ pub struct FfiFerrySidecarProgress {
     pub message: String,
 }
 
-/// Build/refresh `{stem}.navi-ferry-overlay-{profile}.rkyv` from the region PBF.
+/// Build/refresh `{stem}.navi-ferry-overlay-{profile}.rkyv` from the region PBF
+/// (or shared country extract, e.g. `sweden-latest.osm.pbf` for Norrbotten).
 /// Call from pack install / refresh background work — not from the plan path.
 #[uniffi::export]
 pub fn ensure_ferry_sidecar(pack_dir: String, stem: String, profile: TravelProfile) -> String {
@@ -6423,31 +6406,20 @@ pub fn ensure_ferry_sidecar(pack_dir: String, stem: String, profile: TravelProfi
     if stem.is_empty() {
         return "FAIL: empty stem\n".into();
     }
-    let pbf = home.join(format!("{stem}.osm.pbf"));
-    if !pbf.is_file() {
-        // Also accept ferry-only extract.
-        let ferry_pbf = home.join(format!("{stem}.ferry.osm.pbf"));
-        if !ferry_pbf.is_file() {
-            return format!("FAIL: PBF missing for stem={stem}\n");
-        }
-        return match driver_break_core::routing::indexed::ensure_ferry_sidecar(
-            home,
-            stem,
-            RoutingProfile::from(profile.to_core()),
-            &ferry_pbf,
-        ) {
-            Ok(true) => format!("PASS: ferry sidecar ready stem={stem}\n"),
-            Ok(false) => format!("PASS: no ferry edges stem={stem}\n"),
-            Err(e) => format!("FAIL: ferry sidecar: {e:#}\n"),
-        };
-    }
-    match driver_break_core::routing::indexed::ensure_ferry_sidecar(
-        home,
-        stem,
-        RoutingProfile::from(profile.to_core()),
-        &pbf,
+    let rp = RoutingProfile::from(profile.to_core());
+    let pbf = match driver_break_core::routing::indexed::resolve_ferry_overlay_pbf_for_stem(
+        home, stem,
     ) {
-        Ok(true) => format!("PASS: ferry sidecar ready stem={stem}\n"),
+        Some(p) => p,
+        None => return format!("FAIL: PBF missing for stem={stem}\n"),
+    };
+    match driver_break_core::routing::indexed::ensure_ferry_sidecar(home, stem, rp, &pbf) {
+        Ok(true) => format!(
+            "PASS: ferry sidecar ready stem={stem} pbf={}\n",
+            pbf.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("?")
+        ),
         Ok(false) => format!("PASS: no ferry edges stem={stem}\n"),
         Err(e) => format!("FAIL: ferry sidecar: {e:#}\n"),
     }
@@ -6466,20 +6438,17 @@ pub fn ferry_sidecar_progress_snapshot() -> FfiFerrySidecarProgress {
     }
 }
 
-/// True when the stem ferry sidecar meta matches the on-disk PBF fingerprint.
+/// True when the stem ferry sidecar meta matches the on-disk PBF fingerprint
+/// (leaf or shared country extract).
 #[uniffi::export]
 pub fn ferry_sidecar_is_ready(pack_dir: String, stem: String, profile: TravelProfile) -> bool {
     let home = Path::new(pack_dir.trim());
     let stem = stem.trim();
-    let pbf = home.join(format!("{stem}.osm.pbf"));
-    let pbf = if pbf.is_file() {
-        pbf
-    } else {
-        home.join(format!("{stem}.ferry.osm.pbf"))
-    };
-    if !pbf.is_file() {
+    let Some(pbf) =
+        driver_break_core::routing::indexed::resolve_ferry_overlay_pbf_for_stem(home, stem)
+    else {
         return false;
-    }
+    };
     driver_break_core::routing::indexed::sidecar_fresh(
         home,
         stem,

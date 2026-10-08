@@ -63,12 +63,8 @@ object FerrySidecarBackground {
     ) {
         val trimmed = stem.trim()
         if (trimmed.isEmpty()) return
-        val pbf = File(packDir, "$trimmed.osm.pbf")
-        val ferryPbf = File(packDir, "$trimmed.ferry.osm.pbf")
-        if (!pbf.isFile && !ferryPbf.isFile) {
-            Log.i(TAG, "skip ferry sidecar: no PBF for stem=$trimmed")
-            return
-        }
+        // Leaf may share a country extract (e.g. norrbotten → sweden-latest.osm.pbf).
+        // UniFFI resolve + ensure handles that; do not require `{stem}.osm.pbf`.
         val ready =
             runCatching {
                 ferrySidecarIsReady(packDir.absolutePath, trimmed, profile)
@@ -97,7 +93,8 @@ object FerrySidecarBackground {
      * readiness — file presence alone is not enough after a build bump.
      */
     fun ensureFromInstalledMaps() {
-        if (RoutePlanGate.isRunning()) return
+        // Allow enqueue while a plan is ending on ferry_preparing; drain() still
+        // waits for RoutePlanGate to clear before parsing PBFs.
         val snap = InstalledMaps.current() ?: return
         for (r in snap.regions.values) {
             ensureStarted(r.packDir, r.stem, TravelProfile.CAR)

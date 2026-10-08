@@ -391,6 +391,36 @@ pub fn trip_span_deg(points: &[(f64, f64)]) -> f64 {
 }
 
 /// Insert linear midpoints so each consecutive hop's span is ≤ `max_hop_deg`.
+
+/// When true, [`densify_route_points_via_regions_dirs`] panics. Used by tests to
+/// prove the plan path never falls back to centroid densify (FU23 Step 3).
+static FORBID_CENTROID_DENSIFY: AtomicBool = AtomicBool::new(false);
+
+/// Test/helper: forbid centroid densify for the rest of the process.
+pub fn set_forbid_centroid_densify(on: bool) {
+    FORBID_CENTROID_DENSIFY.store(on, Ordering::Relaxed);
+}
+
+pub fn centroid_densify_forbidden() -> bool {
+    FORBID_CENTROID_DENSIFY.load(Ordering::Relaxed)
+}
+
+/// RAII: while alive, centroid densify panics if called (corridor plan path).
+pub struct ForbidCentroidDensify;
+
+impl ForbidCentroidDensify {
+    pub fn enter() -> Self {
+        set_forbid_centroid_densify(true);
+        Self
+    }
+}
+
+impl Drop for ForbidCentroidDensify {
+    fn drop(&mut self) {
+        set_forbid_centroid_densify(false);
+    }
+}
+
 /// Insert linear midpoints so each consecutive hop's span is ≤ `max_hop_deg`.
 /// Prefer [`densify_route_points_via_regions`] for cross-sea corridors.
 pub fn densify_route_points(points: &[(f64, f64)], max_hop_deg: f64) -> Vec<(f64, f64)> {
@@ -2008,6 +2038,24 @@ pub fn try_densify_joints_via_skeleton_path(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn centroid_densify_forbidden_panics_when_called() {
+        set_forbid_centroid_densify(true);
+        let result = std::panic::catch_unwind(|| {
+            let _ = densify_route_points_via_regions(
+                &[(60.0, 10.0), (61.0, 11.0)],
+                std::path::Path::new("/tmp"),
+                LONG_TRIP_CHUNK_DEG,
+            );
+        });
+        set_forbid_centroid_densify(false);
+        assert!(
+            result.is_err(),
+            "densify_route_points_via_regions must panic when forbidden"
+        );
+    }
+
     use super::*;
     use crate::routing::indexed::GRAPH_FORMAT_VERSION;
 

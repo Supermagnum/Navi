@@ -3051,8 +3051,8 @@ private fun NaviMapScreen() {
             }
         }
         // Prefer installed packs on the selected volume for *all* plans — not only
-        // long-trip. longTripEnabled still gates densify/chunk; pack visibility must
-        // not. Empty packDir with SD installs caused pack-miss → multi-minute PBF rebuild.
+        // long-trip. longTripEnabled only gates download-along-route; corridor densify
+        // is independent. Empty packDir with SD installs caused pack-miss → PBF rebuild.
         val longTripPackDir =
             runCatching { LongTripPackStorage.packDownloadDir(context) }.getOrNull()
         val pbf =
@@ -3558,11 +3558,14 @@ private fun NaviMapScreen() {
                         }.ifBlank { "Preparing ferry data…" }
                 status = msg
                 RoutingPlanLog.failed(ecoForPlan, durationMs, msg, result)
+                // Kick sidecar builds (incl. country-shared PBF leaves).
+                runCatching { FerrySidecarBackground.ensureFromInstalledMaps() }
                 // Wait for the background sidecar; do not restart densify every 1.5 s.
-                val maxWaitMs = 6 * 60_000L
+                val maxWaitMs = 15 * 60_000L
                 val stepMs = 2_000L
                 var waited = 0L
                 var idle = false
+                var sawRunning = false
                 while (isActive && waited < maxWaitMs) {
                     delay(stepMs)
                     waited += stepMs
@@ -3572,7 +3575,14 @@ private fun NaviMapScreen() {
                         if (prog.message.isNotBlank()) {
                             status = prog.message
                         }
-                        if (!prog.running) {
+                        if (prog.running) {
+                            sawRunning = true
+                        } else if (sawRunning) {
+                            idle = true
+                            break
+                        } else if (waited >= 8_000L && !FerrySidecarBackground.isRunning()) {
+                            // Nothing started after 8s — re-enqueue once more then retry plan.
+                            runCatching { FerrySidecarBackground.ensureFromInstalledMaps() }
                             idle = true
                             break
                         }

@@ -1809,7 +1809,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_ensure_corridor_skeleton() and 0xFFFF) != 13552) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_ensure_ferry_sidecar() and 0xFFFF) != 516) {
+    if ((lib.uniffi_navi_checksum_func_ensure_ferry_sidecar() and 0xFFFF) != 32373) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_ensure_indexed_maps() and 0xFFFF) != 55582) {
@@ -1833,7 +1833,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_export_saved_route_gpx() and 0xFFFF) != 43605) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_ferry_sidecar_is_ready() and 0xFFFF) != 31014) {
+    if ((lib.uniffi_navi_checksum_func_ferry_sidecar_is_ready() and 0xFFFF) != 28118) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_ferry_sidecar_progress_snapshot() and 0xFFFF) != 35556) {
@@ -2028,7 +2028,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_place_index_has_entries() and 0xFFFF) != 5969) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_plan_car_route() and 0xFFFF) != 20547) {
+    if ((lib.uniffi_navi_checksum_func_plan_car_route() and 0xFFFF) != 25656) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_plan_car_route_at() and 0xFFFF) != 44788) {
@@ -6134,7 +6134,8 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
-         * Build/refresh `{stem}.navi-ferry-overlay-{profile}.rkyv` from the region PBF.
+         * Build/refresh `{stem}.navi-ferry-overlay-{profile}.rkyv` from the region PBF
+         * (or shared country extract, e.g. `sweden-latest.osm.pbf` for Norrbotten).
          * Call from pack install / refresh background work — not from the plan path.
          */ fun `ensureFerrySidecar`(`packDir`: kotlin.String, `stem`: kotlin.String, `profile`: TravelProfile): kotlin.String {
             return FfiConverterString.lift(
@@ -6287,7 +6288,8 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
-         * True when the stem ferry sidecar meta matches the on-disk PBF fingerprint.
+         * True when the stem ferry sidecar meta matches the on-disk PBF fingerprint
+         * (leaf or shared country extract).
          */ fun `ferrySidecarIsReady`(`packDir`: kotlin.String, `stem`: kotlin.String, `profile`: TravelProfile): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     uniffiRustCall() { _status ->
@@ -7237,11 +7239,10 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
          * Android). Empty: search `data_dir` and `data_dir/long-trip-packs` when present.
          * Pass `""` only when the PBF already lives next to the packs.
          *
-         * `long_trip_enabled` gates densify/chunk for spans above [`LONG_TRIP_CHUNK_DEG`].
-         * Ordinary UI plans pass `false` so cross-stem mid trips (Raufoss→Bergen) stay
-         * on one A*. Same-stem coastal ODs with span > CHUNK densify even when longTrip
-         * is off so Automotive never materialises the full Vestlandet single-shot graph
-         * (Bergen→Stavanger ~259k nodes / ~985 MiB peak vs densify hops ~167k / ≤933).
+         * `long_trip_enabled` controls region download-along-route only (Kotlin
+         * LongTripCoordinator). Corridor densify runs for every multi-region trip and
+         * for same-stem coastal spans above CHUNK — independent of this flag. Inland
+         * same-stem ODs (ostlandet) stay single-shot so Hamar→Dombås is not detoured.
          *
          * `allowed_countries`: when `Some` (non-empty), hard-filters the graph to those
          * ISO-3166-1 alpha-2 codes ([`RouteOptions::allowed_countries`]). Host "Stay in
