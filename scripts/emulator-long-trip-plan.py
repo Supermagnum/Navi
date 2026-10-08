@@ -11,7 +11,9 @@ navi_via{i}_name, then reads back from the plan log what the plan received:
 
 The run is rejected (exit 2) when any of these differ from what was sent.
 Results (km, ferries, via distance, hops, plan peak memory) go to
-`<out>/result.json` beside the pulled plan artifacts.
+`<out>/result.json` beside the pulled plan artifacts, together with the place
+index on the pack volume (path, size, quick_check, rows per region), read
+before the plan with `sqlite3 -readonly`.
 
 Usage:
   scripts/emulator-long-trip-plan.py bevensen --datex none --out DIR
@@ -277,6 +279,37 @@ def pull(out):
     return got
 
 
+def place_index_facts():
+    """Place index on the pack volume, as InstalledMaps names it: path, size,
+    quick_check and rows per region. Read-only; never creates a file."""
+    snap = adb("shell", "cat", f"/data/user/0/{PKG}/files/installed-maps-snapshot.txt").stdout or ""
+    m = re.search(r"^place_index vol=(\S+) path=(\S+)", snap, re.M)
+    if not m:
+        unavail = re.search(r"^place_index UNAVAILABLE.*$", snap, re.M)
+        return {"error": unavail.group(0) if unavail else "no place_index line in InstalledMaps snapshot"}
+    vol, path = m.group(1), m.group(2)
+    rec = {"volume": vol, "path": path}
+    size = (adb("shell", f"stat -c %s {path} 2>/dev/null").stdout or "").strip()
+    rec["bytes"] = int(size) if size.isdigit() else None
+    if not rec["bytes"]:
+        return rec
+    uri = f"'file:{path}?mode=ro'"
+    qc = adb("shell", f"sqlite3 -readonly {uri} 'PRAGMA quick_check;'", timeout=900)
+    rec["quick_check"] = (qc.stdout or qc.stderr or "").strip()
+    rows = adb(
+        "shell",
+        f"sqlite3 -readonly {uri} 'SELECT region_id, COUNT(*) FROM name_entries GROUP BY 1;'",
+        timeout=900,
+    )
+    counts = {}
+    for ln in (rows.stdout or "").splitlines():
+        rid, _, n = ln.rpartition("|")
+        if rid and n.strip().isdigit():
+            counts[rid] = int(n)
+    rec["rows"] = counts
+    return rec
+
+
 def summarize(files, trip, text):
     """Route facts from the pulled artifacts; the stored report is cut to 2000
     chars, so ferries come from `enumerations` and Stage B legs from logcat."""
@@ -332,6 +365,8 @@ def main():
     ensure_running()
     pid0 = pid()
     log(f"serial={SERIAL} pid={pid0}")
+    index = place_index_facts()
+    log(f"place index: {index.get('path')} bytes={index.get('bytes')} quick_check={index.get('quick_check')}")
 
     deadline = time.time() + a.timeout_min * 60
     while True:
@@ -363,6 +398,7 @@ def main():
         "peak_reset": peak_reset,
         "input_lines": lines,
         "input_mismatch": bad,
+        "place_index": index,
     }
     rec.update(summarize(files, trip, text))
     rec["accepted"] = not bad and status == "done"

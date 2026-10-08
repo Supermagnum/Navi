@@ -63,6 +63,8 @@ object InstalledMaps {
         val partialFetchIds: Set<String> = emptySet(),
         /** Why place search is unavailable for every region, or null when the index file is usable. */
         val placeIndexProblem: String? = null,
+        /** Where the place index lives (`place_index vol=... path=...`), when known. */
+        val placeIndexLocation: String? = null,
     )
 
     data class MissingIndexBuild(
@@ -218,6 +220,7 @@ object InstalledMaps {
                 missingPlaceIndex = missing,
                 partialFetchIds = partial,
                 placeIndexProblem = problem,
+                placeIndexLocation = placeIndexLocationLine,
             ),
         )
         snapshotRoot.set(internalDataDir.absolutePath)
@@ -228,14 +231,7 @@ object InstalledMaps {
                 .toSet()
         runCatching { PlaceIndexReady.syncStampFromIndex(internalDataDir, intactIds) }
         runCatching {
-            val body =
-                buildString {
-                    appendLine(summaryText())
-                    if (placeIndexLocationLine != null) {
-                        appendLine(placeIndexLocationLine)
-                    }
-                }
-            File(internalDataDir, "installed-maps-snapshot.txt").writeText(body)
+            File(internalDataDir, "installed-maps-snapshot.txt").writeText(summaryText())
         }
         Log.i(
             TAG,
@@ -267,6 +263,7 @@ object InstalledMaps {
                     appendLine("  ${m.regionId} pbf=${m.pbfPath?.absolutePath ?: "-"} ${m.note}")
                 }
             }
+            snap.placeIndexLocation?.let { appendLine(it) }
         }
     }
 

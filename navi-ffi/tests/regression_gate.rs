@@ -24,7 +24,9 @@
 //! - `NAVI_GATE_CASES`: comma list of case ids to run (default: all).
 //! - `NAVI_GATE_EMU`: output dir of `scripts/emulator-long-trip-plan.py` for
 //!   this build. Its wall time and planning peak memory are stored with the run;
-//!   the peak is checked against [`EMU_PEAK_LIMIT_MB`].
+//!   the peak is checked against [`EMU_PEAK_LIMIT_MB`]. The place index on the
+//!   pack volume must exist, be non-empty, pass `quick_check`, and keep every
+//!   region and row count in `tests/regression_gate_place_index.json`.
 //!
 //! Run: `cargo test --release -p navi-ffi --test regression_gate -- --ignored --nocapture`
 
@@ -831,6 +833,7 @@ fn emulator_check(dir: &Path, gate_failures: &mut Vec<&'static str>) -> serde_js
             "planning peak {peak_mb:.0} MB vs limit {EMU_PEAK_LIMIT_MB:.0} MB"
         ));
     }
+    failures.extend(place_index_failures(&r["place_index"]));
     let status = if failures.is_empty() { "PASS" } else { "FAIL" };
     eprintln!(
         "[gate] emulator {status}: trip {}, {:.1} km, ferries {}, hops {}, wall {wall_s:.1} s, \
@@ -857,8 +860,53 @@ fn emulator_check(dir: &Path, gate_failures: &mut Vec<&'static str>) -> serde_js
         "hops": r["hops"],
         "wall_s": wall_s,
         "plan_peak_mb": peak_mb,
+        "place_index": r["place_index"],
         "failures": failures,
     })
+}
+
+/// Place index facts from the harness against the stored per-region row
+/// counts: a missing, empty or damaged file, a lost region or fewer rows fail.
+fn place_index_failures(pi: &serde_json::Value) -> Vec<String> {
+    let expected: BTreeMap<String, u64> = serde_json::from_str(
+        &std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/regression_gate_place_index.json"),
+        )
+        .expect("read regression_gate_place_index.json"),
+    )
+    .expect("parse regression_gate_place_index.json");
+    let mut failures = Vec::new();
+    if let Some(e) = pi["error"].as_str() {
+        failures.push(format!("place index: {e}"));
+        return failures;
+    }
+    let path = pi["path"].as_str().unwrap_or("?");
+    if pi["bytes"].as_u64().unwrap_or(0) == 0 {
+        failures.push(format!("place index {path} missing or empty"));
+        return failures;
+    }
+    if pi["quick_check"].as_str() != Some("ok") {
+        failures.push(format!("place index quick_check: {}", pi["quick_check"]));
+    }
+    for (region, want) in &expected {
+        match pi["rows"][region.as_str()].as_u64() {
+            None => failures.push(format!(
+                "place index region {region} missing (expected {want} rows)"
+            )),
+            Some(got) if got < *want => failures.push(format!(
+                "place index region {region}: {got} rows, expected {want}"
+            )),
+            Some(_) => {}
+        }
+    }
+    let rows = pi["rows"].as_object().map(|m| m.len()).unwrap_or(0);
+    eprintln!(
+        "[gate] place index {path}: {} bytes, quick_check {}, {rows} regions, {} stored",
+        pi["bytes"],
+        pi["quick_check"],
+        expected.len()
+    );
+    failures
 }
 
 fn median(xs: &[f64]) -> f64 {
