@@ -368,7 +368,18 @@ pub fn select_skeleton_edge_indices_for_region(
                     continue;
                 }
                 let hw = pack.edge_highway[i].as_str();
-                if !matches!(hw, "secondary" | "secondary_link") {
+                // Include secondary/tertiary/unclassified/residential on the rim
+                // so Geofabrik cuts that omit shared primary OSM ids still meet
+                // within metres (jamtland↔dalarna was ~7 km primary-only).
+                if !matches!(
+                    hw,
+                    "secondary"
+                        | "secondary_link"
+                        | "tertiary"
+                        | "tertiary_link"
+                        | "unclassified"
+                        | "residential"
+                ) {
                     continue;
                 }
                 let s = pack.edge_src[i] as usize;
@@ -1083,9 +1094,14 @@ pub fn skeleton_to_route_graph(skel: &CorridorSkeletonFile, profile: RoutingProf
 }
 
 /// Max distance for synthetic land links when Geofabrik / skeleton cuts leave
-/// no shared OSM id. FU23 Elsa fair corridor needs ~26 km (jamtland↔ostlandet
-/// start/goal frontier); 15 km was too tight and left only the Turku detour.
-pub const ADJACENT_SKELETON_STITCH_MAX_M: f64 = 30_000.0;
+/// no shared OSM id. Border joins must be real road cuts (metres), not km-scale
+/// bridges. Missing low-class border roads should be pulled into the skeleton
+/// instead of inventing long stitch edges (FU24).
+pub const ADJACENT_SKELETON_STITCH_MAX_M: f64 = 250.0;
+
+/// Intra-region weak-component cuts (missing secondary inside one extract) may
+/// still need a slightly longer bridge than a border cut.
+pub const INTRA_SKELETON_STITCH_MAX_M: f64 = 2_000.0;
 
 /// Merge region skeletons on shared OSM node ids (land borders + shared ferry
 /// terminals). Directed edges and `base_weight` travel-time costs are preserved.
@@ -1104,13 +1120,13 @@ pub fn merge_skeletons_to_route_graph(
         .collect();
     let mut graph = crate::routing::indexed::merge_tile_graphs(graphs, profile);
     let n_intra =
-        stitch_intra_skeleton_component_gaps(&mut graph, skels, ADJACENT_SKELETON_STITCH_MAX_M);
+        stitch_intra_skeleton_component_gaps(&mut graph, skels, INTRA_SKELETON_STITCH_MAX_M);
     let n_adj = stitch_adjacent_skeleton_gaps(&mut graph, skels, ADJACENT_SKELETON_STITCH_MAX_M);
     if n_intra + n_adj > 0 {
         log::info!(
             target: "NaviPlan",
             "skeleton_adjacent_stitch intra={n_intra} adjacent={n_adj} \
-             max_m={ADJACENT_SKELETON_STITCH_MAX_M}"
+             adj_max_m={ADJACENT_SKELETON_STITCH_MAX_M} intra_max_m={INTRA_SKELETON_STITCH_MAX_M}"
         );
     }
     graph

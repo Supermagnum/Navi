@@ -37,7 +37,8 @@ pub const SKELETON_BUILD_SOFT_RSS_MB: u64 = 1800;
 /// all on-disk skeletons (border rule, densify filter, ferry merge, …).
 /// Bumped when border detection / rim-secondary selection changes so installed
 /// skeletons rebuild (FU23: jamtland↔dalarna had a 25 km major-only gap).
-pub const CORRIDOR_SKELETON_BUILD: u32 = 3;
+/// FU24: bump when rim secondary/tertiary/unclassified/residential selection changes.
+pub const CORRIDOR_SKELETON_BUILD: u32 = 4;
 
 fn profile_slug(profile: RoutingProfile) -> &'static str {
     match profile {
