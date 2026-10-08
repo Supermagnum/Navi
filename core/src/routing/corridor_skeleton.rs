@@ -2175,6 +2175,15 @@ pub fn try_stage_b_densify_from_skeletons(
         clear_access_forbidden(&mut graph);
     }
 
+    for (name, r, _, _) in &candidates {
+        log::info!(
+            target: "NaviPlan",
+            "stage_b candidate name={name} km={:.1} min={:.1} ferries={}",
+            r.total_km,
+            r.total_min,
+            r.ferries.len()
+        );
+    }
     let best_min = candidates
         .iter()
         .map(|(_, r, _, _)| r.total_min)
