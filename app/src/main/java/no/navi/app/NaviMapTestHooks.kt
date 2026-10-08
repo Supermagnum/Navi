@@ -292,6 +292,8 @@ object NaviMapTestHooks {
     /** Whether the missing-coverage download dialog is visible. */
     @Volatile
     var missingCoveragePromptVisible: Boolean = false
+    var absurdDetourPromptVisible: Boolean = false
+    var lastAbsurdDetourMessage: String = ""
 
     /**
      * When true, Plan route (Hiking) may load a host-staged polyline + breaks

@@ -1015,6 +1015,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_search_places(
     ): Int
+    external fun uniffi_navi_checksum_func_set_accept_absurd_detour(
+    ): Int
     external fun uniffi_navi_checksum_func_set_osm_weekly_reminder(
     ): Int
     external fun uniffi_navi_checksum_func_set_route_plan_timing_enabled(
@@ -1495,6 +1497,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_search_places(`indexDbPath`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_set_accept_absurd_detour(`accept`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_navi_fn_func_set_osm_weekly_reminder(`dataDir`: RustBuffer.ByValue,`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_navi_fn_func_set_route_plan_timing_enabled(`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -2209,6 +2213,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_search_places() and 0xFFFF) != 63913) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_set_accept_absurd_detour() and 0xFFFF) != 1999) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_set_osm_weekly_reminder() and 0xFFFF) != 15431) {
@@ -8179,6 +8186,19 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
 }
     )
     }
+    
+
+        /**
+         * Arm a one-shot accept for the absurd installed-only detour gate (product UI).
+         */ fun `setAcceptAbsurdDetour`(`accept`: kotlin.Boolean)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_set_accept_absurd_detour(
+    
+        
+        FfiConverterBoolean.lower(`accept`),_status)
+}
+    
     
 
         /**

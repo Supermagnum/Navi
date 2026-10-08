@@ -13,6 +13,9 @@ static PLAN_TILE_BUDGET_AT_LEAST: AtomicUsize = AtomicUsize::new(0);
 /// Stage B: skip chord-only tile budget caps; select tiles covering the coarse path.
 static STAGE_B_ACTIVE: AtomicBool = AtomicBool::new(false);
 
+/// One-shot UI accept for an absurd installed-only detour (cleared when read).
+static ACCEPT_ABSURD_DETOUR: AtomicBool = AtomicBool::new(false);
+
 thread_local! {
     /// Full coarse path (lat, lon) for Stage B hop corridor tile selection.
     static STAGE_B_COARSE_PATH: RefCell<Option<Vec<(f64, f64)>>> = const { RefCell::new(None) };
@@ -268,11 +271,13 @@ pub fn effective_chunk_pad_schedule_take() -> usize {
 pub const MAX_PLAN_TILE_BYTES: u64 = 550 * 1024 * 1024;
 
 /// Coarse-route / straight-line ratio above which an installed-only path is an
-/// absurd detour when the direct corridor has missing regions. Chosen so
-/// Elsa→Sjuvass (~2.57×) is blocked while Bevensen (~1.52×), Aga (~1.47×) and
-/// Florø (~1.58×) stay accepted.
+/// absurd detour **when the direct corridor has missing regions**. Fully
+/// installed corridors are never blocked for length (fjord/mountain routes
+/// often exceed 2× crow-flies).
 pub const ABSURD_DETOUR_RATIO: f64 = 2.0;
 
+/// Soft cap on estimated packed graph nodes loaded for one densify hop
+/// (path tiles + pad). Replaces a raw tile count: tiles vary hugely by region.
 /// Max path-covering graph tiles allowed in one densify hop (before pad).
 /// Hop2 Elsa loaded 22 tiles / ~591k nodes and disconnected under the widen
 /// cap; 10 tiles keeps merged nodes ~≤250k (~1.2 GiB peak with pad).
@@ -302,22 +307,17 @@ pub fn waypoints_straight_km(waypoints: &[(f64, f64)]) -> f64 {
         .sum()
 }
 
-/// True when `coarse_km` is much longer than the crow-flies corridor.
-///
-/// Typical cause: the natural corridor crosses uninstalled regions, so the
-/// coarse search silently detours through whatever packs are Ready. Callers
-/// must not present that path as the route; they name [`missing_direct_regions`]
-/// (or the full direct corridor when packs are present but the coarse path is
-/// still absurd) and may offer the detour only as an explicit choice
-/// (`NAVI_ACCEPT_ABSURD_DETOUR=1` or future UI accept flag).
-///
-/// Threshold [`ABSURD_DETOUR_RATIO`] (2.0): Elsa→Sjuvass coarse ~2.57× is
-/// blocked; Bevensen ~1.52×, Aga ~1.47×, Florø ~1.58× stay accepted.
+/// True when an installed-only coarse path is an absurd detour **and** at least
+/// one direct-corridor region is missing. Never triggers when every region on
+/// the outline corridor is installed (fjord/mountain routes may be >>2× straight).
 pub fn is_absurd_installed_detour(
     coarse_km: f64,
     waypoints: &[(f64, f64)],
-    _missing_direct_regions: &[String],
+    missing_direct_regions: &[String],
 ) -> bool {
+    if missing_direct_regions.is_empty() {
+        return false;
+    }
     if coarse_km <= 0.0 || waypoints.len() < 2 {
         return false;
     }
@@ -328,8 +328,17 @@ pub fn is_absurd_installed_detour(
     coarse_km / straight > ABSURD_DETOUR_RATIO
 }
 
-/// Env override: accept an absurd installed-only detour explicitly.
+/// Arm a one-shot UI accept for the next absurd-detour gate check.
+pub fn set_accept_absurd_detour(accept: bool) {
+    ACCEPT_ABSURD_DETOUR.store(accept, Ordering::SeqCst);
+}
+
+/// Debug-only env override. Product UI uses [`set_accept_absurd_detour`];
+/// release builds ignore `NAVI_ACCEPT_ABSURD_DETOUR`.
 pub fn accept_absurd_detour_env() -> bool {
+    if !cfg!(debug_assertions) {
+        return false;
+    }
     matches!(
         std::env::var("NAVI_ACCEPT_ABSURD_DETOUR")
             .ok()
@@ -337,6 +346,11 @@ pub fn accept_absurd_detour_env() -> bool {
             .map(str::trim),
         Some("1") | Some("true") | Some("yes")
     )
+}
+
+/// True when the user accepted the detour in the app, or (debug only) via env.
+pub fn accept_absurd_detour() -> bool {
+    ACCEPT_ABSURD_DETOUR.swap(false, Ordering::SeqCst) || accept_absurd_detour_env()
 }
 
 /// Snap budget for densify hop endpoints (region centroids), not user stops.

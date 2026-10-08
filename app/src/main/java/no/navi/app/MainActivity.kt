@@ -1117,6 +1117,10 @@ private fun NaviMapScreen() {
     var recalculatingRoute by remember { mutableStateOf(false) }
     var showHikingReroutePrompt by remember { mutableStateOf(false) }
     var missingCoveragePrompt by remember { mutableStateOf<MissingRegionCoverage?>(null) }
+    /** Absurd installed-only detour: missing region names + optional accept. */
+    var absurdDetourPrompt by remember {
+        mutableStateOf<Pair<String, List<String>>?>(null)
+    }
     var rerouteJob by remember { mutableStateOf<Job?>(null) }
     val planAbort =
         remember {
@@ -3644,6 +3648,38 @@ private fun NaviMapScreen() {
                 }
                 return@LaunchedEffect
             }
+            if (result.searchTerminateReason == "absurd_detour") {
+                val missingNames =
+                    Regex("""missing_regions=([^\n]+)""")
+                        .find(result.report)
+                        ?.groupValues
+                        ?.getOrNull(1)
+                        ?.split(',')
+                        ?.map { it.trim() }
+                        ?.filter { it.isNotEmpty() }
+                        .orEmpty()
+                val detourKm =
+                    Regex("""detour_km=([0-9.]+)""")
+                        .find(result.report)
+                        ?.groupValues
+                        ?.getOrNull(1)
+                        .orEmpty()
+                val labels =
+                    missingNames.map { RegionCoverage.displayName(it) }.ifEmpty {
+                        listOf("additional map regions")
+                    }
+                val msg =
+                    "The installed maps only offer a much longer route" +
+                        (if (detourKm.isNotBlank()) " (~$detourKm km)" else "") +
+                        ". Install ${labels.joinToString(", ")} for the direct corridor, " +
+                        "or accept the longer route."
+                absurdDetourPrompt = msg to missingNames
+                NaviMapTestHooks.absurdDetourPromptVisible = true
+                NaviMapTestHooks.lastAbsurdDetourMessage = msg
+                status = msg
+                RoutingPlanLog.failed(ecoForPlan, durationMs, msg, result)
+                return@LaunchedEffect
+            }
             val missingPath =
                 when {
                     result.searchTerminateReason == "missing_regions" -> {
@@ -5755,6 +5791,57 @@ private fun NaviMapScreen() {
                         },
                         modifier = Modifier.testTag("btn_missing_coverage_dismiss"),
                     ) { Text("Not now") }
+                },
+            )
+        }
+        absurdDetourPrompt?.let { (msg, missingNames) ->
+            AlertDialog(
+                onDismissRequest = {
+                    absurdDetourPrompt = null
+                    NaviMapTestHooks.absurdDetourPromptVisible = false
+                    status = "Longer route declined — install the missing regions or cancel"
+                },
+                title = { Text("Longer route available") },
+                text = { Text(msg) },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            val path = missingNames.firstOrNull().orEmpty()
+                            absurdDetourPrompt = null
+                            NaviMapTestHooks.absurdDetourPromptVisible = false
+                            if (path.isNotBlank()) {
+                                selectedGeofabrikPath = path
+                                downloadContinent = GeofabrikDownloadCatalog.continentForPath(path)
+                                val countryHit = GeofabrikDownloadCatalog.findByPath(path)
+                                downloadScopeCountry =
+                                    countryHit != null &&
+                                    countryHit.path == path.trim().trim('/')
+                                showTools = true
+                                startRegionDownload(path)
+                            }
+                        },
+                        modifier = Modifier.testTag("btn_absurd_detour_install"),
+                    ) {
+                        Text(
+                            if (missingNames.isNotEmpty()) {
+                                "Install ${RegionCoverage.displayName(missingNames.first())}"
+                            } else {
+                                "Install maps"
+                            },
+                        )
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            absurdDetourPrompt = null
+                            NaviMapTestHooks.absurdDetourPromptVisible = false
+                            runCatching { uniffi.navi.setAcceptAbsurdDetour(true) }
+                            planKick += 1
+                            status = "Accepting longer installed-only route…"
+                        },
+                        modifier = Modifier.testTag("btn_absurd_detour_accept"),
+                    ) { Text("Accept longer route") }
                 },
             )
         }

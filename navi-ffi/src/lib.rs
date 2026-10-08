@@ -538,6 +538,12 @@ pub fn set_route_plan_timing_enabled(enabled: bool) {
     driver_break_core::routing::plan_perf::set_enabled(enabled);
 }
 
+/// Arm a one-shot accept for the absurd installed-only detour gate (product UI).
+#[uniffi::export]
+pub fn set_accept_absurd_detour(accept: bool) {
+    driver_break_core::routing::plan_bbox::set_accept_absurd_detour(accept);
+}
+
 #[uniffi::export]
 pub fn route_plan_timing_enabled() -> bool {
     ROUTE_PLAN_TIMING_ENABLED.load(Ordering::Relaxed)
@@ -3035,8 +3041,29 @@ fn plan_car_route_chunked_legs(
         "datex_plan_sits={}\n",
         datex_all.as_ref().map(|v| v.len()).unwrap_or(0)
     ));
+    let track = driver_break_core::export::parse_route_polyline(&polyline);
+    let total_poly_km =
+        driver_break_core::routing::path_repair::polyline_length_m(&track) / 1000.0;
+    let total_poly_agree =
+        driver_break_core::routing::path_repair::total_distance_agrees_with_polyline(
+            distance_km * 1000.0,
+            &track,
+            0.005,
+        );
+    let total_poly_rel = if distance_km > 0.0 {
+        ((total_poly_km - distance_km).abs() / distance_km) * 100.0
+    } else {
+        0.0
+    };
+    report.push_str(&format!(
+        "total_poly_km={total_poly_km:.3}; total_km={distance_km:.3}; \
+         total_poly_agree_0_5pct={total_poly_agree}; total_poly_rel_pct={total_poly_rel:.3}\n"
+    ));
+    driver_break_core::routing::plan_file_log::line(format!(
+        "total_poly_agree km={distance_km:.3} poly_km={total_poly_km:.3} \
+         agree_0_5pct={total_poly_agree} rel_pct={total_poly_rel:.3}"
+    ));
     {
-        let track = driver_break_core::export::parse_route_polyline(&polyline);
         if track.len() >= 2 {
             let n = track.len();
             let idxs = [0, n / 6, n / 3, n / 2, (2 * n) / 3, (5 * n) / 6, n - 1];
@@ -3063,7 +3090,8 @@ fn plan_car_route_chunked_legs(
     };
     driver_break_core::routing::plan_file_log::line(format!(
         "plan_summary km={distance_km:.3} eta_min={eta_minutes:.1} \
-         route_ferry_legs={ferry_leg_count} terminate={terminate} hops={}",
+         route_ferry_legs={ferry_leg_count} terminate={terminate} hops={} \
+         total_poly_agree_0_5pct={total_poly_agree}",
         hops.len().saturating_sub(1)
     ));
     if let Ok(body) = serde_json::to_string_pretty(&serde_json::json!({ "hops": hops_sidecar })) {
@@ -3652,7 +3680,7 @@ fn plan_car_route_inner(
                 sb.total_km,
                 &route_points,
                 &missing_direct,
-            ) && !driver_break_core::routing::plan_bbox::accept_absurd_detour_env()
+            ) && !driver_break_core::routing::plan_bbox::accept_absurd_detour()
             {
                 let straight =
                     driver_break_core::routing::plan_bbox::waypoints_straight_km(&route_points);
@@ -3687,7 +3715,7 @@ fn plan_car_route_inner(
                      FAIL: absurd_detour coarse_km={:.1} straight_km={:.1} ratio={:.2}\n\
                      {install_line}\n\
                      detour_available=true detour_km={:.1} detour_min={:.1}\n\
-                     accept_hint=NAVI_ACCEPT_ABSURD_DETOUR=1\n",
+                     accept_hint=ui_accept_absurd_detour\n",
                     sb.total_km, straight, ratio, sb.total_km, sb.total_min
                 ));
                 r.search_terminate_reason = "absurd_detour".into();
