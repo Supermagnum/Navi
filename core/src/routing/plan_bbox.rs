@@ -278,9 +278,15 @@ pub const ABSURD_DETOUR_RATIO: f64 = 2.0;
 
 /// Soft cap on estimated packed graph nodes loaded for one densify hop
 /// (path tiles + pad). Replaces a raw tile count: tiles vary hugely by region.
-/// Max path-covering graph tiles allowed in one densify hop (before pad).
-/// Hop2 Elsa loaded 22 tiles / ~591k nodes and disconnected under the widen
-/// cap; 10 tiles keeps merged nodes ~≤250k (~1.2 GiB peak with pad).
+/// Density ≈ archive bytes / 200 (packed car-graph). ~500k nodes ≈ ~1 GiB peak.
+pub const MAX_PATH_NODES_PER_HOP: usize = 500_000;
+
+/// Refuse micro-splits: never insert a hop joint closer than this (metres) even
+/// when the node budget is exceeded (overlapping large tiles along a dense
+/// coarse path previously produced 1000+ hops).
+pub const MIN_HOP_SPLIT_GAP_M: f64 = 40_000.0;
+
+/// Deprecated alias: hop split uses [`MAX_PATH_NODES_PER_HOP`] (estimated nodes).
 pub const MAX_PATH_TILES_PER_HOP: usize = 10;
 
 /// Great-circle distance in km between two WGS84 points.

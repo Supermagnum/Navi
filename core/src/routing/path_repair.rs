@@ -37,6 +37,15 @@ pub fn hop_distance_agrees_with_polyline(
     ((poly_m - distance_m).abs() / distance_m) <= max_rel
 }
 
+/// Same agree check for the full concatenated route (reported km vs polyline).
+pub fn total_distance_agrees_with_polyline(
+    distance_m: f64,
+    polyline_pts: &[(f64, f64)],
+    max_rel: f64,
+) -> bool {
+    hop_distance_agrees_with_polyline(distance_m, polyline_pts, max_rel)
+}
+
 /// Encode `(lat, lon)` points as Navi `"lon,lat;…"`.
 pub fn encode_lat_lon_polyline(pts: &[(f64, f64)]) -> String {
     let mut s = String::new();
@@ -72,6 +81,7 @@ mod tests {
         assert!(hop_distance_agrees_with_polyline(poly_m * 1.004, &pts, 0.005));
         assert!(!hop_distance_agrees_with_polyline(poly_m * 1.01, &pts, 0.005));
         assert!(!hop_distance_agrees_with_polyline(0.0, &pts, 0.005));
+        assert!(total_distance_agrees_with_polyline(poly_m, &pts, 0.005));
     }
 
     #[test]

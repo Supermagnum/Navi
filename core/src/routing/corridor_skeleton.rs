@@ -1933,11 +1933,12 @@ fn hops_from_report(report: &CoarseRouteReport, start: (f64, f64), end: (f64, f6
     hops
 }
 
-/// Tile bboxes from Ready manifests under [dirs] for [profile].
+/// Tile bboxes + estimated node counts from Ready manifests under [dirs].
+/// Node estimate = archive bytes / 72 (empirical packed car-graph density).
 fn load_profile_tile_bboxes(
     dirs: &[&Path],
     profile: RoutingProfile,
-) -> Vec<(String, [f64; 4])> {
+) -> Vec<(String, [f64; 4], usize)> {
     use crate::routing::indexed::NaviManifest;
     let mut out = Vec::new();
     let mut seen = HashSet::new();
@@ -1962,7 +1963,12 @@ fn load_profile_tile_bboxes(
             };
             for t in tiles {
                 if seen.insert(t.file.clone()) {
-                    out.push((t.file.clone(), t.bbox));
+                    let bytes = std::fs::metadata(dir.join(&t.file))
+                        .map(|m| m.len())
+                        .unwrap_or(0);
+                    // Empirical packed car-graph density (~bytes/200 nodes).
+                    let est_nodes = ((bytes / 200) as usize).max(1);
+                    out.push((t.file.clone(), t.bbox, est_nodes));
                 }
             }
         }
@@ -1970,12 +1976,24 @@ fn load_profile_tile_bboxes(
     out
 }
 
-fn tiles_covering_point(tiles: &[(String, [f64; 4])], lat: f64, lon: f64) -> HashSet<String> {
+fn tiles_covering_point(
+    tiles: &[(String, [f64; 4], usize)],
+    lat: f64,
+    lon: f64,
+) -> HashSet<String> {
     tiles
         .iter()
-        .filter(|(_, b)| crate::routing::basemap::bbox_covers_point(*b, lat, lon))
-        .map(|(n, _)| n.clone())
+        .filter(|(_, b, _)| crate::routing::basemap::bbox_covers_point(*b, lat, lon))
+        .map(|(n, _, _)| n.clone())
         .collect()
+}
+
+fn tile_est_nodes(tiles: &[(String, [f64; 4], usize)], name: &str) -> usize {
+    tiles
+        .iter()
+        .find(|(n, _, _)| n == name)
+        .map(|(_, _, e)| *e)
+        .unwrap_or(1)
 }
 
 fn nearest_coarse_index(path: &[(f64, f64)], p: (f64, f64)) -> usize {
@@ -1990,17 +2008,16 @@ fn nearest_coarse_index(path: &[(f64, f64)], p: (f64, f64)) -> usize {
         .unwrap_or(0)
 }
 
-/// Split long same-region (or long multi-tile) hops so each hop's coarse-path
-/// tiles stay ≤ [`crate::routing::plan_bbox::MAX_PATH_TILES_PER_HOP`].
-/// Joints are nodes on the coarse path; each hop continues from the previous
-/// hop's exact end.
+/// Split long hops so estimated packed nodes for path-covering tiles stay
+/// ≤ [`crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP`]. Path tiles are never
+/// dropped; joints are nodes on the coarse path.
 pub fn split_hops_by_path_tile_budget(
     hops: Vec<(f64, f64)>,
     coarse_path: &[(f64, f64)],
     pack_dirs: &[&Path],
     profile: RoutingProfile,
 ) -> Vec<(f64, f64)> {
-    let max_tiles = crate::routing::plan_bbox::MAX_PATH_TILES_PER_HOP;
+    let max_nodes = crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP;
     if hops.len() < 2 || coarse_path.len() < 2 {
         return hops;
     }
@@ -2027,16 +2044,18 @@ pub fn split_hops_by_path_tile_budget(
             }
             let mut trial = active.clone();
             trial.extend(cover.iter().cloned());
-            if trial.len() > max_tiles && !active.is_empty() {
+            let trial_nodes: usize = trial.iter().map(|n| tile_est_nodes(&tiles, n)).sum();
+            let min_gap = crate::routing::plan_bbox::MIN_HOP_SPLIT_GAP_M;
+            let gap_ok = out.last().is_none_or(|&q| {
+                haversine_m(q.0, q.1, last_emit.0, last_emit.1) >= min_gap
+            });
+            if trial_nodes > max_nodes && !active.is_empty() && gap_ok {
                 // Emit joint at previous coarse node (exact path continuity).
-                if out
-                    .last()
-                    .is_none_or(|&q| haversine_m(q.0, q.1, last_emit.0, last_emit.1) > 200.0)
-                {
-                    out.push(last_emit);
-                }
+                out.push(last_emit);
                 active = cover;
             } else {
+                // Prefer a larger hop over micro-splits when tiles are huge /
+                // overlapping; densify pad still keeps peak bounded.
                 active = trial;
             }
             last_emit = p;
@@ -2071,8 +2090,8 @@ pub fn count_path_covering_tiles(
 ///
 /// Coarse path uses the active [`RouteOptions`] (avoid ferries/tolls/tunnels/
 /// motorways). When ferries are allowed: ferry-exclusion alternatives + 2%
-/// near-equal (fewer km wins). Hop joints = border crossings, ferry terminals,
-/// user vias. No centroid densify and no even hop_deg sampling.
+/// near-equal (fewest ferries, then fewer km). Hop joints = border crossings,
+/// ferry terminals, user vias. No centroid densify and no even hop_deg sampling.
 pub fn try_stage_b_densify_from_skeletons(
     pack_dirs: &[&Path],
     waypoints: &[(f64, f64)],
@@ -2189,13 +2208,15 @@ pub fn try_stage_b_densify_from_skeletons(
         .map(|f| format!("{}→{}", f.from_terminal, f.to_terminal))
         .collect();
     let note = format!(
-        "stage_b pick={} km={:.1} min={:.1} hops={} skels={} near_equal_2pct max_path_tiles={}",
+        "stage_b pick={} km={:.1} min={:.1} hops={} skels={} near_equal_2pct \
+         max_path_nodes={} ferries={}",
         pick.0,
         pick.1.total_km,
         pick.1.total_min,
         hops.len().saturating_sub(1),
         skels.len(),
-        crate::routing::plan_bbox::MAX_PATH_TILES_PER_HOP
+        crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP,
+        pick.1.ferries.len(),
     );
     log::info!(target: "NaviPlan", "{note} ferries={ferries:?}");
     Some(StageBDensify {
