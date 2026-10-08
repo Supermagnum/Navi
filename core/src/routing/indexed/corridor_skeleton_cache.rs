@@ -209,6 +209,26 @@ pub fn corridor_skeleton_ready(home: &Path, stem: &str, profile: RoutingProfile)
     skeleton_fresh(home, stem, profile)
 }
 
+/// True when the skeleton on disk was built by this code (build, format,
+/// profile) from the installed pack (generation, PBF size and time).
+///
+/// Unlike [`skeleton_fresh`] the neighbour part of the meta is not compared:
+/// it records other skeleton files' mtimes, so one neighbour rebuild would make
+/// every installed skeleton unusable for planning until all are rebuilt.
+pub fn skeleton_built_for_pack(home: &Path, stem: &str, profile: RoutingProfile) -> bool {
+    let Some(skel) = crate::routing::corridor_skeleton::resolve_skeleton_path(home, stem) else {
+        return false;
+    };
+    let meta_path = skeleton_meta_path(home, stem);
+    if !skel.is_file() || !meta_path.is_file() {
+        return false;
+    }
+    let want = want_fingerprint(home, stem, profile);
+    let got = fs::read_to_string(&meta_path).unwrap_or_default();
+    let pack_part = |s: &str| s.split(";neighbors=").next().unwrap_or("").to_string();
+    !want.is_empty() && pack_part(got.trim()) == pack_part(&want)
+}
+
 fn tile_paths(home: &Path, stem: &str, profile: RoutingProfile) -> Vec<PathBuf> {
     let Ok(man) = NaviManifest::load(&manifest_path(home, stem)) else {
         return Vec::new();
@@ -569,7 +589,8 @@ pub fn ensure_corridor_skeleton(
     Ok(())
 }
 
-/// Stems among `pack_dirs` that are on the trip corridor but lack a fresh skeleton.
+/// Stems among `pack_dirs` that are on the trip corridor but lack a skeleton
+/// built for the installed pack by this code ([`skeleton_built_for_pack`]).
 pub fn stems_missing_corridor_skeleton(
     pack_dirs: &[&Path],
     route_points: &[(f64, f64)],
@@ -603,7 +624,7 @@ pub fn stems_missing_corridor_skeleton(
         }) else {
             continue;
         };
-        if !corridor_skeleton_ready(home, &stem, profile) {
+        if !skeleton_built_for_pack(home, &stem, profile) {
             out.push(((*home).to_path_buf(), stem));
         }
     }

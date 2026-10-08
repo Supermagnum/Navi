@@ -1764,10 +1764,6 @@ pub fn build_coarse_route_report(
 }
 
 /// True when `path` visits each via in order (nearest node within `snap_m`).
-///
-/// Stage B alternatives are computed with the full waypoint list (origin, vias,
-/// destination) leg-by-leg in [`coarse_shortest_path`]. This check rejects any
-/// candidate whose merged path still misses a via (e.g. bad snap).
 pub fn path_visits_vias_in_order(
     graph: &RouteGraph,
     path: &[NodeId],
@@ -1802,9 +1798,8 @@ pub fn path_visits_vias_in_order(
 /// stays off: on a major-road skeleton it bloated expansions and steered free
 /// A* off Fehmarn onto HH.
 ///
-/// User vias in `waypoints` are applied to every call: each consecutive pair is
-/// routed as its own leg, so free / ferry-exclusion / no-ferry alternatives all
-/// pass every via in order.
+/// Each waypoint is snapped once ([`snap_coarse_waypoints`]); each consecutive
+/// pair is its own leg, and legs join at the shared via snap node.
 pub fn coarse_shortest_path(
     graph: &mut RouteGraph,
     waypoints: &[(f64, f64)],
@@ -1814,8 +1809,21 @@ pub fn coarse_shortest_path(
     if waypoints.len() < 2 {
         return None;
     }
-    graph.ensure_directed_snap_labels();
-    let opts = RouteOptions {
+    let snaps = snap_coarse_waypoints(graph, waypoints, snap_m, route_options)?;
+    let opts = coarse_route_options(route_options);
+    let mut full_path: Vec<NodeId> = Vec::new();
+    let mut full_edges: Vec<usize> = Vec::new();
+    let mut total_cost = 0.0;
+    for w in snaps.windows(2) {
+        let (path, edges, cost) = graph.shortest_path_with_options(w[0], w[1], false, &opts)?;
+        append_leg_path(&mut full_path, &mut full_edges, path, edges);
+        total_cost += cost;
+    }
+    Some((full_path, full_edges, total_cost))
+}
+
+fn coarse_route_options(route_options: &RouteOptions) -> RouteOptions {
+    RouteOptions {
         surface_routing_mode: Some(SurfaceRoutingMode::Offroad),
         avoid_motorways: route_options.avoid_motorways,
         toll_policy: route_options.toll_policy,
@@ -1825,40 +1833,57 @@ pub fn coarse_shortest_path(
         departure_local: route_options.departure_local,
         allowed_countries: route_options.allowed_countries.clone(),
         ..RouteOptions::default()
-    };
-    let mut full_path: Vec<NodeId> = Vec::new();
-    let mut full_edges: Vec<usize> = Vec::new();
-    let mut total_cost = 0.0;
-    for w in waypoints.windows(2) {
-        let (olat, olon) = w[0];
-        let (dlat, dlon) = w[1];
-        let oopts = RouteOptions {
-            snap_role: crate::routing::graph::SnapRole::Origin,
-            ..opts.clone()
-        };
-        let dopts = RouteOptions {
-            snap_role: crate::routing::graph::SnapRole::Destination,
-            ..opts.clone()
-        };
-        let (sid, _) = graph
-            .nearest_routable_with_options_max(olat, olon, &oopts, false, snap_m)
-            .ok()?;
-        let (gid, _) = graph
-            .nearest_routable_with_options_max(dlat, dlon, &dopts, false, snap_m)
-            .ok()?;
-        let (path, edges, cost) = graph.shortest_path_with_options(sid, gid, false, &opts)?;
-        if full_path.is_empty() {
-            full_path = path;
-            full_edges = edges;
-        } else {
-            if path.len() > 1 {
-                full_path.extend(path.into_iter().skip(1));
-            }
-            full_edges.extend(edges);
-        }
-        total_cost += cost;
     }
-    Some((full_path, full_edges, total_cost))
+}
+
+/// Snap every waypoint once on the coarse graph: origin must reach the main
+/// network, destination must be reachable from it, vias must do both.
+pub fn snap_coarse_waypoints(
+    graph: &mut RouteGraph,
+    waypoints: &[(f64, f64)],
+    snap_m: f64,
+    route_options: &RouteOptions,
+) -> Option<Vec<NodeId>> {
+    use crate::routing::graph::SnapRole;
+    graph.ensure_directed_snap_labels();
+    let opts = coarse_route_options(route_options);
+    let last = waypoints.len().checked_sub(1)?;
+    waypoints
+        .iter()
+        .enumerate()
+        .map(|(i, &(lat, lon))| {
+            let snap_role = if i == 0 {
+                SnapRole::Origin
+            } else if i == last {
+                SnapRole::Destination
+            } else {
+                SnapRole::Via
+            };
+            let o = RouteOptions {
+                snap_role,
+                ..opts.clone()
+            };
+            graph
+                .nearest_routable_with_options_max(lat, lon, &o, false, snap_m)
+                .ok()
+                .map(|(id, _)| id)
+        })
+        .collect()
+}
+
+/// Append one leg to a trip path; the leg must start at the trip's last node.
+fn append_leg_path(
+    full_path: &mut Vec<NodeId>,
+    full_edges: &mut Vec<usize>,
+    path: Vec<NodeId>,
+    edges: Vec<usize>,
+) {
+    if full_path.is_empty() {
+        *full_path = path;
+    } else {
+        full_path.extend(path.into_iter().skip(1));
+    }
+    full_edges.extend(edges);
 }
 
 /// Inter-region ferry edges: ferry whose endpoints' nearest skeleton regions differ,
@@ -1912,7 +1937,8 @@ pub fn inter_region_ferry_edges(
 /// Stage B densify result: hop joints + full coarse path for tile selection.
 #[derive(Debug, Clone)]
 pub struct StageBDensify {
-    /// Ordered hop waypoints: origin, joints (border/ferry/via), destination.
+    /// Ordered hop waypoints: origin, joints (border/ferry), exact user vias,
+    /// destination.
     pub hops: Vec<(f64, f64)>,
     /// Full coarse path node lat/lon (for corridor tiles + pad).
     pub coarse_path: Vec<(f64, f64)>,
@@ -1920,16 +1946,204 @@ pub struct StageBDensify {
     pub total_km: f64,
     pub ferries: Vec<String>,
     pub note: String,
+    /// Per-leg alternatives with eligibility and pick (one entry per leg).
+    pub legs: Vec<Vec<StageBLegCandidate>>,
 }
 
-fn load_skeletons_from_dirs(dirs: &[&Path]) -> Vec<CorridorSkeletonFile> {
-    load_skeletons_from_dirs_filtered(dirs, None)
+impl StageBDensify {
+    /// One report line per leg alternative.
+    pub fn alternatives_report(&self) -> String {
+        let mut out = String::new();
+        for (li, leg) in self.legs.iter().enumerate() {
+            for c in leg {
+                out.push_str(&format!(
+                    "stage_b_leg={} alt={} km={:.1} min={:.1} ferries={} eligible={} pick={}\n",
+                    li + 1,
+                    c.name,
+                    c.km,
+                    c.min,
+                    c.ferries,
+                    c.eligible,
+                    c.picked
+                ));
+            }
+        }
+        out
+    }
+}
+
+/// One coarse alternative for one leg (between two consecutive waypoints).
+#[derive(Debug, Clone)]
+pub struct StageBLegCandidate {
+    pub name: String,
+    pub km: f64,
+    pub min: f64,
+    pub ferries: usize,
+    pub eligible: bool,
+    pub picked: bool,
+}
+
+/// Approved near-equal rule. Input per alternative: `(total_min, ferries, km)`.
+///
+/// Eligible iff total time is within 2 % of the fastest and it has no more
+/// ferries than the fastest (several equally fastest: the fewest of theirs).
+/// Among eligible, fewer km wins; equal km falls back to time.
+/// Returns the eligibility flags and the picked index.
+pub fn near_equal_pick(alts: &[(f64, usize, f64)]) -> Option<(Vec<bool>, usize)> {
+    let best_min = alts.iter().map(|a| a.0).fold(f64::INFINITY, f64::min);
+    if !best_min.is_finite() {
+        return None;
+    }
+    let fastest_ferries = alts
+        .iter()
+        .filter(|a| a.0 <= best_min + 1e-9)
+        .map(|a| a.1)
+        .min()?;
+    let eligible: Vec<bool> = alts
+        .iter()
+        .map(|a| a.0 <= best_min * 1.02 && a.1 <= fastest_ferries)
+        .collect();
+    let pick = (0..alts.len()).filter(|&i| eligible[i]).min_by(|&i, &j| {
+        alts[i]
+            .2
+            .total_cmp(&alts[j].2)
+            .then_with(|| alts[i].0.total_cmp(&alts[j].0))
+    })?;
+    Some((eligible, pick))
+}
+
+/// One coarse alternative path for a leg.
+struct LegAlternative {
+    name: String,
+    report: CoarseRouteReport,
+    path: Vec<NodeId>,
+}
+
+/// Alternatives for one leg `from` to `to`: free, each ferry of the free path
+/// excluded, and no ferries (the last two only when ferries are allowed).
+/// Every alternative starts at `from` and ends at `to`.
+fn leg_alternatives(
+    graph: &mut RouteGraph,
+    border_osm: &HashSet<i64>,
+    from: NodeId,
+    to: NodeId,
+    route_options: &RouteOptions,
+) -> Vec<LegAlternative> {
+    let opts = coarse_route_options(route_options);
+    let mut out: Vec<LegAlternative> = Vec::new();
+    let push = |graph: &RouteGraph, name: String, note: &str, out: &mut Vec<LegAlternative>| {
+        let Some((path, edges, _)) = graph.shortest_path_with_options(from, to, false, &opts)
+        else {
+            return;
+        };
+        if path.first() != Some(&from) || path.last() != Some(&to) {
+            return;
+        }
+        let report =
+            build_coarse_route_report(&name, graph, &path, &edges, border_osm, &[], 0, 0, note);
+        out.push(LegAlternative { name, report, path });
+    };
+    push(graph, "free".into(), "stage_b free", &mut out);
+    if route_options.avoid_ferries || out.is_empty() {
+        return out;
+    }
+    let free_ferries = out[0].report.ferries.clone();
+    for leg in &free_ferries {
+        clear_access_forbidden(graph);
+        forbid_ferry_edges_matching_leg(graph, leg, 3_000.0);
+        let name = format!("excl_{}_{}", leg.from_terminal, leg.to_terminal);
+        let note = format!("excl {}→{}", leg.from_terminal, leg.to_terminal);
+        push(graph, name, &note, &mut out);
+    }
+    clear_access_forbidden(graph);
+    for e in graph.edges.iter_mut().filter(|e| e.is_ferry) {
+        e.access_forbidden = true;
+    }
+    push(graph, "no_ferries".into(), "no ferries", &mut out);
+    clear_access_forbidden(graph);
+    out
+}
+
+/// Stage B on a merged skeleton graph: snap every waypoint once, pick each leg
+/// from its own alternatives, join legs at the via snap nodes.
+struct StageBPlan {
+    snaps: Vec<NodeId>,
+    legs: Vec<Vec<StageBLegCandidate>>,
+    picks: Vec<LegAlternative>,
+}
+
+fn stage_b_plan_on_graph(
+    graph: &mut RouteGraph,
+    border_osm: &HashSet<i64>,
+    waypoints: &[(f64, f64)],
+    snap_m: f64,
+    route_options: &RouteOptions,
+) -> Option<StageBPlan> {
+    let snaps = snap_coarse_waypoints(graph, waypoints, snap_m, route_options)?;
+    let mut legs = Vec::with_capacity(snaps.len() - 1);
+    let mut picks = Vec::with_capacity(snaps.len() - 1);
+    for (li, w) in snaps.windows(2).enumerate() {
+        let mut alts = leg_alternatives(graph, border_osm, w[0], w[1], route_options);
+        let summary: Vec<(f64, usize, f64)> = alts
+            .iter()
+            .map(|a| {
+                (
+                    a.report.total_min,
+                    a.report.ferries.len(),
+                    a.report.total_km,
+                )
+            })
+            .collect();
+        let Some((eligible, pick)) = near_equal_pick(&summary) else {
+            log::warn!(target: "NaviPlan", "stage_b leg={} no alternative", li + 1);
+            return None;
+        };
+        let table: Vec<StageBLegCandidate> = alts
+            .iter()
+            .enumerate()
+            .map(|(i, a)| StageBLegCandidate {
+                name: a.name.clone(),
+                km: a.report.total_km,
+                min: a.report.total_min,
+                ferries: a.report.ferries.len(),
+                eligible: eligible[i],
+                picked: i == pick,
+            })
+            .collect();
+        for c in &table {
+            log::info!(
+                target: "NaviPlan",
+                "stage_b leg={} alt={} km={:.1} min={:.1} ferries={} eligible={} pick={}",
+                li + 1,
+                c.name,
+                c.km,
+                c.min,
+                c.ferries,
+                c.eligible,
+                c.picked
+            );
+        }
+        legs.push(table);
+        picks.push(alts.swap_remove(pick));
+    }
+    Some(StageBPlan { snaps, legs, picks })
+}
+
+fn load_skeletons_from_dirs(dirs: &[&Path], profile: RoutingProfile) -> Vec<CorridorSkeletonFile> {
+    load_skeletons_from_dirs_filtered(dirs, None, profile)
 }
 
 /// Load skeletons; when `only_stems` is set, skip every other region file.
+///
+/// A skeleton is used only when its meta says it was built by this code from
+/// the installed pack ([`skeleton_built_for_pack`]), so a skeleton from another
+/// build is never read.
+///
+/// [`skeleton_built_for_pack`]: crate::routing::indexed::skeleton_built_for_pack
 fn load_skeletons_from_dirs_filtered(
     dirs: &[&Path],
     only_stems: Option<&HashSet<String>>,
+    profile: RoutingProfile,
 ) -> Vec<CorridorSkeletonFile> {
     let mut out = Vec::new();
     let mut seen = HashSet::new();
@@ -1937,29 +2151,33 @@ fn load_skeletons_from_dirs_filtered(
         let Ok(rd) = std::fs::read_dir(dir) else {
             continue;
         };
-        let mut paths: Vec<PathBuf> = rd
+        let mut stems: Vec<String> = rd
             .flatten()
-            .map(|e| e.path())
-            .filter(|p| {
-                p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
-                    n.ends_with(".navi-corridor-skeleton.bin")
-                        || n.ends_with(".navi-corridor-skeleton.json")
-                })
+            .filter_map(|e| {
+                let name = e.file_name().into_string().ok()?;
+                name.strip_suffix(".navi-corridor-skeleton.bin")
+                    .or_else(|| name.strip_suffix(".navi-corridor-skeleton.json"))
+                    .map(str::to_string)
             })
             .collect();
-        paths.sort();
-        for p in paths {
+        stems.sort();
+        stems.dedup();
+        for stem in stems {
+            if only_stems.is_some_and(|want| !want.contains(&stem)) || seen.contains(&stem) {
+                continue;
+            }
+            if !crate::routing::indexed::skeleton_built_for_pack(dir, &stem, profile) {
+                log::warn!(target: "NaviPlan", "stage_b skip stale skeleton stem={stem}");
+                continue;
+            }
+            let Some(p) = resolve_skeleton_path(dir, &stem) else {
+                continue;
+            };
             let Ok(s) = read_skeleton_file(&p) else {
                 continue;
             };
-            if let Some(want) = only_stems {
-                if !want.contains(&s.leaf_stem) {
-                    continue;
-                }
-            }
-            if seen.insert(s.leaf_stem.clone()) {
-                out.push(s);
-            }
+            seen.insert(stem);
+            out.push(s);
         }
     }
     out
@@ -2205,11 +2423,13 @@ pub fn count_path_covering_tiles(
 
 /// Stage B: densify from persistent corridor skeletons.
 ///
-/// Coarse path uses the active [`RouteOptions`] (avoid ferries/tolls/tunnels/
-/// motorways). When ferries are allowed: free + per-ferry-exclusion + no-ferry
-/// alternatives, all routed through the same waypoints. Near-equal pick: within
-/// 2% of fastest time and no more ferries than the fastest; then fewer km.
-/// Hop joints = border crossings, ferry terminals, user vias.
+/// The trip is planned leg by leg between consecutive waypoints. Every waypoint
+/// is snapped once on the coarse graph; each leg has its own alternatives (free,
+/// each ferry excluded, no ferries; the last two only when ferries are allowed)
+/// and its own near-equal pick ([`near_equal_pick`]). Legs join at the via snap
+/// node, and hop chains run to the exact via coordinates, so no step sees a
+/// trip-wide route that skips a via. Hop joints = border crossings, ferry
+/// terminals, user vias.
 pub fn try_stage_b_densify_from_skeletons(
     pack_dirs: &[&Path],
     waypoints: &[(f64, f64)],
@@ -2219,12 +2439,13 @@ pub fn try_stage_b_densify_from_skeletons(
     if waypoints.len() < 2 {
         return None;
     }
+    let snap_m = 35_000.0;
     // Trip-local first: corridor + neighbours. Widen to every installed skeleton
     // only when the coarse search finds no route on that subset.
     let local_stems = trip_local_skeleton_stems(waypoints);
     let mut skels = match &local_stems {
         Some(stems) => {
-            let s = load_skeletons_from_dirs_filtered(pack_dirs, Some(stems));
+            let s = load_skeletons_from_dirs_filtered(pack_dirs, Some(stems), profile);
             log::info!(
                 target: "NaviPlan",
                 "stage_b trip_local stems={} loaded={}",
@@ -2233,209 +2454,104 @@ pub fn try_stage_b_densify_from_skeletons(
             );
             s
         }
-        None => load_skeletons_from_dirs(pack_dirs),
+        None => load_skeletons_from_dirs(pack_dirs, profile),
     };
     if skels.is_empty() {
-        log::info!(target: "NaviPlan", "stage_b densify: no persistent skeletons");
+        log::info!(target: "NaviPlan", "stage_b densify: no fresh persistent skeletons");
         return None;
     }
     let mut border_osm = border_osm_from_skeletons(&skels);
     let mut graph = merge_skeletons_to_route_graph(&skels, profile);
-    let snap_m = 35_000.0;
-    let free_path = coarse_shortest_path(&mut graph, waypoints, snap_m, route_options);
-    let (path, edges, _) = match free_path {
-        Some(v) => v,
-        None if local_stems.is_some() => {
-            log::info!(
-                target: "NaviPlan",
-                "stage_b trip_local miss; widening to all installed skeletons"
-            );
-            skels = load_skeletons_from_dirs(pack_dirs);
-            if skels.is_empty() {
-                return None;
-            }
-            border_osm = border_osm_from_skeletons(&skels);
-            graph = merge_skeletons_to_route_graph(&skels, profile);
-            coarse_shortest_path(&mut graph, waypoints, snap_m, route_options)?
+    let mut plan = stage_b_plan_on_graph(&mut graph, &border_osm, waypoints, snap_m, route_options);
+    if plan.is_none() && local_stems.is_some() {
+        log::info!(
+            target: "NaviPlan",
+            "stage_b trip_local miss; widening to all installed skeletons"
+        );
+        skels = load_skeletons_from_dirs(pack_dirs, profile);
+        if skels.is_empty() {
+            return None;
         }
-        None => return None,
-    };
-    let vias = &waypoints[1..waypoints.len().saturating_sub(1)];
-    let free = build_coarse_route_report(
-        "stage_b_free",
+        border_osm = border_osm_from_skeletons(&skels);
+        graph = merge_skeletons_to_route_graph(&skels, profile);
+        plan = stage_b_plan_on_graph(&mut graph, &border_osm, waypoints, snap_m, route_options);
+    }
+    let plan = plan?;
+    Some(assemble_stage_b(
+        plan,
         &graph,
-        &path,
-        &edges,
-        &border_osm,
-        vias,
-        0,
-        0,
-        "stage_b free",
-    );
-
-    // Candidates: free + (when ferries allowed) exclude each ferry + no ferries.
-    // Every candidate is routed through the same waypoints (vias included).
-    let via_snap_m = 2_500.0;
-    let mut candidates: Vec<(String, CoarseRouteReport, Vec<NodeId>, Vec<usize>)> = Vec::new();
-    if path_visits_vias_in_order(&graph, &path, vias, via_snap_m) {
-        candidates.push(("free".into(), free.clone(), path.clone(), edges.clone()));
-    } else {
-        log::warn!(
-            target: "NaviPlan",
-            "stage_b drop free: path misses a user via"
-        );
-    }
-
-    if !route_options.avoid_ferries {
-        for leg in &free.ferries {
-            clear_access_forbidden(&mut graph);
-            forbid_ferry_edges_matching_leg(&mut graph, leg, 3_000.0);
-            if let Some((p, e, _)) =
-                coarse_shortest_path(&mut graph, waypoints, snap_m, route_options)
-            {
-                if !path_visits_vias_in_order(&graph, &p, vias, via_snap_m) {
-                    log::warn!(
-                        target: "NaviPlan",
-                        "stage_b drop excl {}→{}: path misses a user via",
-                        leg.from_terminal,
-                        leg.to_terminal
-                    );
-                    continue;
-                }
-                let r = build_coarse_route_report(
-                    "stage_b_excl",
-                    &graph,
-                    &p,
-                    &e,
-                    &border_osm,
-                    vias,
-                    0,
-                    0,
-                    &format!("excl {}→{}", leg.from_terminal, leg.to_terminal),
-                );
-                candidates.push((
-                    format!("excl_{}_{}", leg.from_terminal, leg.to_terminal),
-                    r,
-                    p,
-                    e,
-                ));
-            }
-        }
-        clear_access_forbidden(&mut graph);
-        for e in graph.edges.iter_mut().filter(|e| e.is_ferry) {
-            e.access_forbidden = true;
-        }
-        if let Some((p, e, _)) = coarse_shortest_path(&mut graph, waypoints, snap_m, route_options)
-        {
-            if path_visits_vias_in_order(&graph, &p, vias, via_snap_m) {
-                let r = build_coarse_route_report(
-                    "stage_b_no_ferry",
-                    &graph,
-                    &p,
-                    &e,
-                    &border_osm,
-                    vias,
-                    0,
-                    0,
-                    "no ferries",
-                );
-                candidates.push(("no_ferries".into(), r, p, e));
-            } else {
-                log::warn!(
-                    target: "NaviPlan",
-                    "stage_b drop no_ferries: path misses a user via"
-                );
-            }
-        }
-        clear_access_forbidden(&mut graph);
-    }
-
-    if candidates.is_empty() {
-        log::warn!(target: "NaviPlan", "stage_b densify: no candidates pass all vias");
-        return None;
-    }
-
-    // FU25 near-equal rule (only): eligible iff total_min within 2% of the
-    // fastest candidate and ferry count ≤ that of the fastest; among eligible,
-    // fewer km wins.
-    for (name, r, _, _) in &candidates {
-        log::info!(
-            target: "NaviPlan",
-            "stage_b candidate name={name} km={:.1} min={:.1} ferries={}",
-            r.total_km,
-            r.total_min,
-            r.ferries.len()
-        );
-    }
-    let best_min = candidates
-        .iter()
-        .map(|(_, r, _, _)| r.total_min)
-        .fold(f64::INFINITY, f64::min);
-    // Ferry count of the fastest candidate(s): if several share best_min, use
-    // the minimum ferry count among them as the eligibility ceiling.
-    let fastest_ferries = candidates
-        .iter()
-        .filter(|(_, r, _, _)| r.total_min <= best_min + 1e-9)
-        .map(|(_, r, _, _)| r.ferries.len())
-        .min()
-        .unwrap_or(0);
-    let eligible: Vec<_> = candidates
-        .iter()
-        .filter(|(_, r, _, _)| r.total_min <= best_min * 1.02 && r.ferries.len() <= fastest_ferries)
-        .collect();
-    for (name, r, _, _) in &candidates {
-        let ok = r.total_min <= best_min * 1.02 && r.ferries.len() <= fastest_ferries;
-        log::info!(
-            target: "NaviPlan",
-            "stage_b eligible={ok} name={name} km={:.1} min={:.1} ferries={} \
-             best_min={best_min:.1} fastest_ferries={fastest_ferries}",
-            r.total_km,
-            r.total_min,
-            r.ferries.len()
-        );
-    }
-    let pick = eligible.into_iter().min_by(|a, b| {
-        a.1.total_km
-            .partial_cmp(&b.1.total_km)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| {
-                a.1.total_min
-                    .partial_cmp(&b.1.total_min)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-    })?;
-
-    let start = waypoints[0];
-    let end = *waypoints.last().unwrap();
-    let hops_raw = hops_from_report(&pick.1, start, end);
-    let coarse_path = path_latlon(&graph, &pick.2);
-    let hops = split_hops_by_path_tile_budget(hops_raw, &coarse_path, pack_dirs, profile);
-    let ferries: Vec<String> = pick
-        .1
-        .ferries
-        .iter()
-        .map(|f| format!("{}→{}", f.from_terminal, f.to_terminal))
-        .collect();
-    let note = format!(
-        "stage_b pick={} km={:.1} min={:.1} hops={} skels={} near_equal_2pct \
-         max_path_nodes={} ferries={}",
-        pick.0,
-        pick.1.total_km,
-        pick.1.total_min,
-        hops.len().saturating_sub(1),
+        waypoints,
+        pack_dirs,
+        profile,
         skels.len(),
+    ))
+}
+
+/// Join the per-leg picks into one hop chain. Each leg's hops run from its exact
+/// start waypoint to its exact end waypoint; a via is the end of one leg and the
+/// start of the next.
+fn assemble_stage_b(
+    plan: StageBPlan,
+    graph: &RouteGraph,
+    waypoints: &[(f64, f64)],
+    pack_dirs: &[&Path],
+    profile: RoutingProfile,
+    skel_count: usize,
+) -> StageBDensify {
+    let mut hops: Vec<(f64, f64)> = Vec::new();
+    let mut coarse_path: Vec<(f64, f64)> = Vec::new();
+    let mut total_min = 0.0;
+    let mut total_km = 0.0;
+    let mut ferries: Vec<String> = Vec::new();
+    let mut picks_note: Vec<String> = Vec::new();
+    for (li, pick) in plan.picks.iter().enumerate() {
+        let leg_start = waypoints[li];
+        let leg_end = waypoints[li + 1];
+        let leg_coarse = path_latlon(graph, &pick.path);
+        let leg_hops = split_hops_by_path_tile_budget(
+            hops_from_report(&pick.report, leg_start, leg_end),
+            &leg_coarse,
+            pack_dirs,
+            profile,
+        );
+        let skip = usize::from(!hops.is_empty());
+        hops.extend(leg_hops.into_iter().skip(skip));
+        let skip = usize::from(!coarse_path.is_empty());
+        coarse_path.extend(leg_coarse.into_iter().skip(skip));
+        total_min += pick.report.total_min;
+        total_km += pick.report.total_km;
+        ferries.extend(
+            pick.report
+                .ferries
+                .iter()
+                .map(|f| format!("{}→{}", f.from_terminal, f.to_terminal)),
+        );
+        picks_note.push(format!("leg{}={}", li + 1, pick.name));
+        debug_assert_eq!(pick.path.first(), Some(&plan.snaps[li]));
+        debug_assert_eq!(pick.path.last(), Some(&plan.snaps[li + 1]));
+    }
+    let note = format!(
+        "stage_b pick={} km={:.1} min={:.1} hops={} skels={} legs={} near_equal_2pct \
+         max_path_nodes={} ferries={}",
+        picks_note.join(","),
+        total_km,
+        total_min,
+        hops.len().saturating_sub(1),
+        skel_count,
+        plan.picks.len(),
         crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP,
-        pick.1.ferries.len(),
+        ferries.len(),
     );
     log::info!(target: "NaviPlan", "{note} ferries={ferries:?}");
-    Some(StageBDensify {
+    StageBDensify {
         hops,
         coarse_path,
-        total_min: pick.1.total_min,
-        total_km: pick.1.total_km,
+        total_min,
+        total_km,
         ferries,
         note,
-    })
+        legs: plan.legs,
+    }
 }
 
 /// True when a detailed (pack) graph would never carry synthetic skeleton stitch
@@ -2762,6 +2878,190 @@ mod tests {
             !path_visits_vias_in_order(&g, &misses_via, &[via], 2_500.0),
             "Stage B alternative that skips a user via must fail"
         );
+    }
+
+    /// Origin 1, via 2, destination 3 on a primary; 1-4-3 is a shorter trip that
+    /// skips the via; a ferry 1-2 gives leg 1 a ferry alternative.
+    fn via_trip_graph() -> RouteGraph {
+        use geo_types::Coord;
+        use osm4routing::Node;
+
+        let mut nodes = HashMap::new();
+        for (id, lat, lon) in [
+            (1i64, 60.0, 10.0),
+            (2, 60.5, 10.0),
+            (3, 61.0, 10.0),
+            (4, 60.5, 10.5),
+        ] {
+            nodes.insert(
+                NodeId(id),
+                Node {
+                    id: NodeId(id),
+                    coord: Coord { x: lon, y: lat },
+                    uses: 0,
+                },
+            );
+        }
+        let mk = |id: &str, s: i64, t: i64, len: f64, ferry: bool| -> GraphEdge {
+            let sn = nodes[&NodeId(s)].coord;
+            let tn = nodes[&NodeId(t)].coord;
+            GraphEdge {
+                id: id.into(),
+                source: NodeId(s),
+                target: NodeId(t),
+                length_m: len,
+                base_weight: len,
+                cost_mult: 1.0,
+                eco_weight: None,
+                start_lat: sn.y,
+                start_lon: sn.x,
+                end_lat: tn.y,
+                end_lon: tn.x,
+                shape: Vec::new(),
+                highway: Some("primary".into()),
+                maxspeed_kmh: Some(80.0),
+                maxspeed_practical_kmh: None,
+                maxspeed_advisory_kmh: None,
+                maxspeed_type: None,
+                maxspeed_variable: false,
+                minspeed_kmh: None,
+                name: None,
+                road_ref: None,
+                is_motorroad: false,
+                is_expressway: false,
+                is_oneway: false,
+                lanes: None,
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: false,
+                is_ferry: ferry,
+                ferry_interval_min: None,
+                is_tunnel: false,
+                is_boardwalk_crossing: false,
+                is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
+                access_forbidden: false,
+                surface_quality: crate::routing::graph::SurfaceQuality::Good,
+            }
+        };
+        let mut edges = Vec::new();
+        for (id, s, t, len, ferry) in [
+            ("a", 1, 2, 50_000.0, false),
+            ("b", 2, 3, 50_000.0, false),
+            ("skip", 1, 4, 40_000.0, false),
+            ("skip2", 4, 3, 40_000.0, false),
+            ("ferry", 1, 2, 45_000.0, true),
+        ] {
+            edges.push(mk(id, s, t, len, ferry));
+            edges.push(mk(&format!("{id}_rev"), t, s, len, ferry));
+        }
+        RouteGraph::from_parts(nodes, edges, RoutingProfile::Car)
+    }
+
+    const VIA_TRIP: [(f64, f64); 3] = [(60.0, 10.0), (60.5003, 10.0004), (61.0, 10.0)];
+
+    #[test]
+    fn near_equal_pick_follows_the_approved_rule() {
+        // (total_min, ferries, km): fastest has 1 ferry; within 2 % and no more
+        // ferries are eligible; fewer km wins among them.
+        let alts = [
+            (100.0, 1, 1500.0),
+            (101.5, 1, 1450.0),
+            (101.0, 2, 1300.0),
+            (103.0, 0, 1200.0),
+        ];
+        let (eligible, pick) = near_equal_pick(&alts).expect("pick");
+        assert_eq!(eligible, vec![true, true, false, false]);
+        assert_eq!(pick, 1);
+        let (_, pick) = near_equal_pick(&[(100.0, 0, 900.0), (102.5, 0, 800.0)]).expect("pick");
+        assert_eq!(pick, 0, "nothing within 2 %: the fastest stays");
+        assert!(near_equal_pick(&[]).is_none());
+    }
+
+    #[test]
+    fn stage_b_every_leg_alternative_runs_between_its_waypoints() {
+        let mut g = via_trip_graph();
+        let opts = RouteOptions::default();
+        let snaps = snap_coarse_waypoints(&mut g, &VIA_TRIP, 5_000.0, &opts).expect("snaps");
+        assert_eq!(snaps, vec![NodeId(1), NodeId(2), NodeId(3)]);
+        let border = HashSet::new();
+        let mut total = 0;
+        for w in snaps.windows(2) {
+            let alts = leg_alternatives(&mut g, &border, w[0], w[1], &opts);
+            assert!(!alts.is_empty(), "every leg has a free alternative");
+            for a in &alts {
+                assert_eq!(
+                    a.path.first(),
+                    Some(&w[0]),
+                    "{} must start at the leg start",
+                    a.name
+                );
+                assert_eq!(
+                    a.path.last(),
+                    Some(&w[1]),
+                    "{} must end at the leg end",
+                    a.name
+                );
+                assert!(
+                    !a.path.contains(&NodeId(4)),
+                    "{} takes the trip shortcut that skips the via",
+                    a.name
+                );
+            }
+            total += alts.len();
+        }
+        assert!(
+            total >= 4,
+            "free and no-ferry alternatives on both legs, got {total}"
+        );
+    }
+
+    #[test]
+    fn stage_b_delivered_route_passes_every_via() {
+        let mut g = via_trip_graph();
+        let opts = coarse_route_options(&RouteOptions::default());
+        let (direct, _, _) = g
+            .shortest_path_with_options(NodeId(1), NodeId(3), false, &opts)
+            .expect("direct");
+        assert!(
+            direct.contains(&NodeId(4)),
+            "fixture: the whole-trip shortest path skips the via"
+        );
+        let plan = stage_b_plan_on_graph(
+            &mut g,
+            &HashSet::new(),
+            &VIA_TRIP,
+            5_000.0,
+            &RouteOptions::default(),
+        )
+        .expect("plan");
+        let sb = assemble_stage_b(plan, &g, &VIA_TRIP, &[], RoutingProfile::Car, 1);
+        assert_eq!(sb.hops.first(), Some(&VIA_TRIP[0]));
+        assert_eq!(sb.hops.last(), Some(&VIA_TRIP[2]));
+        let via_hop = sb
+            .hops
+            .iter()
+            .position(|&h| h == VIA_TRIP[1])
+            .expect("the exact via coordinate must be a hop end");
+        assert!(via_hop > 0 && via_hop + 1 < sb.hops.len());
+        assert!(
+            sb.coarse_path.contains(&(60.5, 10.0)),
+            "coarse path joins at the via node"
+        );
+        assert!(
+            !sb.coarse_path.contains(&(60.5, 10.5)),
+            "coarse path skips the via"
+        );
+        assert_eq!(sb.legs.len(), 2);
+        for leg in &sb.legs {
+            assert_eq!(leg.iter().filter(|c| c.picked).count(), 1);
+        }
     }
 
     #[test]

@@ -3655,6 +3655,44 @@ fn plan_car_route_inner(
             // Still allow Stage B when *some* corridor packs exist (detour case).
         }
 
+        // Stage B plans only on skeletons built by this code for the installed
+        // packs: a missing or other-build skeleton stops here instead of being read.
+        let missing_skel = driver_break_core::routing::indexed::stems_missing_corridor_skeleton(
+            &pack_dir_refs,
+            &route_points,
+            routing_profile,
+        );
+        if !missing_skel.is_empty() {
+            let stem = missing_skel[0].1.clone();
+            let (status, pct) =
+                driver_break_core::routing::indexed::corridor_skeleton_preparing_status(&stem);
+            log::info!(
+                target: "NaviPlan",
+                "skeleton_preparing stems={} first={stem}",
+                missing_skel
+                    .iter()
+                    .map(|(_, s)| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+            let mut r = empty(format!(
+                "TEST_KIND=PLAN_CAR_ROUTE\n\
+                 skeleton_preparing=true\nskeleton_preparing_pct={pct}\n\
+                 skeleton_stale_stems={}\n\
+                 status={status}\nFAIL: {status}\n",
+                missing_skel
+                    .iter()
+                    .map(|(_, s)| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ));
+            driver_break_core::routing::plan_perf::note("skeleton_preparing", &status);
+            driver_break_core::routing::plan_perf::note_u64("skeleton_preparing_pct", pct as u64);
+            r.search_terminate_reason = "skeleton_preparing".into();
+            r.off_trail_advisory = status;
+            return r;
+        }
+
         let stage_b_opts = driver_break_core::routing::graph::RouteOptions {
             avoid_motorways,
             toll_policy,
@@ -3744,7 +3782,7 @@ fn plan_car_route_inner(
                     .join(";")
             );
             if hops.len() > 2 {
-                return plan_car_route_chunked_legs(
+                let mut r = plan_car_route_chunked_legs(
                     pbf_path,
                     elev_dir,
                     cache_dir,
@@ -3762,40 +3800,10 @@ fn plan_car_route_inner(
                     &hops,
                     allowed_countries,
                 );
-            }
-        } else {
-            let missing_skel = driver_break_core::routing::indexed::stems_missing_corridor_skeleton(
-                &pack_dir_refs,
-                &route_points,
-                routing_profile,
-            );
-            if !missing_skel.is_empty() {
-                let stem = missing_skel[0].1.clone();
-                let (status, pct) =
-                    driver_break_core::routing::indexed::corridor_skeleton_preparing_status(&stem);
-                log::info!(
-                    target: "NaviPlan",
-                    "skeleton_preparing stems={} first={stem}",
-                    missing_skel
-                        .iter()
-                        .map(|(_, s)| s.as_str())
-                        .collect::<Vec<_>>()
-                        .join(",")
-                );
-                let mut r = empty(format!(
-                    "TEST_KIND=PLAN_CAR_ROUTE\n\
-                     skeleton_preparing=true\nskeleton_preparing_pct={pct}\n\
-                     status={status}\nFAIL: {status}\n"
-                ));
-                driver_break_core::routing::plan_perf::note("skeleton_preparing", &status);
-                driver_break_core::routing::plan_perf::note_u64(
-                    "skeleton_preparing_pct",
-                    pct as u64,
-                );
-                r.search_terminate_reason = "skeleton_preparing".into();
-                r.off_trail_advisory = status;
+                r.report.push_str(&sb.alternatives_report());
                 return r;
             }
+        } else {
             if !missing_direct.is_empty() {
                 let named = missing_direct.join(",");
                 log::warn!(target: "NaviPlan", "missing_regions_before_densify {named}");
