@@ -1735,7 +1735,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_convert_progress_snapshot() and 0xFFFF) != 28171) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_corridor_skeleton_is_ready() and 0xFFFF) != 20842) {
+    if ((lib.uniffi_navi_checksum_func_corridor_skeleton_is_ready() and 0xFFFF) != 52338) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_corridor_skeleton_progress_snapshot() and 0xFFFF) != 31391) {
@@ -5755,7 +5755,7 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
-         * True when the stem corridor skeleton meta matches pack + neighbor fingerprints.
+         * True when the stem corridor skeleton meta matches the pack and neighbour-pack fingerprints.
          */ fun `corridorSkeletonIsReady`(`packDir`: kotlin.String, `stem`: kotlin.String, `profile`: TravelProfile): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     uniffiRustCall() { _status ->

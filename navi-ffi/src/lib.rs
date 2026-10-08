@@ -2371,7 +2371,21 @@ pub fn plan_car_route_at(
         }
         Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner(),
     };
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let inputs = plan_inputs_line(
+        profile,
+        use_eco,
+        avoid_motorways,
+        toll_policy,
+        avoid_ferries,
+        avoid_tunnels,
+        long_trip_enabled,
+        &data_dir,
+        (start_lat, start_lon),
+        (end_lat, end_lon),
+        &via_points,
+    );
+    driver_break_core::routing::plan_file_log::line(&inputs);
+    let mut result = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ch = driver_break_core::download::progress::ChannelGuard::enter(
             driver_break_core::download::progress::ProgressChannel::Plan,
         );
@@ -2412,7 +2426,45 @@ pub fn plan_car_route_at(
                 "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: native panic during plan_car_route: {msg}\n"
             ))
         }
-    }
+    };
+    result.report.push_str(&inputs);
+    result.report.push('\n');
+    result
+}
+
+/// One line with the inputs this plan received, so a caller can check that
+/// what it sent is what was planned.
+#[allow(clippy::too_many_arguments)]
+fn plan_inputs_line(
+    profile: TravelProfile,
+    use_eco: bool,
+    avoid_motorways: bool,
+    toll_policy: FfiTollPolicy,
+    avoid_ferries: bool,
+    avoid_tunnels: bool,
+    long_trip_enabled: bool,
+    data_dir: &str,
+    start: (f64, f64),
+    end: (f64, f64),
+    vias: &[FfiLatLon],
+) -> String {
+    let datex = driver_break_core::datex::datex_plan_mode(std::path::Path::new(data_dir.trim()));
+    let via_coords = vias
+        .iter()
+        .map(|v| format!("{:.6},{:.6}", v.lat, v.lon))
+        .collect::<Vec<_>>()
+        .join(";");
+    format!(
+        "plan_inputs profile={profile:?} eco={use_eco} avoid_motorways={avoid_motorways} \
+         toll={toll_policy:?} avoid_ferries={avoid_ferries} avoid_tunnels={avoid_tunnels} \
+         long_trip={long_trip_enabled} datex={datex:?} start={:.6},{:.6} end={:.6},{:.6} \
+         vias={} via_coords={via_coords}",
+        start.0,
+        start.1,
+        end.0,
+        end.1,
+        vias.len()
+    )
 }
 
 fn parse_departure_local(iso: Option<&str>) -> Option<chrono::NaiveDateTime> {
@@ -3655,8 +3707,8 @@ fn plan_car_route_inner(
             // Still allow Stage B when *some* corridor packs exist (detour case).
         }
 
-        // Stage B plans only on skeletons built by this code for the installed
-        // packs: a missing or other-build skeleton stops here instead of being read.
+        // Stage B plans only on fresh skeletons: a stale or missing corridor
+        // skeleton stops here instead of being read with another build's data.
         let missing_skel = driver_break_core::routing::indexed::stems_missing_corridor_skeleton(
             &pack_dir_refs,
             &route_points,
@@ -6521,7 +6573,7 @@ pub fn corridor_skeleton_progress_snapshot() -> FfiCorridorSkeletonProgress {
     }
 }
 
-/// True when the stem corridor skeleton meta matches pack + neighbor fingerprints.
+/// True when the stem corridor skeleton meta matches the pack and neighbour-pack fingerprints.
 #[uniffi::export]
 pub fn corridor_skeleton_is_ready(pack_dir: String, stem: String, profile: TravelProfile) -> bool {
     let home = Path::new(pack_dir.trim());
