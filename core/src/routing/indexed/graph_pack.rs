@@ -94,6 +94,9 @@ pub fn densify_skeleton_edge(highway: &str, is_ferry: bool) -> bool {
 /// Vestlandet nodes — the tablet RSS spike above 933 MiB.
 static DENSIFY_SKELETON_ONLY: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
+/// Corridor skeleton build: also keep secondary when densify-skeleton filter is on.
+static CORRIDOR_SKELETON_HYDRATE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 /// Exclusive hydrate gate: densify-skeleton builds and plan pack loads must not
 /// interleave. A process-wide densify flag would otherwise make the plan load
@@ -115,6 +118,21 @@ pub fn with_densify_skeleton_only<R>(f: impl FnOnce() -> R) -> R {
     out
 }
 
+/// Like densify-skeleton hydrate, but also keeps secondary / secondary_link so
+/// rim-band selection can close pack cuts without shared primary OSM ids.
+pub fn with_corridor_skeleton_hydrate<R>(f: impl FnOnce() -> R) -> R {
+    use std::sync::atomic::Ordering;
+    let _gate = pack_hydrate_lock()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let prev_d = DENSIFY_SKELETON_ONLY.swap(true, Ordering::SeqCst);
+    let prev_c = CORRIDOR_SKELETON_HYDRATE.swap(true, Ordering::SeqCst);
+    let out = f();
+    CORRIDOR_SKELETON_HYDRATE.store(prev_c, Ordering::SeqCst);
+    DENSIFY_SKELETON_ONLY.store(prev_d, Ordering::SeqCst);
+    out
+}
+
 /// Run `f` with densify-skeleton filtering guaranteed off (waits for any
 /// in-flight [`with_densify_skeleton_only`] tile load).
 pub fn with_plan_pack_hydrate<R>(f: impl FnOnce() -> R) -> R {
@@ -127,6 +145,10 @@ pub fn with_plan_pack_hydrate<R>(f: impl FnOnce() -> R) -> R {
 
 pub(crate) fn densify_skeleton_only_active() -> bool {
     DENSIFY_SKELETON_ONLY.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+pub(crate) fn corridor_skeleton_hydrate_active() -> bool {
+    CORRIDOR_SKELETON_HYDRATE.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone)]
@@ -452,15 +474,17 @@ impl FlatGraphPack {
         } else {
             HashSet::new()
         };
+        let corridor = corridor_skeleton_hydrate_active();
         let edge_ok = |i: usize| -> bool {
             if skeleton {
                 let hw = self.edge_highway[i].as_str();
                 let ferry = self.edge_is_ferry.get(i).copied().unwrap_or(0) != 0;
                 let major = densify_skeleton_edge(hw, ferry);
+                let secondary = corridor && matches!(hw, "secondary" | "secondary_link");
                 let pier = !ferry
                     && (ferry_nodes.contains(&self.edge_src[i])
                         || ferry_nodes.contains(&self.edge_tgt[i]));
-                if !major && !pier {
+                if !major && !secondary && !pier {
                     return false;
                 }
             }
@@ -764,6 +788,7 @@ impl ArchivedFlatGraphPack {
         } else {
             HashSet::new()
         };
+        let corridor = corridor_skeleton_hydrate_active();
         let edge_ok = |i: usize| -> bool {
             if skeleton {
                 let hw = self.edge_highway[i].as_str();
@@ -771,8 +796,9 @@ impl ArchivedFlatGraphPack {
                 let src = arch_u32(self.edge_src[i]);
                 let tgt = arch_u32(self.edge_tgt[i]);
                 let major = densify_skeleton_edge(hw, ferry);
+                let secondary = corridor && matches!(hw, "secondary" | "secondary_link");
                 let pier = !ferry && (ferry_nodes.contains(&src) || ferry_nodes.contains(&tgt));
-                if !major && !pier {
+                if !major && !secondary && !pier {
                     return false;
                 }
             }

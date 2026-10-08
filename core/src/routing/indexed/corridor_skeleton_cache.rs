@@ -3,7 +3,7 @@
 //! Host CLI [`navi-corridor-skeleton`] builds skeletons offline; this module
 //! mirrors that tile-at-a-time pipeline for idle background work beside installed
 //! packs. Peak RSS stays far below 4 GB by loading one tile under
-//! [`super::with_densify_skeleton_only`] then converting to [`FlatGraphPack`]
+//! [`super::with_corridor_skeleton_hydrate`] then converting to [`FlatGraphPack`]
 //! before the next tile.
 //!
 //! Soft RSS bound: [`SKELETON_BUILD_SOFT_RSS_MB`]. After each tile load, if
@@ -24,7 +24,7 @@ use crate::routing::corridor_skeleton::{
 };
 use crate::routing::graph::RoutingProfile;
 use super::ferry_overlay_cache::{ferry_sidecar_path, load_ferry_overlay_as_flat};
-use super::graph_pack::{with_densify_skeleton_only, FlatGraphPack};
+use super::graph_pack::{with_corridor_skeleton_hydrate, FlatGraphPack};
 use super::load::load_graph_pack_clips;
 use super::manifest::{manifest_path, NaviManifest};
 
@@ -35,7 +35,9 @@ pub const SKELETON_BUILD_SOFT_RSS_MB: u64 = 1800;
 
 /// Schema / algorithm revision in the `.meta` fingerprint. Bump to invalidate
 /// all on-disk skeletons (border rule, densify filter, ferry merge, …).
-pub const CORRIDOR_SKELETON_BUILD: u32 = 1;
+/// Bumped when border detection / rim-secondary selection changes so installed
+/// skeletons rebuild (FU23: jamtland↔dalarna had a 25 km major-only gap).
+pub const CORRIDOR_SKELETON_BUILD: u32 = 3;
 
 fn profile_slug(profile: RoutingProfile) -> &'static str {
     match profile {
@@ -219,10 +221,11 @@ fn tile_paths(home: &Path, stem: &str, profile: RoutingProfile) -> Vec<PathBuf> 
     out
 }
 
-/// Load one pack tile under densify-only, convert to flat, drop RouteGraph.
-/// Returns `None` when load fails or soft RSS is exceeded (tile skipped).
+/// Load one pack tile for corridor-skeleton build (major + secondary), convert
+/// to flat, drop RouteGraph. Returns `None` when load fails or soft RSS is
+/// exceeded (tile skipped).
 fn load_flat_tile_bounded(path: &Path, profile: RoutingProfile, stem: &str) -> Option<FlatGraphPack> {
-    let g = match with_densify_skeleton_only(|| load_graph_pack_clips(path, profile, None)) {
+    let g = match with_corridor_skeleton_hydrate(|| load_graph_pack_clips(path, profile, None)) {
         Ok(g) => g,
         Err(e) => {
             log::warn!(
@@ -269,30 +272,51 @@ fn collect_major_ids(home: &Path, stem: &str, profile: RoutingProfile) -> HashSe
     ids
 }
 
-/// Border OSM ids = intersection of this stem's major ids with node_ids from
-/// other installed stems' existing skeleton JSON files.
-fn border_osm_from_neighbor_skeletons(
+/// Border OSM ids = intersection of this stem's major ids with major (or
+/// skeleton) ids from bbox-adjacent installed neighbours.
+///
+/// Using neighbour **skeletons** alone was a chicken-and-egg: shared primary
+/// nodes only appear as borders after both sides already kept them, so pairs
+/// like jamtland↔dalarna stayed disconnected (~25 km gap) and Stage B detoured
+/// thousands of km through unrelated packs. Adjacent-pack major ids close that.
+fn border_osm_from_neighbor_packs(
     home: &Path,
     stem: &str,
+    profile: RoutingProfile,
     major_ids: &HashSet<i64>,
 ) -> HashSet<i64> {
+    let my_region = leaf_to_region(stem);
+    let my_bbox = crate::routing::basemap::region_bbox(&my_region);
     let mut neighbor_nodes = HashSet::new();
+    let mut seen = HashSet::new();
     let Ok(rd) = fs::read_dir(home) else {
         return HashSet::new();
     };
     for ent in rd.flatten() {
         let name = ent.file_name();
         let name = name.to_string_lossy();
-        let Some(other) = name.strip_suffix(".navi-corridor-skeleton.json") else {
+        let Some(other) = name.strip_suffix(".navi-manifest.json") else {
             continue;
         };
-        if other == stem {
+        if other == stem || !seen.insert(other.to_string()) {
             continue;
         }
-        let Ok(skel) = read_skeleton_file(&ent.path()) else {
-            continue;
+        let other_region = leaf_to_region(other);
+        let adjacent = match (
+            my_bbox,
+            crate::routing::basemap::region_bbox(&other_region),
+        ) {
+            (Some(a), Some(b)) => crate::long_trip::regions_bbox_adjacent(&a, &b, 0.15),
+            _ => true,
         };
-        neighbor_nodes.extend(skel.node_ids.iter().copied());
+        if adjacent {
+            neighbor_nodes.extend(collect_major_ids(home, other, profile));
+        } else {
+            let skel_path = skeleton_path(home, other);
+            if let Ok(skel) = read_skeleton_file(&skel_path) {
+                neighbor_nodes.extend(skel.node_ids.iter().copied());
+            }
+        }
     }
     major_ids.intersection(&neighbor_nodes).copied().collect()
 }
@@ -463,7 +487,7 @@ pub fn ensure_corridor_skeleton(
     set_progress(stem, 15, &format!("Preparing corridor skeleton for {label}…"));
     let major = collect_major_ids(home, stem, profile);
     set_progress(stem, 45, &format!("Preparing corridor skeleton for {label}…"));
-    let border = border_osm_from_neighbor_skeletons(home, stem, &major);
+    let border = border_osm_from_neighbor_packs(home, stem, profile, &major);
     log::info!(
         target: "NaviPlan",
         "corridor_skeleton major_ids={} border_ids={} stem={stem} VmHWM_mb={}",

@@ -691,7 +691,11 @@ fn select_tiles_within_budget_opts(
         }
     }
 
-    if selected.len() > max_tiles {
+    // Stage B: never drop a tile that covers any coarse-path sample. Memory is
+    // bounded by splitting long hops (`MAX_PATH_TILES_PER_HOP`), not by truncating
+    // the corridor mid-path (that produced weak_ok=false on Finland-scale hops).
+    let protect_all_samples = crate::routing::plan_bbox::stage_b_active();
+    if selected.len() > max_tiles && !protect_all_samples {
         selected.sort_by(|a, b| {
             file_len(&a.0)
                 .cmp(&file_len(&b.0))
@@ -731,9 +735,17 @@ fn select_tiles_within_budget_opts(
                 break;
             }
         }
+    } else if selected.len() > max_tiles && protect_all_samples {
+        log::info!(
+            target: "NaviPlan",
+            "stage_b_tile_budget: keeping {} path tiles above max_tiles={max_tiles} \
+             (split hops must bound memory)",
+            selected.len()
+        );
     }
     // Soft disk-byte budget: drop largest non-essential tiles while endpoints stay
     // covered. Prevents six ~70–130 MB car tiles (~1.1M edges) on densify hops.
+    // Stage B: do not drop path-covering tiles for the byte soft-cap either.
     let max_bytes = crate::routing::plan_bbox::MAX_PLAN_TILE_BYTES;
     let total_bytes = |files: &[(String, [f64; 4])]| -> u64 {
         files
@@ -746,7 +758,7 @@ fn select_tiles_within_budget_opts(
             .iter()
             .any(|(n, b)| tile_counts_as_endpoint_cover(n, *b, lat, lon, &ready_paths))
     };
-    while total_bytes(&selected) > max_bytes && selected.len() > 2 {
+    while !protect_all_samples && total_bytes(&selected) > max_bytes && selected.len() > 2 {
         let mut dropped = false;
         let order: Vec<usize> = {
             let mut idx: Vec<usize> = (0..selected.len()).collect();
@@ -1871,6 +1883,20 @@ fn resolve_ferry_overlay_pbf(
     bbox: [f64; 4],
 ) -> Option<PathBuf> {
     let _ = bbox;
+    resolve_ferry_overlay_pbf_in_dirs(dirs, home, stem)
+}
+
+/// Resolve the PBF used to build a ferry sidecar for `stem` under `home`
+/// (leaf extract, ferry-only extract, or shared country extract).
+pub fn resolve_ferry_overlay_pbf_for_stem(home: &Path, stem: &str) -> Option<PathBuf> {
+    resolve_ferry_overlay_pbf_in_dirs(&[], home, stem)
+}
+
+fn resolve_ferry_overlay_pbf_in_dirs(
+    dirs: &[&Path],
+    home: &Path,
+    stem: &str,
+) -> Option<PathBuf> {
     let search: Vec<&Path> = std::iter::once(home).chain(dirs.iter().copied()).collect();
     let ferry_name = format!("{stem}.ferry.osm.pbf");
     if let Some(p) = real_extract_in_dirs(&search, &ferry_name) {

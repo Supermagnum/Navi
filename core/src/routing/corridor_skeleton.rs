@@ -229,6 +229,18 @@ pub const FERRY_STITCH_MAX_M: f64 = 2_500.0;
 pub const OPPOSITE_CARRIAGEWAY_MIN_M: f64 = 8.0;
 pub const OPPOSITE_CARRIAGEWAY_MAX_M: f64 = 45.0;
 
+/// Degrees inward from the region AABB where secondary roads are kept so
+/// landsdel / län cuts that lack shared primary OSM ids still meet (FU23
+/// jamtland↔dalarna ~25 km primary-only gap).
+pub const BORDER_BAND_SECONDARY_DEG: f64 = 0.40;
+
+fn node_near_region_rim(lat: f64, lon: f64, bbox: [f64; 4], band: f64) -> bool {
+    lat <= bbox[0] + band
+        || lat >= bbox[2] - band
+        || lon <= bbox[1] + band
+        || lon >= bbox[3] - band
+}
+
 /// Build skeleton membership for one flat pack tile/region.
 ///
 /// Pass 1: motorway/trunk/primary + ferry (same as densify skeleton).
@@ -236,9 +248,20 @@ pub const OPPOSITE_CARRIAGEWAY_MAX_M: f64 = 45.0;
 /// Pass 3: grow land approaches from each ferry terminal through any non-ferry
 ///         highway until a major-skeleton node is reached (hop-capped).
 /// Pass 4: secondary edges that touch ferry or border anchors.
+/// Pass 5: secondary edges with an endpoint in the region-rim band (closes
+///         pack cuts where primary networks do not share OSM ids).
 pub fn select_skeleton_edge_indices(
     pack: &FlatGraphPack,
     border_osm_ids: &HashSet<i64>,
+) -> (HashSet<usize>, HashSet<u32>, HashSet<u32>) {
+    select_skeleton_edge_indices_for_region(pack, border_osm_ids, None)
+}
+
+/// Like [`select_skeleton_edge_indices`] with optional region id for rim secondary.
+pub fn select_skeleton_edge_indices_for_region(
+    pack: &FlatGraphPack,
+    border_osm_ids: &HashSet<i64>,
+    region_id: Option<&str>,
 ) -> (HashSet<usize>, HashSet<u32>, HashSet<u32>) {
     let n = pack.edge_src.len();
     let mut major: HashSet<usize> = HashSet::new();
@@ -333,6 +356,40 @@ pub fn select_skeleton_edge_indices(
             keep.insert(i);
         }
     }
+    // Pass 5: rim secondary — keep secondary near the region AABB so adjacent
+    // packs meet when primary networks do not share OSM ids at the cut.
+    if let Some(rid) = region_id {
+        if let Some(bbox) = crate::routing::basemap::region_bbox(rid) {
+            for i in 0..n {
+                if keep.contains(&i) {
+                    continue;
+                }
+                if pack.edge_is_ferry.get(i).copied().unwrap_or(0) != 0 {
+                    continue;
+                }
+                let hw = pack.edge_highway[i].as_str();
+                if !matches!(hw, "secondary" | "secondary_link") {
+                    continue;
+                }
+                let s = pack.edge_src[i] as usize;
+                let t = pack.edge_tgt[i] as usize;
+                let near = node_near_region_rim(
+                    pack.node_lats[s],
+                    pack.node_lons[s],
+                    bbox,
+                    BORDER_BAND_SECONDARY_DEG,
+                ) || node_near_region_rim(
+                    pack.node_lats[t],
+                    pack.node_lons[t],
+                    bbox,
+                    BORDER_BAND_SECONDARY_DEG,
+                );
+                if near {
+                    keep.insert(i);
+                }
+            }
+        }
+    }
     (keep, ferry_terminals, border_nodes)
 }
 
@@ -345,7 +402,7 @@ pub fn build_skeleton_from_pack(
 ) -> CorridorSkeletonFile {
     let t0 = Instant::now();
     let (keep, ferry_terminals, border_nodes) =
-        select_skeleton_edge_indices(pack, border_osm_ids);
+        select_skeleton_edge_indices_for_region(pack, border_osm_ids, Some(region_id));
     let mut used_nodes: HashMap<u32, u32> = HashMap::new();
     let mut node_ids = Vec::new();
     let mut node_lats = Vec::new();
@@ -1025,8 +1082,18 @@ pub fn skeleton_to_route_graph(skel: &CorridorSkeletonFile, profile: RoutingProf
     RouteGraph::from_parts(nodes, edges, profile)
 }
 
+/// Max distance for synthetic land links when Geofabrik / skeleton cuts leave
+/// no shared OSM id. FU23 Elsa fair corridor needs ~26 km (jamtland↔ostlandet
+/// start/goal frontier); 15 km was too tight and left only the Turku detour.
+pub const ADJACENT_SKELETON_STITCH_MAX_M: f64 = 30_000.0;
+
 /// Merge region skeletons on shared OSM node ids (land borders + shared ferry
 /// terminals). Directed edges and `base_weight` travel-time costs are preserved.
+/// After the OSM-id merge, bridge short Geofabrik cuts: (1) within one region
+/// when the skeleton has multiple weak components whose nearest nodes are
+/// within [`ADJACENT_SKELETON_STITCH_MAX_M`] (FU23 jamtland ~8.8 km), and
+/// (2) between bbox-adjacent regions that share no OSM ids and are not already
+/// weakly connected.
 pub fn merge_skeletons_to_route_graph(
     skels: &[CorridorSkeletonFile],
     profile: RoutingProfile,
@@ -1035,7 +1102,324 @@ pub fn merge_skeletons_to_route_graph(
         .iter()
         .map(|s| skeleton_to_route_graph(s, profile))
         .collect();
-    crate::routing::indexed::merge_tile_graphs(graphs, profile)
+    let mut graph = crate::routing::indexed::merge_tile_graphs(graphs, profile);
+    let n_intra =
+        stitch_intra_skeleton_component_gaps(&mut graph, skels, ADJACENT_SKELETON_STITCH_MAX_M);
+    let n_adj = stitch_adjacent_skeleton_gaps(&mut graph, skels, ADJACENT_SKELETON_STITCH_MAX_M);
+    if n_intra + n_adj > 0 {
+        log::info!(
+            target: "NaviPlan",
+            "skeleton_adjacent_stitch intra={n_intra} adjacent={n_adj} \
+             max_m={ADJACENT_SKELETON_STITCH_MAX_M}"
+        );
+    }
+    graph
+}
+
+/// Push a bidirectional trunk-equivalent stitch edge pair onto `graph.edges`.
+fn push_skeleton_stitch_edges(
+    graph: &mut RouteGraph,
+    id_a: i64,
+    id_b: i64,
+    alat: f64,
+    alon: f64,
+    blat: f64,
+    blon: f64,
+    d: f64,
+    tag: &str,
+) {
+    let na = NodeId(id_a);
+    let nb = NodeId(id_b);
+    for (src, tgt, sla, slo, ela, elo) in [
+        (na, nb, alat, alon, blat, blon),
+        (nb, na, blat, blon, alat, alon),
+    ] {
+        graph.edges.push(GraphEdge {
+            id: format!("{tag}-{src}-{tgt}", src = src.0, tgt = tgt.0),
+            source: src,
+            target: tgt,
+            length_m: d,
+            base_weight: d,
+            cost_mult: 1.0,
+            eco_weight: Some(d),
+            start_lat: sla,
+            start_lon: slo,
+            end_lat: ela,
+            end_lon: elo,
+            shape: vec![(slo, sla), (elo, ela)],
+            highway: Some("trunk".into()),
+            maxspeed_kmh: Some(70.0),
+            maxspeed_practical_kmh: None,
+            maxspeed_advisory_kmh: None,
+            maxspeed_type: None,
+            maxspeed_variable: false,
+            minspeed_kmh: None,
+            name: Some("skeleton_adjacent_stitch".into()),
+            road_ref: None,
+            is_motorroad: false,
+            is_expressway: false,
+            is_oneway: false,
+            lanes: None,
+            maxweight_t: None,
+            maxaxleload_t: None,
+            maxbogieweight_t: None,
+            maxheight_m: None,
+            maxwidth_m: None,
+            maxlength_m: None,
+            is_toll: false,
+            is_ferry: false,
+            ferry_interval_min: None,
+            is_tunnel: false,
+            is_boardwalk_crossing: false,
+            is_roundabout: false,
+            motor_vehicle_conditional: None,
+            access_conditional: None,
+            maxspeed_conditional: None,
+            access_forbidden: false,
+            surface_quality: SurfaceQuality::Good,
+        });
+    }
+}
+
+fn rebuild_graph_adjacency(graph: &mut RouteGraph) {
+    let profile = graph.profile();
+    let nodes = std::mem::take(&mut graph.nodes);
+    let edges = std::mem::take(&mut graph.edges);
+    *graph = RouteGraph::from_parts(nodes, edges, profile);
+}
+
+/// Bridge weak-component cuts inside a single region skeleton (missing secondary
+/// / Geofabrik edge drops). Only links components with ≥10 nodes each.
+fn stitch_intra_skeleton_component_gaps(
+    graph: &mut RouteGraph,
+    skels: &[CorridorSkeletonFile],
+    max_m: f64,
+) -> u32 {
+    let mut added = 0u32;
+    // Ignore tiny islands; Elsa jamtland cut is 3342↔177 nodes.
+    const MIN_COMP_NODES: usize = 50;
+    for skel in skels {
+        let skel_set: HashSet<i64> = skel.node_ids.iter().copied().collect();
+        let mut parent: HashMap<i64, i64> = skel
+            .node_ids
+            .iter()
+            .map(|&oid| (oid, oid))
+            .collect();
+        fn find(parent: &mut HashMap<i64, i64>, x: i64) -> i64 {
+            let mut root = x;
+            while parent[&root] != root {
+                root = parent[&root];
+            }
+            let mut cur = x;
+            while cur != root {
+                let next = parent[&cur];
+                parent.insert(cur, root);
+                cur = next;
+            }
+            root
+        }
+        fn union(parent: &mut HashMap<i64, i64>, a: i64, b: i64) {
+            let ra = find(parent, a);
+            let rb = find(parent, b);
+            if ra != rb {
+                parent.insert(rb, ra);
+            }
+        }
+        for e in &graph.edges {
+            if skel_set.contains(&e.source.0) && skel_set.contains(&e.target.0) {
+                union(&mut parent, e.source.0, e.target.0);
+            }
+        }
+        let mut comps: HashMap<i64, Vec<usize>> = HashMap::new();
+        for (i, &oid) in skel.node_ids.iter().enumerate() {
+            let r = find(&mut parent, oid);
+            comps.entry(r).or_default().push(i);
+        }
+        let mut large: Vec<(i64, Vec<usize>)> = comps
+            .into_iter()
+            .filter(|(_, idxs)| idxs.len() >= MIN_COMP_NODES)
+            .collect();
+        if large.len() < 2 {
+            continue;
+        }
+        large.sort_by_key(|(r, _)| *r);
+        for ci in 0..large.len() {
+            for cj in (ci + 1)..large.len() {
+                let ra = large[ci].0;
+                let rb = large[cj].0;
+                let ia = &large[ci].1;
+                let ib = &large[cj].1;
+                let na0 = NodeId(skel.node_ids[ia[0]]);
+                let nb0 = NodeId(skel.node_ids[ib[0]]);
+                if graph.same_weak_component(na0, nb0) {
+                    continue;
+                }
+                let step_a = (ia.len() / 200).max(1);
+                let step_b = (ib.len() / 200).max(1);
+                let mut best: Option<(f64, i64, i64, f64, f64, f64, f64)> = None;
+                for &a_i in ia.iter().step_by(step_a) {
+                    for &b_i in ib.iter().step_by(step_b) {
+                        let d = haversine_m(
+                            skel.node_lats[a_i],
+                            skel.node_lons[a_i],
+                            skel.node_lats[b_i],
+                            skel.node_lons[b_i],
+                        );
+                        if d > max_m {
+                            continue;
+                        }
+                        if best.is_none_or(|b| d < b.0) {
+                            best = Some((
+                                d,
+                                skel.node_ids[a_i],
+                                skel.node_ids[b_i],
+                                skel.node_lats[a_i],
+                                skel.node_lons[a_i],
+                                skel.node_lats[b_i],
+                                skel.node_lons[b_i],
+                            ));
+                        }
+                    }
+                }
+                let Some((d, id_a, id_b, alat, alon, blat, blon)) = best else {
+                    continue;
+                };
+                if graph.same_weak_component(NodeId(id_a), NodeId(id_b)) {
+                    continue;
+                }
+                push_skeleton_stitch_edges(
+                    graph,
+                    id_a,
+                    id_b,
+                    alat,
+                    alon,
+                    blat,
+                    blon,
+                    d,
+                    "skeleton_intra_stitch",
+                );
+                added += 1;
+                log::info!(
+                    target: "NaviPlan",
+                    "skeleton_intra_stitch {} d_m={d:.0} nodes={id_a}/{id_b} comps={ra}/{rb}",
+                    skel.leaf_stem
+                );
+                rebuild_graph_adjacency(graph);
+            }
+        }
+    }
+    added
+}
+
+/// For each pair of bbox-adjacent skeletons, if their nearest nodes are within
+/// `max_m` and not already the same OSM id, add a bidirectional link.
+fn stitch_adjacent_skeleton_gaps(
+    graph: &mut RouteGraph,
+    skels: &[CorridorSkeletonFile],
+    max_m: f64,
+) -> u32 {
+    if skels.len() < 2 {
+        return 0;
+    }
+    let mut bboxes: Vec<Option<[f64; 4]>> = skels
+        .iter()
+        .map(|s| crate::routing::basemap::region_bbox(&s.region_id))
+        .collect();
+    // Fallback: node AABB when catalog bbox missing.
+    for (i, s) in skels.iter().enumerate() {
+        if bboxes[i].is_some() || s.node_lats.is_empty() {
+            continue;
+        }
+        let min_lat = s.node_lats.iter().copied().fold(f64::INFINITY, f64::min);
+        let max_lat = s.node_lats.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let min_lon = s.node_lons.iter().copied().fold(f64::INFINITY, f64::min);
+        let max_lon = s.node_lons.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        bboxes[i] = Some([min_lat, min_lon, max_lat, max_lon]);
+    }
+    let mut added = 0u32;
+    for i in 0..skels.len() {
+        for j in (i + 1)..skels.len() {
+            let (Some(a), Some(b)) = (bboxes[i], bboxes[j]) else {
+                continue;
+            };
+            if !crate::long_trip::regions_bbox_adjacent(&a, &b, 0.20) {
+                continue;
+            }
+            // Nearest pair (sampled). Do NOT skip when already same weak
+            // component: a long installed-only detour (Turku) can unify the
+            // graph while the adjacent Geofabrik cut still has zero shared
+            // OSM ids — that local cut must be bridged or A* keeps the
+            // absurd detour as the only cheap corridor.
+            let sa = &skels[i];
+            let sb = &skels[j];
+            // True Geofabrik join already present.
+            let share: HashSet<i64> = sa.node_ids.iter().copied().collect();
+            if sb.node_ids.iter().any(|id| share.contains(id)) {
+                continue;
+            }
+            let step_a = (sa.node_ids.len() / 400).max(1);
+            let step_b = (sb.node_ids.len() / 400).max(1);
+            let mut best: Option<(f64, i64, i64, f64, f64, f64, f64)> = None;
+            for ia in (0..sa.node_ids.len()).step_by(step_a) {
+                let na = NodeId(sa.node_ids[ia]);
+                if !graph.nodes.contains_key(&na) {
+                    continue;
+                }
+                for ib in (0..sb.node_ids.len()).step_by(step_b) {
+                    let nb = NodeId(sb.node_ids[ib]);
+                    if !graph.nodes.contains_key(&nb) {
+                        continue;
+                    }
+                    if sa.node_ids[ia] == sb.node_ids[ib] {
+                        continue;
+                    }
+                    let d = haversine_m(
+                        sa.node_lats[ia],
+                        sa.node_lons[ia],
+                        sb.node_lats[ib],
+                        sb.node_lons[ib],
+                    );
+                    if d > max_m {
+                        continue;
+                    }
+                    if best.is_none_or(|b| d < b.0) {
+                        best = Some((
+                            d,
+                            sa.node_ids[ia],
+                            sb.node_ids[ib],
+                            sa.node_lats[ia],
+                            sa.node_lons[ia],
+                            sb.node_lats[ib],
+                            sb.node_lons[ib],
+                        ));
+                    }
+                }
+            }
+            let Some((d, id_a, id_b, alat, alon, blat, blon)) = best else {
+                continue;
+            };
+            push_skeleton_stitch_edges(
+                graph,
+                id_a,
+                id_b,
+                alat,
+                alon,
+                blat,
+                blon,
+                d,
+                "skeleton_adjacent_stitch",
+            );
+            added += 1;
+            log::info!(
+                target: "NaviPlan",
+                "skeleton_adjacent_stitch {}↔{} d_m={d:.0} nodes={id_a}/{id_b}",
+                skels[i].leaf_stem,
+                skels[j].leaf_stem
+            );
+            rebuild_graph_adjacency(graph);
+        }
+    }
+    added
 }
 
 /// Union of OSM ids marked as border nodes across skeletons.
@@ -1533,6 +1917,140 @@ fn hops_from_report(report: &CoarseRouteReport, start: (f64, f64), end: (f64, f6
     hops
 }
 
+/// Tile bboxes from Ready manifests under [dirs] for [profile].
+fn load_profile_tile_bboxes(
+    dirs: &[&Path],
+    profile: RoutingProfile,
+) -> Vec<(String, [f64; 4])> {
+    use crate::routing::indexed::NaviManifest;
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for dir in dirs {
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        for ent in rd.flatten() {
+            let path = ent.path();
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if !name.ends_with(".navi-manifest.json") {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(man) = serde_json::from_str::<NaviManifest>(&text) else {
+                continue;
+            };
+            let Some(tiles) = man.graph_tiles_for(profile) else {
+                continue;
+            };
+            for t in tiles {
+                if seen.insert(t.file.clone()) {
+                    out.push((t.file.clone(), t.bbox));
+                }
+            }
+        }
+    }
+    out
+}
+
+fn tiles_covering_point(tiles: &[(String, [f64; 4])], lat: f64, lon: f64) -> HashSet<String> {
+    tiles
+        .iter()
+        .filter(|(_, b)| crate::routing::basemap::bbox_covers_point(*b, lat, lon))
+        .map(|(n, _)| n.clone())
+        .collect()
+}
+
+fn nearest_coarse_index(path: &[(f64, f64)], p: (f64, f64)) -> usize {
+    path.iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| {
+            let da = (a.0 - p.0).hypot(a.1 - p.1);
+            let db = (b.0 - p.0).hypot(b.1 - p.1);
+            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(i, _)| i)
+        .unwrap_or(0)
+}
+
+/// Split long same-region (or long multi-tile) hops so each hop's coarse-path
+/// tiles stay ≤ [`crate::routing::plan_bbox::MAX_PATH_TILES_PER_HOP`].
+/// Joints are nodes on the coarse path; each hop continues from the previous
+/// hop's exact end.
+pub fn split_hops_by_path_tile_budget(
+    hops: Vec<(f64, f64)>,
+    coarse_path: &[(f64, f64)],
+    pack_dirs: &[&Path],
+    profile: RoutingProfile,
+) -> Vec<(f64, f64)> {
+    let max_tiles = crate::routing::plan_bbox::MAX_PATH_TILES_PER_HOP;
+    if hops.len() < 2 || coarse_path.len() < 2 {
+        return hops;
+    }
+    let tiles = load_profile_tile_bboxes(pack_dirs, profile);
+    if tiles.is_empty() {
+        return hops;
+    }
+    let mut out: Vec<(f64, f64)> = Vec::new();
+    out.push(hops[0]);
+    for w in hops.windows(2) {
+        let start = w[0];
+        let end = w[1];
+        let mut i0 = nearest_coarse_index(coarse_path, start);
+        let mut i1 = nearest_coarse_index(coarse_path, end);
+        if i0 > i1 {
+            std::mem::swap(&mut i0, &mut i1);
+        }
+        let mut active: HashSet<String> = HashSet::new();
+        let mut last_emit = start;
+        for &p in &coarse_path[i0..=i1] {
+            let cover = tiles_covering_point(&tiles, p.0, p.1);
+            if cover.is_empty() {
+                continue;
+            }
+            let mut trial = active.clone();
+            trial.extend(cover.iter().cloned());
+            if trial.len() > max_tiles && !active.is_empty() {
+                // Emit joint at previous coarse node (exact path continuity).
+                if out
+                    .last()
+                    .is_none_or(|&q| haversine_m(q.0, q.1, last_emit.0, last_emit.1) > 200.0)
+                {
+                    out.push(last_emit);
+                }
+                active = cover;
+            } else {
+                active = trial;
+            }
+            last_emit = p;
+        }
+        if out
+            .last()
+            .is_none_or(|&q| haversine_m(q.0, q.1, end.0, end.1) > 200.0)
+        {
+            out.push(end);
+        } else if let Some(last) = out.last_mut() {
+            *last = end;
+        }
+    }
+    out
+}
+
+/// Count unique pack tiles covering [path] samples (for diagnostics).
+pub fn count_path_covering_tiles(
+    pack_dirs: &[&Path],
+    profile: RoutingProfile,
+    path: &[(f64, f64)],
+) -> usize {
+    let tiles = load_profile_tile_bboxes(pack_dirs, profile);
+    let mut names = HashSet::new();
+    for &(lat, lon) in path {
+        names.extend(tiles_covering_point(&tiles, lat, lon));
+    }
+    names.len()
+}
+
 /// Stage B: densify from persistent corridor skeletons.
 ///
 /// Coarse path uses the active [`RouteOptions`] (avoid ferries/tolls/tunnels/
@@ -1645,8 +2163,9 @@ pub fn try_stage_b_densify_from_skeletons(
 
     let start = waypoints[0];
     let end = *waypoints.last().unwrap();
-    let hops = hops_from_report(&pick.1, start, end);
+    let hops_raw = hops_from_report(&pick.1, start, end);
     let coarse_path = path_latlon(&graph, &pick.2);
+    let hops = split_hops_by_path_tile_budget(hops_raw, &coarse_path, pack_dirs, profile);
     let ferries: Vec<String> = pick
         .1
         .ferries
@@ -1654,12 +2173,13 @@ pub fn try_stage_b_densify_from_skeletons(
         .map(|f| format!("{}→{}", f.from_terminal, f.to_terminal))
         .collect();
     let note = format!(
-        "stage_b pick={} km={:.1} min={:.1} hops={} skels={} near_equal_2pct",
+        "stage_b pick={} km={:.1} min={:.1} hops={} skels={} near_equal_2pct max_path_tiles={}",
         pick.0,
         pick.1.total_km,
         pick.1.total_min,
         hops.len().saturating_sub(1),
-        skels.len()
+        skels.len(),
+        crate::routing::plan_bbox::MAX_PATH_TILES_PER_HOP
     );
     log::info!(target: "NaviPlan", "{note} ferries={ferries:?}");
     Some(StageBDensify {
@@ -2212,5 +2732,108 @@ mod tests {
         let alt = coarse_shortest_path(&mut g, wps, 5_000.0, &avoid).expect("non-motorway path");
         assert!(!path_uses_edge(&g, &alt.1, "short"));
         assert!(path_uses_edge(&g, &alt.1, "l2"));
+    }
+
+    #[test]
+    fn intra_skeleton_stitch_bridges_region_component_cut() {
+        // One region with two disconnected major components ~9 km apart (FU23
+        // jamtland pattern). Merge must add an intra stitch so A* can cross.
+        let skel = CorridorSkeletonFile {
+            format_version: CORRIDOR_SKELETON_FORMAT_VERSION,
+            pack_format_version: GRAPH_FORMAT_VERSION,
+            region_id: "test/cut".into(),
+            leaf_stem: "cut".into(),
+            profile: "car".into(),
+            node_count: 4,
+            edge_count: 4,
+            ferry_edge_count: 0,
+            secondary_edge_count: 0,
+            border_node_count: 0,
+            ferry_terminal_count: 0,
+            build_ms: 0,
+            // Comp A: 1—2 at lon 13.0; Comp B: 3—4 at lon 13.12 (~6.5 km gap).
+            node_ids: vec![1, 2, 3, 4],
+            node_lats: vec![62.0, 62.0, 62.0, 62.0],
+            node_lons: vec![13.0, 13.02, 13.12, 13.14],
+            node_is_border: vec![0, 0, 0, 0],
+            node_is_ferry_terminal: vec![0, 0, 0, 0],
+            edge_src: vec![0, 1, 2, 3],
+            edge_tgt: vec![1, 0, 3, 2],
+            edge_length_m: vec![2_000.0; 4],
+            edge_base_weight: vec![2_000.0; 4],
+            edge_highway: vec!["primary".into(); 4],
+            edge_name: vec![String::new(); 4],
+            edge_road_ref: vec![String::new(); 4],
+            edge_is_oneway: vec![0; 4],
+            edge_is_ferry: vec![0; 4],
+            edge_is_tunnel: vec![0; 4],
+            edge_is_toll: vec![0; 4],
+        };
+        // MIN_COMP_NODES=10: pad each side with isolated-but-linked filler nodes
+        // so both components clear the size floor.
+        let mut skel = skel;
+        for k in 0..100 {
+            let id = 100 + k as i64;
+            skel.node_ids.push(id);
+            skel.node_lats.push(62.0);
+            skel.node_lons.push(13.0 + 0.001 * (k % 10) as f64);
+            skel.node_is_border.push(0);
+            skel.node_is_ferry_terminal.push(0);
+            // Attach fillers 100..149 to node 1 (comp A), 150..199 to node 3 (comp B).
+            let attach = if k < 50 { 0u32 } else { 2u32 };
+            let new_i = (skel.node_ids.len() - 1) as u32;
+            skel.edge_src.push(attach);
+            skel.edge_tgt.push(new_i);
+            skel.edge_src.push(new_i);
+            skel.edge_tgt.push(attach);
+            skel.edge_length_m.extend([100.0, 100.0]);
+            skel.edge_base_weight.extend([100.0, 100.0]);
+            skel.edge_highway.extend(["primary".into(), "primary".into()]);
+            skel.edge_name.extend([String::new(), String::new()]);
+            skel.edge_road_ref.extend([String::new(), String::new()]);
+            skel.edge_is_oneway.extend([0, 0]);
+            skel.edge_is_ferry.extend([0, 0]);
+            skel.edge_is_tunnel.extend([0, 0]);
+            skel.edge_is_toll.extend([0, 0]);
+        }
+        skel.node_count = skel.node_ids.len() as u32;
+        skel.edge_count = skel.edge_src.len() as u32;
+        let g = merge_skeletons_to_route_graph(&[skel], RoutingProfile::Car);
+        assert!(
+            g.edges
+                .iter()
+                .any(|e| e.id.starts_with("skeleton_intra_stitch")),
+            "must bridge the intra-region component cut"
+        );
+        assert!(
+            g.shortest_path(NodeId(1), NodeId(4), false).is_some(),
+            "path must cross the stitch"
+        );
+    }
+
+    #[test]
+    #[ignore = "needs .tmp-fu23-device-skels from emulator pull"]
+    fn fu23_elsa_stage_b_after_stitch() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join(".tmp-fu23-device-skels");
+        assert!(dir.is_dir(), "missing {}", dir.display());
+        let wps = &[(69.9742, 29.63342), (59.80326, 9.39866)];
+        let sb = try_stage_b_densify_from_skeletons(
+            &[dir.as_path()],
+            wps,
+            RoutingProfile::Car,
+            &RouteOptions::default(),
+        )
+        .expect("stage b");
+        eprintln!(
+            "elsa stage_b km={:.1} min={:.1} note={}",
+            sb.total_km, sb.total_min, sb.note
+        );
+        assert!(
+            sb.total_km < 2500.0,
+            "expected fair corridor <2500 km, got {:.1}",
+            sb.total_km
+        );
     }
 }

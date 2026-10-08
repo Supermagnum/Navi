@@ -9,7 +9,10 @@ use geo_types::Coord;
 use osm4routing::{Node, NodeId};
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 
-use super::graph_pack::{clip_keeps_edge, densify_skeleton_edge, densify_skeleton_only_active};
+use super::graph_pack::{
+    clip_keeps_edge, corridor_skeleton_hydrate_active, densify_skeleton_edge,
+    densify_skeleton_only_active,
+};
 use crate::routing::elevation::ElevationService;
 use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile, SurfaceQuality};
 
@@ -317,15 +320,17 @@ impl FlatGraphPackV8 {
         } else {
             HashSet::new()
         };
+        let corridor = corridor_skeleton_hydrate_active();
         let edge_ok = |i: usize| -> bool {
             if skeleton {
                 let hw = self.edge_highway[i].as_str();
                 let ferry = self.edge_is_ferry.get(i).copied().unwrap_or(0) != 0;
                 let major = densify_skeleton_edge(hw, ferry);
+                let secondary = corridor && matches!(hw, "secondary" | "secondary_link");
                 let pier = !ferry
                     && (ferry_nodes.contains(&self.edge_src[i])
                         || ferry_nodes.contains(&self.edge_tgt[i]));
-                if !major && !pier {
+                if !major && !secondary && !pier {
                     return false;
                 }
             }
@@ -618,6 +623,7 @@ impl ArchivedFlatGraphPackV8 {
         } else {
             HashSet::new()
         };
+        let corridor = corridor_skeleton_hydrate_active();
         let edge_ok = |i: usize| -> bool {
             if skeleton {
                 let hw = self.edge_highway[i].as_str();
@@ -625,8 +631,9 @@ impl ArchivedFlatGraphPackV8 {
                 let src = arch_u32(self.edge_src[i]);
                 let tgt = arch_u32(self.edge_tgt[i]);
                 let major = densify_skeleton_edge(hw, ferry);
+                let secondary = corridor && matches!(hw, "secondary" | "secondary_link");
                 let pier = !ferry && (ferry_nodes.contains(&src) || ferry_nodes.contains(&tgt));
-                if !major && !pier {
+                if !major && !secondary && !pier {
                     return false;
                 }
             }
