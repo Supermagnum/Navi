@@ -3604,9 +3604,6 @@ fn plan_car_route_inner(
     };
     let needs_corridor = !is_chunk_leg && (multi_region || same_stem_needs_split);
     if needs_corridor {
-        // Panic if any path still reaches centroid densify during corridor plans.
-        let _forbid_centroid =
-            driver_break_core::routing::plan_bbox::ForbidCentroidDensify::enter();
         let pack_dirs = pack_dirs_for_densify;
         let pack_dir_refs: Vec<&std::path::Path> = pack_dirs.iter().map(|p| p.as_path()).collect();
         // Direct-corridor preflight: name uninstalled regions on the outline path.
