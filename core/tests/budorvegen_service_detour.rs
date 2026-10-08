@@ -4,9 +4,9 @@
 //! Fixture: `tests/fixtures/budorvegen-service-detour.osm.pbf` (~cut from Ostlandet).
 
 use driver_break_core::routing::graph::{
-    apply_surface_preference, apply_surface_quality_from_pbf, way_id_from_edge_id,
-    MotorSoftCostProfile, RouteGraph, RouteOptions, RoutingProfile, SurfaceRoutingMode,
-    HIGHWAY_CLASS_SECONDARY,
+    apply_surface_preference, apply_surface_quality_from_pbf, road_base_weight_m,
+    way_id_from_edge_id, MotorSoftCostProfile, RouteGraph, RouteOptions, RoutingProfile,
+    SurfaceRoutingMode, HIGHWAY_CLASS_SECONDARY,
 };
 use driver_break_core::routing::indexed::{load_graph_pack_bbox, merge_tile_graphs};
 use std::path::{Path, PathBuf};
@@ -15,6 +15,12 @@ const SECONDARY_WAY: &str = "1037045908";
 const SERVICE_WAY: &str = "332640378";
 const JUNCTION_A: i64 = 3397900348;
 const JUNCTION_B: i64 = 3397900317;
+
+/// A* cost of the 64.6 m Budorvegen chord: travel time at its 60 km/h in
+/// drive-equivalent metres, times the secondary soft cost.
+fn secondary_chord_cost() -> f64 {
+    road_base_weight_m(64.6, 60.0) * HIGHWAY_CLASS_SECONDARY
+}
 
 fn fixture_pbf() -> PathBuf {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -85,8 +91,10 @@ fn budorvegen_path_geometry_uses_secondary_not_service_parallel() {
         .shortest_path_with_options(s, g, false, &opts)
         .expect("route must exist");
     assert!(
-        (cost - 64.6 * HIGHWAY_CLASS_SECONDARY).abs() < 2.0,
-        "A* must use ~64.6 m secondary chord (× highway soft cost), got cost {cost}"
+        (cost - secondary_chord_cost()).abs() < 2.0,
+        "A* must use the 64.6 m secondary chord at 60 km/h (× highway soft cost), \
+         expected {:.1}, got cost {cost}",
+        secondary_chord_cost()
     );
     assert_eq!(
         path_edges.len(),
@@ -150,8 +158,10 @@ fn budorvegen_indexed_pack_geometry_uses_secondary_not_service_parallel() {
         .shortest_path_with_options(s, g, false, &opts)
         .expect("route must exist");
     assert!(
-        (cost - 64.6 * HIGHWAY_CLASS_SECONDARY).abs() < 2.0,
-        "A* must use ~64.6 m secondary chord (× highway soft cost), got cost {cost}"
+        (cost - secondary_chord_cost()).abs() < 2.0,
+        "A* must use the 64.6 m secondary chord at 60 km/h (× highway soft cost), \
+         expected {:.1}, got cost {cost}",
+        secondary_chord_cost()
     );
     assert_eq!(
         path_edges.len(),
@@ -222,8 +232,10 @@ fn budorvegen_tiled_merge_geometry_uses_secondary_not_service_parallel() {
         .shortest_path_with_options(s, g, false, &opts)
         .expect("route must exist");
     assert!(
-        (cost - 64.6 * HIGHWAY_CLASS_SECONDARY).abs() < 2.0,
-        "A* must use ~64.6 m secondary chord (× highway soft cost), got cost {cost}"
+        (cost - secondary_chord_cost()).abs() < 2.0,
+        "A* must use the 64.6 m secondary chord at 60 km/h (× highway soft cost), \
+         expected {:.1}, got cost {cost}",
+        secondary_chord_cost()
     );
     assert_no_service_parallel_geometry(&graph, &path_edges);
 }
