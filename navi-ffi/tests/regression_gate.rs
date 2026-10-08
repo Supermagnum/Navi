@@ -34,6 +34,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use driver_break_core::routing::path_repair::unexplained_out_and_backs;
 use navi::{
     corridor_skeleton_is_ready, ensure_corridor_skeleton, plan_car_route, warm_country_polys,
     FfiLatLon, FfiTollPolicy, FfiVehicleLimits, TravelProfile,
@@ -771,6 +772,16 @@ fn run_case(case: &Case, packs: &Path, refs: &Path, work: &Path) -> Outcome {
             o.failures.push(format!("spike {desc}"));
         }
         o.spikes.push(desc);
+    }
+
+    let vias: Vec<(f64, f64)> = case.vias.to_vec();
+    for b in unexplained_out_and_backs(&line, &vias) {
+        let desc = format!(
+            "km {:.1}-{:.1} path {:.2} km turn {:.5},{:.5}",
+            b.from_km, b.to_km, b.path_km, b.turnaround.0, b.turnaround.1
+        );
+        o.failures.push(format!("out-and-back {desc}"));
+        o.spikes.push(format!("out-and-back {desc}"));
     }
 
     o.pass = o.failures.is_empty();

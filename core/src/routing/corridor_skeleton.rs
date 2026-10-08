@@ -1926,12 +1926,18 @@ fn ferry_minutes(e: &GraphEdge) -> (f64, f64, f64) {
     (crossing, wait, crossing + wait)
 }
 
+/// Metres the path must continue in the new country before a border node is a
+/// hop joint. A shorter visit that returns the way it came is a hair, not a crossing.
+const NET_CROSSING_STAY_M: f64 = 8_000.0;
+
 /// Extract joints: user vias + region border crossings + ferry terminals on path.
 /// No evenly spaced hop_deg samples.
 ///
-/// A border crossing is emitted only when the path steps across a node in
-/// `border_osm` **and** the country ISO (or ferry leg) changes — not at every
-/// shared OSM id that happens to lie on the path inland.
+/// A border crossing is emitted only when the path really passes from one
+/// country to another (or boards a ferry): the node is in `border_osm`, the
+/// country ISO (or ferry leg) changes, and the path does not visit that node
+/// and return the same way. A short enter-and-return through the same crossing
+/// is not a joint.
 pub fn extract_coarse_joints(
     graph: &RouteGraph,
     path: &[NodeId],
@@ -1940,6 +1946,9 @@ pub fn extract_coarse_joints(
     vias: &[(f64, f64)],
     via_snap_m: f64,
 ) -> Vec<CoarseJoint> {
+    let (path, edge_indices) = collapse_path_retraces(path, edge_indices);
+    let path = path.as_slice();
+    let edge_indices = edge_indices.as_slice();
     let mut out = Vec::new();
     if path.is_empty() {
         return out;
@@ -1983,7 +1992,7 @@ pub fn extract_coarse_joints(
             push(&mut out, e.source, "ferry_terminal");
             push(&mut out, e.target, "ferry_terminal");
         }
-        // Border: shared OSM node where country ISO changes across this edge.
+        // Border: shared OSM node where the path really changes country.
         if border_osm.contains(&arrive.0) {
             let iso_a = country_iso_for_edge(e);
             let iso_b = edge_indices
@@ -1991,7 +2000,9 @@ pub fn extract_coarse_joints(
                 .and_then(|&j| graph.edges.get(j))
                 .map(country_iso_for_edge)
                 .unwrap_or_else(|| iso_a.clone());
-            if iso_a != iso_b || e.is_ferry {
+            if (iso_a != iso_b || e.is_ferry)
+                && !border_visit_returns_same_way(graph, edge_indices, ei, arrive, &iso_a)
+            {
                 push(&mut out, arrive, "border_crossing");
             }
         }
@@ -2021,7 +2032,132 @@ pub fn extract_coarse_joints(
     out
 }
 
+/// Drop A-B-A (and longer return-to-the-same-node) hairs so a border node the
+/// path only touches on the way out and back is not a hop joint.
+/// Drop a geometric out-and-back on a lat/lon path: if the walk returns
+/// within 200 m of an earlier vertex after at least 3 km, keep the first
+/// visit and discard the excursion. Used for hop-corridor samples so a
+/// skeleton spur is not loaded as the detailed search band.
+fn collapse_coord_retraces(path: &[(f64, f64)]) -> Vec<(f64, f64)> {
+    let mut out: Vec<(f64, f64)> = Vec::with_capacity(path.len());
+    for &p in path {
+        if let Some(j) = coord_return_index(&out, p) {
+            out.truncate(j + 1);
+            continue;
+        }
+        out.push(p);
+    }
+    out
+}
+
+fn coord_return_index(out: &[(f64, f64)], p: (f64, f64)) -> Option<usize> {
+    if out.len() < 2 {
+        return None;
+    }
+    let last = *out.last().unwrap();
+    let mut walked = haversine_m(last.0, last.1, p.0, p.1);
+    for j in (0..out.len()).rev() {
+        if j + 1 < out.len() {
+            walked += haversine_m(out[j].0, out[j].1, out[j + 1].0, out[j + 1].1);
+        }
+        if walked < 3_000.0 {
+            continue;
+        }
+        if haversine_m(out[j].0, out[j].1, p.0, p.1) <= 200.0 {
+            return Some(j);
+        }
+        if walked > 40_000.0 {
+            break;
+        }
+    }
+    None
+}
+
+fn collapse_node_retraces(path: &[NodeId]) -> Vec<NodeId> {
+    let mut nodes: Vec<NodeId> = Vec::with_capacity(path.len());
+    let mut pos: HashMap<i64, usize> = HashMap::new();
+    for &nid in path {
+        if let Some(&j) = pos.get(&nid.0) {
+            for dropped in nodes.drain(j + 1..) {
+                pos.remove(&dropped.0);
+            }
+            continue;
+        }
+        pos.insert(nid.0, nodes.len());
+        nodes.push(nid);
+    }
+    nodes
+}
+
+fn collapse_path_retraces(path: &[NodeId], edge_indices: &[usize]) -> (Vec<NodeId>, Vec<usize>) {
+    let nodes = collapse_node_retraces(path);
+    if nodes.len() < 2 {
+        return (nodes, Vec::new());
+    }
+    let mut ix: HashMap<(i64, i64), usize> = HashMap::new();
+    for (i, &eidx) in edge_indices.iter().enumerate() {
+        if i + 1 >= path.len() {
+            break;
+        }
+        ix.insert((path[i].0, path[i + 1].0), eidx);
+    }
+    let mut edges = Vec::with_capacity(nodes.len().saturating_sub(1));
+    for w in nodes.windows(2) {
+        if let Some(&e) = ix.get(&(w[0].0, w[1].0)) {
+            edges.push(e);
+        }
+    }
+    (nodes, edges)
+}
+
+/// True when the path touches `crossing` and comes back the same way, or
+/// enters the neighbouring country and returns to `old_iso` before staying
+/// [`NET_CROSSING_STAY_M`].
+fn border_visit_returns_same_way(
+    graph: &RouteGraph,
+    edge_indices: &[usize],
+    crossing_ei: usize,
+    crossing: NodeId,
+    old_iso: &str,
+) -> bool {
+    let Some(arrive_e) = graph.edges.get(edge_indices[crossing_ei]) else {
+        return false;
+    };
+    if let Some(&next_i) = edge_indices.get(crossing_ei + 1) {
+        if let Some(next) = graph.edges.get(next_i) {
+            if next.source == arrive_e.target && next.target == arrive_e.source {
+                return true;
+            }
+        }
+    }
+    let mut walked = 0.0_f64;
+    for &idx in edge_indices.iter().skip(crossing_ei + 1) {
+        let Some(ne) = graph.edges.get(idx) else {
+            continue;
+        };
+        if ne.target == crossing {
+            return true;
+        }
+        if country_iso_for_edge(ne) == old_iso {
+            return true;
+        }
+        walked += ne.length_m;
+        if walked >= NET_CROSSING_STAY_M {
+            return false;
+        }
+    }
+    false
+}
+
 fn country_iso_for_edge(e: &GraphEdge) -> String {
+    // Test graphs may pin ISO on the edge id so unit tests do not wait on the
+    // Natural Earth index build (`iso_at` can block for minutes when cold).
+    if let Some(rest) = e.id.strip_prefix("iso:") {
+        let code = rest.split('-').next().unwrap_or(rest);
+        if code.len() == 2 {
+            return code.to_ascii_uppercase();
+        }
+    }
     let lat = (e.start_lat + e.end_lat) * 0.5;
     let lon = (e.start_lon + e.end_lon) * 0.5;
     country_iso_at(lat, lon)
@@ -3014,7 +3150,8 @@ fn assemble_stage_b(
     for (li, pick) in plan.picks.iter().enumerate() {
         let leg_start = waypoints[li];
         let leg_end = waypoints[li + 1];
-        let leg_coarse = path_latlon(graph, &pick.path);
+        let path = collapse_node_retraces(&pick.path);
+        let leg_coarse = collapse_coord_retraces(&path_latlon(graph, &path));
         let leg_hops = split_hops_by_path_tile_budget(
             hops_from_report(&pick.report, leg_start, leg_end),
             &leg_coarse,
@@ -3842,6 +3979,164 @@ mod tests {
         assert!(!joints.iter().any(|j| j.joint_type == "hop_deg"));
         let _ = &mut g;
     }
+
+    fn linear_joint_graph(coords: &[(i64, f64, f64)]) -> RouteGraph {
+        use geo_types::Coord;
+        use osm4routing::Node;
+        use std::collections::HashMap;
+        let mut nodes = HashMap::new();
+        for &(id, lat, lon) in coords {
+            nodes.insert(
+                NodeId(id),
+                Node {
+                    id: NodeId(id),
+                    coord: Coord { x: lon, y: lat },
+                    uses: 2,
+                },
+            );
+        }
+        let mut edges = Vec::new();
+        let mut push = |s: i64, slat: f64, slon: f64, t: i64, tlat: f64, tlon: f64, iso: &str| {
+            let len = haversine_m(slat, slon, tlat, tlon);
+            edges.push(GraphEdge {
+                id: format!("iso:{iso}-{s}-{t}"),
+                source: NodeId(s),
+                target: NodeId(t),
+                length_m: len,
+                base_weight: len,
+                cost_mult: 1.0,
+                eco_weight: None,
+                start_lat: slat,
+                start_lon: slon,
+                end_lat: tlat,
+                end_lon: tlon,
+                shape: Vec::new(),
+                highway: Some("primary".into()),
+                maxspeed_kmh: None,
+                maxspeed_practical_kmh: None,
+                maxspeed_advisory_kmh: None,
+                maxspeed_type: None,
+                maxspeed_variable: false,
+                minspeed_kmh: None,
+                name: None,
+                road_ref: None,
+                is_motorroad: false,
+                is_expressway: false,
+                is_oneway: false,
+                lanes: None,
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: false,
+                is_ferry: false,
+                ferry_interval_min: None,
+                is_tunnel: false,
+                is_boardwalk_crossing: false,
+                is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
+                access_forbidden: false,
+                surface_quality: SurfaceQuality::Good,
+            });
+        };
+        for w in coords.windows(2) {
+            let (s, slat, slon) = w[0];
+            let (t, tlat, tlon) = w[1];
+            let iso_fwd = if slon.max(tlon) > 12.0 { "SE" } else { "NO" };
+            let iso_rev = if slon.min(tlon) > 12.0 { "SE" } else { "NO" };
+            push(s, slat, slon, t, tlat, tlon, iso_fwd);
+            push(t, tlat, tlon, s, slat, slon, iso_rev);
+        }
+        RouteGraph::from_parts(nodes, edges, RoutingProfile::Car)
+    }
+
+    fn edge_ix(g: &RouteGraph, s: i64, t: i64) -> usize {
+        g.edges
+            .iter()
+            .position(|e| e.source == NodeId(s) && e.target == NodeId(t))
+            .expect("edge")
+    }
+
+    #[test]
+    fn border_touch_and_return_is_not_a_joint() {
+        // Oslo (NO) to a border node, into Sweden, and back through the same node.
+        let g = linear_joint_graph(&[
+            (1, 59.91, 10.75),
+            (2, 59.91, 11.98),
+            (3, 59.91, 12.05),
+        ]);
+        let path = vec![NodeId(1), NodeId(2), NodeId(3), NodeId(2), NodeId(1)];
+        let edges = vec![
+            edge_ix(&g, 1, 2),
+            edge_ix(&g, 2, 3),
+            edge_ix(&g, 3, 2),
+            edge_ix(&g, 2, 1),
+        ];
+        let mut borders = HashSet::new();
+        borders.insert(2);
+        let joints = extract_coarse_joints(&g, &path, &edges, &borders, &[], 500.0);
+        assert!(
+            !joints.iter().any(|j| j.joint_type == "border_crossing"),
+            "return through the same border node must not be a hop joint: {joints:?}"
+        );
+    }
+
+    #[test]
+    fn coord_out_and_back_is_collapsed() {
+        let path = vec![
+            (60.0, 10.0),
+            (60.0, 10.04),
+            (60.0, 10.08),
+            (60.0, 10.04),
+            (60.0, 10.12),
+        ];
+        let got = collapse_coord_retraces(&path);
+        assert!(
+            got.len() < path.len(),
+            "expected the east-and-back spur dropped: {got:?}"
+        );
+        assert!((got[0].1 - 10.0).abs() < 1e-6);
+        assert!(got.last().unwrap().1 > 10.10, "{got:?}");
+    }
+
+    #[test]
+    fn path_that_returns_to_a_node_is_collapsed() {
+        let p = vec![NodeId(1), NodeId(2), NodeId(3), NodeId(2), NodeId(4)];
+        assert_eq!(
+            collapse_node_retraces(&p),
+            vec![NodeId(1), NodeId(2), NodeId(4)]
+        );
+    }
+
+    #[test]
+    fn net_country_crossing_is_a_joint() {
+        let g = linear_joint_graph(&[
+            (1, 59.91, 10.75),
+            (2, 59.91, 11.05),
+            (3, 59.33, 18.07),
+            (4, 59.20, 18.20),
+        ]);
+        let path: Vec<NodeId> = vec![NodeId(1), NodeId(2), NodeId(3), NodeId(4)];
+        let edges = vec![
+            edge_ix(&g, 1, 2),
+            edge_ix(&g, 2, 3),
+            edge_ix(&g, 3, 4),
+        ];
+        let mut borders = HashSet::new();
+        borders.insert(2);
+        let joints = extract_coarse_joints(&g, &path, &edges, &borders, &[], 500.0);
+        assert!(
+            joints
+                .iter()
+                .any(|j| j.joint_type == "border_crossing" && j.osm_id == 2),
+            "a crossing the path stays on must remain a joint: {joints:?}"
+        );
+    }
+
 
     #[test]
     fn opposite_oneway_carriageways_get_stitch_link() {
