@@ -29,13 +29,12 @@ pub use fetch::{
 };
 pub use filter::{corridor_view, filter_near_route, split_active_inactive, DatexCorridorView};
 pub use impact::{
-    classify_impact, delay_penalize_mult, is_known_situation_xsi_type, is_structurally_ignore,
-    planner_impacts, text_indicates_closure, wind_penalize_mult, DatexClassification,
-    DatexClassifyFields, DatexImpact, DatexPlannerConstraint, CLOSURE_PHRASES,
+    classify_impact, constraint_from_situation, default_penalty_minutes, delay_penalize_mult,
+    is_full_closure_management, is_known_situation_xsi_type, is_never_block_management,
+    is_structurally_ignore, planner_impacts, text_indicates_closure, wind_penalize_mult,
+    DatexClassification, DatexClassifyFields, DatexImpact, DatexPlannerConstraint, CLOSURE_PHRASES,
     CLOSURE_RISK_EXCLUSIONS, DATEX_IMPACT_RADIUS_M, DATEX_PENALIZE_MULT, DATEX_PENALIZE_MULT_MAX,
     DATEX_PENALIZE_MULT_MIN, NPRA_LIVE_XSI_TYPES, SCHEMA_VALID_UNUSED_XSI_TYPES,
-    constraint_from_situation, default_penalty_minutes, is_full_closure_management,
-    is_never_block_management,
 };
 pub use parse::{parse_situation_publication, DatexSituation, DatexValidPeriod, SituationKind};
 pub use session::{reset_session_for_tests, with_session, DatexSession};
@@ -91,7 +90,10 @@ pub fn planner_impacts_from_data_dir(
 ///
 /// `datex_plan_mode` / `NAVI_DATEX_MODE`: `none` skips, `saved` ignores TTL,
 /// `live` (default) drops caches older than [`DATEX_PLAN_CACHE_MAX_AGE_SECS`].
-pub fn load_plan_datex_situations(data_dir: &Path, now: DateTime<Utc>) -> Option<Vec<DatexSituation>> {
+pub fn load_plan_datex_situations(
+    data_dir: &Path,
+    now: DateTime<Utc>,
+) -> Option<Vec<DatexSituation>> {
     if datex_plan_mode(data_dir) == DatexPlanMode::None {
         return Some(Vec::new());
     }
@@ -99,9 +101,7 @@ pub fn load_plan_datex_situations(data_dir: &Path, now: DateTime<Utc>) -> Option
     if !cache_dir.join(DATEX_APPLY_TO_ROUTING_STAMP).is_file() {
         return None;
     }
-    let Some((_meta, xml, fetched_unix, _fp)) = load_disk_cache(&cache_dir) else {
-        return None;
-    };
+    let (_meta, xml, fetched_unix, _fp) = load_disk_cache(&cache_dir)?;
     let ignore_ttl = datex_plan_mode(data_dir) == DatexPlanMode::Saved;
     if !ignore_ttl {
         let age_secs = now.timestamp().saturating_sub(fetched_unix);
@@ -147,10 +147,7 @@ pub fn write_plan_datex_snapshot(data_dir: &Path, sits: &[DatexSituation]) {
             body.push_str(",\n");
         }
         let (lat, lon) = s.primary_lat_lon().unwrap_or((0.0, 0.0));
-        let vf = s
-            .valid_from
-            .map(|t| t.to_rfc3339())
-            .unwrap_or_default();
+        let vf = s.valid_from.map(|t| t.to_rfc3339()).unwrap_or_default();
         let vt = s.valid_to.map(|t| t.to_rfc3339()).unwrap_or_default();
         body.push_str(&format!(
             "    {{\"id\":\"{}\",\"xsi\":\"{}\",\"kind\":\"{}\",\"impact\":\"{}\",\"lat\":{:.5},\"lon\":{:.5},\"road\":\"{}\",\"valid_from\":\"{}\",\"valid_to\":\"{}\"}}",
@@ -260,7 +257,9 @@ fn vehicle_applies(s: &DatexSituation, truck: bool) -> bool {
                 || t.contains("vehicle")
         })
     } else {
-        types.iter().any(|t| t.contains("car") || t.contains("vehicle") || t.contains("motor"))
+        types
+            .iter()
+            .any(|t| t.contains("car") || t.contains("vehicle") || t.contains("motor"))
     }
 }
 
@@ -314,12 +313,13 @@ pub enum DatexPlanMode {
 
 pub fn datex_plan_mode(data_dir: &Path) -> DatexPlanMode {
     let env = std::env::var("NAVI_DATEX_MODE").unwrap_or_default();
-    parse_datex_plan_mode(&env).or_else(|| {
-        std::fs::read_to_string(data_dir.join(DATEX_PLAN_MODE_FILE))
-            .ok()
-            .and_then(|s| parse_datex_plan_mode(s.trim()))
-    })
-    .unwrap_or(DatexPlanMode::Live)
+    parse_datex_plan_mode(&env)
+        .or_else(|| {
+            std::fs::read_to_string(data_dir.join(DATEX_PLAN_MODE_FILE))
+                .ok()
+                .and_then(|s| parse_datex_plan_mode(s.trim()))
+        })
+        .unwrap_or(DatexPlanMode::Live)
 }
 
 pub fn set_datex_plan_mode(data_dir: &Path, mode: DatexPlanMode) {

@@ -36,8 +36,7 @@ object PlaceIndexReady {
      * No place-index SQLite (clear rows, FTS/WAL, ensurePlaceIndex) while a
      * route plan holds [RoutePlanGate] or a pending debug trip is about to plan.
      */
-    fun deferWritesDuringPlan(): Boolean =
-        RoutePlanGate.isRunning() || NaviMapTestHooks.pendingTripPlan != null
+    fun deferWritesDuringPlan(): Boolean = RoutePlanGate.isRunning() || NaviMapTestHooks.pendingTripPlan != null
 
     /** Drop the search-allowed region cache (call after stamp mutations). */
     fun invalidateAllowedRegionsCache() {

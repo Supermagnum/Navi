@@ -269,10 +269,8 @@ mod tests {
 
     #[test]
     fn sweden_lan_without_leaf_pbf_cannot_index_yet() {
-        let dir = std::env::temp_dir().join(format!(
-            "navi-place-index-se-lan-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("navi-place-index-se-lan-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         // Country extract present must not authorize indexing a län leaf.

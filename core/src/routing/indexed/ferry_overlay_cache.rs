@@ -20,9 +20,7 @@ use rkyv::rancor::Error as RkyvError;
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 
 use crate::routing::graph::{RouteGraph, RoutingProfile};
-use crate::routing::indexed::graph_pack::{
-    pack_opt_metric, ArchivedFlatGraphPack, FlatGraphPack,
-};
+use crate::routing::indexed::graph_pack::{pack_opt_metric, ArchivedFlatGraphPack, FlatGraphPack};
 use crate::routing::indexed::header::Preamble;
 use crate::routing::indexed::io::{archive_payload_offset, write_archive_atomic};
 

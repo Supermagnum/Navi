@@ -563,17 +563,20 @@ private fun cancelledCorridorResult(): uniffi.navi.CorridorRouteResult =
         routeUsesTolls = false,
     )
 
-private fun formatDatexAffectedStatus(base: String, report: String): String {
+private fun formatDatexAffectedStatus(
+    base: String,
+    report: String,
+): String {
     val lines =
-        report.lineSequence()
+        report
+            .lineSequence()
             .filter { it.startsWith("datex_affected ") }
             .map { it.removePrefix("datex_affected ").trim() }
             .filter { it.isNotEmpty() }
             .filter {
                 !it.contains("effect=ignore") &&
                     !it.contains("type=SpeedManagement")
-            }
-            .toList()
+            }.toList()
     if (lines.isEmpty()) return base
     val shown = lines.take(8).joinToString(" · ")
     return "$base · DATEX: $shown"
@@ -582,8 +585,11 @@ private fun formatDatexAffectedStatus(base: String, report: String): String {
 private fun userFacingStatus(raw: String): String {
     val t = raw.trim()
     if (t.isEmpty()) return ""
-    if (t.contains("TEST_KIND=") || t.contains("detected_cores=") || t.contains("DATA_SOURCE=") ||
-        t.contains("pack_hit=") || t.contains("search_terminate_reason=")
+    if (t.contains("TEST_KIND=") ||
+        t.contains("detected_cores=") ||
+        t.contains("DATA_SOURCE=") ||
+        t.contains("pack_hit=") ||
+        t.contains("search_terminate_reason=")
     ) {
         return when {
             planReportIsCancelled(t) -> "Planning cancelled"
@@ -710,7 +716,8 @@ private fun NaviMapScreen() {
             val summary = InstalledMaps.summaryText()
             android.util.Log.i("InstalledMaps", summary)
             runCatching {
-                java.io.File(NaviAppData.resolve(context), "installed-maps-snapshot.txt")
+                java.io
+                    .File(NaviAppData.resolve(context), "installed-maps-snapshot.txt")
                     .writeText(summary)
             }
         }
@@ -1117,6 +1124,7 @@ private fun NaviMapScreen() {
     var recalculatingRoute by remember { mutableStateOf(false) }
     var showHikingReroutePrompt by remember { mutableStateOf(false) }
     var missingCoveragePrompt by remember { mutableStateOf<MissingRegionCoverage?>(null) }
+
     /** Absurd installed-only detour: missing region names + optional accept. */
     var absurdDetourPrompt by remember {
         mutableStateOf<Pair<String, List<String>>?>(null)
@@ -3774,20 +3782,20 @@ private fun NaviMapScreen() {
         status =
             withIndexedPackMissHint(
                 run {
-                val withDatex =
-                    formatDatexAffectedStatus(
-                        if (result.offTrailAdvisory.isNotBlank()) {
-                            "$planStatus · Off-trail: use judgment (terrain advisory)"
-                        } else {
-                            planStatus
-                        },
-                        result.report,
-                    )
-                if (result.tollAvoidanceIncomplete) {
-                    "$withDatex · could not fully avoid tolls"
-                } else {
-                    withDatex
-                }
+                    val withDatex =
+                        formatDatexAffectedStatus(
+                            if (result.offTrailAdvisory.isNotBlank()) {
+                                "$planStatus · Off-trail: use judgment (terrain advisory)"
+                            } else {
+                                planStatus
+                            },
+                            result.report,
+                        )
+                    if (result.tollAvoidanceIncomplete) {
+                        "$withDatex · could not fully avoid tolls"
+                    } else {
+                        withDatex
+                    }
                 },
                 result.report,
             )

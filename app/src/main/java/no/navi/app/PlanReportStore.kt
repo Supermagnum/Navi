@@ -21,8 +21,7 @@ object PlanReportStore {
 
     fun internalDir(dataDir: File): File = File(dataDir, DIR_NAME)
 
-    fun externalDir(context: Context): File? =
-        context.getExternalFilesDir(null)?.let { File(it, DIR_NAME) }
+    fun externalDir(context: Context): File? = context.getExternalFilesDir(null)?.let { File(it, DIR_NAME) }
 
     /** Host-visible copy when external storage exists; otherwise internal. */
     fun canonicalDir(

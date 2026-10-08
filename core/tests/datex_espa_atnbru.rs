@@ -44,7 +44,11 @@ fn local_oslo(y: i32, m: u32, d: u32, hh: u32, mm: u32) -> chrono::DateTime<Utc>
 fn fixture_block_situation() -> driver_break_core::datex::DatexSituation {
     let all = parse_situation_publication(FIXTURE).expect("parse fixture");
     all.into_iter()
-        .find(|s| s.comment.as_deref().is_some_and(|c| c.to_ascii_lowercase().contains("stengt")))
+        .find(|s| {
+            s.comment
+                .as_deref()
+                .is_some_and(|c| c.to_ascii_lowercase().contains("stengt"))
+        })
         .expect("fixture must contain a stengt record")
 }
 

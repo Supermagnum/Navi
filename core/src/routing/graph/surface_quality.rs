@@ -1308,8 +1308,8 @@ mod tests {
             .expect("legacy Good edge must not crash soft costs");
         assert_eq!(path, vec![NodeId(1), NodeId(2)]);
         // Travel-time A*: cost = road_base_weight(length, 60) × tertiary class.
-        let expected = crate::routing::graph::road_base_weight_m(length_m, 60.0)
-            * HIGHWAY_CLASS_TERTIARY;
+        let expected =
+            crate::routing::graph::road_base_weight_m(length_m, 60.0) * HIGHWAY_CLASS_TERTIARY;
         assert!(
             (cost - expected).abs() < 1e-3,
             "legacy baked Good stays Good (× tertiary class only); expected {expected}, got {cost}"

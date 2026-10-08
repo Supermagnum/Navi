@@ -178,9 +178,7 @@ impl DatexSituation {
         if self.valid_periods.is_empty() {
             return true;
         }
-        self.valid_periods
-            .iter()
-            .any(|p| p.contains_local(arrival))
+        self.valid_periods.iter().any(|p| p.contains_local(arrival))
     }
 
     pub fn has_recurring_windows(&self) -> bool {

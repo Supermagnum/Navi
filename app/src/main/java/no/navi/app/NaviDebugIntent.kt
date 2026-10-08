@@ -158,7 +158,12 @@ object NaviDebugIntent {
                 intent.getBooleanExtra("navi_inject_gps", true)
 
         if (intent.hasExtra("navi_datex")) {
-            val mode = intent.getStringExtra("navi_datex").orEmpty().trim().ifBlank { "live" }
+            val mode =
+                intent
+                    .getStringExtra("navi_datex")
+                    .orEmpty()
+                    .trim()
+                    .ifBlank { "live" }
             runCatching {
                 File(dataDirPath, "datex_plan_mode").writeText(mode.lowercase())
             }.onFailure { Log.w(TAG, "datex_plan_mode write failed: ${it.message}") }

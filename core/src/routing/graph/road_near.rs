@@ -128,14 +128,7 @@ pub fn dist_point_to_segment_m(
 /// road even though the geometry is kilometres away.
 pub fn edge_distance_m(e: &GraphEdge, lat: f64, lon: f64) -> f64 {
     if e.shape.is_empty() {
-        return dist_point_to_segment_m(
-            lat,
-            lon,
-            e.start_lat,
-            e.start_lon,
-            e.end_lat,
-            e.end_lon,
-        );
+        return dist_point_to_segment_m(lat, lon, e.start_lat, e.start_lon, e.end_lat, e.end_lon);
     }
     let mut best = f64::INFINITY;
     let mut prev_lat = e.start_lat;
@@ -771,7 +764,8 @@ mod tests {
         let graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
         let chord_mid_lat = 60.85;
         let chord_mid_lon = 11.01;
-        let chord = dist_point_to_segment_m(chord_mid_lat, chord_mid_lon, 60.85, 11.0, 60.85, 11.02);
+        let chord =
+            dist_point_to_segment_m(chord_mid_lat, chord_mid_lon, 60.85, 11.0, 60.85, 11.02);
         let shaped = edge_distance_m(&graph.edges[0], chord_mid_lat, chord_mid_lon);
         assert!(chord < 5.0, "chord={chord}");
         assert!(

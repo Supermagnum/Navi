@@ -197,10 +197,12 @@ pub fn default_penalty_minutes(xsi_type: &str, management_type: Option<&str>) ->
             "PublicEvent" => 8.0,
             "PoorEnvironmentConditions" | "WeatherRelatedRoadConditions" => 5.0,
             "ReroutingManagement" => 5.0,
-            "AbnormalTraffic" | "VehicleObstruction" | "AnimalPresenceObstruction"
-            | "GeneralObstruction" | "NonWeatherRelatedRoadConditions" | "AuthorityOperation" => {
-                5.0
-            }
+            "AbnormalTraffic"
+            | "VehicleObstruction"
+            | "AnimalPresenceObstruction"
+            | "GeneralObstruction"
+            | "NonWeatherRelatedRoadConditions"
+            | "AuthorityOperation" => 5.0,
             _ => 5.0,
         },
     }
@@ -371,9 +373,7 @@ pub fn classify_impact(fields: &DatexClassifyFields<'_>) -> DatexClassification 
 
     match xsi {
         "RoadOrCarriagewayOrLaneManagement" => penalize(delay_mult, minutes),
-        "MaintenanceWorks" | "ConstructionWorks" | "Roadworks" => {
-            penalize(delay_mult, minutes)
-        }
+        "MaintenanceWorks" | "ConstructionWorks" | "Roadworks" => penalize(delay_mult, minutes),
         "GeneralNetworkManagement" => penalize(delay_mult, minutes),
         "ReroutingManagement" => penalize(delay_mult, minutes),
         "EnvironmentalObstruction" | "Accident" => penalize(delay_mult, minutes),

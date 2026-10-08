@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use driver_break_core::routing::corridor_skeleton::{
-    build_skeleton_from_pack, major_node_osm_ids, merge_skeleton_files, shared_osm_ids_across_regions,
-    skeleton_path, write_skeleton_file, CorridorSkeletonFile,
+    build_skeleton_from_pack, major_node_osm_ids, merge_skeleton_files,
+    shared_osm_ids_across_regions, skeleton_path, write_skeleton_file, CorridorSkeletonFile,
 };
 use driver_break_core::routing::graph::RoutingProfile;
 use driver_break_core::routing::indexed::{
@@ -138,11 +138,7 @@ fn build_stem_skeleton(
     if side.is_file() {
         match load_flat_tile(&side, profile) {
             Some(flat) => {
-                let ferry_n = flat
-                    .edge_is_ferry
-                    .iter()
-                    .filter(|&&v| v != 0)
-                    .count();
+                let ferry_n = flat.edge_is_ferry.iter().filter(|&&v| v != 0).count();
                 println!(
                     "  overlay stem={stem} nodes={} edges={} ferry_edges≈{ferry_n}",
                     flat.node_ids.len(),

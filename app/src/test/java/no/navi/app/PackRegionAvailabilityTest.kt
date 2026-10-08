@@ -142,7 +142,8 @@ class PackRegionAvailabilityTest {
             }
             assertEquals(
                 leaf.canonicalFile,
-                PackRegionAvailability.resolvePlaceIndexPbf(dir, "europe/sweden/skane")
+                PackRegionAvailability
+                    .resolvePlaceIndexPbf(dir, "europe/sweden/skane")
                     ?.canonicalFile,
             )
             assertFalse(

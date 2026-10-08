@@ -172,8 +172,7 @@ pub fn fixed_pace_minutes(distance_km: f64, min_per_km: f64) -> f64 {
 /// uses [`crate::routing::graph::ferry_wait_minutes`]. Consecutive ferry edges
 /// count wait once.
 fn ferry_edge_hours(edge: &GraphEdge, already_on_ferry: bool) -> f64 {
-    let (crossing_min, wait_min) =
-        crate::routing::graph::ferry_crossing_and_wait_min(edge);
+    let (crossing_min, wait_min) = crate::routing::graph::ferry_crossing_and_wait_min(edge);
     let mins = if already_on_ferry {
         crossing_min
     } else {

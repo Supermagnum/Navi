@@ -78,8 +78,16 @@ mod tests {
         let pts = vec![(60.0, 10.0), (60.0, 10.2)];
         let poly_m = polyline_length_m(&pts);
         assert!(hop_distance_agrees_with_polyline(poly_m, &pts, 0.005));
-        assert!(hop_distance_agrees_with_polyline(poly_m * 1.004, &pts, 0.005));
-        assert!(!hop_distance_agrees_with_polyline(poly_m * 1.01, &pts, 0.005));
+        assert!(hop_distance_agrees_with_polyline(
+            poly_m * 1.004,
+            &pts,
+            0.005
+        ));
+        assert!(!hop_distance_agrees_with_polyline(
+            poly_m * 1.01,
+            &pts,
+            0.005
+        ));
         assert!(!hop_distance_agrees_with_polyline(0.0, &pts, 0.005));
         assert!(total_distance_agrees_with_polyline(poly_m, &pts, 0.005));
     }

@@ -50,7 +50,11 @@ object PlaceIndexAutoBuild {
         }
         if (!dbReadyForMissingRegionBuilds(dataDir)) return null
         val ids =
-            InstalledMaps.current()?.regions?.keys?.map { PackRegionAvailability.normalize(it) }
+            InstalledMaps
+                .current()
+                ?.regions
+                ?.keys
+                ?.map { PackRegionAvailability.normalize(it) }
                 ?.filter { it.isNotEmpty() }
                 ?.distinct()
                 ?.sorted()
@@ -65,7 +69,11 @@ object PlaceIndexAutoBuild {
      */
     private fun migrateKickoffRegion(dataDir: File): String? {
         val installed =
-            InstalledMaps.current()?.regions?.keys?.map { PackRegionAvailability.normalize(it) }
+            InstalledMaps
+                .current()
+                ?.regions
+                ?.keys
+                ?.map { PackRegionAvailability.normalize(it) }
                 ?.filter { it.isNotEmpty() }
                 ?.distinct()
                 .orEmpty()

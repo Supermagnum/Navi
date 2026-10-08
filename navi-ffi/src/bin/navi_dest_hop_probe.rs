@@ -7,9 +7,7 @@ use std::time::Instant;
 
 use driver_break_core::routing::graph::{RouteGraph, RouteOptions, RoutingProfile};
 use driver_break_core::routing::indexed::{load_graph_pack_clips, merge_tile_graphs};
-use driver_break_core::routing::plan_bbox::{
-    plan_edge_clips, trip_bbox_points, PlanEdgeClipMode,
-};
+use driver_break_core::routing::plan_bbox::{plan_edge_clips, trip_bbox_points};
 use osm4routing::NodeId;
 
 fn haversine_m(alat: f64, alon: f64, blat: f64, blon: f64) -> f64 {
@@ -32,7 +30,11 @@ fn load_stem_clips(
         let p = dir.join(f);
         match load_graph_pack_clips(&p, profile, Some(clips)) {
             Ok(g) => {
-                eprintln!("  loaded {f} nodes={} edges={}", g.nodes.len(), g.edges.len());
+                eprintln!(
+                    "  loaded {f} nodes={} edges={}",
+                    g.nodes.len(),
+                    g.edges.len()
+                );
                 parts.push(g);
             }
             Err(e) => eprintln!("  skip {f}: {e}"),
@@ -51,7 +53,10 @@ fn run_listed_multi(
     dest: (f64, f64),
     clips: &[[f64; 4]],
 ) {
-    println!("=== {label} clips={} primary_vest={primary_vest} ===", clips.len());
+    println!(
+        "=== {label} clips={} primary_vest={primary_vest} ===",
+        clips.len()
+    );
     let t0 = Instant::now();
     let ost = load_stem_clips(dir, ost_files, clips, RoutingProfile::Car);
     let vest = load_stem_clips(dir, vest_files, clips, RoutingProfile::Car);
@@ -65,7 +70,10 @@ fn run_listed_multi(
     let snap_start = g.nearest_routable_with_options(start.0, start.1, &opts, false);
     let snap_dest = g.nearest_routable_with_options(dest.0, dest.1, &opts, false);
     let (Ok((s, sm)), Ok((d, dm))) = (snap_start, snap_dest) else {
-        println!("SNAP FAIL start={snap_start:?} dest={snap_dest:?} nodes={}", g.nodes.len());
+        println!(
+            "SNAP FAIL start={snap_start:?} dest={snap_dest:?} nodes={}",
+            g.nodes.len()
+        );
         return;
     };
     let weak = g.same_weak_component(s, d);
@@ -94,7 +102,11 @@ fn load_stem(dir: &Path, files: &[&str], clip: [f64; 4], profile: RoutingProfile
         let p = dir.join(f);
         match load_graph_pack_clips(&p, profile, Some(&clips)) {
             Ok(g) => {
-                eprintln!("  loaded {f} nodes={} edges={}", g.nodes.len(), g.edges.len());
+                eprintln!(
+                    "  loaded {f} nodes={} edges={}",
+                    g.nodes.len(),
+                    g.edges.len()
+                );
                 parts.push(g);
             }
             Err(e) => eprintln!("  skip {f}: {e}"),
@@ -276,9 +288,10 @@ fn run_cfg(
                     continue;
                 }
                 let rev = directed_hop_ok(&g, b, a);
-                let edge = g.edges.iter().find(|e| {
-                    (e.source == a && e.target == b) || (e.source == b && e.target == a)
-                });
+                let edge = g
+                    .edges
+                    .iter()
+                    .find(|e| (e.source == a && e.target == b) || (e.source == b && e.target == a));
                 if shown < 12 {
                     if let Some(e) = edge {
                         println!(
@@ -316,7 +329,14 @@ fn run_cfg(
             println!("no undirected path despite weak_ok (component id collision?)");
         }
     }
-    println!("result={}", if dir_ok { "directed_ok" } else { "disconnected" });
+    println!(
+        "result={}",
+        if dir_ok {
+            "directed_ok"
+        } else {
+            "disconnected"
+        }
+    );
     println!();
 }
 
@@ -500,7 +520,10 @@ fn run_ablate_one(
         g.nearest_routable_with_options(start.0, start.1, &opts, false),
         g.nearest_routable_with_options(dest.0, dest.1, &opts, false),
     ) else {
-        println!("{label} SNAP FAIL nodes={} bind_ms={bind_ms}", g.nodes.len());
+        println!(
+            "{label} SNAP FAIL nodes={} bind_ms={bind_ms}",
+            g.nodes.len()
+        );
         return;
     };
     let snap_ms = t_snap.elapsed().as_millis();
@@ -609,8 +632,10 @@ fn run_ablate_matrix(
     let o1 = RouteOptions::default();
     steps.push(("1_truck_graph_default_opts", &g_truck, o1.clone()));
 
-    let mut o2 = RouteOptions::default();
-    o2.surface_routing_mode = Some(SurfaceRoutingMode::Car);
+    let o2 = RouteOptions {
+        surface_routing_mode: Some(SurfaceRoutingMode::Car),
+        ..Default::default()
+    };
     steps.push(("2_truck+surface_car", &g_truck, o2.clone()));
 
     let mut o3 = o2.clone();
@@ -741,8 +766,7 @@ fn run_app_corridor(
 ) {
     use driver_break_core::routing::indexed::try_load_graph_for_plan_corridor_with_pack_dirs;
     use driver_break_core::routing::plan_bbox::{
-        set_plan_tile_budget_at_least, trip_bbox_points, PlanEdgeClipMode,
-        MAX_PLAN_TILES_MULTI_STEM,
+        set_plan_tile_budget_at_least, trip_bbox_points, MAX_PLAN_TILES_MULTI_STEM,
     };
 
     set_plan_tile_budget_at_least(0);
@@ -803,13 +827,7 @@ fn run_app_corridor(
     println!();
 }
 
-fn run_hop_astar(
-    label: &str,
-    dir: &Path,
-    start: (f64, f64),
-    dest: (f64, f64),
-    surface_car: bool,
-) {
+fn run_hop_astar(label: &str, dir: &Path, start: (f64, f64), dest: (f64, f64), surface_car: bool) {
     use driver_break_core::routing::graph::SurfaceRoutingMode;
     use driver_break_core::routing::indexed::try_load_graph_for_plan_corridor_with_pack_dirs;
     use driver_break_core::routing::plan_bbox::{
@@ -933,14 +951,16 @@ fn main() {
         use driver_break_core::routing::plan_bbox::PlanEdgeClipMode;
         let pts = [hop17, dest];
         let bbox = trip_bbox_points(&pts, 0.35);
-        let band_clips = plan_edge_clips(Some(pts.as_slice()), Some(bbox), PlanEdgeClipMode::CorridorBand)
-            .unwrap_or_default();
+        let band_clips = plan_edge_clips(
+            Some(pts.as_slice()),
+            Some(bbox),
+            PlanEdgeClipMode::CorridorBand,
+        )
+        .unwrap_or_default();
         let aabb_clips =
             plan_edge_clips(Some(pts.as_slice()), Some(bbox), PlanEdgeClipMode::TripAabb)
                 .unwrap_or_default();
-        println!(
-            "--- listed tiles + emulator corridor-band edge clips (must fail hop 17) ---"
-        );
+        println!("--- listed tiles + emulator corridor-band edge clips (must fail hop 17) ---");
         println!("band_clips={}", band_clips.len());
         run_listed_multi(
             "hop17_listed_band",
@@ -996,9 +1016,7 @@ fn main() {
     }
 
     if mode == "ablate" || mode == "all" {
-        let data_dir = std::env::var("NAVI_PROBE_DATA_DIR")
-            .ok()
-            .map(PathBuf::from);
+        let data_dir = std::env::var("NAVI_PROBE_DATA_DIR").ok().map(PathBuf::from);
         let hop13_a = (60.64909_f64, 10.52005);
         let hop13_b = (61.25957_f64, 10.22110);
         let which = std::env::var("NAVI_PROBE_HOP").unwrap_or_else(|_| "both".into());

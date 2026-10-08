@@ -66,14 +66,14 @@ fn main() {
         db.display()
     );
     let t0 = Instant::now();
-    let (indexed, cache_hit, index_ms) =
-        match build_place_index_from_pbf(&pbf, &db, &region, true) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("FAIL: {e}");
-                process::exit(1);
-            }
-        };
+    let (indexed, cache_hit, index_ms) = match build_place_index_from_pbf(&pbf, &db, &region, true)
+    {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("FAIL: {e}");
+            process::exit(1);
+        }
+    };
     let wall_ms = t0.elapsed().as_secs_f64() * 1000.0;
     let rows = count_region_rows(&db, &region);
     let db_bytes = std::fs::metadata(&db).map(|m| m.len()).unwrap_or(0);

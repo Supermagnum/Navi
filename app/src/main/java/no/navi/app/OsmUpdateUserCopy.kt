@@ -93,12 +93,12 @@ object OsmUpdateUserCopy {
     }
 
     /** OSM apply success is a `PASS` line, not `pack_hit` / `compass`. */
-    private fun osmApplyPassed(raw: String): Boolean {
-        return raw.lineSequence().any { line ->
+    private fun osmApplyPassed(raw: String): Boolean =
+        raw.lineSequence().any { line ->
             val s = line.trim()
             s.equals("PASS", ignoreCase = true) ||
                 s.startsWith("PASS\n") ||
                 s.startsWith("pass method=", ignoreCase = true)
-        } || raw.lowercase().contains("pass\nmethod=")
-    }
+        } ||
+            raw.lowercase().contains("pass\nmethod=")
 }
