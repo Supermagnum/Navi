@@ -5382,6 +5382,7 @@ private fun NaviMapScreen() {
                             onlineAvailable =
                                 outcome.usedOnline ||
                                     (outcome.hits.isEmpty() && outcome.onlineOk),
+                            indexProblem = InstalledMaps.current()?.placeIndexProblem,
                         ).orEmpty()
                     NaviMapTestHooks.lastSearchHitCount = hits.size
                     NaviMapTestHooks.lastSearchQuery = trimmed

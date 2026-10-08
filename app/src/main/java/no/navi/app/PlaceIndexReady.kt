@@ -7,9 +7,9 @@ import java.io.File
 /**
  * Regions whose place-index rows are safe to search.
  *
- * Written only after a region's downloads finish and its place index build
- * returns PASS. Cleared when a new download for that region starts so From/Via/To
- * never surfaces partial or in-progress index rows.
+ * Readiness comes from the database: a region is searchable only when its rows
+ * pass [PlaceIndexIntact]. The ready stamp is a cache of the last known state,
+ * rewritten from the database; a stamp without rows means missing.
  *
  * Search also requires the region to be present on disk (downloaded packs /
  * extract). Hits outside downloaded ∪ ready regions are never shown.
@@ -199,23 +199,29 @@ object PlaceIndexReady {
             return r.placeIndex == InstalledMaps.PlaceIndexState.INTACT ||
                 r.placeIndex == InstalledMaps.PlaceIndexState.LEGACY_INTACT
         }
-        // When a place_index.db exists, stamp alone is not enough (incomplete /
-        // empty complete=1 slices must stay unsearchable). When the DB is
-        // absent — host fixtures, pre-index installs — the ready stamp remains
-        // the readiness signal (pre-c14408fc contract).
-        val dbFile = File(dataDir, "place_index.db")
-        if (dbFile.isFile) {
-            return PlaceIndexIntact.isIntact(dataDir, id)
-        }
-        return load(dataDir).any {
-            PackRegionAvailability.regionIdsMatchForCatalog(it, id)
-        }
+        return PlaceIndexIntact.isIntact(dataDir, id)
     }
 
     /**
-     * Regions allowed in From/Via/To: ready stamp, restricted to downloaded
-     * regions when any are on disk. Hits must match by [PlaceHit.regionId]
-     * (preferred) or lat/lon Geofabrik suggestion (legacy empty region_id).
+     * Rewrite the stamp in [dataDir] to the regions the database reports as
+     * intact. The stamp is a cache of the last known state; it never feeds
+     * back into readiness.
+     */
+    fun syncStampFromIndex(
+        dataDir: File,
+        intact: Set<String>,
+    ) {
+        val next = intact.map { PackRegionAvailability.normalize(it) }.filter { it.isNotEmpty() }.toSet()
+        if (readyFile(dataDir).isFile && loadStampOnly(dataDir) == next) return
+        save(dataDir, next)
+        runCatching { Log.i(TAG, "stamp rewritten from index regions=${next.sorted()}") }
+    }
+
+    /**
+     * Regions allowed in From/Via/To: intact rows in the database, restricted
+     * to downloaded regions when any are on disk. Hits must match by
+     * [PlaceHit.regionId] (preferred) or lat/lon Geofabrik suggestion (legacy
+     * empty region_id).
      */
     fun searchAllowedRegions(dataDir: File): Set<String> {
         val key = dataDir.absolutePath
@@ -234,15 +240,10 @@ object PlaceIndexReady {
                         it.placeIndex == InstalledMaps.PlaceIndexState.LEGACY_INTACT
                 }?.map { it.regionId }
                 ?.toSet()
-                ?: run {
-                    val stamped = load(dataDir)
-                    val dbFile = File(dataDir, "place_index.db")
-                    if (!dbFile.isFile) {
-                        stamped
-                    } else {
-                        stamped.filter { PlaceIndexIntact.isIntact(dataDir, it) }.toSet()
-                    }
-                }
+                ?: PlaceIndexIntact
+                    .indexedRegionIds(dataDir)
+                    .filter { PlaceIndexIntact.isIntact(dataDir, it) }
+                    .toSet()
         val computed =
             if (ready.isEmpty()) {
                 emptySet()
@@ -356,6 +357,10 @@ object PlaceIndexReady {
     ) {
         if (deferWritesDuringPlan()) {
             Log.i(TAG, "skip clearRegionRows during plan region=$regionId")
+            return
+        }
+        PlaceIndexIntact.rowSourceForTests?.let {
+            it.clearRegion(dataDir, regionId)
             return
         }
         val dbFile = File(dataDir, "place_index.db")

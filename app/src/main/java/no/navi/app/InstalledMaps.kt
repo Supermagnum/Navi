@@ -61,6 +61,8 @@ object InstalledMaps {
         val regions: Map<String, Region>,
         val missingPlaceIndex: List<MissingIndexBuild>,
         val partialFetchIds: Set<String> = emptySet(),
+        /** Why place search is unavailable for every region, or null when the index file is usable. */
+        val placeIndexProblem: String? = null,
     )
 
     data class MissingIndexBuild(
@@ -124,8 +126,7 @@ object InstalledMaps {
     fun refresh(context: Context) {
         PlaceIndexStorage.ensureOnPackVolume(context)
         val internal = NaviAppData.resolve(context)
-        val placeIndexDir =
-            PlaceIndexStorage.indexDir(context) ?: internal
+        val placeIndexDir = PlaceIndexStorage.indexDir(context)
         val extras = mutableListOf<Pair<String, File>>()
         extras.add(NaviStorageVolumes.INTERNAL_ID to File(internal, LongTripPackStorage.PACKS_SUBDIR))
         for (vol in NaviStorageVolumes.list(context)) {
@@ -139,7 +140,7 @@ object InstalledMaps {
     fun refreshFromDirs(
         internalDataDir: File,
         packRoots: List<Pair<String, File>>,
-        placeIndexDir: File = internalDataDir,
+        placeIndexDir: File? = internalDataDir,
         placeIndexLocationLine: String? = null,
     ) {
         val byId = linkedMapOf<String, Region>()
@@ -161,7 +162,12 @@ object InstalledMaps {
             consider(id, dir)
         }
         val indexUnavailable =
-            placeIndexLocationLine?.contains("UNAVAILABLE") == true
+            placeIndexDir == null || placeIndexLocationLine?.contains("UNAVAILABLE") == true
+        val problem =
+            when {
+                indexUnavailable || placeIndexDir == null -> "pack volume unavailable"
+                else -> PlaceIndexIntact.fileProblem(placeIndexDir)
+            }
         val missing =
             byId.values.mapNotNull { r ->
                 if (r.placeIndex == PlaceIndexState.INTACT || r.placeIndex == PlaceIndexState.LEGACY_INTACT) {
@@ -172,9 +178,15 @@ object InstalledMaps {
                         r.regionId,
                         r.pbfPath,
                         r.pbfKind,
-                        "place index unavailable on pack volume (not building elsewhere)",
+                        "search unavailable: place index on pack volume unavailable (not building elsewhere)",
                     )
                 }
+                val searchNote =
+                    if (problem != null) {
+                        "search unavailable: place index $problem; "
+                    } else {
+                        "search unavailable: no rows for this region; "
+                    }
                 val leafPbf =
                     PackRegionAvailability.resolvePlaceIndexPbf(r.packDir, r.regionId)
                         ?: PackRegionAvailability.resolvePlaceIndexPbf(internalDataDir, r.regionId)
@@ -197,7 +209,7 @@ object InstalledMaps {
                             "would index ${leafPbf.name} (${leafPbf.length()} bytes); not started; $hours"
                         }
                     }
-                MissingIndexBuild(r.regionId, pbf, r.pbfKind, note)
+                MissingIndexBuild(r.regionId, pbf, r.pbfKind, searchNote + note)
             }
         snapshot.set(
             Snapshot(
@@ -205,9 +217,16 @@ object InstalledMaps {
                 regions = byId,
                 missingPlaceIndex = missing,
                 partialFetchIds = partial,
+                placeIndexProblem = problem,
             ),
         )
         snapshotRoot.set(internalDataDir.absolutePath)
+        val intactIds =
+            byId.values
+                .filter { it.placeIndex == PlaceIndexState.INTACT || it.placeIndex == PlaceIndexState.LEGACY_INTACT }
+                .map { it.regionId }
+                .toSet()
+        runCatching { PlaceIndexReady.syncStampFromIndex(internalDataDir, intactIds) }
         runCatching {
             val body =
                 buildString {
@@ -229,6 +248,9 @@ object InstalledMaps {
         val snap = snapshot.get() ?: return "InstalledMaps: no snapshot"
         return buildString {
             appendLine("InstalledMaps regions=${snap.regions.size} missing_index=${snap.missingPlaceIndex.size}")
+            snap.placeIndexProblem?.let {
+                appendLine("place search unavailable for all regions: place index $it")
+            }
             for (r in snap.regions.values.sortedBy { it.regionId }) {
                 appendLine(
                     "${r.regionId} vol=${r.volumeId} gen=${r.generation.ifBlank { "-" }} " +
@@ -250,7 +272,7 @@ object InstalledMaps {
 
     private fun scanDir(
         tilesDataDir: File,
-        placeIndexDir: File,
+        placeIndexDir: File?,
         volumeId: String,
         dir: File,
         into: MutableMap<String, Region>,
@@ -258,6 +280,15 @@ object InstalledMaps {
         partial: MutableSet<String>,
     ) {
         val files = dir.listFiles() ?: return
+
+        fun probeFor(nid: String): PlaceIndexIntact.Probe =
+            probes.getOrPut(nid) {
+                if (placeIndexDir == null) {
+                    PlaceIndexIntact.unavailable("pack_volume_unavailable")
+                } else {
+                    PlaceIndexIntact.probe(placeIndexDir, nid)
+                }
+            }
         for (f in files) {
             val name = f.name
             if (!name.startsWith(".pack-fetch-")) continue
@@ -288,8 +319,8 @@ object InstalledMaps {
             val pmKey = PackRegionAvailability.geofabrikPathToRegionKey(nid)
             val tilesFile = File(tilesDataDir, "pmtiles/$pmKey.pmtiles")
             val rejectedFile = File(tilesDataDir, "pmtiles/$pmKey.pmtiles.rejected")
-            val probe = probes.getOrPut(nid) { PlaceIndexIntact.probe(placeIndexDir, nid) }
-            val q = File(placeIndexDir, "place_index.db.quarantine").isFile
+            val probe = probeFor(nid)
+            val q = placeIndexDir != null && File(placeIndexDir, "place_index.db.quarantine").isFile
             val indexState =
                 when {
                     probe.intact && probe.legacy -> PlaceIndexState.LEGACY_INTACT
@@ -330,7 +361,7 @@ object InstalledMaps {
             val regionId = regionIdForStem(dir, stem) ?: continue
             val nid = PackRegionAvailability.normalize(regionId)
             if (into.containsKey(nid)) continue
-            val probe = probes.getOrPut(nid) { PlaceIndexIntact.probe(placeIndexDir, nid) }
+            val probe = probeFor(nid)
             val pbfKind =
                 if (f.length() < RegionDownloadBackground.MIN_PBF_BYTES) PbfKind.STUB else PbfKind.REAL
             into[nid] =

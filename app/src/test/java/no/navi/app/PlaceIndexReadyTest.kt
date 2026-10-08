@@ -118,9 +118,9 @@ class PlaceIndexReadyTest {
                 delete()
                 mkdirs()
             }
+        FakePlaceIndexRows.install()
         try {
-            PlaceIndexReady.readyFile(dir).writeText("[]")
-            PlaceIndexReady.markReady(dir, "europe/norway/ostlandet")
+            FakePlaceIndexRows.putRows(dir, "europe/norway/ostlandet", 1_483_135L)
             val keep =
                 PlaceHit(
                     1L,
@@ -148,6 +148,77 @@ class PlaceIndexReadyTest {
             assertEquals(listOf(keep), filtered)
         } finally {
             dir.deleteRecursively()
+            FakePlaceIndexRows.reset()
+        }
+    }
+
+    @Test
+    fun stamp_without_rows_is_missing() {
+        val dir =
+            File.createTempFile("place-ready-norows", "dir").apply {
+                delete()
+                mkdirs()
+            }
+        FakePlaceIndexRows.install()
+        try {
+            PlaceIndexReady.readyFile(dir).writeText("""["europe/sweden","europe/sweden/skane"]""")
+            FakePlaceIndexRows.putRows(dir, "europe/sweden/skane", 202_653L)
+            assertFalse(PlaceIndexReady.isReady(dir, "europe/sweden"))
+            assertTrue(PlaceIndexReady.isReady(dir, "europe/sweden/skane"))
+            assertEquals(setOf("europe/sweden/skane"), PlaceIndexReady.searchAllowedRegions(dir))
+        } finally {
+            dir.deleteRecursively()
+            FakePlaceIndexRows.reset()
+        }
+    }
+
+    @Test
+    fun zero_byte_db_is_missing_for_every_region_and_reported() {
+        val dir =
+            File.createTempFile("place-ready-zero", "dir").apply {
+                delete()
+                mkdirs()
+            }
+        try {
+            PlaceIndexReady.readyFile(dir).writeText("""["europe/denmark"]""")
+            File(dir, "place_index.db").createNewFile()
+            assertFalse(PlaceIndexReady.isReady(dir, "europe/denmark"))
+            assertEquals("file empty (0 bytes)", PlaceIndexIntact.fileProblem(dir))
+            assertEquals(emptySet<String>(), PlaceIndexReady.searchAllowedRegions(dir))
+            File(dir, "place_index.db").delete()
+            assertEquals("file missing", PlaceIndexIntact.fileProblem(dir))
+            assertFalse(File(dir, "place_index.db").exists())
+        } finally {
+            dir.deleteRecursively()
+            PlaceIndexReady.invalidateAllowedRegionsCache()
+        }
+    }
+
+    @Test
+    fun stamp_is_rewritten_from_index_never_the_reverse() {
+        val dir =
+            File.createTempFile("place-ready-sync", "dir").apply {
+                delete()
+                mkdirs()
+            }
+        FakePlaceIndexRows.install()
+        try {
+            File(dir, "denmark-latest.navi-manifest.json").writeText("{}")
+            File(dir, "sweden-latest.navi-manifest.json").writeText("{}")
+            PlaceIndexReady.readyFile(dir).writeText("""["europe/sweden"]""")
+            FakePlaceIndexRows.putRows(dir, "europe/denmark", 2_851_971L)
+            InstalledMaps.refreshFromDirs(dir, emptyList(), placeIndexDir = dir)
+            assertEquals("""["europe/denmark"]""", PlaceIndexReady.readyFile(dir).readText().trim())
+            assertEquals(
+                InstalledMaps.PlaceIndexState.MISSING,
+                InstalledMaps.region("europe/sweden", dir)?.placeIndex,
+            )
+            assertFalse(PlaceIndexReady.isReady(dir, "europe/sweden"))
+            assertTrue(PlaceIndexReady.isReady(dir, "europe/denmark"))
+        } finally {
+            InstalledMaps.clearForTests()
+            dir.deleteRecursively()
+            FakePlaceIndexRows.reset()
         }
     }
 

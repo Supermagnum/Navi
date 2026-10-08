@@ -31,29 +31,56 @@ object PlaceIndexIntact {
         val reason: String,
     )
 
+    /** Stand-in for `place_index.db` in host JVM tests, which have no Android SQLite. */
+    internal interface RowSource {
+        /** region_id to row count, or null when [dataDir] has no database. */
+        fun rows(dataDir: File): Map<String, Long>?
+
+        fun clearRegion(
+            dataDir: File,
+            regionId: String,
+        )
+    }
+
+    @Volatile
+    internal var rowSourceForTests: RowSource? = null
+
     fun isIntact(
         dataDir: File,
         regionId: String,
     ): Boolean = probe(dataDir, regionId).intact
+
+    /** Not intact, nothing read; [reason] says why. */
+    fun unavailable(reason: String): Probe =
+        Probe(
+            intact = false,
+            dbBytes = 0L,
+            userVersion = 0,
+            complete = null,
+            expected = 0L,
+            written = 0L,
+            rowCount = 0L,
+            legacy = false,
+            reason = reason,
+        )
 
     fun probe(
         dataDir: File,
         regionId: String,
     ): Probe {
         val rid = PackRegionAvailability.normalize(regionId)
-        val empty =
-            Probe(
-                intact = false,
-                dbBytes = 0L,
-                userVersion = 0,
-                complete = null,
-                expected = 0L,
-                written = 0L,
-                rowCount = 0L,
-                legacy = false,
-                reason = "empty_region_id",
-            )
+        val empty = unavailable("empty_region_id")
         if (rid.isEmpty()) return empty
+        rowSourceForTests?.let { src ->
+            val rows = src.rows(dataDir) ?: return empty.copy(reason = "db_missing")
+            val n = rows[rid] ?: 0L
+            return empty.copy(
+                intact = n > 0L,
+                userVersion = SCHEMA_VERSION,
+                rowCount = n,
+                reason = if (n > 0L) "ok" else "no_rows_no_build",
+            )
+        }
         val dbFile = File(dataDir, "place_index.db")
         if (!dbFile.isFile) {
             return empty.copy(reason = "db_missing")
@@ -75,6 +102,64 @@ object PlaceIndexIntact {
             Log.w(TAG, "readonly probe failed region=$rid: ${t.message}")
             empty.copy(dbBytes = bytes, reason = "open_failed")
         }
+    }
+
+    /**
+     * Region ids that have a build record or rows in the database under
+     * [dataDir]. Empty when the file is missing, tiny or unreadable.
+     */
+    fun indexedRegionIds(dataDir: File): Set<String> {
+        rowSourceForTests?.let { src ->
+            return src
+                .rows(dataDir)
+                ?.filterValues { it > 0L }
+                ?.keys
+                ?.map { PackRegionAvailability.normalize(it) }
+                ?.toSet()
+                .orEmpty()
+        }
+        val dbFile = File(dataDir, "place_index.db")
+        if (!dbFile.isFile || dbFile.length() < MIN_DB_BYTES) return emptySet()
+        return runCatching {
+            SQLiteDatabase
+                .openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
+                .use { db ->
+                    val cursor =
+                        runCatching { db.rawQuery("SELECT region_id FROM name_index_build", null) }
+                            .getOrElse {
+                                db.rawQuery("SELECT DISTINCT region_id FROM name_entries", null)
+                            }
+                    cursor.use { c ->
+                        buildSet {
+                            while (c.moveToNext()) {
+                                val id = PackRegionAvailability.normalize(c.getString(0) ?: "")
+                                if (id.isNotEmpty()) add(id)
+                            }
+                        }
+                    }
+                }
+        }.getOrDefault(emptySet())
+    }
+
+    /**
+     * Why the whole place index is unusable under [dataDir], or null when the
+     * file is present and opens. Every region counts as missing when non-null.
+     */
+    fun fileProblem(dataDir: File): String? {
+        rowSourceForTests?.let { src ->
+            return if (src.rows(dataDir) == null) "file missing" else null
+        }
+        val dbFile = File(dataDir, "place_index.db")
+        if (!dbFile.isFile) return "file missing"
+        val bytes = dbFile.length()
+        if (bytes < MIN_DB_BYTES) return "file empty ($bytes bytes)"
+        val opens =
+            runCatching {
+                SQLiteDatabase
+                    .openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
+                    .use { db -> db.rawQuery("PRAGMA user_version", null).use { it.moveToFirst() } }
+            }.getOrDefault(false)
+        return if (opens) null else "file unreadable"
     }
 
     private fun probeOpen(

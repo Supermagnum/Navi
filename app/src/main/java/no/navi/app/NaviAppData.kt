@@ -6,7 +6,7 @@ import java.io.File
 
 /**
  * Resolves the on-device directory for large working data (PMTiles, DEM, OSM
- * extracts, elevation cache, graph cache, place index).
+ * extracts, elevation cache, graph cache).
  *
  * Prefer **internal** [Context.getFilesDir] (`/data/user/<id>/<pkg>/files`), which
  * sits on the app-private `/data` volume. Do **not** prefer
@@ -16,6 +16,8 @@ import java.io.File
  *
  * Existing data under the legacy external files tree is migrated into internal
  * storage once when present (same `/data` filesystem → rename when possible).
+ * The place index is not migrated here: it lives on the pack volume and only
+ * [PlaceIndexStorage.ensureOnPackVolume] moves it, and only when it is intact.
  */
 object NaviAppData {
     private const val TAG = "NaviAppData"
@@ -40,7 +42,6 @@ object NaviAppData {
                 "graph-cache",
                 "graph-cache-foot",
                 "navi.db",
-                "place_index.db",
                 "region_meta.json",
             )
         for (name in names) {
