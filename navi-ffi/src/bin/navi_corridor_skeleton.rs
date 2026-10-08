@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use driver_break_core::routing::corridor_skeleton::{
-    build_skeleton_from_pack, major_node_osm_ids, merge_skeleton_files,
+    border_candidate_osm_ids, build_skeleton_from_pack, merge_skeleton_files,
     shared_osm_ids_across_regions, skeleton_path, write_skeleton_file, CorridorSkeletonFile,
 };
 use driver_break_core::routing::graph::RoutingProfile;
@@ -95,14 +95,14 @@ fn load_flat_tile(path: &Path, profile: RoutingProfile) -> Option<FlatGraphPack>
     Some(flat)
 }
 
-fn collect_major_ids(pack_dir: &Path, stem: &str, profile: RoutingProfile) -> HashSet<i64> {
+fn collect_border_ids(pack_dir: &Path, stem: &str, profile: RoutingProfile) -> HashSet<i64> {
     let mut ids = HashSet::new();
     for p in tile_paths(pack_dir, stem, profile) {
         let Some(flat) = load_flat_tile(&p, profile) else {
-            eprintln!("  skip major-id {}: load failed", p.display());
+            eprintln!("  skip border-id {}: load failed", p.display());
             continue;
         };
-        ids.extend(major_node_osm_ids(&flat));
+        ids.extend(border_candidate_osm_ids(&flat, None));
         drop(flat);
         trim_rss();
     }
@@ -229,16 +229,16 @@ fn main() {
     std::fs::create_dir_all(&out_dir).ok();
     let profile = RoutingProfile::Car;
     println!(
-        "pack_dir={} out_dir={} stems={} (pass1: major node ids)",
+        "pack_dir={} out_dir={} stems={} (pass1: border-candidate node ids)",
         pack_dir.display(),
         out_dir.display(),
         stems.len()
     );
     let mut region_sets = Vec::new();
     for stem in &stems {
-        let ids = collect_major_ids(&pack_dir, stem, profile);
+        let ids = collect_border_ids(&pack_dir, stem, profile);
         println!(
-            "  major_ids stem={stem} count={} peak_rss_mb={}",
+            "  border_ids stem={stem} count={} peak_rss_mb={}",
             ids.len(),
             peak_rss_mb()
         );

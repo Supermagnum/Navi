@@ -23,8 +23,9 @@ use super::graph_pack::{with_corridor_skeleton_hydrate, FlatGraphPack};
 use super::load::load_graph_pack_clips;
 use super::manifest::{manifest_path, NaviManifest};
 use crate::routing::corridor_skeleton::{
-    build_skeleton_from_pack, major_node_osm_ids, merge_skeleton_files, read_skeleton_file,
-    write_skeleton_file, CorridorSkeletonFile, CORRIDOR_SKELETON_FORMAT_VERSION,
+    border_band_bbox, border_candidate_osm_ids, build_skeleton_from_pack, merge_skeleton_files,
+    read_skeleton_file, write_skeleton_file, CorridorSkeletonFile,
+    CORRIDOR_SKELETON_FORMAT_VERSION,
 };
 use crate::routing::graph::RoutingProfile;
 
@@ -40,7 +41,11 @@ pub const SKELETON_BUILD_SOFT_RSS_MB: u64 = 1800;
 /// FU24: bump when rim secondary/tertiary/unclassified/residential selection changes.
 /// FU25: binary skeleton + border-crossing-only rim (no full AABB rim keep).
 /// FU27: neighbour fingerprint by installed pack identity, not skeleton mtime.
-pub const CORRIDOR_SKELETON_BUILD: u32 = 6;
+/// FU30: border candidates include approach-class nodes (secondary through
+/// residential), not only major/ferry. Pass 5 walks metres to the major
+/// skeleton (50 km), not a 12-hop cap that dropped rural county cuts.
+/// Both directed edges of a bidirectional approach are kept.
+pub const CORRIDOR_SKELETON_BUILD: u32 = 9;
 
 fn profile_slug(profile: RoutingProfile) -> &'static str {
     match profile {
@@ -268,30 +273,38 @@ fn load_flat_tile_bounded(
     Some(flat)
 }
 
-fn collect_major_ids(home: &Path, stem: &str, profile: RoutingProfile) -> HashSet<i64> {
+fn collect_border_candidates(
+    home: &Path,
+    stem: &str,
+    profile: RoutingProfile,
+    within: Option<[f64; 4]>,
+) -> HashSet<i64> {
     let mut ids = HashSet::new();
     for p in tile_paths(home, stem, profile) {
         let Some(flat) = load_flat_tile_bounded(&p, profile, stem) else {
             continue;
         };
-        ids.extend(major_node_osm_ids(&flat));
+        ids.extend(border_candidate_osm_ids(&flat, within.as_ref()));
         drop(flat);
     }
     ids
 }
 
-/// Border OSM ids = intersection of this stem's major ids with major (or
-/// skeleton) ids from bbox-adjacent installed neighbours.
+/// Border OSM ids = intersection of this stem's border-candidate ids with
+/// candidate (or skeleton) ids from bbox-adjacent installed neighbours.
 ///
-/// Using neighbour **skeletons** alone was a chicken-and-egg: shared primary
-/// nodes only appear as borders after both sides already kept them, so pairs
-/// like jamtland↔dalarna stayed disconnected (~25 km gap) and Stage B detoured
-/// thousands of km through unrelated packs. Adjacent-pack major ids close that.
+/// Candidates are major, ferry and approach-class nodes (secondary through
+/// residential). Using major ids alone missed county cuts that Geofabrik
+/// splits on a secondary or minor road: the two major spines never share an
+/// OSM id, Stage B has no land path, and the search widens through unrelated
+/// packs and ferries. Adjacent-pack candidates in the shared bbox band close
+/// that. Non-adjacent neighbours still contribute existing skeleton ids
+/// (shared ferries).
 fn border_osm_from_neighbor_packs(
     home: &Path,
     stem: &str,
     profile: RoutingProfile,
-    major_ids: &HashSet<i64>,
+    mine: &HashSet<i64>,
 ) -> HashSet<i64> {
     let my_region = leaf_to_region(stem);
     let my_bbox = crate::routing::basemap::region_bbox(&my_region);
@@ -310,23 +323,26 @@ fn border_osm_from_neighbor_packs(
             continue;
         }
         let other_region = leaf_to_region(other);
-        let adjacent = match (my_bbox, crate::routing::basemap::region_bbox(&other_region)) {
+        let other_bbox = crate::routing::basemap::region_bbox(&other_region);
+        let adjacent = match (my_bbox, other_bbox) {
             (Some(a), Some(b)) => crate::long_trip::regions_bbox_adjacent(&a, &b, 0.15),
             _ => true,
         };
         if adjacent {
-            neighbor_nodes.extend(collect_major_ids(home, other, profile));
-        } else {
-            if let Some(skel_path) =
-                crate::routing::corridor_skeleton::resolve_skeleton_path(home, other)
-            {
-                if let Ok(skel) = read_skeleton_file(&skel_path) {
-                    neighbor_nodes.extend(skel.node_ids.iter().copied());
-                }
+            let band = match (my_bbox, other_bbox) {
+                (Some(a), Some(b)) => Some(border_band_bbox(&a, &b, 0.15)),
+                _ => None,
+            };
+            neighbor_nodes.extend(collect_border_candidates(home, other, profile, band));
+        } else if let Some(skel_path) =
+            crate::routing::corridor_skeleton::resolve_skeleton_path(home, other)
+        {
+            if let Ok(skel) = read_skeleton_file(&skel_path) {
+                neighbor_nodes.extend(skel.node_ids.iter().copied());
             }
         }
     }
-    major_ids.intersection(&neighbor_nodes).copied().collect()
+    mine.intersection(&neighbor_nodes).copied().collect()
 }
 
 fn build_stem_skeleton(
@@ -501,21 +517,21 @@ pub fn ensure_corridor_skeleton(
         15,
         &format!("Preparing corridor skeleton for {label}…"),
     );
-    let major = collect_major_ids(home, stem, profile);
+    let mine = collect_border_candidates(home, stem, profile, None);
     set_progress(
         stem,
         45,
         &format!("Preparing corridor skeleton for {label}…"),
     );
-    let border = border_osm_from_neighbor_packs(home, stem, profile, &major);
+    let border = border_osm_from_neighbor_packs(home, stem, profile, &mine);
     log::info!(
         target: "NaviPlan",
-        "corridor_skeleton major_ids={} border_ids={} stem={stem} VmHWM_mb={}",
-        major.len(),
+        "corridor_skeleton candidate_ids={} border_ids={} stem={stem} VmHWM_mb={}",
+        mine.len(),
         border.len(),
         peak_rss_mb()
     );
-    drop(major);
+    drop(mine);
 
     set_progress(
         stem,

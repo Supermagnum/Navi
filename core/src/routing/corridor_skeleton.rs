@@ -21,7 +21,8 @@ use crate::routing::indexed::{densify_skeleton_edge, FlatGraphPack, GRAPH_FORMAT
 use geo_types::Coord;
 use osm4routing::{Node, NodeId};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -205,6 +206,62 @@ pub fn shared_osm_ids_across_regions(region_node_ids: &[HashSet<i64>]) -> HashSe
     shared
 }
 
+/// Road classes a border crossing may use below the major skeleton. Pass 5 of
+/// [`select_skeleton_edge_indices_for_region`] walks these from a border node
+/// to the major skeleton.
+pub fn is_border_approach_highway(highway: &str) -> bool {
+    matches!(
+        highway,
+        "secondary"
+            | "secondary_link"
+            | "tertiary"
+            | "tertiary_link"
+            | "unclassified"
+            | "residential"
+    )
+}
+
+/// Overlap of two `[min_lat, min_lon, max_lat, max_lon]` bboxes, expanded by
+/// `eps_deg`. Used so neighbour packs contribute approach-class nodes only
+/// along the shared cut, not their whole interior.
+pub fn border_band_bbox(a: &[f64; 4], b: &[f64; 4], eps_deg: f64) -> [f64; 4] {
+    [
+        a[0].max(b[0]) - eps_deg,
+        a[1].max(b[1]) - eps_deg,
+        a[2].min(b[2]) + eps_deg,
+        a[3].min(b[3]) + eps_deg,
+    ]
+}
+
+/// OSM node ids that can be a land-border crossing or a shared ferry terminal:
+/// nodes incident to major, ferry or border-approach edges. Regions join where
+/// these sets intersect; a crossing carried only by a secondary or minor road
+/// is not on a major edge on either side.
+///
+/// `within` is `[min_lat, min_lon, max_lat, max_lon]`, same as [`crate::routing::basemap::region_bbox`].
+pub fn border_candidate_osm_ids(pack: &FlatGraphPack, within: Option<&[f64; 4]>) -> HashSet<i64> {
+    let mut out = HashSet::new();
+    let inside = |n: usize| {
+        within.is_none_or(|b| {
+            let (lat, lon) = (pack.node_lats[n], pack.node_lons[n]);
+            lat >= b[0] && lon >= b[1] && lat <= b[2] && lon <= b[3]
+        })
+    };
+    for i in 0..pack.edge_src.len() {
+        let hw = pack.edge_highway[i].as_str();
+        let ferry = pack.edge_is_ferry.get(i).copied().unwrap_or(0) != 0;
+        if !densify_skeleton_edge(hw, ferry) && !is_border_approach_highway(hw) {
+            continue;
+        }
+        for n in [pack.edge_src[i] as usize, pack.edge_tgt[i] as usize] {
+            if inside(n) {
+                out.insert(pack.node_ids[n]);
+            }
+        }
+    }
+    out
+}
+
 /// Collect OSM node ids incident to major (densify-skeleton) or ferry edges.
 pub fn major_node_osm_ids(pack: &FlatGraphPack) -> HashSet<i64> {
     let mut out = HashSet::new();
@@ -350,26 +407,18 @@ pub fn select_skeleton_edge_indices_for_region(
             keep.insert(i);
         }
     }
-    // Pass 5: border-crossing approaches only. Keep secondary/tertiary/
-    // unclassified/residential solely on a short path from a real border node
-    // to the major skeleton (both sides of a Geofabrik cut). Do not keep every
-    // minor road near the region AABB — that bloated Hamburg/SH/Niedersachsen.
-    let _ = region_id; // bbox rim band no longer used for keep-all
+    // Pass 5: from each border node that is not already on the major skeleton,
+    // keep the shortest approach-class path (by metres) to the nearest major
+    // node. A hop budget of 12 dropped rural Geofabrik cuts whose shared node
+    // sits tens of kilometres from the trunk — the two spines never joined.
+    // Still one path per border node, not every minor road in the AABB.
+    let _ = region_id;
     let mut minor_adj: HashMap<u32, Vec<(u32, usize)>> = HashMap::new();
     for i in 0..n {
         if pack.edge_is_ferry.get(i).copied().unwrap_or(0) != 0 {
             continue;
         }
-        let hw = pack.edge_highway[i].as_str();
-        if !matches!(
-            hw,
-            "secondary"
-                | "secondary_link"
-                | "tertiary"
-                | "tertiary_link"
-                | "unclassified"
-                | "residential"
-        ) {
+        if !is_border_approach_highway(pack.edge_highway[i].as_str()) {
             continue;
         }
         let s = pack.edge_src[i];
@@ -377,35 +426,44 @@ pub fn select_skeleton_edge_indices_for_region(
         minor_adj.entry(s).or_default().push((t, i));
         minor_adj.entry(t).or_default().push((s, i));
     }
-    const BORDER_APPROACH_MAX_HOPS: usize = 12;
+    const BORDER_APPROACH_MAX_M: f64 = 50_000.0;
     for &bn in &border_nodes {
         if major_nodes.contains(&bn) {
-            continue; // already on major skeleton
+            continue;
         }
-        let mut visited: HashSet<u32> = HashSet::from([bn]);
-        let mut queue: VecDeque<(u32, usize)> = VecDeque::from([(bn, 0usize)]);
+        let mut dist: HashMap<u32, i64> = HashMap::from([(bn, 0)]);
         let mut parent: HashMap<u32, (u32, usize)> = HashMap::new();
+        let mut heap: BinaryHeap<(Reverse<i64>, u32)> = BinaryHeap::from([(Reverse(0), bn)]);
         let mut reached_major: Option<u32> = None;
-        while let Some((u, hops)) = queue.pop_front() {
-            if hops >= BORDER_APPROACH_MAX_HOPS {
+        while let Some((Reverse(du), u)) = heap.pop() {
+            if dist.get(&u).copied().unwrap_or(i64::MAX) < du {
                 continue;
+            }
+            if u != bn && major_nodes.contains(&u) {
+                reached_major = Some(u);
+                break;
             }
             let Some(neigh) = minor_adj.get(&u) else {
                 continue;
             };
             for &(v, ei) in neigh {
-                if !visited.insert(v) {
+                let w = pack
+                    .edge_length_m
+                    .get(ei)
+                    .copied()
+                    .unwrap_or(0.0)
+                    .max(1.0)
+                    .round() as i64;
+                let alt = du.saturating_add(w);
+                if alt as f64 > BORDER_APPROACH_MAX_M {
                     continue;
                 }
-                parent.insert(v, (u, ei));
-                if major_nodes.contains(&v) {
-                    reached_major = Some(v);
-                    break;
+                if dist.get(&v).copied().unwrap_or(i64::MAX) <= alt {
+                    continue;
                 }
-                queue.push_back((v, hops + 1));
-            }
-            if reached_major.is_some() {
-                break;
+                dist.insert(v, alt);
+                parent.insert(v, (u, ei));
+                heap.push((Reverse(alt), v));
             }
         }
         if let Some(mut cur) = reached_major {
@@ -414,6 +472,23 @@ pub fn select_skeleton_edge_indices_for_region(
                     break;
                 };
                 keep.insert(ei);
+                // Pack stores a bidirectional road as two directed edges.
+                // The walk is undirected; keeping only the traversed index
+                // left the opposite carriageway out and the cut one-way.
+                if let Some(neigh) = minor_adj.get(&cur) {
+                    for &(v, rev) in neigh {
+                        if v == prev {
+                            keep.insert(rev);
+                        }
+                    }
+                }
+                if let Some(neigh) = minor_adj.get(&prev) {
+                    for &(v, rev) in neigh {
+                        if v == cur {
+                            keep.insert(rev);
+                        }
+                    }
+                }
                 cur = prev;
             }
         }
@@ -3197,6 +3272,235 @@ mod tests {
         let b: HashSet<i64> = [3, 4, 5].into_iter().collect();
         let shared = shared_osm_ids_across_regions(&[a, b]);
         assert_eq!(shared, HashSet::from([3]));
+    }
+
+    fn approach_pack(node_ids: [i64; 3], lats: [f64; 3], lons: [f64; 3]) -> FlatGraphPack {
+        let n_e = 2;
+        FlatGraphPack {
+            has_delta_h: false,
+            node_ids: node_ids.to_vec(),
+            node_lats: lats.to_vec(),
+            node_lons: lons.to_vec(),
+            edge_src: vec![0, 1],
+            edge_tgt: vec![1, 2],
+            edge_length_m: vec![1_000.0, 400.0],
+            edge_base_weight: vec![1_000.0, 400.0],
+            edge_delta_h_m: vec![],
+            edge_start_lat: vec![lats[0], lats[1]],
+            edge_start_lon: vec![lons[0], lons[1]],
+            edge_end_lat: vec![lats[1], lats[2]],
+            edge_end_lon: vec![lons[1], lons[2]],
+            edge_highway: vec!["trunk".into(), "secondary".into()],
+            edge_maxspeed_kmh: nan_f64(n_e),
+            edge_maxspeed_practical_kmh: nan_f64(n_e),
+            edge_maxspeed_advisory_kmh: nan_f64(n_e),
+            edge_maxspeed_type: empty_str(n_e),
+            edge_maxspeed_variable: zeros_u8(n_e),
+            edge_minspeed_kmh: nan_f64(n_e),
+            edge_name: empty_str(n_e),
+            edge_road_ref: empty_str(n_e),
+            edge_is_motorroad: zeros_u8(n_e),
+            edge_is_expressway: zeros_u8(n_e),
+            edge_is_oneway: zeros_u8(n_e),
+            edge_lanes: zeros_u8(n_e),
+            edge_maxweight_t: nan_f64(n_e),
+            edge_maxaxleload_t: nan_f64(n_e),
+            edge_maxbogieweight_t: nan_f64(n_e),
+            edge_maxheight_m: nan_f64(n_e),
+            edge_maxwidth_m: nan_f64(n_e),
+            edge_maxlength_m: nan_f64(n_e),
+            edge_is_toll: zeros_u8(n_e),
+            edge_is_ferry: zeros_u8(n_e),
+            edge_is_tunnel: zeros_u8(n_e),
+            edge_is_roundabout: zeros_u8(n_e),
+            edge_is_boardwalk: zeros_u8(n_e),
+            edge_shape_offsets: vec![0; n_e + 1],
+            edge_shape_lons: vec![],
+            edge_shape_lats: vec![],
+            edge_motor_vehicle_conditional: empty_str(n_e),
+            edge_access_conditional: empty_str(n_e),
+            edge_maxspeed_conditional: empty_str(n_e),
+            edge_access_forbidden: zeros_u8(n_e),
+            edge_surface_quality: zeros_u8(n_e),
+            node_access_blocked: zeros_u8(3),
+        }
+    }
+
+    #[test]
+    fn shared_approach_node_joins_when_major_ids_miss() {
+        // Two packs meet on a secondary node the major skeleton never shares.
+        let north = approach_pack([10, 11, 99], [62.2, 62.1, 62.0], [13.4, 13.4, 13.4]);
+        let south = approach_pack([20, 21, 99], [61.8, 61.9, 62.0], [13.4, 13.4, 13.4]);
+        let major_shared: HashSet<i64> = major_node_osm_ids(&north)
+            .intersection(&major_node_osm_ids(&south))
+            .copied()
+            .collect();
+        assert!(
+            major_shared.is_empty(),
+            "the cut is not on a major edge: {major_shared:?}"
+        );
+        let cand_n = border_candidate_osm_ids(&north, None);
+        let cand_s = border_candidate_osm_ids(&south, None);
+        let shared: HashSet<i64> = cand_n.intersection(&cand_s).copied().collect();
+        assert_eq!(shared, HashSet::from([99]));
+        let band = border_band_bbox(&[61.9, 13.3, 62.1, 13.5], &[61.9, 13.3, 62.1, 13.5], 0.0);
+        assert!(border_candidate_osm_ids(&north, Some(&band)).contains(&99));
+        assert!(!border_candidate_osm_ids(&north, Some(&[63.0, 13.3, 64.0, 13.5])).contains(&99));
+
+        let n = build_skeleton_from_pack(&north, "europe/n", "n", "car", &shared);
+        let s = build_skeleton_from_pack(&south, "europe/s", "s", "car", &shared);
+        assert!(n.node_ids.contains(&99));
+        assert!(s.node_ids.contains(&99));
+        let g = merge_skeletons_to_route_graph(&[n, s], RoutingProfile::Car);
+        let a = g.weak_component_id(NodeId(10));
+        let b = g.weak_component_id(NodeId(20));
+        assert_eq!(a, b, "secondary-only cut must join the two major spines");
+    }
+
+    #[test]
+    fn long_secondary_chain_to_major_is_kept() {
+        // 20 x 800 m of secondary from a border node to a trunk (~16 km).
+        // A 12-hop walk would stop short and leave the cut unjoined.
+        let hops = 20usize;
+        let n = hops + 2;
+        let mut node_ids = vec![0i64; n];
+        let mut lats = vec![0.0; n];
+        let mut lons = vec![0.0; n];
+        for i in 0..n {
+            node_ids[i] = 1_000 + i as i64;
+            lats[i] = 62.0 - i as f64 * 0.007;
+            lons[i] = 13.4;
+        }
+        node_ids[0] = 99;
+        let n_e = hops + 1;
+        let mut src = Vec::new();
+        let mut tgt = Vec::new();
+        let mut hw = Vec::new();
+        let mut len = Vec::new();
+        src.push(hops as u32);
+        tgt.push((hops + 1) as u32);
+        hw.push("trunk".into());
+        len.push(800.0);
+        for i in 0..hops {
+            src.push(i as u32);
+            tgt.push((i + 1) as u32);
+            hw.push("secondary".into());
+            len.push(800.0);
+        }
+        let pack = FlatGraphPack {
+            has_delta_h: false,
+            node_ids,
+            node_lats: lats.clone(),
+            node_lons: lons.clone(),
+            edge_src: src,
+            edge_tgt: tgt,
+            edge_length_m: len.clone(),
+            edge_base_weight: len,
+            edge_delta_h_m: vec![],
+            edge_start_lat: vec![0.0; n_e],
+            edge_start_lon: vec![0.0; n_e],
+            edge_end_lat: vec![0.0; n_e],
+            edge_end_lon: vec![0.0; n_e],
+            edge_highway: hw,
+            edge_maxspeed_kmh: nan_f64(n_e),
+            edge_maxspeed_practical_kmh: nan_f64(n_e),
+            edge_maxspeed_advisory_kmh: nan_f64(n_e),
+            edge_maxspeed_type: empty_str(n_e),
+            edge_maxspeed_variable: zeros_u8(n_e),
+            edge_minspeed_kmh: nan_f64(n_e),
+            edge_name: empty_str(n_e),
+            edge_road_ref: empty_str(n_e),
+            edge_is_motorroad: zeros_u8(n_e),
+            edge_is_expressway: zeros_u8(n_e),
+            edge_is_oneway: zeros_u8(n_e),
+            edge_lanes: zeros_u8(n_e),
+            edge_maxweight_t: nan_f64(n_e),
+            edge_maxaxleload_t: nan_f64(n_e),
+            edge_maxbogieweight_t: nan_f64(n_e),
+            edge_maxheight_m: nan_f64(n_e),
+            edge_maxwidth_m: nan_f64(n_e),
+            edge_maxlength_m: nan_f64(n_e),
+            edge_is_toll: zeros_u8(n_e),
+            edge_is_ferry: zeros_u8(n_e),
+            edge_is_tunnel: zeros_u8(n_e),
+            edge_is_roundabout: zeros_u8(n_e),
+            edge_is_boardwalk: zeros_u8(n_e),
+            edge_shape_offsets: vec![0; n_e + 1],
+            edge_shape_lons: vec![],
+            edge_shape_lats: vec![],
+            edge_motor_vehicle_conditional: empty_str(n_e),
+            edge_access_conditional: empty_str(n_e),
+            edge_maxspeed_conditional: empty_str(n_e),
+            edge_access_forbidden: zeros_u8(n_e),
+            edge_surface_quality: zeros_u8(n_e),
+            node_access_blocked: zeros_u8(n),
+        };
+        let borders = HashSet::from([99]);
+        let (keep, _, border_nodes) = select_skeleton_edge_indices(&pack, &borders);
+        assert!(border_nodes.contains(&0));
+        assert!(keep.contains(&0), "trunk must stay");
+        assert_eq!(
+            keep.len(),
+            n_e,
+            "every secondary hop on the path to the trunk must stay, kept={keep:?}"
+        );
+    }
+
+    #[test]
+    fn border_approach_keeps_both_directed_edges() {
+        let n_e = 3;
+        let pack = FlatGraphPack {
+            has_delta_h: false,
+            node_ids: vec![99, 11, 10],
+            node_lats: vec![62.0, 62.01, 62.02],
+            node_lons: vec![13.4, 13.4, 13.4],
+            edge_src: vec![2, 0, 1],
+            edge_tgt: vec![1, 1, 0],
+            edge_length_m: vec![800.0, 400.0, 400.0],
+            edge_base_weight: vec![800.0, 400.0, 400.0],
+            edge_delta_h_m: vec![],
+            edge_start_lat: vec![62.02, 62.0, 62.01],
+            edge_start_lon: vec![13.4, 13.4, 13.4],
+            edge_end_lat: vec![62.01, 62.01, 62.0],
+            edge_end_lon: vec![13.4, 13.4, 13.4],
+            edge_highway: vec!["trunk".into(), "secondary".into(), "secondary".into()],
+            edge_maxspeed_kmh: nan_f64(n_e),
+            edge_maxspeed_practical_kmh: nan_f64(n_e),
+            edge_maxspeed_advisory_kmh: nan_f64(n_e),
+            edge_maxspeed_type: empty_str(n_e),
+            edge_maxspeed_variable: zeros_u8(n_e),
+            edge_minspeed_kmh: nan_f64(n_e),
+            edge_name: empty_str(n_e),
+            edge_road_ref: empty_str(n_e),
+            edge_is_motorroad: zeros_u8(n_e),
+            edge_is_expressway: zeros_u8(n_e),
+            edge_is_oneway: zeros_u8(n_e),
+            edge_lanes: zeros_u8(n_e),
+            edge_maxweight_t: nan_f64(n_e),
+            edge_maxaxleload_t: nan_f64(n_e),
+            edge_maxbogieweight_t: nan_f64(n_e),
+            edge_maxheight_m: nan_f64(n_e),
+            edge_maxwidth_m: nan_f64(n_e),
+            edge_maxlength_m: nan_f64(n_e),
+            edge_is_toll: zeros_u8(n_e),
+            edge_is_ferry: zeros_u8(n_e),
+            edge_is_tunnel: zeros_u8(n_e),
+            edge_is_roundabout: zeros_u8(n_e),
+            edge_is_boardwalk: zeros_u8(n_e),
+            edge_shape_offsets: vec![0; n_e + 1],
+            edge_shape_lons: vec![],
+            edge_shape_lats: vec![],
+            edge_motor_vehicle_conditional: empty_str(n_e),
+            edge_access_conditional: empty_str(n_e),
+            edge_maxspeed_conditional: empty_str(n_e),
+            edge_access_forbidden: zeros_u8(n_e),
+            edge_surface_quality: zeros_u8(n_e),
+            node_access_blocked: zeros_u8(3),
+        };
+        let (keep, _, _) = select_skeleton_edge_indices(&pack, &HashSet::from([99]));
+        assert!(keep.contains(&0), "trunk");
+        assert!(keep.contains(&1), "approach forward");
+        assert!(keep.contains(&2), "approach reverse");
     }
 
     #[test]
