@@ -65,10 +65,7 @@ pub struct OutAndBack {
 /// Windows where the line returns to within [`OUT_AND_BACK_RETURN_M`] of an
 /// earlier point after travelling at least [`OUT_AND_BACK_MIN_PATH_M`], and
 /// no user via lies within [`OUT_AND_BACK_VIA_M`] of the turn-around.
-pub fn unexplained_out_and_backs(
-    pts: &[(f64, f64)],
-    vias: &[(f64, f64)],
-) -> Vec<OutAndBack> {
+pub fn unexplained_out_and_backs(pts: &[(f64, f64)], vias: &[(f64, f64)]) -> Vec<OutAndBack> {
     let rs = resample_polyline(pts, 250.0);
     if rs.len() < 3 {
         return Vec::new();
@@ -99,7 +96,9 @@ pub fn unexplained_out_and_backs(
                     turn = item.0;
                 }
             }
-            let explained = vias.iter().any(|&v| haversine_m(v, turn) <= OUT_AND_BACK_VIA_M);
+            let explained = vias
+                .iter()
+                .any(|&v| haversine_m(v, turn) <= OUT_AND_BACK_VIA_M);
             if !explained {
                 out.push(OutAndBack {
                     from_km: c / 1000.0,
