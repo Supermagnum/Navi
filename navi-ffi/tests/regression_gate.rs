@@ -42,8 +42,8 @@
 //! fallback). Accepted path-over-chord windows are the E 45 hook at Sveg, the
 //! start stretch the reference shares, and the Hallingdal valley meander at
 //! 60.43, 9.32 (present before and after the Bromma repair). Distance vs the
-//! 1944.2 km reference is a known miss, not a gate fail. Case e must have no
-//! unexplained out-and-back.
+//! 1944.2 km reference is a known miss, not a gate fail. The out-and-back at
+//! 60.57, 9.11 is gone after the Bromma stretch-joint slide.
 //!
 //! Issue (no work this follow-up): Oslo → Lillestrøm needs the corridor stage
 //! and about 1.1 GB for a 22 km route.
