@@ -1,8 +1,9 @@
 //! Long-trip mode: adjacency-graph corridor (default), optional preliminary
 //! corridor (BRouter + ORS), ordered region acquisition, and storage checks.
 //!
-//! **Default corridor source:** [`ordered_needed_regions_for_trip`] (PIP +
-//! hop-count adjacency). Router densify via
+//! **Default corridor source:** [`ordered_needed_regions_for_trip`] (hop-count
+//! adjacency). Missing-region naming uses the geometric band
+//! ([`geometric_missing_regions_for_trip`]). Router densify via
 //! [`ordered_needed_regions_along_route`] / [`ordered_needed_regions_along_route_filtered`]
 //! is the refine path — wire a host setting such as "refine with online
 //! routing" at the call sites that today invoke
@@ -14,6 +15,7 @@
 //! change ordinary Tools downloads.
 
 mod adjacency;
+mod missing_geom;
 mod brouter;
 mod estimate;
 mod neighbours;
@@ -41,8 +43,13 @@ pub(crate) fn pace_preliminary_network() {
 
 pub use adjacency::{
     adjacency_edge_count, adjacency_isolates, adjacency_named_links, adjacency_region_count,
-    adjacent_region_ids, direct_corridor_regions_for_trip, ordered_needed_regions_for_trip,
-    region_containing, warm_region_adjacency, MissingCorridor,
+    adjacent_region_ids, direct_corridor_regions_for_trip, geometric_band_regions_for_trip,
+    geometric_missing_regions_for_trip, ordered_needed_regions_for_trip, region_containing,
+    warm_region_adjacency, MissingCorridor, CORRIDOR_BAND_KM,
+};
+pub use missing_geom::{
+    major_ends_into_uninstalled, missing_major_continuations, missing_region_advisory_lines,
+    MissingRegionHint, MAJOR_CONTINUE_PROBE_M, MAJOR_END_PATH_NEAR_KM,
 };
 pub use brouter::{
     build_brouter_url, count_ferry_segments_in_messages, parse_brouter_geojson,

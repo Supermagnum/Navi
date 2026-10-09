@@ -13,11 +13,11 @@
       "wall_s": 4.951809196
     },
     "e_elsa_sjuvass": {
-      "peak_mb": 917.21875,
-      "wall_s": 44.280795557,
-      "emu_wall_s": 128.0,
-      "emu_peak_mb": 1177.0,
-      "note": "host/emu time rose from 7.3 s / 36.5 s when corridor decimation was removed"
+      "peak_mb": 1048.4140625,
+      "wall_s": 13.5,
+      "emu_wall_s": 79.0,
+      "emu_peak_mb": 1076.0,
+      "note": "After europe/sweden/gavleborg: 2348.2 km / 1691 min; E 45 used across the Jamtland-Gavleborg-Dalarna border. Unexplained windows at 62.05,14.61 and 61.22,12.85 are a known spike failure, not accepted."
     }
   }
 }

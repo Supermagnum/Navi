@@ -4,11 +4,13 @@
 //! `scripts/generate-region-adjacency.py` (Geofabrik index polys, NE Sweden
 //! län, named fixed links). Rings are never hand-edited.
 //!
-//! [`ordered_needed_regions_for_trip`] is the **default** corridor source:
+//! [`ordered_needed_regions_for_trip`] is the **default** planning corridor:
 //! containing-region PIP + shortest hop-count path (centroid-distance
-//! tie-break). Router densify ([`super::ordered_needed_regions_along_route`])
-//! remains available for an explicit "refine with online routing" path — see
-//! the long_trip module docs on wiring spots; no toggle is built here.
+//! tie-break). Missing-region naming uses
+//! [`geometric_missing_regions_for_trip`] (a band around each chord). Router
+//! densify ([`super::ordered_needed_regions_along_route`]) remains available
+//! for an explicit "refine with online routing" path — see the long_trip
+//! module docs on wiring spots; no toggle is built here.
 
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, BinaryHeap};
@@ -406,6 +408,7 @@ impl Ord for State {
     }
 }
 
+#[allow(dead_code)]
 fn shortest_path_indices(from: usize, to: usize, country_iso: Option<&str>) -> Option<Vec<usize>> {
     let g = graph();
     if from == to {
@@ -475,16 +478,61 @@ fn shortest_path_indices(from: usize, to: usize, country_iso: Option<&str>) -> O
     Some(path)
 }
 
-fn is_installed(id: &str, installed: &[String]) -> bool {
+pub(crate) fn is_installed(id: &str, installed: &[String]) -> bool {
     installed
         .iter()
         .any(|inst| region_ids_match_for_catalog(inst, id))
 }
 
-/// Sample spacing when densifying OD chords for PIP. Endpoint-only adjacency
-/// (nord-norge→trondelag→ostlandet) misses the fair Bugøynes→Sjuvasslia land
-/// path through Norrbotten / Västerbotten; ~50 km samples recover it.
+/// Sample spacing when densifying OD chords for hop-count PIP. Endpoint-only
+/// adjacency (nord-norge→trondelag→ostlandet) misses the fair Bugøynes→Sjuvasslia
+/// land path through Norrbotten / Västerbotten; ~50 km samples recover it.
 const TRIP_CORRIDOR_SAMPLE_KM: f64 = 50.0;
+
+/// Sample spacing along each waypoint chord for the geometric missing-region band.
+const BAND_CORRIDOR_SAMPLE_KM: f64 = 20.0;
+
+/// Half-width (km) of the pre-plan missing-region band. Regions whose outline
+/// the band crosses are named — not only those that the line itself pokes.
+pub const CORRIDOR_BAND_KM: f64 = 40.0;
+
+fn destination_point(lat: f64, lon: f64, bearing_rad: f64, dist_km: f64) -> (f64, f64) {
+    let r = 6371.0;
+    let ang = dist_km / r;
+    let lat1 = lat.to_radians();
+    let lon1 = lon.to_radians();
+    let lat2 = (lat1.sin() * ang.cos() + lat1.cos() * ang.sin() * bearing_rad.cos()).asin();
+    let lon2 = lon1
+        + (bearing_rad.sin() * ang.sin() * lat1.cos())
+            .atan2(ang.cos() - lat1.sin() * lat2.sin());
+    (lat2.to_degrees(), lon2.to_degrees())
+}
+
+fn bearing_rad(a: (f64, f64), b: (f64, f64)) -> f64 {
+    let lat1 = a.0.to_radians();
+    let lat2 = b.0.to_radians();
+    let dlon = (b.1 - a.1).to_radians();
+    (dlon.sin() * lat2.cos()).atan2(lat1.cos() * lat2.sin() - lat1.sin() * lat2.cos() * dlon.cos())
+}
+
+/// Chord samples plus left/right offsets at half and full band width.
+fn band_sample_points(waypoints: &[(f64, f64)], step_km: f64, band_km: f64) -> Vec<(f64, f64)> {
+    let mut out = densify_trip_waypoints(waypoints, step_km);
+    if band_km <= 0.0 {
+        return out;
+    }
+    for w in waypoints.windows(2) {
+        let brg = bearing_rad(w[0], w[1]);
+        for &p in &densify_trip_waypoints(&[w[0], w[1]], step_km) {
+            for &sign in &[-1.0, 1.0] {
+                let perp = brg + sign * std::f64::consts::FRAC_PI_2;
+                out.push(destination_point(p.0, p.1, perp, band_km * 0.5));
+                out.push(destination_point(p.0, p.1, perp, band_km));
+            }
+        }
+    }
+    out
+}
 
 fn densify_trip_waypoints(waypoints: &[(f64, f64)], step_km: f64) -> Vec<(f64, f64)> {
     let mut out = Vec::new();
@@ -505,11 +553,67 @@ fn densify_trip_waypoints(waypoints: &[(f64, f64)], step_km: f64) -> Vec<(f64, f
     out
 }
 
+/// Regions whose catalog outline is crossed by a band around the straight
+/// corridor between consecutive waypoints. Includes installed regions.
+///
+/// Geometric only — no adjacency hop-count fill between PIP hits. Used to
+/// name missing regions; Stage B still loads the hop-count corridor.
+pub fn geometric_band_regions_for_trip(
+    waypoints: &[(f64, f64)],
+    country_iso: Option<&str>,
+) -> Result<Vec<String>, MissingCorridor> {
+    if waypoints.is_empty() {
+        return Ok(Vec::new());
+    }
+    for &(lat, lon) in waypoints {
+        if region_containing(lat, lon, country_iso).is_none() {
+            return Err(MissingCorridor::UnknownRegion { lat, lon });
+        }
+    }
+
+    let samples = band_sample_points(waypoints, BAND_CORRIDOR_SAMPLE_KM, CORRIDOR_BAND_KM);
+    let mut out: Vec<String> = Vec::new();
+    let mut seen = BTreeSet::new();
+    for &(lat, lon) in &samples {
+        let Some(id) = region_containing(lat, lon, country_iso) else {
+            continue;
+        };
+        let id = normalize_region_id(id);
+        if seen.insert(id.clone()) {
+            out.push(id);
+        }
+    }
+    if out.is_empty() {
+        for &(lat, lon) in waypoints {
+            if let Some(id) = region_containing(lat, lon, country_iso) {
+                let id = normalize_region_id(id);
+                if seen.insert(id.clone()) {
+                    out.push(id);
+                }
+            }
+        }
+    }
+    inject_finland_for_eastern_finnmark_se_bridge(waypoints, &mut out, &mut seen);
+    Ok(out)
+}
+
+/// Uninstalled regions whose outline is crossed by the geometric corridor band.
+pub fn geometric_missing_regions_for_trip(
+    waypoints: &[(f64, f64)],
+    installed: &[String],
+    country_iso: Option<&str>,
+) -> Result<Vec<String>, MissingCorridor> {
+    let all = geometric_band_regions_for_trip(waypoints, country_iso)?;
+    Ok(all
+        .into_iter()
+        .filter(|id| !is_installed(id, installed))
+        .collect())
+}
+
 /// Regions on the direct corridor between consecutive waypoints (catalog
 /// outlines + adjacency hop-path). Includes installed regions.
 ///
-/// Used for preflight naming, absurd-detour checks, and the long-trip
-/// "download regions along route" list.
+/// Used for Stage B trip-local stems and the long-trip download list.
 pub fn direct_corridor_regions_for_trip(
     waypoints: &[(f64, f64)],
     country_iso: Option<&str>,
@@ -538,7 +642,6 @@ pub fn direct_corridor_regions_for_trip(
         }
     }
     if region_ids.is_empty() {
-        // Should not happen after endpoint checks; keep a safe fallback.
         for &(lat, lon) in waypoints {
             if let Some(id) = region_containing(lat, lon, country_iso) {
                 let id = normalize_region_id(id);
@@ -584,24 +687,13 @@ pub fn direct_corridor_regions_for_trip(
             push(&g.regions[idx].id, &mut out, &mut seen);
         }
     }
-    // Adjacency PIP currently holes Finnish Lapland (no `europe/finland`
-    // rings in region_adjacency.bin), so OD-chord samples there are skipped
-    // and the fair Bugøynes→Sjuvasslia land path never requests Finland.
-    // Inject it when eastern Finnmark → Østlandet already selected northern
-    // Sweden — densify spine joints and DATEX sits need the FI pack Ready.
     inject_finland_for_eastern_finnmark_se_bridge(waypoints, &mut out, &mut seen);
     Ok(out)
 }
 
-/// Default long-trip corridor: densify the waypoint chord, PIP each sample,
-/// then adjacency hop-path between consecutive distinct regions.
-///
-/// Densifying matters for long chords that leave the start country (e.g.
-/// Bugøynes→Sjuvasslia crosses Sweden) where endpoint-only adjacency would
-/// stay on Norway landsdel neighbours. Intermediate samples with no catalog
-/// cover are skipped; original endpoints must still resolve.
-///
-/// Installed regions are dropped from the result (same contract as densify).
+/// Default long-trip planning corridor: densify the waypoint chord, PIP each
+/// sample, then adjacency hop-path between consecutive distinct regions.
+/// Installed regions are dropped from the result.
 pub fn ordered_needed_regions_for_trip(
     waypoints: &[(f64, f64)],
     installed: &[String],
@@ -775,6 +867,58 @@ mod tests {
     }
 
     #[test]
+    fn gate_cases_a_to_d_band_names_nothing_with_host_stems() {
+        let installed = [
+            "europe/sweden/dalarna",
+            "europe/denmark",
+            "europe/finland",
+            "europe/sweden/halland",
+            "europe/germany/hamburg",
+            "europe/sweden/jamtland",
+            "europe/germany/mecklenburg-vorpommern",
+            "europe/germany/niedersachsen",
+            "europe/norway/nord-norge",
+            "europe/sweden/norrbotten",
+            "europe/norway/ostlandet",
+            "europe/germany/schleswig-holstein",
+            "europe/sweden/skane",
+            "europe/norway/sorlandet",
+            "europe/sweden/vasterbotten",
+            "europe/sweden/vasternorrland",
+            "europe/sweden/vastra_gotaland",
+            "europe/norway/vestlandet",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect::<Vec<_>>();
+        let a = geometric_missing_regions_for_trip(
+            &[
+                (53.079686, 10.587198),
+                (61.8691419, 9.1055130),
+                (61.4433766, 7.4614016),
+            ],
+            &installed,
+            None,
+        )
+        .expect("a");
+        let b = geometric_missing_regions_for_trip(
+            &[(60.82718, 11.30278), (60.29870, 6.60322)],
+            &installed,
+            None,
+        )
+        .expect("b");
+        let c = geometric_missing_regions_for_trip(
+            &[(60.82712, 11.30249), (62.013569, 7.630359), (61.60145, 5.02658)],
+            &installed,
+            None,
+        )
+        .expect("c");
+        assert!(a.is_empty(), "case a band must name nothing: {a:?}");
+        assert!(b.is_empty(), "case b band must name nothing: {b:?}");
+        assert!(c.is_empty(), "case c band must name nothing: {c:?}");
+    }
+
+    #[test]
     fn klecken_and_innlandet_pip() {
         assert_eq!(
             region_containing(53.334, 10.045, None),
@@ -813,6 +957,12 @@ mod tests {
             ordered_needed_regions_for_trip(&[(57.63, 18.29), (59.33, 18.07)], &[], Some("se"))
                 .unwrap_err();
         assert!(matches!(err, MissingCorridor::NoPath { .. }), "got {err}");
+        let ids = geometric_band_regions_for_trip(&[(57.63, 18.29), (59.33, 18.07)], Some("se"))
+            .expect("geometric corridor");
+        assert!(
+            ids.iter().any(|id| id.contains("gotland")),
+            "band must name the island extract, got {ids:?}"
+        );
     }
 
     #[test]
@@ -863,9 +1013,15 @@ mod tests {
         );
         assert!(
             missing.is_empty(),
-            "emulator 18-pack set covers Elsa direct corridor: missing={missing:?}"
+            "emulator 18-pack set covers Elsa hop-count corridor: missing={missing:?}"
         );
-        // Without dalarna the absurd-detour gate must name it.
+        let band_missing =
+            geometric_missing_regions_for_trip(&[elsa, sjuvass], &installed, None).expect("band");
+        assert!(
+            band_missing.iter().any(|r| r == "europe/sweden/gavleborg"),
+            "40 km band must name the uninstalled sliver on the chord: missing={band_missing:?}"
+        );
+        // Without dalarna the hop-count list still names it.
         let without_dalarna: Vec<String> = installed
             .iter()
             .filter(|r| !r.contains("dalarna"))

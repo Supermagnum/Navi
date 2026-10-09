@@ -2449,6 +2449,8 @@ pub struct StageBDensify {
     pub legs: Vec<Vec<StageBLegCandidate>>,
     /// `stage_b_timing ...` line: phase wall times, graph size, VmHWM.
     pub timing: String,
+    /// Uninstalled outlines named by the geometric checks (band + major ends).
+    pub missing_advisory: String,
 }
 
 impl StageBDensify {
@@ -2470,6 +2472,9 @@ impl StageBDensify {
                     c.search_ms
                 ));
             }
+        }
+        if !self.missing_advisory.is_empty() {
+            out.push_str(&self.missing_advisory);
         }
         out
     }
@@ -3144,6 +3149,35 @@ pub fn try_stage_b_densify_from_skeletons(
     let skels = coarse.regions.len();
     let mut out = assemble_stage_b(plan, &coarse.graph, waypoints, pack_dirs, profile, skels);
     let assemble_ms = t.elapsed().as_millis();
+    let installed: Vec<String> = coarse
+        .regions
+        .iter()
+        .map(|s| {
+            if s.region_id.is_empty() {
+                s.leaf_stem.clone()
+            } else {
+                s.region_id.clone()
+            }
+        })
+        .collect();
+    let mut skel_files = Vec::new();
+    for r in &coarse.regions {
+        for d in pack_dirs {
+            if let Some(p) = resolve_skeleton_path(d, &r.leaf_stem) {
+                if let Ok(s) = read_skeleton_file(&p) {
+                    skel_files.push(s);
+                    break;
+                }
+            }
+        }
+    }
+    let major_hints =
+        crate::long_trip::missing_major_continuations(&skel_files, &out.coarse_path, &installed);
+    let band_missing =
+        crate::long_trip::geometric_missing_regions_for_trip(waypoints, &installed, None)
+            .unwrap_or_default();
+    out.missing_advisory =
+        crate::long_trip::missing_region_advisory_lines(&major_hints, &band_missing);
     let (graph_nodes, graph_edges) = (coarse.graph.nodes.len(), coarse.graph.edges.len());
     let hwm_mb = vm_hwm_mb();
     let rss_before_mb = vm_rss_mb();
@@ -3293,6 +3327,7 @@ fn assemble_stage_b(
         note,
         legs: plan.legs,
         timing: String::new(),
+        missing_advisory: String::new(),
     }
 }
 

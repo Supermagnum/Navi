@@ -141,7 +141,7 @@ pub fn missing_ready_regions_for_trip(
         return Vec::new();
     }
     let installed = installed_ready_region_ids(dirs, profile);
-    match crate::long_trip::ordered_needed_regions_for_trip(route_points, &installed, None) {
+    match crate::long_trip::geometric_missing_regions_for_trip(route_points, &installed, None) {
         Ok(missing) => missing,
         Err(_) => {
             // Catalog PIP hole / unknown point: still name every endpoint leaf
@@ -1268,7 +1268,30 @@ fn try_load_graph_for_plan_corridor_dirs(
                     missing.join(",")
                 );
                 crate::routing::plan_perf::note("missing_regions", missing.join(","));
-                return Err(PackLoadError::MissingRegions(missing));
+                // Abort only when a waypoint sits in an uninstalled outline.
+                // A sliver the band crosses must not block an installed-only plan.
+                let installed = installed_ready_region_ids(dirs, profile);
+                let endpoint_missing: Vec<String> = pts
+                    .iter()
+                    .filter_map(|&(lat, lon)| {
+                        let id = crate::long_trip::region_containing(lat, lon, None)?;
+                        let id = id.to_string();
+                        let covered = installed.iter().any(|inst| {
+                            inst == &id
+                                || id.starts_with(&format!("{inst}/"))
+                                || inst.starts_with(&format!("{id}/"))
+                        });
+                        (!covered).then_some(id)
+                    })
+                    .collect();
+                let mut seen = HashSet::new();
+                let endpoint_missing: Vec<String> = endpoint_missing
+                    .into_iter()
+                    .filter(|id| seen.insert(id.clone()))
+                    .collect();
+                if !endpoint_missing.is_empty() {
+                    return Err(PackLoadError::MissingRegions(endpoint_missing));
+                }
             }
         }
     }

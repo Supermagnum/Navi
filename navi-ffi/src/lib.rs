@@ -3689,6 +3689,7 @@ fn plan_car_route_inner(
         _ => false,
     };
     let needs_corridor = !is_chunk_leg && (multi_region || same_stem_needs_split);
+    let mut stage_b_advisory = String::new();
     if needs_corridor {
         let pack_dirs = pack_dirs_for_densify;
         let pack_dir_refs: Vec<&std::path::Path> = pack_dirs.iter().map(|p| p.as_path()).collect();
@@ -3823,6 +3824,7 @@ fn plan_car_route_inner(
             }
             driver_break_core::routing::plan_bbox::set_stage_b_active(true);
             driver_break_core::routing::plan_bbox::set_stage_b_coarse_path(sb.coarse_path.clone());
+            stage_b_advisory = sb.missing_advisory.clone();
             log::info!(target: "NaviPlan", "stage_b densify {}", sb.note);
             let hops = sb.hops.clone();
             log::info!(
@@ -5744,6 +5746,9 @@ fn plan_car_route_inner(
         polyline.len(),
         break_pois_json
     ));
+    if !stage_b_advisory.is_empty() {
+        report.push_str(&stage_b_advisory);
+    }
     let hop_ferry = parse_u64_token(&report, "route_ferry_legs=").unwrap_or(0);
     let hop_term = if toll_avoidance_incomplete {
         "found_with_toll_fallback"
