@@ -56,6 +56,14 @@ object RoutingPlanLog {
         }
     }
 
+    fun idleJobPause(outcome: IdlePackJobs.PauseOutcome) {
+        Log.i(
+            TAG,
+            "idle_job_pause action=${outcome.action} kind=${outcome.kind ?: "none"} " +
+                "region=${outcome.regionId} duration_ms=${outcome.durationMs}",
+        )
+    }
+
     fun progress(
         pct: Int,
         ecoEnabled: Boolean,

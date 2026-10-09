@@ -48,6 +48,18 @@ object IdlePackJobs {
     private val running = AtomicBoolean(false)
     private val lastStatus = AtomicReference("idle")
     private val active = AtomicReference<Job?>(null)
+    private val pausedJob = AtomicReference<Job?>(null)
+    private val lastPause = AtomicReference(PauseOutcome())
+
+    data class PauseOutcome(
+        val action: String = "none",
+        val kind: Kind? = null,
+        val regionId: String = "",
+        val durationMs: Long = 0,
+    )
+
+    @Volatile
+    var testRunJob: ((Job) -> Boolean)? = null
 
     @Volatile
     var executeJobs: Boolean = true
@@ -64,8 +76,11 @@ object IdlePackJobs {
         synchronized(seen) { seen.clear() }
         running.set(false)
         active.set(null)
+        pausedJob.set(null)
+        lastPause.set(PauseOutcome())
         lastStatus.set("idle")
         executeJobs = false
+        testRunJob = null
     }
 
     fun scheduledForTest(): List<Job> = queue.toList()
@@ -112,7 +127,51 @@ object IdlePackJobs {
     }
 
     fun onPlanEnded() {
+        if (runCatching { uniffi.navi.foregroundPlanActive() }.getOrDefault(false)) {
+            return
+        }
+        pausedJob.getAndSet(null)?.let { offer(it) }
         drainIfAllowed()
+    }
+
+    fun lastPauseOutcome(): PauseOutcome = lastPause.get()
+
+    /**
+     * Wait for a short sidecar/skeleton to finish, or for a place-index to
+     * unwind at its next committed batch. Does not wait for a long index to
+     * complete.
+     */
+    fun waitOrPauseForPlan(): PauseOutcome {
+        val job = active.get()
+        if (job == null && !running.get()) {
+            val none = PauseOutcome()
+            lastPause.set(none)
+            return none
+        }
+        val t0 = System.currentTimeMillis()
+        lastStatus.set("Idle pack jobs paused (planning)…")
+        while (running.get()) {
+            Thread.sleep(20)
+        }
+        val ms = System.currentTimeMillis() - t0
+        val paused = pausedJob.get()
+        val outcome =
+            if (paused != null) {
+                PauseOutcome("paused", paused.kind, paused.regionId, ms)
+            } else if (job != null && (job.kind == Kind.SKELETON || job.kind == Kind.FERRY_CAR || job.kind == Kind.FERRY_TRUCK)) {
+                PauseOutcome("waited", job.kind, job.regionId, ms)
+            } else if (job?.kind == Kind.PLACE_INDEX) {
+                PauseOutcome("paused", job.kind, job.regionId, ms)
+            } else {
+                PauseOutcome("none", job?.kind, job?.regionId ?: "", ms)
+            }
+        lastPause.set(outcome)
+        Log.i(
+            TAG,
+            "plan_idle_pause action=${outcome.action} kind=${outcome.kind} " +
+                "region=${outcome.regionId} duration_ms=${outcome.durationMs}",
+        )
+        return outcome
     }
 
     fun pauseForPlan() {
@@ -149,13 +208,24 @@ object IdlePackJobs {
         indexDb: File,
         regionId: String,
     ) {
+        val rid = PackRegionAvailability.normalize(regionId)
+        val product = appContext?.let { PlaceIndexStorage.resolveDb(it) }
+        val writingProduct = product != null && indexDb.canonicalFile == product.canonicalFile
+        val installed =
+            PackRegionAvailability.installedPackRegionIds(
+                InstalledMaps.current()?.regions?.values.orEmpty(),
+            )
+        if (!PackRegionAvailability.mayIndexRegion(rid, pbf, installed, writingProduct)) {
+            Log.e(TAG, "refusing PLACE_INDEX region=$rid pbf=${pbf.name} product=$writingProduct")
+            return
+        }
         val stem = PackRegionAvailability.localStem(regionId).ifBlank { pbf.name.removeSuffix(".osm.pbf") }
         offer(
             Job(
                 kind = Kind.PLACE_INDEX,
                 stem = stem,
                 packDir = pbf.parentFile ?: indexDb.parentFile ?: File("."),
-                regionId = PackRegionAvailability.normalize(regionId),
+                regionId = rid,
                 pbf = pbf,
                 indexDb = indexDb,
             ),
@@ -185,7 +255,14 @@ object IdlePackJobs {
 
     private fun enqueueFromSnapshot() {
         val snap = InstalledMaps.current() ?: return
-        val indexDir = InstalledMaps.placeIndexDir()
+        val ctx = appContext
+        val indexDir =
+            if (ctx != null) {
+                PlaceIndexStorage.indexDir(ctx)
+            } else {
+                null
+            }
+        val installed = PackRegionAvailability.installedPackRegionIds(snap.regions.values)
         for (r in snap.regions.values) {
             val man = File(r.packDir, "${r.stem}.navi-manifest.json")
             if (!man.isFile) continue
@@ -208,6 +285,10 @@ object IdlePackJobs {
                     r?.let { File(it.packDir, "${it.stem}.navi-server-install.json") }
                 val pbf = m.pbfPath?.takeIf { it.isFile && it.length() >= RegionDownloadBackground.MIN_PBF_BYTES }
                 if (pbf == null && stamp?.isFile != true) continue
+                if (!PackRegionAvailability.mayIndexRegion(m.regionId, pbf, installed, true)) {
+                    Log.i(TAG, "skip PLACE_INDEX region=${m.regionId}: not own source / not an installed pack")
+                    continue
+                }
                 offer(
                     Job(
                         kind = Kind.PLACE_INDEX,
@@ -230,6 +311,9 @@ object IdlePackJobs {
                 if (r.placeIndexSourceSha.isNotBlank()) continue
                 val stamp = File(r.packDir, "${r.stem}.navi-server-install.json")
                 if (!stamp.isFile) continue
+                if (!PackRegionAvailability.mayIndexRegion(r.regionId, r.pbfPath, installed, true)) {
+                    continue
+                }
                 offer(
                     Job(
                         kind = Kind.PLACE_INDEX,
@@ -244,16 +328,21 @@ object IdlePackJobs {
         }
     }
 
+    private fun planBlocksIdle(): Boolean {
+        if (RoutePlanGate.isRunning() || NaviMapTestHooks.pendingTripPlan != null) return true
+        return runCatching { uniffi.navi.foregroundPlanActive() }.getOrDefault(false)
+    }
+
     private fun drainIfAllowed() {
         if (!executeJobs) return
-        if (RoutePlanGate.isRunning() || NaviMapTestHooks.pendingTripPlan != null) return
+        if (planBlocksIdle()) return
         if (queue.isEmpty()) return
         if (!running.compareAndSet(false, true)) return
         scope.launch {
             mutex.withLock {
                 try {
                     while (true) {
-                        if (RoutePlanGate.isRunning() || NaviMapTestHooks.pendingTripPlan != null) {
+                        if (planBlocksIdle()) {
                             lastStatus.set("Idle pack jobs paused (planning)…")
                             break
                         }
@@ -267,18 +356,23 @@ object IdlePackJobs {
                         val rem = remainingSummary()
                         lastStatus.set("Running ${stepLabel(job)} — $rem")
                         Log.i(TAG, "start ${job.kind} stem=${job.stem} remaining=${outstandingCount()}")
-                        runCatching { runJob(job) }
-                            .onFailure { t -> Log.e(TAG, "job ${job.kind} stem=${job.stem} crashed", t) }
+                        val paused =
+                            runCatching { runJob(job) }
+                                .onFailure { t -> Log.e(TAG, "job ${job.kind} stem=${job.stem} crashed", t) }
+                                .getOrDefault(false)
+                        if (paused) {
+                            pausedJob.set(job)
+                            lastStatus.set("Idle pack jobs paused (planning)…")
+                            break
+                        }
                         synchronized(seen) { seen.remove(job.key()) }
                         active.set(null)
                     }
                 } finally {
-                    if (queue.isEmpty()) lastStatus.set("idle")
+                    if (queue.isEmpty() && pausedJob.get() == null) lastStatus.set("idle")
                     running.set(false)
-                    if (queue.isNotEmpty() &&
-                        !RoutePlanGate.isRunning() &&
-                        NaviMapTestHooks.pendingTripPlan == null
-                    ) {
+                    active.set(null)
+                    if (queue.isNotEmpty() && !planBlocksIdle()) {
                         drainIfAllowed()
                     }
                 }
@@ -326,16 +420,26 @@ object IdlePackJobs {
         }
     }
 
-    private fun runJob(job: Job) {
-        when (job.kind) {
-            Kind.FERRY_CAR ->
+    /** True when the job paused for a plan and must be resumed. */
+    private fun runJob(job: Job): Boolean {
+        testRunJob?.let {
+            return it(job)
+        }
+        return when (job.kind) {
+            Kind.FERRY_CAR -> {
                 FerrySidecarBackground.runJob(job.packDir, job.stem, TravelProfile.CAR)
-            Kind.FERRY_TRUCK ->
+                false
+            }
+            Kind.FERRY_TRUCK -> {
                 FerrySidecarBackground.runJob(job.packDir, job.stem, TravelProfile.TRUCK)
-            Kind.SKELETON ->
+                false
+            }
+            Kind.SKELETON -> {
                 CorridorSkeletonBackground.runJob(job.packDir, job.stem, TravelProfile.CAR)
+                false
+            }
             Kind.PLACE_INDEX -> {
-                val db = job.indexDb ?: return
+                val db = job.indexDb ?: return false
                 PlaceIndexBackground.runPackJob(job.packDir, db, job.regionId, job.pbf)
             }
         }

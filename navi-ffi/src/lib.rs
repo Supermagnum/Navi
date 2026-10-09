@@ -2697,6 +2697,7 @@ fn plan_car_route_chunked_legs(
             None => Vec::new(),
         };
         let hop_datex_first = hop_datex.clone();
+        let hop_rss_before = driver_break_core::routing::corridor_skeleton::vm_rss_mb();
         let mut leg = plan_car_route_inner(
             pbf_path.clone(),
             elev_dir.clone(),
@@ -2791,6 +2792,17 @@ fn plan_car_route_chunked_legs(
             );
         }
         log_datex_for_hop_path(&mut report, &hop_datex, &leg.route_polyline);
+        let hop_peak_rss_mb =
+            hop_rss_before.max(driver_break_core::routing::corridor_skeleton::vm_rss_mb());
+        log::info!(
+            target: "NaviPlan",
+            "plan_mem stage=hop_{} peak_rss_mb={hop_peak_rss_mb}",
+            i + 1
+        );
+        report.push_str(&format!(
+            "hop_mem hop={} peak_rss_mb={hop_peak_rss_mb}\n",
+            i + 1
+        ));
         report.push_str(&format!("--- leg{} report ---\n", i + 1));
         report.push_str(&leg.report);
         route_uses_ferry = route_uses_ferry || leg.report.contains("route_uses_ferry=true");
@@ -4219,12 +4231,8 @@ fn plan_car_route_inner(
                     r.off_trail_advisory = status;
                     return r;
                 }
-                Err(driver_break_core::routing::indexed::PackLoadError::MissingEndTile(
-                    at,
-                )) => {
-                    report.push_str(&format!(
-                        "FAIL: hop built without end-node tile at {at}\n"
-                    ));
+                Err(driver_break_core::routing::indexed::PackLoadError::MissingEndTile(at)) => {
+                    report.push_str(&format!("FAIL: hop built without end-node tile at {at}\n"));
                     driver_break_core::routing::plan_perf::note("hop_end_tile_missing", &at);
                     let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
                     let mut r = empty(report);
@@ -4607,10 +4615,11 @@ fn plan_car_route_inner(
                 if !dir_ok {
                     let stage_b = driver_break_core::routing::plan_bbox::stage_b_active();
                     if is_chunk_leg && stage_b && !weak_ok {
-                        let coarse = driver_break_core::routing::plan_bbox::stage_b_hop_corridor_points(
-                            (start_lat, start_lon),
-                            (end_lat, end_lon),
-                        );
+                        let coarse =
+                            driver_break_core::routing::plan_bbox::stage_b_hop_corridor_points(
+                                (start_lat, start_lon),
+                                (end_lat, end_lon),
+                            );
                         match driver_break_core::routing::corridor_skeleton::last_reachable_coarse_path_node(
                             &built,
                             ss,
@@ -4678,46 +4687,46 @@ fn plan_car_route_inner(
                             }
                         }
                     } else {
-                    last_terminate = "disconnected";
-                    report.push_str(
-                        "corridor_components_disconnected before A* (origin/destination \
-                         not connected in loaded tiles)\n",
-                    );
-                    driver_break_core::routing::plan_perf::note(
-                        "corridor_components",
-                        if weak_ok {
-                            "directed_unreachable"
-                        } else {
-                            "disconnected"
-                        },
-                    );
-                    // Free the truncated corridor before reload (RSS / cache).
-                    drop(built);
-                    graph = None;
-                    // Do not reload the same pad clip via tile-budget widen
-                    // (Bevensen dest hop 18: four identical 0.35° loads).
-                    // One trip-AABB retry on this pad, then the next pad.
-                    if driver_break_core::routing::plan_bbox::should_fallback_to_trip_aabb(
-                        edge_clip_mode,
-                        last_terminate,
-                    ) {
-                        // One TripAabb reload so a chord-band that missed the
-                        // road between the hop ends can include both leaves.
-                        // Do not keep doubling pads after that.
-                        edge_clip_mode =
-                            driver_break_core::routing::plan_bbox::PlanEdgeClipMode::TripAabb;
-                        driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(
-                            driver_break_core::routing::plan_bbox::MAX_PLAN_TILES_MULTI_STEM,
-                        );
+                        last_terminate = "disconnected";
                         report.push_str(
+                            "corridor_components_disconnected before A* (origin/destination \
+                         not connected in loaded tiles)\n",
+                        );
+                        driver_break_core::routing::plan_perf::note(
+                            "corridor_components",
+                            if weak_ok {
+                                "directed_unreachable"
+                            } else {
+                                "disconnected"
+                            },
+                        );
+                        // Free the truncated corridor before reload (RSS / cache).
+                        drop(built);
+                        graph = None;
+                        // Do not reload the same pad clip via tile-budget widen
+                        // (Bevensen dest hop 18: four identical 0.35° loads).
+                        // One trip-AABB retry on this pad, then the next pad.
+                        if driver_break_core::routing::plan_bbox::should_fallback_to_trip_aabb(
+                            edge_clip_mode,
+                            last_terminate,
+                        ) {
+                            // One TripAabb reload so a chord-band that missed the
+                            // road between the hop ends can include both leaves.
+                            // Do not keep doubling pads after that.
+                            edge_clip_mode =
+                                driver_break_core::routing::plan_bbox::PlanEdgeClipMode::TripAabb;
+                            driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(
+                                driver_break_core::routing::plan_bbox::MAX_PLAN_TILES_MULTI_STEM,
+                            );
+                            report.push_str(
                             "edge_clip_fallback=trip_aabb after corridor_components_disconnected\n",
                         );
-                        continue;
-                    }
-                    report.push_str(
+                            continue;
+                        }
+                        report.push_str(
                         "corridor_disconnected: stop after one trip-AABB reload (no further pads, no A*)\n",
                     );
-                    break 'pads;
+                        break 'pads;
                     }
                 }
             }
@@ -6784,6 +6793,11 @@ pub fn ensure_place_index(
         .trim()
         .trim_matches('/')
         .to_string();
+    if !region.is_empty() {
+        if let Err(e) = driver_break_core::pack_server::refuse_overbroad_place_index(&region, pbf) {
+            return format!("FAIL: {e}\n");
+        }
+    }
     // Surface 0/6 immediately so the Tools % line is never blank while we check
     // the cache / open SQLite.
     progress::set(0, Some(6), "Place index: starting…");
@@ -6837,7 +6851,14 @@ pub fn ensure_place_index(
                 Ok(n) => format!(
                     "PASS\ncache_hit=false\nindexed={n}\nregion_id={region}\nindex_db={index_db_path}\n"
                 ),
-                Err(e) => format!("FAIL: index load: {e:#}\n"),
+                Err(e) => {
+                    let msg = format!("{e:#}");
+                    if msg.contains(driver_break_core::search::PLACE_INDEX_PAUSED_PREFIX) {
+                        format!("PAUSED\n{msg}\nregion_id={region}\nindex_db={index_db_path}\n")
+                    } else {
+                        format!("FAIL: index load: {msg}\n")
+                    }
+                }
             }
         }
         Err(e) => {

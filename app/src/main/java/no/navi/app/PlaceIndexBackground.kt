@@ -96,6 +96,17 @@ object PlaceIndexBackground {
             lastStatus.set(annotate("failed (unknown region)", rid))
             return
         }
+        val installed =
+            PackRegionAvailability.installedPackRegionIds(
+                InstalledMaps.current()?.regions?.values.orEmpty(),
+            )
+        if (rid != null &&
+            !PackRegionAvailability.mayIndexRegion(rid, pbf, installed, true)
+        ) {
+            Log.e(TAG, "refusing ensurePlaceIndex region=$rid pbf=${pbf.name}")
+            lastStatus.set(annotate("failed (not own source)", rid))
+            return
+        }
         if (!rid.isNullOrBlank() &&
             !PackRegionAvailability.pbfMatchesRegionForPlaceIndex(pbf, rid)
         ) {
@@ -133,15 +144,16 @@ object PlaceIndexBackground {
         runPackJob(pbf.parentFile ?: indexDb.parentFile ?: File("."), indexDb, regionId, pbf)
     }
 
+    /** True when the build paused for a plan and must be resumed. */
     internal fun runPackJob(
         packDir: File,
         indexDb: File,
         regionId: String?,
         pbf: File?,
-    ) {
+    ): Boolean {
         if (!claimWorker()) {
             Log.i(TAG, "already running; skip")
-            return
+            return false
         }
         val rid = regionId?.trim()?.trim('/')?.ifBlank { null }
         activeRegionId.set(rid.orEmpty())
@@ -170,6 +182,11 @@ object PlaceIndexBackground {
                     "FAIL: no pack-server stamp and no extract\n"
                 }
             val bytes = if (indexDb.isFile) indexDb.length() else 0L
+            if (report.contains("PAUSED") || report.contains("action=paused")) {
+                lastStatus.set(annotate("paused for plan", rid.orEmpty()))
+                Log.i(TAG, "paused bytes=$bytes report=$report")
+                return true
+            }
             if (report.contains("PASS")) {
                 val dataDir = indexDb.parentFile
                 if (dataDir != null && !rid.isNullOrBlank()) {
@@ -187,9 +204,11 @@ object PlaceIndexBackground {
                 lastStatus.set(annotate("failed", rid.orEmpty()))
             }
             Log.i(TAG, "finished bytes=$bytes report=$report")
+            return false
         } catch (t: Throwable) {
             lastStatus.set(annotate("failed: ${t.message}", rid.orEmpty()))
             Log.e(TAG, "ensurePlaceIndex crashed", t)
+            return false
         } finally {
             activeRegionId.set("")
             releaseWorker()

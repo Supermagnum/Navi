@@ -21,6 +21,55 @@ pub const NAMED_BUILDING_KIND: &str = "building";
 /// Commit SQLite/FTS inserts this often so a force-close cannot roll back the
 /// entire write, and so WAL readers are not blocked for minutes.
 const INSERT_COMMIT_BATCH: usize = 50_000;
+
+/// Error prefix when a foreground plan pauses an in-flight index at a batch.
+pub const PLACE_INDEX_PAUSED_PREFIX: &str = "place_index_paused";
+
+fn place_index_rss_mb() -> u64 {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| {
+            s.lines().find_map(|line| {
+                let rest = line.strip_prefix("VmRSS:")?;
+                rest.split_whitespace().next()?.parse::<u64>().ok()
+            })
+        })
+        .unwrap_or(0)
+        / 1024
+}
+
+fn release_index_heap() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    unsafe {
+        libc::malloc_trim(0);
+    }
+    #[cfg(target_os = "android")]
+    {
+        extern "C" {
+            fn mallopt(param: libc::c_int, value: libc::c_int) -> libc::c_int;
+        }
+        const M_PURGE_ALL: libc::c_int = -104;
+        const M_PURGE: libc::c_int = -101;
+        unsafe {
+            if mallopt(M_PURGE_ALL, 0) == 0 {
+                mallopt(M_PURGE, 0);
+            }
+        }
+    }
+}
+
+fn pause_index_if_plan_active(written: i64, expected: i64, peak_rss_mb: u64) -> anyhow::Result<()> {
+    if !crate::download::pbf_priority::foreground_plan_active() {
+        return Ok(());
+    }
+    release_index_heap();
+    log::info!(
+        target: "PlaceIndex",
+        "place_index_build action=paused written={written} expected={expected} \
+         peak_rss_mb={peak_rss_mb} held=committed_rows+wal"
+    );
+    anyhow::bail!("{PLACE_INDEX_PAUSED_PREFIX} written={written} expected={expected}")
+}
 /// Refresh place-index UI labels during long PBF walks so Android does not
 /// appear frozen on a single "scanning ways…" / "scanning nodes…" string.
 const PLACE_INDEX_PROGRESS_HEARTBEAT: usize = 25_000;
@@ -809,6 +858,16 @@ impl NameIndex {
         let _bg = crate::download::pbf_priority::BackgroundIndexerGuard::enter();
         let path = path.as_ref();
         let region_id = region_id.trim().trim_matches('/').to_string();
+        let mut peak_rss_mb = place_index_rss_mb();
+        let bump_peak = |peak: &mut u64| {
+            let rss = place_index_rss_mb();
+            if rss > *peak {
+                *peak = rss;
+            }
+        };
+        // Before any PBF pass: a plan already in flight must not enter a scan
+        // that waits on foreground_plan_active (that parks the indexer).
+        pause_index_if_plan_active(Self::build_written(&self.conn, &region_id), 0, peak_rss_mb)?;
         // (osm_id, display_name, search_doc, kind, lat, lon)
         let mut batch: Vec<(i64, String, String, String, f64, f64)> = Vec::new();
         const PHASES: u64 = 6;
@@ -832,6 +891,8 @@ impl NameIndex {
             admin_t0,
             &format!("admin_rings={}", admin_rings.len()),
         );
+        bump_peak(&mut peak_rss_mb);
+        pause_index_if_plan_active(0, 0, peak_rss_mb)?;
 
         // Pass 1: collect named closed/open ways that need node centroids
         // (tourism=zoo, amenity areas, etc. are often ways, not nodes).
@@ -891,6 +952,8 @@ impl NameIndex {
                 needed_nodes.len()
             ),
         );
+        bump_peak(&mut peak_rss_mb);
+        pause_index_if_plan_active(0, 0, peak_rss_mb)?;
 
         // Pass 2: nodes (search hits) + coords for way centroids.
         crate::download::progress::set(2, Some(PHASES), &format!("{phase_prefix}scanning nodes…"));
@@ -947,6 +1010,8 @@ impl NameIndex {
                 node_coords.len()
             ),
         );
+        bump_peak(&mut peak_rss_mb);
+        pause_index_if_plan_active(0, 0, peak_rss_mb)?;
 
         // Surface centroids on the progress UI — this pass used to leave the
         // last "scanning nodes…" label frozen for a long stretch.
@@ -991,13 +1056,15 @@ impl NameIndex {
             centroids_t0,
             &format!("way_hits={way_hits} batch={}", batch.len()),
         );
+        bump_peak(&mut peak_rss_mb);
+        pause_index_if_plan_active(0, batch.len() as i64, peak_rss_mb)?;
 
         // Official hiking/cycling route relations (name/ref/operator) for To/Via search.
         // Relation ids are distinct from node ids in OSM; store relation id as-is
         // (FTS rowid = osm_id).
         crate::download::progress::set(3, Some(PHASES), &format!("{phase_prefix}named routes…"));
         let routes_t0 = phase_timing::start("place_index.named_routes");
-        crate::download::pbf_priority::yield_if_foreground_plan();
+        pause_index_if_plan_active(0, batch.len() as i64, peak_rss_mb)?;
         let mut route_hits = 0usize;
         match crate::routing::graph::load_named_route_entries(path) {
             Ok(routes) => {
@@ -1016,6 +1083,8 @@ impl NameIndex {
             routes_t0,
             &format!("route_hits={route_hits} batch={}", batch.len()),
         );
+        bump_peak(&mut peak_rss_mb);
+        pause_index_if_plan_active(0, batch.len() as i64, peak_rss_mb)?;
 
         crate::download::progress::set(
             4,
@@ -1036,6 +1105,8 @@ impl NameIndex {
             ctx_t0,
             &format!("batch={}", batch.len()),
         );
+        bump_peak(&mut peak_rss_mb);
+        pause_index_if_plan_active(0, batch.len() as i64, peak_rss_mb)?;
 
         crate::download::progress::set(
             5,
@@ -1120,7 +1191,8 @@ impl NameIndex {
                     Some(total as u64),
                     &format!("{phase_prefix}writing database…"),
                 );
-                crate::download::pbf_priority::yield_if_foreground_plan();
+                bump_peak(&mut peak_rss_mb);
+                pause_index_if_plan_active(inserted as i64, total as i64, peak_rss_mb)?;
                 tx = self.conn.unchecked_transaction()?;
                 since_commit = 0;
             }
@@ -1143,10 +1215,16 @@ impl NameIndex {
             &format!("rows={total}"),
         );
         crate::download::progress::set(PHASES, Some(PHASES), "Place index ready");
+        bump_peak(&mut peak_rss_mb);
+        log::info!(
+            target: "PlaceIndex",
+            "place_index_build action=built region={region_id} indexed={} peak_rss_mb={peak_rss_mb}",
+            batch.len()
+        );
         phase_timing::end_detail(
             "place_index.total",
             total_t0,
-            &format!("indexed={}", batch.len()),
+            &format!("indexed={} peak_rss_mb={peak_rss_mb}", batch.len()),
         );
         Ok(batch.len())
     }
@@ -3082,5 +3160,50 @@ mod tests {
             n, 0,
             "GROUP BY backfill must not run when name_index_build already existed"
         );
+    }
+
+    #[test]
+    fn plan_during_index_pauses_and_resumes_same_rows() {
+        use crate::download::pbf_priority::{self, ForegroundPlanGuard};
+        let _g = pbf_priority::lock_plan_flag_for_test();
+        let pbf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/place-source-tiny.osm.pbf");
+        assert!(pbf.is_file(), "{}", pbf.display());
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let uninterrupted = dir.path().join("full.db");
+        let paused = dir.path().join("paused.db");
+        let region = "test/fu38-pause";
+        let n_full = {
+            let mut idx = NameIndex::open(&uninterrupted).unwrap();
+            idx.load_from_pbf_for_region(&pbf, region).unwrap()
+        };
+        assert!(n_full > 0);
+        {
+            let _fg = ForegroundPlanGuard::acquire();
+            let mut idx = NameIndex::open(&paused).unwrap();
+            let err = idx
+                .load_from_pbf_for_region(&pbf, region)
+                .expect_err("must pause");
+            assert!(
+                err.to_string().contains(PLACE_INDEX_PAUSED_PREFIX),
+                "{err:#}"
+            );
+            assert!(
+                !NameIndex::region_index_intact(&paused, region),
+                "paused build must not look intact"
+            );
+        }
+        let n_resume = {
+            let mut idx = NameIndex::open(&paused).unwrap();
+            idx.load_from_pbf_for_region(&pbf, region).unwrap()
+        };
+        assert_eq!(n_resume, n_full);
+        assert!(NameIndex::region_index_intact(&paused, region));
+        let full_ids =
+            NameIndex::osm_ids_for_region(&Connection::open(&uninterrupted).unwrap(), region)
+                .unwrap();
+        let resume_ids =
+            NameIndex::osm_ids_for_region(&Connection::open(&paused).unwrap(), region).unwrap();
+        assert_eq!(full_ids, resume_ids);
     }
 }

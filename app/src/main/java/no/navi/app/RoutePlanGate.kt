@@ -11,7 +11,12 @@ object RoutePlanGate {
 
     fun isRunning(): Boolean = running.get()
 
-    fun tryBegin(): Boolean = running.compareAndSet(false, true)
+    fun tryBegin(): Boolean {
+        if (!running.compareAndSet(false, true)) return false
+        val pause = IdlePackJobs.waitOrPauseForPlan()
+        RoutingPlanLog.idleJobPause(pause)
+        return true
+    }
 
     fun end() {
         running.set(false)

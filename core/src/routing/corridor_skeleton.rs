@@ -3095,6 +3095,11 @@ pub fn try_stage_b_densify_from_skeletons(
         return Err("stage_b needs at least two waypoints".into());
     }
     let t0 = std::time::Instant::now();
+    log::info!(
+        target: "NaviPlan",
+        "plan_mem stage=idle rss_mb={}",
+        vm_rss_mb()
+    );
     let mut load_ms = 0u128;
     let mut graph_ms = 0u128;
     let mut plan_ms = 0u128;
@@ -3133,7 +3138,11 @@ pub fn try_stage_b_densify_from_skeletons(
         .graph
         .nodes
         .keys()
-        .filter(|id| coarse.graph.directed_snap_ok(**id, crate::routing::graph::SnapRole::Via))
+        .filter(|id| {
+            coarse
+                .graph
+                .directed_snap_ok(**id, crate::routing::graph::SnapRole::Via)
+        })
         .map(|id| id.0)
         .collect();
     let t_att = std::time::Instant::now();
@@ -3151,8 +3160,23 @@ pub fn try_stage_b_densify_from_skeletons(
         }
     };
     let snap_ms = t_att.elapsed().as_millis();
+    let after_attach_before_trim = vm_rss_mb();
+    let t_rel = Instant::now();
+    release_free_heap();
+    let release_after_attach_ms = t_rel.elapsed().as_millis();
+    let after_attach_rss_mb = vm_rss_mb();
+    log::info!(
+        target: "NaviPlan",
+        "plan_mem stage=after_attach rss_mb={after_attach_rss_mb} \
+         rss_before_trim_mb={after_attach_before_trim}"
+    );
+    log::info!(
+        target: "NaviPlan",
+        "plan_add_ms release_free_heap_after_attach={release_after_attach_ms}"
+    );
     let snaps = attach_plan.apply(&mut coarse.graph);
     let t_plan = std::time::Instant::now();
+    let corridor_rss_before = vm_rss_mb();
     let mut plan = stage_b_plan_on_graph(
         &mut coarse.graph,
         &coarse.names,
@@ -3162,6 +3186,7 @@ pub fn try_stage_b_densify_from_skeletons(
         route_options,
     );
     plan_ms += t_plan.elapsed().as_millis();
+    let corridor_peak_rss_mb = corridor_rss_before.max(vm_rss_mb());
     if plan.is_none() && local_stems.is_some() {
         log::info!(
             target: "NaviPlan",
@@ -3224,6 +3249,7 @@ pub fn try_stage_b_densify_from_skeletons(
             }
         }
     }
+    let t_named = Instant::now();
     let major_hints =
         crate::long_trip::missing_major_continuations(&skel_files, &out.coarse_path, &installed);
     let band_missing =
@@ -3231,17 +3257,40 @@ pub fn try_stage_b_densify_from_skeletons(
             .unwrap_or_default();
     out.missing_advisory =
         crate::long_trip::missing_region_advisory_lines(&major_hints, &band_missing);
+    let named_missing_ms = t_named.elapsed().as_millis();
+    log::info!(
+        target: "NaviPlan",
+        "plan_add_ms named_missing_regions={named_missing_ms} corridor_skels={}",
+        skel_files.len()
+    );
     let (graph_nodes, graph_edges) = (coarse.graph.nodes.len(), coarse.graph.edges.len());
-    let hwm_mb = vm_hwm_mb();
+    let corridor_peak_rss_mb = corridor_peak_rss_mb.max(vm_rss_mb());
     let rss_before_mb = vm_rss_mb();
     drop(coarse);
     drop(border_osm);
+    drop(attach_plan);
+    let t_rel2 = Instant::now();
     release_free_heap();
+    let release_after_release_ms = t_rel2.elapsed().as_millis();
+    log::info!(
+        target: "NaviPlan",
+        "plan_add_ms release_free_heap_after_release={release_after_release_ms}"
+    );
     let rss_after_mb = vm_rss_mb();
+    log::info!(
+        target: "NaviPlan",
+        "plan_mem stage=corridor_peak rss_mb={corridor_peak_rss_mb}"
+    );
+    log::info!(
+        target: "NaviPlan",
+        "plan_mem stage=after_release rss_mb={rss_after_mb}"
+    );
     out.timing = format!(
         "stage_b_timing skels={skels} widened={widened} graph_nodes={graph_nodes} \
          graph_edges={graph_edges} load_ms={load_ms} graph_ms={graph_ms} plan_ms={plan_ms} \
-         snap_ms={snap_ms} assemble_ms={assemble_ms} total_ms={} vm_hwm_mb={hwm_mb}\n\
+         snap_ms={snap_ms} assemble_ms={assemble_ms} total_ms={} \
+         corridor_peak_rss_mb={corridor_peak_rss_mb} after_attach_rss_mb={after_attach_rss_mb} \
+         after_release_rss_mb={rss_after_mb}\n\
          stage_b_release rss_before_mb={rss_before_mb} rss_after_mb={rss_after_mb}",
         t0.elapsed().as_millis(),
     );
@@ -3251,11 +3300,11 @@ pub fn try_stage_b_densify_from_skeletons(
 
 /// Return freed heap pages to the system so the first detailed hop does not
 /// start on top of the corridor stage's footprint.
+///
+/// Host glibc `malloc_trim(0)` walks the whole heap and added seconds to every
+/// plan. Sample RSS without trimming on the host. Android still purges at
+/// stage boundaries.
 fn release_free_heap() {
-    #[cfg(all(target_os = "linux", target_env = "gnu"))]
-    unsafe {
-        libc::malloc_trim(0);
-    }
     #[cfg(target_os = "android")]
     {
         extern "C" {
