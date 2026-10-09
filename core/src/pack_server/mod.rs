@@ -36,6 +36,7 @@ mod acquisition;
 mod corridor_regions;
 mod fetch;
 mod place_index_after;
+mod place_source;
 mod region_plan;
 
 pub use acquisition::{
@@ -55,6 +56,11 @@ pub use place_index_after::{
     build_place_index_from_pbf, ensure_geofabrik_pbf_for_region,
     ensure_place_index_after_pack_install, PackPlaceIndexReport, MIN_REAL_PBF_BYTES,
     PLACE_INDEX_DB_NAME,
+};
+pub use place_source::{
+    ensure_place_index_for_installed_region, ensure_place_index_for_pack_region,
+    place_source_from_manifest_json, PlaceIndexEnsureReport, PlaceIndexSource, PlaceSourceRef,
+    PLACE_SOURCE_SUFFIX,
 };
 pub use region_plan::{
     ensure_corridor_regions_installed, region_plan_error_from_snap_or_no_route,

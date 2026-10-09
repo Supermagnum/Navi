@@ -296,16 +296,47 @@ def place_index_facts():
     uri = f"'file:{path}?mode=ro'"
     qc = adb("shell", f"sqlite3 -readonly {uri} 'PRAGMA quick_check;'", timeout=900)
     rec["quick_check"] = (qc.stdout or qc.stderr or "").strip()
-    rows = adb(
-        "shell",
-        f"sqlite3 -readonly {uri} 'SELECT region_id, COUNT(*) FROM name_entries GROUP BY 1;'",
-        timeout=900,
-    )
+    # After an APK replace the app may still hold the WAL. GROUP BY 1 on a 2 GB
+    # file then often returns empty stdout (locked / busy) while quick_check
+    # already succeeded. Retry, group by the column name, and fall back to
+    # per-region counts so the stored ten-region check is not empty.
+    sql = "SELECT region_id, COUNT(*) FROM name_entries GROUP BY region_id;"
     counts = {}
-    for ln in (rows.stdout or "").splitlines():
-        rid, _, n = ln.rpartition("|")
-        if rid and n.strip().isdigit():
-            counts[rid] = int(n)
+    err = ""
+    for _ in range(4):
+        rows = adb("shell", f"sqlite3 -readonly {uri} '{sql}'", timeout=900)
+        err = (rows.stderr or "").strip()
+        counts = {}
+        for ln in (rows.stdout or "").splitlines():
+            rid, _, n = ln.rpartition("|")
+            if rid and n.strip().isdigit():
+                counts[rid] = int(n)
+        if counts:
+            break
+        time.sleep(2)
+    if not counts:
+        rec["rows_error"] = err or "group_by_empty"
+        stored = [
+            "europe/denmark",
+            "europe/germany/hamburg",
+            "europe/germany/niedersachsen",
+            "europe/germany/schleswig-holstein",
+            "europe/norway/ostlandet",
+            "europe/norway/sorlandet",
+            "europe/norway/vestlandet",
+            "europe/sweden/halland",
+            "europe/sweden/skane",
+            "europe/sweden/vastra_gotaland",
+        ]
+        for rid in stored:
+            one = adb(
+                "shell",
+                f"sqlite3 -readonly {uri} \"SELECT COUNT(*) FROM name_entries WHERE region_id='{rid}';\"",
+                timeout=120,
+            )
+            n = (one.stdout or "").strip()
+            if n.isdigit():
+                counts[rid] = int(n)
     rec["rows"] = counts
     return rec
 

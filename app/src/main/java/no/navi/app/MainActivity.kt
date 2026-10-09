@@ -712,6 +712,7 @@ private fun NaviMapScreen() {
         withContext(Dispatchers.IO) {
             runCatching { InstalledMaps.refresh(context) }
             IdlePackJobs.executeJobs = true
+            IdlePackJobs.attachContext(context)
             IdlePackJobs.onAppIdle()
             val summary = InstalledMaps.summaryText()
             android.util.Log.i("InstalledMaps", summary)
@@ -728,6 +729,7 @@ private fun NaviMapScreen() {
         withContext(Dispatchers.IO) {
             runCatching { InstalledMaps.refresh(context) }
             IdlePackJobs.executeJobs = true
+            IdlePackJobs.attachContext(context)
             IdlePackJobs.onAppIdle()
         }
         mapsEpoch += 1

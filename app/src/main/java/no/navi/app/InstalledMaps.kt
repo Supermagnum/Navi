@@ -30,6 +30,12 @@ object InstalledMaps {
         QUARANTINED,
     }
 
+    enum class PlaceIndexSource {
+        PLACE_SOURCE,
+        OWN_EXTRACT,
+        NONE,
+    }
+
     data class Region(
         val regionId: String,
         val stem: String,
@@ -47,6 +53,8 @@ object InstalledMaps {
         val tilesRejected: Boolean,
         val placeIndex: PlaceIndexState,
         val placeIndexRows: Long,
+        val placeIndexSource: PlaceIndexSource = PlaceIndexSource.NONE,
+        val placeIndexSourceSha: String = "",
     ) {
         /** Tiles that the active routing profile can actually load. */
         fun tilesLoadFor(profileKey: String): Boolean {
@@ -198,8 +206,12 @@ object InstalledMaps {
                     PackRegionAvailability.resolvePlaceIndexPbf(r.packDir, r.regionId)
                         ?: PackRegionAvailability.resolvePlaceIndexPbf(internalDataDir, r.regionId)
                 val pbf = leafPbf ?: r.pbfPath
+                val stamp = File(r.packDir, "${r.stem}.navi-server-install.json")
                 val note =
                     when {
+                        leafPbf == null && stamp.isFile ->
+                            "no own extract; idle will try the pack-server place-source file, " +
+                                "otherwise " + OfflineIndexGate.CANNOT_INDEX_YET
                         leafPbf == null ->
                             OfflineIndexGate.CANNOT_INDEX_YET +
                                 " (need ${PackRegionAvailability.localStem(r.regionId)}.osm.pbf)"
@@ -261,7 +273,8 @@ object InstalledMaps {
                         "pbf=${r.pbfKind} ferry_car=${r.ferrySidecarCar} ferry_truck=${r.ferrySidecarTruck} " +
                         "corridor_skel=${r.corridorSkeleton} " +
                         "tiles=${r.tilesPresent} rejected=${r.tilesRejected} " +
-                        "index=${r.placeIndex} rows=${r.placeIndexRows}",
+                        "index=${r.placeIndex} index_source=${r.placeIndexSource.name.lowercase().replace('_', '-')} " +
+                        "rows=${r.placeIndexRows}",
                 )
             }
             if (snap.missingPlaceIndex.isNotEmpty()) {
@@ -352,6 +365,8 @@ object InstalledMaps {
                     tilesRejected = rejectedFile.isFile,
                     placeIndex = indexState,
                     placeIndexRows = probe.rowCount,
+                    placeIndexSource = indexSourceOf(indexState, probe),
+                    placeIndexSourceSha = probe.sourceSha256,
                 )
             val prev = into[nid]
             if (prev == null || prefer(region, prev)) {
@@ -393,8 +408,28 @@ object InstalledMaps {
                             PlaceIndexState.MISSING
                         },
                     placeIndexRows = probe.rowCount,
+                    placeIndexSource = indexSourceOf(
+                        if (probe.intact) {
+                            if (probe.legacy) PlaceIndexState.LEGACY_INTACT else PlaceIndexState.INTACT
+                        } else {
+                            PlaceIndexState.MISSING
+                        },
+                        probe,
+                    ),
+                    placeIndexSourceSha = probe.sourceSha256,
                 )
         }
+    }
+
+    private fun indexSourceOf(
+        state: PlaceIndexState,
+        probe: PlaceIndexIntact.Probe,
+    ): PlaceIndexSource {
+        if (state == PlaceIndexState.MISSING || state == PlaceIndexState.QUARANTINED) {
+            return PlaceIndexSource.NONE
+        }
+        if (probe.indexSource == "place-source") return PlaceIndexSource.PLACE_SOURCE
+        return PlaceIndexSource.OWN_EXTRACT
     }
 
     private fun prefer(

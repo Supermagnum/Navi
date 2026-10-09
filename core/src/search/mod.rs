@@ -239,12 +239,54 @@ impl NameIndex {
                 region_id TEXT PRIMARY KEY NOT NULL,
                 expected INTEGER NOT NULL DEFAULT 0,
                 written INTEGER NOT NULL DEFAULT 0,
-                complete INTEGER NOT NULL DEFAULT 0
+                complete INTEGER NOT NULL DEFAULT 0,
+                source_sha256 TEXT NOT NULL DEFAULT '',
+                index_source TEXT NOT NULL DEFAULT ''
             );
             ",
         )?;
         Self::ensure_context_columns(conn)?;
         Self::ensure_search_doc_fts(conn)?;
+        Self::ensure_source_sha256_column(conn)?;
+        Self::ensure_index_source_column(conn)?;
+        Ok(())
+    }
+
+    fn ensure_source_sha256_column(conn: &Connection) -> SqlResult<()> {
+        let mut has = false;
+        let mut stmt = conn.prepare("PRAGMA table_info(name_index_build)")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+        for r in rows {
+            if r?.as_str() == "source_sha256" {
+                has = true;
+                break;
+            }
+        }
+        if !has {
+            conn.execute(
+                "ALTER TABLE name_index_build ADD COLUMN source_sha256 TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+        }
+        Ok(())
+    }
+
+    fn ensure_index_source_column(conn: &Connection) -> SqlResult<()> {
+        let mut has = false;
+        let mut stmt = conn.prepare("PRAGMA table_info(name_index_build)")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+        for r in rows {
+            if r?.as_str() == "index_source" {
+                has = true;
+                break;
+            }
+        }
+        if !has {
+            conn.execute(
+                "ALTER TABLE name_index_build ADD COLUMN index_source TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+        }
         Ok(())
     }
 
@@ -1123,6 +1165,7 @@ impl NameIndex {
             tx.execute_batch(
                 "
                 DELETE FROM name_entries;
+                DELETE FROM name_index_build;
                 INSERT INTO name_fts(name_fts) VALUES('rebuild');
                 ",
             )?;
@@ -1145,8 +1188,129 @@ impl NameIndex {
             "DELETE FROM name_entries WHERE region_id = ?1",
             params![region_id],
         )?;
+        tx.execute(
+            "DELETE FROM name_index_build WHERE region_id = ?1",
+            params![region_id],
+        )?;
         // External-content FTS5: rebuild after deleting a region's rows.
         let _ = tx.execute_batch("INSERT INTO name_fts(name_fts) VALUES('rebuild');");
+        Ok(())
+    }
+
+    /// Place-source sha256 recorded with this region's index state, if any.
+    pub fn place_source_sha256(path: impl AsRef<Path>, region_id: &str) -> Option<String> {
+        let path = path.as_ref();
+        let region_id = region_id.trim().trim_matches('/');
+        if !path.is_file() || region_id.is_empty() {
+            return None;
+        }
+        let Ok(conn) =
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        else {
+            return None;
+        };
+        conn.query_row(
+            "SELECT source_sha256 FROM name_index_build WHERE region_id = ?1",
+            params![region_id],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+    }
+
+    /// Record the place-source sha256 on an existing (or just-built) region row.
+    /// Does not change complete/written/expected.
+    pub fn set_place_source_sha256(
+        path: impl AsRef<Path>,
+        region_id: &str,
+        sha256: &str,
+    ) -> Result<(), String> {
+        let path = path.as_ref();
+        let region_id = region_id.trim().trim_matches('/');
+        let sha256 = sha256.trim();
+        if region_id.is_empty() {
+            return Err("region_id empty".into());
+        }
+        if sha256.is_empty() {
+            return Err("source sha256 empty".into());
+        }
+        let conn = Connection::open(path).map_err(|e| e.to_string())?;
+        Self::apply_file_pragmas(&conn).map_err(|e| e.to_string())?;
+        Self::ensure_source_sha256_column(&conn).map_err(|e| e.to_string())?;
+        let n = conn
+            .execute(
+                "UPDATE name_index_build SET source_sha256 = ?1 WHERE region_id = ?2",
+                params![sha256, region_id],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            conn.execute(
+                "INSERT INTO name_index_build(region_id, expected, written, complete, source_sha256)
+                 SELECT ?2, COUNT(*), COUNT(*), 1, ?1
+                 FROM name_entries WHERE region_id = ?2",
+                params![sha256, region_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
+    /// How this region's index was built: `place-source`, `own-extract`, or none.
+    pub fn place_index_source(path: impl AsRef<Path>, region_id: &str) -> Option<String> {
+        let path = path.as_ref();
+        let region_id = region_id.trim().trim_matches('/');
+        if !path.is_file() || region_id.is_empty() {
+            return None;
+        }
+        let Ok(conn) =
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        else {
+            return None;
+        };
+        conn.query_row(
+            "SELECT index_source FROM name_index_build WHERE region_id = ?1",
+            params![region_id],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+    }
+
+    /// Record `place-source` or `own-extract` without changing row counts.
+    pub fn set_place_index_source(
+        path: impl AsRef<Path>,
+        region_id: &str,
+        source: &str,
+    ) -> Result<(), String> {
+        let path = path.as_ref();
+        let region_id = region_id.trim().trim_matches('/');
+        let source = source.trim();
+        if region_id.is_empty() {
+            return Err("region_id empty".into());
+        }
+        if source != "place-source" && source != "own-extract" {
+            return Err(format!("invalid index_source {source}"));
+        }
+        let conn = Connection::open(path).map_err(|e| e.to_string())?;
+        Self::apply_file_pragmas(&conn).map_err(|e| e.to_string())?;
+        Self::ensure_index_source_column(&conn).map_err(|e| e.to_string())?;
+        let n = conn
+            .execute(
+                "UPDATE name_index_build SET index_source = ?1 WHERE region_id = ?2",
+                params![source, region_id],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            conn.execute(
+                "INSERT INTO name_index_build(region_id, expected, written, complete, index_source)
+                 SELECT ?2, COUNT(*), COUNT(*), 1, ?1
+                 FROM name_entries WHERE region_id = ?2",
+                params![source, region_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
         Ok(())
     }
 

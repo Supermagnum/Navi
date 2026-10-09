@@ -29,6 +29,8 @@ object PlaceIndexIntact {
         val rowCount: Long,
         val legacy: Boolean,
         val reason: String,
+        val sourceSha256: String = "",
+        val indexSource: String = "",
     )
 
     /** Stand-in for `place_index.db` in host JVM tests, which have no Android SQLite. */
@@ -196,16 +198,48 @@ object PlaceIndexIntact {
             runCatching {
                 db
                     .rawQuery(
-                        "SELECT complete, expected, written FROM name_index_build WHERE region_id = ? LIMIT 1",
+                        "SELECT complete, expected, written, source_sha256, index_source FROM name_index_build WHERE region_id = ? LIMIT 1",
                         arrayOf(rid),
                     ).use { c ->
                         if (!c.moveToFirst()) {
                             null
                         } else {
-                            Triple(c.getInt(0), c.getLong(1), c.getLong(2))
+                            Quad(
+                                c.getInt(0),
+                                c.getLong(1),
+                                c.getLong(2),
+                                c.getString(3).orEmpty(),
+                                c.getString(4).orEmpty(),
+                            )
                         }
                     }
             }.getOrNull()
+                ?: runCatching {
+                    db
+                        .rawQuery(
+                            "SELECT complete, expected, written, source_sha256 FROM name_index_build WHERE region_id = ? LIMIT 1",
+                            arrayOf(rid),
+                        ).use { c ->
+                            if (!c.moveToFirst()) {
+                                null
+                            } else {
+                                Quad(c.getInt(0), c.getLong(1), c.getLong(2), c.getString(3).orEmpty(), "")
+                            }
+                        }
+                }.getOrNull()
+                ?: runCatching {
+                    db
+                        .rawQuery(
+                            "SELECT complete, expected, written FROM name_index_build WHERE region_id = ? LIMIT 1",
+                            arrayOf(rid),
+                        ).use { c ->
+                            if (!c.moveToFirst()) {
+                                null
+                            } else {
+                                Quad(c.getInt(0), c.getLong(1), c.getLong(2), "", "")
+                            }
+                        }
+                }.getOrNull()
         if (build == null) {
             val ok = rowCount > 0L
             return Probe(
@@ -220,7 +254,7 @@ object PlaceIndexIntact {
                 reason = if (ok) "legacy_rows" else "no_rows_no_build",
             )
         }
-        val (complete, expected, written) = build
+        val (complete, expected, written, sourceSha, indexSource) = build
         if (complete == 0) {
             return Probe(
                 intact = false,
@@ -232,6 +266,8 @@ object PlaceIndexIntact {
                 rowCount = rowCount,
                 legacy = false,
                 reason = "incomplete",
+                sourceSha256 = sourceSha,
+                indexSource = indexSource,
             )
         }
         if (rowCount <= 0L) {
@@ -245,6 +281,8 @@ object PlaceIndexIntact {
                 rowCount = rowCount,
                 legacy = false,
                 reason = "complete_empty",
+                sourceSha256 = sourceSha,
+                indexSource = indexSource,
             )
         }
         val ref = if (written > 0L) written else expected
@@ -259,6 +297,16 @@ object PlaceIndexIntact {
             rowCount = rowCount,
             legacy = false,
             reason = if (closeEnough) "ok" else "row_count_far_from_written",
+            sourceSha256 = sourceSha,
+            indexSource = indexSource,
         )
     }
+
+    private data class Quad(
+        val complete: Int,
+        val expected: Long,
+        val written: Long,
+        val sourceSha: String,
+        val indexSource: String,
+    )
 }

@@ -130,6 +130,15 @@ object PlaceIndexBackground {
         indexDb: File,
         regionId: String?,
     ) {
+        runPackJob(pbf.parentFile ?: indexDb.parentFile ?: File("."), indexDb, regionId, pbf)
+    }
+
+    internal fun runPackJob(
+        packDir: File,
+        indexDb: File,
+        regionId: String?,
+        pbf: File?,
+    ) {
         if (!claimWorker()) {
             Log.i(TAG, "already running; skip")
             return
@@ -139,15 +148,27 @@ object PlaceIndexBackground {
         lastStatus.set(annotate("building", rid.orEmpty()))
         Log.i(
             TAG,
-            "start ensurePlaceIndex pbf=${pbf.absolutePath} db=${indexDb.absolutePath} region=$rid",
+            "start place-index pack=${packDir.absolutePath} pbf=${pbf?.absolutePath} " +
+                "db=${indexDb.absolutePath} region=$rid",
         )
         try {
+            val stamp = rid?.let { File(packDir, "${PackRegionAvailability.localStem(it)}.navi-server-install.json") }
             val report =
-                ensurePlaceIndex(
-                    pbf.absolutePath,
-                    indexDb.absolutePath,
-                    rid,
-                )
+                if (rid != null && stamp?.isFile == true) {
+                    uniffi.navi.ensurePlaceIndexForPackRegion(
+                        packDir.absolutePath,
+                        indexDb.absolutePath,
+                        rid,
+                    )
+                } else if (pbf != null) {
+                    ensurePlaceIndex(
+                        pbf.absolutePath,
+                        indexDb.absolutePath,
+                        rid,
+                    )
+                } else {
+                    "FAIL: no pack-server stamp and no extract\n"
+                }
             val bytes = if (indexDb.isFile) indexDb.length() else 0L
             if (report.contains("PASS")) {
                 val dataDir = indexDb.parentFile

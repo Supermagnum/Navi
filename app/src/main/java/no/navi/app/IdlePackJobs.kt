@@ -1,5 +1,6 @@
 package no.navi.app
 
+import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -50,6 +51,13 @@ object IdlePackJobs {
 
     @Volatile
     var executeJobs: Boolean = true
+
+    @Volatile
+    private var appContext: Context? = null
+
+    fun attachContext(context: Context) {
+        appContext = context.applicationContext
+    }
 
     fun resetForTests() {
         queue.clear()
@@ -195,15 +203,40 @@ object IdlePackJobs {
         if (indexDir != null) {
             val db = File(indexDir, "place_index.db")
             for (m in snap.missingPlaceIndex) {
-                val pbf = m.pbfPath ?: continue
-                if (!pbf.isFile) continue
+                val r = snap.regions[m.regionId]
+                val stamp =
+                    r?.let { File(it.packDir, "${it.stem}.navi-server-install.json") }
+                val pbf = m.pbfPath?.takeIf { it.isFile && it.length() >= RegionDownloadBackground.MIN_PBF_BYTES }
+                if (pbf == null && stamp?.isFile != true) continue
                 offer(
                     Job(
                         kind = Kind.PLACE_INDEX,
-                        stem = PackRegionAvailability.localStem(m.regionId),
-                        packDir = pbf.parentFile ?: indexDir,
+                        stem = r?.stem ?: PackRegionAvailability.localStem(m.regionId),
+                        packDir = r?.packDir ?: pbf?.parentFile ?: indexDir,
                         regionId = m.regionId,
                         pbf = pbf,
+                        indexDb = db,
+                    ),
+                )
+            }
+            // Intact index from another source: record the first listed
+            // place-source sha256 without rebuilding (follow-up 37 item 7).
+            for (r in snap.regions.values) {
+                if (r.placeIndex != InstalledMaps.PlaceIndexState.INTACT &&
+                    r.placeIndex != InstalledMaps.PlaceIndexState.LEGACY_INTACT
+                ) {
+                    continue
+                }
+                if (r.placeIndexSourceSha.isNotBlank()) continue
+                val stamp = File(r.packDir, "${r.stem}.navi-server-install.json")
+                if (!stamp.isFile) continue
+                offer(
+                    Job(
+                        kind = Kind.PLACE_INDEX,
+                        stem = r.stem,
+                        packDir = r.packDir,
+                        regionId = r.regionId,
+                        pbf = r.pbfPath,
                         indexDb = db,
                     ),
                 )
@@ -225,6 +258,11 @@ object IdlePackJobs {
                             break
                         }
                         val job = pollNext() ?: break
+                        if (job.kind == Kind.PLACE_INDEX && !placeIndexDownloadAllowed(job)) {
+                            lastStatus.set("Waiting for unmetered connection to download place-source…")
+                            synchronized(seen) { seen.remove(job.key()) }
+                            break
+                        }
                         active.set(job)
                         val rem = remainingSummary()
                         lastStatus.set("Running ${stepLabel(job)} — $rem")
@@ -259,6 +297,22 @@ object IdlePackJobs {
         return queue.poll()
     }
 
+    private fun placeIndexDownloadAllowed(job: Job): Boolean {
+        val haveSource =
+            job.packDir.listFiles()?.any { it.name.endsWith(".navi-place-source.osm.pbf") } == true
+        val pbfOk =
+            job.pbf != null &&
+                job.pbf.isFile &&
+                job.pbf.length() >= RegionDownloadBackground.MIN_PBF_BYTES
+        if (haveSource || pbfOk) return true
+        val ctx = appContext ?: return true
+        val longTripPacks =
+            job.packDir.name == LongTripPackStorage.PACKS_SUBDIR ||
+                job.packDir.path.contains("long-trip-packs")
+        if (!longTripPacks) return true
+        return NetworkUnmetered.isWifiOrEthernet(ctx)
+    }
+
     private fun stepLabel(job: Job): String {
         val name =
             RegionProgressMessages.regionName(job.regionId).ifBlank {
@@ -281,9 +335,8 @@ object IdlePackJobs {
             Kind.SKELETON ->
                 CorridorSkeletonBackground.runJob(job.packDir, job.stem, TravelProfile.CAR)
             Kind.PLACE_INDEX -> {
-                val pbf = job.pbf ?: return
                 val db = job.indexDb ?: return
-                PlaceIndexBackground.runJob(pbf, db, job.regionId)
+                PlaceIndexBackground.runPackJob(job.packDir, db, job.regionId, job.pbf)
             }
         }
     }

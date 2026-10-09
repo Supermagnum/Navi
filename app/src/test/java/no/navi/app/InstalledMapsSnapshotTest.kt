@@ -84,11 +84,17 @@ class InstalledMapsSnapshotTest {
             kinds.contains(IdlePackJobs.Kind.FERRY_CAR) ||
                 kinds.contains(IdlePackJobs.Kind.FERRY_TRUCK),
         )
+        assertTrue(
+            "stamp without a real extract must still schedule the place index",
+            kinds.contains(IdlePackJobs.Kind.PLACE_INDEX),
+        )
         assertTrue(scheduled.any { it.stem == "varmland-latest" })
         val r = InstalledMaps.region("europe/sweden/varmland", internal)!!
         assertFalse(r.tilesPresent)
         assertFalse(r.corridorSkeleton)
         assertFalse(r.ferrySidecarCar)
+        assertEquals(InstalledMaps.PlaceIndexSource.NONE, r.placeIndexSource)
+        assertTrue(InstalledMaps.summaryText().contains("index_source=none"))
     }
 
     @Test

@@ -6898,6 +6898,31 @@ pub fn clear_place_index_region_rows(index_db_path: String, region_id: String) -
     }
 }
 
+/// Build this pack-server region's place index from the place-source file when
+/// the region's manifest lists it; otherwise the existing extract path.
+#[uniffi::export]
+pub fn ensure_place_index_for_pack_region(
+    pack_dir: String,
+    index_db_path: String,
+    region_id: String,
+) -> String {
+    match driver_break_core::pack_server::ensure_place_index_for_installed_region(
+        Path::new(&pack_dir),
+        Path::new(&index_db_path),
+        &region_id,
+    ) {
+        Ok(r) => r.to_report_string(),
+        Err(e) => format!("FAIL: {e}\n"),
+    }
+}
+
+/// Read-only: place-source sha256 recorded with this region's index, or empty.
+#[uniffi::export]
+pub fn place_index_source_sha256(index_db_path: String, region_id: String) -> String {
+    driver_break_core::search::NameIndex::place_source_sha256(index_db_path, &region_id)
+        .unwrap_or_default()
+}
+
 /// Build preprocess-once indexed map packs next to a region PBF (graph + POI/barrier).
 ///
 /// Preference order when packs are missing / stale / format-mismatched:

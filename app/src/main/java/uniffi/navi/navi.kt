@@ -757,6 +757,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_ensure_place_index(
     ): Int
+    external fun uniffi_navi_checksum_func_ensure_place_index_for_pack_region(
+    ): Int
     external fun uniffi_navi_checksum_func_ensure_poi_lookahead_covering(
     ): Int
     external fun uniffi_navi_checksum_func_ensure_poi_lookahead_loaded(
@@ -892,6 +894,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_place_index_build_lock_release(
     ): Int
     external fun uniffi_navi_checksum_func_place_index_has_entries(
+    ): Int
+    external fun uniffi_navi_checksum_func_place_index_source_sha256(
     ): Int
     external fun uniffi_navi_checksum_func_plan_car_route(
     ): Int
@@ -1239,6 +1243,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_ensure_place_index(`pbfPath`: RustBuffer.ByValue,`indexDbPath`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_ensure_place_index_for_pack_region(`packDir`: RustBuffer.ByValue,`indexDbPath`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_ensure_poi_lookahead_covering(`dataDir`: RustBuffer.ByValue,`packDirsJson`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_ensure_poi_lookahead_loaded(`dataDir`: RustBuffer.ByValue,`pbfPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1375,6 +1381,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_place_index_has_entries(`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    external fun uniffi_navi_fn_func_place_index_source_sha256(`indexDbPath`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_plan_car_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`avoidTunnels`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`dataDir`: RustBuffer.ByValue,`packDir`: RustBuffer.ByValue,`longTripEnabled`: Byte,`allowedCountries`: RustBuffer.ByValue,`viaPoints`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_plan_car_route_at(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`avoidTunnels`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`departureLocalIso`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`packDir`: RustBuffer.ByValue,`longTripEnabled`: Byte,`allowedCountries`: RustBuffer.ByValue,`viaPoints`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1828,6 +1836,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_ensure_place_index() and 0xFFFF) != 27043) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_ensure_place_index_for_pack_region() and 0xFFFF) != 44667) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_ensure_poi_lookahead_covering() and 0xFFFF) != 9302) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2030,6 +2041,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_place_index_has_entries() and 0xFFFF) != 5969) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_place_index_source_sha256() and 0xFFFF) != 14354) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_plan_car_route() and 0xFFFF) != 25656) {
@@ -6242,6 +6256,23 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Build this pack-server region's place index from the place-source file when
+         * the region's manifest lists it; otherwise the existing extract path.
+         */ fun `ensurePlaceIndexForPackRegion`(`packDir`: kotlin.String, `indexDbPath`: kotlin.String, `regionId`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_ensure_place_index_for_pack_region(
+    
+        
+        FfiConverterString.lower(`packDir`),
+        FfiConverterString.lower(`indexDbPath`),
+        FfiConverterString.lower(`regionId`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Load the Ready POI pack that covers `lat,lon` (long-trip-packs / Removable
          * roots via `pack_dirs_json`). One pack at a time — never co-resident with a
          * route graph. Cell key (~0.5°) avoids thrashing when GPS jitters inside a region.
@@ -7227,6 +7258,21 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
         
         FfiConverterString.lower(`indexDbPath`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Read-only: place-source sha256 recorded with this region's index, or empty.
+         */ fun `placeIndexSourceSha256`(`indexDbPath`: kotlin.String, `regionId`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_place_index_source_sha256(
+    
+        
+        FfiConverterString.lower(`indexDbPath`),
+        FfiConverterString.lower(`regionId`),_status)
 }
     )
     }
