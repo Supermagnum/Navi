@@ -18,6 +18,20 @@
       "emu_wall_s": 79.0,
       "emu_peak_mb": 1076.0,
       "note": "Current packs (Gavleborg + Varmland installed). Host medians from the last full-route measurement on these packs before waypoint attach. Tag fu20-known-good cannot complete these routes here: current ferry sidecars are MAGIC_FERRY_OVERLAY / build 3, and that tag expects MAGIC_GRAPH plus a PBF-fingerprint meta. Unexplained out-and-back at 60.57,9.11 is a known spike failure, not accepted."
+    },
+    "f_hamar_stange": {
+      "peak_mb": 397.40625,
+      "wall_s": 0.836881336,
+      "emu_wall_s": 9.1,
+      "emu_peak_mb": 597.0,
+      "note": "Østlandet Hamar place:city to Stange place:town. Host warm, follow-up 42. Corridor stage skipped. long_trip on/off same polyline. Emulator first plan 9.1 s (planner 4.0 s); warm replay 6.1 s."
+    },
+    "g_hamar_lillehammer": {
+      "peak_mb": 601.34765625,
+      "wall_s": 1.423699624,
+      "emu_wall_s": 6.1,
+      "emu_peak_mb": 632.0,
+      "note": "Østlandet Hamar place:city to Lillehammer place:town. Host warm, follow-up 42. Corridor stage skipped. long_trip on/off same polyline. Emulator wall 6.1 s (planner 2.7 s)."
     }
   }
 }

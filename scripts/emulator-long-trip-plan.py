@@ -56,6 +56,18 @@ TRIPS = {
         "vias": [],
         "to": (59.80326, 9.39866, "Sjuvass"),
     },
+    # Place-index Østlandet: Hamar place:city, Stange place:town.
+    "hamar_stange": {
+        "from": (60.794721, 11.068055, "Hamar"),
+        "vias": [],
+        "to": (60.717675, 11.192379, "Stange"),
+    },
+    # Place-index Østlandet: Hamar place:city, Lillehammer place:town.
+    "hamar_lillehammer": {
+        "from": (60.794721, 11.068055, "Hamar"),
+        "vias": [],
+        "to": (61.114545, 10.467007, "Lillehammer"),
+    },
 }
 
 DATEX_MODES = {"none": "None", "saved": "Saved", "live": "Live"}
@@ -162,12 +174,12 @@ def clear_previous_plan():
         )
 
 
-def start_plan(trip, avoid_ferries, datex):
+def start_plan(trip, avoid_ferries, datex, long_trip=True):
     f_lat, f_lon, f_name = trip["from"]
     t_lat, t_lon, t_name = trip["to"]
     args = [
         "shell", "am", "start", "-n", f"{PKG}/.MainActivity",
-        "--ez", "navi_long_trip", "true",
+        "--ez", "navi_long_trip", "true" if long_trip else "false",
         "--ez", "navi_auto_plan", "true",
         "--ez", "navi_eco", "false",
         "--ez", "navi_restore_settings", "false",
@@ -438,7 +450,11 @@ def run_display_checks():
     clear_forced_basemap()
     adb("logcat", "-c")
     camera_to(53.551, 9.993, 11)
-    before = wait_tiles(8)
+    before = wait_tiles(12)
+    if not before["ok"]:
+        adb("logcat", "-c")
+        camera_to(53.551, 9.993, 11)
+        before = wait_tiles(12)
     start_plan(TRIPS["bevensen"], False, "none")
     time.sleep(3)
     during = wait_tiles(8)
@@ -448,6 +464,9 @@ def run_display_checks():
         "during": during["visible"],
     }
     log(f"plan_no_blank before={plan['before']} during={plan['during']} ok={plan['ok']}")
+    # This check starts a real plan; wait it out so the gate trip is not busy.
+    status, end, wall, _peak = wait_plan(180)
+    log(f"plan_no_blank drain {status} after {wall:.0f}s: {end[-160:]}")
     return {
         "hooks_cleared": hooks_ok,
         "hop": hop,
@@ -632,7 +651,7 @@ def wait_plan(deadline_s):
     return "timeout", "", time.time() - t0, peak
 
 
-def check_inputs(text, trip, avoid_ferries, datex):
+def check_inputs(text, trip, avoid_ferries, datex, long_trip=True):
     """Compare what the plan received with what was sent; return mismatches."""
     bad = []
     pi = last_line(text, "plan_inputs ")
@@ -651,7 +670,7 @@ def check_inputs(text, trip, avoid_ferries, datex):
         "avoid_ferries": str(avoid_ferries).lower(),
         "avoid_tunnels": "false",
         "toll": "Allow",
-        "long_trip": "true",
+        "long_trip": "true" if long_trip else "false",
         "datex": DATEX_MODES[datex],
         "vias": str(len(trip["vias"])),
     }
@@ -816,6 +835,16 @@ def main():
     ap.add_argument("--search-check", action="store_true")
     ap.add_argument("--clear-region", action="append", default=[])
     ap.add_argument("--pause-test", action="store_true")
+    ap.add_argument(
+        "--long-trip-off",
+        action="store_true",
+        help="send navi_long_trip=false (default is true)",
+    )
+    ap.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="skip search, offline-map and display checks (short-route timing)",
+    )
     a = ap.parse_args()
     if not a.trip and not a.search_check and not a.clear_region and not a.pause_test:
         ap.error("trip is required unless --search-check, --clear-region or --pause-test")
@@ -834,11 +863,12 @@ def main():
         cleared.append({"region": rid, "line": clear_place_index_region(rid)})
         index = place_index_facts()
 
-    searches = run_search_check() if (a.search_check or trip) else []
+    run_pre = (a.search_check or trip) and not a.plan_only
+    searches = run_search_check() if run_pre else []
     search_fail = [s for s in searches if not s.get("ok")]
-    maps = run_offline_map_check() if (a.search_check or trip) else []
+    maps = run_offline_map_check() if run_pre else []
     map_fail = [m for m in maps if not m.get("ok")]
-    display = run_display_checks() if (a.search_check or trip) else None
+    display = run_display_checks() if run_pre else None
     display_fail = bool(display) and (
         display.get("hooks_cleared") is False
         or not all(
@@ -868,7 +898,7 @@ def main():
         clear_previous_plan()
         adb("logcat", "-c")
         peak_reset = reset_peak()
-        start_plan(trip, a.avoid_ferries, a.datex)
+        start_plan(trip, a.avoid_ferries, a.datex, long_trip=not a.long_trip_off)
         status, end, wall, peak_kb = wait_plan(deadline - time.time())
         log(f"{status} after {wall:.0f} s: {end[-200:]}")
         if status != "preparing" or time.time() > deadline:
@@ -878,7 +908,7 @@ def main():
 
     text = logcat()
     (out / "logcat.txt").write_text(text)
-    bad, lines = check_inputs(text, trip, a.avoid_ferries, a.datex)
+    bad, lines = check_inputs(text, trip, a.avoid_ferries, a.datex, long_trip=not a.long_trip_off)
     files = pull(out)
     stages, native_peak = plan_stage_peaks(text)
     sampled_mb = round(peak_kb / 1024) if peak_kb else 0

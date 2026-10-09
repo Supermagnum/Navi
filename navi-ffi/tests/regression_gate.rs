@@ -30,6 +30,11 @@
 //!   must exist, be non-empty, pass `quick_check`, and keep every region and
 //!   row count in `tests/regression_gate_place_index.json`.
 //!
+//! Cases f (Hamar–Stange) and g (Hamar–Lillehammer) are short Østlandet
+//! trips with no via. They must complete, match polyline within 0.5 %, start
+//! and end on the waypoints' own roads, and produce the same route with
+//! `long_trip` off and on. The corridor stage must not run.
+//!
 //! Case e (Elsa to Sjuvass) must pass: the plan completes, 0 ferries,
 //! intermediate hop ends within 50 m of the coarse-path joint (or an on-path
 //! fallback). Accepted path-over-chord windows are the E 45 hook at Sveg and
@@ -76,6 +81,15 @@ const GROTLI: (f64, f64) = (62.013569, 7.630359);
 const FLORO: (f64, f64) = (61.60145, 5.02658);
 const ELSA: (f64, f64) = (69.9742, 29.63342);
 const SJUVASS: (f64, f64) = (59.80326, 9.39866);
+/// Place-index `name_entries` (Østlandet): Hamar `place:city`, Stange `place:town`.
+/// Oslo–Lillestrøm (city/town centroids) fails `corridor_components_disconnected`
+/// under the 14-tile budget; Hamar–Stange is the same 10–20 km class inland.
+const HAMAR: (f64, f64) = (60.794721, 11.068055);
+const STANGE: (f64, f64) = (60.717675, 11.192379);
+/// Place-index `name_entries` (Østlandet): Lillehammer `place:town`.
+const LILLEHAMMER: (f64, f64) = (61.114545, 10.467007);
+/// Start/end must snap onto the waypoint's own roads, not a distant highway.
+const OWN_ROAD_MAX_M: f64 = 400.0;
 
 const OTTA: (f64, f64) = (61.7727, 9.5404);
 const LOM: (f64, f64) = (61.8381, 8.5676);
@@ -109,6 +123,8 @@ struct Case {
     known_spikes: Option<&'static str>,
     /// Cold runs timed; the wall-time check uses their median.
     timing_runs: usize,
+    /// Plan again with `long_trip` off and require the same polyline.
+    compare_long_trip: bool,
 }
 
 const CASES: &[Case] = &[
@@ -128,6 +144,7 @@ const CASES: &[Case] = &[
         known_distance: None,
         known_spikes: None,
         timing_runs: 3,
+        compare_long_trip: false,
     },
     Case {
         id: "b_brenneriroa_aga",
@@ -146,6 +163,7 @@ const CASES: &[Case] = &[
         known_distance: None,
         known_spikes: None,
         timing_runs: 1,
+        compare_long_trip: false,
     },
     Case {
         id: "c_brenneriroa_grotli_floro",
@@ -163,6 +181,7 @@ const CASES: &[Case] = &[
         known_distance: None,
         known_spikes: None,
         timing_runs: 1,
+        compare_long_trip: false,
     },
     Case {
         id: "d_bevensen_vaga_dalsoren_avoid_ferries",
@@ -181,6 +200,7 @@ const CASES: &[Case] = &[
         known_distance: None,
         known_spikes: None,
         timing_runs: 1,
+        compare_long_trip: false,
     },
     Case {
         id: "e_elsa_sjuvass",
@@ -198,6 +218,43 @@ const CASES: &[Case] = &[
         known_distance: Some("distance against the 1944.2 km reference"),
         known_spikes: Some("unexplained out-and-back at 60.57,9.11"),
         timing_runs: 1,
+        compare_long_trip: false,
+    },
+    Case {
+        id: "f_hamar_stange",
+        start: HAMAR,
+        vias: &[],
+        end: STANGE,
+        pbf_stem: "ostlandet-latest",
+        avoid_ferries: false,
+        ferries: &[],
+        distance: None,
+        rv15_otta_vaga_lom: false,
+        reference: None,
+        expected_fail: None,
+        accepted_spikes: &[],
+        known_distance: None,
+        known_spikes: None,
+        timing_runs: 1,
+        compare_long_trip: true,
+    },
+    Case {
+        id: "g_hamar_lillehammer",
+        start: HAMAR,
+        vias: &[],
+        end: LILLEHAMMER,
+        pbf_stem: "ostlandet-latest",
+        avoid_ferries: false,
+        ferries: &[],
+        distance: None,
+        rv15_otta_vaga_lom: false,
+        reference: None,
+        expected_fail: None,
+        accepted_spikes: &[],
+        known_distance: None,
+        known_spikes: None,
+        timing_runs: 1,
+        compare_long_trip: true,
     },
 ];
 
@@ -217,6 +274,8 @@ struct Outcome {
     wall_runs_s: Vec<f64>,
     peak_mb: f64,
     terminate: String,
+    hops: usize,
+    corridor_ran: bool,
 }
 
 fn empty_vehicle() -> FfiVehicleLimits {
@@ -548,7 +607,7 @@ fn rv15_share(sim_samples_json: &str) -> Result<(f64, Vec<(String, f64)>), Strin
 }
 
 /// Differences between what the gate sent and the planner's `plan_inputs` line.
-fn plan_inputs_mismatch(report: &str, case: &Case) -> Vec<String> {
+fn plan_inputs_mismatch(report: &str, case: &Case, long_trip: bool) -> Vec<String> {
     let Some(line) = report.lines().find(|l| l.starts_with("plan_inputs ")) else {
         return vec!["no plan_inputs line in the report".into()];
     };
@@ -563,7 +622,7 @@ fn plan_inputs_mismatch(report: &str, case: &Case) -> Vec<String> {
         ("profile", "Car".to_string()),
         ("eco", "false".to_string()),
         ("avoid_ferries", case.avoid_ferries.to_string()),
-        ("long_trip", "true".to_string()),
+        ("long_trip", long_trip.to_string()),
         ("vias", case.vias.len().to_string()),
     ];
     for (k, v) in want {
@@ -605,6 +664,40 @@ fn read_proc_kb(key: &str) -> Option<f64> {
 
 fn reset_peak_rss() {
     let _ = std::fs::write("/proc/self/clear_refs", "5");
+}
+
+fn hops_from_report(report: &str) -> usize {
+    report
+        .lines()
+        .rev()
+        .find_map(|l| {
+            l.split_whitespace().find_map(|t| {
+                t.strip_prefix("hops=")
+                    .and_then(|v| v.trim_end_matches(',').parse::<usize>().ok())
+            })
+        })
+        .unwrap_or(1)
+}
+
+fn corridor_ran(report: &str) -> bool {
+    report.contains("stage_b densify")
+        || report.contains("stage_b=true")
+        || report.contains("corridor densify span=")
+}
+
+fn snap_endpoint_dists_m(report: &str) -> Option<(f64, f64)> {
+    let line = report.lines().find(|l| l.contains("snap_start="))?;
+    let start = line.split_once("snap_start=")?.1.split_once("dist_m=")?.1;
+    let start_end = start
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(start.len());
+    let start_m: f64 = start[..start_end].parse().ok()?;
+    let end = line.split_once("snap_end=")?.1.split_once("dist_m=")?.1;
+    let end_end = end
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(end.len());
+    let end_m: f64 = end[..end_end].parse().ok()?;
+    Some((start_m, end_m))
 }
 
 fn snap_end_dist_m(leg: &str) -> Option<f64> {
@@ -667,42 +760,48 @@ fn run_case(case: &Case, packs: &Path, refs: &Path, work: &Path) -> Outcome {
         .map(|v| FfiLatLon { lat: v.0, lon: v.1 })
         .collect();
 
+    let plan = |long_trip: bool| {
+        plan_car_route(
+            pbf.display().to_string(),
+            elev.display().to_string(),
+            cache_dir.display().to_string(),
+            case.start.0,
+            case.start.1,
+            case.end.0,
+            case.end.1,
+            false,
+            TravelProfile::Car,
+            false,
+            FfiTollPolicy::Allow,
+            case.avoid_ferries,
+            false,
+            empty_vehicle(),
+            false,
+            data_dir.display().to_string(),
+            packs.display().to_string(),
+            long_trip,
+            None,
+            vias.clone(),
+        )
+    };
+
     reset_peak_rss();
     let t0 = Instant::now();
-    let r = plan_car_route(
-        pbf.display().to_string(),
-        elev.display().to_string(),
-        cache_dir.display().to_string(),
-        case.start.0,
-        case.start.1,
-        case.end.0,
-        case.end.1,
-        false,
-        TravelProfile::Car,
-        false,
-        FfiTollPolicy::Allow,
-        case.avoid_ferries,
-        false,
-        empty_vehicle(),
-        false,
-        data_dir.display().to_string(),
-        packs.display().to_string(),
-        true,
-        None,
-        vias,
-    );
+    let r = plan(true);
     o.wall_s = t0.elapsed().as_secs_f64();
     o.peak_mb = read_proc_kb("VmHWM:").unwrap_or(0.0) / 1024.0;
     o.distance_km = r.distance_km;
     o.eta_min = r.eta_minutes;
     o.terminate = r.search_terminate_reason.clone();
+    o.hops = hops_from_report(&r.report);
+    o.corridor_ran = corridor_ran(&r.report);
     let _ = std::fs::write(work.join(format!("{}.report.txt", case.id)), &r.report);
     let _ = std::fs::write(
         work.join(format!("{}.polyline.txt", case.id)),
         &r.route_polyline,
     );
 
-    o.failures.extend(plan_inputs_mismatch(&r.report, case));
+    o.failures.extend(plan_inputs_mismatch(&r.report, case, true));
     let line = parse_polyline(&r.route_polyline);
     if !r.report.contains("PASS") || line.len() < 2 {
         o.failures.push(format!(
@@ -723,6 +822,36 @@ fn run_case(case: &Case, packs: &Path, refs: &Path, work: &Path) -> Outcome {
                 v.0,
                 v.1,
                 d
+            ));
+        }
+    }
+
+    if case.compare_long_trip {
+        match snap_endpoint_dists_m(&r.report) {
+            Some((sm, em)) => {
+                if sm > OWN_ROAD_MAX_M {
+                    o.failures.push(format!(
+                        "start snapped {sm:.0} m from the waypoint (max {OWN_ROAD_MAX_M:.0} m)"
+                    ));
+                }
+                if em > OWN_ROAD_MAX_M {
+                    o.failures.push(format!(
+                        "end snapped {em:.0} m from the waypoint (max {OWN_ROAD_MAX_M:.0} m)"
+                    ));
+                }
+            }
+            None => o.failures.push("missing snap_start/snap_end distances".into()),
+        }
+        let start_m = haversine_m(line[0], case.start);
+        let end_m = haversine_m(*line.last().unwrap(), case.end);
+        if start_m > OWN_ROAD_MAX_M {
+            o.failures.push(format!(
+                "route starts {start_m:.0} m from the start waypoint (max {OWN_ROAD_MAX_M:.0} m)"
+            ));
+        }
+        if end_m > OWN_ROAD_MAX_M {
+            o.failures.push(format!(
+                "route ends {end_m:.0} m from the end waypoint (max {OWN_ROAD_MAX_M:.0} m)"
             ));
         }
     }
@@ -900,6 +1029,25 @@ fn run_case(case: &Case, packs: &Path, refs: &Path, work: &Path) -> Outcome {
             o.failures.push(format!("out-and-back {desc}"));
         }
         o.spikes.push(format!("out-and-back {desc}"));
+    }
+
+    if case.compare_long_trip {
+        let off = plan(false);
+        o.failures.extend(plan_inputs_mismatch(&off.report, case, false));
+        let _ = std::fs::write(work.join(format!("{}.long-trip-off.report.txt", case.id)), &off.report);
+        if !off.report.contains("PASS") {
+            o.failures.push(format!(
+                "long_trip=off plan did not pass (terminate={})",
+                off.search_terminate_reason
+            ));
+        } else if off.route_polyline != r.route_polyline {
+            o.failures.push("long_trip=off polyline differs from long_trip=on".into());
+        } else if (off.distance_km - r.distance_km).abs() > 1e-6 {
+            o.failures.push(format!(
+                "long_trip=off distance {:.3} km differs from on {:.3} km",
+                off.distance_km, r.distance_km
+            ));
+        }
     }
 
     o.pass = o.failures.is_empty();
@@ -1299,6 +1447,13 @@ fn long_trip_regression_gate() {
             o.peak_mb,
             o.terminate
         );
+        if case.compare_long_trip {
+            eprintln!(
+                "[gate]   hops {} corridor {} (short local; long_trip on/off compared)",
+                o.hops,
+                if o.corridor_ran { "ran" } else { "skipped" }
+            );
+        }
         for f in &o.failures {
             eprintln!("[gate]   - {f}");
         }
@@ -1323,6 +1478,8 @@ fn long_trip_regression_gate() {
             "wall_runs_s": o.wall_runs_s,
             "peak_mb": o.peak_mb,
             "terminate": o.terminate,
+            "hops": o.hops,
+            "corridor_ran": o.corridor_ran,
             "failures": o.failures,
             "known_failures": o.known,
             "expected_fail": case.expected_fail,
