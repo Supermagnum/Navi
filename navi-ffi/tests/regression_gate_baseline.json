@@ -1,23 +1,23 @@
 {
   "cases": {
     "a_bevensen_vaga_dalsoren": {
-      "peak_mb": 1868.53125,
-      "wall_s": 25.556240583
+      "peak_mb": 1257.046875,
+      "wall_s": 33.884609387
     },
     "b_brenneriroa_aga": {
-      "peak_mb": 1329.12890625,
-      "wall_s": 4.866335591
+      "peak_mb": 763.875,
+      "wall_s": 4.744616305
     },
     "c_brenneriroa_grotli_floro": {
-      "peak_mb": 1268.671875,
-      "wall_s": 4.951809196
+      "peak_mb": 830.15625,
+      "wall_s": 4.732729963
     },
     "e_elsa_sjuvass": {
-      "peak_mb": 1048.4140625,
-      "wall_s": 13.5,
+      "peak_mb": 1065.078125,
+      "wall_s": 16.547957156,
       "emu_wall_s": 79.0,
       "emu_peak_mb": 1076.0,
-      "note": "After europe/sweden/gavleborg: 2348.2 km / 1691 min; E 45 used across the Jamtland-Gavleborg-Dalarna border. Unexplained windows at 62.05,14.61 and 61.22,12.85 are a known spike failure, not accepted."
+      "note": "Current packs (Gavleborg + Varmland installed). Host medians from the last full-route measurement on these packs before waypoint attach. Tag fu20-known-good cannot complete these routes here: current ferry sidecars are MAGIC_FERRY_OVERLAY / build 3, and that tag expects MAGIC_GRAPH plus a PBF-fingerprint meta. Unexplained out-and-back at 60.57,9.11 is a known spike failure, not accepted."
     }
   }
 }
