@@ -116,6 +116,27 @@ pub struct CoarseJoint {
     pub joint_type: String,
 }
 
+/// Why a hop waypoint exists. Stretch-only joints are a hint, not an obligation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HopJointKind {
+    User,
+    BorderCrossing,
+    FerryTerminal,
+    Via,
+    StretchSplit,
+}
+
+/// At most this many merge-or-slide repairs run on one chunked plan.
+pub const STRETCH_JOINT_REPAIR_MAX_RETRIES: usize = 4;
+
+/// Decision after both hops beside a stretch joint have been found.
+#[derive(Debug, Clone, PartialEq)]
+pub enum StretchRepair {
+    Keep,
+    Merge,
+    Slide((f64, f64)),
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CoarseFerryLeg {
     pub from_lat: f64,
@@ -2439,6 +2460,9 @@ pub struct StageBDensify {
     /// Ordered hop waypoints: origin, joints (border/ferry), exact user vias,
     /// destination.
     pub hops: Vec<(f64, f64)>,
+    /// Kind of each hop waypoint (same length as [`Self::hops`]). Stretch-only
+    /// joints are hints and may be merged after a reversal.
+    pub hop_kinds: Vec<HopJointKind>,
     /// Full coarse path node lat/lon (for corridor tiles + pad).
     pub coarse_path: Vec<(f64, f64)>,
     pub total_min: f64,
@@ -2843,6 +2867,136 @@ fn hops_from_report(
         *last = end;
     }
     hops
+}
+
+fn obligated_kind(joint_type: &str) -> Option<HopJointKind> {
+    match joint_type {
+        "border_crossing" => Some(HopJointKind::BorderCrossing),
+        "ferry_terminal" => Some(HopJointKind::FerryTerminal),
+        "via" => Some(HopJointKind::Via),
+        _ => None,
+    }
+}
+
+/// Label each hop waypoint. Start/end are user; a point near a border, ferry
+/// or via stays obligated; every other intermediate point is a stretch split.
+pub fn classify_hop_joints(
+    hops: &[(f64, f64)],
+    obligated: &[(HopJointKind, f64, f64)],
+) -> Vec<HopJointKind> {
+    hops.iter()
+        .enumerate()
+        .map(|(i, &h)| {
+            if i == 0 || i + 1 == hops.len() {
+                return HopJointKind::User;
+            }
+            obligated
+                .iter()
+                .find(|(_, la, lo)| haversine_m(*la, *lo, h.0, h.1) < 500.0)
+                .map(|(k, _, _)| *k)
+                .unwrap_or(HopJointKind::StretchSplit)
+        })
+        .collect()
+}
+
+pub fn is_stretch_hint(kind: HopJointKind) -> bool {
+    kind == HopJointKind::StretchSplit
+}
+
+/// Concatenate two hop polylines and run the gate out-and-back check. A hit
+/// whose window covers the joint, or whose turnaround is near it, is a reversal
+/// even when the return is not the exact same carriageway (200 m return radius).
+pub fn pair_has_joint_reversal(
+    left: &[(f64, f64)],
+    right: &[(f64, f64)],
+    joint: (f64, f64),
+) -> bool {
+    if left.len() < 2 || right.len() < 2 {
+        return false;
+    }
+    let mut concat = left.to_vec();
+    concat.extend(right.iter().skip(1).copied());
+    let hits = crate::routing::path_repair::unexplained_out_and_backs(&concat, &[]);
+    hits.iter().any(|h| {
+        let near_turn = haversine_m(h.turnaround.0, h.turnaround.1, joint.0, joint.1) < 2_500.0;
+        let along = crate::routing::path_repair::polyline_length_m(&concat);
+        if along <= 0.0 {
+            return near_turn;
+        }
+        let mut cum = 0.0;
+        let mut joint_km = 0.0;
+        let mut best = f64::MAX;
+        for w in concat.windows(2) {
+            let d = haversine_m(w[0].0, w[0].1, joint.0, joint.1);
+            if d < best {
+                best = d;
+                joint_km = cum / 1000.0;
+            }
+            cum += haversine_m(w[0].0, w[0].1, w[1].0, w[1].1);
+        }
+        near_turn || (joint_km + 0.05 >= h.from_km && joint_km <= h.to_km + 0.05)
+    })
+}
+
+/// Walk back along the coarse path from [joint] to the first vertex that is
+/// not on both hop routes (the routes have diverged). That is the new joint.
+pub fn slide_joint_before_divergence(
+    coarse_path: &[(f64, f64)],
+    left: &[(f64, f64)],
+    right: &[(f64, f64)],
+    joint: (f64, f64),
+) -> (f64, f64) {
+    if coarse_path.len() < 2 {
+        return joint;
+    }
+    let on_both = |p: (f64, f64)| nearest_dist(left, p) < 250.0 && nearest_dist(right, p) < 250.0;
+    let ji = nearest_coarse_index(coarse_path, joint);
+    let mut i = ji;
+    while i > 0 {
+        if !on_both(coarse_path[i]) {
+            break;
+        }
+        i -= 1;
+    }
+    // Stay before the diverge, and retreat at least 2 km so a retry
+    // cannot land on the same spur.
+    while i > 0 && haversine_m(coarse_path[i].0, coarse_path[i].1, joint.0, joint.1) < 2_000.0 {
+        i -= 1;
+    }
+    coarse_path[i]
+}
+
+fn nearest_dist(line: &[(f64, f64)], p: (f64, f64)) -> f64 {
+    line.iter()
+        .map(|q| haversine_m(q.0, q.1, p.0, p.1))
+        .fold(f64::MAX, f64::min)
+}
+
+pub fn stretch_repair_action(
+    kind: HopJointKind,
+    left: &[(f64, f64)],
+    right: &[(f64, f64)],
+    joint: (f64, f64),
+    merged_nodes: usize,
+    max_nodes: usize,
+    coarse_path: &[(f64, f64)],
+) -> StretchRepair {
+    if !is_stretch_hint(kind) {
+        return StretchRepair::Keep;
+    }
+    if !pair_has_joint_reversal(left, right, joint) {
+        return StretchRepair::Keep;
+    }
+    if merged_nodes <= max_nodes {
+        StretchRepair::Merge
+    } else {
+        StretchRepair::Slide(slide_joint_before_divergence(
+            coarse_path,
+            left,
+            right,
+            joint,
+        ))
+    }
 }
 
 /// Tile bboxes + estimated node counts from Ready manifests under [dirs].
@@ -3387,6 +3541,7 @@ fn assemble_stage_b(
 ) -> StageBDensify {
     let mut hops: Vec<(f64, f64)> = Vec::new();
     let mut coarse_path: Vec<(f64, f64)> = Vec::new();
+    let mut obligated: Vec<(HopJointKind, f64, f64)> = Vec::new();
     let mut total_min = 0.0;
     let mut total_km = 0.0;
     let mut ferries: Vec<String> = Vec::new();
@@ -3396,6 +3551,11 @@ fn assemble_stage_b(
         let leg_end = waypoints[li + 1];
         let path = collapse_node_retraces(&pick.path);
         let leg_coarse = collapse_coord_retraces(&path_latlon(graph, &path));
+        for j in &pick.report.joints {
+            if let Some(k) = obligated_kind(&j.joint_type) {
+                obligated.push((k, j.lat, j.lon));
+            }
+        }
         let raw_hops = split_hops_by_path_tile_budget(
             hops_from_report(&pick.report, leg_start, leg_end),
             &leg_coarse,
@@ -3451,8 +3611,10 @@ fn assemble_stage_b(
         ferries.len(),
     );
     log::info!(target: "NaviPlan", "{note} ferries={ferries:?}");
+    let hop_kinds = classify_hop_joints(&hops, &obligated);
     StageBDensify {
         hops,
+        hop_kinds,
         coarse_path,
         total_min,
         total_km,
@@ -5094,6 +5256,114 @@ mod tests {
             sb.total_km < 2500.0,
             "expected fair corridor <2500 km, got {:.1}",
             sb.total_km
+        );
+    }
+
+    fn reversal_pair() -> (Vec<(f64, f64)>, Vec<(f64, f64)>, (f64, f64)) {
+        // South along a valley, then north to a spur and back (Bromma shape).
+        let joint = (60.57311, 9.11153);
+        let left = vec![(60.40, 9.20), (60.48, 9.16), (60.55, 9.13), joint];
+        let right = vec![
+            joint,
+            (60.62, 9.11),
+            (60.68, 9.10),
+            (60.62, 9.11),
+            joint,
+            (60.50, 9.05),
+            (60.42, 8.95),
+        ];
+        (left, right, joint)
+    }
+
+    #[test]
+    fn split_joint_off_natural_route_is_merged_away() {
+        let (left, right, joint) = reversal_pair();
+        let action = stretch_repair_action(
+            HopJointKind::StretchSplit,
+            &left,
+            &right,
+            joint,
+            10_000,
+            crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP,
+            &[],
+        );
+        assert_eq!(action, StretchRepair::Merge);
+    }
+
+    #[test]
+    fn merged_hop_over_node_limit_moves_joint() {
+        let (left, right, joint) = reversal_pair();
+        let coarse: Vec<(f64, f64)> = (0..20)
+            .map(|i| (60.40 + i as f64 * 0.02, 9.20 - i as f64 * 0.01))
+            .collect();
+        let action = stretch_repair_action(
+            HopJointKind::StretchSplit,
+            &left,
+            &right,
+            joint,
+            crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP + 1,
+            crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP,
+            &coarse,
+        );
+        match action {
+            StretchRepair::Slide(p) => {
+                assert!(
+                    haversine_m(p.0, p.1, joint.0, joint.1) > 50.0,
+                    "slide must leave the spur joint, got {p:?}"
+                );
+            }
+            other => panic!("expected Slide, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn region_crossing_never_merged() {
+        let (left, right, joint) = reversal_pair();
+        assert_eq!(
+            stretch_repair_action(
+                HopJointKind::BorderCrossing,
+                &left,
+                &right,
+                joint,
+                10,
+                crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP,
+                &[],
+            ),
+            StretchRepair::Keep
+        );
+    }
+
+    #[test]
+    fn ferry_terminal_never_merged() {
+        let (left, right, joint) = reversal_pair();
+        assert_eq!(
+            stretch_repair_action(
+                HopJointKind::FerryTerminal,
+                &left,
+                &right,
+                joint,
+                10,
+                crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP,
+                &[],
+            ),
+            StretchRepair::Keep
+        );
+    }
+
+    #[test]
+    fn user_via_never_merged() {
+        let (left, right, joint) = reversal_pair();
+        assert_eq!(
+            stretch_repair_action(
+                HopJointKind::Via,
+                &left,
+                &right,
+                joint,
+                10,
+                crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP,
+                &[],
+            ),
+            StretchRepair::Keep
         );
     }
 }

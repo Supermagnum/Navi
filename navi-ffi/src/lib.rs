@@ -2512,6 +2512,42 @@ fn long_trip_pack_fingerprint(pack_dir: &str) -> String {
         .join("|")
 }
 
+fn undo_last_hop(
+    polyline: &mut String,
+    hop_polys: &mut Vec<String>,
+    distance_km: &mut f64,
+    eta_minutes: &mut f64,
+    hops_sidecar: &mut Vec<serde_json::Value>,
+    leg_maneuvers: &mut Vec<Vec<RouteManeuver>>,
+    prev_km: f64,
+    prev_eta: f64,
+) {
+    *distance_km = (*distance_km - prev_km).max(0.0);
+    *eta_minutes = (*eta_minutes - prev_eta).max(0.0);
+    hops_sidecar.pop();
+    leg_maneuvers.pop();
+    hop_polys.pop();
+    *polyline = stitch_hop_polylines(hop_polys);
+}
+
+fn stitch_hop_polylines(hop_polys: &[String]) -> String {
+    let mut out = String::new();
+    for poly in hop_polys {
+        if poly.is_empty() {
+            continue;
+        }
+        if out.is_empty() {
+            out = poly.clone();
+        } else if let Some((_, rest)) = poly.split_once(';') {
+            if !rest.is_empty() {
+                out.push(';');
+                out.push_str(rest);
+            }
+        }
+    }
+    out
+}
+
 fn plan_car_route_chunked_legs(
     pbf_path: String,
     elev_dir: String,
@@ -2528,13 +2564,23 @@ fn plan_car_route_chunked_legs(
     data_dir: String,
     pack_dir: String,
     hops: &[(f64, f64)],
+    hop_kinds: &[driver_break_core::routing::corridor_skeleton::HopJointKind],
+    coarse_path: &[(f64, f64)],
+    routing_profile: driver_break_core::routing::graph::RoutingProfile,
     allowed_countries: Option<Vec<String>>,
 ) -> CorridorRouteResult {
     let mut report = String::from("TEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\n");
+    let mut hops = hops.to_vec();
+    let mut hop_kinds = if hop_kinds.len() == hops.len() {
+        hop_kinds.to_vec()
+    } else {
+        driver_break_core::routing::corridor_skeleton::classify_hop_joints(&hops, &[])
+    };
     report.push_str(&format!(
-        "long_trip_chunked=true; hops={}; chunk_deg={:.2}\n",
+        "long_trip_chunked=true; hops={}; chunk_deg={:.2}; stretch_joint_repair_max={}\n",
         hops.len().saturating_sub(1),
-        driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG
+        driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG,
+        driver_break_core::routing::corridor_skeleton::STRETCH_JOINT_REPAIR_MAX_RETRIES
     ));
     let datex_all = {
         let dir = data_dir.trim();
@@ -2578,6 +2624,7 @@ fn plan_car_route_chunked_legs(
     let mut build_s = 0.0;
     let mut cache_hit = true;
     let mut polyline = String::new();
+    let mut hop_polys: Vec<String> = Vec::new();
     let mut sim_samples = String::from("[");
     let mut break_pois = String::from("[");
     let mut sim_first = true;
@@ -2600,6 +2647,19 @@ fn plan_car_route_chunked_legs(
     // last geometry vertex, not a fresh 35 km snap onto the densify coordinate.
     let mut hop_start = hops[0];
     let mut skip_until = 0usize;
+    let mut stretch_repairs = 0usize;
+    let mut prev_hop_poly = String::new();
+    let mut prev_hop_km = 0.0_f64;
+    let mut prev_hop_eta = 0.0_f64;
+    let mut prev_hop_start = hops[0];
+    let pack_dirs_for_repair = plan_pack_dirs(
+        std::path::Path::new(pbf_path.trim()),
+        &data_dir,
+        &pack_dir,
+        /* long_trip_enabled */ true,
+    );
+    let pack_refs_for_repair: Vec<&std::path::Path> =
+        pack_dirs_for_repair.iter().map(|p| p.as_path()).collect();
     if let Some(raw) = driver_break_core::routing::plan_file_log::read_file(
         driver_break_core::routing::plan_file_log::HOPS_PARTIAL_NAME,
     ) {
@@ -2644,12 +2704,14 @@ fn plan_car_route_chunked_legs(
         }
     }
 
-    for (i, w) in hops.windows(2).enumerate() {
+    let mut i = 0usize;
+    while i + 1 < hops.len() {
         if i < skip_until {
+            i += 1;
             continue;
         }
         let (slat, slon) = hop_start;
-        let (elat, elon) = w[1];
+        let (elat, elon) = hops[i + 1];
         report.push_str(&format!(
             "chunk_leg{}={:.5},{:.5} -> {:.5},{:.5}\n",
             i + 1,
@@ -2801,7 +2863,7 @@ fn plan_car_route_chunked_legs(
             "hop_mem hop={} peak_rss_mb={hop_peak_rss_mb}\n",
             i + 1
         ));
-        report.push_str(&format!("--- leg{} report ---\n", i + 1));
+        report.push_str(&format!("--- hop_try{} report ---\n", i + 1));
         report.push_str(&leg.report);
         route_uses_ferry = route_uses_ferry || leg.report.contains("route_uses_ferry=true");
         if let Some(n) = parse_graph_ferry_edges_token(&leg.report) {
@@ -2969,6 +3031,88 @@ fn plan_car_route_chunked_legs(
             i + 1,
             hop_poly_agree
         ));
+        if i >= 1
+            && stretch_repairs
+                < driver_break_core::routing::corridor_skeleton::STRETCH_JOINT_REPAIR_MAX_RETRIES
+        {
+            let joint = hops[i];
+            let kind = hop_kinds.get(i).copied().unwrap_or(
+                driver_break_core::routing::corridor_skeleton::HopJointKind::StretchSplit,
+            );
+            let left = parse_route_polyline(&prev_hop_poly);
+            let right = hop_poly_pts.clone();
+            let merged_nodes =
+                driver_break_core::routing::corridor_skeleton::estimated_path_covering_nodes(
+                    &pack_refs_for_repair,
+                    routing_profile,
+                    &[hops[i - 1], hops[i + 1]],
+                );
+            let action = driver_break_core::routing::corridor_skeleton::stretch_repair_action(
+                kind,
+                &left,
+                &right,
+                joint,
+                merged_nodes,
+                driver_break_core::routing::plan_bbox::MAX_PATH_NODES_PER_HOP,
+                coarse_path,
+            );
+            match action {
+                driver_break_core::routing::corridor_skeleton::StretchRepair::Keep => {}
+                driver_break_core::routing::corridor_skeleton::StretchRepair::Merge => {
+                    stretch_repairs += 1;
+                    undo_last_hop(
+                        &mut polyline,
+                        &mut hop_polys,
+                        &mut distance_km,
+                        &mut eta_minutes,
+                        &mut hops_sidecar,
+                        &mut leg_maneuvers,
+                        prev_hop_km,
+                        prev_hop_eta,
+                    );
+                    report.push_str(&format!(
+                        "stretch_joint_merge i={} joint={:.5},{:.5} repairs={stretch_repairs}\n",
+                        i + 1,
+                        joint.0,
+                        joint.1
+                    ));
+                    hop_start = prev_hop_start;
+                    hops.remove(i);
+                    if i < hop_kinds.len() {
+                        hop_kinds.remove(i);
+                    }
+                    i = i.saturating_sub(1);
+                    continue;
+                }
+                driver_break_core::routing::corridor_skeleton::StretchRepair::Slide(new_joint) => {
+                    stretch_repairs += 1;
+                    undo_last_hop(
+                        &mut polyline,
+                        &mut hop_polys,
+                        &mut distance_km,
+                        &mut eta_minutes,
+                        &mut hops_sidecar,
+                        &mut leg_maneuvers,
+                        prev_hop_km,
+                        prev_hop_eta,
+                    );
+                    report.push_str(&format!(
+                        "stretch_joint_slide i={} from={:.5},{:.5} to={:.5},{:.5} repairs={stretch_repairs}\n",
+                        i + 1,
+                        joint.0,
+                        joint.1,
+                        new_joint.0,
+                        new_joint.1
+                    ));
+                    hops[i] = new_joint;
+                    hop_start = prev_hop_start;
+                    i = i.saturating_sub(1);
+                    continue;
+                }
+            }
+        }
+        report.push_str(&format!("--- leg{} report ---\n", i + 1));
+        report.push_str(&leg.report);
         hops_sidecar.push(serde_json::json!({
             "i": i + 1,
             "endpoints": format!("{slat:.5},{slon:.5}->{elat:.5},{elon:.5}"),
@@ -3000,6 +3144,7 @@ fn plan_car_route_chunked_legs(
             priority_share_w += leg.distance_km;
         }
         // Polyline: skip duplicate joint vertex on subsequent legs.
+        hop_polys.push(leg.route_polyline.clone());
         if polyline.is_empty() {
             polyline = leg.route_polyline.clone();
         } else if let Some((_, rest)) = leg.route_polyline.split_once(';') {
@@ -3011,7 +3156,7 @@ fn plan_car_route_chunked_legs(
         if let Some(&end_pt) = parse_route_polyline(&polyline).last() {
             hop_start = end_pt;
         } else {
-            hop_start = w[1];
+            hop_start = hops[i + 1];
         }
         {
             let partial = serde_json::json!({
@@ -3034,6 +3179,10 @@ fn plan_car_route_chunked_legs(
             serde_json::from_str(&leg.maneuvers_json).unwrap_or_default();
         leg_maneuvers.push(mans);
         append_json_array_elems(&mut break_pois, &mut break_first, &leg.break_pois_json);
+        prev_hop_poly = leg.route_polyline.clone();
+        prev_hop_km = leg.distance_km;
+        prev_hop_eta = leg.eta_minutes;
+        prev_hop_start = (slat, slon);
         // Clear large leftover strings so the next hop starts with less retained
         // RSS on 4 GB Automotive (LMK previously killed ~2.9 GB RSS).
         let CorridorRouteResult {
@@ -3048,6 +3197,7 @@ fn plan_car_route_chunked_legs(
             ..
         } = leg;
         drop((leftover_days, leftover_segs, leftover_adv));
+        i += 1;
     }
     // FU13: do not delete vertices from the exported line. Distance, ETA,
     // maneuvers and GeoJSON must describe the path the search chose; every
@@ -3079,7 +3229,7 @@ fn plan_car_route_chunked_legs(
         &polyline,
         distance_km,
         eta_minutes,
-        hops,
+        &hops,
     );
     report.push_str(&soft_report);
     let _ = break_pois; // per-leg breaks were empty (poi_skipped); replaced above
@@ -3883,6 +4033,9 @@ fn plan_car_route_inner(
                     data_dir,
                     pack_dir,
                     &hops,
+                    &sb.hop_kinds,
+                    &sb.coarse_path,
+                    routing_profile,
                     allowed_countries,
                 );
                 r.report.push_str(&sb.alternatives_report());
@@ -4650,9 +4803,7 @@ fn plan_car_route_inner(
                          nodes={} snap_a_m={snap_a_m:.1} snap_b_m={snap_b_m:.1}",
                         built.nodes.len()
                     );
-                    report.push_str(
-                        "directed_unreachable_same_component continue_astar\n",
-                    );
+                    report.push_str("directed_unreachable_same_component continue_astar\n");
                 } else if !dir_ok {
                     let stage_b = driver_break_core::routing::plan_bbox::stage_b_active();
                     if is_chunk_leg && stage_b && !weak_ok {
