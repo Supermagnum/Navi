@@ -1,8 +1,8 @@
 # Tablet test (debug APK)
 
-Build from this branch: `app/build/outputs/apk/debug/app-debug.apk` (66.3 MB,
+Build from this branch: `app/build/outputs/apk/debug/app-debug.apk` (64 MB,
 arm64 + x86_64). sha256
-`4368a5e7cdd62841fc9864740c60d6e8a9cfefbed9e91af5274aef4047896e23`.
+`b55c93dcfcfe11da202625240dcb6b934ce7781ca582bca556ff5e09206d9b43`.
 
 Install this debug APK over an existing **debug-signed** `no.navi.app` with
 `adb install -r app-debug.apk` (or the file manager “update”). Same application
@@ -45,9 +45,8 @@ finish; search needs the place index.
 
 Pick the named place (city/town), not a farm of the same name.
 
-1. **Short (one region):** Hamar (`place:city` 60.79472, 11.06806) to Stange
-   (`place:town` 60.71768, 11.19238). About 15 km. Oslo–Lillestrøm city/town
-   centroids fail to connect under the planner's 14-tile budget.
+1. **Short (one region):** Oslo (`place:city` 59.91333, 10.73897) to Lillestrøm
+   (`place:town` 59.95592, 11.04911). About 22 km on the urban Østlandet tiles.
 2. **Within Norway:** Hamar (`place:city` 60.79472, 11.06806) to Lillehammer
    (`place:town` 61.11455, 10.46701). About 60 km on the E6.
 3. **Across a border:** Kongsvinger (`place:town` 60.19093, 11.99868, Østlandet)
