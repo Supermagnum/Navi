@@ -993,6 +993,7 @@ fn emulator_check(
         }
     }
     failures.extend(place_index_failures(&r["place_index"]));
+    failures.extend(search_check_failures(&r["searches"]));
     let status = if failures.is_empty() { "PASS" } else { "FAIL" };
     eprintln!(
         "[gate] emulator {status}: trip {}, {:.1} km, ferries {}, hops {}, wall {wall_s:.1} s, \
@@ -1065,6 +1066,50 @@ fn place_index_failures(pi: &serde_json::Value) -> Vec<String> {
         pi["quick_check"],
         expected.len()
     );
+    failures
+}
+
+const EMU_SEARCH_EXPECT: &[(&str, &str)] = &[
+    ("Oslo", "Oslo"),
+    ("Hamar", "Hamar"),
+    ("Lillehammer", "Lillehammer"),
+    ("Luleå", "Luleå"),
+    ("Kiruna", "Kiruna"),
+    ("Piteå", "Piteå"),
+    ("Falun", "Falun"),
+    ("Mora", "Mora"),
+];
+
+fn fold_place_name(s: &str) -> String {
+    s.to_lowercase()
+        .replace('å', "a")
+        .replace('ä', "a")
+        .replace('ö', "o")
+        .replace('æ', "ae")
+        .replace('ø', "o")
+}
+
+/// Fixed search list through the app's real search path after an APK install.
+fn search_check_failures(searches: &serde_json::Value) -> Vec<String> {
+    let mut failures = Vec::new();
+    let Some(arr) = searches.as_array() else {
+        failures.push("emulator searches missing (run the harness search check)".into());
+        return failures;
+    };
+    for (q, want) in EMU_SEARCH_EXPECT {
+        let hit = arr.iter().find(|s| s["q"].as_str() == Some(*q));
+        let Some(hit) = hit else {
+            failures.push(format!("search {q}: no result"));
+            continue;
+        };
+        let n = hit["n"].as_u64().unwrap_or(0);
+        let top = hit["top"].as_str().unwrap_or("");
+        if n == 0 || !fold_place_name(top).contains(&fold_place_name(want)) {
+            failures.push(format!(
+                "search {q}: expected {want}, got n={n} top={top}"
+            ));
+        }
+    }
     failures
 }
 

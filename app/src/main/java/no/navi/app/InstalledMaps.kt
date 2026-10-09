@@ -188,6 +188,9 @@ object InstalledMaps {
                 if (r.placeIndex == PlaceIndexState.INTACT || r.placeIndex == PlaceIndexState.LEGACY_INTACT) {
                     return@mapNotNull null
                 }
+                if (PackRegionAvailability.isPublishedPackParent(r.regionId)) {
+                    return@mapNotNull null
+                }
                 if (indexUnavailable) {
                     return@mapNotNull MissingIndexBuild(
                         r.regionId,

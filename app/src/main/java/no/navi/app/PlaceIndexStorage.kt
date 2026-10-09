@@ -88,6 +88,16 @@ object PlaceIndexStorage {
             is Status.Unavailable -> null
         }
 
+    /**
+     * Single place-index resolver for search, idle jobs, InstalledMaps, and
+     * the harness. Follows the pack volume. Never falls back to internal
+     * storage when the pack volume is unavailable.
+     */
+    fun resolveDb(context: Context): File? {
+        ensureOnPackVolume(context)
+        return dbFile(context)
+    }
+
     /** Human-readable location line for InstalledMaps / logs. */
     fun locationSummary(context: Context): String =
         when (val s = status(context)) {

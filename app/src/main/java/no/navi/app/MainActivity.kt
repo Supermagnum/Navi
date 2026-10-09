@@ -278,6 +278,80 @@ class MainActivity : ComponentActivity() {
         } else if (intent.action == Intent.ACTION_MAIN) {
             NaviMapTestHooks.disableGpsFollow = false
         }
+        intent.getStringExtra("navi_place_index_clear_region")?.trim()?.takeIf { it.isNotEmpty() }?.let { rid ->
+            if (RoutePlanGate.isRunning() || IdlePackJobs.isRunning()) {
+                android.util.Log.w(
+                    "PlaceIndexReady",
+                    "refuse clear region=$rid: plan or idle job running",
+                )
+            } else {
+                val dir = PlaceIndexStorage.indexDir(this)
+                if (dir == null) {
+                    android.util.Log.w("PlaceIndexReady", "refuse clear region=$rid: place index unavailable")
+                } else {
+                    PlaceIndexReady.clearReady(dir, rid)
+                    android.util.Log.i("PlaceIndexReady", "harness_clear region=$rid")
+                }
+            }
+        }
+        intent.getStringExtra("navi_place_index_pbf")?.trim()?.takeIf { it.isNotEmpty() }?.let { path ->
+            val rid = intent.getStringExtra("navi_place_index_region").orEmpty()
+            val pbf = java.io.File(path)
+            val scratch = intent.getStringExtra("navi_place_index_db")?.trim()?.takeIf { it.isNotEmpty() }
+            val product = PlaceIndexStorage.resolveDb(this)
+            val db =
+                if (scratch != null) {
+                    java.io.File(scratch)
+                } else {
+                    product
+                }
+            if (db == null) {
+                android.util.Log.w("IdlePackJobs", "debug place-index skipped: place index unavailable")
+            } else {
+                val writingProduct = product != null && db.canonicalFile == product.canonicalFile
+                val installed =
+                    PackRegionAvailability.installedPackRegionIds(
+                        InstalledMaps.current()?.regions?.values.orEmpty(),
+                    )
+                if (!PackRegionAvailability.mayIndexRegion(rid, pbf, installed, writingProduct)) {
+                    android.util.Log.e(
+                        "IdlePackJobs",
+                        "refusing PLACE_INDEX region=$rid pbf=${pbf.name} product=$writingProduct",
+                    )
+                } else {
+                    IdlePackJobs.executeJobs = true
+                    IdlePackJobs.offerPlaceIndex(pbf, db, rid)
+                    android.util.Log.i(
+                        "IdlePackJobs",
+                        "debug place-index queued pbf=$path region=$rid db=${db.absolutePath}",
+                    )
+                }
+            }
+        }
+        intent.getStringExtra("navi_search_q")?.trim()?.takeIf { it.isNotEmpty() }?.let { q ->
+            val dbFile = PlaceIndexStorage.resolveDb(this)
+            Thread {
+                if (dbFile == null || !dbFile.isFile) {
+                    android.util.Log.i(
+                        "NaviSearch",
+                        "app_search q=$q n=0 top= region= results=[] reason=place_index_unavailable",
+                    )
+                } else {
+                    val hits =
+                        runCatching { searchPlaces(dbFile.absolutePath, q, 20u) }.getOrElse { e ->
+                            android.util.Log.i("NaviSearch", "app_search q=$q FAIL: ${e.message}")
+                            emptyList()
+                        }
+                    val top = hits.firstOrNull()
+                    android.util.Log.i(
+                        "NaviSearch",
+                        "app_search q=$q n=${hits.size} top=${top?.name.orEmpty()} " +
+                            "region=${top?.regionId.orEmpty()} " +
+                            "results=${hits.joinToString("|") { "${it.name}@${it.regionId}" }}",
+                    )
+                }
+            }.start()
+        }
         // Trip / profile / settings / graph: debug builds only.
         val dataDirPath = filesDir.absolutePath
         val debugTrip =
@@ -2115,17 +2189,8 @@ private fun NaviMapScreen() {
     }
 
     fun resolvePlaceIndexDb(): File {
-        val preferred = placeIndexDbForWrite()
-        // Prefer the pack-volume copy. /data/local/tmp may look readable (canRead)
-        // on the AVD but SQLite open still fails under the app sandbox.
-        if (preferred.isFile && preferred.length() > 10_000L) {
-            return preferred
-        }
-        val staged = File("/data/local/tmp/navi_fixtures/place_index_search_check.db")
-        if (staged.isFile && staged.canRead() && staged.length() > 10_000L) {
-            return staged
-        }
-        return preferred
+        return PlaceIndexStorage.resolveDb(context)
+            ?: placeIndexDbForWrite()
     }
 
     fun resolveRegionPbf(): File? = RouteReplan.resolvePbf(dataDir)
@@ -2525,6 +2590,7 @@ private fun NaviMapScreen() {
                         "(recalculated after detour)"
                 } finally {
                     foregroundPlanLeave()
+                    IdlePackJobs.onPlanEnded()
                     planProgressClear()
                 }
             }
@@ -3546,6 +3612,7 @@ private fun NaviMapScreen() {
                 planIndexingHintVisible = false
                 planProgressClear()
                 foregroundPlanLeave()
+                IdlePackJobs.onPlanEnded()
                 DownloadProgressClear.clearIfIdle()
             }
         val durationMs = System.currentTimeMillis() - planStarted

@@ -60,6 +60,19 @@ TRIPS = {
 
 DATEX_MODES = {"none": "None", "saved": "Saved", "live": "Live"}
 
+# Fixed list for the gate emulator search check. Each query must return this
+# place name as the top hit (case-insensitive; å/ä/ö fold to a/o).
+SEARCH_EXPECT = [
+    ("Oslo", "Oslo"),
+    ("Hamar", "Hamar"),
+    ("Lillehammer", "Lillehammer"),
+    ("Luleå", "Luleå"),
+    ("Kiruna", "Kiruna"),
+    ("Piteå", "Piteå"),
+    ("Falun", "Falun"),
+    ("Mora", "Mora"),
+]
+
 env = os.environ.copy()
 sdk = pathlib.Path.home() / "Android/Sdk/platform-tools"
 env["PATH"] = f"{sdk}:{env.get('PATH', '')}"
@@ -112,11 +125,11 @@ def proc_kb(key):
 
 
 def reset_peak():
-    """Reset VmHWM of the app process so the next read is this plan's peak."""
+    """Reset VmHWM to current RSS (clear_refs 4). Value 5 is file-backed refs."""
     p = pid()
-    r = adb("shell", f"echo 5 > /proc/{p}/clear_refs && echo ok")
+    r = adb("shell", f"echo 4 > /proc/{p}/clear_refs && echo ok")
     if "ok" not in (r.stdout or ""):
-        r = adb("shell", f"su 0 sh -c 'echo 5 > /proc/{p}/clear_refs' && echo ok")
+        r = adb("shell", f"su 0 sh -c 'echo 4 > /proc/{p}/clear_refs' && echo ok")
     return "ok" in (r.stdout or "")
 
 
@@ -182,6 +195,199 @@ def logcat():
     return adb("logcat", "-d", "-v", "time", timeout=120).stdout or ""
 
 
+def fold_name(s):
+    return (
+        (s or "")
+        .casefold()
+        .replace("å", "a")
+        .replace("ä", "a")
+        .replace("ö", "o")
+        .replace("æ", "ae")
+        .replace("ø", "o")
+    )
+
+
+def run_search(query):
+    """Search through the app's real path (PlaceIndexStorage / searchPlaces)."""
+    adb("logcat", "-c")
+    adb(
+        "shell",
+        "am",
+        "start",
+        "-n",
+        f"{PKG}/.MainActivity",
+        "--es",
+        "navi_search_q",
+        query,
+    )
+    line = ""
+    for _ in range(20):
+        time.sleep(0.5)
+        text = logcat()
+        for ln in text.splitlines():
+            if "NaviSearch" in ln and f"app_search q={query}" in ln:
+                line = ln
+        if line:
+            break
+    top = field(line, "top") if line else ""
+    region = field(line, "region") if line else ""
+    n = field(line, "n") if line else "0"
+    return {
+        "q": query,
+        "n": int(n) if (n or "").isdigit() else 0,
+        "top": top,
+        "region": region,
+        "line": line,
+    }
+
+
+def run_search_check():
+    out = []
+    for q, want in SEARCH_EXPECT:
+        rec = run_search(q)
+        rec["want"] = want
+        rec["ok"] = rec["n"] > 0 and fold_name(want) in fold_name(rec["top"])
+        out.append(rec)
+        log(f"search q={q} n={rec['n']} top={rec['top']} region={rec['region']} ok={rec['ok']}")
+    return out
+
+
+def clear_place_index_region(region_id):
+    adb("logcat", "-c")
+    adb(
+        "shell",
+        "am",
+        "start",
+        "-n",
+        f"{PKG}/.MainActivity",
+        "--es",
+        "navi_place_index_clear_region",
+        region_id,
+    )
+    line = ""
+    for _ in range(180):
+        time.sleep(1)
+        text = logcat()
+        for ln in text.splitlines():
+            if "harness_clear region=" in ln or "refuse clear region=" in ln:
+                line = ln
+        if line:
+            break
+    log(f"clear {region_id}: {line[-200:]}")
+    return line
+
+
+# Tiny fixture + scratch DB for the emulator pause test. Never the product index.
+TINY_PBF = pathlib.Path(__file__).resolve().parents[1] / "core/tests/fixtures/place-source-tiny.osm.pbf"
+PAUSE_SCRATCH = "/storage/0000-0000/Android/data/no.navi.app/files/fu39-pause-scratch"
+
+
+def run_pause_test():
+    """Index a small fixture into a scratch database, then remove both.
+
+    The product place index is not opened for write.
+    """
+    if not TINY_PBF.is_file():
+        return {"ok": False, "error": f"missing {TINY_PBF}"}
+    remote_pbf = f"{PAUSE_SCRATCH}/tiny.osm.pbf"
+    remote_db = f"{PAUSE_SCRATCH}/place_index.db"
+    adb("shell", f"rm -rf {PAUSE_SCRATCH} && mkdir -p {PAUSE_SCRATCH}")
+    pushed = adb("push", str(TINY_PBF), remote_pbf)
+    if pushed.returncode != 0:
+        return {"ok": False, "error": (pushed.stderr or pushed.stdout or "push failed").strip()}
+    before = place_index_facts()
+    adb("logcat", "-c")
+    adb(
+        "shell",
+        "am",
+        "start",
+        "-n",
+        f"{PKG}/.MainActivity",
+        "--es",
+        "navi_place_index_pbf",
+        remote_pbf,
+        "--es",
+        "navi_place_index_region",
+        "test/fu38-pause",
+        "--es",
+        "navi_place_index_db",
+        remote_db,
+    )
+    line = ""
+    for _ in range(60):
+        time.sleep(1)
+        text = logcat()
+        for ln in text.splitlines():
+            if (
+                "debug place-index queued" in ln
+                or "refusing PLACE_INDEX" in ln
+                or "place_index_build" in ln
+                or "idle_job_pause" in ln
+            ):
+                line = ln
+        if line and (
+            "queued" in line
+            or "action=built" in line
+            or "refusing" in line
+            or "PAUSED" in line
+            or "idle_job_pause" in line
+        ):
+            break
+    after = place_index_facts()
+    product_rows_before = (before.get("rows") or {}).get("test/fu38-pause", 0)
+    product_rows_after = (after.get("rows") or {}).get("test/fu38-pause", 0)
+    scratch_ls = (adb("shell", f"ls -l {remote_db} {remote_db}-wal 2>/dev/null").stdout or "").strip()
+    finished = False
+    for _ in range(60):
+        text = logcat()
+        if any(
+            s in text
+            for s in (
+                "PlaceIndexBg: finished",
+                "PlaceIndexBg: paused",
+                "job PLACE_INDEX",
+                "FAIL:",
+                "action=built",
+            )
+        ):
+            finished = True
+            break
+        time.sleep(1)
+    if not finished:
+        log("pause-test: index job did not finish in 60s; leaving scratch until then")
+    adb("shell", f"rm -rf {PAUSE_SCRATCH}")
+    gone = (adb("shell", f"ls {PAUSE_SCRATCH} 2>/dev/null").stdout or "").strip() == ""
+    queued = "queued" in line or "action=built" in line
+    refused_product = "product=true" in line
+    ok = queued and not refused_product and product_rows_after == 0 and product_rows_before == 0 and gone
+    rec = {
+        "ok": ok,
+        "line": line,
+        "scratch_db": remote_db,
+        "scratch_listing": scratch_ls,
+        "scratch_removed": gone,
+        "product_test_fu38_pause_before": product_rows_before,
+        "product_test_fu38_pause_after": product_rows_after,
+    }
+    log(f"pause-test ok={ok} product_rows={product_rows_after} scratch_removed={gone} {line[-160:]}")
+    return rec
+
+
+def plan_stage_peaks(text):
+    """Per-stage RSS from plan_mem / hop_mem / stage_b lines (not process HWM)."""
+    stages = {}
+    plan_peak = 0
+    for ln in text.splitlines():
+        if "plan_mem " in ln or "hop_mem " in ln or "stage_b_timing " in ln:
+            stage = field(ln, "stage") or field(ln, "hop") or "stage"
+            rss = field(ln, "peak_rss_mb") or field(ln, "rss_mb") or field(ln, "corridor_peak_rss_mb")
+            if rss and rss.replace(".", "", 1).isdigit():
+                mb = float(rss)
+                stages[stage] = mb
+                plan_peak = max(plan_peak, mb)
+    return stages, plan_peak
+
+
 def last_line(text, needle):
     hits = [ln for ln in text.splitlines() if needle in ln]
     return hits[-1] if hits else ""
@@ -197,8 +403,8 @@ def wait_plan(deadline_s):
     t0 = time.time()
     peak = 0
     while time.time() - t0 < deadline_s:
-        hwm = proc_kb("VmHWM") or 0
-        peak = max(peak, hwm)
+        rss = proc_kb("VmRSS") or 0
+        peak = max(peak, rss)
         text = logcat()
         done = last_line(text, "planning_done")
         failed = last_line(text, "planning_failed")
@@ -282,7 +488,11 @@ def pull(out):
 def place_index_facts():
     """Place index on the pack volume, as InstalledMaps names it: path, size,
     quick_check and rows per region. Read-only; never creates a file."""
-    snap = adb("shell", "cat", f"/data/user/0/{PKG}/files/installed-maps-snapshot.txt").stdout or ""
+    snap = (
+        adb("shell", "run-as", PKG, "cat", "files/installed-maps-snapshot.txt").stdout
+        or adb("shell", "cat", f"/data/user/0/{PKG}/files/installed-maps-snapshot.txt").stdout
+        or ""
+    )
     m = re.search(r"^place_index vol=(\S+) path=(\S+)", snap, re.M)
     if not m:
         unavail = re.search(r"^place_index UNAVAILABLE.*$", snap, re.M)
@@ -383,13 +593,18 @@ def summarize(files, trip, text):
 def main():
     global SERIAL
     ap = argparse.ArgumentParser()
-    ap.add_argument("trip", choices=sorted(TRIPS))
+    ap.add_argument("trip", nargs="?", choices=sorted(TRIPS))
     ap.add_argument("--datex", choices=sorted(DATEX_MODES), default="none")
     ap.add_argument("--avoid-ferries", action="store_true")
     ap.add_argument("--out", required=True)
     ap.add_argument("--timeout-min", type=float, default=60)
+    ap.add_argument("--search-check", action="store_true")
+    ap.add_argument("--clear-region", action="append", default=[])
+    ap.add_argument("--pause-test", action="store_true")
     a = ap.parse_args()
-    trip = TRIPS[a.trip]
+    if not a.trip and not a.search_check and not a.clear_region and not a.pause_test:
+        ap.error("trip is required unless --search-check, --clear-region or --pause-test")
+    trip = TRIPS.get(a.trip) if a.trip else None
     out = pathlib.Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     SERIAL = serial()
@@ -398,6 +613,29 @@ def main():
     log(f"serial={SERIAL} pid={pid0}")
     index = place_index_facts()
     log(f"place index: {index.get('path')} bytes={index.get('bytes')} quick_check={index.get('quick_check')}")
+
+    cleared = []
+    for rid in a.clear_region:
+        cleared.append({"region": rid, "line": clear_place_index_region(rid)})
+        index = place_index_facts()
+
+    searches = run_search_check() if (a.search_check or trip) else []
+    search_fail = [s for s in searches if not s.get("ok")]
+    pause = run_pause_test() if a.pause_test else None
+    pause_fail = bool(pause) and not pause.get("ok")
+
+    if not trip:
+        rec = {
+            "status": "done",
+            "accepted": not search_fail and not pause_fail,
+            "place_index": index,
+            "searches": searches,
+            "cleared": cleared,
+            "pause_test": pause,
+        }
+        (out / "result.json").write_text(json.dumps(rec, indent=2) + "\n")
+        print(json.dumps(rec, indent=2))
+        sys.exit(0 if rec["accepted"] else 1)
 
     deadline = time.time() + a.timeout_min * 60
     while True:
@@ -416,6 +654,9 @@ def main():
     (out / "logcat.txt").write_text(text)
     bad, lines = check_inputs(text, trip, a.avoid_ferries, a.datex)
     files = pull(out)
+    stages, native_peak = plan_stage_peaks(text)
+    sampled_mb = round(peak_kb / 1024) if peak_kb else 0
+    plan_peak = max(sampled_mb, round(native_peak)) if (sampled_mb or native_peak) else None
     rec = {
         "trip": a.trip,
         "datex": a.datex,
@@ -424,19 +665,30 @@ def main():
         "wall_s": round(wall, 1),
         "pid_start": pid0,
         "pid_end": pid(),
-        "plan_peak_mb": round(peak_kb / 1024) if peak_reset and peak_kb else None,
-        "process_peak_mb": round(peak_kb / 1024) if peak_kb else None,
+        "plan_peak_mb": plan_peak,
+        "process_peak_mb": round((proc_kb("VmHWM") or 0) / 1024) or None,
         "peak_reset": peak_reset,
+        "plan_stage_rss_mb": stages,
         "input_lines": lines,
         "input_mismatch": bad,
         "place_index": index,
+        "searches": searches,
+        "cleared": cleared,
+        "pause_test": pause,
+        "idle_job_pause": last_line(text, "idle_job_pause "),
     }
     rec.update(summarize(files, trip, text))
-    rec["accepted"] = not bad and status == "done"
+    rec["accepted"] = not bad and not search_fail and not pause_fail and status == "done"
     (out / "result.json").write_text(json.dumps(rec, indent=2) + "\n")
     print(json.dumps(rec, indent=2))
     if bad:
         log("REJECTED: the plan did not receive what was sent")
+        sys.exit(2)
+    if search_fail:
+        log("REJECTED: search check failed")
+        sys.exit(2)
+    if pause_fail:
+        log("REJECTED: pause test wrote the product index or failed")
         sys.exit(2)
     sys.exit(0 if status == "done" else 1)
 
