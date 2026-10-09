@@ -373,9 +373,6 @@ pub fn effective_chunk_intermediate_snap_m() -> f64 {
         .unwrap_or(CHUNK_INTERMEDIATE_SNAP_M)
 }
 
-/// Tighter densify snap when both hop ends lie in the same catalog region.
-pub const CHUNK_SAME_REGION_SNAP_M: f64 = 8_000.0;
-
 /// Chebyshev-ish span of the point set (max of lat/lon ranges).
 pub fn trip_span_deg(points: &[(f64, f64)]) -> f64 {
     let (min_lat, min_lon, max_lat, max_lon) = points_bounds(points);

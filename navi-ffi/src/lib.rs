@@ -2414,7 +2414,6 @@ pub fn plan_car_route_at(
             /* is_chunk_leg */ false,
             /* relax_start_snap */ false,
             /* relax_end_snap */ false,
-            /* tight_intermediate_snap */ false,
             /* datex_impacts_override */ None,
         )
     })) {
@@ -2723,7 +2722,6 @@ fn plan_car_route_chunked_legs(
             /* is_chunk_leg */ true,
             relax_start,
             relax_end,
-            /* tight_intermediate_snap */ false,
             Some(hop_datex_first),
         );
         let hop_failed = leg.distance_km <= 0.0
@@ -2789,7 +2787,6 @@ fn plan_car_route_chunked_legs(
                 true,
                 relax_start,
                 relax_end,
-                false,
                 Some(retry),
             );
         }
@@ -3608,7 +3605,6 @@ fn plan_car_route_inner(
     is_chunk_leg: bool,
     relax_start_snap: bool,
     relax_end_snap: bool,
-    tight_intermediate_snap: bool,
     datex_impacts_override: Option<Vec<driver_break_core::datex::DatexPlannerConstraint>>,
 ) -> CorridorRouteResult {
     let empty = empty_corridor;
@@ -4441,11 +4437,8 @@ fn plan_car_route_inner(
                 Vec::with_capacity(route_points.len());
             let mut snap_ok = true;
             let default_snap = max_waypoint_snap_m(built.profile());
-            let chunk_snap = if tight_intermediate_snap {
-                driver_break_core::routing::plan_bbox::CHUNK_SAME_REGION_SNAP_M
-            } else {
-                driver_break_core::routing::plan_bbox::effective_chunk_intermediate_snap_m()
-            };
+            let chunk_snap =
+                driver_break_core::routing::plan_bbox::effective_chunk_intermediate_snap_m();
             let snap_stops = |built: &driver_break_core::routing::graph::RouteGraph,
                               route_opts: &driver_break_core::routing::graph::RouteOptions,
                               use_roles: bool|

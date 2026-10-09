@@ -53,7 +53,7 @@ pub use load::{
     fingerprint_pbf_for_packs, load_graph_pack, load_graph_pack_bbox, load_graph_pack_clips,
     load_poi_barrier_pack, load_poi_barrier_pack_bbox, load_wetland_pack, merge_tile_graphs,
     missing_ready_regions_for_trip, resolve_ferry_overlay_pbf_for_stem,
-    try_densify_hops_via_skeleton, try_load_graph_for_plan, try_load_graph_for_plan_bbox,
+    try_load_graph_for_plan, try_load_graph_for_plan_bbox,
     try_load_graph_for_plan_corridor, try_load_graph_for_plan_corridor_with_pack_dirs,
     try_load_poi_barrier_for_plan, try_load_poi_barrier_for_plan_bbox,
     try_load_poi_barrier_for_plan_bbox_with_pack_dirs, try_load_poi_pack_covering_point,
