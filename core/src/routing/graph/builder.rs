@@ -1,6 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::path::Path;
 
+use geo_types::Coord;
 use osm4routing::{
     BikeAccessibility, CarAccessibility, Edge, FootAccessibility, Node, NodeId, Reader,
 };
@@ -478,6 +480,14 @@ pub struct PathSearchStats {
     pub terminate_reason: &'static str,
 }
 
+/// One skeleton (or other) node reached by travel time from a waypoint.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TravelHit {
+    pub node: NodeId,
+    pub cost_m: f64,
+    pub length_m: f64,
+}
+
 /// Counts directed `(source, target)` pairs with multiple profile edges.
 #[derive(Debug, Clone, Default)]
 pub struct ParallelEdgeCensus {
@@ -871,6 +881,39 @@ impl RouteGraph {
             graph.ensure_directed_snap_labels();
         }
         graph
+    }
+
+    /// Insert a node used as a waypoint spur. Does not rebuild components.
+    pub fn insert_node_at(&mut self, id: NodeId, lat: f64, lon: f64) {
+        self.nodes.insert(
+            id,
+            Node {
+                id,
+                coord: Coord { x: lon, y: lat },
+                uses: 0,
+            },
+        );
+    }
+
+    /// Append one directed edge and update adjacency. The new source inherits
+    /// the target's weak-component root when known, so later coarse searches
+    /// treat the spur as attached to the skeleton.
+    pub fn push_directed_edge(&mut self, edge: GraphEdge) {
+        let src = edge.source;
+        let tgt = edge.target;
+        let idx = self.edges.len();
+        self.edges.push(edge);
+        self.adjacency.entry(src).or_default().push(idx);
+        self.incident.insert(src);
+        self.incident.insert(tgt);
+        if let Some(&root) = self
+            .component_root
+            .get(&tgt)
+            .or_else(|| self.component_root.get(&src))
+        {
+            self.component_root.insert(src, root);
+            self.component_root.insert(tgt, root);
+        }
     }
 
     /// Cheapest parallel edge between `from` and `to` under the same costing model as
@@ -2081,6 +2124,98 @@ impl RouteGraph {
         }
     }
 
+    /// Dijkstra from `start` that records every `targets` node reached, stopping
+    /// when expansions, radius, hit count or cost slack is exhausted.
+    ///
+    /// Used to attach a waypoint on the detailed network to several skeleton
+    /// nodes by travel time, not by crow-flies.
+    pub fn reach_nodes_by_travel(
+        &self,
+        start: NodeId,
+        targets: &HashSet<NodeId>,
+        options: &RouteOptions,
+        max_expansions: u64,
+        max_radius_m: f64,
+        origin: (f64, f64),
+        first_cost_slack_m: f64,
+        max_hits: usize,
+        clip_bbox: Option<[f64; 4]>,
+    ) -> (Vec<TravelHit>, u64, bool) {
+        let mut hits = Vec::new();
+        if targets.is_empty() || max_hits == 0 {
+            return (hits, 0, false);
+        }
+        let mut best: HashMap<NodeId, f64> = HashMap::new();
+        let mut length_at: HashMap<NodeId, f64> = HashMap::new();
+        let mut heap: BinaryHeap<Reverse<(u64, i64)>> = BinaryHeap::new();
+        best.insert(start, 0.0);
+        length_at.insert(start, 0.0);
+        heap.push(Reverse((0, start.0)));
+        let mut expansions = 0u64;
+        let mut first_cost = None;
+        let mut hit_clip_edge = false;
+        while let Some(Reverse((cost_u, id))) = heap.pop() {
+            let node = NodeId(id);
+            let cost = cost_u as f64;
+            if best.get(&node).is_some_and(|&b| cost > b + 0.5) {
+                continue;
+            }
+            let length_m = length_at.get(&node).copied().unwrap_or(0.0);
+            expansions = expansions.saturating_add(1);
+            if expansions > max_expansions {
+                break;
+            }
+            if let Some(n) = self.nodes.get(&node) {
+                if haversine_point_m(origin.0, origin.1, n) > max_radius_m {
+                    continue;
+                }
+                if let Some(bbox) = clip_bbox {
+                    if point_near_bbox_edge(n.coord.y, n.coord.x, bbox, 250.0) {
+                        hit_clip_edge = true;
+                    }
+                }
+            }
+            if node != start && targets.contains(&node) && hits.iter().all(|h| h.node != node) {
+                hits.push(TravelHit {
+                    node,
+                    cost_m: cost,
+                    length_m,
+                });
+                if first_cost.is_none() {
+                    first_cost = Some(cost);
+                }
+                if hits.len() >= max_hits {
+                    break;
+                }
+                if first_cost.is_some_and(|f| cost > f + first_cost_slack_m) {
+                    break;
+                }
+            }
+            if first_cost.is_some_and(|f| cost > f + first_cost_slack_m) && !hits.is_empty() {
+                break;
+            }
+            for &idx in self.outgoing_edge_indices(node) {
+                let edge = &self.edges[idx];
+                if !edge_allowed_at(edge, idx, options, self.profile) {
+                    continue;
+                }
+                let step = edge_travel_cost(edge, idx, false, options, self.profile);
+                if !step.is_finite() || step < 0.0 {
+                    continue;
+                }
+                let next_cost = cost + step;
+                let next_len = length_m + edge.length_m.max(0.0);
+                let better = best.get(&edge.target).is_none_or(|&b| next_cost + 0.5 < b);
+                if better {
+                    best.insert(edge.target, next_cost);
+                    length_at.insert(edge.target, next_len);
+                    heap.push(Reverse((next_cost.max(0.0) as u64, edge.target.0)));
+                }
+            }
+        }
+        (hits, expansions, hit_clip_edge)
+    }
+
     /// Admissible A* scale: cost units per metre of great-circle remainder.
     ///
     /// Uses `min(edge_cost / endpoint_chord_m)` so the heuristic stays admissible
@@ -3248,6 +3383,17 @@ fn haversine_m(a: &Node, b: &Node) -> f64 {
 
 fn haversine_point_m(lat: f64, lon: f64, n: &Node) -> f64 {
     haversine_latlon_m(lat, lon, n.coord.y, n.coord.x)
+}
+
+/// True when `(lat, lon)` sits within `margin_m` of a bbox edge.
+fn point_near_bbox_edge(lat: f64, lon: f64, bbox: [f64; 4], margin_m: f64) -> bool {
+    let dlat = margin_m / 111_320.0;
+    let cos = lat.to_radians().cos().abs().max(0.2);
+    let dlon = margin_m / (111_320.0 * cos);
+    (lat - bbox[0]).abs() <= dlat
+        || (bbox[2] - lat).abs() <= dlat
+        || (lon - bbox[1]).abs() <= dlon
+        || (bbox[3] - lon).abs() <= dlon
 }
 
 fn haversine_latlon_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {

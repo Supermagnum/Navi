@@ -3770,7 +3770,7 @@ fn plan_car_route_inner(
                 routing_profile,
                 &stage_b_opts,
             );
-        if let Some(ref sb) = stage_b {
+        if let Ok(ref sb) = stage_b {
             // Absurd installed-only detour: coarse path ≫ crow-flies.
             if driver_break_core::routing::plan_bbox::is_absurd_installed_detour(
                 sb.total_km,
@@ -3865,7 +3865,10 @@ fn plan_car_route_inner(
                 return r;
             }
         } else {
-            if !missing_direct.is_empty() {
+            let err = stage_b
+                .err()
+                .unwrap_or_else(|| "stage_b densify unavailable".into());
+            if err.contains("no fresh persistent skeletons") && !missing_direct.is_empty() {
                 let named = missing_direct.join(",");
                 log::warn!(target: "NaviPlan", "missing_regions_before_densify {named}");
                 let mut r = empty(format!(
@@ -3875,14 +3878,13 @@ fn plan_car_route_inner(
                 r.off_trail_advisory = format!("missing_region:{}", missing_direct[0]);
                 return r;
             }
-            // Skeletons present but Stage B could not densify — no centroid fallback.
-            log::warn!(
-                target: "NaviPlan",
-                "stage_b densify failed with skeletons present; no centroid fallback"
-            );
-            let mut r =
-                empty("TEST_KIND=PLAN_CAR_ROUTE\nFAIL: stage_b densify unavailable\n".into());
-            r.search_terminate_reason = "stage_b_unavailable".into();
+            log::warn!(target: "NaviPlan", "stage_b densify failed: {err}");
+            let mut r = empty(format!("TEST_KIND=PLAN_CAR_ROUTE\nFAIL: {err}\n"));
+            r.search_terminate_reason = if err.contains("waypoint") {
+                "waypoint_attach".into()
+            } else {
+                "stage_b_unavailable".into()
+            };
             return r;
         }
     }

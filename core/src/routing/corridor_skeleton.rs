@@ -2593,8 +2593,8 @@ fn leg_alternatives(
     out
 }
 
-/// Stage B on a merged skeleton graph: snap every waypoint once, pick each leg
-/// from its own alternatives, join legs at the via snap nodes.
+/// Stage B on a merged skeleton graph: waypoints are already attached, pick
+/// each leg from its own alternatives, join legs at the via snap nodes.
 struct StageBPlan {
     snaps: Vec<NodeId>,
     legs: Vec<Vec<StageBLegCandidate>>,
@@ -2606,13 +2606,13 @@ fn stage_b_plan_on_graph(
     graph: &mut RouteGraph,
     names: &CoarseEdgeNames,
     border_osm: &HashSet<i64>,
-    waypoints: &[(f64, f64)],
-    snap_m: f64,
+    snaps: Vec<NodeId>,
+    snap_ms: u128,
     route_options: &RouteOptions,
 ) -> Option<StageBPlan> {
-    let t = std::time::Instant::now();
-    let snaps = snap_coarse_waypoints(graph, waypoints, snap_m, route_options)?;
-    let snap_ms = t.elapsed().as_millis();
+    if snaps.len() < 2 {
+        return None;
+    }
     let mut legs = Vec::with_capacity(snaps.len() - 1);
     let mut picks = Vec::with_capacity(snaps.len() - 1);
     for (li, w) in snaps.windows(2).enumerate() {
@@ -2735,6 +2735,21 @@ fn for_each_fresh_skeleton(
             f(s);
         }
     }
+}
+
+/// OSM ids of every fresh skeleton (or only `only_stems`). Used as attach
+/// targets without loading the coarse graph.
+pub fn collect_fresh_skeleton_osm_ids(
+    dirs: &[&Path],
+    only_stems: Option<&HashSet<String>>,
+    profile: RoutingProfile,
+) -> HashSet<i64> {
+    let mut ids = HashSet::new();
+    let mut dummy = 0u128;
+    for_each_fresh_skeleton(dirs, only_stems, profile, &mut dummy, |s| {
+        ids.extend(s.node_ids.iter().copied());
+    });
+    ids
 }
 
 /// Stems for Stage B: direct-corridor regions plus one-hop adjacency neighbours.
@@ -3063,22 +3078,22 @@ pub fn count_path_covering_tiles(
 /// Stage B: densify from persistent corridor skeletons.
 ///
 /// The trip is planned leg by leg between consecutive waypoints. Every waypoint
-/// is snapped once on the coarse graph; each leg has its own alternatives (free,
-/// each ferry excluded, no ferries; the last two only when ferries are allowed)
-/// and its own near-equal pick ([`near_equal_pick`]). Legs join at the via snap
-/// node, and hop chains run to the exact via coordinates, so no step sees a
-/// trip-wide route that skips a via. Hop joints = border crossings, ferry
-/// terminals, user vias.
+/// is attached to the skeleton by a detailed search (real road snap + travel-
+/// time spurs); each leg has its own alternatives (free, each ferry excluded,
+/// no ferries; the last two only when ferries are allowed) and its own
+/// near-equal pick ([`near_equal_pick`]). Legs join at the via snap node, and
+/// hop chains run to the exact via coordinates, so no step sees a trip-wide
+/// route that skips a via. Hop joints = border crossings, ferry terminals,
+/// user vias.
 pub fn try_stage_b_densify_from_skeletons(
     pack_dirs: &[&Path],
     waypoints: &[(f64, f64)],
     profile: RoutingProfile,
     route_options: &RouteOptions,
-) -> Option<StageBDensify> {
+) -> Result<StageBDensify, String> {
     if waypoints.len() < 2 {
-        return None;
+        return Err("stage_b needs at least two waypoints".into());
     }
-    let snap_m = 35_000.0;
     let t0 = std::time::Instant::now();
     let mut load_ms = 0u128;
     let mut graph_ms = 0u128;
@@ -3088,6 +3103,7 @@ pub fn try_stage_b_densify_from_skeletons(
     // only when the coarse search finds no route on that subset.
     let local_stems = trip_local_skeleton_stems(waypoints);
     let t = std::time::Instant::now();
+    let load_before = load_ms;
     let coarse = match &local_stems {
         Some(stems) => {
             let c = load_coarse_graph(pack_dirs, Some(stems), profile, &mut load_ms);
@@ -3101,22 +3117,51 @@ pub fn try_stage_b_densify_from_skeletons(
         }
         None => load_coarse_graph(pack_dirs, None, profile, &mut load_ms),
     };
-    graph_ms += t.elapsed().as_millis().saturating_sub(load_ms);
+    graph_ms += t
+        .elapsed()
+        .as_millis()
+        .saturating_sub(load_ms - load_before);
     let Some(mut coarse) = coarse else {
         log::info!(target: "NaviPlan", "stage_b densify: no fresh persistent skeletons");
-        return None;
+        return Err("no fresh persistent skeletons".into());
     };
     let mut border_osm = border_osm_from_regions(&coarse.regions);
-    let t = std::time::Instant::now();
+    coarse.graph.ensure_directed_snap_labels();
+    // Targets are directed-ok skeleton nodes of the loaded graph (same set the
+    // coarse search can use). Search each waypoint once; a widen reapplies.
+    let skeleton_ids: HashSet<i64> = coarse
+        .graph
+        .nodes
+        .keys()
+        .filter(|id| coarse.graph.directed_snap_ok(**id, crate::routing::graph::SnapRole::Via))
+        .map(|id| id.0)
+        .collect();
+    let t_att = std::time::Instant::now();
+    let attach_plan = match crate::routing::waypoint_attach::TripAttachPlan::resolve(
+        pack_dirs,
+        waypoints,
+        &skeleton_ids,
+        profile,
+        route_options,
+    ) {
+        Ok(p) => p,
+        Err(e) => {
+            log::error!(target: "NaviPlan", "stage_b waypoint attach: {e}");
+            return Err(e.to_string());
+        }
+    };
+    let snap_ms = t_att.elapsed().as_millis();
+    let snaps = attach_plan.apply(&mut coarse.graph);
+    let t_plan = std::time::Instant::now();
     let mut plan = stage_b_plan_on_graph(
         &mut coarse.graph,
         &coarse.names,
         &border_osm,
-        waypoints,
-        snap_m,
+        snaps,
+        snap_ms,
         route_options,
     );
-    plan_ms += t.elapsed().as_millis();
+    plan_ms += t_plan.elapsed().as_millis();
     if plan.is_none() && local_stems.is_some() {
         log::info!(
             target: "NaviPlan",
@@ -3126,24 +3171,32 @@ pub fn try_stage_b_densify_from_skeletons(
         drop(coarse);
         let t = std::time::Instant::now();
         let load_before = load_ms;
-        coarse = load_coarse_graph(pack_dirs, None, profile, &mut load_ms)?;
+        coarse = load_coarse_graph(pack_dirs, None, profile, &mut load_ms)
+            .ok_or_else(|| "no fresh persistent skeletons".to_string())?;
         graph_ms += t
             .elapsed()
             .as_millis()
             .saturating_sub(load_ms - load_before);
         border_osm = border_osm_from_regions(&coarse.regions);
-        let t = std::time::Instant::now();
+        coarse.graph.ensure_directed_snap_labels();
+        let snaps = attach_plan.apply(&mut coarse.graph);
+        let t_plan = std::time::Instant::now();
         plan = stage_b_plan_on_graph(
             &mut coarse.graph,
             &coarse.names,
             &border_osm,
-            waypoints,
-            snap_m,
+            snaps,
+            snap_ms,
             route_options,
         );
-        plan_ms += t.elapsed().as_millis();
+        plan_ms += t_plan.elapsed().as_millis();
     }
-    let plan = plan?;
+    let plan = match plan {
+        Some(p) => p,
+        None => {
+            return Err("stage_b no coarse path between attached waypoints".into());
+        }
+    };
     let snap_ms = plan.snap_ms;
     let t = std::time::Instant::now();
     let skels = coarse.regions.len();
@@ -3193,7 +3246,7 @@ pub fn try_stage_b_densify_from_skeletons(
         t0.elapsed().as_millis(),
     );
     log::info!(target: "NaviPlan", "{}", out.timing);
-    Some(out)
+    Ok(out)
 }
 
 /// Return freed heap pages to the system so the first detailed hop does not
@@ -4065,12 +4118,14 @@ mod tests {
             direct.contains(&NodeId(4)),
             "fixture: the whole-trip shortest path skips the via"
         );
+        let snaps = snap_coarse_waypoints(&mut g, &VIA_TRIP, 5_000.0, &RouteOptions::default())
+            .expect("snaps");
         let plan = stage_b_plan_on_graph(
             &mut g,
             &CoarseEdgeNames::default(),
             &HashSet::new(),
-            &VIA_TRIP,
-            5_000.0,
+            snaps,
+            0,
             &RouteOptions::default(),
         )
         .expect("plan");
@@ -4196,11 +4251,7 @@ mod tests {
     #[test]
     fn border_touch_and_return_is_not_a_joint() {
         // Oslo (NO) to a border node, into Sweden, and back through the same node.
-        let g = linear_joint_graph(&[
-            (1, 59.91, 10.75),
-            (2, 59.91, 11.98),
-            (3, 59.91, 12.05),
-        ]);
+        let g = linear_joint_graph(&[(1, 59.91, 10.75), (2, 59.91, 11.98), (3, 59.91, 12.05)]);
         let path = vec![NodeId(1), NodeId(2), NodeId(3), NodeId(2), NodeId(1)];
         let edges = vec![
             edge_ix(&g, 1, 2),
@@ -4253,11 +4304,7 @@ mod tests {
             (4, 59.20, 18.20),
         ]);
         let path: Vec<NodeId> = vec![NodeId(1), NodeId(2), NodeId(3), NodeId(4)];
-        let edges = vec![
-            edge_ix(&g, 1, 2),
-            edge_ix(&g, 2, 3),
-            edge_ix(&g, 3, 4),
-        ];
+        let edges = vec![edge_ix(&g, 1, 2), edge_ix(&g, 2, 3), edge_ix(&g, 3, 4)];
         let mut borders = HashSet::new();
         borders.insert(2);
         let joints = extract_coarse_joints(&g, &path, &edges, &borders, &[], 500.0);
@@ -4273,12 +4320,9 @@ mod tests {
     fn hop_end_far_from_coarse_path_is_rejected() {
         let path = vec![(60.0, 10.0), (60.1, 10.0), (60.2, 10.0)];
         let hops = vec![(60.0, 10.0), (60.15, 10.5), (60.2, 10.0)];
-        let err = ensure_hops_on_coarse_path(
-            &hops,
-            &path,
-            crate::routing::plan_bbox::HOP_END_MATCH_M,
-        )
-        .expect_err("joint 0.5° off the path must fail");
+        let err =
+            ensure_hops_on_coarse_path(&hops, &path, crate::routing::plan_bbox::HOP_END_MATCH_M)
+                .expect_err("joint 0.5° off the path must fail");
         assert!(
             err.contains("from the coarse path"),
             "expected a hop-end tolerance failure, got {err}"
@@ -4295,11 +4339,7 @@ mod tests {
     #[test]
     fn last_reachable_coarse_node_skips_disconnected_joint() {
         // 1-2-3 connected; 4-5 a separate component. Intended end is 5.
-        let g = linear_joint_graph(&[
-            (1, 60.00, 10.00),
-            (2, 60.01, 10.00),
-            (3, 60.02, 10.00),
-        ]);
+        let g = linear_joint_graph(&[(1, 60.00, 10.00), (2, 60.01, 10.00), (3, 60.02, 10.00)]);
         let mut nodes = g.nodes.clone();
         let mut edges = g.edges.clone();
         for &(id, lat, lon) in &[(4i64, 60.03, 10.00), (5, 60.04, 10.00)] {
@@ -4419,7 +4459,7 @@ mod tests {
         )
         .expect("node 3 is still in the start component");
         assert_eq!(got.0, NodeId(3));
-        assert!((got.1.0 - 60.02).abs() < 1e-6);
+        assert!((got.1 .0 - 60.02).abs() < 1e-6);
     }
 
     #[test]

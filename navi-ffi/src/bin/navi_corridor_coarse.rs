@@ -15,7 +15,8 @@ use driver_break_core::routing::corridor_skeleton::{
     inter_region_ferry_edges, merge_skeletons_to_route_graph, read_skeleton_file,
     CoarseRouteReport, CorridorSkeletonFile,
 };
-use driver_break_core::routing::graph::{RouteOptions, RoutingProfile};
+use driver_break_core::routing::graph::{max_waypoint_snap_m, RouteOptions, RoutingProfile};
+use driver_break_core::routing::waypoint_attach::attach_trip_waypoints;
 use driver_break_core::routing::indexed::{ferry_sidecar_path, load_graph_pack_clips};
 use serde::Serialize;
 
@@ -83,7 +84,14 @@ fn run_named(
     border_osm: &std::collections::HashSet<i64>,
     note: &str,
 ) -> Option<CoarseRouteReport> {
-    run_named_snap(name, graph, waypoints, border_osm, note, 35_000.0)
+    run_named_snap(
+        name,
+        graph,
+        waypoints,
+        border_osm,
+        note,
+        max_waypoint_snap_m(RoutingProfile::Car),
+    )
 }
 
 /// All ferry edges for the same crossing as `leg` (parallel piers / both dirs).
@@ -209,7 +217,14 @@ fn ferry_exclusion_alts(
         );
         let t0 = Instant::now();
         let report = with_forbidden_edges(graph, &idxs, |g| {
-            run_named_snap(&name, g, waypoints, border_osm, &note, 35_000.0)
+            run_named_snap(
+                &name,
+                g,
+                waypoints,
+                border_osm,
+                &note,
+                max_waypoint_snap_m(RoutingProfile::Car),
+            )
         });
         let wall_ms = t0.elapsed().as_millis();
         match report {
@@ -243,7 +258,7 @@ fn ferry_exclusion_alts(
             waypoints,
             border_osm,
             &format!("no ferries ({} edges forbidden)", all_ferry.len()),
-            35_000.0,
+            max_waypoint_snap_m(RoutingProfile::Car),
         )
     });
     let wall_ms = t0.elapsed().as_millis();
@@ -605,6 +620,61 @@ fn main() {
     let bevensen = (53.07969, 10.5872);
     let vaga = (61.875, 9.096);
     let dalsoren = (61.44338, 7.4614);
+    let a1_near_lubeck = (53.87, 10.69);
+    let puttgarden = (54.5028164, 11.2282207);
+    let rodby = (54.6543072, 11.3508124);
+    let faro = (54.95, 11.99);
+    let koege_e47 = (55.45, 12.12);
+    let cph_e20 = (55.62, 12.52);
+    let oresund = (55.57, 12.85);
+    let e6_gothenburg = (57.70, 12.00);
+    let padborg = (54.82, 9.36);
+    let storebaelt = (55.34, 10.97);
+    let helsingor = (56.033, 12.616);
+    let breneriroa = (60.82718, 11.30278);
+    let aga = (60.2987, 6.60322);
+    let utne = (60.4241, 6.6218);
+    let kvanndal = (60.4718, 6.6124);
+    let kinsarvik = (60.3750, 6.7200);
+    let pack = pack_dir.as_deref().unwrap_or(skel_dir.as_path());
+    let attach_opts = RouteOptions::default();
+    let product = [bevensen, vaga, dalsoren, breneriroa, aga];
+    match attach_trip_waypoints(
+        &mut graph,
+        &[pack],
+        &product,
+        RoutingProfile::Car,
+        &attach_opts,
+    ) {
+        Ok(ids) => println!("attached product waypoints n={}", ids.len()),
+        Err(e) => eprintln!("attach product waypoints: {e}"),
+    }
+    for wp in [
+        a1_near_lubeck,
+        puttgarden,
+        rodby,
+        faro,
+        koege_e47,
+        cph_e20,
+        oresund,
+        e6_gothenburg,
+        padborg,
+        storebaelt,
+        helsingor,
+        utne,
+        kvanndal,
+        kinsarvik,
+    ] {
+        if let Err(e) = attach_trip_waypoints(
+            &mut graph,
+            &[pack],
+            &[wp],
+            RoutingProfile::Car,
+            &attach_opts,
+        ) {
+            eprintln!("attach skip {:.5},{:.5}: {e}", wp.0, wp.1);
+        }
+    }
 
     let chosen = run_named(
         "bevensen_vaga_dalsoren",
@@ -617,15 +687,7 @@ fn main() {
     // Forced: A1 + Puttgarden–Rødby + Zealand/Øresund land bridge (ORS profile).
     // Without Øresund vias, time-cost A* prefers HH ferry (~+3 km-eq to Göteborg)
     // even though Farø/E47/E20/Øresund edges exist — not a land disconnect.
-    // Tight snap so ferry terminals do not collapse (19 km apart; 35 km unsafe).
-    let a1_near_lubeck = (53.87, 10.69);
-    let puttgarden = (54.5028164, 11.2282207);
-    let rodby = (54.6543072, 11.3508124);
-    let faro = (54.95, 11.99);
-    let koege_e47 = (55.45, 12.12);
-    let cph_e20 = (55.62, 12.52);
-    let oresund = (55.57, 12.85);
-    let e6_gothenburg = (57.70, 12.00);
+    // Same 750 m attach as the product (wide 35 km / 8 km snaps removed).
     let forced_fehmarn = run_named_snap(
         "forced_a1_puttgarden_rodby",
         &mut graph,
@@ -644,12 +706,10 @@ fn main() {
         ],
         &border_osm,
         "forced via A1/Lübeck, Puttgarden–Rødby, Farø/E47, E20/Øresund, E6",
-        8_000.0,
+        max_waypoint_snap_m(RoutingProfile::Car),
     );
 
     // Forced: Jutland + Storebælt + Øresund bridge
-    let padborg = (54.82, 9.36);
-    let storebaelt = (55.34, 10.97);
     let forced_oresund = run_named(
         "forced_jutland_storebaelt_oresund",
         &mut graph,
@@ -659,7 +719,6 @@ fn main() {
     );
 
     // Forced: Jutland + Storebælt + Helsingør–Helsingborg
-    let helsingor = (56.033, 12.616);
     let forced_hh = run_named(
         "forced_jutland_storebaelt_hh",
         &mut graph,
@@ -687,15 +746,10 @@ fn main() {
         ],
         &border_osm,
         "forced ORS corridor: A1, Puttgarden–Rødby, E47, E20, Øresund, E6",
-        8_000.0,
+        max_waypoint_snap_m(RoutingProfile::Car),
     );
 
     // Breneriroa → Aga (FU14 waypoints); ferry naming on Hardanger.
-    let breneriroa = (60.82718, 11.30278);
-    let aga = (60.2987, 6.60322);
-    let utne = (60.4241, 6.6218);
-    let kvanndal = (60.4718, 6.6124);
-    let kinsarvik = (60.3750, 6.7200);
     let aga_report = run_named(
         "breneriroa_aga",
         &mut graph,
