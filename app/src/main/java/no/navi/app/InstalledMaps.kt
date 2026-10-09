@@ -76,6 +76,9 @@ object InstalledMaps {
 
     private val snapshot = AtomicReference<Snapshot?>(null)
     private val snapshotRoot = AtomicReference<String?>(null)
+    private val lastPlaceIndexDir = AtomicReference<File?>(null)
+
+    fun placeIndexDir(): File? = lastPlaceIndexDir.get()
 
     fun snapshotIsFor(dataDir: File): Boolean = snapshotRoot.get() == dataDir.absolutePath
 
@@ -84,6 +87,8 @@ object InstalledMaps {
     fun clearForTests() {
         snapshot.set(null)
         snapshotRoot.set(null)
+        lastPlaceIndexDir.set(null)
+        IdlePackJobs.resetForTests()
     }
 
     fun region(
@@ -224,6 +229,8 @@ object InstalledMaps {
             ),
         )
         snapshotRoot.set(internalDataDir.absolutePath)
+        lastPlaceIndexDir.set(placeIndexDir)
+        IdlePackJobs.onInstalledMapsChanged()
         val intactIds =
             byId.values
                 .filter { it.placeIndex == PlaceIndexState.INTACT || it.placeIndex == PlaceIndexState.LEGACY_INTACT }

@@ -15,5 +15,6 @@ object RoutePlanGate {
 
     fun end() {
         running.set(false)
+        IdlePackJobs.onPlanEnded()
     }
 }

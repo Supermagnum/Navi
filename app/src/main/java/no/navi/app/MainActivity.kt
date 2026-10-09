@@ -711,8 +711,8 @@ private fun NaviMapScreen() {
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             runCatching { InstalledMaps.refresh(context) }
-            runCatching { FerrySidecarBackground.ensureFromInstalledMaps() }
-            runCatching { CorridorSkeletonBackground.ensureFromInstalledMaps() }
+            IdlePackJobs.executeJobs = true
+            IdlePackJobs.onAppIdle()
             val summary = InstalledMaps.summaryText()
             android.util.Log.i("InstalledMaps", summary)
             runCatching {
@@ -727,8 +727,8 @@ private fun NaviMapScreen() {
         if (packCatalogEpoch == 0) return@LaunchedEffect
         withContext(Dispatchers.IO) {
             runCatching { InstalledMaps.refresh(context) }
-            runCatching { FerrySidecarBackground.ensureFromInstalledMaps() }
-            runCatching { CorridorSkeletonBackground.ensureFromInstalledMaps() }
+            IdlePackJobs.executeJobs = true
+            IdlePackJobs.onAppIdle()
         }
         mapsEpoch += 1
     }
@@ -2659,7 +2659,17 @@ private fun NaviMapScreen() {
                         seq?.first,
                         seq?.second,
                     )
-                val rawLine = formatProgressPct(snap.unitsDone, snap.unitsTotal, labeled)
+                val rawPct = formatProgressPct(snap.unitsDone, snap.unitsTotal, labeled)
+                val rem = IdlePackJobs.remainingSummary()
+                val rawLine =
+                    if (
+                        labeled.contains("Writing map archive", ignoreCase = true) &&
+                        rem.isNotEmpty()
+                    ) {
+                        "$rawPct — $rem"
+                    } else {
+                        rawPct
+                    }
                 val nowPulse = SystemClock.elapsedRealtime()
                 if (labeled.contains("map tiles", ignoreCase = true) ||
                     labeled.contains("basemap", ignoreCase = true) ||

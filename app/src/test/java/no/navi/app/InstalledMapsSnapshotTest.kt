@@ -61,6 +61,37 @@ class InstalledMapsSnapshotTest {
     }
 
     @Test
+    fun installing_region_with_ui_idle_schedules_skeleton_and_sidecar() {
+        IdlePackJobs.resetForTests()
+        val internal = tmp.newFolder("idle-files")
+        val packs = tmp.newFolder("idle-packs")
+        File(packs, "varmland-latest.navi-manifest.json").writeText(
+            """{"schema":1,"stem":"varmland-latest","graph_format_version":9}""",
+        )
+        File(packs, "varmland-latest.navi-server-install.json").writeText(
+            """{"schema":1,"region_id":"europe/sweden/varmland","generation":"g1"}""",
+        )
+        File(packs, "varmland-latest.navi-graph-car.t0_0.rkyv").writeBytes(ByteArray(64))
+        InstalledMaps.refreshFromDirs(internal, listOf("sd" to packs))
+        val scheduled = IdlePackJobs.scheduledForTest()
+        val kinds = scheduled.map { it.kind }.toSet()
+        assertTrue(
+            "UI idle must still schedule the corridor skeleton",
+            kinds.contains(IdlePackJobs.Kind.SKELETON),
+        )
+        assertTrue(
+            "UI idle must still schedule the ferry sidecar",
+            kinds.contains(IdlePackJobs.Kind.FERRY_CAR) ||
+                kinds.contains(IdlePackJobs.Kind.FERRY_TRUCK),
+        )
+        assertTrue(scheduled.any { it.stem == "varmland-latest" })
+        val r = InstalledMaps.region("europe/sweden/varmland", internal)!!
+        assertFalse(r.tilesPresent)
+        assertFalse(r.corridorSkeleton)
+        assertFalse(r.ferrySidecarCar)
+    }
+
+    @Test
     fun hasInstallForUi_uses_snapshot_partial_fetch_without_listFiles() {
         val internal = tmp.newFolder("files")
         val packs = tmp.newFolder("long-trip-packs")

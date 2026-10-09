@@ -1,12 +1,6 @@
 package no.navi.app
 
 import android.util.Log
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import uniffi.navi.downloadProgressSnapshot
 import uniffi.navi.ensurePlaceIndex
 import java.io.File
@@ -23,8 +17,6 @@ import java.util.concurrent.atomic.AtomicReference
  */
 object PlaceIndexBackground {
     private const val TAG = "PlaceIndexBg"
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val mutex = Mutex()
     private val running = AtomicBoolean(false)
     private val lastStatus = AtomicReference("idle")
     private val activeRegionId = AtomicReference("")
@@ -130,53 +122,56 @@ object PlaceIndexBackground {
                 return
             }
         }
+        IdlePackJobs.offerPlaceIndex(pbf, indexDb, rid.orEmpty())
+    }
+
+    internal fun runJob(
+        pbf: File,
+        indexDb: File,
+        regionId: String?,
+    ) {
         if (!claimWorker()) {
             Log.i(TAG, "already running; skip")
             return
         }
+        val rid = regionId?.trim()?.trim('/')?.ifBlank { null }
         activeRegionId.set(rid.orEmpty())
         lastStatus.set(annotate("building", rid.orEmpty()))
         Log.i(
             TAG,
             "start ensurePlaceIndex pbf=${pbf.absolutePath} db=${indexDb.absolutePath} region=$rid",
         )
-        scope.launch {
-            mutex.withLock {
-                try {
-                    val report =
-                        ensurePlaceIndex(
-                            pbf.absolutePath,
-                            indexDb.absolutePath,
-                            rid,
-                        )
-                    val bytes = if (indexDb.isFile) indexDb.length() else 0L
-                    if (report.contains("PASS")) {
-                        val dataDir = indexDb.parentFile
-                        if (dataDir != null && !rid.isNullOrBlank()) {
-                            PlaceIndexReady.markReady(dataDir, rid)
-                        }
-                        lastStatus.set(annotate("Place index ready 100% (6 / 6)", rid.orEmpty()))
-                        // Own [running] is still true until [finally]; skip if the
-                        // region pipeline has taken the lock for another build.
-                        if (DownloadProgressClear.shouldClear(
-                                regionRunning = RegionDownloadBackground.isRunning(),
-                                placeIndexRunning = false,
-                            )
-                        ) {
-                            runCatching { uniffi.navi.downloadProgressClear() }
-                        }
-                    } else {
-                        lastStatus.set(annotate("failed", rid.orEmpty()))
-                    }
-                    Log.i(TAG, "finished bytes=$bytes report=$report")
-                } catch (t: Throwable) {
-                    lastStatus.set(annotate("failed: ${t.message}", rid.orEmpty()))
-                    Log.e(TAG, "ensurePlaceIndex crashed", t)
-                } finally {
-                    activeRegionId.set("")
-                    releaseWorker()
+        try {
+            val report =
+                ensurePlaceIndex(
+                    pbf.absolutePath,
+                    indexDb.absolutePath,
+                    rid,
+                )
+            val bytes = if (indexDb.isFile) indexDb.length() else 0L
+            if (report.contains("PASS")) {
+                val dataDir = indexDb.parentFile
+                if (dataDir != null && !rid.isNullOrBlank()) {
+                    PlaceIndexReady.markReady(dataDir, rid)
                 }
+                lastStatus.set(annotate("Place index ready 100% (6 / 6)", rid.orEmpty()))
+                if (DownloadProgressClear.shouldClear(
+                        regionRunning = RegionDownloadBackground.isRunning(),
+                        placeIndexRunning = false,
+                    )
+                ) {
+                    runCatching { uniffi.navi.downloadProgressClear() }
+                }
+            } else {
+                lastStatus.set(annotate("failed", rid.orEmpty()))
             }
+            Log.i(TAG, "finished bytes=$bytes report=$report")
+        } catch (t: Throwable) {
+            lastStatus.set(annotate("failed: ${t.message}", rid.orEmpty()))
+            Log.e(TAG, "ensurePlaceIndex crashed", t)
+        } finally {
+            activeRegionId.set("")
+            releaseWorker()
         }
     }
 }

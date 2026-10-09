@@ -1546,6 +1546,7 @@ object RegionDownloadBackground {
                     // and for rest/overnight POI packs. Basemap + place-index
                     // continue in the background; long-trip planning waits for
                     // Indexed via LongTripCoordinator.corridorReadyForPlanning.
+                    runCatching { InstalledMaps.refresh(context) }
                     emitInstalledForRouting(pathForDecision)
                     handOffBasemapAndPlaceIndex(
                         context = context,
@@ -1747,7 +1748,10 @@ object RegionDownloadBackground {
             if (r != null) {
                 FerrySidecarBackground.ensureForRegionPath(r.packDir, trimmed)
                 CorridorSkeletonBackground.ensureForRegionPath(r.packDir, trimmed)
+            } else {
+                IdlePackJobs.onInstalledMapsChanged()
             }
+            IdlePackJobs.onAppIdle()
         }
     }
 
