@@ -173,11 +173,9 @@ pub const CORRIDOR_BAND_STEP_DEG: f64 = 0.20;
 /// Six is enough for one-stem corridors once edge clipping is a corridor band.
 pub const MAX_PLAN_TILES: usize = 6;
 
-/// Cross-stem corridors (e.g. Ostlandet→Vestlandet / Raufoss→Bergen) need more
-/// than six tiles so midpoint samples keep a connected bridge; six dropped the
-/// Vestlandet half and left A* exploring a disconnected Ostlandet component
-/// for minutes. Fourteen stays under the ~550 MiB on-disk soft byte cap for
-/// typical car corridor tiles (measured ~900 MiB peak RSS on host).
+/// Cap on leftover (non-path) neighbour extras and TripAabb fill. Path tiles
+/// that cover the start, the destination, or the area between them are never
+/// dropped by this count; those are bounded by [`MAX_PATH_NODES_PER_HOP`].
 pub const MAX_PLAN_TILES_MULTI_STEM: usize = 14;
 
 /// Memory-aware upper bound when widening a disconnected corridor tile budget.

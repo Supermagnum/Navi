@@ -30,10 +30,12 @@
 //!   must exist, be non-empty, pass `quick_check`, and keep every region and
 //!   row count in `tests/regression_gate_place_index.json`.
 //!
-//! Cases f (Hamar–Stange) and g (Hamar–Lillehammer) are short Østlandet
-//! trips with no via. They must complete, match polyline within 0.5 %, start
-//! and end on the waypoints' own roads, and produce the same route with
-//! `long_trip` off and on. The corridor stage must not run.
+//! Cases f/g (Hamar–Stange, Hamar–Lillehammer), h (Oslo–Lillestrøm),
+//! i (Hamburg–Bergedorf) and j (Copenhagen–Taastrup) are short trips with no via.
+//! They must complete, start and end on the waypoints' own roads, and produce
+//! the same route with `long_trip` off and on. Report whether the corridor
+//! stage ran. Oslo–Lillestrøm is a permanent dense-tile case (do not swap it
+//! away).
 //!
 //! Case e (Elsa to Sjuvass) must pass: the plan completes, 0 ferries,
 //! intermediate hop ends within 50 m of the coarse-path joint (or an on-path
@@ -82,12 +84,19 @@ const FLORO: (f64, f64) = (61.60145, 5.02658);
 const ELSA: (f64, f64) = (69.9742, 29.63342);
 const SJUVASS: (f64, f64) = (59.80326, 9.39866);
 /// Place-index `name_entries` (Østlandet): Hamar `place:city`, Stange `place:town`.
-/// Oslo–Lillestrøm (city/town centroids) fails `corridor_components_disconnected`
-/// under the 14-tile budget; Hamar–Stange is the same 10–20 km class inland.
 const HAMAR: (f64, f64) = (60.794721, 11.068055);
 const STANGE: (f64, f64) = (60.717675, 11.192379);
 /// Place-index `name_entries` (Østlandet): Lillehammer `place:town`.
 const LILLEHAMMER: (f64, f64) = (61.114545, 10.467007);
+/// Place-index `name_entries` (Østlandet): Oslo `place:city`, Lillestrøm `place:town`.
+const OSLO: (f64, f64) = (59.913330, 10.738970);
+const LILLESTROM: (f64, f64) = (59.955924, 11.049112);
+/// Place-index style city / suburb centroids, ~18 km across Hamburg.
+const HAMBURG: (f64, f64) = (53.550341, 9.993682);
+const BERGEDORF: (f64, f64) = (53.48611, 10.23278);
+/// Place-index style city / town centroids, ~19 km across Copenhagen.
+const COPENHAGEN: (f64, f64) = (55.676098, 12.568337);
+const TAASTRUP: (f64, f64) = (55.6517, 12.2922);
 /// Start/end must snap onto the waypoint's own roads, not a distant highway.
 const OWN_ROAD_MAX_M: f64 = 400.0;
 
@@ -244,6 +253,60 @@ const CASES: &[Case] = &[
         vias: &[],
         end: LILLEHAMMER,
         pbf_stem: "ostlandet-latest",
+        avoid_ferries: false,
+        ferries: &[],
+        distance: None,
+        rv15_otta_vaga_lom: false,
+        reference: None,
+        expected_fail: None,
+        accepted_spikes: &[],
+        known_distance: None,
+        known_spikes: None,
+        timing_runs: 1,
+        compare_long_trip: true,
+    },
+    Case {
+        id: "h_oslo_lillestrom",
+        start: OSLO,
+        vias: &[],
+        end: LILLESTROM,
+        pbf_stem: "ostlandet-latest",
+        avoid_ferries: false,
+        ferries: &[],
+        distance: None,
+        rv15_otta_vaga_lom: false,
+        reference: None,
+        expected_fail: None,
+        accepted_spikes: &[],
+        known_distance: None,
+        known_spikes: None,
+        timing_runs: 1,
+        compare_long_trip: true,
+    },
+    Case {
+        id: "i_hamburg_bergedorf",
+        start: HAMBURG,
+        vias: &[],
+        end: BERGEDORF,
+        pbf_stem: "hamburg-latest",
+        avoid_ferries: false,
+        ferries: &[],
+        distance: None,
+        rv15_otta_vaga_lom: false,
+        reference: None,
+        expected_fail: None,
+        accepted_spikes: &[],
+        known_distance: None,
+        known_spikes: None,
+        timing_runs: 1,
+        compare_long_trip: true,
+    },
+    Case {
+        id: "j_copenhagen_taastrup",
+        start: COPENHAGEN,
+        vias: &[],
+        end: TAASTRUP,
+        pbf_stem: "denmark-latest",
         avoid_ferries: false,
         ferries: &[],
         distance: None,

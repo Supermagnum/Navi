@@ -3696,7 +3696,21 @@ fn plan_car_route_inner(
         }
         _ => false,
     };
-    let needs_corridor = !is_chunk_leg && (multi_region || same_stem_needs_split);
+    let pack_dir_refs_for_nodes: Vec<&std::path::Path> =
+        pack_dirs_for_densify.iter().map(|p| p.as_path()).collect();
+    let path_covering_nodes =
+        driver_break_core::routing::corridor_skeleton::estimated_path_covering_nodes(
+            &pack_dir_refs_for_nodes,
+            routing_profile,
+            &route_points,
+        );
+    let path_over_node_limit =
+        path_covering_nodes > driver_break_core::routing::plan_bbox::MAX_PATH_NODES_PER_HOP;
+    // Same rule as a long trip: tiles on the path are always loaded; if they
+    // would exceed the node limit, plan through the corridor stage and hops.
+    // No place or region names in this predicate.
+    let needs_corridor =
+        !is_chunk_leg && (multi_region || same_stem_needs_split || path_over_node_limit);
     let mut stage_b_advisory = String::new();
     if needs_corridor {
         let pack_dirs = pack_dirs_for_densify;
@@ -3876,7 +3890,13 @@ fn plan_car_route_inner(
             let err = stage_b
                 .err()
                 .unwrap_or_else(|| "stage_b densify unavailable".into());
-            if err.contains("no fresh persistent skeletons") && !missing_direct.is_empty() {
+            let path_only = path_over_node_limit && !multi_region && !same_stem_needs_split;
+            if path_only {
+                log::warn!(
+                    target: "NaviPlan",
+                    "stage_b densify failed (path node budget); continue single graph: {err}"
+                );
+            } else if err.contains("no fresh persistent skeletons") && !missing_direct.is_empty() {
                 let named = missing_direct.join(",");
                 log::warn!(target: "NaviPlan", "missing_regions_before_densify {named}");
                 let mut r = empty(format!(
@@ -3885,15 +3905,16 @@ fn plan_car_route_inner(
                 r.search_terminate_reason = "missing_regions".into();
                 r.off_trail_advisory = format!("missing_region:{}", missing_direct[0]);
                 return r;
-            }
-            log::warn!(target: "NaviPlan", "stage_b densify failed: {err}");
-            let mut r = empty(format!("TEST_KIND=PLAN_CAR_ROUTE\nFAIL: {err}\n"));
-            r.search_terminate_reason = if err.contains("waypoint") {
-                "waypoint_attach".into()
             } else {
-                "stage_b_unavailable".into()
-            };
-            return r;
+                log::warn!(target: "NaviPlan", "stage_b densify failed: {err}");
+                let mut r = empty(format!("TEST_KIND=PLAN_CAR_ROUTE\nFAIL: {err}\n"));
+                r.search_terminate_reason = if err.contains("waypoint") {
+                    "waypoint_attach".into()
+                } else {
+                    "stage_b_unavailable".into()
+                };
+                return r;
+            }
         }
     }
 
@@ -3942,6 +3963,11 @@ fn plan_car_route_inner(
     report.push_str(&format!(
         "profile={profile:?}; routing={routing_profile:?}; start={start_lat:.6},{start_lon:.6}; end={end_lat:.6},{end_lon:.6}; vias={}; use_eco={use_eco}; long_trip_enabled={long_trip_enabled}\n",
         via_points.len()
+    ));
+    report.push_str(&format!(
+        "path_covering_nodes={path_covering_nodes}; path_over_node_limit={path_over_node_limit}; \
+         needs_corridor={needs_corridor}; stage_b={}\n",
+        driver_break_core::routing::plan_bbox::stage_b_active()
     ));
     report.push_str(&format!(
         "allowed_countries={}\n",
@@ -4612,7 +4638,20 @@ fn plan_car_route_inner(
                     snap_b.1,
                     built.nodes.len()
                 ));
-                if !dir_ok {
+                if !dir_ok && weak_ok {
+                    // Same weak component: intervening tiles are loaded. A directed
+                    // miss is a one-way / snap issue, not a dropped-tile disconnect.
+                    // Run A* (and the existing label-resnap retry). Do not stop.
+                    log::info!(
+                        target: "NaviPlan",
+                        "directed_unreachable_same_component continue_astar \
+                         nodes={} snap_a_m={snap_a_m:.1} snap_b_m={snap_b_m:.1}",
+                        built.nodes.len()
+                    );
+                    report.push_str(
+                        "directed_unreachable_same_component continue_astar\n",
+                    );
+                } else if !dir_ok {
                     let stage_b = driver_break_core::routing::plan_bbox::stage_b_active();
                     if is_chunk_leg && stage_b && !weak_ok {
                         let coarse =

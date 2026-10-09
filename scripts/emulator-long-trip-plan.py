@@ -68,6 +68,24 @@ TRIPS = {
         "vias": [],
         "to": (61.114545, 10.467007, "Lillehammer"),
     },
+    # Place-index Østlandet: Oslo place:city, Lillestrøm place:town.
+    "oslo_lillestrom": {
+        "from": (59.913330, 10.738970, "Oslo"),
+        "vias": [],
+        "to": (59.955924, 11.049112, "Lillestrom"),
+    },
+    # Hamburg place:city to Bergedorf, ~18 km across the city-state pack.
+    "hamburg_bergedorf": {
+        "from": (53.550341, 9.993682, "Hamburg"),
+        "vias": [],
+        "to": (53.48611, 10.23278, "Bergedorf"),
+    },
+    # Copenhagen place:city to Taastrup, ~19 km across the dense Zealand tile.
+    "copenhagen_taastrup": {
+        "from": (55.676098, 12.568337, "Copenhagen"),
+        "vias": [],
+        "to": (55.6517, 12.2922, "Taastrup"),
+    },
 }
 
 DATEX_MODES = {"none": "None", "saved": "Saved", "live": "Live"}

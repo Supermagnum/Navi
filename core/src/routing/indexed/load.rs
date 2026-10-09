@@ -715,18 +715,23 @@ fn select_tiles_within_budget_opts(
         }
     }
 
-    // Stage B: never drop a tile that covers any coarse-path sample. Memory is
-    // bounded by splitting long hops (`MAX_PATH_TILES_PER_HOP`), not by truncating
-    // the corridor mid-path (that produced weak_ok=false on Finland-scale hops).
-    let protect_all_samples = crate::routing::plan_bbox::stage_b_active();
-    if selected.len() > max_tiles && !protect_all_samples {
+    // Never drop a tile that covers the start, the destination, or an
+    // intervening sample (eighths on each hop). A tile-count budget must not
+    // produce a disconnected graph between two road-connected points.
+    // Memory for those tiles is bounded by hop-split on
+    // [`crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP`].
+    let covers_path_sample = |bbox: [f64; 4]| -> bool {
+        samples
+            .iter()
+            .any(|&(lat, lon)| crate::routing::basemap::bbox_covers_point(bbox, lat, lon))
+    };
+    if selected.len() > max_tiles {
         selected.sort_by(|a, b| {
             file_len(&a.0)
                 .cmp(&file_len(&b.0))
                 .then_with(|| a.0.cmp(&b.0))
         });
-        // Keep endpoint coverage: re-run sample picks on the size-sorted prefix
-        // is lossy; prefer dropping largest extras while endpoints stay covered.
+        // Drop largest extras that are not on the path. Endpoints stay covered.
         // Country AABB spill must not count as covering a leaf endpoint.
         let covers = |files: &[(String, [f64; 4])], lat: f64, lon: f64| -> bool {
             files
@@ -735,7 +740,6 @@ fn select_tiles_within_budget_opts(
         };
         while selected.len() > max_tiles {
             let mut dropped = false;
-            // Drop largest tile that is not the sole cover of any endpoint.
             let order: Vec<usize> = {
                 let mut idx: Vec<usize> = (0..selected.len()).collect();
                 idx.sort_by(|&i, &j| file_len(&selected[j].0).cmp(&file_len(&selected[i].0)));
@@ -743,6 +747,10 @@ fn select_tiles_within_budget_opts(
             };
             for i in order {
                 let name = selected[i].0.clone();
+                let bbox = selected[i].1;
+                if covers_path_sample(bbox) {
+                    continue;
+                }
                 let without: Vec<_> = selected
                     .iter()
                     .filter(|(n, _)| n != &name)
@@ -756,20 +764,18 @@ fn select_tiles_within_budget_opts(
                 }
             }
             if !dropped {
+                log::info!(
+                    target: "NaviPlan",
+                    "path_tile_budget: keeping {} path tiles above max_tiles={max_tiles} \
+                     (split hops must bound memory)",
+                    selected.len()
+                );
                 break;
             }
         }
-    } else if selected.len() > max_tiles && protect_all_samples {
-        log::info!(
-            target: "NaviPlan",
-            "stage_b_tile_budget: keeping {} path tiles above max_tiles={max_tiles} \
-             (split hops must bound memory)",
-            selected.len()
-        );
     }
-    // Soft disk-byte budget: drop largest non-essential tiles while endpoints stay
-    // covered. Prevents six ~70–130 MB car tiles (~1.1M edges) on densify hops.
-    // Stage B: do not drop path-covering tiles for the byte soft-cap either.
+    // Soft disk-byte budget: drop largest non-path tiles while endpoints stay
+    // covered. Path-covering tiles are never dropped for the byte cap.
     let max_bytes = crate::routing::plan_bbox::MAX_PLAN_TILE_BYTES;
     let total_bytes = |files: &[(String, [f64; 4])]| -> u64 {
         files
@@ -782,7 +788,7 @@ fn select_tiles_within_budget_opts(
             .iter()
             .any(|(n, b)| tile_counts_as_endpoint_cover(n, *b, lat, lon, &ready_paths))
     };
-    while !protect_all_samples && total_bytes(&selected) > max_bytes && selected.len() > 2 {
+    while total_bytes(&selected) > max_bytes && selected.len() > 2 {
         let mut dropped = false;
         let order: Vec<usize> = {
             let mut idx: Vec<usize> = (0..selected.len()).collect();
@@ -791,6 +797,10 @@ fn select_tiles_within_budget_opts(
         };
         for i in order {
             let name = selected[i].0.clone();
+            let bbox = selected[i].1;
+            if covers_path_sample(bbox) {
+                continue;
+            }
             let without: Vec<_> = selected
                 .iter()
                 .filter(|(n, _)| n != &name)
@@ -1633,11 +1643,13 @@ fn try_load_graph_for_plan_corridor_dirs(
                                     })
                                 })
                             };
-                            // Budget selection already covers both ends: do **not**
-                            // pull every corridor-intersecting primary tile (Ostlandet
-                            // car tiles are 40–110 MB; four of them → ~450k edges and
-                            // multi-minute snap/A* on Automotive). Only fill when an
-                            // endpoint is still uncovered.
+                            // Budget selection already covers both ends. Sample
+                            // tiles (start, dest, intervening eighths) are never
+                            // dropped; only fill more primary tiles when an
+                            // endpoint is still uncovered. Extra tiles that are
+                            // not on the path stay under the leftover count/byte
+                            // cap. Memory for path tiles is hop-split by node
+                            // count, not by dropping the mid-path.
                             let mut seen: HashSet<String> = tile_files.iter().cloned().collect();
                             if !(selected_covers(pts[0].0, pts[0].1)
                                 && selected_covers(pts[1].0, pts[1].1))
@@ -3200,6 +3212,49 @@ mod select_tiles_budget_tests {
             selected.len(),
             4,
             "R4b should stay at 4 tiles (2 samples + 2 bridges); got {selected:?}"
+        );
+    }
+
+    /// Start and dest on adjacent tiles with a mid tile covering the chord
+    /// sample: a tight count budget must not drop the intervening tile.
+    #[test]
+    fn intervening_sample_tile_not_dropped_by_count_budget() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let west = [59.8_f64, 10.0, 60.2, 10.4];
+        let mid = [59.8_f64, 10.4, 60.2, 10.8];
+        let east = [59.8_f64, 10.8, 60.2, 11.2];
+        let extra = [59.0_f64, 10.0, 59.4, 11.2];
+        for (name, bytes) in [
+            ("leaf.navi-graph-car.t1_3.rkyv", 80usize),
+            ("leaf.navi-graph-car.t1_4.rkyv", 90),
+            ("leaf.navi-graph-car.t1_5.rkyv", 70),
+            ("leaf.navi-graph-car.t0_4.rkyv", 120),
+        ] {
+            touch_sized(dir.path(), name, bytes);
+        }
+        let cands = vec![
+            ("leaf.navi-graph-car.t1_3.rkyv".into(), west),
+            ("leaf.navi-graph-car.t1_4.rkyv".into(), mid),
+            ("leaf.navi-graph-car.t1_5.rkyv".into(), east),
+            ("leaf.navi-graph-car.t0_4.rkyv".into(), extra),
+        ];
+        let pts = [(60.0_f64, 10.2), (60.0, 11.0)];
+        let selected = select_tiles_within_budget(cands, Some(&pts), 2, &[dir.path()]);
+        assert!(
+            selected.iter().any(|f| f.contains("t1_3")),
+            "start tile must stay; got {selected:?}"
+        );
+        assert!(
+            selected.iter().any(|f| f.contains("t1_5")),
+            "dest tile must stay; got {selected:?}"
+        );
+        assert!(
+            selected.iter().any(|f| f.contains("t1_4")),
+            "intervening sample tile must stay under a 2-tile budget; got {selected:?}"
+        );
+        assert!(
+            !selected.iter().any(|f| f.contains("t0_4")),
+            "off-path extra may drop; got {selected:?}"
         );
     }
 

@@ -3075,6 +3075,37 @@ pub fn count_path_covering_tiles(
     names.len()
 }
 
+/// Estimated packed nodes for tiles covering the start, the destination, and
+/// eighth-samples between consecutive waypoints. Used to decide whether a
+/// single-region trip must hop-split like any other oversize corridor.
+pub fn estimated_path_covering_nodes(
+    pack_dirs: &[&Path],
+    profile: RoutingProfile,
+    path: &[(f64, f64)],
+) -> usize {
+    if path.is_empty() {
+        return 0;
+    }
+    let tiles = load_profile_tile_bboxes(pack_dirs, profile);
+    if tiles.is_empty() {
+        return 0;
+    }
+    let mut samples = path.to_vec();
+    for w in path.windows(2) {
+        for &t in &[0.125_f64, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875] {
+            samples.push((
+                w[0].0 + (w[1].0 - w[0].0) * t,
+                w[0].1 + (w[1].1 - w[0].1) * t,
+            ));
+        }
+    }
+    let mut names = HashSet::new();
+    for &(lat, lon) in &samples {
+        names.extend(tiles_covering_point(&tiles, lat, lon));
+    }
+    names.iter().map(|n| tile_est_nodes(&tiles, n)).sum()
+}
+
 /// Stage B: densify from persistent corridor skeletons.
 ///
 /// The trip is planned leg by leg between consecutive waypoints. Every waypoint
