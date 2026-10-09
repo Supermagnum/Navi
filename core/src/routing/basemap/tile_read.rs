@@ -36,7 +36,26 @@ async fn open_reader(path: &Path) -> anyhow::Result<Reader> {
 /// Fetch one tile (decompressed) from a local PMTiles file.
 ///
 /// Returns `Ok(None)` when the archive has no tile at that coordinate.
+///
+/// [PmtilesDownloader::run_job] already sits inside a current-thread
+/// `block_on`. Sampling a tile from that context must not call
+/// `runtime().block_on` on this thread.
 pub fn read_pmtiles_tile(path: &Path, z: u8, x: u32, y: u32) -> anyhow::Result<Option<Vec<u8>>> {
+    if tokio::runtime::Handle::try_current().is_ok() {
+        let path = path.to_path_buf();
+        return std::thread::spawn(move || read_pmtiles_tile_on_runtime(&path, z, x, y))
+            .join()
+            .unwrap_or_else(|_| Err(anyhow::anyhow!("pmtiles tile thread panicked")));
+    }
+    read_pmtiles_tile_on_runtime(path, z, x, y)
+}
+
+fn read_pmtiles_tile_on_runtime(
+    path: &Path,
+    z: u8,
+    x: u32,
+    y: u32,
+) -> anyhow::Result<Option<Vec<u8>>> {
     let path_buf = path.to_path_buf();
     let coord = TileCoord::new(z, x, y).map_err(|e| anyhow::anyhow!("bad tile coord: {e}"))?;
     runtime().block_on(async {

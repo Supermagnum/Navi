@@ -990,6 +990,7 @@ fn emulator_check(
     failures.extend(place_index_failures(&r["place_index"]));
     failures.extend(search_check_failures(&r["searches"]));
     failures.extend(offline_map_check_failures(&r["offline_map"]));
+    failures.extend(display_check_failures(&r["display_checks"]));
     let status = if failures.is_empty() { "PASS" } else { "FAIL" };
     eprintln!(
         "[gate] emulator {status}: trip {}, {:.1} km, ferries {}, hops {}, wall {wall_s:.1} s, \
@@ -1107,12 +1108,13 @@ fn search_check_failures(searches: &serde_json::Value) -> Vec<String> {
     failures
 }
 
-/// Network-off: each gate-route start must have a tile/feature count above zero.
+/// Network off and on: each gate-route start, via and destination must have tiles.
 fn offline_map_check_failures(maps: &serde_json::Value) -> Vec<String> {
     let mut failures = Vec::new();
     let Some(arr) = maps.as_array() else {
         failures.push(
-            "emulator offline_map missing (network-off tile count at each gate start)".into(),
+            "emulator offline_map missing (tiles at each gate start/via/dest, network off and on)"
+                .into(),
         );
         return failures;
     };
@@ -1122,13 +1124,47 @@ fn offline_map_check_failures(maps: &serde_json::Value) -> Vec<String> {
     }
     for rec in arr {
         let trip = rec["trip"].as_str().unwrap_or("?");
+        let role = rec["role"].as_str().unwrap_or("from");
+        let net = rec["network"].as_str().unwrap_or("off");
         let visible = rec["visible"].as_u64().unwrap_or(0);
         let ok = rec["ok"].as_bool().unwrap_or(false);
         if !ok || visible == 0 {
             failures.push(format!(
-                "offline map blank at {trip} start (visible={visible} kind={})",
+                "map blank at {trip} {role} network={net} (visible={visible} kind={})",
                 rec["kind"]
             ));
+        }
+    }
+    for trip in ["bevensen", "aga", "floro", "elsa"] {
+        for net in ["off", "on"] {
+            for role in ["from", "to"] {
+                let hit = arr.iter().any(|r| {
+                    r["trip"].as_str() == Some(trip)
+                        && r["role"].as_str() == Some(role)
+                        && r["network"].as_str() == Some(net)
+                });
+                if !hit {
+                    failures.push(format!("map check missing {trip} {role} network={net}"));
+                }
+            }
+        }
+    }
+    failures
+}
+
+/// Hop across three regions, pan a border, and plan without blanking the map.
+fn display_check_failures(checks: &serde_json::Value) -> Vec<String> {
+    let mut failures = Vec::new();
+    if !checks.is_object() {
+        failures.push("emulator display_checks missing (hop / border pan / plan-no-blank)".into());
+        return failures;
+    }
+    if checks["hooks_cleared"].as_bool() == Some(false) {
+        failures.push("forced-online or forced-source was not cleared".into());
+    }
+    for key in ["hop", "border_pan", "plan_no_blank"] {
+        if checks[key]["ok"].as_bool() != Some(true) {
+            failures.push(format!("display check {key} failed: {}", checks[key]));
         }
     }
     failures

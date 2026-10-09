@@ -652,6 +652,21 @@ mod tests {
     }
 
     #[test]
+    fn validate_sample_decode_inside_current_thread_runtime() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("europe_sweden_dalarna.pmtiles");
+        write_valid_pmtiles(&path, 15, true);
+        let bbox = [50.0, 0.0, 70.0, 20.0];
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            validate_completed_pmtiles(&path, "europe_sweden_dalarna", bbox).unwrap();
+        });
+    }
+
+    #[test]
     fn interrupted_write_leaves_existing_dest() {
         let dir = tempfile::tempdir().unwrap();
         let dest = dir.path().join("europe_sweden_dalarna.pmtiles");

@@ -151,6 +151,7 @@ import uniffi.navi.planProgressSnapshot
 import uniffi.navi.pmtilesCancelJob
 import uniffi.navi.pmtilesGetJob
 import uniffi.navi.pmtilesPauseJob
+import uniffi.navi.pmtilesQueueRegion
 import uniffi.navi.pmtilesResumeJob
 import uniffi.navi.pmtilesRunJob
 import uniffi.navi.renameSavedPlace
@@ -340,6 +341,36 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+        intent.getStringExtra("navi_extract_pmtiles")?.trim()?.takeIf { it.isNotEmpty() }?.let { path ->
+            val dataDir = NaviAppData.resolve(this)
+            Thread {
+                android.util.Log.i("NaviExtract", "queue path=$path dir=${dataDir.absolutePath}")
+                val job =
+                    runCatching { pmtilesQueueRegion(dataDir.absolutePath, path, null) }
+                        .getOrElse { t ->
+                            android.util.Log.e("NaviExtract", "queue failed path=$path", t)
+                            return@Thread
+                        }
+                android.util.Log.i(
+                    "NaviExtract",
+                    "queued path=$path id=${job.id} status=${job.status}",
+                )
+                if (job.id.isBlank() || job.status.startsWith("failed")) {
+                    return@Thread
+                }
+                val done =
+                    runCatching { pmtilesRunJob(dataDir.absolutePath, job.id) }
+                        .getOrElse { t ->
+                            android.util.Log.e("NaviExtract", "run failed id=${job.id}", t)
+                            return@Thread
+                        }
+                android.util.Log.i(
+                    "NaviExtract",
+                    "done path=$path id=${done.id} status=${done.status} " +
+                        "local=${done.localPath} bytes=${done.bytesReceived}",
+                )
+            }.start()
         }
         intent.getStringExtra("navi_search_q")?.trim()?.takeIf { it.isNotEmpty() }?.let { q ->
             val dbFile = PlaceIndexStorage.resolveDb(this)
@@ -9606,6 +9637,10 @@ private fun CorridorMapView(
                         applyTracksToStyle(style, stateRef.get().tracks, mapView.context)
                         ensureRouteAboveHillshade(style)
                         map.triggerRepaint()
+                        mapView.postDelayed({
+                            if (!BasemapStyleApplyQueue.isCurrent(applyGen)) return@postDelayed
+                            logVisibleBasemapTiles(map)
+                        }, 400)
                     }
                     BasemapStyleApplyQueue.accept(
                         BasemapStyleApplyQueue.Result(

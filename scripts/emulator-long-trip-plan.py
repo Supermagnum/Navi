@@ -246,69 +246,214 @@ def set_airplane(on):
     adb("shell", "cmd", "connectivity", "airplane-mode", mode)
 
 
+def clear_forced_basemap():
+    """Clear forced-online / forced-source and verify the hooks log they are off."""
+    adb("logcat", "-c")
+    adb(
+        "shell",
+        "am",
+        "start",
+        "-n",
+        f"{PKG}/.MainActivity",
+        "--ez",
+        "navi_clear_basemap_test_hooks",
+        "true",
+        "--ez",
+        "navi_force_online_basemap",
+        "false",
+    )
+    line = ""
+    for _ in range(40):
+        time.sleep(0.25)
+        text = adb("logcat", "-d", "-v", "time", "-s", "NaviMapHooks:I", timeout=30).stdout or ""
+        for ln in text.splitlines():
+            if "NaviMapHooks" in ln and "force_online=" in ln:
+                line = ln
+        if line:
+            break
+    online = (field(line, "force_online") or "").lower()
+    source = field(line, "force_source") or ""
+    if source.lower() == "null":
+        source = ""
+    cleared = (field(line, "cleared") or "").lower()
+    ok = online in ("false", "0") and source in ("", "null") and cleared in ("true", "1")
+    rec = {"ok": ok, "line": line, "force_online": online, "force_source": source}
+    log(f"clear_forced_basemap ok={ok} line={line[-160:]}")
+    return rec
+
+
+def camera_to(lat, lon, zoom=12):
+    adb(
+        "shell",
+        "am",
+        "start",
+        "-n",
+        f"{PKG}/.MainActivity",
+        "--ez",
+        "navi_hide_chrome",
+        "true",
+        "--ez",
+        "navi_clear_basemap_test_hooks",
+        "true",
+        "--ed",
+        "navi_camera_lat",
+        str(lat),
+        "--ed",
+        "navi_camera_lon",
+        str(lon),
+        "--ed",
+        "navi_camera_zoom",
+        str(zoom),
+    )
+
+
+def wait_tiles(seconds=12):
+    visible = None
+    kind = ""
+    line = ""
+    min_visible = None
+    for _ in range(int(seconds * 2)):
+        time.sleep(0.5)
+        text = logcat()
+        for ln in text.splitlines():
+            if "NaviMapTiles" in ln and "visible=" in ln:
+                line = ln
+                raw = field(ln, "visible") or "0"
+                try:
+                    visible = int(raw)
+                except ValueError:
+                    visible = 0
+                kind = field(ln, "kind") or ""
+                if min_visible is None or visible < min_visible:
+                    min_visible = visible
+        if (visible or 0) > 0:
+            break
+    return {
+        "visible": visible or 0,
+        "min_visible": min_visible if min_visible is not None else 0,
+        "kind": kind,
+        "line": line,
+        "ok": (visible or 0) > 0,
+    }
+
+
 def run_offline_map_check():
-    """Network off: each gate-route start must show basemap features (not blank)."""
-    set_airplane(True)
-    time.sleep(2)
+    """Network off, then on: tiles at each gate-route start, via and destination."""
     out = []
-    try:
-        for name, spec in TRIPS.items():
-            lat, lon, label = spec["from"]
-            adb("logcat", "-c")
-            adb(
-                "shell",
-                "am",
-                "start",
-                "-n",
-                f"{PKG}/.MainActivity",
-                "--ez",
-                "navi_hide_chrome",
-                "true",
-                "--ed",
-                "navi_camera_lat",
-                str(lat),
-                "--ed",
-                "navi_camera_lon",
-                str(lon),
-                "--ed",
-                "navi_camera_zoom",
-                "12",
+    for airplane, net in ((True, "off"), (False, "on")):
+        hooks = clear_forced_basemap()
+        if not hooks.get("ok"):
+            out.append(
+                {
+                    "trip": "hooks",
+                    "role": "clear",
+                    "network": net,
+                    "visible": 0,
+                    "ok": False,
+                    "kind": "hooks",
+                    "line": hooks.get("line") or "NaviMapHooks missing",
+                }
             )
-            visible = None
-            kind = ""
-            line = ""
-            for _ in range(24):
-                time.sleep(0.5)
-                text = logcat()
-                for ln in text.splitlines():
-                    if "NaviMapTiles" in ln and "visible=" in ln:
-                        line = ln
-                        raw = field(ln, "visible") or "0"
-                        try:
-                            visible = int(raw)
-                        except ValueError:
-                            visible = 0
-                        kind = field(ln, "kind") or ""
-                if visible is not None:
-                    break
-            rec = {
-                "trip": name,
-                "from": label,
-                "lat": lat,
-                "lon": lon,
-                "visible": visible or 0,
-                "kind": kind,
-                "line": line,
-                "ok": (visible or 0) > 0,
-            }
-            out.append(rec)
-            log(
-                f"offline_map {name} {label} visible={rec['visible']} kind={kind} ok={rec['ok']}"
-            )
-    finally:
-        set_airplane(False)
-        time.sleep(1)
+        set_airplane(airplane)
+        time.sleep(2)
+        try:
+            for name, spec in TRIPS.items():
+                points = [("from", spec["from"])]
+                points += [("via", v) for v in spec["vias"]]
+                points.append(("to", spec["to"]))
+                for role, (lat, lon, label) in points:
+                    hooks = clear_forced_basemap()
+                    adb("logcat", "-c")
+                    camera_to(lat, lon)
+                    rec = wait_tiles()
+                    rec.update(
+                        {
+                            "trip": name,
+                            "role": role,
+                            "label": label,
+                            "lat": lat,
+                            "lon": lon,
+                            "network": net,
+                            "hooks_cleared": hooks.get("ok", False),
+                        }
+                    )
+                    if not hooks.get("ok"):
+                        rec["ok"] = False
+                    out.append(rec)
+                    log(
+                        f"map_{net} {name} {role} {label} visible={rec['visible']} "
+                        f"kind={rec['kind']} ok={rec['ok']}"
+                    )
+        finally:
+            if airplane:
+                set_airplane(False)
+                time.sleep(1)
     return out
+
+
+def run_display_checks():
+    """Hop, border pan, and plan-must-not-blank. Hooks cleared before each."""
+    hops = [
+        (53.551, 9.993, "hamburg"),
+        (57.708, 11.974, "vastra_gotaland"),
+        (60.674, 17.141, "gavleborg"),
+    ]
+    hooks_ok = True
+    hooks = clear_forced_basemap()
+    hooks_ok = hooks_ok and hooks.get("ok", False)
+    adb("logcat", "-c")
+    t0 = time.time()
+    for lat, lon, _name in hops:
+        camera_to(lat, lon, 10)
+    hop_s = time.time() - t0
+    last = wait_tiles(8)
+    hop = {
+        "ok": hop_s < 1.0 and last["ok"],
+        "elapsed_s": round(hop_s, 3),
+        "last_kind": last["kind"],
+        "last_visible": last["visible"],
+        "line": last["line"],
+    }
+    log(f"hop_three_regions elapsed={hop['elapsed_s']}s visible={last['visible']} ok={hop['ok']}")
+
+    clear_forced_basemap()
+    adb("logcat", "-c")
+    # Halland / Västra Götaland border (FU40 blank-map site).
+    empties = 0
+    frames = []
+    for lon in (12.2, 12.35, 12.5, 12.65):
+        adb("logcat", "-c")
+        camera_to(57.5, lon, 9)
+        rec = wait_tiles(6)
+        frames.append(rec)
+        if not rec["ok"] or rec.get("min_visible", 0) == 0:
+            empties += 1
+    pan = {
+        "ok": empties == 0,
+        "empty_frames": empties,
+        "frames": frames,
+    }
+    log(f"border_pan empty_frames={empties} ok={pan['ok']}")
+
+    clear_forced_basemap()
+    adb("logcat", "-c")
+    camera_to(53.551, 9.993, 11)
+    before = wait_tiles(8)
+    start_plan(TRIPS["bevensen"], False, "none")
+    time.sleep(3)
+    during = wait_tiles(8)
+    plan = {
+        "ok": before["ok"] and during["ok"],
+        "before": before["visible"],
+        "during": during["visible"],
+    }
+    log(f"plan_no_blank before={plan['before']} during={plan['during']} ok={plan['ok']}")
+    return {
+        "hooks_cleared": hooks_ok,
+        "hop": hop,
+        "border_pan": pan,
+        "plan_no_blank": plan,
+    }
 
 
 def run_search_check():
@@ -693,16 +838,24 @@ def main():
     search_fail = [s for s in searches if not s.get("ok")]
     maps = run_offline_map_check() if (a.search_check or trip) else []
     map_fail = [m for m in maps if not m.get("ok")]
+    display = run_display_checks() if (a.search_check or trip) else None
+    display_fail = bool(display) and (
+        display.get("hooks_cleared") is False
+        or not all(
+            display.get(k, {}).get("ok", False) for k in ("hop", "border_pan", "plan_no_blank")
+        )
+    )
     pause = run_pause_test() if a.pause_test else None
     pause_fail = bool(pause) and not pause.get("ok")
 
     if not trip:
         rec = {
             "status": "done",
-            "accepted": not search_fail and not pause_fail and not map_fail,
+            "accepted": not search_fail and not pause_fail and not map_fail and not display_fail,
             "place_index": index,
             "searches": searches,
             "offline_map": maps,
+            "display_checks": display,
             "cleared": cleared,
             "pause_test": pause,
         }
@@ -747,12 +900,20 @@ def main():
         "place_index": index,
         "searches": searches,
         "offline_map": maps,
+        "display_checks": display,
         "cleared": cleared,
         "pause_test": pause,
         "idle_job_pause": last_line(text, "idle_job_pause "),
     }
     rec.update(summarize(files, trip, text))
-    rec["accepted"] = not bad and not search_fail and not map_fail and not pause_fail and status == "done"
+    rec["accepted"] = (
+        not bad
+        and not search_fail
+        and not map_fail
+        and not display_fail
+        and not pause_fail
+        and status == "done"
+    )
     (out / "result.json").write_text(json.dumps(rec, indent=2) + "\n")
     print(json.dumps(rec, indent=2))
     if bad:
@@ -762,7 +923,10 @@ def main():
         log("REJECTED: search check failed")
         sys.exit(2)
     if map_fail:
-        log("REJECTED: offline map over a gate-route start was blank")
+        log("REJECTED: map over a gate-route start/via/destination was blank")
+        sys.exit(2)
+    if display_fail:
+        log("REJECTED: hop, border-pan or plan-no-blank display check failed")
         sys.exit(2)
     if pause_fail:
         log("REJECTED: pause test wrote the product index or failed")
