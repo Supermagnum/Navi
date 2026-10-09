@@ -2361,13 +2361,10 @@ pub fn plan_car_route_at(
     let _flight = match PLAN_CAR_ROUTE_FLIGHT.try_lock() {
         Ok(g) => g,
         Err(std::sync::TryLockError::WouldBlock) => {
-            driver_break_core::routing::plan_file_log::line(
-                "FAIL: plan already running (single-flight)",
-            );
-            return empty_corridor(
-                "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: plan already running\nsearch_terminate_reason=busy\n"
-                    .into(),
-            );
+            driver_break_core::download::plan_cancel::request_cancel();
+            PLAN_CAR_ROUTE_FLIGHT
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
         }
         Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner(),
     };

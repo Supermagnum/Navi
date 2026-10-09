@@ -83,4 +83,20 @@ class IdlePackJobsPauseTest {
         assertEquals(IdlePackJobs.Kind.PLACE_INDEX, pause.kind)
         RoutePlanGate.end()
     }
+
+    @Test
+    fun replace_cancels_running_plan_then_starts() {
+        assertTrue(RoutePlanGate.tryBegin())
+        val cancelled = AtomicBoolean(false)
+        val ender =
+            Thread {
+                Thread.sleep(40)
+                RoutePlanGate.end()
+            }
+        ender.start()
+        assertTrue(RoutePlanGate.tryBeginOrReplace({ cancelled.set(true) }, timeoutMs = 2_000))
+        assertTrue(cancelled.get())
+        ender.join(1_000)
+        RoutePlanGate.end()
+    }
 }

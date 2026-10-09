@@ -7,6 +7,7 @@ import uniffi.navi.CorridorRouteResult
 import uniffi.navi.FfiTollPolicy
 import uniffi.navi.FfiVehicleLimits
 import uniffi.navi.TravelProfile
+import uniffi.navi.cancelInFlightPlan
 import uniffi.navi.planCarRoute
 import uniffi.navi.planHikingRoute
 import java.io.File
@@ -154,7 +155,7 @@ object RouteReplan {
                 } else {
                     null
                 }
-            if (!RoutePlanGate.tryBegin()) {
+            if (!RoutePlanGate.tryBeginOrReplace({ cancelInFlightPlan() })) {
                 return@withContext CorridorRouteResult(
                     report = "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: plan already running\n",
                     distanceKm = 0.0,

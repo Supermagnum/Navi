@@ -3542,7 +3542,7 @@ private fun NaviMapScreen() {
                                             .map { File(it, "elevation") }
                                             .firstOrNull { it.isDirectory }
                                             ?: File(dataDir, "elevation")
-                                    if (!RoutePlanGate.tryBegin()) {
+                                    if (!RoutePlanGate.tryBeginOrReplace({ cancelInFlightPlan() })) {
                                         return@runCatching uniffi.navi.CorridorRouteResult(
                                             report =
                                                 "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: plan already running\n",
