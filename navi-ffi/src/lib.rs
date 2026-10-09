@@ -3619,6 +3619,10 @@ fn plan_car_route_inner(
 ) -> CorridorRouteResult {
     let empty = empty_corridor;
     let _cancel_guard = driver_break_core::download::plan_cancel::begin_plan();
+    if !is_chunk_leg {
+        driver_break_core::routing::plan_bbox::set_stage_b_active(false);
+        driver_break_core::routing::plan_bbox::set_stage_b_coarse_path(Vec::new());
+    }
     // Host settings root (`navi.db` for rest / vehicle / fuel). Must not be
     // confused with pack lookup dirs after `plan_pack_data_dir` rebinding.
     let settings_data_dir = data_dir.clone();
