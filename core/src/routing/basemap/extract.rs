@@ -159,8 +159,9 @@ pub async fn extract_bbox_to_file(
     };
     let staging = chunk_staging_dir(dest);
     // Keep staging across retries so completed chunks are not re-fetched.
+    // Never remove or truncate [dest]: an interrupted write must leave the
+    // previous archive untouched and must not leave an empty completed file.
     let _ = fs::remove_file(&partial);
-    let _ = fs::remove_file(dest);
     fs::create_dir_all(&staging)?;
 
     wait_if_paused_or_cancelled(control, store, &partial, &staging).await?;
@@ -310,7 +311,11 @@ pub async fn extract_bbox_to_file(
     if !partial.exists() {
         anyhow::bail!("extract produced no file");
     }
-    fs::rename(&partial, dest).map_err(|e| crate::download::enrich_io_error(e, dest))?;
+    let key = dest
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+    commit_partial_pmtiles(&partial, dest, key, bbox)?;
     let _ = fs::remove_dir_all(&staging);
     let len = fs::metadata(dest)?.len();
     phase_timing::end_detail(
@@ -441,7 +446,7 @@ pub fn validate_completed_pmtiles(
     if let Ok(mut g) = VALIDATE_CACHE.lock() {
         g.push((path.to_path_buf(), len, mtime, result.clone()));
         if g.len() > 64 {
-            g.remove(0);
+            let _dropped = g.remove(0);
         }
     }
     result

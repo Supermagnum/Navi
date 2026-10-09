@@ -50,6 +50,7 @@ object IdlePackJobs {
     private val active = AtomicReference<Job?>(null)
     private val pausedJob = AtomicReference<Job?>(null)
     private val lastPause = AtomicReference(PauseOutcome())
+    private val lastRecheckAccepted = java.util.concurrent.atomic.AtomicInteger(0)
 
     data class PauseOutcome(
         val action: String = "none",
@@ -78,6 +79,7 @@ object IdlePackJobs {
         active.set(null)
         pausedJob.set(null)
         lastPause.set(PauseOutcome())
+        lastRecheckAccepted.set(0)
         lastStatus.set("idle")
         executeJobs = false
         testRunJob = null
@@ -121,9 +123,46 @@ object IdlePackJobs {
         enqueueFromSnapshot()
     }
 
+    fun lastRecheckAccepted(): Int = lastRecheckAccepted.get()
+
     fun onAppIdle() {
+        recheckRejectedArchives()
         enqueueFromSnapshot()
         drainIfAllowed()
+    }
+
+    private fun recheckRejectedArchives() {
+        if (RoutePlanGate.isRunning()) return
+        val ctx = appContext ?: return
+        val dataDir = NaviAppData.resolve(ctx)
+        val n =
+            runCatching { uniffi.navi.pmtilesRecheckRejected(dataDir.absolutePath).toInt() }
+                .getOrDefault(0)
+        lastRecheckAccepted.set(n)
+        val audited = auditCompletedArchives(dataDir)
+        if (n > 0 || audited > 0) {
+            Log.i(TAG, "rejected_archives_accepted=$n completed_invalid=$audited")
+            runCatching { InstalledMaps.refresh(ctx) }
+        }
+    }
+
+    private fun auditCompletedArchives(dataDir: File): Int {
+        val jobs =
+            runCatching { uniffi.navi.pmtilesListJobs(dataDir.absolutePath) }.getOrDefault(emptyList())
+        val shown = PmtilesArchiveGate.readShownMarker(dataDir)
+        var n = 0
+        for (job in jobs) {
+            if (!job.status.equals("completed", ignoreCase = true)) continue
+            val file = File(job.localPath)
+            val why = PmtilesArchiveGate.rejectionReason(file, job.regionKey) ?: continue
+            val sidecar = File(file.absolutePath + ".reason")
+            sidecar.writeText(why)
+            if (shown != null && shown == file.absolutePath) {
+                Log.i(TAG, "invalid_shown_archive path=${file.name} reason=$why (kept until style switch)")
+            }
+            n++
+        }
+        return n
     }
 
     fun onPlanEnded() {
@@ -277,15 +316,20 @@ object IdlePackJobs {
                 offer(Job(Kind.SKELETON, r.stem, r.packDir, r.regionId))
             }
         }
-        if (indexDir != null) {
-            val db = File(indexDir, "place_index.db")
+        val indexRoot =
+            indexDir
+                ?: snap.regions.values
+                    .firstOrNull()
+                    ?.packDir
+        if (indexRoot != null) {
+            val db = File(indexRoot, "place_index.db")
             for (m in snap.missingPlaceIndex) {
                 val r = snap.regions[m.regionId]
                 val stamp =
                     r?.let { File(it.packDir, "${it.stem}.navi-server-install.json") }
                 val pbf = m.pbfPath?.takeIf { it.isFile && it.length() >= RegionDownloadBackground.MIN_PBF_BYTES }
                 if (pbf == null && stamp?.isFile != true) continue
-                if (!PackRegionAvailability.mayIndexRegion(m.regionId, pbf, installed, true)) {
+                if (!PackRegionAvailability.mayIndexRegion(m.regionId, pbf, installed, ctx != null)) {
                     Log.i(TAG, "skip PLACE_INDEX region=${m.regionId}: not own source / not an installed pack")
                     continue
                 }
@@ -293,7 +337,7 @@ object IdlePackJobs {
                     Job(
                         kind = Kind.PLACE_INDEX,
                         stem = r?.stem ?: PackRegionAvailability.localStem(m.regionId),
-                        packDir = r?.packDir ?: pbf?.parentFile ?: indexDir,
+                        packDir = r?.packDir ?: pbf?.parentFile ?: indexRoot,
                         regionId = m.regionId,
                         pbf = pbf,
                         indexDb = db,

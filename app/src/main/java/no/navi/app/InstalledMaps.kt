@@ -51,6 +51,8 @@ object InstalledMaps {
         val corridorSkeleton: Boolean,
         val tilesPresent: Boolean,
         val tilesRejected: Boolean,
+        /** Why [tilesRejected] is set; empty when the archive is present or never downloaded. */
+        val tilesRejectReason: String = "",
         val placeIndex: PlaceIndexState,
         val placeIndexRows: Long,
         val placeIndexSource: PlaceIndexSource = PlaceIndexSource.NONE,
@@ -61,6 +63,14 @@ object InstalledMaps {
             val key = profileKey.lowercase()
             if (profilesLoadable.contains(key)) return true
             return key == "truck" && profilesLoadable.contains("car")
+        }
+
+        /** User-facing line when this region has no usable offline basemap. */
+        fun noOfflineMapMessage(): String? {
+            if (tilesPresent) return null
+            if (!tilesRejected && tilesRejectReason.isBlank()) return null
+            val why = tilesRejectReason.ifBlank { "offline archive rejected" }
+            return "This region has no offline map ($why)"
         }
     }
 
@@ -275,7 +285,13 @@ object InstalledMaps {
                         "fmt=${r.graphFormat} profiles=${r.profilesLoadable.joinToString(",")} " +
                         "pbf=${r.pbfKind} ferry_car=${r.ferrySidecarCar} ferry_truck=${r.ferrySidecarTruck} " +
                         "corridor_skel=${r.corridorSkeleton} " +
-                        "tiles=${r.tilesPresent} rejected=${r.tilesRejected} " +
+                        "tiles=${r.tilesPresent} rejected=${r.tilesRejected}" +
+                        (if (r.tilesRejected) {
+                            " no_offline_map=true reason=${r.tilesRejectReason.ifBlank { "offline archive rejected" }}"
+                        } else {
+                            ""
+                        }) +
+                        " " +
                         "index=${r.placeIndex} index_source=${r.placeIndexSource.name.lowercase().replace('_', '-')} " +
                         "rows=${r.placeIndexRows}",
                 )
@@ -339,6 +355,8 @@ object InstalledMaps {
             val pmKey = PackRegionAvailability.geofabrikPathToRegionKey(nid)
             val tilesFile = File(tilesDataDir, "pmtiles/$pmKey.pmtiles")
             val rejectedFile = File(tilesDataDir, "pmtiles/$pmKey.pmtiles.rejected")
+            val tiles = tilesStatus(tilesFile, rejectedFile)
+            val rejectReason = tiles.reason
             val probe = probeFor(nid)
             val q = placeIndexDir != null && File(placeIndexDir, "place_index.db.quarantine").isFile
             val indexState =
@@ -364,8 +382,9 @@ object InstalledMaps {
                     corridorSkeleton =
                         File(dir, "$stem.navi-corridor-skeleton.bin").isFile ||
                             File(dir, "$stem.navi-corridor-skeleton.json").isFile,
-                    tilesPresent = tilesFile.isFile,
-                    tilesRejected = rejectedFile.isFile,
+                    tilesPresent = tiles.present,
+                    tilesRejected = tiles.rejected,
+                    tilesRejectReason = rejectReason,
                     placeIndex = indexState,
                     placeIndexRows = probe.rowCount,
                     placeIndexSource = indexSourceOf(indexState, probe),
@@ -386,6 +405,11 @@ object InstalledMaps {
             val probe = probeFor(nid)
             val pbfKind =
                 if (f.length() < RegionDownloadBackground.MIN_PBF_BYTES) PbfKind.STUB else PbfKind.REAL
+            val pbfTiles =
+                tilesStatus(
+                    File(tilesDataDir, "pmtiles/${PackRegionAvailability.geofabrikPathToRegionKey(nid)}.pmtiles"),
+                    File(tilesDataDir, "pmtiles/${PackRegionAvailability.geofabrikPathToRegionKey(nid)}.pmtiles.rejected"),
+                )
             into[nid] =
                 Region(
                     regionId = nid,
@@ -402,8 +426,9 @@ object InstalledMaps {
                     corridorSkeleton =
                         File(dir, "$stem.navi-corridor-skeleton.bin").isFile ||
                             File(dir, "$stem.navi-corridor-skeleton.json").isFile,
-                    tilesPresent = File(tilesDataDir, "pmtiles/${PackRegionAvailability.geofabrikPathToRegionKey(nid)}.pmtiles").isFile,
-                    tilesRejected = File(tilesDataDir, "pmtiles/${PackRegionAvailability.geofabrikPathToRegionKey(nid)}.pmtiles.rejected").isFile,
+                    tilesPresent = pbfTiles.present,
+                    tilesRejected = pbfTiles.rejected,
+                    tilesRejectReason = pbfTiles.reason,
                     placeIndex =
                         if (probe.intact) {
                             if (probe.legacy) PlaceIndexState.LEGACY_INTACT else PlaceIndexState.INTACT
@@ -421,6 +446,43 @@ object InstalledMaps {
                     ),
                     placeIndexSourceSha = probe.sourceSha256,
                 )
+        }
+    }
+
+    private data class TilesStatus(
+        val present: Boolean,
+        val rejected: Boolean,
+        val reason: String,
+    )
+
+    private fun tilesStatus(
+        tilesFile: File,
+        rejectedFile: File,
+    ): TilesStatus {
+        if (rejectedFile.isFile) {
+            return TilesStatus(false, true, readRejectReason(rejectedFile))
+        }
+        if (!tilesFile.isFile) {
+            val sidecar = File(tilesFile.absolutePath + ".reason")
+            if (sidecar.isFile) {
+                return TilesStatus(false, true, sidecar.readText().trim().ifBlank { "missing archive" })
+            }
+            return TilesStatus(false, false, "")
+        }
+        val why = PmtilesArchiveGate.rejectionReason(tilesFile)
+        if (why != null) {
+            return TilesStatus(false, true, why)
+        }
+        return TilesStatus(true, false, "")
+    }
+
+    private fun readRejectReason(rejectedFile: File): String {
+        if (!rejectedFile.isFile) return ""
+        val reason = File(rejectedFile.absolutePath + ".reason")
+        return if (reason.isFile) {
+            reason.readText().trim()
+        } else {
+            "offline archive rejected"
         }
     }
 

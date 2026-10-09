@@ -98,11 +98,13 @@ object BasemapStyleResolver {
 
     /**
      * First completed covering job eligible as the **vector** offline basemap.
-     * DEM jobs are skipped even when they are newer (`created_at DESC`).
+     * DEM jobs are skipped even when they are newer (`created_at DESC`). A
+     * missing, empty or invalid file does not block later coverings.
      */
     fun selectVectorCoveringJob(coveringJobs: List<FfiPmtilesJob>): FfiPmtilesJob? =
         coveringJobs.firstOrNull { job ->
-            !isDemArchive(job.regionKey, job.localPath) && File(job.localPath).isFile
+            !isDemArchive(job.regionKey, job.localPath) &&
+                PmtilesArchiveGate.isUsable(File(job.localPath), job.regionKey)
         }
 
     /**
@@ -123,17 +125,34 @@ object BasemapStyleResolver {
     ): ResolvedStyle {
         val want3d = prefer3d && vulkanAvailable
 
+        val forcedPath = NaviMapTestHooks.forceBasemapSource
+        if (!forcedPath.isNullOrBlank()) {
+            val uri =
+                prepareOfflineStyle(context, forcedPath, demFor3d = null)
+                    ?: return fallbackOnline(
+                        context,
+                        dataDir,
+                        prefer3d,
+                        vulkanAvailable,
+                        "forced source was not a map",
+                    )
+            return ResolvedStyle(
+                kind = StyleKind.OfflineProtomaps,
+                styleUri = uri,
+                note = "forced source",
+            )
+        }
         if (!forceOnline2d) {
             val coveringJobs =
                 runCatching {
                     pmtilesListCovering(dataDir.absolutePath, lat, lon)
                 }.getOrDefault(emptyList())
             val covering = selectVectorCoveringJob(coveringJobs)
-            val missingCovering =
+            val blockedCovering =
                 coveringJobs.filter { job ->
                     !isDemArchive(job.regionKey, job.localPath) &&
                         job.localPath.isNotBlank() &&
-                        !File(job.localPath).isFile
+                        !PmtilesArchiveGate.isUsable(File(job.localPath), job.regionKey)
                 }
 
             if (covering != null) {
@@ -176,19 +195,22 @@ object BasemapStyleResolver {
                 )
             }
 
-            if (missingCovering.isNotEmpty()) {
+            if (blockedCovering.isNotEmpty()) {
+                val first = blockedCovering.first()
                 val region =
-                    missingCovering.first().regionKey.ifBlank {
-                        File(missingCovering.first().localPath).nameWithoutExtension
+                    first.regionKey.ifBlank {
+                        File(first.localPath).nameWithoutExtension
                     }
+                val why =
+                    PmtilesArchiveGate.rejectionReason(File(first.localPath), first.regionKey)
+                        ?: "missing or invalid archive"
                 return fallbackOnline(
                     context,
                     dataDir,
                     prefer3d,
                     vulkanAvailable,
                     note =
-                        "Offline data for $region was previously downloaded but is no longer " +
-                            "available — open Tools to re-download",
+                        "This region has no offline map ($why). Open Tools to download $region again.",
                 )
             }
         }
