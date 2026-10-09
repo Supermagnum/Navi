@@ -248,9 +248,22 @@ class MainActivity : ComponentActivity() {
      */
     private fun applyNaviLaunchExtras(intent: Intent?) {
         if (intent == null) return
-        if (intent.getBooleanExtra("navi_force_online_basemap", false)) {
-            NaviMapTestHooks.forceOnlineBasemap = true
+        if (intent.hasExtra("navi_clear_basemap_test_hooks")) {
+            NaviMapTestHooks.clearForcedBasemapSettings()
         }
+        if (intent.hasExtra("navi_force_online_basemap")) {
+            NaviMapTestHooks.forceOnlineBasemap = intent.getBooleanExtra("navi_force_online_basemap", false)
+        }
+        if (intent.hasExtra("navi_force_basemap_source")) {
+            val src = intent.getStringExtra("navi_force_basemap_source").orEmpty().trim()
+            NaviMapTestHooks.forceBasemapSource = src.ifBlank { null }
+        }
+        android.util.Log.i(
+            "NaviMapHooks",
+            "force_online=${NaviMapTestHooks.forceOnlineBasemap} " +
+                "force_source=${NaviMapTestHooks.forceBasemapSource ?: ""} " +
+                "cleared=${NaviMapTestHooks.forcedBasemapSettingsCleared()}",
+        )
         // hideUiChrome sticks in-process after adb --ez navi_hide_chrome true.
         // Explicit extra sets it; a normal launcher MAIN clears a leftover hide.
         when {
@@ -779,8 +792,14 @@ private fun NaviMapScreen() {
     var packCatalogUnreachable by remember { mutableStateOf<String?>(null) }
     var packCatalogEpoch by remember { mutableIntStateOf(0) }
     var mapsEpoch by remember { mutableIntStateOf(0) }
+    var styleEpoch by remember { mutableIntStateOf(0) }
     LaunchedEffect(selectedGeofabrikPath) {
         NaviMapTestHooks.lastSelectedGeofabrikPath = selectedGeofabrikPath
+    }
+    LaunchedEffect(selectedGeofabrikPath, mapsEpoch) {
+        InstalledMaps.region(selectedGeofabrikPath)?.noOfflineMapMessage()?.let { msg ->
+            status = msg
+        }
     }
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -797,6 +816,12 @@ private fun NaviMapScreen() {
             }
         }
         mapsEpoch += 1
+        if (IdlePackJobs.lastRecheckAccepted() > 0) {
+            styleEpoch += 1
+        }
+        InstalledMaps.region(selectedGeofabrikPath)?.noOfflineMapMessage()?.let { msg ->
+            status = msg
+        }
     }
     LaunchedEffect(packCatalogEpoch) {
         if (packCatalogEpoch == 0) return@LaunchedEffect
@@ -807,6 +832,9 @@ private fun NaviMapScreen() {
             IdlePackJobs.onAppIdle()
         }
         mapsEpoch += 1
+        if (IdlePackJobs.lastRecheckAccepted() > 0) {
+            styleEpoch += 1
+        }
     }
     val selectedLocalReady =
         remember(selectedGeofabrikPath, mapsEpoch) {
@@ -1434,7 +1462,6 @@ private fun NaviMapScreen() {
     }
     var pmtilesJobId by remember { mutableStateOf<String?>(null) }
     var pmtilesProgress by remember { mutableStateOf("") }
-    var styleEpoch by remember { mutableIntStateOf(0) }
     var showDriveSettings by remember { mutableStateOf(false) }
     var showMapSettings by remember { mutableStateOf(false) }
     var drivingHoursSinceBreak by remember { mutableDoubleStateOf(0.0) }
@@ -9400,6 +9427,44 @@ private fun CorridorMapView(
         NaviMapTestHooks.lastCameraPitch = map.cameraPosition.tilt
     }
 
+    fun logVisibleBasemapTiles(map: MapLibreMap) {
+        val w = mapView.width.toFloat().coerceAtLeast(1f)
+        val h = mapView.height.toFloat().coerceAtLeast(1f)
+        val box = android.graphics.RectF(0f, 0f, w, h)
+        val skip =
+            setOf(
+                "route-line",
+                "route-line-off",
+                "route-casing",
+                "waypoints-dots",
+                "waypoints-layer",
+                "gps-accuracy",
+                "gps-dot",
+            )
+        val n =
+            runCatching {
+                val layers =
+                    map.style
+                        ?.layers
+                        .orEmpty()
+                        .map { it.id }
+                        .filter { id -> id.isNotEmpty() && id !in skip && !id.startsWith("route") }
+                        .toTypedArray()
+                if (layers.isEmpty()) {
+                    0
+                } else {
+                    map.queryRenderedFeatures(box, *layers).size
+                }
+            }.getOrDefault(0)
+        NaviMapTestHooks.lastVisibleBasemapFeatures = n
+        android.util.Log.i(
+            "NaviMapTiles",
+            "visible=$n kind=${currentStyleKind.value?.name ?: NaviMapTestHooks.lastBasemapKind} " +
+                "lat=${map.cameraPosition.target?.latitude} lon=${map.cameraPosition.target?.longitude} " +
+                "zoom=${map.cameraPosition.zoom}",
+        )
+    }
+
     fun applyTerrainAndPitch(
         map: MapLibreMap,
         style: Style,
@@ -9488,131 +9553,170 @@ private fun CorridorMapView(
         NaviMapTestHooks.completeStyleApply(applyGen)
         NaviMapTestHooks.lastBasemapKind = currentStyleKind.value?.name ?: resolved.kind.name
         map.triggerRepaint()
+        mapView.postDelayed({
+            if (applyGen != styleApplyGen.get()) return@postDelayed
+            logVisibleBasemapTiles(map)
+        }, 1500)
     }
 
     fun applyResolvedStyle(
         map: MapLibreMap,
         force: Boolean = false,
     ) {
-        val livePrefer3d = prefer3dRef.get()
-        val liveVulkan = vulkanRef.get()
-        val want3d = livePrefer3d && liveVulkan
-        val latest = stateRef.get()
-        // Prefer Compose camera target (pendingCamera) over the live MapLibre
-        // camera so style switches are not delayed one idle frame behind state.
-        val lat =
-            latest.cameraLat
-                ?: map.cameraPosition.target?.latitude
-                ?: 60.0
-        val lon =
-            latest.cameraLon
-                ?: map.cameraPosition.target?.longitude
-                ?: 10.0
-        val resolved =
-            BasemapStyleResolver.resolve(
-                context = context,
-                dataDir = dataDir,
-                lat = lat,
-                lon = lon,
-                prefer3d = livePrefer3d,
-                vulkanAvailable = liveVulkan,
-                forceOnline2d = NaviMapTestHooks.forceOnlineBasemap,
-            )
-        val sameUri = resolved.styleUri == currentStyleUri.value
-        val sameKind = resolved.kind == currentStyleKind.value
-
-        // Coverage-only idle callbacks: if URI/kind unchanged and terrain/tilt
-        // already match, do not bump applyGen (that would cancel an in-flight 3D attach).
-        if (!force && sameUri && sameKind) {
-            map.getStyle { style ->
-                if (style == null) return@getStyle
-                val attached = MapterhornTerrain.isAttached(style)
-                val tilt = map.cameraPosition.tilt
-                // Compare against the achievable tilt (MapLibre clamps at 60°).
-                val wantTilt = effectiveTiltDeg()
-                val tiltMatches = kotlin.math.abs(tilt - wantTilt) <= 1.0
-                val wantTerrain = MapterhornTerrain.wantHillshadeAttached(resolved)
-                val terrainMatches = attached == wantTerrain
-                val wantContours = contoursEnabledRef.get()
-                val contoursAttached = MapterhornContours.isAttached(style)
-                val contoursMatches = contoursAttached == wantContours
-                if (terrainMatches && tiltMatches && contoursMatches) return@getStyle
-                val applyGen = styleApplyGen.incrementAndGet()
+        mapScope.launch(Dispatchers.IO) {
+            val livePrefer3d = prefer3dRef.get()
+            val liveVulkan = vulkanRef.get()
+            val want3d = livePrefer3d && liveVulkan
+            val latest = stateRef.get()
+            val lat =
+                latest.cameraLat
+                    ?: map.cameraPosition.target?.latitude
+                    ?: 60.0
+            val lon =
+                latest.cameraLon
+                    ?: map.cameraPosition.target?.longitude
+                    ?: 10.0
+            val resolved =
+                BasemapStyleResolver.resolve(
+                    context = context,
+                    dataDir = dataDir,
+                    lat = lat,
+                    lon = lon,
+                    prefer3d = livePrefer3d,
+                    vulkanAvailable = liveVulkan,
+                    forceOnline2d = NaviMapTestHooks.forceOnlineBasemap,
+                )
+            val sourceKey =
+                listOf(
+                    resolved.styleUri,
+                    resolved.kind.name,
+                    "3d=$want3d",
+                    "contours=${contoursEnabledRef.get()}",
+                ).joinToString("|")
+            val request = BasemapStyleApplyQueue.enqueue(sourceKey, forceBaseReload = force)
+            val applyGen = request.generation
+            styleApplyGen.set(applyGen)
+            withContext(Dispatchers.Main) {
+                if (!BasemapStyleApplyQueue.isCurrent(applyGen)) return@withContext
+                val reloadBase = BasemapStyleApplyQueue.shouldReloadBase(request)
+                if (!reloadBase) {
+                    map.getStyle { style ->
+                        if (style == null) return@getStyle
+                        applyRouteToStyle(style, stateRef.get())
+                        applyTracksToStyle(style, stateRef.get().tracks, mapView.context)
+                        ensureRouteAboveHillshade(style)
+                        map.triggerRepaint()
+                    }
+                    BasemapStyleApplyQueue.accept(
+                        BasemapStyleApplyQueue.Result(
+                            generation = applyGen,
+                            sourceKey = sourceKey,
+                            ok = true,
+                            reloadedBase = false,
+                        ),
+                    )
+                    return@withContext
+                }
+                val previousUri = currentStyleUri.value
+                val previousKind = currentStyleKind.value
                 NaviMapTestHooks.beginStyleApply(applyGen)
-                styleReady.value = false
-                applyTerrainAndPitch(map, style, resolved, applyGen)
-            }
-            return
-        }
-
-        val applyGen = styleApplyGen.incrementAndGet()
-        NaviMapTestHooks.beginStyleApply(applyGen)
-        // Tilt is independent of hillshade 3D; apply preferred tilt (0 when no Vulkan).
-        applyCameraTilt(map)
-        if (!want3d) {
-            NaviMapTestHooks.lastTerrainAttached = false
-        }
-        styleReady.value = false
-        onStyleNote(resolved.note)
-        if (resolved.kind == BasemapStyleResolver.StyleKind.OfflineProtomaps &&
-            resolved.note.isNullOrBlank()
-        ) {
-            onStyleNote("Offline basemap (Protomaps)")
-        }
-
-        // Same basemap URI (e.g. Liberty URL for both OnlineLiberty and Online3d):
-        // MapLibre often no-ops setStyle(sameUri), so mutate the live style instead.
-        if (sameUri) {
-            currentStyleKind.value = resolved.kind
-            map.getStyle { style ->
-                if (applyGen != styleApplyGen.get()) return@getStyle
-                if (style == null) {
-                    currentStyleUri.value = null
-                    applyResolvedStyle(map, force = true)
-                    return@getStyle
+                applyCameraTilt(map)
+                if (!want3d) {
+                    NaviMapTestHooks.lastTerrainAttached = false
                 }
-                applyTerrainAndPitch(map, style, resolved, applyGen)
-            }
-            return
-        }
-
-        currentStyleUri.value = resolved.styleUri
-        currentStyleKind.value = resolved.kind
-        map.setStyle(resolved.styleUri) { style ->
-            if (applyGen != styleApplyGen.get()) return@setStyle
-            if (style == null) {
-                NaviMapTestHooks.lastStyleLoadError = "setStyle returned null (${resolved.styleUri})"
-                onStyleNote("Basemap load failed; falling back to 2D Liberty")
-                if (livePrefer3d) {
-                    on3dFailed()
+                onStyleNote(resolved.note)
+                if (resolved.kind == BasemapStyleResolver.StyleKind.OfflineProtomaps &&
+                    resolved.note.isNullOrBlank()
+                ) {
+                    onStyleNote("Offline basemap (Protomaps)")
                 }
-                val fallbackUri = BasemapStyleResolver.LIBERTY_URL
-                currentStyleUri.value = fallbackUri
-                currentStyleKind.value = BasemapStyleResolver.StyleKind.OnlineLiberty
-                map.setStyle(fallbackUri) { fallback ->
-                    if (applyGen != styleApplyGen.get()) return@setStyle
-                    if (fallback != null) {
-                        applyTerrainAndPitch(
-                            map,
-                            fallback,
-                            BasemapStyleResolver.ResolvedStyle(
-                                kind = BasemapStyleResolver.StyleKind.OnlineLiberty,
-                                styleUri = fallbackUri,
+                PmtilesArchiveGate.writeShownMarker(dataDir, resolved.coveringJob?.localPath)
+                val sameUri = resolved.styleUri == currentStyleUri.value
+                if (sameUri) {
+                    currentStyleKind.value = resolved.kind
+                    map.getStyle { style ->
+                        if (!BasemapStyleApplyQueue.isCurrent(applyGen)) return@getStyle
+                        if (style == null) {
+                            applyResolvedStyle(map, force = true)
+                            return@getStyle
+                        }
+                        applyTerrainAndPitch(map, style, resolved, applyGen)
+                        BasemapStyleApplyQueue.accept(
+                            BasemapStyleApplyQueue.Result(
+                                generation = applyGen,
+                                sourceKey = sourceKey,
+                                ok = true,
+                                reloadedBase = true,
                             ),
-                            applyGen,
                         )
-                    } else {
+                    }
+                    return@withContext
+                }
+                map.setStyle(resolved.styleUri) { style ->
+                    if (!BasemapStyleApplyQueue.isCurrent(applyGen)) return@setStyle
+                    if (style == null) {
+                        NaviMapTestHooks.lastStyleLoadError =
+                            "setStyle returned null (${resolved.styleUri})"
+                        onStyleNote("Map update failed; keeping the previous map")
+                        BasemapStyleApplyQueue.keepPrevious("Map update failed; keeping the previous map")
+                        BasemapStyleApplyQueue.accept(
+                            BasemapStyleApplyQueue.Result(
+                                generation = applyGen,
+                                sourceKey = previousUri ?: sourceKey,
+                                ok = false,
+                                reloadedBase = true,
+                                note = "Map update failed; keeping the previous map",
+                            ),
+                        )
+                        if (previousUri != null) {
+                            currentStyleUri.value = previousUri
+                            currentStyleKind.value = previousKind
+                        }
                         styleReady.value = true
                         NaviMapTestHooks.completeStyleApply(applyGen)
-                        NaviMapTestHooks.lastBasemapKind =
-                            BasemapStyleResolver.StyleKind.OnlineLiberty.name
-                        NaviMapTestHooks.lastCameraPitch = 0.0
-                        NaviMapTestHooks.lastTerrainAttached = false
+                        return@setStyle
                     }
+                    currentStyleUri.value = resolved.styleUri
+                    currentStyleKind.value = resolved.kind
+                    applyTerrainAndPitch(map, style, resolved, applyGen)
+                    mapView.postDelayed({
+                        if (!BasemapStyleApplyQueue.isCurrent(applyGen)) return@postDelayed
+                        logVisibleBasemapTiles(map)
+                        val tiles = NaviMapTestHooks.lastVisibleBasemapFeatures
+                        if (tiles <= 0 && previousUri != null && previousUri != resolved.styleUri) {
+                            onStyleNote("Map update failed; keeping the previous map")
+                            BasemapStyleApplyQueue.keepPrevious("Map update failed; keeping the previous map")
+                            currentStyleUri.value = previousUri
+                            currentStyleKind.value = previousKind
+                            map.setStyle(previousUri) { restored ->
+                                if (restored != null) {
+                                    applyRouteToStyle(restored, stateRef.get())
+                                }
+                                styleReady.value = true
+                                NaviMapTestHooks.completeStyleApply(applyGen)
+                            }
+                            BasemapStyleApplyQueue.accept(
+                                BasemapStyleApplyQueue.Result(
+                                    generation = applyGen,
+                                    sourceKey = previousUri,
+                                    ok = false,
+                                    reloadedBase = true,
+                                    note = "Map update failed; keeping the previous map",
+                                ),
+                            )
+                        } else {
+                            BasemapStyleApplyQueue.accept(
+                                BasemapStyleApplyQueue.Result(
+                                    generation = applyGen,
+                                    sourceKey = sourceKey,
+                                    ok = true,
+                                    reloadedBase = true,
+                                ),
+                            )
+                        }
+                    }, 1500)
                 }
-                return@setStyle
             }
-            applyTerrainAndPitch(map, style, resolved, applyGen)
         }
     }
 

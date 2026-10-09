@@ -59,6 +59,17 @@ object NaviMapTestHooks {
     @Volatile
     var forceOnlineBasemap: Boolean = false
 
+    /** Optional absolute PMTiles path that overrides covering selection. */
+    @Volatile
+    var forceBasemapSource: String? = null
+
+    fun forcedBasemapSettingsCleared(): Boolean = !forceOnlineBasemap && forceBasemapSource == null
+
+    fun clearForcedBasemapSettings() {
+        forceOnlineBasemap = false
+        forceBasemapSource = null
+    }
+
     /** Triple of lat, lon, zoom. Consumed by MainActivity. */
     @Volatile
     var pendingCamera: Triple<Double, Double, Double>? = null
@@ -238,6 +249,10 @@ object NaviMapTestHooks {
     /** Last basemap kind from [BasemapStyleResolver] (OnlineLiberty / Online3d / OfflineProtomaps). */
     @Volatile
     var lastBasemapKind: String = ""
+
+    /** Rendered basemap features in the viewport (excludes the route overlay). */
+    @Volatile
+    var lastVisibleBasemapFeatures: Int = 0
 
     /** Last MapLibre style load failure message, if any. */
     @Volatile
