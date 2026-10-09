@@ -194,14 +194,9 @@ const CASES: &[Case] = &[
         rv15_otta_vaga_lom: false,
         reference: Some("elsa-sjuvass.geojson"),
         expected_fail: None,
-        accepted_spikes: &[
-            (69.69, 29.37),
-            (62.04, 14.39),
-        ],
+        accepted_spikes: &[(69.69, 29.37), (62.04, 14.39)],
         known_distance: Some("distance against the 1944.2 km reference"),
-        known_spikes: Some(
-            "unexplained out-and-back at 60.57,9.11",
-        ),
+        known_spikes: Some("unexplained out-and-back at 60.57,9.11"),
         timing_runs: 1,
     },
 ];
@@ -646,8 +641,7 @@ fn check_intermediate_hop_ends(report: &str, o: &mut Outcome) {
         }
         let fallback = leg.contains("hop_end_fallback=");
         let Some(dist) = snap_end_dist_m(leg) else {
-            o.failures
-                .push(format!("hop {} missing snap_end", i + 1));
+            o.failures.push(format!("hop {} missing snap_end", i + 1));
             continue;
         };
         if dist > 50.0 && !fallback {
@@ -845,9 +839,10 @@ fn run_case(case: &Case, packs: &Path, refs: &Path, work: &Path) -> Outcome {
     let mut accepted_hit = vec![false; case.accepted_spikes.len()];
     for s in find_spikes(&line) {
         let shared = reference_has_spike(&s, &reference_spikes);
-        let accepted_at = case.accepted_spikes.iter().position(|&p| {
-            haversine_m(s.a, p) <= 8_000.0 || haversine_m(s.mid, p) <= 8_000.0
-        });
+        let accepted_at = case
+            .accepted_spikes
+            .iter()
+            .position(|&p| haversine_m(s.a, p) <= 8_000.0 || haversine_m(s.mid, p) <= 8_000.0);
         if let Some(i) = accepted_at {
             accepted_hit[i] = true;
         }
@@ -994,6 +989,7 @@ fn emulator_check(
     }
     failures.extend(place_index_failures(&r["place_index"]));
     failures.extend(search_check_failures(&r["searches"]));
+    failures.extend(offline_map_check_failures(&r["offline_map"]));
     let status = if failures.is_empty() { "PASS" } else { "FAIL" };
     eprintln!(
         "[gate] emulator {status}: trip {}, {:.1} km, ferries {}, hops {}, wall {wall_s:.1} s, \
@@ -1105,8 +1101,33 @@ fn search_check_failures(searches: &serde_json::Value) -> Vec<String> {
         let n = hit["n"].as_u64().unwrap_or(0);
         let top = hit["top"].as_str().unwrap_or("");
         if n == 0 || !fold_place_name(top).contains(&fold_place_name(want)) {
+            failures.push(format!("search {q}: expected {want}, got n={n} top={top}"));
+        }
+    }
+    failures
+}
+
+/// Network-off: each gate-route start must have a tile/feature count above zero.
+fn offline_map_check_failures(maps: &serde_json::Value) -> Vec<String> {
+    let mut failures = Vec::new();
+    let Some(arr) = maps.as_array() else {
+        failures.push(
+            "emulator offline_map missing (network-off tile count at each gate start)".into(),
+        );
+        return failures;
+    };
+    if arr.is_empty() {
+        failures.push("emulator offline_map empty".into());
+        return failures;
+    }
+    for rec in arr {
+        let trip = rec["trip"].as_str().unwrap_or("?");
+        let visible = rec["visible"].as_u64().unwrap_or(0);
+        let ok = rec["ok"].as_bool().unwrap_or(false);
+        if !ok || visible == 0 {
             failures.push(format!(
-                "search {q}: expected {want}, got n={n} top={top}"
+                "offline map blank at {trip} start (visible={visible} kind={})",
+                rec["kind"]
             ));
         }
     }

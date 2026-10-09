@@ -931,6 +931,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_pmtiles_queue_region(
     ): Int
+    external fun uniffi_navi_checksum_func_pmtiles_recheck_rejected(
+    ): Int
     external fun uniffi_navi_checksum_func_pmtiles_region_bbox(
     ): Int
     external fun uniffi_navi_checksum_func_pmtiles_region_key(
@@ -1417,6 +1419,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_pmtiles_queue_region(`dataDir`: RustBuffer.ByValue,`geofabrikPath`: RustBuffer.ByValue,`baseUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_pmtiles_recheck_rejected(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Int
     external fun uniffi_navi_fn_func_pmtiles_region_bbox(`geofabrikPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_pmtiles_region_key(`geofabrikPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -2095,6 +2099,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_pmtiles_queue_region() and 0xFFFF) != 49048) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_pmtiles_recheck_rejected() and 0xFFFF) != 53510) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_pmtiles_region_bbox() and 0xFFFF) != 27835) {
@@ -7575,6 +7582,21 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         FfiConverterString.lower(`dataDir`),
         FfiConverterString.lower(`geofabrikPath`),
         FfiConverterOptionalString.lower(`baseUrl`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Re-validate `*.pmtiles.rejected` under [data_dir]/pmtiles. Valid archives
+         * are accepted in place (no download). Returns how many were accepted.
+         */ fun `pmtilesRecheckRejected`(`dataDir`: kotlin.String): kotlin.UInt {
+            return FfiConverterUInt.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_pmtiles_recheck_rejected(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
 }
     )
     }

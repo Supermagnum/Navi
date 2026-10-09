@@ -241,6 +241,76 @@ def run_search(query):
     }
 
 
+def set_airplane(on):
+    mode = "enable" if on else "disable"
+    adb("shell", "cmd", "connectivity", "airplane-mode", mode)
+
+
+def run_offline_map_check():
+    """Network off: each gate-route start must show basemap features (not blank)."""
+    set_airplane(True)
+    time.sleep(2)
+    out = []
+    try:
+        for name, spec in TRIPS.items():
+            lat, lon, label = spec["from"]
+            adb("logcat", "-c")
+            adb(
+                "shell",
+                "am",
+                "start",
+                "-n",
+                f"{PKG}/.MainActivity",
+                "--ez",
+                "navi_hide_chrome",
+                "true",
+                "--ed",
+                "navi_camera_lat",
+                str(lat),
+                "--ed",
+                "navi_camera_lon",
+                str(lon),
+                "--ed",
+                "navi_camera_zoom",
+                "12",
+            )
+            visible = None
+            kind = ""
+            line = ""
+            for _ in range(24):
+                time.sleep(0.5)
+                text = logcat()
+                for ln in text.splitlines():
+                    if "NaviMapTiles" in ln and "visible=" in ln:
+                        line = ln
+                        raw = field(ln, "visible") or "0"
+                        try:
+                            visible = int(raw)
+                        except ValueError:
+                            visible = 0
+                        kind = field(ln, "kind") or ""
+                if visible is not None:
+                    break
+            rec = {
+                "trip": name,
+                "from": label,
+                "lat": lat,
+                "lon": lon,
+                "visible": visible or 0,
+                "kind": kind,
+                "line": line,
+                "ok": (visible or 0) > 0,
+            }
+            out.append(rec)
+            log(
+                f"offline_map {name} {label} visible={rec['visible']} kind={kind} ok={rec['ok']}"
+            )
+    finally:
+        set_airplane(False)
+        time.sleep(1)
+    return out
+
+
 def run_search_check():
     out = []
     for q, want in SEARCH_EXPECT:
@@ -621,15 +691,18 @@ def main():
 
     searches = run_search_check() if (a.search_check or trip) else []
     search_fail = [s for s in searches if not s.get("ok")]
+    maps = run_offline_map_check() if (a.search_check or trip) else []
+    map_fail = [m for m in maps if not m.get("ok")]
     pause = run_pause_test() if a.pause_test else None
     pause_fail = bool(pause) and not pause.get("ok")
 
     if not trip:
         rec = {
             "status": "done",
-            "accepted": not search_fail and not pause_fail,
+            "accepted": not search_fail and not pause_fail and not map_fail,
             "place_index": index,
             "searches": searches,
+            "offline_map": maps,
             "cleared": cleared,
             "pause_test": pause,
         }
@@ -673,12 +746,13 @@ def main():
         "input_mismatch": bad,
         "place_index": index,
         "searches": searches,
+        "offline_map": maps,
         "cleared": cleared,
         "pause_test": pause,
         "idle_job_pause": last_line(text, "idle_job_pause "),
     }
     rec.update(summarize(files, trip, text))
-    rec["accepted"] = not bad and not search_fail and not pause_fail and status == "done"
+    rec["accepted"] = not bad and not search_fail and not map_fail and not pause_fail and status == "done"
     (out / "result.json").write_text(json.dumps(rec, indent=2) + "\n")
     print(json.dumps(rec, indent=2))
     if bad:
@@ -686,6 +760,9 @@ def main():
         sys.exit(2)
     if search_fail:
         log("REJECTED: search check failed")
+        sys.exit(2)
+    if map_fail:
+        log("REJECTED: offline map over a gate-route start was blank")
         sys.exit(2)
     if pause_fail:
         log("REJECTED: pause test wrote the product index or failed")

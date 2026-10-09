@@ -109,7 +109,17 @@ impl PmtilesDownloader {
         lat: f64,
         lon: f64,
     ) -> anyhow::Result<Vec<PmtilesJobRecord>> {
-        Ok(PmtilesJobStore::new(&self.storage).list_completed_covering(lat, lon)?)
+        let jobs = PmtilesJobStore::new(&self.storage).list_completed_covering(lat, lon)?;
+        Ok(jobs
+            .into_iter()
+            .filter(|j| {
+                let bbox = match (j.min_lat, j.min_lon, j.max_lat, j.max_lon) {
+                    (Some(a), Some(b), Some(c), Some(d)) => [a, b, c, d],
+                    _ => return false,
+                };
+                validate_completed_pmtiles(Path::new(&j.local_path), &j.region_key, bbox).is_ok()
+            })
+            .collect())
     }
 
     pub fn delete_job(&self, job_id: Uuid) -> anyhow::Result<()> {
@@ -176,8 +186,12 @@ impl PmtilesDownloader {
                         job.region_key
                     );
                     store.set_status(job_id, PmtilesJobStatus::Failed, false)?;
-                    let rejected = final_path.with_extension("pmtiles.rejected");
-                    let _ = fs::rename(&final_path, &rejected);
+                    write_invalid_reason(&final_path, &reason);
+                    if !is_shown_archive(&self.data_dir, &final_path) {
+                        let rejected = rejected_path(&final_path);
+                        let _ = fs::rename(&final_path, &rejected);
+                        write_reject_reason(&rejected, &reason);
+                    }
                     return Err(anyhow::anyhow!(
                         "existing PMTiles rejected for {}: {reason}",
                         job.region_key
@@ -255,8 +269,12 @@ impl PmtilesDownloader {
                     job.region_key
                 );
                 store.set_status(job_id, PmtilesJobStatus::Failed, false)?;
-                let rejected = final_path.with_extension("pmtiles.rejected");
-                let _ = fs::rename(&final_path, &rejected);
+                write_invalid_reason(&final_path, &reason);
+                if !is_shown_archive(&self.data_dir, &final_path) {
+                    let rejected = rejected_path(&final_path);
+                    let _ = fs::rename(&final_path, &rejected);
+                    write_reject_reason(&rejected, &reason);
+                }
                 return Err(anyhow::anyhow!(
                     "extracted PMTiles rejected for {}: {reason}",
                     job.region_key
@@ -268,6 +286,133 @@ impl PmtilesDownloader {
             .get_job(job_id)?
             .ok_or_else(|| anyhow::anyhow!("job missing after extract"))
     }
+
+    /// Re-validate `*.pmtiles.rejected` with the current completion guard.
+    /// Valid archives are renamed back to `.pmtiles` and the newest job for
+    /// that region is marked completed — no download.
+    pub fn recheck_rejected_archives(&self) -> anyhow::Result<u32> {
+        let dir = self.pmtiles_dir();
+        if !dir.is_dir() {
+            return Ok(0);
+        }
+        let store = PmtilesJobStore::new(&self.storage);
+        let jobs = store.list_jobs().unwrap_or_default();
+        let mut accepted = 0u32;
+        for ent in fs::read_dir(&dir)? {
+            let path = ent?.path();
+            let name = match path.file_name().and_then(|n| n.to_str()) {
+                Some(n) => n,
+                None => continue,
+            };
+            if !name.ends_with(".pmtiles.rejected") {
+                continue;
+            }
+            let key = name.trim_end_matches(".pmtiles.rejected");
+            let job = jobs.iter().find(|j| j.region_key == key);
+            let bbox = match job.and_then(|j| match (j.min_lat, j.min_lon, j.max_lat, j.max_lon) {
+                (Some(a), Some(b), Some(c), Some(d)) => Some([a, b, c, d]),
+                _ => None,
+            }) {
+                Some(b) => b,
+                None => [0.0, -180.0, 0.0, 180.0],
+            };
+            match validate_completed_pmtiles(&path, key, bbox) {
+                Ok(()) => {
+                    let dest = self.local_path_for_key(key);
+                    fs::rename(&path, &dest)?;
+                    let _ = fs::remove_file(reject_reason_path(&path));
+                    if let Some(j) = job {
+                        let len = fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
+                        store.set_progress(j.id, len, Some(len))?;
+                        store.set_status(j.id, PmtilesJobStatus::Completed, false)?;
+                    }
+                    log::info!(
+                        target: "NaviDownload",
+                        "[NaviDownload] rejected archive accepted path={} region={}",
+                        dest.display(),
+                        key
+                    );
+                    accepted += 1;
+                }
+                Err(reason) => {
+                    write_reject_reason(&path, &reason);
+                    log::info!(
+                        target: "NaviDownload",
+                        "[NaviDownload] rejected archive still invalid path={} region={} reason={reason}",
+                        path.display(),
+                        key
+                    );
+                }
+            }
+        }
+        accepted += self.audit_completed_jobs()?;
+        Ok(accepted)
+    }
+
+    /// Mark completed jobs whose files are missing or invalid so the user can
+    /// download again. Does not rename or remove a file the map is showing.
+    pub fn audit_completed_jobs(&self) -> anyhow::Result<u32> {
+        let store = PmtilesJobStore::new(&self.storage);
+        let jobs = store.list_jobs().unwrap_or_default();
+        let mut n = 0u32;
+        for job in jobs {
+            if job.status != PmtilesJobStatus::Completed {
+                continue;
+            }
+            let path = PathBuf::from(&job.local_path);
+            let bbox = match (job.min_lat, job.min_lon, job.max_lat, job.max_lon) {
+                (Some(a), Some(b), Some(c), Some(d)) => [a, b, c, d],
+                _ => [0.0, -180.0, 0.0, 180.0],
+            };
+            match validate_completed_pmtiles(&path, &job.region_key, bbox) {
+                Ok(()) => {}
+                Err(reason) => {
+                    store.set_status(job.id, PmtilesJobStatus::Failed, false)?;
+                    write_invalid_reason(&path, &reason);
+                    log::warn!(
+                        target: "NaviDownload",
+                        "[NaviDownload] completed job invalid path={} region={} reason={reason}",
+                        path.display(),
+                        job.region_key
+                    );
+                    n += 1;
+                }
+            }
+        }
+        Ok(n)
+    }
+}
+
+fn rejected_path(final_path: &Path) -> PathBuf {
+    final_path.with_extension("pmtiles.rejected")
+}
+
+fn reject_reason_path(rejected: &Path) -> PathBuf {
+    let mut s = rejected.as_os_str().to_os_string();
+    s.push(".reason");
+    PathBuf::from(s)
+}
+
+fn write_reject_reason(rejected: &Path, reason: &str) {
+    let _ = fs::write(reject_reason_path(rejected), reason);
+}
+
+fn write_invalid_reason(archive: &Path, reason: &str) {
+    let mut s = archive.as_os_str().to_os_string();
+    s.push(".reason");
+    let _ = fs::write(PathBuf::from(s), reason);
+}
+
+fn is_shown_archive(data_dir: &Path, archive: &Path) -> bool {
+    let marker = data_dir.join("pmtiles").join(".shown");
+    let shown = match fs::read_to_string(&marker) {
+        Ok(s) => s.trim().to_string(),
+        Err(_) => return false,
+    };
+    if shown.is_empty() {
+        return false;
+    }
+    Path::new(&shown) == archive
 }
 
 #[cfg(test)]

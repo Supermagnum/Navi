@@ -10204,6 +10204,24 @@ pub fn pmtiles_list_covering(data_dir: String, lat: f64, lon: f64) -> Vec<FfiPmt
         .collect()
 }
 
+/// Re-validate `*.pmtiles.rejected` under [data_dir]/pmtiles. Valid archives
+/// are accepted in place (no download). Returns how many were accepted.
+#[uniffi::export]
+pub fn pmtiles_recheck_rejected(data_dir: String) -> u32 {
+    let storage = match pmtiles_db(Path::new(&data_dir)) {
+        Ok(s) => s,
+        Err(_) => return 0,
+    };
+    let dl = PmtilesDownloader::new(storage, PathBuf::from(&data_dir));
+    match dl.recheck_rejected_archives() {
+        Ok(n) => n,
+        Err(e) => {
+            log::warn!("pmtiles_recheck_rejected({data_dir}): {e:#}");
+            0
+        }
+    }
+}
+
 #[uniffi::export]
 pub fn pmtiles_delete_job(data_dir: String, job_id: String) -> bool {
     let uuid = match uuid::Uuid::parse_str(&job_id) {
