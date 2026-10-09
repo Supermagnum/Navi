@@ -1079,4 +1079,77 @@ mod tests {
         }
     }
 
+    /// A plan searches each waypoint once; applying the result again (widen,
+    /// another alternative) must not search again.
+    #[test]
+    fn each_waypoint_is_attached_once_per_plan() {
+        reset_attach_search_counts();
+        let mut dnodes = HashMap::new();
+        dnodes.extend([
+            node(1, 60.00, 9.90),
+            node(10, 60.00, 10.00),
+            node(2, 60.00, 10.10),
+        ]);
+        let mut dedges = Vec::new();
+        for (id, s, t, len) in [("w", 1i64, 10, 5_500.0), ("e", 10, 2, 5_500.0)] {
+            dedges.push(edge(id, s, t, &dnodes, len, 50.0));
+            dedges.push(edge(&format!("{id}_r"), t, s, &dnodes, len, 50.0));
+        }
+        let detailed = graph(dnodes, dedges);
+        let mut cnodes = HashMap::new();
+        cnodes.extend([
+            node(1, 60.00, 9.90),
+            node(2, 60.00, 10.10),
+        ]);
+        let cedges = vec![
+            edge("s", 1, 2, &cnodes, 20_000.0, 80.0),
+            edge("sr", 2, 1, &cnodes, 20_000.0, 80.0),
+        ];
+        let mut coarse = graph(cnodes, cedges);
+        let ids: HashSet<i64> = coarse.nodes.keys().map(|id| id.0).collect();
+        let wps = [(60.00, 10.00), (60.00, 10.10)];
+        let mut atts = Vec::new();
+        for (i, wp) in wps.iter().enumerate() {
+            let role = if i == 0 {
+                SnapRole::Origin
+            } else {
+                SnapRole::Destination
+            };
+            atts.push(
+                resolve_one_on_graph(&detailed, &ids, *wp, role, &RouteOptions::default(), true)
+                    .expect("attach"),
+            );
+        }
+        let plan = TripAttachPlan { attachments: atts };
+        assert_eq!(attach_search_count(60.00, 10.00), 1);
+        assert_eq!(attach_search_count(60.00, 10.10), 1);
+        assert_eq!(total_attach_searches(), 2);
+        let snaps = plan.apply(&mut coarse);
+        assert_eq!(snaps.len(), 2);
+        let mut coarse2 = graph(
+            coarse
+                .nodes
+                .iter()
+                .filter(|(id, _)| id.0 == 1 || id.0 == 2)
+                .map(|(id, n)| (*id, n.clone()))
+                .collect(),
+            vec![
+                edge("s", 1, 2, &{
+                    let mut m = HashMap::new();
+                    m.extend([node(1, 60.00, 9.90), node(2, 60.00, 10.10)]);
+                    m
+                }, 20_000.0, 80.0),
+            ],
+        );
+        let _ = plan.apply(&mut coarse2);
+        assert_eq!(
+            attach_search_count(60.00, 10.00),
+            1,
+            "widen/apply must not search a waypoint again"
+        );
+        assert_eq!(total_attach_searches(), 2);
+        if attach_search_count(60.00, 10.00) > 1 {
+            panic!("waypoint attached more than once in a plan");
+        }
+    }
 }
