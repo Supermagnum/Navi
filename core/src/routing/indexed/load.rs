@@ -2,6 +2,7 @@
 
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use memmap2::Mmap;
 use rkyv::rancor::Error as RkyvError;
@@ -127,11 +128,11 @@ fn installed_ready_region_ids(dirs: &[&Path], profile: RoutingProfile) -> Vec<St
     out
 }
 
-/// Required corridor regions (origin / destination / densified chord) that lack
-/// a Ready pack for [profile]. Empty when coverage is complete.
+/// Fail-fast list: waypoint regions that lack a Ready pack for [profile].
 ///
-/// Runs before any tile mmap / graph materialize so missing landsdels fail in
-/// milliseconds instead of loading primary-only tiles and spinning on A*.
+/// Does not load skeletons or scan main-road ends. User-facing names come from
+/// `named_missing_regions` after the corridor is chosen. Geometric-band ids are
+/// logged separately as candidates and never abort a plan.
 pub fn missing_ready_regions_for_trip(
     dirs: &[&Path],
     profile: RoutingProfile,
@@ -141,30 +142,46 @@ pub fn missing_ready_regions_for_trip(
         return Vec::new();
     }
     let installed = installed_ready_region_ids(dirs, profile);
-    match crate::long_trip::geometric_missing_regions_for_trip(route_points, &installed, None) {
-        Ok(missing) => missing,
-        Err(_) => {
-            // Catalog PIP hole / unknown point: still name every endpoint leaf
-            // that is not covered by an installed Ready pack.
-            let mut missing = Vec::new();
-            let mut seen = HashSet::new();
-            for &(lat, lon) in route_points {
-                let Some(id) = crate::routing::suggest_geofabrik_path_for_point(lat, lon) else {
-                    continue;
-                };
-                let id = id.to_string();
-                let covered = installed.iter().any(|inst| {
-                    inst == &id
-                        || id.starts_with(&format!("{inst}/"))
-                        || inst.starts_with(&format!("{id}/"))
-                });
-                if !covered && seen.insert(id.clone()) {
-                    missing.push(id);
-                }
-            }
-            missing
+    waypoint_uninstalled_regions(route_points, &installed)
+}
+
+/// Geometric-band region ids that lack a Ready pack. Log-only candidates.
+/// Never used to block or delay a plan.
+pub fn missing_region_candidates_for_trip(
+    dirs: &[&Path],
+    profile: RoutingProfile,
+    route_points: &[(f64, f64)],
+) -> Vec<String> {
+    if route_points.len() < 2 {
+        return Vec::new();
+    }
+    let installed = installed_ready_region_ids(dirs, profile);
+    crate::long_trip::geometric_missing_regions_for_trip(route_points, &installed, None)
+        .unwrap_or_default()
+}
+
+fn waypoint_uninstalled_regions(route_points: &[(f64, f64)], installed: &[String]) -> Vec<String> {
+    let mut missing = Vec::new();
+    let mut seen = HashSet::new();
+    for &(lat, lon) in route_points {
+        let Some(id) = crate::long_trip::region_containing(lat, lon, None)
+            .map(|s| s.to_string())
+            .or_else(|| {
+                crate::routing::suggest_geofabrik_path_for_point(lat, lon).map(|s| s.to_string())
+            })
+        else {
+            continue;
+        };
+        let covered = installed.iter().any(|inst| {
+            inst == &id
+                || id.starts_with(&format!("{inst}/"))
+                || inst.starts_with(&format!("{id}/"))
+        });
+        if !covered && seen.insert(id.clone()) {
+            missing.push(id);
         }
     }
+    missing
 }
 
 /// Directory among [dirs] where [stem] packs are Ready for [profile].
@@ -795,10 +812,7 @@ fn select_tiles_within_budget_opts(
     files
 }
 
-fn all_ready_graph_tiles(
-    dirs: &[&Path],
-    profile: RoutingProfile,
-) -> Vec<(String, [f64; 4])> {
+fn all_ready_graph_tiles(dirs: &[&Path], profile: RoutingProfile) -> Vec<(String, [f64; 4])> {
     let mut out = Vec::new();
     let mut seen = HashSet::new();
     for dir in dirs {
@@ -1259,17 +1273,29 @@ fn try_load_graph_for_plan_corridor_dirs(
     // no Ready pack (classic Ostlandet-only Raufoss→Bergen hang).
     if let Some(pts) = route_points {
         if pts.len() >= 2 {
+            let t_pre = Instant::now();
             let missing = missing_ready_regions_for_trip(dirs, profile, pts);
-            if !missing.is_empty() {
+            let candidates = missing_region_candidates_for_trip(dirs, profile, pts);
+            let pre_ms = t_pre.elapsed().as_millis();
+            if !candidates.is_empty() {
                 log::info!(
                     target: "NaviPlan",
-                    "missing_regions_before_load count={} regions={}",
-                    missing.len(),
-                    missing.join(",")
+                    "missing_region_candidates count={} regions={}",
+                    candidates.len(),
+                    candidates.join(",")
                 );
+            }
+            log::info!(
+                target: "NaviPlan",
+                "plan_add_ms missing_ready_preflight={pre_ms} waypoint_missing={} candidates={}",
+                missing.len(),
+                candidates.len()
+            );
+            crate::routing::plan_perf::note_u64("missing_ready_preflight_ms", pre_ms as u64);
+            if !missing.is_empty() {
                 crate::routing::plan_perf::note("missing_regions", missing.join(","));
                 // Abort only when a waypoint sits in an uninstalled outline.
-                // A sliver the band crosses must not block an installed-only plan.
+                // Candidates the band crosses must not block an installed-only plan.
                 let installed = installed_ready_region_ids(dirs, profile);
                 let endpoint_missing: Vec<String> = pts
                     .iter()

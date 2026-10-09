@@ -503,8 +503,7 @@ fn destination_point(lat: f64, lon: f64, bearing_rad: f64, dist_km: f64) -> (f64
     let lon1 = lon.to_radians();
     let lat2 = (lat1.sin() * ang.cos() + lat1.cos() * ang.sin() * bearing_rad.cos()).asin();
     let lon2 = lon1
-        + (bearing_rad.sin() * ang.sin() * lat1.cos())
-            .atan2(ang.cos() - lat1.sin() * lat2.sin());
+        + (bearing_rad.sin() * ang.sin() * lat1.cos()).atan2(ang.cos() - lat1.sin() * lat2.sin());
     (lat2.to_degrees(), lon2.to_degrees())
 }
 
@@ -752,6 +751,21 @@ pub fn warm_region_adjacency() -> usize {
     adjacency_region_count()
 }
 
+/// Catalog ids in `region_adjacency.bin` whose ring list is empty.
+pub fn region_ids_without_outline() -> Vec<String> {
+    graph()
+        .regions
+        .iter()
+        .filter(|r| r.rings.is_empty())
+        .map(|r| r.id.clone())
+        .collect()
+}
+
+/// Every id stored in `region_adjacency.bin`.
+pub fn adjacency_region_ids() -> Vec<String> {
+    graph().regions.iter().map(|r| r.id.clone()).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -774,6 +788,15 @@ mod tests {
                 .iter()
                 .all(|(a, b, _)| *a != "europe/norway/hedmark" && *b != "europe/norway/hedmark"),
             "hedmark must not appear in named links: {links:?}"
+        );
+    }
+
+    #[test]
+    fn finland_is_absent_from_adjacency() {
+        let ids = adjacency_region_ids();
+        assert!(
+            !ids.iter().any(|id| id == "europe/finland"),
+            "europe/finland must not be in region_adjacency.bin, got it in {ids:?}"
         );
     }
 
@@ -908,7 +931,11 @@ mod tests {
         )
         .expect("b");
         let c = geometric_missing_regions_for_trip(
-            &[(60.82712, 11.30249), (62.013569, 7.630359), (61.60145, 5.02658)],
+            &[
+                (60.82712, 11.30249),
+                (62.013569, 7.630359),
+                (61.60145, 5.02658),
+            ],
             &installed,
             None,
         )

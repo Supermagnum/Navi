@@ -60,8 +60,7 @@ fn destination_point(lat: f64, lon: f64, bearing_rad: f64, dist_km: f64) -> (f64
     let lon1 = lon.to_radians();
     let lat2 = (lat1.sin() * ang.cos() + lat1.cos() * ang.sin() * bearing_rad.cos()).asin();
     let lon2 = lon1
-        + (bearing_rad.sin() * ang.sin() * lat1.cos())
-            .atan2(ang.cos() - lat1.sin() * lat2.sin());
+        + (bearing_rad.sin() * ang.sin() * lat1.cos()).atan2(ang.cos() - lat1.sin() * lat2.sin());
     (lat2.to_degrees(), lon2.to_degrees())
 }
 
@@ -192,12 +191,7 @@ pub fn missing_major_continuations(
             ref_at.entry(b).or_insert((rf, hw.to_string()));
         }
         for (n, neigh) in &adj {
-            let border = sk
-                .node_is_border
-                .get(*n as usize)
-                .copied()
-                .unwrap_or(0)
-                == 1;
+            let border = sk.node_is_border.get(*n as usize).copied().unwrap_or(0) == 1;
             if neigh.len() > 1 && !border {
                 continue;
             }
@@ -230,44 +224,39 @@ pub fn missing_major_continuations(
     )
 }
 
-/// Report lines for a completed plan that found a longer installed-only route.
-///
-/// Major-end hints name a region only when the geometric band also crosses
-/// that outline. Otherwise a nearby unused primary (same 40 km window) would
-/// name regions the trip never needed.
-pub fn missing_region_advisory_lines(hints: &[MissingRegionHint], band_missing: &[String]) -> String {
-    let band: std::collections::BTreeSet<&str> =
-        band_missing.iter().map(String::as_str).collect();
-    let hints: Vec<&MissingRegionHint> = hints
-        .iter()
-        .filter(|h| band.contains(h.region_id.as_str()))
-        .collect();
-    let mut ids: Vec<String> = Vec::new();
+/// Name a region only when a major road on the chosen corridor ends at an
+/// installed edge and continues into it, and the geometric band also crosses
+/// that outline. A region that merely lies in the band is not named.
+pub fn named_missing_regions(hints: &[MissingRegionHint], band_missing: &[String]) -> Vec<String> {
+    let band: std::collections::BTreeSet<&str> = band_missing.iter().map(String::as_str).collect();
+    let mut ids = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
-    for h in &hints {
-        if seen.insert(h.region_id.clone()) {
+    for h in hints {
+        if band.contains(h.region_id.as_str()) && seen.insert(h.region_id.clone()) {
             ids.push(h.region_id.clone());
         }
     }
-    for id in band_missing {
-        if seen.insert(id.clone()) {
-            ids.push(id.clone());
-        }
-    }
+    ids
+}
+
+/// Report lines for a completed plan that found a longer installed-only route.
+///
+/// Uses [named_missing_regions]: major-end + band. Does not append band-only
+/// outlines.
+pub fn missing_region_advisory_lines(
+    hints: &[MissingRegionHint],
+    band_missing: &[String],
+) -> String {
+    let ids = named_missing_regions(hints, band_missing);
     if ids.is_empty() {
         return String::new();
     }
+    let named: std::collections::BTreeSet<&str> = ids.iter().map(String::as_str).collect();
     let mut out = format!("missing_regions={}\n", ids.join(","));
-    for h in &hints {
-        out.push_str(&format!("missing_region_why={}\n", h.reason()));
-    }
-    for id in band_missing {
-        if hints.iter().any(|h| h.region_id == *id) {
-            continue;
+    for h in hints {
+        if named.contains(h.region_id.as_str()) {
+            out.push_str(&format!("missing_region_why={}\n", h.reason()));
         }
-        out.push_str(&format!(
-            "missing_region_why={id} is crossed by the direct corridor and is not installed\n"
-        ));
     }
     out.push_str("route_may_be_longer=true\n");
     out
@@ -300,13 +289,7 @@ mod tests {
     #[test]
     fn sliver_between_two_installed_regions_is_named() {
         // Major end at the west pack edge; 400 m onward is the sliver.
-        let ends = [(
-            0.50,
-            0.999,
-            "R1",
-            "trunk",
-            Some((0.50, 0.90)),
-        )];
+        let ends = [(0.50, 0.999, "R1", "trunk", Some((0.50, 0.90)))];
         let path = [(0.50, 0.80), (0.50, 0.95), (0.50, 0.999)];
         let hints = major_ends_into_uninstalled(&ends, &path, 40.0, pip, installed);
         assert_eq!(hints.len(), 1, "{hints:?}");
@@ -354,5 +337,13 @@ mod tests {
         assert!(text.contains("synth/sliver"));
         assert!(text.contains("R1"));
         assert!(text.contains("route_may_be_longer=true"));
+    }
+
+    #[test]
+    fn band_only_region_is_not_named() {
+        let band = vec!["synth/sliver".into(), "synth/other".into()];
+        assert!(named_missing_regions(&[], &band).is_empty());
+        let text = missing_region_advisory_lines(&[], &band);
+        assert!(text.is_empty(), "{text}");
     }
 }

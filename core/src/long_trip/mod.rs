@@ -15,9 +15,9 @@
 //! change ordinary Tools downloads.
 
 mod adjacency;
-mod missing_geom;
 mod brouter;
 mod estimate;
+mod missing_geom;
 mod neighbours;
 mod orchestrate;
 mod ors;
@@ -43,13 +43,10 @@ pub(crate) fn pace_preliminary_network() {
 
 pub use adjacency::{
     adjacency_edge_count, adjacency_isolates, adjacency_named_links, adjacency_region_count,
-    adjacent_region_ids, direct_corridor_regions_for_trip, geometric_band_regions_for_trip,
-    geometric_missing_regions_for_trip, ordered_needed_regions_for_trip, region_containing,
+    adjacency_region_ids, adjacent_region_ids, direct_corridor_regions_for_trip,
+    geometric_band_regions_for_trip, geometric_missing_regions_for_trip,
+    ordered_needed_regions_for_trip, region_containing, region_ids_without_outline,
     warm_region_adjacency, MissingCorridor, CORRIDOR_BAND_KM,
-};
-pub use missing_geom::{
-    major_ends_into_uninstalled, missing_major_continuations, missing_region_advisory_lines,
-    MissingRegionHint, MAJOR_CONTINUE_PROBE_M, MAJOR_END_PATH_NEAR_KM,
 };
 pub use brouter::{
     build_brouter_url, count_ferry_segments_in_messages, parse_brouter_geojson,
@@ -59,6 +56,10 @@ pub use brouter::{
 pub use estimate::{
     estimate_trip_disk_bytes, CatalogSizeLookup, SpaceCheck, SpaceReport, PBF_KEEP_RATIO,
     PLACE_INDEX_RATIO, STAGING_SAFETY_FACTOR,
+};
+pub use missing_geom::{
+    major_ends_into_uninstalled, missing_major_continuations, missing_region_advisory_lines,
+    named_missing_regions, MissingRegionHint, MAJOR_CONTINUE_PROBE_M, MAJOR_END_PATH_NEAR_KM,
 };
 pub use neighbours::{
     avoid_country_ids_for_allowed, land_neighbours_iso, neighbour_table_is_symmetric,
