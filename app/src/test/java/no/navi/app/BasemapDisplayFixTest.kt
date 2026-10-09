@@ -120,6 +120,84 @@ class BasemapDisplayFixTest {
     }
 
     @Test
+    fun viewport_beyond_one_archive_mounts_online_when_network_on() {
+        assertTrue(
+            BasemapStyleResolver.shouldMountOnlineUnderlay(
+                hasNetwork = true,
+                viewportExtendsBeyond = true,
+            ),
+        )
+        assertFalse(
+            BasemapStyleResolver.shouldMountOnlineUnderlay(
+                hasNetwork = false,
+                viewportExtendsBeyond = true,
+            ),
+        )
+        assertFalse(
+            BasemapStyleResolver.shouldMountOnlineUnderlay(
+                hasNetwork = true,
+                viewportExtendsBeyond = false,
+            ),
+        )
+    }
+
+    @Test
+    fun intersecting_jobs_include_every_archive_the_view_touches() {
+        PmtilesArchiveGate.validateContent = { file, _ ->
+            if (!file.isFile || file.length() == 0L) "empty" else null
+        }
+        val ost = tmp.newFile("ostlandet.pmtiles").also { it.writeText("ost") }
+        val vest = tmp.newFile("vestlandet.pmtiles").also { it.writeText("vest") }
+        val jobs =
+            listOf(
+                job("ost", "europe_norway_ostlandet", ost.absolutePath, 58.0, 7.5, 62.7, 13.0),
+                job("vest", "europe_norway_vestlandet", vest.absolutePath, 58.0, 4.5, 63.2, 8.5),
+            )
+        val view = BasemapStyleResolver.Viewport(south = 59.0, west = 6.0, north = 62.0, east = 12.0)
+        val hit = BasemapStyleResolver.selectIntersectingVectorJobs(jobs, view, emptyList())
+        assertEquals(2, hit.size)
+        assertTrue(hit.any { it.id == "ost" })
+        assertTrue(hit.any { it.id == "vest" })
+        val scandinavia =
+            BasemapStyleResolver.Viewport(south = 55.0, west = 4.0, north = 71.0, east = 32.0)
+        assertTrue(BasemapStyleResolver.viewportExtendsBeyondArchives(scandinavia, jobs))
+        val oslo = BasemapStyleResolver.Viewport(south = 59.8, west = 10.5, north = 60.0, east = 10.9)
+        assertFalse(BasemapStyleResolver.viewportExtendsBeyondArchives(oslo, jobs))
+    }
+
+    @Test
+    fun rewrite_source_uses_world_bounds_and_tile_url() {
+        val style = tmp.newFile("style.json")
+        style.writeText(
+            """{"sources":{"protomaps":{"type":"vector","url":"pmtiles://file:///tmp/x.pmtiles","maxzoom":15}}}""",
+        )
+        BasemapStyleResolver.rewriteSourceToCompositeTiles(
+            style,
+            "http://127.0.0.1:9/{z}/{x}/{y}.pbf",
+        )
+        val json = org.json.JSONObject(style.readText())
+        val pm = json.getJSONObject("sources").getJSONObject("protomaps")
+        assertFalse(pm.has("url"))
+        assertEquals("http://127.0.0.1:9/{z}/{x}/{y}.pbf", pm.getJSONArray("tiles").getString(0))
+        assertEquals(-180.0, pm.getJSONArray("bounds").getDouble(0), 1e-6)
+        assertEquals(0, pm.getInt("minzoom"))
+    }
+
+    @Test
+    fun rewrite_world_bounds_keeps_file_url() {
+        val style = tmp.newFile("style-file.json")
+        style.writeText(
+            """{"sources":{"protomaps":{"type":"vector","url":"pmtiles://file:///tmp/x.pmtiles","maxzoom":15}}}""",
+        )
+        BasemapStyleResolver.rewriteSourceWorldBounds(style)
+        val json = org.json.JSONObject(style.readText())
+        val pm = json.getJSONObject("sources").getJSONObject("protomaps")
+        assertEquals("pmtiles://file:///tmp/x.pmtiles", pm.getString("url"))
+        assertEquals(-180.0, pm.getJSONArray("bounds").getDouble(0), 1e-6)
+        assertEquals(0, pm.getInt("minzoom"))
+    }
+
+    @Test
     fun installed_maps_reports_empty_completed_as_no_offline_map() {
         PmtilesArchiveGate.validateContent = { file, _ ->
             if (file.length() == 0L) "empty archive" else null
@@ -148,6 +226,10 @@ class BasemapDisplayFixTest {
         id: String,
         regionKey: String,
         localPath: String,
+        minLat: Double = 59.0,
+        minLon: Double = 10.0,
+        maxLat: Double = 61.0,
+        maxLon: Double = 12.0,
     ): FfiPmtilesJob =
         FfiPmtilesJob(
             id = id,
@@ -158,9 +240,9 @@ class BasemapDisplayFixTest {
             totalBytes = 1uL,
             status = "completed",
             paused = false,
-            minLat = 59.0,
-            minLon = 10.0,
-            maxLat = 61.0,
-            maxLon = 12.0,
+            minLat = minLat,
+            minLon = minLon,
+            maxLat = maxLat,
+            maxLon = maxLon,
         )
 }

@@ -221,6 +221,9 @@ class MainActivity : ComponentActivity() {
             }
             LaunchedEffect(Unit) {
                 MapLibre.getInstance(this@MainActivity)
+                // Loopback PMTiles must still fetch when the radio is off.
+                // hasNetwork() separately decides whether the online underlay mounts.
+                MapLibre.setConnected(true)
                 showMap = true
             }
         }
@@ -291,6 +294,13 @@ class MainActivity : ComponentActivity() {
             NaviMapTestHooks.pendingCamera = Triple(camLat, camLon, camZoom)
         } else if (intent.action == Intent.ACTION_MAIN) {
             NaviMapTestHooks.disableGpsFollow = false
+        }
+        intent.getStringExtra("navi_overlay_polyline_file")?.trim()?.takeIf { it.isNotEmpty() }?.let { path ->
+            val poly = java.io.File(path).takeIf { it.isFile }?.readText()?.trim().orEmpty()
+            if (poly.isNotEmpty()) {
+                NaviMapTestHooks.pendingOverlayPolyline = poly
+                android.util.Log.i("NaviRoute", "overlay_polyline file=$path chars=${poly.length}")
+            }
         }
         intent.getStringExtra("navi_place_index_clear_region")?.trim()?.takeIf { it.isNotEmpty() }?.let { rid ->
             if (RoutePlanGate.isRunning() || IdlePackJobs.isRunning()) {
@@ -4785,6 +4795,19 @@ private fun NaviMapScreen() {
                             if (resumed) {
                                 NaviMapTestHooks.pendingRoute = null
                                 applyPlannedRoute(pending)
+                            }
+                        }
+                        val overlayPoly = NaviMapTestHooks.pendingOverlayPolyline
+                        if (overlayPoly != null) {
+                            val resumed =
+                                (context as? androidx.lifecycle.LifecycleOwner)
+                                    ?.lifecycle
+                                    ?.currentState
+                                    ?.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+                                    ?: false
+                            if (resumed) {
+                                NaviMapTestHooks.pendingOverlayPolyline = null
+                                mapState = mapState.copy(polyline = overlayPoly)
                             }
                         }
                         if (NaviMapTestHooks.requestClearRoute) {
@@ -9458,6 +9481,26 @@ private fun CorridorMapView(
         NaviMapTestHooks.lastCameraPitch = map.cameraPosition.tilt
     }
 
+    fun invalidateViewportTiles(map: MapLibreMap) {
+        // MapLibre computes tile cover on camera change. A style or source swap
+        // without a camera event leaves the new source unpainted for part of
+        // the view until the user moves the map. Re-set the same camera.
+        val pos = map.cameraPosition
+        runCatching {
+            map.moveCamera(
+                CameraUpdateFactory.newCameraPosition(
+                    org.maplibre.android.camera.CameraPosition
+                        .Builder(pos)
+                        .build(),
+                ),
+            )
+        }
+        map.triggerRepaint()
+        mapView.post {
+            map.triggerRepaint()
+        }
+    }
+
     fun logVisibleBasemapTiles(map: MapLibreMap) {
         val w = mapView.width.toFloat().coerceAtLeast(1f)
         val h = mapView.height.toFloat().coerceAtLeast(1f)
@@ -9488,12 +9531,50 @@ private fun CorridorMapView(
                 }
             }.getOrDefault(0)
         NaviMapTestHooks.lastVisibleBasemapFeatures = n
+        val blank = NaviMapTestHooks.lastBlankSharePct
         android.util.Log.i(
             "NaviMapTiles",
-            "visible=$n kind=${currentStyleKind.value?.name ?: NaviMapTestHooks.lastBasemapKind} " +
+            "visible=$n blank_pct=${"%.2f".format(blank)} " +
+                "kind=${currentStyleKind.value?.name ?: NaviMapTestHooks.lastBasemapKind} " +
                 "lat=${map.cameraPosition.target?.latitude} lon=${map.cameraPosition.target?.longitude} " +
                 "zoom=${map.cameraPosition.zoom}",
         )
+    }
+
+    fun measureBlankShareAndLog(map: MapLibreMap) {
+        val w = mapView.width
+        val h = mapView.height
+        if (w <= 0 || h <= 0) {
+            logVisibleBasemapTiles(map)
+            return
+        }
+        val bmp =
+            android.graphics.Bitmap.createBitmap(
+                w,
+                h,
+                android.graphics.Bitmap.Config.ARGB_8888,
+            )
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        val window = (mapView.context as? android.app.Activity)?.window
+        val listener =
+            android.view.PixelCopy.OnPixelCopyFinishedListener { result ->
+                if (result == android.view.PixelCopy.SUCCESS) {
+                    NaviMapTestHooks.lastBlankSharePct = NaviMapTestHooks.blankSharePercent(bmp)
+                }
+                bmp.recycle()
+                logVisibleBasemapTiles(map)
+            }
+        try {
+            if (window != null) {
+                android.view.PixelCopy.request(window, bmp, listener, handler)
+            } else {
+                bmp.recycle()
+                logVisibleBasemapTiles(map)
+            }
+        } catch (_: Exception) {
+            runCatching { bmp.recycle() }
+            logVisibleBasemapTiles(map)
+        }
     }
 
     fun applyTerrainAndPitch(
@@ -9583,10 +9664,10 @@ private fun CorridorMapView(
         styleReady.value = true
         NaviMapTestHooks.completeStyleApply(applyGen)
         NaviMapTestHooks.lastBasemapKind = currentStyleKind.value?.name ?: resolved.kind.name
-        map.triggerRepaint()
+        invalidateViewportTiles(map)
         mapView.postDelayed({
             if (applyGen != styleApplyGen.get()) return@postDelayed
-            logVisibleBasemapTiles(map)
+            measureBlankShareAndLog(map)
         }, 1500)
     }
 
@@ -9594,35 +9675,53 @@ private fun CorridorMapView(
         map: MapLibreMap,
         force: Boolean = false,
     ) {
+        MapLibre.setConnected(true)
+        val liveCam = map.cameraPosition
+        val liveTarget = liveCam.target
+        val viewBounds =
+            runCatching { map.projection.visibleRegion.latLngBounds }.getOrNull()
         mapScope.launch(Dispatchers.IO) {
             val livePrefer3d = prefer3dRef.get()
             val liveVulkan = vulkanRef.get()
             val want3d = livePrefer3d && liveVulkan
-            val latest = stateRef.get()
-            val lat =
-                latest.cameraLat
-                    ?: map.cameraPosition.target?.latitude
-                    ?: 60.0
-            val lon =
-                latest.cameraLon
-                    ?: map.cameraPosition.target?.longitude
-                    ?: 10.0
+            // Live MapLibre camera + viewport, not Compose cameraLat. After a
+            // plan the compose target can still be the destination while the
+            // map has already fitted the whole route.
+            val lat = liveTarget?.latitude ?: 60.0
+            val lon = liveTarget?.longitude ?: 10.0
             val resolved =
-                BasemapStyleResolver.resolve(
-                    context = context,
-                    dataDir = dataDir,
-                    lat = lat,
-                    lon = lon,
-                    prefer3d = livePrefer3d,
-                    vulkanAvailable = liveVulkan,
-                    forceOnline2d = NaviMapTestHooks.forceOnlineBasemap,
-                )
+                runCatching {
+                    BasemapStyleResolver.resolve(
+                        context = context,
+                        dataDir = dataDir,
+                        lat = lat,
+                        lon = lon,
+                        prefer3d = livePrefer3d,
+                        vulkanAvailable = liveVulkan,
+                        forceOnline2d = NaviMapTestHooks.forceOnlineBasemap,
+                        viewSouth = viewBounds?.latitudeSouth,
+                        viewWest = viewBounds?.longitudeWest,
+                        viewNorth = viewBounds?.latitudeNorth,
+                        viewEast = viewBounds?.longitudeEast,
+                    )
+                }.getOrElse { err ->
+                    android.util.Log.e("NaviBasemap", "resolve failed: ${err.message}")
+                    return@launch
+                }
+            val archiveKey =
+                resolved.overlayArchives
+                    .map { File(it.localPath).nameWithoutExtension }
+                    .sorted()
+                    .joinToString("+")
+                    .ifBlank { resolved.coveringJob?.localPath ?: "none" }
             val sourceKey =
                 listOf(
                     resolved.styleUri,
                     resolved.kind.name,
                     "3d=$want3d",
                     "contours=${contoursEnabledRef.get()}",
+                    "onlineUnderlay=${resolved.onlineUnderlay}",
+                    "archives=$archiveKey",
                 ).joinToString("|")
             val request = BasemapStyleApplyQueue.enqueue(sourceKey, forceBaseReload = force)
             val applyGen = request.generation
@@ -9636,10 +9735,10 @@ private fun CorridorMapView(
                         applyRouteToStyle(style, stateRef.get())
                         applyTracksToStyle(style, stateRef.get().tracks, mapView.context)
                         ensureRouteAboveHillshade(style)
-                        map.triggerRepaint()
+                        invalidateViewportTiles(map)
                         mapView.postDelayed({
                             if (!BasemapStyleApplyQueue.isCurrent(applyGen)) return@postDelayed
-                            logVisibleBasemapTiles(map)
+                            measureBlankShareAndLog(map)
                         }, 400)
                     }
                     BasemapStyleApplyQueue.accept(
@@ -9714,42 +9813,20 @@ private fun CorridorMapView(
                     currentStyleUri.value = resolved.styleUri
                     currentStyleKind.value = resolved.kind
                     applyTerrainAndPitch(map, style, resolved, applyGen)
+                    invalidateViewportTiles(map)
+                    BasemapStyleApplyQueue.accept(
+                        BasemapStyleApplyQueue.Result(
+                            generation = applyGen,
+                            sourceKey = sourceKey,
+                            ok = true,
+                            reloadedBase = true,
+                        ),
+                    )
                     mapView.postDelayed({
                         if (!BasemapStyleApplyQueue.isCurrent(applyGen)) return@postDelayed
-                        logVisibleBasemapTiles(map)
-                        val tiles = NaviMapTestHooks.lastVisibleBasemapFeatures
-                        if (tiles <= 0 && previousUri != null && previousUri != resolved.styleUri) {
-                            onStyleNote("Map update failed; keeping the previous map")
-                            BasemapStyleApplyQueue.keepPrevious("Map update failed; keeping the previous map")
-                            currentStyleUri.value = previousUri
-                            currentStyleKind.value = previousKind
-                            map.setStyle(previousUri) { restored ->
-                                if (restored != null) {
-                                    applyRouteToStyle(restored, stateRef.get())
-                                }
-                                styleReady.value = true
-                                NaviMapTestHooks.completeStyleApply(applyGen)
-                            }
-                            BasemapStyleApplyQueue.accept(
-                                BasemapStyleApplyQueue.Result(
-                                    generation = applyGen,
-                                    sourceKey = previousUri,
-                                    ok = false,
-                                    reloadedBase = true,
-                                    note = "Map update failed; keeping the previous map",
-                                ),
-                            )
-                        } else {
-                            BasemapStyleApplyQueue.accept(
-                                BasemapStyleApplyQueue.Result(
-                                    generation = applyGen,
-                                    sourceKey = sourceKey,
-                                    ok = true,
-                                    reloadedBase = true,
-                                ),
-                            )
-                        }
-                    }, 1500)
+                        invalidateViewportTiles(map)
+                        measureBlankShareAndLog(map)
+                    }, 400)
                 }
             }
         }
@@ -9827,6 +9904,14 @@ private fun CorridorMapView(
     DisposableEffect(Unit) {
         mapView.onStart()
         mapView.onResume()
+        mapView.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+                mapView.getMapAsync { map ->
+                    map.triggerRepaint()
+                    applyResolvedStyle(map, force = false)
+                }
+            }
+        }
         NaviMapTestHooks.mapPauseHandler = { pause ->
             if (pause) {
                 runCatching { mapView.onPause() }
@@ -9834,6 +9919,10 @@ private fun CorridorMapView(
                 runCatching {
                     mapView.onStart()
                     mapView.onResume()
+                    mapView.getMapAsync { map ->
+                        applyResolvedStyle(map, force = false)
+                        invalidateViewportTiles(map)
+                    }
                 }
             }
         }
@@ -9876,6 +9965,9 @@ private fun CorridorMapView(
                         // Keep Compose waypoint/track pins glued to geo while
                         // pan/zoom is in progress (idle-only refresh drifts on screen).
                         refreshTrackOverlay(map)
+                    }
+                    mapView.addOnDidBecomeIdleListener {
+                        measureBlankShareAndLog(map)
                     }
                     map.addOnCameraIdleListener {
                         refreshTrackOverlay(map)
@@ -10252,9 +10344,18 @@ private fun CorridorMapView(
         refreshTrackOverlay(map)
     }
 
-    LaunchedEffect(state.cameraLat, state.cameraLon, prefer3d, contoursEnabled, cameraTiltDeg) {
+    LaunchedEffect(state.cameraLat, state.cameraLon, state.cameraZoom, prefer3d, contoursEnabled, cameraTiltDeg) {
         val map = mapRef ?: return@LaunchedEffect
         if (state.cameraLat != null && state.cameraLon != null) {
+            val pos =
+                org.maplibre.android.camera.CameraPosition
+                    .Builder()
+                    .target(LatLng(state.cameraLat, state.cameraLon))
+                    .zoom(state.cameraZoom ?: 12.0)
+                    .bearing(state.cameraBearing)
+                    .tilt(effectiveTiltDeg())
+                    .build()
+            map.moveCamera(CameraUpdateFactory.newCameraPosition(pos))
             applyResolvedStyle(map, force = false)
         }
     }
@@ -10306,7 +10407,20 @@ private fun CorridorMapView(
                                     }
                                 }.build()
                         // Fit entire route; keep user tilt so hillshade/perspective stay visible.
-                        map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 120))
+                        map.animateCamera(
+                            CameraUpdateFactory.newLatLngBounds(bounds, 120),
+                            object : org.maplibre.android.maps.MapLibreMap.CancelableCallback {
+                                override fun onCancel() {
+                                    applyResolvedStyle(map, force = false)
+                                    invalidateViewportTiles(map)
+                                }
+
+                                override fun onFinish() {
+                                    applyResolvedStyle(map, force = false)
+                                    invalidateViewportTiles(map)
+                                }
+                            },
+                        )
                         map.moveCamera(
                             CameraUpdateFactory.newCameraPosition(
                                 org.maplibre.android.camera.CameraPosition

@@ -6,6 +6,7 @@ import android.net.NetworkCapabilities
 import org.json.JSONObject
 import uniffi.navi.FfiPmtilesJob
 import uniffi.navi.pmtilesListCovering
+import uniffi.navi.pmtilesListJobs
 import java.io.File
 import java.io.FileOutputStream
 
@@ -57,6 +58,10 @@ object BasemapStyleResolver {
          * Null when 3D is not requested / unavailable.
          */
         val demSourceUri: String? = null,
+        /** True when Liberty is mounted because the viewport extends past archives. */
+        val onlineUnderlay: Boolean = false,
+        /** Offline archives that intersect the viewport (empty for forced online). */
+        val overlayArchives: List<FfiPmtilesJob> = emptyList(),
     )
 
     fun hasNetwork(context: Context): Boolean {
@@ -122,13 +127,38 @@ object BasemapStyleResolver {
         prefer3d: Boolean,
         vulkanAvailable: Boolean,
         forceOnline2d: Boolean = false,
+        viewSouth: Double? = null,
+        viewWest: Double? = null,
+        viewNorth: Double? = null,
+        viewEast: Double? = null,
     ): ResolvedStyle {
         val want3d = prefer3d && vulkanAvailable
+        val view =
+            if (viewSouth != null && viewWest != null && viewNorth != null && viewEast != null) {
+                Viewport(viewSouth, viewWest, viewNorth, viewEast)
+            } else {
+                null
+            }
 
         val forcedPath = NaviMapTestHooks.forceBasemapSource
         if (!forcedPath.isNullOrBlank()) {
+            val forcedJob =
+                FfiPmtilesJob(
+                    id = "forced",
+                    regionKey = "forced",
+                    url = "",
+                    localPath = forcedPath,
+                    bytesReceived = 0uL,
+                    totalBytes = null,
+                    status = "completed",
+                    paused = false,
+                    minLat = view?.south ?: (lat - 2.0),
+                    minLon = view?.west ?: (lon - 2.0),
+                    maxLat = view?.north ?: (lat + 2.0),
+                    maxLon = view?.east ?: (lon + 2.0),
+                )
             val uri =
-                prepareOfflineStyle(context, forcedPath, demFor3d = null)
+                prepareOfflineComposite(context, listOf(forcedJob), demFor3d = null)
                     ?: return fallbackOnline(
                         context,
                         dataDir,
@@ -139,7 +169,9 @@ object BasemapStyleResolver {
             return ResolvedStyle(
                 kind = StyleKind.OfflineProtomaps,
                 styleUri = uri,
+                coveringJob = forcedJob,
                 note = "forced source",
+                overlayArchives = listOf(forcedJob),
             )
         }
         if (!forceOnline2d) {
@@ -147,7 +179,13 @@ object BasemapStyleResolver {
                 runCatching {
                     pmtilesListCovering(dataDir.absolutePath, lat, lon)
                 }.getOrDefault(emptyList())
-            val covering = selectVectorCoveringJob(coveringJobs)
+            val allJobs =
+                runCatching { pmtilesListJobs(dataDir.absolutePath) }.getOrDefault(emptyList())
+            val intersecting =
+                selectIntersectingVectorJobs(allJobs, view, coveringJobs)
+            val covering = intersecting.firstOrNull { job ->
+                pointInJobBbox(lat, lon, job)
+            } ?: intersecting.firstOrNull() ?: selectVectorCoveringJob(coveringJobs)
             val blockedCovering =
                 coveringJobs.filter { job ->
                     !isDemArchive(job.regionKey, job.localPath) &&
@@ -155,21 +193,53 @@ object BasemapStyleResolver {
                         !PmtilesArchiveGate.isUsable(File(job.localPath), job.regionKey)
                 }
 
-            if (covering != null) {
-                val localDem = MapterhornTerrain.localDemBesideBasemap(covering.localPath)
+            val archives = if (intersecting.isNotEmpty()) intersecting else listOfNotNull(covering)
+            val extendsBeyond =
+                view != null &&
+                    viewportExtendsBeyondArchives(view, archives)
+            val network = hasNetwork(context)
+            val mountOnline = shouldMountOnlineUnderlay(network, extendsBeyond)
+
+            if (mountOnline) {
+                val online =
+                    fallbackOnline(
+                        context,
+                        dataDir,
+                        prefer3d,
+                        vulkanAvailable,
+                        note =
+                            if (archives.isNotEmpty()) {
+                                "Online map fills the view beyond offline archives"
+                            } else {
+                                null
+                            },
+                    )
+                return online.copy(
+                    onlineUnderlay = true,
+                    overlayArchives = archives,
+                    coveringJob = covering,
+                )
+            }
+
+            if (archives.isNotEmpty()) {
+                val primary = covering ?: archives.first()
+                val localDem = MapterhornTerrain.localDemBesideBasemap(primary.localPath)
                 val offlineFlags =
                     offlineCoveringFlags(
                         want3d = want3d,
                         localDemPresent = localDem != null,
                     )
                 val uri =
-                    prepareOfflineStyle(
+                    prepareOfflineComposite(
                         context,
-                        covering.localPath,
-                        // Terrarium encoding must be in style JSON — Android
-                        // RasterDemSource cannot set encoding programmatically
-                        // (maplibre-native#3564 / MapLibre Android PMTiles notes).
+                        archives,
                         demFor3d = if (offlineFlags.offline3d) localDem else null,
+                        // Several extracts, or a view larger than one bbox:
+                        // loopback composite (MapLibre.setConnected keeps
+                        // 127.0.0.1 alive in airplane mode). A single archive
+                        // that covers the view is read with pmtiles://file://
+                        // so the extract's own z/x/y tiles are used.
+                        useLoopback = archives.size > 1 || extendsBeyond,
                     )
                         ?: return fallbackOnline(
                             context,
@@ -181,10 +251,9 @@ object BasemapStyleResolver {
                 return ResolvedStyle(
                     kind = StyleKind.OfflineProtomaps,
                     styleUri = uri,
-                    coveringJob = covering,
+                    coveringJob = primary,
                     note = offlineFlags.note,
                     cameraPitch = offlineFlags.cameraPitch,
-                    // Baked into style.local.json; runtime attach would detach/readd.
                     attachMapterhornTerrain = false,
                     demSourceUri =
                         if (offlineFlags.offline3d) {
@@ -192,6 +261,7 @@ object BasemapStyleResolver {
                         } else {
                             null
                         },
+                    overlayArchives = archives,
                 )
             }
 
@@ -216,6 +286,91 @@ object BasemapStyleResolver {
         }
 
         return fallbackOnline(context, dataDir, prefer3d, vulkanAvailable, note = null)
+    }
+
+    data class Viewport(
+        val south: Double,
+        val west: Double,
+        val north: Double,
+        val east: Double,
+    )
+
+    /**
+     * Completed, usable vector jobs whose bbox intersects [view]. When [view]
+     * is null, the camera-centre covering list is used (one-archive fallback).
+     */
+    internal fun selectIntersectingVectorJobs(
+        allJobs: List<FfiPmtilesJob>,
+        view: Viewport?,
+        coveringJobs: List<FfiPmtilesJob>,
+    ): List<FfiPmtilesJob> {
+        val usable =
+            allJobs.filter { job ->
+                job.status == "completed" &&
+                    !isDemArchive(job.regionKey, job.localPath) &&
+                    job.localPath.isNotBlank() &&
+                    PmtilesArchiveGate.isUsable(File(job.localPath), job.regionKey)
+            }
+        if (view == null) {
+            return selectVectorCoveringJob(coveringJobs)?.let { listOf(it) } ?: emptyList()
+        }
+        val hit =
+            usable.filter { job ->
+                val minLat = job.minLat ?: return@filter false
+                val minLon = job.minLon ?: return@filter false
+                val maxLat = job.maxLat ?: return@filter false
+                val maxLon = job.maxLon ?: return@filter false
+                LocalVectorPmtilesServer.bboxIntersects(
+                    view.south,
+                    view.west,
+                    view.north,
+                    view.east,
+                    minLat,
+                    minLon,
+                    maxLat,
+                    maxLon,
+                )
+            }
+        if (hit.isNotEmpty()) return hit.distinctBy { it.localPath }
+        // Camera centre may sit on a covering even when the stored bbox missed
+        // the viewport (stale job bbox). Keep that archive.
+        return selectVectorCoveringJob(coveringJobs)?.let { listOf(it) } ?: emptyList()
+    }
+
+    internal fun viewportExtendsBeyondArchives(
+        view: Viewport,
+        archives: List<FfiPmtilesJob>,
+    ): Boolean {
+        if (archives.isEmpty()) return true
+        val samples =
+            listOf(
+                view.south to view.west,
+                view.south to view.east,
+                view.north to view.west,
+                view.north to view.east,
+                (view.south + view.north) / 2.0 to view.west,
+                (view.south + view.north) / 2.0 to view.east,
+                view.south to (view.west + view.east) / 2.0,
+                view.north to (view.west + view.east) / 2.0,
+            )
+        return samples.any { (lat, lon) -> archives.none { pointInJobBbox(lat, lon, it) } }
+    }
+
+    internal fun shouldMountOnlineUnderlay(
+        hasNetwork: Boolean,
+        viewportExtendsBeyond: Boolean,
+    ): Boolean = hasNetwork && viewportExtendsBeyond
+
+    internal fun pointInJobBbox(
+        lat: Double,
+        lon: Double,
+        job: FfiPmtilesJob,
+    ): Boolean {
+        val minLat = job.minLat ?: return false
+        val minLon = job.minLon ?: return false
+        val maxLat = job.maxLat ?: return false
+        val maxLon = job.maxLon ?: return false
+        return LocalVectorPmtilesServer.pointInBbox(lat, lon, minLat, minLon, maxLat, maxLon)
     }
 
     /**
@@ -305,6 +460,8 @@ object BasemapStyleResolver {
         context: Context,
         pmtilesAbsolutePath: String,
         demFor3d: File? = null,
+        tilesUrl: String? = null,
+        worldBounds: Boolean = false,
     ): String? {
         val pmFile = File(pmtilesAbsolutePath)
         if (!pmFile.isFile) return null
@@ -352,6 +509,7 @@ object BasemapStyleResolver {
         // do not exist and the map goes blank — including peak labels, which
         // then never appear. Pin maxzoom to the archive header so z16+ overzooms.
         readPmtilesMaxZoom(pmFile)?.let { pm.put("maxzoom", it) }
+        patchProtomapsSource(json, tilesUrl, worldBounds)
         var styleJson = json
         if (demFor3d != null && demFor3d.isFile) {
             val tileJsonUrl = MapterhornTerrain.ensureLocalDemTileJsonUrl(demFor3d)
@@ -368,9 +526,119 @@ object BasemapStyleResolver {
                 withDem = demFor3d != null && demFor3d.isFile,
             )
         val outStyle = File(outRoot, outName)
-        outStyle.writeText(styleJson.toString())
+        writeStyleAtomically(outStyle, styleJson)
         // MapLibre Native expects a URI scheme for local styles.
         return "file://${outStyle.absolutePath}"
+    }
+
+    /**
+     * Offline style that reads every intersecting archive through the local
+     * vector tile server. Source bounds are the world so tiles that only partly
+     * overlap a region bbox are still requested at low zoom.
+     */
+    fun prepareOfflineComposite(
+        context: Context,
+        archives: List<FfiPmtilesJob>,
+        demFor3d: File? = null,
+        useLoopback: Boolean = true,
+    ): String? {
+        val usable =
+            archives.filter { job ->
+                File(job.localPath).isFile &&
+                    !isDemArchive(job.regionKey, job.localPath)
+            }
+        if (usable.isEmpty()) return null
+        val primary = File(usable.first().localPath)
+        val tilesUrl =
+            if (useLoopback) {
+                val serverArchives =
+                    usable.map { job ->
+                        LocalVectorPmtilesServer.Archive(
+                            path = job.localPath,
+                            minLat = job.minLat ?: -85.0,
+                            minLon = job.minLon ?: -180.0,
+                            maxLat = job.maxLat ?: 85.0,
+                            maxLon = job.maxLon ?: 180.0,
+                        )
+                    }
+                LocalVectorPmtilesServer.ensureServing(serverArchives)
+            } else {
+                null
+            }
+        // Airplane / no radio: keep pmtiles://file:// (MapLibre will not
+        // fetch 127.0.0.1). World bounds so low-zoom ancestors still paint.
+        return prepareOfflineStyle(
+            context,
+            primary.absolutePath,
+            demFor3d,
+            tilesUrl = tilesUrl,
+            worldBounds = true,
+        )
+    }
+
+    private fun patchProtomapsSource(
+        json: JSONObject,
+        tilesUrl: String?,
+        worldBounds: Boolean,
+    ) {
+        val pm = json.getJSONObject("sources").getJSONObject("protomaps")
+        if (!tilesUrl.isNullOrBlank()) {
+            pm.remove("url")
+            pm.put("tiles", org.json.JSONArray().put(tilesUrl))
+            val maxz = pm.optInt("maxzoom", 15)
+            pm.put("maxzoom", if (maxz in 1..15) maxz else 15)
+        }
+        if (worldBounds || !tilesUrl.isNullOrBlank()) {
+            pm.put("minzoom", 0)
+            // Do not clip to one extract bbox: a tile that lies only partly
+            // inside the region must still be requested.
+            pm.put(
+                "bounds",
+                org.json.JSONArray()
+                    .put(-180.0)
+                    .put(-85.0511287)
+                    .put(180.0)
+                    .put(85.0511287),
+            )
+        }
+    }
+
+    private fun writeStyleAtomically(
+        outStyle: File,
+        json: JSONObject,
+    ) {
+        val tmp = File(outStyle.parentFile, "${outStyle.name}.tmp")
+        tmp.writeText(json.toString())
+        if (!tmp.renameTo(outStyle)) {
+            tmp.copyTo(outStyle, overwrite = true)
+            tmp.delete()
+        }
+    }
+
+    internal fun rewriteSourceWorldBounds(styleFile: File) {
+        rewritePreparedStyle(styleFile, tilesUrl = null, worldBounds = true)
+    }
+
+    internal fun rewriteSourceToCompositeTiles(
+        styleFile: File,
+        tilesUrl: String,
+    ) {
+        rewritePreparedStyle(styleFile, tilesUrl = tilesUrl, worldBounds = true)
+    }
+
+    private fun rewritePreparedStyle(
+        styleFile: File,
+        tilesUrl: String?,
+        worldBounds: Boolean,
+    ) {
+        if (!styleFile.isFile) return
+        val text =
+            runCatching { styleFile.readText() }.getOrNull()?.takeIf { it.isNotBlank() }
+                ?: return
+        val json =
+            runCatching { JSONObject(text) }.getOrNull() ?: return
+        patchProtomapsSource(json, tilesUrl, worldBounds)
+        writeStyleAtomically(styleFile, json)
     }
 
     /**

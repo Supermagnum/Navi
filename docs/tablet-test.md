@@ -1,8 +1,8 @@
 # Tablet test (debug APK)
 
-Build from this branch: `app/build/outputs/apk/debug/app-debug.apk` (64 MB,
+Build from this branch: `app/build/outputs/apk/debug/app-debug.apk` (53 MB,
 arm64 + x86_64). sha256
-`b55c93dcfcfe11da202625240dcb6b934ce7781ca582bca556ff5e09206d9b43`.
+`2e7e5cdd11af392aa808f60260dac4e400acf01272540c2edc1cbf439bcce217`.
 
 Install this debug APK over an existing **debug-signed** `no.navi.app` with
 `adb install -r app-debug.apk` (or the file manager “update”). Same application
@@ -54,8 +54,15 @@ Pick the named place (city/town), not a farm of the same name.
 
 Look at: the route on the **roads next to those places** (not a snap onto a
 distant highway); no unexplained out-and-back; the map filled under the camera
-(one offline archive is mounted, chosen by the camera centre — a view that
-spans two regions can be half empty); tiles still visible while a plan runs.
+(every offline archive that intersects the view is drawn; when the view
+extends past those archives and the network is on, the online map fills the
+rest); tiles still visible while a plan runs.
+
+## Issues (no work yet)
+
+- Oslo (`place:city` 59.91333, 10.73897) to Lillestrøm (`place:town`
+  59.95592, 11.04911) needs the corridor stage and about 1.1 GB for a 22 km
+  route.
 
 ## If something goes wrong
 

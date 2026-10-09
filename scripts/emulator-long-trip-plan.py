@@ -337,33 +337,218 @@ def camera_to(lat, lon, zoom=12):
     )
 
 
+FU44_POSITIONS = [
+    ("elsa_overview", 64.88873, 19.51604),
+    ("oslo", 59.91333, 10.73897),
+    ("hamar", 60.79472, 11.06806),
+    ("hallingdal_bromma", 60.50, 9.17),
+    ("ostersund", 63.18, 14.64),
+    ("ostlandet_varmland", 59.92, 12.29),
+    ("hamburg", 53.55034, 9.99368),
+]
+FU44_ZOOMS = (3, 5, 7, 9, 11, 13, 15)
+BLANK_BG = (248, 244, 240)
+
+
+def _is_blank_bg(r, g, b, tol=6):
+    br, bg, bb = BLANK_BG
+    cream = abs(r - br) <= tol and abs(g - bg) <= tol and abs(b - bb) <= tol
+    empty_gray = max(r, g, b) >= 215 and max(r, g, b) - min(r, g, b) <= 16
+    cutoff = abs(r - 218) <= 8 and abs(g - 214) <= 8 and abs(b - 211) <= 8
+    return cream or empty_gray or cutoff
+
+
+def blank_share_png(path, tol=6):
+    """Share of the map that is a solid blank background, in percent.
+
+    A coarse grid so a straight half-screen cutoff counts and a drawn city
+    (roads and water through the cream) does not.
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    im = Image.open(path).convert("RGB")
+    w, h = im.size
+    if w <= 0 or h <= 0:
+        return 100.0
+    cols, rows = 8, 16
+    top = max(1, int(h * 0.0375))
+    bot = max(1, int(h * 0.02))
+    y0, y1 = top, max(top + 1, h - bot)
+    cw, ch = w // cols, (y1 - y0) // rows
+    if cw <= 0 or ch <= 0:
+        return 100.0
+    blank_cells = 0
+    for i in range(rows):
+        for j in range(cols):
+            crop = im.crop((j * cw, y0 + i * ch, j * cw + cw, y0 + i * ch + ch))
+            px = list(crop.getdata())
+            if not px:
+                blank_cells += 1
+                continue
+            empty = sum(1 for r, g, b in px if _is_blank_bg(r, g, b, tol))
+            if empty / len(px) >= 0.92:
+                blank_cells += 1
+    return 100.0 * blank_cells / (cols * rows)
+
+
+def screencap(dest):
+    dest = pathlib.Path(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    remote = "/data/local/tmp/navi_fu44.png"
+    adb("shell", "screencap", "-p", remote)
+    adb("pull", remote, str(dest), timeout=60)
+    return dest
+
+
+def pixel_nudge_deg(zoom, pixels=4):
+    return pixels * 360.0 / (256.0 * (2.0 ** float(zoom)))
+
+
+def run_fu44_map_matrix(out_dir, plan_elsa=True):
+    """Idle then nudge screenshots at seven positions and seven zooms, net on/off."""
+    out = pathlib.Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    rows = []
+    before_poly = os.environ.get(
+        "NAVI_FU44_BEFORE_POLY",
+        "/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/navi-gate/work-fu43/e_elsa_sjuvass.polyline.txt",
+    )
+    if pathlib.Path(before_poly).is_file():
+        remote_poly = "/data/local/tmp/elsa_before.polyline.txt"
+        adb("push", before_poly, remote_poly, timeout=60)
+        clear_forced_basemap()
+        adb(
+            "shell",
+            "am",
+            "start",
+            "-n",
+            f"{PKG}/.MainActivity",
+            "--ez",
+            "navi_hide_chrome",
+            "true",
+            "--es",
+            "navi_overlay_polyline_file",
+            remote_poly,
+        )
+        time.sleep(2)
+        camera_to(60.54, 9.14, 11)
+        wait_tiles(16)
+        screencap(out / "bromma_before.png")
+        log("fu44-map bromma_before.png")
+    if plan_elsa and os.environ.get("NAVI_FU44_SKIP_PLAN") != "1":
+        log("fu44-map: plan Elsa for the route-overview camera")
+        clear_previous_plan()
+        adb("logcat", "-c")
+        start_plan(TRIPS["elsa"], False, "none")
+        status, end, wall, _peak = wait_plan(240)
+        log(f"fu44-map elsa plan {status} after {wall:.0f}s: {end[-160:]}")
+        camera_to(60.54, 9.14, 11)
+        wait_tiles(16)
+        screencap(out / "bromma_after.png")
+        log("fu44-map bromma_after.png")
+    only_net = os.environ.get("NAVI_FU44_NET", "").strip().lower()
+    nets = ((False, "on"), (True, "off"))
+    if only_net == "off":
+        nets = ((True, "off"),)
+    elif only_net == "on":
+        nets = ((False, "on"),)
+    for airplane, net in nets:
+        set_airplane(airplane)
+        time.sleep(2)
+        try:
+            for name, lat, lon in FU44_POSITIONS:
+                for z in FU44_ZOOMS:
+                    ensure_running()
+                    clear_forced_basemap()
+                    adb("logcat", "-c")
+                    camera_to(lat, lon, z)
+                    idle = wait_tiles(16)
+                    idle_path = out / f"{name}_z{z}_{net}_idle.png"
+                    screencap(idle_path)
+                    idle_blank = blank_share_png(idle_path)
+                    dlat = pixel_nudge_deg(z)
+                    adb("logcat", "-c")
+                    camera_to(lat + dlat, lon, z)
+                    nudged = wait_tiles(16)
+                    nudge_path = out / f"{name}_z{z}_{net}_nudge.png"
+                    screencap(nudge_path)
+                    nudge_blank = blank_share_png(nudge_path)
+                    before = idle_blank if idle_blank is not None else idle.get("blank_pct")
+                    after = nudge_blank if nudge_blank is not None else nudged.get("blank_pct")
+                    pair_ok = (
+                        before is not None
+                        and after is not None
+                        and abs(before - after) <= 1.0
+                    )
+                    rec = {
+                        "position": name,
+                        "lat": lat,
+                        "lon": lon,
+                        "zoom": z,
+                        "network": net,
+                        "idle_file": idle_path.name,
+                        "nudge_file": nudge_path.name,
+                        "blank_idle": None if before is None else round(before, 2),
+                        "blank_nudge": None if after is None else round(after, 2),
+                        "pair_ok": pair_ok,
+                        "log_idle": idle.get("blank_pct"),
+                        "log_nudge": nudged.get("blank_pct"),
+                    }
+                    rows.append(rec)
+                    log(
+                        f"fu44-map {name} z{z} net={net} idle={rec['blank_idle']} "
+                        f"nudge={rec['blank_nudge']} pair_ok={pair_ok}"
+                    )
+        finally:
+            if airplane:
+                set_airplane(False)
+                time.sleep(1)
+    (out / "blank-share.json").write_text(json.dumps(rows, indent=2) + "\n")
+    return rows
+
+
 def wait_tiles(seconds=12):
+    """Wait until the map logs a blank-area share. Feature count is not used."""
     visible = None
+    blank = None
     kind = ""
     line = ""
     min_visible = None
+    min_blank = None
     for _ in range(int(seconds * 2)):
         time.sleep(0.5)
         text = logcat()
         for ln in text.splitlines():
-            if "NaviMapTiles" in ln and "visible=" in ln:
+            if "NaviMapTiles" in ln and "blank_pct=" in ln:
                 line = ln
                 raw = field(ln, "visible") or "0"
                 try:
                     visible = int(raw)
                 except ValueError:
                     visible = 0
+                braw = field(ln, "blank_pct") or ""
+                try:
+                    blank = float(braw)
+                except ValueError:
+                    blank = None
                 kind = field(ln, "kind") or ""
                 if min_visible is None or visible < min_visible:
                     min_visible = visible
-        if (visible or 0) > 0:
+                if blank is not None and (min_blank is None or blank < min_blank):
+                    min_blank = blank
+        if blank is not None:
             break
+    ok = blank is not None and blank <= 25.0
     return {
         "visible": visible or 0,
         "min_visible": min_visible if min_visible is not None else 0,
+        "blank_pct": blank,
+        "min_blank_pct": min_blank,
         "kind": kind,
         "line": line,
-        "ok": (visible or 0) > 0,
+        "ok": ok,
     }
 
 
@@ -442,9 +627,13 @@ def run_display_checks():
         "elapsed_s": round(hop_s, 3),
         "last_kind": last["kind"],
         "last_visible": last["visible"],
+        "blank_pct": last.get("blank_pct"),
         "line": last["line"],
     }
-    log(f"hop_three_regions elapsed={hop['elapsed_s']}s visible={last['visible']} ok={hop['ok']}")
+    log(
+        f"hop_three_regions elapsed={hop['elapsed_s']}s "
+        f"blank_pct={last.get('blank_pct')} ok={hop['ok']}"
+    )
 
     clear_forced_basemap()
     adb("logcat", "-c")
@@ -456,7 +645,7 @@ def run_display_checks():
         camera_to(57.5, lon, 9)
         rec = wait_tiles(6)
         frames.append(rec)
-        if not rec["ok"] or rec.get("min_visible", 0) == 0:
+        if not rec["ok"]:
             empties += 1
     pan = {
         "ok": empties == 0,
@@ -478,10 +667,15 @@ def run_display_checks():
     during = wait_tiles(8)
     plan = {
         "ok": before["ok"] and during["ok"],
-        "before": before["visible"],
-        "during": during["visible"],
+        "before": before.get("blank_pct"),
+        "during": during.get("blank_pct"),
+        "before_visible": before["visible"],
+        "during_visible": during["visible"],
     }
-    log(f"plan_no_blank before={plan['before']} during={plan['during']} ok={plan['ok']}")
+    log(
+        f"plan_no_blank before_blank={plan['before']} "
+        f"during_blank={plan['during']} ok={plan['ok']}"
+    )
     # This check starts a real plan; wait it out so the gate trip is not busy.
     status, end, wall, _peak = wait_plan(180)
     log(f"plan_no_blank drain {status} after {wall:.0f}s: {end[-160:]}")
@@ -863,9 +1057,14 @@ def main():
         action="store_true",
         help="skip search, offline-map and display checks (short-route timing)",
     )
+    ap.add_argument(
+        "--fu44-map",
+        action="store_true",
+        help="idle/nudge blank-share screenshot matrix into --out (docs/fu44-map)",
+    )
     a = ap.parse_args()
-    if not a.trip and not a.search_check and not a.clear_region and not a.pause_test:
-        ap.error("trip is required unless --search-check, --clear-region or --pause-test")
+    if not a.trip and not a.search_check and not a.clear_region and not a.pause_test and not a.fu44_map:
+        ap.error("trip is required unless --search-check, --clear-region, --pause-test or --fu44-map")
     trip = TRIPS.get(a.trip) if a.trip else None
     out = pathlib.Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -873,6 +1072,13 @@ def main():
     ensure_running()
     pid0 = pid()
     log(f"serial={SERIAL} pid={pid0}")
+    if a.fu44_map:
+        rows = run_fu44_map_matrix(out)
+        fails = [r for r in rows if not r.get("pair_ok")]
+        rec = {"accepted": not fails, "rows": rows, "fail_count": len(fails)}
+        (out / "result.json").write_text(json.dumps(rec, indent=2) + "\n")
+        print(json.dumps({"accepted": rec["accepted"], "fail_count": rec["fail_count"]}, indent=2))
+        sys.exit(0 if rec["accepted"] else 1)
     index = place_index_facts()
     log(f"place index: {index.get('path')} bytes={index.get('bytes')} quick_check={index.get('quick_check')}")
 
