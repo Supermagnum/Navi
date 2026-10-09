@@ -2368,6 +2368,7 @@ pub fn plan_car_route_at(
         }
         Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner(),
     };
+    driver_break_core::routing::plan_file_log::clear_trip_artifacts();
     let inputs = plan_inputs_line(
         profile,
         use_eco,

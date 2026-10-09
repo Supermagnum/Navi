@@ -82,6 +82,13 @@ pub fn remove_file(name: &str) {
     let _ = std::fs::remove_file(root.join(name));
 }
 
+/// Drop the previous trip's log and hops before a new plan writes any line.
+pub fn clear_trip_artifacts() {
+    write_file(LOG_NAME, b"");
+    write_file(HOPS_NAME, b"{\"hops\":[]}\n");
+    remove_file(HOPS_PARTIAL_NAME);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -110,6 +117,15 @@ mod tests {
         let text = fs::read_to_string(&log).unwrap();
         assert!(text.contains("hop_result=success"), "{text}");
         assert_eq!(fs::read_to_string(&hops).unwrap(), "{\"hops\":[]}");
+        write_file(HOPS_NAME, b"{\"hops\":[{\"prev\":true}]}\n");
+        line("hop from previous trip");
+        clear_trip_artifacts();
+        let cleared_log = fs::read_to_string(&log).unwrap();
+        assert!(
+            !cleared_log.contains("previous trip"),
+            "{cleared_log}"
+        );
+        assert_eq!(fs::read_to_string(&hops).unwrap(), "{\"hops\":[]}\n");
         let _ = fs::remove_dir_all(&dir);
     }
 }
