@@ -1,12 +1,22 @@
 {
   "europe/denmark": 2851971,
+  "europe/finland": 1445700,
   "europe/germany/hamburg": 339055,
+  "europe/germany/mecklenburg-vorpommern": 576504,
   "europe/germany/niedersachsen": 2903125,
   "europe/germany/schleswig-holstein": 836391,
+  "europe/norway/nord-norge": 414996,
   "europe/norway/ostlandet": 1483135,
   "europe/norway/sorlandet": 235104,
   "europe/norway/vestlandet": 791584,
+  "europe/sweden/dalarna": 53435,
+  "europe/sweden/gavleborg": 71624,
   "europe/sweden/halland": 31298,
+  "europe/sweden/jamtland": 35958,
+  "europe/sweden/norrbotten": 42675,
   "europe/sweden/skane": 202653,
+  "europe/sweden/varmland": 53164,
+  "europe/sweden/vasterbotten": 40695,
+  "europe/sweden/vasternorrland": 56048,
   "europe/sweden/vastra_gotaland": 258056
 }
