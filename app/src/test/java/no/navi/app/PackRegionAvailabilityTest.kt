@@ -221,4 +221,30 @@ class PackRegionAvailabilityTest {
         assertTrue(PackRegionAvailability.osmCheckUsesReadyStyle(true))
         assertFalse(PackRegionAvailability.osmCheckUsesReadyStyle(false))
     }
+
+    @Test
+    fun mayIndex_refuses_parent_and_non_installed_on_product_db() {
+        val country = File("sweden-latest.osm.pbf")
+        val leaves = setOf("europe/sweden/norrbotten", "europe/sweden/dalarna")
+        assertFalse(
+            PackRegionAvailability.mayIndexRegion("europe/sweden", country, leaves, true),
+        )
+        assertFalse(
+            PackRegionAvailability.mayIndexRegion("test/fu38-pause", country, leaves, true),
+        )
+        assertTrue(
+            PackRegionAvailability.mayIndexRegion(
+                "europe/sweden/norrbotten",
+                File("norrbotten-latest.osm.pbf"),
+                leaves,
+                true,
+            ),
+        )
+        assertTrue(
+            PackRegionAvailability.mayIndexRegion("test/fu38-pause", country, leaves, false),
+        )
+        assertTrue(PackRegionAvailability.isPublishedPackParent("europe/sweden"))
+        assertFalse(PackRegionAvailability.isPublishedPackParent("europe/sweden/norrbotten"))
+        assertFalse(PackRegionAvailability.isPublishedPackParent("europe/norway/ostlandet"))
+    }
 }

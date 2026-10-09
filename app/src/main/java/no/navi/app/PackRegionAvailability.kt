@@ -90,6 +90,56 @@ object PackRegionAvailability {
     }
 
     /**
+     * True when [regionId] is a catalog parent that publishes leaf pack regions.
+     * Those parents are never given a place index (their extract covers the leaves).
+     */
+    fun isPublishedPackParent(regionId: String): Boolean {
+        val rid = GeofabrikDownloadCatalog.canonicalizePath(regionId)
+        if (rid.isEmpty()) return false
+        val base = GeofabrikDownloadCatalog.regionChipBasePath(rid) ?: return false
+        return rid == base && GeofabrikDownloadCatalog.packCatalogLeafPaths(rid).isNotEmpty()
+    }
+
+    /**
+     * Installed pack regions: those with a `*.navi-manifest.json`, not a
+     * leftover country extract sitting next to leaf packs.
+     */
+    fun installedPackRegionIds(regions: Collection<InstalledMaps.Region>): Set<String> =
+        regions
+            .filter { File(it.packDir, "${it.stem}.navi-manifest.json").isFile }
+            .map { normalize(it.regionId) }
+            .toSet()
+
+    /**
+     * A region is indexed only from its own source (place-source file or own
+     * extract). An extract that covers more than the region's outline is never
+     * indexed under any id. A region id that is not an installed pack region
+     * is never given an index.
+     *
+     * [writingProductDb] false is for tests / scratch databases.
+     */
+    fun mayIndexRegion(
+        regionId: String,
+        pbf: File?,
+        installedPackIds: Collection<String>,
+        writingProductDb: Boolean,
+    ): Boolean {
+        val rid = normalize(regionId)
+        if (rid.isEmpty()) return false
+        if (!writingProductDb) return true
+        if (isPublishedPackParent(rid)) return false
+        if (installedPackIds.none { normalize(it) == rid }) return false
+        if (installedPackIds.any { normalize(it).startsWith("$rid/") }) return false
+        if (pbf != null &&
+            !pbf.name.endsWith(".navi-place-source.osm.pbf") &&
+            !pbfMatchesRegionForPlaceIndex(pbf, rid)
+        ) {
+            return false
+        }
+        return true
+    }
+
+    /**
      * Place-index only: the PBF leaf stem must match the region id (plus catalog
      * aliases). Never accept a parent-country extract under a subregion id
      * (Hamburg must not index from `sweden-latest`; Finland must not either;

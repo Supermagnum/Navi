@@ -18,6 +18,78 @@ use crate::search::NameIndex;
 /// Minimum size treated as a real extract (matches region provision / Android).
 pub const MIN_REAL_PBF_BYTES: u64 = 1_000_000;
 
+const PLACE_SOURCE_FILE_SUFFIX: &str = ".navi-place-source.osm.pbf";
+
+/// Pack regions that have a manifest or install stamp in [dir].
+pub fn installed_pack_region_ids(dir: &Path) -> Vec<String> {
+    let mut ids = Vec::new();
+    let Ok(rd) = fs::read_dir(dir) else {
+        return ids;
+    };
+    for ent in rd.flatten() {
+        let name = ent.file_name();
+        let name = name.to_string_lossy();
+        if let Some(_stem) = name.strip_suffix(".navi-server-install.json") {
+            if let Ok(txt) = fs::read_to_string(ent.path()) {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
+                    if let Some(id) = v.get("region_id").and_then(|x| x.as_str()) {
+                        let id = normalize_region_id(id);
+                        if !id.is_empty() {
+                            ids.push(id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
+fn region_has_pack_manifest(dir: &Path, region_id: &str) -> bool {
+    let stem = leaf_stem_for_region_id(region_id);
+    dir.join(format!("{stem}.navi-manifest.json")).is_file()
+        || dir.join(format!("{stem}.navi-server-install.json")).is_file()
+}
+
+/// A region is indexed only from its own source (place-source file or own
+/// extract). An extract that covers more than the region's outline is never
+/// indexed under any id. A region id that is not an installed pack region is
+/// never given an index.
+pub fn refuse_overbroad_place_index(region_id: &str, pbf: &Path) -> Result<(), String> {
+    let region_id = normalize_region_id(region_id);
+    if region_id.is_empty() {
+        return Err("empty region_id".into());
+    }
+    let fname = pbf.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    if fname.ends_with(PLACE_SOURCE_FILE_SUFFIX) {
+        return Ok(());
+    }
+    let extract = crate::routing::geofabrik_extract_path(&region_id);
+    if extract != region_id {
+        return Err(format!(
+            "extract covers more than the region outline; will not index {extract} under {region_id}"
+        ));
+    }
+    let Some(dir) = pbf.parent() else {
+        return Ok(());
+    };
+    let installed = installed_pack_region_ids(dir);
+    let prefix = format!("{region_id}/");
+    if installed.iter().any(|id| id.starts_with(&prefix)) {
+        return Err(format!(
+            "refusing covering extract under {region_id}: leaf pack regions are installed"
+        ));
+    }
+    if !region_has_pack_manifest(dir, &region_id) {
+        return Err(format!(
+            "region id is not an installed pack region: {region_id}"
+        ));
+    }
+    Ok(())
+}
+
 /// On-device FTS path used by searchPlaces / PlaceIndexBackground.
 pub const PLACE_INDEX_DB_NAME: &str = "place_index.db";
 
@@ -186,7 +258,14 @@ pub fn build_place_index_from_pbf(
     crate::download::phase_timing::end("place_index.open_db", open_t0);
     let n = idx
         .load_from_pbf_for_region(pbf_path, region_id)
-        .map_err(|e| format!("index load: {e:#}"))?;
+        .map_err(|e| {
+            let msg = format!("{e:#}");
+            if msg.contains(crate::search::PLACE_INDEX_PAUSED_PREFIX) {
+                msg
+            } else {
+                format!("index load: {msg}")
+            }
+        })?;
     let ms = t0.elapsed().as_secs_f64() * 1000.0;
     if n == 0 || !NameIndex::has_entries(index_db) {
         return Err(format!(
@@ -211,6 +290,7 @@ pub fn ensure_place_index_after_pack_install(
     let region_id = normalize_region_id(region_id);
     let (pbf_path, pbf_bytes, pbf_downloaded, pbf_ms) =
         ensure_geofabrik_pbf_for_region(data_dir, &region_id)?;
+    refuse_overbroad_place_index(&region_id, &pbf_path)?;
     let index_db = data_dir.join(PLACE_INDEX_DB_NAME);
     log::info!(
         target: "NaviPack",
@@ -284,6 +364,47 @@ mod tests {
             "expected cannot-index-yet, got {err}"
         );
         assert!(err.contains("halland-latest.osm.pbf"), "{err}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn refuse_covering_extract_when_leaf_packs_installed() {
+        let dir = std::env::temp_dir().join(format!(
+            "navi-place-index-parent-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("norrbotten-latest.navi-server-install.json"),
+            r#"{"region_id":"europe/sweden/norrbotten"}"#,
+        )
+        .unwrap();
+        let pbf = dir.join("sweden-latest.osm.pbf");
+        {
+            let f = fs::File::create(&pbf).unwrap();
+            f.set_len(MIN_REAL_PBF_BYTES).unwrap();
+        }
+        let err = refuse_overbroad_place_index("europe/sweden", &pbf).unwrap_err();
+        assert!(err.contains("leaf pack"), "{err}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn refuse_region_id_that_is_not_an_installed_pack() {
+        let dir = std::env::temp_dir().join(format!(
+            "navi-place-index-not-pack-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let pbf = dir.join("fu38-pause.osm.pbf");
+        {
+            let f = fs::File::create(&pbf).unwrap();
+            f.set_len(MIN_REAL_PBF_BYTES).unwrap();
+        }
+        let err = refuse_overbroad_place_index("test/fu38-pause", &pbf).unwrap_err();
+        assert!(err.contains("not an installed pack region"), "{err}");
         let _ = fs::remove_dir_all(&dir);
     }
 

@@ -54,8 +54,8 @@ pub use corridor_regions::{
 pub use fetch::{try_fetch_region_packs, ServerInstallStamp};
 pub use place_index_after::{
     build_place_index_from_pbf, ensure_geofabrik_pbf_for_region,
-    ensure_place_index_after_pack_install, PackPlaceIndexReport, MIN_REAL_PBF_BYTES,
-    PLACE_INDEX_DB_NAME,
+    ensure_place_index_after_pack_install, installed_pack_region_ids, refuse_overbroad_place_index,
+    PackPlaceIndexReport, MIN_REAL_PBF_BYTES, PLACE_INDEX_DB_NAME,
 };
 pub use place_source::{
     ensure_place_index_for_installed_region, ensure_place_index_for_pack_region,

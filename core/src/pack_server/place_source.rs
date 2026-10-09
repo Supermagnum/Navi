@@ -66,6 +66,14 @@ pub struct PlaceIndexEnsureReport {
 
 impl PlaceIndexEnsureReport {
     pub fn to_report_string(&self) -> String {
+        if self.action == "paused" {
+            return format!(
+                "PAUSED\nregion_id={}\nsource={}\naction=paused\nreason={}\n",
+                self.region_id,
+                self.source.as_str(),
+                self.reason
+            );
+        }
         if self.action == "missing" || self.action == "rejected" {
             return format!(
                 "FAIL\nregion_id={}\nsource={}\naction={}\nreason={}\n",
@@ -324,7 +332,24 @@ fn build_from_place_source(
     );
     let t0 = Instant::now();
     let (indexed, cache_hit, index_ms) =
-        build_place_index_from_pbf(pbf, index_db, region_id, force)?;
+        match build_place_index_from_pbf(pbf, index_db, region_id, force) {
+            Ok(v) => v,
+            Err(e) if e.contains(crate::search::PLACE_INDEX_PAUSED_PREFIX) => {
+                return Ok(PlaceIndexEnsureReport {
+                    region_id: region_id.to_string(),
+                    source: PlaceIndexSource::PlaceSource,
+                    action: "paused".into(),
+                    indexed: 0,
+                    cache_hit: false,
+                    sha256: listed.sha256.clone(),
+                    download_bytes: listed.bytes,
+                    index_ms: t0.elapsed().as_secs_f64() * 1000.0,
+                    reason: e,
+                    file_deleted: false,
+                });
+            }
+            Err(e) => return Err(e),
+        };
     if !NameIndex::region_index_intact(index_db, region_id) {
         return Err("place index intact check failed after place-source build".into());
     }
@@ -365,6 +390,18 @@ pub fn ensure_place_index_for_pack_region(
     let region_id = normalize_region_id(region_id);
     if region_id.is_empty() {
         return Err("empty region_id".into());
+    }
+    let prefix = format!("{region_id}/");
+    if super::place_index_after::installed_pack_region_ids(pack_dir)
+        .iter()
+        .any(|id| id.starts_with(&prefix))
+    {
+        return Ok(fail(
+            &region_id,
+            PlaceIndexSource::None,
+            "rejected",
+            format!("refusing covering extract under {region_id}: leaf pack regions are installed"),
+        ));
     }
     fs::create_dir_all(pack_dir).map_err(|e| e.to_string())?;
     if let Some(parent) = index_db.parent() {
@@ -438,8 +475,29 @@ pub fn ensure_place_index_for_pack_region(
     } else {
         match ensure_geofabrik_pbf_for_region(pack_dir, &region_id) {
             Ok((pbf, bytes, downloaded, pbf_ms)) => {
+                if let Err(e) = super::place_index_after::refuse_overbroad_place_index(&region_id, &pbf)
+                {
+                    return Ok(fail(&region_id, PlaceIndexSource::None, "rejected", e));
+                }
                 let (indexed, cache_hit, index_ms) =
-                    build_place_index_from_pbf(&pbf, index_db, &region_id, false)?;
+                    match build_place_index_from_pbf(&pbf, index_db, &region_id, false) {
+                        Ok(v) => v,
+                        Err(e) if e.contains(crate::search::PLACE_INDEX_PAUSED_PREFIX) => {
+                            return Ok(PlaceIndexEnsureReport {
+                                region_id,
+                                source: PlaceIndexSource::OwnExtract,
+                                action: "paused".into(),
+                                indexed: 0,
+                                cache_hit: false,
+                                sha256: String::new(),
+                                download_bytes: if downloaded { bytes } else { 0 },
+                                index_ms: pbf_ms,
+                                reason: e,
+                                file_deleted: false,
+                            });
+                        }
+                        Err(e) => return Err(e),
+                    };
                 NameIndex::set_place_index_source(index_db, &region_id, "own-extract")?;
                 Ok(PlaceIndexEnsureReport {
                     region_id,

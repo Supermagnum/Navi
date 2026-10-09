@@ -1873,6 +1873,15 @@ object RegionDownloadBackground {
             setStatus(OfflineIndexGate.CANNOT_INDEX_YET)
             return false
         }
+        val installed =
+            PackRegionAvailability.installedPackRegionIds(
+                InstalledMaps.current()?.regions?.values.orEmpty(),
+            ) + PackRegionAvailability.normalize(rid)
+        if (!PackRegionAvailability.mayIndexRegion(rid, pbf, installed, true)) {
+            Log.e(TAG, "FAIL: refusing place index region=$rid (not own source / not an installed pack)")
+            setStatus("failed (not own source)")
+            return false
+        }
         emitPhase(rid, "indexing")
         setStatus("Place index: starting… 0% (0 / 6)")
         if (PlaceIndexIntact.isIntact(placeDir, rid)) {
