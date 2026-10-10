@@ -2600,7 +2600,7 @@ fn plan_car_route_chunked_legs(
         if dir.is_empty() {
             None
         } else {
-            driver_break_core::datex::load_plan_datex_situations(
+            driver_break_core::datex::load_plan_datex_bound(
                 std::path::Path::new(dir),
                 chrono::Utc::now(),
             )
@@ -2608,7 +2608,6 @@ fn plan_car_route_chunked_legs(
     };
     let datex_now = chrono::Utc::now();
     if let Some(all) = datex_all.as_ref() {
-        driver_break_core::datex::write_plan_datex_snapshot(std::path::Path::new(&data_dir), all);
         driver_break_core::routing::plan_file_log::line(format!(
             "datex_snapshot sits={} mode={:?}",
             all.len(),
@@ -2757,7 +2756,7 @@ fn plan_car_route_chunked_legs(
         let arrival = datex_now + chrono::Duration::minutes(eta_minutes.round() as i64);
         let trip_uncertain = eta_minutes > 12.0 * 60.0;
         let hop_datex = match &datex_all {
-            Some(all) => driver_break_core::datex::impacts_near_route_ctx(
+            Some(all) => driver_break_core::datex::impacts_near_bound_ctx(
                 all,
                 &[(slat, slon), (elat, elon)],
                 driver_break_core::datex::DATEX_HOP_MARGIN_M,

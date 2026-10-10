@@ -39,7 +39,7 @@ pub use impact::{
 pub use parse::{parse_situation_publication, DatexSituation, DatexValidPeriod, SituationKind};
 pub use session::{reset_session_for_tests, with_session, DatexSession};
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, FixedOffset, Utc};
 
 use crate::pack_server::{
     self, check_connectivity_chain_blocking, data_source_tag, pack_server_discovery_bases,
@@ -86,6 +86,102 @@ pub fn planner_impacts_from_data_dir(
     impacts_near_route(&all, route_lat_lon, DATEX_HOP_MARGIN_M, now)
 }
 
+/// Compact classified record kept for hop binding. Comments, raw XML and the
+/// parser document are dropped before the first hop loads.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DatexBoundRecord {
+    pub geometry: Vec<(f64, f64)>,
+    pub impact: DatexImpact,
+    pub penalize_mult: f64,
+    pub penalty_minutes: f64,
+    pub situation_id: String,
+    pub road: String,
+    pub place: String,
+    pub validity_text: String,
+    pub xsi_type: String,
+    pub valid_from: Option<DateTime<FixedOffset>>,
+    pub valid_to: Option<DateTime<FixedOffset>>,
+    pub valid_periods: Vec<DatexValidPeriod>,
+    pub vehicle_types: Vec<String>,
+    pub direction: Option<String>,
+}
+
+impl DatexBoundRecord {
+    fn from_situation(s: DatexSituation) -> Self {
+        let validity_text = s.validity_text();
+        let place = s
+            .location_description
+            .as_deref()
+            .unwrap_or("")
+            .chars()
+            .take(80)
+            .collect();
+        Self {
+            geometry: s.geometry,
+            impact: s.impact,
+            penalize_mult: s.penalize_mult,
+            penalty_minutes: s.penalty_minutes,
+            situation_id: s.id,
+            road: s.road_number.unwrap_or_default(),
+            place,
+            validity_text,
+            xsi_type: s.xsi_type,
+            valid_from: s.valid_from,
+            valid_to: s.valid_to,
+            valid_periods: s.valid_periods,
+            vehicle_types: s.vehicle_types,
+            direction: s.direction,
+        }
+    }
+
+    fn is_active_at(&self, now: DateTime<Utc>) -> bool {
+        if let Some(start) = self.valid_from {
+            if now < start.with_timezone(&Utc) {
+                return false;
+            }
+        }
+        if let Some(end) = self.valid_to {
+            if now > end.with_timezone(&Utc) {
+                return false;
+            }
+        }
+        self.valid_from.is_some() || self.valid_to.is_some()
+    }
+
+    fn is_active_at_arrival(&self, arrival: DateTime<Utc>) -> bool {
+        if !self.is_active_at(arrival) {
+            return false;
+        }
+        if self.valid_periods.is_empty() {
+            return true;
+        }
+        self.valid_periods.iter().any(|p| p.contains_local(arrival))
+    }
+
+    fn has_recurring_windows(&self) -> bool {
+        self.valid_periods
+            .iter()
+            .any(|p| !p.days.is_empty() || p.tod_start.is_some() || p.tod_end.is_some())
+    }
+
+    fn into_constraint(self) -> DatexPlannerConstraint {
+        let (lat, lon) = self.geometry.first().copied().unwrap_or((0.0, 0.0));
+        DatexPlannerConstraint {
+            lat,
+            lon,
+            impact: self.impact,
+            radius_m: DATEX_IMPACT_RADIUS_M,
+            situation_id: self.situation_id,
+            penalize_mult: self.penalize_mult.max(1.0),
+            penalty_minutes: self.penalty_minutes,
+            road: self.road,
+            place: self.place,
+            validity_text: self.validity_text,
+            xsi_type: self.xsi_type,
+        }
+    }
+}
+
 /// Parse the on-disk snapshot when the apply stamp is present.
 ///
 /// `datex_plan_mode` / `NAVI_DATEX_MODE`: `none` skips, `saved` ignores TTL,
@@ -94,8 +190,64 @@ pub fn load_plan_datex_situations(
     data_dir: &Path,
     now: DateTime<Utc>,
 ) -> Option<Vec<DatexSituation>> {
-    if datex_plan_mode(data_dir) == DatexPlanMode::None {
+    let (xml, _) = read_plan_datex_xml(data_dir, now)?;
+    if xml.is_empty() {
         return Some(Vec::new());
+    }
+    match parse_situation_publication(&xml) {
+        Ok(v) => Some(v),
+        Err(e) => {
+            log::warn!(target: "NaviDatex", "plan-time DATEX parse failed: {e}");
+            None
+        }
+    }
+}
+
+/// Parse and classify before the first hop, then drop the raw document.
+pub fn load_plan_datex_bound(data_dir: &Path, now: DateTime<Utc>) -> Option<Vec<DatexBoundRecord>> {
+    // Overlay refresh may still hold the GetSituation body. Drop it before the
+    // planner reads the disk snapshot so parse does not keep two copies.
+    session::with_session(|s| {
+        s.cached_xml = None;
+    });
+    let (xml, skipped) = read_plan_datex_xml(data_dir, now)?;
+    if skipped || xml.is_empty() {
+        write_plan_datex_bound_snapshot(data_dir, &[]);
+        return Some(Vec::new());
+    }
+    let xml_kb = xml.len() / 1024;
+    let bound = {
+        let parsed = match parse_situation_publication(&xml) {
+            Ok(v) => v,
+            Err(e) => {
+                log::warn!(target: "NaviDatex", "plan-time DATEX parse failed: {e}");
+                return None;
+            }
+        };
+        drop(xml);
+        let sits_in = parsed.len();
+        let bound: Vec<DatexBoundRecord> = parsed
+            .into_iter()
+            .filter(|s| s.impact != DatexImpact::Ignore && s.primary_lat_lon().is_some())
+            .map(|mut s| {
+                s.comment = None;
+                DatexBoundRecord::from_situation(s)
+            })
+            .collect();
+        log::info!(
+            target: "NaviDatex",
+            "datex_compact xml_kb={xml_kb} sits_in={sits_in} kept={}",
+            bound.len()
+        );
+        bound
+    };
+    write_plan_datex_bound_snapshot(data_dir, &bound);
+    Some(bound)
+}
+
+fn read_plan_datex_xml(data_dir: &Path, now: DateTime<Utc>) -> Option<(String, bool)> {
+    if datex_plan_mode(data_dir) == DatexPlanMode::None {
+        return Some((String::new(), true));
     }
     let cache_dir = data_dir.join("datex_cache");
     if !cache_dir.join(DATEX_APPLY_TO_ROUTING_STAMP).is_file() {
@@ -110,16 +262,10 @@ pub fn load_plan_datex_situations(
                 target: "NaviDatex",
                 "plan-time DATEX cache stale age_secs={age_secs} max={DATEX_PLAN_CACHE_MAX_AGE_SECS}; skipping"
             );
-            return Some(Vec::new());
+            return Some((String::new(), true));
         }
     }
-    match parse_situation_publication(&xml) {
-        Ok(v) => Some(v),
-        Err(e) => {
-            log::warn!(target: "NaviDatex", "plan-time DATEX parse failed: {e}");
-            None
-        }
-    }
+    Some((xml, false))
 }
 
 /// Copy the XML the planner actually opened, plus a JSON index of parsed sits.
@@ -158,6 +304,40 @@ pub fn write_plan_datex_snapshot(data_dir: &Path, sits: &[DatexSituation]) {
             lat,
             lon,
             s.road_number.clone().unwrap_or_default().replace('"', ""),
+            vf.replace('"', ""),
+            vt.replace('"', ""),
+        ));
+    }
+    body.push_str("\n  ]\n}\n");
+    crate::routing::plan_file_log::write_file(
+        crate::routing::plan_file_log::DATEX_SNAPSHOT_JSON,
+        body,
+    );
+}
+
+fn write_plan_datex_bound_snapshot(data_dir: &Path, sits: &[DatexBoundRecord]) {
+    // Do not copy the raw GetSituation body into the in-memory plan log.
+    let mode = match datex_plan_mode(data_dir) {
+        DatexPlanMode::Live => "live",
+        DatexPlanMode::Saved => "saved",
+        DatexPlanMode::None => "none",
+    };
+    let mut body = format!("{{\n  \"mode\": \"{mode}\",\n  \"situations\": [\n");
+    for (i, s) in sits.iter().enumerate() {
+        if i > 0 {
+            body.push_str(",\n");
+        }
+        let (lat, lon) = s.geometry.first().copied().unwrap_or((0.0, 0.0));
+        let vf = s.valid_from.map(|t| t.to_rfc3339()).unwrap_or_default();
+        let vt = s.valid_to.map(|t| t.to_rfc3339()).unwrap_or_default();
+        body.push_str(&format!(
+            "    {{\"id\":\"{}\",\"xsi\":\"{}\",\"kind\":\"\",\"impact\":\"{}\",\"lat\":{:.5},\"lon\":{:.5},\"road\":\"{}\",\"valid_from\":\"{}\",\"valid_to\":\"{}\"}}",
+            s.situation_id.replace('"', ""),
+            s.xsi_type.replace('"', ""),
+            s.impact.as_str(),
+            lat,
+            lon,
+            s.road.replace('"', ""),
             vf.replace('"', ""),
             vt.replace('"', ""),
         ));
@@ -233,6 +413,102 @@ pub fn impacts_near_route_ctx(
         }
     }
     out
+}
+
+/// Same as [`impacts_near_route_ctx`] on the compact list kept after parse.
+pub fn impacts_near_bound_ctx(
+    all: &[DatexBoundRecord],
+    route_lat_lon: &[(f64, f64)],
+    margin_m: f64,
+    ctx: DatexHopContext,
+) -> Vec<DatexPlannerConstraint> {
+    if route_lat_lon.len() < 2 {
+        return Vec::new();
+    }
+    let band = crate::poi::CorridorBand::from_lat_lon(route_lat_lon, margin_m);
+    let mut out = Vec::new();
+    for s in all {
+        if !s.geometry.iter().any(|&(lat, lon)| band.contains(lat, lon)) {
+            continue;
+        }
+        if !bound_vehicle_applies(s, ctx.truck) {
+            continue;
+        }
+        if !bound_direction_applies(s, ctx.hop_bearing_deg) {
+            continue;
+        }
+        let mut rec = s.clone();
+        let active = rec.is_active_at_arrival(ctx.arrival);
+        if active {
+            if ctx.trip_uncertain && rec.has_recurring_windows() && rec.impact == DatexImpact::Block
+            {
+                rec.impact = DatexImpact::Warn;
+            }
+            out.push(rec.into_constraint());
+            continue;
+        }
+        if rec.has_recurring_windows() && rec.impact != DatexImpact::Ignore {
+            rec.impact = DatexImpact::Warn;
+            rec.penalty_minutes = 0.0;
+            out.push(rec.into_constraint());
+        }
+    }
+    out
+}
+
+fn bound_vehicle_applies(s: &DatexBoundRecord, truck: bool) -> bool {
+    if s.vehicle_types.is_empty() {
+        return true;
+    }
+    let types: Vec<String> = s
+        .vehicle_types
+        .iter()
+        .map(|t| t.to_ascii_lowercase())
+        .collect();
+    if types.iter().any(|t| t == "all" || t == "any") {
+        return true;
+    }
+    if truck {
+        types.iter().any(|t| {
+            t.contains("lorry")
+                || t.contains("hgv")
+                || t.contains("truck")
+                || t.contains("heavy")
+                || t == "car"
+                || t.contains("vehicle")
+        })
+    } else {
+        types
+            .iter()
+            .any(|t| t.contains("car") || t.contains("vehicle") || t.contains("motor"))
+    }
+}
+
+fn bound_direction_applies(s: &DatexBoundRecord, hop_bearing_deg: Option<f64>) -> bool {
+    let Some(dir) = s.direction.as_deref() else {
+        return true;
+    };
+    let d = dir.to_ascii_lowercase();
+    if d.contains("both") || d.contains("unknown") {
+        return true;
+    }
+    let Some(hop) = hop_bearing_deg else {
+        return true;
+    };
+    if s.geometry.len() < 2 {
+        return true;
+    }
+    let (a_lat, a_lon) = s.geometry[0];
+    let (b_lat, b_lon) = s.geometry[s.geometry.len() - 1];
+    let sit = bearing_deg(a_lat, a_lon, b_lat, b_lon);
+    let diff = angle_diff_deg(hop, sit);
+    if d.contains("neg") {
+        diff > 60.0
+    } else if d.contains("pos") {
+        diff < 120.0
+    } else {
+        true
+    }
 }
 
 fn vehicle_applies(s: &DatexSituation, truck: bool) -> bool {
