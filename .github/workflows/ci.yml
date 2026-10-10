@@ -102,11 +102,15 @@ jobs:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           CLANG_PRE="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CLANG_PRE/aarch64-linux-android34-clang"
+          CLANG="$CLANG_PRE/aarch64-linux-android34-clang"
+          export PATH="$CLANG_PRE:$PATH"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CLANG"
+          export CC_aarch64_linux_android="$CLANG"
+          export AR_aarch64_linux_android="$CLANG_PRE/llvm-ar"
           mkdir -p .cargo
           printf '%s\n' \
             '[target.aarch64-linux-android]' \
-            "linker = \"$CLANG_PRE/aarch64-linux-android34-clang\"" \
+            "linker = \"$CLANG\"" \
             'rustflags = ["-C", "link-arg=-lc++_shared"]' \
             > .cargo/config.toml
           cargo build -p navi-ffi --target aarch64-linux-android --lib
