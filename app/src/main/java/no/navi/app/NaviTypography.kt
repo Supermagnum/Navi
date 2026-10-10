@@ -19,6 +19,7 @@ val NaviFontFamily: FontFamily = FontFamily(Font(R.font.liberation_sans))
 
 fun naviTypography(): Typography {
     val base = Typography()
+
     fun TextStyle.plain(): TextStyle =
         copy(
             letterSpacing = 0.sp,

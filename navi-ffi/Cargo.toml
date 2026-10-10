@@ -5,10 +5,21 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "UniFFI bindings for Navi / driver-break-core on Android and other hosts"
+autobins = false
 
 [lib]
 crate-type = ["cdylib", "staticlib", "rlib"]
 name = "navi"
+
+[features]
+default = []
+# Probe / skeleton / place-index CLIs. Off by default so `cargo build -p navi-ffi`
+# and workspace clippy/test do not compile them. Build a named binary with
+# `--features diag-bins --bin <name>`.
+diag-bins = []
+# Host regression gate (needs device long-trip packs). Off by default so a
+# plain `cargo test` does not compile it.
+regression-gate = []
 
 [dependencies]
 driver-break-core = { path = "../core" }
@@ -38,75 +49,104 @@ path = "uniffi-bindgen.rs"
 [[bin]]
 name = "plan-skolla-rondvassbu"
 path = "src/bin/plan_skolla_rondvassbu.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "plan-nashaugs-skriurusten-matrix"
 path = "src/bin/plan_nashaugs_skriurusten_matrix.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "plan-truck-live-gps"
 path = "src/bin/plan_truck_live_gps.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "indexed-rtree-poc"
 path = "src/bin/indexed_rtree_poc.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "rkyv-mmap-graph-poc"
 path = "src/bin/rkyv_mmap_graph_poc.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "rkyv-mmap-poi-barrier-poc"
 path = "src/bin/rkyv_mmap_poi_barrier_poc.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "navi-indexed-convert"
 path = "src/bin/navi_indexed_convert.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "navi-indexed-bench"
 path = "src/bin/navi_indexed_bench.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "navi-indexed-plan-bench"
 path = "src/bin/navi_indexed_plan_bench.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "navi-wetland-bench"
 path = "src/bin/navi_wetland_bench.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "live-hazard-extract"
 path = "src/bin/live_hazard_extract.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "plan-drammen-berlevag-budget"
 path = "src/bin/plan_drammen_berlevag_budget.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "plan-hop-budget"
 path = "src/bin/plan_hop_budget.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "region-to-region-perf-matrix"
 path = "src/bin/region_to_region_perf_matrix.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "navi-ferry-probe"
 path = "src/bin/navi_ferry_probe.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "navi-corridor-skeleton"
 path = "src/bin/navi_corridor_skeleton.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "navi-corridor-coarse"
 path = "src/bin/navi_corridor_coarse.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "navi-dest-hop-probe"
 path = "src/bin/navi_dest_hop_probe.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "navi-place-index"
 path = "src/bin/navi_place_index.rs"
+required-features = ["diag-bins"]
+
+[[bin]]
+name = "directed-snap-diag"
+path = "src/bin/directed_snap_diag.rs"
+required-features = ["diag-bins"]
+
+[[test]]
+name = "regression_gate"
+path = "tests/regression_gate.rs"
+required-features = ["regression-gate"]

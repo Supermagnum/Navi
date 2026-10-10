@@ -3,7 +3,6 @@ package no.navi.app
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
-import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.sources.VectorSource
 import java.io.File
@@ -86,7 +85,10 @@ object Fu49MapDiag {
         return System.currentTimeMillis() - start
     }
 
-    fun logEvent(kind: String, extra: String = "") {
+    fun logEvent(
+        kind: String,
+        extra: String = "",
+    ) {
         val ms = elapsed()
         when (kind) {
             "idle" -> lastIdleElapsedMs = ms
@@ -115,7 +117,12 @@ object Fu49MapDiag {
         )
     }
 
-    fun dumpGeneratedStyle(styleUri: String, mountedKey: String, sameUri: Boolean, reloadBase: Boolean) {
+    fun dumpGeneratedStyle(
+        styleUri: String,
+        mountedKey: String,
+        sameUri: Boolean,
+        reloadBase: Boolean,
+    ) {
         val path = styleUri.removePrefix("file://")
         val file = File(path)
         val leaf = file.name
@@ -131,7 +138,11 @@ object Fu49MapDiag {
         copyBeside(file, File(file.parentFile, "fu49-generated-last.json"))
     }
 
-    fun dumpLiveStyle(style: Style?, destDir: File, tag: String) {
+    fun dumpLiveStyle(
+        style: Style?,
+        destDir: File,
+        tag: String,
+    ) {
         if (style == null) {
             Log.w(TAG_STYLE, "live tag=$tag style=null")
             return
@@ -171,9 +182,17 @@ object Fu49MapDiag {
         Log.i(TAG_STYLE, "live_file=${out.absolutePath} bytes=${out.length()} uri=$uri")
     }
 
-    fun summarizeStyleJson(json: JSONObject, tag: String) {
+    fun summarizeStyleJson(
+        json: JSONObject,
+        tag: String,
+    ) {
         val sources = json.optJSONObject("sources") ?: JSONObject()
-        val names = sources.keys().asSequence().toList().sorted()
+        val names =
+            sources
+                .keys()
+                .asSequence()
+                .toList()
+                .sorted()
         val parts = ArrayList<String>()
         for (name in names) {
             val src = sources.optJSONObject(name) ?: continue
@@ -194,7 +213,13 @@ object Fu49MapDiag {
         )
     }
 
-    fun logTotals(roads: Int, water: Int, labels: Int, blankCells: Int, phase: String) {
+    fun logTotals(
+        roads: Int,
+        water: Int,
+        labels: Int,
+        blankCells: Int,
+        phase: String,
+    ) {
         Log.i(
             TAG_TOTALS,
             "phase=$phase roads=$roads water=$water labels=$labels " +
@@ -203,7 +228,10 @@ object Fu49MapDiag {
         )
     }
 
-    private fun copyBeside(from: File, to: File) {
+    private fun copyBeside(
+        from: File,
+        to: File,
+    ) {
         runCatching {
             to.writeText(from.readText())
         }

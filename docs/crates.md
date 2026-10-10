@@ -30,7 +30,9 @@ Package names may differ from directory names.
 | `plugins/busy-loop/` | `navi-plugin-busy-loop` | Reference WASM guest for isolation / fuel stress (example only) |
 
 Default workspace members for a plain `cargo build` / `cargo test`:
-`driver-break-core`, `navi-plugin-host`.
+`driver-break-core`, `navi-plugin-host`. `navi-ffi` probe/skeleton CLIs are
+behind the `diag-bins` feature; the regression gate is behind
+`regression-gate` (see [`regression-gate.md`](regression-gate.md)).
 
 Core modules under `core/src/` (`routing/`, `poi/`, `search/`, `storage/`,
 `config/`, `tracks/`, `icons/`, `download/`, `sensors/`, `ecu/`, `bus/`, `nav/`)

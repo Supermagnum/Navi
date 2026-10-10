@@ -16,8 +16,8 @@ use driver_break_core::routing::corridor_skeleton::{
     CoarseRouteReport, CorridorSkeletonFile,
 };
 use driver_break_core::routing::graph::{max_waypoint_snap_m, RouteOptions, RoutingProfile};
-use driver_break_core::routing::waypoint_attach::attach_trip_waypoints;
 use driver_break_core::routing::indexed::{ferry_sidecar_path, load_graph_pack_clips};
+use driver_break_core::routing::waypoint_attach::attach_trip_waypoints;
 use serde::Serialize;
 
 fn peak_rss_mb() -> u64 {

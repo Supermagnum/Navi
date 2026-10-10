@@ -293,10 +293,12 @@ fun rankPlaceHits(
 }
 
 /** 0 = local / installed-region hit, 1 = online (Nominatim or ORS). */
-internal fun placeSourceClass(kind: String): Int =
-    if (kind.startsWith("online/", ignoreCase = true)) 1 else 0
+internal fun placeSourceClass(kind: String): Int = if (kind.startsWith("online/", ignoreCase = true)) 1 else 0
 
-internal fun placeMatchClass(name: String, qLower: String): Int {
+internal fun placeMatchClass(
+    name: String,
+    qLower: String,
+): Int {
     val n = name.lowercase()
     return when {
         n == qLower -> 0
@@ -328,7 +330,10 @@ internal fun placeKindClass(kind: String): Int {
     return 15
 }
 
-internal fun placeRegionClass(regionId: String, visible: String): Int {
+internal fun placeRegionClass(
+    regionId: String,
+    visible: String,
+): Int {
     if (visible.isEmpty()) return 1
     val rid = regionId.trim().trim('/')
     if (rid == visible || rid.startsWith("$visible/")) return 0
@@ -348,8 +353,9 @@ internal fun placeDistanceDecikm(
     val dlon = Math.toRadians(hit.lon - biasLon)
     val la1 = Math.toRadians(biasLat)
     val la2 = Math.toRadians(hit.lat)
-    val h = Math.sin(dlat / 2) * Math.sin(dlat / 2) +
-        Math.cos(la1) * Math.cos(la2) * Math.sin(dlon / 2) * Math.sin(dlon / 2)
+    val h =
+        Math.sin(dlat / 2) * Math.sin(dlat / 2) +
+            Math.cos(la1) * Math.cos(la2) * Math.sin(dlon / 2) * Math.sin(dlon / 2)
     val km = 2.0 * 6371.0 * Math.asin(Math.sqrt(h))
     return (km * 10.0).toInt()
 }

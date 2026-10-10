@@ -1,0 +1,190 @@
+# Heavy checks. Start by hand (Actions → CI manual → Run workflow).
+# Not a required merge check. No schedule (ask before adding a weekly run).
+#
+# Includes: Clippy -D warnings, workspace tests, deny/audit, linux-build,
+# plugin-host isolation + optional Android aarch64 smoke, detekt.
+# Does not run the regression gate (needs local packs; see docs/regression-gate.md)
+# or the instrumented suite (android-instrumented.yml).
+
+name: CI manual
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-manual-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  rust-heavy:
+    name: rust-heavy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.0"
+          components: clippy
+          targets: wasm32-unknown-unknown,aarch64-linux-android
+
+      - name: System deps (pkg-config / OpenSSL)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libssl-dev
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: rust-heavy
+          cache-targets: true
+
+      - name: Install cargo-deny + cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny@0.19.9,cargo-audit@0.22.2
+
+      - name: Clippy (-D warnings)
+        # Example wasm32 guests are no_std + panic=abort; exclude them.
+        # navi-ffi diag-bins is a separate crate feature (not a workspace feature).
+        run: |
+          cargo clippy --workspace --all-targets \
+            --exclude navi-ffi \
+            --exclude navi-plugin-log-hello \
+            --exclude navi-plugin-busy-loop \
+            --exclude navi-plugin-trap-guest \
+            --exclude navi-plugin-memory-bomb \
+            --exclude navi-plugin-weather \
+            --exclude navi-plugin-datex \
+            --exclude navi-plugin-poi-lookahead \
+            --exclude navi-desktop \
+            -- -D warnings
+          cargo clippy -p navi-ffi --all-targets --features diag-bins -- -D warnings
+
+      - name: Unit / default tests (excludes #[ignore] fixture integrations)
+        run: >
+          cargo test --workspace
+          --exclude navi-desktop
+          --exclude navi-plugin-log-hello
+          --exclude navi-plugin-busy-loop
+          --exclude navi-plugin-trap-guest
+          --exclude navi-plugin-memory-bomb
+          --exclude navi-plugin-weather
+          --exclude navi-plugin-datex
+          --exclude navi-plugin-poi-lookahead
+
+      - name: Plugin host isolation tests
+        run: cargo test -p navi-plugin-host --test isolation
+
+      - name: Plugin-host gate guards
+        run: bash scripts/check-plugin-host-gate.sh
+
+      - name: cargo deny check
+        run: cargo deny check
+
+      - name: cargo deny advisories (aarch64-linux-android)
+        run: cargo deny --target aarch64-linux-android check advisories
+
+      - name: cargo audit
+        run: cargo audit
+
+      - name: cargo audit (aarch64 / android filters)
+        run: cargo audit --target-arch aarch64 --target-os android
+
+  linux-build:
+    name: linux-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.0"
+          targets: wasm32-unknown-unknown
+
+      - name: System deps (linker / pkg-config)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libssl-dev
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: linux-build
+
+      - name: cargo build (workspace minus WebKit desktop)
+        run: |
+          cargo build --workspace \
+            --exclude navi-desktop \
+            --exclude navi-plugin-log-hello \
+            --exclude navi-plugin-busy-loop \
+            --exclude navi-plugin-trap-guest \
+            --exclude navi-plugin-memory-bomb \
+            --exclude navi-plugin-weather \
+            --exclude navi-plugin-datex \
+            --exclude navi-plugin-poi-lookahead
+          cargo build -p navi-desktop --no-default-features --features gpsd,linux-imu
+
+  kotlin-detekt:
+    name: kotlin-detekt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+
+      - name: Cache Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: false
+
+      - name: detekt
+        run: ./gradlew :app:detekt --no-daemon
+
+  plugin-host-android-aarch64:
+    name: plugin-host-android-aarch64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.0"
+          targets: wasm32-unknown-unknown,aarch64-linux-android,aarch64-unknown-linux-gnu
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: plugin-host-android-aarch64
+
+      - name: Setup Android NDK r27c
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27c
+
+      - name: Install qemu-user-static + aarch64 GNU cross
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+
+      - name: Cross-compile Android aarch64 + QEMU Cranelift aarch64 smoke
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: bash scripts/plugin-host-android-aarch64-smoke.sh --qemu

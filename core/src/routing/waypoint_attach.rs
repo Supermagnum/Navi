@@ -52,7 +52,10 @@ thread_local! {
 }
 
 fn wp_key(lat: f64, lon: f64) -> (i64, i64) {
-    ((lat * 100_000.0).round() as i64, (lon * 100_000.0).round() as i64)
+    (
+        (lat * 100_000.0).round() as i64,
+        (lon * 100_000.0).round() as i64,
+    )
 }
 
 fn note_attach_search(lat: f64, lon: f64) {
@@ -186,7 +189,8 @@ impl WaypointAttachment {
             .hits
             .iter()
             .filter(|s| {
-                coarse.nodes.contains_key(&s.target) && coarse.directed_snap_ok(s.target, SnapRole::Via)
+                coarse.nodes.contains_key(&s.target)
+                    && coarse.directed_snap_ok(s.target, SnapRole::Via)
             })
             .collect();
         if usable.is_empty() {
@@ -349,8 +353,8 @@ fn resolve_one_on_graph(
         .get(&snap_id)
         .map(|n| (n.coord.y, n.coord.x))
         .unwrap_or(waypoint);
-    let on_skel = skeleton_osm_ids.contains(&snap_id.0)
-        && detailed.directed_snap_ok(snap_id, snap_role);
+    let on_skel =
+        skeleton_osm_ids.contains(&snap_id.0) && detailed.directed_snap_ok(snap_id, snap_role);
     if on_skel {
         return Ok(WaypointAttachment {
             snap_id,
@@ -453,7 +457,13 @@ fn resolve_one_lazy(
     let mut load_ms = 0u128;
     let mut tiles_mb = 0.0;
     let mut tile_names: Vec<String> = Vec::new();
-    let mut detailed = load_tile(&tiles[cover], profile, search_bbox, &mut load_ms, &mut tiles_mb)?;
+    let mut detailed = load_tile(
+        &tiles[cover],
+        profile,
+        search_bbox,
+        &mut load_ms,
+        &mut tiles_mb,
+    )?;
     loaded.push(cover);
     tile_names.push(tiles[cover].name.clone());
 
@@ -490,7 +500,7 @@ fn resolve_one_lazy(
         skeleton_osm_ids.contains(&snap_id.0) && detailed.directed_snap_ok(snap_id, snap_role);
 
     if !already_on_skeleton {
-    loop {
+        loop {
             let targets: HashSet<NodeId> = detailed
                 .nodes
                 .keys()
@@ -525,7 +535,13 @@ fn resolve_one_lazy(
             let Some(next) = next_neighbor_tile(&tiles, &loaded, lat, lon, search_bbox) else {
                 break;
             };
-            match load_tile(&tiles[next], profile, search_bbox, &mut load_ms, &mut tiles_mb) {
+            match load_tile(
+                &tiles[next],
+                profile,
+                search_bbox,
+                &mut load_ms,
+                &mut tiles_mb,
+            ) {
                 Ok(extra) => {
                     detailed = merge_tile_graphs(vec![detailed, extra], profile);
                     loaded.push(next);
@@ -649,7 +665,11 @@ fn list_region_tiles(
         }
     }
     if tiles.is_empty() {
-        return Err(WaypointAttachError::PackMissing { lat, lon, region_id });
+        return Err(WaypointAttachError::PackMissing {
+            lat,
+            lon,
+            region_id,
+        });
     }
     Ok((region_id, tiles))
 }
@@ -663,9 +683,9 @@ fn pack_tile(home: &Path, t: &GraphTileEntry) -> PackTile {
 }
 
 fn covering_tile_index(tiles: &[PackTile], lat: f64, lon: f64) -> Option<usize> {
-    tiles.iter().position(|t| {
-        crate::routing::basemap::bbox_covers_point(t.bbox, lat, lon)
-    })
+    tiles
+        .iter()
+        .position(|t| crate::routing::basemap::bbox_covers_point(t.bbox, lat, lon))
 }
 
 fn loaded_coverage_bbox(tiles: &[PackTile], loaded: &[usize]) -> [f64; 4] {
@@ -1097,10 +1117,7 @@ mod tests {
         }
         let detailed = graph(dnodes, dedges);
         let mut cnodes = HashMap::new();
-        cnodes.extend([
-            node(1, 60.00, 9.90),
-            node(2, 60.00, 10.10),
-        ]);
+        cnodes.extend([node(1, 60.00, 9.90), node(2, 60.00, 10.10)]);
         let cedges = vec![
             edge("s", 1, 2, &cnodes, 20_000.0, 80.0),
             edge("sr", 2, 1, &cnodes, 20_000.0, 80.0),
@@ -1133,13 +1150,18 @@ mod tests {
                 .filter(|(id, _)| id.0 == 1 || id.0 == 2)
                 .map(|(id, n)| (*id, n.clone()))
                 .collect(),
-            vec![
-                edge("s", 1, 2, &{
+            vec![edge(
+                "s",
+                1,
+                2,
+                &{
                     let mut m = HashMap::new();
                     m.extend([node(1, 60.00, 9.90), node(2, 60.00, 10.10)]);
                     m
-                }, 20_000.0, 80.0),
-            ],
+                },
+                20_000.0,
+                80.0,
+            )],
         );
         let _ = plan.apply(&mut coarse2);
         assert_eq!(

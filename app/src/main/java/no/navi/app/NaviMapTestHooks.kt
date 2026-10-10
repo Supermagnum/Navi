@@ -286,7 +286,11 @@ object NaviMapTestHooks {
     const val BLANK_BG_G = 244
     const val BLANK_BG_B = 240
 
-    fun isBlankBackgroundPixel(r: Int, g: Int, b: Int): Boolean {
+    fun isBlankBackgroundPixel(
+        r: Int,
+        g: Int,
+        b: Int,
+    ): Boolean {
         val cream =
             kotlin.math.abs(r - BLANK_BG_R) <= 6 &&
                 kotlin.math.abs(g - BLANK_BG_G) <= 6 &&

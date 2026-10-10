@@ -27,8 +27,7 @@ object PmtilesLayerProbe {
 
     fun hasWater(layers: Set<String>): Boolean = layers.any { it == "water" }
 
-    fun hasLabels(layers: Set<String>): Boolean =
-        layers.any { it == "places" || it == "pois" || it == "water" || it == "roads" }
+    fun hasLabels(layers: Set<String>): Boolean = layers.any { it == "places" || it == "pois" || it == "water" || it == "roads" }
 
     internal fun lonLatToTile(
         lat: Double,

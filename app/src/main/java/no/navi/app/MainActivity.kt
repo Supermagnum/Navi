@@ -47,13 +47,13 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -222,13 +222,13 @@ class MainActivity : ComponentActivity() {
                             fontSynthesis = FontSynthesis.None,
                         ),
                 ) {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    // Cheap first frame so the splash can exit within SPLASH_MAX_HOLD_MS
-                    // even while MapLibre / NaviMapScreen still warm up.
-                    if (showMap) {
-                        NaviMapScreen()
+                    Surface(modifier = Modifier.fillMaxSize()) {
+                        // Cheap first frame so the splash can exit within SPLASH_MAX_HOLD_MS
+                        // even while MapLibre / NaviMapScreen still warm up.
+                        if (showMap) {
+                            NaviMapScreen()
+                        }
                     }
-                }
                 }
             }
             SideEffect {
@@ -339,7 +339,13 @@ class MainActivity : ComponentActivity() {
             NaviMapTestHooks.disableGpsFollow = false
         }
         intent.getStringExtra("navi_overlay_polyline_file")?.trim()?.takeIf { it.isNotEmpty() }?.let { path ->
-            val poly = java.io.File(path).takeIf { it.isFile }?.readText()?.trim().orEmpty()
+            val poly =
+                java.io
+                    .File(path)
+                    .takeIf { it.isFile }
+                    ?.readText()
+                    ?.trim()
+                    .orEmpty()
             if (poly.isNotEmpty()) {
                 NaviMapTestHooks.pendingOverlayPolyline = poly
                 android.util.Log.i("NaviRoute", "overlay_polyline file=$path chars=${poly.length}")
@@ -386,7 +392,11 @@ class MainActivity : ComponentActivity() {
                 val writingProduct = product != null && db.canonicalFile == product.canonicalFile
                 val installed =
                     PackRegionAvailability.installedPackRegionIds(
-                        InstalledMaps.current()?.regions?.values.orEmpty(),
+                        InstalledMaps
+                            .current()
+                            ?.regions
+                            ?.values
+                            .orEmpty(),
                     )
                 if (!PackRegionAvailability.mayIndexRegion(rid, pbf, installed, writingProduct)) {
                     android.util.Log.e(
@@ -2336,10 +2346,9 @@ private fun NaviMapScreen() {
         }
     }
 
-    fun resolvePlaceIndexDb(): File {
-        return PlaceIndexStorage.resolveDb(context)
+    fun resolvePlaceIndexDb(): File =
+        PlaceIndexStorage.resolveDb(context)
             ?: placeIndexDbForWrite()
-    }
 
     fun resolveRegionPbf(): File? = RouteReplan.resolvePbf(dataDir)
 
@@ -5588,8 +5597,10 @@ private fun NaviMapScreen() {
                                         runCatching {
                                             val lat = mapState.cameraLat
                                             val lon = mapState.cameraLon
-                                            if (lat != null && lon != null &&
-                                                lat.isFinite() && lon.isFinite() &&
+                                            if (lat != null &&
+                                                lon != null &&
+                                                lat.isFinite() &&
+                                                lon.isFinite() &&
                                                 !(lat == 0.0 && lon == 0.0)
                                             ) {
                                                 searchPlacesBiased(
@@ -9599,8 +9610,10 @@ private fun CorridorMapView(
             val restored =
                 org.maplibre.android.camera.CameraPosition
                     .Builder(before)
-                    .target(org.maplibre.android.geometry.LatLng(lat, lon))
-                    .zoom(zoom)
+                    .target(
+                        org.maplibre.android.geometry
+                            .LatLng(lat, lon),
+                    ).zoom(zoom)
                     .build()
             runCatching { map.cancelTransitions() }
             runCatching { map.moveCamera(CameraUpdateFactory.newCameraPosition(restored)) }

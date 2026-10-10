@@ -199,11 +199,21 @@ tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
 }
 
 // F-Droid / reproducible: stage wasm guests from source (no committed binaries).
+// Hook assemble/bundle only — not preBuild — so JVM unit tests do not compile wasm.
 tasks.register<Exec>("buildPluginWasm") {
     workingDir = rootProject.projectDir
     commandLine("bash", "scripts/build-plugin-wasm.sh")
 }
 
-tasks.named("preBuild").configure {
+val packageTasks =
+    setOf(
+        "assemble",
+        "assembleDebug",
+        "assembleRelease",
+        "bundle",
+        "bundleDebug",
+        "bundleRelease",
+    )
+tasks.matching { it.name in packageTasks }.configureEach {
     dependsOn("buildPluginWasm")
 }

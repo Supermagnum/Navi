@@ -121,10 +121,7 @@ mod tests {
         line("hop from previous trip");
         clear_trip_artifacts();
         let cleared_log = fs::read_to_string(&log).unwrap();
-        assert!(
-            !cleared_log.contains("previous trip"),
-            "{cleared_log}"
-        );
+        assert!(!cleared_log.contains("previous trip"), "{cleared_log}");
         assert_eq!(fs::read_to_string(&hops).unwrap(), "{\"hops\":[]}\n");
         let _ = fs::remove_dir_all(&dir);
     }

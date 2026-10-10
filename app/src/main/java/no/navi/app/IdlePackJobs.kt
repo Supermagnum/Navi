@@ -50,7 +50,9 @@ object IdlePackJobs {
     private val active = AtomicReference<Job?>(null)
     private val pausedJob = AtomicReference<Job?>(null)
     private val lastPause = AtomicReference(PauseOutcome())
-    private val lastRecheckAccepted = java.util.concurrent.atomic.AtomicInteger(0)
+    private val lastRecheckAccepted =
+        java.util.concurrent.atomic
+            .AtomicInteger(0)
 
     data class PauseOutcome(
         val action: String = "none",
@@ -270,7 +272,11 @@ object IdlePackJobs {
         val writingProduct = product != null && indexDb.canonicalFile == product.canonicalFile
         val installed =
             PackRegionAvailability.installedPackRegionIds(
-                InstalledMaps.current()?.regions?.values.orEmpty(),
+                InstalledMaps
+                    .current()
+                    ?.regions
+                    ?.values
+                    .orEmpty(),
             )
         if (!PackRegionAvailability.mayIndexRegion(rid, pbf, installed, writingProduct)) {
             Log.e(TAG, "refusing PLACE_INDEX region=$rid pbf=${pbf.name} product=$writingProduct")
