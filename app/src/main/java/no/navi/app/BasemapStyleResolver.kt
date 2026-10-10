@@ -10,6 +10,7 @@ import uniffi.navi.pmtilesListCovering
 import uniffi.navi.pmtilesListJobs
 import java.io.File
 import java.io.FileOutputStream
+import java.security.MessageDigest
 import kotlin.math.max
 import kotlin.math.min
 
@@ -904,6 +905,7 @@ object BasemapStyleResolver {
         val leaf = mountedStyleLeafName(mounted, demFor3d != null && demFor3d.isFile)
         val outStyle = File(outRoot, leaf)
         writeStyleAtomically(outStyle, styleJson)
+        sweepStalePreparedStyles(outRoot, leaf)
         return "file://${outStyle.absolutePath}"
     }
 
@@ -1026,11 +1028,59 @@ object BasemapStyleResolver {
         withDem: Boolean,
     ): String {
         val raw = mounted.key() + if (withDem) "|dem" else ""
+        val hash = mountKeyHash(raw)
         val stem =
             raw
                 .replace(Regex("[^A-Za-z0-9._+-]"), "_")
-                .take(80)
-        return "style.native.v1.$stem.json"
+                .take(40)
+        return "style.native.v2.$stem.$hash.json"
+    }
+
+    internal fun mountKeyHash(raw: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(raw.toByteArray(Charsets.UTF_8))
+        return digest.take(8).joinToString("") { b -> "%02x".format(b.toInt() and 0xff) }
+    }
+
+    /**
+     * Skip [org.maplibre.android.maps.MapLibreMap.setStyle] only when the full
+     * mount key is unchanged. A matching URI is not enough: two mounts used to
+     * share one truncated leaf and the second never loaded.
+     */
+    internal fun shouldSkipSetStyle(
+        currentMountedKey: String?,
+        currentStyleUri: String?,
+        nextMountedKey: String,
+        nextStyleUri: String,
+    ): Boolean {
+        if (nextMountedKey.isNotEmpty()) {
+            return nextMountedKey == currentMountedKey
+        }
+        return nextStyleUri.isNotEmpty() && nextStyleUri == currentStyleUri
+    }
+
+    internal fun sweepStalePreparedStyles(
+        outRoot: File,
+        keepLeaf: String,
+    ) {
+        if (!outRoot.isDirectory) return
+        val keep =
+            setOf(
+                keepLeaf,
+                "style.template.json",
+                ".asset_epoch",
+            )
+        outRoot.listFiles()?.forEach { file ->
+            if (!file.isFile) return@forEach
+            val name = file.name
+            val staleNative =
+                name.startsWith("style.native.") &&
+                    name.endsWith(".json") &&
+                    name !in keep
+            val staleTmp = name.endsWith(".tmp") && name.startsWith("style.native.")
+            if (staleNative || staleTmp) {
+                file.delete()
+            }
+        }
     }
 
     /**

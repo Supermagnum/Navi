@@ -240,6 +240,58 @@ class BasemapDisplayFixTest {
     }
 
     @Test
+    fun mount_keys_that_share_an_eighty_char_prefix_get_distinct_leaves_and_both_set_style() {
+        val ov = "/data/user/0/no.navi.app/files/pmtiles/world_overview.pmtiles"
+        val finland = "/data/user/0/no.navi.app/files/pmtiles/europe_finland.pmtiles"
+        val vasterbotten = "/data/user/0/no.navi.app/files/pmtiles/europe_sweden_vasterbotten.pmtiles"
+        val overview = job("ov", "world_overview", ov)
+        val a =
+            BasemapStyleResolver.MountedSources(
+                overview = overview,
+                regionals = listOf(job("fi", "europe/finland", finland)),
+                includeOnline = false,
+            )
+        val b =
+            BasemapStyleResolver.MountedSources(
+                overview = overview,
+                regionals = listOf(job("vb", "europe/sweden/vasterbotten", vasterbotten)),
+                includeOnline = false,
+            )
+        val oldStem: (String) -> String = { raw ->
+            raw.replace(Regex("[^A-Za-z0-9._+-]"), "_").take(80)
+        }
+        assertEquals(oldStem(a.key()), oldStem(b.key()))
+        val leafA = BasemapStyleResolver.mountedStyleLeafName(a, false)
+        val leafB = BasemapStyleResolver.mountedStyleLeafName(b, false)
+        assertTrue(leafA != leafB)
+        val sharedUri = "file:///styles/${oldStem(a.key())}.json"
+        assertFalse(
+            BasemapStyleResolver.shouldSkipSetStyle(
+                a.key(),
+                sharedUri,
+                b.key(),
+                sharedUri,
+            ),
+        )
+        assertTrue(
+            BasemapStyleResolver.shouldSkipSetStyle(
+                a.key(),
+                "file:///styles/$leafA",
+                a.key(),
+                "file:///styles/$leafA",
+            ),
+        )
+        val dir = tmp.newFolder("styles")
+        File(dir, leafA).writeText("{}")
+        File(dir, leafB).writeText("{}")
+        File(dir, "style.native.v1.${oldStem(a.key())}.json").writeText("stale")
+        BasemapStyleResolver.sweepStalePreparedStyles(dir, leafA)
+        assertTrue(File(dir, leafA).isFile)
+        assertFalse(File(dir, leafB).isFile)
+        assertFalse(File(dir, "style.native.v1.${oldStem(a.key())}.json").isFile)
+    }
+
+    @Test
     fun airplane_mode_is_treated_as_offline() {
         assertFalse(BasemapStyleResolver.networkUsable(airplane = true, hasInternet = true))
         assertTrue(BasemapStyleResolver.networkUsable(airplane = false, hasInternet = true))

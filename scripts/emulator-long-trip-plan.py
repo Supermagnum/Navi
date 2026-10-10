@@ -1610,7 +1610,10 @@ def set_true_offline(on):
 
 def camera_to_fu49(lat, lon, zoom, extra=None):
     args = [
-        "shell", "am", "start", "-n", f"{PKG}/.MainActivity",
+        "shell", "am", "start",
+        "-a", "android.intent.action.VIEW",
+        "-f", "0x20000000",
+        "-n", f"{PKG}/.MainActivity",
         "--ez", "navi_hide_chrome", "true",
         "--ed", "navi_camera_lat", str(lat),
         "--ed", "navi_camera_lon", str(lon),
@@ -1619,6 +1622,27 @@ def camera_to_fu49(lat, lon, zoom, extra=None):
     if extra:
         args.extend(extra)
     adb(*args)
+
+
+def camera_held_matches(text, lat, lon, zoom):
+    for ln in reversed(text.splitlines()):
+        if "NaviMapTiles" in ln and "lat=" in ln:
+            try:
+                clat = float(field(ln, "lat") or "nan")
+                clon = float(field(ln, "lon") or "nan")
+                cz = float(field(ln, "zoom") or "nan")
+            except ValueError:
+                continue
+            return abs(clat - lat) <= 0.03 and abs(clon - lon) <= 0.03 and abs(cz - zoom) <= 0.35
+        if "NaviMapCamera" in ln and "at lat=" in ln:
+            try:
+                clat = float(field(ln, "lat") or "nan")
+                clon = float(field(ln, "lon") or "nan")
+                cz = float(field(ln, "zoom") or "nan")
+            except ValueError:
+                continue
+            return abs(clat - lat) <= 0.03 and abs(clon - lon) <= 0.03 and abs(cz - zoom) <= 0.35
+    return False
 
 
 def parse_fu49_logs(text):
@@ -1686,15 +1710,32 @@ def wait_fu49(seconds=20, want_fully=False):
     return last or parse_fu49_logs(logcat())
 
 
-def wait_fu49_settle(seconds=16):
-    """Do not return on the first totals line; keep the last sample."""
+def wait_fu49_settle(lat=None, lon=None, zoom=None, extra=None, seconds=20):
+    """Settled when feature totals match on two samples one second apart."""
+    prev_line = None
+    prev_key = None
     last = {}
     deadline = time.time() + seconds
     while time.time() < deadline:
-        time.sleep(0.5)
+        if lat is not None and lon is not None and zoom is not None:
+            text = logcat()
+            if not camera_held_matches(text, lat, lon, zoom):
+                camera_to_fu49(lat, lon, zoom, extra)
+                time.sleep(1.0)
+                continue
         parsed = parse_fu49_logs(logcat())
-        if parsed.get("totals"):
+        tot = parsed.get("totals") or {}
+        line = tot.get("line") or ""
+        key = (tot.get("roads"), tot.get("water"), tot.get("labels")) if tot else None
+        if line and key is not None and line != prev_line:
+            if prev_key == key:
+                return parsed
+            prev_key = key
+            prev_line = line
             last = parsed
+            time.sleep(1.0)
+            continue
+        time.sleep(0.5)
     return last or parse_fu49_logs(logcat())
 
 
@@ -1735,14 +1776,13 @@ def screencap_host(path):
     adb("shell", "rm", "-f", tmp)
 
 
-def shoot_away_and_back(dest, lat, lon, zoom, extra=None, wait_s=16):
+def shoot_away_and_back(dest, lat, lon, zoom, extra=None, wait_s=20):
     dest = pathlib.Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    force = ["--ez", "navi_fu49_force_set_style", "true"]
-    extra = list(extra or []) + force
+    extra = list(extra or [])
     adb("logcat", "-c")
     camera_to_fu49(lat, lon, zoom, extra)
-    idle = wait_fu49_settle(wait_s)
+    idle = wait_fu49_settle(lat, lon, zoom, extra, wait_s)
     if dest.suffix == ".png":
         idle_png = dest.parent / (dest.stem + "_idle.png")
         back_png = dest.parent / (dest.stem + "_back.png")
@@ -1753,10 +1793,10 @@ def shoot_away_and_back(dest, lat, lon, zoom, extra=None, wait_s=16):
     dlat = half_screen_deg(lat, zoom)
     adb("logcat", "-c")
     camera_to_fu49(lat + dlat, lon, zoom, extra)
-    wait_fu49_settle(8)
+    wait_fu49_settle(lat + dlat, lon, zoom, extra, min(wait_s, 12))
     adb("logcat", "-c")
     camera_to_fu49(lat, lon, zoom, extra)
-    back = wait_fu49_settle(wait_s)
+    back = wait_fu49_settle(lat, lon, zoom, extra, wait_s)
     screencap_host(back_png)
     return {
         "idle": idle,
@@ -1767,20 +1807,45 @@ def shoot_away_and_back(dest, lat, lon, zoom, extra=None, wait_s=16):
     }
 
 
+def style_source_urls(path):
+    p = pathlib.Path(path)
+    if not p.is_file() or p.stat().st_size == 0:
+        return None
+    try:
+        data = json.loads(p.read_text())
+    except json.JSONDecodeError:
+        return None
+    srcs = data.get("sources") or {}
+    return {k: (v or {}).get("url") for k, v in srcs.items()}
+
+
 def run_fu49_q1(out):
     out = pathlib.Path(out)
     rows = []
     for name, lat, lon, z in FU49_Q1:
         adb("logcat", "-c")
         camera_to_fu49(lat, lon, z)
-        rec = wait_fu49(18)
+        rec = wait_fu49_settle(lat, lon, z, None, 20)
         dest = out / f"{name}_z{z}"
         dest.mkdir(parents=True, exist_ok=True)
         pull_fu49_styles(dest)
         screencap_host(dest / "screen.png")
+        gen = style_source_urls(dest / "fu49-generated-last.json")
+        live = style_source_urls(dest / "fu49-live-applied.json") or style_source_urls(
+            dest / "fu49-live-same-uri.json"
+        )
+        match = gen is not None and live is not None and gen == live
         (dest / "log.json").write_text(json.dumps(rec, indent=2) + "\n")
-        rows.append({"name": name, "zoom": z, "log": rec})
-        log(f"q1 {name} z{z} totals={rec.get('totals')}")
+        row = {
+            "name": name,
+            "zoom": z,
+            "log": rec,
+            "generated": gen,
+            "live": live,
+            "style_match": match,
+        }
+        rows.append(row)
+        log(f"q1 {name} z{z} style_match={match} totals={rec.get('totals')}")
     return {"rows": rows}
 
 
@@ -1790,7 +1855,7 @@ def run_fu49_away_back(out, build):
     for offline in (True, False):
         net = "off" if offline else "on"
         set_true_offline(offline)
-        time.sleep(2)
+        time.sleep(4)
         extra = ["--ez", "navi_fu49_force_offline", "true" if offline else "false"]
         try:
             for name, lat, lon in FU49_CAMERAS:
@@ -1815,6 +1880,11 @@ def run_fu49_away_back(out, build):
                     "back_fully_ms": (shot["back"] or {}).get("fully_ms"),
                     "net": (shot["idle"] or {}).get("net"),
                     "underdrawn": (idle_t.get("roads") or 0) + 20 < (back_t.get("roads") or 0),
+                    "idle_back_match": (
+                        idle_t.get("roads") == back_t.get("roads")
+                        and idle_t.get("water") == back_t.get("water")
+                        and idle_t.get("labels") == back_t.get("labels")
+                    ),
                 }
                 (dest / "counts.json").write_text(json.dumps(row, indent=2) + "\n")
                 rows.append(row)
@@ -1957,7 +2027,7 @@ def main():
         rec = run_fu49_q1(out)
         (out / "q1.json").write_text(json.dumps(rec, indent=2) + "\n")
         print(json.dumps(rec, indent=2))
-        sys.exit(0)
+        sys.exit(0 if all(r.get("style_match") for r in rec.get("rows", [])) else 1)
     if a.fu49_q3:
         rec = run_fu49_q3(out)
         (out / "q3.json").write_text(json.dumps(rec, indent=2) + "\n")
@@ -1965,9 +2035,12 @@ def main():
         sys.exit(0)
     if a.fu49_map:
         rec = run_fu49_away_back(out, a.fu49_build)
+        fails = [r for r in rec.get("rows", []) if not r.get("idle_back_match")]
+        rec["accepted"] = not fails
+        rec["fail_count"] = len(fails)
         (out / "result.json").write_text(json.dumps(rec, indent=2) + "\n")
-        print(json.dumps({"build": a.fu49_build, "rows": len(rec.get("rows", []))}, indent=2))
-        sys.exit(0)
+        print(json.dumps({"build": a.fu49_build, "accepted": rec["accepted"], "fail_count": rec["fail_count"]}, indent=2))
+        sys.exit(0 if rec["accepted"] else 1)
     if a.fu47_map:
         rows, extras = run_fu47_map_matrix(out)
         fails = [

@@ -9389,6 +9389,7 @@ private fun CorridorMapView(
                 .AtomicBoolean(false)
         }
     val currentStyleUri = remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    val currentMountedKey = remember { androidx.compose.runtime.mutableStateOf("") }
     val currentStyleKind =
         remember {
             androidx.compose.runtime.mutableStateOf<BasemapStyleResolver.StyleKind?>(null)
@@ -9959,6 +9960,7 @@ private fun CorridorMapView(
                 }
                 val previousUri = currentStyleUri.value
                 val previousKind = currentStyleKind.value
+                val previousMount = currentMountedKey.value
                 NaviMapTestHooks.beginStyleApply(applyGen)
                 applyCameraTilt(map)
                 if (!want3d) {
@@ -9972,7 +9974,13 @@ private fun CorridorMapView(
                 }
                 PmtilesArchiveGate.writeShownMarker(dataDir, resolved.coveringJob?.localPath)
                 val sameUri =
-                    !Fu49MapDiag.forceSetStyle && resolved.styleUri == currentStyleUri.value
+                    !Fu49MapDiag.forceSetStyle &&
+                        BasemapStyleResolver.shouldSkipSetStyle(
+                            currentMountedKey.value,
+                            currentStyleUri.value,
+                            resolved.mountedKey,
+                            resolved.styleUri,
+                        )
                 Fu49MapDiag.dumpGeneratedStyle(
                     resolved.styleUri,
                     resolved.mountedKey,
@@ -10029,6 +10037,7 @@ private fun CorridorMapView(
                         if (previousUri != null) {
                             currentStyleUri.value = previousUri
                             currentStyleKind.value = previousKind
+                            currentMountedKey.value = previousMount
                         }
                         styleReady.value = true
                         NaviMapTestHooks.completeStyleApply(applyGen)
@@ -10036,6 +10045,7 @@ private fun CorridorMapView(
                     }
                     currentStyleUri.value = resolved.styleUri
                     currentStyleKind.value = resolved.kind
+                    currentMountedKey.value = resolved.mountedKey
                     applyTerrainAndPitch(map, style, resolved, applyGen)
                     restoreHeldCamera(map, liveCam)
                     Fu49MapDiag.dumpLiveStyle(
@@ -10200,6 +10210,17 @@ private fun CorridorMapView(
                     mapView.addOnDidBecomeIdleListener {
                         Fu49MapDiag.logEvent("idle")
                         measureBlankShareAndLog(map)
+                        val leaf =
+                            currentStyleUri.value
+                                ?.removePrefix("file://")
+                                ?.let { File(it).name }
+                                .orEmpty()
+                        if (leaf.isNotEmpty()) {
+                            BasemapStyleResolver.sweepStalePreparedStyles(
+                                File(context.filesDir, "map-styles/protomaps-light"),
+                                leaf,
+                            )
+                        }
                     }
                     mapView.addOnDidFinishRenderingFrameListener { fully, _, _ ->
                         if (fully) {
