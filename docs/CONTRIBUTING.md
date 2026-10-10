@@ -334,7 +334,12 @@ by hand, or run locally):
 
 - Clippy (`-D warnings`), `cargo test --workspace`, plugin-host isolation,
   `cargo deny`, `cargo audit`, Linux workspace build, detekt, plugin-host
-  Android aarch64 smoke.
+  Android aarch64 smoke, and the old regression-guards Rust integration tests
+  (`motor_access_barrier`, `budorvegen_service_detour`, `wetland_apply_identity`,
+  `wetland_pack_identity`, `poi_discovery`).
+- Weekly (Monday 06:00 UTC, same workflow, `schedule` only): clippy, `cargo deny`,
+  and `cargo audit`. That run does not block merges or the automatic `CI`
+  workflow. A red weekly run shows as **CI manual** in the Actions tab.
 - The regression gate — local packs required; see
   [`regression-gate.md`](regression-gate.md). Required before merging routing
   or map changes.
@@ -346,14 +351,28 @@ by hand, or run locally):
 
 **Required** before opening a PR: the automatic set must already be green
 **on your machine**. Do not open a PR hoping CI will catch failures.
-Run at least:
+Run the same commands the automatic jobs run (do not substitute a broader
+`cargo test` or `assemble` for `fmt` / `ktlint`):
 
 ```bash
+# rust-fmt
 cargo fmt --all -- --check
+
+# rust-lib-tests
 cargo test -p driver-break-core --lib
 cargo test -p navi-ffi --lib
-./gradlew :app:ktlintCheck :app:testDebugUnitTest :app:assembleDebug -PnaviAbis=arm64-v8a
+
+# kotlin-fast
+./gradlew :app:ktlintCheck --no-daemon
+./gradlew :app:testDebugUnitTest --no-daemon
+
+# android-app-compile
+./gradlew :app:assembleDebug -PnaviAbis=arm64-v8a --no-daemon
 ```
+
+The `android-native-compile` job is `cargo build -p navi-ffi --target aarch64-linux-android --lib` with the NDK clang as linker and `CC`. Run that when the NDK is installed.
+
+The merge of `wip/fu3-plan-diag-index-snapshot` into `dev` (`83208f16`) reached GitHub with rustfmt and ktlint failures even though local verification was reported clean. That local run used `cargo test`, Gradle unit tests, and `assemble` — not `cargo fmt --all -- --check` and not `:app:ktlintCheck`. Those two commands are part of the automatic set above and must not be skipped.
 
 Routing or map changes also need the [regression gate](regression-gate.md)
 locally. Clippy, deny/audit, detekt, and the workspace build are the manual

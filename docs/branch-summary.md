@@ -76,3 +76,13 @@ Each host case runs in its own process and records that case's own peak (follow-
 - m Oslo–Lillehammer: 168.936 km, 134.9 min, 0 hops, 24.3 s, 1182 MB.
 
 Emulator kilometres match the host for e, h, k and m.
+
+## CI
+
+Automatic checks (push and pull request, [`.github/workflows/ci.yml`](../.github/workflows/ci.yml); skips docs, markdown, geojson-routes, and gate refs): `rust-fmt`, `rust-lib-tests`, `android-native-compile`, `kotlin-fast`, `android-app-compile`. Jobs are independent. Warm-cache wall is about 3 minutes (run 38094560779 rerun). Budget is 10 minutes. Cold first-green times were `rust-lib-tests` 435 s, `kotlin-fast` 175 s, `android-app-compile` 266 s, `android-native-compile` 268 s.
+
+Manual (Actions → **CI manual** → Run workflow, [`.github/workflows/ci-manual.yml`](../.github/workflows/ci-manual.yml)): Clippy, workspace tests, plugin-host isolation, deny, audit, Linux workspace build, detekt, plugin-host Android aarch64 smoke, and the old regression-guards Rust integration tests (mini PBF). Not a required merge check. The instrumented suite stays on `android-instrumented.yml` (dispatch only).
+
+Weekly (Monday 06:00 UTC, same **CI manual** workflow, `schedule` only): Clippy, `cargo deny`, and `cargo audit`. Does not run on push or pull request, does not block merges or the automatic `CI` workflow, and does not run the regression gate, the emulator, or the workspace build. A red weekly run is visible in the Actions tab as **CI manual**.
+
+The [regression gate](regression-gate.md) is local and required before merging routing or map changes.

@@ -1,7 +1,12 @@
 # Heavy checks. Start by hand (Actions → CI manual → Run workflow).
-# Not a required merge check. No schedule (ask before adding a weekly run).
+# Not a required merge check. Failure here does not fail the automatic CI
+# workflow (.github/workflows/ci.yml).
 #
-# Includes: Clippy -D warnings, workspace tests, deny/audit, linux-build,
+# Weekly (Monday 06:00 UTC): clippy + cargo deny + cargo audit only.
+# That scheduled job does not run the gate, emulator, or workspace build.
+#
+# Manual dispatch includes: Clippy -D warnings, workspace tests, the old
+# regression-guards Rust integration tests (mini PBF), deny/audit, linux-build,
 # plugin-host isolation + optional Android aarch64 smoke, detekt.
 # Does not run the regression gate (needs local packs; see docs/regression-gate.md)
 # or the instrumented suite (android-instrumented.yml).
@@ -10,9 +15,11 @@ name: CI manual
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
 
 concurrency:
-  group: ci-manual-${{ github.workflow }}-${{ github.ref }}
+  group: ci-manual-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -20,8 +27,65 @@ env:
   RUSTFLAGS: -Dwarnings
 
 jobs:
+  weekly-lint-audit:
+    name: weekly-lint-audit
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.0"
+          components: clippy
+
+      - name: System deps (pkg-config / OpenSSL)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libssl-dev
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: weekly-lint-audit
+          cache-targets: true
+
+      - name: Install cargo-deny + cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny@0.19.9,cargo-audit@0.22.2
+
+      - name: Clippy (-D warnings)
+        run: |
+          cargo clippy --workspace --all-targets \
+            --exclude navi-ffi \
+            --exclude navi-plugin-log-hello \
+            --exclude navi-plugin-busy-loop \
+            --exclude navi-plugin-trap-guest \
+            --exclude navi-plugin-memory-bomb \
+            --exclude navi-plugin-weather \
+            --exclude navi-plugin-datex \
+            --exclude navi-plugin-poi-lookahead \
+            --exclude navi-desktop \
+            -- -D warnings
+          cargo clippy -p navi-ffi --all-targets --features diag-bins -- -D warnings
+
+      - name: cargo deny check
+        run: cargo deny check
+
+      - name: cargo deny advisories (aarch64-linux-android)
+        run: cargo deny --target aarch64-linux-android check advisories
+
+      - name: cargo audit
+        run: cargo audit
+
+      - name: cargo audit (aarch64 / android filters)
+        run: cargo audit --target-arch aarch64 --target-os android
+
   rust-heavy:
     name: rust-heavy
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -78,6 +142,17 @@ jobs:
           --exclude navi-plugin-datex
           --exclude navi-plugin-poi-lookahead
 
+      - name: Regression-guards integration (mini PBF)
+        # Dropped from automatic CI: these are cargo --test binaries, not --lib.
+        # Fixtures under core/tests/fixtures/. Manual only unless each test is
+        # well under a minute and the automatic warm wall stays under 10 minutes.
+        run: |
+          cargo test -p driver-break-core --test motor_access_barrier -- --nocapture
+          cargo test -p driver-break-core --test budorvegen_service_detour -- --nocapture
+          cargo test -p driver-break-core --test wetland_apply_identity -- --nocapture
+          cargo test -p driver-break-core --test wetland_pack_identity -- --nocapture
+          cargo test -p driver-break-core --test poi_discovery -- --nocapture
+
       - name: Plugin host isolation tests
         run: cargo test -p navi-plugin-host --test isolation
 
@@ -98,6 +173,7 @@ jobs:
 
   linux-build:
     name: linux-build
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -133,6 +209,7 @@ jobs:
 
   kotlin-detekt:
     name: kotlin-detekt
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -158,6 +235,7 @@ jobs:
 
   plugin-host-android-aarch64:
     name: plugin-host-android-aarch64
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
