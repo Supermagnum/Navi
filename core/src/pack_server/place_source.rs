@@ -420,22 +420,23 @@ pub fn ensure_place_index_for_pack_region(
         if let Some(ps) = listed {
             if recorded.is_empty() {
                 NameIndex::set_place_source_sha256(index_db, &region_id, &ps.sha256)?;
-                NameIndex::set_place_index_source(index_db, &region_id, "own-extract")?;
+                NameIndex::set_place_index_source(index_db, &region_id, "place-source")?;
                 return Ok(PlaceIndexEnsureReport {
                     region_id,
-                    source: PlaceIndexSource::OwnExtract,
+                    source: PlaceIndexSource::PlaceSource,
                     action: "recorded_sha".into(),
                     indexed: 0,
                     cache_hit: true,
                     sha256: ps.sha256,
                     download_bytes: 0,
                     index_ms: 0.0,
-                    reason: "intact index from another source; recorded first place-source sha256"
+                    reason: "intact index from place-source; recorded first place-source sha256"
                         .into(),
                     file_deleted: false,
                 });
             }
             if recorded.eq_ignore_ascii_case(&ps.sha256) {
+                NameIndex::set_place_index_source(index_db, &region_id, "place-source")?;
                 return Ok(PlaceIndexEnsureReport {
                     region_id,
                     source: PlaceIndexSource::PlaceSource,
@@ -475,7 +476,8 @@ pub fn ensure_place_index_for_pack_region(
     } else {
         match ensure_geofabrik_pbf_for_region(pack_dir, &region_id) {
             Ok((pbf, bytes, downloaded, pbf_ms)) => {
-                if let Err(e) = super::place_index_after::refuse_overbroad_place_index(&region_id, &pbf)
+                if let Err(e) =
+                    super::place_index_after::refuse_overbroad_place_index(&region_id, &pbf)
                 {
                     return Ok(fail(&region_id, PlaceIndexSource::None, "rejected", e));
                 }
@@ -717,10 +719,10 @@ mod tests {
             ensure_place_index_for_pack_region(&dir, &db, "europe/test/leaf", Some(&man), false)
                 .unwrap();
         assert_eq!(r.action, "recorded_sha");
-        assert_eq!(r.source, PlaceIndexSource::OwnExtract);
+        assert_eq!(r.source, PlaceIndexSource::PlaceSource);
         assert_eq!(
             NameIndex::place_index_source(&db, "europe/test/leaf").as_deref(),
-            Some("own-extract")
+            Some("place-source")
         );
         assert_eq!(
             NameIndex::place_source_sha256(&db, "europe/test/leaf").as_deref(),
