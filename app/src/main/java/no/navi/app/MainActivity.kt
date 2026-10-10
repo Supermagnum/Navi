@@ -260,11 +260,42 @@ class MainActivity : ComponentActivity() {
             val src = intent.getStringExtra("navi_force_basemap_source").orEmpty().trim()
             NaviMapTestHooks.forceBasemapSource = src.ifBlank { null }
         }
+        if (intent.hasExtra("navi_fu49_force_offline")) {
+            Fu49MapDiag.forceOffline = intent.getBooleanExtra("navi_fu49_force_offline", false)
+        }
+        if (intent.hasExtra("navi_fu49_simple_mount")) {
+            Fu49MapDiag.simpleMount = intent.getBooleanExtra("navi_fu49_simple_mount", false)
+        }
+        if (intent.hasExtra("navi_fu49_overview")) {
+            Fu49MapDiag.enableOverview = intent.getBooleanExtra("navi_fu49_overview", false)
+        }
+        if (intent.hasExtra("navi_fu49_second_regional")) {
+            Fu49MapDiag.enableSecondRegional = intent.getBooleanExtra("navi_fu49_second_regional", false)
+        }
+        if (intent.hasExtra("navi_fu49_online")) {
+            Fu49MapDiag.enableOnline = intent.getBooleanExtra("navi_fu49_online", false)
+        }
+        if (intent.hasExtra("navi_fu49_bypass_queue")) {
+            Fu49MapDiag.bypassStyleQueue = intent.getBooleanExtra("navi_fu49_bypass_queue", false)
+        }
+        if (intent.hasExtra("navi_fu49_disable_keep_previous")) {
+            Fu49MapDiag.disableKeepPrevious = intent.getBooleanExtra("navi_fu49_disable_keep_previous", false)
+        }
+        if (intent.hasExtra("navi_fu49_force_set_style")) {
+            Fu49MapDiag.forceSetStyle = intent.getBooleanExtra("navi_fu49_force_set_style", false)
+        }
         android.util.Log.i(
             "NaviMapHooks",
             "force_online=${NaviMapTestHooks.forceOnlineBasemap} " +
                 "force_source=${NaviMapTestHooks.forceBasemapSource ?: ""} " +
-                "cleared=${NaviMapTestHooks.forcedBasemapSettingsCleared()}",
+                "cleared=${NaviMapTestHooks.forcedBasemapSettingsCleared()} " +
+                "fu49_offline=${Fu49MapDiag.forceOffline} " +
+                "fu49_simple=${Fu49MapDiag.simpleMount} " +
+                "fu49_overview=${Fu49MapDiag.enableOverview} " +
+                "fu49_second=${Fu49MapDiag.enableSecondRegional} " +
+                "fu49_online=${Fu49MapDiag.enableOnline} " +
+                "fu49_bypass_queue=${Fu49MapDiag.bypassStyleQueue} " +
+                "fu49_no_keep=${Fu49MapDiag.disableKeepPrevious}",
         )
         // hideUiChrome sticks in-process after adb --ez navi_hide_chrome true.
         // Explicit extra sets it; a normal launcher MAIN clears a leftover hide.
@@ -4821,6 +4852,7 @@ private fun NaviMapScreen() {
                         val cam = NaviMapTestHooks.pendingCamera
                         if (cam != null) {
                             NaviMapTestHooks.pendingCamera = null
+                            Fu49MapDiag.markCamera()
                             mapState =
                                 mapState.copy(
                                     followGps = false,
@@ -9644,6 +9676,20 @@ private fun CorridorMapView(
             }
         }
         NaviMapTestHooks.lastFeatureGridJson = cells.joinToString(";")
+        var roadsTot = 0
+        var waterTot = 0
+        var labelsTot = 0
+        var blankTot = 0
+        for (cell in cells) {
+            val r = Regex("r=(\\d+),w=(\\d+),l=(\\d+),b=(\\d+)").find(cell)
+            if (r != null) {
+                roadsTot += r.groupValues[1].toInt()
+                waterTot += r.groupValues[2].toInt()
+                labelsTot += r.groupValues[3].toInt()
+                blankTot += r.groupValues[4].toInt()
+            }
+        }
+        Fu49MapDiag.logTotals(roadsTot, waterTot, labelsTot, blankTot, "grid")
         logArchiveTileLayers(map)
     }
 
@@ -9876,12 +9922,19 @@ private fun CorridorMapView(
                         "archives=$archiveKey",
                     ).joinToString("|")
                 }
-            val request = BasemapStyleApplyQueue.enqueue(sourceKey, forceBaseReload = force)
+            val enqueueKey =
+                if (Fu49MapDiag.bypassStyleQueue) {
+                    "$sourceKey|fu49-bypass-${System.nanoTime()}"
+                } else {
+                    sourceKey
+                }
+            val request = BasemapStyleApplyQueue.enqueue(enqueueKey, forceBaseReload = force)
             val applyGen = request.generation
             styleApplyGen.set(applyGen)
             withContext(Dispatchers.Main) {
                 if (!BasemapStyleApplyQueue.isCurrent(applyGen)) return@withContext
-                val reloadBase = BasemapStyleApplyQueue.shouldReloadBase(request)
+                val reloadBase =
+                    Fu49MapDiag.bypassStyleQueue || BasemapStyleApplyQueue.shouldReloadBase(request)
                 if (!reloadBase) {
                     map.getStyle { style ->
                         if (style == null) return@getStyle
@@ -9918,7 +9971,14 @@ private fun CorridorMapView(
                     onStyleNote("Offline basemap (Protomaps)")
                 }
                 PmtilesArchiveGate.writeShownMarker(dataDir, resolved.coveringJob?.localPath)
-                val sameUri = resolved.styleUri == currentStyleUri.value
+                val sameUri =
+                    !Fu49MapDiag.forceSetStyle && resolved.styleUri == currentStyleUri.value
+                Fu49MapDiag.dumpGeneratedStyle(
+                    resolved.styleUri,
+                    resolved.mountedKey,
+                    sameUri,
+                    reloadBase,
+                )
                 if (sameUri) {
                     currentStyleKind.value = resolved.kind
                     map.getStyle { style ->
@@ -9928,6 +9988,12 @@ private fun CorridorMapView(
                             return@getStyle
                         }
                         applyTerrainAndPitch(map, style, resolved, applyGen)
+                        Fu49MapDiag.dumpLiveStyle(
+                            style,
+                            File(context.filesDir, "map-styles/protomaps-light"),
+                            "same-uri",
+                        )
+                        Fu49MapDiag.logEvent("style_same_uri", "uri=${resolved.styleUri}")
                         BasemapStyleApplyQueue.accept(
                             BasemapStyleApplyQueue.Result(
                                 generation = applyGen,
@@ -9946,7 +10012,11 @@ private fun CorridorMapView(
                         NaviMapTestHooks.lastStyleLoadError =
                             "setStyle returned null (${resolved.styleUri})"
                         onStyleNote("Map update failed; keeping the previous map")
-                        BasemapStyleApplyQueue.keepPrevious("Map update failed; keeping the previous map")
+                        if (Fu49MapDiag.disableKeepPrevious) {
+                            Fu49MapDiag.logEvent("keep_previous_skipped", "style null")
+                        } else {
+                            BasemapStyleApplyQueue.keepPrevious("Map update failed; keeping the previous map")
+                        }
                         BasemapStyleApplyQueue.accept(
                             BasemapStyleApplyQueue.Result(
                                 generation = applyGen,
@@ -9968,6 +10038,12 @@ private fun CorridorMapView(
                     currentStyleKind.value = resolved.kind
                     applyTerrainAndPitch(map, style, resolved, applyGen)
                     restoreHeldCamera(map, liveCam)
+                    Fu49MapDiag.dumpLiveStyle(
+                        style,
+                        File(context.filesDir, "map-styles/protomaps-light"),
+                        "applied",
+                    )
+                    Fu49MapDiag.logEvent("style_loaded", "uri=${resolved.styleUri}")
                     invalidateViewportTiles(map)
                     BasemapStyleApplyQueue.accept(
                         BasemapStyleApplyQueue.Result(
@@ -10122,7 +10198,22 @@ private fun CorridorMapView(
                         refreshTrackOverlay(map)
                     }
                     mapView.addOnDidBecomeIdleListener {
+                        Fu49MapDiag.logEvent("idle")
                         measureBlankShareAndLog(map)
+                    }
+                    mapView.addOnDidFinishRenderingFrameListener { fully, _, _ ->
+                        if (fully) {
+                            Fu49MapDiag.logEvent("fully")
+                        }
+                    }
+                    mapView.addOnDidFinishLoadingStyleListener {
+                        Fu49MapDiag.logEvent("style_loaded_lib")
+                    }
+                    mapView.addOnDidFinishLoadingMapListener {
+                        Fu49MapDiag.logEvent("map_loaded")
+                    }
+                    mapView.addOnDidFinishRenderingMapListener { fully ->
+                        Fu49MapDiag.logEvent(if (fully) "map_fully" else "map_partial")
                     }
                     map.addOnCameraIdleListener {
                         refreshTrackOverlay(map)

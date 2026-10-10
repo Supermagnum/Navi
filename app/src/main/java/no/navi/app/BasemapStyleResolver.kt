@@ -86,7 +86,11 @@ object BasemapStyleResolver {
             ) != 0
         val cm =
             context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-                ?: return networkUsable(airplane, hasInternet = false)
+                ?: run {
+                    val usable = networkUsable(airplane, hasInternet = false)
+                    Fu49MapDiag.logNetworkDecision(airplane, false, usable, Fu49MapDiag.forceOffline)
+                    return usable && !Fu49MapDiag.forceOffline
+                }
         val network = cm.activeNetwork
         val caps = network?.let { cm.getNetworkCapabilities(it) }
         val hasInternet =
@@ -99,7 +103,10 @@ object BasemapStyleResolver {
                         caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
                         caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
                 )
-        return networkUsable(airplane, hasInternet)
+        val usable = networkUsable(airplane, hasInternet)
+        Fu49MapDiag.logNetworkDecision(airplane, hasInternet, usable, Fu49MapDiag.forceOffline)
+        if (Fu49MapDiag.forceOffline) return false
+        return usable
     }
 
     /**
@@ -242,11 +249,26 @@ object BasemapStyleResolver {
             val network = hasNetwork(context)
             val mountOnline = shouldMountOnlineUnderlay(network, extendsBeyond)
             val mounted =
-                MountedSources(
-                    overview = overview,
-                    regionals = mountedRegionals,
-                    includeOnline = mountOnline,
-                )
+                if (Fu49MapDiag.simpleMount) {
+                    val one = covering ?: mountedRegionals.firstOrNull()
+                    val regs =
+                        if (Fu49MapDiag.enableSecondRegional) {
+                            mountedRegionals.take(2).ifEmpty { listOfNotNull(one) }
+                        } else {
+                            listOfNotNull(one)
+                        }
+                    MountedSources(
+                        overview = if (Fu49MapDiag.enableOverview) overview else null,
+                        regionals = regs,
+                        includeOnline = Fu49MapDiag.enableOnline && mountOnline,
+                    )
+                } else {
+                    MountedSources(
+                        overview = overview,
+                        regionals = mountedRegionals,
+                        includeOnline = mountOnline,
+                    )
+                }
 
             if (mounted.overview != null || mounted.regionals.isNotEmpty()) {
                 val primary = covering ?: mounted.regionals.firstOrNull() ?: mounted.overview

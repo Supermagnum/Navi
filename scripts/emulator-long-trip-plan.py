@@ -1571,6 +1571,322 @@ def summarize(files, trip, text):
     return rec
 
 
+FU49_CAMERAS = [
+    ("hamar", 60.79472, 11.06806),
+    ("oslo", 59.91333, 10.73897),
+    ("hamburg", 53.55034, 9.99368),
+    ("hallingdal_bromma", 60.50, 9.17),
+]
+FU49_Q1 = [
+    ("elsa_overview", 64.88873, 19.51604, 15),
+    ("oslo", 59.91333, 10.73897, 5),
+]
+OSTLANDET = "/data/user/0/no.navi.app/files/pmtiles/europe_norway_ostlandet.pmtiles"
+
+
+def half_screen_deg(lat, zoom, px=540):
+    earth = 40075016.686
+    m_per_px = earth * math.cos(math.radians(lat)) / (256.0 * (2.0 ** zoom))
+    return (m_per_px * px) / 111195.0
+
+
+def set_true_offline(on):
+    """Airplane plus in-app force-offline. Flight mode alone left Wi-Fi up."""
+    set_airplane(on)
+    if on:
+        adb("shell", "svc", "wifi", "disable")
+        adb("shell", "svc", "data", "disable")
+    else:
+        adb("shell", "svc", "wifi", "enable")
+        adb("shell", "svc", "data", "enable")
+    extras = [
+        "shell", "am", "start", "-n", f"{PKG}/.MainActivity",
+        "--ez", "navi_fu49_force_offline", "true" if on else "false",
+        "--ez", "navi_hide_chrome", "true",
+    ]
+    adb(*extras)
+    time.sleep(1)
+
+
+def camera_to_fu49(lat, lon, zoom, extra=None):
+    args = [
+        "shell", "am", "start", "-n", f"{PKG}/.MainActivity",
+        "--ez", "navi_hide_chrome", "true",
+        "--ed", "navi_camera_lat", str(lat),
+        "--ed", "navi_camera_lon", str(lon),
+        "--ed", "navi_camera_zoom", str(zoom),
+    ]
+    if extra:
+        args.extend(extra)
+    adb(*args)
+
+
+def parse_fu49_logs(text):
+    totals = None
+    idle_ms = None
+    fully_ms = None
+    net = None
+    style_lines = []
+    for ln in text.splitlines():
+        if "NaviMapTotals" in ln and "roads=" in ln:
+            totals = {
+                "roads": int(field(ln, "roads") or 0),
+                "water": int(field(ln, "water") or 0),
+                "labels": int(field(ln, "labels") or 0),
+                "blank_cells": int(field(ln, "blank_cells") or 0),
+                "elapsed_ms": field(ln, "elapsed_ms"),
+                "idle_ms": field(ln, "idle_ms"),
+                "fully_ms": field(ln, "fully_ms"),
+                "line": ln,
+            }
+        if "NaviFu49Event" in ln and "kind=idle" in ln:
+            try:
+                idle_ms = int(field(ln, "elapsed_ms") or -1)
+            except ValueError:
+                idle_ms = None
+        if "NaviFu49Event" in ln and "kind=fully" in ln:
+            try:
+                fully_ms = int(field(ln, "elapsed_ms") or -1)
+            except ValueError:
+                fully_ms = None
+        if "NaviFu49Net" in ln:
+            net = {
+                "airplane": field(ln, "airplane"),
+                "has_internet": field(ln, "has_internet"),
+                "usable": field(ln, "usable"),
+                "force_offline": field(ln, "force_offline"),
+                "http_allowed": field(ln, "http_allowed"),
+                "line": ln,
+            }
+        if "NaviFu49Style" in ln:
+            style_lines.append(ln)
+    return {
+        "totals": totals,
+        "idle_ms": idle_ms,
+        "fully_ms": fully_ms,
+        "net": net,
+        "style_lines": style_lines[-8:],
+    }
+
+
+def wait_fu49(seconds=20, want_fully=False):
+    last = {}
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        time.sleep(0.5)
+        parsed = parse_fu49_logs(logcat())
+        if parsed.get("totals"):
+            last = parsed
+            if want_fully:
+                if parsed.get("fully_ms") not in (None, -1, "-1"):
+                    if time.time() + 0.1 >= deadline:
+                        return parsed
+            else:
+                return parsed
+    return last or parse_fu49_logs(logcat())
+
+
+def wait_fu49_settle(seconds=16):
+    """Do not return on the first totals line; keep the last sample."""
+    last = {}
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        time.sleep(0.5)
+        parsed = parse_fu49_logs(logcat())
+        if parsed.get("totals"):
+            last = parsed
+    return last or parse_fu49_logs(logcat())
+
+
+def pull_fu49_styles(dest):
+    dest = pathlib.Path(dest)
+    dest.mkdir(parents=True, exist_ok=True)
+    adb(
+        "shell",
+        "run-as",
+        PKG,
+        "sh",
+        "-c",
+        "ls files/map-styles/protomaps-light",
+    )
+    for name in (
+        "fu49-live-applied.json",
+        "fu49-live-same-uri.json",
+        "fu49-generated-last.json",
+        ".asset_epoch",
+    ):
+        r = adb(
+            "exec-out",
+            "run-as",
+            PKG,
+            "cat",
+            f"files/map-styles/protomaps-light/{name}",
+        )
+        if r.returncode == 0 and r.stdout:
+            (dest / name).write_bytes(r.stdout.encode() if isinstance(r.stdout, str) else r.stdout)
+
+
+def screencap_host(path):
+    path = pathlib.Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f"/sdcard/Download/{path.name}"
+    adb("shell", "screencap", "-p", tmp)
+    adb("pull", tmp, str(path))
+    adb("shell", "rm", "-f", tmp)
+
+
+def shoot_away_and_back(dest, lat, lon, zoom, extra=None, wait_s=16):
+    dest = pathlib.Path(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    force = ["--ez", "navi_fu49_force_set_style", "true"]
+    extra = list(extra or []) + force
+    adb("logcat", "-c")
+    camera_to_fu49(lat, lon, zoom, extra)
+    idle = wait_fu49_settle(wait_s)
+    if dest.suffix == ".png":
+        idle_png = dest.parent / (dest.stem + "_idle.png")
+        back_png = dest.parent / (dest.stem + "_back.png")
+    else:
+        idle_png = dest / "idle.png"
+        back_png = dest / "back.png"
+    screencap_host(idle_png)
+    dlat = half_screen_deg(lat, zoom)
+    adb("logcat", "-c")
+    camera_to_fu49(lat + dlat, lon, zoom, extra)
+    wait_fu49_settle(8)
+    adb("logcat", "-c")
+    camera_to_fu49(lat, lon, zoom, extra)
+    back = wait_fu49_settle(wait_s)
+    screencap_host(back_png)
+    return {
+        "idle": idle,
+        "back": back,
+        "idle_png": str(idle_png),
+        "back_png": str(back_png),
+        "dlat": dlat,
+    }
+
+
+def run_fu49_q1(out):
+    out = pathlib.Path(out)
+    rows = []
+    for name, lat, lon, z in FU49_Q1:
+        adb("logcat", "-c")
+        camera_to_fu49(lat, lon, z)
+        rec = wait_fu49(18)
+        dest = out / f"{name}_z{z}"
+        dest.mkdir(parents=True, exist_ok=True)
+        pull_fu49_styles(dest)
+        screencap_host(dest / "screen.png")
+        (dest / "log.json").write_text(json.dumps(rec, indent=2) + "\n")
+        rows.append({"name": name, "zoom": z, "log": rec})
+        log(f"q1 {name} z{z} totals={rec.get('totals')}")
+    return {"rows": rows}
+
+
+def run_fu49_away_back(out, build):
+    out = pathlib.Path(out)
+    rows = []
+    for offline in (True, False):
+        net = "off" if offline else "on"
+        set_true_offline(offline)
+        time.sleep(2)
+        extra = ["--ez", "navi_fu49_force_offline", "true" if offline else "false"]
+        try:
+            for name, lat, lon in FU49_CAMERAS:
+                dest = out / f"{name}_z11_{net}"
+                dest.mkdir(parents=True, exist_ok=True)
+                shot = shoot_away_and_back(dest, lat, lon, 11, extra=extra)
+                idle_t = (shot["idle"] or {}).get("totals") or {}
+                back_t = (shot["back"] or {}).get("totals") or {}
+                row = {
+                    "build": build,
+                    "name": name,
+                    "network": net,
+                    "idle_roads": idle_t.get("roads"),
+                    "idle_water": idle_t.get("water"),
+                    "idle_labels": idle_t.get("labels"),
+                    "back_roads": back_t.get("roads"),
+                    "back_water": back_t.get("water"),
+                    "back_labels": back_t.get("labels"),
+                    "idle_ms": (shot["idle"] or {}).get("idle_ms"),
+                    "fully_ms": (shot["idle"] or {}).get("fully_ms"),
+                    "back_idle_ms": (shot["back"] or {}).get("idle_ms"),
+                    "back_fully_ms": (shot["back"] or {}).get("fully_ms"),
+                    "net": (shot["idle"] or {}).get("net"),
+                    "underdrawn": (idle_t.get("roads") or 0) + 20 < (back_t.get("roads") or 0),
+                }
+                (dest / "counts.json").write_text(json.dumps(row, indent=2) + "\n")
+                rows.append(row)
+                log(
+                    f"{build} {name} {net} idle_r={row['idle_roads']} back_r={row['back_roads']} "
+                    f"underdrawn={row['underdrawn']} net={row['net']}"
+                )
+        finally:
+            if offline:
+                set_true_offline(False)
+                time.sleep(1)
+    return {"build": build, "rows": rows}
+
+
+def run_fu49_q3(out):
+    out = pathlib.Path(out)
+    steps = [
+        ("01_single", ["--ez", "navi_fu49_simple_mount", "true",
+                       "--ez", "navi_fu49_bypass_queue", "true",
+                       "--ez", "navi_fu49_disable_keep_previous", "true",
+                       "--ez", "navi_fu49_force_offline", "true",
+                       "--es", "navi_force_basemap_source", OSTLANDET]),
+        ("02_queue", ["--ez", "navi_fu49_simple_mount", "true",
+                      "--ez", "navi_fu49_bypass_queue", "false",
+                      "--ez", "navi_fu49_disable_keep_previous", "true",
+                      "--ez", "navi_fu49_force_offline", "true",
+                      "--es", "navi_force_basemap_source", OSTLANDET]),
+        ("03_keep_previous", ["--ez", "navi_fu49_simple_mount", "true",
+                              "--ez", "navi_fu49_bypass_queue", "false",
+                              "--ez", "navi_fu49_disable_keep_previous", "false",
+                              "--ez", "navi_fu49_force_offline", "true"]),
+        ("04_overview", ["--ez", "navi_fu49_simple_mount", "true",
+                         "--ez", "navi_fu49_overview", "true",
+                         "--ez", "navi_fu49_force_offline", "true"]),
+        ("05_second_regional", ["--ez", "navi_fu49_simple_mount", "true",
+                                "--ez", "navi_fu49_overview", "true",
+                                "--ez", "navi_fu49_second_regional", "true",
+                                "--ez", "navi_fu49_force_offline", "true"]),
+        ("06_online", ["--ez", "navi_fu49_simple_mount", "true",
+                       "--ez", "navi_fu49_overview", "true",
+                       "--ez", "navi_fu49_second_regional", "true",
+                       "--ez", "navi_fu49_online", "true",
+                       "--ez", "navi_fu49_force_offline", "false"]),
+    ]
+    set_true_offline(True)
+    lat, lon, z = 60.79472, 11.06806, 11
+    recs = []
+    try:
+        for label, extra in steps:
+            dest = out / label
+            dest.mkdir(parents=True, exist_ok=True)
+            if label == "06_online":
+                set_true_offline(False)
+            adb("logcat", "-c")
+            camera_to_fu49(lat, lon, z, extra)
+            early = wait_fu49(8, want_fully=False)
+            fully = wait_fu49(20, want_fully=True)
+            screencap_host(dest / "idle.png")
+            pull_fu49_styles(dest)
+            (dest / "early.json").write_text(json.dumps(early, indent=2) + "\n")
+            (dest / "fully.json").write_text(json.dumps(fully, indent=2) + "\n")
+            recs.append({"label": label, "early": early, "fully": fully})
+            log(f"q3 {label} early={early.get('totals')} fully={fully.get('totals')}")
+    finally:
+        set_true_offline(False)
+        adb(
+            "shell", "am", "start", "-n", f"{PKG}/.MainActivity",
+            "--ez", "navi_clear_basemap_test_hooks", "true",
+        )
+    return {"steps": recs}
+
+
 def main():
     global SERIAL
     ap = argparse.ArgumentParser()
@@ -1607,9 +1923,29 @@ def main():
         action="store_true",
         help="follow-up 47 screenshot matrix into --out (docs/fu47-map)",
     )
+    ap.add_argument(
+        "--fu49-map",
+        action="store_true",
+        help="follow-up 49 diagnosis: away-and-back + style dumps into --out",
+    )
+    ap.add_argument(
+        "--fu49-q1",
+        action="store_true",
+        help="dump live vs generated style at Elsa z15 and Oslo z5",
+    )
+    ap.add_argument(
+        "--fu49-q3",
+        action="store_true",
+        help="single-source Hamar z11 then add elements one at a time",
+    )
+    ap.add_argument(
+        "--fu49-build",
+        default="head",
+        help="label under docs/fu49-map/<build>/ for --fu49-map",
+    )
     a = ap.parse_args()
-    if not a.trip and not a.search_check and not a.clear_region and not a.pause_test and not a.fu44_map and not a.fu46_map and not a.fu47_map:
-        ap.error("trip is required unless --search-check, --clear-region, --pause-test, --fu44-map, --fu46-map or --fu47-map")
+    if not a.trip and not a.search_check and not a.clear_region and not a.pause_test and not a.fu44_map and not a.fu46_map and not a.fu47_map and not a.fu49_map and not a.fu49_q1 and not a.fu49_q3:
+        ap.error("trip is required unless --search-check, --clear-region, --pause-test, --fu44-map, --fu46-map, --fu47-map or --fu49-*")
     trip = TRIPS.get(a.trip) if a.trip else None
     out = pathlib.Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -1617,6 +1953,21 @@ def main():
     ensure_running()
     pid0 = pid()
     log(f"serial={SERIAL} pid={pid0}")
+    if a.fu49_q1:
+        rec = run_fu49_q1(out)
+        (out / "q1.json").write_text(json.dumps(rec, indent=2) + "\n")
+        print(json.dumps(rec, indent=2))
+        sys.exit(0)
+    if a.fu49_q3:
+        rec = run_fu49_q3(out)
+        (out / "q3.json").write_text(json.dumps(rec, indent=2) + "\n")
+        print(json.dumps({"steps": [s.get("label") for s in rec.get("steps", [])]}, indent=2))
+        sys.exit(0)
+    if a.fu49_map:
+        rec = run_fu49_away_back(out, a.fu49_build)
+        (out / "result.json").write_text(json.dumps(rec, indent=2) + "\n")
+        print(json.dumps({"build": a.fu49_build, "rows": len(rec.get("rows", []))}, indent=2))
+        sys.exit(0)
     if a.fu47_map:
         rows, extras = run_fu47_map_matrix(out)
         fails = [

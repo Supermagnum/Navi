@@ -63,11 +63,23 @@ object NaviMapTestHooks {
     @Volatile
     var forceBasemapSource: String? = null
 
-    fun forcedBasemapSettingsCleared(): Boolean = !forceOnlineBasemap && forceBasemapSource == null
+    fun forcedBasemapSettingsCleared(): Boolean =
+        !forceOnlineBasemap &&
+            forceBasemapSource == null &&
+            !Fu49MapDiag.forceOffline &&
+            !Fu49MapDiag.simpleMount
 
     fun clearForcedBasemapSettings() {
         forceOnlineBasemap = false
         forceBasemapSource = null
+        Fu49MapDiag.forceOffline = false
+        Fu49MapDiag.simpleMount = false
+        Fu49MapDiag.enableOverview = false
+        Fu49MapDiag.enableSecondRegional = false
+        Fu49MapDiag.enableOnline = false
+        Fu49MapDiag.bypassStyleQueue = false
+        Fu49MapDiag.disableKeepPrevious = false
+        Fu49MapDiag.forceSetStyle = false
     }
 
     /** Triple of lat, lon, zoom. Consumed by MainActivity. */
