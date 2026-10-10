@@ -1,0 +1,31 @@
+{
+  "position": "ostlandet_trondelag",
+  "lat": 62.6,
+  "lon": 10.2,
+  "zoom": 9,
+  "network": "on",
+  "idle": {
+    "roads": null,
+    "water": null,
+    "labels": null,
+    "blank_cells": null
+  },
+  "back": {
+    "roads": 139,
+    "water": 638,
+    "labels": 12,
+    "blank_cells": 9
+  },
+  "idle_png": "idle.png",
+  "back_png": "back.png",
+  "agree": false,
+  "net": {
+    "airplane": "false",
+    "has_internet": "true",
+    "usable": "true",
+    "force_offline": "false",
+    "http_allowed": "true",
+    "line": "10-10 21:03:15.930 I/NaviFu49Net( 6656): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+  },
+  "kind": "boundary"
+}

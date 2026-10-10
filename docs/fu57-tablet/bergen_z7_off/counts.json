@@ -1,0 +1,30 @@
+{
+  "position": "bergen",
+  "lat": 60.3913,
+  "lon": 5.3221,
+  "zoom": 7,
+  "network": "off",
+  "idle": {
+    "roads": 399,
+    "water": 740,
+    "labels": 42,
+    "blank_cells": 0
+  },
+  "back": {
+    "roads": 399,
+    "water": 740,
+    "labels": 42,
+    "blank_cells": 0
+  },
+  "idle_png": "idle.png",
+  "back_png": "back.png",
+  "agree": true,
+  "net": {
+    "airplane": "true",
+    "has_internet": "false",
+    "usable": "false",
+    "force_offline": "true",
+    "http_allowed": "false",
+    "line": "10-10 20:47:25.331 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+  }
+}

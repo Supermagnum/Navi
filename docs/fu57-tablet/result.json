@@ -1,0 +1,1255 @@
+{
+  "rows": [
+    {
+      "position": "hamar",
+      "lat": 60.79472,
+      "lon": 11.06806,
+      "zoom": 7,
+      "network": "off",
+      "idle": {
+        "roads": 585,
+        "water": 731,
+        "labels": 83,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 585,
+        "water": 731,
+        "labels": 83,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "true",
+        "has_internet": "false",
+        "usable": "false",
+        "force_offline": "true",
+        "http_allowed": "false",
+        "line": "10-10 20:41:08.565 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+      }
+    },
+    {
+      "position": "hamar",
+      "lat": 60.79472,
+      "lon": 11.06806,
+      "zoom": 9,
+      "network": "off",
+      "idle": {
+        "roads": 389,
+        "water": 711,
+        "labels": 20,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 389,
+        "water": 711,
+        "labels": 20,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "true",
+        "has_internet": "false",
+        "usable": "false",
+        "force_offline": "true",
+        "http_allowed": "false",
+        "line": "10-10 20:41:58.189 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+      }
+    },
+    {
+      "position": "hamar",
+      "lat": 60.79472,
+      "lon": 11.06806,
+      "zoom": 11,
+      "network": "off",
+      "idle": {
+        "roads": 396,
+        "water": 174,
+        "labels": 55,
+        "blank_cells": 1
+      },
+      "back": {
+        "roads": 396,
+        "water": 174,
+        "labels": 55,
+        "blank_cells": 1
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "true",
+        "has_internet": "false",
+        "usable": "false",
+        "force_offline": "true",
+        "http_allowed": "false",
+        "line": "10-10 20:42:31.415 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+      }
+    },
+    {
+      "position": "hamar",
+      "lat": 60.79472,
+      "lon": 11.06806,
+      "zoom": 13,
+      "network": "off",
+      "idle": {
+        "roads": 678,
+        "water": 123,
+        "labels": 117,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 678,
+        "water": 123,
+        "labels": 117,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "true",
+        "has_internet": "false",
+        "usable": "false",
+        "force_offline": "true",
+        "http_allowed": "false",
+        "line": "10-10 20:42:49.845 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+      }
+    },
+    {
+      "position": "hamar",
+      "lat": 60.79472,
+      "lon": 11.06806,
+      "zoom": 15,
+      "network": "off",
+      "idle": {
+        "roads": 1052,
+        "water": 72,
+        "labels": 762,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 791,
+        "water": 1,
+        "labels": 799,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": false,
+      "net": {
+        "airplane": "true",
+        "has_internet": "false",
+        "usable": "false",
+        "force_offline": "true",
+        "http_allowed": "false",
+        "line": "10-10 20:43:23.365 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+      }
+    },
+    {
+      "position": "oslo",
+      "lat": 59.91333,
+      "lon": 10.73897,
+      "zoom": 7,
+      "network": "off",
+      "idle": {
+        "roads": 0,
+        "water": 0,
+        "labels": 0,
+        "blank_cells": 128
+      },
+      "back": {
+        "roads": 670,
+        "water": 714,
+        "labels": 112,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": false,
+      "net": {
+        "airplane": "true",
+        "has_internet": "false",
+        "usable": "false",
+        "force_offline": "true",
+        "http_allowed": "false",
+        "line": "10-10 20:44:00.537 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+      }
+    },
+    {
+      "position": "oslo",
+      "lat": 59.91333,
+      "lon": 10.73897,
+      "zoom": 9,
+      "network": "off",
+      "idle": {
+        "roads": 587,
+        "water": 869,
+        "labels": 47,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 587,
+        "water": 869,
+        "labels": 47,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "true",
+        "has_internet": "false",
+        "usable": "false",
+        "force_offline": "true",
+        "http_allowed": "false",
+        "line": "10-10 20:45:04.956 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+      }
+    },
+    {
+      "position": "oslo",
+      "lat": 59.91333,
+      "lon": 10.73897,
+      "zoom": 11,
+      "network": "off",
+      "idle": {
+        "roads": 462,
+        "water": 324,
+        "labels": 94,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 462,
+        "water": 324,
+        "labels": 94,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "true",
+        "has_internet": "false",
+        "usable": "false",
+        "force_offline": "true",
+        "http_allowed": "false",
+        "line": "10-10 20:45:32.371 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+      }
+    },
+    {
+      "position": "oslo",
+      "lat": 59.91333,
+      "lon": 10.73897,
+      "zoom": 13,
+      "network": "off",
+      "idle": {
+        "roads": 1379,
+        "water": 224,
+        "labels": 190,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 1379,
+        "water": 224,
+        "labels": 190,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "true",
+        "has_internet": "false",
+        "usable": "false",
+        "force_offline": "true",
+        "http_allowed": "false",
+        "line": "10-10 20:45:59.687 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+      }
+    },
+    {
+      "position": "oslo",
+      "lat": 59.91333,
+      "lon": 10.73897,
+      "zoom": 15,
+      "network": "off",
+      "idle": {
+        "roads": 1834,
+        "water": 85,
+        "labels": 400,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 1834,
+        "water": 85,
+        "labels": 400,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "true",
+        "has_internet": "false",
+        "usable": "false",
+        "force_offline": "true",
+        "http_allowed": "false",
+        "line": "10-10 20:46:43.166 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+      }
+    },
+    {
+      "position": "bergen",
+      "lat": 60.3913,
+      "lon": 5.3221,
+      "zoom": 7,
+      "network": "off",
+      "idle": {
+        "roads": 399,
+        "water": 740,
+        "labels": 42,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 399,
+        "water": 740,
+        "labels": 42,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "true",
+        "has_internet": "false",
+        "usable": "false",
+        "force_offline": "true",
+        "http_allowed": "false",
+        "line": "10-10 20:47:25.331 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+      }
+    },
+    {
+      "position": "bergen",
+      "lat": 60.3913,
+      "lon": 5.3221,
+      "zoom": 9,
+      "network": "off",
+      "idle": {
+        "roads": 401,
+        "water": 759,
+        "labels": 7,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 401,
+        "water": 759,
+        "labels": 7,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "true",
+        "has_internet": "false",
+        "usable": "false",
+        "force_offline": "true",
+        "http_allowed": "false",
+        "line": "10-10 20:48:05.936 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+      }
+    },
+    {
+      "position": "bergen",
+      "lat": 60.3913,
+      "lon": 5.3221,
+      "zoom": 11,
+      "network": "off",
+      "idle": {
+        "roads": 609,
+        "water": 333,
+        "labels": 79,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 609,
+        "water": 333,
+        "labels": 79,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "true",
+        "has_internet": "false",
+        "usable": "false",
+        "force_offline": "true",
+        "http_allowed": "false",
+        "line": "10-10 20:48:45.483 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+      }
+    },
+    {
+      "position": "bergen",
+      "lat": 60.3913,
+      "lon": 5.3221,
+      "zoom": 13,
+      "network": "off",
+      "idle": {
+        "roads": 872,
+        "water": 184,
+        "labels": 70,
+        "blank_cells": 5
+      },
+      "back": {
+        "roads": 872,
+        "water": 184,
+        "labels": 70,
+        "blank_cells": 5
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "true",
+        "has_internet": "false",
+        "usable": "false",
+        "force_offline": "true",
+        "http_allowed": "false",
+        "line": "10-10 20:49:06.353 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+      }
+    },
+    {
+      "position": "bergen",
+      "lat": 60.3913,
+      "lon": 5.3221,
+      "zoom": 15,
+      "network": "off",
+      "idle": {
+        "roads": 2482,
+        "water": 69,
+        "labels": 1316,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 1370,
+        "water": 93,
+        "labels": 921,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": false,
+      "net": {
+        "airplane": "true",
+        "has_internet": "false",
+        "usable": "false",
+        "force_offline": "true",
+        "http_allowed": "false",
+        "line": "10-10 20:49:25.919 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+      }
+    },
+    {
+      "position": "ostlandet_vestlandet",
+      "lat": 61.15,
+      "lon": 8.05,
+      "zoom": 9,
+      "network": "off",
+      "idle": {
+        "roads": 202,
+        "water": 1758,
+        "labels": 19,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 202,
+        "water": 1758,
+        "labels": 19,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "true",
+        "has_internet": "false",
+        "usable": "false",
+        "force_offline": "true",
+        "http_allowed": "false",
+        "line": "10-10 20:49:41.575 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+      },
+      "kind": "boundary"
+    },
+    {
+      "position": "ostlandet_vestlandet",
+      "lat": 61.15,
+      "lon": 8.05,
+      "zoom": 11,
+      "network": "off",
+      "idle": {
+        "roads": 202,
+        "water": 1758,
+        "labels": 19,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 202,
+        "water": 1758,
+        "labels": 19,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "true",
+        "has_internet": "false",
+        "usable": "false",
+        "force_offline": "true",
+        "http_allowed": "false",
+        "line": "10-10 20:50:33.025 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+      },
+      "kind": "boundary"
+    },
+    {
+      "position": "ostlandet_trondelag",
+      "lat": 62.6,
+      "lon": 10.2,
+      "zoom": 9,
+      "network": "off",
+      "idle": {
+        "roads": 206,
+        "water": 1214,
+        "labels": 2,
+        "blank_cells": 4
+      },
+      "back": {
+        "roads": 230,
+        "water": 1086,
+        "labels": 12,
+        "blank_cells": 3
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": false,
+      "net": {
+        "airplane": "true",
+        "has_internet": "false",
+        "usable": "false",
+        "force_offline": "true",
+        "http_allowed": "false",
+        "line": "10-10 20:51:27.035 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+      },
+      "kind": "boundary"
+    },
+    {
+      "position": "ostlandet_trondelag",
+      "lat": 62.6,
+      "lon": 10.2,
+      "zoom": 11,
+      "network": "off",
+      "idle": {
+        "roads": 46,
+        "water": 478,
+        "labels": 11,
+        "blank_cells": 4
+      },
+      "back": {
+        "roads": 46,
+        "water": 478,
+        "labels": 11,
+        "blank_cells": 4
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "true",
+        "has_internet": "false",
+        "usable": "false",
+        "force_offline": "true",
+        "http_allowed": "false",
+        "line": "10-10 20:52:09.007 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+      },
+      "kind": "boundary"
+    },
+    {
+      "position": "hamar",
+      "lat": 60.79472,
+      "lon": 11.06806,
+      "zoom": 7,
+      "network": "on",
+      "idle": {
+        "roads": 86,
+        "water": 274,
+        "labels": 5,
+        "blank_cells": 103
+      },
+      "back": {
+        "roads": 429,
+        "water": 917,
+        "labels": 25,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": false,
+      "net": {
+        "airplane": "false",
+        "has_internet": "true",
+        "usable": "true",
+        "force_offline": "false",
+        "http_allowed": "true",
+        "line": "10-10 20:52:55.721 I/NaviFu49Net( 6656): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+      }
+    },
+    {
+      "position": "hamar",
+      "lat": 60.79472,
+      "lon": 11.06806,
+      "zoom": 9,
+      "network": "on",
+      "idle": {
+        "roads": 907,
+        "water": 1126,
+        "labels": 83,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 389,
+        "water": 711,
+        "labels": 20,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": false,
+      "net": {
+        "airplane": "false",
+        "has_internet": "true",
+        "usable": "true",
+        "force_offline": "false",
+        "http_allowed": "true",
+        "line": "10-10 20:54:04.039 I/NaviFu49Net( 6656): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+      }
+    },
+    {
+      "position": "hamar",
+      "lat": 60.79472,
+      "lon": 11.06806,
+      "zoom": 11,
+      "network": "on",
+      "idle": {
+        "roads": 396,
+        "water": 174,
+        "labels": 55,
+        "blank_cells": 1
+      },
+      "back": {
+        "roads": 396,
+        "water": 174,
+        "labels": 55,
+        "blank_cells": 1
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "false",
+        "has_internet": "true",
+        "usable": "true",
+        "force_offline": "false",
+        "http_allowed": "true",
+        "line": "10-10 20:54:32.868 I/NaviFu49Net( 6656): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+      }
+    },
+    {
+      "position": "hamar",
+      "lat": 60.79472,
+      "lon": 11.06806,
+      "zoom": 13,
+      "network": "on",
+      "idle": {
+        "roads": 678,
+        "water": 123,
+        "labels": 117,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 678,
+        "water": 123,
+        "labels": 117,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "false",
+        "has_internet": "true",
+        "usable": "true",
+        "force_offline": "false",
+        "http_allowed": "true",
+        "line": "10-10 20:54:48.995 I/NaviFu49Net( 6656): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+      }
+    },
+    {
+      "position": "hamar",
+      "lat": 60.79472,
+      "lon": 11.06806,
+      "zoom": 15,
+      "network": "on",
+      "idle": {
+        "roads": 1052,
+        "water": 72,
+        "labels": 762,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 791,
+        "water": 1,
+        "labels": 799,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": false,
+      "net": {
+        "airplane": "false",
+        "has_internet": "true",
+        "usable": "true",
+        "force_offline": "false",
+        "http_allowed": "true",
+        "line": "10-10 20:55:08.349 I/NaviFu49Net( 6656): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+      }
+    },
+    {
+      "position": "oslo",
+      "lat": 59.91333,
+      "lon": 10.73897,
+      "zoom": 7,
+      "network": "on",
+      "idle": {
+        "roads": 373,
+        "water": 415,
+        "labels": 112,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 783,
+        "water": 1142,
+        "labels": 25,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": false,
+      "net": {
+        "airplane": "false",
+        "has_internet": "true",
+        "usable": "true",
+        "force_offline": "false",
+        "http_allowed": "true",
+        "line": "10-10 20:55:25.855 I/NaviFu49Net( 6656): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+      }
+    },
+    {
+      "position": "oslo",
+      "lat": 59.91333,
+      "lon": 10.73897,
+      "zoom": 9,
+      "network": "on",
+      "idle": {
+        "roads": 587,
+        "water": 869,
+        "labels": 47,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 587,
+        "water": 869,
+        "labels": 47,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "false",
+        "has_internet": "true",
+        "usable": "true",
+        "force_offline": "false",
+        "http_allowed": "true",
+        "line": "10-10 20:56:31.440 I/NaviFu49Net( 6656): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+      }
+    },
+    {
+      "position": "oslo",
+      "lat": 59.91333,
+      "lon": 10.73897,
+      "zoom": 11,
+      "network": "on",
+      "idle": {
+        "roads": 462,
+        "water": 324,
+        "labels": 94,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 462,
+        "water": 324,
+        "labels": 94,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "false",
+        "has_internet": "true",
+        "usable": "true",
+        "force_offline": "false",
+        "http_allowed": "true",
+        "line": "10-10 20:57:04.758 I/NaviFu49Net( 6656): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+      }
+    },
+    {
+      "position": "oslo",
+      "lat": 59.91333,
+      "lon": 10.73897,
+      "zoom": 13,
+      "network": "on",
+      "idle": {
+        "roads": 1379,
+        "water": 224,
+        "labels": 190,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 1379,
+        "water": 224,
+        "labels": 190,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "false",
+        "has_internet": "true",
+        "usable": "true",
+        "force_offline": "false",
+        "http_allowed": "true",
+        "line": "10-10 20:57:41.504 I/NaviFu49Net( 6656): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+      }
+    },
+    {
+      "position": "oslo",
+      "lat": 59.91333,
+      "lon": 10.73897,
+      "zoom": 15,
+      "network": "on",
+      "idle": {
+        "roads": 1834,
+        "water": 85,
+        "labels": 333,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 1834,
+        "water": 85,
+        "labels": 333,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "false",
+        "has_internet": "true",
+        "usable": "true",
+        "force_offline": "false",
+        "http_allowed": "true",
+        "line": "10-10 20:58:11.545 I/NaviFu49Net( 6656): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+      }
+    },
+    {
+      "position": "bergen",
+      "lat": 60.3913,
+      "lon": 5.3221,
+      "zoom": 7,
+      "network": "on",
+      "idle": {
+        "roads": 608,
+        "water": 1321,
+        "labels": 42,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 473,
+        "water": 1192,
+        "labels": 41,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": false,
+      "net": {
+        "airplane": "false",
+        "has_internet": "true",
+        "usable": "true",
+        "force_offline": "false",
+        "http_allowed": "true",
+        "line": "10-10 20:58:48.775 I/NaviFu49Net( 6656): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+      }
+    },
+    {
+      "position": "bergen",
+      "lat": 60.3913,
+      "lon": 5.3221,
+      "zoom": 9,
+      "network": "on",
+      "idle": {
+        "roads": 401,
+        "water": 759,
+        "labels": 7,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 401,
+        "water": 759,
+        "labels": 7,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "false",
+        "has_internet": "true",
+        "usable": "true",
+        "force_offline": "false",
+        "http_allowed": "true",
+        "line": "10-10 20:59:37.140 I/NaviFu49Net( 6656): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+      }
+    },
+    {
+      "position": "bergen",
+      "lat": 60.3913,
+      "lon": 5.3221,
+      "zoom": 11,
+      "network": "on",
+      "idle": {
+        "roads": 609,
+        "water": 333,
+        "labels": 79,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 609,
+        "water": 333,
+        "labels": 79,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "false",
+        "has_internet": "true",
+        "usable": "true",
+        "force_offline": "false",
+        "http_allowed": "true",
+        "line": "10-10 21:00:17.510 I/NaviFu49Net( 6656): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+      }
+    },
+    {
+      "position": "bergen",
+      "lat": 60.3913,
+      "lon": 5.3221,
+      "zoom": 13,
+      "network": "on",
+      "idle": {
+        "roads": 872,
+        "water": 184,
+        "labels": 70,
+        "blank_cells": 5
+      },
+      "back": {
+        "roads": 872,
+        "water": 184,
+        "labels": 70,
+        "blank_cells": 5
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "false",
+        "has_internet": "true",
+        "usable": "true",
+        "force_offline": "false",
+        "http_allowed": "true",
+        "line": "10-10 21:00:39.412 I/NaviFu49Net( 6656): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+      }
+    },
+    {
+      "position": "bergen",
+      "lat": 60.3913,
+      "lon": 5.3221,
+      "zoom": 15,
+      "network": "on",
+      "idle": {
+        "roads": 2482,
+        "water": 69,
+        "labels": 1317,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 1370,
+        "water": 93,
+        "labels": 921,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": false,
+      "net": {
+        "airplane": "false",
+        "has_internet": "true",
+        "usable": "true",
+        "force_offline": "false",
+        "http_allowed": "true",
+        "line": "10-10 21:01:11.317 I/NaviFu49Net( 6656): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+      }
+    },
+    {
+      "position": "ostlandet_vestlandet",
+      "lat": 61.15,
+      "lon": 8.05,
+      "zoom": 9,
+      "network": "on",
+      "idle": {
+        "roads": 202,
+        "water": 1758,
+        "labels": 19,
+        "blank_cells": 0
+      },
+      "back": {
+        "roads": 202,
+        "water": 1758,
+        "labels": 19,
+        "blank_cells": 0
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "false",
+        "has_internet": "true",
+        "usable": "true",
+        "force_offline": "false",
+        "http_allowed": "true",
+        "line": "10-10 21:01:33.554 I/NaviFu49Net( 6656): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+      },
+      "kind": "boundary"
+    },
+    {
+      "position": "ostlandet_vestlandet",
+      "lat": 61.15,
+      "lon": 8.05,
+      "zoom": 11,
+      "network": "on",
+      "idle": {
+        "roads": 0,
+        "water": 0,
+        "labels": 0,
+        "blank_cells": 128
+      },
+      "back": {
+        "roads": null,
+        "water": null,
+        "labels": null,
+        "blank_cells": null
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "false",
+        "has_internet": "true",
+        "usable": "true",
+        "force_offline": "false",
+        "http_allowed": "true",
+        "line": "10-10 21:02:20.381 I/NaviFu49Net( 6656): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+      },
+      "kind": "boundary"
+    },
+    {
+      "position": "ostlandet_trondelag",
+      "lat": 62.6,
+      "lon": 10.2,
+      "zoom": 9,
+      "network": "on",
+      "idle": {
+        "roads": null,
+        "water": null,
+        "labels": null,
+        "blank_cells": null
+      },
+      "back": {
+        "roads": 139,
+        "water": 638,
+        "labels": 12,
+        "blank_cells": 9
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": false,
+      "net": {
+        "airplane": "false",
+        "has_internet": "true",
+        "usable": "true",
+        "force_offline": "false",
+        "http_allowed": "true",
+        "line": "10-10 21:03:15.930 I/NaviFu49Net( 6656): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+      },
+      "kind": "boundary"
+    },
+    {
+      "position": "ostlandet_trondelag",
+      "lat": 62.6,
+      "lon": 10.2,
+      "zoom": 11,
+      "network": "on",
+      "idle": {
+        "roads": 46,
+        "water": 478,
+        "labels": 11,
+        "blank_cells": 4
+      },
+      "back": {
+        "roads": 46,
+        "water": 478,
+        "labels": 11,
+        "blank_cells": 4
+      },
+      "idle_png": "idle.png",
+      "back_png": "back.png",
+      "agree": true,
+      "net": {
+        "airplane": "false",
+        "has_internet": "true",
+        "usable": "true",
+        "force_offline": "false",
+        "http_allowed": "true",
+        "line": "10-10 21:03:56.421 I/NaviFu49Net( 6656): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+      },
+      "kind": "boundary"
+    }
+  ],
+  "extras": [
+    {
+      "kind": "app_start",
+      "file": "app_start.png"
+    },
+    {
+      "kind": "zoom_step",
+      "zoom": 3,
+      "file": "hamar_zoom_step_z3.png",
+      "totals": {
+        "roads": 129,
+        "water": 305,
+        "labels": 0,
+        "blank_cells": 0
+      }
+    },
+    {
+      "kind": "zoom_step",
+      "zoom": 5,
+      "file": "hamar_zoom_step_z5.png",
+      "totals": {
+        "roads": 188,
+        "water": 491,
+        "labels": 31,
+        "blank_cells": 0
+      }
+    },
+    {
+      "kind": "zoom_step",
+      "zoom": 7,
+      "file": "hamar_zoom_step_z7.png",
+      "totals": {
+        "roads": 188,
+        "water": 491,
+        "labels": 31,
+        "blank_cells": 0
+      }
+    },
+    {
+      "kind": "zoom_step",
+      "zoom": 9,
+      "file": "hamar_zoom_step_z9.png",
+      "totals": {
+        "roads": 907,
+        "water": 1126,
+        "labels": 83,
+        "blank_cells": 0
+      }
+    },
+    {
+      "kind": "zoom_step",
+      "zoom": 11,
+      "file": "hamar_zoom_step_z11.png",
+      "totals": {
+        "roads": 396,
+        "water": 174,
+        "labels": 55,
+        "blank_cells": 1
+      }
+    },
+    {
+      "kind": "zoom_step",
+      "zoom": 13,
+      "file": "hamar_zoom_step_z13.png",
+      "totals": {
+        "roads": 678,
+        "water": 123,
+        "labels": 117,
+        "blank_cells": 0
+      }
+    },
+    {
+      "kind": "zoom_step",
+      "zoom": 15,
+      "file": "hamar_zoom_step_z15.png",
+      "totals": {
+        "roads": 1052,
+        "water": 72,
+        "labels": 762,
+        "blank_cells": 0
+      }
+    },
+    {
+      "kind": "after_plan",
+      "file": "raufoss_bergen_after_plan.png",
+      "plan_status": "done"
+    },
+    {
+      "kind": "two_routes_fit",
+      "file": "two_routes_fit.png",
+      "totals": {
+        "roads": 178,
+        "water": 547,
+        "labels": 31,
+        "blank_cells": 0
+      },
+      "plan_status": "done"
+    },
+    {
+      "kind": "rotate",
+      "file": "oslo_z11_rotated.png"
+    }
+  ]
+}

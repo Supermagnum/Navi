@@ -1,0 +1,30 @@
+{
+  "position": "oslo",
+  "lat": 59.91333,
+  "lon": 10.73897,
+  "zoom": 11,
+  "network": "off",
+  "idle": {
+    "roads": 462,
+    "water": 324,
+    "labels": 94,
+    "blank_cells": 0
+  },
+  "back": {
+    "roads": 462,
+    "water": 324,
+    "labels": 94,
+    "blank_cells": 0
+  },
+  "idle_png": "idle.png",
+  "back_png": "back.png",
+  "agree": true,
+  "net": {
+    "airplane": "true",
+    "has_internet": "false",
+    "usable": "false",
+    "force_offline": "true",
+    "http_allowed": "false",
+    "line": "10-10 20:45:32.371 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+  }
+}

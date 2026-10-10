@@ -2176,6 +2176,172 @@ def run_fu51_head_matrix(out):
     return {"rows": rows, "extras": extras}
 
 
+FU57_POSITIONS = [
+    ("hamar", 60.79472, 11.06806),
+    ("oslo", 59.91333, 10.73897),
+    ("bergen", 60.3913, 5.3221),
+]
+FU57_ZOOMS = (7, 9, 11, 13, 15)
+FU57_BORDERS = [
+    ("ostlandet_vestlandet", 61.15, 8.05),
+    ("ostlandet_trondelag", 62.60, 10.20),
+]
+FU57_BORDER_ZOOMS = (9, 11)
+FU57_HAMAR_ZOOMS = (3, 5, 7, 9, 11, 13, 15)
+
+
+def _fu57_settings_snapshot():
+    return {
+        "airplane": (adb("shell", "settings", "get", "global", "airplane_mode_on").stdout or "").strip(),
+        "wifi": (adb("shell", "settings", "get", "global", "wifi_on").stdout or "").strip(),
+        "accel": (adb("shell", "settings", "get", "system", "accelerometer_rotation").stdout or "").strip(),
+        "rotation": (adb("shell", "settings", "get", "system", "user_rotation").stdout or "").strip(),
+    }
+
+
+def _fu57_restore_settings(snap):
+    set_true_offline(False)
+    adb("shell", "settings", "put", "system", "accelerometer_rotation", snap.get("accel") or "1")
+    adb("shell", "settings", "put", "system", "user_rotation", snap.get("rotation") or "0")
+    adb(
+        "shell", "am", "start", "-n", f"{PKG}/.MainActivity",
+        "--ez", "navi_fu49_force_offline", "false",
+        "--ez", "navi_clear_basemap_test_hooks", "true",
+    )
+    time.sleep(2)
+
+
+def run_fu57_tablet_matrix(out):
+    out = pathlib.Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    snap = _fu57_settings_snapshot()
+    (out / "settings-before.json").write_text(json.dumps(snap, indent=2) + "\n")
+    rows = []
+    extras = []
+    try:
+        start_png = out / "app_start.png"
+        wait_fu49_settle(seconds=12)
+        screencap_host(start_png)
+        extras.append({"kind": "app_start", "file": start_png.name})
+        log("fu57 app_start")
+        for offline in (True, False):
+            net = "off" if offline else "on"
+            set_true_offline(offline)
+            time.sleep(3)
+            extra = ["--ez", "navi_fu49_force_offline", "true" if offline else "false"]
+            try:
+                for name, lat, lon in FU57_POSITIONS:
+                    for z in FU57_ZOOMS:
+                        dest = out / f"{name}_z{z}_{net}"
+                        dest.mkdir(parents=True, exist_ok=True)
+                        shot = shoot_away_and_back(dest, lat, lon, z, extra=extra)
+                        idle_t = _fu51_totals(shot.get("idle"))
+                        back_t = _fu51_totals(shot.get("back"))
+                        row = {
+                            "position": name,
+                            "lat": lat,
+                            "lon": lon,
+                            "zoom": z,
+                            "network": net,
+                            "idle": idle_t,
+                            "back": back_t,
+                            "idle_png": pathlib.Path(shot["idle_png"]).name,
+                            "back_png": pathlib.Path(shot["back_png"]).name,
+                            "agree": _fu51_agree(idle_t, back_t),
+                            "net": (shot.get("idle") or {}).get("net"),
+                        }
+                        (dest / "counts.json").write_text(json.dumps(row, indent=2) + "\n")
+                        rows.append(row)
+                        log(
+                            f"fu57 {name} z{z} {net} "
+                            f"idle_r={idle_t.get('roads')} back_r={back_t.get('roads')} "
+                            f"agree={row['agree']} net={row['net']}"
+                        )
+                for name, lat, lon in FU57_BORDERS:
+                    for z in FU57_BORDER_ZOOMS:
+                        dest = out / f"{name}_z{z}_{net}"
+                        dest.mkdir(parents=True, exist_ok=True)
+                        shot = shoot_away_and_back(dest, lat, lon, z, extra=extra)
+                        idle_t = _fu51_totals(shot.get("idle"))
+                        back_t = _fu51_totals(shot.get("back"))
+                        row = {
+                            "position": name,
+                            "lat": lat,
+                            "lon": lon,
+                            "zoom": z,
+                            "network": net,
+                            "idle": idle_t,
+                            "back": back_t,
+                            "idle_png": pathlib.Path(shot["idle_png"]).name,
+                            "back_png": pathlib.Path(shot["back_png"]).name,
+                            "agree": _fu51_agree(idle_t, back_t),
+                            "net": (shot.get("idle") or {}).get("net"),
+                            "kind": "boundary",
+                        }
+                        (dest / "counts.json").write_text(json.dumps(row, indent=2) + "\n")
+                        rows.append(row)
+                        log(
+                            f"fu57-border {name} z{z} {net} "
+                            f"idle_r={idle_t.get('roads')} agree={row['agree']}"
+                        )
+            finally:
+                if offline:
+                    set_true_offline(False)
+                    time.sleep(2)
+        extra = ["--ez", "navi_fu49_force_offline", "false"]
+        set_true_offline(False)
+        for z in FU57_HAMAR_ZOOMS:
+            dest = out / f"hamar_zoom_step_z{z}"
+            dest.mkdir(parents=True, exist_ok=True)
+            adb("logcat", "-c")
+            camera_to_fu49(60.79472, 11.06806, z, extra)
+            rec = wait_fu49_settle(60.79472, 11.06806, z, extra, 20)
+            flat = out / f"hamar_zoom_step_z{z}.png"
+            screencap_host(flat)
+            extras.append({"kind": "zoom_step", "zoom": z, "file": flat.name, "totals": _fu51_totals(rec)})
+            log(f"fu57 hamar zoom {z} tot={_fu51_totals(rec)}")
+        clear_previous_plan()
+        adb("logcat", "-c")
+        start_plan(TRIPS["raufoss_bergen"], False, "none")
+        status, end, wall, _peak = wait_plan(240)
+        log(f"fu57 raufoss_bergen plan {status} after {wall:.0f}s")
+        after = out / "raufoss_bergen_after_plan.png"
+        time.sleep(4)
+        wait_fu49_settle(seconds=16)
+        screencap_host(after)
+        extras.append({"kind": "after_plan", "file": after.name, "plan_status": status})
+        start_plan(TRIPS["aga"], False, "none")
+        status2, end2, wall2, _peak2 = wait_plan(240)
+        log(f"fu57 aga plan {status2} after {wall2:.0f}s")
+        # Frame Raufoss-Bergen and Brenneriroa-Aga without a map touch.
+        fit_lat, fit_lon, fit_z = 60.56, 8.32, 5
+        adb("logcat", "-c")
+        camera_to_fu49(fit_lat, fit_lon, fit_z, extra)
+        rec = wait_fu49_settle(fit_lat, fit_lon, fit_z, extra, 20)
+        fit = out / "two_routes_fit.png"
+        screencap_host(fit)
+        extras.append({
+            "kind": "two_routes_fit",
+            "file": fit.name,
+            "totals": _fu51_totals(rec),
+            "plan_status": status2,
+        })
+        camera_to_fu49(59.91333, 10.73897, 11, extra)
+        wait_fu49_settle(59.91333, 10.73897, 11, extra, 16)
+        adb("shell", "settings", "put", "system", "accelerometer_rotation", "0")
+        adb("shell", "settings", "put", "system", "user_rotation", "1")
+        time.sleep(3)
+        rot = out / "oslo_z11_rotated.png"
+        screencap_host(rot)
+        extras.append({"kind": "rotate", "file": rot.name})
+        adb("shell", "settings", "put", "system", "user_rotation", "0")
+        time.sleep(2)
+    finally:
+        _fu57_restore_settings(snap)
+        (out / "settings-after.json").write_text(json.dumps(_fu57_settings_snapshot(), indent=2) + "\n")
+    return {"rows": rows, "extras": extras}
+
+
 def run_fu51_final_matrix(out):
     out = pathlib.Path(out)
     out.mkdir(parents=True, exist_ok=True)
@@ -2435,13 +2601,18 @@ def main():
         help="follow-up 51 final proof matrix into --out (docs/fu51-map/final)",
     )
     ap.add_argument(
+        "--fu57-map",
+        action="store_true",
+        help="follow-up 57 tablet screenshot matrix into --out (docs/fu57-tablet)",
+    )
+    ap.add_argument(
         "--fu49-build",
         default="head",
         help="label under docs/fu49-map/<build>/ for --fu49-map",
     )
     a = ap.parse_args()
-    if not a.trip and not a.search_check and not a.clear_region and not a.pause_test and not a.fu44_map and not a.fu46_map and not a.fu47_map and not a.fu49_map and not a.fu49_q1 and not a.fu49_q3 and not a.fu51_map and not a.fu51_final:
-        ap.error("trip is required unless --search-check, --clear-region, --pause-test, --fu44-map, --fu46-map, --fu47-map, --fu49-* or --fu51-map")
+    if not a.trip and not a.search_check and not a.clear_region and not a.pause_test and not a.fu44_map and not a.fu46_map and not a.fu47_map and not a.fu49_map and not a.fu49_q1 and not a.fu49_q3 and not a.fu51_map and not a.fu51_final and not a.fu57_map:
+        ap.error("trip is required unless --search-check, --clear-region, --pause-test, --fu44-map, --fu46-map, --fu47-map, --fu49-*, --fu51-map or --fu57-map")
     trip = TRIPS.get(a.trip) if a.trip else None
     out = pathlib.Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -2449,6 +2620,11 @@ def main():
     ensure_running()
     pid0 = pid()
     log(f"serial={SERIAL} pid={pid0}")
+    if a.fu57_map:
+        rec = run_fu57_tablet_matrix(out)
+        (out / "result.json").write_text(json.dumps(rec, indent=2) + "\n")
+        print(json.dumps({"rows": len(rec.get("rows", [])), "extras": len(rec.get("extras", []))}, indent=2))
+        sys.exit(0)
     if a.fu51_map:
         rec = run_fu51_head_matrix(out)
         (out / "result.json").write_text(json.dumps(rec, indent=2) + "\n")

@@ -1,0 +1,30 @@
+{
+  "position": "hamar",
+  "lat": 60.79472,
+  "lon": 11.06806,
+  "zoom": 9,
+  "network": "off",
+  "idle": {
+    "roads": 389,
+    "water": 711,
+    "labels": 20,
+    "blank_cells": 0
+  },
+  "back": {
+    "roads": 389,
+    "water": 711,
+    "labels": 20,
+    "blank_cells": 0
+  },
+  "idle_png": "idle.png",
+  "back_png": "back.png",
+  "agree": true,
+  "net": {
+    "airplane": "true",
+    "has_internet": "false",
+    "usable": "false",
+    "force_offline": "true",
+    "http_allowed": "false",
+    "line": "10-10 20:41:58.189 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+  }
+}

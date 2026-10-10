@@ -26,6 +26,7 @@ Do not merge this follow-up. Product map code is still `535ab13b`. Later commits
 | Elsa last hop: stretch repair can only merge or slide. | [#151](https://github.com/Supermagnum/Navi/issues/151) | Closed. Last stretch is one Direct search (136.448 km). Elsa 2159.8 km / 1531 min / 6 hops. |
 | Oslo to Lillestrøm needs the corridor stage and about 1.1 GB for 22 km. | (tablet page; no issue) | Closed in the same change: 22.4 km direct search, corridor skipped, host 228 MB. |
 | Elsa distance vs the 1944.2 km reference. | (known miss, not a gate fail) | Planned 2159.8 km / 6 hops / 0 ferries. |
+| Place-index compact after a schema migration, when idle. The app migrates in place and leaves `place_index.db.bak-pk-v6` plus dead pages; it does not write a compacted copy and swap it in. | (open; do not implement in this follow-up) | Follow-up 56 tablet: 4.0 GB live file vs 2.2 GB v4 backup. Reclaim is a host/adb one-shot until the app does this itself. |
 
 The gate still lists `low_zoom_mint_fill` and `elsa_overview_z15` as known tests outside the route cases.
 

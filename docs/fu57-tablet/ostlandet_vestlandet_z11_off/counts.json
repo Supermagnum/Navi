@@ -1,0 +1,31 @@
+{
+  "position": "ostlandet_vestlandet",
+  "lat": 61.15,
+  "lon": 8.05,
+  "zoom": 11,
+  "network": "off",
+  "idle": {
+    "roads": 202,
+    "water": 1758,
+    "labels": 19,
+    "blank_cells": 0
+  },
+  "back": {
+    "roads": 202,
+    "water": 1758,
+    "labels": 19,
+    "blank_cells": 0
+  },
+  "idle_png": "idle.png",
+  "back_png": "back.png",
+  "agree": true,
+  "net": {
+    "airplane": "true",
+    "has_internet": "false",
+    "usable": "false",
+    "force_offline": "true",
+    "http_allowed": "false",
+    "line": "10-10 20:50:33.025 I/NaviFu49Net( 6656): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+  },
+  "kind": "boundary"
+}
