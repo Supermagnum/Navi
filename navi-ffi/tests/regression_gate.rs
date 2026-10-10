@@ -364,7 +364,7 @@ const CASES: &[Case] = &[
         pbf_stem: "ostlandet-latest",
         avoid_ferries: false,
         ferries: &[],
-        distance: Some((429.443, 0.01)),
+        distance: Some((428.494, 0.01)),
         rv15_otta_vaga_lom: false,
         reference: None,
         expected_fail: None,
@@ -1535,30 +1535,11 @@ fn run_gate_isolated(
                 .unwrap_or(true)
         })
         .collect();
-    let longs: Vec<&str> = selected
-        .iter()
-        .filter(|c| !c.compare_long_trip)
-        .map(|c| c.id)
-        .collect();
-    let shorts: Vec<&str> = selected
-        .iter()
-        .filter(|c| c.compare_long_trip)
-        .map(|c| c.id)
-        .collect();
-    let mut batches: Vec<String> = Vec::new();
-    if !longs.is_empty() {
-        batches.push(longs.join(","));
-    }
-    for id in shorts {
-        batches.push(id.to_string());
-    }
+    // One OS process per case. A shared long-trip process left Elsa's RSS
+    // in case l's peak; order of cases must not change the result.
+    let batches: Vec<String> = selected.iter().map(|c| c.id.to_string()).collect();
     for batch in batches {
-        let isolated = !batch.contains(',');
-        eprintln!(
-            "[gate] {} process {}",
-            if isolated { "isolated" } else { "shared" },
-            batch
-        );
+        eprintln!("[gate] isolated process {batch}");
         let mut cmd = Command::new(&exe);
         cmd.args([
             "long_trip_regression_gate",

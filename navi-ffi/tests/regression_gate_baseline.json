@@ -62,11 +62,11 @@
       "wall_s": 2.431549182
     },
     "l_raufoss_bergen": {
-      "distance_km": 429.443,
-      "eta_min": 345.0,
-      "note": "Follow-up 56: tablet 429.443 km / 345.0 min. Host 428.5 km / 344 min (within 0.5 %). Host wall 6.2 s / 702 MB.",
-      "peak_mb": 1000.0,
-      "wall_s": 5.0
+      "distance_km": 428.494,
+      "eta_min": 344.0,
+      "note": "Follow-up 57: old 429.443 km (FU55 place-index Raufoss/Bergen). New 428.494 km (debug extras Raufoss 60.727748,10.610940 to Bergen station 60.388114,5.333857). Tablet and host polyline identical. Isolated-process host 5.45 s / 666.4 MB (this case's own RSS; 25 % gate limit applies).",
+      "peak_mb": 666.40625,
+      "wall_s": 5.44801756
     },
     "m_oslo_lillehammer": {
       "distance_km": 168.9,
