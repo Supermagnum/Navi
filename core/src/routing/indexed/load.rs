@@ -3265,7 +3265,8 @@ mod select_tiles_budget_tests {
         // neither endpoint nor eighth samples) and is dropped unless fill_to_budget.
         let start_bb = [61.5_f64, 8.2, 61.9, 8.5];
         let dest_bb = [61.3_f64, 7.3, 61.6, 7.6];
-        let valley_bb = [61.45_f64, 7.7, 61.65, 8.15];
+        // South-east of the chord, inside the start-end AABB, missed by eighths.
+        let valley_bb = [61.445_f64, 8.10, 61.50, 8.28];
         let cands = vec![
             ("ostlandet-latest.navi-graph-car.t3_1.rkyv".into(), start_bb),
             ("vestlandet-latest.navi-graph-car.t4_3.rkyv".into(), dest_bb),
