@@ -65,6 +65,9 @@ impl PmtilesDownloader {
         geofabrik_path: &str,
         planet_url_override: Option<&str>,
     ) -> anyhow::Result<PmtilesJob> {
+        if crate::routing::basemap::is_world_overview_region(geofabrik_path) {
+            return self.queue_world_overview(planet_url_override);
+        }
         let region_key = geofabrik_path_to_region_key(geofabrik_path);
         let bbox = region_bbox(geofabrik_path)
             .ok_or_else(|| anyhow::anyhow!("no bbox for geofabrik path {geofabrik_path}"))?;
@@ -77,6 +80,23 @@ impl PmtilesDownloader {
                 PROTOMAPS_PLANET_FALLBACK_URL.to_string()
             });
         self.queue_url(&region_key, &url, Some(bbox))
+    }
+
+    /// Low-zoom planet extract (z0–z6) used as the always-on overview source.
+    pub fn queue_world_overview(
+        &self,
+        planet_url_override: Option<&str>,
+    ) -> anyhow::Result<PmtilesJob> {
+        let url = planet_url_override
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| PROTOMAPS_PLANET_FALLBACK_URL.to_string());
+        self.queue_url(
+            crate::routing::basemap::WORLD_OVERVIEW_REGION_KEY,
+            &url,
+            Some(crate::routing::basemap::WORLD_OVERVIEW_BBOX),
+        )
     }
 
     pub fn queue_url(
@@ -225,7 +245,10 @@ impl PmtilesDownloader {
             }
         }
 
-        let max_zoom = if job.region_key.starts_with("test_") {
+        let max_zoom = if crate::routing::basemap::is_world_overview_region(&job.region_key)
+        {
+            crate::routing::basemap::WORLD_OVERVIEW_MAX_ZOOM
+        } else if job.region_key.starts_with("test_") {
             10
         } else {
             self.max_zoom

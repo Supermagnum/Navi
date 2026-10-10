@@ -127,7 +127,19 @@ object PmtilesArchiveGate {
         if (regionKey.startsWith("test_")) {
             return Verdict(true, "")
         }
-        if (header.maxZoom < 15) {
+        val worldOverview =
+            regionKey == "world_overview" ||
+                regionKey.endsWith("/world_overview") ||
+                regionKey.endsWith("_world_overview") ||
+                file.nameWithoutExtension.equals("world_overview", ignoreCase = true)
+        if (worldOverview) {
+            if (header.maxZoom < 6) {
+                return Verdict(
+                    false,
+                    "PMTiles maxzoom ${header.maxZoom} < required 6 for world overview",
+                )
+            }
+        } else if (header.maxZoom < 15) {
             return Verdict(
                 false,
                 "PMTiles maxzoom ${header.maxZoom} < required 15 for region $regionKey",

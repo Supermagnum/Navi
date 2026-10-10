@@ -931,6 +931,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_pmtiles_queue_region(
     ): Int
+    external fun uniffi_navi_checksum_func_pmtiles_queue_world_overview(
+    ): Int
     external fun uniffi_navi_checksum_func_pmtiles_recheck_rejected(
     ): Int
     external fun uniffi_navi_checksum_func_pmtiles_region_bbox(
@@ -1418,6 +1420,8 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_pmtiles_queue_dem_region(`dataDir`: RustBuffer.ByValue,`geofabrikPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_pmtiles_queue_region(`dataDir`: RustBuffer.ByValue,`geofabrikPath`: RustBuffer.ByValue,`baseUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_pmtiles_queue_world_overview(`dataDir`: RustBuffer.ByValue,`baseUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_pmtiles_recheck_rejected(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Int
@@ -2099,6 +2103,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_pmtiles_queue_region() and 0xFFFF) != 49048) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_pmtiles_queue_world_overview() and 0xFFFF) != 12504) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_pmtiles_recheck_rejected() and 0xFFFF) != 53510) {
@@ -7581,6 +7588,21 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         
         FfiConverterString.lower(`dataDir`),
         FfiConverterString.lower(`geofabrikPath`),
+        FfiConverterOptionalString.lower(`baseUrl`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Queue the z0–z6 world overview extract if it is not already completed.
+         */ fun `pmtilesQueueWorldOverview`(`dataDir`: kotlin.String, `baseUrl`: kotlin.String?): FfiPmtilesJob {
+            return FfiConverterTypeFfiPmtilesJob.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_pmtiles_queue_world_overview(
+    
+        
+        FfiConverterString.lower(`dataDir`),
         FfiConverterOptionalString.lower(`baseUrl`),_status)
 }
     )

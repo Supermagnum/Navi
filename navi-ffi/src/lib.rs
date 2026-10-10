@@ -10282,6 +10282,69 @@ pub fn pmtiles_queue_region(
     }
 }
 
+/// Queue the z0–z6 world overview extract if it is not already completed.
+#[uniffi::export]
+pub fn pmtiles_queue_world_overview(
+    data_dir: String,
+    base_url: Option<String>,
+) -> FfiPmtilesJob {
+    let empty = |msg: &str| FfiPmtilesJob {
+        id: String::new(),
+        region_key: String::new(),
+        url: String::new(),
+        local_path: String::new(),
+        bytes_received: 0,
+        total_bytes: None,
+        status: format!("failed:{msg}"),
+        paused: false,
+        min_lat: None,
+        min_lon: None,
+        max_lat: None,
+        max_lon: None,
+    };
+    let storage = match pmtiles_db(Path::new(&data_dir)) {
+        Ok(s) => s,
+        Err(e) => return empty(&e),
+    };
+    let dl = PmtilesDownloader::new(storage, PathBuf::from(&data_dir));
+    if let Ok(jobs) = dl.list_jobs() {
+        if let Some(existing) = jobs.into_iter().find(|j| {
+            driver_break_core::routing::basemap::is_world_overview_region(&j.region_key)
+                && j.status == driver_break_core::storage::PmtilesJobStatus::Completed
+        }) {
+            let bbox = [
+                existing.min_lat.unwrap_or(-85.051_128_7),
+                existing.min_lon.unwrap_or(-180.0),
+                existing.max_lat.unwrap_or(85.051_128_7),
+                existing.max_lon.unwrap_or(180.0),
+            ];
+            if driver_break_core::routing::basemap::validate_completed_pmtiles(
+                std::path::Path::new(&existing.local_path),
+                &existing.region_key,
+                bbox,
+            )
+            .is_ok()
+            {
+                return map_pmtiles_job(existing);
+            }
+        }
+    }
+    let planet = base_url
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(default_pmtiles_planet_url);
+    match dl.queue_world_overview(Some(planet.as_str())) {
+        Ok(job) => {
+            let control = DownloadControl::default();
+            pmtiles_controls()
+                .lock()
+                .expect("pmtiles controls")
+                .insert(job.id.to_string(), control);
+            map_pmtiles_job(job.record)
+        }
+        Err(e) => empty(&e.to_string()),
+    }
+}
+
 /// Run (or continue) a queued PMTiles job on the calling thread until terminal status.
 #[uniffi::export]
 pub fn pmtiles_run_job(data_dir: String, job_id: String) -> FfiPmtilesJob {

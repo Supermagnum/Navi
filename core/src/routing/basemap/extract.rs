@@ -43,6 +43,11 @@ pub const PLANNING_EXTRACT_LABEL: &str = "Planning extract…";
 /// Default max zoom for offline extracts (higher = larger downloads).
 pub const DEFAULT_EXTRACT_MAX_ZOOM: u8 = 15;
 
+/// Low-zoom planet overview mounted under regional extracts (z0–z6).
+pub const WORLD_OVERVIEW_REGION_KEY: &str = "world_overview";
+pub const WORLD_OVERVIEW_MAX_ZOOM: u8 = 6;
+pub const WORLD_OVERVIEW_BBOX: [f64; 4] = [-85.051_128_7, -180.0, 85.051_128_7, 180.0];
+
 /// Historical size floor (staging picker / older tests). Archives are no longer
 /// judged by size against bbox — see [validate_completed_pmtiles].
 pub const MIN_FULL_REGION_BASEMAP_BYTES: u64 = 500_000_000;
@@ -387,6 +392,12 @@ fn is_test_region_key(region_key: &str) -> bool {
     region_key.starts_with("test_")
 }
 
+pub fn is_world_overview_region(region_key: &str) -> bool {
+    region_key == WORLD_OVERVIEW_REGION_KEY
+        || region_key.ends_with("/world_overview")
+        || region_key.ends_with("_world_overview")
+}
+
 /// Shared completion guard: existing short-circuit files, fresh extracts, and
 /// idle recheck of `*.pmtiles.rejected`.
 ///
@@ -463,6 +474,15 @@ fn validate_completed_pmtiles_uncached(
     let header = read_pmtiles_header(path).map_err(|e| e.to_string())?;
 
     if is_dem_archive(region_key, path) || is_test_region_key(region_key) {
+        return Ok(());
+    }
+    if is_world_overview_region(region_key) {
+        if header.max_zoom < WORLD_OVERVIEW_MAX_ZOOM {
+            return Err(format!(
+                "PMTiles maxzoom {} < required {WORLD_OVERVIEW_MAX_ZOOM} for world overview",
+                header.max_zoom
+            ));
+        }
         return Ok(());
     }
     if header.max_zoom < DEFAULT_EXTRACT_MAX_ZOOM {
@@ -699,6 +719,14 @@ mod tests {
     }
 
     #[test]
+    fn validate_world_overview_allows_maxzoom_6() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("world_overview.pmtiles");
+        write_valid_pmtiles(&path, 6, true);
+        validate_completed_pmtiles(&path, WORLD_OVERVIEW_REGION_KEY, WORLD_OVERVIEW_BBOX).unwrap();
+    }
+
+    #[test]
     fn validate_test_region_allows_small_mz12() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("fixture.pmtiles");
@@ -714,6 +742,40 @@ mod tests {
         write_fake_pmtiles(&path, 12, 50_000);
         let bbox = [58.5, 7.5, 62.8, 13.5];
         validate_completed_pmtiles(&path, "europe_norway_ostlandet_dem", bbox).unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "network: real Protomaps range extract of the z0-6 world overview"]
+    async fn extract_world_overview_z6() {
+        let url = resolve_planet_url(&reqwest::Client::new())
+            .await
+            .unwrap_or_else(|_| PROTOMAPS_PLANET_FALLBACK_URL.to_string());
+        let dest = PathBuf::from("/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/navi-gate/world_overview.pmtiles");
+        if let Some(parent) = dest.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let control = DownloadControl::default();
+        let planned = tiles_covering_bbox(WORLD_OVERVIEW_BBOX, WORLD_OVERVIEW_MAX_ZOOM).len();
+        eprintln!("url={url} planned_tiles={planned} dest={}", dest.display());
+        let t0 = Instant::now();
+        let len = extract_bbox_to_file(
+            &url,
+            &dest,
+            WORLD_OVERVIEW_BBOX,
+            WORLD_OVERVIEW_MAX_ZOOM,
+            &control,
+            None,
+        )
+        .await
+        .expect("world overview extract");
+        eprintln!(
+            "COMPLETE bytes={len} tiles={planned} elapsed_s={:.1} dest={}",
+            t0.elapsed().as_secs_f64(),
+            dest.display()
+        );
+        assert!(dest.is_file());
+        assert!(len > 10_000);
+        validate_completed_pmtiles(&dest, WORLD_OVERVIEW_REGION_KEY, WORLD_OVERVIEW_BBOX).unwrap();
     }
 
     #[tokio::test]

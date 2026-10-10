@@ -9,10 +9,11 @@ mod tile_read;
 
 pub use downloader::{PmtilesDownloader, PmtilesJob};
 pub use extract::{
-    commit_partial_pmtiles, extract_bbox_to_file, read_pmtiles_header, read_pmtiles_max_zoom,
-    resolve_planet_url_blocking, validate_completed_pmtiles, DEFAULT_EXTRACT_MAX_ZOOM,
-    MIN_FULL_REGION_BASEMAP_BYTES,
-    PROTOMAPS_BUILDS_METADATA_URL, PROTOMAPS_BUILD_BASE_URL, PROTOMAPS_PLANET_FALLBACK_URL,
+    commit_partial_pmtiles, extract_bbox_to_file, is_world_overview_region, read_pmtiles_header,
+    read_pmtiles_max_zoom, resolve_planet_url_blocking, validate_completed_pmtiles,
+    DEFAULT_EXTRACT_MAX_ZOOM, MIN_FULL_REGION_BASEMAP_BYTES, PROTOMAPS_BUILDS_METADATA_URL,
+    PROTOMAPS_BUILD_BASE_URL, PROTOMAPS_PLANET_FALLBACK_URL, WORLD_OVERVIEW_BBOX,
+    WORLD_OVERVIEW_MAX_ZOOM, WORLD_OVERVIEW_REGION_KEY,
 };
 pub use regions::{
     bbox_covers_point, catalog_leaf_bboxes_under, default_pmtiles_base_url,

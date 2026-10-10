@@ -186,6 +186,7 @@ object InstalledMaps {
         for ((id, dir) in packRoots) {
             consider(id, dir)
         }
+        addWorldOverview(internalDataDir, byId)
         val indexUnavailable =
             placeIndexDir == null || placeIndexLocationLine?.contains("UNAVAILABLE") == true
         val problem =
@@ -195,6 +196,9 @@ object InstalledMaps {
             }
         val missing =
             byId.values.mapNotNull { r ->
+                if (r.regionId == BasemapStyleResolver.WORLD_OVERVIEW_REGION_KEY) {
+                    return@mapNotNull null
+                }
                 if (r.placeIndex == PlaceIndexState.INTACT || r.placeIndex == PlaceIndexState.LEGACY_INTACT) {
                     return@mapNotNull null
                 }
@@ -306,6 +310,38 @@ object InstalledMaps {
         }
     }
 
+    private fun addWorldOverview(
+        tilesDataDir: File,
+        into: MutableMap<String, Region>,
+    ) {
+        val key = BasemapStyleResolver.WORLD_OVERVIEW_REGION_KEY
+        if (into.containsKey(key)) return
+        val tilesFile = File(tilesDataDir, "pmtiles/$key.pmtiles")
+        val rejectedFile = File(tilesDataDir, "pmtiles/$key.pmtiles.rejected")
+        val tiles = tilesStatus(tilesFile, rejectedFile, key)
+        if (!tiles.present && !tiles.rejected && !tilesFile.isFile) return
+        into[key] =
+            Region(
+                regionId = key,
+                stem = key,
+                volumeId = NaviStorageVolumes.INTERNAL_ID,
+                packDir = File(tilesDataDir, "pmtiles"),
+                generation = "",
+                graphFormat = 0,
+                profilesLoadable = emptyList(),
+                pbfKind = PbfKind.MISSING,
+                pbfPath = null,
+                ferrySidecarCar = false,
+                ferrySidecarTruck = false,
+                corridorSkeleton = false,
+                tilesPresent = tiles.present,
+                tilesRejected = tiles.rejected,
+                tilesRejectReason = tiles.reason,
+                placeIndex = PlaceIndexState.MISSING,
+                placeIndexRows = 0,
+            )
+    }
+
     private fun scanDir(
         tilesDataDir: File,
         placeIndexDir: File?,
@@ -355,7 +391,7 @@ object InstalledMaps {
             val pmKey = PackRegionAvailability.geofabrikPathToRegionKey(nid)
             val tilesFile = File(tilesDataDir, "pmtiles/$pmKey.pmtiles")
             val rejectedFile = File(tilesDataDir, "pmtiles/$pmKey.pmtiles.rejected")
-            val tiles = tilesStatus(tilesFile, rejectedFile)
+            val tiles = tilesStatus(tilesFile, rejectedFile, pmKey)
             val rejectReason = tiles.reason
             val probe = probeFor(nid)
             val q = placeIndexDir != null && File(placeIndexDir, "place_index.db.quarantine").isFile
@@ -409,6 +445,7 @@ object InstalledMaps {
                 tilesStatus(
                     File(tilesDataDir, "pmtiles/${PackRegionAvailability.geofabrikPathToRegionKey(nid)}.pmtiles"),
                     File(tilesDataDir, "pmtiles/${PackRegionAvailability.geofabrikPathToRegionKey(nid)}.pmtiles.rejected"),
+                    PackRegionAvailability.geofabrikPathToRegionKey(nid),
                 )
             into[nid] =
                 Region(
@@ -458,6 +495,7 @@ object InstalledMaps {
     private fun tilesStatus(
         tilesFile: File,
         rejectedFile: File,
+        regionKey: String = "",
     ): TilesStatus {
         if (rejectedFile.isFile) {
             return TilesStatus(false, true, readRejectReason(rejectedFile))
@@ -469,7 +507,7 @@ object InstalledMaps {
             }
             return TilesStatus(false, false, "")
         }
-        val why = PmtilesArchiveGate.rejectionReason(tilesFile)
+        val why = PmtilesArchiveGate.rejectionReason(tilesFile, regionKey)
         if (why != null) {
             return TilesStatus(false, true, why)
         }
