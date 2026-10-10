@@ -166,35 +166,146 @@ class BasemapDisplayFixTest {
     }
 
     @Test
-    fun rewrite_source_uses_world_bounds_and_tile_url() {
-        val style = tmp.newFile("style.json")
-        style.writeText(
-            """{"sources":{"protomaps":{"type":"vector","url":"pmtiles://file:///tmp/x.pmtiles","maxzoom":15}}}""",
-        )
-        BasemapStyleResolver.rewriteSourceToCompositeTiles(
-            style,
-            "http://127.0.0.1:9/{z}/{x}/{y}.pbf",
-        )
-        val json = org.json.JSONObject(style.readText())
-        val pm = json.getJSONObject("sources").getJSONObject("protomaps")
-        assertFalse(pm.has("url"))
-        assertEquals("http://127.0.0.1:9/{z}/{x}/{y}.pbf", pm.getJSONArray("tiles").getString(0))
-        assertEquals(-180.0, pm.getJSONArray("bounds").getDouble(0), 1e-6)
-        assertEquals(0, pm.getInt("minzoom"))
+    fun world_overview_is_not_a_regional_slot() {
+        PmtilesArchiveGate.validateContent = { file, _ ->
+            if (!file.isFile || file.length() == 0L) "empty" else null
+        }
+        val world = tmp.newFile("world_overview.pmtiles").also { it.writeText("world") }
+        val ost = tmp.newFile("ostlandet.pmtiles").also { it.writeText("ost") }
+        val vest = tmp.newFile("vestlandet.pmtiles").also { it.writeText("vest") }
+        val jobs =
+            listOf(
+                job("world", "world_overview", world.absolutePath, -85.0, -180.0, 85.0, 180.0),
+                job("ost", "europe_norway_ostlandet", ost.absolutePath, 58.0, 7.5, 62.7, 13.0),
+                job("vest", "europe_norway_vestlandet", vest.absolutePath, 58.0, 4.5, 63.2, 8.5),
+            )
+        val view = BasemapStyleResolver.Viewport(south = 59.0, west = 6.0, north = 62.0, east = 12.0)
+        val hit = BasemapStyleResolver.selectIntersectingVectorJobs(jobs, view, emptyList())
+        assertFalse(hit.any { it.regionKey == "world_overview" })
+        val mounted = BasemapStyleResolver.selectMountedRegionals(hit, view)
+        assertTrue(mounted.size <= BasemapStyleResolver.MAX_REGIONAL_SOURCES)
+        assertTrue(mounted.any { it.id == "ost" })
+        assertTrue(mounted.any { it.id == "vest" })
+        val overview = BasemapStyleResolver.findWorldOverview(jobs, tmp.root)
+        assertEquals("world", overview?.id)
     }
 
     @Test
-    fun rewrite_world_bounds_keeps_file_url() {
-        val style = tmp.newFile("style-file.json")
-        style.writeText(
-            """{"sources":{"protomaps":{"type":"vector","url":"pmtiles://file:///tmp/x.pmtiles","maxzoom":15}}}""",
-        )
-        BasemapStyleResolver.rewriteSourceWorldBounds(style)
-        val json = org.json.JSONObject(style.readText())
-        val pm = json.getJSONObject("sources").getJSONObject("protomaps")
-        assertEquals("pmtiles://file:///tmp/x.pmtiles", pm.getString("url"))
-        assertEquals(-180.0, pm.getJSONArray("bounds").getDouble(0), 1e-6)
-        assertEquals(0, pm.getInt("minzoom"))
+    fun mounted_regionals_keep_the_three_that_cover_most_of_the_view() {
+        PmtilesArchiveGate.validateContent = { file, _ ->
+            if (!file.isFile || file.length() == 0L) "empty" else null
+        }
+        val a = tmp.newFile("a.pmtiles").also { it.writeText("a") }
+        val b = tmp.newFile("b.pmtiles").also { it.writeText("b") }
+        val c = tmp.newFile("c.pmtiles").also { it.writeText("c") }
+        val d = tmp.newFile("d.pmtiles").also { it.writeText("d") }
+        val jobs =
+            listOf(
+                job("a", "europe_a", a.absolutePath, 59.0, 10.0, 62.0, 13.0),
+                job("b", "europe_b", b.absolutePath, 59.0, 8.0, 61.0, 10.5),
+                job("c", "europe_c", c.absolutePath, 60.0, 12.0, 61.0, 13.0),
+                job("d", "europe_d", d.absolutePath, 59.2, 10.2, 59.4, 10.4),
+            )
+        val view = BasemapStyleResolver.Viewport(south = 59.0, west = 8.0, north = 62.0, east = 13.0)
+        val mounted = BasemapStyleResolver.selectMountedRegionals(jobs, view)
+        assertEquals(3, mounted.size)
+        assertTrue(mounted.any { it.id == "a" })
+        assertTrue(mounted.any { it.id == "b" })
+        assertFalse(mounted.any { it.id == "d" })
+        val key1 =
+            BasemapStyleResolver.MountedSources(overview = null, regionals = mounted, includeOnline = false).key()
+        val key2 =
+            BasemapStyleResolver.MountedSources(overview = null, regionals = mounted, includeOnline = false).key()
+        assertEquals(key1, key2)
+    }
+
+    @Test
+    fun country_archive_is_dropped_when_the_view_is_inside_a_regional() {
+        PmtilesArchiveGate.validateContent = { file, _ ->
+            if (!file.isFile || file.length() == 0L) "empty" else null
+        }
+        val germany = tmp.newFile("europe_germany.pmtiles").also { it.writeText("de") }
+        val hamburg = tmp.newFile("europe_germany_hamburg.pmtiles").also { it.writeText("hh") }
+        val jobs =
+            listOf(
+                job("de", "europe/germany", germany.absolutePath, 47.0, 5.8, 55.1, 15.1),
+                job("hh", "europe/germany/hamburg", hamburg.absolutePath, 53.38, 9.70, 53.75, 10.33),
+            )
+        val city = BasemapStyleResolver.Viewport(south = 53.54, west = 9.97, north = 53.56, east = 10.01)
+        val mounted = BasemapStyleResolver.selectMountedRegionals(jobs, city)
+        assertEquals(listOf("hh"), mounted.map { it.id })
+        val wide = BasemapStyleResolver.Viewport(south = 51.0, west = 6.0, north = 54.5, east = 12.0)
+        val wideMounted = BasemapStyleResolver.selectMountedRegionals(jobs, wide)
+        assertEquals(listOf("de"), wideMounted.map { it.id })
+    }
+
+    @Test
+    fun airplane_mode_is_treated_as_offline() {
+        assertFalse(BasemapStyleResolver.networkUsable(airplane = true, hasInternet = true))
+        assertTrue(BasemapStyleResolver.networkUsable(airplane = false, hasInternet = true))
+        assertFalse(BasemapStyleResolver.networkUsable(airplane = false, hasInternet = false))
+    }
+
+    @Test
+    fun overview_is_not_drawn_when_the_online_map_is_mounted() {
+        assertTrue(BasemapStyleResolver.shouldDrawOverview(overviewPresent = true, includeOnline = false))
+        assertFalse(BasemapStyleResolver.shouldDrawOverview(overviewPresent = true, includeOnline = true))
+        assertFalse(BasemapStyleResolver.shouldDrawOverview(overviewPresent = false, includeOnline = true))
+    }
+
+    @Test
+    fun layer_kind_puts_earth_before_water_before_roads() {
+        val earth = org.json.JSONObject("""{"id":"earth","type":"fill","source-layer":"earth"}""")
+        val water = org.json.JSONObject("""{"id":"water","type":"fill","source-layer":"water"}""")
+        val road = org.json.JSONObject("""{"id":"roads_major","type":"line","source-layer":"roads"}""")
+        val label = org.json.JSONObject("""{"id":"places","type":"symbol","source-layer":"places"}""")
+        assertEquals(BasemapStyleResolver.LayerKind.EarthLand, BasemapStyleResolver.layerKind(earth))
+        assertEquals(BasemapStyleResolver.LayerKind.Water, BasemapStyleResolver.layerKind(water))
+        assertEquals(BasemapStyleResolver.LayerKind.Roads, BasemapStyleResolver.layerKind(road))
+        assertEquals(BasemapStyleResolver.LayerKind.Labels, BasemapStyleResolver.layerKind(label))
+    }
+
+    @Test
+    fun installed_maps_lists_world_overview() {
+        val internal = tmp.newFolder("overview-tiles")
+        val packs = tmp.newFolder("overview-packs")
+        File(internal, "pmtiles").mkdirs()
+        File(internal, "pmtiles/world_overview.pmtiles").writeText("overview-stub")
+        PmtilesArchiveGate.validateContent = { file, key ->
+            if (key == "world_overview" && file.name.contains("world_overview")) null else "no"
+        }
+        InstalledMaps.refreshFromDirs(internal, listOf("sd" to packs))
+        val r = InstalledMaps.region("world_overview", internal)!!
+        assertTrue(r.tilesPresent)
+        assertTrue(InstalledMaps.summaryText().contains("world_overview"))
+    }
+
+    @Test
+    fun mvt_probe_reads_layer_names() {
+        // Tile { layers { name = "water" } } — field 3 message, field 1 string.
+        val water = "water".toByteArray()
+        val layer = byteArrayOf(0x0A, water.size.toByte()) + water
+        val tile = byteArrayOf(0x1A, layer.size.toByte()) + layer
+        assertTrue(PmtilesLayerProbe.mvtLayerNames(tile).contains("water"))
+        assertTrue(PmtilesLayerProbe.hasWater(setOf("water")))
+        assertFalse(PmtilesLayerProbe.hasWater(setOf("earth", "roads")))
+    }
+
+    @Test
+    fun archive_gate_allows_world_overview_maxzoom_6() {
+        val file = tmp.newFile("world_overview.pmtiles")
+        file.outputStream().use { out ->
+            out.write("PMTiles".toByteArray())
+            out.write(ByteArray(94))
+            out.write(byteArrayOf(6))
+            out.write(ByteArray(25))
+        }
+        // Header-only stub is too small for a real sample tile; hook the content
+        // check so the maxzoom floor is what we exercise.
+        PmtilesArchiveGate.validateContent = { f, key ->
+            if (key == "world_overview" && f.name.contains("world_overview")) null else "no"
+        }
+        assertTrue(PmtilesArchiveGate.isUsable(file, "world_overview"))
     }
 
     @Test

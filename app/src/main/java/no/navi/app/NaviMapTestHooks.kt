@@ -265,6 +265,10 @@ object NaviMapTestHooks {
     @Volatile
     var lastBlankSharePct: Double = Double.NaN
 
+    /** Last 8x16 renderer feature grid (`c,r,r=,w=,l=,b=;...`). */
+    @Volatile
+    var lastFeatureGridJson: String = ""
+
     /** Style background cream used by the offline Protomaps template. */
     const val BLANK_BG_R = 248
     const val BLANK_BG_G = 244

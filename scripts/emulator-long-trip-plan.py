@@ -273,7 +273,25 @@ def run_search(query):
 
 def set_airplane(on):
     mode = "enable" if on else "disable"
+    want = "1" if on else "0"
     adb("shell", "cmd", "connectivity", "airplane-mode", mode)
+    adb("shell", "settings", "put", "global", "airplane_mode_on", want)
+    adb(
+        "shell",
+        "am",
+        "broadcast",
+        "-a",
+        "android.intent.action.AIRPLANE_MODE",
+        "--ez",
+        "state",
+        "true" if on else "false",
+    )
+    for _ in range(20):
+        time.sleep(0.25)
+        got = (adb("shell", "settings", "get", "global", "airplane_mode_on").stdout or "").strip()
+        if got == want:
+            return
+    log(f"airplane_mode_on stayed {got!r} want={want}")
 
 
 def clear_forced_basemap():
@@ -507,6 +525,523 @@ def run_fu44_map_matrix(out_dir, plan_elsa=True):
                 time.sleep(1)
     (out / "blank-share.json").write_text(json.dumps(rows, indent=2) + "\n")
     return rows
+
+
+def parse_camera_line(line):
+    try:
+        lat = float(field(line, "lat") or "nan")
+        lon = float(field(line, "lon") or "nan")
+        zoom = float(field(line, "zoom") or "nan")
+    except ValueError:
+        return None
+    if any(math.isnan(v) for v in (lat, lon, zoom)):
+        return None
+    return lat, lon, zoom
+
+
+def camera_close(got, want_lat, want_lon, want_zoom):
+    lat, lon, zoom = got
+    lat_tol = max(0.03, pixel_nudge_deg(want_zoom) * 12)
+    lon_tol = lat_tol / max(0.2, math.cos(math.radians(want_lat)))
+    return (
+        abs(lat - want_lat) <= lat_tol
+        and abs(lon - want_lon) <= lon_tol
+        and abs(zoom - want_zoom) <= 0.4
+    )
+
+
+def wait_camera(lat, lon, zoom, seconds=16):
+    last = ""
+    got = None
+    for _ in range(int(seconds * 2)):
+        time.sleep(0.5)
+        text = logcat()
+        for ln in text.splitlines():
+            if "NaviMapCamera" not in ln or "lat=" not in ln:
+                continue
+            parsed = parse_camera_line(ln)
+            if parsed is None:
+                continue
+            last = ln
+            got = parsed
+            if camera_close(parsed, lat, lon, zoom):
+                return {"ok": True, "line": ln, "lat": parsed[0], "lon": parsed[1], "zoom": parsed[2]}
+    return {
+        "ok": False,
+        "line": last,
+        "lat": None if got is None else got[0],
+        "lon": None if got is None else got[1],
+        "zoom": None if got is None else got[2],
+    }
+
+
+def parse_feature_grid(text):
+    cells = {}
+    for ln in text.splitlines():
+        if "NaviMapGrid" not in ln or "roads=" not in ln:
+            continue
+        try:
+            col = int(field(ln, "c") or "-1")
+            row = int(field(ln, "r") or "-1")
+            roads = int(field(ln, "roads") or "0")
+            water = int(field(ln, "water") or "0")
+            labels = int(field(ln, "labels") or "0")
+            blank = int(field(ln, "blank") or "0")
+        except ValueError:
+            continue
+        if col < 0 or row < 0:
+            continue
+        cells[f"{col},{row}"] = {
+            "roads": roads,
+            "water": water,
+            "labels": labels,
+            "blank": blank,
+        }
+    return cells
+
+
+def grid_agree(a, b):
+    """Legacy exact-count compare. Follow-up 47 uses [grid_presence_agree]."""
+    if not a or not b:
+        return False
+    if set(a) != set(b):
+        return False
+    for key in a:
+        if (
+            a[key]["roads"] != b[key]["roads"]
+            or a[key]["water"] != b[key]["water"]
+            or a[key]["labels"] != b[key]["labels"]
+        ):
+            return False
+    return True
+
+
+def _present(cell, kind):
+    return int(cell.get(kind) or 0) > 0
+
+
+def grid_presence_agree(a, b):
+    """Per-cell presence of roads/water/labels; whole-view totals within 10%."""
+    mismatches = []
+    if not a or not b:
+        return False, ["empty-grid"], {}
+    keys = set(a) | set(b)
+    totals = {"roads": [0, 0], "water": [0, 0], "labels": [0, 0]}
+    for key in sorted(keys):
+        ca = a.get(key) or {"roads": 0, "water": 0, "labels": 0}
+        cb = b.get(key) or {"roads": 0, "water": 0, "labels": 0}
+        for kind in ("roads", "water", "labels"):
+            totals[kind][0] += int(ca.get(kind) or 0)
+            totals[kind][1] += int(cb.get(kind) or 0)
+            if _present(ca, kind) != _present(cb, kind):
+                mismatches.append(f"{key}:{kind}")
+    tot_ok = True
+    for kind, (ia, ib) in totals.items():
+        hi = max(ia, ib)
+        lo = min(ia, ib)
+        if hi > 0 and lo < 0.9 * hi:
+            tot_ok = False
+            mismatches.append(f"total:{kind}:{ia}/{ib}")
+    return (not mismatches) and tot_ok, mismatches, totals
+
+
+def parse_archive_features(text):
+    """Layers present in mounted archive tiles at the camera (NaviMapArchive)."""
+    roads = water = labels = False
+    files = []
+    for ln in text.splitlines():
+        if "NaviMapArchive" not in ln or "layers=" not in ln:
+            continue
+        files.append(ln)
+        if (field(ln, "roads") or "0") not in ("0", ""):
+            roads = True
+        if (field(ln, "water") or "0") not in ("0", ""):
+            water = True
+        if (field(ln, "labels") or "0") not in ("0", ""):
+            labels = True
+    return {"roads": roads, "water": water, "labels": labels, "lines": files}
+
+
+def shoot_verified(dest, lat, lon, zoom, seconds=18):
+    """Move camera, require a matching NaviMapCamera log, then screenshot."""
+    last_cam = {"ok": False}
+    last_tiles = {}
+    last_grid = {}
+    last_archive = {}
+    for attempt in range(3):
+        adb("logcat", "-c")
+        camera_to(lat, lon, zoom)
+        last_cam = wait_camera(lat, lon, zoom, seconds)
+        last_tiles = wait_tiles(seconds)
+        cat = logcat()
+        last_grid = parse_feature_grid(cat)
+        last_archive = parse_archive_features(cat)
+        if last_cam.get("ok"):
+            screencap(dest)
+            last_tiles["camera_ok"] = True
+            last_tiles["grid"] = last_grid
+            last_tiles["archive"] = last_archive
+            last_tiles["attempts"] = attempt + 1
+            return last_tiles
+        log(
+            f"discard wrong camera {pathlib.Path(dest).name} "
+            f"want={lat:.5f},{lon:.5f},z{zoom} got={last_cam}"
+        )
+    screencap(dest)
+    last_tiles["camera_ok"] = False
+    last_tiles["grid"] = last_grid
+    last_tiles["archive"] = last_archive
+    last_tiles["attempts"] = 3
+    last_tiles["ok"] = False
+    return last_tiles
+
+
+def run_fu46_map_matrix(out_dir, extra_shots=True):
+    """Idle then nudge on one APK; camera verified from the app log."""
+    out = pathlib.Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    rows = []
+    only_net = os.environ.get("NAVI_FU46_NET", os.environ.get("NAVI_FU44_NET", "")).strip().lower()
+    nets = ((False, "on"), (True, "off"))
+    if only_net == "off":
+        nets = ((True, "off"),)
+    elif only_net == "on":
+        nets = ((False, "on"),)
+    for airplane, net in nets:
+        set_airplane(airplane)
+        time.sleep(2)
+        try:
+            for name, lat, lon in FU44_POSITIONS:
+                for z in FU44_ZOOMS:
+                    ensure_running()
+                    clear_forced_basemap()
+                    idle_path = out / f"{name}_z{z}_{net}_idle.png"
+                    idle = shoot_verified(idle_path, lat, lon, z)
+                    dlat = pixel_nudge_deg(z)
+                    nudge_path = out / f"{name}_z{z}_{net}_nudge.png"
+                    nudged = shoot_verified(nudge_path, lat + dlat, lon, z)
+                    idle_blank = blank_share_png(idle_path)
+                    nudge_blank = blank_share_png(nudge_path)
+                    agree = grid_agree(idle.get("grid") or {}, nudged.get("grid") or {})
+                    rec = {
+                        "position": name,
+                        "lat": lat,
+                        "lon": lon,
+                        "zoom": z,
+                        "network": net,
+                        "idle_file": idle_path.name,
+                        "nudge_file": nudge_path.name,
+                        "blank_idle": None if idle_blank is None else round(idle_blank, 2),
+                        "blank_nudge": None if nudge_blank is None else round(nudge_blank, 2),
+                        "camera_idle_ok": bool(idle.get("camera_ok")),
+                        "camera_nudge_ok": bool(nudged.get("camera_ok")),
+                        "grid_agree": agree,
+                        "idle_grid": idle.get("grid") or {},
+                        "nudge_grid": nudged.get("grid") or {},
+                    }
+                    rows.append(rec)
+                    log(
+                        f"fu46-map {name} z{z} net={net} cam={rec['camera_idle_ok']}/{rec['camera_nudge_ok']} "
+                        f"grid_agree={agree} blank={rec['blank_idle']}/{rec['blank_nudge']}"
+                    )
+        finally:
+            if airplane:
+                set_airplane(False)
+                time.sleep(1)
+    extras = []
+    if extra_shots:
+        extras.extend(run_fu46_extra_shots(out))
+    (out / "blank-share.json").write_text(json.dumps({"rows": rows, "extras": extras}, indent=2) + "\n")
+    return rows, extras
+
+
+def run_fu46_extra_shots(out):
+    extras = []
+    clear_forced_basemap()
+    hamar = next(p for p in FU44_POSITIONS if p[0] == "hamar")
+    _, lat, lon = hamar
+    prev = None
+    for z in FU44_ZOOMS:
+        path = out / f"hamar_zoom_step_z{z}.png"
+        rec = shoot_verified(path, lat, lon, z)
+        extras.append(
+            {
+                "kind": "zoom_step",
+                "file": path.name,
+                "zoom": z,
+                "camera_ok": rec.get("camera_ok"),
+                "blank": blank_share_png(path),
+                "grid": rec.get("grid") or {},
+                "blank_frame": (blank_share_png(path) or 0) >= 80,
+            }
+        )
+    border = next(p for p in FU44_POSITIONS if p[0] == "ostlandet_varmland")
+    _, blat, blon = border
+    for i, dlon in enumerate((-0.35, -0.15, 0.0, 0.15, 0.35)):
+        path = out / f"border_pan_z11_{i}.png"
+        rec = shoot_verified(path, blat, blon + dlon, 11)
+        extras.append(
+            {
+                "kind": "border_pan",
+                "file": path.name,
+                "lon": blon + dlon,
+                "camera_ok": rec.get("camera_ok"),
+                "blank": blank_share_png(path),
+                "grid": rec.get("grid") or {},
+            }
+        )
+    if os.environ.get("NAVI_FU46_SKIP_PLAN") != "1":
+        clear_previous_plan()
+        adb("logcat", "-c")
+        start_plan(TRIPS["elsa"], False, "none")
+        status, end, wall, _peak = wait_plan(240)
+        log(f"fu46-map elsa plan {status} after {wall:.0f}s: {end[-160:]}")
+        path = out / "elsa_after_plan.png"
+        rec = shoot_verified(path, 64.88873, 19.51604, 5)
+        extras.append(
+            {
+                "kind": "elsa_after_plan",
+                "file": path.name,
+                "plan_status": status,
+                "camera_ok": rec.get("camera_ok"),
+                "blank": blank_share_png(path),
+            }
+        )
+    set_airplane(False)
+    camera_to(59.91333, 10.73897, 11)
+    wait_camera(59.91333, 10.73897, 11, 12)
+    wait_tiles(8)
+    adb("shell", "settings", "put", "system", "accelerometer_rotation", "0")
+    adb("shell", "settings", "put", "system", "user_rotation", "1")
+    time.sleep(3)
+    rotate_path = out / "oslo_z11_rotated.png"
+    screencap(rotate_path)
+    extras.append({"kind": "rotate", "file": rotate_path.name, "blank": blank_share_png(rotate_path)})
+    adb("shell", "settings", "put", "system", "user_rotation", "0")
+    time.sleep(2)
+    return extras
+
+
+def run_fu46_gate_map_check():
+    """Network off: Oslo, Hamar, Hallingdal, border at z7/11/14."""
+    points = [
+        ("oslo", 59.91333, 10.73897),
+        ("hamar", 60.79472, 11.06806),
+        ("hallingdal_bromma", 60.50, 9.17),
+        ("ostlandet_varmland", 59.92, 12.29),
+    ]
+    set_airplane(True)
+    time.sleep(2)
+    out = []
+    try:
+        for name, lat, lon in points:
+            for z in (7, 11, 14):
+                clear_forced_basemap()
+                rec = shoot_verified(f"/tmp/navi_fu46_gate_{name}_z{z}.png", lat, lon, z, seconds=14)
+                rec.update({"position": name, "zoom": z, "network": "off"})
+                rec["camera_ok"] = bool(rec.get("camera_ok"))
+                rec["ok"] = bool(rec.get("camera_ok") and rec.get("ok"))
+                out.append(rec)
+                log(
+                    f"fu46-gate {name} z{z} cam={rec.get('camera_ok')} "
+                    f"blank={rec.get('blank_pct')} ok={rec.get('ok')}"
+                )
+    finally:
+        set_airplane(False)
+        time.sleep(1)
+    return out
+
+
+FU47_ZOOMS = (5, 11, 15)
+FU47_OUTSIDE = (
+    ("paris", 48.8566, 2.3522),
+    ("stockholm", 59.3293, 18.0686),
+)
+# Recorded in the gate until follow-up 48 fixes selection and coarse fill.
+KNOWN_MAP_FAILURES = (
+    {
+        "id": "elsa_overview_z15",
+        "reason": (
+            "Elsa overview z15 is blank because a neighbouring archive is ranked "
+            "first by bounding-box overlap (Finland over Vasterbotten at 64.889, 19.516)."
+        ),
+    },
+    {
+        "id": "low_zoom_mint_fill",
+        "reason": (
+            "At low zoom a regional archive paints flat land fill outside its real "
+            "coverage (Sweden from Oslo/Hamar z5, Poland from Hamburg z5) because "
+            "header bounds are a rectangle and coarse world tiles fill the rest."
+        ),
+    },
+)
+
+
+def _fu47_row(name, lat, lon, z, net, idle, nudged, idle_path, nudge_path):
+    idle_grid = idle.get("grid") or {}
+    nudge_grid = nudged.get("grid") or {}
+    agree, mismatches, totals = grid_presence_agree(idle_grid, nudge_grid)
+    idle_arch = idle.get("archive") or {}
+    nudge_arch = nudged.get("archive") or {}
+    archive = {
+        "roads": bool(idle_arch.get("roads") or nudge_arch.get("roads")),
+        "water": bool(idle_arch.get("water") or nudge_arch.get("water")),
+        "labels": bool(idle_arch.get("labels") or nudge_arch.get("labels")),
+        "lines": (idle_arch.get("lines") or []) + (nudge_arch.get("lines") or []),
+    }
+    idle_tot = {k: sum(int((c or {}).get(k) or 0) for c in idle_grid.values()) for k in ("roads", "water", "labels")}
+    return {
+        "position": name,
+        "lat": lat,
+        "lon": lon,
+        "zoom": z,
+        "network": net,
+        "idle_file": idle_path.name,
+        "nudge_file": nudge_path.name,
+        "camera_idle_ok": bool(idle.get("camera_ok")),
+        "camera_nudge_ok": bool(nudged.get("camera_ok")),
+        "grid_presence_agree": agree,
+        "presence_mismatch": mismatches,
+        "totals": totals,
+        "idle_totals": idle_tot,
+        "archive": {k: archive[k] for k in ("roads", "water", "labels")},
+        "blank_idle": None if blank_share_png(idle_path) is None else round(blank_share_png(idle_path), 2),
+        "blank_nudge": None if blank_share_png(nudge_path) is None else round(blank_share_png(nudge_path), 2),
+        "ok": bool(idle.get("camera_ok"))
+        and bool(nudged.get("camera_ok"))
+        and not any(m.startswith("total:") for m in mismatches),
+    }
+
+
+def run_fu47_map_matrix(out_dir, extra_shots=True):
+    """Corrected idle/nudge matrix: z5/11/15 plus named extras."""
+    out = pathlib.Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    rows = []
+    only_net = os.environ.get("NAVI_FU47_NET", os.environ.get("NAVI_FU46_NET", "")).strip().lower()
+    nets = ((False, "on"), (True, "off"))
+    if only_net == "off":
+        nets = ((True, "off"),)
+    elif only_net == "on":
+        nets = ((False, "on"),)
+    for airplane, net in nets:
+        set_airplane(airplane)
+        time.sleep(2)
+        try:
+            for name, lat, lon in FU44_POSITIONS:
+                for z in FU47_ZOOMS:
+                    ensure_running()
+                    clear_forced_basemap()
+                    idle_path = out / f"{name}_z{z}_{net}_idle.png"
+                    idle = shoot_verified(idle_path, lat, lon, z)
+                    dlat = pixel_nudge_deg(z)
+                    nudge_path = out / f"{name}_z{z}_{net}_nudge.png"
+                    nudged = shoot_verified(nudge_path, lat + dlat, lon, z)
+                    rec = _fu47_row(name, lat, lon, z, net, idle, nudged, idle_path, nudge_path)
+                    rows.append(rec)
+                    log(
+                        f"fu47-map {name} z{z} net={net} cam={rec['camera_idle_ok']}/{rec['camera_nudge_ok']} "
+                        f"presence={rec['grid_presence_agree']} mismatch={rec['presence_mismatch'][:6]}"
+                    )
+        finally:
+            if airplane:
+                set_airplane(False)
+                time.sleep(1)
+    extras = []
+    if extra_shots:
+        extras.extend(run_fu47_extra_shots(out))
+    (out / "blank-share.json").write_text(json.dumps({"rows": rows, "extras": extras}, indent=2) + "\n")
+    return rows, extras
+
+
+def run_fu47_extra_shots(out):
+    extras = []
+    extras.extend(run_fu46_extra_shots(out))
+    border = next(p for p in FU44_POSITIONS if p[0] == "ostlandet_varmland")
+    _, blat, blon = border
+    for airplane, net in ((False, "on"), (True, "off")):
+        set_airplane(airplane)
+        time.sleep(2)
+        try:
+            for z in (13, 15):
+                path = out / f"border_overlap_z{z}_{net}_idle.png"
+                rec = shoot_verified(path, blat, blon, z)
+                extras.append(
+                    {
+                        "kind": "border_overlap",
+                        "file": path.name,
+                        "zoom": z,
+                        "network": net,
+                        "camera_ok": rec.get("camera_ok"),
+                        "blank": blank_share_png(path),
+                        "grid": rec.get("grid") or {},
+                        "archive": rec.get("archive") or {},
+                    }
+                )
+                log(f"fu47-border-overlap z{z} net={net} cam={rec.get('camera_ok')}")
+        finally:
+            if airplane:
+                set_airplane(False)
+                time.sleep(1)
+    for airplane, net in ((False, "on"), (True, "off")):
+        set_airplane(airplane)
+        time.sleep(2)
+        try:
+            for name, lat, lon in FU47_OUTSIDE:
+                path = out / f"{name}_z11_{net}_idle.png"
+                rec = shoot_verified(path, lat, lon, 11)
+                extras.append(
+                    {
+                        "kind": "outside_region",
+                        "file": path.name,
+                        "position": name,
+                        "zoom": 11,
+                        "network": net,
+                        "camera_ok": rec.get("camera_ok"),
+                        "blank": blank_share_png(path),
+                        "grid": rec.get("grid") or {},
+                        "archive": rec.get("archive") or {},
+                    }
+                )
+                log(f"fu47-outside {name} z11 net={net} cam={rec.get('camera_ok')}")
+        finally:
+            if airplane:
+                set_airplane(False)
+                time.sleep(1)
+    return extras
+
+
+def run_fu47_gate_map_check():
+    """Network off: Oslo, Hamar, Hallingdal, border at z7/11/14 with presence rules."""
+    points = [
+        ("oslo", 59.91333, 10.73897),
+        ("hamar", 60.79472, 11.06806),
+        ("hallingdal_bromma", 60.50, 9.17),
+        ("ostlandet_varmland", 59.92, 12.29),
+    ]
+    set_airplane(True)
+    time.sleep(2)
+    out = []
+    try:
+        for name, lat, lon in points:
+            for z in (7, 11, 14):
+                clear_forced_basemap()
+                rec = shoot_verified(f"/tmp/navi_fu47_gate_{name}_z{z}.png", lat, lon, z, seconds=14)
+                grid = rec.get("grid") or {}
+                roads = sum(int((c or {}).get("roads") or 0) for c in grid.values())
+                water = sum(int((c or {}).get("water") or 0) for c in grid.values())
+                rec.update({"position": name, "zoom": z, "network": "off", "roads": roads, "water": water})
+                rec["camera_ok"] = bool(rec.get("camera_ok"))
+                rec["ok"] = bool(rec.get("camera_ok") and (roads > 0 or water > 0))
+                out.append(rec)
+                log(
+                    f"fu47-gate {name} z{z} cam={rec.get('camera_ok')} "
+                    f"roads={roads} water={water} ok={rec.get('ok')}"
+                )
+    finally:
+        set_airplane(False)
+        time.sleep(1)
+    return out
 
 
 def wait_tiles(seconds=12):
@@ -1062,9 +1597,19 @@ def main():
         action="store_true",
         help="idle/nudge blank-share screenshot matrix into --out (docs/fu44-map)",
     )
+    ap.add_argument(
+        "--fu46-map",
+        action="store_true",
+        help="idle/nudge native-source screenshot matrix into --out (docs/fu46-map)",
+    )
+    ap.add_argument(
+        "--fu47-map",
+        action="store_true",
+        help="follow-up 47 screenshot matrix into --out (docs/fu47-map)",
+    )
     a = ap.parse_args()
-    if not a.trip and not a.search_check and not a.clear_region and not a.pause_test and not a.fu44_map:
-        ap.error("trip is required unless --search-check, --clear-region, --pause-test or --fu44-map")
+    if not a.trip and not a.search_check and not a.clear_region and not a.pause_test and not a.fu44_map and not a.fu46_map and not a.fu47_map:
+        ap.error("trip is required unless --search-check, --clear-region, --pause-test, --fu44-map, --fu46-map or --fu47-map")
     trip = TRIPS.get(a.trip) if a.trip else None
     out = pathlib.Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -1072,6 +1617,50 @@ def main():
     ensure_running()
     pid0 = pid()
     log(f"serial={SERIAL} pid={pid0}")
+    if a.fu47_map:
+        rows, extras = run_fu47_map_matrix(out)
+        fails = [
+            r
+            for r in rows
+            if not r.get("ok")
+        ]
+        rec = {
+            "accepted": not fails,
+            "rows": rows,
+            "extras": extras,
+            "fail_count": len(fails),
+            "known_failures": list(KNOWN_MAP_FAILURES),
+        }
+        (out / "result.json").write_text(json.dumps(rec, indent=2) + "\n")
+        print(
+            json.dumps(
+                {
+                    "accepted": rec["accepted"],
+                    "fail_count": rec["fail_count"],
+                    "known_failures": rec["known_failures"],
+                },
+                indent=2,
+            )
+        )
+        sys.exit(0 if rec["accepted"] else 1)
+    if a.fu46_map:
+        rows, extras = run_fu46_map_matrix(out)
+        fails = [
+            r
+            for r in rows
+            if not r.get("camera_idle_ok")
+            or not r.get("camera_nudge_ok")
+            or not r.get("grid_agree")
+        ]
+        rec = {
+            "accepted": not fails,
+            "rows": rows,
+            "extras": extras,
+            "fail_count": len(fails),
+        }
+        (out / "result.json").write_text(json.dumps(rec, indent=2) + "\n")
+        print(json.dumps({"accepted": rec["accepted"], "fail_count": rec["fail_count"]}, indent=2))
+        sys.exit(0 if rec["accepted"] else 1)
     if a.fu44_map:
         rows = run_fu44_map_matrix(out)
         fails = [r for r in rows if not r.get("pair_ok")]

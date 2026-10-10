@@ -76,7 +76,16 @@ const GATE_REF_PREFIX: &str = "gate:";
 const EMU_PEAK_LIMIT_MB: f64 = 1400.0;
 
 /// Tests outside the gate that are known to fail; listed in every gate report.
-const KNOWN_TEST_FAILURES: &[(&str, &str)] = &[];
+const KNOWN_TEST_FAILURES: &[(&str, &str)] = &[
+    (
+        "elsa_overview_z15",
+        "Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).",
+    ),
+    (
+        "low_zoom_mint_fill",
+        "At low zoom a regional archive paints flat land fill outside its real coverage (Sweden from Oslo/Hamar z5, Poland from Hamburg z5) because header bounds are a rectangle and coarse world tiles fill the rest.",
+    ),
+];
 
 const BEVENSEN: (f64, f64) = (53.079686, 10.587198);
 const VAGAAVEGEN_80: (f64, f64) = (61.8691419, 9.1055130);
