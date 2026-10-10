@@ -1,8 +1,16 @@
 # Tablet test (debug APK)
 
-Build from this branch: `app/build/outputs/apk/debug/app-debug.apk` (53 MB,
-arm64 + x86_64). sha256
-`2e7e5cdd11af392aa808f60260dac4e400acf01272540c2edc1cbf439bcce217`.
+Build from this branch (`535ab13b`). Debug APK on disk (not in git):
+`docs/fu51-map/head/app-debug.apk` (53 MB, arm64 + x86_64). sha256
+`bdb350c5f3c68bb301f331055a13d43f5b661c1f587a1be2f1815e1345027b8d`.
+The same file is produced as `app/build/outputs/apk/debug/app-debug.apk`.
+
+At zoom 7 and above the installed regional archives draw completely. Below about
+zoom 6 a regional archive can still paint a flat land fill over a neighbouring
+country (Sweden east of Oslo/Hamar, Poland east of Hamburg). On first start the
+map already shows a regional archive or the online map while the 43 MB world
+overview downloads in the background; there is no blank screen and no blocking
+dialog.
 
 Install this debug APK over an existing **debug-signed** `no.navi.app` with
 `adb install -r app-debug.apk` (or the file manager “update”). Same application
