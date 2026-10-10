@@ -3,7 +3,7 @@
 //! Initial pad matches historical `plan_car_route_inner` behaviour; widen doubles
 //! until [`PLAN_BBOX_PAD_CAP_DEG`] so RAM stays bounded on Automotive devices.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 /// Runtime floor raised by corridor disconnect widen-retry (0 = inactive).
@@ -19,6 +19,10 @@ static ACCEPT_ABSURD_DETOUR: AtomicBool = AtomicBool::new(false);
 thread_local! {
     /// Full coarse path (lat, lon) for Stage B hop corridor tile selection.
     static STAGE_B_COARSE_PATH: RefCell<Option<Vec<(f64, f64)>>> = const { RefCell::new(None) };
+    /// One hop: clip around the straight line between the hop ends, not the
+    /// coarse corridor. Stretch-repair Direct and the post-corridor retry set
+    /// this so a fitting stretch is searched as one detailed hop.
+    static FORCE_STRAIGHT_CLIP: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Enable/disable Stage B densify mode for the current plan.
@@ -44,6 +48,14 @@ pub fn set_stage_b_coarse_path(path: Vec<(f64, f64)>) {
 
 pub fn clear_stage_b_coarse_path() {
     STAGE_B_COARSE_PATH.with(|c| *c.borrow_mut() = None);
+}
+
+pub fn set_force_straight_clip(on: bool) {
+    FORCE_STRAIGHT_CLIP.with(|c| c.set(on));
+}
+
+pub fn force_straight_clip() -> bool {
+    FORCE_STRAIGHT_CLIP.with(|c| c.get())
 }
 
 /// Coarse-path samples between hop endpoints (inclusive), for Stage B tile/edge
@@ -186,6 +198,30 @@ pub const MAX_PLAN_TILES_WIDEN_CAP: usize = 20;
 /// proceeds up to [`MAX_PLAN_TILES_WIDEN_CAP`] so a truncated corridor can recover;
 /// the disconnected graph is dropped before reload.
 pub const PLAN_TILE_WIDEN_RSS_CAP_MB: f64 = 2800.0;
+
+/// Planning RSS limit (MiB). Same number as the gate emulator peak check.
+pub const PLAN_RSS_LIMIT_MB: f64 = 1400.0;
+
+/// Direct-search decision stays this fraction below [`PLAN_RSS_LIMIT_MB`].
+pub const DIRECT_SEARCH_RSS_MARGIN: f64 = 0.12;
+
+/// Cheap clip-share nodes for the 60.27656,10.81650–59.80326,9.39866 stretch
+/// (same pad the search now uses). Measured Elsa-plan peak for that stretch
+/// was 1203 MB with 418_706 nodes materialised.
+const DIRECT_SEARCH_CHEAP_NODES_CAL: f64 = 722_821.0;
+const DIRECT_SEARCH_PEAK_MB_CAL: f64 = 1203.0;
+
+/// RSS guess from a cheap clipped-node count, calibrated on that stretch:
+/// 1203 MB / 722_821 cheap nodes. 418_706 materialised nodes on the same
+/// load is the bytes/200 overcount (cheap / materialised ≈ 1.73).
+pub fn estimated_nodes_rss_mb(nodes: usize) -> f64 {
+    (nodes as f64) * (DIRECT_SEARCH_PEAK_MB_CAL / DIRECT_SEARCH_CHEAP_NODES_CAL)
+}
+
+/// Cap used when deciding whether a direct search fits (limit minus margin).
+pub fn direct_search_rss_cap_mb() -> f64 {
+    PLAN_RSS_LIMIT_MB * (1.0 - DIRECT_SEARCH_RSS_MARGIN)
+}
 
 /// Raise the effective tile budget floor for the current plan thread/process.
 /// Pass `0` to clear. Used by disconnect widen-retry so a forced measure budget
@@ -537,6 +573,62 @@ pub fn corridor_band_bboxes(
     out
 }
 
+/// Margin (degrees) added on every side of the start–end box for a direct
+/// detailed search. Floor 0.10° (~11 km) so a short hop is not a razor clip.
+/// Grows with the longer start–end span; cap 0.25° so the cheap estimate
+/// tracks the clipped graph, not whole tiles. Unused corners of the
+/// unpadded start–end box stay inside.
+pub fn direct_search_margin_deg(start: (f64, f64), end: (f64, f64)) -> f64 {
+    let cheb = (end.0 - start.0).abs().max((end.1 - start.1).abs());
+    (0.08 + 0.05 * cheb).clamp(0.10, 0.25)
+}
+
+/// Axis-aligned box of the two ends, expanded by [`direct_search_margin_deg`].
+/// One box, not a chord-only strip: the search can leave the straight line.
+pub fn direct_search_clip_bboxes(start: (f64, f64), end: (f64, f64)) -> Vec<[f64; 4]> {
+    vec![trip_bbox_points(
+        &[start, end],
+        direct_search_margin_deg(start, end),
+    )]
+}
+
+/// Axis-aligned box covering `start` and `end` with no pad.
+pub fn start_end_aabb(start: (f64, f64), end: (f64, f64)) -> [f64; 4] {
+    trip_bbox_points(&[start, end], 0.0)
+}
+
+/// True when a direct detailed search of `nodes` stays inside the hop node
+/// limit and the planning RSS cap (gate limit minus margin).
+pub fn direct_search_fits_nodes(nodes: usize) -> bool {
+    nodes <= MAX_PATH_NODES_PER_HOP && estimated_nodes_rss_mb(nodes) <= direct_search_rss_cap_mb()
+}
+
+/// First pad is [`direct_search_margin_deg`] (same box as the cheap estimate).
+/// Later entries are the usual widen schedule, used only after a disconnect.
+pub fn direct_search_pad_schedule(start: (f64, f64), end: (f64, f64)) -> Vec<f64> {
+    let first = direct_search_margin_deg(start, end);
+    let mut out = vec![first];
+    for p in plan_bbox_pad_schedule_points(&[start, end]) {
+        if p > first + 1e-6 {
+            out.push(p);
+        }
+    }
+    out
+}
+
+/// Combined time of a hop pair is much longer than the straight-line distance
+/// between the outer ends would suggest (70 km/h, 50 % slack).
+pub fn hop_pair_much_slower(pair_km: f64, pair_min: f64, straight_km: f64) -> bool {
+    if straight_km < 1.0 {
+        return false;
+    }
+    let typical_min = straight_km / 70.0 * 60.0;
+    pair_km > 1.35 * straight_km && pair_min > 1.50 * typical_min
+}
+
+/// Post-corridor direct retries per plan (stretch-repair Direct is separate).
+pub const DIRECT_DETOUR_RETRY_MAX: usize = 2;
+
 /// True when a `disconnected` A* on corridor-band materialization should retry
 /// with [`PlanEdgeClipMode::TripAabb`]. Pad widen alone cannot fix that case:
 /// band boxes ignore the pad schedule.
@@ -558,6 +650,14 @@ mod trip_aabb_fallback_tests {
             !should_fallback_to_trip_aabb(PlanEdgeClipMode::TripAabb, "disconnected"),
             "second fail must not schedule another AABB/pad"
         );
+    }
+
+    #[test]
+    fn hop_pair_detour_trigger() {
+        // 230 km / 196 min for a 95 km chord: the Hallingdal pair.
+        assert!(hop_pair_much_slower(230.0, 196.0, 95.0));
+        assert!(!hop_pair_much_slower(140.0, 80.0, 95.0));
+        assert!(!hop_pair_much_slower(230.0, 196.0, 0.5));
     }
 }
 
@@ -841,5 +941,33 @@ mod tests {
             PlanEdgeClipMode::CorridorBand,
             "snap_failed"
         ));
+    }
+
+    #[test]
+    fn direct_band_covers_start_end_aabb_unused_corners() {
+        let start = (60.27656, 10.81650);
+        let end = (59.80326, 9.39866);
+        let clips = direct_search_clip_bboxes(start, end);
+        let unused_a = (start.0, end.1);
+        let unused_b = (end.0, start.1);
+        assert!(
+            point_in_any_bbox(unused_a.0, unused_a.1, &clips),
+            "unused AABB corner {unused_a:?} must stay inside the direct clip"
+        );
+        assert!(
+            point_in_any_bbox(unused_b.0, unused_b.1, &clips),
+            "unused AABB corner {unused_b:?} must stay inside the direct clip"
+        );
+        assert!(direct_search_margin_deg(start, end) >= 0.10);
+        assert!(
+            direct_search_margin_deg(start, end)
+                > direct_search_margin_deg((60.0, 10.0), (60.05, 10.05))
+        );
+        let pads = direct_search_pad_schedule(start, end);
+        assert!((pads[0] - direct_search_margin_deg(start, end)).abs() < 1e-9);
+        assert!(direct_search_fits_nodes(722_821));
+        assert!(!direct_search_fits_nodes(2_000_000));
+        assert!(estimated_nodes_rss_mb(722_821) <= direct_search_rss_cap_mb());
+        assert!(direct_search_rss_cap_mb() < PLAN_RSS_LIMIT_MB);
     }
 }
