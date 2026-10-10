@@ -7484,16 +7484,7 @@ pub fn water_pois_along_polyline(
     out
 }
 
-/// Offline place / address-style name search (FTS5 prefix).
-#[uniffi::export]
-pub fn search_places(index_db_path: String, query: String, limit: u32) -> Vec<PlaceHit> {
-    let Ok(idx) = driver_break_core::search::NameIndex::open_readonly(Path::new(&index_db_path))
-    else {
-        return Vec::new();
-    };
-    let Ok(hits) = idx.search(&query, limit as usize) else {
-        return Vec::new();
-    };
+fn place_hits_from_names(hits: Vec<driver_break_core::search::NameHit>) -> Vec<PlaceHit> {
     hits.into_iter()
         .map(|h| PlaceHit {
             osm_id: h.osm_id,
@@ -7506,6 +7497,49 @@ pub fn search_places(index_db_path: String, query: String, limit: u32) -> Vec<Pl
             region_id: h.region_id,
         })
         .collect()
+}
+
+/// Offline place / address-style name search (FTS5 prefix).
+#[uniffi::export]
+pub fn search_places(index_db_path: String, query: String, limit: u32) -> Vec<PlaceHit> {
+    let Ok(idx) = driver_break_core::search::NameIndex::open_readonly(Path::new(&index_db_path))
+    else {
+        return Vec::new();
+    };
+    let Ok(hits) = idx.search(&query, limit as usize) else {
+        return Vec::new();
+    };
+    place_hits_from_names(hits)
+}
+
+/// Same as [`search_places`], ranked with the map centre and visible region.
+#[uniffi::export]
+pub fn search_places_biased(
+    index_db_path: String,
+    query: String,
+    limit: u32,
+    bias_lat: f64,
+    bias_lon: f64,
+    visible_region: String,
+) -> Vec<PlaceHit> {
+    let Ok(idx) = driver_break_core::search::NameIndex::open_readonly(Path::new(&index_db_path))
+    else {
+        return Vec::new();
+    };
+    let lat = if bias_lat.is_finite() {
+        Some(bias_lat)
+    } else {
+        None
+    };
+    let lon = if bias_lon.is_finite() {
+        Some(bias_lon)
+    } else {
+        None
+    };
+    let Ok(hits) = idx.search_biased(&query, limit as usize, lat, lon, &visible_region) else {
+        return Vec::new();
+    };
+    place_hits_from_names(hits)
 }
 
 /// Named OSM buildings (`building=*` + `name=*`) in a viewport bbox from the

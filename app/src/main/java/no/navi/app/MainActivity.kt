@@ -164,6 +164,7 @@ import uniffi.navi.saveNamedRoute
 import uniffi.navi.saveTruckRestSettings
 import uniffi.navi.saveVehicleLimits
 import uniffi.navi.searchPlaces
+import uniffi.navi.searchPlacesBiased
 import uniffi.navi.setOsmWeeklyReminder
 import uniffi.navi.travelProfileLocksAvoidMotorways
 import uniffi.navi.travelProfileMenuFocus
@@ -347,6 +348,14 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        if (intent.hasExtra("navi_index_phase_sleep_ms")) {
+            val ms = intent.getIntExtra("navi_index_phase_sleep_ms", 0).coerceAtLeast(0)
+            runCatching {
+                android.system.Os.setenv("NAVI_INDEX_PHASE_SLEEP_MS", ms.toString(), true)
+            }
+            runCatching { uniffi.navi.setTestIndexPhaseSleepMs(ms.toULong()) }
+            android.util.Log.i("IdlePackJobs", "index_phase_sleep_ms=$ms")
+        }
         intent.getStringExtra("navi_place_index_pbf")?.trim()?.takeIf { it.isNotEmpty() }?.let { path ->
             val rid = intent.getStringExtra("navi_place_index_region").orEmpty()
             val pbf = java.io.File(path)
@@ -413,6 +422,14 @@ class MainActivity : ComponentActivity() {
         }
         intent.getStringExtra("navi_search_q")?.trim()?.takeIf { it.isNotEmpty() }?.let { q ->
             val dbFile = PlaceIndexStorage.resolveDb(this)
+            val biasLat = intentDoubleExtra(intent, "navi_camera_lat")
+            val biasLon = intentDoubleExtra(intent, "navi_camera_lon")
+            val vis =
+                if (!biasLat.isNaN() && !biasLon.isNaN()) {
+                    RegionCoverage.suggestGeofabrikPath(biasLat, biasLon).orEmpty()
+                } else {
+                    ""
+                }
             Thread {
                 if (dbFile == null || !dbFile.isFile) {
                     android.util.Log.i(
@@ -420,11 +437,32 @@ class MainActivity : ComponentActivity() {
                         "app_search q=$q n=0 top= region= results=[] reason=place_index_unavailable",
                     )
                 } else {
-                    val hits =
-                        runCatching { searchPlaces(dbFile.absolutePath, q, 20u) }.getOrElse { e ->
+                    val raw =
+                        runCatching {
+                            if (biasLat.isNaN() || biasLon.isNaN()) {
+                                searchPlaces(dbFile.absolutePath, q, 80u)
+                            } else {
+                                searchPlacesBiased(
+                                    dbFile.absolutePath,
+                                    q,
+                                    80u,
+                                    biasLat,
+                                    biasLon,
+                                    vis,
+                                )
+                            }
+                        }.getOrElse { e ->
                             android.util.Log.i("NaviSearch", "app_search q=$q FAIL: ${e.message}")
                             emptyList()
                         }
+                    val hits =
+                        rankPlaceHits(
+                            q,
+                            raw,
+                            biasLat.takeUnless { it.isNaN() },
+                            biasLon.takeUnless { it.isNaN() },
+                            vis,
+                        )
                     val top = hits.firstOrNull()
                     android.util.Log.i(
                         "NaviSearch",
@@ -3588,6 +3626,10 @@ private fun NaviMapScreen() {
                                             .map { File(it, "elevation") }
                                             .firstOrNull { it.isDirectory }
                                             ?: File(dataDir, "elevation")
+                                    if (IdlePackJobs.isRunning()) {
+                                        routePlanProgress = "waiting for a background job"
+                                        status = routePlanProgress
+                                    }
                                     if (!RoutePlanGate.tryBeginOrReplace({ cancelInFlightPlan() })) {
                                         return@runCatching uniffi.navi.CorridorRouteResult(
                                             report =
@@ -5468,6 +5510,13 @@ private fun NaviMapScreen() {
         mapMarkPending = null
     }
 
+    fun visibleSearchRegion(): String {
+        val lat = mapState.cameraLat ?: mapState.gpsLat
+        val lon = mapState.cameraLon ?: mapState.gpsLon
+        if (lat == 0.0 && lon == 0.0) return ""
+        return RegionCoverage.suggestGeofabrikPath(lat, lon).orEmpty()
+    }
+
     fun runSearch(q: String) {
         searchJob?.cancel()
         val trimmed = q.trim()
@@ -5519,16 +5568,42 @@ private fun NaviMapScreen() {
                                 runCatching { placeIndexHasEntries(dbPath) }.getOrDefault(false)
                             ensureActive()
                             var list =
-                                PlaceIndexReady.filterHitsToReadyRegions(
-                                    dataDir,
-                                    searchPlaces(dbPath, placeQ, 20u),
+                                rankPlaceHits(
+                                    placeQ,
+                                    PlaceIndexReady.filterHitsToReadyRegions(
+                                        dataDir,
+                                        runCatching {
+                                            val lat = mapState.cameraLat
+                                            val lon = mapState.cameraLon
+                                            if (lat != null && lon != null &&
+                                                lat.isFinite() && lon.isFinite() &&
+                                                !(lat == 0.0 && lon == 0.0)
+                                            ) {
+                                                searchPlacesBiased(
+                                                    dbPath,
+                                                    placeQ,
+                                                    80u,
+                                                    lat,
+                                                    lon,
+                                                    visibleSearchRegion(),
+                                                )
+                                            } else {
+                                                searchPlaces(dbPath, placeQ, 80u)
+                                            }
+                                        }.getOrDefault(emptyList()),
+                                    ),
+                                    mapState.cameraLat,
+                                    mapState.cameraLon,
+                                    visibleSearchRegion(),
                                 )
                             var usedOnline = false
-                            // Prefer online geocode when networked: offline FTS is
-                            // region-local and can mis-rank foreign towns (e.g.
-                            // "Kalmar" → Kalmargaten in Bergen). Merge online first.
-                            // Nominatim throttle/HTTP are suspend + interruptible so
-                            // searchJob.cancel() aborts in-flight work while typing.
+                            // OpenStreetMap Nominatim when the radio is up (optional
+                            // ORS only if ors_api_key.txt is present). Local exact
+                            // matches stay ahead of every online hit; online of the
+                            // same class is merged after local. Map centre is the
+                            // rank bias. Nominatim throttle/HTTP are suspend +
+                            // interruptible so searchJob.cancel() aborts in-flight
+                            // work while typing.
                             if (BasemapStyleResolver.hasNetwork(context)) {
                                 ensureActive()
                                 val online =
@@ -5545,7 +5620,14 @@ private fun NaviMapScreen() {
                                         if (list.isEmpty()) {
                                             online
                                         } else {
-                                            mergeOnlineAndOfflinePlaceHits(placeQ, online, list)
+                                            mergeOnlineAndOfflinePlaceHits(
+                                                placeQ,
+                                                online,
+                                                list,
+                                                mapState.cameraLat,
+                                                mapState.cameraLon,
+                                                visibleSearchRegion(),
+                                            )
                                         }
                                 }
                             }

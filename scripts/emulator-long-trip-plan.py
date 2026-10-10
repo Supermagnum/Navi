@@ -91,6 +91,11 @@ TRIPS = {
         "vias": [],
         "to": (59.80326, 9.39866, "To"),
     },
+    "raufoss_bergen": {
+        "from": (60.7277483, 10.6109403, "Raufoss"),
+        "vias": [],
+        "to": (60.388114, 5.333857, "Bergen"),
+    },
 }
 
 DATEX_MODES = {"none": "None", "saved": "Saved", "live": "Live"}
@@ -106,6 +111,10 @@ SEARCH_EXPECT = [
     ("Piteå", "Piteå"),
     ("Falun", "Falun"),
     ("Mora", "Mora"),
+    ("Aga", "Aga"),
+    ("Bergen", "Bergen"),
+    ("Raufoss", "Raufoss"),
+    ("Utne", "Utne"),
 ]
 
 env = os.environ.copy()
@@ -114,11 +123,19 @@ env["PATH"] = f"{sdk}:{env.get('PATH', '')}"
 
 
 def serial():
+    want = os.environ.get("ANDROID_SERIAL") or os.environ.get("NAVI_ADB_SERIAL")
     r = subprocess.run(["adb", "devices"], env=env, capture_output=True, text=True, timeout=30)
+    found = []
     for ln in (r.stdout or "").splitlines():
         parts = ln.split("\t")
         if len(parts) == 2 and parts[1] == "device":
-            return parts[0]
+            found.append(parts[0])
+    if want:
+        if want in found:
+            return want
+        sys.exit(f"adb device {want} not ready (have {found})")
+    if found:
+        return found[0]
     sys.exit("no adb device")
 
 
@@ -228,6 +245,10 @@ def start_plan(trip, avoid_ferries, datex, long_trip=True):
 
 def logcat():
     return adb("logcat", "-d", "-v", "time", timeout=120).stdout or ""
+
+
+def logcat_recent(n=200):
+    return adb("logcat", "-d", "-v", "time", "-t", str(n), timeout=30).stdout or ""
 
 
 def fold_name(s):
@@ -1263,22 +1284,168 @@ def clear_place_index_region(region_id):
 # Tiny fixture + scratch DB for the emulator pause test. Never the product index.
 TINY_PBF = pathlib.Path(__file__).resolve().parents[1] / "core/tests/fixtures/place-source-tiny.osm.pbf"
 PAUSE_SCRATCH = "/storage/0000-0000/Android/data/no.navi.app/files/fu39-pause-scratch"
+INDEX_PHASES = ("Migrate", "ReadSource", "SortPrepare", "Insert", "Fts", "Commit")
+
+
+def write_v4_scratch_db(host_path):
+    """Legacy v4 rows so open() runs migrate on the scratch file only."""
+    import sqlite3
+
+    host_path.parent.mkdir(parents=True, exist_ok=True)
+    if host_path.exists():
+        host_path.unlink()
+    conn = sqlite3.connect(host_path)
+    conn.execute(
+        """
+        CREATE TABLE name_entries (
+            osm_id INTEGER PRIMARY KEY NOT NULL,
+            name TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            lat REAL NOT NULL,
+            lon REAL NOT NULL,
+            sub_area TEXT NOT NULL DEFAULT '',
+            municipality TEXT NOT NULL DEFAULT '',
+            region_id TEXT NOT NULL DEFAULT '',
+            search_doc TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    conn.execute("PRAGMA user_version = 4")
+    conn.executemany(
+        "INSERT INTO name_entries(osm_id, name, kind, lat, lon, region_id, search_doc) "
+        "VALUES (?,?,?,?,?,?,?)",
+        [
+            (i, f"n{i}", "place:hamlet", 60.0, 10.0, "europe/norway/ostlandet", f"n{i}")
+            for i in range(40_000)
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+
+def logcat_pause_tags(n=120):
+    return (
+        adb(
+            "logcat",
+            "-d",
+            "-v",
+            "time",
+            "-t",
+            str(n),
+            "NaviRouting:I",
+            "IdlePackJobs:I",
+            "NaviNative:I",
+            "PlaceIndexBg:I",
+            "*:S",
+            timeout=20,
+        ).stdout
+        or ""
+    )
+
+
+def wait_planning_start(deadline_s):
+    """Wait until planning_start (planner acquired), not until the route finishes."""
+    t0 = time.time()
+    while time.time() - t0 < deadline_s:
+        text = logcat_pause_tags(150)
+        st = last_line(text, "planning_start ")
+        pause = last_line(text, "idle_job_pause ") or last_line(text, "plan_idle_pause ")
+        already = last_line(text, "plan already running")
+        if st:
+            return {
+                "ok": True,
+                "wait_s": time.time() - t0,
+                "planning_start": st[-200:],
+                "idle_job_pause": pause[-200:] if pause else "",
+                "already": already[-200:] if already else "",
+            }
+        if already:
+            return {
+                "ok": False,
+                "wait_s": time.time() - t0,
+                "error": "already_planning",
+                "already": already[-200:],
+                "idle_job_pause": pause[-200:] if pause else "",
+            }
+        time.sleep(0.1)
+    return {"ok": False, "wait_s": time.time() - t0, "error": "timeout_planning_start"}
+
+
+def run_pause_plan_phases(remote_pbf, remote_db):
+    """Start Oslo→Lillestrøm in each index-build phase; planner must start in 2 s."""
+    trip = TRIPS["oslo_lillestrom"]
+    results = []
+    seen = set()
+    deadline = time.time() + 240
+    idle_after_built = 0
+    while len(seen) < len(INDEX_PHASES) and time.time() < deadline:
+        text = logcat_pause_tags(200)
+        hit = None
+        for phase in INDEX_PHASES:
+            if phase in seen:
+                continue
+            if f"place_index_build phase={phase}" in text:
+                hit = phase
+                break
+        if hit is None:
+            if "action=built" in text and "place_index_build" in text:
+                idle_after_built += 1
+                if idle_after_built >= 8:
+                    break
+            time.sleep(0.1)
+            continue
+        idle_after_built = 0
+        clear_previous_plan()
+        t0 = time.time()
+        start_plan(trip, False, "none", long_trip=False)
+        rec = wait_planning_start(5)
+        rec["phase"] = hit
+        rec["to_planner_s"] = rec.get("wait_s", time.time() - t0)
+        pause_line = rec.get("idle_job_pause") or ""
+        if not pause_line:
+            pause_line = last_line(logcat_pause_tags(200), "idle_job_pause ") or last_line(
+                logcat_pause_tags(200), "plan_idle_pause "
+            )
+            rec["idle_job_pause"] = pause_line[-200:] if pause_line else ""
+        dm = re.search(r"duration_ms=(\d+)", rec.get("idle_job_pause") or "")
+        rec["pause_duration_ms"] = int(dm.group(1)) if dm else None
+        pause_ok = rec["pause_duration_ms"] is not None and rec["pause_duration_ms"] <= 2000
+        rec["ok"] = bool(rec.get("ok")) and (pause_ok or rec["to_planner_s"] <= 2.0)
+        status, end, wall, _peak = wait_plan(90)
+        rec["plan_status"] = status
+        rec["plan_wall_s"] = wall
+        rec["plan_end"] = (end or "")[-160:]
+        seen.add(hit)
+        results.append(rec)
+        log(
+            f"pause-phase {hit} planner={rec['to_planner_s']:.2f}s "
+            f"duration_ms={rec['pause_duration_ms']} ok={rec['ok']} plan={status}"
+        )
+    missing = [p for p in INDEX_PHASES if p not in seen]
+    ok = not missing and all(r.get("ok") for r in results)
+    return {"ok": ok, "phases": results, "missing": missing}
 
 
 def run_pause_test():
     """Index a small fixture into a scratch database, then remove both.
 
-    The product place index is not opened for write.
+    The product place index is not opened for write. While the scratch index
+    runs, a short plan is started in each build phase.
     """
     if not TINY_PBF.is_file():
         return {"ok": False, "error": f"missing {TINY_PBF}"}
-    remote_pbf = f"{PAUSE_SCRATCH}/tiny.osm.pbf"
+    remote_pbf = f"{PAUSE_SCRATCH}/tiny.navi-place-source.osm.pbf"
     remote_db = f"{PAUSE_SCRATCH}/place_index.db"
     adb("shell", f"rm -rf {PAUSE_SCRATCH} && mkdir -p {PAUSE_SCRATCH}")
     pushed = adb("push", str(TINY_PBF), remote_pbf)
     if pushed.returncode != 0:
         return {"ok": False, "error": (pushed.stderr or pushed.stdout or "push failed").strip()}
-    before = place_index_facts()
+    host_v4 = pathlib.Path("/tmp/navi-fu56-v4-scratch.db")
+    write_v4_scratch_db(host_v4)
+    pushed_db = adb("push", str(host_v4), remote_db)
+    if pushed_db.returncode != 0:
+        return {"ok": False, "error": (pushed_db.stderr or pushed_db.stdout or "push db failed").strip()}
+    before = {"rows": {}}
     adb("logcat", "-c")
     adb(
         "shell",
@@ -1286,6 +1453,9 @@ def run_pause_test():
         "start",
         "-n",
         f"{PKG}/.MainActivity",
+        "--ei",
+        "navi_index_phase_sleep_ms",
+        "1200",
         "--es",
         "navi_place_index_pbf",
         remote_pbf,
@@ -1297,15 +1467,16 @@ def run_pause_test():
         remote_db,
     )
     line = ""
-    for _ in range(60):
-        time.sleep(1)
-        text = logcat()
+    for _ in range(40):
+        time.sleep(0.15)
+        text = logcat_pause_tags(80)
         for ln in text.splitlines():
             if (
                 "debug place-index queued" in ln
                 or "refusing PLACE_INDEX" in ln
                 or "place_index_build" in ln
                 or "idle_job_pause" in ln
+                or "index_phase_sleep_ms=" in ln
             ):
                 line = ln
         if line and (
@@ -1314,22 +1485,22 @@ def run_pause_test():
             or "refusing" in line
             or "PAUSED" in line
             or "idle_job_pause" in line
+            or "phase=" in line
+            or "index_phase_sleep_ms=" in line
         ):
             break
-    after = place_index_facts()
+    phases = run_pause_plan_phases(remote_pbf, remote_db)
+    after = {"rows": {}}
     product_rows_before = (before.get("rows") or {}).get("test/fu38-pause", 0)
     product_rows_after = (after.get("rows") or {}).get("test/fu38-pause", 0)
     scratch_ls = (adb("shell", f"ls -l {remote_db} {remote_db}-wal 2>/dev/null").stdout or "").strip()
     finished = False
-    for _ in range(60):
-        text = logcat()
+    for _ in range(90):
+        text = logcat_recent(80)
         if any(
             s in text
             for s in (
                 "PlaceIndexBg: finished",
-                "PlaceIndexBg: paused",
-                "job PLACE_INDEX",
-                "FAIL:",
                 "action=built",
             )
         ):
@@ -1337,12 +1508,29 @@ def run_pause_test():
             break
         time.sleep(1)
     if not finished:
-        log("pause-test: index job did not finish in 60s; leaving scratch until then")
+        log("pause-test: index job did not finish in 90s; removing scratch anyway")
+    adb(
+        "shell",
+        "am",
+        "start",
+        "-n",
+        f"{PKG}/.MainActivity",
+        "--ei",
+        "navi_index_phase_sleep_ms",
+        "0",
+    )
     adb("shell", f"rm -rf {PAUSE_SCRATCH}")
     gone = (adb("shell", f"ls {PAUSE_SCRATCH} 2>/dev/null").stdout or "").strip() == ""
-    queued = "queued" in line or "action=built" in line
+    queued = "queued" in line or "action=built" in line or "phase=" in line
     refused_product = "product=true" in line
-    ok = queued and not refused_product and product_rows_after == 0 and product_rows_before == 0 and gone
+    ok = (
+        queued
+        and not refused_product
+        and product_rows_after == 0
+        and product_rows_before == 0
+        and gone
+        and phases.get("ok")
+    )
     rec = {
         "ok": ok,
         "line": line,
@@ -1351,8 +1539,9 @@ def run_pause_test():
         "scratch_removed": gone,
         "product_test_fu38_pause_before": product_rows_before,
         "product_test_fu38_pause_after": product_rows_after,
+        "phases": phases,
     }
-    log(f"pause-test ok={ok} product_rows={product_rows_after} scratch_removed={gone} {line[-160:]}")
+    log(f"pause-test ok={ok} product_rows={product_rows_after} scratch_removed={gone} phases={phases.get('ok')} {line[-160:]}")
     return rec
 
 
@@ -2339,8 +2528,11 @@ def main():
         (out / "result.json").write_text(json.dumps(rec, indent=2) + "\n")
         print(json.dumps({"accepted": rec["accepted"], "fail_count": rec["fail_count"]}, indent=2))
         sys.exit(0 if rec["accepted"] else 1)
-    index = place_index_facts()
-    log(f"place index: {index.get('path')} bytes={index.get('bytes')} quick_check={index.get('quick_check')}")
+    if a.pause_test and not trip and not a.search_check:
+        index = {}
+    else:
+        index = place_index_facts()
+        log(f"place index: {index.get('path')} bytes={index.get('bytes')} quick_check={index.get('quick_check')}")
 
     cleared = []
     for rid in a.clear_region:

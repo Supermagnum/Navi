@@ -250,13 +250,19 @@ fun mergeOnlineAndOfflinePlaceHits(
     query: String,
     online: List<uniffi.navi.PlaceHit>,
     offline: List<uniffi.navi.PlaceHit>,
+    biasLat: Double? = null,
+    biasLon: Double? = null,
+    visibleRegion: String = "",
 ): List<uniffi.navi.PlaceHit> {
-    if (online.isEmpty()) return offline
-    if (offline.isEmpty()) return online
+    if (online.isEmpty() && offline.isEmpty()) return emptyList()
     val offlineKeep =
-        offline.filter { hit ->
-            placeNameContainsQueryTokens(hit.name, query) ||
-                placeNameContainsQueryTokens(placeHitDisplayLabel(hit), query)
+        if (online.isEmpty()) {
+            offline
+        } else {
+            offline.filter { hit ->
+                placeNameContainsQueryTokens(hit.name, query) ||
+                    placeNameContainsQueryTokens(placeHitDisplayLabel(hit), query)
+            }
         }
     val seen = HashSet<String>()
     val merged = ArrayList<uniffi.navi.PlaceHit>(online.size + offlineKeep.size)
@@ -264,5 +270,86 @@ fun mergeOnlineAndOfflinePlaceHits(
         val key = "${h.name.lowercase()}|${"%.4f".format(h.lat)}|${"%.4f".format(h.lon)}"
         if (seen.add(key)) merged.add(h)
     }
-    return merged
+    return rankPlaceHits(query, merged, biasLat, biasLon, visibleRegion)
+}
+
+fun rankPlaceHits(
+    query: String,
+    hits: List<uniffi.navi.PlaceHit>,
+    biasLat: Double? = null,
+    biasLon: Double? = null,
+    visibleRegion: String = "",
+): List<uniffi.navi.PlaceHit> {
+    val q = query.trim().lowercase()
+    val vis = visibleRegion.trim().trim('/')
+    return hits.sortedWith(
+        compareBy<uniffi.navi.PlaceHit> { placeMatchClass(it.name, q) }
+            .thenBy { placeSourceClass(it.kind) }
+            .thenBy { placeRegionClass(it.regionId, vis) }
+            .thenBy { placeKindClass(it.kind) }
+            .thenBy { placeDistanceDecikm(it, biasLat, biasLon) }
+            .thenBy { it.name.length },
+    )
+}
+
+/** 0 = local / installed-region hit, 1 = online (Nominatim or ORS). */
+internal fun placeSourceClass(kind: String): Int =
+    if (kind.startsWith("online/", ignoreCase = true)) 1 else 0
+
+internal fun placeMatchClass(name: String, qLower: String): Int {
+    val n = name.lowercase()
+    return when {
+        n == qLower -> 0
+        n.startsWith(qLower) -> 1
+        else -> 2
+    }
+}
+
+internal fun placeKindClass(kind: String): Int {
+    val k = kind.lowercase()
+    val place = k.substringAfter("place:", "")
+    if (k.startsWith("place:") || place.isNotEmpty()) {
+        return when (place.ifBlank { k.removePrefix("place:") }) {
+            "city", "municipality" -> 0
+            "town" -> 1
+            "suburb", "borough", "quarter" -> 2
+            "village" -> 3
+            "hamlet" -> 4
+            "locality", "isolated_dwelling" -> 5
+            else -> 6
+        }
+    }
+    if (k.contains("tourism") || k.contains("amenity") || k.contains("leisure") || k.contains("natural")) {
+        return 10
+    }
+    if (k.contains("addr") || k.contains("highway") || k.contains("street")) {
+        return 20
+    }
+    return 15
+}
+
+internal fun placeRegionClass(regionId: String, visible: String): Int {
+    if (visible.isEmpty()) return 1
+    val rid = regionId.trim().trim('/')
+    if (rid == visible || rid.startsWith("$visible/")) return 0
+    val visCountry = visible.split('/').getOrNull(1).orEmpty()
+    val hitCountry = rid.split('/').getOrNull(1).orEmpty()
+    if (visCountry.isNotEmpty() && visCountry == hitCountry) return 1
+    return 2
+}
+
+internal fun placeDistanceDecikm(
+    hit: uniffi.navi.PlaceHit,
+    biasLat: Double?,
+    biasLon: Double?,
+): Int {
+    if (biasLat == null || biasLon == null) return 0
+    val dlat = Math.toRadians(hit.lat - biasLat)
+    val dlon = Math.toRadians(hit.lon - biasLon)
+    val la1 = Math.toRadians(biasLat)
+    val la2 = Math.toRadians(hit.lat)
+    val h = Math.sin(dlat / 2) * Math.sin(dlat / 2) +
+        Math.cos(la1) * Math.cos(la2) * Math.sin(dlon / 2) * Math.sin(dlon / 2)
+    val km = 2.0 * 6371.0 * Math.asin(Math.sqrt(h))
+    return (km * 10.0).toInt()
 }

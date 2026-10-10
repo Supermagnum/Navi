@@ -22,6 +22,39 @@ pub const NAMED_BUILDING_KIND: &str = "building";
 /// entire write, and so WAL readers are not blocked for minutes.
 const INSERT_COMMIT_BATCH: usize = 50_000;
 
+/// Rows copied per PK-migrate transaction so a plan can pause within 2 s.
+const MIGRATE_COPY_BATCH: i64 = 5_000;
+
+/// Place-index build phases a pause request must be able to interrupt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IndexBuildPhase {
+    ReadSource,
+    SortPrepare,
+    Insert,
+    Fts,
+    Commit,
+    Migrate,
+}
+
+fn index_phase_tick(phase: IndexBuildPhase) {
+    thread_local! {
+        static LAST: std::cell::Cell<Option<IndexBuildPhase>> = const { std::cell::Cell::new(None) };
+    }
+    LAST.with(|last| {
+        if last.get() != Some(phase) {
+            last.set(Some(phase));
+            log::info!(
+                target: "PlaceIndexBg",
+                "place_index_build phase={phase:?}"
+            );
+        }
+    });
+    let ms = crate::download::pbf_priority::test_index_phase_sleep_ms();
+    if ms > 0 {
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+    }
+}
+
 /// Error prefix when a foreground plan pauses an in-flight index at a batch.
 pub const PLACE_INDEX_PAUSED_PREFIX: &str = "place_index_paused";
 
@@ -59,7 +92,7 @@ fn release_index_heap() {
 }
 
 fn pause_index_if_plan_active(written: i64, expected: i64, peak_rss_mb: u64) -> anyhow::Result<()> {
-    if !crate::download::pbf_priority::foreground_plan_active() {
+    if !crate::download::pbf_priority::idle_pause_requested() {
         return Ok(());
     }
     release_index_heap();
@@ -183,6 +216,91 @@ pub struct NameHit {
     pub region_id: String,
 }
 
+fn search_match_class(name: &str, q_lower: &str) -> i32 {
+    let name_l = name.to_lowercase();
+    if name_l == q_lower {
+        0
+    } else if name_l.starts_with(q_lower) {
+        1
+    } else {
+        2
+    }
+}
+
+fn search_kind_class(kind: &str) -> i32 {
+    if let Some(rest) = kind.strip_prefix("place:") {
+        return match rest {
+            "city" | "municipality" => 0,
+            "town" => 1,
+            "suburb" | "borough" | "quarter" => 2,
+            "village" => 3,
+            "hamlet" => 4,
+            "locality" | "isolated_dwelling" => 5,
+            _ => 6,
+        };
+    }
+    if kind.starts_with("tourism:")
+        || kind.starts_with("amenity:")
+        || kind.starts_with("leisure:")
+        || kind.starts_with("natural:")
+    {
+        return 10;
+    }
+    if kind.starts_with("addr:") || kind.starts_with("highway:") {
+        return 20;
+    }
+    15
+}
+
+fn search_region_country(region_id: &str) -> &str {
+    let mut parts = region_id.trim_matches('/').split('/');
+    let _ = parts.next();
+    parts.next().unwrap_or("")
+}
+
+fn search_haversine_km(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> i32 {
+    let r = 6371.0_f64;
+    let dlat = (b_lat - a_lat).to_radians();
+    let dlon = (b_lon - a_lon).to_radians();
+    let la1 = a_lat.to_radians();
+    let la2 = b_lat.to_radians();
+    let h = (dlat / 2.0).sin().powi(2) + la1.cos() * la2.cos() * (dlon / 2.0).sin().powi(2);
+    let km = 2.0 * r * h.sqrt().asin();
+    (km * 10.0).round() as i32
+}
+
+fn search_rank_key(
+    h: &NameHit,
+    q_lower: &str,
+    bias: Option<(Option<f64>, Option<f64>, &str)>,
+) -> (i32, i32, i32, i32, usize) {
+    let match_c = search_match_class(&h.name, q_lower);
+    let kind_c = search_kind_class(&h.kind);
+    let (region_c, dist) = match bias {
+        Some((lat, lon, visible)) => {
+            let vis = visible.trim_matches('/');
+            let region_c = if vis.is_empty() {
+                1
+            } else if h.region_id == vis || h.region_id.starts_with(&format!("{vis}/")) {
+                0
+            } else if search_region_country(&h.region_id) == search_region_country(vis)
+                && !search_region_country(vis).is_empty()
+            {
+                1
+            } else {
+                2
+            };
+            let dist = match (lat, lon) {
+                (Some(lat), Some(lon)) => search_haversine_km(lat, lon, h.lat, h.lon),
+                _ => 0,
+            };
+            (region_c, dist)
+        }
+        None => (1, 0),
+    };
+    (match_c, region_c, kind_c, dist, h.name.len())
+}
+
 /// Local FTS5 name index for settlements, POIs, huts, peaks, and named ways.
 pub struct NameIndex {
     conn: Connection,
@@ -192,7 +310,9 @@ impl NameIndex {
     pub fn open_in_memory() -> SqlResult<Self> {
         let conn = Connection::open_in_memory()?;
         Self::migrate(&conn)?;
-        Self::migrate_region_osm_pk(&conn)?;
+        Self::migrate_region_osm_pk(&conn).map_err(|e| {
+            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e.to_string())))
+        })?;
         Self::backfill_legacy_complete(&conn)?;
         Ok(Self { conn })
     }
@@ -237,7 +357,9 @@ impl NameIndex {
         let had_build_table = Self::name_index_build_table_exists(&conn)?;
         let migrate_t0 = phase_timing::start("place_index.open_db.migrate");
         Self::migrate(&conn)?;
-        Self::migrate_region_osm_pk(&conn)?;
+        Self::migrate_region_osm_pk(&conn).map_err(|e| {
+            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e.to_string())))
+        })?;
         phase_timing::end("place_index.open_db.migrate", migrate_t0);
         let backfill_t0 = phase_timing::start("place_index.open_db.backfill_legacy_complete");
         if !had_build_table {
@@ -295,7 +417,9 @@ impl NameIndex {
             ",
         )?;
         Self::ensure_context_columns(conn)?;
-        Self::ensure_search_doc_fts(conn)?;
+        // Never rebuild FTS here: `INSERT INTO name_fts(name_fts) VALUES('rebuild')`
+        // on a multi-million-row tablet DB is a single uninterruptible statement
+        // (the 13-minute Oslo block). Batched fill lives in migrate_region_osm_pk.
         Self::ensure_source_sha256_column(conn)?;
         Self::ensure_index_source_column(conn)?;
         Ok(())
@@ -365,14 +489,22 @@ impl NameIndex {
         .optional()
     }
 
-    /// v6: PRIMARY KEY (region_id, osm_id). Resumable copy into name_entries_pk.
-    fn migrate_region_osm_pk(conn: &Connection) -> SqlResult<()> {
+    /// v6: PRIMARY KEY (region_id, osm_id). Resumable copy into name_entries_pk
+    /// in small transactions so a plan can pause within 2 s.
+    fn migrate_region_osm_pk(conn: &Connection) -> anyhow::Result<()> {
         let sql = Self::name_entries_sql(conn)?.unwrap_or_default();
         if sql.contains("PRIMARY KEY (region_id, osm_id)")
             || sql.contains("PRIMARY KEY(region_id, osm_id)")
         {
+            Self::ensure_search_doc_fts_create_only(conn)?;
+            Self::ensure_search_doc_fts_batched(conn)?;
+            conn.execute_batch(&format!(
+                "PRAGMA user_version = {PLACE_INDEX_SCHEMA_VERSION};"
+            ))?;
             return Ok(());
         }
+        index_phase_tick(IndexBuildPhase::Migrate);
+        pause_index_if_plan_active(0, 0, place_index_rss_mb())?;
         let before = Self::region_row_counts(conn)?;
         conn.execute_batch(
             "
@@ -388,35 +520,124 @@ impl NameIndex {
                 search_doc TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY (region_id, osm_id)
             );
-            INSERT OR IGNORE INTO name_entries_pk(
-                region_id, osm_id, name, kind, lat, lon, sub_area, municipality, search_doc
-            )
-            SELECT region_id, osm_id, name, kind, lat, lon, sub_area, municipality, search_doc
-            FROM name_entries;
+            CREATE TABLE IF NOT EXISTS _pk_migrate_pos (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                last_rowid INTEGER NOT NULL
+            );
+            INSERT OR IGNORE INTO _pk_migrate_pos(id, last_rowid) VALUES (1, -1);
             ",
         )?;
+        let source_n: i64 =
+            conn.query_row("SELECT COUNT(*) FROM name_entries", [], |row| row.get(0))?;
+        loop {
+            index_phase_tick(IndexBuildPhase::Migrate);
+            let last_rowid: i64 = conn
+                .query_row(
+                    "SELECT last_rowid FROM _pk_migrate_pos WHERE id = 1",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(-1);
+            let copied_so_far: i64 = conn
+                .query_row("SELECT COUNT(*) FROM name_entries_pk", [], |r| r.get(0))
+                .unwrap_or(0);
+            pause_index_if_plan_active(copied_so_far, source_n, place_index_rss_mb())?;
+            let end_rowid: Option<i64> = conn.query_row(
+                "SELECT MAX(rowid) FROM (
+                    SELECT rowid FROM name_entries WHERE rowid > ?1
+                    ORDER BY rowid LIMIT ?2
+                 )",
+                params![last_rowid, MIGRATE_COPY_BATCH],
+                |row| row.get(0),
+            )?;
+            let Some(end_rowid) = end_rowid else {
+                break;
+            };
+            conn.execute(
+                "
+                INSERT OR IGNORE INTO name_entries_pk(
+                    region_id, osm_id, name, kind, lat, lon, sub_area, municipality, search_doc
+                )
+                SELECT e.region_id, e.osm_id, e.name, e.kind, e.lat, e.lon,
+                       e.sub_area, e.municipality,
+                       COALESCE(NULLIF(e.search_doc, ''), e.name)
+                FROM name_entries e
+                WHERE e.rowid > ?1 AND e.rowid <= ?2
+                ",
+                params![last_rowid, end_rowid],
+            )?;
+            conn.execute(
+                "UPDATE _pk_migrate_pos SET last_rowid = ?1 WHERE id = 1",
+                params![end_rowid],
+            )?;
+        }
+        index_phase_tick(IndexBuildPhase::Commit);
+        pause_index_if_plan_active(source_n, source_n, place_index_rss_mb())?;
+        conn.execute_batch("DROP TABLE IF EXISTS name_fts;")?;
+        loop {
+            index_phase_tick(IndexBuildPhase::Commit);
+            pause_index_if_plan_active(source_n, source_n, place_index_rss_mb())?;
+            let deleted = conn.execute(
+                "DELETE FROM name_entries WHERE rowid IN (
+                    SELECT rowid FROM name_entries LIMIT ?1
+                )",
+                params![MIGRATE_COPY_BATCH],
+            )?;
+            if deleted == 0 {
+                break;
+            }
+        }
+        index_phase_tick(IndexBuildPhase::Commit);
+        pause_index_if_plan_active(source_n, source_n, place_index_rss_mb())?;
         conn.execute_batch(
             "
             DROP TABLE name_entries;
             ALTER TABLE name_entries_pk RENAME TO name_entries;
+            DROP TABLE IF EXISTS _pk_migrate_pos;
             ",
         )?;
-        conn.execute_batch("DROP TABLE IF EXISTS name_fts;")?;
-        Self::ensure_search_doc_fts(conn)?;
+        Self::ensure_search_doc_fts_create_only(conn)?;
+        Self::ensure_search_doc_fts_batched(conn)?;
         for (rid, n) in &before {
             let after = Self::region_row_count(conn, rid).unwrap_or(0);
             if after != *n {
-                return Err(rusqlite::Error::SqliteFailure(
-                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
-                    Some(format!(
-                        "place_index pk migrate stopped: {rid} rows {after} != {n}"
-                    )),
-                ));
+                anyhow::bail!("place_index pk migrate stopped: {rid} rows {after} != {n}");
             }
         }
         conn.execute_batch(&format!(
             "PRAGMA user_version = {PLACE_INDEX_SCHEMA_VERSION};"
         ))?;
+        Ok(())
+    }
+
+    fn ensure_search_doc_fts_batched(conn: &Connection) -> anyhow::Result<()> {
+        let total: i64 =
+            conn.query_row("SELECT COUNT(*) FROM name_entries", [], |row| row.get(0))?;
+        let mut last_rowid: i64 = -1;
+        loop {
+            index_phase_tick(IndexBuildPhase::Fts);
+            pause_index_if_plan_active(last_rowid, total, place_index_rss_mb())?;
+            let end_rowid: Option<i64> = conn.query_row(
+                "SELECT MAX(rowid) FROM (
+                    SELECT rowid FROM name_entries WHERE rowid > ?1
+                    ORDER BY rowid LIMIT ?2
+                 )",
+                params![last_rowid, MIGRATE_COPY_BATCH],
+                |row| row.get(0),
+            )?;
+            let Some(end_rowid) = end_rowid else {
+                break;
+            };
+            conn.execute(
+                "
+                INSERT INTO name_fts(rowid, search_doc, kind)
+                SELECT rowid, search_doc, kind FROM name_entries
+                WHERE rowid > ?1 AND rowid <= ?2
+                ",
+                params![last_rowid, end_rowid],
+            )?;
+            last_rowid = end_rowid;
+        }
         Ok(())
     }
 
@@ -489,20 +710,18 @@ impl NameIndex {
                 [],
             )?;
             // Legacy rows: FTS rebuild can use display name until the region is
-            // re-indexed with alt_name / loc_name.
-            conn.execute(
-                "UPDATE name_entries SET search_doc = name WHERE search_doc = ''",
-                [],
-            )?;
+            // re-indexed with alt_name / loc_name. Batched in migrate_region_osm_pk
+            // so a plan can pause; a single UPDATE of 11M rows cannot.
         }
-        conn.execute_batch(
-            "CREATE INDEX IF NOT EXISTS idx_name_entries_region_id ON name_entries(region_id);",
-        )?;
+        // After v6 the composite PK (region_id, osm_id) covers region lookups.
+        // Creating idx_name_entries_region_id on a stale multi-million-row file
+        // is another uninterruptible stall.
         Ok(())
     }
 
     /// FTS5 external-content table must index `search_doc` (v5). Recreate when
     /// an older `name`/`kind` FTS definition is still present.
+    #[allow(dead_code)]
     fn ensure_search_doc_fts(conn: &Connection) -> SqlResult<()> {
         let sql: Option<String> = conn
             .query_row(
@@ -529,6 +748,21 @@ impl NameIndex {
             )?;
             let _ = conn.execute_batch("INSERT INTO name_fts(name_fts) VALUES('rebuild');");
         }
+        Ok(())
+    }
+
+    fn ensure_search_doc_fts_create_only(conn: &Connection) -> SqlResult<()> {
+        conn.execute_batch("DROP TABLE IF EXISTS name_fts;")?;
+        conn.execute_batch(
+            "
+            CREATE VIRTUAL TABLE name_fts USING fts5(
+                search_doc,
+                kind,
+                content='name_entries',
+                content_rowid='rowid'
+            );
+            ",
+        )?;
         Ok(())
     }
 
@@ -856,6 +1090,11 @@ impl NameIndex {
     ) -> anyhow::Result<usize> {
         let total_t0 = phase_timing::start("place_index.total");
         let _bg = crate::download::pbf_priority::BackgroundIndexerGuard::enter();
+        // Same thread already holds the plan: refuse the build immediately.
+        // Do not wait for that plan (deadlock) and do not trip `NameIndex::open`.
+        if crate::download::pbf_priority::plan_on_this_thread() {
+            anyhow::bail!("{PLACE_INDEX_PAUSED_PREFIX} written=0 expected=0");
+        }
         let path = path.as_ref();
         let region_id = region_id.trim().trim_matches('/').to_string();
         let mut peak_rss_mb = place_index_rss_mb();
@@ -867,6 +1106,7 @@ impl NameIndex {
         };
         // Before any PBF pass: a plan already in flight must not enter a scan
         // that waits on foreground_plan_active (that parks the indexer).
+        index_phase_tick(IndexBuildPhase::ReadSource);
         pause_index_if_plan_active(Self::build_written(&self.conn, &region_id), 0, peak_rss_mb)?;
         // (osm_id, display_name, search_doc, kind, lat, lon)
         let mut batch: Vec<(i64, String, String, String, f64, f64)> = Vec::new();
@@ -881,11 +1121,16 @@ impl NameIndex {
         // Sub-labels are set inside load_admin_from_pbf so the 0/6 phase is not
         // a single frozen "admin boundaries…" string for a minute-plus scan.
         let admin_t0 = phase_timing::start("place_index.admin");
-        let admin_rings =
-            place_context::load_admin_from_pbf(path, phase_prefix).unwrap_or_else(|e| {
+        let admin_rings = match place_context::load_admin_from_pbf(path, phase_prefix) {
+            Ok(v) => v,
+            Err(e) if e.to_string().contains(PLACE_INDEX_PAUSED_PREFIX) => {
+                return Err(e);
+            }
+            Err(e) => {
                 log::warn!("admin boundary load for place context skipped: {e:#}");
                 Vec::new()
-            });
+            }
+        };
         phase_timing::end_detail(
             "place_index.admin",
             admin_t0,
@@ -902,16 +1147,25 @@ impl NameIndex {
         let mut needed_nodes: std::collections::HashSet<i64> = std::collections::HashSet::new();
         let mut ways_visited = 0usize;
         let mut ways_last_hb = 0usize;
+        let ways_pause = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         {
-            crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
+            let ways_pause = ways_pause.clone();
+            crate::download::pbf_priority::for_each_pbf_elements_pausable(path, |element| {
+                if ways_pause.load(std::sync::atomic::Ordering::Relaxed) {
+                    return;
+                }
                 ways_visited += 1;
                 if ways_visited - ways_last_hb >= PLACE_INDEX_PROGRESS_HEARTBEAT {
                     ways_last_hb = ways_visited;
+                    index_phase_tick(IndexBuildPhase::ReadSource);
                     crate::download::progress::set(
                         1,
                         Some(PHASES),
                         &format!("{phase_prefix}scanning ways… ({} found)", way_jobs.len()),
                     );
+                    if pause_index_if_plan_active(0, 0, place_index_rss_mb()).is_err() {
+                        ways_pause.store(true, std::sync::atomic::Ordering::Relaxed);
+                    }
                 }
                 let Element::Way(way) = element else {
                     return;
@@ -943,6 +1197,9 @@ impl NameIndex {
                 way_jobs.push((way.id(), name, search_doc, kind, refs));
             })?;
         }
+        if ways_pause.load(std::sync::atomic::Ordering::Relaxed) {
+            pause_index_if_plan_active(0, 0, peak_rss_mb)?;
+        }
         phase_timing::end_detail(
             "place_index.ways",
             ways_t0,
@@ -962,16 +1219,25 @@ impl NameIndex {
             std::collections::HashMap::with_capacity(needed_nodes.len());
         let mut nodes_visited = 0usize;
         let mut nodes_last_hb = 0usize;
+        let nodes_pause = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         {
-            crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
+            let nodes_pause = nodes_pause.clone();
+            crate::download::pbf_priority::for_each_pbf_elements_pausable(path, |element| {
+                if nodes_pause.load(std::sync::atomic::Ordering::Relaxed) {
+                    return;
+                }
                 nodes_visited += 1;
                 if nodes_visited - nodes_last_hb >= PLACE_INDEX_PROGRESS_HEARTBEAT {
                     nodes_last_hb = nodes_visited;
+                    index_phase_tick(IndexBuildPhase::ReadSource);
                     crate::download::progress::set(
                         2,
                         Some(PHASES),
                         &format!("{phase_prefix}scanning nodes… ({} found)", batch.len()),
                     );
+                    if pause_index_if_plan_active(0, 0, place_index_rss_mb()).is_err() {
+                        nodes_pause.store(true, std::sync::atomic::Ordering::Relaxed);
+                    }
                 }
                 match element {
                     Element::Node(node) => {
@@ -999,6 +1265,9 @@ impl NameIndex {
                     _ => {}
                 }
             })?;
+        }
+        if nodes_pause.load(std::sync::atomic::Ordering::Relaxed) {
+            pause_index_if_plan_active(0, 0, peak_rss_mb)?;
         }
         let node_hits = batch.len();
         phase_timing::end_detail(
@@ -1057,6 +1326,7 @@ impl NameIndex {
             &format!("way_hits={way_hits} batch={}", batch.len()),
         );
         bump_peak(&mut peak_rss_mb);
+        index_phase_tick(IndexBuildPhase::SortPrepare);
         pause_index_if_plan_active(0, batch.len() as i64, peak_rss_mb)?;
 
         // Official hiking/cycling route relations (name/ref/operator) for To/Via search.
@@ -1073,6 +1343,9 @@ impl NameIndex {
                     let search_doc = r.name.clone();
                     batch.push((r.osm_id, r.name, search_doc, r.kind, r.lat, r.lon));
                 }
+            }
+            Err(e) if e.to_string().contains(PLACE_INDEX_PAUSED_PREFIX) => {
+                return Err(e);
             }
             Err(e) => {
                 log::warn!("named route relation index skipped: {e:#}");
@@ -1147,6 +1420,8 @@ impl NameIndex {
         let total = batch.len();
         let mut inserted = skip.len();
         let mut since_commit = 0usize;
+        index_phase_tick(IndexBuildPhase::Insert);
+        pause_index_if_plan_active(inserted as i64, total as i64, peak_rss_mb)?;
         let mut tx = self.conn.unchecked_transaction()?;
         for (osm_id, name, search_doc, kind, lat, lon) in &batch {
             if skip.contains(osm_id) {
@@ -1192,6 +1467,7 @@ impl NameIndex {
                     &format!("{phase_prefix}writing database…"),
                 );
                 bump_peak(&mut peak_rss_mb);
+                index_phase_tick(IndexBuildPhase::Insert);
                 pause_index_if_plan_active(inserted as i64, total as i64, peak_rss_mb)?;
                 tx = self.conn.unchecked_transaction()?;
                 since_commit = 0;
@@ -1207,6 +1483,8 @@ impl NameIndex {
             "PRAGMA user_version = {PLACE_INDEX_SCHEMA_VERSION};"
         ))?;
         Self::upsert_build_progress(&tx, &region_id, total as i64, inserted as i64, true)?;
+        index_phase_tick(IndexBuildPhase::Commit);
+        pause_index_if_plan_active(inserted as i64, total as i64, peak_rss_mb)?;
         tx.commit()?;
         phase_timing::end("place_index.sqlite_commit", commit_t0);
         phase_timing::end_detail(
@@ -1494,6 +1772,52 @@ impl NameIndex {
         Ok(())
     }
 
+    fn exact_name_hits(&self, query: &str, limit: usize) -> SqlResult<Vec<NameHit>> {
+        let mut stmt = self.conn.prepare(
+            "
+            SELECT osm_id, name, kind, lat, lon, sub_area, municipality, region_id
+            FROM name_entries
+            WHERE name = ?1 COLLATE NOCASE
+            LIMIT ?2
+            ",
+        )?;
+        let rows = stmt.query_map(params![query, limit as i64], |row| {
+            Ok(NameHit {
+                osm_id: row.get(0)?,
+                name: row.get(1)?,
+                kind: row.get(2)?,
+                lat: row.get(3)?,
+                lon: row.get(4)?,
+                sub_area: row.get(5)?,
+                municipality: row.get(6)?,
+                region_id: row.get(7)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn search_biased(
+        &self,
+        query: &str,
+        limit: usize,
+        bias_lat: Option<f64>,
+        bias_lon: Option<f64>,
+        visible_region: &str,
+    ) -> SqlResult<Vec<NameHit>> {
+        let mut out = self.search(query, limit.saturating_mul(4).max(limit))?;
+        let q_lower = query.trim().to_lowercase();
+        let visible = visible_region.trim().trim_matches('/');
+        out.sort_by(|a, b| {
+            search_rank_key(a, &q_lower, Some((bias_lat, bias_lon, visible))).cmp(&search_rank_key(
+                b,
+                &q_lower,
+                Some((bias_lat, bias_lon, visible)),
+            ))
+        });
+        out.truncate(limit);
+        Ok(out)
+    }
+
     pub fn search(&self, query: &str, limit: usize) -> SqlResult<Vec<NameHit>> {
         let q = query.trim();
         if q.is_empty() {
@@ -1529,30 +1853,22 @@ impl NameIndex {
         for r in rows {
             out.push(r?);
         }
+        // FTS prefix order can drown a local exact name (Aga in Vestlandet)
+        // under hundreds of foreign AGA* rows. Fold every exact name in.
+        let exact = self.exact_name_hits(q, 200)?;
+        let mut seen = HashSet::new();
+        let mut merged = Vec::with_capacity(out.len() + exact.len());
+        for h in exact.into_iter().chain(out) {
+            if seen.insert((h.region_id.clone(), h.osm_id)) {
+                merged.push(h);
+            }
+        }
         let q_lower = q.to_lowercase();
-        out.sort_by(|a, b| {
-            let score = |h: &NameHit| -> (i32, i32, usize) {
-                let name_l = h.name.to_lowercase();
-                let starts = if name_l.starts_with(&q_lower) { 0 } else { 1 };
-                let kind_rank = if h.kind.starts_with("place:") {
-                    0
-                } else if h.kind.starts_with("tourism:")
-                    || h.kind.starts_with("amenity:")
-                    || h.kind.starts_with("leisure:")
-                    || h.kind.starts_with("natural:")
-                {
-                    1
-                } else if h.kind.starts_with("addr:") {
-                    3
-                } else {
-                    2
-                };
-                (starts, kind_rank, h.name.len())
-            };
-            score(a).cmp(&score(b))
+        merged.sort_by(|a, b| {
+            search_rank_key(a, &q_lower, None).cmp(&search_rank_key(b, &q_lower, None))
         });
-        out.truncate(limit);
-        Ok(out)
+        merged.truncate(limit);
+        Ok(merged)
     }
 
     /// Entries within [radius_m] of `(lat, lon)`, nearest first (Haversine).
@@ -3205,5 +3521,234 @@ mod tests {
         let resume_ids =
             NameIndex::osm_ids_for_region(&Connection::open(&paused).unwrap(), region).unwrap();
         assert_eq!(full_ids, resume_ids);
+    }
+
+    #[test]
+    fn search_ranks_exact_local_place_before_foreign_prefix() {
+        let mut idx = NameIndex::open_in_memory().unwrap();
+        idx.upsert_entry_with_region(
+            1,
+            "Aga".into(),
+            "place:hamlet".into(),
+            60.30,
+            6.60,
+            String::new(),
+            "Ullensvang".into(),
+            "europe/norway/vestlandet".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            2,
+            "Agardh".into(),
+            "place:hamlet".into(),
+            56.67,
+            12.86,
+            String::new(),
+            String::new(),
+            "europe/sweden/halland".into(),
+        )
+        .unwrap();
+        let hits = idx
+            .search_biased(
+                "Aga",
+                10,
+                Some(60.39),
+                Some(6.50),
+                "europe/norway/vestlandet",
+            )
+            .unwrap();
+        assert_eq!(hits[0].name, "Aga");
+        assert_eq!(hits[0].region_id, "europe/norway/vestlandet");
+    }
+
+    #[test]
+    fn search_keeps_prefix_only_hits() {
+        let mut idx = NameIndex::open_in_memory().unwrap();
+        idx.upsert_entry_with_region(
+            1,
+            "Raufoss".into(),
+            "place:town".into(),
+            60.73,
+            10.61,
+            String::new(),
+            "Vestre Toten".into(),
+            "europe/norway/ostlandet".into(),
+        )
+        .unwrap();
+        let hits = idx.search("Raufo", 10).unwrap();
+        assert!(hits.iter().any(|h| h.name == "Raufoss"));
+    }
+
+    #[test]
+    fn pause_request_stops_each_index_phase_within_two_seconds() {
+        use crate::download::pbf_priority::{self, ForegroundPlanGuard};
+        let _g = pbf_priority::lock_plan_flag_for_test();
+        pbf_priority::TEST_INDEX_PHASE_SLEEP_MS.store(400, std::sync::atomic::Ordering::Relaxed);
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("v4.db");
+        {
+            let conn = Connection::open(&db).unwrap();
+            conn.execute_batch(
+                "
+                CREATE TABLE name_entries (
+                    osm_id INTEGER PRIMARY KEY NOT NULL,
+                    name TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    lat REAL NOT NULL,
+                    lon REAL NOT NULL,
+                    sub_area TEXT NOT NULL DEFAULT '',
+                    municipality TEXT NOT NULL DEFAULT '',
+                    region_id TEXT NOT NULL DEFAULT '',
+                    search_doc TEXT NOT NULL DEFAULT ''
+                );
+                PRAGMA user_version = 4;
+                ",
+            )
+            .unwrap();
+            let tx = conn.unchecked_transaction().unwrap();
+            for i in 0..12_000 {
+                tx.execute(
+                    "INSERT INTO name_entries(osm_id, name, kind, lat, lon, region_id, search_doc)
+                     VALUES (?1, ?2, 'place:hamlet', 60.0, 10.0, 'europe/norway/ostlandet', ?2)",
+                    params![i, format!("n{i}")],
+                )
+                .unwrap();
+            }
+            tx.commit().unwrap();
+        }
+        let started = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let started2 = started.clone();
+        let db2 = db.clone();
+        let worker = std::thread::spawn(move || {
+            pbf_priority::honour_idle_pause_on_this_thread();
+            started2.store(true, std::sync::atomic::Ordering::Relaxed);
+            NameIndex::open(&db2)
+        });
+        while !started.load(std::sync::atomic::Ordering::Relaxed) {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        let t0 = std::time::Instant::now();
+        pbf_priority::request_idle_pause();
+        let _fg = ForegroundPlanGuard::acquire();
+        let err = match worker.join().expect("join") {
+            Ok(_) => panic!("migrate must pause"),
+            Err(e) => e,
+        };
+        pbf_priority::TEST_INDEX_PHASE_SLEEP_MS.store(0, std::sync::atomic::Ordering::Relaxed);
+        pbf_priority::clear_idle_pause();
+        let waited = t0.elapsed();
+        assert!(err.to_string().contains(PLACE_INDEX_PAUSED_PREFIX), "{err}");
+        assert!(
+            waited.as_millis() <= 2000,
+            "plan waited {waited:?} for migrate pause"
+        );
+    }
+
+    #[test]
+    fn pause_request_honoured_in_every_index_phase() {
+        use crate::download::pbf_priority::{self, ForegroundPlanGuard};
+        let _g = pbf_priority::lock_plan_flag_for_test();
+        let phases = [
+            IndexBuildPhase::ReadSource,
+            IndexBuildPhase::SortPrepare,
+            IndexBuildPhase::Insert,
+            IndexBuildPhase::Fts,
+            IndexBuildPhase::Commit,
+            IndexBuildPhase::Migrate,
+        ];
+        for phase in phases {
+            pbf_priority::clear_idle_pause();
+            pbf_priority::TEST_INDEX_PHASE_SLEEP_MS
+                .store(300, std::sync::atomic::Ordering::Relaxed);
+            let worker = std::thread::spawn(move || {
+                pbf_priority::honour_idle_pause_on_this_thread();
+                loop {
+                    index_phase_tick(phase);
+                    if pause_index_if_plan_active(0, 0, 0).is_err() {
+                        break;
+                    }
+                }
+            });
+            std::thread::sleep(std::time::Duration::from_millis(40));
+            let t0 = std::time::Instant::now();
+            pbf_priority::request_idle_pause();
+            let _fg = ForegroundPlanGuard::acquire();
+            worker.join().expect("phase worker");
+            pbf_priority::TEST_INDEX_PHASE_SLEEP_MS.store(0, std::sync::atomic::Ordering::Relaxed);
+            pbf_priority::clear_idle_pause();
+            let waited = t0.elapsed();
+            assert!(
+                waited.as_millis() <= 2000,
+                "phase {phase:?} waited {waited:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn migrate_resumes_after_repeated_pauses() {
+        use crate::download::pbf_priority::{self, ForegroundPlanGuard};
+        let _g = pbf_priority::lock_plan_flag_for_test();
+        pbf_priority::TEST_INDEX_PHASE_SLEEP_MS.store(200, std::sync::atomic::Ordering::Relaxed);
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("v4-resume.db");
+        {
+            let conn = Connection::open(&db).unwrap();
+            conn.execute_batch(
+                "
+                CREATE TABLE name_entries (
+                    osm_id INTEGER PRIMARY KEY NOT NULL,
+                    name TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    lat REAL NOT NULL,
+                    lon REAL NOT NULL,
+                    sub_area TEXT NOT NULL DEFAULT '',
+                    municipality TEXT NOT NULL DEFAULT '',
+                    region_id TEXT NOT NULL DEFAULT '',
+                    search_doc TEXT NOT NULL DEFAULT ''
+                );
+                PRAGMA user_version = 4;
+                ",
+            )
+            .unwrap();
+            let tx = conn.unchecked_transaction().unwrap();
+            for i in 0..16_000 {
+                tx.execute(
+                    "INSERT INTO name_entries(osm_id, name, kind, lat, lon, region_id, search_doc)
+                     VALUES (?1, ?2, 'place:hamlet', 60.0, 10.0, 'europe/norway/ostlandet', ?2)",
+                    params![i, format!("n{i}")],
+                )
+                .unwrap();
+            }
+            tx.commit().unwrap();
+        }
+        for _ in 0..3 {
+            pbf_priority::clear_idle_pause();
+            let db2 = db.clone();
+            let worker = std::thread::spawn(move || {
+                pbf_priority::honour_idle_pause_on_this_thread();
+                NameIndex::open(&db2)
+            });
+            std::thread::sleep(std::time::Duration::from_millis(80));
+            pbf_priority::request_idle_pause();
+            let _fg = ForegroundPlanGuard::acquire();
+            let _ = worker.join().expect("join");
+            drop(_fg);
+            pbf_priority::clear_idle_pause();
+        }
+        pbf_priority::TEST_INDEX_PHASE_SLEEP_MS.store(0, std::sync::atomic::Ordering::Relaxed);
+        pbf_priority::clear_idle_pause();
+        let idx = NameIndex::open(&db).expect("resume must finish");
+        drop(idx);
+        let n: i64 = Connection::open(&db)
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM name_entries", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 16_000);
+        let v: i32 = Connection::open(&db)
+            .unwrap()
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, PLACE_INDEX_SCHEMA_VERSION);
     }
 }
