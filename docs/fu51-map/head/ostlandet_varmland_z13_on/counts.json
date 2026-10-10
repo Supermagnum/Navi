@@ -1,0 +1,30 @@
+{
+  "position": "ostlandet_varmland",
+  "lat": 59.92,
+  "lon": 12.29,
+  "zoom": 13,
+  "network": "on",
+  "idle": {
+    "roads": 534,
+    "water": 225,
+    "labels": 52,
+    "blank_cells": 28
+  },
+  "back": {
+    "roads": 534,
+    "water": 225,
+    "labels": 52,
+    "blank_cells": 28
+  },
+  "idle_png": "idle.png",
+  "back_png": "back.png",
+  "agree": true,
+  "net": {
+    "airplane": "false",
+    "has_internet": "true",
+    "usable": "true",
+    "force_offline": "false",
+    "http_allowed": "true",
+    "line": "10-10 10:52:56.390 I/NaviFu49Net( 4421): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+  }
+}

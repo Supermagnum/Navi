@@ -1,0 +1,30 @@
+{
+  "position": "hallingdal_bromma",
+  "lat": 60.5,
+  "lon": 9.17,
+  "zoom": 15,
+  "network": "off",
+  "idle": {
+    "roads": 84,
+    "water": 103,
+    "labels": 52,
+    "blank_cells": 35
+  },
+  "back": {
+    "roads": 84,
+    "water": 103,
+    "labels": 52,
+    "blank_cells": 35
+  },
+  "idle_png": "idle.png",
+  "back_png": "back.png",
+  "agree": true,
+  "net": {
+    "airplane": "true",
+    "has_internet": "false",
+    "usable": "false",
+    "force_offline": "true",
+    "http_allowed": "false",
+    "line": "10-10 10:32:31.230 I/NaviFu49Net( 4421): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+  }
+}

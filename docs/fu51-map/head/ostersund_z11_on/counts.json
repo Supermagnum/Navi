@@ -1,0 +1,30 @@
+{
+  "position": "ostersund",
+  "lat": 63.18,
+  "lon": 14.64,
+  "zoom": 11,
+  "network": "on",
+  "idle": {
+    "roads": 209,
+    "water": 84,
+    "labels": 20,
+    "blank_cells": 19
+  },
+  "back": {
+    "roads": 209,
+    "water": 84,
+    "labels": 20,
+    "blank_cells": 19
+  },
+  "idle_png": "idle.png",
+  "back_png": "back.png",
+  "agree": true,
+  "net": {
+    "airplane": "false",
+    "has_internet": "true",
+    "usable": "true",
+    "force_offline": "false",
+    "http_allowed": "true",
+    "line": "10-10 10:49:33.437 I/NaviFu49Net( 4421): airplane=false has_internet=true usable=true force_offline=false http_allowed=true"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "position": "hamburg",
+  "lat": 53.55034,
+  "lon": 9.99368,
+  "zoom": 13,
+  "network": "off",
+  "idle": {
+    "roads": 2664,
+    "water": 973,
+    "labels": 124,
+    "blank_cells": 0
+  },
+  "back": {
+    "roads": 2664,
+    "water": 973,
+    "labels": 124,
+    "blank_cells": 0
+  },
+  "idle_png": "idle.png",
+  "back_png": "back.png",
+  "agree": true,
+  "net": {
+    "airplane": "true",
+    "has_internet": "false",
+    "usable": "false",
+    "force_offline": "true",
+    "http_allowed": "false",
+    "line": "10-10 10:39:24.589 I/NaviFu49Net( 4421): airplane=true has_internet=false usable=false force_offline=true http_allowed=false"
+  }
+}
