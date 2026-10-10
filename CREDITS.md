@@ -57,3 +57,19 @@ The bundled Protomaps light atlas baseline remains from
 [protomaps/basemaps-assets](https://github.com/protomaps/basemaps-assets) (v4).
 
 See also [`docs/icons.md`](docs/icons.md) for the separate Navit overlay icon set.
+
+## App UI font
+
+All in-app text uses one bundled face so a system font replacement (Samsung
+FlipFont / One UI) cannot change spacing.
+
+- **File:** `app/src/main/res/font/liberation_sans.ttf` (Liberation Sans Regular)
+- **Size:** 401 KiB (410 820 bytes)
+- **License:** SIL Open Font License 1.1
+- **Copyright:** Digitized data (c) 2010 Google Corporation (reserved names
+  Arimo, Tinos, Cousine); (c) 2012 Red Hat, Inc. (reserved name Liberation)
+- **Source:** https://github.com/liberationfonts/liberation-fonts
+
+Map labels use bundled MapLibre glyph PBFs (`Noto Sans Regular` / `Noto Sans
+Italic` in `app/src/main/assets/map-styles/protomaps-light/`). Those are not
+Android typefaces, so FlipFont does not affect them.

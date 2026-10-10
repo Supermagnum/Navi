@@ -53,7 +53,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -79,9 +81,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontSynthesis
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
@@ -209,13 +213,22 @@ class MainActivity : ComponentActivity() {
         WorldOverviewDownload.ensure(this)
         setContent {
             var showMap by remember { mutableStateOf(false) }
-            MaterialTheme {
+            MaterialTheme(typography = naviTypography()) {
+                CompositionLocalProvider(
+                    LocalTextStyle provides
+                        LocalTextStyle.current.copy(
+                            letterSpacing = 0.sp,
+                            fontFamily = NaviFontFamily,
+                            fontSynthesis = FontSynthesis.None,
+                        ),
+                ) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     // Cheap first frame so the splash can exit within SPLASH_MAX_HOLD_MS
                     // even while MapLibre / NaviMapScreen still warm up.
                     if (showMap) {
                         NaviMapScreen()
                     }
+                }
                 }
             }
             SideEffect {
@@ -6331,20 +6344,20 @@ private fun NaviMapScreen() {
                                     FilterChip(
                                         selected = searchTarget == SearchTarget.From,
                                         onClick = { selectSearchTarget(SearchTarget.From) },
-                                        label = { Text("From") },
+                                        label = { NaviText("From") },
                                         modifier = Modifier.testTag("chip_from"),
                                     )
                                     FilterChip(
                                         selected = searchTarget == SearchTarget.To,
                                         onClick = { selectSearchTarget(SearchTarget.To) },
-                                        label = { Text("To") },
+                                        label = { NaviText("To") },
                                         modifier = Modifier.testTag("chip_to"),
                                     )
                                     FilterChip(
                                         selected = searchTarget == SearchTarget.Via,
                                         onClick = { selectSearchTarget(SearchTarget.Via) },
                                         label = {
-                                            Text(
+                                            NaviText(
                                                 if (viaPoints.isEmpty()) {
                                                     "Via"
                                                 } else {
@@ -6360,7 +6373,7 @@ private fun NaviMapScreen() {
                                         onClick = { showTools = !showTools },
                                         modifier = Modifier.testTag("btn_tools"),
                                     ) {
-                                        Text(if (showTools) "Hide tools" else "Tools")
+                                        NaviText(if (showTools) "Hide tools" else "Tools")
                                     }
                                     TextButton(
                                         onClick = {
@@ -6370,7 +6383,7 @@ private fun NaviMapScreen() {
                                         },
                                         modifier = Modifier.testTag("btn_close_search"),
                                     ) {
-                                        Text("Close")
+                                        NaviText("Close")
                                     }
                                 }
                             }
@@ -6506,7 +6519,7 @@ private fun NaviMapScreen() {
                                         .fillMaxWidth()
                                         .testTag("btn_plan_route"),
                             ) {
-                                Text(if (planningRoute) "Planning…" else "Plan route")
+                                NaviText(if (planningRoute) "Planning…" else "Plan route")
                             }
                             if (mapState.polyline.isNotBlank()) {
                                 TextButton(
@@ -6517,7 +6530,7 @@ private fun NaviMapScreen() {
                                             .fillMaxWidth()
                                             .testTag("btn_delete_planned_route"),
                                 ) {
-                                    Text("Delete route")
+                                    NaviText("Delete route")
                                 }
                             }
                             if (routePlanProgress.isNotBlank() || planningRoute) {
@@ -11231,6 +11244,7 @@ private fun applyRouteToStyle(
                     PropertyFactory.textField("{name}"),
                     PropertyFactory.textOffset(arrayOf(0f, 1.2f)),
                     PropertyFactory.textSize(12f),
+                    PropertyFactory.textLetterSpacing(0f),
                     PropertyFactory.textHaloColor("#FFFFFF"),
                     PropertyFactory.textHaloWidth(1.5f),
                     PropertyFactory.textAllowOverlap(true),
@@ -11278,6 +11292,7 @@ private fun applyRouteToStyle(
                 SymbolLayer("waypoints-layer", "waypoints-src").withProperties(
                     PropertyFactory.textField("{name}"),
                     PropertyFactory.textSize(14f),
+                    PropertyFactory.textLetterSpacing(0f),
                     PropertyFactory.textColor("#111111"),
                     PropertyFactory.textHaloColor("#FFFFFF"),
                     PropertyFactory.textHaloWidth(2f),

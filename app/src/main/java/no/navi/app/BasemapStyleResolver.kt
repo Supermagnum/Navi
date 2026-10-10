@@ -1007,6 +1007,22 @@ object BasemapStyleResolver {
                 val existing = if (layer.has("maxzoom")) layer.getDouble("maxzoom") else 24.0
                 layer.put("maxzoom", min(existing, maxZoom))
             }
+            if (layer.optString("type") == "symbol") {
+                val layout = layer.optJSONObject("layout") ?: JSONObject()
+                layout.put("text-letter-spacing", 0)
+                layer.put("layout", layout)
+                // Overview and regional labels both painted at z6–z7, so
+                // "Utne" was drawn twice as "Utnetne". Fill layers keep the
+                // wider handover; labels do not overlap.
+                if (sourceId == "overview") {
+                    val existing = if (layer.has("maxzoom")) layer.getDouble("maxzoom") else 24.0
+                    layer.put("maxzoom", min(existing, REGIONAL_HANDOVER_MINZOOM))
+                }
+                if (sourceId.startsWith("region")) {
+                    val existing = if (layer.has("minzoom")) layer.getDouble("minzoom") else 0.0
+                    layer.put("minzoom", max(existing, REGIONAL_HANDOVER_MINZOOM))
+                }
+            }
             dest.put(layer)
         }
     }
@@ -1033,7 +1049,7 @@ object BasemapStyleResolver {
             raw
                 .replace(Regex("[^A-Za-z0-9._+-]"), "_")
                 .take(40)
-        return "style.native.v2.$stem.$hash.json"
+        return "style.native.v3.$stem.$hash.json"
     }
 
     internal fun mountKeyHash(raw: String): String {
