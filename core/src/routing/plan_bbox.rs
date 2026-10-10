@@ -604,7 +604,9 @@ pub fn direct_search_fits_nodes(nodes: usize) -> bool {
 }
 
 /// First pad is [`direct_search_margin_deg`] (same box as the cheap estimate).
-/// Later entries are the usual widen schedule, used only after a disconnect.
+/// Later entries are the usual widen schedule. A Direct search that starts as
+/// TripAabb must advance to these after a disconnect (Oslo→Lillehammer: the
+/// first 0.14° box misses E6 east of Mjøsa).
 pub fn direct_search_pad_schedule(start: (f64, f64), end: (f64, f64)) -> Vec<f64> {
     let first = direct_search_margin_deg(start, end);
     let mut out = vec![first];
@@ -634,6 +636,16 @@ pub const DIRECT_DETOUR_RETRY_MAX: usize = 2;
 /// band boxes ignore the pad schedule.
 pub fn should_fallback_to_trip_aabb(mode: PlanEdgeClipMode, terminate: &str) -> bool {
     mode == PlanEdgeClipMode::CorridorBand && terminate == "disconnected"
+}
+
+/// Direct search already uses TripAabb. After a disconnect, take the next pad
+/// in [`direct_search_pad_schedule`] instead of stopping.
+pub fn should_advance_direct_pad(
+    started_direct: bool,
+    mode: PlanEdgeClipMode,
+    terminate: &str,
+) -> bool {
+    started_direct && mode == PlanEdgeClipMode::TripAabb && terminate == "disconnected"
 }
 
 #[cfg(test)]
@@ -941,6 +953,37 @@ mod tests {
             PlanEdgeClipMode::CorridorBand,
             "snap_failed"
         ));
+        assert!(should_advance_direct_pad(
+            true,
+            PlanEdgeClipMode::TripAabb,
+            "disconnected"
+        ));
+        assert!(!should_advance_direct_pad(
+            false,
+            PlanEdgeClipMode::TripAabb,
+            "disconnected"
+        ));
+    }
+
+    #[test]
+    fn oslo_lillehammer_first_pad_misses_e6_east_of_mjosa() {
+        let oslo = (59.913330, 10.738970);
+        let lillehammer = (61.114545, 10.467007);
+        let hamar_e6 = (60.794721, 11.068055);
+        let pads = direct_search_pad_schedule(oslo, lillehammer);
+        assert!(pads.len() >= 2, "direct schedule must keep widen pads");
+        let first = trip_bbox_points(&[oslo, lillehammer], pads[0]);
+        assert!(
+            !point_in_any_bbox(hamar_e6.0, hamar_e6.1, &[first]),
+            "first pad {:.3} must miss E6 at Hamar so the disconnect is the Mjøsa clip",
+            pads[0]
+        );
+        let second = trip_bbox_points(&[oslo, lillehammer], pads[1]);
+        assert!(
+            point_in_any_bbox(hamar_e6.0, hamar_e6.1, &[second]),
+            "second pad {:.3} must include E6 at Hamar",
+            pads[1]
+        );
     }
 
     #[test]

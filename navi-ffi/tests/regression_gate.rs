@@ -110,6 +110,12 @@ const BERGEDORF: (f64, f64) = (53.48611, 10.23278);
 /// Place-index style city / town centroids, ~19 km across Copenhagen.
 const COPENHAGEN: (f64, f64) = (55.676098, 12.568337);
 const TAASTRUP: (f64, f64) = (55.6517, 12.2922);
+const RAUFOSS: (f64, f64) = (60.7277483, 10.6109403);
+const BERGEN_STATION: (f64, f64) = (60.388114, 5.333857);
+/// Place-index style town centroids, Østlandet. Gjøvik is the via on
+/// Lillehammer → Hønefoss (~130 km). Hønefoss is the west-end town.
+const GJOVIK: (f64, f64) = (60.79474, 10.69278);
+const HONEFOSS: (f64, f64) = (60.16647, 10.25639);
 /// Start/end must snap onto the waypoint's own roads, not a distant highway.
 const OWN_ROAD_MAX_M: f64 = 400.0;
 
@@ -345,6 +351,78 @@ const CASES: &[Case] = &[
         reference: None,
         expected_fail: None,
         accepted_spikes: &[(59.93052, 9.90754)],
+        known_distance: None,
+        known_spikes: None,
+        timing_runs: 1,
+        compare_long_trip: true,
+    },
+    Case {
+        id: "l_raufoss_bergen",
+        start: RAUFOSS,
+        vias: &[],
+        end: BERGEN_STATION,
+        pbf_stem: "ostlandet-latest",
+        avoid_ferries: false,
+        ferries: &[],
+        distance: Some((429.443, 0.01)),
+        rv15_otta_vaga_lom: false,
+        reference: None,
+        expected_fail: None,
+        accepted_spikes: &[(60.87634, 7.14568), (60.41814, 5.47972)],
+        known_distance: None,
+        known_spikes: None,
+        timing_runs: 1,
+        compare_long_trip: false,
+    },
+    Case {
+        id: "m_oslo_lillehammer",
+        start: OSLO,
+        vias: &[],
+        end: LILLEHAMMER,
+        pbf_stem: "ostlandet-latest",
+        avoid_ferries: false,
+        ferries: &[],
+        distance: None,
+        rv15_otta_vaga_lom: false,
+        reference: None,
+        expected_fail: None,
+        accepted_spikes: &[],
+        known_distance: None,
+        known_spikes: None,
+        timing_runs: 1,
+        compare_long_trip: true,
+    },
+    Case {
+        id: "n_hamar_oslo",
+        start: HAMAR,
+        vias: &[],
+        end: OSLO,
+        pbf_stem: "ostlandet-latest",
+        avoid_ferries: false,
+        ferries: &[],
+        distance: None,
+        rv15_otta_vaga_lom: false,
+        reference: None,
+        expected_fail: None,
+        accepted_spikes: &[(59.91032, 10.73576)],
+        known_distance: None,
+        known_spikes: None,
+        timing_runs: 1,
+        compare_long_trip: true,
+    },
+    Case {
+        id: "o_lillehammer_gjovik_honefoss",
+        start: LILLEHAMMER,
+        vias: &[GJOVIK],
+        end: HONEFOSS,
+        pbf_stem: "ostlandet-latest",
+        avoid_ferries: false,
+        ferries: &[],
+        distance: None,
+        rv15_otta_vaga_lom: false,
+        reference: None,
+        expected_fail: None,
+        accepted_spikes: &[],
         known_distance: None,
         known_spikes: None,
         timing_runs: 1,
@@ -1327,6 +1405,10 @@ const EMU_SEARCH_EXPECT: &[(&str, &str)] = &[
     ("Piteå", "Piteå"),
     ("Falun", "Falun"),
     ("Mora", "Mora"),
+    ("Aga", "Aga"),
+    ("Bergen", "Bergen"),
+    ("Raufoss", "Raufoss"),
+    ("Utne", "Utne"),
 ];
 
 fn fold_place_name(s: &str) -> String {

@@ -4343,9 +4343,9 @@ fn plan_car_route_inner(
     let mut bbox = [0.0; 4];
     // Corridor-band edge clip ignores pad widen (band is OD-only). After a
     // disconnected A* on that stable materialization, retry with trip-AABB.
-    let mut edge_clip_mode = if driver_break_core::routing::plan_bbox::force_straight_clip()
-        || (!is_chunk_leg && !needs_corridor)
-    {
+    let started_direct = driver_break_core::routing::plan_bbox::force_straight_clip()
+        || (!is_chunk_leg && !needs_corridor);
+    let mut edge_clip_mode = if started_direct {
         // Direct search: clip to the start–end box (plus plan pad), not the
         // coarse-path band. Matches the cheap clipped-size decision.
         driver_break_core::routing::plan_bbox::PlanEdgeClipMode::TripAabb
@@ -4959,6 +4959,16 @@ fn plan_car_route_inner(
                                     );
                                     continue;
                                 }
+                                if driver_break_core::routing::plan_bbox::should_advance_direct_pad(
+                                    started_direct,
+                                    edge_clip_mode,
+                                    last_terminate,
+                                ) {
+                                    report.push_str(
+                                        "direct_search_pad_widen after disconnected TripAabb\n",
+                                    );
+                                    break;
+                                }
                                 report.push_str(
                                     "corridor_disconnected: stop after one trip-AABB reload (no further pads, no A*)\n",
                                 );
@@ -4991,7 +5001,6 @@ fn plan_car_route_inner(
                         ) {
                             // One TripAabb reload so a chord-band that missed the
                             // road between the hop ends can include both leaves.
-                            // Do not keep doubling pads after that.
                             edge_clip_mode =
                                 driver_break_core::routing::plan_bbox::PlanEdgeClipMode::TripAabb;
                             driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(
@@ -5001,6 +5010,15 @@ fn plan_car_route_inner(
                             "edge_clip_fallback=trip_aabb after corridor_components_disconnected\n",
                         );
                             continue;
+                        }
+                        if driver_break_core::routing::plan_bbox::should_advance_direct_pad(
+                            started_direct,
+                            edge_clip_mode,
+                            last_terminate,
+                        ) {
+                            report
+                                .push_str("direct_search_pad_widen after disconnected TripAabb\n");
+                            break;
                         }
                         report.push_str(
                         "corridor_disconnected: stop after one trip-AABB reload (no further pads, no A*)\n",
@@ -5182,6 +5200,16 @@ fn plan_car_route_inner(
                 continue;
             }
             if last_terminate == "disconnected" && pack_hit {
+                if driver_break_core::routing::plan_bbox::should_advance_direct_pad(
+                    started_direct,
+                    edge_clip_mode,
+                    last_terminate,
+                ) {
+                    report.push_str(
+                        "direct_search_pad_widen after disconnected TripAabb (pack hit)\n",
+                    );
+                    break;
+                }
                 report.push_str(
                     "FAIL: corridor disconnected after tile-budget widen — origin and \
                      destination remain unconnected in loaded packs.\n",

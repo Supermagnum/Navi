@@ -13,53 +13,81 @@
       "wall_s": 4.732729963
     },
     "e_elsa_sjuvass": {
-      "peak_mb": 903.0,
-      "wall_s": 20.540905392,
-      "emu_wall_s": 100.4,
-      "emu_peak_mb": 1241.0,
       "distance_km": 2159.825,
+      "emu_peak_mb": 1241.0,
+      "emu_wall_s": 100.4,
       "eta_min": 1531.0,
       "hops": 6,
-      "note": "Follow-up 54: last stretch Direct 136.448 km. Host 20.5 s / 903 MB. Emulator 100.4 s / 1241 MB (under 1400)."
-    },
-    "h_oslo_lillestrom": {
-      "peak_mb": 227.9375,
-      "wall_s": 2.244608624,
-      "emu_wall_s": 9.2,
-      "emu_peak_mb": 815.0,
-      "distance_km": 22.427,
-      "eta_min": 19.1,
-      "note": "Follow-up 54: direct search, corridor skipped. 22.4 km, 19.1 min. Host 2.2 s / 228 MB. Emulator 9.2 s / 815 MB."
-    },
-    "j_copenhagen_taastrup": {
-      "peak_mb": 278.25390625,
-      "wall_s": 1.23120516,
-      "distance_km": 22.214,
-      "eta_min": 19.0,
-      "note": "Follow-up 54: direct search, corridor skipped. 22.2 km, 19.0 min. Host 1.2 s / 278 MB."
-    },
-    "k_60_276_10_816": {
-      "peak_mb": 605.94140625,
-      "wall_s": 2.431549182,
-      "emu_wall_s": 9.1,
-      "emu_peak_mb": 901.0,
-      "distance_km": 136.448,
-      "eta_min": 123.4,
-      "note": "Follow-up 54: one direct search, 136.4 km, 123.4 min, corridor skipped. Host 2.4 s / 606 MB. Emulator 9.1 s / 901 MB."
+      "note": "Follow-up 54: last stretch Direct 136.448 km. Host 20.5 s / 903 MB. Emulator 100.4 s / 1241 MB (under 1400).",
+      "peak_mb": 903.0,
+      "wall_s": 20.540905392
     },
     "f_hamar_stange": {
-      "peak_mb": 397.40625,
-      "wall_s": 0.836881336,
-      "emu_wall_s": 9.1,
       "emu_peak_mb": 597.0,
-      "note": "Østlandet Hamar place:city to Stange place:town. Host warm, follow-up 42. Corridor stage skipped. long_trip on/off same polyline. Emulator first plan 9.1 s (planner 4.0 s); warm replay 6.1 s."
+      "emu_wall_s": 9.1,
+      "note": "Østlandet Hamar place:city to Stange place:town. Host warm, follow-up 42. Corridor stage skipped. long_trip on/off same polyline. Emulator first plan 9.1 s (planner 4.0 s); warm replay 6.1 s.",
+      "peak_mb": 397.40625,
+      "wall_s": 0.836881336
     },
     "g_hamar_lillehammer": {
-      "peak_mb": 601.34765625,
-      "wall_s": 1.423699624,
-      "emu_wall_s": 6.1,
       "emu_peak_mb": 632.0,
-      "note": "Østlandet Hamar place:city to Lillehammer place:town. Host warm, follow-up 42. Corridor stage skipped. long_trip on/off same polyline. Emulator wall 6.1 s (planner 2.7 s)."
+      "emu_wall_s": 6.1,
+      "note": "Østlandet Hamar place:city to Lillehammer place:town. Host warm, follow-up 42. Corridor stage skipped. long_trip on/off same polyline. Emulator wall 6.1 s (planner 2.7 s).",
+      "peak_mb": 601.34765625,
+      "wall_s": 1.423699624
+    },
+    "h_oslo_lillestrom": {
+      "distance_km": 22.427,
+      "emu_peak_mb": 815.0,
+      "emu_wall_s": 9.2,
+      "eta_min": 19.1,
+      "note": "Follow-up 54: direct search, corridor skipped. 22.4 km, 19.1 min. Host 2.2 s / 228 MB. Emulator 9.2 s / 815 MB.",
+      "peak_mb": 227.9375,
+      "wall_s": 2.244608624
+    },
+    "j_copenhagen_taastrup": {
+      "distance_km": 22.214,
+      "eta_min": 19.0,
+      "note": "Follow-up 54: direct search, corridor skipped. 22.2 km, 19.0 min. Host 1.2 s / 278 MB.",
+      "peak_mb": 278.25390625,
+      "wall_s": 1.23120516
+    },
+    "k_60_276_10_816": {
+      "distance_km": 136.448,
+      "emu_peak_mb": 901.0,
+      "emu_wall_s": 9.1,
+      "eta_min": 123.4,
+      "note": "Follow-up 54: one direct search, 136.4 km, 123.4 min, corridor skipped. Host 2.4 s / 606 MB. Emulator 9.1 s / 901 MB.",
+      "peak_mb": 605.94140625,
+      "wall_s": 2.431549182
+    },
+    "l_raufoss_bergen": {
+      "distance_km": 429.443,
+      "eta_min": 345.0,
+      "note": "Follow-up 56: tablet 429.443 km / 345.0 min. Host 428.5 km / 344 min (within 0.5 %). Host wall 6.2 s / 702 MB.",
+      "peak_mb": 1000.0,
+      "wall_s": 5.0
+    },
+    "m_oslo_lillehammer": {
+      "distance_km": 168.9,
+      "eta_min": 135.0,
+      "note": "Follow-up 56: Direct search after pad widen (first 0.14 deg box misses E6 east of Mjosa). Host 168.9 km / 135 min / 8.6 s / 964 MB. Corridor skipped.",
+      "peak_mb": 964.08203125,
+      "wall_s": 8.633664502
+    },
+    "n_hamar_oslo": {
+      "distance_km": 130.1,
+      "eta_min": 81.0,
+      "note": "Follow-up 56: medium one-region, not previously tuned. Host 130.1 km / 81 min / 6.9 s / 991 MB. Oslo approach spike accepted.",
+      "peak_mb": 991.04296875,
+      "wall_s": 6.854201492
+    },
+    "o_lillehammer_gjovik_honefoss": {
+      "distance_km": 137.9,
+      "eta_min": 108.0,
+      "note": "Follow-up 56: medium one-region with Gjovik via. Host 137.9 km / 108 min / 1.8 s / 963 MB. Via 41 m.",
+      "peak_mb": 963.30078125,
+      "wall_s": 1.7717832119999999
     }
   }
 }
