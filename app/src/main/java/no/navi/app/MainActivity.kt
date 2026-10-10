@@ -205,6 +205,7 @@ class MainActivity : ComponentActivity() {
             },
             "CampingBootstrap",
         ).start()
+        WorldOverviewDownload.ensure(this)
         setContent {
             var showMap by remember { mutableStateOf(false) }
             MaterialTheme {
@@ -221,9 +222,6 @@ class MainActivity : ComponentActivity() {
             }
             LaunchedEffect(Unit) {
                 MapLibre.getInstance(this@MainActivity)
-                // Loopback PMTiles must still fetch when the radio is off.
-                // hasNetwork() separately decides whether the online underlay mounts.
-                MapLibre.setConnected(true)
                 showMap = true
             }
         }
@@ -9445,6 +9443,36 @@ private fun CorridorMapView(
         return MapHudPrefs.snapTilt(tiltRef.get())
     }
 
+    fun restoreHeldCamera(
+        map: MapLibreMap,
+        before: org.maplibre.android.camera.CameraPosition,
+    ) {
+        val pending = NaviMapTestHooks.pendingCamera
+        val hold = NaviMapTestHooks.disableGpsFollow
+        val lat = pending?.first ?: before.target?.latitude
+        val lon = pending?.second ?: before.target?.longitude
+        val zoom = pending?.third ?: before.zoom
+        if (lat != null && lon != null && !lat.isNaN() && !lon.isNaN()) {
+            val restored =
+                org.maplibre.android.camera.CameraPosition
+                    .Builder(before)
+                    .target(org.maplibre.android.geometry.LatLng(lat, lon))
+                    .zoom(zoom)
+                    .build()
+            runCatching { map.cancelTransitions() }
+            runCatching { map.moveCamera(CameraUpdateFactory.newCameraPosition(restored)) }
+            NaviMapTestHooks.lastCameraLat = lat
+            NaviMapTestHooks.lastCameraLon = lon
+            NaviMapTestHooks.lastCameraZoom = zoom
+        }
+        val t = map.cameraPosition.target
+        android.util.Log.i(
+            "NaviMapCamera",
+            "held lat=${t?.latitude} lon=${t?.longitude} zoom=${map.cameraPosition.zoom} " +
+                "disableGpsFollow=$hold pending=${pending != null}",
+        )
+    }
+
     fun applyCameraTilt(
         map: MapLibreMap,
         tiltDeg: Double = effectiveTiltDeg(),
@@ -9501,6 +9529,124 @@ private fun CorridorMapView(
         }
     }
 
+    fun idLooksLike(
+        id: String,
+        needle: String,
+    ): Boolean = id.contains(needle, ignoreCase = true)
+
+    fun logArchiveTileLayers(map: MapLibreMap) {
+        val cam = map.cameraPosition
+        val target = cam.target ?: return
+        val zoom = cam.zoom
+        val files = LinkedHashSet<String>()
+        runCatching {
+            uniffi.navi.pmtilesListJobs(dataDir.absolutePath)
+        }.getOrDefault(emptyList()).forEach { job ->
+            if (job.status == "completed" &&
+                job.localPath.isNotBlank() &&
+                File(job.localPath).isFile &&
+                !BasemapStyleResolver.isDemArchive(job.regionKey, job.localPath) &&
+                BasemapStyleResolver.pointInJobBbox(target.latitude, target.longitude, job)
+            ) {
+                files.add(job.localPath)
+            }
+        }
+        val overview = File(dataDir, "pmtiles/world_overview.pmtiles")
+        if (overview.isFile) files.add(overview.absolutePath)
+        for (path in files) {
+            val layers = PmtilesLayerProbe.layersAt(path, target.latitude, target.longitude, zoom)
+            android.util.Log.i(
+                "NaviMapArchive",
+                "file=${File(path).name} z=${zoom.toInt()} " +
+                    "roads=${if (PmtilesLayerProbe.hasRoads(layers)) 1 else 0} " +
+                    "water=${if (PmtilesLayerProbe.hasWater(layers)) 1 else 0} " +
+                    "labels=${if (PmtilesLayerProbe.hasLabels(layers)) 1 else 0} " +
+                    "layers=${layers.sorted().joinToString(",")}",
+            )
+        }
+    }
+
+    fun logFeatureGrid(map: MapLibreMap) {
+        val w = mapView.width.toFloat().coerceAtLeast(1f)
+        val h = mapView.height.toFloat().coerceAtLeast(1f)
+        val skip =
+            setOf(
+                "route-line",
+                "route-line-off",
+                "route-casing",
+                "waypoints-dots",
+                "waypoints-layer",
+                "gps-accuracy",
+                "gps-dot",
+            )
+        val layers =
+            map.style
+                ?.layers
+                .orEmpty()
+                .filter { it.id.isNotEmpty() && it.id !in skip && !it.id.startsWith("route") }
+        val roadLayers =
+            layers
+                .filter { idLooksLike(it.id, "road") || idLooksLike(it.id, "highway") }
+                .map { it.id }
+                .toTypedArray()
+        val waterLayers =
+            layers
+                .filter { idLooksLike(it.id, "water") }
+                .map { it.id }
+                .toTypedArray()
+        val labelLayers =
+            layers
+                .filter { it is org.maplibre.android.style.layers.SymbolLayer }
+                .map { it.id }
+                .toTypedArray()
+        val cols = 8
+        val rows = 16
+        val top = (h * 0.0375f).coerceAtLeast(1f)
+        val bot = (h * 0.02f).coerceAtLeast(1f)
+        val y0 = top
+        val y1 = (h - bot).coerceAtLeast(y0 + 1f)
+        val cw = w / cols
+        val ch = (y1 - y0) / rows
+        val cells = ArrayList<String>(cols * rows)
+        for (row in 0 until rows) {
+            for (col in 0 until cols) {
+                val box =
+                    android.graphics.RectF(
+                        col * cw,
+                        y0 + row * ch,
+                        (col + 1) * cw,
+                        y0 + (row + 1) * ch,
+                    )
+                val roads =
+                    if (roadLayers.isEmpty()) {
+                        0
+                    } else {
+                        runCatching { map.queryRenderedFeatures(box, *roadLayers).size }.getOrDefault(0)
+                    }
+                val water =
+                    if (waterLayers.isEmpty()) {
+                        0
+                    } else {
+                        runCatching { map.queryRenderedFeatures(box, *waterLayers).size }.getOrDefault(0)
+                    }
+                val labels =
+                    if (labelLayers.isEmpty()) {
+                        0
+                    } else {
+                        runCatching { map.queryRenderedFeatures(box, *labelLayers).size }.getOrDefault(0)
+                    }
+                val blank = if (roads == 0 && water == 0 && labels == 0) 1 else 0
+                cells.add("$col,$row,r=$roads,w=$water,l=$labels,b=$blank")
+                android.util.Log.i(
+                    "NaviMapGrid",
+                    "c=$col r=$row roads=$roads water=$water labels=$labels blank=$blank",
+                )
+            }
+        }
+        NaviMapTestHooks.lastFeatureGridJson = cells.joinToString(";")
+        logArchiveTileLayers(map)
+    }
+
     fun logVisibleBasemapTiles(map: MapLibreMap) {
         val w = mapView.width.toFloat().coerceAtLeast(1f)
         val h = mapView.height.toFloat().coerceAtLeast(1f)
@@ -9532,13 +9678,19 @@ private fun CorridorMapView(
             }.getOrDefault(0)
         NaviMapTestHooks.lastVisibleBasemapFeatures = n
         val blank = NaviMapTestHooks.lastBlankSharePct
+        val cam = map.cameraPosition
         android.util.Log.i(
             "NaviMapTiles",
             "visible=$n blank_pct=${"%.2f".format(blank)} " +
                 "kind=${currentStyleKind.value?.name ?: NaviMapTestHooks.lastBasemapKind} " +
-                "lat=${map.cameraPosition.target?.latitude} lon=${map.cameraPosition.target?.longitude} " +
-                "zoom=${map.cameraPosition.zoom}",
+                "lat=${cam.target?.latitude} lon=${cam.target?.longitude} " +
+                "zoom=${cam.zoom}",
         )
+        android.util.Log.i(
+            "NaviMapCamera",
+            "at lat=${cam.target?.latitude} lon=${cam.target?.longitude} zoom=${cam.zoom}",
+        )
+        logFeatureGrid(map)
     }
 
     fun measureBlankShareAndLog(map: MapLibreMap) {
@@ -9675,7 +9827,6 @@ private fun CorridorMapView(
         map: MapLibreMap,
         force: Boolean = false,
     ) {
-        MapLibre.setConnected(true)
         val liveCam = map.cameraPosition
         val liveTarget = liveCam.target
         val viewBounds =
@@ -9715,14 +9866,16 @@ private fun CorridorMapView(
                     .joinToString("+")
                     .ifBlank { resolved.coveringJob?.localPath ?: "none" }
             val sourceKey =
-                listOf(
-                    resolved.styleUri,
-                    resolved.kind.name,
-                    "3d=$want3d",
-                    "contours=${contoursEnabledRef.get()}",
-                    "onlineUnderlay=${resolved.onlineUnderlay}",
-                    "archives=$archiveKey",
-                ).joinToString("|")
+                resolved.mountedKey.ifBlank {
+                    listOf(
+                        resolved.styleUri,
+                        resolved.kind.name,
+                        "3d=$want3d",
+                        "contours=${contoursEnabledRef.get()}",
+                        "onlineUnderlay=${resolved.onlineUnderlay}",
+                        "archives=$archiveKey",
+                    ).joinToString("|")
+                }
             val request = BasemapStyleApplyQueue.enqueue(sourceKey, forceBaseReload = force)
             val applyGen = request.generation
             styleApplyGen.set(applyGen)
@@ -9787,6 +9940,7 @@ private fun CorridorMapView(
                     return@withContext
                 }
                 map.setStyle(resolved.styleUri) { style ->
+                    restoreHeldCamera(map, liveCam)
                     if (!BasemapStyleApplyQueue.isCurrent(applyGen)) return@setStyle
                     if (style == null) {
                         NaviMapTestHooks.lastStyleLoadError =
@@ -9813,6 +9967,7 @@ private fun CorridorMapView(
                     currentStyleUri.value = resolved.styleUri
                     currentStyleKind.value = resolved.kind
                     applyTerrainAndPitch(map, style, resolved, applyGen)
+                    restoreHeldCamera(map, liveCam)
                     invalidateViewportTiles(map)
                     BasemapStyleApplyQueue.accept(
                         BasemapStyleApplyQueue.Result(
