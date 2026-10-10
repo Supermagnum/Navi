@@ -86,6 +86,11 @@ TRIPS = {
         "vias": [],
         "to": (55.6517, 12.2922, "Taastrup"),
     },
+    "k_60_276_10_816": {
+        "from": (60.27656, 10.81650, "From"),
+        "vias": [],
+        "to": (59.80326, 9.39866, "To"),
+    },
 }
 
 DATEX_MODES = {"none": "None", "saved": "Saved", "live": "Live"}

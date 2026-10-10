@@ -1,8 +1,8 @@
 # Tablet test (debug APK)
 
-Build from this branch (`535ab13b`). Debug APK on disk (not in git):
-`docs/fu51-map/head/app-debug.apk` (53 MB, arm64 + x86_64). sha256
-`bdb350c5f3c68bb301f331055a13d43f5b661c1f587a1be2f1815e1345027b8d`.
+Build from this branch (`wip/fu3-plan-diag-index-snapshot`). Debug APK on disk
+(not in git): `docs/fu51-map/head/app-debug.apk` (65 MB, arm64 + x86_64). sha256
+`84a953d072831a2b248be4e2b7e2975ef1eae2d16f0348394e7b4a20b0781d1f`.
 The same file is produced as `app/build/outputs/apk/debug/app-debug.apk`.
 
 At zoom 7 and above the installed regional archives draw completely. Below about
@@ -69,8 +69,8 @@ rest); tiles still visible while a plan runs.
 ## Issues (no work yet)
 
 - Oslo (`place:city` 59.91333, 10.73897) to Lillestrøm (`place:town`
-  59.95592, 11.04911) needs the corridor stage and about 1.1 GB for a 22 km
-  route.
+  59.95592, 11.04911) is a 22.4 km direct search (corridor skipped). Host
+  peak 228 MB; emulator planning peak 815 MB.
 
 ## If something goes wrong
 

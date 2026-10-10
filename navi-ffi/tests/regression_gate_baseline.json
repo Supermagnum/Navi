@@ -13,14 +13,39 @@
       "wall_s": 4.732729963
     },
     "e_elsa_sjuvass": {
-      "peak_mb": 910.0,
-      "wall_s": 20.664649842,
-      "emu_wall_s": 109.4,
-      "emu_peak_mb": 995.0,
-      "distance_km": 2253.341,
-      "eta_min": 1603.6,
-      "hops": 7,
-      "note": "Follow-up 45: stored after the Bromma stretch-joint slide. 2253.341 km, 1603.6 min, 7 hops. Distance against the 1944.2 km reference stays a known failure. The out-and-back at 60.57,9.11 is gone."
+      "peak_mb": 903.0,
+      "wall_s": 20.540905392,
+      "emu_wall_s": 100.4,
+      "emu_peak_mb": 1241.0,
+      "distance_km": 2159.825,
+      "eta_min": 1531.0,
+      "hops": 6,
+      "note": "Follow-up 54: last stretch Direct 136.448 km. Host 20.5 s / 903 MB. Emulator 100.4 s / 1241 MB (under 1400)."
+    },
+    "h_oslo_lillestrom": {
+      "peak_mb": 227.9375,
+      "wall_s": 2.244608624,
+      "emu_wall_s": 9.2,
+      "emu_peak_mb": 815.0,
+      "distance_km": 22.427,
+      "eta_min": 19.1,
+      "note": "Follow-up 54: direct search, corridor skipped. 22.4 km, 19.1 min. Host 2.2 s / 228 MB. Emulator 9.2 s / 815 MB."
+    },
+    "j_copenhagen_taastrup": {
+      "peak_mb": 278.25390625,
+      "wall_s": 1.23120516,
+      "distance_km": 22.214,
+      "eta_min": 19.0,
+      "note": "Follow-up 54: direct search, corridor skipped. 22.2 km, 19.0 min. Host 1.2 s / 278 MB."
+    },
+    "k_60_276_10_816": {
+      "peak_mb": 605.94140625,
+      "wall_s": 2.431549182,
+      "emu_wall_s": 9.1,
+      "emu_peak_mb": 901.0,
+      "distance_km": 136.448,
+      "eta_min": 123.4,
+      "note": "Follow-up 54: one direct search, 136.4 km, 123.4 min, corridor skipped. Host 2.4 s / 606 MB. Emulator 9.1 s / 901 MB."
     },
     "f_hamar_stange": {
       "peak_mb": 397.40625,

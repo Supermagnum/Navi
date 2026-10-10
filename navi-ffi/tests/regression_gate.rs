@@ -31,7 +31,8 @@
 //!   row count in `tests/regression_gate_place_index.json`.
 //!
 //! Cases f/g (Hamar–Stange, Hamar–Lillehammer), h (Oslo–Lillestrøm),
-//! i (Hamburg–Bergedorf) and j (Copenhagen–Taastrup) are short trips with no via.
+//! i (Hamburg–Bergedorf), j (Copenhagen–Taastrup) and k (60.27656,10.81650
+//! to 59.80326,9.39866) are short trips with no via.
 //! They must complete, start and end on the waypoints' own roads, and produce
 //! the same route with `long_trip` off and on. Report whether the corridor
 //! stage ran. Oslo–Lillestrøm is a permanent dense-tile case (do not swap it
@@ -39,14 +40,12 @@
 //!
 //! Case e (Elsa to Sjuvass) must pass: the plan completes, 0 ferries,
 //! intermediate hop ends within 50 m of the coarse-path joint (or an on-path
-//! fallback). Accepted path-over-chord windows are the E 45 hook at Sveg, the
-//! start stretch the reference shares, and the Hallingdal valley meander at
-//! 60.43, 9.32 (present before and after the Bromma repair). Distance vs the
-//! 1944.2 km reference is a known miss, not a gate fail. The out-and-back at
-//! 60.57, 9.11 is gone after the Bromma stretch-joint slide.
+//! fallback). Accepted path-over-chord windows are the start hook at
+//! 69.73, 29.30, the E 45 at 62.05, 14.61, and the Lunner-area hook at
+//! 59.93, 9.91. Distance vs the 1944.2 km reference is a known miss.
 //!
-//! Issue (no work this follow-up): Oslo → Lillestrøm needs the corridor stage
-//! and about 1.1 GB for a 22 km route.
+//! Short cases h and j may skip the corridor stage when the clipped graph
+//! between the ends fits the hop node limit.
 //!
 //! Run: `cargo test --release -p navi-ffi --test regression_gate -- --ignored --nocapture`
 
@@ -73,7 +72,7 @@ const BASELINE_REGRESSION: f64 = 1.25;
 const GATE_REF_PREFIX: &str = "gate:";
 
 /// Planning peak memory bound on the emulator (app running, sidecars ready).
-const EMU_PEAK_LIMIT_MB: f64 = 1400.0;
+const EMU_PEAK_LIMIT_MB: f64 = driver_break_core::routing::plan_bbox::PLAN_RSS_LIMIT_MB;
 
 /// Tests outside the gate that are known to fail; listed in every gate report.
 const KNOWN_TEST_FAILURES: &[(&str, &str)] = &[
@@ -237,7 +236,7 @@ const CASES: &[Case] = &[
         rv15_otta_vaga_lom: false,
         reference: Some("elsa-sjuvass.geojson"),
         expected_fail: None,
-        accepted_spikes: &[(69.69, 29.37), (62.04, 14.39), (60.43, 9.32)],
+        accepted_spikes: &[(69.73, 29.30), (62.05, 14.61), (59.93052, 9.90754)],
         known_distance: Some("distance against the 1944.2 km reference"),
         known_spikes: None,
         timing_runs: 1,
@@ -328,6 +327,24 @@ const CASES: &[Case] = &[
         reference: None,
         expected_fail: None,
         accepted_spikes: &[],
+        known_distance: None,
+        known_spikes: None,
+        timing_runs: 1,
+        compare_long_trip: true,
+    },
+    Case {
+        id: "k_60_276_10_816",
+        start: (60.27656, 10.81650),
+        vias: &[],
+        end: SJUVASS,
+        pbf_stem: "ostlandet-latest",
+        avoid_ferries: false,
+        ferries: &[],
+        distance: Some((136.4, 0.03)),
+        rv15_otta_vaga_lom: false,
+        reference: None,
+        expected_fail: None,
+        accepted_spikes: &[(59.93052, 9.90754)],
         known_distance: None,
         known_spikes: None,
         timing_runs: 1,
@@ -1495,9 +1512,13 @@ fn run_gate_isolated(
             }
         }
     }
-    let emulator = std::env::var("NAVI_GATE_EMU")
-        .ok()
-        .map(|d| emulator_check(Path::new(&d), &mut gate_failures, &load_baseline(baseline_path)));
+    let emulator = std::env::var("NAVI_GATE_EMU").ok().map(|d| {
+        emulator_check(
+            Path::new(&d),
+            &mut gate_failures,
+            &load_baseline(baseline_path),
+        )
+    });
     if emulator.is_none() {
         eprintln!("[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)");
     }
@@ -1544,7 +1565,14 @@ fn long_trip_regression_gate() {
     // One OS process per case so leftover RSS from Elsa cannot inflate
     // the Hamar peak. Order of cases must not change the result.
     if std::env::var("NAVI_GATE_WORKER").as_deref() != Ok("1") {
-        run_gate_isolated(&packs, &refs, &work, &baseline_path, write_baseline, only.as_ref());
+        run_gate_isolated(
+            &packs,
+            &refs,
+            &work,
+            &baseline_path,
+            write_baseline,
+            only.as_ref(),
+        );
         return;
     }
 
