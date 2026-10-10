@@ -313,7 +313,7 @@ pub(crate) fn load_admin_from_pbf(
             &format!("{phase_prefix}admin boundaries: relations…"),
         );
         let t0 = phase_timing::start("place_index.admin.relations");
-        crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
+        crate::download::pbf_priority::for_each_pbf_elements_pausable(path, |element| {
             let Element::Relation(rel) = element else {
                 return;
             };
@@ -361,7 +361,7 @@ pub(crate) fn load_admin_from_pbf(
             &format!("{phase_prefix}admin boundaries: ways…"),
         );
         let t0 = phase_timing::start("place_index.admin.ways");
-        crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
+        crate::download::pbf_priority::for_each_pbf_elements_pausable(path, |element| {
             let Element::Way(way) = element else {
                 return;
             };
@@ -407,17 +407,20 @@ pub(crate) fn load_admin_from_pbf(
             &format!("{phase_prefix}admin boundaries: nodes…"),
         );
         let t0 = phase_timing::start("place_index.admin.nodes");
-        crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
-            Element::Node(n) => {
-                if needed_nodes.contains(&n.id()) {
-                    coords.insert(n.id(), (n.lat(), n.lon()));
+        crate::download::pbf_priority::for_each_pbf_elements_pausable(
+            path,
+            |element| match element {
+                Element::Node(n) => {
+                    if needed_nodes.contains(&n.id()) {
+                        coords.insert(n.id(), (n.lat(), n.lon()));
+                    }
                 }
-            }
-            Element::DenseNode(n) if needed_nodes.contains(&n.id) => {
-                coords.insert(n.id, (n.lat(), n.lon()));
-            }
-            _ => {}
-        })?;
+                Element::DenseNode(n) if needed_nodes.contains(&n.id) => {
+                    coords.insert(n.id, (n.lat(), n.lon()));
+                }
+                _ => {}
+            },
+        )?;
         phase_timing::end_detail(
             "place_index.admin.nodes",
             t0,

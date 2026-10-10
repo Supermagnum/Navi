@@ -967,6 +967,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_rename_saved_place(
     ): Int
+    external fun uniffi_navi_checksum_func_request_idle_pause(
+    ): Int
     external fun uniffi_navi_checksum_func_resolve_speed_limit_kmh(
     ): Int
     external fun uniffi_navi_checksum_func_road_label_near(
@@ -1023,11 +1025,15 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_search_places(
     ): Int
+    external fun uniffi_navi_checksum_func_search_places_biased(
+    ): Int
     external fun uniffi_navi_checksum_func_set_accept_absurd_detour(
     ): Int
     external fun uniffi_navi_checksum_func_set_osm_weekly_reminder(
     ): Int
     external fun uniffi_navi_checksum_func_set_route_plan_timing_enabled(
+    ): Int
+    external fun uniffi_navi_checksum_func_set_test_index_phase_sleep_ms(
     ): Int
     external fun uniffi_navi_checksum_func_set_truck_exceptional_extension_armed(
     ): Int
@@ -1457,6 +1463,8 @@ internal object UniffiLib {
     ): Byte
     external fun uniffi_navi_fn_func_rename_saved_place(`dataDir`: RustBuffer.ByValue,`id`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    external fun uniffi_navi_fn_func_request_idle_pause(uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_navi_fn_func_resolve_speed_limit_kmh(`postedKmh`: RustBuffer.ByValue,`maxspeedConditional`: RustBuffer.ByValue,`highway`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Double
     external fun uniffi_navi_fn_func_road_label_near(`pbfPath`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`profile`: RustBuffer.ByValue,`maxM`: Double,uniffi_out_err: UniffiRustCallStatus, 
@@ -1513,11 +1521,15 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_search_places(`indexDbPath`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_search_places_biased(`indexDbPath`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,`limit`: Int,`biasLat`: Double,`biasLon`: Double,`visibleRegion`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_set_accept_absurd_detour(`accept`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_navi_fn_func_set_osm_weekly_reminder(`dataDir`: RustBuffer.ByValue,`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_navi_fn_func_set_route_plan_timing_enabled(`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_set_test_index_phase_sleep_ms(`ms`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_navi_fn_func_set_truck_exceptional_extension_armed(`dataDir`: RustBuffer.ByValue,`armed`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
@@ -2159,6 +2171,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_rename_saved_place() and 0xFFFF) != 32947) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_request_idle_pause() and 0xFFFF) != 15188) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_resolve_speed_limit_kmh() and 0xFFFF) != 57610) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2243,6 +2258,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_search_places() and 0xFFFF) != 63913) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_search_places_biased() and 0xFFFF) != 15263) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_set_accept_absurd_detour() and 0xFFFF) != 1999) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2250,6 +2268,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_set_route_plan_timing_enabled() and 0xFFFF) != 33373) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_set_test_index_phase_sleep_ms() and 0xFFFF) != 64805) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_set_truck_exceptional_extension_armed() and 0xFFFF) != 48179) {
@@ -7857,6 +7878,18 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Ask idle jobs to stop at the next committed batch so a plan can start.
+         */ fun `requestIdlePause`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_request_idle_pause(
+    
+        _status)
+}
+    
+    
+
+        /**
          * Resolve applicable road speed limit (km/h): `maxspeed:conditional` at local
          * now, else posted `maxspeed`, else highway-class ETA fallback.
          */ fun `resolveSpeedLimitKmh`(`postedKmh`: kotlin.Double?, `maxspeedConditional`: kotlin.String?, `highway`: kotlin.String?): kotlin.Double {
@@ -8279,6 +8312,25 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Same as [`search_places`], ranked with the map centre and visible region.
+         */ fun `searchPlacesBiased`(`indexDbPath`: kotlin.String, `query`: kotlin.String, `limit`: kotlin.UInt, `biasLat`: kotlin.Double, `biasLon`: kotlin.Double, `visibleRegion`: kotlin.String): List<PlaceHit> {
+            return FfiConverterSequenceTypePlaceHit.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_search_places_biased(
+    
+        
+        FfiConverterString.lower(`indexDbPath`),
+        FfiConverterString.lower(`query`),
+        FfiConverterUInt.lower(`limit`),
+        FfiConverterDouble.lower(`biasLat`),
+        FfiConverterDouble.lower(`biasLon`),
+        FfiConverterString.lower(`visibleRegion`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Arm a one-shot accept for the absurd installed-only detour gate (product UI).
          */ fun `setAcceptAbsurdDetour`(`accept`: kotlin.Boolean)
         = 
@@ -8315,6 +8367,20 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
         
         FfiConverterBoolean.lower(`enabled`),_status)
+}
+    
+    
+
+        /**
+         * Test-only: slow each index-build phase check so a harness can start a plan
+         * while that phase is active. Zero clears the delay.
+         */ fun `setTestIndexPhaseSleepMs`(`ms`: kotlin.ULong)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_set_test_index_phase_sleep_ms(
+    
+        
+        FfiConverterULong.lower(`ms`),_status)
 }
     
     

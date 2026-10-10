@@ -161,6 +161,19 @@ pub fn foreground_plan_active() -> bool {
     driver_break_core::download::pbf_priority::foreground_plan_active()
 }
 
+/// Ask idle jobs to stop at the next committed batch so a plan can start.
+#[uniffi::export]
+pub fn request_idle_pause() {
+    driver_break_core::download::pbf_priority::request_idle_pause();
+}
+
+/// Test-only: slow each index-build phase check so a harness can start a plan
+/// while that phase is active. Zero clears the delay.
+#[uniffi::export]
+pub fn set_test_index_phase_sleep_ms(ms: u64) {
+    driver_break_core::download::pbf_priority::set_test_index_phase_sleep_ms(ms);
+}
+
 /// Ask the in-flight UniFFI plan to stop at the next checkpoint.
 /// Does not unwind JNI; [`plan_car_route`] / [`plan_hiking_route`] return
 /// `FAIL: cancelled` once a blob/stage/A* check observes the flag.
@@ -7082,6 +7095,7 @@ pub fn ensure_place_index(
     index_db_path: String,
     region_id: Option<String>,
 ) -> String {
+    let _job_pause = driver_break_core::download::pbf_priority::IdleJobPauseGuard::enter();
     use driver_break_core::download::progress;
     let pbf = Path::new(&pbf_path);
     if !pbf.is_file() {
@@ -7234,6 +7248,7 @@ pub fn ensure_place_index_for_pack_region(
     index_db_path: String,
     region_id: String,
 ) -> String {
+    let _job_pause = driver_break_core::download::pbf_priority::IdleJobPauseGuard::enter();
     match driver_break_core::pack_server::ensure_place_index_for_installed_region(
         Path::new(&pack_dir),
         Path::new(&index_db_path),
@@ -9965,6 +9980,7 @@ pub fn ensure_pack_region_place_index(
     region_id: String,
     force_rebuild: bool,
 ) -> String {
+    let _job_pause = driver_break_core::download::pbf_priority::IdleJobPauseGuard::enter();
     ensure_native_logging();
     match driver_break_core::pack_server::ensure_place_index_after_pack_install(
         Path::new(&data_dir),

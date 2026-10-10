@@ -2501,6 +2501,9 @@ private fun NaviMapScreen() {
                 if (BasemapStyleResolver.hasNetwork(context)) {
                     return@withContext null
                 }
+                if (runCatching { foregroundPlanActive() }.getOrDefault(false)) {
+                    return@withContext null
+                }
                 withTimeoutOrNull(1_500L) {
                     try {
                         val hits =
@@ -2533,6 +2536,9 @@ private fun NaviMapScreen() {
         val fromIndex =
             withTimeoutOrNull(2_000L) {
                 withContext(Dispatchers.IO) {
+                    if (runCatching { foregroundPlanActive() }.getOrDefault(false)) {
+                        return@withContext null
+                    }
                     try {
                         val hits =
                             nearbyPlaces(
@@ -3056,7 +3062,7 @@ private fun NaviMapScreen() {
                             }
                             else -> ""
                         }
-                    if (!regionDownloading && !PlaceIndexBackground.isRunning()) {
+                    if (!planning && !regionDownloading && !PlaceIndexBackground.isRunning()) {
                         val rid =
                             PlaceIndexAutoBuild.nextRegion(dataDir)
                                 ?: regionPath.trim().trim('/')
@@ -3490,7 +3496,8 @@ private fun NaviMapScreen() {
                                         "planCarRoute pbf=${pbf!!.absolutePath} " +
                                             "packDir=$planPackDirPath dataDir=${dataDir.absolutePath} " +
                                             "longTrip=$longTripEnabled " +
-                                            "from=${start.lat},${start.lon} to=${toPoint.lat},${toPoint.lon}",
+                                            "from=${start.lat},${start.lon} to=${toPoint.lat},${toPoint.lon} " +
+                                            "time_to_planner_ms=${System.currentTimeMillis() - planStarted}",
                                     )
                                     RoutingPlanLog.logPlanSettings(
                                         dataDir = dataDir,
@@ -4606,9 +4613,17 @@ private fun NaviMapScreen() {
                         val fixLon = loc.longitude
                         val prof = profile
                         val clearIfFar = movedM > 150.0
+                        val planningNow =
+                            skipLiveGraphWorkDuringForegroundPlan(
+                                runCatching { foregroundPlanActive() }
+                                    .getOrDefault(planningRoute),
+                            )
                         scope.launch {
                             val interim =
                                 withContext(Dispatchers.IO) {
+                                    if (planningNow) {
+                                        return@withContext null
+                                    }
                                     val hits =
                                         runCatching {
                                             nearbyPlaces(

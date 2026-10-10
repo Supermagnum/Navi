@@ -81,6 +81,7 @@ object IdlePackJobs {
         lastPause.set(PauseOutcome())
         lastRecheckAccepted.set(0)
         lastStatus.set("idle")
+        pauseRequested = false
         executeJobs = false
         testRunJob = null
     }
@@ -166,19 +167,26 @@ object IdlePackJobs {
     }
 
     fun onPlanEnded() {
+        pauseRequested = false
         if (runCatching { uniffi.navi.foregroundPlanActive() }.getOrDefault(false)) {
             return
         }
-        pausedJob.getAndSet(null)?.let { offer(it) }
+        pausedJob.getAndSet(null)?.let { job ->
+            synchronized(seen) { seen.remove(job.key()) }
+            offer(job)
+        }
         drainIfAllowed()
     }
 
     fun lastPauseOutcome(): PauseOutcome = lastPause.get()
 
+    @Volatile
+    var pauseRequested: Boolean = false
+        private set
+
     /**
-     * Wait for a short sidecar/skeleton to finish, or for a place-index to
-     * unwind at its next committed batch. Does not wait for a long index to
-     * complete.
+     * Ask the running idle job to stop at its next batch, then wait at most
+     * 2 s so a plan can start. Does not take [RoutePlanGate].
      */
     fun waitOrPauseForPlan(): PauseOutcome {
         val job = active.get()
@@ -187,9 +195,19 @@ object IdlePackJobs {
             lastPause.set(none)
             return none
         }
+        pauseRequested = true
+        runCatching { uniffi.navi.requestIdlePause() }
         val t0 = System.currentTimeMillis()
-        lastStatus.set("Idle pack jobs paused (planning)…")
-        while (running.get()) {
+        lastStatus.set("waiting for a background job")
+        val deadline = t0 + 2_000L
+        // Place-index open of a multi-GB file has no pause check until the
+        // first batch. Do not hold the planner for that whole open: request
+        // pause, wait briefly for an in-batch job, then start the plan.
+        val soft = if (job?.kind == Kind.PLACE_INDEX) t0 + 300L else deadline
+        while (System.currentTimeMillis() < deadline) {
+            if (pausedJob.get() != null) break
+            if (!running.get()) break
+            if (System.currentTimeMillis() >= soft) break
             Thread.sleep(20)
         }
         val ms = System.currentTimeMillis() - t0
@@ -373,6 +391,7 @@ object IdlePackJobs {
     }
 
     private fun planBlocksIdle(): Boolean {
+        if (pauseRequested) return true
         if (RoutePlanGate.isRunning() || NaviMapTestHooks.pendingTripPlan != null) return true
         return runCatching { uniffi.navi.foregroundPlanActive() }.getOrDefault(false)
     }
@@ -383,6 +402,9 @@ object IdlePackJobs {
         if (queue.isEmpty()) return
         if (!running.compareAndSet(false, true)) return
         scope.launch {
+            runCatching {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+            }
             mutex.withLock {
                 try {
                     while (true) {
@@ -416,7 +438,7 @@ object IdlePackJobs {
                     if (queue.isEmpty() && pausedJob.get() == null) lastStatus.set("idle")
                     running.set(false)
                     active.set(null)
-                    if (queue.isNotEmpty() && !planBlocksIdle()) {
+                    if (queue.isNotEmpty() && pausedJob.get() == null && !planBlocksIdle()) {
                         drainIfAllowed()
                     }
                 }

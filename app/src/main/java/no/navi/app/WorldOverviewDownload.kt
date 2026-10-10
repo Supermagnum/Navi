@@ -53,6 +53,11 @@ object WorldOverviewDownload {
         }
         Thread(
             {
+                runCatching {
+                    android.os.Process.setThreadPriority(
+                        android.os.Process.THREAD_PRIORITY_BACKGROUND,
+                    )
+                }
                 try {
                     fetch(context, dataDir)
                 } finally {

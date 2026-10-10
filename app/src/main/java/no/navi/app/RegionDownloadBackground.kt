@@ -1082,6 +1082,9 @@ object RegionDownloadBackground {
         }
         val startDrain = claimWorker()
         scope.launch {
+            runCatching {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+            }
             val path = GeofabrikDownloadCatalog.canonicalizePath(geofabrikPath)
             val job =
                 Job(
@@ -1790,6 +1793,9 @@ object RegionDownloadBackground {
         val rid = regionId.trim().trim('/')
         if (rid.isEmpty()) return
         scope.launch {
+            runCatching {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+            }
             val basemapOk =
                 runCatching {
                     downloadBasemapPmtiles(context, dataDir, rid)

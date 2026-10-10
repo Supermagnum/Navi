@@ -245,8 +245,7 @@ impl PmtilesDownloader {
             }
         }
 
-        let max_zoom = if crate::routing::basemap::is_world_overview_region(&job.region_key)
-        {
+        let max_zoom = if crate::routing::basemap::is_world_overview_region(&job.region_key) {
             crate::routing::basemap::WORLD_OVERVIEW_MAX_ZOOM
         } else if job.region_key.starts_with("test_") {
             10
@@ -269,7 +268,9 @@ impl PmtilesDownloader {
         {
             Ok(_) => {}
             Err(e) => {
-                if control.is_cancelled() {
+                if e.to_string().contains("idle_job_paused") {
+                    store.set_status(job_id, PmtilesJobStatus::Paused, true)?;
+                } else if control.is_cancelled() {
                     store.set_status(job_id, PmtilesJobStatus::Cancelled, false)?;
                 } else if !control.is_paused() {
                     store.set_status(job_id, PmtilesJobStatus::Failed, false)?;

@@ -111,6 +111,14 @@ async fn wait_if_paused_or_cancelled(
     partial: &Path,
     staging: &Path,
 ) -> anyhow::Result<()> {
+    if crate::download::pbf_priority::idle_pause_requested()
+        || crate::download::pbf_priority::foreground_plan_active()
+    {
+        if let Some((storage, job_id)) = store {
+            PmtilesJobStore::new(storage).set_status(job_id, PmtilesJobStatus::Paused, true)?;
+        }
+        anyhow::bail!("idle_job_paused");
+    }
     if control.is_cancelled() {
         let _ = fs::remove_file(partial);
         let _ = fs::remove_dir_all(staging);
@@ -304,7 +312,7 @@ pub async fn extract_bbox_to_file(
                 crate::download::available_bytes(dest)
             );
         }
-        if done.is_multiple_of(512) {
+        if done.is_multiple_of(32) {
             wait_if_paused_or_cancelled(control, store, &partial, &staging).await?;
         }
     }
@@ -316,10 +324,7 @@ pub async fn extract_bbox_to_file(
     if !partial.exists() {
         anyhow::bail!("extract produced no file");
     }
-    let key = dest
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("");
+    let key = dest.file_stem().and_then(|s| s.to_str()).unwrap_or("");
     commit_partial_pmtiles(&partial, dest, key, bbox)?;
     let _ = fs::remove_dir_all(&staging);
     let len = fs::metadata(dest)?.len();
@@ -519,9 +524,7 @@ fn sample_decode_tiles(path: &Path, region_key: &str) -> Result<(), String> {
             return Ok(());
         }
     }
-    Err(last_err.unwrap_or_else(|| {
-        format!("no decodable sample tile for region {region_key}")
-    }))
+    Err(last_err.unwrap_or_else(|| format!("no decodable sample tile for region {region_key}")))
 }
 
 pub fn tiles_covering_bbox(bbox: [f64; 4], max_zoom: u8) -> Vec<TileCoord> {
@@ -699,7 +702,8 @@ mod tests {
         };
         fs::write(&partial, b"not-a-pmtiles-archive").unwrap();
         let bbox = [50.0, 0.0, 70.0, 20.0];
-        let err = commit_partial_pmtiles(&partial, &dest, "europe_sweden_dalarna", bbox).unwrap_err();
+        let err =
+            commit_partial_pmtiles(&partial, &dest, "europe_sweden_dalarna", bbox).unwrap_err();
         assert!(
             err.to_string().contains("validation") || err.to_string().contains("not a PMTiles"),
             "{err}"
@@ -750,7 +754,9 @@ mod tests {
         let url = resolve_planet_url(&reqwest::Client::new())
             .await
             .unwrap_or_else(|_| PROTOMAPS_PLANET_FALLBACK_URL.to_string());
-        let dest = PathBuf::from("/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/navi-gate/world_overview.pmtiles");
+        let dest = PathBuf::from(
+            "/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/navi-gate/world_overview.pmtiles",
+        );
         if let Some(parent) = dest.parent() {
             let _ = fs::create_dir_all(parent);
         }

@@ -50,7 +50,9 @@ pub fn installed_pack_region_ids(dir: &Path) -> Vec<String> {
 fn region_has_pack_manifest(dir: &Path, region_id: &str) -> bool {
     let stem = leaf_stem_for_region_id(region_id);
     dir.join(format!("{stem}.navi-manifest.json")).is_file()
-        || dir.join(format!("{stem}.navi-server-install.json")).is_file()
+        || dir
+            .join(format!("{stem}.navi-server-install.json"))
+            .is_file()
 }
 
 /// A region is indexed only from its own source (place-source file or own
@@ -254,7 +256,14 @@ pub fn build_place_index_from_pbf(
     let t0 = Instant::now();
     crate::download::progress::set(0, Some(6), "Place index: starting…");
     let open_t0 = crate::download::phase_timing::start("place_index.open_db");
-    let mut idx = NameIndex::open(index_db).map_err(|e| format!("open index: {e}"))?;
+    let mut idx = NameIndex::open(index_db).map_err(|e| {
+        let msg = format!("open index: {e}");
+        if msg.contains(crate::search::PLACE_INDEX_PAUSED_PREFIX) {
+            format!("{} {msg}", crate::search::PLACE_INDEX_PAUSED_PREFIX)
+        } else {
+            msg
+        }
+    })?;
     crate::download::phase_timing::end("place_index.open_db", open_t0);
     let n = idx
         .load_from_pbf_for_region(pbf_path, region_id)
@@ -369,10 +378,8 @@ mod tests {
 
     #[test]
     fn refuse_covering_extract_when_leaf_packs_installed() {
-        let dir = std::env::temp_dir().join(format!(
-            "navi-place-index-parent-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("navi-place-index-parent-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         fs::write(
@@ -392,10 +399,8 @@ mod tests {
 
     #[test]
     fn refuse_region_id_that_is_not_an_installed_pack() {
-        let dir = std::env::temp_dir().join(format!(
-            "navi-place-index-not-pack-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("navi-place-index-not-pack-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let pbf = dir.join("fu38-pause.osm.pbf");

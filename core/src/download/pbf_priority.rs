@@ -6,10 +6,10 @@
 //! serialize via [`lock_bbox_build`] so a new caller cannot scan the PBF in
 //! parallel with an active plan.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::path::Path;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::thread;
 use std::time::Duration;
 
@@ -20,12 +20,105 @@ use super::progress::{current_channel, ProgressChannel};
 
 static FOREGROUND_PLANS: AtomicU32 = AtomicU32::new(0);
 static BBOX_BUILD: Mutex<()> = Mutex::new(());
+/// The running idle job publishes its pause flag here. [request_idle_pause]
+/// sets that flag only. Other threads that open the place index never see it.
+static ACTIVE_JOB_PAUSE: Mutex<Option<Weak<AtomicBool>>> = Mutex::new(None);
+
+/// Ask the **current idle job** to stop at its next batch. Does not set a
+/// process-wide flag: a pause cannot affect another thread's `NameIndex::open`.
+pub fn request_idle_pause() {
+    let guard = ACTIVE_JOB_PAUSE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(flag) = guard.as_ref().and_then(|w| w.upgrade()) {
+        flag.store(true, Ordering::SeqCst);
+    }
+}
+
+pub fn clear_idle_pause() {
+    let guard = ACTIVE_JOB_PAUSE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(flag) = guard.as_ref().and_then(|w| w.upgrade()) {
+        flag.store(false, Ordering::SeqCst);
+    }
+}
+
+/// True only on the thread that owns the idle job (its TLS flag).
+pub fn idle_pause_requested() -> bool {
+    JOB_PAUSE.with(|c| {
+        c.borrow()
+            .as_ref()
+            .is_some_and(|f| f.load(Ordering::SeqCst))
+    })
+}
+
+/// Test-only: extra milliseconds to sleep at each index-build phase check
+/// (simulates slow storage).
+pub static TEST_INDEX_PHASE_SLEEP_MS: AtomicU64 = AtomicU64::new(0);
+
+/// Milliseconds of artificial delay for index-phase tests. The atomic value
+/// wins; otherwise `NAVI_INDEX_PHASE_SLEEP_MS` in the process environment
+/// (set from the emulator harness) is used.
+pub fn test_index_phase_sleep_ms() -> u64 {
+    let n = TEST_INDEX_PHASE_SLEEP_MS.load(Ordering::Relaxed);
+    if n > 0 {
+        return n;
+    }
+    std::env::var("NAVI_INDEX_PHASE_SLEEP_MS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0)
+}
+
+pub fn set_test_index_phase_sleep_ms(ms: u64) {
+    TEST_INDEX_PHASE_SLEEP_MS.store(ms, Ordering::Relaxed);
+}
 
 /// Returned when a non-plan bbox build is skipped so the plan keeps the PBF.
 pub const BBOX_BUILD_SKIPPED: &str = "pbf bbox skipped: foreground plan in progress";
 
 thread_local! {
     static BACKGROUND_INDEXER: Cell<bool> = const { Cell::new(false) };
+    /// Pause flag for the idle job running on this thread. Never read from
+    /// another thread's `NameIndex::open`.
+    static JOB_PAUSE: RefCell<Option<Arc<AtomicBool>>> = const { RefCell::new(None) };
+    /// Nesting count for [`enter`] on this thread. A plan must not wait for
+    /// itself (same-thread `load_from_pbf` while holding [`ForegroundPlanGuard`]).
+    static PLAN_ON_THIS_THREAD: Cell<u32> = const { Cell::new(0) };
+}
+
+fn publish_job_pause_flag(flag: &Arc<AtomicBool>) {
+    JOB_PAUSE.with(|c| *c.borrow_mut() = Some(Arc::clone(flag)));
+    let mut slot = ACTIVE_JOB_PAUSE.lock().unwrap_or_else(|e| e.into_inner());
+    *slot = Some(Arc::downgrade(flag));
+}
+
+fn clear_job_pause_flag(flag: &Arc<AtomicBool>) {
+    JOB_PAUSE.with(|c| {
+        if c.borrow()
+            .as_ref()
+            .is_some_and(|held| Arc::ptr_eq(held, flag))
+        {
+            *c.borrow_mut() = None;
+        }
+    });
+    let mut slot = ACTIVE_JOB_PAUSE.lock().unwrap_or_else(|e| e.into_inner());
+    if slot
+        .as_ref()
+        .and_then(|w| w.upgrade())
+        .is_some_and(|a| Arc::ptr_eq(&a, flag))
+    {
+        *slot = None;
+    }
+}
+
+/// Bind this thread to a job-local pause flag (tests and extract jobs).
+/// If a plan is already in flight, the flag starts set so a new job pauses
+/// at the first batch instead of waiting on the plan it cannot finish.
+pub fn honour_idle_pause_on_this_thread() {
+    let flag = Arc::new(AtomicBool::new(foreground_plan_active()));
+    publish_job_pause_flag(&flag);
+}
+
+pub fn honour_idle_pause_active() -> bool {
+    JOB_PAUSE.with(|c| c.borrow().is_some())
 }
 
 /// Held for the duration of a pack-miss plan (or the whole UI plan coroutine).
@@ -46,9 +139,11 @@ impl Drop for ForegroundPlanGuard {
 
 pub fn enter() {
     FOREGROUND_PLANS.fetch_add(1, Ordering::SeqCst);
+    PLAN_ON_THIS_THREAD.with(|c| c.set(c.get().saturating_add(1)));
 }
 
 pub fn leave() {
+    PLAN_ON_THIS_THREAD.with(|c| c.set(c.get().saturating_sub(1)));
     loop {
         let cur = FOREGROUND_PLANS.load(Ordering::SeqCst);
         if cur == 0 {
@@ -58,6 +153,9 @@ pub fn leave() {
             .compare_exchange(cur, cur - 1, Ordering::SeqCst, Ordering::SeqCst)
             .is_ok()
         {
+            if cur == 1 {
+                clear_idle_pause();
+            }
             return;
         }
     }
@@ -65,6 +163,12 @@ pub fn leave() {
 
 pub fn foreground_plan_active() -> bool {
     FOREGROUND_PLANS.load(Ordering::SeqCst) > 0
+}
+
+/// True only on the thread that called [`enter`]. Another thread's plan never
+/// trips this; `NameIndex::open` on a reader thread stays unaffected.
+pub fn plan_on_this_thread() -> bool {
+    PLAN_ON_THIS_THREAD.with(|c| c.get() > 0)
 }
 
 /// Skip GPS/cone/road-near bbox builds while a plan owns the PBF.
@@ -114,6 +218,34 @@ impl Drop for BackgroundIndexerGuard {
     }
 }
 
+/// Marks this thread as the idle job that [request_idle_pause] can stop.
+/// Other threads that open the place index never see this flag.
+pub struct IdleJobPauseGuard {
+    flag: Arc<AtomicBool>,
+}
+
+impl IdleJobPauseGuard {
+    pub fn enter() -> Self {
+        let flag = JOB_PAUSE.with(|c| {
+            c.borrow()
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| Arc::new(AtomicBool::new(false)))
+        });
+        if foreground_plan_active() {
+            flag.store(true, Ordering::SeqCst);
+        }
+        publish_job_pause_flag(&flag);
+        Self { flag }
+    }
+}
+
+impl Drop for IdleJobPauseGuard {
+    fn drop(&mut self) {
+        clear_job_pause_flag(&self.flag);
+    }
+}
+
 pub fn with_background_indexer<R>(f: impl FnOnce() -> R) -> R {
     let _g = BackgroundIndexerGuard::enter();
     f()
@@ -156,6 +288,11 @@ fn wait_while_foreground_plan_on_caller() {
 /// pool threads and deadlocks any concurrent plan `par_bridge` (ferry overlay).
 fn wait_for_plan_before_parallel_scan() {
     if !BACKGROUND_INDEXER.with(|c| c.get()) {
+        return;
+    }
+    // Same thread already holds the plan: waiting would deadlock. The load
+    // path returns `place_index_paused` via [`plan_on_this_thread`] instead.
+    if plan_on_this_thread() {
         return;
     }
     wait_while_foreground_plan_on_caller();
@@ -352,6 +489,48 @@ where
                     let mut guard = f.lock().unwrap_or_else(|e| e.into_inner());
                     block.for_each_element(&mut *guard);
                     drop(guard);
+                    super::plan_cancel::abort_if_cancelled_id(plan_id)?;
+                    Ok(())
+                }
+                Err(e) => Err(e.into()),
+            }
+        })?;
+    Ok(())
+}
+
+fn pausable_scan_should_stop() -> bool {
+    idle_pause_requested()
+}
+
+/// Same walk as [`for_each_pbf_elements`], but a background place-index scan
+/// stops at the next blob when a plan asks to pause. Plan-thread scans must
+/// keep using [`for_each_pbf_elements`] so they are not aborted.
+pub fn for_each_pbf_elements_pausable<F>(path: &Path, f: F) -> anyhow::Result<()>
+where
+    F: for<'a> FnMut(Element<'a>) + Send,
+{
+    let plan_id = super::plan_cancel::current_plan_id();
+    if pausable_scan_should_stop() {
+        anyhow::bail!("place_index_paused pbf_scan");
+    }
+    let blobs = BlobReader::from_path(path)?;
+    let f = Mutex::new(f);
+    blobs
+        .par_bridge()
+        .try_for_each(|blob| -> anyhow::Result<()> {
+            if pausable_scan_should_stop() {
+                anyhow::bail!("place_index_paused pbf_scan");
+            }
+            super::plan_cancel::abort_if_cancelled_id(plan_id)?;
+            match blob?.decode() {
+                Ok(BlobDecode::OsmHeader(_)) | Ok(BlobDecode::Unknown(_)) => Ok(()),
+                Ok(BlobDecode::OsmData(block)) => {
+                    let mut guard = f.lock().unwrap_or_else(|e| e.into_inner());
+                    block.for_each_element(&mut *guard);
+                    drop(guard);
+                    if pausable_scan_should_stop() {
+                        anyhow::bail!("place_index_paused pbf_scan");
+                    }
                     super::plan_cancel::abort_if_cancelled_id(plan_id)?;
                     Ok(())
                 }

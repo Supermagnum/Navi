@@ -59,6 +59,9 @@ object NamedBuildingLabels {
         map: MapLibreMap,
         placeIndexDb: String,
     ) {
+        if (runCatching { uniffi.navi.foregroundPlanActive() }.getOrDefault(false)) {
+            return
+        }
         debounceJob?.cancel()
         debounceJob =
             scope.launch {
@@ -71,6 +74,9 @@ object NamedBuildingLabels {
         map: MapLibreMap,
         placeIndexDb: String,
     ) {
+        if (runCatching { uniffi.navi.foregroundPlanActive() }.getOrDefault(false)) {
+            return
+        }
         val style = map.style ?: return
         if (placeIndexDb.isBlank()) {
             clear(style)
