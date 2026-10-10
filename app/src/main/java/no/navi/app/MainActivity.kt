@@ -53,7 +53,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -79,9 +81,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontSynthesis
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
@@ -151,6 +155,7 @@ import uniffi.navi.planProgressSnapshot
 import uniffi.navi.pmtilesCancelJob
 import uniffi.navi.pmtilesGetJob
 import uniffi.navi.pmtilesPauseJob
+import uniffi.navi.pmtilesQueueRegion
 import uniffi.navi.pmtilesResumeJob
 import uniffi.navi.pmtilesRunJob
 import uniffi.navi.renameSavedPlace
@@ -163,6 +168,7 @@ import uniffi.navi.saveNamedRoute
 import uniffi.navi.saveTruckRestSettings
 import uniffi.navi.saveVehicleLimits
 import uniffi.navi.searchPlaces
+import uniffi.navi.searchPlacesBiased
 import uniffi.navi.setOsmWeeklyReminder
 import uniffi.navi.travelProfileLocksAvoidMotorways
 import uniffi.navi.travelProfileMenuFocus
@@ -195,18 +201,34 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         applyNaviLaunchExtras(intent)
         runCatching { uniffi.navi.initNativeLogging() }
-        CampingBootstrap.ensureInitialized(this)
         // Natural Earth country grid: never build on the main looper (ANR / seed stall).
+        // CampingBootstrap.configure also touches country_polys; keep it off-main.
         CountryPolysWarm.startBackground()
+        Thread(
+            {
+                runCatching { CampingBootstrap.ensureInitialized(this@MainActivity) }
+            },
+            "CampingBootstrap",
+        ).start()
+        WorldOverviewDownload.ensure(this)
         setContent {
             var showMap by remember { mutableStateOf(false) }
-            MaterialTheme {
+            MaterialTheme(typography = naviTypography()) {
+                CompositionLocalProvider(
+                    LocalTextStyle provides
+                        LocalTextStyle.current.copy(
+                            letterSpacing = 0.sp,
+                            fontFamily = NaviFontFamily,
+                            fontSynthesis = FontSynthesis.None,
+                        ),
+                ) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     // Cheap first frame so the splash can exit within SPLASH_MAX_HOLD_MS
                     // even while MapLibre / NaviMapScreen still warm up.
                     if (showMap) {
                         NaviMapScreen()
                     }
+                }
                 }
             }
             SideEffect {
@@ -242,9 +264,53 @@ class MainActivity : ComponentActivity() {
      */
     private fun applyNaviLaunchExtras(intent: Intent?) {
         if (intent == null) return
-        if (intent.getBooleanExtra("navi_force_online_basemap", false)) {
-            NaviMapTestHooks.forceOnlineBasemap = true
+        if (intent.hasExtra("navi_clear_basemap_test_hooks")) {
+            NaviMapTestHooks.clearForcedBasemapSettings()
         }
+        if (intent.hasExtra("navi_force_online_basemap")) {
+            NaviMapTestHooks.forceOnlineBasemap = intent.getBooleanExtra("navi_force_online_basemap", false)
+        }
+        if (intent.hasExtra("navi_force_basemap_source")) {
+            val src = intent.getStringExtra("navi_force_basemap_source").orEmpty().trim()
+            NaviMapTestHooks.forceBasemapSource = src.ifBlank { null }
+        }
+        if (intent.hasExtra("navi_fu49_force_offline")) {
+            Fu49MapDiag.forceOffline = intent.getBooleanExtra("navi_fu49_force_offline", false)
+        }
+        if (intent.hasExtra("navi_fu49_simple_mount")) {
+            Fu49MapDiag.simpleMount = intent.getBooleanExtra("navi_fu49_simple_mount", false)
+        }
+        if (intent.hasExtra("navi_fu49_overview")) {
+            Fu49MapDiag.enableOverview = intent.getBooleanExtra("navi_fu49_overview", false)
+        }
+        if (intent.hasExtra("navi_fu49_second_regional")) {
+            Fu49MapDiag.enableSecondRegional = intent.getBooleanExtra("navi_fu49_second_regional", false)
+        }
+        if (intent.hasExtra("navi_fu49_online")) {
+            Fu49MapDiag.enableOnline = intent.getBooleanExtra("navi_fu49_online", false)
+        }
+        if (intent.hasExtra("navi_fu49_bypass_queue")) {
+            Fu49MapDiag.bypassStyleQueue = intent.getBooleanExtra("navi_fu49_bypass_queue", false)
+        }
+        if (intent.hasExtra("navi_fu49_disable_keep_previous")) {
+            Fu49MapDiag.disableKeepPrevious = intent.getBooleanExtra("navi_fu49_disable_keep_previous", false)
+        }
+        if (intent.hasExtra("navi_fu49_force_set_style")) {
+            Fu49MapDiag.forceSetStyle = intent.getBooleanExtra("navi_fu49_force_set_style", false)
+        }
+        android.util.Log.i(
+            "NaviMapHooks",
+            "force_online=${NaviMapTestHooks.forceOnlineBasemap} " +
+                "force_source=${NaviMapTestHooks.forceBasemapSource ?: ""} " +
+                "cleared=${NaviMapTestHooks.forcedBasemapSettingsCleared()} " +
+                "fu49_offline=${Fu49MapDiag.forceOffline} " +
+                "fu49_simple=${Fu49MapDiag.simpleMount} " +
+                "fu49_overview=${Fu49MapDiag.enableOverview} " +
+                "fu49_second=${Fu49MapDiag.enableSecondRegional} " +
+                "fu49_online=${Fu49MapDiag.enableOnline} " +
+                "fu49_bypass_queue=${Fu49MapDiag.bypassStyleQueue} " +
+                "fu49_no_keep=${Fu49MapDiag.disableKeepPrevious}",
+        )
         // hideUiChrome sticks in-process after adb --ez navi_hide_chrome true.
         // Explicit extra sets it; a normal launcher MAIN clears a leftover hide.
         when {
@@ -272,16 +338,165 @@ class MainActivity : ComponentActivity() {
         } else if (intent.action == Intent.ACTION_MAIN) {
             NaviMapTestHooks.disableGpsFollow = false
         }
+        intent.getStringExtra("navi_overlay_polyline_file")?.trim()?.takeIf { it.isNotEmpty() }?.let { path ->
+            val poly = java.io.File(path).takeIf { it.isFile }?.readText()?.trim().orEmpty()
+            if (poly.isNotEmpty()) {
+                NaviMapTestHooks.pendingOverlayPolyline = poly
+                android.util.Log.i("NaviRoute", "overlay_polyline file=$path chars=${poly.length}")
+            }
+        }
+        intent.getStringExtra("navi_place_index_clear_region")?.trim()?.takeIf { it.isNotEmpty() }?.let { rid ->
+            if (RoutePlanGate.isRunning() || IdlePackJobs.isRunning()) {
+                android.util.Log.w(
+                    "PlaceIndexReady",
+                    "refuse clear region=$rid: plan or idle job running",
+                )
+            } else {
+                val dir = PlaceIndexStorage.indexDir(this)
+                if (dir == null) {
+                    android.util.Log.w("PlaceIndexReady", "refuse clear region=$rid: place index unavailable")
+                } else {
+                    PlaceIndexReady.clearReady(dir, rid)
+                    android.util.Log.i("PlaceIndexReady", "harness_clear region=$rid")
+                }
+            }
+        }
+        if (intent.hasExtra("navi_index_phase_sleep_ms")) {
+            val ms = intent.getIntExtra("navi_index_phase_sleep_ms", 0).coerceAtLeast(0)
+            runCatching {
+                android.system.Os.setenv("NAVI_INDEX_PHASE_SLEEP_MS", ms.toString(), true)
+            }
+            runCatching { uniffi.navi.setTestIndexPhaseSleepMs(ms.toULong()) }
+            android.util.Log.i("IdlePackJobs", "index_phase_sleep_ms=$ms")
+        }
+        intent.getStringExtra("navi_place_index_pbf")?.trim()?.takeIf { it.isNotEmpty() }?.let { path ->
+            val rid = intent.getStringExtra("navi_place_index_region").orEmpty()
+            val pbf = java.io.File(path)
+            val scratch = intent.getStringExtra("navi_place_index_db")?.trim()?.takeIf { it.isNotEmpty() }
+            val product = PlaceIndexStorage.resolveDb(this)
+            val db =
+                if (scratch != null) {
+                    java.io.File(scratch)
+                } else {
+                    product
+                }
+            if (db == null) {
+                android.util.Log.w("IdlePackJobs", "debug place-index skipped: place index unavailable")
+            } else {
+                val writingProduct = product != null && db.canonicalFile == product.canonicalFile
+                val installed =
+                    PackRegionAvailability.installedPackRegionIds(
+                        InstalledMaps.current()?.regions?.values.orEmpty(),
+                    )
+                if (!PackRegionAvailability.mayIndexRegion(rid, pbf, installed, writingProduct)) {
+                    android.util.Log.e(
+                        "IdlePackJobs",
+                        "refusing PLACE_INDEX region=$rid pbf=${pbf.name} product=$writingProduct",
+                    )
+                } else {
+                    IdlePackJobs.executeJobs = true
+                    IdlePackJobs.offerPlaceIndex(pbf, db, rid)
+                    android.util.Log.i(
+                        "IdlePackJobs",
+                        "debug place-index queued pbf=$path region=$rid db=${db.absolutePath}",
+                    )
+                }
+            }
+        }
+        intent.getStringExtra("navi_extract_pmtiles")?.trim()?.takeIf { it.isNotEmpty() }?.let { path ->
+            val dataDir = NaviAppData.resolve(this)
+            Thread {
+                android.util.Log.i("NaviExtract", "queue path=$path dir=${dataDir.absolutePath}")
+                val job =
+                    runCatching { pmtilesQueueRegion(dataDir.absolutePath, path, null) }
+                        .getOrElse { t ->
+                            android.util.Log.e("NaviExtract", "queue failed path=$path", t)
+                            return@Thread
+                        }
+                android.util.Log.i(
+                    "NaviExtract",
+                    "queued path=$path id=${job.id} status=${job.status}",
+                )
+                if (job.id.isBlank() || job.status.startsWith("failed")) {
+                    return@Thread
+                }
+                val done =
+                    runCatching { pmtilesRunJob(dataDir.absolutePath, job.id) }
+                        .getOrElse { t ->
+                            android.util.Log.e("NaviExtract", "run failed id=${job.id}", t)
+                            return@Thread
+                        }
+                android.util.Log.i(
+                    "NaviExtract",
+                    "done path=$path id=${done.id} status=${done.status} " +
+                        "local=${done.localPath} bytes=${done.bytesReceived}",
+                )
+            }.start()
+        }
+        intent.getStringExtra("navi_search_q")?.trim()?.takeIf { it.isNotEmpty() }?.let { q ->
+            val dbFile = PlaceIndexStorage.resolveDb(this)
+            val biasLat = intentDoubleExtra(intent, "navi_camera_lat")
+            val biasLon = intentDoubleExtra(intent, "navi_camera_lon")
+            val vis =
+                if (!biasLat.isNaN() && !biasLon.isNaN()) {
+                    RegionCoverage.suggestGeofabrikPath(biasLat, biasLon).orEmpty()
+                } else {
+                    ""
+                }
+            Thread {
+                if (dbFile == null || !dbFile.isFile) {
+                    android.util.Log.i(
+                        "NaviSearch",
+                        "app_search q=$q n=0 top= region= results=[] reason=place_index_unavailable",
+                    )
+                } else {
+                    val raw =
+                        runCatching {
+                            if (biasLat.isNaN() || biasLon.isNaN()) {
+                                searchPlaces(dbFile.absolutePath, q, 80u)
+                            } else {
+                                searchPlacesBiased(
+                                    dbFile.absolutePath,
+                                    q,
+                                    80u,
+                                    biasLat,
+                                    biasLon,
+                                    vis,
+                                )
+                            }
+                        }.getOrElse { e ->
+                            android.util.Log.i("NaviSearch", "app_search q=$q FAIL: ${e.message}")
+                            emptyList()
+                        }
+                    val hits =
+                        rankPlaceHits(
+                            q,
+                            raw,
+                            biasLat.takeUnless { it.isNaN() },
+                            biasLon.takeUnless { it.isNaN() },
+                            vis,
+                        )
+                    val top = hits.firstOrNull()
+                    android.util.Log.i(
+                        "NaviSearch",
+                        "app_search q=$q n=${hits.size} top=${top?.name.orEmpty()} " +
+                            "region=${top?.regionId.orEmpty()} " +
+                            "results=${hits.joinToString("|") { "${it.name}@${it.regionId}" }}",
+                    )
+                }
+            }.start()
+        }
         // Trip / profile / settings / graph: debug builds only.
         val dataDirPath = filesDir.absolutePath
         val debugTrip =
             NaviDebugIntent.consumeTripExtras(this, intent, dataDirPath)
+                ?: NaviDebugIntent.consumePendingTripFile(this, dataDirPath)
         if (debugTrip != null) {
             NaviMapTestHooks.pendingTripPlan = debugTrip
             debugTrip.profile?.let { NaviMapTestHooks.requestTravelProfile = it }
-            if (debugTrip.vias.isNotEmpty()) {
-                NaviMapTestHooks.pendingViaPoints = debugTrip.vias
-            }
+            // Always replace vias so a leftover via from the previous trip
+            // cannot leak into a debug OD that has none.
+            NaviMapTestHooks.pendingViaPoints = debugTrip.vias
             NaviMapTestHooks.forceLocalPbf = debugTrip.forceLocalPbf
             debugTrip.avoidFerries?.let { NaviMapTestHooks.requestAvoidFerries = it }
             debugTrip.bikeCapability?.let { NaviMapTestHooks.requestBikeCapability = it }
@@ -556,15 +771,46 @@ private fun cancelledCorridorResult(): uniffi.navi.CorridorRouteResult =
         routeUsesTolls = false,
     )
 
+private fun formatDatexAffectedStatus(
+    base: String,
+    report: String,
+): String {
+    val lines =
+        report
+            .lineSequence()
+            .filter { it.startsWith("datex_affected ") }
+            .map { it.removePrefix("datex_affected ").trim() }
+            .filter { it.isNotEmpty() }
+            .filter {
+                !it.contains("effect=ignore") &&
+                    !it.contains("type=SpeedManagement")
+            }.toList()
+    if (lines.isEmpty()) return base
+    val shown = lines.take(8).joinToString(" · ")
+    return "$base · DATEX: $shown"
+}
+
 private fun userFacingStatus(raw: String): String {
     val t = raw.trim()
     if (t.isEmpty()) return ""
-    if (OsmUpdateUserCopy.looksTechnical(t)) {
-        return OsmUpdateUserCopy.sanitize(t)
-    }
-    if (t.contains("TEST_KIND=") || t.contains("detected_cores=") || t.contains("DATA_SOURCE=")) {
+    if (t.contains("TEST_KIND=") ||
+        t.contains("detected_cores=") ||
+        t.contains("DATA_SOURCE=") ||
+        t.contains("pack_hit=") ||
+        t.contains("search_terminate_reason=")
+    ) {
         return when {
             planReportIsCancelled(t) -> "Planning cancelled"
+            t.contains("FAIL: plan already running") -> "Already planning a route"
+            t.lineSequence().any { it.startsWith("FAIL") } -> {
+                val failLine =
+                    t
+                        .lineSequence()
+                        .first { it.startsWith("FAIL") }
+                        .removePrefix("FAIL:")
+                        .trim()
+                failLine.take(160)
+            }
             t.contains("PASS") && t.contains("distance_km=") -> {
                 val km = Regex("""distance_km=([0-9.]+)""").find(t)?.groupValues?.getOrNull(1)
                 val base =
@@ -575,7 +821,8 @@ private fun userFacingStatus(raw: String): String {
                     } else {
                         base
                     }
-                withIndexedPackMissHint(withToll, t)
+                val withDatex = formatDatexAffectedStatus(withIndexedPackMissHint(withToll, t), t)
+                withDatex
             }
             t.contains("PASS") -> withIndexedPackMissHint("Done", t)
             t.lineSequence().any { it.startsWith("FAIL") } -> {
@@ -596,6 +843,9 @@ private fun userFacingStatus(raw: String): String {
             }
             else -> ""
         }
+    }
+    if (OsmUpdateUserCopy.looksTechnical(t)) {
+        return OsmUpdateUserCopy.sanitize(t)
     }
     return t.take(120)
 }
@@ -662,9 +912,58 @@ private fun NaviMapScreen() {
     var packCatalogDataSource by remember { mutableStateOf("local-bake") }
     var packCatalogUnreachable by remember { mutableStateOf<String?>(null) }
     var packCatalogEpoch by remember { mutableIntStateOf(0) }
+    var mapsEpoch by remember { mutableIntStateOf(0) }
+    var styleEpoch by remember { mutableIntStateOf(0) }
     LaunchedEffect(selectedGeofabrikPath) {
         NaviMapTestHooks.lastSelectedGeofabrikPath = selectedGeofabrikPath
     }
+    LaunchedEffect(selectedGeofabrikPath, mapsEpoch) {
+        InstalledMaps.region(selectedGeofabrikPath)?.noOfflineMapMessage()?.let { msg ->
+            status = msg
+        }
+    }
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            runCatching { InstalledMaps.refresh(context) }
+            IdlePackJobs.executeJobs = true
+            IdlePackJobs.attachContext(context)
+            IdlePackJobs.onAppIdle()
+            val summary = InstalledMaps.summaryText()
+            android.util.Log.i("InstalledMaps", summary)
+            runCatching {
+                java.io
+                    .File(NaviAppData.resolve(context), "installed-maps-snapshot.txt")
+                    .writeText(summary)
+            }
+        }
+        mapsEpoch += 1
+        if (IdlePackJobs.lastRecheckAccepted() > 0) {
+            styleEpoch += 1
+        }
+        InstalledMaps.region(selectedGeofabrikPath)?.noOfflineMapMessage()?.let { msg ->
+            status = msg
+        }
+    }
+    LaunchedEffect(packCatalogEpoch) {
+        if (packCatalogEpoch == 0) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            runCatching { InstalledMaps.refresh(context) }
+            IdlePackJobs.executeJobs = true
+            IdlePackJobs.attachContext(context)
+            IdlePackJobs.onAppIdle()
+        }
+        mapsEpoch += 1
+        if (IdlePackJobs.lastRecheckAccepted() > 0) {
+            styleEpoch += 1
+        }
+    }
+    val selectedLocalReady =
+        remember(selectedGeofabrikPath, mapsEpoch) {
+            InstalledMaps.hasInstallForUi(
+                selectedGeofabrikPath,
+                NaviAppData.resolve(context),
+            )
+        }
     LaunchedEffect(Unit) {
         DiagnosticLog.restoreFromPrefs(context)
         diagnosticLogging = DiagnosticLog.isEnabled()
@@ -978,6 +1277,7 @@ private fun NaviMapScreen() {
     var planningRoute by remember { mutableStateOf(false) }
     var planKick by remember { mutableIntStateOf(0) }
     var ferryPreparingRetries by remember { mutableIntStateOf(0) }
+    var skeletonPreparingRetries by remember { mutableIntStateOf(0) }
     var routePlanProgress by remember { mutableStateOf("") }
 
     // Standalone long-trip seed via adb extras (see applyNaviLaunchExtras).
@@ -1001,9 +1301,7 @@ private fun NaviMapScreen() {
                         lat = trip.toLat,
                         lon = trip.toLon,
                     )
-                if (trip.vias.isNotEmpty()) {
-                    viaPoints = trip.vias
-                }
+                viaPoints = trip.vias
                 // Profile / eco / driveHud: applyNaviLaunchExtras already set
                 // requestTravelProfile; the later hook poll updates Compose state
                 // after driveHud is in scope.
@@ -1021,6 +1319,9 @@ private fun NaviMapScreen() {
                     ecoEnabled = on
                     NaviMapTestHooks.requestEcoMode = on
                 }
+                campingPluginEnabled = false
+                uniffi.navi.campingPluginSetEnabled(false)
+                MapHudPrefs.saveCampingPluginEnabled(context, false)
                 NaviMapTestHooks.forceLocalPbf = trip.forceLocalPbf
                 if (trip.injectGpsAtFrom) {
                     // Pin puck at from immediately and again after plan so the
@@ -1035,6 +1336,7 @@ private fun NaviMapScreen() {
                 if (trip.autoPlan) {
                     delay(1_200)
                     ferryPreparingRetries = 0
+                    skeletonPreparingRetries = 0
                     planKick += 1
                 }
             }
@@ -1047,6 +1349,11 @@ private fun NaviMapScreen() {
     var recalculatingRoute by remember { mutableStateOf(false) }
     var showHikingReroutePrompt by remember { mutableStateOf(false) }
     var missingCoveragePrompt by remember { mutableStateOf<MissingRegionCoverage?>(null) }
+
+    /** Absurd installed-only detour: missing region names + optional accept. */
+    var absurdDetourPrompt by remember {
+        mutableStateOf<Pair<String, List<String>>?>(null)
+    }
     var rerouteJob by remember { mutableStateOf<Job?>(null) }
     val planAbort =
         remember {
@@ -1276,7 +1583,6 @@ private fun NaviMapScreen() {
     }
     var pmtilesJobId by remember { mutableStateOf<String?>(null) }
     var pmtilesProgress by remember { mutableStateOf("") }
-    var styleEpoch by remember { mutableIntStateOf(0) }
     var showDriveSettings by remember { mutableStateOf(false) }
     var showMapSettings by remember { mutableStateOf(false) }
     var drivingHoursSinceBreak by remember { mutableDoubleStateOf(0.0) }
@@ -1682,8 +1988,6 @@ private fun NaviMapScreen() {
             )
         NaviMapTestHooks.lastRoutePlanStatsJson = routePlanStats.toReportJson().toString()
         runCatching {
-            val dir =
-                File(context.getExternalFilesDir(null), "long-trip-ui-report").also { it.mkdirs() }
             val days = pending.daysJson
             val o =
                 org.json
@@ -1698,7 +2002,27 @@ private fun NaviMapScreen() {
                     .put("end", endLabel)
                     .put("long_trip_status", LongTripCoordinator.statusLine())
                     .put("enumerations", routePlanStats.toReportJson())
-            File(dir, "route-result.json").writeText(o.toString(2))
+            val hopsSidecar =
+                File(PlanReportStore.internalDir(dataDir), PlanReportStore.HOPS_NAME)
+                    .takeIf { it.isFile }
+                    ?.readText()
+            // Canonical: files/long-trip-ui-report/ (+ external twin). Native hop
+            // log already lives here; polyline must not land in a different folder.
+            if ((context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                PlanReportStore.publishFinishedPlan(
+                    context,
+                    dataDir,
+                    pending.routePolyline,
+                    hopsSidecar,
+                    o.toString(2),
+                )
+            } else {
+                PlanReportStore.writeText(
+                    PlanReportStore.canonicalDir(context, dataDir),
+                    PlanReportStore.RESULT_NAME,
+                    o.toString(2),
+                )
+            }
         }
         routeSamples =
             parseRouteSimSamples(
@@ -1992,20 +2316,29 @@ private fun NaviMapScreen() {
         }
     }
 
-    fun placeIndexDbForWrite(): File = File(dataDir, "place_index.db")
+    fun placeIndexDbForWrite(): File {
+        // Follow pack volume; never silently create on a different volume.
+        PlaceIndexStorage.ensureOnPackVolume(context)
+        return when (val s = PlaceIndexStorage.status(context)) {
+            is PlaceIndexStorage.Status.Ready -> s.dbFile
+            is PlaceIndexStorage.Status.Unavailable -> {
+                android.util.Log.w(
+                    "PlaceIndexStorage",
+                    "place_index unavailable vol=${s.volumeId} reason=${s.reason}",
+                )
+                // Path under the selected volume (may be unmounted); callers must
+                // treat missing/unwritable as unavailable — do not rebuild elsewhere.
+                File(
+                    "/storage/${s.volumeId.removePrefix("uuid:")}/Android/data/" +
+                        "${context.packageName}/files/place_index.db",
+                )
+            }
+        }
+    }
 
     fun resolvePlaceIndexDb(): File {
-        val preferred = placeIndexDbForWrite()
-        // Prefer the app-local copy. /data/local/tmp may look readable (canRead)
-        // on the AVD but SQLite open still fails under the app sandbox.
-        if (preferred.isFile && preferred.length() > 10_000L) {
-            return preferred
-        }
-        val staged = File("/data/local/tmp/navi_fixtures/place_index_search_check.db")
-        if (staged.isFile && staged.canRead() && staged.length() > 10_000L) {
-            return staged
-        }
-        return preferred
+        return PlaceIndexStorage.resolveDb(context)
+            ?: placeIndexDbForWrite()
     }
 
     fun resolveRegionPbf(): File? = RouteReplan.resolvePbf(dataDir)
@@ -2219,6 +2552,9 @@ private fun NaviMapScreen() {
                 if (BasemapStyleResolver.hasNetwork(context)) {
                     return@withContext null
                 }
+                if (runCatching { foregroundPlanActive() }.getOrDefault(false)) {
+                    return@withContext null
+                }
                 withTimeoutOrNull(1_500L) {
                     try {
                         val hits =
@@ -2251,6 +2587,9 @@ private fun NaviMapScreen() {
         val fromIndex =
             withTimeoutOrNull(2_000L) {
                 withContext(Dispatchers.IO) {
+                    if (runCatching { foregroundPlanActive() }.getOrDefault(false)) {
+                        return@withContext null
+                    }
                     try {
                         val hits =
                             nearbyPlaces(
@@ -2405,6 +2744,7 @@ private fun NaviMapScreen() {
                         "(recalculated after detour)"
                 } finally {
                     foregroundPlanLeave()
+                    IdlePackJobs.onPlanEnded()
                     planProgressClear()
                 }
             }
@@ -2541,7 +2881,17 @@ private fun NaviMapScreen() {
                         seq?.first,
                         seq?.second,
                     )
-                val rawLine = formatProgressPct(snap.unitsDone, snap.unitsTotal, labeled)
+                val rawPct = formatProgressPct(snap.unitsDone, snap.unitsTotal, labeled)
+                val rem = IdlePackJobs.remainingSummary()
+                val rawLine =
+                    if (
+                        labeled.contains("Writing map archive", ignoreCase = true) &&
+                        rem.isNotEmpty()
+                    ) {
+                        "$rawPct — $rem"
+                    } else {
+                        rawPct
+                    }
                 val nowPulse = SystemClock.elapsedRealtime()
                 if (labeled.contains("map tiles", ignoreCase = true) ||
                     labeled.contains("basemap", ignoreCase = true) ||
@@ -2679,19 +3029,22 @@ private fun NaviMapScreen() {
         // synchronously before its IO coroutine, so this check cannot race a
         // just-started resume (PlaceIndexBackground + RegionDownload both
         // calling ensurePlaceIndex on the same DB).
-        // Never auto-index from fixtures / empty installs — see OfflineIndexGate.
+        // Standalone auto-index for any missing/not-intact region (Vestlandet
+        // first) only when no plan is running and schema is current.
         if (OfflineIndexGate.hasMaterialToIndex(dataDir) &&
             !RegionDownloadBackground.isRunning()
         ) {
-            val pbf =
-                OfflineIndexGate.resolveAutoIndexPbf(dataDir, selectedGeofabrikPath)
-            if (pbf != null && OfflineIndexGate.isIndexablePbf(pbf)) {
-                val rid = selectedGeofabrikPath.trim().trim('/')
-                if (rid.isEmpty() || !PlaceIndexReady.isReady(dataDir, rid)) {
+            val rid =
+                PlaceIndexAutoBuild.nextRegion(dataDir)
+                    ?: selectedGeofabrikPath.trim().trim('/')
+            if (rid.isNotEmpty() && PlaceIndexAutoBuild.mayStart(dataDir, rid)) {
+                val pbf =
+                    OfflineIndexGate.resolveAutoIndexPbf(dataDir, rid)
+                if (pbf != null && OfflineIndexGate.isIndexablePbf(pbf)) {
                     PlaceIndexBackground.ensureStarted(
                         pbf,
                         placeIndexDbForWrite(),
-                        rid.ifBlank { null },
+                        rid,
                     )
                 }
             }
@@ -2719,25 +3072,29 @@ private fun NaviMapScreen() {
                     if (!OfflineIndexGate.hasMaterialToIndex(dataDir)) {
                         return@withContext BgTick("", "", false, false, false)
                     }
-                    val pbf = OfflineIndexGate.resolveAutoIndexPbf(dataDir, regionPath)
-                    if (pbf == null) {
-                        return@withContext BgTick("", "", false, false, false)
-                    }
+                    // Indexed-maps may use ferry/download PBF resolution (Sweden
+                    // country extract). Place-index is leaf-only — never fall back.
+                    val indexedPbf =
+                        when {
+                            regionPath.isNotEmpty() ->
+                                PackRegionAvailability.resolvePbfForRegion(dataDir, regionPath)
+                            else -> null
+                        }
                     val elev = File(dataDir, "elevation").takeIf { it.isDirectory }
                     val regionDownloading = RegionDownloadBackground.isRunning()
-                    if (!regionDownloading) {
+                    if (!regionDownloading && indexedPbf != null) {
                         IndexedMapsBackground.ensureStarted(
-                            pbf,
+                            indexedPbf,
                             dataDir,
                             elev,
                             regionPath.ifBlank { null },
                         )
                     }
                     val indexedLine =
-                        if (regionDownloading) {
+                        if (regionDownloading || indexedPbf == null) {
                             ""
                         } else {
-                            IndexedMapsBackground.uiLine(pbf, dataDir)
+                            IndexedMapsBackground.uiLine(indexedPbf, dataDir)
                         }
                     val placeLine =
                         when {
@@ -2756,24 +3113,18 @@ private fun NaviMapScreen() {
                             }
                             else -> ""
                         }
-                    if (!regionDownloading && !PlaceIndexBackground.isRunning()) {
-                        // Stamp-only heal — do not open place_index.db here (SQLite
-                        // lock fights Use GPS / nearbyPlaces and ANRs the UI).
-                        // Only real local PBFs (not fixtures / stubs).
-                        val missing =
-                            RegionCoverage
-                                .downloadedGeofabrikPaths(dataDir)
-                                .firstOrNull { path ->
-                                    !PlaceIndexReady.isReady(dataDir, path)
-                                }
-                        if (missing != null) {
-                            val missingPbf =
-                                OfflineIndexGate.resolveAutoIndexPbf(dataDir, missing)
-                            if (missingPbf != null && OfflineIndexGate.isIndexablePbf(missingPbf)) {
+                    if (!planning && !regionDownloading && !PlaceIndexBackground.isRunning()) {
+                        val rid =
+                            PlaceIndexAutoBuild.nextRegion(dataDir)
+                                ?: regionPath.trim().trim('/')
+                        if (rid.isNotEmpty() && PlaceIndexAutoBuild.mayStart(dataDir, rid)) {
+                            val resumePbf =
+                                OfflineIndexGate.resolveAutoIndexPbf(dataDir, rid)
+                            if (resumePbf != null && OfflineIndexGate.isIndexablePbf(resumePbf)) {
                                 PlaceIndexBackground.ensureStarted(
-                                    missingPbf,
+                                    resumePbf,
                                     placeIndexDbForWrite(),
-                                    missing,
+                                    rid,
                                 )
                             }
                         }
@@ -2922,10 +3273,8 @@ private fun NaviMapScreen() {
                     }
                 status = longTripStatusLine.ifBlank { status }
             }
-            // Wait until every corridor region is Indexed (place-index ready).
-            // Starting plan while a region is still Installed/Indexing contends
-            // with place-index PBF scans and can deadlock or stall graph-build.
-            while (isActive && !LongTripCoordinator.corridorReadyForPlanning()) {
+            // Wait until corridor graph packs load. Place-index is not a plan gate.
+            while (isActive && !LongTripCoordinator.corridorPacksReady()) {
                 val line =
                     LongTripCoordinator
                         .statusLine()
@@ -2946,8 +3295,8 @@ private fun NaviMapScreen() {
             }
         }
         // Prefer installed packs on the selected volume for *all* plans — not only
-        // long-trip. longTripEnabled still gates densify/chunk; pack visibility must
-        // not. Empty packDir with SD installs caused pack-miss → multi-minute PBF rebuild.
+        // long-trip. longTripEnabled only gates download-along-route; corridor densify
+        // is independent. Empty packDir with SD installs caused pack-miss → PBF rebuild.
         val longTripPackDir =
             runCatching { LongTripPackStorage.packDownloadDir(context) }.getOrNull()
         val pbf =
@@ -2986,6 +3335,29 @@ private fun NaviMapScreen() {
             }
         val ecoForPlan =
             if (ecoModeToggleable(profile)) ecoEnabled else true
+        RoutingPlanLog.logPlanSettings(
+            dataDir = dataDir,
+            ecoEnabled = ecoForPlan,
+            campingPluginEnabled = campingPluginEnabled,
+            professionalDriver = campingProfessionalDriver,
+            avoidMotorways = avoidMotorways,
+            avoidTolls = avoidTolls,
+            avoidFerries = avoidFerries,
+            avoidTunnels = avoidTunnels,
+        )
+        val settingsOk =
+            !(ecoModeToggleable(profile) && ecoForPlan) &&
+                !campingPluginEnabled
+        if (!settingsOk) {
+            val why =
+                "FAIL: plan_settings abort eco=$ecoForPlan camping_plugin=$campingPluginEnabled " +
+                    "avoid_mw=$avoidMotorways avoid_tolls=$avoidTolls avoid_ferries=$avoidFerries " +
+                    "avoid_tunnels=$avoidTunnels"
+            android.util.Log.e("NaviRouting", why)
+            RoutingPlanLog.failed(ecoForPlan, 0, why, null)
+            status = why
+            return@LaunchedEffect
+        }
         planAbort.set(false)
         val planStarted = System.currentTimeMillis()
         RoutingPlanLog.start(
@@ -3175,7 +3547,18 @@ private fun NaviMapScreen() {
                                         "planCarRoute pbf=${pbf!!.absolutePath} " +
                                             "packDir=$planPackDirPath dataDir=${dataDir.absolutePath} " +
                                             "longTrip=$longTripEnabled " +
-                                            "from=${start.lat},${start.lon} to=${toPoint.lat},${toPoint.lon}",
+                                            "from=${start.lat},${start.lon} to=${toPoint.lat},${toPoint.lon} " +
+                                            "time_to_planner_ms=${System.currentTimeMillis() - planStarted}",
+                                    )
+                                    RoutingPlanLog.logPlanSettings(
+                                        dataDir = dataDir,
+                                        ecoEnabled = ecoForPlan,
+                                        campingPluginEnabled = campingPluginEnabled,
+                                        professionalDriver = campingProfessionalDriver,
+                                        avoidMotorways = avoidMotorways,
+                                        avoidTolls = avoidTolls,
+                                        avoidFerries = avoidFerries,
+                                        avoidTunnels = avoidTunnels,
                                     )
                                     val ffiVias =
                                         viaPoints.map { v ->
@@ -3256,33 +3639,72 @@ private fun NaviMapScreen() {
                                             .map { File(it, "elevation") }
                                             .firstOrNull { it.isDirectory }
                                             ?: File(dataDir, "elevation")
-                                    val planned =
-                                        uniffi.navi.planCarRoute(
-                                            pbf.absolutePath,
-                                            elevDir.absolutePath,
-                                            cacheDir.absolutePath,
-                                            start.lat,
-                                            start.lon,
-                                            toPoint.lat,
-                                            toPoint.lon,
-                                            ecoForPlan,
-                                            profile,
-                                            avoidMotorways,
-                                            if (avoidTolls) {
-                                                uniffi.navi.FfiTollPolicy.PENALIZE
-                                            } else {
-                                                uniffi.navi.FfiTollPolicy.ALLOW
-                                            },
-                                            avoidFerries,
-                                            avoidTunnels,
-                                            loadVehicleLimits(dataDir.absolutePath),
-                                            preferOfficialNetworks,
-                                            dataDir.absolutePath,
-                                            planPackDirPath,
-                                            longTripEnabled = longTripEnabled,
-                                            allowedCountries = allowedCountries,
-                                            viaPoints = ffiVias,
+                                    if (IdlePackJobs.isRunning()) {
+                                        routePlanProgress = "waiting for a background job"
+                                        status = routePlanProgress
+                                    }
+                                    if (!RoutePlanGate.tryBeginOrReplace({ cancelInFlightPlan() })) {
+                                        return@runCatching uniffi.navi.CorridorRouteResult(
+                                            report =
+                                                "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: plan already running\n",
+                                            distanceKm = 0.0,
+                                            etaMinutes = 0.0,
+                                            cacheHit = false,
+                                            coldBuildS = 0.0,
+                                            warmLoadS = 0.0,
+                                            routePolyline = "",
+                                            poiLat = 0.0,
+                                            poiLon = 0.0,
+                                            poiName = "",
+                                            poiIconKey = "",
+                                            breakPoisJson = "[]",
+                                            daysJson = "[]",
+                                            simSamplesJson = "[]",
+                                            maneuversJson = "[]",
+                                            priorityPathSharePct = 0.0,
+                                            routeSegmentsJson = "[]",
+                                            offTrailAdvisory = "",
+                                            tollPolicy = "allow",
+                                            padAttemptsJson = "[]",
+                                            searchExpansions = 0u,
+                                            searchTerminateReason = "busy",
+                                            tollAvoidanceIncomplete = false,
+                                            routeUsesTolls = false,
                                         )
+                                    }
+                                    CorridorSkeletonBackground.clearQueueForPlan()
+                                    FerrySidecarBackground.clearQueueForPlan()
+                                    val planned =
+                                        try {
+                                            uniffi.navi.planCarRoute(
+                                                pbf.absolutePath,
+                                                elevDir.absolutePath,
+                                                cacheDir.absolutePath,
+                                                start.lat,
+                                                start.lon,
+                                                toPoint.lat,
+                                                toPoint.lon,
+                                                ecoForPlan,
+                                                profile,
+                                                avoidMotorways,
+                                                if (avoidTolls) {
+                                                    uniffi.navi.FfiTollPolicy.PENALIZE
+                                                } else {
+                                                    uniffi.navi.FfiTollPolicy.ALLOW
+                                                },
+                                                avoidFerries,
+                                                avoidTunnels,
+                                                loadVehicleLimits(dataDir.absolutePath),
+                                                preferOfficialNetworks,
+                                                dataDir.absolutePath,
+                                                planPackDirPath,
+                                                longTripEnabled = longTripEnabled,
+                                                allowedCountries = allowedCountries,
+                                                viaPoints = ffiVias,
+                                            )
+                                        } finally {
+                                            RoutePlanGate.end()
+                                        }
                                     RoutingPlanLog.progress(
                                         90,
                                         ecoForPlan,
@@ -3349,6 +3771,7 @@ private fun NaviMapScreen() {
                 planIndexingHintVisible = false
                 planProgressClear()
                 foregroundPlanLeave()
+                IdlePackJobs.onPlanEnded()
                 DownloadProgressClear.clearIfIdle()
             }
         val durationMs = System.currentTimeMillis() - planStarted
@@ -3373,7 +3796,7 @@ private fun NaviMapScreen() {
             NaviMapTestHooks.lastRoutePolylineChars = 0
             NaviMapTestHooks.lastRoutePolyline = ""
             // Native fail-fast: missing corridor region — same dialog as UI pre-flight.
-            // Ferry sidecar still building — show progress and auto-retry the plan.
+            // Ferry sidecar / corridor skeleton still building — show progress and auto-retry.
             if (result.searchTerminateReason == "ferry_preparing") {
                 val msg =
                     result.offTrailAdvisory
@@ -3387,11 +3810,14 @@ private fun NaviMapScreen() {
                         }.ifBlank { "Preparing ferry data…" }
                 status = msg
                 RoutingPlanLog.failed(ecoForPlan, durationMs, msg, result)
+                // Kick sidecar builds (incl. country-shared PBF leaves).
+                runCatching { FerrySidecarBackground.ensureFromInstalledMaps() }
                 // Wait for the background sidecar; do not restart densify every 1.5 s.
-                val maxWaitMs = 6 * 60_000L
+                val maxWaitMs = 15 * 60_000L
                 val stepMs = 2_000L
                 var waited = 0L
                 var idle = false
+                var sawRunning = false
                 while (isActive && waited < maxWaitMs) {
                     delay(stepMs)
                     waited += stepMs
@@ -3401,7 +3827,14 @@ private fun NaviMapScreen() {
                         if (prog.message.isNotBlank()) {
                             status = prog.message
                         }
-                        if (!prog.running) {
+                        if (prog.running) {
+                            sawRunning = true
+                        } else if (sawRunning) {
+                            idle = true
+                            break
+                        } else if (waited >= 8_000L && !FerrySidecarBackground.isRunning()) {
+                            // Nothing started after 8s — re-enqueue once more then retry plan.
+                            runCatching { FerrySidecarBackground.ensureFromInstalledMaps() }
                             idle = true
                             break
                         }
@@ -3413,6 +3846,86 @@ private fun NaviMapScreen() {
                 } else if (isActive) {
                     status = "$msg (stopped auto-retry)"
                 }
+                return@LaunchedEffect
+            }
+            if (result.searchTerminateReason == "skeleton_preparing") {
+                runCatching { CorridorSkeletonBackground.ensureFromInstalledMaps() }
+                val msg =
+                    result.offTrailAdvisory
+                        .ifBlank {
+                            result.report
+                                .lineSequence()
+                                .firstOrNull { it.startsWith("status=") }
+                                ?.removePrefix("status=")
+                                ?.trim()
+                                .orEmpty()
+                        }.ifBlank { "Preparing corridor skeleton…" }
+                status = msg
+                RoutingPlanLog.failed(ecoForPlan, durationMs, msg, result)
+                val maxWaitMs = 30 * 60_000L
+                val stepMs = 2_000L
+                var waited = 0L
+                var idle = false
+                while (isActive && waited < maxWaitMs) {
+                    delay(stepMs)
+                    waited += stepMs
+                    val prog =
+                        runCatching {
+                            uniffi.navi.corridorSkeletonProgressSnapshot()
+                        }.getOrNull()
+                    if (prog != null) {
+                        if (prog.message.isNotBlank()) {
+                            status =
+                                if (prog.pct.toInt() > 0) {
+                                    "${prog.message} ${prog.pct}%"
+                                } else {
+                                    prog.message
+                                }
+                        }
+                        if (!prog.running) {
+                            idle = true
+                            break
+                        }
+                    }
+                }
+                if (isActive && idle && skeletonPreparingRetries < 3) {
+                    skeletonPreparingRetries += 1
+                    planKick += 1
+                } else if (isActive) {
+                    status = "$msg (stopped auto-retry)"
+                }
+                return@LaunchedEffect
+            }
+            if (result.searchTerminateReason == "absurd_detour") {
+                val missingNames =
+                    Regex("""missing_regions=([^\n]+)""")
+                        .find(result.report)
+                        ?.groupValues
+                        ?.getOrNull(1)
+                        ?.split(',')
+                        ?.map { it.trim() }
+                        ?.filter { it.isNotEmpty() }
+                        .orEmpty()
+                val detourKm =
+                    Regex("""detour_km=([0-9.]+)""")
+                        .find(result.report)
+                        ?.groupValues
+                        ?.getOrNull(1)
+                        .orEmpty()
+                val labels =
+                    missingNames.map { RegionCoverage.displayName(it) }.ifEmpty {
+                        listOf("additional map regions")
+                    }
+                val msg =
+                    "The installed maps only offer a much longer route" +
+                        (if (detourKm.isNotBlank()) " (~$detourKm km)" else "") +
+                        ". Install ${labels.joinToString(", ")} for the direct corridor, " +
+                        "or accept the longer route."
+                absurdDetourPrompt = msg to missingNames
+                NaviMapTestHooks.absurdDetourPromptVisible = true
+                NaviMapTestHooks.lastAbsurdDetourMessage = msg
+                status = msg
+                RoutingPlanLog.failed(ecoForPlan, durationMs, msg, result)
                 return@LaunchedEffect
             }
             val missingPath =
@@ -3507,16 +4020,19 @@ private fun NaviMapScreen() {
         status =
             withIndexedPackMissHint(
                 run {
-                    val base =
-                        if (result.offTrailAdvisory.isNotBlank()) {
-                            "$planStatus · Off-trail: use judgment (terrain advisory)"
-                        } else {
-                            planStatus
-                        }
+                    val withDatex =
+                        formatDatexAffectedStatus(
+                            if (result.offTrailAdvisory.isNotBlank()) {
+                                "$planStatus · Off-trail: use judgment (terrain advisory)"
+                            } else {
+                                planStatus
+                            },
+                            result.report,
+                        )
                     if (result.tollAvoidanceIncomplete) {
-                        "$base · could not fully avoid tolls"
+                        "$withDatex · could not fully avoid tolls"
                     } else {
-                        base
+                        withDatex
                     }
                 },
                 result.report,
@@ -4152,9 +4668,17 @@ private fun NaviMapScreen() {
                         val fixLon = loc.longitude
                         val prof = profile
                         val clearIfFar = movedM > 150.0
+                        val planningNow =
+                            skipLiveGraphWorkDuringForegroundPlan(
+                                runCatching { foregroundPlanActive() }
+                                    .getOrDefault(planningRoute),
+                            )
                         scope.launch {
                             val interim =
                                 withContext(Dispatchers.IO) {
+                                    if (planningNow) {
+                                        return@withContext null
+                                    }
                                     val hits =
                                         runCatching {
                                             nearbyPlaces(
@@ -4372,6 +4896,19 @@ private fun NaviMapScreen() {
                                 applyPlannedRoute(pending)
                             }
                         }
+                        val overlayPoly = NaviMapTestHooks.pendingOverlayPolyline
+                        if (overlayPoly != null) {
+                            val resumed =
+                                (context as? androidx.lifecycle.LifecycleOwner)
+                                    ?.lifecycle
+                                    ?.currentState
+                                    ?.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+                                    ?: false
+                            if (resumed) {
+                                NaviMapTestHooks.pendingOverlayPolyline = null
+                                mapState = mapState.copy(polyline = overlayPoly)
+                            }
+                        }
                         if (NaviMapTestHooks.requestClearRoute) {
                             NaviMapTestHooks.requestClearRoute = false
                             clearActiveRoute("Route deleted")
@@ -4385,6 +4922,7 @@ private fun NaviMapScreen() {
                         val cam = NaviMapTestHooks.pendingCamera
                         if (cam != null) {
                             NaviMapTestHooks.pendingCamera = null
+                            Fu49MapDiag.markCamera()
                             mapState =
                                 mapState.copy(
                                     followGps = false,
@@ -4985,6 +5523,13 @@ private fun NaviMapScreen() {
         mapMarkPending = null
     }
 
+    fun visibleSearchRegion(): String {
+        val lat = mapState.cameraLat ?: mapState.gpsLat
+        val lon = mapState.cameraLon ?: mapState.gpsLon
+        if (lat == 0.0 && lon == 0.0) return ""
+        return RegionCoverage.suggestGeofabrikPath(lat, lon).orEmpty()
+    }
+
     fun runSearch(q: String) {
         searchJob?.cancel()
         val trimmed = q.trim()
@@ -5036,16 +5581,42 @@ private fun NaviMapScreen() {
                                 runCatching { placeIndexHasEntries(dbPath) }.getOrDefault(false)
                             ensureActive()
                             var list =
-                                PlaceIndexReady.filterHitsToReadyRegions(
-                                    dataDir,
-                                    searchPlaces(dbPath, placeQ, 20u),
+                                rankPlaceHits(
+                                    placeQ,
+                                    PlaceIndexReady.filterHitsToReadyRegions(
+                                        dataDir,
+                                        runCatching {
+                                            val lat = mapState.cameraLat
+                                            val lon = mapState.cameraLon
+                                            if (lat != null && lon != null &&
+                                                lat.isFinite() && lon.isFinite() &&
+                                                !(lat == 0.0 && lon == 0.0)
+                                            ) {
+                                                searchPlacesBiased(
+                                                    dbPath,
+                                                    placeQ,
+                                                    80u,
+                                                    lat,
+                                                    lon,
+                                                    visibleSearchRegion(),
+                                                )
+                                            } else {
+                                                searchPlaces(dbPath, placeQ, 80u)
+                                            }
+                                        }.getOrDefault(emptyList()),
+                                    ),
+                                    mapState.cameraLat,
+                                    mapState.cameraLon,
+                                    visibleSearchRegion(),
                                 )
                             var usedOnline = false
-                            // Prefer online geocode when networked: offline FTS is
-                            // region-local and can mis-rank foreign towns (e.g.
-                            // "Kalmar" → Kalmargaten in Bergen). Merge online first.
-                            // Nominatim throttle/HTTP are suspend + interruptible so
-                            // searchJob.cancel() aborts in-flight work while typing.
+                            // OpenStreetMap Nominatim when the radio is up (optional
+                            // ORS only if ors_api_key.txt is present). Local exact
+                            // matches stay ahead of every online hit; online of the
+                            // same class is merged after local. Map centre is the
+                            // rank bias. Nominatim throttle/HTTP are suspend +
+                            // interruptible so searchJob.cancel() aborts in-flight
+                            // work while typing.
                             if (BasemapStyleResolver.hasNetwork(context)) {
                                 ensureActive()
                                 val online =
@@ -5062,7 +5633,14 @@ private fun NaviMapScreen() {
                                         if (list.isEmpty()) {
                                             online
                                         } else {
-                                            mergeOnlineAndOfflinePlaceHits(placeQ, online, list)
+                                            mergeOnlineAndOfflinePlaceHits(
+                                                placeQ,
+                                                online,
+                                                list,
+                                                mapState.cameraLat,
+                                                mapState.cameraLon,
+                                                visibleSearchRegion(),
+                                            )
                                         }
                                 }
                             }
@@ -5104,6 +5682,7 @@ private fun NaviMapScreen() {
                             onlineAvailable =
                                 outcome.usedOnline ||
                                     (outcome.hits.isEmpty() && outcome.onlineOk),
+                            indexProblem = InstalledMaps.current()?.placeIndexProblem,
                         ).orEmpty()
                     NaviMapTestHooks.lastSearchHitCount = hits.size
                     NaviMapTestHooks.lastSearchQuery = trimmed
@@ -5526,6 +6105,57 @@ private fun NaviMapScreen() {
                 },
             )
         }
+        absurdDetourPrompt?.let { (msg, missingNames) ->
+            AlertDialog(
+                onDismissRequest = {
+                    absurdDetourPrompt = null
+                    NaviMapTestHooks.absurdDetourPromptVisible = false
+                    status = "Longer route declined — install the missing regions or cancel"
+                },
+                title = { Text("Longer route available") },
+                text = { Text(msg) },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            val path = missingNames.firstOrNull().orEmpty()
+                            absurdDetourPrompt = null
+                            NaviMapTestHooks.absurdDetourPromptVisible = false
+                            if (path.isNotBlank()) {
+                                selectedGeofabrikPath = path
+                                downloadContinent = GeofabrikDownloadCatalog.continentForPath(path)
+                                val countryHit = GeofabrikDownloadCatalog.findByPath(path)
+                                downloadScopeCountry =
+                                    countryHit != null &&
+                                    countryHit.path == path.trim().trim('/')
+                                showTools = true
+                                startRegionDownload(path)
+                            }
+                        },
+                        modifier = Modifier.testTag("btn_absurd_detour_install"),
+                    ) {
+                        Text(
+                            if (missingNames.isNotEmpty()) {
+                                "Install ${RegionCoverage.displayName(missingNames.first())}"
+                            } else {
+                                "Install maps"
+                            },
+                        )
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            absurdDetourPrompt = null
+                            NaviMapTestHooks.absurdDetourPromptVisible = false
+                            runCatching { uniffi.navi.setAcceptAbsurdDetour(true) }
+                            planKick += 1
+                            status = "Accepting longer installed-only route…"
+                        },
+                        modifier = Modifier.testTag("btn_absurd_detour_accept"),
+                    ) { Text("Accept longer route") }
+                },
+            )
+        }
         if (confirmDeleteRegion) {
             val deletePath = selectedGeofabrikPath.trim().trim('/')
             val deleteLabel = RegionCoverage.displayName(deletePath)
@@ -5714,20 +6344,20 @@ private fun NaviMapScreen() {
                                     FilterChip(
                                         selected = searchTarget == SearchTarget.From,
                                         onClick = { selectSearchTarget(SearchTarget.From) },
-                                        label = { Text("From") },
+                                        label = { NaviText("From") },
                                         modifier = Modifier.testTag("chip_from"),
                                     )
                                     FilterChip(
                                         selected = searchTarget == SearchTarget.To,
                                         onClick = { selectSearchTarget(SearchTarget.To) },
-                                        label = { Text("To") },
+                                        label = { NaviText("To") },
                                         modifier = Modifier.testTag("chip_to"),
                                     )
                                     FilterChip(
                                         selected = searchTarget == SearchTarget.Via,
                                         onClick = { selectSearchTarget(SearchTarget.Via) },
                                         label = {
-                                            Text(
+                                            NaviText(
                                                 if (viaPoints.isEmpty()) {
                                                     "Via"
                                                 } else {
@@ -5743,7 +6373,7 @@ private fun NaviMapScreen() {
                                         onClick = { showTools = !showTools },
                                         modifier = Modifier.testTag("btn_tools"),
                                     ) {
-                                        Text(if (showTools) "Hide tools" else "Tools")
+                                        NaviText(if (showTools) "Hide tools" else "Tools")
                                     }
                                     TextButton(
                                         onClick = {
@@ -5753,7 +6383,7 @@ private fun NaviMapScreen() {
                                         },
                                         modifier = Modifier.testTag("btn_close_search"),
                                     ) {
-                                        Text("Close")
+                                        NaviText("Close")
                                     }
                                 }
                             }
@@ -5880,6 +6510,7 @@ private fun NaviMapScreen() {
                             Button(
                                 onClick = {
                                     ferryPreparingRetries = 0
+                                    skeletonPreparingRetries = 0
                                     planKick += 1
                                 },
                                 enabled = !planningRoute,
@@ -5888,7 +6519,7 @@ private fun NaviMapScreen() {
                                         .fillMaxWidth()
                                         .testTag("btn_plan_route"),
                             ) {
-                                Text(if (planningRoute) "Planning…" else "Plan route")
+                                NaviText(if (planningRoute) "Planning…" else "Plan route")
                             }
                             if (mapState.polyline.isNotBlank()) {
                                 TextButton(
@@ -5899,7 +6530,7 @@ private fun NaviMapScreen() {
                                             .fillMaxWidth()
                                             .testTag("btn_delete_planned_route"),
                                 ) {
-                                    Text("Delete route")
+                                    NaviText("Delete route")
                                 }
                             }
                             if (routePlanProgress.isNotBlank() || planningRoute) {
@@ -7682,32 +8313,6 @@ private fun NaviMapScreen() {
                                 PackRegionAvailability.downloadRegionButtonLabel(selectedServerReady),
                             )
                         }
-                        val packDirForDelete =
-                            runCatching {
-                                LongTripPackStorage.packDownloadDir(context)
-                            }.getOrNull()
-                        val selectedLocalReady =
-                            PackRegionAvailability.localInstalledReady(
-                                dataDir,
-                                selectedGeofabrikPath,
-                            ) ||
-                                PackRegionAvailability.localBakeReady(
-                                    dataDir,
-                                    selectedGeofabrikPath,
-                                ) ||
-                                (
-                                    packDirForDelete != null &&
-                                        PackRegionAvailability.localBakeReady(
-                                            packDirForDelete,
-                                            selectedGeofabrikPath,
-                                        )
-                                ) ||
-                                DownloadedRegionDelete.hasAnyInstall(
-                                    dataDir,
-                                    selectedGeofabrikPath,
-                                    listOfNotNull(packDirForDelete),
-                                ) ||
-                                PlaceIndexReady.isReady(dataDir, selectedGeofabrikPath)
                         Button(
                             onClick = {
                                 val path = selectedGeofabrikPath.trim().trim('/')
@@ -7715,17 +8320,25 @@ private fun NaviMapScreen() {
                                     status = "Select a Geofabrik path first."
                                     return@Button
                                 }
-                                val block =
-                                    DownloadedRegionDelete.blockReason(
-                                        path,
-                                        dataDir,
-                                        listOfNotNull(packDirForDelete),
-                                    )
-                                if (block != null) {
-                                    status = block
-                                    return@Button
+                                scope.launch {
+                                    val block =
+                                        withContext(Dispatchers.IO) {
+                                            val packDirForDelete =
+                                                runCatching {
+                                                    LongTripPackStorage.packDownloadDir(context)
+                                                }.getOrNull()
+                                            DownloadedRegionDelete.blockReason(
+                                                path,
+                                                dataDir,
+                                                listOfNotNull(packDirForDelete),
+                                            )
+                                        }
+                                    if (block != null) {
+                                        status = block
+                                        return@launch
+                                    }
+                                    confirmDeleteRegion = true
                                 }
-                                confirmDeleteRegion = true
                             },
                             enabled = selectedLocalReady,
                             modifier =
@@ -8011,6 +8624,12 @@ private fun NaviMapScreen() {
                                             val pathForReady =
                                                 selectedGeofabrikPath.trim().trim('/').ifBlank { null }
                                             withContext(Dispatchers.IO) {
+                                                if (pathForReady != null &&
+                                                    PlaceIndexIntact.isIntact(dataDir, pathForReady)
+                                                ) {
+                                                    PlaceIndexReady.markReady(dataDir, pathForReady)
+                                                    return@withContext
+                                                }
                                                 val report =
                                                     ensurePlaceIndex(
                                                         pbf.absolutePath,
@@ -8880,6 +9499,7 @@ private fun CorridorMapView(
                 .AtomicBoolean(false)
         }
     val currentStyleUri = remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    val currentMountedKey = remember { androidx.compose.runtime.mutableStateOf("") }
     val currentStyleKind =
         remember {
             androidx.compose.runtime.mutableStateOf<BasemapStyleResolver.StyleKind?>(null)
@@ -8966,6 +9586,36 @@ private fun CorridorMapView(
         return MapHudPrefs.snapTilt(tiltRef.get())
     }
 
+    fun restoreHeldCamera(
+        map: MapLibreMap,
+        before: org.maplibre.android.camera.CameraPosition,
+    ) {
+        val pending = NaviMapTestHooks.pendingCamera
+        val hold = NaviMapTestHooks.disableGpsFollow
+        val lat = pending?.first ?: before.target?.latitude
+        val lon = pending?.second ?: before.target?.longitude
+        val zoom = pending?.third ?: before.zoom
+        if (lat != null && lon != null && !lat.isNaN() && !lon.isNaN()) {
+            val restored =
+                org.maplibre.android.camera.CameraPosition
+                    .Builder(before)
+                    .target(org.maplibre.android.geometry.LatLng(lat, lon))
+                    .zoom(zoom)
+                    .build()
+            runCatching { map.cancelTransitions() }
+            runCatching { map.moveCamera(CameraUpdateFactory.newCameraPosition(restored)) }
+            NaviMapTestHooks.lastCameraLat = lat
+            NaviMapTestHooks.lastCameraLon = lon
+            NaviMapTestHooks.lastCameraZoom = zoom
+        }
+        val t = map.cameraPosition.target
+        android.util.Log.i(
+            "NaviMapCamera",
+            "held lat=${t?.latitude} lon=${t?.longitude} zoom=${map.cameraPosition.zoom} " +
+                "disableGpsFollow=$hold pending=${pending != null}",
+        )
+    }
+
     fun applyCameraTilt(
         map: MapLibreMap,
         tiltDeg: Double = effectiveTiltDeg(),
@@ -9000,6 +9650,240 @@ private fun CorridorMapView(
         map.moveCamera(CameraUpdateFactory.newCameraPosition(pos))
         // Prefer the engine's post-clamp pitch so hooks/UI stay truthful.
         NaviMapTestHooks.lastCameraPitch = map.cameraPosition.tilt
+    }
+
+    fun invalidateViewportTiles(map: MapLibreMap) {
+        // MapLibre computes tile cover on camera change. A style or source swap
+        // without a camera event leaves the new source unpainted for part of
+        // the view until the user moves the map. Re-set the same camera.
+        val pos = map.cameraPosition
+        runCatching {
+            map.moveCamera(
+                CameraUpdateFactory.newCameraPosition(
+                    org.maplibre.android.camera.CameraPosition
+                        .Builder(pos)
+                        .build(),
+                ),
+            )
+        }
+        map.triggerRepaint()
+        mapView.post {
+            map.triggerRepaint()
+        }
+    }
+
+    fun idLooksLike(
+        id: String,
+        needle: String,
+    ): Boolean = id.contains(needle, ignoreCase = true)
+
+    fun logArchiveTileLayers(map: MapLibreMap) {
+        val cam = map.cameraPosition
+        val target = cam.target ?: return
+        val zoom = cam.zoom
+        val files = LinkedHashSet<String>()
+        runCatching {
+            uniffi.navi.pmtilesListJobs(dataDir.absolutePath)
+        }.getOrDefault(emptyList()).forEach { job ->
+            if (job.status == "completed" &&
+                job.localPath.isNotBlank() &&
+                File(job.localPath).isFile &&
+                !BasemapStyleResolver.isDemArchive(job.regionKey, job.localPath) &&
+                BasemapStyleResolver.pointInJobBbox(target.latitude, target.longitude, job)
+            ) {
+                files.add(job.localPath)
+            }
+        }
+        val overview = File(dataDir, "pmtiles/world_overview.pmtiles")
+        if (overview.isFile) files.add(overview.absolutePath)
+        for (path in files) {
+            val layers = PmtilesLayerProbe.layersAt(path, target.latitude, target.longitude, zoom)
+            android.util.Log.i(
+                "NaviMapArchive",
+                "file=${File(path).name} z=${zoom.toInt()} " +
+                    "roads=${if (PmtilesLayerProbe.hasRoads(layers)) 1 else 0} " +
+                    "water=${if (PmtilesLayerProbe.hasWater(layers)) 1 else 0} " +
+                    "labels=${if (PmtilesLayerProbe.hasLabels(layers)) 1 else 0} " +
+                    "layers=${layers.sorted().joinToString(",")}",
+            )
+        }
+    }
+
+    fun logFeatureGrid(map: MapLibreMap) {
+        val w = mapView.width.toFloat().coerceAtLeast(1f)
+        val h = mapView.height.toFloat().coerceAtLeast(1f)
+        val skip =
+            setOf(
+                "route-line",
+                "route-line-off",
+                "route-casing",
+                "waypoints-dots",
+                "waypoints-layer",
+                "gps-accuracy",
+                "gps-dot",
+            )
+        val layers =
+            map.style
+                ?.layers
+                .orEmpty()
+                .filter { it.id.isNotEmpty() && it.id !in skip && !it.id.startsWith("route") }
+        val roadLayers =
+            layers
+                .filter { idLooksLike(it.id, "road") || idLooksLike(it.id, "highway") }
+                .map { it.id }
+                .toTypedArray()
+        val waterLayers =
+            layers
+                .filter { idLooksLike(it.id, "water") }
+                .map { it.id }
+                .toTypedArray()
+        val labelLayers =
+            layers
+                .filter { it is org.maplibre.android.style.layers.SymbolLayer }
+                .map { it.id }
+                .toTypedArray()
+        val cols = 8
+        val rows = 16
+        val top = (h * 0.0375f).coerceAtLeast(1f)
+        val bot = (h * 0.02f).coerceAtLeast(1f)
+        val y0 = top
+        val y1 = (h - bot).coerceAtLeast(y0 + 1f)
+        val cw = w / cols
+        val ch = (y1 - y0) / rows
+        val cells = ArrayList<String>(cols * rows)
+        for (row in 0 until rows) {
+            for (col in 0 until cols) {
+                val box =
+                    android.graphics.RectF(
+                        col * cw,
+                        y0 + row * ch,
+                        (col + 1) * cw,
+                        y0 + (row + 1) * ch,
+                    )
+                val roads =
+                    if (roadLayers.isEmpty()) {
+                        0
+                    } else {
+                        runCatching { map.queryRenderedFeatures(box, *roadLayers).size }.getOrDefault(0)
+                    }
+                val water =
+                    if (waterLayers.isEmpty()) {
+                        0
+                    } else {
+                        runCatching { map.queryRenderedFeatures(box, *waterLayers).size }.getOrDefault(0)
+                    }
+                val labels =
+                    if (labelLayers.isEmpty()) {
+                        0
+                    } else {
+                        runCatching { map.queryRenderedFeatures(box, *labelLayers).size }.getOrDefault(0)
+                    }
+                val blank = if (roads == 0 && water == 0 && labels == 0) 1 else 0
+                cells.add("$col,$row,r=$roads,w=$water,l=$labels,b=$blank")
+                android.util.Log.i(
+                    "NaviMapGrid",
+                    "c=$col r=$row roads=$roads water=$water labels=$labels blank=$blank",
+                )
+            }
+        }
+        NaviMapTestHooks.lastFeatureGridJson = cells.joinToString(";")
+        var roadsTot = 0
+        var waterTot = 0
+        var labelsTot = 0
+        var blankTot = 0
+        for (cell in cells) {
+            val r = Regex("r=(\\d+),w=(\\d+),l=(\\d+),b=(\\d+)").find(cell)
+            if (r != null) {
+                roadsTot += r.groupValues[1].toInt()
+                waterTot += r.groupValues[2].toInt()
+                labelsTot += r.groupValues[3].toInt()
+                blankTot += r.groupValues[4].toInt()
+            }
+        }
+        Fu49MapDiag.logTotals(roadsTot, waterTot, labelsTot, blankTot, "grid")
+        logArchiveTileLayers(map)
+    }
+
+    fun logVisibleBasemapTiles(map: MapLibreMap) {
+        val w = mapView.width.toFloat().coerceAtLeast(1f)
+        val h = mapView.height.toFloat().coerceAtLeast(1f)
+        val box = android.graphics.RectF(0f, 0f, w, h)
+        val skip =
+            setOf(
+                "route-line",
+                "route-line-off",
+                "route-casing",
+                "waypoints-dots",
+                "waypoints-layer",
+                "gps-accuracy",
+                "gps-dot",
+            )
+        val n =
+            runCatching {
+                val layers =
+                    map.style
+                        ?.layers
+                        .orEmpty()
+                        .map { it.id }
+                        .filter { id -> id.isNotEmpty() && id !in skip && !id.startsWith("route") }
+                        .toTypedArray()
+                if (layers.isEmpty()) {
+                    0
+                } else {
+                    map.queryRenderedFeatures(box, *layers).size
+                }
+            }.getOrDefault(0)
+        NaviMapTestHooks.lastVisibleBasemapFeatures = n
+        val blank = NaviMapTestHooks.lastBlankSharePct
+        val cam = map.cameraPosition
+        android.util.Log.i(
+            "NaviMapTiles",
+            "visible=$n blank_pct=${"%.2f".format(blank)} " +
+                "kind=${currentStyleKind.value?.name ?: NaviMapTestHooks.lastBasemapKind} " +
+                "lat=${cam.target?.latitude} lon=${cam.target?.longitude} " +
+                "zoom=${cam.zoom}",
+        )
+        android.util.Log.i(
+            "NaviMapCamera",
+            "at lat=${cam.target?.latitude} lon=${cam.target?.longitude} zoom=${cam.zoom}",
+        )
+        logFeatureGrid(map)
+    }
+
+    fun measureBlankShareAndLog(map: MapLibreMap) {
+        val w = mapView.width
+        val h = mapView.height
+        if (w <= 0 || h <= 0) {
+            logVisibleBasemapTiles(map)
+            return
+        }
+        val bmp =
+            android.graphics.Bitmap.createBitmap(
+                w,
+                h,
+                android.graphics.Bitmap.Config.ARGB_8888,
+            )
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        val window = (mapView.context as? android.app.Activity)?.window
+        val listener =
+            android.view.PixelCopy.OnPixelCopyFinishedListener { result ->
+                if (result == android.view.PixelCopy.SUCCESS) {
+                    NaviMapTestHooks.lastBlankSharePct = NaviMapTestHooks.blankSharePercent(bmp)
+                }
+                bmp.recycle()
+                logVisibleBasemapTiles(map)
+            }
+        try {
+            if (window != null) {
+                android.view.PixelCopy.request(window, bmp, listener, handler)
+            } else {
+                bmp.recycle()
+                logVisibleBasemapTiles(map)
+            }
+        } catch (_: Exception) {
+            runCatching { bmp.recycle() }
+            logVisibleBasemapTiles(map)
+        }
     }
 
     fun applyTerrainAndPitch(
@@ -9089,132 +9973,213 @@ private fun CorridorMapView(
         styleReady.value = true
         NaviMapTestHooks.completeStyleApply(applyGen)
         NaviMapTestHooks.lastBasemapKind = currentStyleKind.value?.name ?: resolved.kind.name
-        map.triggerRepaint()
+        invalidateViewportTiles(map)
+        mapView.postDelayed({
+            if (applyGen != styleApplyGen.get()) return@postDelayed
+            measureBlankShareAndLog(map)
+        }, 1500)
     }
 
     fun applyResolvedStyle(
         map: MapLibreMap,
         force: Boolean = false,
     ) {
-        val livePrefer3d = prefer3dRef.get()
-        val liveVulkan = vulkanRef.get()
-        val want3d = livePrefer3d && liveVulkan
-        val latest = stateRef.get()
-        // Prefer Compose camera target (pendingCamera) over the live MapLibre
-        // camera so style switches are not delayed one idle frame behind state.
-        val lat =
-            latest.cameraLat
-                ?: map.cameraPosition.target?.latitude
-                ?: 60.0
-        val lon =
-            latest.cameraLon
-                ?: map.cameraPosition.target?.longitude
-                ?: 10.0
-        val resolved =
-            BasemapStyleResolver.resolve(
-                context = context,
-                dataDir = dataDir,
-                lat = lat,
-                lon = lon,
-                prefer3d = livePrefer3d,
-                vulkanAvailable = liveVulkan,
-                forceOnline2d = NaviMapTestHooks.forceOnlineBasemap,
-            )
-        val sameUri = resolved.styleUri == currentStyleUri.value
-        val sameKind = resolved.kind == currentStyleKind.value
-
-        // Coverage-only idle callbacks: if URI/kind unchanged and terrain/tilt
-        // already match, do not bump applyGen (that would cancel an in-flight 3D attach).
-        if (!force && sameUri && sameKind) {
-            map.getStyle { style ->
-                if (style == null) return@getStyle
-                val attached = MapterhornTerrain.isAttached(style)
-                val tilt = map.cameraPosition.tilt
-                // Compare against the achievable tilt (MapLibre clamps at 60°).
-                val wantTilt = effectiveTiltDeg()
-                val tiltMatches = kotlin.math.abs(tilt - wantTilt) <= 1.0
-                val wantTerrain = MapterhornTerrain.wantHillshadeAttached(resolved)
-                val terrainMatches = attached == wantTerrain
-                val wantContours = contoursEnabledRef.get()
-                val contoursAttached = MapterhornContours.isAttached(style)
-                val contoursMatches = contoursAttached == wantContours
-                if (terrainMatches && tiltMatches && contoursMatches) return@getStyle
-                val applyGen = styleApplyGen.incrementAndGet()
+        val liveCam = map.cameraPosition
+        val liveTarget = liveCam.target
+        val viewBounds =
+            runCatching { map.projection.visibleRegion.latLngBounds }.getOrNull()
+        mapScope.launch(Dispatchers.IO) {
+            val livePrefer3d = prefer3dRef.get()
+            val liveVulkan = vulkanRef.get()
+            val want3d = livePrefer3d && liveVulkan
+            // Live MapLibre camera + viewport, not Compose cameraLat. After a
+            // plan the compose target can still be the destination while the
+            // map has already fitted the whole route.
+            val lat = liveTarget?.latitude ?: 60.0
+            val lon = liveTarget?.longitude ?: 10.0
+            val resolved =
+                runCatching {
+                    BasemapStyleResolver.resolve(
+                        context = context,
+                        dataDir = dataDir,
+                        lat = lat,
+                        lon = lon,
+                        prefer3d = livePrefer3d,
+                        vulkanAvailable = liveVulkan,
+                        forceOnline2d = NaviMapTestHooks.forceOnlineBasemap,
+                        viewSouth = viewBounds?.latitudeSouth,
+                        viewWest = viewBounds?.longitudeWest,
+                        viewNorth = viewBounds?.latitudeNorth,
+                        viewEast = viewBounds?.longitudeEast,
+                    )
+                }.getOrElse { err ->
+                    android.util.Log.e("NaviBasemap", "resolve failed: ${err.message}")
+                    return@launch
+                }
+            val archiveKey =
+                resolved.overlayArchives
+                    .map { File(it.localPath).nameWithoutExtension }
+                    .sorted()
+                    .joinToString("+")
+                    .ifBlank { resolved.coveringJob?.localPath ?: "none" }
+            val sourceKey =
+                resolved.mountedKey.ifBlank {
+                    listOf(
+                        resolved.styleUri,
+                        resolved.kind.name,
+                        "3d=$want3d",
+                        "contours=${contoursEnabledRef.get()}",
+                        "onlineUnderlay=${resolved.onlineUnderlay}",
+                        "archives=$archiveKey",
+                    ).joinToString("|")
+                }
+            val enqueueKey =
+                if (Fu49MapDiag.bypassStyleQueue) {
+                    "$sourceKey|fu49-bypass-${System.nanoTime()}"
+                } else {
+                    sourceKey
+                }
+            val request = BasemapStyleApplyQueue.enqueue(enqueueKey, forceBaseReload = force)
+            val applyGen = request.generation
+            styleApplyGen.set(applyGen)
+            withContext(Dispatchers.Main) {
+                if (!BasemapStyleApplyQueue.isCurrent(applyGen)) return@withContext
+                val reloadBase =
+                    Fu49MapDiag.bypassStyleQueue || BasemapStyleApplyQueue.shouldReloadBase(request)
+                if (!reloadBase) {
+                    map.getStyle { style ->
+                        if (style == null) return@getStyle
+                        applyRouteToStyle(style, stateRef.get())
+                        applyTracksToStyle(style, stateRef.get().tracks, mapView.context)
+                        ensureRouteAboveHillshade(style)
+                        invalidateViewportTiles(map)
+                        mapView.postDelayed({
+                            if (!BasemapStyleApplyQueue.isCurrent(applyGen)) return@postDelayed
+                            measureBlankShareAndLog(map)
+                        }, 400)
+                    }
+                    BasemapStyleApplyQueue.accept(
+                        BasemapStyleApplyQueue.Result(
+                            generation = applyGen,
+                            sourceKey = sourceKey,
+                            ok = true,
+                            reloadedBase = false,
+                        ),
+                    )
+                    return@withContext
+                }
+                val previousUri = currentStyleUri.value
+                val previousKind = currentStyleKind.value
+                val previousMount = currentMountedKey.value
                 NaviMapTestHooks.beginStyleApply(applyGen)
-                styleReady.value = false
-                applyTerrainAndPitch(map, style, resolved, applyGen)
-            }
-            return
-        }
-
-        val applyGen = styleApplyGen.incrementAndGet()
-        NaviMapTestHooks.beginStyleApply(applyGen)
-        // Tilt is independent of hillshade 3D; apply preferred tilt (0 when no Vulkan).
-        applyCameraTilt(map)
-        if (!want3d) {
-            NaviMapTestHooks.lastTerrainAttached = false
-        }
-        styleReady.value = false
-        onStyleNote(resolved.note)
-        if (resolved.kind == BasemapStyleResolver.StyleKind.OfflineProtomaps &&
-            resolved.note.isNullOrBlank()
-        ) {
-            onStyleNote("Offline basemap (Protomaps)")
-        }
-
-        // Same basemap URI (e.g. Liberty URL for both OnlineLiberty and Online3d):
-        // MapLibre often no-ops setStyle(sameUri), so mutate the live style instead.
-        if (sameUri) {
-            currentStyleKind.value = resolved.kind
-            map.getStyle { style ->
-                if (applyGen != styleApplyGen.get()) return@getStyle
-                if (style == null) {
-                    currentStyleUri.value = null
-                    applyResolvedStyle(map, force = true)
-                    return@getStyle
+                applyCameraTilt(map)
+                if (!want3d) {
+                    NaviMapTestHooks.lastTerrainAttached = false
                 }
-                applyTerrainAndPitch(map, style, resolved, applyGen)
-            }
-            return
-        }
-
-        currentStyleUri.value = resolved.styleUri
-        currentStyleKind.value = resolved.kind
-        map.setStyle(resolved.styleUri) { style ->
-            if (applyGen != styleApplyGen.get()) return@setStyle
-            if (style == null) {
-                NaviMapTestHooks.lastStyleLoadError = "setStyle returned null (${resolved.styleUri})"
-                onStyleNote("Basemap load failed; falling back to 2D Liberty")
-                if (livePrefer3d) {
-                    on3dFailed()
+                onStyleNote(resolved.note)
+                if (resolved.kind == BasemapStyleResolver.StyleKind.OfflineProtomaps &&
+                    resolved.note.isNullOrBlank()
+                ) {
+                    onStyleNote("Offline basemap (Protomaps)")
                 }
-                val fallbackUri = BasemapStyleResolver.LIBERTY_URL
-                currentStyleUri.value = fallbackUri
-                currentStyleKind.value = BasemapStyleResolver.StyleKind.OnlineLiberty
-                map.setStyle(fallbackUri) { fallback ->
-                    if (applyGen != styleApplyGen.get()) return@setStyle
-                    if (fallback != null) {
-                        applyTerrainAndPitch(
-                            map,
-                            fallback,
-                            BasemapStyleResolver.ResolvedStyle(
-                                kind = BasemapStyleResolver.StyleKind.OnlineLiberty,
-                                styleUri = fallbackUri,
-                            ),
-                            applyGen,
+                PmtilesArchiveGate.writeShownMarker(dataDir, resolved.coveringJob?.localPath)
+                val sameUri =
+                    !Fu49MapDiag.forceSetStyle &&
+                        BasemapStyleResolver.shouldSkipSetStyle(
+                            currentMountedKey.value,
+                            currentStyleUri.value,
+                            resolved.mountedKey,
+                            resolved.styleUri,
                         )
-                    } else {
+                Fu49MapDiag.dumpGeneratedStyle(
+                    resolved.styleUri,
+                    resolved.mountedKey,
+                    sameUri,
+                    reloadBase,
+                )
+                if (sameUri) {
+                    currentStyleKind.value = resolved.kind
+                    map.getStyle { style ->
+                        if (!BasemapStyleApplyQueue.isCurrent(applyGen)) return@getStyle
+                        if (style == null) {
+                            applyResolvedStyle(map, force = true)
+                            return@getStyle
+                        }
+                        applyTerrainAndPitch(map, style, resolved, applyGen)
+                        Fu49MapDiag.dumpLiveStyle(
+                            style,
+                            File(context.filesDir, "map-styles/protomaps-light"),
+                            "same-uri",
+                        )
+                        Fu49MapDiag.logEvent("style_same_uri", "uri=${resolved.styleUri}")
+                        BasemapStyleApplyQueue.accept(
+                            BasemapStyleApplyQueue.Result(
+                                generation = applyGen,
+                                sourceKey = sourceKey,
+                                ok = true,
+                                reloadedBase = true,
+                            ),
+                        )
+                    }
+                    return@withContext
+                }
+                map.setStyle(resolved.styleUri) { style ->
+                    restoreHeldCamera(map, liveCam)
+                    if (!BasemapStyleApplyQueue.isCurrent(applyGen)) return@setStyle
+                    if (style == null) {
+                        NaviMapTestHooks.lastStyleLoadError =
+                            "setStyle returned null (${resolved.styleUri})"
+                        onStyleNote("Map update failed; keeping the previous map")
+                        if (Fu49MapDiag.disableKeepPrevious) {
+                            Fu49MapDiag.logEvent("keep_previous_skipped", "style null")
+                        } else {
+                            BasemapStyleApplyQueue.keepPrevious("Map update failed; keeping the previous map")
+                        }
+                        BasemapStyleApplyQueue.accept(
+                            BasemapStyleApplyQueue.Result(
+                                generation = applyGen,
+                                sourceKey = previousUri ?: sourceKey,
+                                ok = false,
+                                reloadedBase = true,
+                                note = "Map update failed; keeping the previous map",
+                            ),
+                        )
+                        if (previousUri != null) {
+                            currentStyleUri.value = previousUri
+                            currentStyleKind.value = previousKind
+                            currentMountedKey.value = previousMount
+                        }
                         styleReady.value = true
                         NaviMapTestHooks.completeStyleApply(applyGen)
-                        NaviMapTestHooks.lastBasemapKind =
-                            BasemapStyleResolver.StyleKind.OnlineLiberty.name
-                        NaviMapTestHooks.lastCameraPitch = 0.0
-                        NaviMapTestHooks.lastTerrainAttached = false
+                        return@setStyle
                     }
+                    currentStyleUri.value = resolved.styleUri
+                    currentStyleKind.value = resolved.kind
+                    currentMountedKey.value = resolved.mountedKey
+                    applyTerrainAndPitch(map, style, resolved, applyGen)
+                    restoreHeldCamera(map, liveCam)
+                    Fu49MapDiag.dumpLiveStyle(
+                        style,
+                        File(context.filesDir, "map-styles/protomaps-light"),
+                        "applied",
+                    )
+                    Fu49MapDiag.logEvent("style_loaded", "uri=${resolved.styleUri}")
+                    invalidateViewportTiles(map)
+                    BasemapStyleApplyQueue.accept(
+                        BasemapStyleApplyQueue.Result(
+                            generation = applyGen,
+                            sourceKey = sourceKey,
+                            ok = true,
+                            reloadedBase = true,
+                        ),
+                    )
+                    mapView.postDelayed({
+                        if (!BasemapStyleApplyQueue.isCurrent(applyGen)) return@postDelayed
+                        invalidateViewportTiles(map)
+                        measureBlankShareAndLog(map)
+                    }, 400)
                 }
-                return@setStyle
             }
-            applyTerrainAndPitch(map, style, resolved, applyGen)
         }
     }
 
@@ -9290,6 +10255,14 @@ private fun CorridorMapView(
     DisposableEffect(Unit) {
         mapView.onStart()
         mapView.onResume()
+        mapView.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+                mapView.getMapAsync { map ->
+                    map.triggerRepaint()
+                    applyResolvedStyle(map, force = false)
+                }
+            }
+        }
         NaviMapTestHooks.mapPauseHandler = { pause ->
             if (pause) {
                 runCatching { mapView.onPause() }
@@ -9297,6 +10270,10 @@ private fun CorridorMapView(
                 runCatching {
                     mapView.onStart()
                     mapView.onResume()
+                    mapView.getMapAsync { map ->
+                        applyResolvedStyle(map, force = false)
+                        invalidateViewportTiles(map)
+                    }
                 }
             }
         }
@@ -9339,6 +10316,35 @@ private fun CorridorMapView(
                         // Keep Compose waypoint/track pins glued to geo while
                         // pan/zoom is in progress (idle-only refresh drifts on screen).
                         refreshTrackOverlay(map)
+                    }
+                    mapView.addOnDidBecomeIdleListener {
+                        Fu49MapDiag.logEvent("idle")
+                        measureBlankShareAndLog(map)
+                        val leaf =
+                            currentStyleUri.value
+                                ?.removePrefix("file://")
+                                ?.let { File(it).name }
+                                .orEmpty()
+                        if (leaf.isNotEmpty()) {
+                            BasemapStyleResolver.sweepStalePreparedStyles(
+                                File(context.filesDir, "map-styles/protomaps-light"),
+                                leaf,
+                            )
+                        }
+                    }
+                    mapView.addOnDidFinishRenderingFrameListener { fully, _, _ ->
+                        if (fully) {
+                            Fu49MapDiag.logEvent("fully")
+                        }
+                    }
+                    mapView.addOnDidFinishLoadingStyleListener {
+                        Fu49MapDiag.logEvent("style_loaded_lib")
+                    }
+                    mapView.addOnDidFinishLoadingMapListener {
+                        Fu49MapDiag.logEvent("map_loaded")
+                    }
+                    mapView.addOnDidFinishRenderingMapListener { fully ->
+                        Fu49MapDiag.logEvent(if (fully) "map_fully" else "map_partial")
                     }
                     map.addOnCameraIdleListener {
                         refreshTrackOverlay(map)
@@ -9715,9 +10721,18 @@ private fun CorridorMapView(
         refreshTrackOverlay(map)
     }
 
-    LaunchedEffect(state.cameraLat, state.cameraLon, prefer3d, contoursEnabled, cameraTiltDeg) {
+    LaunchedEffect(state.cameraLat, state.cameraLon, state.cameraZoom, prefer3d, contoursEnabled, cameraTiltDeg) {
         val map = mapRef ?: return@LaunchedEffect
         if (state.cameraLat != null && state.cameraLon != null) {
+            val pos =
+                org.maplibre.android.camera.CameraPosition
+                    .Builder()
+                    .target(LatLng(state.cameraLat, state.cameraLon))
+                    .zoom(state.cameraZoom ?: 12.0)
+                    .bearing(state.cameraBearing)
+                    .tilt(effectiveTiltDeg())
+                    .build()
+            map.moveCamera(CameraUpdateFactory.newCameraPosition(pos))
             applyResolvedStyle(map, force = false)
         }
     }
@@ -9769,7 +10784,20 @@ private fun CorridorMapView(
                                     }
                                 }.build()
                         // Fit entire route; keep user tilt so hillshade/perspective stay visible.
-                        map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 120))
+                        map.animateCamera(
+                            CameraUpdateFactory.newLatLngBounds(bounds, 120),
+                            object : org.maplibre.android.maps.MapLibreMap.CancelableCallback {
+                                override fun onCancel() {
+                                    applyResolvedStyle(map, force = false)
+                                    invalidateViewportTiles(map)
+                                }
+
+                                override fun onFinish() {
+                                    applyResolvedStyle(map, force = false)
+                                    invalidateViewportTiles(map)
+                                }
+                            },
+                        )
                         map.moveCamera(
                             CameraUpdateFactory.newCameraPosition(
                                 org.maplibre.android.camera.CameraPosition
@@ -10216,6 +11244,7 @@ private fun applyRouteToStyle(
                     PropertyFactory.textField("{name}"),
                     PropertyFactory.textOffset(arrayOf(0f, 1.2f)),
                     PropertyFactory.textSize(12f),
+                    PropertyFactory.textLetterSpacing(0f),
                     PropertyFactory.textHaloColor("#FFFFFF"),
                     PropertyFactory.textHaloWidth(1.5f),
                     PropertyFactory.textAllowOverlap(true),
@@ -10263,6 +11292,7 @@ private fun applyRouteToStyle(
                 SymbolLayer("waypoints-layer", "waypoints-src").withProperties(
                     PropertyFactory.textField("{name}"),
                     PropertyFactory.textSize(14f),
+                    PropertyFactory.textLetterSpacing(0f),
                     PropertyFactory.textColor("#111111"),
                     PropertyFactory.textHaloColor("#FFFFFF"),
                     PropertyFactory.textHaloWidth(2f),

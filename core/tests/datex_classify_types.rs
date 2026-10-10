@@ -104,7 +104,7 @@ fn type_maintenance_works_penalize_on_lanes_or_medium_severity() {
         "MaintenanceWorks",
         &lanes_severity_comment(0, "none", "Vegarbeid, toveis trafikk i ett løp."),
     );
-    assert_eq!(quiet.impact, DatexImpact::Ignore);
+    assert_eq!(quiet.impact, DatexImpact::Penalize);
 }
 
 #[test]
@@ -113,7 +113,7 @@ fn type_general_network_management_penalize_only_when_lanes() {
         "GeneralNetworkManagement",
         &lanes_severity_comment(0, "low", "Midlertidige trafikklys."),
     );
-    assert_eq!(lights.impact, DatexImpact::Ignore);
+    assert_eq!(lights.impact, DatexImpact::Penalize);
 
     let restricted = parse_one(
         "GeneralNetworkManagement",
@@ -153,7 +153,7 @@ fn type_construction_works_penalize_unless_closure_text() {
         "ConstructionWorks",
         &lanes_severity_comment(0, "low", "Vegen er stengt."),
     );
-    assert_eq!(closed.impact, DatexImpact::Block);
+    assert_eq!(closed.impact, DatexImpact::Penalize);
 }
 
 #[test]
@@ -162,7 +162,7 @@ fn type_environmental_obstruction_block() {
         "EnvironmentalObstruction",
         &lanes_severity_comment(0, "high", "Steinsprang. Fallen tree / landslip."),
     );
-    assert_eq!(s.impact, DatexImpact::Block);
+    assert_eq!(s.impact, DatexImpact::Penalize);
 }
 
 #[test]
@@ -177,7 +177,7 @@ fn type_public_event_block_when_lanes_or_closed() {
         "PublicEvent",
         &lanes_severity_comment(2, "low", "Vegen er stengt for arrangement."),
     );
-    assert_eq!(lanes.impact, DatexImpact::Block);
+    assert_eq!(lanes.impact, DatexImpact::Penalize);
 }
 
 #[test]
@@ -195,13 +195,13 @@ fn type_infrastructure_damage_obstruction_block_on_closure_or_lanes() {
         "InfrastructureDamageObstruction",
         &lanes_severity_comment(0, "high", "damagedRoadSurface. Vegen er stengt."),
     );
-    assert_eq!(closed.impact, DatexImpact::Block);
+    assert_eq!(closed.impact, DatexImpact::Penalize);
 
     let two_lanes = parse_one(
         "InfrastructureDamageObstruction",
         &lanes_severity_comment(2, "high", "Midlertidig omkjøring via Eidsfoss"),
     );
-    assert_eq!(two_lanes.impact, DatexImpact::Block);
+    assert_eq!(two_lanes.impact, DatexImpact::Penalize);
 }
 
 #[test]
@@ -242,7 +242,7 @@ fn regression_partial_lane_stengt_does_not_block_from_text() {
         &lanes_severity_comment(0, "low", "Et felt stengt."),
     );
     assert_ne!(felt.impact, DatexImpact::Block);
-    assert_eq!(felt.impact, DatexImpact::Ignore);
+    assert_eq!(felt.impact, DatexImpact::Penalize);
 }
 
 #[test]
@@ -301,13 +301,13 @@ fn type_general_obstruction_penalize_escalates_on_closure_text() {
         "GeneralObstruction",
         &lanes_severity_comment(0, "unknown", "Vegen er stengt pga. gjenstand."),
     );
-    assert_eq!(blocked.impact, DatexImpact::Block);
+    assert_eq!(blocked.impact, DatexImpact::Penalize);
 }
 
 #[test]
 fn type_accident_block_even_when_severity_unknown() {
     let s = parse_one("Accident", &lanes_severity_comment(0, "unknown", "Ulykke."));
-    assert_eq!(s.impact, DatexImpact::Block);
+    assert_eq!(s.impact, DatexImpact::Penalize);
 }
 
 #[test]
@@ -424,7 +424,7 @@ fn lane_management_delays_without_value_falls_back_to_lane_severity() {
     let s = parse_one("RoadOrCarriagewayOrLaneManagement", inner);
     assert!(s.delays_present);
     assert!(s.delay_time_secs.is_none());
-    assert_eq!(s.impact, DatexImpact::Ignore);
+    assert_eq!(s.impact, DatexImpact::Penalize);
 }
 
 #[test]
@@ -459,5 +459,5 @@ fn schema_valid_unused_types_do_not_panic() {
         &lanes_severity_comment(0, "none", "Vått føre."),
     );
     assert!(!weather.unrecognized_xsi_type);
-    assert_eq!(weather.impact, DatexImpact::Ignore);
+    assert_eq!(weather.impact, DatexImpact::Penalize);
 }

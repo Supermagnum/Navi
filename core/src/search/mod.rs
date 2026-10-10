@@ -6,7 +6,7 @@ use std::sync::{Mutex, MutexGuard, TryLockError};
 use std::time::Duration;
 
 use osmpbf::Element;
-use rusqlite::{params, Connection, Result as SqlResult};
+use rusqlite::{params, Connection, OptionalExtension, Result as SqlResult};
 
 use crate::download::phase_timing;
 use crate::storage::Storage;
@@ -21,6 +21,88 @@ pub const NAMED_BUILDING_KIND: &str = "building";
 /// Commit SQLite/FTS inserts this often so a force-close cannot roll back the
 /// entire write, and so WAL readers are not blocked for minutes.
 const INSERT_COMMIT_BATCH: usize = 50_000;
+
+/// Rows copied per PK-migrate transaction so a plan can pause within 2 s.
+const MIGRATE_COPY_BATCH: i64 = 5_000;
+
+/// Place-index build phases a pause request must be able to interrupt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IndexBuildPhase {
+    ReadSource,
+    SortPrepare,
+    Insert,
+    Fts,
+    Commit,
+    Migrate,
+}
+
+fn index_phase_tick(phase: IndexBuildPhase) {
+    thread_local! {
+        static LAST: std::cell::Cell<Option<IndexBuildPhase>> = const { std::cell::Cell::new(None) };
+    }
+    LAST.with(|last| {
+        if last.get() != Some(phase) {
+            last.set(Some(phase));
+            log::info!(
+                target: "PlaceIndexBg",
+                "place_index_build phase={phase:?}"
+            );
+        }
+    });
+    let ms = crate::download::pbf_priority::test_index_phase_sleep_ms();
+    if ms > 0 {
+        std::thread::sleep(std::time::Duration::from_millis(ms));
+    }
+}
+
+/// Error prefix when a foreground plan pauses an in-flight index at a batch.
+pub const PLACE_INDEX_PAUSED_PREFIX: &str = "place_index_paused";
+
+fn place_index_rss_mb() -> u64 {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| {
+            s.lines().find_map(|line| {
+                let rest = line.strip_prefix("VmRSS:")?;
+                rest.split_whitespace().next()?.parse::<u64>().ok()
+            })
+        })
+        .unwrap_or(0)
+        / 1024
+}
+
+fn release_index_heap() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    unsafe {
+        libc::malloc_trim(0);
+    }
+    #[cfg(target_os = "android")]
+    {
+        extern "C" {
+            fn mallopt(param: libc::c_int, value: libc::c_int) -> libc::c_int;
+        }
+        const M_PURGE_ALL: libc::c_int = -104;
+        const M_PURGE: libc::c_int = -101;
+        unsafe {
+            if mallopt(M_PURGE_ALL, 0) == 0 {
+                mallopt(M_PURGE, 0);
+            }
+        }
+    }
+}
+
+fn pause_index_if_plan_active(written: i64, expected: i64, peak_rss_mb: u64) -> anyhow::Result<()> {
+    if !crate::download::pbf_priority::idle_pause_requested() {
+        return Ok(());
+    }
+    release_index_heap();
+    log::info!(
+        target: "PlaceIndex",
+        "place_index_build action=paused written={written} expected={expected} \
+         peak_rss_mb={peak_rss_mb} held=committed_rows+wal"
+    );
+    anyhow::bail!("{PLACE_INDEX_PAUSED_PREFIX} written={written} expected={expected}")
+}
 /// Refresh place-index UI labels during long PBF walks so Android does not
 /// appear frozen on a single "scanning ways…" / "scanning nodes…" string.
 const PLACE_INDEX_PROGRESS_HEARTBEAT: usize = 25_000;
@@ -134,6 +216,91 @@ pub struct NameHit {
     pub region_id: String,
 }
 
+fn search_match_class(name: &str, q_lower: &str) -> i32 {
+    let name_l = name.to_lowercase();
+    if name_l == q_lower {
+        0
+    } else if name_l.starts_with(q_lower) {
+        1
+    } else {
+        2
+    }
+}
+
+fn search_kind_class(kind: &str) -> i32 {
+    if let Some(rest) = kind.strip_prefix("place:") {
+        return match rest {
+            "city" | "municipality" => 0,
+            "town" => 1,
+            "suburb" | "borough" | "quarter" => 2,
+            "village" => 3,
+            "hamlet" => 4,
+            "locality" | "isolated_dwelling" => 5,
+            _ => 6,
+        };
+    }
+    if kind.starts_with("tourism:")
+        || kind.starts_with("amenity:")
+        || kind.starts_with("leisure:")
+        || kind.starts_with("natural:")
+    {
+        return 10;
+    }
+    if kind.starts_with("addr:") || kind.starts_with("highway:") {
+        return 20;
+    }
+    15
+}
+
+fn search_region_country(region_id: &str) -> &str {
+    let mut parts = region_id.trim_matches('/').split('/');
+    let _ = parts.next();
+    parts.next().unwrap_or("")
+}
+
+fn search_haversine_km(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> i32 {
+    let r = 6371.0_f64;
+    let dlat = (b_lat - a_lat).to_radians();
+    let dlon = (b_lon - a_lon).to_radians();
+    let la1 = a_lat.to_radians();
+    let la2 = b_lat.to_radians();
+    let h = (dlat / 2.0).sin().powi(2) + la1.cos() * la2.cos() * (dlon / 2.0).sin().powi(2);
+    let km = 2.0 * r * h.sqrt().asin();
+    (km * 10.0).round() as i32
+}
+
+fn search_rank_key(
+    h: &NameHit,
+    q_lower: &str,
+    bias: Option<(Option<f64>, Option<f64>, &str)>,
+) -> (i32, i32, i32, i32, usize) {
+    let match_c = search_match_class(&h.name, q_lower);
+    let kind_c = search_kind_class(&h.kind);
+    let (region_c, dist) = match bias {
+        Some((lat, lon, visible)) => {
+            let vis = visible.trim_matches('/');
+            let region_c = if vis.is_empty() {
+                1
+            } else if h.region_id == vis || h.region_id.starts_with(&format!("{vis}/")) {
+                0
+            } else if search_region_country(&h.region_id) == search_region_country(vis)
+                && !search_region_country(vis).is_empty()
+            {
+                1
+            } else {
+                2
+            };
+            let dist = match (lat, lon) {
+                (Some(lat), Some(lon)) => search_haversine_km(lat, lon, h.lat, h.lon),
+                _ => 0,
+            };
+            (region_c, dist)
+        }
+        None => (1, 0),
+    };
+    (match_c, region_c, kind_c, dist, h.name.len())
+}
+
 /// Local FTS5 name index for settlements, POIs, huts, peaks, and named ways.
 pub struct NameIndex {
     conn: Connection,
@@ -143,17 +310,45 @@ impl NameIndex {
     pub fn open_in_memory() -> SqlResult<Self> {
         let conn = Connection::open_in_memory()?;
         Self::migrate(&conn)?;
+        Self::migrate_region_osm_pk(&conn).map_err(|e| {
+            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e.to_string())))
+        })?;
         Self::backfill_legacy_complete(&conn)?;
         Ok(Self { conn })
     }
 
     pub fn open(path: impl AsRef<Path>) -> SqlResult<Self> {
+        let path = path.as_ref();
+        let user_peek: i32 =
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .ok()
+                .and_then(|c| {
+                    c.query_row("PRAGMA user_version", [], |row| row.get(0))
+                        .ok()
+                })
+                .unwrap_or(0);
+        if user_peek > 0 && user_peek < PLACE_INDEX_SCHEMA_VERSION && path.is_file() {
+            let bak = path.with_file_name("place_index.db.bak-pk-v6");
+            if !bak.is_file() {
+                std::fs::copy(path, &bak)
+                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+            }
+        }
         let conn = Connection::open(path)?;
         // WAL writers rarely wait on readers; keep a short timeout for checkpoints.
-        conn.busy_timeout(Duration::from_secs(5))?;
+        // PK migrate copies millions of rows — allow a long busy wait so a stray
+        // readonly probe cannot abort the writer with SQLITE_BUSY / locking protocol.
+        conn.busy_timeout(Duration::from_secs(120))?;
         let pragmas_t0 = phase_timing::start("place_index.open_db.pragmas");
         Self::apply_file_pragmas(&conn)?;
         phase_timing::end("place_index.open_db.pragmas", pragmas_t0);
+        let user_version: i32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap_or(0);
+        // Already at current schema: no DDL, no FTS drop/rebuild.
+        if user_version >= PLACE_INDEX_SCHEMA_VERSION {
+            return Ok(Self { conn });
+        }
         // GROUP BY over name_entries on every open dominated reopen (~383 ms of
         // 384 ms for 2.1M rows in the ignored timing test; tablet open_db ~7 s).
         // Production writers (`load_from_pbf_for_region` → `upsert_build_progress`)
@@ -162,6 +357,9 @@ impl NameIndex {
         let had_build_table = Self::name_index_build_table_exists(&conn)?;
         let migrate_t0 = phase_timing::start("place_index.open_db.migrate");
         Self::migrate(&conn)?;
+        Self::migrate_region_osm_pk(&conn).map_err(|e| {
+            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e.to_string())))
+        })?;
         phase_timing::end("place_index.open_db.migrate", migrate_t0);
         let backfill_t0 = phase_timing::start("place_index.open_db.backfill_legacy_complete");
         if !had_build_table {
@@ -212,12 +410,234 @@ impl NameIndex {
                 region_id TEXT PRIMARY KEY NOT NULL,
                 expected INTEGER NOT NULL DEFAULT 0,
                 written INTEGER NOT NULL DEFAULT 0,
-                complete INTEGER NOT NULL DEFAULT 0
+                complete INTEGER NOT NULL DEFAULT 0,
+                source_sha256 TEXT NOT NULL DEFAULT '',
+                index_source TEXT NOT NULL DEFAULT ''
             );
             ",
         )?;
         Self::ensure_context_columns(conn)?;
-        Self::ensure_search_doc_fts(conn)?;
+        // Never rebuild FTS here: `INSERT INTO name_fts(name_fts) VALUES('rebuild')`
+        // on a multi-million-row tablet DB is a single uninterruptible statement
+        // (the 13-minute Oslo block). Batched fill lives in migrate_region_osm_pk.
+        Self::ensure_source_sha256_column(conn)?;
+        Self::ensure_index_source_column(conn)?;
+        Ok(())
+    }
+
+    fn ensure_source_sha256_column(conn: &Connection) -> SqlResult<()> {
+        let mut has = false;
+        let mut stmt = conn.prepare("PRAGMA table_info(name_index_build)")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+        for r in rows {
+            if r?.as_str() == "source_sha256" {
+                has = true;
+                break;
+            }
+        }
+        if !has {
+            conn.execute(
+                "ALTER TABLE name_index_build ADD COLUMN source_sha256 TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+        }
+        Ok(())
+    }
+
+    fn ensure_index_source_column(conn: &Connection) -> SqlResult<()> {
+        let mut has = false;
+        let mut stmt = conn.prepare("PRAGMA table_info(name_index_build)")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+        for r in rows {
+            if r?.as_str() == "index_source" {
+                has = true;
+                break;
+            }
+        }
+        if !has {
+            conn.execute(
+                "ALTER TABLE name_index_build ADD COLUMN index_source TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+        }
+        Ok(())
+    }
+
+    fn region_row_count(conn: &Connection, region_id: &str) -> SqlResult<i64> {
+        conn.query_row(
+            "SELECT COUNT(*) FROM name_entries WHERE region_id = ?1",
+            params![region_id],
+            |row| row.get(0),
+        )
+    }
+
+    /// Per-region row counts already present (no hard-coded product/test region ids).
+    fn region_row_counts(conn: &Connection) -> SqlResult<Vec<(String, i64)>> {
+        let mut stmt = conn.prepare(
+            "SELECT region_id, COUNT(*) FROM name_entries GROUP BY region_id ORDER BY region_id",
+        )?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect()
+    }
+
+    fn name_entries_sql(conn: &Connection) -> SqlResult<Option<String>> {
+        conn.query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='name_entries'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+    }
+
+    /// v6: PRIMARY KEY (region_id, osm_id). Resumable copy into name_entries_pk
+    /// in small transactions so a plan can pause within 2 s.
+    fn migrate_region_osm_pk(conn: &Connection) -> anyhow::Result<()> {
+        let sql = Self::name_entries_sql(conn)?.unwrap_or_default();
+        if sql.contains("PRIMARY KEY (region_id, osm_id)")
+            || sql.contains("PRIMARY KEY(region_id, osm_id)")
+        {
+            Self::ensure_search_doc_fts_create_only(conn)?;
+            Self::ensure_search_doc_fts_batched(conn)?;
+            conn.execute_batch(&format!(
+                "PRAGMA user_version = {PLACE_INDEX_SCHEMA_VERSION};"
+            ))?;
+            return Ok(());
+        }
+        index_phase_tick(IndexBuildPhase::Migrate);
+        pause_index_if_plan_active(0, 0, place_index_rss_mb())?;
+        let before = Self::region_row_counts(conn)?;
+        conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS name_entries_pk (
+                region_id TEXT NOT NULL DEFAULT '',
+                osm_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                lat REAL NOT NULL,
+                lon REAL NOT NULL,
+                sub_area TEXT NOT NULL DEFAULT '',
+                municipality TEXT NOT NULL DEFAULT '',
+                search_doc TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY (region_id, osm_id)
+            );
+            CREATE TABLE IF NOT EXISTS _pk_migrate_pos (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                last_rowid INTEGER NOT NULL
+            );
+            INSERT OR IGNORE INTO _pk_migrate_pos(id, last_rowid) VALUES (1, -1);
+            ",
+        )?;
+        let source_n: i64 =
+            conn.query_row("SELECT COUNT(*) FROM name_entries", [], |row| row.get(0))?;
+        loop {
+            index_phase_tick(IndexBuildPhase::Migrate);
+            let last_rowid: i64 = conn
+                .query_row(
+                    "SELECT last_rowid FROM _pk_migrate_pos WHERE id = 1",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(-1);
+            let copied_so_far: i64 = conn
+                .query_row("SELECT COUNT(*) FROM name_entries_pk", [], |r| r.get(0))
+                .unwrap_or(0);
+            pause_index_if_plan_active(copied_so_far, source_n, place_index_rss_mb())?;
+            let end_rowid: Option<i64> = conn.query_row(
+                "SELECT MAX(rowid) FROM (
+                    SELECT rowid FROM name_entries WHERE rowid > ?1
+                    ORDER BY rowid LIMIT ?2
+                 )",
+                params![last_rowid, MIGRATE_COPY_BATCH],
+                |row| row.get(0),
+            )?;
+            let Some(end_rowid) = end_rowid else {
+                break;
+            };
+            conn.execute(
+                "
+                INSERT OR IGNORE INTO name_entries_pk(
+                    region_id, osm_id, name, kind, lat, lon, sub_area, municipality, search_doc
+                )
+                SELECT e.region_id, e.osm_id, e.name, e.kind, e.lat, e.lon,
+                       e.sub_area, e.municipality,
+                       COALESCE(NULLIF(e.search_doc, ''), e.name)
+                FROM name_entries e
+                WHERE e.rowid > ?1 AND e.rowid <= ?2
+                ",
+                params![last_rowid, end_rowid],
+            )?;
+            conn.execute(
+                "UPDATE _pk_migrate_pos SET last_rowid = ?1 WHERE id = 1",
+                params![end_rowid],
+            )?;
+        }
+        index_phase_tick(IndexBuildPhase::Commit);
+        pause_index_if_plan_active(source_n, source_n, place_index_rss_mb())?;
+        conn.execute_batch("DROP TABLE IF EXISTS name_fts;")?;
+        loop {
+            index_phase_tick(IndexBuildPhase::Commit);
+            pause_index_if_plan_active(source_n, source_n, place_index_rss_mb())?;
+            let deleted = conn.execute(
+                "DELETE FROM name_entries WHERE rowid IN (
+                    SELECT rowid FROM name_entries LIMIT ?1
+                )",
+                params![MIGRATE_COPY_BATCH],
+            )?;
+            if deleted == 0 {
+                break;
+            }
+        }
+        index_phase_tick(IndexBuildPhase::Commit);
+        pause_index_if_plan_active(source_n, source_n, place_index_rss_mb())?;
+        conn.execute_batch(
+            "
+            DROP TABLE name_entries;
+            ALTER TABLE name_entries_pk RENAME TO name_entries;
+            DROP TABLE IF EXISTS _pk_migrate_pos;
+            ",
+        )?;
+        Self::ensure_search_doc_fts_create_only(conn)?;
+        Self::ensure_search_doc_fts_batched(conn)?;
+        for (rid, n) in &before {
+            let after = Self::region_row_count(conn, rid).unwrap_or(0);
+            if after != *n {
+                anyhow::bail!("place_index pk migrate stopped: {rid} rows {after} != {n}");
+            }
+        }
+        conn.execute_batch(&format!(
+            "PRAGMA user_version = {PLACE_INDEX_SCHEMA_VERSION};"
+        ))?;
+        Ok(())
+    }
+
+    fn ensure_search_doc_fts_batched(conn: &Connection) -> anyhow::Result<()> {
+        let total: i64 =
+            conn.query_row("SELECT COUNT(*) FROM name_entries", [], |row| row.get(0))?;
+        let mut last_rowid: i64 = -1;
+        loop {
+            index_phase_tick(IndexBuildPhase::Fts);
+            pause_index_if_plan_active(last_rowid, total, place_index_rss_mb())?;
+            let end_rowid: Option<i64> = conn.query_row(
+                "SELECT MAX(rowid) FROM (
+                    SELECT rowid FROM name_entries WHERE rowid > ?1
+                    ORDER BY rowid LIMIT ?2
+                 )",
+                params![last_rowid, MIGRATE_COPY_BATCH],
+                |row| row.get(0),
+            )?;
+            let Some(end_rowid) = end_rowid else {
+                break;
+            };
+            conn.execute(
+                "
+                INSERT INTO name_fts(rowid, search_doc, kind)
+                SELECT rowid, search_doc, kind FROM name_entries
+                WHERE rowid > ?1 AND rowid <= ?2
+                ",
+                params![last_rowid, end_rowid],
+            )?;
+            last_rowid = end_rowid;
+        }
         Ok(())
     }
 
@@ -290,20 +710,18 @@ impl NameIndex {
                 [],
             )?;
             // Legacy rows: FTS rebuild can use display name until the region is
-            // re-indexed with alt_name / loc_name.
-            conn.execute(
-                "UPDATE name_entries SET search_doc = name WHERE search_doc = ''",
-                [],
-            )?;
+            // re-indexed with alt_name / loc_name. Batched in migrate_region_osm_pk
+            // so a plan can pause; a single UPDATE of 11M rows cannot.
         }
-        conn.execute_batch(
-            "CREATE INDEX IF NOT EXISTS idx_name_entries_region_id ON name_entries(region_id);",
-        )?;
+        // After v6 the composite PK (region_id, osm_id) covers region lookups.
+        // Creating idx_name_entries_region_id on a stale multi-million-row file
+        // is another uninterruptible stall.
         Ok(())
     }
 
     /// FTS5 external-content table must index `search_doc` (v5). Recreate when
     /// an older `name`/`kind` FTS definition is still present.
+    #[allow(dead_code)]
     fn ensure_search_doc_fts(conn: &Connection) -> SqlResult<()> {
         let sql: Option<String> = conn
             .query_row(
@@ -314,7 +732,7 @@ impl NameIndex {
             .ok();
         let needs_recreate = match sql.as_deref() {
             None => true,
-            Some(s) => !s.contains("search_doc"),
+            Some(s) => !s.contains("search_doc") || !s.contains("content_rowid='rowid'"),
         };
         if needs_recreate {
             conn.execute_batch("DROP TABLE IF EXISTS name_fts;")?;
@@ -324,13 +742,27 @@ impl NameIndex {
                     search_doc,
                     kind,
                     content='name_entries',
-                    content_rowid='osm_id'
+                    content_rowid='rowid'
                 );
                 ",
             )?;
-            // Populate from content (search_doc already backfilled to name).
             let _ = conn.execute_batch("INSERT INTO name_fts(name_fts) VALUES('rebuild');");
         }
+        Ok(())
+    }
+
+    fn ensure_search_doc_fts_create_only(conn: &Connection) -> SqlResult<()> {
+        conn.execute_batch("DROP TABLE IF EXISTS name_fts;")?;
+        conn.execute_batch(
+            "
+            CREATE VIRTUAL TABLE name_fts USING fts5(
+                search_doc,
+                kind,
+                content='name_entries',
+                content_rowid='rowid'
+            );
+            ",
+        )?;
         Ok(())
     }
 
@@ -371,8 +803,11 @@ impl NameIndex {
     }
 
     /// True when this DB was built by a context-aware `load_from_pbf`.
+    /// Read-only: never creates or migrates the file.
     pub fn is_current_schema(path: impl AsRef<Path>) -> bool {
-        let Ok(conn) = Connection::open(path.as_ref()) else {
+        let Ok(conn) =
+            Connection::open_with_flags(path.as_ref(), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        else {
             return false;
         };
         let v: i32 = conn
@@ -381,38 +816,168 @@ impl NameIndex {
         v >= PLACE_INDEX_SCHEMA_VERSION
     }
 
-    /// Delete an on-device index whose `user_version` is below
-    /// [`PLACE_INDEX_SCHEMA_VERSION`].
+    /// Schema bumps must migrate in place. Never delete the shared multi-region DB.
     ///
-    /// Used before rebuild so a multi-region DB cannot keep pre-bump row kinds
-    /// (e.g. buildings as `named`) after only one region is re-indexed and the
-    /// pragma advances. Returns true when a file was removed.
+    /// Returns false always (no file removed). Callers that cannot migrate must
+    /// stop and ask — they must not wipe sibling regions.
     pub fn discard_if_schema_stale(path: impl AsRef<Path>) -> bool {
         let path = path.as_ref();
         if !path.is_file() || Self::is_current_schema(path) {
             return false;
         }
-        match std::fs::remove_file(path) {
-            Ok(()) => {
-                Self::remove_wal_sidecars(path);
-                log::info!(
+        log::warn!(
+            target: "NaviSearch",
+            "place-index: schema older than v{PLACE_INDEX_SCHEMA_VERSION} at {} — \
+             migrate in place, not delete",
+            path.display()
+        );
+        false
+    }
+
+    /// Path of the one-shot v5→v6 pre-migrate copy next to `place_index.db`.
+    pub fn bak_pk_v6_path(path: impl AsRef<Path>) -> PathBuf {
+        path.as_ref().with_file_name("place_index.db.bak-pk-v6")
+    }
+
+    /// Restore `place_index.db` from [`bak_pk_v6_path`] when the live file is
+    /// missing, tiny, or was replaced by an empty post-quarantine stub.
+    ///
+    /// Returns true when a restore ran. Never deletes the bak file.
+    pub fn restore_from_bak_pk_v6(path: impl AsRef<Path>) -> bool {
+        let path = path.as_ref();
+        let bak = Self::bak_pk_v6_path(path);
+        if !bak.is_file() {
+            return false;
+        }
+        let bak_len = std::fs::metadata(&bak).map(|m| m.len()).unwrap_or(0);
+        if bak_len < 10_000 {
+            return false;
+        }
+        let live_len = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        let need = !path.is_file() || live_len < 10_000 || live_len + 1_000_000 < bak_len;
+        if !need {
+            return false;
+        }
+        for suffix in ["-wal", "-shm"] {
+            let mut s = path.as_os_str().to_os_string();
+            s.push(suffix);
+            let _ = std::fs::remove_file(PathBuf::from(s));
+        }
+        match std::fs::copy(&bak, path) {
+            Ok(_) => {
+                log::warn!(
                     target: "NaviSearch",
-                    "place-index: discarded stale schema DB {}",
-                    path.display()
+                    "place-index: restored {} ({} bytes) from {}",
+                    path.display(),
+                    bak_len,
+                    bak.display()
                 );
                 true
             }
             Err(e) => {
-                log::warn!(
+                log::error!(
                     target: "NaviSearch",
-                    "place-index: failed to discard stale schema DB {}: {e}",
-                    path.display()
+                    "place-index: restore from {} failed: {e}",
+                    bak.display()
                 );
                 false
             }
         }
     }
 
+    /// Intact check on an already-open writer (no second connection).
+    pub fn region_intact_on_conn(&self, region_id: &str) -> bool {
+        let region_id = region_id.trim().trim_matches('/');
+        if region_id.is_empty() {
+            return false;
+        }
+        let user_version: i32 = self
+            .conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap_or(0);
+        if user_version < PLACE_INDEX_SCHEMA_VERSION {
+            return false;
+        }
+        let count: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM name_entries WHERE region_id = ?1",
+                params![region_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        if count <= 0 {
+            return false;
+        }
+        match self.conn.query_row(
+            "SELECT complete, written, expected FROM name_index_build WHERE region_id = ?1",
+            params![region_id],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            },
+        ) {
+            Ok((complete, written, expected)) => {
+                if complete == 0 {
+                    return false;
+                }
+                let refer = if written > 0 { written } else { expected };
+                refer <= 0 || (count as f64) >= (refer as f64) * 0.10
+            }
+            Err(_) => true,
+        }
+    }
+
+    /// Rename a DB that cannot be opened so the next open sees "missing" without
+    /// destroying the bytes. WAL/SHM sidecars stay next to the quarantine name.
+    pub fn quarantine_unreadable(path: impl AsRef<Path>) -> Option<PathBuf> {
+        let path = path.as_ref();
+        if !path.is_file() {
+            return None;
+        }
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let file_name = path.file_name()?.to_string_lossy();
+        let dest = path.with_file_name(format!("{file_name}.quarantine-{ts}"));
+        match std::fs::rename(path, &dest) {
+            Ok(()) => {
+                for suffix in ["-wal", "-shm"] {
+                    let src = {
+                        let mut s = path.as_os_str().to_os_string();
+                        s.push(suffix);
+                        PathBuf::from(s)
+                    };
+                    if src.is_file() {
+                        let mut d = dest.as_os_str().to_os_string();
+                        d.push(suffix);
+                        let _ = std::fs::rename(&src, PathBuf::from(d));
+                    }
+                }
+                log::error!(
+                    target: "NaviSearch",
+                    "place-index: quarantined unreadable DB {} -> {}",
+                    path.display(),
+                    dest.display()
+                );
+                Some(dest)
+            }
+            Err(e) => {
+                log::error!(
+                    target: "NaviSearch",
+                    "place-index: quarantine failed for {}: {e}",
+                    path.display()
+                );
+                None
+            }
+        }
+    }
+
+    #[allow(dead_code)]
     fn remove_wal_sidecars(path: &Path) {
         for suffix in ["-wal", "-shm"] {
             let mut sidecar = path.as_os_str().to_os_string();
@@ -421,14 +986,23 @@ impl NameIndex {
         }
     }
 
-    /// True when this region's index finished a write (not a mid-build partial).
+    /// True when this region's index finished a write **and** has a plausible
+    /// row count (not `complete=1` with 0 or a handful of rows vs a million written).
     ///
-    /// Missing `name_index_build` table (never opened with this code) falls back
-    /// to [`has_entries_for_region`] / [`has_entries`] so legacy DBs still cache-hit.
-    pub fn region_index_complete(path: impl AsRef<Path>, region_id: &str) -> bool {
+    /// Missing `name_index_build` with real rows is legacy intact. Complete with
+    /// zero rows is **not** intact.
+    pub fn region_index_intact(path: impl AsRef<Path>, region_id: &str) -> bool {
         let path = path.as_ref();
         let region_id = region_id.trim().trim_matches('/');
         if !path.is_file() {
+            return false;
+        }
+        if let Ok(meta) = std::fs::metadata(path) {
+            if meta.len() < 10_000 {
+                return false;
+            }
+        }
+        if !Self::is_current_schema(path) {
             return false;
         }
         let Ok(conn) =
@@ -436,20 +1010,49 @@ impl NameIndex {
         else {
             return false;
         };
-        match conn.query_row(
-            "SELECT complete FROM name_index_build WHERE region_id = ?1",
-            params![region_id],
-            |row| row.get::<_, i64>(0),
-        ) {
-            Ok(v) => v != 0,
-            Err(_) => {
-                if region_id.is_empty() {
-                    Self::has_entries(path)
-                } else {
-                    Self::has_entries_for_region(path, region_id)
-                }
-            }
+        let count: i64 = if region_id.is_empty() {
+            conn.query_row("SELECT COUNT(*) FROM name_entries", [], |row| row.get(0))
+                .unwrap_or(0)
+        } else {
+            conn.query_row(
+                "SELECT COUNT(*) FROM name_entries WHERE region_id = ?1",
+                params![region_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0)
+        };
+        if count <= 0 {
+            return false;
         }
+        match conn.query_row(
+            "SELECT complete, written, expected FROM name_index_build WHERE region_id = ?1",
+            params![region_id],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            },
+        ) {
+            Ok((complete, written, expected)) => {
+                if complete == 0 {
+                    return false;
+                }
+                let refer = if written > 0 { written } else { expected };
+                refer <= 0 || (count as f64) >= (refer as f64) * 0.10
+            }
+            Err(_) => true, // legacy: rows exist, no build row / table
+        }
+    }
+
+    /// True when this region's index finished a write (not a mid-build partial).
+    ///
+    /// Missing `name_index_build` table (never opened with this code) falls back
+    /// to [`has_entries_for_region`] / [`has_entries`] so legacy DBs still cache-hit.
+    /// Prefers [`region_index_intact`] so empty complete flags are not treated as ready.
+    pub fn region_index_complete(path: impl AsRef<Path>, region_id: &str) -> bool {
+        Self::region_index_intact(path, region_id)
     }
 
     fn build_is_interrupted(conn: &Connection, region_id: &str) -> bool {
@@ -487,8 +1090,24 @@ impl NameIndex {
     ) -> anyhow::Result<usize> {
         let total_t0 = phase_timing::start("place_index.total");
         let _bg = crate::download::pbf_priority::BackgroundIndexerGuard::enter();
+        // Same thread already holds the plan: refuse the build immediately.
+        // Do not wait for that plan (deadlock) and do not trip `NameIndex::open`.
+        if crate::download::pbf_priority::plan_on_this_thread() {
+            anyhow::bail!("{PLACE_INDEX_PAUSED_PREFIX} written=0 expected=0");
+        }
         let path = path.as_ref();
         let region_id = region_id.trim().trim_matches('/').to_string();
+        let mut peak_rss_mb = place_index_rss_mb();
+        let bump_peak = |peak: &mut u64| {
+            let rss = place_index_rss_mb();
+            if rss > *peak {
+                *peak = rss;
+            }
+        };
+        // Before any PBF pass: a plan already in flight must not enter a scan
+        // that waits on foreground_plan_active (that parks the indexer).
+        index_phase_tick(IndexBuildPhase::ReadSource);
+        pause_index_if_plan_active(Self::build_written(&self.conn, &region_id), 0, peak_rss_mb)?;
         // (osm_id, display_name, search_doc, kind, lat, lon)
         let mut batch: Vec<(i64, String, String, String, f64, f64)> = Vec::new();
         const PHASES: u64 = 6;
@@ -502,16 +1121,23 @@ impl NameIndex {
         // Sub-labels are set inside load_admin_from_pbf so the 0/6 phase is not
         // a single frozen "admin boundaries…" string for a minute-plus scan.
         let admin_t0 = phase_timing::start("place_index.admin");
-        let admin_rings =
-            place_context::load_admin_from_pbf(path, phase_prefix).unwrap_or_else(|e| {
+        let admin_rings = match place_context::load_admin_from_pbf(path, phase_prefix) {
+            Ok(v) => v,
+            Err(e) if e.to_string().contains(PLACE_INDEX_PAUSED_PREFIX) => {
+                return Err(e);
+            }
+            Err(e) => {
                 log::warn!("admin boundary load for place context skipped: {e:#}");
                 Vec::new()
-            });
+            }
+        };
         phase_timing::end_detail(
             "place_index.admin",
             admin_t0,
             &format!("admin_rings={}", admin_rings.len()),
         );
+        bump_peak(&mut peak_rss_mb);
+        pause_index_if_plan_active(0, 0, peak_rss_mb)?;
 
         // Pass 1: collect named closed/open ways that need node centroids
         // (tourism=zoo, amenity areas, etc. are often ways, not nodes).
@@ -521,16 +1147,25 @@ impl NameIndex {
         let mut needed_nodes: std::collections::HashSet<i64> = std::collections::HashSet::new();
         let mut ways_visited = 0usize;
         let mut ways_last_hb = 0usize;
+        let ways_pause = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         {
-            crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
+            let ways_pause = ways_pause.clone();
+            crate::download::pbf_priority::for_each_pbf_elements_pausable(path, |element| {
+                if ways_pause.load(std::sync::atomic::Ordering::Relaxed) {
+                    return;
+                }
                 ways_visited += 1;
                 if ways_visited - ways_last_hb >= PLACE_INDEX_PROGRESS_HEARTBEAT {
                     ways_last_hb = ways_visited;
+                    index_phase_tick(IndexBuildPhase::ReadSource);
                     crate::download::progress::set(
                         1,
                         Some(PHASES),
                         &format!("{phase_prefix}scanning ways… ({} found)", way_jobs.len()),
                     );
+                    if pause_index_if_plan_active(0, 0, place_index_rss_mb()).is_err() {
+                        ways_pause.store(true, std::sync::atomic::Ordering::Relaxed);
+                    }
                 }
                 let Element::Way(way) = element else {
                     return;
@@ -562,6 +1197,9 @@ impl NameIndex {
                 way_jobs.push((way.id(), name, search_doc, kind, refs));
             })?;
         }
+        if ways_pause.load(std::sync::atomic::Ordering::Relaxed) {
+            pause_index_if_plan_active(0, 0, peak_rss_mb)?;
+        }
         phase_timing::end_detail(
             "place_index.ways",
             ways_t0,
@@ -571,6 +1209,8 @@ impl NameIndex {
                 needed_nodes.len()
             ),
         );
+        bump_peak(&mut peak_rss_mb);
+        pause_index_if_plan_active(0, 0, peak_rss_mb)?;
 
         // Pass 2: nodes (search hits) + coords for way centroids.
         crate::download::progress::set(2, Some(PHASES), &format!("{phase_prefix}scanning nodes…"));
@@ -579,16 +1219,25 @@ impl NameIndex {
             std::collections::HashMap::with_capacity(needed_nodes.len());
         let mut nodes_visited = 0usize;
         let mut nodes_last_hb = 0usize;
+        let nodes_pause = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         {
-            crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
+            let nodes_pause = nodes_pause.clone();
+            crate::download::pbf_priority::for_each_pbf_elements_pausable(path, |element| {
+                if nodes_pause.load(std::sync::atomic::Ordering::Relaxed) {
+                    return;
+                }
                 nodes_visited += 1;
                 if nodes_visited - nodes_last_hb >= PLACE_INDEX_PROGRESS_HEARTBEAT {
                     nodes_last_hb = nodes_visited;
+                    index_phase_tick(IndexBuildPhase::ReadSource);
                     crate::download::progress::set(
                         2,
                         Some(PHASES),
                         &format!("{phase_prefix}scanning nodes… ({} found)", batch.len()),
                     );
+                    if pause_index_if_plan_active(0, 0, place_index_rss_mb()).is_err() {
+                        nodes_pause.store(true, std::sync::atomic::Ordering::Relaxed);
+                    }
                 }
                 match element {
                     Element::Node(node) => {
@@ -617,6 +1266,9 @@ impl NameIndex {
                 }
             })?;
         }
+        if nodes_pause.load(std::sync::atomic::Ordering::Relaxed) {
+            pause_index_if_plan_active(0, 0, peak_rss_mb)?;
+        }
         let node_hits = batch.len();
         phase_timing::end_detail(
             "place_index.nodes",
@@ -627,6 +1279,8 @@ impl NameIndex {
                 node_coords.len()
             ),
         );
+        bump_peak(&mut peak_rss_mb);
+        pause_index_if_plan_active(0, 0, peak_rss_mb)?;
 
         // Surface centroids on the progress UI — this pass used to leave the
         // last "scanning nodes…" label frozen for a long stretch.
@@ -671,13 +1325,16 @@ impl NameIndex {
             centroids_t0,
             &format!("way_hits={way_hits} batch={}", batch.len()),
         );
+        bump_peak(&mut peak_rss_mb);
+        index_phase_tick(IndexBuildPhase::SortPrepare);
+        pause_index_if_plan_active(0, batch.len() as i64, peak_rss_mb)?;
 
         // Official hiking/cycling route relations (name/ref/operator) for To/Via search.
         // Relation ids are distinct from node ids in OSM; store relation id as-is
         // (FTS rowid = osm_id).
         crate::download::progress::set(3, Some(PHASES), &format!("{phase_prefix}named routes…"));
         let routes_t0 = phase_timing::start("place_index.named_routes");
-        crate::download::pbf_priority::yield_if_foreground_plan();
+        pause_index_if_plan_active(0, batch.len() as i64, peak_rss_mb)?;
         let mut route_hits = 0usize;
         match crate::routing::graph::load_named_route_entries(path) {
             Ok(routes) => {
@@ -686,6 +1343,9 @@ impl NameIndex {
                     let search_doc = r.name.clone();
                     batch.push((r.osm_id, r.name, search_doc, r.kind, r.lat, r.lon));
                 }
+            }
+            Err(e) if e.to_string().contains(PLACE_INDEX_PAUSED_PREFIX) => {
+                return Err(e);
             }
             Err(e) => {
                 log::warn!("named route relation index skipped: {e:#}");
@@ -696,6 +1356,8 @@ impl NameIndex {
             routes_t0,
             &format!("route_hits={route_hits} batch={}", batch.len()),
         );
+        bump_peak(&mut peak_rss_mb);
+        pause_index_if_plan_active(0, batch.len() as i64, peak_rss_mb)?;
 
         crate::download::progress::set(
             4,
@@ -716,6 +1378,8 @@ impl NameIndex {
             ctx_t0,
             &format!("batch={}", batch.len()),
         );
+        bump_peak(&mut peak_rss_mb);
+        pause_index_if_plan_active(0, batch.len() as i64, peak_rss_mb)?;
 
         crate::download::progress::set(
             5,
@@ -756,18 +1420,14 @@ impl NameIndex {
         let total = batch.len();
         let mut inserted = skip.len();
         let mut since_commit = 0usize;
+        index_phase_tick(IndexBuildPhase::Insert);
+        pause_index_if_plan_active(inserted as i64, total as i64, peak_rss_mb)?;
         let mut tx = self.conn.unchecked_transaction()?;
         for (osm_id, name, search_doc, kind, lat, lon) in &batch {
             if skip.contains(osm_id) {
                 continue;
             }
             let ctx = resolver.resolve(*osm_id, name, kind, *lat, *lon);
-            // osm_id may already exist from another region at a landsdel border —
-            // replace and refresh FTS for that id.
-            let _ = tx.execute(
-                "INSERT INTO name_fts(name_fts, rowid, search_doc, kind) VALUES('delete', ?1, NULL, NULL)",
-                params![osm_id],
-            );
             tx.execute(
                 "INSERT OR REPLACE INTO name_entries(osm_id, name, kind, lat, lon, sub_area, municipality, region_id, search_doc)
                  VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
@@ -783,9 +1443,18 @@ impl NameIndex {
                     search_doc
                 ],
             )?;
+            let rowid: i64 = tx.query_row(
+                "SELECT rowid FROM name_entries WHERE region_id = ?1 AND osm_id = ?2",
+                params![region_id, osm_id],
+                |row| row.get(0),
+            )?;
+            let _ = tx.execute(
+                "INSERT INTO name_fts(name_fts, rowid, search_doc, kind) VALUES('delete', ?1, NULL, NULL)",
+                params![rowid],
+            );
             tx.execute(
                 "INSERT INTO name_fts(rowid, search_doc, kind) VALUES (?1,?2,?3)",
-                params![osm_id, search_doc, kind],
+                params![rowid, search_doc, kind],
             )?;
             inserted += 1;
             since_commit += 1;
@@ -797,7 +1466,9 @@ impl NameIndex {
                     Some(total as u64),
                     &format!("{phase_prefix}writing database…"),
                 );
-                crate::download::pbf_priority::yield_if_foreground_plan();
+                bump_peak(&mut peak_rss_mb);
+                index_phase_tick(IndexBuildPhase::Insert);
+                pause_index_if_plan_active(inserted as i64, total as i64, peak_rss_mb)?;
                 tx = self.conn.unchecked_transaction()?;
                 since_commit = 0;
             }
@@ -812,6 +1483,8 @@ impl NameIndex {
             "PRAGMA user_version = {PLACE_INDEX_SCHEMA_VERSION};"
         ))?;
         Self::upsert_build_progress(&tx, &region_id, total as i64, inserted as i64, true)?;
+        index_phase_tick(IndexBuildPhase::Commit);
+        pause_index_if_plan_active(inserted as i64, total as i64, peak_rss_mb)?;
         tx.commit()?;
         phase_timing::end("place_index.sqlite_commit", commit_t0);
         phase_timing::end_detail(
@@ -820,10 +1493,16 @@ impl NameIndex {
             &format!("rows={total}"),
         );
         crate::download::progress::set(PHASES, Some(PHASES), "Place index ready");
+        bump_peak(&mut peak_rss_mb);
+        log::info!(
+            target: "PlaceIndex",
+            "place_index_build action=built region={region_id} indexed={} peak_rss_mb={peak_rss_mb}",
+            batch.len()
+        );
         phase_timing::end_detail(
             "place_index.total",
             total_t0,
-            &format!("indexed={}", batch.len()),
+            &format!("indexed={} peak_rss_mb={peak_rss_mb}", batch.len()),
         );
         Ok(batch.len())
     }
@@ -842,13 +1521,14 @@ impl NameIndex {
             tx.execute_batch(
                 "
                 DELETE FROM name_entries;
-                INSERT INTO name_fts(name_fts) VALUES('delete-all');
+                DELETE FROM name_index_build;
+                INSERT INTO name_fts(name_fts) VALUES('rebuild');
                 ",
             )?;
             return Ok(());
         }
         {
-            let mut stmt = tx.prepare("SELECT osm_id FROM name_entries WHERE region_id = ?1")?;
+            let mut stmt = tx.prepare("SELECT rowid FROM name_entries WHERE region_id = ?1")?;
             let ids: Vec<i64> = stmt
                 .query_map(params![region_id], |row| row.get(0))?
                 .collect::<SqlResult<Vec<_>>>()?;
@@ -864,11 +1544,129 @@ impl NameIndex {
             "DELETE FROM name_entries WHERE region_id = ?1",
             params![region_id],
         )?;
-        // External-content FTS5 can retain orphan index rows when content was
-        // deleted without matching FTS 'delete' commands (e.g. Android framework
-        // SQLite lacking FTS5 cleared name_entries first). Rebuild syncs the
-        // index to the remaining content table so orphans cannot MATCH.
+        tx.execute(
+            "DELETE FROM name_index_build WHERE region_id = ?1",
+            params![region_id],
+        )?;
+        // External-content FTS5: rebuild after deleting a region's rows.
         let _ = tx.execute_batch("INSERT INTO name_fts(name_fts) VALUES('rebuild');");
+        Ok(())
+    }
+
+    /// Place-source sha256 recorded with this region's index state, if any.
+    pub fn place_source_sha256(path: impl AsRef<Path>, region_id: &str) -> Option<String> {
+        let path = path.as_ref();
+        let region_id = region_id.trim().trim_matches('/');
+        if !path.is_file() || region_id.is_empty() {
+            return None;
+        }
+        let Ok(conn) =
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        else {
+            return None;
+        };
+        conn.query_row(
+            "SELECT source_sha256 FROM name_index_build WHERE region_id = ?1",
+            params![region_id],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+    }
+
+    /// Record the place-source sha256 on an existing (or just-built) region row.
+    /// Does not change complete/written/expected.
+    pub fn set_place_source_sha256(
+        path: impl AsRef<Path>,
+        region_id: &str,
+        sha256: &str,
+    ) -> Result<(), String> {
+        let path = path.as_ref();
+        let region_id = region_id.trim().trim_matches('/');
+        let sha256 = sha256.trim();
+        if region_id.is_empty() {
+            return Err("region_id empty".into());
+        }
+        if sha256.is_empty() {
+            return Err("source sha256 empty".into());
+        }
+        let conn = Connection::open(path).map_err(|e| e.to_string())?;
+        Self::apply_file_pragmas(&conn).map_err(|e| e.to_string())?;
+        Self::ensure_source_sha256_column(&conn).map_err(|e| e.to_string())?;
+        let n = conn
+            .execute(
+                "UPDATE name_index_build SET source_sha256 = ?1 WHERE region_id = ?2",
+                params![sha256, region_id],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            conn.execute(
+                "INSERT INTO name_index_build(region_id, expected, written, complete, source_sha256)
+                 SELECT ?2, COUNT(*), COUNT(*), 1, ?1
+                 FROM name_entries WHERE region_id = ?2",
+                params![sha256, region_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
+    /// How this region's index was built: `place-source`, `own-extract`, or none.
+    pub fn place_index_source(path: impl AsRef<Path>, region_id: &str) -> Option<String> {
+        let path = path.as_ref();
+        let region_id = region_id.trim().trim_matches('/');
+        if !path.is_file() || region_id.is_empty() {
+            return None;
+        }
+        let Ok(conn) =
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        else {
+            return None;
+        };
+        conn.query_row(
+            "SELECT index_source FROM name_index_build WHERE region_id = ?1",
+            params![region_id],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+    }
+
+    /// Record `place-source` or `own-extract` without changing row counts.
+    pub fn set_place_index_source(
+        path: impl AsRef<Path>,
+        region_id: &str,
+        source: &str,
+    ) -> Result<(), String> {
+        let path = path.as_ref();
+        let region_id = region_id.trim().trim_matches('/');
+        let source = source.trim();
+        if region_id.is_empty() {
+            return Err("region_id empty".into());
+        }
+        if source != "place-source" && source != "own-extract" {
+            return Err(format!("invalid index_source {source}"));
+        }
+        let conn = Connection::open(path).map_err(|e| e.to_string())?;
+        Self::apply_file_pragmas(&conn).map_err(|e| e.to_string())?;
+        Self::ensure_index_source_column(&conn).map_err(|e| e.to_string())?;
+        let n = conn
+            .execute(
+                "UPDATE name_index_build SET index_source = ?1 WHERE region_id = ?2",
+                params![source, region_id],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            conn.execute(
+                "INSERT INTO name_index_build(region_id, expected, written, complete, index_source)
+                 SELECT ?2, COUNT(*), COUNT(*), 1, ?1
+                 FROM name_entries WHERE region_id = ?2",
+                params![source, region_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
         Ok(())
     }
 
@@ -958,16 +1756,66 @@ impl NameIndex {
                 &name
             ],
         )?;
-        // Rebuild FTS row for this id (delete + insert keeps content sync).
+        let rowid: i64 = self.conn.query_row(
+            "SELECT rowid FROM name_entries WHERE region_id = ?1 AND osm_id = ?2",
+            params![&region_id, osm_id],
+            |row| row.get(0),
+        )?;
         let _ = self.conn.execute(
             "INSERT INTO name_fts(name_fts, rowid, search_doc, kind) VALUES('delete', ?1, NULL, NULL)",
-            params![osm_id],
+            params![rowid],
         );
         self.conn.execute(
             "INSERT INTO name_fts(rowid, search_doc, kind) VALUES (?1,?2,?3)",
-            params![osm_id, &name, &kind],
+            params![rowid, &name, &kind],
         )?;
         Ok(())
+    }
+
+    fn exact_name_hits(&self, query: &str, limit: usize) -> SqlResult<Vec<NameHit>> {
+        let mut stmt = self.conn.prepare(
+            "
+            SELECT osm_id, name, kind, lat, lon, sub_area, municipality, region_id
+            FROM name_entries
+            WHERE name = ?1 COLLATE NOCASE
+            LIMIT ?2
+            ",
+        )?;
+        let rows = stmt.query_map(params![query, limit as i64], |row| {
+            Ok(NameHit {
+                osm_id: row.get(0)?,
+                name: row.get(1)?,
+                kind: row.get(2)?,
+                lat: row.get(3)?,
+                lon: row.get(4)?,
+                sub_area: row.get(5)?,
+                municipality: row.get(6)?,
+                region_id: row.get(7)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn search_biased(
+        &self,
+        query: &str,
+        limit: usize,
+        bias_lat: Option<f64>,
+        bias_lon: Option<f64>,
+        visible_region: &str,
+    ) -> SqlResult<Vec<NameHit>> {
+        let mut out = self.search(query, limit.saturating_mul(4).max(limit))?;
+        let q_lower = query.trim().to_lowercase();
+        let visible = visible_region.trim().trim_matches('/');
+        out.sort_by(|a, b| {
+            search_rank_key(a, &q_lower, Some((bias_lat, bias_lon, visible))).cmp(&search_rank_key(
+                b,
+                &q_lower,
+                Some((bias_lat, bias_lon, visible)),
+            ))
+        });
+        out.truncate(limit);
+        Ok(out)
     }
 
     pub fn search(&self, query: &str, limit: usize) -> SqlResult<Vec<NameHit>> {
@@ -983,8 +1831,9 @@ impl NameIndex {
             "
             SELECT e.osm_id, e.name, e.kind, e.lat, e.lon, e.sub_area, e.municipality, e.region_id
             FROM name_fts f
-            JOIN name_entries e ON e.osm_id = f.rowid
+            JOIN name_entries e ON e.rowid = f.rowid
             WHERE name_fts MATCH ?1
+            GROUP BY e.osm_id
             LIMIT ?2
             ",
         )?;
@@ -1004,30 +1853,22 @@ impl NameIndex {
         for r in rows {
             out.push(r?);
         }
+        // FTS prefix order can drown a local exact name (Aga in Vestlandet)
+        // under hundreds of foreign AGA* rows. Fold every exact name in.
+        let exact = self.exact_name_hits(q, 200)?;
+        let mut seen = HashSet::new();
+        let mut merged = Vec::with_capacity(out.len() + exact.len());
+        for h in exact.into_iter().chain(out) {
+            if seen.insert((h.region_id.clone(), h.osm_id)) {
+                merged.push(h);
+            }
+        }
         let q_lower = q.to_lowercase();
-        out.sort_by(|a, b| {
-            let score = |h: &NameHit| -> (i32, i32, usize) {
-                let name_l = h.name.to_lowercase();
-                let starts = if name_l.starts_with(&q_lower) { 0 } else { 1 };
-                let kind_rank = if h.kind.starts_with("place:") {
-                    0
-                } else if h.kind.starts_with("tourism:")
-                    || h.kind.starts_with("amenity:")
-                    || h.kind.starts_with("leisure:")
-                    || h.kind.starts_with("natural:")
-                {
-                    1
-                } else if h.kind.starts_with("addr:") {
-                    3
-                } else {
-                    2
-                };
-                (starts, kind_rank, h.name.len())
-            };
-            score(a).cmp(&score(b))
+        merged.sort_by(|a, b| {
+            search_rank_key(a, &q_lower, None).cmp(&search_rank_key(b, &q_lower, None))
         });
-        out.truncate(limit);
-        Ok(out)
+        merged.truncate(limit);
+        Ok(merged)
     }
 
     /// Entries within [radius_m] of `(lat, lon)`, nearest first (Haversine).
@@ -1223,7 +2064,8 @@ impl NameIndex {
     ///
     /// Requires a place index built at current [`PLACE_INDEX_SCHEMA_VERSION`]
     /// so `classify_named` stored buildings as [`NAMED_BUILDING_KIND`]. Older
-    /// on-device indexes are discarded and rebuilt on next `ensure_place_index`.
+    /// on-device indexes migrate in place on the next writer open — the shared
+    /// file is never discarded.
     pub fn named_buildings_in_bbox(
         &self,
         min_lat: f64,
@@ -1502,6 +2344,80 @@ mod tests {
         assert!(bj.iter().any(|h| h.name.contains('ø')), "got {bj:?}");
     }
 
+    #[test]
+    fn keep_both_regions_on_osm_id_clash() {
+        let mut idx = NameIndex::open_in_memory().expect("mem index");
+        idx.upsert_entry_with_region(
+            42,
+            "Border".into(),
+            "place:hamlet".into(),
+            55.0,
+            12.0,
+            String::new(),
+            String::new(),
+            "europe/denmark".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            42,
+            "Stolen".into(),
+            "place:hamlet".into(),
+            53.5,
+            10.0,
+            String::new(),
+            String::new(),
+            "europe/germany/hamburg".into(),
+        )
+        .unwrap();
+        let n: i64 = idx
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM name_entries WHERE osm_id = 42",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 2);
+        let hits = idx.search("Stolen", 8).unwrap();
+        assert_eq!(hits.iter().filter(|h| h.osm_id == 42).count(), 1);
+    }
+
+    #[test]
+    fn same_region_osm_id_replace_allowed() {
+        let mut idx = NameIndex::open_in_memory().expect("mem index");
+        idx.upsert_entry_with_region(
+            7,
+            "Old".into(),
+            "place:hamlet".into(),
+            61.0,
+            7.0,
+            String::new(),
+            String::new(),
+            "europe/norway/vestlandet".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            7,
+            "New".into(),
+            "place:village".into(),
+            61.1,
+            7.1,
+            String::new(),
+            String::new(),
+            "europe/norway/vestlandet".into(),
+        )
+        .unwrap();
+        let name: String = idx
+            .conn
+            .query_row(
+                "SELECT name FROM name_entries WHERE osm_id = 7",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(name, "New");
+    }
+
     /// Document SQLite FTS5 unicode61 folding: å/ü fold to ASCII bases; æ/ø do not.
     #[test]
     fn fts_unicode61_folds_aa_but_not_ae_oe() {
@@ -1759,8 +2675,11 @@ mod tests {
             .unwrap();
         }
         assert!(!NameIndex::is_current_schema(&db));
-        assert!(NameIndex::discard_if_schema_stale(&db));
-        assert!(!db.is_file());
+        assert!(
+            !NameIndex::discard_if_schema_stale(&db),
+            "must not delete the shared DB on schema mismatch"
+        );
+        assert!(db.is_file());
         assert!(!NameIndex::discard_if_schema_stale(&db));
     }
 
@@ -2510,10 +3429,15 @@ mod tests {
             .unwrap();
         }
         let _idx = NameIndex::open(&db).expect("open legacy");
-        assert!(
-            NameIndex::region_index_complete(&db, "europe/norway/ostlandet"),
-            "legacy rows must get a complete name_index_build row"
-        );
+        let conn = Connection::open(&db).unwrap();
+        let complete: i64 = conn
+            .query_row(
+                "SELECT complete FROM name_index_build WHERE region_id = 'europe/norway/ostlandet'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("name_index_build row");
+        assert_eq!(complete, 1);
     }
 
     #[test]
@@ -2552,5 +3476,279 @@ mod tests {
             n, 0,
             "GROUP BY backfill must not run when name_index_build already existed"
         );
+    }
+
+    #[test]
+    fn plan_during_index_pauses_and_resumes_same_rows() {
+        use crate::download::pbf_priority::{self, ForegroundPlanGuard};
+        let _g = pbf_priority::lock_plan_flag_for_test();
+        let pbf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/place-source-tiny.osm.pbf");
+        assert!(pbf.is_file(), "{}", pbf.display());
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let uninterrupted = dir.path().join("full.db");
+        let paused = dir.path().join("paused.db");
+        let region = "test/fu38-pause";
+        let n_full = {
+            let mut idx = NameIndex::open(&uninterrupted).unwrap();
+            idx.load_from_pbf_for_region(&pbf, region).unwrap()
+        };
+        assert!(n_full > 0);
+        {
+            let _fg = ForegroundPlanGuard::acquire();
+            let mut idx = NameIndex::open(&paused).unwrap();
+            let err = idx
+                .load_from_pbf_for_region(&pbf, region)
+                .expect_err("must pause");
+            assert!(
+                err.to_string().contains(PLACE_INDEX_PAUSED_PREFIX),
+                "{err:#}"
+            );
+            assert!(
+                !NameIndex::region_index_intact(&paused, region),
+                "paused build must not look intact"
+            );
+        }
+        let n_resume = {
+            let mut idx = NameIndex::open(&paused).unwrap();
+            idx.load_from_pbf_for_region(&pbf, region).unwrap()
+        };
+        assert_eq!(n_resume, n_full);
+        assert!(NameIndex::region_index_intact(&paused, region));
+        let full_ids =
+            NameIndex::osm_ids_for_region(&Connection::open(&uninterrupted).unwrap(), region)
+                .unwrap();
+        let resume_ids =
+            NameIndex::osm_ids_for_region(&Connection::open(&paused).unwrap(), region).unwrap();
+        assert_eq!(full_ids, resume_ids);
+    }
+
+    #[test]
+    fn search_ranks_exact_local_place_before_foreign_prefix() {
+        let mut idx = NameIndex::open_in_memory().unwrap();
+        idx.upsert_entry_with_region(
+            1,
+            "Aga".into(),
+            "place:hamlet".into(),
+            60.30,
+            6.60,
+            String::new(),
+            "Ullensvang".into(),
+            "europe/norway/vestlandet".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            2,
+            "Agardh".into(),
+            "place:hamlet".into(),
+            56.67,
+            12.86,
+            String::new(),
+            String::new(),
+            "europe/sweden/halland".into(),
+        )
+        .unwrap();
+        let hits = idx
+            .search_biased(
+                "Aga",
+                10,
+                Some(60.39),
+                Some(6.50),
+                "europe/norway/vestlandet",
+            )
+            .unwrap();
+        assert_eq!(hits[0].name, "Aga");
+        assert_eq!(hits[0].region_id, "europe/norway/vestlandet");
+    }
+
+    #[test]
+    fn search_keeps_prefix_only_hits() {
+        let mut idx = NameIndex::open_in_memory().unwrap();
+        idx.upsert_entry_with_region(
+            1,
+            "Raufoss".into(),
+            "place:town".into(),
+            60.73,
+            10.61,
+            String::new(),
+            "Vestre Toten".into(),
+            "europe/norway/ostlandet".into(),
+        )
+        .unwrap();
+        let hits = idx.search("Raufo", 10).unwrap();
+        assert!(hits.iter().any(|h| h.name == "Raufoss"));
+    }
+
+    #[test]
+    fn pause_request_stops_each_index_phase_within_two_seconds() {
+        use crate::download::pbf_priority::{self, ForegroundPlanGuard};
+        let _g = pbf_priority::lock_plan_flag_for_test();
+        pbf_priority::TEST_INDEX_PHASE_SLEEP_MS.store(400, std::sync::atomic::Ordering::Relaxed);
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("v4.db");
+        {
+            let conn = Connection::open(&db).unwrap();
+            conn.execute_batch(
+                "
+                CREATE TABLE name_entries (
+                    osm_id INTEGER PRIMARY KEY NOT NULL,
+                    name TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    lat REAL NOT NULL,
+                    lon REAL NOT NULL,
+                    sub_area TEXT NOT NULL DEFAULT '',
+                    municipality TEXT NOT NULL DEFAULT '',
+                    region_id TEXT NOT NULL DEFAULT '',
+                    search_doc TEXT NOT NULL DEFAULT ''
+                );
+                PRAGMA user_version = 4;
+                ",
+            )
+            .unwrap();
+            let tx = conn.unchecked_transaction().unwrap();
+            for i in 0..12_000 {
+                tx.execute(
+                    "INSERT INTO name_entries(osm_id, name, kind, lat, lon, region_id, search_doc)
+                     VALUES (?1, ?2, 'place:hamlet', 60.0, 10.0, 'europe/norway/ostlandet', ?2)",
+                    params![i, format!("n{i}")],
+                )
+                .unwrap();
+            }
+            tx.commit().unwrap();
+        }
+        let started = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let started2 = started.clone();
+        let db2 = db.clone();
+        let worker = std::thread::spawn(move || {
+            pbf_priority::honour_idle_pause_on_this_thread();
+            started2.store(true, std::sync::atomic::Ordering::Relaxed);
+            NameIndex::open(&db2)
+        });
+        while !started.load(std::sync::atomic::Ordering::Relaxed) {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        let t0 = std::time::Instant::now();
+        pbf_priority::request_idle_pause();
+        let _fg = ForegroundPlanGuard::acquire();
+        let err = match worker.join().expect("join") {
+            Ok(_) => panic!("migrate must pause"),
+            Err(e) => e,
+        };
+        pbf_priority::TEST_INDEX_PHASE_SLEEP_MS.store(0, std::sync::atomic::Ordering::Relaxed);
+        pbf_priority::clear_idle_pause();
+        let waited = t0.elapsed();
+        assert!(err.to_string().contains(PLACE_INDEX_PAUSED_PREFIX), "{err}");
+        assert!(
+            waited.as_millis() <= 2000,
+            "plan waited {waited:?} for migrate pause"
+        );
+    }
+
+    #[test]
+    fn pause_request_honoured_in_every_index_phase() {
+        use crate::download::pbf_priority::{self, ForegroundPlanGuard};
+        let _g = pbf_priority::lock_plan_flag_for_test();
+        let phases = [
+            IndexBuildPhase::ReadSource,
+            IndexBuildPhase::SortPrepare,
+            IndexBuildPhase::Insert,
+            IndexBuildPhase::Fts,
+            IndexBuildPhase::Commit,
+            IndexBuildPhase::Migrate,
+        ];
+        for phase in phases {
+            pbf_priority::clear_idle_pause();
+            pbf_priority::TEST_INDEX_PHASE_SLEEP_MS
+                .store(300, std::sync::atomic::Ordering::Relaxed);
+            let worker = std::thread::spawn(move || {
+                pbf_priority::honour_idle_pause_on_this_thread();
+                loop {
+                    index_phase_tick(phase);
+                    if pause_index_if_plan_active(0, 0, 0).is_err() {
+                        break;
+                    }
+                }
+            });
+            std::thread::sleep(std::time::Duration::from_millis(40));
+            let t0 = std::time::Instant::now();
+            pbf_priority::request_idle_pause();
+            let _fg = ForegroundPlanGuard::acquire();
+            worker.join().expect("phase worker");
+            pbf_priority::TEST_INDEX_PHASE_SLEEP_MS.store(0, std::sync::atomic::Ordering::Relaxed);
+            pbf_priority::clear_idle_pause();
+            let waited = t0.elapsed();
+            assert!(
+                waited.as_millis() <= 2000,
+                "phase {phase:?} waited {waited:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn migrate_resumes_after_repeated_pauses() {
+        use crate::download::pbf_priority::{self, ForegroundPlanGuard};
+        let _g = pbf_priority::lock_plan_flag_for_test();
+        pbf_priority::TEST_INDEX_PHASE_SLEEP_MS.store(200, std::sync::atomic::Ordering::Relaxed);
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("v4-resume.db");
+        {
+            let conn = Connection::open(&db).unwrap();
+            conn.execute_batch(
+                "
+                CREATE TABLE name_entries (
+                    osm_id INTEGER PRIMARY KEY NOT NULL,
+                    name TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    lat REAL NOT NULL,
+                    lon REAL NOT NULL,
+                    sub_area TEXT NOT NULL DEFAULT '',
+                    municipality TEXT NOT NULL DEFAULT '',
+                    region_id TEXT NOT NULL DEFAULT '',
+                    search_doc TEXT NOT NULL DEFAULT ''
+                );
+                PRAGMA user_version = 4;
+                ",
+            )
+            .unwrap();
+            let tx = conn.unchecked_transaction().unwrap();
+            for i in 0..16_000 {
+                tx.execute(
+                    "INSERT INTO name_entries(osm_id, name, kind, lat, lon, region_id, search_doc)
+                     VALUES (?1, ?2, 'place:hamlet', 60.0, 10.0, 'europe/norway/ostlandet', ?2)",
+                    params![i, format!("n{i}")],
+                )
+                .unwrap();
+            }
+            tx.commit().unwrap();
+        }
+        for _ in 0..3 {
+            pbf_priority::clear_idle_pause();
+            let db2 = db.clone();
+            let worker = std::thread::spawn(move || {
+                pbf_priority::honour_idle_pause_on_this_thread();
+                NameIndex::open(&db2)
+            });
+            std::thread::sleep(std::time::Duration::from_millis(80));
+            pbf_priority::request_idle_pause();
+            let _fg = ForegroundPlanGuard::acquire();
+            let _ = worker.join().expect("join");
+            drop(_fg);
+            pbf_priority::clear_idle_pause();
+        }
+        pbf_priority::TEST_INDEX_PHASE_SLEEP_MS.store(0, std::sync::atomic::Ordering::Relaxed);
+        pbf_priority::clear_idle_pause();
+        let idx = NameIndex::open(&db).expect("resume must finish");
+        drop(idx);
+        let n: i64 = Connection::open(&db)
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM name_entries", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 16_000);
+        let v: i32 = Connection::open(&db)
+            .unwrap()
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, PLACE_INDEX_SCHEMA_VERSION);
     }
 }

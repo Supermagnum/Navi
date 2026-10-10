@@ -495,6 +495,11 @@ pub fn try_fetch_region_packs(
         if remote_name == &navi_name {
             continue;
         }
+        // Place-source is optional search input; idle jobs fetch it. Skip here
+        // so a pack install does not pull it for routing.
+        if remote_name.ends_with(".navi-place-source.osm.pbf") {
+            continue;
+        }
         done_files += 1;
         let label = format!("Fetching packs ({done_files}/{file_count}): {remote_name}");
         let url = join_url(&pack_base, remote_name);
@@ -580,7 +585,10 @@ pub fn try_fetch_region_packs(
     let install_t0 = phase_timing::start("pack_fetch.install_promote");
     // Remap bake → leaf into final names under staging/out (navi-manifest already there).
     for remote_name in client.files.keys() {
-        if remote_name == &navi_name || remote_name.ends_with(".navi-manifest.json") {
+        if remote_name == &navi_name
+            || remote_name.ends_with(".navi-manifest.json")
+            || remote_name.ends_with(".navi-place-source.osm.pbf")
+        {
             continue;
         }
         let src = staging.join(remote_name);

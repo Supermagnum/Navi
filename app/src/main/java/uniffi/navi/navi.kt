@@ -695,6 +695,10 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_convert_progress_snapshot(
     ): Int
+    external fun uniffi_navi_checksum_func_corridor_skeleton_is_ready(
+    ): Int
+    external fun uniffi_navi_checksum_func_corridor_skeleton_progress_snapshot(
+    ): Int
     external fun uniffi_navi_checksum_func_country_iso_at(
     ): Int
     external fun uniffi_navi_checksum_func_country_polys_ready(
@@ -741,6 +745,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_elevation_at(
     ): Int
+    external fun uniffi_navi_checksum_func_ensure_corridor_skeleton(
+    ): Int
     external fun uniffi_navi_checksum_func_ensure_ferry_sidecar(
     ): Int
     external fun uniffi_navi_checksum_func_ensure_indexed_maps(
@@ -750,6 +756,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_ensure_pack_region_place_index(
     ): Int
     external fun uniffi_navi_checksum_func_ensure_place_index(
+    ): Int
+    external fun uniffi_navi_checksum_func_ensure_place_index_for_pack_region(
     ): Int
     external fun uniffi_navi_checksum_func_ensure_poi_lookahead_covering(
     ): Int
@@ -887,6 +895,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_place_index_has_entries(
     ): Int
+    external fun uniffi_navi_checksum_func_place_index_source_sha256(
+    ): Int
     external fun uniffi_navi_checksum_func_plan_car_route(
     ): Int
     external fun uniffi_navi_checksum_func_plan_car_route_at(
@@ -921,6 +931,10 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_pmtiles_queue_region(
     ): Int
+    external fun uniffi_navi_checksum_func_pmtiles_queue_world_overview(
+    ): Int
+    external fun uniffi_navi_checksum_func_pmtiles_recheck_rejected(
+    ): Int
     external fun uniffi_navi_checksum_func_pmtiles_region_bbox(
     ): Int
     external fun uniffi_navi_checksum_func_pmtiles_region_key(
@@ -952,6 +966,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_regions_cover_point(
     ): Int
     external fun uniffi_navi_checksum_func_rename_saved_place(
+    ): Int
+    external fun uniffi_navi_checksum_func_request_idle_pause(
     ): Int
     external fun uniffi_navi_checksum_func_resolve_speed_limit_kmh(
     ): Int
@@ -1009,9 +1025,15 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_search_places(
     ): Int
+    external fun uniffi_navi_checksum_func_search_places_biased(
+    ): Int
+    external fun uniffi_navi_checksum_func_set_accept_absurd_detour(
+    ): Int
     external fun uniffi_navi_checksum_func_set_osm_weekly_reminder(
     ): Int
     external fun uniffi_navi_checksum_func_set_route_plan_timing_enabled(
+    ): Int
+    external fun uniffi_navi_checksum_func_set_test_index_phase_sleep_ms(
     ): Int
     external fun uniffi_navi_checksum_func_set_truck_exceptional_extension_armed(
     ): Int
@@ -1169,6 +1191,10 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_navi_fn_func_convert_progress_snapshot(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_corridor_skeleton_is_ready(`packDir`: RustBuffer.ByValue,`stem`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_corridor_skeleton_progress_snapshot(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_country_iso_at(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_country_polys_ready(uniffi_out_err: UniffiRustCallStatus, 
@@ -1215,6 +1241,8 @@ internal object UniffiLib {
     ): Byte
     external fun uniffi_navi_fn_func_elevation_at(`elevDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_ensure_corridor_skeleton(`packDir`: RustBuffer.ByValue,`stem`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_ensure_ferry_sidecar(`packDir`: RustBuffer.ByValue,`stem`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_ensure_indexed_maps(`pbfPath`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,`progressOnConvertChannel`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -1224,6 +1252,8 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_ensure_pack_region_place_index(`dataDir`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,`forceRebuild`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_ensure_place_index(`pbfPath`: RustBuffer.ByValue,`indexDbPath`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_ensure_place_index_for_pack_region(`packDir`: RustBuffer.ByValue,`indexDbPath`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_ensure_poi_lookahead_covering(`dataDir`: RustBuffer.ByValue,`packDirsJson`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1361,6 +1391,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_place_index_has_entries(`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    external fun uniffi_navi_fn_func_place_index_source_sha256(`indexDbPath`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_plan_car_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`avoidTunnels`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`dataDir`: RustBuffer.ByValue,`packDir`: RustBuffer.ByValue,`longTripEnabled`: Byte,`allowedCountries`: RustBuffer.ByValue,`viaPoints`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_plan_car_route_at(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`avoidTunnels`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`departureLocalIso`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`packDir`: RustBuffer.ByValue,`longTripEnabled`: Byte,`allowedCountries`: RustBuffer.ByValue,`viaPoints`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1395,6 +1427,10 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_pmtiles_queue_region(`dataDir`: RustBuffer.ByValue,`geofabrikPath`: RustBuffer.ByValue,`baseUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_pmtiles_queue_world_overview(`dataDir`: RustBuffer.ByValue,`baseUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_pmtiles_recheck_rejected(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Int
     external fun uniffi_navi_fn_func_pmtiles_region_bbox(`geofabrikPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_pmtiles_region_key(`geofabrikPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1427,6 +1463,8 @@ internal object UniffiLib {
     ): Byte
     external fun uniffi_navi_fn_func_rename_saved_place(`dataDir`: RustBuffer.ByValue,`id`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    external fun uniffi_navi_fn_func_request_idle_pause(uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_navi_fn_func_resolve_speed_limit_kmh(`postedKmh`: RustBuffer.ByValue,`maxspeedConditional`: RustBuffer.ByValue,`highway`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Double
     external fun uniffi_navi_fn_func_road_label_near(`pbfPath`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`profile`: RustBuffer.ByValue,`maxM`: Double,uniffi_out_err: UniffiRustCallStatus, 
@@ -1483,9 +1521,15 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_search_places(`indexDbPath`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_search_places_biased(`indexDbPath`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,`limit`: Int,`biasLat`: Double,`biasLon`: Double,`visibleRegion`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_set_accept_absurd_detour(`accept`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_navi_fn_func_set_osm_weekly_reminder(`dataDir`: RustBuffer.ByValue,`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_navi_fn_func_set_route_plan_timing_enabled(`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_set_test_index_phase_sleep_ms(`ms`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_navi_fn_func_set_truck_exceptional_extension_armed(`dataDir`: RustBuffer.ByValue,`armed`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
@@ -1719,6 +1763,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_convert_progress_snapshot() and 0xFFFF) != 28171) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_corridor_skeleton_is_ready() and 0xFFFF) != 52338) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_corridor_skeleton_progress_snapshot() and 0xFFFF) != 31391) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_country_iso_at() and 0xFFFF) != 819) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1788,7 +1838,10 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_elevation_at() and 0xFFFF) != 35410) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_ensure_ferry_sidecar() and 0xFFFF) != 516) {
+    if ((lib.uniffi_navi_checksum_func_ensure_corridor_skeleton() and 0xFFFF) != 12784) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_ensure_ferry_sidecar() and 0xFFFF) != 32373) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_ensure_indexed_maps() and 0xFFFF) != 55582) {
@@ -1803,6 +1856,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_ensure_place_index() and 0xFFFF) != 27043) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_ensure_place_index_for_pack_region() and 0xFFFF) != 44667) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_ensure_poi_lookahead_covering() and 0xFFFF) != 9302) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1812,7 +1868,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_export_saved_route_gpx() and 0xFFFF) != 43605) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_ferry_sidecar_is_ready() and 0xFFFF) != 31014) {
+    if ((lib.uniffi_navi_checksum_func_ferry_sidecar_is_ready() and 0xFFFF) != 28118) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_ferry_sidecar_progress_snapshot() and 0xFFFF) != 35556) {
@@ -2007,7 +2063,10 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_place_index_has_entries() and 0xFFFF) != 5969) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_plan_car_route() and 0xFFFF) != 20547) {
+    if ((lib.uniffi_navi_checksum_func_place_index_source_sha256() and 0xFFFF) != 14354) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_plan_car_route() and 0xFFFF) != 25656) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_plan_car_route_at() and 0xFFFF) != 44788) {
@@ -2058,6 +2117,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_pmtiles_queue_region() and 0xFFFF) != 49048) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_pmtiles_queue_world_overview() and 0xFFFF) != 12504) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_pmtiles_recheck_rejected() and 0xFFFF) != 53510) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_pmtiles_region_bbox() and 0xFFFF) != 27835) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2104,6 +2169,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_rename_saved_place() and 0xFFFF) != 32947) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_request_idle_pause() and 0xFFFF) != 15188) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_resolve_speed_limit_kmh() and 0xFFFF) != 57610) {
@@ -2190,10 +2258,19 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_search_places() and 0xFFFF) != 63913) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_search_places_biased() and 0xFFFF) != 15263) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_set_accept_absurd_detour() and 0xFFFF) != 1999) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_set_osm_weekly_reminder() and 0xFFFF) != 15431) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_set_route_plan_timing_enabled() and 0xFFFF) != 33373) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_set_test_index_phase_sleep_ms() and 0xFFFF) != 64805) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_set_truck_exceptional_extension_armed() and 0xFFFF) != 48179) {
@@ -3496,6 +3573,59 @@ public object FfiConverterTypeFfiCarRestSettings: FfiConverterRustBuffer<FfiCarR
             FfiConverterUInt.write(value.`restDurationMinutes`, buf)
             FfiConverterBoolean.write(value.`ecoModeEnabled`, buf)
             FfiConverterDouble.write(value.`maxHours`, buf)
+    }
+}
+
+
+
+data class FfiCorridorSkeletonProgress (
+    var `stem`: kotlin.String
+    , 
+    var `regionLabel`: kotlin.String
+    , 
+    var `running`: kotlin.Boolean
+    , 
+    var `pct`: kotlin.UByte
+    , 
+    var `message`: kotlin.String
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiCorridorSkeletonProgress: FfiConverterRustBuffer<FfiCorridorSkeletonProgress> {
+    override fun read(buf: ByteBuffer): FfiCorridorSkeletonProgress {
+        return FfiCorridorSkeletonProgress(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterUByte.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiCorridorSkeletonProgress) = (
+            FfiConverterString.allocationSize(value.`stem`) +
+            FfiConverterString.allocationSize(value.`regionLabel`) +
+            FfiConverterBoolean.allocationSize(value.`running`) +
+            FfiConverterUByte.allocationSize(value.`pct`) +
+            FfiConverterString.allocationSize(value.`message`)
+    )
+
+    override fun write(value: FfiCorridorSkeletonProgress, buf: ByteBuffer) {
+            FfiConverterString.write(value.`stem`, buf)
+            FfiConverterString.write(value.`regionLabel`, buf)
+            FfiConverterBoolean.write(value.`running`, buf)
+            FfiConverterUByte.write(value.`pct`, buf)
+            FfiConverterString.write(value.`message`, buf)
     }
 }
 
@@ -5674,6 +5804,35 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * True when the stem corridor skeleton meta matches the pack and neighbour-pack fingerprints.
+         */ fun `corridorSkeletonIsReady`(`packDir`: kotlin.String, `stem`: kotlin.String, `profile`: TravelProfile): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_corridor_skeleton_is_ready(
+    
+        
+        FfiConverterString.lower(`packDir`),
+        FfiConverterString.lower(`stem`),
+        FfiConverterTypeTravelProfile.lower(`profile`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Progress for an in-flight corridor skeleton build (empty stem when idle).
+         */ fun `corridorSkeletonProgressSnapshot`(): FfiCorridorSkeletonProgress {
+            return FfiConverterTypeFfiCorridorSkeletonProgress.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_corridor_skeleton_progress_snapshot(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
          * Offline ISO-3166-1 alpha-2 for a WGS84 point (Natural Earth Admin-0).
          *
          * Safe to call from a background thread. Avoid the Android main looper —
@@ -6014,7 +6173,25 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
-         * Build/refresh `{stem}.navi-ferry-overlay-{profile}.rkyv` from the region PBF.
+         * Build/refresh `{stem}.navi-corridor-skeleton.bin` from installed graph packs.
+         * Call from pack install / idle background work — not from the plan path.
+         */ fun `ensureCorridorSkeleton`(`packDir`: kotlin.String, `stem`: kotlin.String, `profile`: TravelProfile): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_ensure_corridor_skeleton(
+    
+        
+        FfiConverterString.lower(`packDir`),
+        FfiConverterString.lower(`stem`),
+        FfiConverterTypeTravelProfile.lower(`profile`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Build/refresh `{stem}.navi-ferry-overlay-{profile}.rkyv` from the region PBF
+         * (or shared country extract, e.g. `sweden-latest.osm.pbf` for Norrbotten).
          * Call from pack install / refresh background work — not from the plan path.
          */ fun `ensureFerrySidecar`(`packDir`: kotlin.String, `stem`: kotlin.String, `profile`: TravelProfile): kotlin.String {
             return FfiConverterString.lift(
@@ -6114,6 +6291,23 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Build this pack-server region's place index from the place-source file when
+         * the region's manifest lists it; otherwise the existing extract path.
+         */ fun `ensurePlaceIndexForPackRegion`(`packDir`: kotlin.String, `indexDbPath`: kotlin.String, `regionId`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_ensure_place_index_for_pack_region(
+    
+        
+        FfiConverterString.lower(`packDir`),
+        FfiConverterString.lower(`indexDbPath`),
+        FfiConverterString.lower(`regionId`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Load the Ready POI pack that covers `lat,lon` (long-trip-packs / Removable
          * roots via `pack_dirs_json`). One pack at a time — never co-resident with a
          * route graph. Cell key (~0.5°) avoids thrashing when GPS jitters inside a region.
@@ -6167,7 +6361,8 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
-         * True when the stem ferry sidecar meta matches the on-disk PBF fingerprint.
+         * True when the stem ferry sidecar meta matches the on-disk PBF fingerprint
+         * (leaf or shared country extract).
          */ fun `ferrySidecarIsReady`(`packDir`: kotlin.String, `stem`: kotlin.String, `profile`: TravelProfile): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     uniffiRustCall() { _status ->
@@ -7104,6 +7299,21 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Read-only: place-source sha256 recorded with this region's index, or empty.
+         */ fun `placeIndexSourceSha256`(`indexDbPath`: kotlin.String, `regionId`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_place_index_source_sha256(
+    
+        
+        FfiConverterString.lower(`indexDbPath`),
+        FfiConverterString.lower(`regionId`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Plan a motor / bicycle route between two WGS84 points using a local OSM `.pbf`.
          *
          * Always builds a **bbox-clipped** graph (`[min_lat,min_lon,max_lat,max_lon]` padded
@@ -7117,11 +7327,10 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
          * Android). Empty: search `data_dir` and `data_dir/long-trip-packs` when present.
          * Pass `""` only when the PBF already lives next to the packs.
          *
-         * `long_trip_enabled` gates densify/chunk for spans above [`LONG_TRIP_CHUNK_DEG`].
-         * Ordinary UI plans pass `false` so cross-stem mid trips (Raufoss→Bergen) stay
-         * on one A*. Same-stem coastal ODs with span > CHUNK densify even when longTrip
-         * is off so Automotive never materialises the full Vestlandet single-shot graph
-         * (Bergen→Stavanger ~259k nodes / ~985 MiB peak vs densify hops ~167k / ≤933).
+         * `long_trip_enabled` controls region download-along-route only (Kotlin
+         * LongTripCoordinator). Corridor densify runs for every multi-region trip and
+         * for same-stem coastal spans above CHUNK — independent of this flag. Inland
+         * same-stem ODs (ostlandet) stay single-shot so Hamar→Dombås is not detoured.
          *
          * `allowed_countries`: when `Some` (non-empty), hard-filters the graph to those
          * ISO-3166-1 alpha-2 codes ([`RouteOptions::allowed_countries`]). Host "Stay in
@@ -7405,6 +7614,36 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     )
     }
     
+
+        /**
+         * Queue the z0–z6 world overview extract if it is not already completed.
+         */ fun `pmtilesQueueWorldOverview`(`dataDir`: kotlin.String, `baseUrl`: kotlin.String?): FfiPmtilesJob {
+            return FfiConverterTypeFfiPmtilesJob.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_pmtiles_queue_world_overview(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterOptionalString.lower(`baseUrl`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Re-validate `*.pmtiles.rejected` under [data_dir]/pmtiles. Valid archives
+         * are accepted in place (no download). Returns how many were accepted.
+         */ fun `pmtilesRecheckRejected`(`dataDir`: kotlin.String): kotlin.UInt {
+            return FfiConverterUInt.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_pmtiles_recheck_rejected(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
  fun `pmtilesRegionBbox`(`geofabrikPath`: kotlin.String): List<kotlin.Double>? {
             return FfiConverterOptionalSequenceDouble.lift(
     uniffiRustCall() { _status ->
@@ -7636,6 +7875,18 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
 }
     )
     }
+    
+
+        /**
+         * Ask idle jobs to stop at the next committed batch so a plan can start.
+         */ fun `requestIdlePause`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_request_idle_pause(
+    
+        _status)
+}
+    
     
 
         /**
@@ -8061,6 +8312,38 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Same as [`search_places`], ranked with the map centre and visible region.
+         */ fun `searchPlacesBiased`(`indexDbPath`: kotlin.String, `query`: kotlin.String, `limit`: kotlin.UInt, `biasLat`: kotlin.Double, `biasLon`: kotlin.Double, `visibleRegion`: kotlin.String): List<PlaceHit> {
+            return FfiConverterSequenceTypePlaceHit.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_search_places_biased(
+    
+        
+        FfiConverterString.lower(`indexDbPath`),
+        FfiConverterString.lower(`query`),
+        FfiConverterUInt.lower(`limit`),
+        FfiConverterDouble.lower(`biasLat`),
+        FfiConverterDouble.lower(`biasLon`),
+        FfiConverterString.lower(`visibleRegion`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Arm a one-shot accept for the absurd installed-only detour gate (product UI).
+         */ fun `setAcceptAbsurdDetour`(`accept`: kotlin.Boolean)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_set_accept_absurd_detour(
+    
+        
+        FfiConverterBoolean.lower(`accept`),_status)
+}
+    
+    
+
+        /**
          * Weekly reminder opt-in (surfaces a check prompt; never auto-applies).
          */ fun `setOsmWeeklyReminder`(`dataDir`: kotlin.String, `enabled`: kotlin.Boolean): kotlin.Boolean {
             return FfiConverterBoolean.lift(
@@ -8084,6 +8367,20 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
         
         FfiConverterBoolean.lower(`enabled`),_status)
+}
+    
+    
+
+        /**
+         * Test-only: slow each index-build phase check so a harness can start a plan
+         * while that phase is active. Zero clears the delay.
+         */ fun `setTestIndexPhaseSleepMs`(`ms`: kotlin.ULong)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_set_test_index_phase_sleep_ms(
+    
+        
+        FfiConverterULong.lower(`ms`),_status)
 }
     
     

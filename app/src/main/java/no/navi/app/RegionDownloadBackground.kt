@@ -708,11 +708,12 @@ object RegionDownloadBackground {
         val indexReady = placeIndexLooksReady(dataDir, path)
         val phase =
             when {
-                // Place-index already ready: do not synthesize a multi-hour PMTiles
-                // resume that clears Indexed and blocks long-trip planning.
                 indexReady -> return null
+                // Incomplete in-progress index may resume. Empty stamped regions
+                // are missing but must not auto-synthesize a multi-hour PLACE_INDEX.
+                placeIndexBuildIncomplete(dataDir, path) -> Phase.PLACE_INDEX
                 !PackRegionAvailability.localPmtilesReady(dataDir, path) -> Phase.BASEMAP
-                else -> Phase.PLACE_INDEX
+                else -> return null
             }
         // Extract URL for place-index PBF; packs come from the pack server.
         val url =
@@ -747,12 +748,17 @@ object RegionDownloadBackground {
             phase =
                 when {
                     !basemapReady -> Phase.BASEMAP
-                    !indexReady -> Phase.PLACE_INDEX
+                    placeIndexBuildIncomplete(dataDir, path) -> Phase.PLACE_INDEX
                     else -> return null
                 }
         }
         if (phase == Phase.BASEMAP && basemapReady) {
-            phase = if (!indexReady) Phase.PLACE_INDEX else return null
+            phase =
+                if (placeIndexBuildIncomplete(dataDir, path)) {
+                    Phase.PLACE_INDEX
+                } else {
+                    return null
+                }
         }
         if (phase == Phase.PLACE_INDEX && indexReady) {
             return null
@@ -775,35 +781,18 @@ object RegionDownloadBackground {
     ): Boolean {
         val rid = regionId.trim().trim('/')
         if (rid.isEmpty()) return false
-        val dbFile = File(dataDir, "place_index.db")
-        if (!dbFile.isFile || dbFile.length() < 10_000L) return false
-        if (!placeIndexSchemaCurrent(dbFile)) {
-            // Drop stamps so heal cannot re-adopt pre-wipe region ids as ready
-            // while ensure_place_index discards the stale DB.
-            runCatching { PlaceIndexReady.readyFile(dataDir).delete() }
-            return false
+        InstalledMaps.region(rid, dataDir)?.let { snap ->
+            return snap.placeIndex == InstalledMaps.PlaceIndexState.INTACT ||
+                snap.placeIndex == InstalledMaps.PlaceIndexState.LEGACY_INTACT
         }
-        if (PlaceIndexReady.isReady(dataDir, rid)) {
-            // Stamp alone is not enough after a schema wipe removed other regions.
-            return placeIndexHasRowsForRegion(dbFile, rid) && placeIndexBuildComplete(dbFile, rid)
-        }
-        // Once a stamp file exists it is authoritative — do not treat partial
-        // mid-build rows as ready (clearReady leaves an updated stamp).
-        if (PlaceIndexReady.readyFile(dataDir).isFile) return false
-        val hasRows = placeIndexHasRowsForRegion(dbFile, rid)
-        if (hasRows) {
-            if (!placeIndexBuildComplete(dbFile, rid)) return false
-            // Legacy DB rows without a ready stamp — adopt them once.
-            PlaceIndexReady.markReady(dataDir, rid)
-        }
-        return hasRows
+        return PlaceIndexIntact.isIntact(dataDir, rid)
     }
 
     /**
      * Must match core `PLACE_INDEX_SCHEMA_VERSION`
      * (v5 = search_doc FTS for alt_name / loc_name).
      */
-    internal const val PLACE_INDEX_SCHEMA_VERSION = 5
+    internal const val PLACE_INDEX_SCHEMA_VERSION = 6
 
     internal fun placeIndexSchemaCurrent(dbFile: File): Boolean {
         if (!dbFile.isFile) return false
@@ -919,6 +908,7 @@ object RegionDownloadBackground {
         regionId: String,
     ): Boolean {
         if (phase == Phase.BASEMAP) return false
+        if (PlaceIndexIntact.isIntact(dataDir, regionId)) return false
         return !(phase == Phase.PLACE_INDEX && placeIndexBuildIncomplete(dataDir, regionId))
     }
 
@@ -1092,6 +1082,9 @@ object RegionDownloadBackground {
         }
         val startDrain = claimWorker()
         scope.launch {
+            runCatching {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+            }
             val path = GeofabrikDownloadCatalog.canonicalizePath(geofabrikPath)
             val job =
                 Job(
@@ -1327,6 +1320,11 @@ object RegionDownloadBackground {
         dataDir: File,
     ) {
         while (true) {
+            if (PlaceIndexReady.deferWritesDuringPlan()) {
+                setStatus("Paused — waiting for route plan to finish")
+                Log.i(TAG, "drainQueue deferred: route plan in flight")
+                break
+            }
             if (requireUnmeteredGate.get() && !NetworkUnmetered.isWifiOrEthernet(context)) {
                 setStatus("Paused — waiting for Wi-Fi/Ethernet")
                 Log.i(TAG, "drainQueue paused: unmetered gate")
@@ -1355,6 +1353,13 @@ object RegionDownloadBackground {
         val url = incoming.url
         val filename = incoming.filename
         val geofabrikPath = incoming.geofabrikPath.trim().trim('/')
+        if (PlaceIndexReady.deferWritesDuringPlan()) {
+            Log.i(TAG, "runOneRegion deferred: plan in flight path=$geofabrikPath")
+            mutex.withLock {
+                enqueueJobLocked(dataDir, incoming, null, null)
+            }
+            return
+        }
         if (geofabrikPath.isNotBlank()) {
             activeRegionPath.set(geofabrikPath)
         }
@@ -1370,6 +1375,13 @@ object RegionDownloadBackground {
         // keep partial name_entries so the next ensurePlaceIndex can finish
         // (full PBF reparse is accepted; discarding rows left regions stuck).
         if (geofabrikPath.isNotBlank() && startPhase != Phase.BASEMAP) {
+            if (PlaceIndexReady.deferWritesDuringPlan()) {
+                Log.i(TAG, "skip preparePipelineStart during plan path=$geofabrikPath")
+                mutex.withLock {
+                    enqueueJobLocked(dataDir, incoming, null, null)
+                }
+                return
+            }
             val clearRows =
                 shouldClearPlaceRowsOnPipelineStart(startPhase, dataDir, geofabrikPath)
             PlaceIndexReady.preparePipelineStart(
@@ -1537,6 +1549,7 @@ object RegionDownloadBackground {
                     // and for rest/overnight POI packs. Basemap + place-index
                     // continue in the background; long-trip planning waits for
                     // Indexed via LongTripCoordinator.corridorReadyForPlanning.
+                    runCatching { InstalledMaps.refresh(context) }
                     emitInstalledForRouting(pathForDecision)
                     handOffBasemapAndPlaceIndex(
                         context = context,
@@ -1733,9 +1746,16 @@ object RegionDownloadBackground {
         lastUsablePath.set(trimmed)
         setStatus("Packs installed — region ready for routing")
         Log.i(TAG, "region installed for routing path=$trimmed")
-        // Ferry sidecar is lazy: plan path kicks ensure_ferry_sidecar only when
-        // directed connectivity still needs overlay (see supplement_pack_ferries).
-        // Do not build hundreds of MB of coastal ferry mesh at every install.
+        runCatching {
+            val r = InstalledMaps.region(trimmed)
+            if (r != null) {
+                FerrySidecarBackground.ensureForRegionPath(r.packDir, trimmed)
+                CorridorSkeletonBackground.ensureForRegionPath(r.packDir, trimmed)
+            } else {
+                IdlePackJobs.onInstalledMapsChanged()
+            }
+            IdlePackJobs.onAppIdle()
+        }
     }
 
     /**
@@ -1773,6 +1793,9 @@ object RegionDownloadBackground {
         val rid = regionId.trim().trim('/')
         if (rid.isEmpty()) return
         scope.launch {
+            runCatching {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+            }
             val basemapOk =
                 runCatching {
                     downloadBasemapPmtiles(context, dataDir, rid)
@@ -1812,6 +1835,10 @@ object RegionDownloadBackground {
         val pbf = File(pbfDir, filename)
         if (!pbf.isFile || pbf.length() < MIN_PBF_BYTES) return false
         val rid = regionId.trim().trim('/')
+        if (PlaceIndexReady.deferWritesDuringPlan()) {
+            Log.i(TAG, "skip ensurePlaceIndex during plan region=$rid")
+            return false
+        }
         if (rid.isEmpty() || !GeofabrikDownloadCatalog.isKnownPackRegionId(rid)) {
             Log.e(
                 TAG,
@@ -1820,21 +1847,63 @@ object RegionDownloadBackground {
             setStatus("failed (unknown region)")
             return false
         }
+        // Place index lives on the pack volume (parent of long-trip-packs).
+        // Do not fall back to internal when that volume is unwritable.
+        val placeDir =
+            if (pbfDir.name == LongTripPackStorage.PACKS_SUBDIR) {
+                pbfDir.parentFile ?: indexDataDir
+            } else {
+                indexDataDir
+            }
+        if (!NaviStorageVolumes.probeWritable(placeDir)) {
+            Log.e(
+                TAG,
+                "FAIL: place index unavailable on pack volume dir=${placeDir.absolutePath} " +
+                    "(not building elsewhere)",
+            )
+            setStatus("place index unavailable on pack volume")
+            return false
+        }
         Log.i(
             TAG,
-            "local-bake pbf resolved region_id=$rid pbf=${pbf.absolutePath} expected_prefix=$rid",
+            "local-bake pbf resolved region_id=$rid pbf=${pbf.absolutePath} expected_prefix=$rid " +
+                "place_index_dir=${placeDir.absolutePath}",
         )
-        if (!PackRegionAvailability.pbfMatchesRegion(pbf, rid)) {
+        if (!PackRegionAvailability.pbfMatchesRegionForPlaceIndex(pbf, rid)) {
             Log.e(
                 TAG,
                 "FAIL: PBF/region mismatch for place index region_id=$rid pbf=${pbf.name} " +
-                    "expected_stem=${PackRegionAvailability.localStem(rid)}",
+                    "expected_stem=${PackRegionAvailability.localStem(rid)} — " +
+                    OfflineIndexGate.CANNOT_INDEX_YET,
             )
-            setStatus("failed (pbf/region mismatch)")
+            setStatus(OfflineIndexGate.CANNOT_INDEX_YET)
+            return false
+        }
+        val installed =
+            PackRegionAvailability.installedPackRegionIds(
+                InstalledMaps.current()?.regions?.values.orEmpty(),
+            ) + PackRegionAvailability.normalize(rid)
+        if (!PackRegionAvailability.mayIndexRegion(rid, pbf, installed, true)) {
+            Log.e(TAG, "FAIL: refusing place index region=$rid (not own source / not an installed pack)")
+            setStatus("failed (not own source)")
             return false
         }
         emitPhase(rid, "indexing")
         setStatus("Place index: starting… 0% (0 / 6)")
+        if (PlaceIndexIntact.isIntact(placeDir, rid)) {
+            Log.i(TAG, "place-index gate: $rid intact — skip rebuild")
+            setStatus("Place index ready 100% (6 / 6)")
+            emitPhase(rid, "indexed")
+            PlaceIndexReady.markReady(placeDir, rid)
+            InstalledMaps.refreshFromDirs(
+                indexDataDir,
+                listOf(NaviStorageVolumes.INTERNAL_ID to pbfDir),
+                placeIndexDir = placeDir,
+                placeIndexLocationLine =
+                    "place_index vol=pack-dir path=${File(placeDir, "place_index.db").absolutePath}",
+            )
+            return true
+        }
         // Native `ensure_place_index` single-flights discard/open/load so a
         // concurrent PlaceIndexBackground caller waits then cache-hits
         // (PLACE_INDEX_BUILD_LOCK in core).
@@ -1842,7 +1911,7 @@ object RegionDownloadBackground {
             runCatching {
                 ensurePlaceIndex(
                     pbf.absolutePath,
-                    File(indexDataDir, "place_index.db").absolutePath,
+                    File(placeDir, "place_index.db").absolutePath,
                     rid,
                 )
             }.getOrElse { t ->
@@ -1853,6 +1922,14 @@ object RegionDownloadBackground {
         if (placeReport.contains("PASS")) {
             setStatus("Place index ready 100% (6 / 6)")
             emitPhase(rid, "indexed")
+            PlaceIndexReady.markReady(placeDir, rid)
+            InstalledMaps.refreshFromDirs(
+                indexDataDir,
+                listOf(NaviStorageVolumes.INTERNAL_ID to pbfDir),
+                placeIndexDir = placeDir,
+                placeIndexLocationLine =
+                    "place_index vol=pack-dir path=${File(placeDir, "place_index.db").absolutePath}",
+            )
         }
         return placeReport.contains("PASS")
     }

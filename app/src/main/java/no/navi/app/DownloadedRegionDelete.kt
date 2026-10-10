@@ -221,6 +221,9 @@ object DownloadedRegionDelete {
                 "Deleted $label — removed $count files ($freed freed)."
             }
         Log.i(TAG, "delete path=$path files=$count bytes=$bytes")
+        if (context != null) {
+            runCatching { InstalledMaps.refresh(context) }
+        }
         return Result(ok = true, message = msg, bytesFreed = bytes, filesRemoved = count)
     }
 

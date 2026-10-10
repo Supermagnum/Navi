@@ -353,6 +353,25 @@ object RegionCoverage {
         )
     }
 
+    /** Host-test fallback when UniFFI bboxes are unavailable. */
+    internal fun crudePointCover(
+        path: String,
+        lat: Double,
+        lon: Double,
+    ): Boolean {
+        val p = path.trim().trim('/').lowercase()
+        return when {
+            p.endsWith("niedersachsen") -> lat in 51.0..54.6 && lon in 6.0..12.0
+            p.endsWith("hamburg") -> lat in 53.3..53.8 && lon in 9.6..10.4
+            p.endsWith("schleswig-holstein") -> lat in 53.3..55.1 && lon in 8.0..11.4
+            p.endsWith("vestlandet") -> lat in 58.0..63.7 && lon in 4.0..9.3
+            p.endsWith("ostlandet") -> lat in 58.7..62.7 && lon in 8.4..13.4
+            p.endsWith("sorlandet") -> lat in 57.8..59.6 && lon in 6.0..9.7
+            p == "europe/denmark" -> lat in 54.4..57.9 && lon in 8.0..15.3
+            else -> false
+        }
+    }
+
     /**
      * Pick a local region PBF for the trip. Prefer a single extract that covers
      * every waypoint; otherwise any extract that covers at least one waypoint
@@ -398,39 +417,50 @@ object RegionCoverage {
 
         if (candidates.isEmpty()) return null
 
-        fun coversAll(path: String): Boolean = waypoints.all { wp -> pointCovered(wp.lat, wp.lon, listOf(path)) }
-
-        fun coversAny(path: String): Boolean = waypoints.isEmpty() || waypoints.any { wp -> pointCovered(wp.lat, wp.lon, listOf(path)) }
-
-        fun areaRank(
-            f: File,
-            path: String,
-        ): Double =
-            when {
-                path == "europe/norway" -> 1_000_000.0
-                else -> f.length().toDouble().coerceAtLeast(1.0)
-            }
-
         // Prefer non-fixture candidates so stub/SD packs beat /data/local/tmp fixtures.
         fun isFixture(f: File): Boolean = f.absolutePath.contains("/navi_fixtures/")
 
         val preferred = candidates.filterNot(::isFixture).ifEmpty { candidates }
 
-        val fullCover =
-            preferred.mapNotNull { f ->
-                val path = geofabrikPathForPbfName(f.name) ?: return@mapNotNull null
-                if (!coversAll(path)) return@mapNotNull null
-                f to areaRank(f, path)
-            }
-        fullCover.minByOrNull { it.second }?.let { return it.first }
+        fun pathOf(f: File): String? =
+            geofabrikPathForPbfName(f.name)
+                ?: InstalledMaps.stemFallback(f.name.removeSuffix(".osm.pbf"))
 
-        val partialCover =
-            preferred.mapNotNull { f ->
-                val path = geofabrikPathForPbfName(f.name) ?: return@mapNotNull null
-                if (!coversAny(path)) return@mapNotNull null
-                f to areaRank(f, path)
+        fun coversOrigin(path: String): Boolean {
+            val origin = waypoints.firstOrNull() ?: return true
+            return runCatching { pointCovered(origin.lat, origin.lon, listOf(path)) }
+                .getOrElse { crudePointCover(path, origin.lat, origin.lon) }
+        }
+
+        fun coverCount(path: String): Int =
+            if (waypoints.isEmpty()) {
+                1
+            } else {
+                waypoints.count { wp ->
+                    runCatching { pointCovered(wp.lat, wp.lon, listOf(path)) }
+                        .getOrElse { crudePointCover(path, wp.lat, wp.lon) }
+                }
             }
-        partialCover.minByOrNull { it.second }?.let { return it.first }
+
+        fun leafBonus(path: String): Int = path.count { it == '/' }
+
+        // Origin leaf first. Never pick the smallest dest-only PBF.
+        val ranked =
+            preferred.mapNotNull { f ->
+                val path = pathOf(f) ?: return@mapNotNull null
+                val origin = if (coversOrigin(path)) 0 else 1
+                val covers = coverCount(path)
+                if (covers == 0 && waypoints.isNotEmpty()) return@mapNotNull null
+                Triple(origin, -covers, -leafBonus(path)) to f
+            }
+        ranked
+            .minWithOrNull(
+                compareBy<Pair<Triple<Int, Int, Int>, File>>(
+                    { it.first.first },
+                    { it.first.second },
+                    { it.first.third },
+                ),
+            )?.let { return it.second }
 
         return listOf(
             "ostlandet-latest.osm.pbf",

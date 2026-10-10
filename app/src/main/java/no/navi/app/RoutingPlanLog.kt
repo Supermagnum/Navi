@@ -3,6 +3,7 @@ package no.navi.app
 import android.util.Log
 import org.json.JSONArray
 import uniffi.navi.CorridorRouteResult
+import java.io.File
 
 /**
  * Planning progress visible via `adb logcat -s NaviRouting:I`.
@@ -31,6 +32,36 @@ object RoutingPlanLog {
         progress(0, ecoEnabled, detail = "queued")
         NaviManeuverDump.noteProfile(profile)
         DiagnosticLog.logRoutePlanStart(profile, startLat, startLon, endLat, endLon)
+    }
+
+    fun logPlanSettings(
+        dataDir: java.io.File,
+        ecoEnabled: Boolean,
+        campingPluginEnabled: Boolean,
+        professionalDriver: Boolean,
+        avoidMotorways: Boolean,
+        avoidTolls: Boolean,
+        avoidFerries: Boolean,
+        avoidTunnels: Boolean,
+    ) {
+        val line =
+            "plan_settings eco=$ecoEnabled camping_plugin=$campingPluginEnabled " +
+                "professional_driver=$professionalDriver avoid_motorways=$avoidMotorways " +
+                "avoid_tolls=$avoidTolls avoid_ferries=$avoidFerries avoid_tunnels=$avoidTunnels"
+        Log.i(TAG, line)
+        runCatching {
+            val f = File(PlanReportStore.internalDir(dataDir), PlanReportStore.LOG_NAME)
+            f.parentFile?.mkdirs()
+            f.appendText(line + "\n")
+        }
+    }
+
+    fun idleJobPause(outcome: IdlePackJobs.PauseOutcome) {
+        Log.i(
+            TAG,
+            "idle_job_pause action=${outcome.action} kind=${outcome.kind ?: "none"} " +
+                "region=${outcome.regionId} duration_ms=${outcome.durationMs}",
+        )
     }
 
     fun progress(

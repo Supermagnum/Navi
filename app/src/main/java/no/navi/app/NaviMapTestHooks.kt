@@ -59,9 +59,36 @@ object NaviMapTestHooks {
     @Volatile
     var forceOnlineBasemap: Boolean = false
 
+    /** Optional absolute PMTiles path that overrides covering selection. */
+    @Volatile
+    var forceBasemapSource: String? = null
+
+    fun forcedBasemapSettingsCleared(): Boolean =
+        !forceOnlineBasemap &&
+            forceBasemapSource == null &&
+            !Fu49MapDiag.forceOffline &&
+            !Fu49MapDiag.simpleMount
+
+    fun clearForcedBasemapSettings() {
+        forceOnlineBasemap = false
+        forceBasemapSource = null
+        Fu49MapDiag.forceOffline = false
+        Fu49MapDiag.simpleMount = false
+        Fu49MapDiag.enableOverview = false
+        Fu49MapDiag.enableSecondRegional = false
+        Fu49MapDiag.enableOnline = false
+        Fu49MapDiag.bypassStyleQueue = false
+        Fu49MapDiag.disableKeepPrevious = false
+        Fu49MapDiag.forceSetStyle = false
+    }
+
     /** Triple of lat, lon, zoom. Consumed by MainActivity. */
     @Volatile
     var pendingCamera: Triple<Double, Double, Double>? = null
+
+    /** Debug overlay: apply this polyline without planning. */
+    @Volatile
+    var pendingOverlayPolyline: String? = null
 
     /**
      * Cold-start / adb trip seed for standalone long-trip runs (not under
@@ -239,6 +266,86 @@ object NaviMapTestHooks {
     @Volatile
     var lastBasemapKind: String = ""
 
+    /** Rendered basemap features in the viewport (excludes the route overlay). */
+    @Volatile
+    var lastVisibleBasemapFeatures: Int = 0
+
+    /**
+     * Share of the map framebuffer that is the style background cream (#f8f4f0),
+     * in percent. Replaces a feature count for "is the view drawn".
+     */
+    @Volatile
+    var lastBlankSharePct: Double = Double.NaN
+
+    /** Last 8x16 renderer feature grid (`c,r,r=,w=,l=,b=;...`). */
+    @Volatile
+    var lastFeatureGridJson: String = ""
+
+    /** Style background cream used by the offline Protomaps template. */
+    const val BLANK_BG_R = 248
+    const val BLANK_BG_G = 244
+    const val BLANK_BG_B = 240
+
+    fun isBlankBackgroundPixel(r: Int, g: Int, b: Int): Boolean {
+        val cream =
+            kotlin.math.abs(r - BLANK_BG_R) <= 6 &&
+                kotlin.math.abs(g - BLANK_BG_G) <= 6 &&
+                kotlin.math.abs(b - BLANK_BG_B) <= 6
+        val mx = maxOf(r, g, b)
+        val mn = minOf(r, g, b)
+        val emptyGray = mx >= 215 && mx - mn <= 16
+        // Unloaded offline tiles screenshot as ~218,214,211, not style cream.
+        val cutoff =
+            kotlin.math.abs(r - 218) <= 8 &&
+                kotlin.math.abs(g - 214) <= 8 &&
+                kotlin.math.abs(b - 211) <= 8
+        return cream || emptyGray || cutoff
+    }
+
+    /**
+     * Share of the map that is a solid blank background, in percent.
+     * Uses a coarse grid so a half-screen cutoff counts and a drawn city
+     * (roads and water cutting the cream) does not.
+     */
+    fun blankSharePercent(bmp: android.graphics.Bitmap): Double {
+        val w = bmp.width
+        val h = bmp.height
+        if (w <= 0 || h <= 0) return 100.0
+        val pixels = IntArray(w * h)
+        bmp.getPixels(pixels, 0, w, 0, 0, w, h)
+        val cols = 8
+        val rows = 16
+        val top = (h * 0.0375).toInt().coerceAtLeast(1)
+        val bot = (h * 0.02).toInt().coerceAtLeast(1)
+        val y0 = top
+        val y1 = (h - bot).coerceAtLeast(y0 + 1)
+        val cw = w / cols
+        val ch = (y1 - y0) / rows
+        if (cw <= 0 || ch <= 0) return 100.0
+        var blankCells = 0
+        val total = cols * rows
+        for (row in 0 until rows) {
+            for (col in 0 until cols) {
+                val x0 = col * cw
+                val yy0 = y0 + row * ch
+                var empty = 0
+                val n = cw * ch
+                for (yy in yy0 until yy0 + ch) {
+                    val rowOff = yy * w
+                    for (xx in x0 until x0 + cw) {
+                        val c = pixels[rowOff + xx]
+                        val r = (c shr 16) and 0xff
+                        val g = (c shr 8) and 0xff
+                        val b = c and 0xff
+                        if (isBlankBackgroundPixel(r, g, b)) empty++
+                    }
+                }
+                if (n > 0 && empty.toDouble() / n >= 0.92) blankCells++
+            }
+        }
+        return 100.0 * blankCells / total
+    }
+
     /** Last MapLibre style load failure message, if any. */
     @Volatile
     var lastStyleLoadError: String? = null
@@ -292,6 +399,8 @@ object NaviMapTestHooks {
     /** Whether the missing-coverage download dialog is visible. */
     @Volatile
     var missingCoveragePromptVisible: Boolean = false
+    var absurdDetourPromptVisible: Boolean = false
+    var lastAbsurdDetourMessage: String = ""
 
     /**
      * When true, Plan route (Hiking) may load a host-staged polyline + breaks

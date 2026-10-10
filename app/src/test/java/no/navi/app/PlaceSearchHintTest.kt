@@ -8,6 +8,30 @@ import org.junit.Test
 
 class PlaceSearchHintTest {
     @Test
+    fun saysOfflineSearchUnavailableWhenIndexFileUnusable() {
+        val offline =
+            placeSearchBuildingMessage(
+                hitsEmpty = true,
+                indexHasEntries = false,
+                indexRunning = false,
+                indexProblem = "file missing",
+            )
+        assertEquals(
+            "Offline place search unavailable (place index file missing) — enter coordinates or tap the map",
+            offline,
+        )
+        val online =
+            placeSearchBuildingMessage(
+                hitsEmpty = false,
+                indexHasEntries = false,
+                indexRunning = false,
+                onlineAvailable = true,
+                indexProblem = "pack volume unavailable",
+            )
+        assertTrue(online!!.startsWith("Offline place search unavailable (place index pack volume unavailable)"))
+    }
+
+    @Test
     fun showsOnlineMessageWhenNetworkAvailableAndIndexEmpty() {
         val msg =
             placeSearchBuildingMessage(

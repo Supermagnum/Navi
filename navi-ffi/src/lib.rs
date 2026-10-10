@@ -14,6 +14,7 @@ use driver_break_core::config::{
     RestConfig, SafetyConfig, VehicleLimits, HIKING_MAIN_BREAK_DISTANCE_KM,
     OVERNIGHT_BUILDING_CORRIDOR_MARGIN_M,
 };
+use driver_break_core::export::parse_route_polyline;
 use driver_break_core::icons::{self, IconTheme};
 use driver_break_core::poi::{rest_area_suitable_for_weekly, PoiCategory, PoiIndex, PoiRecord};
 use driver_break_core::routing::elevation::{ElevationCache, ElevationService};
@@ -55,6 +56,10 @@ uniffi::setup_scaffolding!();
 
 mod camping_plugin;
 pub use camping_plugin::*;
+
+/// One native `plan_car_route` at a time (second Activity / am start must not
+/// spawn a second planner thread).
+static PLAN_CAR_ROUTE_FLIGHT: Mutex<()> = Mutex::new(());
 
 fn ensure_native_logging() {
     #[cfg(target_os = "android")]
@@ -154,6 +159,19 @@ pub fn foreground_plan_leave() {
 #[uniffi::export]
 pub fn foreground_plan_active() -> bool {
     driver_break_core::download::pbf_priority::foreground_plan_active()
+}
+
+/// Ask idle jobs to stop at the next committed batch so a plan can start.
+#[uniffi::export]
+pub fn request_idle_pause() {
+    driver_break_core::download::pbf_priority::request_idle_pause();
+}
+
+/// Test-only: slow each index-build phase check so a harness can start a plan
+/// while that phase is active. Zero clears the delay.
+#[uniffi::export]
+pub fn set_test_index_phase_sleep_ms(ms: u64) {
+    driver_break_core::download::pbf_priority::set_test_index_phase_sleep_ms(ms);
 }
 
 /// Ask the in-flight UniFFI plan to stop at the next checkpoint.
@@ -533,6 +551,12 @@ pub fn set_route_plan_timing_enabled(enabled: bool) {
     driver_break_core::routing::plan_perf::set_enabled(enabled);
 }
 
+/// Arm a one-shot accept for the absurd installed-only detour gate (product UI).
+#[uniffi::export]
+pub fn set_accept_absurd_detour(accept: bool) {
+    driver_break_core::routing::plan_bbox::set_accept_absurd_detour(accept);
+}
+
 #[uniffi::export]
 pub fn route_plan_timing_enabled() -> bool {
     ROUTE_PLAN_TIMING_ENABLED.load(Ordering::Relaxed)
@@ -655,6 +679,67 @@ fn parse_graph_ferry_edges_token(report: &str) -> Option<u64> {
         }
     }
     None
+}
+
+fn datex_constraint_line(
+    prefix: &str,
+    c: &driver_break_core::datex::DatexPlannerConstraint,
+) -> String {
+    format!(
+        "{prefix} road={} place={} type={} validity={} effect={} penalty_min={:.0}",
+        c.road.replace('\n', " "),
+        c.place
+            .replace('\n', " ")
+            .chars()
+            .take(80)
+            .collect::<String>(),
+        c.xsi_type,
+        c.validity_text.replace('\n', " "),
+        c.impact.as_str(),
+        c.penalty_minutes
+    )
+}
+
+fn datex_hits_polyline(
+    c: &driver_break_core::datex::DatexPlannerConstraint,
+    pts: &[(f64, f64)],
+) -> bool {
+    let r = c
+        .radius_m
+        .max(driver_break_core::datex::DATEX_IMPACT_RADIUS_M);
+    pts.iter().any(|(lat, lon)| {
+        let earth = 6_371_000.0_f64;
+        let p1 = lat.to_radians();
+        let p2 = c.lat.to_radians();
+        let dp = p2 - p1;
+        let dl = (c.lon - lon).to_radians();
+        let h = (dp / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dl / 2.0).sin().powi(2);
+        2.0 * earth * h.sqrt().asin() <= r
+    })
+}
+
+fn log_datex_for_hop_path(
+    report: &mut String,
+    hop_datex: &[driver_break_core::datex::DatexPlannerConstraint],
+    polyline: &str,
+) {
+    let pts = parse_route_polyline(polyline);
+    for c in hop_datex {
+        let ignore = c.impact == driver_break_core::datex::DatexImpact::Ignore
+            || c.xsi_type.eq_ignore_ascii_case("SpeedManagement");
+        let on_path = !pts.is_empty() && datex_hits_polyline(c, &pts);
+        if ignore || !on_path {
+            driver_break_core::routing::plan_file_log::line(datex_constraint_line(
+                "datex_nearby",
+                c,
+            ));
+            continue;
+        }
+        let line = datex_constraint_line("datex_affected", c);
+        driver_break_core::routing::plan_file_log::line(line.clone());
+        report.push_str(&line);
+        report.push('\n');
+    }
 }
 
 fn parse_u64_token(report: &str, key: &str) -> Option<u64> {
@@ -2197,11 +2282,10 @@ fn plan_pack_dirs(
 /// Android). Empty: search `data_dir` and `data_dir/long-trip-packs` when present.
 /// Pass `""` only when the PBF already lives next to the packs.
 ///
-/// `long_trip_enabled` gates densify/chunk for spans above [`LONG_TRIP_CHUNK_DEG`].
-/// Ordinary UI plans pass `false` so cross-stem mid trips (Raufoss→Bergen) stay
-/// on one A*. Same-stem coastal ODs with span > CHUNK densify even when longTrip
-/// is off so Automotive never materialises the full Vestlandet single-shot graph
-/// (Bergen→Stavanger ~259k nodes / ~985 MiB peak vs densify hops ~167k / ≤933).
+/// `long_trip_enabled` controls region download-along-route only (Kotlin
+/// LongTripCoordinator). Corridor densify runs for every multi-region trip and
+/// for same-stem coastal spans above CHUNK — independent of this flag. Inland
+/// same-stem ODs (ostlandet) stay single-shot so Hamar→Dombås is not detoured.
 ///
 /// `allowed_countries`: when `Some` (non-empty), hard-filters the graph to those
 /// ISO-3166-1 alpha-2 codes ([`RouteOptions::allowed_countries`]). Host "Stay in
@@ -2285,7 +2369,34 @@ pub fn plan_car_route_at(
     allowed_countries: Option<Vec<String>>,
     via_points: Vec<FfiLatLon>,
 ) -> CorridorRouteResult {
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    ensure_native_logging();
+    driver_break_core::routing::plan_file_log::set_data_dir(&data_dir);
+    let _flight = match PLAN_CAR_ROUTE_FLIGHT.try_lock() {
+        Ok(g) => g,
+        Err(std::sync::TryLockError::WouldBlock) => {
+            driver_break_core::download::plan_cancel::request_cancel();
+            PLAN_CAR_ROUTE_FLIGHT
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+        }
+        Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner(),
+    };
+    driver_break_core::routing::plan_file_log::clear_trip_artifacts();
+    let inputs = plan_inputs_line(
+        profile,
+        use_eco,
+        avoid_motorways,
+        toll_policy,
+        avoid_ferries,
+        avoid_tunnels,
+        long_trip_enabled,
+        &data_dir,
+        (start_lat, start_lon),
+        (end_lat, end_lon),
+        &via_points,
+    );
+    driver_break_core::routing::plan_file_log::line(&inputs);
+    let mut result = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ch = driver_break_core::download::progress::ChannelGuard::enter(
             driver_break_core::download::progress::ProgressChannel::Plan,
         );
@@ -2314,7 +2425,6 @@ pub fn plan_car_route_at(
             /* is_chunk_leg */ false,
             /* relax_start_snap */ false,
             /* relax_end_snap */ false,
-            /* tight_intermediate_snap */ false,
             /* datex_impacts_override */ None,
         )
     })) {
@@ -2326,7 +2436,45 @@ pub fn plan_car_route_at(
                 "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: native panic during plan_car_route: {msg}\n"
             ))
         }
-    }
+    };
+    result.report.push_str(&inputs);
+    result.report.push('\n');
+    result
+}
+
+/// One line with the inputs this plan received, so a caller can check that
+/// what it sent is what was planned.
+#[allow(clippy::too_many_arguments)]
+fn plan_inputs_line(
+    profile: TravelProfile,
+    use_eco: bool,
+    avoid_motorways: bool,
+    toll_policy: FfiTollPolicy,
+    avoid_ferries: bool,
+    avoid_tunnels: bool,
+    long_trip_enabled: bool,
+    data_dir: &str,
+    start: (f64, f64),
+    end: (f64, f64),
+    vias: &[FfiLatLon],
+) -> String {
+    let datex = driver_break_core::datex::datex_plan_mode(std::path::Path::new(data_dir.trim()));
+    let via_coords = vias
+        .iter()
+        .map(|v| format!("{:.6},{:.6}", v.lat, v.lon))
+        .collect::<Vec<_>>()
+        .join(";");
+    format!(
+        "plan_inputs profile={profile:?} eco={use_eco} avoid_motorways={avoid_motorways} \
+         toll={toll_policy:?} avoid_ferries={avoid_ferries} avoid_tunnels={avoid_tunnels} \
+         long_trip={long_trip_enabled} datex={datex:?} start={:.6},{:.6} end={:.6},{:.6} \
+         vias={} via_coords={via_coords}",
+        start.0,
+        start.1,
+        end.0,
+        end.1,
+        vias.len()
+    )
 }
 
 fn parse_departure_local(iso: Option<&str>) -> Option<chrono::NaiveDateTime> {
@@ -2337,6 +2485,80 @@ fn parse_departure_local(iso: Option<&str>) -> Option<chrono::NaiveDateTime> {
     chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S")
         .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S"))
         .ok()
+}
+
+/// Stable pack identity for hop-resume keys: sorted manifest name + size + mtime.
+fn long_trip_pack_fingerprint(pack_dir: &str) -> String {
+    use std::collections::BTreeMap;
+    use std::time::UNIX_EPOCH;
+    let dir = pack_dir.trim();
+    if dir.is_empty() {
+        return "none".into();
+    }
+    let path = std::path::Path::new(dir);
+    let Ok(rd) = std::fs::read_dir(path) else {
+        return "missing".into();
+    };
+    let mut map = BTreeMap::new();
+    for ent in rd.flatten() {
+        let name = ent.file_name().to_string_lossy().into_owned();
+        if !name.ends_with(".navi-manifest.json") {
+            continue;
+        }
+        let Ok(meta) = ent.metadata() else {
+            continue;
+        };
+        let mtime = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        map.insert(name, format!("{}:{}", meta.len(), mtime));
+    }
+    if map.is_empty() {
+        return "empty".into();
+    }
+    map.into_iter()
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
+fn undo_last_hop(
+    polyline: &mut String,
+    hop_polys: &mut Vec<String>,
+    distance_km: &mut f64,
+    eta_minutes: &mut f64,
+    hops_sidecar: &mut Vec<serde_json::Value>,
+    leg_maneuvers: &mut Vec<Vec<RouteManeuver>>,
+    prev_km: f64,
+    prev_eta: f64,
+) {
+    *distance_km = (*distance_km - prev_km).max(0.0);
+    *eta_minutes = (*eta_minutes - prev_eta).max(0.0);
+    hops_sidecar.pop();
+    leg_maneuvers.pop();
+    hop_polys.pop();
+    *polyline = stitch_hop_polylines(hop_polys);
+}
+
+fn stitch_hop_polylines(hop_polys: &[String]) -> String {
+    let mut out = String::new();
+    for poly in hop_polys {
+        if poly.is_empty() {
+            continue;
+        }
+        if out.is_empty() {
+            out = poly.clone();
+        } else if let Some((_, rest)) = poly.split_once(';') {
+            if !rest.is_empty() {
+                out.push(';');
+                out.push_str(rest);
+            }
+        }
+    }
+    out
 }
 
 fn plan_car_route_chunked_legs(
@@ -2355,49 +2577,66 @@ fn plan_car_route_chunked_legs(
     data_dir: String,
     pack_dir: String,
     hops: &[(f64, f64)],
+    hop_kinds: &[driver_break_core::routing::corridor_skeleton::HopJointKind],
+    coarse_path: &[(f64, f64)],
+    routing_profile: driver_break_core::routing::graph::RoutingProfile,
     allowed_countries: Option<Vec<String>>,
 ) -> CorridorRouteResult {
     let mut report = String::from("TEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\n");
+    let mut hops = hops.to_vec();
+    let mut hop_kinds = if hop_kinds.len() == hops.len() {
+        hop_kinds.to_vec()
+    } else {
+        driver_break_core::routing::corridor_skeleton::classify_hop_joints(&hops, &[])
+    };
     report.push_str(&format!(
-        "long_trip_chunked=true; hops={}; chunk_deg={:.2}\n",
+        "long_trip_chunked=true; hops={}; chunk_deg={:.2}; stretch_joint_repair_max={}\n",
         hops.len().saturating_sub(1),
-        driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG
+        driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG,
+        driver_break_core::routing::corridor_skeleton::STRETCH_JOINT_REPAIR_MAX_RETRIES
     ));
-    let datex_impacts = {
+    let datex_all = {
         let dir = data_dir.trim();
         if dir.is_empty() {
-            Vec::new()
+            None
         } else {
-            driver_break_core::datex::planner_impacts_from_data_dir(
+            driver_break_core::datex::load_plan_datex_bound(
                 std::path::Path::new(dir),
-                hops,
                 chrono::Utc::now(),
             )
         }
     };
-    let datex_blocks = datex_impacts
+    let datex_now = chrono::Utc::now();
+    if let Some(all) = datex_all.as_ref() {
+        driver_break_core::routing::plan_file_log::line(format!(
+            "datex_snapshot sits={} mode={:?}",
+            all.len(),
+            driver_break_core::datex::datex_plan_mode(std::path::Path::new(&data_dir))
+        ));
+    } else {
+        driver_break_core::datex::write_plan_datex_snapshot(std::path::Path::new(&data_dir), &[]);
+    }
+    // Resume only when waypoints, options, DATEX mode, packs and native build match.
+    // Waypoint-only keys reused hops from older APKs/packs (fu13 baseline).
+    let datex_mode = driver_break_core::datex::datex_plan_mode(std::path::Path::new(&data_dir));
+    let pack_fp = long_trip_pack_fingerprint(&pack_dir);
+    let hops_coords: String = hops
         .iter()
-        .filter(|c| c.impact == driver_break_core::datex::DatexImpact::Block)
-        .count();
-    let datex_penalize = datex_impacts
-        .iter()
-        .filter(|c| c.impact == driver_break_core::datex::DatexImpact::Penalize)
-        .count();
-    report.push_str(&format!(
-        "datex_impacts={}; datex_block={datex_blocks}; datex_penalize={datex_penalize}\n",
-        datex_blocks + datex_penalize
-    ));
-    log::info!(
-        target: "NaviDatex",
-        "chunked plan-time DATEX impacts={} block={datex_blocks} penalize={datex_penalize} hops={}",
-        datex_blocks + datex_penalize,
-        hops.len()
+        .map(|(a, b)| format!("{a:.5},{b:.5}"))
+        .collect::<Vec<_>>()
+        .join(";");
+    let hops_key = format!(
+        "v2;native={};profile={profile:?};eco={use_eco};mw={avoid_motorways};toll={toll_policy:?};\
+         avoid_ferry={avoid_ferries};avoid_tunnel={avoid_tunnels};datex={datex_mode:?};\
+         pack={pack_fp};hops={hops_coords}",
+        env!("CARGO_PKG_VERSION"),
     );
     let mut distance_km = 0.0;
     let mut eta_minutes = 0.0;
     let mut build_s = 0.0;
     let mut cache_hit = true;
     let mut polyline = String::new();
+    let mut hop_polys: Vec<String> = Vec::new();
     let mut sim_samples = String::from("[");
     let mut break_pois = String::from("[");
     let mut sim_first = true;
@@ -2415,10 +2654,77 @@ fn plan_car_route_chunked_legs(
     let mut pad_attempts: Vec<f64> = Vec::new();
     let mut priority_share_acc = 0.0;
     let mut priority_share_w = 0.0;
+    let mut hops_sidecar: Vec<serde_json::Value> = Vec::new();
+    // Densify joints are hop terminals: the next hop starts at the previous hop's
+    // last geometry vertex, not a fresh 35 km snap onto the densify coordinate.
+    let mut hop_start = hops[0];
+    let mut skip_until = 0usize;
+    let mut stretch_repairs = 0usize;
+    let mut detour_retries = 0usize;
+    let mut prev_hop_poly = String::new();
+    let mut prev_hop_km = 0.0_f64;
+    let mut prev_hop_eta = 0.0_f64;
+    let mut prev_hop_start = hops[0];
+    let pack_dirs_for_repair = plan_pack_dirs(
+        std::path::Path::new(pbf_path.trim()),
+        &data_dir,
+        &pack_dir,
+        /* long_trip_enabled */ true,
+    );
+    let pack_refs_for_repair: Vec<&std::path::Path> =
+        pack_dirs_for_repair.iter().map(|p| p.as_path()).collect();
+    if let Some(raw) = driver_break_core::routing::plan_file_log::read_file(
+        driver_break_core::routing::plan_file_log::HOPS_PARTIAL_NAME,
+    ) {
+        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&raw) {
+            let key = v.get("key").and_then(|x| x.as_str()).unwrap_or("");
+            let completed = v.get("completed").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
+            if key == hops_key && completed > 0 && completed < hops.len() {
+                skip_until = completed;
+                polyline = v
+                    .get("polyline")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                distance_km = v.get("distance_km").and_then(|x| x.as_f64()).unwrap_or(0.0);
+                eta_minutes = v.get("eta_minutes").and_then(|x| x.as_f64()).unwrap_or(0.0);
+                expansions = v.get("expansions").and_then(|x| x.as_u64()).unwrap_or(0);
+                ferry_leg_count = v
+                    .get("ferry_leg_count")
+                    .and_then(|x| x.as_u64())
+                    .unwrap_or(0);
+                if let Some(arr) = v.get("hops").and_then(|x| x.as_array()) {
+                    hops_sidecar = arr.clone();
+                }
+                if let Some(&end_pt) = parse_route_polyline(&polyline).last() {
+                    hop_start = end_pt;
+                }
+                driver_break_core::routing::plan_file_log::line(format!(
+                    "hop_resume skip_until={skip_until} km={distance_km:.3}"
+                ));
+                report.push_str(&format!(
+                    "hop_resume=true; skip_until={skip_until}; resumed_km={distance_km:.3}\n"
+                ));
+            } else if !key.is_empty() {
+                driver_break_core::routing::plan_file_log::remove_file(
+                    driver_break_core::routing::plan_file_log::HOPS_PARTIAL_NAME,
+                );
+                driver_break_core::routing::plan_file_log::line(
+                    "hop_resume discarded: key mismatch (apk/packs/options/datex/waypoints)",
+                );
+                report.push_str("hop_resume=discarded; reason=key_mismatch\n");
+            }
+        }
+    }
 
-    for (i, w) in hops.windows(2).enumerate() {
-        let (slat, slon) = w[0];
-        let (elat, elon) = w[1];
+    let mut i = 0usize;
+    while i + 1 < hops.len() {
+        if i < skip_until {
+            i += 1;
+            continue;
+        }
+        let (slat, slon) = hop_start;
+        let (elat, elon) = hops[i + 1];
         report.push_str(&format!(
             "chunk_leg{}={:.5},{:.5} -> {:.5},{:.5}\n",
             i + 1,
@@ -2432,14 +2738,40 @@ fn plan_car_route_chunked_legs(
             Some((hops.len() - 1) as u64),
             &format!("Planning long trip leg {}/{}…", i + 1, hops.len() - 1),
         );
-        let relax_start = i > 0;
+        let relax_start = false;
         let relax_end = i + 2 < hops.len();
         // Drop the previous hop's owned corridor before materializing the next
         // so densify never stacks two full hop graphs (tablet ≤933 MiB).
         if i > 0 {
             driver_break_core::routing::indexed::corridor_cache_clear();
         }
-        let leg = plan_car_route_inner(
+        let hop_bearing = {
+            let p1 = slat.to_radians();
+            let p2 = elat.to_radians();
+            let dl = (elon - slon).to_radians();
+            let y = dl.sin() * p2.cos();
+            let x = p1.cos() * p2.sin() - p1.sin() * p2.cos() * dl.cos();
+            (y.atan2(x).to_degrees() + 360.0) % 360.0
+        };
+        let arrival = datex_now + chrono::Duration::minutes(eta_minutes.round() as i64);
+        let trip_uncertain = eta_minutes > 12.0 * 60.0;
+        let hop_datex = match &datex_all {
+            Some(all) => driver_break_core::datex::impacts_near_bound_ctx(
+                all,
+                &[(slat, slon), (elat, elon)],
+                driver_break_core::datex::DATEX_HOP_MARGIN_M,
+                driver_break_core::datex::DatexHopContext {
+                    arrival,
+                    trip_uncertain,
+                    hop_bearing_deg: Some(hop_bearing),
+                    truck: true,
+                },
+            ),
+            None => Vec::new(),
+        };
+        let hop_datex_first = hop_datex.clone();
+        let hop_rss_before = driver_break_core::routing::corridor_skeleton::vm_rss_mb();
+        let mut leg = plan_car_route_inner(
             pbf_path.clone(),
             elev_dir.clone(),
             cache_dir.clone(),
@@ -2464,21 +2796,103 @@ fn plan_car_route_chunked_legs(
             /* is_chunk_leg */ true,
             relax_start,
             relax_end,
-            /* tight_intermediate_snap */ false,
-            Some(datex_impacts.clone()),
+            Some(hop_datex_first),
         );
-        report.push_str(&format!("--- leg{} report ---\n", i + 1));
+        let hop_failed = leg.distance_km <= 0.0
+            || leg.search_terminate_reason == "snap_failed"
+            || leg.search_terminate_reason == "fail"
+            || leg.search_terminate_reason == "graph_build"
+            || leg.search_terminate_reason == "bbox_exhausted"
+            || leg.search_terminate_reason == "disconnected"
+            || leg.search_terminate_reason == "corridor_disconnected"
+            || leg.search_terminate_reason == "hop_end_tile_missing"
+            || leg.search_terminate_reason == "hop_end_unreachable"
+            || leg.route_polyline.is_empty();
+        if hop_failed
+            && hop_datex
+                .iter()
+                .any(|c| c.impact == driver_break_core::datex::DatexImpact::Block)
+        {
+            let named: Vec<String> = hop_datex
+                .iter()
+                .filter(|c| c.impact == driver_break_core::datex::DatexImpact::Block)
+                .map(|c| {
+                    format!(
+                        "{} {} {}",
+                        c.road,
+                        c.place.chars().take(60).collect::<String>(),
+                        c.validity_text
+                    )
+                })
+                .collect();
+            driver_break_core::routing::plan_file_log::line(format!(
+                "datex_behind_closure retry_without_block {}",
+                named.join(" | ")
+            ));
+            let mut retry = hop_datex.clone();
+            for c in &mut retry {
+                if c.impact == driver_break_core::datex::DatexImpact::Block {
+                    c.impact = driver_break_core::datex::DatexImpact::Warn;
+                }
+            }
+            driver_break_core::routing::indexed::corridor_cache_clear();
+            leg = plan_car_route_inner(
+                pbf_path.clone(),
+                elev_dir.clone(),
+                cache_dir.clone(),
+                slat,
+                slon,
+                elat,
+                elon,
+                use_eco,
+                profile,
+                avoid_motorways,
+                toll_policy,
+                avoid_ferries,
+                avoid_tunnels,
+                vehicle.clone(),
+                prefer_official_networks,
+                departure_local_iso.clone(),
+                data_dir.clone(),
+                pack_dir.clone(),
+                Vec::new(),
+                false,
+                allowed_countries.clone(),
+                true,
+                relax_start,
+                relax_end,
+                Some(retry),
+            );
+        }
+        driver_break_core::routing::plan_bbox::set_force_straight_clip(false);
+        log_datex_for_hop_path(&mut report, &hop_datex, &leg.route_polyline);
+        let hop_peak_rss_mb =
+            hop_rss_before.max(driver_break_core::routing::corridor_skeleton::vm_rss_mb());
+        log::info!(
+            target: "NaviPlan",
+            "plan_mem stage=hop_{} peak_rss_mb={hop_peak_rss_mb}",
+            i + 1
+        );
+        report.push_str(&format!(
+            "hop_mem hop={} peak_rss_mb={hop_peak_rss_mb}\n",
+            i + 1
+        ));
+        report.push_str(&format!("--- hop_try{} report ---\n", i + 1));
         report.push_str(&leg.report);
         route_uses_ferry = route_uses_ferry || leg.report.contains("route_uses_ferry=true");
         if let Some(n) = parse_graph_ferry_edges_token(&leg.report) {
             graph_ferry_edges = graph_ferry_edges.max(n);
         }
-        if let Some(n) = parse_u64_token(&leg.report, "route_ferry_legs=") {
-            ferry_leg_count = ferry_leg_count.saturating_add(n);
-        }
         if let Some(fp) = parse_token_value(&leg.report, "route_ferry_fp=") {
             if !fp.is_empty() {
-                ferry_fp_parts.push(fp);
+                // Split hop fingerprints so a pier hop and the water hop for the
+                // same crossing do not double-count when summed.
+                for part in fp.split('|') {
+                    let part = part.trim();
+                    if !part.is_empty() {
+                        ferry_fp_parts.push(part.to_string());
+                    }
+                }
             }
         }
         if let Some(n) = parse_u64_token(&leg.report, "route_tunnel_count=") {
@@ -2489,20 +2903,83 @@ fn plan_car_route_chunked_legs(
                 tunnel_fp_parts.push(fp);
             }
         }
+        if leg.search_terminate_reason == "ferry_preparing"
+            || leg.search_terminate_reason == "skeleton_preparing"
+        {
+            let reason = leg.search_terminate_reason.clone();
+            let partial = serde_json::json!({
+                "key": hops_key,
+                "completed": i,
+                "polyline": polyline,
+                "distance_km": distance_km,
+                "eta_minutes": eta_minutes,
+                "expansions": expansions,
+                "ferry_leg_count": ferry_leg_count,
+                "hops": hops_sidecar,
+            });
+            driver_break_core::routing::plan_file_log::write_file(
+                driver_break_core::routing::plan_file_log::HOPS_PARTIAL_NAME,
+                partial.to_string(),
+            );
+            driver_break_core::routing::plan_file_log::line(format!(
+                "hop_{reason} i={} completed={i} km={distance_km:.3}",
+                i + 1
+            ));
+            let mut r = empty_corridor(report);
+            r.search_terminate_reason = reason;
+            r.off_trail_advisory = leg.off_trail_advisory;
+            r.search_expansions = expansions.saturating_add(leg.search_expansions);
+            r.route_polyline = polyline;
+            r.distance_km = distance_km;
+            r.eta_minutes = eta_minutes;
+            return r;
+        }
         if leg.distance_km <= 0.0
             || leg.search_terminate_reason == "snap_failed"
             || leg.search_terminate_reason == "fail"
             || leg.search_terminate_reason == "graph_build"
             || leg.search_terminate_reason == "bbox_exhausted"
             || leg.search_terminate_reason == "disconnected"
+            || leg.search_terminate_reason == "corridor_disconnected"
+            || leg.search_terminate_reason == "hop_end_tile_missing"
+            || leg.search_terminate_reason == "hop_end_unreachable"
             || leg.route_polyline.is_empty()
         {
+            driver_break_core::routing::plan_file_log::line(format!(
+                "hop_fail i={} terminate={} a={:.5},{:.5} b={:.5},{:.5}",
+                i + 1,
+                leg.search_terminate_reason,
+                slat,
+                slon,
+                elat,
+                elon
+            ));
             // Put the failing leg first so truncated logs still show the cause.
             let mut fail = format!(
                 "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: chunk_leg{} terminated {}\n",
                 i + 1,
                 leg.search_terminate_reason
             );
+            let closures: Vec<String> = hop_datex
+                .iter()
+                .filter(|c| c.impact == driver_break_core::datex::DatexImpact::Block)
+                .map(|c| {
+                    format!(
+                        "DATEX closure {} {} {}",
+                        c.road,
+                        c.place.chars().take(80).collect::<String>(),
+                        c.validity_text
+                    )
+                })
+                .collect();
+            if !closures.is_empty() {
+                fail = format!(
+                    "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: {}\nFAIL: chunk_leg{} terminated {}\n",
+                    closures.join("; "),
+                    i + 1,
+                    leg.search_terminate_reason
+                );
+            }
             if avoid_ferries
                 && !fail.contains("no_route_without_ferry=")
                 && !leg.report.contains("no_route_without_ferry=")
@@ -2512,6 +2989,10 @@ fn plan_car_route_chunked_legs(
                 );
             }
             fail.push_str(&report);
+            driver_break_core::routing::plan_file_log::remove_file(
+                driver_break_core::routing::plan_file_log::HOPS_PARTIAL_NAME,
+            );
+            driver_break_core::routing::plan_bbox::set_stage_b_active(false);
             let mut r = empty_corridor(fail);
             r.search_terminate_reason = leg.search_terminate_reason;
             r.toll_policy = leg.toll_policy;
@@ -2519,6 +3000,205 @@ fn plan_car_route_chunked_legs(
             r.search_expansions = expansions.saturating_add(leg.search_expansions);
             return r;
         }
+        let hop_ferry = parse_u64_token(&leg.report, "route_ferry_legs=").unwrap_or(0);
+        let hop_poly_pts = parse_route_polyline(&leg.route_polyline);
+        let hop_poly_km =
+            driver_break_core::routing::path_repair::polyline_length_m(&hop_poly_pts) / 1000.0;
+        let hop_dist_m = leg.distance_km * 1000.0;
+        let hop_poly_agree =
+            driver_break_core::routing::path_repair::hop_distance_agrees_with_polyline(
+                hop_dist_m,
+                &hop_poly_pts,
+                0.005,
+            );
+        let hop_poly_rel = if hop_dist_m > 0.0 {
+            ((hop_poly_km * 1000.0 - hop_dist_m).abs() / hop_dist_m) * 100.0
+        } else {
+            0.0
+        };
+        driver_break_core::routing::plan_file_log::line(format!(
+            "hop_result=success i={} km={:.3} poly_km={:.3} poly_agree_0_5pct={} \
+             poly_rel_pct={:.3} eta_min={:.1} terminate={} route_ferry_legs={hop_ferry} \
+             expansions={} pack_load_ms={} datex_bind_ms={} snap_ms={} search_ms={} \
+             nodes={} vm_hwm_mb={}",
+            i + 1,
+            leg.distance_km,
+            hop_poly_km,
+            hop_poly_agree,
+            hop_poly_rel,
+            leg.eta_minutes,
+            leg.search_terminate_reason,
+            leg.search_expansions,
+            parse_u64_token(&leg.report, "pack_load_ms=").unwrap_or(0),
+            parse_u64_token(&leg.report, "datex_bind_ms=").unwrap_or(0),
+            parse_u64_token(&leg.report, "snap_ms=").unwrap_or(0),
+            parse_u64_token(&leg.report, "search_ms=").unwrap_or(0),
+            parse_u64_token(&leg.report, "nodes=").unwrap_or(0),
+            driver_break_core::routing::corridor_skeleton::vm_hwm_mb(),
+        ));
+        report.push_str(&format!(
+            "hop{}_poly_km={:.3}; hop{}_km={:.3}; hop{}_poly_agree_0_5pct={}\n",
+            i + 1,
+            hop_poly_km,
+            i + 1,
+            leg.distance_km,
+            i + 1,
+            hop_poly_agree
+        ));
+        if i >= 1
+            && stretch_repairs
+                < driver_break_core::routing::corridor_skeleton::STRETCH_JOINT_REPAIR_MAX_RETRIES
+        {
+            let joint = hops[i];
+            let kind = hop_kinds.get(i).copied().unwrap_or(
+                driver_break_core::routing::corridor_skeleton::HopJointKind::StretchSplit,
+            );
+            let left = parse_route_polyline(&prev_hop_poly);
+            let right = hop_poly_pts.clone();
+            let merged_nodes =
+                driver_break_core::routing::corridor_skeleton::estimated_path_covering_nodes(
+                    &pack_refs_for_repair,
+                    routing_profile,
+                    &[hops[i - 1], hops[i + 1]],
+                );
+            let clipped_fits = driver_break_core::routing::corridor_skeleton::direct_search_fits(
+                &pack_refs_for_repair,
+                routing_profile,
+                hops[i - 1],
+                hops[i + 1],
+            );
+            let mut action = driver_break_core::routing::corridor_skeleton::stretch_repair_action(
+                kind,
+                &left,
+                &right,
+                joint,
+                merged_nodes,
+                driver_break_core::routing::plan_bbox::MAX_PATH_NODES_PER_HOP,
+                coarse_path,
+                clipped_fits,
+            );
+            if matches!(
+                action,
+                driver_break_core::routing::corridor_skeleton::StretchRepair::Keep
+            ) && driver_break_core::routing::corridor_skeleton::is_stretch_hint(kind)
+                && clipped_fits
+                && detour_retries < driver_break_core::routing::plan_bbox::DIRECT_DETOUR_RETRY_MAX
+            {
+                let straight = driver_break_core::routing::plan_bbox::haversine_km(
+                    hops[i - 1].0,
+                    hops[i - 1].1,
+                    hops[i + 1].0,
+                    hops[i + 1].1,
+                );
+                if driver_break_core::routing::plan_bbox::hop_pair_much_slower(
+                    prev_hop_km + hop_dist_m / 1000.0,
+                    prev_hop_eta + leg.eta_minutes,
+                    straight,
+                ) {
+                    action = driver_break_core::routing::corridor_skeleton::StretchRepair::Direct;
+                    detour_retries += 1;
+                }
+            }
+            match action {
+                driver_break_core::routing::corridor_skeleton::StretchRepair::Keep => {}
+                driver_break_core::routing::corridor_skeleton::StretchRepair::Direct => {
+                    stretch_repairs += 1;
+                    undo_last_hop(
+                        &mut polyline,
+                        &mut hop_polys,
+                        &mut distance_km,
+                        &mut eta_minutes,
+                        &mut hops_sidecar,
+                        &mut leg_maneuvers,
+                        prev_hop_km,
+                        prev_hop_eta,
+                    );
+                    report.push_str(&format!(
+                        "stretch_joint_direct i={} joint={:.5},{:.5} repairs={stretch_repairs}\n",
+                        i + 1,
+                        joint.0,
+                        joint.1
+                    ));
+                    hop_start = prev_hop_start;
+                    hops.remove(i);
+                    if i < hop_kinds.len() {
+                        hop_kinds.remove(i);
+                    }
+                    driver_break_core::routing::plan_bbox::set_force_straight_clip(true);
+                    i = i.saturating_sub(1);
+                    continue;
+                }
+                driver_break_core::routing::corridor_skeleton::StretchRepair::Merge => {
+                    stretch_repairs += 1;
+                    undo_last_hop(
+                        &mut polyline,
+                        &mut hop_polys,
+                        &mut distance_km,
+                        &mut eta_minutes,
+                        &mut hops_sidecar,
+                        &mut leg_maneuvers,
+                        prev_hop_km,
+                        prev_hop_eta,
+                    );
+                    report.push_str(&format!(
+                        "stretch_joint_merge i={} joint={:.5},{:.5} repairs={stretch_repairs}\n",
+                        i + 1,
+                        joint.0,
+                        joint.1
+                    ));
+                    hop_start = prev_hop_start;
+                    hops.remove(i);
+                    if i < hop_kinds.len() {
+                        hop_kinds.remove(i);
+                    }
+                    i = i.saturating_sub(1);
+                    continue;
+                }
+                driver_break_core::routing::corridor_skeleton::StretchRepair::Slide(new_joint) => {
+                    stretch_repairs += 1;
+                    undo_last_hop(
+                        &mut polyline,
+                        &mut hop_polys,
+                        &mut distance_km,
+                        &mut eta_minutes,
+                        &mut hops_sidecar,
+                        &mut leg_maneuvers,
+                        prev_hop_km,
+                        prev_hop_eta,
+                    );
+                    report.push_str(&format!(
+                        "stretch_joint_slide i={} from={:.5},{:.5} to={:.5},{:.5} repairs={stretch_repairs}\n",
+                        i + 1,
+                        joint.0,
+                        joint.1,
+                        new_joint.0,
+                        new_joint.1
+                    ));
+                    hops[i] = new_joint;
+                    hop_start = prev_hop_start;
+                    i = i.saturating_sub(1);
+                    continue;
+                }
+            }
+        }
+        report.push_str(&format!("--- leg{} report ---\n", i + 1));
+        report.push_str(&leg.report);
+        hops_sidecar.push(serde_json::json!({
+            "i": i + 1,
+            "endpoints": format!("{slat:.5},{slon:.5}->{elat:.5},{elon:.5}"),
+            "km": (leg.distance_km * 1000.0).round() / 1000.0,
+            "poly_km": (hop_poly_km * 1000.0).round() / 1000.0,
+            "poly_agree_0_5pct": hop_poly_agree,
+            "eta_min": (leg.eta_minutes * 10.0).round() / 10.0,
+            "terminate": leg.search_terminate_reason,
+            "route_ferry_legs": hop_ferry,
+            "expansions": leg.search_expansions,
+            "pack_load_ms": parse_u64_token(&leg.report, "pack_load_ms=").unwrap_or(0),
+            "datex_bind_ms": parse_u64_token(&leg.report, "datex_bind_ms=").unwrap_or(0),
+            "snap_ms": parse_u64_token(&leg.report, "snap_ms=").unwrap_or(0),
+            "search_ms": parse_u64_token(&leg.report, "search_ms=").unwrap_or(0),
+            "result": "success",
+        }));
         distance_km += leg.distance_km;
         eta_minutes += leg.eta_minutes;
         build_s += leg.cold_build_s;
@@ -2534,19 +3214,45 @@ fn plan_car_route_chunked_legs(
             priority_share_w += leg.distance_km;
         }
         // Polyline: skip duplicate joint vertex on subsequent legs.
+        hop_polys.push(leg.route_polyline.clone());
         if polyline.is_empty() {
-            polyline = leg.route_polyline;
+            polyline = leg.route_polyline.clone();
         } else if let Some((_, rest)) = leg.route_polyline.split_once(';') {
             if !rest.is_empty() {
                 polyline.push(';');
                 polyline.push_str(rest);
             }
         }
+        if let Some(&end_pt) = parse_route_polyline(&polyline).last() {
+            hop_start = end_pt;
+        } else {
+            hop_start = hops[i + 1];
+        }
+        {
+            let partial = serde_json::json!({
+                "key": hops_key,
+                "completed": i + 1,
+                "polyline": polyline,
+                "distance_km": distance_km,
+                "eta_minutes": eta_minutes,
+                "expansions": expansions,
+                "ferry_leg_count": ferry_leg_count,
+                "hops": hops_sidecar,
+            });
+            driver_break_core::routing::plan_file_log::write_file(
+                driver_break_core::routing::plan_file_log::HOPS_PARTIAL_NAME,
+                partial.to_string(),
+            );
+        }
         append_json_array_elems(&mut sim_samples, &mut sim_first, &leg.sim_samples_json);
         let mans: Vec<RouteManeuver> =
             serde_json::from_str(&leg.maneuvers_json).unwrap_or_default();
         leg_maneuvers.push(mans);
         append_json_array_elems(&mut break_pois, &mut break_first, &leg.break_pois_json);
+        prev_hop_poly = leg.route_polyline.clone();
+        prev_hop_km = leg.distance_km;
+        prev_hop_eta = leg.eta_minutes;
+        prev_hop_start = (slat, slon);
         // Clear large leftover strings so the next hop starts with less retained
         // RSS on 4 GB Automotive (LMK previously killed ~2.9 GB RSS).
         let CorridorRouteResult {
@@ -2561,7 +3267,11 @@ fn plan_car_route_chunked_legs(
             ..
         } = leg;
         drop((leftover_days, leftover_segs, leftover_adv));
+        i += 1;
     }
+    // FU13: do not delete vertices from the exported line. Distance, ETA,
+    // maneuvers and GeoJSON must describe the path the search chose; every
+    // point must lie on a road or ferry. Cosmetic joint/chord repair is off.
     sim_samples.push(']');
     let maneuvers = maneuvers_to_json(&stitch_chunk_leg_maneuvers(&leg_maneuvers));
     let priority_path_share_pct = if priority_share_w > 0.0 {
@@ -2589,10 +3299,24 @@ fn plan_car_route_chunked_legs(
         &polyline,
         distance_km,
         eta_minutes,
-        hops,
+        &hops,
     );
     report.push_str(&soft_report);
     let _ = break_pois; // per-leg breaks were empty (poi_skipped); replaced above
+                        // Unique ferry services across hops: pier densify hop + water hop for the
+                        // same crossing share a label (`name@km`); count once by label stem.
+    {
+        let mut seen = std::collections::BTreeSet::new();
+        let mut deduped = Vec::new();
+        for fp in ferry_fp_parts.drain(..) {
+            let stem = fp.split('@').next().unwrap_or(fp.as_str()).to_string();
+            if seen.insert(stem) {
+                deduped.push(fp);
+            }
+        }
+        ferry_fp_parts = deduped;
+        ferry_leg_count = ferry_fp_parts.len() as u64;
+    }
     report.push_str(&format!("graph_ferry_edges={graph_ferry_edges}\n"));
     report.push_str(&format!("route_ferry_legs={ferry_leg_count}\n"));
     report.push_str(&format!("route_ferry_fp={}\n", ferry_fp_parts.join("|")));
@@ -2600,11 +3324,31 @@ fn plan_car_route_chunked_legs(
     report.push_str(&format!("route_tunnel_fp={}\n", tunnel_fp_parts.join("|")));
     append_rest_place_count(&mut report, &break_pois_json);
     report.push_str(&format!(
-        "datex_impacts={}; datex_block={datex_blocks}; datex_penalize={datex_penalize}\n",
-        datex_blocks + datex_penalize
+        "datex_plan_sits={}\n",
+        datex_all.as_ref().map(|v| v.len()).unwrap_or(0)
+    ));
+    let track = driver_break_core::export::parse_route_polyline(&polyline);
+    let total_poly_km = driver_break_core::routing::path_repair::polyline_length_m(&track) / 1000.0;
+    let total_poly_agree =
+        driver_break_core::routing::path_repair::total_distance_agrees_with_polyline(
+            distance_km * 1000.0,
+            &track,
+            0.005,
+        );
+    let total_poly_rel = if distance_km > 0.0 {
+        ((total_poly_km - distance_km).abs() / distance_km) * 100.0
+    } else {
+        0.0
+    };
+    report.push_str(&format!(
+        "total_poly_km={total_poly_km:.3}; total_km={distance_km:.3}; \
+         total_poly_agree_0_5pct={total_poly_agree}; total_poly_rel_pct={total_poly_rel:.3}\n"
+    ));
+    driver_break_core::routing::plan_file_log::line(format!(
+        "total_poly_agree km={distance_km:.3} poly_km={total_poly_km:.3} \
+         agree_0_5pct={total_poly_agree} rel_pct={total_poly_rel:.3}"
     ));
     {
-        let track = driver_break_core::export::parse_route_polyline(&polyline);
         if track.len() >= 2 {
             let n = track.len();
             let idxs = [0, n / 6, n / 3, n / 2, (2 * n) / 3, (5 * n) / 6, n - 1];
@@ -2624,6 +3368,31 @@ fn plan_car_route_chunked_legs(
         "chunked_distance_km={distance_km:.3}; chunked_eta_min={eta_minutes:.1}; hops={}; route_uses_ferry={route_uses_ferry}\nPASS\n",
         hops.len().saturating_sub(1)
     ));
+    let terminate = if toll_incomplete {
+        "found_with_toll_fallback"
+    } else {
+        "found"
+    };
+    driver_break_core::routing::plan_file_log::line(format!(
+        "plan_summary km={distance_km:.3} eta_min={eta_minutes:.1} \
+         route_ferry_legs={ferry_leg_count} terminate={terminate} hops={} \
+         total_poly_agree_0_5pct={total_poly_agree}",
+        hops.len().saturating_sub(1)
+    ));
+    if let Ok(body) = serde_json::to_string_pretty(&serde_json::json!({ "hops": hops_sidecar })) {
+        driver_break_core::routing::plan_file_log::write_file(
+            driver_break_core::routing::plan_file_log::HOPS_NAME,
+            body,
+        );
+    }
+    driver_break_core::routing::plan_file_log::write_file(
+        driver_break_core::routing::plan_file_log::POLYLINE_NAME,
+        polyline.as_bytes(),
+    );
+    driver_break_core::routing::plan_file_log::remove_file(
+        driver_break_core::routing::plan_file_log::HOPS_PARTIAL_NAME,
+    );
+    driver_break_core::routing::plan_bbox::set_stage_b_active(false);
     driver_break_core::download::progress::set(5, Some(5), "Planning route: done");
     CorridorRouteResult {
         report,
@@ -3066,11 +3835,15 @@ fn plan_car_route_inner(
     is_chunk_leg: bool,
     relax_start_snap: bool,
     relax_end_snap: bool,
-    tight_intermediate_snap: bool,
     datex_impacts_override: Option<Vec<driver_break_core::datex::DatexPlannerConstraint>>,
 ) -> CorridorRouteResult {
     let empty = empty_corridor;
     let _cancel_guard = driver_break_core::download::plan_cancel::begin_plan();
+    if !is_chunk_leg {
+        driver_break_core::routing::plan_bbox::set_stage_b_active(false);
+        driver_break_core::routing::plan_bbox::set_stage_b_coarse_path(Vec::new());
+        driver_break_core::routing::plan_bbox::set_force_straight_clip(false);
+    }
     // Host settings root (`navi.db` for rest / vehicle / fuel). Must not be
     // confused with pack lookup dirs after `plan_pack_data_dir` rebinding.
     let settings_data_dir = data_dir.clone();
@@ -3108,12 +3881,10 @@ fn plan_car_route_inner(
     }
     route_points.push((end_lat, end_lon));
 
-    // Long corridors (multi-landsdel) cannot merge every pack tile into one
-    // graph on Automotive RAM. Densify hops and plan each leg separately when
-    // the host long-trip toggle is on and span > CHUNK. Same-stem coastal ODs
-    // (Vestlandet / Nord-Norge / …) also densify when span > CHUNK with
-    // longTrip off: dig never held the ~259k-node Bergen→Stavanger single-shot
-    // owned RouteGraph that pushed VmHWM to ~985 MiB; densify hops stay ≤~167k.
+    // Corridor densify whenever the trip needs more than one region or more
+    // tiles than one hop may hold (span > CHUNK). `long_trip_enabled` only
+    // controls downloading regions along a route (Kotlin LongTripCoordinator);
+    // it must not gate Stage B / hop planning.
     let span = driver_break_core::routing::plan_bbox::trip_span_deg(&route_points);
     let pack_dirs_for_densify = plan_pack_dirs(
         std::path::Path::new(pbf_path.trim()),
@@ -3121,96 +3892,270 @@ fn plan_car_route_inner(
         &pack_dir,
         long_trip_enabled,
     );
-    let ferry_same_stem_densify = !long_trip_enabled
-        && !is_chunk_leg
-        && span > driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG
-        && {
-            let (a_lat, a_lon) = route_points[0];
-            let (b_lat, b_lon) = *route_points.last().unwrap();
-            let leaf_a = driver_break_core::long_trip::region_containing(a_lat, a_lon, None);
-            let leaf_b = driver_break_core::long_trip::region_containing(b_lat, b_lon, None);
-            match (leaf_a, leaf_b) {
-                (Some(a), Some(b)) if a == b => {
-                    let leaf = a.rsplit('/').next().unwrap_or(a);
-                    // Inland stems (ostlandet) often span > CHUNK without needing
-                    // densify for RSS; densifying detours Raufoss→Dombås.
-                    matches!(
-                        leaf,
-                        "vestlandet" | "nord-norge" | "sorlandet" | "troms" | "finnmark"
-                    )
-                }
-                _ => false,
-            }
-        };
-    if (long_trip_enabled || ferry_same_stem_densify)
-        && !is_chunk_leg
-        && span > driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG
-    {
+    let (leaf_a, leaf_b) = {
+        let (a_lat, a_lon) = route_points[0];
+        let (b_lat, b_lon) = *route_points.last().unwrap();
+        (
+            driver_break_core::long_trip::region_containing(a_lat, a_lon, None),
+            driver_break_core::long_trip::region_containing(b_lat, b_lon, None),
+        )
+    };
+    let multi_region = match (leaf_a, leaf_b) {
+        (Some(a), Some(b)) => a != b,
+        _ => true,
+    };
+    // Same-stem coastal ODs still need hop split when span > CHUNK (ferry RSS).
+    // Inland stems (ostlandet) often span > CHUNK without needing densify —
+    // densifying detours Hamar→Dombås / Raufoss→Dombås.
+    let same_stem_needs_split = match (leaf_a, leaf_b) {
+        (Some(a), Some(b))
+            if a == b && span > driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG =>
+        {
+            let leaf = a.rsplit('/').next().unwrap_or(a);
+            matches!(
+                leaf,
+                "vestlandet" | "nord-norge" | "sorlandet" | "troms" | "finnmark"
+            )
+        }
+        _ => false,
+    };
+    let pack_dir_refs_for_nodes: Vec<&std::path::Path> =
+        pack_dirs_for_densify.iter().map(|p| p.as_path()).collect();
+    let path_covering_nodes =
+        driver_break_core::routing::corridor_skeleton::estimated_path_covering_nodes(
+            &pack_dir_refs_for_nodes,
+            routing_profile,
+            &route_points,
+        );
+    let path_over_node_limit =
+        path_covering_nodes > driver_break_core::routing::plan_bbox::MAX_PATH_NODES_PER_HOP;
+    let (leg_start, leg_end) = (route_points[0], *route_points.last().unwrap());
+    let clipped_nodes =
+        driver_break_core::routing::corridor_skeleton::estimated_direct_search_nodes(
+            &pack_dir_refs_for_nodes,
+            routing_profile,
+            leg_start,
+            leg_end,
+        );
+    let clipped_fits =
+        driver_break_core::routing::plan_bbox::direct_search_fits_nodes(clipped_nodes);
+    // Corridor only when the clipped graph between the ends does not fit.
+    // Whole-tile count, region count and stem names are not the predicate.
+    let needs_corridor = !is_chunk_leg && !clipped_fits;
+    let mut stage_b_advisory = String::new();
+    if needs_corridor {
         let pack_dirs = pack_dirs_for_densify;
         let pack_dir_refs: Vec<&std::path::Path> = pack_dirs.iter().map(|p| p.as_path()).collect();
-        let geometric =
-            driver_break_core::routing::plan_bbox::densify_route_points_via_regions_dirs(
-                &route_points,
-                &pack_dir_refs,
-                driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG,
-            );
-        // Prefer joints on a major-road + ferry coarse path for **same-stem**
-        // coastal ODs (Bergen→Stavanger). Long-trip DE→NO must keep region
-        // densify: skeleton loads a trip AABB of the user pins (pad 0.15°)
-        // that misses Fehmarn/E47, then even-split hops walk Lolland/Kalvehave.
-        let hops = if ferry_same_stem_densify {
-            driver_break_core::routing::indexed::try_densify_hops_via_skeleton(
-                std::path::Path::new(data_dir.trim()),
-                &pack_dir_refs,
-                std::path::Path::new(pbf_path.trim()),
-                routing_profile,
-                &route_points,
-                driver_break_core::routing::plan_bbox::LONG_TRIP_CHUNK_DEG,
-            )
-            .unwrap_or(geometric)
-        } else {
-            geometric
-        };
-        log::info!(
-            target: "NaviPlan",
-            "long_trip densify span={span:.3} hops={} long_trip_enabled={long_trip_enabled} \
-             ferry_same_stem={ferry_same_stem_densify} hops_latlon={} dirs={}",
-            hops.len(),
-            hops.iter()
-                .map(|(la, lo)| format!("{la:.4},{lo:.4}"))
-                .collect::<Vec<_>>()
-                .join(";"),
-            pack_dirs
-                .iter()
-                .map(|d| d.display().to_string())
-                .collect::<Vec<_>>()
-                .join(";")
+        // Direct-corridor preflight: name uninstalled regions on the outline path.
+        let missing_direct = driver_break_core::routing::indexed::missing_ready_regions_for_trip(
+            &pack_dir_refs,
+            routing_profile,
+            &route_points,
         );
-        if hops.len() > 2 {
-            return plan_car_route_chunked_legs(
-                pbf_path,
-                elev_dir,
-                cache_dir,
-                use_eco,
-                profile,
-                avoid_motorways,
-                ffi_toll_policy,
-                avoid_ferries,
-                avoid_tunnels,
-                vehicle,
-                prefer_official_networks,
-                departure_local_iso,
-                data_dir,
-                pack_dir,
-                &hops,
-                allowed_countries,
+        if !missing_direct.is_empty() {
+            log::info!(
+                target: "NaviPlan",
+                "direct_corridor_missing={}",
+                missing_direct.join(",")
             );
+        }
+        // When every direct-corridor region is missing coverage and no installed
+        // path can be attempted yet, fail naming the installs (fail-fast).
+        // If some packs are Ready, Stage B may still find an installed-only
+        // detour — absurd-detour gate below decides whether to present it.
+        if !missing_direct.is_empty() && !long_trip_enabled {
+            // Without long-trip download, missing packs cannot be fetched mid-plan.
+            // Still allow Stage B when *some* corridor packs exist (detour case).
+        }
+
+        // Stage B plans only on fresh skeletons: a stale or missing corridor
+        // skeleton stops here instead of being read with another build's data.
+        let missing_skel = driver_break_core::routing::indexed::stems_missing_corridor_skeleton(
+            &pack_dir_refs,
+            &route_points,
+            routing_profile,
+        );
+        if !missing_skel.is_empty() {
+            let stem = missing_skel[0].1.clone();
+            let (status, pct) =
+                driver_break_core::routing::indexed::corridor_skeleton_preparing_status(&stem);
+            log::info!(
+                target: "NaviPlan",
+                "skeleton_preparing stems={} first={stem}",
+                missing_skel
+                    .iter()
+                    .map(|(_, s)| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+            let mut r = empty(format!(
+                "TEST_KIND=PLAN_CAR_ROUTE\n\
+                 skeleton_preparing=true\nskeleton_preparing_pct={pct}\n\
+                 skeleton_stale_stems={}\n\
+                 status={status}\nFAIL: {status}\n",
+                missing_skel
+                    .iter()
+                    .map(|(_, s)| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ));
+            driver_break_core::routing::plan_perf::note("skeleton_preparing", &status);
+            driver_break_core::routing::plan_perf::note_u64("skeleton_preparing_pct", pct as u64);
+            r.search_terminate_reason = "skeleton_preparing".into();
+            r.off_trail_advisory = status;
+            return r;
+        }
+
+        let stage_b_opts = driver_break_core::routing::graph::RouteOptions {
+            avoid_motorways,
+            toll_policy,
+            avoid_ferries,
+            avoid_tunnels,
+            vehicle: vehicle_limits.clone(),
+            departure_local,
+            allowed_countries: allowed_countries.clone(),
+            ..Default::default()
+        };
+        let stage_b =
+            driver_break_core::routing::corridor_skeleton::try_stage_b_densify_from_skeletons(
+                &pack_dir_refs,
+                &route_points,
+                routing_profile,
+                &stage_b_opts,
+            );
+        if let Ok(ref sb) = stage_b {
+            // Absurd installed-only detour: coarse path ≫ crow-flies.
+            if driver_break_core::routing::plan_bbox::is_absurd_installed_detour(
+                sb.total_km,
+                &route_points,
+                &missing_direct,
+            ) && !driver_break_core::routing::plan_bbox::accept_absurd_detour()
+            {
+                let straight =
+                    driver_break_core::routing::plan_bbox::waypoints_straight_km(&route_points);
+                let ratio = if straight > 0.0 {
+                    sb.total_km / straight
+                } else {
+                    0.0
+                };
+                let direct = driver_break_core::long_trip::direct_corridor_regions_for_trip(
+                    &route_points,
+                    None,
+                )
+                .unwrap_or_default();
+                let named_missing = missing_direct.join(",");
+                let named_direct = direct.join(",");
+                let install_line = if missing_direct.is_empty() {
+                    format!("expected_direct_corridor={named_direct}")
+                } else {
+                    format!("missing_regions={named_missing}\ninstall_regions_to_plan_direct={named_missing}")
+                };
+                log::warn!(
+                    target: "NaviPlan",
+                    "absurd_detour coarse_km={:.1} straight_km={:.1} ratio={:.2} \
+                     missing_regions={named_missing} direct={named_direct} \
+                     detour_available=true",
+                    sb.total_km,
+                    straight,
+                    ratio
+                );
+                let mut r = empty(format!(
+                    "TEST_KIND=PLAN_CAR_ROUTE\n\
+                     FAIL: absurd_detour coarse_km={:.1} straight_km={:.1} ratio={:.2}\n\
+                     {install_line}\n\
+                     detour_available=true detour_km={:.1} detour_min={:.1}\n\
+                     accept_hint=ui_accept_absurd_detour\n",
+                    sb.total_km, straight, ratio, sb.total_km, sb.total_min
+                ));
+                r.search_terminate_reason = "absurd_detour".into();
+                r.off_trail_advisory = if missing_direct.is_empty() {
+                    "absurd_detour".into()
+                } else {
+                    format!("missing_region:{}", missing_direct[0])
+                };
+                return r;
+            }
+            driver_break_core::routing::plan_bbox::set_stage_b_active(true);
+            driver_break_core::routing::plan_bbox::set_stage_b_coarse_path(sb.coarse_path.clone());
+            stage_b_advisory = sb.missing_advisory.clone();
+            log::info!(target: "NaviPlan", "stage_b densify {}", sb.note);
+            let hops = sb.hops.clone();
+            log::info!(
+                target: "NaviPlan",
+                "corridor densify span={span:.3} hops={} multi_region={multi_region} \
+                 long_trip_enabled={long_trip_enabled} stage_b=true hops_latlon={} dirs={}",
+                hops.len(),
+                hops.iter()
+                    .map(|(la, lo)| format!("{la:.4},{lo:.4}"))
+                    .collect::<Vec<_>>()
+                    .join(";"),
+                pack_dirs
+                    .iter()
+                    .map(|d| d.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(";")
+            );
+            if hops.len() > 2 {
+                let mut r = plan_car_route_chunked_legs(
+                    pbf_path,
+                    elev_dir,
+                    cache_dir,
+                    use_eco,
+                    profile,
+                    avoid_motorways,
+                    ffi_toll_policy,
+                    avoid_ferries,
+                    avoid_tunnels,
+                    vehicle,
+                    prefer_official_networks,
+                    departure_local_iso,
+                    data_dir,
+                    pack_dir,
+                    &hops,
+                    &sb.hop_kinds,
+                    &sb.coarse_path,
+                    routing_profile,
+                    allowed_countries,
+                );
+                r.report.push_str(&sb.alternatives_report());
+                return r;
+            }
+        } else {
+            let err = stage_b
+                .err()
+                .unwrap_or_else(|| "stage_b densify unavailable".into());
+            let path_only = path_over_node_limit && !multi_region && !same_stem_needs_split;
+            if path_only {
+                log::warn!(
+                    target: "NaviPlan",
+                    "stage_b densify failed (path node budget); continue single graph: {err}"
+                );
+            } else if err.contains("no fresh persistent skeletons") && !missing_direct.is_empty() {
+                let named = missing_direct.join(",");
+                log::warn!(target: "NaviPlan", "missing_regions_before_densify {named}");
+                let mut r = empty(format!(
+                    "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: missing_regions={named}\n"
+                ));
+                r.search_terminate_reason = "missing_regions".into();
+                r.off_trail_advisory = format!("missing_region:{}", missing_direct[0]);
+                return r;
+            } else {
+                log::warn!(target: "NaviPlan", "stage_b densify failed: {err}");
+                let mut r = empty(format!("TEST_KIND=PLAN_CAR_ROUTE\nFAIL: {err}\n"));
+                r.search_terminate_reason = if err.contains("waypoint") {
+                    "waypoint_attach".into()
+                } else {
+                    "stage_b_unavailable".into()
+                };
+                return r;
+            }
         }
     }
 
     // Initial plan only: apply active DATEX from `{data_dir}/datex_cache` when the
     // plugin stamp is present. No UniFFI signature change; mid-nav dynamic
     // reroute remains out of scope.
+    let datex_from_override = datex_impacts_override.is_some();
     let datex_impacts = if let Some(v) = datex_impacts_override {
         v
     } else {
@@ -3254,6 +4199,12 @@ fn plan_car_route_inner(
         via_points.len()
     ));
     report.push_str(&format!(
+        "path_covering_nodes={path_covering_nodes}; path_over_node_limit={path_over_node_limit}; \
+         clipped_nodes={clipped_nodes}; clipped_fits={clipped_fits}; \
+         needs_corridor={needs_corridor}; stage_b={}\n",
+        driver_break_core::routing::plan_bbox::stage_b_active()
+    ));
+    report.push_str(&format!(
         "allowed_countries={}\n",
         match &allowed_countries_norm {
             Some(c) if !c.is_empty() => c.join(","),
@@ -3269,6 +4220,37 @@ fn plan_car_route_inner(
         "datex_impacts={}; datex_block={datex_blocks}; datex_penalize={datex_penalize}\n",
         datex_blocks + datex_penalize
     ));
+    {
+        let mut snap = String::from("{\n  \"impacts\": [\n");
+        for (i, c) in route_opts.datex_impacts.iter().enumerate() {
+            if i > 0 {
+                snap.push_str(",\n");
+            }
+            snap.push_str(&format!(
+                "    {{\"id\":\"{}\",\"impact\":\"{}\",\"lat\":{:.5},\"lon\":{:.5},\"r_m\":{:.0},\"mult\":{}}}",
+                c.situation_id.replace('"', ""),
+                c.impact.as_str(),
+                c.lat,
+                c.lon,
+                c.radius_m,
+                c.penalize_mult
+            ));
+        }
+        snap.push_str("\n  ]\n}\n");
+        if !datex_from_override {
+            driver_break_core::routing::plan_file_log::write_file(
+                driver_break_core::routing::plan_file_log::DATEX_SNAPSHOT_JSON,
+                snap,
+            );
+            if !data_dir.trim().is_empty() {
+                driver_break_core::datex::copy_plan_datex_xml(Path::new(data_dir.trim()));
+            }
+            driver_break_core::routing::plan_file_log::line(format!(
+                "datex_snapshot impacts={} block={datex_blocks} penalize={datex_penalize}",
+                route_opts.datex_impacts.len()
+            ));
+        }
+    }
     report.push_str(&format!(
         "eco_regen={:.3}\n",
         eco_for_travel_profile(profile).regen_efficiency
@@ -3329,7 +4311,16 @@ fn plan_car_route_inner(
         let force_chunk_take = std::env::var("NAVI_MEASURE_FORCE_CHUNK_PAD")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
-        if is_chunk_leg || force_chunk_take {
+        let direct_clip = driver_break_core::routing::plan_bbox::force_straight_clip()
+            || (!is_chunk_leg && !needs_corridor);
+        if direct_clip {
+            // Same pad as the cheap clipped-size estimate. Widen entries stay
+            // for a disconnected retry only.
+            driver_break_core::routing::plan_bbox::direct_search_pad_schedule(
+                (start_lat, start_lon),
+                (end_lat, end_lon),
+            )
+        } else if is_chunk_leg || force_chunk_take {
             // Chunked legs: default three pads (initial + two widens → 1.4°).
             // Two was not enough when the first pad snapped a densify hop onto a
             // neighbour shore. Measure overrides may raise take toward the full
@@ -3351,6 +4342,7 @@ fn plan_car_route_inner(
     let mut eco_reweight_ms_acc = 0u64;
     let mut snap_ms_acc = 0u64;
     let mut search_ms_acc = 0u64;
+    let mut datex_bind_ms_acc = 0u64;
     let mut path = Vec::new();
     let mut path_edges = Vec::new();
     let mut cost = 0.0;
@@ -3363,10 +4355,21 @@ fn plan_car_route_inner(
     let mut bbox = [0.0; 4];
     // Corridor-band edge clip ignores pad widen (band is OD-only). After a
     // disconnected A* on that stable materialization, retry with trip-AABB.
-    let mut edge_clip_mode = driver_break_core::routing::plan_bbox::PlanEdgeClipMode::CorridorBand;
+    let started_direct = driver_break_core::routing::plan_bbox::force_straight_clip()
+        || (!is_chunk_leg && !needs_corridor);
+    let mut edge_clip_mode = if started_direct {
+        // Direct search: clip to the start–end box (plus plan pad), not the
+        // coarse-path band. Matches the cheap clipped-size decision.
+        driver_break_core::routing::plan_bbox::PlanEdgeClipMode::TripAabb
+    } else {
+        driver_break_core::routing::plan_bbox::PlanEdgeClipMode::CorridorBand
+    };
     // Tile-budget widen across disconnect retries (forced 6 → 10 → 14 → …).
     // Cleared on plan exit so later plans do not inherit a raised floor.
-    driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(0);
+    // Stage B keeps the raised floor (coarse-path tiles; no chord budget).
+    if !driver_break_core::routing::plan_bbox::stage_b_active() {
+        driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(0);
+    }
     // Prefer multi-stem default so widen steps start from the real corridor budget
     // (14) unless NAVI_MEASURE_MAX_PLAN_TILES forces a lower base (e.g. 6).
     let mut tile_budget_used =
@@ -3389,11 +4392,27 @@ fn plan_car_route_inner(
             route_opts.eco_weights = None;
             route_opts.motor_soft = None;
             route_opts.surface_routing_mode = None;
-            bbox = driver_break_core::routing::plan_bbox::trip_bbox_points(&route_points, pad);
+            // Stage B: tiles follow the coarse path (plus pad), not the O–D chord.
+            let corridor_pts: Vec<(f64, f64)> =
+                if driver_break_core::routing::plan_bbox::force_straight_clip() {
+                    vec![(start_lat, start_lon), (end_lat, end_lon)]
+                } else if is_chunk_leg && driver_break_core::routing::plan_bbox::stage_b_active() {
+                    driver_break_core::routing::plan_bbox::stage_b_hop_corridor_points(
+                        (start_lat, start_lon),
+                        (end_lat, end_lon),
+                    )
+                } else {
+                    route_points.clone()
+                };
+            bbox = driver_break_core::routing::plan_bbox::trip_bbox_points(&corridor_pts, pad);
             report.push_str(&format!(
                 "bbox={:.3},{:.3},{:.3},{:.3}; pad={pad:.2}; edge_clip={edge_clip_mode:?}; \
-                 tile_budget={tile_budget_used}\n",
-                bbox[0], bbox[1], bbox[2], bbox[3]
+                 tile_budget={tile_budget_used}; corridor_pts={}\n",
+                bbox[0],
+                bbox[1],
+                bbox[2],
+                bbox[3],
+                corridor_pts.len()
             ));
             driver_break_core::routing::plan_perf::note_u64("tile_budget", tile_budget_used as u64);
 
@@ -3422,7 +4441,7 @@ fn plan_car_route_inner(
                         pbf,
                         routing_profile,
                         Some(bbox),
-                        Some(route_points.as_slice()),
+                        Some(corridor_pts.as_slice()),
                         edge_clip_mode,
                     )
                 }
@@ -3489,6 +4508,37 @@ fn plan_car_route_inner(
                     r.toll_policy = toll_policy.as_diag_str().into();
                     r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
                     r.search_terminate_reason = "ferry_preparing".into();
+                    r.off_trail_advisory = status;
+                    return r;
+                }
+                Err(driver_break_core::routing::indexed::PackLoadError::MissingEndTile(at)) => {
+                    report.push_str(&format!("FAIL: hop built without end-node tile at {at}\n"));
+                    driver_break_core::routing::plan_perf::note("hop_end_tile_missing", &at);
+                    let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
+                    let mut r = empty(report);
+                    r.toll_policy = toll_policy.as_diag_str().into();
+                    r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
+                    r.search_terminate_reason = "hop_end_tile_missing".into();
+                    return r;
+                }
+                Err(driver_break_core::routing::indexed::PackLoadError::SkeletonPreparing(
+                    status,
+                    pct,
+                )) => {
+                    report.push_str(&format!(
+                        "skeleton_preparing=true\nskeleton_preparing_pct={pct}\n\
+                         status={status}\nFAIL: {status}\n"
+                    ));
+                    driver_break_core::routing::plan_perf::note("skeleton_preparing", &status);
+                    driver_break_core::routing::plan_perf::note_u64(
+                        "skeleton_preparing_pct",
+                        pct as u64,
+                    );
+                    let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
+                    let mut r = empty(report);
+                    r.toll_policy = toll_policy.as_diag_str().into();
+                    r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
+                    r.search_terminate_reason = "skeleton_preparing".into();
                     r.off_trail_advisory = status;
                     return r;
                 }
@@ -3570,6 +4620,15 @@ fn plan_car_route_inner(
                 built.nodes.len(),
                 built.edges.len()
             );
+            let t_datex_bind = Instant::now();
+            built.bind_datex_overlay(&mut route_opts);
+            let datex_bind_ms = t_datex_bind.elapsed().as_millis() as u64;
+            datex_bind_ms_acc = datex_bind_ms_acc.saturating_add(datex_bind_ms);
+            driver_break_core::routing::plan_perf::note_u64("datex_bind_ms", datex_bind_ms);
+            driver_break_core::routing::plan_file_log::line(format!(
+                "datex_bind_ms={datex_bind_ms} impacts={}",
+                route_opts.datex_impacts.len()
+            ));
             driver_break_core::download::progress::set(1, Some(5), "Snapping to road network…");
             if (profile == TravelProfile::Bicycle || profile == TravelProfile::BicycleElectric)
                 && prefer_official_networks
@@ -3666,11 +4725,8 @@ fn plan_car_route_inner(
                 Vec::with_capacity(route_points.len());
             let mut snap_ok = true;
             let default_snap = max_waypoint_snap_m(built.profile());
-            let chunk_snap = if tight_intermediate_snap {
-                driver_break_core::routing::plan_bbox::CHUNK_SAME_REGION_SNAP_M
-            } else {
-                driver_break_core::routing::plan_bbox::effective_chunk_intermediate_snap_m()
-            };
+            let chunk_snap =
+                driver_break_core::routing::plan_bbox::effective_chunk_intermediate_snap_m();
             let snap_stops = |built: &driver_break_core::routing::graph::RouteGraph,
                               route_opts: &driver_break_core::routing::graph::RouteOptions,
                               use_roles: bool|
@@ -3683,7 +4739,10 @@ fn plan_car_route_inner(
                     let prefer_better_surface = i > 0 && i + 1 < route_points.len();
                     let at_start = i == 0;
                     let at_end = i + 1 == route_points.len();
-                    let snap_max = if (at_start && relax_start_snap) || (at_end && relax_end_snap) {
+                    let snap_max = if at_end && is_chunk_leg && relax_end_snap {
+                        // Intermediate hop ends match the intended joint only.
+                        driver_break_core::routing::plan_bbox::HOP_END_MATCH_M
+                    } else if (at_start && relax_start_snap) || (at_end && relax_end_snap) {
                         chunk_snap
                     } else {
                         default_snap
@@ -3728,75 +4787,256 @@ fn plan_car_route_inner(
                     driver_break_core::routing::plan_perf::note_u64("directed_label_ms", 0);
                 }
                 Err((label, e)) => {
-                    last_terminate = "snap_failed";
-                    report.push_str(&format!(
-                        "snap_fail_{label} pad={pad:.2}: {}\n",
-                        format_snap_too_far(&label, e, built.profile())
-                    ));
-                    snap_ok = false;
+                    let try_fb = is_chunk_leg
+                        && relax_end_snap
+                        && driver_break_core::routing::plan_bbox::stage_b_active()
+                        && label == "destination";
+                    if try_fb {
+                        let start_opts = {
+                            let mut o = route_opts.clone();
+                            o.snap_role = driver_break_core::routing::graph::SnapRole::Origin;
+                            o
+                        };
+                        match built.nearest_routable_with_options_max(
+                            start_lat,
+                            start_lon,
+                            &start_opts,
+                            false,
+                            default_snap,
+                        ) {
+                            Ok((ss, sm)) => {
+                                let coarse = driver_break_core::routing::plan_bbox::stage_b_hop_corridor_points(
+                                    (start_lat, start_lon),
+                                    (end_lat, end_lon),
+                                );
+                                match driver_break_core::routing::corridor_skeleton::last_reachable_coarse_path_node(
+                                    &built,
+                                    ss,
+                                    &coarse,
+                                    (end_lat, end_lon),
+                                    driver_break_core::routing::plan_bbox::HOP_END_MATCH_M,
+                                ) {
+                                    Some((nid, ll)) => {
+                                        let dist = driver_break_core::routing::plan_bbox::haversine_km(
+                                            end_lat, end_lon, ll.0, ll.1,
+                                        ) * 1000.0;
+                                        report.push_str(&format!(
+                                            "hop_end_fallback={:.5},{:.5} reason=intended_end_not_in_graph \
+                                             intended={end_lat:.5},{end_lon:.5}\n",
+                                            ll.0, ll.1
+                                        ));
+                                        log::info!(
+                                            target: "NaviPlan",
+                                            "hop_end_fallback={:.5},{:.5} reason=intended_end_not_in_graph",
+                                            ll.0, ll.1
+                                        );
+                                        snapped = vec![(ss, sm), (nid, dist)];
+                                    }
+                                    None => {
+                                        last_terminate = "hop_end_unreachable";
+                                        report.push_str(
+                                            "FAIL: no coarse-path node beyond the start is reachable \
+                                             (intended end not in graph)\n",
+                                        );
+                                        snap_ok = false;
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                last_terminate = "snap_failed";
+                                report.push_str(&format!(
+                                    "snap_fail_{label} pad={pad:.2}: {}\n",
+                                    format_snap_too_far(&label, e, built.profile())
+                                ));
+                                snap_ok = false;
+                            }
+                        }
+                    } else {
+                        last_terminate = "snap_failed";
+                        report.push_str(&format!(
+                            "snap_fail_{label} pad={pad:.2}: {}\n",
+                            format_snap_too_far(&label, e, built.profile())
+                        ));
+                        snap_ok = false;
+                    }
                 }
             }
             snap_ms_acc = snap_ms_acc.saturating_add(t_snap.elapsed().as_millis() as u64);
             driver_break_core::routing::plan_perf::note_u64("directed_snap_ms", snap_ms_acc);
             if !snap_ok {
+                if last_terminate == "hop_end_unreachable" {
+                    break 'pads;
+                }
                 break; // next pad (edge_clip_mode unchanged)
             }
             // Fast disconnect: O/D snapped but sit on different weak components
             // (typical when tile budget dropped the bridge stem). Widen tiles
             // instead of exploring the whole origin component with A*.
             if snapped.len() >= 2 {
-                let (ss, _) = snapped[0];
-                let (gg, _) = snapped[snapped.len() - 1];
-                if !built.same_weak_component(ss, gg) {
-                    last_terminate = "disconnected";
-                    report.push_str(
-                        "corridor_components_disconnected before A* (origin/destination \
-                         not connected in loaded tiles)\n",
+                let (ss, snap_a_m) = snapped[0];
+                let (gg, snap_b_m) = snapped[snapped.len() - 1];
+                let snap_a = built.node_lat_lon(ss).unwrap_or((start_lat, start_lon));
+                let snap_b = built.node_lat_lon(gg).unwrap_or((end_lat, end_lon));
+                let comp_a = built.weak_component_id(ss);
+                let comp_b = built.weak_component_id(gg);
+                let weak_ok = built.same_weak_component(ss, gg);
+                let dir_ok = weak_ok && built.directed_reachable_with_options(ss, gg, &route_opts);
+                driver_break_core::routing::plan_file_log::line(format!(
+                    "hop endpoints={start_lat:.5},{start_lon:.5}->{end_lat:.5},{end_lon:.5} \
+                     snap_a={:.5},{:.5} snap_a_m={snap_a_m:.1} snap_b={:.5},{:.5} snap_b_m={snap_b_m:.1} \
+                     nodes={} pack_hit={pack_hit} comp_a={comp_a} comp_b={comp_b} \
+                     weak_ok={weak_ok} directed_ok={dir_ok}",
+                    snap_a.0,
+                    snap_a.1,
+                    snap_b.0,
+                    snap_b.1,
+                    built.nodes.len()
+                ));
+                if !dir_ok && weak_ok {
+                    // Same weak component: intervening tiles are loaded. A directed
+                    // miss is a one-way / snap issue, not a dropped-tile disconnect.
+                    // Run A* (and the existing label-resnap retry). Do not stop.
+                    log::info!(
+                        target: "NaviPlan",
+                        "directed_unreachable_same_component continue_astar \
+                         nodes={} snap_a_m={snap_a_m:.1} snap_b_m={snap_b_m:.1}",
+                        built.nodes.len()
                     );
-                    driver_break_core::routing::plan_perf::note(
-                        "corridor_components",
-                        "disconnected",
-                    );
-                    // Free the truncated corridor before reload (RSS / cache).
-                    drop(built);
-                    graph = None;
-                    if try_widen_tile_budget(
-                        &mut report,
-                        &mut tile_budget_used,
-                        &mut tile_widen_attempts,
-                        pack_hit,
-                    ) {
-                        edge_clip_mode =
-                            driver_break_core::routing::plan_bbox::PlanEdgeClipMode::CorridorBand;
-                        continue;
-                    }
-                    // Same as post-A* disconnected: pad widen does not expand
-                    // corridor-band clips. Øresund-class water chords keep the
-                    // bridge but drop the Zealand land approach (Køge xt>0.40°);
-                    // trip-AABB restores that land network without inventing edges.
-                    if driver_break_core::routing::plan_bbox::should_fallback_to_trip_aabb(
-                        edge_clip_mode,
-                        last_terminate,
-                    ) {
-                        edge_clip_mode =
-                            driver_break_core::routing::plan_bbox::PlanEdgeClipMode::TripAabb;
+                    report.push_str("directed_unreachable_same_component continue_astar\n");
+                } else if !dir_ok {
+                    let stage_b = driver_break_core::routing::plan_bbox::stage_b_active();
+                    if is_chunk_leg && stage_b && !weak_ok {
+                        let coarse =
+                            driver_break_core::routing::plan_bbox::stage_b_hop_corridor_points(
+                                (start_lat, start_lon),
+                                (end_lat, end_lon),
+                            );
+                        match driver_break_core::routing::corridor_skeleton::last_reachable_coarse_path_node(
+                            &built,
+                            ss,
+                            &coarse,
+                            (end_lat, end_lon),
+                            driver_break_core::routing::plan_bbox::HOP_END_MATCH_M,
+                        ) {
+                            Some((nid, ll)) if nid != gg => {
+                                let dist = driver_break_core::routing::plan_bbox::haversine_km(
+                                    end_lat, end_lon, ll.0, ll.1,
+                                ) * 1000.0;
+                                report.push_str(&format!(
+                                    "hop_end_fallback={:.5},{:.5} \
+                                     reason=intended_end_not_in_start_component \
+                                     intended={end_lat:.5},{end_lon:.5}\n",
+                                    ll.0, ll.1
+                                ));
+                                log::info!(
+                                    target: "NaviPlan",
+                                    "hop_end_fallback={:.5},{:.5} \
+                                     reason=intended_end_not_in_start_component",
+                                    ll.0, ll.1
+                                );
+                                let last = snapped.len() - 1;
+                                snapped[last] = (nid, dist);
+                            }
+                            None => {
+                                last_terminate = "hop_end_unreachable";
+                                report.push_str(
+                                    "FAIL: no coarse-path node beyond the start is reachable \
+                                     (intended end disconnected)\n",
+                                );
+                                break 'pads;
+                            }
+                            _ => {
+                                last_terminate = "disconnected";
+                                report.push_str(
+                                    "corridor_components_disconnected before A* (origin/destination \
+                                     not connected in loaded tiles)\n",
+                                );
+                                driver_break_core::routing::plan_perf::note(
+                                    "corridor_components",
+                                    "directed_unreachable",
+                                );
+                                drop(built);
+                                graph = None;
+                                if driver_break_core::routing::plan_bbox::should_fallback_to_trip_aabb(
+                                    edge_clip_mode,
+                                    last_terminate,
+                                ) {
+                                    edge_clip_mode =
+                                        driver_break_core::routing::plan_bbox::PlanEdgeClipMode::TripAabb;
+                                    driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(
+                                        driver_break_core::routing::plan_bbox::MAX_PLAN_TILES_MULTI_STEM,
+                                    );
+                                    report.push_str(
+                                        "edge_clip_fallback=trip_aabb after corridor_components_disconnected\n",
+                                    );
+                                    continue;
+                                }
+                                if driver_break_core::routing::plan_bbox::should_advance_direct_pad(
+                                    started_direct,
+                                    edge_clip_mode,
+                                    last_terminate,
+                                ) {
+                                    report.push_str(
+                                        "direct_search_pad_widen after disconnected TripAabb\n",
+                                    );
+                                    break;
+                                }
+                                report.push_str(
+                                    "corridor_disconnected: stop after one trip-AABB reload (no further pads, no A*)\n",
+                                );
+                                break 'pads;
+                            }
+                        }
+                    } else {
+                        last_terminate = "disconnected";
                         report.push_str(
+                            "corridor_components_disconnected before A* (origin/destination \
+                         not connected in loaded tiles)\n",
+                        );
+                        driver_break_core::routing::plan_perf::note(
+                            "corridor_components",
+                            if weak_ok {
+                                "directed_unreachable"
+                            } else {
+                                "disconnected"
+                            },
+                        );
+                        // Free the truncated corridor before reload (RSS / cache).
+                        drop(built);
+                        graph = None;
+                        // Do not reload the same pad clip via tile-budget widen
+                        // (Bevensen dest hop 18: four identical 0.35° loads).
+                        // One trip-AABB retry on this pad, then the next pad.
+                        if driver_break_core::routing::plan_bbox::should_fallback_to_trip_aabb(
+                            edge_clip_mode,
+                            last_terminate,
+                        ) {
+                            // One TripAabb reload so a chord-band that missed the
+                            // road between the hop ends can include both leaves.
+                            edge_clip_mode =
+                                driver_break_core::routing::plan_bbox::PlanEdgeClipMode::TripAabb;
+                            driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(
+                                driver_break_core::routing::plan_bbox::MAX_PLAN_TILES_MULTI_STEM,
+                            );
+                            report.push_str(
                             "edge_clip_fallback=trip_aabb after corridor_components_disconnected\n",
                         );
-                        continue;
+                            continue;
+                        }
+                        if driver_break_core::routing::plan_bbox::should_advance_direct_pad(
+                            started_direct,
+                            edge_clip_mode,
+                            last_terminate,
+                        ) {
+                            report
+                                .push_str("direct_search_pad_widen after disconnected TripAabb\n");
+                            break;
+                        }
+                        report.push_str(
+                        "corridor_disconnected: stop after one trip-AABB reload (no further pads, no A*)\n",
+                    );
+                        break 'pads;
                     }
-                    report.push_str(&format!(
-                        "pack_hit={pack_hit}; FAIL: corridor disconnected — origin and destination \
-                         are not connected in the loaded map tiles (tile budget exhausted). \
-                         Install the missing region packs or raise the plan tile budget.\n"
-                    ));
-                    let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
-                    driver_break_core::routing::plan_bbox::set_plan_tile_budget_at_least(0);
-                    let mut r = empty(report);
-                    r.toll_policy = toll_policy.as_diag_str().into();
-                    r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
-                    r.search_terminate_reason = "corridor_disconnected".into();
-                    return r;
                 }
             }
             // snap_ms already accumulated above (dig pad scan; labels deferred).
@@ -3972,6 +5212,16 @@ fn plan_car_route_inner(
                 continue;
             }
             if last_terminate == "disconnected" && pack_hit {
+                if driver_break_core::routing::plan_bbox::should_advance_direct_pad(
+                    started_direct,
+                    edge_clip_mode,
+                    last_terminate,
+                ) {
+                    report.push_str(
+                        "direct_search_pad_widen after disconnected TripAabb (pack hit)\n",
+                    );
+                    break;
+                }
                 report.push_str(
                     "FAIL: corridor disconnected after tile-budget widen — origin and \
                      destination remain unconnected in loaded packs.\n",
@@ -4140,7 +5390,8 @@ fn plan_car_route_inner(
     ));
     report.push_str(&format!(
         "pack_load_ms={pack_load_ms_acc}; eco_reweight_ms={eco_reweight_ms_acc}; \
-         snap_ms={snap_ms_acc}; search_ms={search_ms_acc}; expansions={last_expansions}\n"
+         datex_bind_ms={datex_bind_ms_acc}; snap_ms={snap_ms_acc}; search_ms={search_ms_acc}; \
+         expansions={last_expansions}\n"
     ));
     append_graph_ferry_edges(&mut report, &graph);
     let seasonal_n = graph.seasonal_closure_excluded_in_graph(&used_opts);
@@ -4817,6 +6068,19 @@ fn plan_car_route_inner(
         "distance_km={dist_km:.3}; eta_min={eta_minutes:.1}; path_nodes={path_nodes}; path_cost={cost:.0}; polyline_chars={}; break_pois={}; route_uses_ferry={route_uses_ferry}\nPASS\n",
         polyline.len(),
         break_pois_json
+    ));
+    if !stage_b_advisory.is_empty() {
+        report.push_str(&stage_b_advisory);
+    }
+    let hop_ferry = parse_u64_token(&report, "route_ferry_legs=").unwrap_or(0);
+    let hop_term = if toll_avoidance_incomplete {
+        "found_with_toll_fallback"
+    } else {
+        "found"
+    };
+    driver_break_core::routing::plan_file_log::line(format!(
+        "hop_result=success km={dist_km:.3} eta_min={eta_minutes:.1} terminate={hop_term} \
+         route_ferry_legs={hop_ferry} nodes={path_nodes} pack_hit={pack_hit} expansions={last_expansions}"
     ));
     driver_break_core::download::progress::set(5, Some(5), "Planning route: done");
 
@@ -5705,7 +6969,8 @@ pub struct FfiFerrySidecarProgress {
     pub message: String,
 }
 
-/// Build/refresh `{stem}.navi-ferry-overlay-{profile}.rkyv` from the region PBF.
+/// Build/refresh `{stem}.navi-ferry-overlay-{profile}.rkyv` from the region PBF
+/// (or shared country extract, e.g. `sweden-latest.osm.pbf` for Norrbotten).
 /// Call from pack install / refresh background work — not from the plan path.
 #[uniffi::export]
 pub fn ensure_ferry_sidecar(pack_dir: String, stem: String, profile: TravelProfile) -> String {
@@ -5714,31 +6979,17 @@ pub fn ensure_ferry_sidecar(pack_dir: String, stem: String, profile: TravelProfi
     if stem.is_empty() {
         return "FAIL: empty stem\n".into();
     }
-    let pbf = home.join(format!("{stem}.osm.pbf"));
-    if !pbf.is_file() {
-        // Also accept ferry-only extract.
-        let ferry_pbf = home.join(format!("{stem}.ferry.osm.pbf"));
-        if !ferry_pbf.is_file() {
-            return format!("FAIL: PBF missing for stem={stem}\n");
-        }
-        return match driver_break_core::routing::indexed::ensure_ferry_sidecar(
-            home,
-            stem,
-            RoutingProfile::from(profile.to_core()),
-            &ferry_pbf,
-        ) {
-            Ok(true) => format!("PASS: ferry sidecar ready stem={stem}\n"),
-            Ok(false) => format!("PASS: no ferry edges stem={stem}\n"),
-            Err(e) => format!("FAIL: ferry sidecar: {e:#}\n"),
+    let rp = RoutingProfile::from(profile.to_core());
+    let pbf =
+        match driver_break_core::routing::indexed::resolve_ferry_overlay_pbf_for_stem(home, stem) {
+            Some(p) => p,
+            None => return format!("FAIL: PBF missing for stem={stem}\n"),
         };
-    }
-    match driver_break_core::routing::indexed::ensure_ferry_sidecar(
-        home,
-        stem,
-        RoutingProfile::from(profile.to_core()),
-        &pbf,
-    ) {
-        Ok(true) => format!("PASS: ferry sidecar ready stem={stem}\n"),
+    match driver_break_core::routing::indexed::ensure_ferry_sidecar(home, stem, rp, &pbf) {
+        Ok(true) => format!(
+            "PASS: ferry sidecar ready stem={stem} pbf={}\n",
+            pbf.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+        ),
         Ok(false) => format!("PASS: no ferry edges stem={stem}\n"),
         Err(e) => format!("FAIL: ferry sidecar: {e:#}\n"),
     }
@@ -5757,25 +7008,78 @@ pub fn ferry_sidecar_progress_snapshot() -> FfiFerrySidecarProgress {
     }
 }
 
-/// True when the stem ferry sidecar meta matches the on-disk PBF fingerprint.
+/// True when the stem ferry sidecar meta matches the on-disk PBF fingerprint
+/// (leaf or shared country extract).
 #[uniffi::export]
 pub fn ferry_sidecar_is_ready(pack_dir: String, stem: String, profile: TravelProfile) -> bool {
     let home = Path::new(pack_dir.trim());
     let stem = stem.trim();
-    let pbf = home.join(format!("{stem}.osm.pbf"));
-    let pbf = if pbf.is_file() {
-        pbf
-    } else {
-        home.join(format!("{stem}.ferry.osm.pbf"))
-    };
-    if !pbf.is_file() {
+    let Some(pbf) =
+        driver_break_core::routing::indexed::resolve_ferry_overlay_pbf_for_stem(home, stem)
+    else {
         return false;
-    }
+    };
     driver_break_core::routing::indexed::sidecar_fresh(
         home,
         stem,
         RoutingProfile::from(profile.to_core()),
         &pbf,
+    )
+}
+
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiCorridorSkeletonProgress {
+    pub stem: String,
+    pub region_label: String,
+    pub running: bool,
+    pub pct: u8,
+    pub message: String,
+}
+
+/// Build/refresh `{stem}.navi-corridor-skeleton.bin` from installed graph packs.
+/// Call from pack install / idle background work — not from the plan path.
+#[uniffi::export]
+pub fn ensure_corridor_skeleton(pack_dir: String, stem: String, profile: TravelProfile) -> String {
+    let home = Path::new(pack_dir.trim());
+    let stem = stem.trim();
+    if stem.is_empty() {
+        return "FAIL: empty stem\n".into();
+    }
+    match driver_break_core::routing::indexed::ensure_corridor_skeleton(
+        home,
+        stem,
+        RoutingProfile::from(profile.to_core()),
+    ) {
+        Ok(()) => format!("PASS: corridor skeleton ready stem={stem}\n"),
+        Err(e) => format!("FAIL: corridor skeleton: {e:#}\n"),
+    }
+}
+
+/// Progress for an in-flight corridor skeleton build (empty stem when idle).
+#[uniffi::export]
+pub fn corridor_skeleton_progress_snapshot() -> FfiCorridorSkeletonProgress {
+    let p = driver_break_core::routing::indexed::corridor_skeleton_progress();
+    FfiCorridorSkeletonProgress {
+        stem: p.stem,
+        region_label: p.region_label,
+        running: p.running,
+        pct: p.pct,
+        message: p.message,
+    }
+}
+
+/// True when the stem corridor skeleton meta matches the pack and neighbour-pack fingerprints.
+#[uniffi::export]
+pub fn corridor_skeleton_is_ready(pack_dir: String, stem: String, profile: TravelProfile) -> bool {
+    let home = Path::new(pack_dir.trim());
+    let stem = stem.trim();
+    if stem.is_empty() {
+        return false;
+    }
+    driver_break_core::routing::indexed::corridor_skeleton_ready(
+        home,
+        stem,
+        RoutingProfile::from(profile.to_core()),
     )
 }
 
@@ -5790,6 +7094,7 @@ pub fn ensure_place_index(
     index_db_path: String,
     region_id: Option<String>,
 ) -> String {
+    let _job_pause = driver_break_core::download::pbf_priority::IdleJobPauseGuard::enter();
     use driver_break_core::download::progress;
     let pbf = Path::new(&pbf_path);
     if !pbf.is_file() {
@@ -5808,28 +7113,24 @@ pub fn ensure_place_index(
         .trim()
         .trim_matches('/')
         .to_string();
+    if !region.is_empty() {
+        if let Err(e) = driver_break_core::pack_server::refuse_overbroad_place_index(&region, pbf) {
+            return format!("FAIL: {e}\n");
+        }
+    }
     // Surface 0/6 immediately so the Tools % line is never blank while we check
     // the cache / open SQLite.
     progress::set(0, Some(6), "Place index: starting…");
     let prep_t0 = driver_break_core::download::phase_timing::start("place_index.prep_cache_check");
-    // Schema bumps (e.g. v4 building kind) must rebuild; wipe first so other
-    // regions are not left with pre-bump row kinds after user_version advances.
+    // Schema bumps migrate in place. Never delete the shared multi-region DB.
     driver_break_core::search::NameIndex::discard_if_schema_stale(db);
-    // Reuse existing index when this region (or any rows for legacy empty id)
-    // is already present at the current schema.
+    // Empty stub after a failed quarantine: put the pre-migrate bak back first.
+    let _ = driver_break_core::search::NameIndex::restore_from_bak_pk_v6(db);
+    // Reuse existing index when this region is intact at the current schema.
     if db.is_file() {
         if let Ok(meta) = std::fs::metadata(db) {
-            let region_ok = if region.is_empty() {
-                meta.len() > 10_000
-                    && driver_break_core::search::NameIndex::is_current_schema(db)
-                    && driver_break_core::search::NameIndex::has_entries(db)
-                    && driver_break_core::search::NameIndex::region_index_complete(db, "")
-            } else {
-                meta.len() > 10_000
-                    && driver_break_core::search::NameIndex::is_current_schema(db)
-                    && driver_break_core::search::NameIndex::has_entries_for_region(db, &region)
-                    && driver_break_core::search::NameIndex::region_index_complete(db, &region)
-            };
+            let region_ok = meta.len() > 10_000
+                && driver_break_core::search::NameIndex::region_index_intact(db, &region);
             if region_ok {
                 driver_break_core::download::phase_timing::end(
                     "place_index.prep_cache_check",
@@ -5844,19 +7145,62 @@ pub fn ensure_place_index(
     }
     driver_break_core::download::phase_timing::end("place_index.prep_cache_check", prep_t0);
     let open_t0 = driver_break_core::download::phase_timing::start("place_index.open_db");
-    match driver_break_core::search::NameIndex::open(db) {
+    let open_once = || driver_break_core::search::NameIndex::open(db);
+    let mut open_res = open_once();
+    if open_res.is_err() {
+        // Locking-protocol / busy from a concurrent probe: restore bak and retry
+        // once. Never quarantine while a bak-pk-v6 exists — that wiped protected
+        // rows when a migrate was interrupted.
+        let restored = driver_break_core::search::NameIndex::restore_from_bak_pk_v6(db);
+        if restored {
+            open_res = open_once();
+        }
+    }
+    match open_res {
         Ok(mut idx) => {
             driver_break_core::download::phase_timing::end("place_index.open_db", open_t0);
+            // open() may have just migrated v5→v6. Re-check on the same connection
+            // before a PBF rebuild so migrate kickoff returns cache_hit.
+            if !region.is_empty() && idx.region_intact_on_conn(&region) {
+                progress::set(6, Some(6), "Place index ready");
+                return format!(
+                    "PASS\ncache_hit=true\nmigrated_open=true\nregion_id={region}\nindex_db={index_db_path}\n"
+                );
+            }
             match idx.load_from_pbf_for_region(pbf, &region) {
                 Ok(n) => format!(
                     "PASS\ncache_hit=false\nindexed={n}\nregion_id={region}\nindex_db={index_db_path}\n"
                 ),
-                Err(e) => format!("FAIL: index load: {e:#}\n"),
+                Err(e) => {
+                    let msg = format!("{e:#}");
+                    if msg.contains(driver_break_core::search::PLACE_INDEX_PAUSED_PREFIX) {
+                        format!("PAUSED\n{msg}\nregion_id={region}\nindex_db={index_db_path}\n")
+                    } else {
+                        format!("FAIL: index load: {msg}\n")
+                    }
+                }
             }
         }
         Err(e) => {
             driver_break_core::download::phase_timing::end("place_index.open_db", open_t0);
-            format!("FAIL: open index: {e}\n")
+            let bak = driver_break_core::search::NameIndex::bak_pk_v6_path(db);
+            if bak.is_file() {
+                // Keep the live file and bak; do not quarantine while recovery exists.
+                return format!(
+                    "FAIL: open index (bak kept at {}): {e}\n\
+                     Place index open failed; pre-migrate backup was not quarantined.\n",
+                    bak.display()
+                );
+            }
+            let q = driver_break_core::search::NameIndex::quarantine_unreadable(db);
+            let qpath = q
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "rename_failed".into());
+            format!(
+                "FAIL: open index (quarantined to {qpath}): {e}\n\
+                 Place index could not be opened. The file was moved aside; regions will show as missing until rebuilt.\n"
+            )
         }
     }
 }
@@ -5893,6 +7237,32 @@ pub fn clear_place_index_region_rows(index_db_path: String, region_id: String) -
         Ok(()) => "PASS".into(),
         Err(e) => format!("FAIL: {e}"),
     }
+}
+
+/// Build this pack-server region's place index from the place-source file when
+/// the region's manifest lists it; otherwise the existing extract path.
+#[uniffi::export]
+pub fn ensure_place_index_for_pack_region(
+    pack_dir: String,
+    index_db_path: String,
+    region_id: String,
+) -> String {
+    let _job_pause = driver_break_core::download::pbf_priority::IdleJobPauseGuard::enter();
+    match driver_break_core::pack_server::ensure_place_index_for_installed_region(
+        Path::new(&pack_dir),
+        Path::new(&index_db_path),
+        &region_id,
+    ) {
+        Ok(r) => r.to_report_string(),
+        Err(e) => format!("FAIL: {e}\n"),
+    }
+}
+
+/// Read-only: place-source sha256 recorded with this region's index, or empty.
+#[uniffi::export]
+pub fn place_index_source_sha256(index_db_path: String, region_id: String) -> String {
+    driver_break_core::search::NameIndex::place_source_sha256(index_db_path, &region_id)
+        .unwrap_or_default()
 }
 
 /// Build preprocess-once indexed map packs next to a region PBF (graph + POI/barrier).
@@ -6113,16 +7483,7 @@ pub fn water_pois_along_polyline(
     out
 }
 
-/// Offline place / address-style name search (FTS5 prefix).
-#[uniffi::export]
-pub fn search_places(index_db_path: String, query: String, limit: u32) -> Vec<PlaceHit> {
-    let Ok(idx) = driver_break_core::search::NameIndex::open_readonly(Path::new(&index_db_path))
-    else {
-        return Vec::new();
-    };
-    let Ok(hits) = idx.search(&query, limit as usize) else {
-        return Vec::new();
-    };
+fn place_hits_from_names(hits: Vec<driver_break_core::search::NameHit>) -> Vec<PlaceHit> {
     hits.into_iter()
         .map(|h| PlaceHit {
             osm_id: h.osm_id,
@@ -6135,6 +7496,49 @@ pub fn search_places(index_db_path: String, query: String, limit: u32) -> Vec<Pl
             region_id: h.region_id,
         })
         .collect()
+}
+
+/// Offline place / address-style name search (FTS5 prefix).
+#[uniffi::export]
+pub fn search_places(index_db_path: String, query: String, limit: u32) -> Vec<PlaceHit> {
+    let Ok(idx) = driver_break_core::search::NameIndex::open_readonly(Path::new(&index_db_path))
+    else {
+        return Vec::new();
+    };
+    let Ok(hits) = idx.search(&query, limit as usize) else {
+        return Vec::new();
+    };
+    place_hits_from_names(hits)
+}
+
+/// Same as [`search_places`], ranked with the map centre and visible region.
+#[uniffi::export]
+pub fn search_places_biased(
+    index_db_path: String,
+    query: String,
+    limit: u32,
+    bias_lat: f64,
+    bias_lon: f64,
+    visible_region: String,
+) -> Vec<PlaceHit> {
+    let Ok(idx) = driver_break_core::search::NameIndex::open_readonly(Path::new(&index_db_path))
+    else {
+        return Vec::new();
+    };
+    let lat = if bias_lat.is_finite() {
+        Some(bias_lat)
+    } else {
+        None
+    };
+    let lon = if bias_lon.is_finite() {
+        Some(bias_lon)
+    } else {
+        None
+    };
+    let Ok(hits) = idx.search_biased(&query, limit as usize, lat, lon, &visible_region) else {
+        return Vec::new();
+    };
+    place_hits_from_names(hits)
 }
 
 /// Named OSM buildings (`building=*` + `name=*`) in a viewport bbox from the
@@ -8609,6 +10013,7 @@ pub fn ensure_pack_region_place_index(
     region_id: String,
     force_rebuild: bool,
 ) -> String {
+    let _job_pause = driver_break_core::download::pbf_priority::IdleJobPauseGuard::enter();
     ensure_native_logging();
     match driver_break_core::pack_server::ensure_place_index_after_pack_install(
         Path::new(&data_dir),
@@ -9041,6 +10446,66 @@ pub fn pmtiles_queue_region(
     }
 }
 
+/// Queue the z0–z6 world overview extract if it is not already completed.
+#[uniffi::export]
+pub fn pmtiles_queue_world_overview(data_dir: String, base_url: Option<String>) -> FfiPmtilesJob {
+    let empty = |msg: &str| FfiPmtilesJob {
+        id: String::new(),
+        region_key: String::new(),
+        url: String::new(),
+        local_path: String::new(),
+        bytes_received: 0,
+        total_bytes: None,
+        status: format!("failed:{msg}"),
+        paused: false,
+        min_lat: None,
+        min_lon: None,
+        max_lat: None,
+        max_lon: None,
+    };
+    let storage = match pmtiles_db(Path::new(&data_dir)) {
+        Ok(s) => s,
+        Err(e) => return empty(&e),
+    };
+    let dl = PmtilesDownloader::new(storage, PathBuf::from(&data_dir));
+    if let Ok(jobs) = dl.list_jobs() {
+        if let Some(existing) = jobs.into_iter().find(|j| {
+            driver_break_core::routing::basemap::is_world_overview_region(&j.region_key)
+                && j.status == driver_break_core::storage::PmtilesJobStatus::Completed
+        }) {
+            let bbox = [
+                existing.min_lat.unwrap_or(-85.051_128_7),
+                existing.min_lon.unwrap_or(-180.0),
+                existing.max_lat.unwrap_or(85.051_128_7),
+                existing.max_lon.unwrap_or(180.0),
+            ];
+            if driver_break_core::routing::basemap::validate_completed_pmtiles(
+                std::path::Path::new(&existing.local_path),
+                &existing.region_key,
+                bbox,
+            )
+            .is_ok()
+            {
+                return map_pmtiles_job(existing);
+            }
+        }
+    }
+    let planet = base_url
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(default_pmtiles_planet_url);
+    match dl.queue_world_overview(Some(planet.as_str())) {
+        Ok(job) => {
+            let control = DownloadControl::default();
+            pmtiles_controls()
+                .lock()
+                .expect("pmtiles controls")
+                .insert(job.id.to_string(), control);
+            map_pmtiles_job(job.record)
+        }
+        Err(e) => empty(&e.to_string()),
+    }
+}
+
 /// Run (or continue) a queued PMTiles job on the calling thread until terminal status.
 #[uniffi::export]
 pub fn pmtiles_run_job(data_dir: String, job_id: String) -> FfiPmtilesJob {
@@ -9153,6 +10618,24 @@ pub fn pmtiles_list_covering(data_dir: String, lat: f64, lon: f64) -> Vec<FfiPmt
         .into_iter()
         .map(map_pmtiles_job)
         .collect()
+}
+
+/// Re-validate `*.pmtiles.rejected` under [data_dir]/pmtiles. Valid archives
+/// are accepted in place (no download). Returns how many were accepted.
+#[uniffi::export]
+pub fn pmtiles_recheck_rejected(data_dir: String) -> u32 {
+    let storage = match pmtiles_db(Path::new(&data_dir)) {
+        Ok(s) => s,
+        Err(_) => return 0,
+    };
+    let dl = PmtilesDownloader::new(storage, PathBuf::from(&data_dir));
+    match dl.recheck_rejected_archives() {
+        Ok(n) => n,
+        Err(e) => {
+            log::warn!("pmtiles_recheck_rejected({data_dir}): {e:#}");
+            0
+        }
+    }
 }
 
 #[uniffi::export]
@@ -9485,6 +10968,28 @@ pub fn weather_map_symbols_json(
 #[cfg(test)]
 mod hiking_auto_via_tests {
     use super::*;
+
+    #[test]
+    fn long_trip_pack_fingerprint_changes_with_manifest_bytes() {
+        let dir = std::env::temp_dir().join(format!(
+            "navi-pack-fp-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let a = long_trip_pack_fingerprint(dir.to_str().unwrap());
+        assert_eq!(a, "empty");
+        std::fs::write(dir.join("denmark-latest.navi-manifest.json"), b"{\"x\":1}").unwrap();
+        let b = long_trip_pack_fingerprint(dir.to_str().unwrap());
+        assert!(b.contains("denmark-latest.navi-manifest.json="), "{b}");
+        std::fs::write(dir.join("denmark-latest.navi-manifest.json"), b"{\"x\":12}").unwrap();
+        let c = long_trip_pack_fingerprint(dir.to_str().unwrap());
+        assert_ne!(b, c);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn parse_graph_ferry_edges_token_reads_report_line() {

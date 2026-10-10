@@ -1,6 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::path::Path;
 
+use geo_types::Coord;
 use osm4routing::{
     BikeAccessibility, CarAccessibility, Edge, FootAccessibility, Node, NodeId, Reader,
 };
@@ -81,16 +83,52 @@ pub enum SnapRole {
     Via,
 }
 
-/// Drive-equivalent speed used to turn a ferry crossing into A* metres.
+/// Drive-equivalent speed used to turn travel time into A* metres.
 /// Matches navi-server `pack-convert-core` [`ferry_base_weight_m`].
+/// Roads and ferries share this scale so A* minimises time, not distance.
 pub const FERRY_DRIVE_EQUIV_KMH: f64 = 80.0;
 /// Assumed ferry speed when OSM `duration` is missing.
 pub const FERRY_FALLBACK_SPEED_KMH: f64 = 10.0;
-/// Extra car/truck boarding cost in minutes, converted at [`FERRY_DRIVE_EQUIV_KMH`].
-pub const FERRY_CAR_BOARDING_PENALTY_MIN: f64 = 10.0;
+/// Floor for expected ferry wait (minutes) when no timetable interval is known.
+pub const FERRY_WAIT_FLOOR_MIN: f64 = 10.0;
+/// Fraction of crossing duration used as expected wait when OSM `interval` is absent.
+pub const FERRY_WAIT_CROSSING_FRACTION: f64 = 0.25;
+/// Deprecated alias: flat boarding was replaced by [`ferry_wait_minutes`].
+pub const FERRY_CAR_BOARDING_PENALTY_MIN: f64 = FERRY_WAIT_FLOOR_MIN;
 
-fn ferry_drive_equiv_m_per_s() -> f64 {
+/// Drive-equivalent metres per second used by [`ferry_base_weight_m`] and ETA invert.
+pub fn ferry_drive_equiv_m_per_s() -> f64 {
     FERRY_DRIVE_EQUIV_KMH * 1000.0 / 3600.0
+}
+
+/// Expected ferry wait in minutes (no per-ferry constants).
+///
+/// - When OSM `interval` (minutes between departures) is known: half the interval,
+///   floored at [`FERRY_WAIT_FLOOR_MIN`].
+/// - Otherwise: [`FERRY_WAIT_CROSSING_FRACTION`] of the crossing duration, floored
+///   at [`FERRY_WAIT_FLOOR_MIN`]. Longer crossings therefore wait longer.
+pub fn ferry_wait_minutes(crossing_min: f64, interval_min: Option<f64>) -> f64 {
+    let crossing = if crossing_min.is_finite() && crossing_min > 0.0 {
+        crossing_min
+    } else {
+        0.0
+    };
+    if let Some(iv) = interval_min.filter(|v| v.is_finite() && *v > 0.0) {
+        (iv * 0.5).max(FERRY_WAIT_FLOOR_MIN)
+    } else {
+        (crossing * FERRY_WAIT_CROSSING_FRACTION).max(FERRY_WAIT_FLOOR_MIN)
+    }
+}
+
+/// A* weight in drive-equivalent metres for a timed road segment.
+pub fn road_base_weight_m(length_m: f64, speed_kmh: f64) -> f64 {
+    let speed = if speed_kmh.is_finite() && speed_kmh > 0.0 {
+        speed_kmh
+    } else {
+        1.0
+    };
+    let secs = (length_m.max(0.0) / 1000.0) / speed * 3600.0;
+    secs * ferry_drive_equiv_m_per_s()
 }
 
 /// Parse OSM `duration` as `H:MM`, `HH:MM`, or `HH:MM:SS`. Minutes must be `< 60`.
@@ -110,24 +148,172 @@ pub(crate) fn parse_osm_duration_secs(raw: &str) -> Option<f64> {
     }
 }
 
-/// A* weight in metres for a ferry edge. `length_m` stays the geometric length.
-/// Same formula as navi-server `ferry_base_weight_m`.
+fn endpoint_haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    let r = 6_371_000.0_f64;
+    let p1 = lat1.to_radians();
+    let p2 = lat2.to_radians();
+    let dp = p2 - p1;
+    let dl = (lon2 - lon1).to_radians();
+    let h = (dp / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dl / 2.0).sin().powi(2);
+    2.0 * r * h.sqrt().asin()
+}
+
+/// OSM `highway=construction` / `highway=proposed` (and the same values with
+/// a `;` suffix). Must never be routable.
+pub fn is_construction_or_proposed_highway(highway: Option<&str>) -> bool {
+    let Some(raw) = highway else {
+        return false;
+    };
+    raw.split(';').any(|part| {
+        matches!(
+            part.trim().to_ascii_lowercase().as_str(),
+            "construction" | "proposed"
+        )
+    })
+}
+
+/// Endpoint tolerance when matching a pack edge to an overlay ferry terminal
+/// pair. Both ends must match (same or reversed). Ordinary roads and bridges
+/// near one terminal do not match the other terminal.
+const OVERLAY_FERRY_MATCH_M: f64 = 2_500.0;
+
+/// Pack edge whose endpoints match an overlay `route=ferry` (either direction).
+/// The pack edge itself must not already be a tagged ferry.
+pub fn pack_edge_matches_overlay_ferry(pack: &GraphEdge, ferry: &GraphEdge) -> bool {
+    if pack.is_ferry || !ferry.is_ferry {
+        return false;
+    }
+    let same = endpoint_haversine_m(
+        pack.start_lat,
+        pack.start_lon,
+        ferry.start_lat,
+        ferry.start_lon,
+    ) < OVERLAY_FERRY_MATCH_M
+        && endpoint_haversine_m(pack.end_lat, pack.end_lon, ferry.end_lat, ferry.end_lon)
+            < OVERLAY_FERRY_MATCH_M;
+    let rev = endpoint_haversine_m(pack.start_lat, pack.start_lon, ferry.end_lat, ferry.end_lon)
+        < OVERLAY_FERRY_MATCH_M
+        && endpoint_haversine_m(pack.end_lat, pack.end_lon, ferry.start_lat, ferry.start_lon)
+            < OVERLAY_FERRY_MATCH_M;
+    same || rev
+}
+
+/// Drop non-ferry pack edges that join the same terminals as an overlay ferry,
+/// and rewire that overlay ferry onto the pack edge's node ids.
+///
+/// The overlay keeps its geometry, duration and ferry cost; the pack edge is
+/// not stamped as a ferry. Rewiring is required because pack road endpoints and
+/// overlay pier/ferry OSM ids often differ even when coordinates match within
+/// [`OVERLAY_FERRY_MATCH_M`] — without it, merge leaves a floating ferry and the
+/// hop goes `disconnected` (Fehmarnbelt after drop-not-stamp).
+pub fn drop_pack_edges_replaced_by_overlay_ferry(graph: &mut RouteGraph, overlay: &mut RouteGraph) {
+    if !overlay.edges.iter().any(|e| e.is_ferry) {
+        return;
+    }
+    let profile = graph.profile();
+    let mut drop_ids: HashSet<String> = HashSet::new();
+    let pack_edges = graph.edges.clone();
+    for ferry in overlay.edges.iter_mut().filter(|e| e.is_ferry) {
+        let Some(pack) = pack_edges
+            .iter()
+            .find(|e| pack_edge_matches_overlay_ferry(e, ferry))
+        else {
+            continue;
+        };
+        drop_ids.insert(pack.id.clone());
+        let same = endpoint_haversine_m(
+            pack.start_lat,
+            pack.start_lon,
+            ferry.start_lat,
+            ferry.start_lon,
+        ) < OVERLAY_FERRY_MATCH_M
+            && endpoint_haversine_m(pack.end_lat, pack.end_lon, ferry.end_lat, ferry.end_lon)
+                < OVERLAY_FERRY_MATCH_M;
+        ferry.source = pack.source;
+        ferry.target = pack.target;
+        ferry.start_lat = pack.start_lat;
+        ferry.start_lon = pack.start_lon;
+        ferry.end_lat = pack.end_lat;
+        ferry.end_lon = pack.end_lon;
+        if !same {
+            ferry.shape.reverse();
+        }
+        if let Some(n) = graph.nodes.get(&pack.source) {
+            overlay.nodes.insert(
+                pack.source,
+                Node {
+                    id: n.id,
+                    coord: n.coord,
+                    uses: n.uses,
+                },
+            );
+        }
+        if let Some(n) = graph.nodes.get(&pack.target) {
+            overlay.nodes.insert(
+                pack.target,
+                Node {
+                    id: n.id,
+                    coord: n.coord,
+                    uses: n.uses,
+                },
+            );
+        }
+    }
+    if drop_ids.is_empty() {
+        return;
+    }
+    let nodes = std::mem::take(&mut graph.nodes);
+    let edges: Vec<GraphEdge> = std::mem::take(&mut graph.edges)
+        .into_iter()
+        .filter(|e| !drop_ids.contains(&e.id))
+        .collect();
+    *graph = RouteGraph::from_parts(nodes, edges, profile);
+}
+
+/// Crossing duration in minutes from OSM `duration` or the 10 km/h fallback.
+pub fn ferry_crossing_minutes(length_m: f64, duration_raw: Option<&str>) -> f64 {
+    match duration_raw.and_then(parse_osm_duration_secs) {
+        Some(secs) if secs.is_finite() && secs > 0.0 => secs / 60.0,
+        _ => {
+            let speed = FERRY_FALLBACK_SPEED_KMH.max(1.0);
+            (length_m.max(0.0) / 1000.0) / speed * 60.0
+        }
+    }
+}
+
+/// A* weight in drive-equivalent metres for a ferry edge.
+/// `length_m` stays the geometric length. Cost = crossing time + expected wait
+/// (from OSM `interval` when known, else growing with crossing), converted at
+/// [`FERRY_DRIVE_EQUIV_KMH`]. Foot/bike: crossing only (no vehicle wait).
 pub fn ferry_base_weight_m(
     length_m: f64,
     duration_raw: Option<&str>,
     profile: RoutingProfile,
 ) -> f64 {
-    let travel = match duration_raw.and_then(parse_osm_duration_secs) {
-        Some(secs) => secs * ferry_drive_equiv_m_per_s(),
-        None => length_m * (FERRY_DRIVE_EQUIV_KMH / FERRY_FALLBACK_SPEED_KMH),
-    };
-    let boarding = match profile {
+    ferry_base_weight_m_with_interval(length_m, duration_raw, None, profile)
+}
+
+/// Like [`ferry_base_weight_m`] with an optional OSM departure `interval` (minutes).
+///
+/// Packed weight always embeds [`FERRY_WAIT_FLOOR_MIN`] so crossing can be
+/// inverted from `base_weight` on load. Search applies the full
+/// [`ferry_wait_minutes`] (interval or crossing fraction) via
+/// [`time_base_weight_for_edge`].
+pub fn ferry_base_weight_m_with_interval(
+    length_m: f64,
+    duration_raw: Option<&str>,
+    _interval_min: Option<f64>,
+    profile: RoutingProfile,
+) -> f64 {
+    let crossing_min = ferry_crossing_minutes(length_m, duration_raw);
+    let travel = crossing_min * 60.0 * ferry_drive_equiv_m_per_s();
+    let wait = match profile {
         RoutingProfile::Car | RoutingProfile::Truck => {
-            FERRY_CAR_BOARDING_PENALTY_MIN * 60.0 * ferry_drive_equiv_m_per_s()
+            FERRY_WAIT_FLOOR_MIN * 60.0 * ferry_drive_equiv_m_per_s()
         }
         RoutingProfile::Foot | RoutingProfile::Bicycle => 0.0,
     };
-    travel + boarding
+    travel + wait
 }
 
 /// Counters from [`RouteGraph::apply_wetland_hazards`].
@@ -160,6 +346,9 @@ pub struct GraphEdge {
     pub target: NodeId,
     pub length_m: f64,
     pub base_weight: f64,
+    /// Soft preference multiplier applied on top of travel-time cost (bike /
+    /// surface / network / wetland). Default `1.0`. Not stored in region packs.
+    pub cost_mult: f64,
     pub eco_weight: Option<f64>,
     pub start_lat: f64,
     pub start_lon: f64,
@@ -201,6 +390,9 @@ pub struct GraphEdge {
     pub maxlength_m: Option<f64>,
     pub is_toll: bool,
     pub is_ferry: bool,
+    /// OSM departure `interval` minutes on ferry edges (overlay sidecar only).
+    /// Not present on region packs; `None` when unknown.
+    pub ferry_interval_min: Option<f64>,
     /// OSM `tunnel=*` (any non-empty value other than `no`). Soft-avoid via
     /// [`RouteOptions::avoid_tunnels`], not a hard exclusion.
     pub is_tunnel: bool,
@@ -253,7 +445,13 @@ pub struct RouteOptions {
     pub departure_local: Option<chrono::NaiveDateTime>,
     /// Active DATEX planner constraints (empty = no DATEX effect). Prefer
     /// [`crate::datex::planner_impacts`] on the active corridor slice only.
+    /// A* / snap must not scan this on the hot path — call
+    /// [`RouteGraph::bind_datex_overlay`] after the hop graph is loaded.
     pub datex_impacts: Vec<crate::datex::DatexPlannerConstraint>,
+    /// Per-edge DATEX Block (1) / not (0), parallel to [`RouteGraph::edges`].
+    pub datex_edge_block: Option<std::sync::Arc<Vec<u8>>>,
+    /// Per-edge DATEX extra metres (`0.0` = none), from penalty minutes at 80 km/h.
+    pub datex_edge_penalize: Option<std::sync::Arc<Vec<f64>>>,
     /// When `Some`, only traverse edges whose midpoint falls inside one of these
     /// ISO-3166-1 alpha-2 codes (case-insensitive). `None` keeps historical
     /// behaviour (no country filter). Hard constraint — never soft-penalize.
@@ -280,6 +478,14 @@ pub struct PathSearchStats {
     pub expansions: u64,
     /// `found`, `disconnected`, `cancelled`, or `outside_countries`.
     pub terminate_reason: &'static str,
+}
+
+/// One skeleton (or other) node reached by travel time from a waypoint.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TravelHit {
+    pub node: NodeId,
+    pub cost_m: f64,
+    pub length_m: f64,
 }
 
 /// Counts directed `(source, target)` pairs with multiple profile edges.
@@ -546,6 +752,92 @@ impl RouteGraph {
         self.profile
     }
 
+    /// One pass over hop edges: DATEX Block/Penalize become per-edge markers.
+    /// Snap and A* only test those markers afterwards.
+    ///
+    /// Impacts are put on a lat/lon grid so each edge is tested only against
+    /// nearby records, not the full list (O(E × D) was 25–32 s on hop 13).
+    pub fn bind_datex_overlay(&self, options: &mut RouteOptions) {
+        if options.datex_impacts.is_empty() {
+            options.datex_edge_block = None;
+            options.datex_edge_penalize = None;
+            return;
+        }
+        let n = self.edges.len();
+        let mut block = vec![0u8; n];
+        let mut penalize = vec![0.0f64; n];
+        let mut max_radius_m = 250.0_f64;
+        for c in &options.datex_impacts {
+            if matches!(
+                c.impact,
+                crate::datex::DatexImpact::Ignore | crate::datex::DatexImpact::Warn
+            ) {
+                continue;
+            }
+            max_radius_m = max_radius_m.max(c.radius_m);
+        }
+        // ~1 km cells; pad queries by the largest impact radius.
+        const CELL_DEG: f64 = 0.01;
+        let mut grid: std::collections::HashMap<(i32, i32), Vec<usize>> =
+            std::collections::HashMap::new();
+        for (j, c) in options.datex_impacts.iter().enumerate() {
+            if matches!(
+                c.impact,
+                crate::datex::DatexImpact::Ignore | crate::datex::DatexImpact::Warn
+            ) {
+                continue;
+            }
+            grid.entry(datex_cell(c.lat, c.lon, CELL_DEG))
+                .or_default()
+                .push(j);
+        }
+        let mut seen = vec![0u32; options.datex_impacts.len()];
+        let mut stamp = 1u32;
+        for (i, e) in self.edges.iter().enumerate() {
+            let (min_lat, max_lat, min_lon, max_lon) = edge_latlon_bbox(e);
+            let mid_lat = ((min_lat + max_lat) * 0.5).clamp(-89.0, 89.0);
+            let lat_pad = max_radius_m / 111_320.0;
+            let lon_pad = max_radius_m / (111_320.0 * mid_lat.to_radians().cos().max(0.2));
+            let gi0 = ((min_lat - lat_pad) / CELL_DEG).floor() as i32;
+            let gi1 = ((max_lat + lat_pad) / CELL_DEG).floor() as i32;
+            let gj0 = ((min_lon - lon_pad) / CELL_DEG).floor() as i32;
+            let gj1 = ((max_lon + lon_pad) / CELL_DEG).floor() as i32;
+            if stamp == u32::MAX {
+                seen.fill(0);
+                stamp = 1;
+            }
+            for gi in gi0..=gi1 {
+                for gj in gj0..=gj1 {
+                    let Some(js) = grid.get(&(gi, gj)) else {
+                        continue;
+                    };
+                    for &j in js {
+                        if seen[j] == stamp {
+                            continue;
+                        }
+                        seen[j] = stamp;
+                        let c = &options.datex_impacts[j];
+                        if !edge_hit_by_datex(e, c) {
+                            continue;
+                        }
+                        match c.impact {
+                            crate::datex::DatexImpact::Block => block[i] = 1,
+                            crate::datex::DatexImpact::Penalize => {
+                                let extra = (c.penalty_minutes.max(0.0) * 80_000.0 / 60.0).max(0.0);
+                                penalize[i] = penalize[i].max(extra);
+                            }
+                            crate::datex::DatexImpact::Ignore | crate::datex::DatexImpact::Warn => {
+                            }
+                        }
+                    }
+                }
+            }
+            stamp = stamp.saturating_add(1);
+        }
+        options.datex_edge_block = Some(std::sync::Arc::new(block));
+        options.datex_edge_penalize = Some(std::sync::Arc::new(penalize));
+    }
+
     /// Build a graph from pre-built nodes/edges (tests and synthetic fixtures).
     pub fn from_parts(
         nodes: HashMap<NodeId, Node>,
@@ -591,6 +883,39 @@ impl RouteGraph {
         graph
     }
 
+    /// Insert a node used as a waypoint spur. Does not rebuild components.
+    pub fn insert_node_at(&mut self, id: NodeId, lat: f64, lon: f64) {
+        self.nodes.insert(
+            id,
+            Node {
+                id,
+                coord: Coord { x: lon, y: lat },
+                uses: 0,
+            },
+        );
+    }
+
+    /// Append one directed edge and update adjacency. The new source inherits
+    /// the target's weak-component root when known, so later coarse searches
+    /// treat the spur as attached to the skeleton.
+    pub fn push_directed_edge(&mut self, edge: GraphEdge) {
+        let src = edge.source;
+        let tgt = edge.target;
+        let idx = self.edges.len();
+        self.edges.push(edge);
+        self.adjacency.entry(src).or_default().push(idx);
+        self.incident.insert(src);
+        self.incident.insert(tgt);
+        if let Some(&root) = self
+            .component_root
+            .get(&tgt)
+            .or_else(|| self.component_root.get(&src))
+        {
+            self.component_root.insert(src, root);
+            self.component_root.insert(tgt, root);
+        }
+    }
+
     /// Cheapest parallel edge between `from` and `to` under the same costing model as
     /// [`Self::shortest_path_with_options`] (base/eco weight plus surface transition).
     pub fn best_edge_index_between(
@@ -609,10 +934,10 @@ impl RouteGraph {
         let mut best: Option<(usize, u64)> = None;
         for &idx in self.outgoing_edge_indices(from) {
             let edge = &self.edges[idx];
-            if edge.target != to || !edge_allowed_for_options(edge, options, self.profile) {
+            if edge.target != to || !edge_allowed_at(edge, idx, options, self.profile) {
                 continue;
             }
-            let base = edge_travel_cost(edge, idx, use_eco, options);
+            let base = edge_travel_cost(edge, idx, use_eco, options, self.profile);
             let transition = if use_surface_transitions {
                 surface_transition_cost_m(prev_surface, edge.surface_quality, surface_mode)
             } else {
@@ -822,7 +1147,7 @@ impl RouteGraph {
                 if pass == 0 && !edge_in_pad(e) {
                     continue;
                 }
-                if !edge_allowed_for_options(e, options, self.profile) {
+                if !edge_allowed_at(e, idx, options, self.profile) {
                     continue;
                 }
                 let edge_d = super::edge_distance_m(e, lat, lon);
@@ -915,7 +1240,7 @@ impl RouteGraph {
             .get(&id)
             .into_iter()
             .flatten()
-            .any(|&idx| edge_allowed_for_options(&self.edges[idx], options, self.profile))
+            .any(|&idx| edge_allowed_at(&self.edges[idx], idx, options, self.profile))
         {
             return true;
         }
@@ -931,8 +1256,8 @@ impl RouteGraph {
         let mut parent: HashMap<NodeId, NodeId> = HashMap::new();
         let mut size: HashMap<NodeId, usize> = HashMap::new();
         let mut incident: HashSet<NodeId> = HashSet::new();
-        for edge in &self.edges {
-            if !edge_allowed_for_options(edge, options, self.profile) {
+        for (idx, edge) in self.edges.iter().enumerate() {
+            if !edge_allowed_at(edge, idx, options, self.profile) {
                 continue;
             }
             incident.insert(edge.source);
@@ -942,8 +1267,8 @@ impl RouteGraph {
             parent.insert(id, id);
             size.insert(id, 1);
         }
-        for edge in &self.edges {
-            if !edge_allowed_for_options(edge, options, self.profile) {
+        for (idx, edge) in self.edges.iter().enumerate() {
+            if !edge_allowed_at(edge, idx, options, self.profile) {
                 continue;
             }
             uf_union(&mut parent, &mut size, edge.source, edge.target);
@@ -980,6 +1305,15 @@ impl RouteGraph {
         }
     }
 
+    /// Union-find root for diagnostics (`-1` when the node is not in the graph).
+    pub fn weak_component_id(&self, id: NodeId) -> i64 {
+        self.component_root.get(&id).map(|r| r.0).unwrap_or(-1)
+    }
+
+    pub fn node_lat_lon(&self, id: NodeId) -> Option<(f64, f64)> {
+        self.nodes.get(&id).map(|n| (n.coord.y, n.coord.x))
+    }
+
     /// True when `goal` is reachable from `start` on directed edges allowed by
     /// `options` (ferries/one-ways/access). Prefer this over
     /// [`Self::same_weak_component`] when deciding whether a ferry overlay is
@@ -1000,7 +1334,7 @@ impl RouteGraph {
         while let Some(u) = q.pop_front() {
             for &idx in self.outgoing_edge_indices(u) {
                 let e = &self.edges[idx];
-                if !edge_allowed_for_options(e, options, self.profile) {
+                if !edge_allowed_at(e, idx, options, self.profile) {
                     continue;
                 }
                 let v = e.target;
@@ -1067,7 +1401,7 @@ impl RouteGraph {
                 }
                 Some(WetlandClass::SoftAvoid) => {
                     soft += 1;
-                    edge.base_weight *= WETLAND_SOFT_COST_MULT;
+                    edge.cost_mult *= WETLAND_SOFT_COST_MULT;
                     if let Some(w) = edge.eco_weight.as_mut() {
                         *w *= WETLAND_SOFT_COST_MULT;
                     }
@@ -1088,7 +1422,7 @@ impl RouteGraph {
             for (i, mut edge) in hard_candidates.into_iter().enumerate() {
                 if use_bridge[i] {
                     soft += 1;
-                    edge.base_weight *= WETLAND_SOFT_COST_MULT;
+                    edge.cost_mult *= WETLAND_SOFT_COST_MULT;
                     if let Some(w) = edge.eco_weight.as_mut() {
                         *w *= WETLAND_SOFT_COST_MULT;
                     }
@@ -1626,6 +1960,23 @@ impl RouteGraph {
     ) -> PathSearchStats {
         let plan_id = crate::download::plan_cancel::current_plan_id();
         let expansions = std::sync::atomic::AtomicU64::new(0);
+        // Expansion abort (no wall-clock deadline): fail fast on runaway A* while
+        // still allowing large connected graphs. Threshold =
+        // max(ASTAR_MIN_EXPANSION_ABORT, nodes × ASTAR_EXPANSION_PER_NODE).
+        const ASTAR_MIN_EXPANSION_ABORT: u64 = 500_000;
+        const ASTAR_EXPANSION_PER_NODE: u64 = 32;
+        let expansion_limit = ASTAR_MIN_EXPANSION_ABORT
+            .max((self.nodes.len() as u64).saturating_mul(ASTAR_EXPANSION_PER_NODE));
+        let expansion_aborted = std::sync::atomic::AtomicBool::new(false);
+        // Directed reachability after snap: disconnected O/D returns immediately
+        // instead of expanding until the old 8s wall-clock deadline.
+        if !self.directed_reachable_with_options(start, goal, options) {
+            return PathSearchStats {
+                path: None,
+                expansions: 0,
+                terminate_reason: "disconnected",
+            };
+        }
         let surface_mode = options
             .surface_routing_mode
             .unwrap_or(self.surface_routing_mode);
@@ -1641,6 +1992,10 @@ impl RouteGraph {
                 |state| {
                     let (node, prev_surface, _) = *state;
                     let n = expansions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if n > expansion_limit {
+                        expansion_aborted.store(true, std::sync::atomic::Ordering::Relaxed);
+                        return Vec::new();
+                    }
                     if plan_id != 0
                         && n & 2047 == 0
                         && crate::download::plan_cancel::is_cancelled_id(plan_id)
@@ -1656,10 +2011,11 @@ impl RouteGraph {
                         .flatten()
                         .filter_map(|&edge_idx| {
                             let edge = &self.edges[edge_idx];
-                            if !edge_allowed_for_options(edge, options, self.profile) {
+                            if !edge_allowed_at(edge, edge_idx, options, self.profile) {
                                 return None;
                             }
-                            let base = edge_travel_cost(edge, edge_idx, use_eco, options);
+                            let base =
+                                edge_travel_cost(edge, edge_idx, use_eco, options, self.profile);
                             let transition = surface_transition_cost_m(
                                 prev_surface,
                                 edge.surface_quality,
@@ -1693,6 +2049,8 @@ impl RouteGraph {
             return PathSearchStats {
                 terminate_reason: if path.is_some() {
                     "found"
+                } else if expansion_aborted.load(std::sync::atomic::Ordering::Relaxed) {
+                    "expansion_limit"
                 } else {
                     "disconnected"
                 },
@@ -1706,6 +2064,10 @@ impl RouteGraph {
             |state| {
                 let (node, _) = *state;
                 let n = expansions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if n > expansion_limit {
+                    expansion_aborted.store(true, std::sync::atomic::Ordering::Relaxed);
+                    return Vec::new();
+                }
                 if plan_id != 0
                     && n & 2047 == 0
                     && crate::download::plan_cancel::is_cancelled_id(plan_id)
@@ -1721,10 +2083,10 @@ impl RouteGraph {
                     .flatten()
                     .filter_map(|&edge_idx| {
                         let edge = &self.edges[edge_idx];
-                        if !edge_allowed_for_options(edge, options, self.profile) {
+                        if !edge_allowed_at(edge, edge_idx, options, self.profile) {
                             return None;
                         }
-                        let cost = edge_travel_cost(edge, edge_idx, use_eco, options);
+                        let cost = edge_travel_cost(edge, edge_idx, use_eco, options, self.profile);
                         Some(((edge.target, edge_idx), cost_to_u64(cost)))
                     })
                     .collect::<Vec<_>>()
@@ -1752,12 +2114,106 @@ impl RouteGraph {
         PathSearchStats {
             terminate_reason: if path.is_some() {
                 "found"
+            } else if expansion_aborted.load(std::sync::atomic::Ordering::Relaxed) {
+                "expansion_limit"
             } else {
                 "disconnected"
             },
             path,
             expansions,
         }
+    }
+
+    /// Dijkstra from `start` that records every `targets` node reached, stopping
+    /// when expansions, radius, hit count or cost slack is exhausted.
+    ///
+    /// Used to attach a waypoint on the detailed network to several skeleton
+    /// nodes by travel time, not by crow-flies.
+    pub fn reach_nodes_by_travel(
+        &self,
+        start: NodeId,
+        targets: &HashSet<NodeId>,
+        options: &RouteOptions,
+        max_expansions: u64,
+        max_radius_m: f64,
+        origin: (f64, f64),
+        first_cost_slack_m: f64,
+        max_hits: usize,
+        clip_bbox: Option<[f64; 4]>,
+    ) -> (Vec<TravelHit>, u64, bool) {
+        let mut hits = Vec::new();
+        if targets.is_empty() || max_hits == 0 {
+            return (hits, 0, false);
+        }
+        let mut best: HashMap<NodeId, f64> = HashMap::new();
+        let mut length_at: HashMap<NodeId, f64> = HashMap::new();
+        let mut heap: BinaryHeap<Reverse<(u64, i64)>> = BinaryHeap::new();
+        best.insert(start, 0.0);
+        length_at.insert(start, 0.0);
+        heap.push(Reverse((0, start.0)));
+        let mut expansions = 0u64;
+        let mut first_cost = None;
+        let mut hit_clip_edge = false;
+        while let Some(Reverse((cost_u, id))) = heap.pop() {
+            let node = NodeId(id);
+            let cost = cost_u as f64;
+            if best.get(&node).is_some_and(|&b| cost > b + 0.5) {
+                continue;
+            }
+            let length_m = length_at.get(&node).copied().unwrap_or(0.0);
+            expansions = expansions.saturating_add(1);
+            if expansions > max_expansions {
+                break;
+            }
+            if let Some(n) = self.nodes.get(&node) {
+                if haversine_point_m(origin.0, origin.1, n) > max_radius_m {
+                    continue;
+                }
+                if let Some(bbox) = clip_bbox {
+                    if point_near_bbox_edge(n.coord.y, n.coord.x, bbox, 250.0) {
+                        hit_clip_edge = true;
+                    }
+                }
+            }
+            if node != start && targets.contains(&node) && hits.iter().all(|h| h.node != node) {
+                hits.push(TravelHit {
+                    node,
+                    cost_m: cost,
+                    length_m,
+                });
+                if first_cost.is_none() {
+                    first_cost = Some(cost);
+                }
+                if hits.len() >= max_hits {
+                    break;
+                }
+                if first_cost.is_some_and(|f| cost > f + first_cost_slack_m) {
+                    break;
+                }
+            }
+            if first_cost.is_some_and(|f| cost > f + first_cost_slack_m) && !hits.is_empty() {
+                break;
+            }
+            for &idx in self.outgoing_edge_indices(node) {
+                let edge = &self.edges[idx];
+                if !edge_allowed_at(edge, idx, options, self.profile) {
+                    continue;
+                }
+                let step = edge_travel_cost(edge, idx, false, options, self.profile);
+                if !step.is_finite() || step < 0.0 {
+                    continue;
+                }
+                let next_cost = cost + step;
+                let next_len = length_m + edge.length_m.max(0.0);
+                let better = best.get(&edge.target).is_none_or(|&b| next_cost + 0.5 < b);
+                if better {
+                    best.insert(edge.target, next_cost);
+                    length_at.insert(edge.target, next_len);
+                    heap.push(Reverse((next_cost.max(0.0) as u64, edge.target.0)));
+                }
+            }
+        }
+        (hits, expansions, hit_clip_edge)
     }
 
     /// Admissible A* scale: cost units per metre of great-circle remainder.
@@ -1788,6 +2244,7 @@ impl RouteGraph {
                     motor_soft: options.motor_soft,
                     ..RouteOptions::default()
                 },
+                self.profile,
             );
             if cost.is_finite() && cost >= 0.0 {
                 min_ratio = min_ratio.min(cost / chord);
@@ -1804,7 +2261,7 @@ impl RouteGraph {
     pub fn restricted_edge_count(&self, edge_indices: &[usize], options: &RouteOptions) -> usize {
         edge_indices
             .iter()
-            .filter(|&&i| !edge_allowed_for_options(&self.edges[i], options, self.profile))
+            .filter(|&&i| !edge_allowed_at(&self.edges[i], i, options, self.profile))
             .count()
     }
 
@@ -1819,8 +2276,58 @@ impl RouteGraph {
     }
 
     /// Contiguous ferry-edge runs on the path: `(label, length_m)`.
-    /// Label prefers OSM `name`, else `ref`, else `unnamed`.
+    /// Label is terminal names (`A - B`) from OSM name / ref, known terminals,
+    /// else coordinates — never an empty fingerprint stem.
     pub fn path_ferry_legs(&self, edge_indices: &[usize]) -> Vec<(String, f64)> {
+        fn known_terminal(lat: f64, lon: f64) -> Option<&'static str> {
+            // Coarse harbour labels for route_ferry_fp (metres).
+            const KNOWN: &[(&str, f64, f64, f64)] = &[
+                ("Puttgarden", 54.5028, 11.2282, 3_000.0),
+                ("Rodby", 54.6543, 11.3508, 3_000.0),
+                ("Helsingor", 56.0330, 12.6160, 3_000.0),
+                ("Helsingborg", 56.0433, 12.6915, 3_000.0),
+                ("Mannheller", 61.1435, 7.3239, 4_000.0),
+                ("Fodnes", 61.0863, 7.3742, 4_000.0),
+                ("Kinsarvik", 60.3750, 6.7200, 4_000.0),
+                ("Utne", 60.4241, 6.6218, 3_000.0),
+                ("Kvanndal", 60.4718, 6.6124, 3_000.0),
+            ];
+            let mut best: Option<(&'static str, f64)> = None;
+            for (name, kla, klo, rad) in KNOWN {
+                let d = haversine_latlon_m(lat, lon, *kla, *klo);
+                if d <= *rad && best.is_none_or(|(_, bd)| d < bd) {
+                    best = Some((*name, d));
+                }
+            }
+            best.map(|(n, _)| n)
+        }
+        fn ferry_leg_label(e: &GraphEdge) -> String {
+            let raw = e
+                .name
+                .as_deref()
+                .or(e.road_ref.as_deref())
+                .unwrap_or("")
+                .trim();
+            for sep in [" – ", " - ", " — ", "–"] {
+                if let Some((a, b)) = raw.split_once(sep) {
+                    let a = a.trim();
+                    let b = b.trim();
+                    if !a.is_empty() && !b.is_empty() {
+                        return format!("{a} - {b}");
+                    }
+                }
+            }
+            if !raw.is_empty() {
+                return raw.to_string();
+            }
+            let a = known_terminal(e.start_lat, e.start_lon)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("{:.5},{:.5}", e.start_lat, e.start_lon));
+            let b = known_terminal(e.end_lat, e.end_lon)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("{:.5},{:.5}", e.end_lat, e.end_lon));
+            format!("{a} - {b}")
+        }
         let mut legs: Vec<(String, f64)> = Vec::new();
         let mut cur_label: Option<String> = None;
         let mut cur_m = 0.0_f64;
@@ -1838,12 +2345,7 @@ impl RouteGraph {
                 flush(&mut legs, &mut cur_label, &mut cur_m);
                 continue;
             }
-            let label = e
-                .name
-                .as_deref()
-                .or(e.road_ref.as_deref())
-                .unwrap_or("unnamed")
-                .to_string();
+            let label = ferry_leg_label(e);
             match cur_label.as_ref() {
                 Some(l) if l == &label => cur_m += e.length_m,
                 Some(_) => {
@@ -2113,6 +2615,8 @@ struct EdgeMeta {
     is_ferry: bool,
     /// OSM `duration` on ferry ways (H:MM / HH:MM:SS), when present.
     ferry_duration: Option<String>,
+    /// OSM departure `interval` minutes on ferry ways, when present.
+    ferry_interval_min: Option<f64>,
     is_tunnel: bool,
     is_boardwalk_crossing: bool,
     is_roundabout: bool,
@@ -2193,6 +2697,13 @@ fn edge_meta(edge: &Edge, profile: RoutingProfile) -> EdgeMeta {
     } else {
         None
     };
+    let ferry_interval_min = if is_ferry {
+        edge.tags
+            .get("interval")
+            .and_then(|s| parse_osm_interval_minutes(s))
+    } else {
+        None
+    };
     let is_tunnel = edge.tags.get("tunnel").is_some_and(|s| is_tunnel_tag(s));
     let is_boardwalk_crossing = tags_indicate_boardwalk(
         edge.tags.get("bridge").map(String::as_str),
@@ -2237,6 +2748,7 @@ fn edge_meta(edge: &Edge, profile: RoutingProfile) -> EdgeMeta {
         is_toll,
         is_ferry,
         ferry_duration,
+        ferry_interval_min,
         is_tunnel,
         is_boardwalk_crossing,
         is_roundabout,
@@ -2296,7 +2808,18 @@ fn push_directed_edge(
     let base_weight = if meta.is_ferry {
         ferry_base_weight_m(length_m, meta.ferry_duration.as_deref(), graph.profile)
     } else {
-        length_m
+        // Time cost (drive-equiv metres), same scale as ferries — never raw length.
+        let speed = meta
+            .maxspeed_practical_kmh
+            .or(meta.maxspeed_kmh)
+            .or(meta.maxspeed_advisory_kmh)
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .unwrap_or_else(|| crate::routing::eta::highway_fallback_kmh(meta.highway.as_deref()));
+        let floor = meta
+            .minspeed_kmh
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .unwrap_or(0.0);
+        road_base_weight_m(length_m, speed.max(floor))
     };
     graph.edges.push(GraphEdge {
         id,
@@ -2304,6 +2827,7 @@ fn push_directed_edge(
         target,
         length_m,
         base_weight,
+        cost_mult: 1.0,
         eco_weight: None,
         start_lat,
         start_lon,
@@ -2331,6 +2855,7 @@ fn push_directed_edge(
         maxlength_m: meta.maxlength_m,
         is_toll: meta.is_toll,
         is_ferry: meta.is_ferry,
+        ferry_interval_min: meta.ferry_interval_min,
         is_tunnel: meta.is_tunnel,
         is_boardwalk_crossing: meta.is_boardwalk_crossing,
         is_roundabout: meta.is_roundabout,
@@ -2450,7 +2975,35 @@ fn edge_hit_by_datex(edge: &GraphEdge, c: &crate::datex::DatexPlannerConstraint)
     crate::routing::graph::edge_distance_m(edge, c.lat, c.lon) <= c.radius_m
 }
 
-fn edge_blocked_by_datex(edge: &GraphEdge, options: &RouteOptions) -> bool {
+fn datex_cell(lat: f64, lon: f64, cell_deg: f64) -> (i32, i32) {
+    (
+        (lat / cell_deg).floor() as i32,
+        (lon / cell_deg).floor() as i32,
+    )
+}
+
+fn edge_latlon_bbox(e: &GraphEdge) -> (f64, f64, f64, f64) {
+    let mut min_lat = e.start_lat.min(e.end_lat);
+    let mut max_lat = e.start_lat.max(e.end_lat);
+    let mut min_lon = e.start_lon.min(e.end_lon);
+    let mut max_lon = e.start_lon.max(e.end_lon);
+    for &(lon, lat) in &e.shape {
+        min_lat = min_lat.min(lat);
+        max_lat = max_lat.max(lat);
+        min_lon = min_lon.min(lon);
+        max_lon = max_lon.max(lon);
+    }
+    (min_lat, max_lat, min_lon, max_lon)
+}
+
+fn edge_blocked_by_datex(
+    edge: &GraphEdge,
+    options: &RouteOptions,
+    edge_idx: Option<usize>,
+) -> bool {
+    if let (Some(bits), Some(i)) = (options.datex_edge_block.as_ref(), edge_idx) {
+        return bits.get(i).copied().unwrap_or(0) != 0;
+    }
     options
         .datex_impacts
         .iter()
@@ -2458,13 +3011,22 @@ fn edge_blocked_by_datex(edge: &GraphEdge, options: &RouteOptions) -> bool {
 }
 
 /// Strongest Penalize multiplier among DATEX constraints that hit this edge.
-fn datex_penalize_multiplier(edge: &GraphEdge, options: &RouteOptions) -> Option<f64> {
+fn datex_penalize_extra_m(
+    edge: &GraphEdge,
+    options: &RouteOptions,
+    edge_idx: usize,
+) -> Option<f64> {
+    if let Some(pen) = options.datex_edge_penalize.as_ref() {
+        let m = *pen.get(edge_idx)?;
+        return if m > 1e-9 { Some(m) } else { None };
+    }
     options
         .datex_impacts
         .iter()
         .filter(|c| c.impact == crate::datex::DatexImpact::Penalize && edge_hit_by_datex(edge, c))
-        .map(|c| c.penalize_mult.max(1.0))
+        .map(|c| (c.penalty_minutes.max(0.0) * 80_000.0 / 60.0).max(0.0))
         .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        .filter(|m| *m > 1e-9)
 }
 
 /// True when `options` can remove edges vs an unrestricted car graph. Snap then
@@ -2475,15 +3037,38 @@ fn options_need_filtered_components(options: &RouteOptions) -> bool {
         || options.avoid_tunnels
         || options.toll_policy != crate::routing::toll::TollPolicy::Allow
         || options.vehicle.is_some()
-        || !options.datex_impacts.is_empty()
+        || options
+            .datex_edge_block
+            .as_ref()
+            .is_some_and(|b| b.iter().any(|&v| v != 0))
+        || (options.datex_edge_block.is_none() && !options.datex_impacts.is_empty())
         || options.allowed_countries.is_some()
         || options.departure_local.is_some()
 }
 
+fn edge_allowed_at(
+    edge: &GraphEdge,
+    edge_idx: usize,
+    options: &RouteOptions,
+    profile: RoutingProfile,
+) -> bool {
+    edge_allowed_core(edge, options, profile, Some(edge_idx))
+}
+
+#[cfg(test)]
 fn edge_allowed_for_options(
     edge: &GraphEdge,
     options: &RouteOptions,
     profile: RoutingProfile,
+) -> bool {
+    edge_allowed_core(edge, options, profile, None)
+}
+
+fn edge_allowed_core(
+    edge: &GraphEdge,
+    options: &RouteOptions,
+    profile: RoutingProfile,
+    edge_idx: Option<usize>,
 ) -> bool {
     if edge.access_forbidden {
         return false;
@@ -2494,7 +3079,7 @@ fn edge_allowed_for_options(
     if options.toll_policy == crate::routing::toll::TollPolicy::NeverUse && edge.is_toll {
         return false;
     }
-    if edge_blocked_by_datex(edge, options) {
+    if edge_blocked_by_datex(edge, options, edge_idx) {
         return false;
     }
     if options.avoid_ferries && edge.is_ferry {
@@ -2587,6 +3172,7 @@ fn edge_travel_cost(
     edge_idx: usize,
     use_eco: bool,
     options: &RouteOptions,
+    profile: RoutingProfile,
 ) -> f64 {
     let mut cost = if use_eco {
         options
@@ -2594,10 +3180,27 @@ fn edge_travel_cost(
             .as_ref()
             .and_then(|w| w.get(edge_idx).copied())
             .or(edge.eco_weight)
-            .unwrap_or(edge.base_weight)
+            .unwrap_or_else(|| time_base_weight_for_edge(edge))
     } else {
-        edge.base_weight
+        match profile {
+            // Motor: travel time so ferries compete fairly with roads.
+            RoutingProfile::Car | RoutingProfile::Truck => time_base_weight_for_edge(edge),
+            // Bike/foot soft prefs are tuned in length-metres; fixed-pace ETA
+            // still applies on the finished path. Ferries keep time weight.
+            RoutingProfile::Bicycle | RoutingProfile::Foot => {
+                if edge.is_ferry {
+                    time_base_weight_for_edge(edge)
+                } else {
+                    edge.length_m.max(0.0)
+                }
+            }
+        }
     };
+    // Soft preference layers (bike / surface / network / wetland) scale
+    // `cost_mult` without mutating travel-time `base_weight`.
+    if edge.cost_mult.is_finite() && edge.cost_mult > 0.0 && (edge.cost_mult - 1.0).abs() > 1e-12 {
+        cost *= edge.cost_mult;
+    }
     if let Some((mode, profile)) = options.motor_soft {
         let mult = crate::routing::graph::edge_motor_soft_multiplier(edge, mode, profile);
         if mult > 1.0 + 1e-9 {
@@ -2610,10 +3213,67 @@ fn edge_travel_cost(
     if options.avoid_tunnels && edge.is_tunnel {
         cost *= crate::routing::toll::TUNNEL_AVOID_PENALTY_MULT;
     }
-    if let Some(mult) = datex_penalize_multiplier(edge, options) {
-        cost *= mult;
+    if let Some(extra) = datex_penalize_extra_m(edge, options, edge_idx) {
+        cost += extra;
     }
     cost
+}
+
+/// Time-based A* weight for any edge (road or ferry), drive-equivalent metres.
+///
+/// Roads: `length / speed` using the same speed model as pre-departure ETA.
+/// Ferries: crossing minutes inverted from the packed weight (which baked the
+/// historical flat wait floor) plus [`ferry_wait_minutes`] with no interval
+/// available on loaded packs.
+pub fn time_base_weight_for_edge(edge: &GraphEdge) -> f64 {
+    if edge.is_ferry {
+        let (crossing_min, wait_min) = ferry_crossing_and_wait_min(edge);
+        (crossing_min + wait_min) * 60.0 * ferry_drive_equiv_m_per_s()
+    } else {
+        let speed = crate::routing::eta::edge_speed_kmh(edge);
+        road_base_weight_m(edge.length_m, speed)
+    }
+}
+
+/// OSM departure `interval` minutes on a ferry edge (overlay sidecar field).
+pub fn ferry_interval_min_from_edge(edge: &GraphEdge) -> Option<f64> {
+    if !edge.is_ferry {
+        return None;
+    }
+    edge.ferry_interval_min
+        .filter(|v| v.is_finite() && *v > 0.0)
+}
+
+/// Parse OSM `interval` (minutes between departures): `MM`, `H:MM`, or `HH:MM:SS`.
+pub fn parse_osm_interval_minutes(raw: &str) -> Option<f64> {
+    let s = raw.trim();
+    if s.is_empty() {
+        return None;
+    }
+    if let Ok(m) = s.parse::<f64>() {
+        return (m.is_finite() && m > 0.0).then_some(m);
+    }
+    // Reuse duration parser (seconds) → minutes.
+    parse_osm_duration_secs(s)
+        .map(|secs| secs / 60.0)
+        .filter(|m| *m > 0.0)
+}
+
+/// Crossing and expected-wait minutes for a ferry edge already on a loaded graph.
+pub fn ferry_crossing_and_wait_min(edge: &GraphEdge) -> (f64, f64) {
+    let drive = ferry_drive_equiv_m_per_s();
+    let packed_min = if drive > 0.0 && edge.base_weight.is_finite() {
+        edge.base_weight / drive / 60.0
+    } else {
+        0.0
+    };
+    // Packs baked flat FERRY_WAIT_FLOOR_MIN into base_weight; peel it off.
+    let mut crossing = (packed_min - FERRY_WAIT_FLOOR_MIN).max(0.0);
+    if crossing < 0.5 {
+        crossing = ferry_crossing_minutes(edge.length_m, None);
+    }
+    let wait = ferry_wait_minutes(crossing, ferry_interval_min_from_edge(edge));
+    (crossing, wait)
 }
 
 fn decode_recorded_path(
@@ -2725,6 +3385,17 @@ fn haversine_point_m(lat: f64, lon: f64, n: &Node) -> f64 {
     haversine_latlon_m(lat, lon, n.coord.y, n.coord.x)
 }
 
+/// True when `(lat, lon)` sits within `margin_m` of a bbox edge.
+fn point_near_bbox_edge(lat: f64, lon: f64, bbox: [f64; 4], margin_m: f64) -> bool {
+    let dlat = margin_m / 111_320.0;
+    let cos = lat.to_radians().cos().abs().max(0.2);
+    let dlon = margin_m / (111_320.0 * cos);
+    (lat - bbox[0]).abs() <= dlat
+        || (bbox[2] - lat).abs() <= dlat
+        || (lon - bbox[1]).abs() <= dlon
+        || (bbox[3] - lon).abs() <= dlon
+}
+
 fn haversine_latlon_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let rlat1 = lat1.to_radians();
     let rlat2 = lat2.to_radians();
@@ -2782,11 +3453,6 @@ mod tests {
     use crate::routing::graph::{apply_surface_preference, MotorSoftCostProfile};
     use geo_types::Coord;
 
-    #[test]
-    fn profile_mapping() {
-        assert_eq!(RoutingProfile::from(Profile::Hiking), RoutingProfile::Foot);
-    }
-
     fn two_node_foot_graph() -> RouteGraph {
         use geo_types::Coord;
         use std::collections::HashMap;
@@ -2810,6 +3476,7 @@ mod tests {
             target: NodeId(2),
             length_m: 500.0,
             base_weight: 500.0,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: 60.0,
             start_lon: 10.0,
@@ -2837,6 +3504,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -2847,6 +3515,53 @@ mod tests {
             surface_quality: SurfaceQuality::Good,
         }];
         RouteGraph::from_parts(nodes, edges, RoutingProfile::Foot)
+    }
+
+    #[test]
+    fn profile_mapping() {
+        assert_eq!(RoutingProfile::from(Profile::Hiking), RoutingProfile::Foot);
+    }
+
+    #[test]
+    fn datex_grid_bind_hits_nearby_edge_and_skips_far_impacts() {
+        let g = two_node_foot_graph();
+        let mut far = Vec::new();
+        for i in 0..200 {
+            far.push(crate::datex::DatexPlannerConstraint {
+                lat: 70.0 + (i as f64) * 0.01,
+                lon: 20.0,
+                impact: crate::datex::DatexImpact::Block,
+                radius_m: 250.0,
+                situation_id: format!("far-{i}"),
+                penalize_mult: 50.0,
+                penalty_minutes: 0.0,
+                road: String::new(),
+                place: String::new(),
+                validity_text: String::new(),
+                xsi_type: String::new(),
+            });
+        }
+        far.push(crate::datex::DatexPlannerConstraint {
+            lat: 60.0,
+            lon: 10.005,
+            impact: crate::datex::DatexImpact::Block,
+            radius_m: 250.0,
+            situation_id: "near".into(),
+            penalize_mult: 50.0,
+            penalty_minutes: 0.0,
+            road: String::new(),
+            place: String::new(),
+            validity_text: String::new(),
+            xsi_type: String::new(),
+        });
+        let mut opts = RouteOptions {
+            datex_impacts: far,
+            ..RouteOptions::default()
+        };
+        g.bind_datex_overlay(&mut opts);
+        let bits = opts.datex_edge_block.as_ref().expect("bits");
+        assert_eq!(bits.len(), 1);
+        assert_eq!(bits[0], 1, "midpoint DATEX must block the only edge");
     }
 
     #[test]
@@ -2899,6 +3614,7 @@ mod tests {
             target: NodeId(target),
             length_m: 100.0,
             base_weight: 100.0,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: slat,
             start_lon: slon,
@@ -2926,6 +3642,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -3708,6 +4425,7 @@ mod tests {
             target: NodeId(t),
             length_m: 1000.0,
             base_weight: 1000.0,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: lat0,
             start_lon: lon0,
@@ -3735,6 +4453,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -3778,6 +4497,7 @@ mod tests {
             target: NodeId(2),
             length_m: 100.0,
             base_weight: 100.0,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: 0.0,
             start_lon: 0.0,
@@ -3805,6 +4525,7 @@ mod tests {
             maxlength_m: None,
             is_toll: true,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -3856,6 +4577,7 @@ mod tests {
             target: NodeId(2),
             length_m: 100.0,
             base_weight: 100.0,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: 0.0,
             start_lon: 0.0,
@@ -3883,6 +4605,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: true,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -3900,8 +4623,14 @@ mod tests {
             edge_allowed_for_options(&edge, &avoid, RoutingProfile::Car),
             "tunnels must stay searchable under soft avoid"
         );
-        let base = edge_travel_cost(&edge, 0, false, &RouteOptions::default());
-        let penalized = edge_travel_cost(&edge, 0, false, &avoid);
+        let base = edge_travel_cost(
+            &edge,
+            0,
+            false,
+            &RouteOptions::default(),
+            RoutingProfile::Car,
+        );
+        let penalized = edge_travel_cost(&edge, 0, false, &avoid, RoutingProfile::Car);
         assert!(
             (penalized - base * crate::routing::toll::TUNNEL_AVOID_PENALTY_MULT).abs() < 1e-9,
             "base={base} penalized={penalized}"
@@ -3912,8 +4641,14 @@ mod tests {
         assert!(!is_tunnel_tag(""));
         edge.is_tunnel = false;
         assert_eq!(
-            edge_travel_cost(&edge, 0, false, &avoid),
-            edge_travel_cost(&edge, 0, false, &RouteOptions::default())
+            edge_travel_cost(&edge, 0, false, &avoid, RoutingProfile::Car),
+            edge_travel_cost(
+                &edge,
+                0,
+                false,
+                &RouteOptions::default(),
+                RoutingProfile::Car
+            )
         );
     }
 
@@ -3925,6 +4660,7 @@ mod tests {
             target: NodeId(2),
             length_m: 100.0,
             base_weight: 100.0,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: 0.0,
             start_lon: 0.0,
@@ -3952,6 +4688,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -3993,6 +4730,7 @@ mod tests {
             target: NodeId(2),
             length_m: 100.0,
             base_weight: 100.0,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: 61.9,
             start_lon: 10.0,
@@ -4020,6 +4758,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -4092,6 +4831,7 @@ mod tests {
             target: NodeId(2),
             length_m: 100.0,
             base_weight: 100.0,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: 0.0,
             start_lon: 0.0,
@@ -4119,6 +4859,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -4495,6 +5236,7 @@ mod tests {
             target: NodeId(2),
             length_m: 100.0,
             base_weight: 100.0,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: 60.0,
             start_lon: 10.0,
@@ -4522,6 +5264,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -4548,6 +5291,7 @@ mod tests {
                 target: NodeId(t),
                 length_m: 100.0,
                 base_weight: 100.0,
+                cost_mult: 1.0,
                 eco_weight: None,
                 start_lat: slat,
                 start_lon: slon,
@@ -4575,6 +5319,7 @@ mod tests {
                 maxlength_m: None,
                 is_toll: false,
                 is_ferry: false,
+                ferry_interval_min: None,
                 is_tunnel: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
@@ -4655,6 +5400,7 @@ mod tests {
                 target: NodeId(t),
                 length_m: 50.0,
                 base_weight: 50.0,
+                cost_mult: 1.0,
                 eco_weight: None,
                 start_lat: slat,
                 start_lon: slon,
@@ -4682,6 +5428,7 @@ mod tests {
                 maxlength_m: None,
                 is_toll: false,
                 is_ferry: false,
+                ferry_interval_min: None,
                 is_tunnel: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
@@ -4718,6 +5465,37 @@ mod tests {
         assert!(g.directed_snap_ok(o, SnapRole::Origin));
         assert!(!g.directed_snap_ok(NodeId(4), SnapRole::Origin));
         assert!(!g.directed_snap_ok(NodeId(3), SnapRole::Origin));
+    }
+
+    #[test]
+    fn parse_osm_interval_minutes_accepts_forms() {
+        assert_eq!(parse_osm_interval_minutes("60"), Some(60.0));
+        assert_eq!(parse_osm_interval_minutes("1:00"), Some(60.0));
+        assert_eq!(parse_osm_interval_minutes("0:30"), Some(30.0));
+        assert!(parse_osm_interval_minutes("").is_none());
+        assert!(parse_osm_interval_minutes("0").is_none());
+    }
+
+    #[test]
+    fn ferry_interval_side_channel_affects_wait() {
+        let mut e = test_edge(1, 2, 54.5, 11.2, 54.6, 11.3);
+        e.is_ferry = true;
+        e.length_m = 18_000.0;
+        // Pack-style base_weight: 45 min crossing + 10 min floor.
+        let drive = ferry_drive_equiv_m_per_s();
+        e.base_weight = (45.0 + FERRY_WAIT_FLOOR_MIN) * 60.0 * drive;
+        e.ferry_interval_min = None;
+        let (c0, w0) = ferry_crossing_and_wait_min(&e);
+        assert!((c0 - 45.0).abs() < 0.5, "crossing={c0}");
+        assert!((w0 - ferry_wait_minutes(45.0, None)).abs() < 1e-6);
+        // Overlay interval: 20 min between departures → wait max(10, 10).
+        e.ferry_interval_min = Some(20.0);
+        let (c1, w1) = ferry_crossing_and_wait_min(&e);
+        assert!((c1 - 45.0).abs() < 0.5);
+        assert!((w1 - 10.0).abs() < 1e-6, "wait={w1}");
+        e.ferry_interval_min = Some(90.0);
+        let (_, w2) = ferry_crossing_and_wait_min(&e);
+        assert!((w2 - 45.0).abs() < 1e-6, "wait={w2}");
     }
 
     #[test]
@@ -4762,6 +5540,165 @@ mod tests {
         // with server weights the short tagged ferry wins by a wide margin.
         assert!(short_length_only < chain_length_only);
         assert!(short_server < chain_server);
+    }
+
+    #[test]
+    fn construction_or_proposed_highway_detected() {
+        let mut proposed = test_edge(1, 2, 54.5, 11.2, 54.6, 11.3);
+        proposed.highway = Some("proposed".into());
+        assert!(is_construction_or_proposed_highway(
+            proposed.highway.as_deref()
+        ));
+        proposed.highway = Some("construction".into());
+        assert!(is_construction_or_proposed_highway(
+            proposed.highway.as_deref()
+        ));
+        proposed.highway = Some("motorway".into());
+        assert!(!is_construction_or_proposed_highway(
+            proposed.highway.as_deref()
+        ));
+    }
+
+    fn named_ferry(
+        s: i64,
+        t: i64,
+        slat: f64,
+        slon: f64,
+        elat: f64,
+        elon: f64,
+        name: &str,
+    ) -> GraphEdge {
+        let mut e = test_edge(s, t, slat, slon, elat, elon);
+        e.is_ferry = true;
+        e.name = Some(name.into());
+        e.highway = None;
+        e
+    }
+
+    #[test]
+    fn overlay_ferry_replaces_pack_edge_not_stamp() {
+        let crossings = [
+            (54.50709, 11.23183, 54.62456, 11.30643, "Puttgarden-Rodby"),
+            (60.391, 6.721, 60.425, 6.621, "Kinsarvik-Utne"),
+            (56.034, 12.617, 56.043, 12.691, "Helsingor-Helsingborg"),
+            (54.574, 11.926, 54.079, 12.135, "Rostock-Gedser"),
+        ];
+        for (i, (slat, slon, elat, elon, name)) in crossings.iter().enumerate() {
+            let id = (i as i64 + 1) * 10;
+            let mut pack = test_edge(id, id + 1, *slat, *slon, *elat, *elon);
+            pack.highway = Some("unclassified".into());
+            pack.length_m = 13_000.0;
+            let mut ferry = named_ferry(id + 2, id + 3, *slat, *slon, *elat, *elon, name);
+            ferry.length_m = 18_900.0;
+            ferry.shape = vec![(*slon + 0.01, *slat + 0.01)];
+            assert!(pack_edge_matches_overlay_ferry(&pack, &ferry), "{name}");
+            let mut nodes = HashMap::new();
+            for (nid, n) in [test_node(id, *slat, *slon), test_node(id + 1, *elat, *elon)] {
+                nodes.insert(nid, n);
+            }
+            // Land stubs so the rewired ferry must stay on pack node ids.
+            let mut land_a = test_edge(id - 2, id, *slat - 0.01, *slon, *slat, *slon);
+            land_a.length_m = 800.0;
+            let mut land_b = test_edge(id + 1, id + 4, *elat, *elon, *elat + 0.01, *elon);
+            land_b.length_m = 800.0;
+            for (nid, n) in [
+                test_node(id - 2, *slat - 0.01, *slon),
+                test_node(id + 4, *elat + 0.01, *elon),
+            ] {
+                nodes.insert(nid, n);
+            }
+            let mut g =
+                RouteGraph::from_parts(nodes, vec![land_a, pack, land_b], RoutingProfile::Car);
+            let mut onodes = HashMap::new();
+            for (nid, n) in [
+                test_node(id + 2, *slat, *slon),
+                test_node(id + 3, *elat, *elon),
+            ] {
+                onodes.insert(nid, n);
+            }
+            let mut overlay =
+                RouteGraph::from_parts(onodes, vec![ferry.clone()], RoutingProfile::Car);
+            drop_pack_edges_replaced_by_overlay_ferry(&mut g, &mut overlay);
+            assert_eq!(
+                g.edges.len(),
+                2,
+                "{name}: only the water-chord pack edge is removed"
+            );
+            assert!(g.edges.iter().all(|e| !e.is_ferry), "{name}");
+            let merged =
+                crate::routing::indexed::merge_tile_graphs(vec![g, overlay], RoutingProfile::Car);
+            let ferry_e = merged
+                .edges
+                .iter()
+                .find(|e| e.is_ferry)
+                .unwrap_or_else(|| panic!("{name}: overlay ferry missing after merge"));
+            assert_eq!(ferry_e.name.as_deref(), Some(*name));
+            assert_eq!(ferry_e.shape.len(), 1, "{name}: overlay geometry");
+            assert!((ferry_e.length_m - 18_900.0).abs() < 1e-6);
+            assert_eq!(ferry_e.source, NodeId(id), "{name}: rewired to pack source");
+            assert_eq!(
+                ferry_e.target,
+                NodeId(id + 1),
+                "{name}: rewired to pack target"
+            );
+            // Land → ferry → land must be one weak component.
+            assert_eq!(
+                merged.weak_component_id(NodeId(id - 2)),
+                merged.weak_component_id(NodeId(id + 4)),
+                "{name}: rewired ferry must join land approaches"
+            );
+            let avoid = RouteOptions {
+                avoid_ferries: true,
+                ..Default::default()
+            };
+            assert!(
+                !edge_allowed_for_options(ferry_e, &avoid, RoutingProfile::Car),
+                "avoid_ferries must drop {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn overlay_ferry_match_skips_oresund_and_storebaelt_bridges() {
+        // Helsingør–Helsingborg ferry terminals.
+        let ferry = named_ferry(
+            1,
+            2,
+            56.034,
+            12.617,
+            56.043,
+            12.691,
+            "Helsingor-Helsingborg",
+        );
+        // Øresund bridge (Copenhagen–Malmö): neither end is a ferry terminal.
+        let mut oresund = test_edge(10, 11, 55.573, 12.568, 55.574, 12.892);
+        oresund.highway = Some("motorway".into());
+        oresund.length_m = 16_000.0;
+        assert!(
+            !pack_edge_matches_overlay_ferry(&oresund, &ferry),
+            "Øresund bridge must stay a road"
+        );
+        // Storebælt bridge (Zealand–Funen): far from Helsingør terminals.
+        let mut storebaelt = test_edge(12, 13, 55.341, 10.970, 55.341, 11.200);
+        storebaelt.highway = Some("motorway".into());
+        storebaelt.length_m = 18_000.0;
+        assert!(
+            !pack_edge_matches_overlay_ferry(&storebaelt, &ferry),
+            "Storebælt bridge must stay a road"
+        );
+        // Local road near Helsingør only — other end is not Helsingborg.
+        let mut local = test_edge(14, 15, 56.034, 12.617, 56.040, 12.630);
+        local.highway = Some("secondary".into());
+        local.length_m = 1_200.0;
+        assert!(
+            !pack_edge_matches_overlay_ferry(&local, &ferry),
+            "ordinary road near one terminal must not match"
+        );
+        // True water-chord between the same terminals is replaced.
+        let mut chord = test_edge(16, 17, 56.034, 12.617, 56.043, 12.691);
+        chord.highway = Some("unclassified".into());
+        chord.length_m = 4_500.0;
+        assert!(pack_edge_matches_overlay_ferry(&chord, &ferry));
     }
 
     #[test]

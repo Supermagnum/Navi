@@ -166,12 +166,34 @@ pub fn fixed_pace_minutes(distance_km: f64, min_per_km: f64) -> f64 {
     distance_km * min_per_km
 }
 
+/// Ferry crossing + expected-wait hours.
+///
+/// Crossing comes from the packed duration (peeled from `base_weight`); wait
+/// uses [`crate::routing::graph::ferry_wait_minutes`]. Consecutive ferry edges
+/// count wait once.
+fn ferry_edge_hours(edge: &GraphEdge, already_on_ferry: bool) -> f64 {
+    let (crossing_min, wait_min) = crate::routing::graph::ferry_crossing_and_wait_min(edge);
+    let mins = if already_on_ferry {
+        crossing_min
+    } else {
+        crossing_min + wait_min
+    };
+    mins / 60.0
+}
+
 /// Sum motor pre-departure time along A*-recorded edge indices.
 pub fn motor_path_minutes_from_edges(graph: &RouteGraph, edge_indices: &[usize]) -> f64 {
     let mut hours = 0.0;
+    let mut on_ferry = false;
     for &idx in edge_indices {
         let e = &graph.edges[idx];
-        hours += hours_for_segment(e.length_m, edge_speed_kmh(e));
+        if e.is_ferry {
+            hours += ferry_edge_hours(e, on_ferry);
+            on_ferry = true;
+        } else {
+            on_ferry = false;
+            hours += hours_for_segment(e.length_m, edge_speed_kmh(e));
+        }
     }
     hours * 60.0
 }
@@ -182,11 +204,19 @@ pub fn motor_path_minutes(graph: &RouteGraph, path: &[NodeId]) -> f64 {
         return 0.0;
     }
     let mut hours = 0.0;
+    let mut on_ferry = false;
     for w in path.windows(2) {
         if let Some(idx) = graph.edge_index(w[0], w[1]) {
             let e = &graph.edges[idx];
-            hours += hours_for_segment(e.length_m, edge_speed_kmh(e));
+            if e.is_ferry {
+                hours += ferry_edge_hours(e, on_ferry);
+                on_ferry = true;
+            } else {
+                on_ferry = false;
+                hours += hours_for_segment(e.length_m, edge_speed_kmh(e));
+            }
         } else if let (Some(a), Some(b)) = (graph.nodes.get(&w[0]), graph.nodes.get(&w[1])) {
+            on_ferry = false;
             // Missing directed edge: still estimate from node spacing + default class.
             let length_m = haversine_m(a.coord.y, a.coord.x, b.coord.y, b.coord.x);
             hours += hours_for_segment(length_m, DEFAULT_FALLBACK_KMH);
@@ -304,6 +334,7 @@ mod tests {
             target: NodeId(2),
             length_m,
             base_weight: length_m,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: 60.0,
             start_lon: 10.0,
@@ -331,6 +362,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -372,6 +404,7 @@ mod tests {
             target: NodeId(2),
             length_m,
             base_weight: length_m,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: 60.0,
             start_lon: 10.0,
@@ -399,6 +432,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -450,6 +484,7 @@ mod tests {
             target: NodeId(2),
             length_m,
             base_weight: length_m,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: 60.0,
             start_lon: 10.0,
@@ -477,6 +512,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -517,5 +553,33 @@ mod tests {
         let graph = RouteGraph::from_parts(nodes, vec![edge], RoutingProfile::Car);
         let mins = motor_path_minutes(&graph, &[NodeId(1), NodeId(2)]);
         assert!((mins - 7.5).abs() < 0.01, "got {mins}");
+    }
+
+    #[test]
+    fn ferry_eta_uses_overlay_duration_plus_boarding() {
+        use crate::routing::graph::ferry_base_weight_m;
+        let length_m = 13_919.0;
+        let (nodes, mut edge) = stub_edge(None, None, None, None, length_m, "ferry");
+        edge.is_ferry = true;
+        edge.base_weight = ferry_base_weight_m(length_m, Some("0:45"), RoutingProfile::Truck);
+        let graph = RouteGraph::from_parts(nodes, vec![edge], RoutingProfile::Truck);
+        let mins = motor_path_minutes_from_edges(&graph, &[0]);
+        // 45 min crossing + wait = max(10, 0.25*45) = 11.25.
+        let expect = 45.0 + crate::routing::graph::ferry_wait_minutes(45.0, None);
+        assert!((mins - expect).abs() < 0.05, "got {mins} expect {expect}");
+    }
+
+    #[test]
+    fn ferry_eta_fallback_10kmh_only_without_duration() {
+        use crate::routing::graph::ferry_base_weight_m;
+        let length_m = 13_919.0;
+        let (nodes, mut edge) = stub_edge(None, None, None, None, length_m, "ferry");
+        edge.is_ferry = true;
+        edge.base_weight = ferry_base_weight_m(length_m, None, RoutingProfile::Truck);
+        let graph = RouteGraph::from_parts(nodes, vec![edge], RoutingProfile::Truck);
+        let mins = motor_path_minutes_from_edges(&graph, &[0]);
+        let cross = length_m / 1000.0 / crate::routing::graph::FERRY_FALLBACK_SPEED_KMH * 60.0;
+        let expect = cross + crate::routing::graph::ferry_wait_minutes(cross, None);
+        assert!((mins - expect).abs() < 0.05, "got {mins} expect {expect}");
     }
 }

@@ -68,7 +68,7 @@ pub fn apply_slow_road_preference(graph: &mut RouteGraph) {
     graph.edges.par_iter_mut().for_each(|edge| {
         let mult = slow_road_edge_multiplier(edge);
         if mult > 1.0 + 1e-9 {
-            edge.base_weight *= mult;
+            edge.cost_mult *= mult;
             if let Some(ref mut eco) = edge.eco_weight {
                 *eco *= mult;
             }
@@ -312,7 +312,7 @@ pub fn apply_official_network_preference(graph: &mut RouteGraph, network_way_ids
     graph.edges.par_iter_mut().for_each(|edge| {
         let on_network = edge_way_id(&edge.id).is_some_and(|id| network_way_ids.contains(&id));
         if !on_network {
-            edge.base_weight *= NON_NETWORK_PENALTY;
+            edge.cost_mult *= NON_NETWORK_PENALTY;
             if let Some(ref mut eco) = edge.eco_weight {
                 *eco *= NON_NETWORK_PENALTY;
             }
@@ -725,6 +725,7 @@ mod tests {
                 target: NodeId(2),
                 length_m: 100.0,
                 base_weight: 100.0,
+                cost_mult: 1.0,
                 eco_weight: Some(100.0),
                 start_lat: 60.0,
                 start_lon: 10.0,
@@ -752,6 +753,7 @@ mod tests {
                 maxlength_m: None,
                 is_toll: false,
                 is_ferry: false,
+                ferry_interval_min: None,
                 is_tunnel: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
@@ -767,6 +769,7 @@ mod tests {
                 target: NodeId(2),
                 length_m: 100.0,
                 base_weight: 100.0,
+                cost_mult: 1.0,
                 eco_weight: Some(100.0),
                 start_lat: 60.0,
                 start_lon: 10.0,
@@ -794,6 +797,7 @@ mod tests {
                 maxlength_m: None,
                 is_toll: false,
                 is_ferry: false,
+                ferry_interval_min: None,
                 is_tunnel: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
@@ -808,8 +812,8 @@ mod tests {
         let mut net = HashSet::new();
         net.insert(10);
         apply_official_network_preference(&mut graph, &net);
-        assert!((graph.edges[0].base_weight - 100.0).abs() < 1e-9);
-        assert!((graph.edges[1].base_weight - 100.0 * NON_NETWORK_PENALTY).abs() < 1e-9);
+        assert!((graph.edges[0].cost_mult - 1.0).abs() < 1e-9);
+        assert!((graph.edges[1].cost_mult - NON_NETWORK_PENALTY).abs() < 1e-9);
     }
 
     #[test]
@@ -854,6 +858,7 @@ mod tests {
                 target: NodeId(2),
                 length_m: 100.0,
                 base_weight: 100.0,
+                cost_mult: 1.0,
                 eco_weight: Some(100.0),
                 start_lat: 60.0,
                 start_lon: 10.0,
@@ -881,6 +886,7 @@ mod tests {
                 maxlength_m: None,
                 is_toll: false,
                 is_ferry: false,
+                ferry_interval_min: None,
                 is_tunnel: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
@@ -896,6 +902,7 @@ mod tests {
                 target: NodeId(3),
                 length_m: 100.0,
                 base_weight: 100.0,
+                cost_mult: 1.0,
                 eco_weight: Some(100.0),
                 start_lat: 60.001,
                 start_lon: 10.0,
@@ -923,6 +930,7 @@ mod tests {
                 maxlength_m: None,
                 is_toll: false,
                 is_ferry: false,
+                ferry_interval_min: None,
                 is_tunnel: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
@@ -937,8 +945,8 @@ mod tests {
         let mut pilgrim = HashSet::new();
         pilgrim.insert(100);
         apply_official_network_preference(&mut graph, &pilgrim);
-        assert!((graph.edges[0].base_weight - 100.0).abs() < 1e-9);
-        assert!(graph.edges[1].base_weight > 100.0);
+        assert!((graph.edges[0].cost_mult - 1.0).abs() < 1e-9);
+        assert!(graph.edges[1].cost_mult > 1.0);
         let (path, _, _cost) = graph
             .shortest_path(NodeId(1), NodeId(3), false)
             .expect("soft pref must not block gap on ordinary path");
@@ -959,6 +967,7 @@ mod tests {
                 target: NodeId(3),
                 length_m: 100.0,
                 base_weight: 100.0,
+                cost_mult: 1.0,
                 eco_weight: Some(100.0),
                 start_lat: 60.0,
                 start_lon: 10.0,
@@ -986,6 +995,7 @@ mod tests {
                 maxlength_m: None,
                 is_toll: false,
                 is_ferry: false,
+                ferry_interval_min: None,
                 is_tunnel: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
@@ -1001,6 +1011,7 @@ mod tests {
                 target: NodeId(2),
                 length_m: 120.0,
                 base_weight: 120.0,
+                cost_mult: 1.0,
                 eco_weight: Some(120.0),
                 start_lat: 60.0,
                 start_lon: 10.0,
@@ -1028,6 +1039,7 @@ mod tests {
                 maxlength_m: None,
                 is_toll: false,
                 is_ferry: false,
+                ferry_interval_min: None,
                 is_tunnel: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
@@ -1043,6 +1055,7 @@ mod tests {
                 target: NodeId(3),
                 length_m: 120.0,
                 base_weight: 120.0,
+                cost_mult: 1.0,
                 eco_weight: Some(120.0),
                 start_lat: 60.001,
                 start_lon: 10.001,
@@ -1070,6 +1083,7 @@ mod tests {
                 maxlength_m: None,
                 is_toll: false,
                 is_ferry: false,
+                ferry_interval_min: None,
                 is_tunnel: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
@@ -1105,6 +1119,7 @@ mod tests {
                 target: NodeId(3),
                 length_m: 1000.0,
                 base_weight: 1000.0,
+                cost_mult: 1.0,
                 eco_weight: Some(1000.0),
                 start_lat: 61.89,
                 start_lon: 11.55,
@@ -1132,6 +1147,7 @@ mod tests {
                 maxlength_m: None,
                 is_toll: false,
                 is_ferry: false,
+                ferry_interval_min: None,
                 is_tunnel: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
@@ -1147,6 +1163,7 @@ mod tests {
                 target: NodeId(2),
                 length_m: 600.0,
                 base_weight: 600.0,
+                cost_mult: 1.0,
                 eco_weight: Some(600.0),
                 start_lat: 61.89,
                 start_lon: 11.55,
@@ -1174,6 +1191,7 @@ mod tests {
                 maxlength_m: None,
                 is_toll: false,
                 is_ferry: false,
+                ferry_interval_min: None,
                 is_tunnel: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
@@ -1189,6 +1207,7 @@ mod tests {
                 target: NodeId(3),
                 length_m: 600.0,
                 base_weight: 600.0,
+                cost_mult: 1.0,
                 eco_weight: Some(600.0),
                 start_lat: 61.90,
                 start_lon: 11.56,
@@ -1216,6 +1235,7 @@ mod tests {
                 maxlength_m: None,
                 is_toll: false,
                 is_ferry: false,
+                ferry_interval_min: None,
                 is_tunnel: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
@@ -1261,7 +1281,7 @@ mod tests {
         let edges = vec![rv3_vs_237_edges()[0].clone()];
         let mut graph = RouteGraph::from_parts(HashMap::new(), edges, RoutingProfile::Foot);
         apply_slow_road_preference(&mut graph);
-        assert!(graph.edges[0].base_weight > 1000.0);
+        assert!(graph.edges[0].cost_mult > 1.0);
         let (path, _, _) = graph
             .shortest_path(NodeId(1), NodeId(3), false)
             .expect("must still route on high-speed when only option");

@@ -9,7 +9,15 @@ fun placeSearchBuildingMessage(
     indexHasEntries: Boolean,
     indexRunning: Boolean,
     onlineAvailable: Boolean = false,
+    indexProblem: String? = null,
 ): String? {
+    if (indexProblem != null) {
+        return if (onlineAvailable || !hitsEmpty) {
+            "Offline place search unavailable (place index $indexProblem) — showing online results (Nominatim)."
+        } else {
+            "Offline place search unavailable (place index $indexProblem) — enter coordinates or tap the map"
+        }
+    }
     if (!hitsEmpty) return null
     return when {
         onlineAvailable && !indexHasEntries ->

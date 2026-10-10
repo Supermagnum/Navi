@@ -41,6 +41,7 @@ fn edge(
         target: NodeId(target),
         length_m,
         base_weight: length_m,
+        cost_mult: 1.0,
         eco_weight: Some(length_m),
         start_lat,
         start_lon,
@@ -68,6 +69,7 @@ fn edge(
         maxlength_m: None,
         is_toll: false,
         is_ferry: false,
+        ferry_interval_min: None,
         is_tunnel: false,
         is_boardwalk_crossing: false,
         is_roundabout: false,
@@ -470,8 +472,10 @@ fn avoid_ferry_changes_planned_route() {
     ab.is_ferry = true;
     let mut bc = edge("bc", 2, 3, 60.0, 10.01, 60.0, 10.02, 80.0, "secondary");
     bc.is_ferry = true;
-    let ad = edge("ad", 1, 4, 60.0, 10.0, 60.01, 10.01, 300.0, "secondary");
-    let dc = edge("dc", 4, 3, 60.01, 10.01, 60.0, 10.02, 300.0, "secondary");
+    // The road detour must take longer than the crossing plus the expected
+    // ferry wait (`ferry_wait_minutes`), or the default route skips the ferry.
+    let ad = edge("ad", 1, 4, 60.0, 10.0, 60.01, 10.01, 30_000.0, "secondary");
+    let dc = edge("dc", 4, 3, 60.01, 10.01, 60.0, 10.02, 30_000.0, "secondary");
     let graph = RouteGraph::from_parts(nodes, vec![ab, bc, ad, dc], RoutingProfile::Car);
 
     let with_ferry = graph.shortest_path(NodeId(1), NodeId(3), false).unwrap();

@@ -106,15 +106,26 @@ object BasemapLabelPolicy {
      * after a 3D augment reload).
      */
     private fun applyProtomapsRuntime(style: Style): Boolean {
-        val motorway = style.getLayer("roads_label_motorway") ?: return false
+        val motorway =
+            style.getLayer("roads_label_motorway")
+                ?: style.layers.firstOrNull { it.id.startsWith("roads_label_motorway") }
+                ?: return false
         motorway.setMinZoom(MOTORWAY_MIN_ZOOM.toFloat())
-        style.getLayer("roads_label_secondary")?.setMinZoom(SECONDARY_MIN_ZOOM.toFloat())
-        style.getLayer("roads_label_major")?.setMinZoom(MAJOR_MINOR_MIN_ZOOM.toFloat())
-        style.getLayer("roads_label_minor")?.setMinZoom(MAJOR_MINOR_MIN_ZOOM.toFloat())
+        style.layers
+            .filter { it.id.startsWith("roads_label_secondary") }
+            .forEach { it.setMinZoom(SECONDARY_MIN_ZOOM.toFloat()) }
+        style.layers
+            .filter { it.id.startsWith("roads_label_major") }
+            .forEach { it.setMinZoom(MAJOR_MINOR_MIN_ZOOM.toFloat()) }
+        style.layers
+            .filter { it.id.startsWith("roads_label_minor") }
+            .forEach { it.setMinZoom(MAJOR_MINOR_MIN_ZOOM.toFloat()) }
         // Layer floor z8 so large glacier/military names (coalesce min_zoom, 10)
         // can appear farther out. Amenity kinds stay at z16 via the per-kind
         // match in style.template.json — do not raise this floor to 16.
-        style.getLayer("pois")?.setMinZoom(8f)
+        style.layers.filter { it.id == "pois" || it.id.startsWith("pois__") }.forEach {
+            it.setMinZoom(8f)
+        }
         return true
     }
 }

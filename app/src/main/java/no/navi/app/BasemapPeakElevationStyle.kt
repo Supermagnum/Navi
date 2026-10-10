@@ -38,10 +38,14 @@ object BasemapPeakElevationStyle {
         style: Style,
         unitSystem: UnitSystem,
     ) {
-        val pois = style.getLayer("pois") as? SymbolLayer
-        if (pois != null) {
+        val poisLayers =
+            style.layers.filter { it.id == "pois" || it.id.startsWith("pois__") }
+        for (layer in poisLayers) {
+            val pois = layer as? SymbolLayer ?: continue
             pois.setProperties(PropertyFactory.textField(protomapsTextField(unitSystem)))
-            Log.i(TAG, "patched pois peak elevation units=${unitSystem.persistId}")
+        }
+        if (poisLayers.isNotEmpty()) {
+            Log.i(TAG, "patched ${poisLayers.size} pois peak elevation units=${unitSystem.persistId}")
         }
         applyLiberty(style, unitSystem)
     }
