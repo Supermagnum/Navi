@@ -133,6 +133,8 @@ pub const STRETCH_JOINT_REPAIR_MAX_RETRIES: usize = 4;
 #[derive(Debug, Clone, PartialEq)]
 pub enum StretchRepair {
     Keep,
+    /// Plan the stretch as one detailed search on the straight-line clip.
+    Direct,
     Merge,
     Slide((f64, f64)),
 }
@@ -2980,6 +2982,7 @@ pub fn stretch_repair_action(
     merged_nodes: usize,
     max_nodes: usize,
     coarse_path: &[(f64, f64)],
+    clipped_fits: bool,
 ) -> StretchRepair {
     if !is_stretch_hint(kind) {
         return StretchRepair::Keep;
@@ -2987,7 +2990,9 @@ pub fn stretch_repair_action(
     if !pair_has_joint_reversal(left, right, joint) {
         return StretchRepair::Keep;
     }
-    if merged_nodes <= max_nodes {
+    if clipped_fits {
+        StretchRepair::Direct
+    } else if merged_nodes <= max_nodes {
         StretchRepair::Merge
     } else {
         StretchRepair::Slide(slide_joint_before_divergence(
@@ -3000,7 +3005,7 @@ pub fn stretch_repair_action(
 }
 
 /// Tile bboxes + estimated node counts from Ready manifests under [dirs].
-/// Node estimate = archive bytes / 72 (empirical packed car-graph density).
+/// Node estimate = archive bytes / 200 (empirical packed car-graph density).
 fn load_profile_tile_bboxes(
     dirs: &[&Path],
     profile: RoutingProfile,
@@ -3258,6 +3263,80 @@ pub fn estimated_path_covering_nodes(
         names.extend(tiles_covering_point(&tiles, lat, lon));
     }
     names.iter().map(|n| tile_est_nodes(&tiles, n)).sum()
+}
+
+/// Share of `tile` that sits in any clip box, from a 12×12 grid of cell
+/// centres. Avoids counting a whole dense tile when the band only crosses it.
+fn tile_clip_frac(tile: [f64; 4], clips: &[[f64; 4]]) -> f64 {
+    if clips.is_empty() {
+        return 0.0;
+    }
+    const N: usize = 12;
+    let dlat = (tile[2] - tile[0]).max(1e-12);
+    let dlon = (tile[3] - tile[1]).max(1e-12);
+    let mut hit = 0usize;
+    for i in 0..N {
+        for j in 0..N {
+            let lat = tile[0] + (i as f64 + 0.5) / N as f64 * dlat;
+            let lon = tile[1] + (j as f64 + 0.5) / N as f64 * dlon;
+            if clips
+                .iter()
+                .any(|c| lat >= c[0] && lat <= c[2] && lon >= c[1] && lon <= c[3])
+            {
+                hit += 1;
+            }
+        }
+    }
+    hit as f64 / (N * N) as f64
+}
+
+/// Estimated packed nodes after clipping tiles to `clips`. Does not load
+/// graph tiles: uses manifest byte density times each tile's clip share.
+pub fn estimated_clipped_nodes(
+    pack_dirs: &[&Path],
+    profile: RoutingProfile,
+    clips: &[[f64; 4]],
+) -> usize {
+    if clips.is_empty() {
+        return 0;
+    }
+    let tiles = load_profile_tile_bboxes(pack_dirs, profile);
+    estimated_clipped_nodes_from_tiles(&tiles, clips)
+}
+
+/// Same as [`estimated_clipped_nodes`] with caller-supplied tile density.
+pub fn estimated_clipped_nodes_from_tiles(
+    tiles: &[(String, [f64; 4], usize)],
+    clips: &[[f64; 4]],
+) -> usize {
+    tiles
+        .iter()
+        .map(|(_, bbox, est)| ((*est as f64) * tile_clip_frac(*bbox, clips)).round() as usize)
+        .sum()
+}
+
+/// Estimated nodes for a direct search between two ends (band around the
+/// straight line). Cheap: no graph load.
+pub fn estimated_direct_search_nodes(
+    pack_dirs: &[&Path],
+    profile: RoutingProfile,
+    start: (f64, f64),
+    end: (f64, f64),
+) -> usize {
+    let clips = crate::routing::plan_bbox::direct_search_clip_bboxes(start, end);
+    estimated_clipped_nodes(pack_dirs, profile, &clips)
+}
+
+/// True when the clipped graph between two ends fits the hop node and memory
+/// limits. Does not load tiles.
+pub fn direct_search_fits(
+    pack_dirs: &[&Path],
+    profile: RoutingProfile,
+    start: (f64, f64),
+    end: (f64, f64),
+) -> bool {
+    let n = estimated_direct_search_nodes(pack_dirs, profile, start, end);
+    crate::routing::plan_bbox::direct_search_fits_nodes(n)
 }
 
 /// Stage B: densify from persistent corridor skeletons.
@@ -5286,6 +5365,7 @@ mod tests {
             10_000,
             crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP,
             &[],
+            false,
         );
         assert_eq!(action, StretchRepair::Merge);
     }
@@ -5304,6 +5384,7 @@ mod tests {
             crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP + 1,
             crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP,
             &coarse,
+            false,
         );
         match action {
             StretchRepair::Slide(p) => {
@@ -5328,6 +5409,7 @@ mod tests {
                 10,
                 crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP,
                 &[],
+                true,
             ),
             StretchRepair::Keep
         );
@@ -5345,6 +5427,7 @@ mod tests {
                 10,
                 crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP,
                 &[],
+                true,
             ),
             StretchRepair::Keep
         );
@@ -5362,8 +5445,67 @@ mod tests {
                 10,
                 crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP,
                 &[],
+                true,
             ),
             StretchRepair::Keep
+        );
+    }
+
+    #[test]
+    fn reversal_with_clipped_fit_is_direct() {
+        let (left, right, joint) = reversal_pair();
+        assert_eq!(
+            stretch_repair_action(
+                HopJointKind::StretchSplit,
+                &left,
+                &right,
+                joint,
+                crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP + 1,
+                crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP,
+                &[],
+                true,
+            ),
+            StretchRepair::Direct
+        );
+    }
+
+    #[test]
+    fn clipped_share_fits_when_whole_tiles_do_not() {
+        let tiles = vec![(
+            "dense".into(),
+            [59.0, 9.0, 61.0, 11.5],
+            crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP + 200_000,
+        )];
+        let start = (60.27656, 10.81650);
+        let end = (59.80326, 9.39866);
+        let clips = crate::routing::plan_bbox::direct_search_clip_bboxes(start, end);
+        let clipped = estimated_clipped_nodes_from_tiles(&tiles, &clips);
+        let whole: usize = tiles.iter().map(|(_, _, n)| *n).sum();
+        assert!(
+            whole > crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP,
+            "whole tiles {whole} must exceed the hop limit"
+        );
+        assert!(
+            crate::routing::plan_bbox::direct_search_fits_nodes(clipped),
+            "clipped {clipped} should fit"
+        );
+    }
+
+    #[test]
+    fn full_overlap_still_uses_corridor() {
+        let start = (60.0, 10.0);
+        let end = (59.5, 9.5);
+        let clips = crate::routing::plan_bbox::direct_search_clip_bboxes(start, end);
+        let tile = clips[0];
+        let tiles = vec![(
+            "dense".into(),
+            tile,
+            crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP + 50_000,
+        )];
+        let clipped = estimated_clipped_nodes_from_tiles(&tiles, &clips);
+        assert!(
+            !crate::routing::plan_bbox::direct_search_fits_nodes(clipped),
+            "full-tile overlap {clipped} must not fit"
         );
     }
 }

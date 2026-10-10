@@ -2648,6 +2648,7 @@ fn plan_car_route_chunked_legs(
     let mut hop_start = hops[0];
     let mut skip_until = 0usize;
     let mut stretch_repairs = 0usize;
+    let mut detour_retries = 0usize;
     let mut prev_hop_poly = String::new();
     let mut prev_hop_km = 0.0_f64;
     let mut prev_hop_eta = 0.0_f64;
@@ -2851,6 +2852,7 @@ fn plan_car_route_chunked_legs(
                 Some(retry),
             );
         }
+        driver_break_core::routing::plan_bbox::set_force_straight_clip(false);
         log_datex_for_hop_path(&mut report, &hop_datex, &leg.route_polyline);
         let hop_peak_rss_mb =
             hop_rss_before.max(driver_break_core::routing::corridor_skeleton::vm_rss_mb());
@@ -3047,7 +3049,13 @@ fn plan_car_route_chunked_legs(
                     routing_profile,
                     &[hops[i - 1], hops[i + 1]],
                 );
-            let action = driver_break_core::routing::corridor_skeleton::stretch_repair_action(
+            let clipped_fits = driver_break_core::routing::corridor_skeleton::direct_search_fits(
+                &pack_refs_for_repair,
+                routing_profile,
+                hops[i - 1],
+                hops[i + 1],
+            );
+            let mut action = driver_break_core::routing::corridor_skeleton::stretch_repair_action(
                 kind,
                 &left,
                 &right,
@@ -3055,9 +3063,59 @@ fn plan_car_route_chunked_legs(
                 merged_nodes,
                 driver_break_core::routing::plan_bbox::MAX_PATH_NODES_PER_HOP,
                 coarse_path,
+                clipped_fits,
             );
+            if matches!(
+                action,
+                driver_break_core::routing::corridor_skeleton::StretchRepair::Keep
+            ) && driver_break_core::routing::corridor_skeleton::is_stretch_hint(kind)
+                && clipped_fits
+                && detour_retries < driver_break_core::routing::plan_bbox::DIRECT_DETOUR_RETRY_MAX
+            {
+                let straight = driver_break_core::routing::plan_bbox::haversine_km(
+                    hops[i - 1].0,
+                    hops[i - 1].1,
+                    hops[i + 1].0,
+                    hops[i + 1].1,
+                );
+                if driver_break_core::routing::plan_bbox::hop_pair_much_slower(
+                    prev_hop_km + hop_dist_m / 1000.0,
+                    prev_hop_eta + leg.eta_minutes,
+                    straight,
+                ) {
+                    action = driver_break_core::routing::corridor_skeleton::StretchRepair::Direct;
+                    detour_retries += 1;
+                }
+            }
             match action {
                 driver_break_core::routing::corridor_skeleton::StretchRepair::Keep => {}
+                driver_break_core::routing::corridor_skeleton::StretchRepair::Direct => {
+                    stretch_repairs += 1;
+                    undo_last_hop(
+                        &mut polyline,
+                        &mut hop_polys,
+                        &mut distance_km,
+                        &mut eta_minutes,
+                        &mut hops_sidecar,
+                        &mut leg_maneuvers,
+                        prev_hop_km,
+                        prev_hop_eta,
+                    );
+                    report.push_str(&format!(
+                        "stretch_joint_direct i={} joint={:.5},{:.5} repairs={stretch_repairs}\n",
+                        i + 1,
+                        joint.0,
+                        joint.1
+                    ));
+                    hop_start = prev_hop_start;
+                    hops.remove(i);
+                    if i < hop_kinds.len() {
+                        hop_kinds.remove(i);
+                    }
+                    driver_break_core::routing::plan_bbox::set_force_straight_clip(true);
+                    i = i.saturating_sub(1);
+                    continue;
+                }
                 driver_break_core::routing::corridor_skeleton::StretchRepair::Merge => {
                     stretch_repairs += 1;
                     undo_last_hop(
@@ -3772,6 +3830,7 @@ fn plan_car_route_inner(
     if !is_chunk_leg {
         driver_break_core::routing::plan_bbox::set_stage_b_active(false);
         driver_break_core::routing::plan_bbox::set_stage_b_coarse_path(Vec::new());
+        driver_break_core::routing::plan_bbox::set_force_straight_clip(false);
     }
     // Host settings root (`navi.db` for rest / vehicle / fuel). Must not be
     // confused with pack lookup dirs after `plan_pack_data_dir` rebinding.
@@ -3858,11 +3917,19 @@ fn plan_car_route_inner(
         );
     let path_over_node_limit =
         path_covering_nodes > driver_break_core::routing::plan_bbox::MAX_PATH_NODES_PER_HOP;
-    // Same rule as a long trip: tiles on the path are always loaded; if they
-    // would exceed the node limit, plan through the corridor stage and hops.
-    // No place or region names in this predicate.
-    let needs_corridor =
-        !is_chunk_leg && (multi_region || same_stem_needs_split || path_over_node_limit);
+    let (leg_start, leg_end) = (route_points[0], *route_points.last().unwrap());
+    let clipped_nodes =
+        driver_break_core::routing::corridor_skeleton::estimated_direct_search_nodes(
+            &pack_dir_refs_for_nodes,
+            routing_profile,
+            leg_start,
+            leg_end,
+        );
+    let clipped_fits =
+        driver_break_core::routing::plan_bbox::direct_search_fits_nodes(clipped_nodes);
+    // Corridor only when the clipped graph between the ends does not fit.
+    // Whole-tile count, region count and stem names are not the predicate.
+    let needs_corridor = !is_chunk_leg && !clipped_fits;
     let mut stage_b_advisory = String::new();
     if needs_corridor {
         let pack_dirs = pack_dirs_for_densify;
@@ -4121,6 +4188,7 @@ fn plan_car_route_inner(
     ));
     report.push_str(&format!(
         "path_covering_nodes={path_covering_nodes}; path_over_node_limit={path_over_node_limit}; \
+         clipped_nodes={clipped_nodes}; clipped_fits={clipped_fits}; \
          needs_corridor={needs_corridor}; stage_b={}\n",
         driver_break_core::routing::plan_bbox::stage_b_active()
     ));
@@ -4231,7 +4299,16 @@ fn plan_car_route_inner(
         let force_chunk_take = std::env::var("NAVI_MEASURE_FORCE_CHUNK_PAD")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
-        if is_chunk_leg || force_chunk_take {
+        let direct_clip = driver_break_core::routing::plan_bbox::force_straight_clip()
+            || (!is_chunk_leg && !needs_corridor);
+        if direct_clip {
+            // Same pad as the cheap clipped-size estimate. Widen entries stay
+            // for a disconnected retry only.
+            driver_break_core::routing::plan_bbox::direct_search_pad_schedule(
+                (start_lat, start_lon),
+                (end_lat, end_lon),
+            )
+        } else if is_chunk_leg || force_chunk_take {
             // Chunked legs: default three pads (initial + two widens → 1.4°).
             // Two was not enough when the first pad snapped a densify hop onto a
             // neighbour shore. Measure overrides may raise take toward the full
@@ -4266,7 +4343,15 @@ fn plan_car_route_inner(
     let mut bbox = [0.0; 4];
     // Corridor-band edge clip ignores pad widen (band is OD-only). After a
     // disconnected A* on that stable materialization, retry with trip-AABB.
-    let mut edge_clip_mode = driver_break_core::routing::plan_bbox::PlanEdgeClipMode::CorridorBand;
+    let mut edge_clip_mode = if driver_break_core::routing::plan_bbox::force_straight_clip()
+        || (!is_chunk_leg && !needs_corridor)
+    {
+        // Direct search: clip to the start–end box (plus plan pad), not the
+        // coarse-path band. Matches the cheap clipped-size decision.
+        driver_break_core::routing::plan_bbox::PlanEdgeClipMode::TripAabb
+    } else {
+        driver_break_core::routing::plan_bbox::PlanEdgeClipMode::CorridorBand
+    };
     // Tile-budget widen across disconnect retries (forced 6 → 10 → 14 → …).
     // Cleared on plan exit so later plans do not inherit a raised floor.
     // Stage B keeps the raised floor (coarse-path tiles; no chord budget).
@@ -4297,7 +4382,9 @@ fn plan_car_route_inner(
             route_opts.surface_routing_mode = None;
             // Stage B: tiles follow the coarse path (plus pad), not the O–D chord.
             let corridor_pts: Vec<(f64, f64)> =
-                if is_chunk_leg && driver_break_core::routing::plan_bbox::stage_b_active() {
+                if driver_break_core::routing::plan_bbox::force_straight_clip() {
+                    vec![(start_lat, start_lon), (end_lat, end_lon)]
+                } else if is_chunk_leg && driver_break_core::routing::plan_bbox::stage_b_active() {
                     driver_break_core::routing::plan_bbox::stage_b_hop_corridor_points(
                         (start_lat, start_lon),
                         (end_lat, end_lon),
@@ -10284,10 +10371,7 @@ pub fn pmtiles_queue_region(
 
 /// Queue the z0–z6 world overview extract if it is not already completed.
 #[uniffi::export]
-pub fn pmtiles_queue_world_overview(
-    data_dir: String,
-    base_url: Option<String>,
-) -> FfiPmtilesJob {
+pub fn pmtiles_queue_world_overview(data_dir: String, base_url: Option<String>) -> FfiPmtilesJob {
     let empty = |msg: &str| FfiPmtilesJob {
         id: String::new(),
         region_key: String::new(),
