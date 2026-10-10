@@ -47,7 +47,7 @@
 //! Short cases h and j may skip the corridor stage when the clipped graph
 //! between the ends fits the hop node limit.
 //!
-//! Run: `cargo test --release -p navi-ffi --test regression_gate -- --ignored --nocapture`
+//! Run: `cargo test --release -p navi-ffi --features regression-gate --test regression_gate -- --ignored --nocapture`
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -1610,8 +1610,20 @@ fn run_gate_isolated(
 #[test]
 #[ignore = "needs NAVI_GATE_PACKS (device long-trip packs) and NAVI_GATE_REFS (reference lines)"]
 fn long_trip_regression_gate() {
-    let packs = PathBuf::from(std::env::var("NAVI_GATE_PACKS").expect("set NAVI_GATE_PACKS"));
-    let refs = PathBuf::from(std::env::var("NAVI_GATE_REFS").expect("set NAVI_GATE_REFS"));
+    let packs = match std::env::var("NAVI_GATE_PACKS") {
+        Ok(p) if Path::new(&p).is_dir() => PathBuf::from(p),
+        _ => {
+            eprintln!("skip: NAVI_GATE_PACKS unset or not a directory");
+            return;
+        }
+    };
+    let refs = match std::env::var("NAVI_GATE_REFS") {
+        Ok(p) if Path::new(&p).is_dir() => PathBuf::from(p),
+        _ => {
+            eprintln!("skip: NAVI_GATE_REFS unset or not a directory");
+            return;
+        }
+    };
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let work = std::env::var("NAVI_GATE_WORK")
         .map(PathBuf::from)

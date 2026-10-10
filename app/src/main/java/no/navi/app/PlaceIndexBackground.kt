@@ -98,7 +98,11 @@ object PlaceIndexBackground {
         }
         val installed =
             PackRegionAvailability.installedPackRegionIds(
-                InstalledMaps.current()?.regions?.values.orEmpty(),
+                InstalledMaps
+                    .current()
+                    ?.regions
+                    ?.values
+                    .orEmpty(),
             )
         if (rid != null &&
             !PackRegionAvailability.mayIndexRegion(rid, pbf, installed, true)

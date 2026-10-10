@@ -290,11 +290,13 @@ object InstalledMaps {
                         "pbf=${r.pbfKind} ferry_car=${r.ferrySidecarCar} ferry_truck=${r.ferrySidecarTruck} " +
                         "corridor_skel=${r.corridorSkeleton} " +
                         "tiles=${r.tilesPresent} rejected=${r.tilesRejected}" +
-                        (if (r.tilesRejected) {
-                            " no_offline_map=true reason=${r.tilesRejectReason.ifBlank { "offline archive rejected" }}"
-                        } else {
-                            ""
-                        }) +
+                        (
+                            if (r.tilesRejected) {
+                                " no_offline_map=true reason=${r.tilesRejectReason.ifBlank { "offline archive rejected" }}"
+                            } else {
+                                ""
+                            }
+                        ) +
                         " " +
                         "index=${r.placeIndex} index_source=${r.placeIndexSource.name.lowercase().replace('_', '-')} " +
                         "rows=${r.placeIndexRows}",
@@ -473,14 +475,15 @@ object InstalledMaps {
                             PlaceIndexState.MISSING
                         },
                     placeIndexRows = probe.rowCount,
-                    placeIndexSource = indexSourceOf(
-                        if (probe.intact) {
-                            if (probe.legacy) PlaceIndexState.LEGACY_INTACT else PlaceIndexState.INTACT
-                        } else {
-                            PlaceIndexState.MISSING
-                        },
-                        probe,
-                    ),
+                    placeIndexSource =
+                        indexSourceOf(
+                            if (probe.intact) {
+                                if (probe.legacy) PlaceIndexState.LEGACY_INTACT else PlaceIndexState.INTACT
+                            } else {
+                                PlaceIndexState.MISSING
+                            },
+                            probe,
+                        ),
                     placeIndexSourceSha = probe.sourceSha256,
                 )
         }

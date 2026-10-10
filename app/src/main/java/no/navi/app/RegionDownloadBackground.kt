@@ -1881,7 +1881,11 @@ object RegionDownloadBackground {
         }
         val installed =
             PackRegionAvailability.installedPackRegionIds(
-                InstalledMaps.current()?.regions?.values.orEmpty(),
+                InstalledMaps
+                    .current()
+                    ?.regions
+                    ?.values
+                    .orEmpty(),
             ) + PackRegionAvailability.normalize(rid)
         if (!PackRegionAvailability.mayIndexRegion(rid, pbf, installed, true)) {
             Log.e(TAG, "FAIL: refusing place index region=$rid (not own source / not an installed pack)")

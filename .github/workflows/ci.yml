@@ -1,21 +1,26 @@
-# Per-PR / push CI: Rust checks, Kotlin lint+unit tests, Android assemble, Linux build,
-# plus a distinct regression-guards job for curated host-side guards of past bugs.
+# Automatic push/PR checks. Wall-time budget: 10 minutes with warm caches.
+# Jobs are independent. A newer commit on the same branch/PR cancels this run.
 #
-# NOT in this workflow (stay dispatch-only / local):
-# - Android instrumented suite (89 classes): GitHub-hosted AAOS+SwiftShader is not a
-#   trusted renderer (docs/real-hardware-testing.md#github-hosted-instrumented-ci).
-#   Screenshot classes are evidence captures (PNG count / washFrac), not golden
-#   pixel-diff, and several need live Liberty tiles + /data/local/tmp fixtures.
-# - Rust #[ignore] OSM/DEM integrations: live network and/or ~1 GB fixtures and
-#   multi-minute graph builds (docs/build-linux.md).
-# See android-instrumented.yml for the leftover (C) list.
+# Not in this workflow (see ci-manual.yml, android-instrumented.yml, or local):
+# - Clippy / deny / audit / detekt
+# - cargo test --workspace, plugin-host isolation, linux-build
+# - multi-ABI release, emulator/device, map packs, the regression gate
 
 name: CI
 
 on:
   push:
-    branches: [main, dev]
+    paths-ignore:
+      - "docs/**"
+      - "geojson-routes/**"
+      - "navi-ffi/tests/regression_gate_refs/**"
+      - "**/*.md"
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "geojson-routes/**"
+      - "navi-ffi/tests/regression_gate_refs/**"
+      - "**/*.md"
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -23,24 +28,33 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: -Dwarnings
 
 jobs:
-  rust-checks:
-    name: rust-checks
+  rust-fmt:
+    name: rust-fmt
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
-          # Matches rust-toolchain.toml / workspace rust-version (MSRV pin).
           toolchain: "1.98.0"
-          components: rustfmt, clippy
-          targets: wasm32-unknown-unknown,aarch64-linux-android
+          components: rustfmt
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+  rust-lib-tests:
+    name: rust-lib-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.0"
 
       - name: System deps (pkg-config / OpenSSL)
         run: |
@@ -50,123 +64,18 @@ jobs:
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: rust-checks
+          shared-key: rust-lib-tests
           cache-targets: true
 
-      - name: Install cargo-deny + cargo-audit
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-deny@0.19.9,cargo-audit@0.22.2
+      - name: Core library tests
+        run: cargo test -p driver-break-core --lib
 
-      - name: Format (cargo fmt --check)
-        run: cargo fmt --all -- --check
+      - name: navi-ffi library tests
+        run: cargo test -p navi-ffi --lib
 
-      - name: Clippy (-D warnings)
-        # Example wasm32 guests are no_std + panic=abort; clippy --all-targets on the
-        # host triple fails for those crates. Exclude them; isolation tests still
-        # compile them for wasm32 explicitly.
-        run: >
-          cargo clippy --workspace --all-targets
-          --exclude navi-plugin-log-hello
-          --exclude navi-plugin-busy-loop
-          --exclude navi-plugin-trap-guest
-          --exclude navi-plugin-memory-bomb
-          --exclude navi-plugin-weather
-          --exclude navi-plugin-datex
-          --exclude navi-plugin-poi-lookahead
-          --exclude navi-desktop
-          -- -D warnings
-
-      - name: Unit / default tests (excludes #[ignore] fixture integrations)
-        # Do NOT pass --ignored. OSM/DEM-heavy tests such as
-        # venabygdsfjellet_ebike_climb, dnt_hiking_integration,
-        # kongsvinger_lillehammer_integration, falletvegen_atnbrufossen_eco,
-        # route_geometry_audit, place_name_search_check, overnight_scan_bench,
-        # fondsbu_spiterstulen_polyline, planner_options_routes, raufoss_approach_route
-        # require large downloaded fixtures under core/target/integration-fixtures
-        # and stay local/dispatch-only (cargo test -- --ignored).
-        #
-        # Confirmed still in this default set (not #[ignore]):
-        # - bike_suitability_route (synthetic road/MTB exclusion)
-        # - wetland_pack_identity::boardwalk_tag_logic_unchanged +
-        #   flat_pack_preserves_hard_over_soft_precedence
-        # - download::pbf_priority (cone/plan skip — ForegroundPlanConeSkip host logic)
-        # - basemap::extract::validate_rejects_mz12_large_region_fixture
-        # motor_access_barrier / budorvegen_service_detour / wetland_apply_identity / wetland_pack_identity
-        # pack-vs-PBF now use checked-in mini PBFs under core/tests/fixtures/
-        # and are also asserted explicitly in the regression-guards job.
-        # Exclude navi-desktop: default features need WebKitGTK (separate linux-build path).
-        # Exclude wasm32 no_std example guests: host-triple `cargo test` cannot build them
-        # (custom panic handler); they are exercised via plugin-host isolation tests.
-        run: >
-          cargo test --workspace
-          --exclude navi-desktop
-          --exclude navi-plugin-log-hello
-          --exclude navi-plugin-busy-loop
-          --exclude navi-plugin-trap-guest
-          --exclude navi-plugin-memory-bomb
-          --exclude navi-plugin-weather
-          --exclude navi-plugin-datex
-          --exclude navi-plugin-poi-lookahead
-
-      - name: Plugin host isolation tests (fuel/timeout sandbox)
-        run: cargo test -p navi-plugin-host --test isolation
-
-      - name: Plugin-host gate guards (no premature link + wasmtime features)
-        run: bash scripts/check-plugin-host-gate.sh
-
-      - name: Version bump gate (product code requires versionCode/versionName bump)
-        run: |
-          # Fetch base for merge-base comparison (shallow clones need depth).
-          git fetch --no-tags --depth=200 origin main || true
-          bash scripts/check-version-bump.sh origin/main
-
-      - name: cargo deny check
-        run: cargo deny check
-
-      - name: cargo deny advisories (aarch64-linux-android target filter)
-        # deny.toml [graph].targets already lists Android; this explicit pass
-        # fails the job if target-gated advisories regress for that triple alone.
-        # Note: --target is a cargo-deny global flag (before `check`).
-        run: cargo deny --target aarch64-linux-android check advisories
-
-      - name: cargo audit
-        run: cargo audit
-
-      - name: cargo audit (aarch64 / android filters)
-        run: cargo audit --target-arch aarch64 --target-os android
-
-  # Path filter: NDK+QEMU aarch64 smoke only when plugin-host / lockfile / smoke
-  # scripts change (PR and push). Always emit the paths job itself as a green check.
-  plugin-host-android-paths:
-    name: plugin-host-android-paths
+  android-native-compile:
+    name: android-native-compile
     runs-on: ubuntu-latest
-    outputs:
-      run_smoke: ${{ steps.filter.outputs.smoke }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dorny/paths-filter@v4
-        id: filter
-        with:
-          filters: |
-            smoke:
-              - 'plugin-host/**'
-              - 'plugins/log-hello/**'
-              - 'plugins/busy-loop/**'
-              - 'plugin-sdk/**'
-              - 'Cargo.lock'
-              - 'Cargo.toml'
-              - 'rust-toolchain.toml'
-              - 'deny.toml'
-              - '.cargo/audit.toml'
-              - 'scripts/plugin-host-android-aarch64-smoke.sh'
-              - 'scripts/check-plugin-host-gate.sh'
-
-  plugin-host-android-aarch64:
-    name: plugin-host-android-aarch64
-    needs: plugin-host-android-paths
-    runs-on: ubuntu-latest
-    if: needs.plugin-host-android-paths.outputs.run_smoke == 'true'
     steps:
       - uses: actions/checkout@v7
 
@@ -174,12 +83,13 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.98.0"
-          targets: wasm32-unknown-unknown,aarch64-linux-android,aarch64-unknown-linux-gnu
+          targets: aarch64-linux-android
 
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: plugin-host-android-aarch64
+          shared-key: android-native-lib
+          cache-targets: true
 
       - name: Setup Android NDK r27c
         uses: nttld/setup-ndk@v1
@@ -187,59 +97,26 @@ jobs:
         with:
           ndk-version: r27c
 
-      - name: Install qemu-user-static + aarch64 GNU cross
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y qemu-user-static gcc-aarch64-linux-gnu libc6-dev-arm64-cross
-
-      - name: Cross-compile Android aarch64 + QEMU Cranelift aarch64 smoke
+      - name: Compile navi-ffi lib for arm64-v8a
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-        run: bash scripts/plugin-host-android-aarch64-smoke.sh --qemu
-
-  linux-build:
-    name: linux-build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install pinned Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: "1.98.0"
-          targets: wasm32-unknown-unknown
-
-      - name: System deps (linker / pkg-config)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libssl-dev
+          CLANG_PRE="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          CLANG="$CLANG_PRE/aarch64-linux-android34-clang"
+          export PATH="$CLANG_PRE:$PATH"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CLANG"
+          export CC_aarch64_linux_android="$CLANG"
+          export AR_aarch64_linux_android="$CLANG_PRE/llvm-ar"
+          mkdir -p .cargo
+          printf '%s\n' \
+            '[target.aarch64-linux-android]' \
+            "linker = \"$CLANG\"" \
+            'rustflags = ["-C", "link-arg=-lc++_shared"]' \
+            > .cargo/config.toml
+          cargo build -p navi-ffi --target aarch64-linux-android --lib
 
-      - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: linux-build
-
-      - name: cargo build (workspace minus WebKit desktop)
-        # Full `navi-desktop` with embedded-webview needs libwebkit2gtk-4.1-dev.
-        # CI builds the headless feature set documented in docs/build-linux.md
-        # (`--no-default-features --features gpsd,linux-imu`) plus the rest of
-        # the workspace without pulling WebKit.
-        # Wasm example guests are host-unbuildable (no_std panic=abort); isolation
-        # tests compile them for wasm32-unknown-unknown explicitly.
-        run: |
-          cargo build --workspace \
-            --exclude navi-desktop \
-            --exclude navi-plugin-log-hello \
-            --exclude navi-plugin-busy-loop \
-            --exclude navi-plugin-trap-guest \
-            --exclude navi-plugin-memory-bomb \
-            --exclude navi-plugin-weather \
-            --exclude navi-plugin-datex \
-            --exclude navi-plugin-poi-lookahead
-          cargo build -p navi-desktop --no-default-features --features gpsd,linux-imu
-
-  kotlin-checks:
-    name: kotlin-checks
+  kotlin-fast:
+    name: kotlin-fast
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -253,8 +130,6 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
-          # Google no longer publishes the obsolete `tools` package; the action
-          # default still includes it and fails sdkmanager on current runners.
           packages: platform-tools
 
       - name: Cache Gradle
@@ -265,35 +140,26 @@ jobs:
       - name: ktlintCheck
         run: ./gradlew :app:ktlintCheck --no-daemon
 
-      - name: detekt
-        run: ./gradlew :app:detekt --no-daemon
-
       - name: JVM unit tests
         run: ./gradlew :app:testDebugUnitTest --no-daemon
 
-  # Distinct from kotlin-checks / rust-checks so an ordinary code-only PR does not
-  # serialize those fast jobs behind this label. Parallel, required. Does not boot
-  # an emulator — instrumented (C)/(B) stay on android-instrumented.yml.
-  regression-guards:
-    name: regression-guards
+  android-app-compile:
+    name: android-app-compile
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install pinned Rust toolchain
+      - name: Install pinned Rust toolchain (wasm guests)
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.98.0"
-
-      - name: System deps (pkg-config / OpenSSL)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libssl-dev
+          targets: wasm32-unknown-unknown
 
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: regression-guards
+          shared-key: android-app-wasm
+          cache-targets: true
 
       - name: Set up JDK 17
         uses: actions/setup-java@v6
@@ -304,7 +170,6 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
-          # Default still includes obsolete `tools`; install platform-tools only.
           packages: platform-tools
 
       - name: Cache Gradle
@@ -312,89 +177,8 @@ jobs:
         with:
           cache-read-only: false
 
-      - name: Host guards for past download / restore regressions
-        # JVM stand-ins for instrumented classes that need device fixtures or a
-        # live ~1 GB Protomaps extract:
-        # - PmtilesCompletionGuardInstrumentedTest#production_restore_rejects_mz12_fixture
-        # - RestoreOstlandetFixturesInstrumentedTest / OfflineDataMismatch (restore offer)
-        # CoordinateInput was instrumented-only; now gates PRs as a host unit test.
-        run: >
-          ./gradlew :app:testDebugUnitTest --no-daemon
-          --tests no.navi.app.OfflinePmtilesBootstrapTest
-          --tests no.navi.app.OfflineDataIntegrityRestoreTest
-          --tests no.navi.app.CoordinateInputTest
-          --tests no.navi.app.PlaceSearchHintTest
-
-      - name: Motor-access + wetland pack-vs-PBF + POI discovery (checked-in mini PBFs)
-        # Must execute (not skip). Fixtures under core/tests/fixtures/ (~1.6 MiB).
-        # Do not point these at core/target/integration-fixtures.
-        # poi_discovery: host stand-in for OfflineInnlandetScreenshotTest corridor
-        # POI nearest check (Hamar amenities in motor-access mini PBF).
-        run: |
-          cargo test -p driver-break-core --test motor_access_barrier -- --nocapture
-          cargo test -p driver-break-core --test budorvegen_service_detour -- --nocapture
-          cargo test -p driver-break-core --test wetland_apply_identity -- --nocapture
-          cargo test -p driver-break-core --test wetland_pack_identity -- --nocapture
-          cargo test -p driver-break-core --test poi_discovery -- --nocapture
-
-      - name: Pack-server place-index host guards (offline)
-        # On-device Geofabrik PBF + NameIndex path after pack install (no network).
-        run: >
-          cargo test -p driver-break-core --lib
-          pack_server::place_index_after:: -- --nocapture
-
-  # Distinct job: seasonal motor_vehicle:conditional (winter) on a synthetic edge.
-  winter-road-closure:
-    name: winter-road-closure
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install pinned Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: "1.98.0"
-
-      - name: System deps (pkg-config / OpenSSL)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libssl-dev
-
-      - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: winter-road-closure
-
-      - name: Seasonal winter closure (car/truck blocked, foot/bike not)
-        run: >
-          cargo test -p driver-break-core --lib
-          seasonal_conditional_blocks_car_not_foot -- --nocapture
-
-  android-build:
-    name: android-build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          # Default still includes obsolete `tools`; install platform-tools only.
-          packages: platform-tools
-
-      - name: Cache Gradle
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          cache-read-only: false
-
-      - name: assembleDebug
-        # Uses committed jniLibs/*/libnavi.so when present (fast PR gate).
-        # F-Droid builds delete those prebuilts and cross-compile from Rust source
-        # (see tools/fdroid-check/metadata/no.navi.app.yml).
-        run: ./gradlew :app:assembleDebug --no-daemon
+      - name: assembleDebug (one ABI)
+        # Uses committed jniLibs when present. Native compile is the
+        # android-native-compile job. F-Droid deletes the prebuilts and
+        # cross-compiles from source (tools/fdroid-check/metadata/no.navi.app.yml).
+        run: ./gradlew :app:assembleDebug -PnaviAbis=arm64-v8a --no-daemon

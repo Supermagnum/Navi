@@ -23,7 +23,10 @@ object RoutePlanGate {
      * Take the gate, cancelling a running plan first. [cancelRunning] must ask
      * the native planner to stop; this waits until [end] is called.
      */
-    fun tryBeginOrReplace(cancelRunning: () -> Unit, timeoutMs: Long = 120_000L): Boolean {
+    fun tryBeginOrReplace(
+        cancelRunning: () -> Unit,
+        timeoutMs: Long = 120_000L,
+    ): Boolean {
         if (tryBegin()) return true
         cancelRunning()
         val deadline = System.nanoTime() + timeoutMs * 1_000_000L

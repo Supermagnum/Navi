@@ -225,9 +225,10 @@ object BasemapStyleResolver {
                 runCatching { pmtilesListJobs(dataDir.absolutePath) }.getOrDefault(emptyList())
             val intersecting =
                 selectIntersectingVectorJobs(allJobs, view, coveringJobs)
-            val covering = intersecting.firstOrNull { job ->
-                pointInJobBbox(lat, lon, job)
-            } ?: intersecting.firstOrNull() ?: selectVectorCoveringJob(coveringJobs)
+            val covering =
+                intersecting.firstOrNull { job ->
+                    pointInJobBbox(lat, lon, job)
+                } ?: intersecting.firstOrNull() ?: selectVectorCoveringJob(coveringJobs)
             val blockedCovering =
                 coveringJobs.filter { job ->
                     !isDemArchive(job.regionKey, job.localPath) &&
@@ -530,8 +531,16 @@ object BasemapStyleResolver {
         child: FfiPmtilesJob,
     ): Boolean {
         if (parent.localPath == child.localPath) return false
-        val parentKey = parent.regionKey.trim().lowercase().replace('/', '_')
-        val childKey = child.regionKey.trim().lowercase().replace('/', '_')
+        val parentKey =
+            parent.regionKey
+                .trim()
+                .lowercase()
+                .replace('/', '_')
+        val childKey =
+            child.regionKey
+                .trim()
+                .lowercase()
+                .replace('/', '_')
         return parentKey.isNotEmpty() &&
             (childKey.startsWith("${parentKey}_") || childKey.startsWith("$parentKey/"))
     }
@@ -744,7 +753,11 @@ object BasemapStyleResolver {
             pm.put("minzoom", 0)
             pm.put(
                 "bounds",
-                JSONArray().put(-180.0).put(-85.0511287).put(180.0).put(85.0511287),
+                JSONArray()
+                    .put(-180.0)
+                    .put(-85.0511287)
+                    .put(180.0)
+                    .put(85.0511287),
             )
         }
         var styleJson = json
@@ -962,7 +975,11 @@ object BasemapStyleResolver {
         if (worldBounds) {
             spec.put(
                 "bounds",
-                JSONArray().put(-180.0).put(-85.0511287).put(180.0).put(85.0511287),
+                JSONArray()
+                    .put(-180.0)
+                    .put(-85.0511287)
+                    .put(180.0)
+                    .put(85.0511287),
             )
         } else if (job != null &&
             job.minLon != null &&

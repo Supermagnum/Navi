@@ -316,69 +316,67 @@ Then:
 
 ### CI expectations (GitHub Actions)
 
-Every push to **`main`** or **`dev`**, and every PR, runs
-[`.github/workflows/ci.yml`](../.github/workflows/ci.yml):
+Every push and every PR runs [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
+unless the change touches only documentation or reference-route files. Jobs
+are independent. A newer commit on the same branch or PR cancels the older
+run. Warm-cache wall time must stay at or under 10 minutes.
 
 | Job | What it checks |
 |---|---|
-| `rust-checks` | `cargo fmt --check`, Clippy (`-D warnings`), `cargo test --workspace` (default set only; excludes `navi-desktop` and wasm example guests), plugin-host `isolation` tests, `cargo deny`, `cargo audit` |
-| `linux-build` | Workspace `cargo build` on Linux (headless `navi-desktop` features; excludes WebKit and wasm guests) |
-| `kotlin-checks` | ktlint, detekt, `./gradlew :app:testDebugUnitTest` |
-| `regression-guards` | Curated host JVM + Rust guards for past download/restore/search bugs (parallel; no emulator). See below. |
-| `winter-road-closure` | Friisvegen-style `motor_vehicle:conditional` winter exclusion (car/truck blocked; foot/bike not). |
-| `android-build` | `./gradlew :app:assembleDebug` |
-| `plugin-host-android-paths` | Path filter for optional NDK+QEMU aarch64 smoke (smoke runs only when plugin-host paths change). |
+| `rust-fmt` | `cargo fmt --all -- --check` |
+| `rust-lib-tests` | `cargo test -p driver-break-core --lib` and `cargo test -p navi-ffi --lib` |
+| `android-native-compile` | `cargo build -p navi-ffi --target aarch64-linux-android --lib` |
+| `kotlin-fast` | ktlint and `./gradlew :app:testDebugUnitTest` |
+| `android-app-compile` | `./gradlew :app:assembleDebug -PnaviAbis=arm64-v8a` |
 
-**`regression-guards`** (per-PR, distinct job so rust/kotlin are not serialized behind it):
+**Not** automatic (start [`.github/workflows/ci-manual.yml`](../.github/workflows/ci-manual.yml)
+by hand, or run locally):
 
-- `OfflinePmtilesBootstrapTest` / `OfflineDataIntegrityRestoreTest` — mz12 fixture must not complete or offer production restore (the download-completion gap).
-- `CoordinateInputTest` — lat/lon parse (was instrumented-only).
-- `PlaceSearchHintTest` — skip live graph work while a foreground plan is active.
-- `motor_access_barrier` / `wetland_apply_identity` / `wetland_pack_identity` / `poi_discovery` — Torggata/Kirkebyskogen access, wetland pack-vs-PBF, and typed POI `nearest` discovery (Hamar amenities) against checked-in mini PBFs under `core/tests/fixtures/`.
-- `pack_server::place_index_after` — offline guards for post-pack Geofabrik PBF leaf naming + place-index report/error paths.
-
-Rust counterparts already in `rust-checks` / `regression-guards` (not `#[ignore]`): `bike_suitability_route`, wetland tag/precedence unit tests, `download::pbf_priority` (cone/plan skip), `basemap::extract::validate_rejects_mz12_large_region_fixture`, `motor_access_barrier`, `poi_discovery`, and wetland pack-vs-PBF (`wetland_apply_identity` / `wetland_pack_identity`) against checked-in mini PBFs under `core/tests/fixtures/` (~1.6 MiB; regenerate via `scripts/cut-corridor-extract.py`).
-
-**Not** in the per-PR gate (run locally or via manual workflow dispatch):
-
-- Rust `#[ignore]` OSM/DEM integration tests (need fixtures under
+- Clippy (`-D warnings`), `cargo test --workspace`, plugin-host isolation,
+  `cargo deny`, `cargo audit`, Linux workspace build, detekt, plugin-host
+  Android aarch64 smoke, and the old regression-guards Rust integration tests
+  (`motor_access_barrier`, `budorvegen_service_detour`, `wetland_apply_identity`,
+  `wetland_pack_identity`, `poi_discovery`).
+- Weekly (Monday 06:00 UTC, same workflow, `schedule` only): clippy, `cargo deny`,
+  and `cargo audit`. That run does not block merges or the automatic `CI`
+  workflow. A red weekly run shows as **CI manual** in the Actions tab.
+- The regression gate — local packs required; see
+  [`regression-gate.md`](regression-gate.md). Required before merging routing
+  or map changes.
+- Rust `#[ignore]` OSM/DEM integration tests (fixtures under
   `core/target/integration-fixtures` — see [`build-linux.md`](build-linux.md)).
-  Cached full Ostlandet (~450 MB PBF + graph build) is still multi-minute
-  (`kongsvinger_lillehammer_integration` ~232 s after fixtures) and live-network
-  extracts stay off the PR gate.
-- Android instrumented tests — [`.github/workflows/android-instrumented.yml`](../.github/workflows/android-instrumented.yml)
-  (`workflow_dispatch` only; not a required check — see
-  [`real-hardware-testing.md`](real-hardware-testing.md#github-hosted-instrumented-ci)).
-  Screenshot classes are evidence captures, not golden pixel-diff; GitHub
-  SwiftShader is not a trusted MapLibre renderer. Host stand-ins for the
-  completion-guard live in `regression-guards` instead of booting an emulator.
+- Android instrumented tests —
+  [`.github/workflows/android-instrumented.yml`](../.github/workflows/android-instrumented.yml)
+  (`workflow_dispatch` only).
 
-**Required** before opening a PR: the same gate as GitHub Actions must already
-be green **on your machine**. Do not open a PR hoping CI will catch failures.
-Run at least:
+**Required** before opening a PR: the automatic set must already be green
+**on your machine**. Do not open a PR hoping CI will catch failures.
+Run the same commands the automatic jobs run (do not substitute a broader
+`cargo test` or `assemble` for `fmt` / `ktlint`):
 
 ```bash
+# rust-fmt
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets \
-  --exclude navi-plugin-log-hello --exclude navi-plugin-busy-loop \
-  --exclude navi-plugin-weather --exclude navi-desktop \
-  -- -D warnings
-cargo test --workspace \
-  --exclude navi-desktop --exclude navi-plugin-log-hello \
-  --exclude navi-plugin-busy-loop --exclude navi-plugin-weather
-cargo test -p navi-plugin-host --test isolation
-# Explicit regression-guards Rust subset (also in rust-checks workspace run):
-cargo test -p driver-break-core --test motor_access_barrier -- --nocapture
-cargo test -p driver-break-core --test wetland_apply_identity -- --nocapture
-cargo test -p driver-break-core --test wetland_pack_identity -- --nocapture
-cargo test -p driver-break-core --test poi_discovery -- --nocapture
-cargo deny check
-cargo audit
-./gradlew :app:ktlintCheck :app:detekt :app:testDebugUnitTest :app:assembleDebug
-# Optional explicit subset (also covered by testDebugUnitTest):
-# ./gradlew :app:testDebugUnitTest --tests no.navi.app.OfflinePmtilesBootstrapTest \
-#   --tests no.navi.app.OfflineDataIntegrityRestoreTest
+
+# rust-lib-tests
+cargo test -p driver-break-core --lib
+cargo test -p navi-ffi --lib
+
+# kotlin-fast
+./gradlew :app:ktlintCheck --no-daemon
+./gradlew :app:testDebugUnitTest --no-daemon
+
+# android-app-compile
+./gradlew :app:assembleDebug -PnaviAbis=arm64-v8a --no-daemon
 ```
+
+The `android-native-compile` job is `cargo build -p navi-ffi --target aarch64-linux-android --lib` with the NDK clang as linker and `CC`. Run that when the NDK is installed.
+
+The merge of `wip/fu3-plan-diag-index-snapshot` into `dev` (`83208f16`) reached GitHub with rustfmt and ktlint failures even though local verification was reported clean. That local run used `cargo test`, Gradle unit tests, and `assemble` — not `cargo fmt --all -- --check` and not `:app:ktlintCheck`. Those two commands are part of the automatic set above and must not be skipped.
+
+Routing or map changes also need the [regression gate](regression-gate.md)
+locally. Clippy, deny/audit, detekt, and the workspace build are the manual
+workflow, not the merge gate.
 
 Rust toolchain is pinned by `rust-toolchain.toml` (**1.98** reproducibility
 pin — not a proven MSRV matrix; see [`build-linux.md`](build-linux.md)).
@@ -390,7 +388,7 @@ Run a short dependency freshness pass **at least once per quarter** (or before
 any release / store submission). Checklist:
 
 1. **Rust (crates.io)** — `cargo outdated -w` (or equivalent) on the workspace;
-   skim `cargo deny check` / `cargo audit` (already in CI).
+   skim `cargo deny check` / `cargo audit` (manual workflow).
 2. **Near-term flags** (called out by the 2026-07 future-proofing audit):
    - `wee_alloc` (example WASM guests only; `RUSTSEC-2022-0054` allowed in
      `deny.toml`) — **schedule replacement review** before shipping production
