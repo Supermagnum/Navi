@@ -22,7 +22,7 @@ Resultater på enhet og emulator:
 **Installer den signerte release-APK-en.** Testere skal laste ned og sideloade
 [`compiled/navi-release.apk`](../compiled/navi-release.apk) — en **riktig
 signert, installerbar release-APK** (upload-nøkkel; ikke debug-bygget). Gjeldende
-bygg: **0.3.20-beta** (`versionName` 0.3.20-beta, `versionCode` 25). Last ned fra
+bygg: **0.3.21-beta** (`versionName` 0.3.21-beta, `versionCode` 26). Last ned fra
 [`dev`-grenen](https://github.com/Supermagnum/Navi/tree/dev/compiled)
 (siste testerbygg).
 Android validerer
@@ -673,7 +673,7 @@ den som en vanlig installasjon (ikke usignert eller bare debug).
 
 | Fil | Rolle |
 |---|---|
-| [`compiled/navi-release.apk`](../compiled/navi-release.apk) | **Installer denne** — signert release-APK (arm64-v8a + x86_64, `versionName` 0.3.20-beta, `versionCode` 25) |
+| [`compiled/navi-release.apk`](../compiled/navi-release.apk) | **Installer denne** — signert release-APK (arm64-v8a + x86_64, `versionName` 0.3.21-beta, `versionCode` 26) |
 | [`compiled/SHA256SUMS`](../compiled/SHA256SUMS) | SHA-256-sjekksum for integritet |
 | [`compiled/SHA256SUMS.asc`](../compiled/SHA256SUMS.asc) | Løsrevet GPG-proveniens (ikke Android APK-signering) |
 

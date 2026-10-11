@@ -3929,13 +3929,12 @@ fn plan_car_route_inner(
         );
     let path_over_node_limit =
         path_covering_nodes > driver_break_core::routing::plan_bbox::MAX_PATH_NODES_PER_HOP;
-    let (leg_start, leg_end) = (route_points[0], *route_points.last().unwrap());
     let clipped_nodes =
-        driver_break_core::routing::corridor_skeleton::estimated_direct_search_nodes(
+        driver_break_core::routing::corridor_skeleton::estimated_direct_search_nodes_points(
             &pack_dir_refs_for_nodes,
             routing_profile,
-            leg_start,
-            leg_end,
+            &route_points,
+            0,
         );
     let clipped_fits =
         driver_break_core::routing::plan_bbox::direct_search_fits_nodes(clipped_nodes);
@@ -4358,9 +4357,9 @@ fn plan_car_route_inner(
     let started_direct = driver_break_core::routing::plan_bbox::force_straight_clip()
         || (!is_chunk_leg && !needs_corridor);
     let mut edge_clip_mode = if started_direct {
-        // Direct search: clip to the start–end box (plus plan pad), not the
-        // coarse-path band. Matches the cheap clipped-size decision.
-        driver_break_core::routing::plan_bbox::PlanEdgeClipMode::TripAabb
+        // Direct search: clip to the detour ellipse of the route points, the
+        // same area the cheap clipped-size decision estimated.
+        driver_break_core::routing::plan_bbox::PlanEdgeClipMode::DirectEllipse { widen: 0 }
     } else {
         driver_break_core::routing::plan_bbox::PlanEdgeClipMode::CorridorBand
     };
@@ -4383,7 +4382,37 @@ fn plan_car_route_inner(
         return plan_cancelled_result(report, &timer, &[("profile_map_ms", profile_map_ms)]);
     }
 
-    'pads: for &pad in &pad_schedule {
+    // Direct search: cost on the first ellipse while a widened one is tried,
+    // and whether the widen question is closed for this plan.
+    let mut direct_first_cost: Option<f64> = None;
+    let mut direct_widen_settled = false;
+    let mut pad_idx = 0usize;
+    'pads: loop {
+        if pad_idx == pad_schedule.len() {
+            // A widened direct search that found nothing on any pad: plan the
+            // first ellipse again and keep that route.
+            if path.is_empty() && direct_first_cost.is_some() && !direct_widen_settled {
+                direct_widen_settled = true;
+                edge_clip_mode =
+                    driver_break_core::routing::plan_bbox::PlanEdgeClipMode::DirectEllipse {
+                        widen: 0,
+                    };
+                report.push_str("direct_area_widen kept=first (widened search found no route)\n");
+                pad_idx = 0;
+            } else {
+                break;
+            }
+        }
+        let pad = pad_schedule[pad_idx];
+        if pad_idx > 0
+            && matches!(
+                edge_clip_mode,
+                driver_break_core::routing::plan_bbox::PlanEdgeClipMode::DirectEllipse { .. }
+            )
+        {
+            edge_clip_mode = driver_break_core::routing::plan_bbox::PlanEdgeClipMode::TripAabb;
+        }
+        pad_idx += 1;
         // Inner loop: at most band then AABB on the same pad after disconnected,
         // plus finite tile-budget widen retries (must never spin).
         loop {
@@ -4404,7 +4433,21 @@ fn plan_car_route_inner(
                 } else {
                     route_points.clone()
                 };
-            bbox = driver_break_core::routing::plan_bbox::trip_bbox_points(&corridor_pts, pad);
+            let direct_area = match edge_clip_mode {
+                driver_break_core::routing::plan_bbox::PlanEdgeClipMode::DirectEllipse {
+                    widen,
+                } => Some(
+                    driver_break_core::routing::plan_bbox::DirectSearchArea::new(
+                        &corridor_pts,
+                        widen,
+                    ),
+                ),
+                _ => None,
+            };
+            bbox = match &direct_area {
+                Some(area) => area.bbox(),
+                None => driver_break_core::routing::plan_bbox::trip_bbox_points(&corridor_pts, pad),
+            };
             report.push_str(&format!(
                 "bbox={:.3},{:.3},{:.3},{:.3}; pad={pad:.2}; edge_clip={edge_clip_mode:?}; \
                  tile_budget={tile_budget_used}; corridor_pts={}\n",
@@ -4414,6 +4457,14 @@ fn plan_car_route_inner(
                 bbox[3],
                 corridor_pts.len()
             ));
+            if let Some(area) = &direct_area {
+                report.push_str(&format!(
+                    "direct_area=ellipse factor={:.2} allowance_km={:.0} strips={}\n",
+                    area.factor,
+                    area.allowance_km,
+                    area.clip_strips().len()
+                ));
+            }
             driver_break_core::routing::plan_perf::note_u64("tile_budget", tile_budget_used as u64);
 
             driver_break_core::download::progress::set(
@@ -5166,6 +5217,73 @@ fn plan_car_route_inner(
                 t_search.elapsed().as_millis() as u64,
             );
             if legs_ok && full_path.len() >= 2 {
+                if let (
+                    Some(area),
+                    driver_break_core::routing::plan_bbox::PlanEdgeClipMode::DirectEllipse {
+                        widen,
+                    },
+                ) = (&direct_area, edge_clip_mode)
+                {
+                    if widen == 0 && !direct_widen_settled {
+                        let route_km = full_edges
+                            .iter()
+                            .map(|&i| built.edges[i].length_m)
+                            .sum::<f64>()
+                            / 1000.0;
+                        let edge_km = area.edge_run_km(full_edges.iter().map(|&i| {
+                            let e = &built.edges[i];
+                            (
+                                (e.start_lat, e.start_lon),
+                                (e.end_lat, e.end_lon),
+                                e.length_m / 1000.0,
+                            )
+                        }));
+                        report.push_str(&format!(
+                            "direct_area_edge_run_km={edge_km:.1} route_km={route_km:.1}\n"
+                        ));
+                        if driver_break_core::routing::plan_bbox::direct_search_route_hugs_edge(
+                            edge_km, route_km,
+                        ) {
+                            let dir_refs: Vec<&Path> =
+                                pack_dirs.iter().map(|p| p.as_path()).collect();
+                            let widened_nodes = driver_break_core::routing::corridor_skeleton::estimated_direct_search_nodes_points(
+                                &dir_refs,
+                                routing_profile,
+                                &corridor_pts,
+                                1,
+                            );
+                            let fits =
+                                driver_break_core::routing::plan_bbox::direct_search_fits_nodes(
+                                    widened_nodes,
+                                );
+                            report.push_str(&format!(
+                                "direct_area_widen widened_nodes={widened_nodes} fits={fits}\n"
+                            ));
+                            if fits {
+                                direct_first_cost = Some(full_cost);
+                                edge_clip_mode = driver_break_core::routing::plan_bbox::PlanEdgeClipMode::DirectEllipse { widen: 1 };
+                                drop(built);
+                                graph = None;
+                                continue;
+                            }
+                        }
+                    } else if widen == 1 && !direct_widen_settled {
+                        direct_widen_settled = true;
+                        if let Some(first) = direct_first_cost {
+                            let kept_first = full_cost > first;
+                            report.push_str(&format!(
+                                "direct_area_widen first_cost={first:.0} widened_cost={full_cost:.0} kept={}\n",
+                                if kept_first { "first" } else { "widened" }
+                            ));
+                            if kept_first {
+                                edge_clip_mode = driver_break_core::routing::plan_bbox::PlanEdgeClipMode::DirectEllipse { widen: 0 };
+                                drop(built);
+                                graph = None;
+                                continue;
+                            }
+                        }
+                    }
+                }
                 path = full_path;
                 path_edges = full_edges;
                 cost = full_cost;

@@ -38,16 +38,19 @@ fun placeSearchBuildingMessage(
 /**
  * Local-only list where no hit matches the whole query after folding: the
  * prefix and partial hits stay listed below this line (`Köln` over
- * `Kolnesholmane`).
+ * `Kolnesholmane`). While the query is still being typed ([submitted] false)
+ * and a hit continues it (`Domb` and `Dombås`), there is no hint.
  */
 fun placeSearchNoWholeMatchHint(
     query: String,
     hits: List<uniffi.navi.PlaceHit>,
     onlineEnabled: Boolean,
     usedOnline: Boolean,
+    submitted: Boolean = true,
 ): String? {
     if (usedOnline || hits.isEmpty()) return null
     if (hits.any { placeHitMatchesWholeQuery(it, query) }) return null
+    if (!submitted && hits.any { placeHitMatchesQueryPrefix(it, query) }) return null
     return if (onlineEnabled) {
         "No offline match."
     } else {

@@ -77,8 +77,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -971,6 +974,9 @@ private fun NaviMapScreen() {
     }
     var showTools by remember { mutableStateOf(false) }
     var confirmDeleteRegion by remember { mutableStateOf(false) }
+    var confirmDeletePlannedRoute by remember { mutableStateOf(false) }
+    var confirmDeleteSavedRouteId by remember { mutableStateOf<String?>(null) }
+    var topChromeHeightPx by remember { mutableIntStateOf(0) }
     var diagnosticLogging by remember {
         mutableStateOf(MapHudPrefs.loadDiagnosticLogging(context))
     }
@@ -4347,7 +4353,9 @@ private fun NaviMapScreen() {
                         NaviMapTestHooks.lastArrivedAtEnd = true
                     }
                     NaviMapTestHooks.lastManeuverKind = snap.maneuver?.kind
-                    snap.sample?.let { s ->
+                    // Off the route the nearest sample is a road elsewhere; the
+                    // bar then shows the device's own road (lookup below).
+                    snap.sample?.takeIf { !snap.offRoute }?.let { s ->
                         if (!simulatingRef.get()) {
                             NaviMapTestHooks.lastSimSpeedKmh = s.speedKmh
                             NaviMapTestHooks.lastSimHighway = s.highway
@@ -5809,6 +5817,7 @@ private fun NaviMapScreen() {
                                         hits = outcome.hits,
                                         onlineEnabled = onlinePlaceSearchEnabled,
                                         usedOnline = outcome.usedOnline,
+                                        submitted = allowOnline,
                                     ).orEmpty()
                                 }.ifBlank {
                                     placeSearchOfflineMoreHint(
@@ -6330,6 +6339,55 @@ private fun NaviMapScreen() {
                 },
             )
         }
+        if (confirmDeletePlannedRoute) {
+            AlertDialog(
+                onDismissRequest = { confirmDeletePlannedRoute = false },
+                title = { Text("Delete route?") },
+                text = { Text("The planned route is removed from the map.") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            confirmDeletePlannedRoute = false
+                            clearActiveRoute("Planned route deleted")
+                        },
+                        modifier = Modifier.testTag("btn_confirm_delete_planned_route"),
+                    ) { Text("Delete") }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { confirmDeletePlannedRoute = false },
+                        modifier = Modifier.testTag("btn_cancel_delete_planned_route"),
+                    ) { Text("Cancel") }
+                },
+            )
+        }
+        confirmDeleteSavedRouteId?.let { routeId ->
+            AlertDialog(
+                onDismissRequest = { confirmDeleteSavedRouteId = null },
+                title = { Text("Delete route?") },
+                text = { Text("The saved route is deleted from this device.") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            confirmDeleteSavedRouteId = null
+                            if (deleteSavedRoute(dataDir.absolutePath, routeId)) {
+                                refreshRoutes()
+                                status = "Deleted saved route ${routeId.take(8)}"
+                            } else {
+                                status = "Could not delete saved route"
+                            }
+                        },
+                        modifier = Modifier.testTag("btn_confirm_delete_saved_route"),
+                    ) { Text("Delete") }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { confirmDeleteSavedRouteId = null },
+                        modifier = Modifier.testTag("btn_cancel_delete_saved_route"),
+                    ) { Text("Cancel") }
+                },
+            )
+        }
         if (confirmDeleteRegion) {
             val deletePath = selectedGeofabrikPath.trim().trim('/')
             val deleteLabel = RegionCoverage.displayName(deletePath)
@@ -6383,6 +6441,7 @@ private fun NaviMapScreen() {
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
                     .zIndex(1f)
+                    .onSizeChanged { topChromeHeightPx = it.height }
                     .windowInsetsPadding(
                         WindowInsets.safeDrawing.only(
                             WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
@@ -6407,82 +6466,6 @@ private fun NaviMapScreen() {
                     },
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
-                // Hazard chrome (yellow children / road-sign box) stays Start; discovery
-                // chips sit End so they do not compete for the same glance zone.
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f, fill = false),
-                        horizontalAlignment = Alignment.Start,
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        ApproachInstructionBox(
-                            state = approachGuidance,
-                            iconsDir = iconsDir.absolutePath,
-                            routePlanned = mapState.polyline.isNotBlank(),
-                            modifier = Modifier.align(Alignment.Start),
-                        )
-                        SpeedCameraWarningBox(
-                            state = speedCameraWarning,
-                            iconsDir = iconsDir.absolutePath,
-                            modifier = Modifier.align(Alignment.Start),
-                        )
-                        RoadSignWarningBox(
-                            state = roadSignWarning,
-                            iconsDir = iconsDir.absolutePath,
-                            modifier = Modifier.align(Alignment.Start),
-                        )
-                        if (weatherPluginEnabled) {
-                            WeatherHudChip(
-                                state = weatherHud,
-                                weatherIconsDir = File(iconsDir, "weather").absolutePath,
-                                onRefresh = {
-                                    val lat = mapState.cameraLat ?: mapState.gpsLat
-                                    val lon = mapState.cameraLon ?: mapState.gpsLon
-                                    val raw =
-                                        runCatching {
-                                            uniffi.navi.weatherRefreshJson(
-                                                dataDir.absolutePath,
-                                                lat,
-                                                lon,
-                                                true,
-                                                weatherAppActive,
-                                                true,
-                                            )
-                                        }.getOrDefault("{}")
-                                    weatherHud = weatherHudFromRefreshJson(raw)
-                                    android.util.Log.i("NaviWeather", "manual refresh: $raw")
-                                },
-                                modifier = Modifier.align(Alignment.Start),
-                            )
-                        }
-                    }
-                    if (poiLookaheadEnabled) {
-                        PoiLookaheadHudChip(
-                            state = poiLookaheadHud,
-                            iconsDir = iconsDir.absolutePath,
-                            onDismissNearest = { osmId ->
-                                val next = poiLookaheadDismissedIds + osmId.toString()
-                                poiLookaheadDismissedIds = next
-                                MapHudPrefs.savePoiLookaheadDismissedIds(context, next)
-                                val remaining = poiLookaheadHud.hits.filter { it.osmId != osmId }
-                                poiLookaheadHud =
-                                    PoiLookaheadHudState(
-                                        active = remaining.isNotEmpty(),
-                                        hits = remaining,
-                                    )
-                            },
-                            modifier =
-                                Modifier
-                                    .align(Alignment.Top)
-                                    .widthIn(max = 280.dp)
-                                    .padding(start = 8.dp),
-                        )
-                    }
-                }
                 if (!hideSearch) {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -6792,7 +6775,7 @@ private fun NaviMapScreen() {
                             }
                             if (mapState.polyline.isNotBlank()) {
                                 TextButton(
-                                    onClick = { clearActiveRoute("Planned route deleted") },
+                                    onClick = { confirmDeletePlannedRoute = true },
                                     enabled = !planningRoute,
                                     modifier =
                                         Modifier
@@ -7830,14 +7813,7 @@ private fun NaviMapScreen() {
                                                 modifier = Modifier.testTag("btn_export_saved_route_gpx"),
                                             ) { Text("Export") }
                                             TextButton(
-                                                onClick = {
-                                                    if (deleteSavedRoute(dataDir.absolutePath, route.id)) {
-                                                        refreshRoutes()
-                                                        status = "Deleted saved route ${route.id.take(8)}"
-                                                    } else {
-                                                        status = "Could not delete saved route"
-                                                    }
-                                                },
+                                                onClick = { confirmDeleteSavedRouteId = route.id },
                                                 modifier = Modifier.testTag("btn_delete_saved_route"),
                                             ) { Text("Delete route") }
                                         }
@@ -8073,6 +8049,100 @@ private fun NaviMapScreen() {
                     }
                 }
             } // end if (!hideChrome)
+        }
+
+        // Banners sit on the map under the top chrome (bar and route panel), not
+        // in its column: the panel controls never move or hide when one appears.
+        if (!hideChrome) {
+            val topChromeHeight = with(LocalDensity.current) { topChromeHeightPx.toDp() }
+            Column(
+                modifier =
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .zIndex(2f)
+                        .padding(top = topChromeHeight)
+                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                        .padding(horizontal = 10.dp)
+                        .testTag("top_banner_overlay"),
+            ) {
+                // Hazard chrome (yellow children / road-sign box) stays Start; discovery
+                // chips sit End so they do not compete for the same glance zone.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f, fill = false),
+                        horizontalAlignment = Alignment.Start,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        ApproachInstructionBox(
+                            state = approachGuidance,
+                            iconsDir = iconsDir.absolutePath,
+                            routePlanned = mapState.polyline.isNotBlank(),
+                            modifier = Modifier.align(Alignment.Start).pointerInput(Unit) {},
+                        )
+                        SpeedCameraWarningBox(
+                            state = speedCameraWarning,
+                            iconsDir = iconsDir.absolutePath,
+                            modifier = Modifier.align(Alignment.Start).pointerInput(Unit) {},
+                        )
+                        RoadSignWarningBox(
+                            state = roadSignWarning,
+                            iconsDir = iconsDir.absolutePath,
+                            modifier = Modifier.align(Alignment.Start).pointerInput(Unit) {},
+                        )
+                        if (weatherPluginEnabled) {
+                            WeatherHudChip(
+                                state = weatherHud,
+                                weatherIconsDir = File(iconsDir, "weather").absolutePath,
+                                onRefresh = {
+                                    val lat = mapState.cameraLat ?: mapState.gpsLat
+                                    val lon = mapState.cameraLon ?: mapState.gpsLon
+                                    val raw =
+                                        runCatching {
+                                            uniffi.navi.weatherRefreshJson(
+                                                dataDir.absolutePath,
+                                                lat,
+                                                lon,
+                                                true,
+                                                weatherAppActive,
+                                                true,
+                                            )
+                                        }.getOrDefault("{}")
+                                    weatherHud = weatherHudFromRefreshJson(raw)
+                                    android.util.Log.i("NaviWeather", "manual refresh: $raw")
+                                },
+                                modifier = Modifier.align(Alignment.Start),
+                            )
+                        }
+                    }
+                    if (poiLookaheadEnabled) {
+                        PoiLookaheadHudChip(
+                            state = poiLookaheadHud,
+                            iconsDir = iconsDir.absolutePath,
+                            onDismissNearest = { osmId ->
+                                val next = poiLookaheadDismissedIds + osmId.toString()
+                                poiLookaheadDismissedIds = next
+                                MapHudPrefs.savePoiLookaheadDismissedIds(context, next)
+                                val remaining = poiLookaheadHud.hits.filter { it.osmId != osmId }
+                                poiLookaheadHud =
+                                    PoiLookaheadHudState(
+                                        active = remaining.isNotEmpty(),
+                                        hits = remaining,
+                                    )
+                            },
+                            modifier =
+                                Modifier
+                                    .align(Alignment.Top)
+                                    .widthIn(max = 280.dp)
+                                    .padding(start = 8.dp),
+                        )
+                    }
+                }
+            }
         }
 
         if (showTools && !hideChrome) {

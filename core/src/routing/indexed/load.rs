@@ -1542,7 +1542,8 @@ fn try_load_graph_for_plan_corridor_dirs(
     // Fehmarn terminals while still reporting extras=DK. Tile pick then uses
     // clip_bbox (pad AABB) like edge clips.
     let tile_segs = match edge_clip_mode {
-        crate::routing::plan_bbox::PlanEdgeClipMode::TripAabb => None,
+        crate::routing::plan_bbox::PlanEdgeClipMode::TripAabb
+        | crate::routing::plan_bbox::PlanEdgeClipMode::DirectEllipse { .. } => None,
         crate::routing::plan_bbox::PlanEdgeClipMode::CorridorBand => segs_ref,
     };
     if let Some(tiles) = man.graph_tiles_for(profile) {
@@ -1573,6 +1574,7 @@ fn try_load_graph_for_plan_corridor_dirs(
     let fill_aabb = matches!(
         edge_clip_mode,
         crate::routing::plan_bbox::PlanEdgeClipMode::TripAabb
+            | crate::routing::plan_bbox::PlanEdgeClipMode::DirectEllipse { .. }
     );
     let mut budget = crate::routing::plan_bbox::effective_max_plan_tiles_for_stems(extras.len());
     let mut tile_files = select_tiles_within_budget_opts(
