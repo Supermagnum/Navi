@@ -36,6 +36,27 @@ fun placeSearchBuildingMessage(
 }
 
 /**
+ * Local-only list where no hit matches the whole query after folding: the
+ * prefix and partial hits stay listed below this line (`Köln` over
+ * `Kolnesholmane`).
+ */
+fun placeSearchNoWholeMatchHint(
+    query: String,
+    hits: List<uniffi.navi.PlaceHit>,
+    onlineEnabled: Boolean,
+    usedOnline: Boolean,
+): String? {
+    if (usedOnline || hits.isEmpty()) return null
+    if (hits.any { placeHitMatchesWholeQuery(it, query) }) return null
+    return if (onlineEnabled) {
+        "No offline match."
+    } else {
+        "No offline match. Turn on Online place search in Map settings, " +
+            "or download the region that contains this place."
+    }
+}
+
+/**
  * Offline-only: a local hit exists, but it is a minor place. Point at online
  * search or downloading another region (København farm vs the Danish city).
  */

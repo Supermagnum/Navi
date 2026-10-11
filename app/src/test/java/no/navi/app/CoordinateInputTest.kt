@@ -153,7 +153,7 @@ class CoordinateInputTest {
         val aga =
             mergeOnlineAndOfflinePlaceHits(
                 "Aga",
-                listOf(PlaceHit(12L, "Aga", "online/place/village", 57.04, 12.54, "", "", "europe/sweden/halland")),
+                listOf(PlaceHit(12L, "Aga", "online/place/island|no", 59.03, 5.98, "", "", "europe/norway/vestlandet")),
                 listOf(PlaceHit(13L, "Aga", "place:hamlet", 60.29870, 6.60322, "", "Ullensvang", "europe/norway/vestlandet")),
                 60.39,
                 6.50,
@@ -176,5 +176,165 @@ class CoordinateInputTest {
             )
         assertEquals("Åre", merged[0].name)
         assertTrue(merged[0].kind.startsWith("online/"))
+    }
+
+    private val areFarm = PlaceHit(30L, "Åre", "place:farm", 59.37, 10.18, "", "Våje", "europe/norway/ostlandet")
+    private val areHamlet = PlaceHit(31L, "Are", "place:hamlet", 59.36, 5.36, "", "Bokn", "europe/norway/vestlandet")
+
+    private fun names(hits: List<PlaceHit>) = hits.map { it.name }
+
+    @Test
+    fun exactAsTypedNameComesBeforeFoldedName() {
+        val ranked = rankPlaceHits("Åre", listOf(areHamlet, areFarm), 63.43, 10.40, "europe/norway/trondelag")
+        assertEquals(listOf("Åre", "Are"), names(ranked))
+        assertEquals(listOf("Åre", "Are"), names(rankPlaceHits("åre", listOf(areHamlet, areFarm))))
+        assertEquals(0, placeMatchClass("Åre", "Åre"))
+        assertEquals(1, placeMatchClass("Are", "Åre"))
+        assertEquals(1, placeMatchClass("Åre", "Are"))
+        assertEquals(1, placeMatchClass("Are", "Are"))
+        assertEquals(2, placeMatchClass("Årestua", "Åre"))
+        assertEquals(2, placeMatchClass("Kolnesholmane", "Köln"))
+        assertEquals(3, placeMatchClass("Nedre Åre", "Åre"))
+    }
+
+    @Test
+    fun plainQueryLetsKindAndDistanceDecideBetweenSpellings() {
+        val ranked = rankPlaceHits("Are", listOf(areFarm, areHamlet), 63.43, 10.40, "europe/norway/trondelag")
+        assertEquals(listOf("Are", "Åre"), names(ranked))
+        val town = PlaceHit(32L, "Åre", "place:town", 63.398, 13.081, "", "Åre", "europe/sweden/jamtland")
+        assertEquals("Åre", rankPlaceHits("Are", listOf(areHamlet, areFarm, town))[0].name)
+        val nearFarm = areFarm.copy(lat = 63.40, lon = 10.30)
+        val farFarm = areHamlet.copy(kind = "place:farm")
+        assertEquals(
+            "Våje",
+            rankPlaceHits("Are", listOf(farFarm, nearFarm), 63.43, 10.40, "")[0].municipality,
+        )
+    }
+
+    @Test
+    fun prefixMatchNeverBeatsWholeNameMatch() {
+        val city = PlaceHit(33L, "Årestua", "place:city", 63.0, 10.0, "", "", "europe/norway/trondelag")
+        val ranked = rankPlaceHits("Åre", listOf(city, areHamlet, areFarm), 63.0, 10.0, "europe/norway/trondelag")
+        assertEquals(listOf("Åre", "Are", "Årestua"), names(ranked))
+    }
+
+    @Test
+    fun onlineSettlementBeatsLocalMinorFeatureEvenInTheVisibleRegion() {
+        val rodby =
+            mergeOnlineAndOfflinePlaceHits(
+                "Rødby",
+                listOf(PlaceHit(40L, "Rødby", "online/place/village|dk", 54.69, 11.39, "", "Lolland", "europe/denmark")),
+                listOf(PlaceHit(41L, "Rødby", "highway:bus_stop", 59.83, 10.44, "", "Asker", "europe/norway/ostlandet")),
+                59.83,
+                10.44,
+                "europe/norway/ostlandet",
+            )
+        assertEquals("europe/denmark", rodby[0].regionId)
+
+        val are =
+            mergeOnlineAndOfflinePlaceHits(
+                "Åre",
+                listOf(PlaceHit(42L, "Åre", "online/place/village|se", 63.398, 13.081, "", "Åre", "europe/sweden/jamtland")),
+                listOf(areFarm, areHamlet),
+                59.37,
+                10.18,
+                "europe/norway/ostlandet",
+            )
+        assertEquals(listOf("online/place/village|se", "place:farm", "place:hamlet"), are.map { it.kind })
+
+        for (minor in listOf("route:ferry", "route:hiking:rwn", "shop:supermarket", "amenity:cafe", "building", "place:locality")) {
+            val merged =
+                mergeOnlineAndOfflinePlaceHits(
+                    "Rødby",
+                    listOf(PlaceHit(43L, "Rødby", "online/place/village|dk", 54.69, 11.39, "", "", "europe/denmark")),
+                    listOf(PlaceHit(44L, "Rødby", minor, 59.83, 10.44, "", "Asker", "europe/norway/ostlandet")),
+                    59.83,
+                    10.44,
+                    "europe/norway/ostlandet",
+                )
+            assertTrue("local $minor", merged[0].kind.startsWith("online/"))
+        }
+    }
+
+    @Test
+    fun onlineCopyOfALocalPlaceIsDroppedSoTheLocalHitRanks() {
+        val localHamlet = PlaceHit(45L, "Rødby", "place:hamlet", 59.8301, 10.4402, "", "Asker", "europe/norway/ostlandet")
+        val rodby =
+            mergeOnlineAndOfflinePlaceHits(
+                "Rødby",
+                listOf(
+                    PlaceHit(47L, "Rødby", "online/place/village|dk", 54.69, 11.39, "", "Lolland", "europe/denmark"),
+                    PlaceHit(46L, "Rødby", "online/place/hamlet|no", 59.8303, 10.4405, "", "Asker", "europe/norway/ostlandet"),
+                ),
+                listOf(localHamlet),
+                63.43,
+                10.40,
+                "europe/norway/trondelag",
+            )
+        assertEquals(listOf("online/place/village|dk", "place:hamlet"), rodby.map { it.kind })
+
+        val dombas =
+            mergeOnlineAndOfflinePlaceHits(
+                "Dombås",
+                listOf(PlaceHit(48L, "Dombås", "online/place/village|no", 62.0751, 9.1282, "", "Dovre", "europe/norway/ostlandet")),
+                listOf(
+                    PlaceHit(49L, "Dombås", "named", 62.08, 9.13, "", "Dovre", "europe/norway/ostlandet"),
+                    PlaceHit(50L, "Dombås", "place:village", 62.075, 9.128, "", "Dovre", "europe/norway/ostlandet"),
+                ),
+                63.43,
+                10.40,
+                "europe/norway/trondelag",
+            )
+        assertEquals(listOf("place:village", "named"), dombas.map { it.kind })
+    }
+
+    @Test
+    fun localHamletStaysFirstAgainstVillagesOfThatNameOnOtherContinents() {
+        val ullensvang = PlaceHit(70L, "Aga", "place:hamlet", 60.2987, 6.6032, "", "Ullensvang", "europe/norway/vestlandet")
+        val busStop = PlaceHit(71L, "Aga", "highway:bus_stop", 60.31, 6.61, "", "Ullensvang", "europe/norway/vestlandet")
+        val merged =
+            mergeOnlineAndOfflinePlaceHits(
+                "Aga",
+                listOf(
+                    PlaceHit(74L, "Aga", "online/place/village|bj", 7.1, 2.2, "", "Zou", "africa/benin"),
+                    PlaceHit(75L, "Aga", "online/place/village|ph", 18.0, 121.4, "", "Pudtol", ""),
+                    PlaceHit(72L, "Aga", "online/place/hamlet|no", 60.2988, 6.6034, "", "Ullensvang", "europe/norway/vestlandet"),
+                    PlaceHit(73L, "Aga", "online/place/island|no", 59.03, 5.98, "", "Bømlo", "europe/norway/vestlandet"),
+                ),
+                listOf(busStop, ullensvang),
+                63.43,
+                10.40,
+                "europe/norway/trondelag",
+            )
+        assertEquals(ullensvang, merged[0])
+        assertEquals(busStop, merged[1])
+        assertTrue(merged.drop(2).all { it.kind.startsWith("online/") })
+    }
+
+    @Test
+    fun localSettlementOfTheSameNameStaysFirstAgainstOnlineCity() {
+        for (localKind in listOf("place:village", "place:town", "place:city")) {
+            val merged =
+                mergeOnlineAndOfflinePlaceHits(
+                    "Rødby",
+                    listOf(PlaceHit(50L, "Rødby", "online/place/city|dk", 54.69, 11.39, "", "", "europe/denmark")),
+                    listOf(PlaceHit(51L, "Rødby", localKind, 59.83, 10.44, "", "Asker", "europe/norway/ostlandet")),
+                    63.43,
+                    10.40,
+                    "europe/norway/trondelag",
+                )
+            assertEquals("local $localKind", localKind, merged[0].kind)
+        }
+    }
+
+    @Test
+    fun wholeQueryMatchIsFoldedAndWordBased() {
+        val koln = PlaceHit(60L, "Kolnesholmane", "place:islet", 63.5, 10.0, "", "Frøya", "europe/norway/trondelag")
+        assertFalse(placeHitMatchesWholeQuery(koln, "Köln"))
+        val kbh = PlaceHit(61L, "København", "place:farm", 60.96, 10.55, "", "Gjøvik", "europe/norway/ostlandet")
+        assertTrue(placeHitMatchesWholeQuery(kbh, "Kobenhavn"))
+        assertTrue(placeHitMatchesWholeQuery(kbh, "København, Gjøvik"))
+        val muenchen = PlaceHit(62L, "München", "place:city", 48.14, 11.58, "", "", "europe/germany/bayern")
+        assertTrue(placeHitMatchesWholeQuery(muenchen, "Muenchen"))
     }
 }

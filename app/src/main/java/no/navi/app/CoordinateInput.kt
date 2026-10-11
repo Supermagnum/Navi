@@ -104,7 +104,7 @@ private fun foldSearchLetter(ch: Char): String =
         else -> if (ch.isLetterOrDigit()) ch.toString() else ""
     }
 
-/** Selecting a search hit only frames the map. Route and Tools region stay put. */
+/** Where the map frames a selected search hit. The Tools region stays put. */
 data class SearchHitMapMove(
     val lat: Double,
     val lon: Double,
@@ -325,6 +325,23 @@ fun placeNameContainsQueryTokens(
 }
 
 /**
+ * True when every word of [query] is a whole word of the hit's name or label
+ * after folding: `Kobenhavn` matches `København`, `Köln` does not match
+ * `Kolnesholmane`.
+ */
+fun placeHitMatchesWholeQuery(
+    hit: uniffi.navi.PlaceHit,
+    query: String,
+): Boolean {
+    fun words(s: String) = foldSearchKey(s).split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotEmpty() }
+    val queryWords = words(query)
+    if (queryWords.isEmpty()) return true
+    val hay = (words(hit.name) + words(placeHitDisplayLabel(hit))).toSet()
+    val hayCollapsed = hay.map(::foldCollapse).toSet()
+    return queryWords.all { it in hay || foldCollapse(it) in hayCollapsed }
+}
+
+/**
  * Merge online geocode hits ahead of local FTS, dropping offline prefix
  * expansions that do not contain the query as whole tokens.
  */
@@ -348,12 +365,28 @@ fun mergeOnlineAndOfflinePlaceHits(
         }
     val seen = HashSet<String>()
     val merged = ArrayList<uniffi.navi.PlaceHit>(online.size + offlineKeep.size)
-    for (h in online + offlineKeep) {
+    for (h in offlineKeep) {
+        val key = "${h.name.lowercase()}|${"%.4f".format(h.lat)}|${"%.4f".format(h.lon)}"
+        if (seen.add(key)) merged.add(h)
+    }
+    for (h in online) {
+        if (offlineKeep.any { isSamePlace(it, h) }) continue
         val key = "${h.name.lowercase()}|${"%.4f".format(h.lat)}|${"%.4f".format(h.lon)}"
         if (seen.add(key)) merged.add(h)
     }
     return rankPlaceHits(query, merged, biasLat, biasLon, visibleRegion)
 }
+
+/**
+ * The online geocoder's copy of a local feature (same folded name within
+ * 300 m). The local hit is kept so it ranks as local.
+ */
+private fun isSamePlace(
+    local: uniffi.navi.PlaceHit,
+    online: uniffi.navi.PlaceHit,
+): Boolean =
+    foldSearchKey(local.name.trim()) == foldSearchKey(online.name.trim()) &&
+        placeDistanceDecikm(online, local.lat, local.lon) < 3
 
 fun rankPlaceHits(
     query: String,
@@ -362,11 +395,14 @@ fun rankPlaceHits(
     biasLon: Double? = null,
     visibleRegion: String = "",
 ): List<uniffi.navi.PlaceHit> {
-    val q = query.trim().lowercase()
+    val q = query.trim()
     val vis = visibleRegion.trim().trim('/')
+    val matchClass = hits.associateWith { placeMatchClass(it.name, q) }
     return hits.sortedWith(
-        compareBy<uniffi.navi.PlaceHit> { placeMatchClass(it.name, q) }
-            .then { a, b -> compareOnlinePromote(a, b, vis) }
+        compareBy<uniffi.navi.PlaceHit> { placeNameTier(matchClass.getValue(it)) }
+            .then { a, b -> compareOnlinePromote(a, b, placeNameTier(matchClass.getValue(a))) }
+            .thenBy { matchClass.getValue(it) }
+            .thenBy { placeSourceClass(it.kind) }
             .thenBy { placeRegionClass(it.regionId, vis) }
             .thenBy { placeKindClass(it.kind) }
             .thenBy { placeDistanceDecikm(it, biasLat, biasLon) }
@@ -375,39 +411,42 @@ fun rankPlaceHits(
 }
 
 /**
- * Local exact of the same or a smaller class stays first. An online city or
- * town (and an online village that is not in the visible region) comes first
- * against a local farm, hamlet, isolated dwelling, locality, bus stop or
- * building.
+ * Between two hits whose names both equal the query (tier 0): an online city,
+ * town or village comes before a local minor feature of that name. Otherwise 0,
+ * so the exact-as-typed class and then local-before-online decide.
  */
 internal fun compareOnlinePromote(
     a: uniffi.navi.PlaceHit,
     b: uniffi.navi.PlaceHit,
-    visibleRegion: String,
+    nameTier: Int,
 ): Int {
+    if (nameTier != 0) return 0
     val aOn = placeSourceClass(a.kind) == 1
     val bOn = placeSourceClass(b.kind) == 1
-    if (aOn == bOn) return placeSourceClass(a.kind).compareTo(placeSourceClass(b.kind))
+    if (aOn == bOn) return 0
     val online = if (aOn) a else b
     val local = if (aOn) b else a
-    val promote = shouldPromoteOnlineOverLocal(online, local, visibleRegion)
-    return when {
-        !promote -> placeSourceClass(a.kind).compareTo(placeSourceClass(b.kind))
-        aOn -> -1
-        else -> 1
-    }
+    if (!shouldPromoteOnlineOverLocal(online, local)) return 0
+    return if (aOn) -1 else 1
 }
 
+/**
+ * Online city or town over a local minor feature anywhere; an online village
+ * only on the local feature's continent (Rødby in Denmark over the Asker
+ * hamlet, but not villages named Aga in Benin over the Ullensvang hamlet).
+ */
 internal fun shouldPromoteOnlineOverLocal(
     online: uniffi.navi.PlaceHit,
     local: uniffi.navi.PlaceHit,
-    visibleRegion: String,
 ): Boolean {
     if (!isMinorPlaceKind(local.kind)) return false
     if (isCityOrTownKind(online.kind)) return true
     if (placeKindToken(online.kind) != "village") return false
-    return placeRegionClass(local.regionId, visibleRegion) != 0
+    val onlineContinent = regionContinent(online.regionId)
+    return onlineContinent.isNotEmpty() && onlineContinent == regionContinent(local.regionId)
 }
+
+private fun regionContinent(regionId: String): String = regionId.trim('/', ' ').substringBefore('/')
 
 internal fun placeKindToken(kind: String): String {
     val k = kind.lowercase().substringBefore('|')
@@ -425,6 +464,11 @@ internal fun isCityOrTownKind(kind: String): Boolean {
     return t == "city" || t == "town" || t == "municipality"
 }
 
+/**
+ * Local features that an online settlement of the same name outranks: farm,
+ * hamlet, isolated dwelling, locality, bus stop, building, ferry and other
+ * route relations, shops and other points of interest.
+ */
 internal fun isMinorPlaceKind(kind: String): Boolean {
     val t = placeKindToken(kind)
     val k = kind.lowercase()
@@ -435,30 +479,46 @@ internal fun isMinorPlaceKind(kind: String): Boolean {
         t == "bus_stop" ||
         t == "building" ||
         k.contains("bus_stop") ||
-        k.contains("building")
+        k.contains("building") ||
+        k.contains("ferry") ||
+        MINOR_KIND_PREFIXES.any { k.startsWith(it) }
 }
+
+private val MINOR_KIND_PREFIXES =
+    listOf("route:", "shop:", "amenity:", "tourism:", "leisure:", "historic:", "office:", "craft:", "man_made:")
 
 /** 0 = local / installed-region hit, 1 = online (Nominatim or ORS). */
 internal fun placeSourceClass(kind: String): Int = if (kind.startsWith("online/", ignoreCase = true)) 1 else 0
 
+/**
+ * 0 = name equals the query as typed, accents and special letters included
+ * (case ignored); 1 = equal after case and accent folding; 2 = prefix; 3 = other.
+ * A query typed without special letters cannot tell Åre from Are, so for it
+ * classes 0 and 1 are one class and kind, size and distance decide.
+ */
 internal fun placeMatchClass(
     name: String,
-    qLower: String,
+    query: String,
 ): Int {
-    val n = name.lowercase()
-    val q = qLower.lowercase()
+    val n = name.trim().lowercase()
+    val q = query.trim().lowercase()
     val nf = foldSearchKey(name)
     val qf = foldSearchKey(q)
-    val nCollapse = nf.replace("aa", "a").replace("ue", "u").replace("oe", "o")
-    val qCollapse = qf.replace("aa", "a").replace("ue", "u").replace("oe", "o")
+    val nCollapse = foldCollapse(nf)
+    val qCollapse = foldCollapse(qf)
+    val typedSpecial = q.any { it.isLetter() && it.code > 0x7f }
     return when {
-        n == q -> 0
-        nf == qf -> 0
-        nCollapse == qCollapse -> 0
-        n.startsWith(q) || nf.startsWith(qf) || nCollapse.startsWith(qCollapse) -> 1
-        else -> 2
+        n == q && typedSpecial -> 0
+        n == q || nf == qf || nCollapse == qCollapse -> 1
+        n.startsWith(q) || nf.startsWith(qf) || nCollapse.startsWith(qCollapse) -> 2
+        else -> 3
     }
 }
+
+/** Exact-as-typed and folded-exact names share tier 0; prefix and other keep their class. */
+internal fun placeNameTier(matchClass: Int): Int = if (matchClass <= 1) 0 else matchClass
+
+private fun foldCollapse(folded: String): String = folded.replace("aa", "a").replace("ue", "u").replace("oe", "o")
 
 internal fun placeKindClass(kind: String): Int {
     val k = kind.lowercase()

@@ -85,6 +85,35 @@ class PlaceSearchHintTest {
     }
 
     @Test
+    fun noOfflineMatchShownAbovePrefixOnlyHits() {
+        val islet =
+            uniffi.navi.PlaceHit(1L, "Kolnesholmane", "place:islet", 63.5, 10.0, "", "Frøya", "europe/norway/trondelag")
+        val msg = placeSearchNoWholeMatchHint("Köln", listOf(islet), onlineEnabled = false, usedOnline = false)
+        assertTrue(msg!!.startsWith("No offline match."))
+        assertTrue(msg.contains("Online place search"))
+        assertEquals(
+            "No offline match.",
+            placeSearchNoWholeMatchHint("Köln", listOf(islet), onlineEnabled = true, usedOnline = false),
+        )
+        assertNull(placeSearchNoWholeMatchHint("Köln", listOf(islet), onlineEnabled = true, usedOnline = true))
+        assertNull(placeSearchNoWholeMatchHint("Köln", emptyList(), onlineEnabled = false, usedOnline = false))
+    }
+
+    @Test
+    fun noOfflineMatchHiddenWhenAHitMatchesTheWholeQuery() {
+        val farm =
+            uniffi.navi.PlaceHit(2L, "København", "place:farm", 60.96, 10.55, "", "Gjøvik", "europe/norway/ostlandet")
+        val islet =
+            uniffi.navi.PlaceHit(3L, "Kobenhavnholmen", "place:islet", 63.5, 10.0, "", "", "europe/norway/trondelag")
+        for (q in listOf("København", "Kobenhavn", "københavn")) {
+            assertNull(q, placeSearchNoWholeMatchHint(q, listOf(islet, farm), onlineEnabled = false, usedOnline = false))
+        }
+        val dombas =
+            uniffi.navi.PlaceHit(4L, "Dombås", "place:village", 62.07, 9.12, "", "Dovre", "europe/norway/ostlandet")
+        assertNull(placeSearchNoWholeMatchHint("Dombas", listOf(dombas), onlineEnabled = false, usedOnline = false))
+    }
+
+    @Test
     fun noMessageWhenQueryHasHits() {
         assertNull(
             placeSearchBuildingMessage(
