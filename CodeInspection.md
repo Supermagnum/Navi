@@ -37,6 +37,7 @@ For how to run the same gate locally before opening a PR, see
 | `OfflineDataIntegrityRestoreTest` | mz12 fixtures must not surface as a production restore offer |
 | `CoordinateInputTest` | Lat/lon query parse (comma/space); rejects place names and bare integers |
 | `PlaceSearchHintTest` | Place-index empty/building messages; skips live graph work while a foreground plan is active |
+| `OnlinePlaceSearchLimiterTest` | Online place search off/typing send nothing; explicit submit, 1/s limiter, cache, User-Agent, empty URL |
 
 **Rust** (checked-in mini PBFs under `core/tests/fixtures/`):
 

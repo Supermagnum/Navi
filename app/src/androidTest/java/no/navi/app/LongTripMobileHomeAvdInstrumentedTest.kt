@@ -67,6 +67,7 @@ class LongTripMobileHomeAvdInstrumentedTest {
             placeDb.renameTo(File(dataDir, "place_index.db.bak-avd"))
         }
         assertTrue("device must be online for Nominatim", BasemapStyleResolver.hasNetwork(context))
+        OnlinePlaceSearch.enabledOverrideForTests = true
         val onlineHits =
             runBlocking {
                 OnlinePlaceSearch.search(

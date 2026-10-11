@@ -905,6 +905,13 @@ private fun NaviMapScreen() {
     var hits by remember { mutableStateOf<List<PlaceHit>>(emptyList()) }
     var searchBusy by remember { mutableStateOf(false) }
     var searchIndexHint by remember { mutableStateOf("") }
+    var searchUsedOnline by remember { mutableStateOf(false) }
+    var onlinePlaceSearchEnabled by remember {
+        mutableStateOf(MapHudPrefs.loadOnlinePlaceSearchEnabled(context))
+    }
+    var nominatimBaseUrl by remember {
+        mutableStateOf(MapHudPrefs.loadNominatimBaseUrl(context))
+    }
     var showTools by remember { mutableStateOf(false) }
     var confirmDeleteRegion by remember { mutableStateOf(false) }
     var diagnosticLogging by remember {
@@ -2537,30 +2544,10 @@ private fun NaviMapScreen() {
         lat: Double,
         lon: Double,
     ): Pair<String, String> {
-        // Prefer online reverse geocode (real street/address). Never call
-        // roadLabelNear (cold PBF graph ANRs on SM-P613). When online, skip
-        // nearbyPlaces entirely — place_index.db lock fights cause multi-second
-        // hangs even on Dispatchers.IO under memory pressure.
+        // Offline nearby only. Online reverse is not used for GPS / map-mark
+        // (online place search is submit-only; never an automatic lookup).
         val resolved =
             withContext(Dispatchers.IO) {
-                val online =
-                    try {
-                        OnlinePlaceSearch.reverse(context, lat, lon)
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (_: Exception) {
-                        null
-                    }
-                if (online != null) {
-                    val label =
-                        placeHitDisplayLabel(online).ifBlank { online.name.trim() }
-                    if (label.isNotBlank()) {
-                        return@withContext label to "map-resolved"
-                    }
-                }
-                if (BasemapStyleResolver.hasNetwork(context)) {
-                    return@withContext null
-                }
                 if (runCatching { foregroundPlanActive() }.getOrDefault(false)) {
                     return@withContext null
                 }
@@ -5539,13 +5526,17 @@ private fun NaviMapScreen() {
         return RegionCoverage.suggestGeofabrikPath(lat, lon).orEmpty()
     }
 
-    fun runSearch(q: String) {
+    fun runSearch(
+        q: String,
+        allowOnline: Boolean = false,
+    ) {
         searchJob?.cancel()
         val trimmed = q.trim()
         if (trimmed.length < 2) {
             hits = emptyList()
             searchIndexHint = ""
             searchBusy = false
+            searchUsedOnline = false
             return
         }
         // Accept WGS84 "lat, lon" for From / Via / To without place FTS.
@@ -5570,6 +5561,7 @@ private fun NaviMapScreen() {
             NaviMapTestHooks.lastSearchHitNames = listOf(name)
             searchBusy = false
             searchIndexHint = ""
+            searchUsedOnline = false
             return
         }
         searchJob =
@@ -5621,22 +5613,24 @@ private fun NaviMapScreen() {
                                     visibleSearchRegion(),
                                 )
                             var usedOnline = false
-                            // OpenStreetMap Nominatim when the radio is up (optional
-                            // ORS only if ors_api_key.txt is present). Local exact
-                            // matches stay ahead of every online hit; online of the
-                            // same class is merged after local. Map centre is the
-                            // rank bias. Nominatim throttle/HTTP are suspend +
-                            // interruptible so searchJob.cancel() aborts in-flight
-                            // work while typing.
-                            if (BasemapStyleResolver.hasNetwork(context)) {
+                            // Online Nominatim only on explicit submit, when the
+                            // setting is on and the base URL is non-empty. Typing
+                            // stays local. Local exact matches stay ahead of every
+                            // online hit (follow-up 56).
+                            val wantOnline =
+                                allowOnline &&
+                                    onlinePlaceSearchEnabled &&
+                                    nominatimBaseUrl.isNotBlank() &&
+                                    BasemapStyleResolver.hasNetwork(context)
+                            if (wantOnline) {
                                 ensureActive()
                                 val online =
                                     OnlinePlaceSearch.search(
                                         context = context,
                                         query = trimmed,
                                         limit = 20,
-                                        // Unified From/Via/To search (no Place/Address chips).
                                         addressMode = false,
+                                        explicitSubmit = true,
                                     )
                                 if (online.isNotEmpty()) {
                                     usedOnline = true
@@ -5676,7 +5670,9 @@ private fun NaviMapScreen() {
                                                 k.contains("building")
                                         }.ifEmpty { list }
                                 }
-                            val onlineOk = BasemapStyleResolver.hasNetwork(context)
+                            val onlineOk =
+                                wantOnline &&
+                                    BasemapStyleResolver.hasNetwork(context)
                             PlaceSearchOutcome(
                                 hits = filtered,
                                 hasEntries = hasEntries,
@@ -5685,6 +5681,7 @@ private fun NaviMapScreen() {
                             )
                         }
                     hits = outcome.hits
+                    searchUsedOnline = outcome.usedOnline
                     searchIndexHint =
                         placeSearchBuildingMessage(
                             outcome.hits.isEmpty(),
@@ -6455,18 +6452,18 @@ private fun NaviMapScreen() {
                                 value = query,
                                 onValueChange = {
                                     query = it
-                                    runSearch(it)
+                                    runSearch(it, allowOnline = false)
                                 },
                                 modifier =
                                     Modifier
                                         .fillMaxWidth()
                                         .testTag("field_search"),
                                 singleLine = true,
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                                 keyboardActions =
                                     KeyboardActions(
-                                        onDone = {
-                                            hits.firstOrNull()?.let { applyHit(it) }
+                                        onSearch = {
+                                            runSearch(query, allowOnline = true)
                                         },
                                     ),
                                 placeholder = {
@@ -6486,6 +6483,12 @@ private fun NaviMapScreen() {
                                     )
                                 },
                             )
+                            TextButton(
+                                onClick = { runSearch(query, allowOnline = true) },
+                                modifier = Modifier.testTag("btn_submit_search"),
+                            ) {
+                                Text("Search")
+                            }
                             if (searchBusy) {
                                 Text("Searching...", style = MaterialTheme.typography.bodySmall)
                             }
@@ -6497,6 +6500,16 @@ private fun NaviMapScreen() {
                                         Modifier
                                             .fillMaxWidth()
                                             .testTag("search_index_building_hint"),
+                                )
+                            }
+                            if (searchUsedOnline && hits.isNotEmpty()) {
+                                Text(
+                                    OSM_PLACE_SEARCH_ATTRIBUTION,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .testTag("online_place_search_attribution"),
                                 )
                             }
                             if (hits.isNotEmpty()) {
@@ -9240,6 +9253,17 @@ private fun NaviMapScreen() {
                     },
                     campingSessionDisableMessage = campingSessionDisableMessage,
                     onCampingReEnableSession = campingReEnableSession,
+                    onlinePlaceSearchEnabled = onlinePlaceSearchEnabled,
+                    onOnlinePlaceSearchChange = { on ->
+                        onlinePlaceSearchEnabled = on
+                        MapHudPrefs.saveOnlinePlaceSearchEnabled(context, on)
+                        DiagnosticLog.logToggle("online_place_search", on)
+                    },
+                    nominatimBaseUrl = nominatimBaseUrl,
+                    onNominatimBaseUrlChange = { url ->
+                        nominatimBaseUrl = url
+                        MapHudPrefs.saveNominatimBaseUrl(context, url)
+                    },
                     onSave = {
                         MapHudPrefs.saveAutoZoom(
                             context,
@@ -9249,6 +9273,8 @@ private fun NaviMapScreen() {
                         MapHudPrefs.saveOptIn3d(context, driveHud.optIn3d)
                         MapHudPrefs.saveContoursEnabled(context, driveHud.contoursEnabled)
                         MapHudPrefs.saveCameraTiltDeg(context, driveHud.cameraTiltDeg)
+                        MapHudPrefs.saveOnlinePlaceSearchEnabled(context, onlinePlaceSearchEnabled)
+                        MapHudPrefs.saveNominatimBaseUrl(context, nominatimBaseUrl)
                         DiagnosticLog.logSettingSaved("map_hud_auto_zoom_level", driveHud.autoZoomLevel)
                         DiagnosticLog.logSettingSaved("map_hud_opt_in_3d", driveHud.optIn3d)
                         DiagnosticLog.logSettingSaved("map_hud_contours_enabled", driveHud.contoursEnabled)

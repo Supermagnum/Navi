@@ -2,44 +2,29 @@ package no.navi.app
 
 import android.content.Context
 import android.util.Log
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.runInterruptible
 import org.json.JSONArray
 import uniffi.navi.PlaceHit
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import kotlin.coroutines.coroutineContext
 
 /**
- * Online place / address search when the offline FTS place index is empty or
- * missing. Primary: OpenStreetMap Nominatim (no API key). Optional secondary:
- * OpenRouteService geocode if a one-line key file is present.
+ * Optional online place search against a Nominatim-compatible service.
  *
- * Key file (optional, least-preferred): first non-blank line of
- * `<app files>/ors_api_key.txt` or `<external files>/ors_api_key.txt`.
+ * The product path is opt-in ([MapHudPrefs.ONLINE_PLACE_SEARCH_DEFAULT_ENABLED]
+ * is false), submit-only, rate-limited, and cached. Offline FTS is unaffected.
  *
- * All network entry points are **suspend** so place-search debounce can cancel
- * in-flight Nominatim waits and HTTP (via [delay] / [runInterruptible]) when
- * the user keeps typing.
+ * Optional OpenRouteService geocode remains available for tests / a key file,
+ * but a submitted search sends at most one HTTP request (no automatic retry
+ * onto ORS or extra Nominatim fallbacks).
  */
 object OnlinePlaceSearch {
     private const val TAG = "OnlinePlaceSearch"
-    private const val NOMINATIM =
-        "https://nominatim.openstreetmap.org/search"
-    private const val NOMINATIM_REVERSE =
-        "https://nominatim.openstreetmap.org/reverse"
-    private const val ORS_GEOCODE =
-        "https://api.openrouteservice.org/geocode/search"
-    private const val USER_AGENT =
-        "Navi/0.1 (https://github.com/Supermagnum/Navi; offline-nav app)"
     private const val KEY_FILE = "ors_api_key.txt"
 
-    @Volatile
-    private var lastNominatimMs: Long = 0L
+    internal val limiter = OnlinePlaceSearchLimiter()
 
     /** Test seam: when non-null, [search] returns this instead of hitting the network. */
     @Volatile
@@ -49,47 +34,105 @@ object OnlinePlaceSearch {
     @Volatile
     internal var reverseOverrideForTests: ((Double, Double) -> PlaceHit?)? = null
 
+    /** JVM tests: force the setting without SharedPreferences. */
+    @Volatile
+    internal var enabledOverrideForTests: Boolean? = null
+
+    /** JVM tests: force the base URL without SharedPreferences. */
+    @Volatile
+    internal var baseUrlOverrideForTests: String? = null
+
+    /** JVM tests: inject HTTP (no real network). */
+    @Volatile
+    internal var httpOverrideForTests: OnlineHttpClient? = null
+
+    private val requestLog = ArrayList<String>()
+
+    fun snapshotRequestLog(): List<String> =
+        synchronized(requestLog) {
+            requestLog.toList()
+        }
+
+    fun clearRequestLog() {
+        synchronized(requestLog) { requestLog.clear() }
+        limiter.resetForTests()
+    }
+
+    fun resetOverridesForTests() {
+        overrideForTests = null
+        reverseOverrideForTests = null
+        enabledOverrideForTests = null
+        baseUrlOverrideForTests = null
+        httpOverrideForTests = null
+        clearRequestLog()
+    }
+
+    internal fun resolvedEnabled(context: Context): Boolean = enabledOverrideForTests ?: MapHudPrefs.loadOnlinePlaceSearchEnabled(context)
+
+    internal fun resolvedBaseUrl(context: Context): String = baseUrlOverrideForTests ?: MapHudPrefs.loadNominatimBaseUrl(context)
+
+    internal fun appUserAgent(): String = naviOnlinePlaceSearchUserAgent(BuildConfig.VERSION_NAME)
+
     suspend fun search(
         context: Context,
         query: String,
         limit: Int,
         addressMode: Boolean,
+        explicitSubmit: Boolean = true,
     ): List<PlaceHit> {
         val q = query.trim()
         if (q.length < 2) return emptyList()
         overrideForTests?.let { return it(q, limit) }
+        val config =
+            OnlinePlaceSearchConfig(
+                enabled = resolvedEnabled(context),
+                baseUrl = resolvedBaseUrl(context),
+                userAgent = appUserAgent(),
+                explicitSubmit = explicitSubmit,
+            )
+        if (!shouldSendOnlinePlaceSearch(config)) return emptyList()
         if (!BasemapStyleResolver.hasNetwork(context)) return emptyList()
+        val client = httpOverrideForTests ?: defaultHttpClient()
+        return searchWithConfig(q, limit, config, client, limiter, addressMode)
+    }
 
+    /**
+     * Context-free search used by unit tests with a fake [OnlineHttpClient].
+     * Never opens a real socket.
+     */
+    internal suspend fun searchWithConfig(
+        query: String,
+        limit: Int,
+        config: OnlinePlaceSearchConfig,
+        client: OnlineHttpClient,
+        limiter: OnlinePlaceSearchLimiter = this.limiter,
+        @Suppress("UNUSED_PARAMETER") addressMode: Boolean = false,
+    ): List<PlaceHit> {
+        val q = query.trim()
+        if (q.length < 2) return emptyList()
+        if (!shouldSendOnlinePlaceSearch(config)) return emptyList()
+        val base = normalizeNominatimBaseUrl(config.baseUrl)
+        if (base.isEmpty()) return emptyList()
         val split = splitCountryQualifiedQuery(q)
         val placeQ = split.placeQuery.ifBlank { q }
         val countryIso = split.countryIso
+        val searchQ = if (countryIso != null) placeQ else q
         val lim = limit.coerceIn(1, 20)
-        // Prefer place-only candidates when a country filter is present so
-        // Nominatim countrycodes= is applied to "Bergen" not "Bergen, Germany".
-        val candidates =
-            if (countryIso != null) {
-                linkedSetOf(placeQ, q).toList()
-            } else {
-                nominatimQueryFallbacks(q)
+        val url = nominatimSearchUrl(base, searchQ, lim, countryIso)
+        if (url.isEmpty()) return emptyList()
+        val headers =
+            mapOf(
+                "User-Agent" to config.userAgent,
+                "Accept" to "application/json",
+            )
+        val cacheKey = "$base\n$searchQ\n$lim\n${countryIso.orEmpty()}"
+        val result = limiter.get(cacheKey, OnlineHttpRequest(url, headers), client)
+        return when (result) {
+            is OnlineHttpResult.Ok -> {
+                runCatching { parseNominatimJson(result.body, lim) }.getOrDefault(emptyList())
             }
-        for (candidate in candidates) {
-            coroutineContext.ensureActive()
-            val nominatim =
-                searchNominatim(
-                    candidate,
-                    lim,
-                    addressMode,
-                    countryIso = countryIso,
-                )
-            val filtered = filterHitsByCountryIso(nominatim, countryIso)
-            if (filtered.isNotEmpty()) return filtered
-            if (countryIso == null && nominatim.isNotEmpty()) return nominatim
+            is OnlineHttpResult.Failure -> emptyList()
         }
-
-        coroutineContext.ensureActive()
-        val key = readOrsApiKey(context)
-        if (key.isNullOrBlank()) return emptyList()
-        return filterHitsByCountryIso(searchOrs(placeQ, lim, key), countryIso)
     }
 
     /**
@@ -121,7 +164,8 @@ object OnlinePlaceSearch {
 
     /**
      * Reverse-geocode [lat]/[lon] to a street / place label (Nominatim).
-     * Used by Use GPS / map-mark when the offline place index has no nearby addr.
+     * Not used for GPS / map-mark / nearby lookups. Gated by the same setting
+     * and base URL as forward search.
      */
     suspend fun reverse(
         context: Context,
@@ -129,17 +173,32 @@ object OnlinePlaceSearch {
         lon: Double,
     ): PlaceHit? {
         reverseOverrideForTests?.let { return it(lat, lon) }
+        val config =
+            OnlinePlaceSearchConfig(
+                enabled = resolvedEnabled(context),
+                baseUrl = resolvedBaseUrl(context),
+                userAgent = appUserAgent(),
+                explicitSubmit = true,
+            )
+        if (!shouldSendOnlinePlaceSearch(config)) return null
         if (!BasemapStyleResolver.hasNetwork(context)) return null
         if (lat == 0.0 && lon == 0.0) return null
-        throttleNominatim()
-        val url =
-            "$NOMINATIM_REVERSE?lat=$lat&lon=$lon&format=jsonv2&addressdetails=1&zoom=18"
-        return runCatching {
-            val body = httpGet(url, connectTimeoutMs = 6_000, readTimeoutMs = 8_000)
-            parseNominatimReverseJson(body, lat, lon)
-        }.onFailure { e ->
-            Log.w(TAG, "Nominatim reverse failed: ${e.message}")
-        }.getOrNull()
+        val url = nominatimReverseUrl(config.baseUrl, lat, lon)
+        if (url.isEmpty()) return null
+        val client = httpOverrideForTests ?: defaultHttpClient()
+        val headers =
+            mapOf(
+                "User-Agent" to config.userAgent,
+                "Accept" to "application/json",
+            )
+        val cacheKey = "reverse\n${config.baseUrl}\n$lat\n$lon"
+        val result =
+            limiter.get(cacheKey, OnlineHttpRequest(url, headers), client)
+        return when (result) {
+            is OnlineHttpResult.Ok ->
+                runCatching { parseNominatimReverseJson(result.body, lat, lon) }.getOrNull()
+            is OnlineHttpResult.Failure -> null
+        }
     }
 
     internal fun parseNominatimReverseJson(
@@ -207,7 +266,6 @@ object OnlinePlaceSearch {
     }
 
     fun readOrsApiKey(context: Context): String? {
-        // Prefer one-line file (easy to find via adb / file manager).
         val candidates =
             listOfNotNull(
                 File(NaviAppData.resolve(context), KEY_FILE),
@@ -225,7 +283,6 @@ object OnlinePlaceSearch {
                 }.getOrNull()
             if (!line.isNullOrBlank()) return line
         }
-        // Optional prefs fallback if a settings UI ever wrote a key.
         return MapHudPrefs.loadOrsApiKey(context).trim().ifBlank { null }
     }
 
@@ -295,55 +352,6 @@ object OnlinePlaceSearch {
         return out
     }
 
-    private suspend fun searchNominatim(
-        query: String,
-        limit: Int,
-        addressMode: Boolean,
-        countryIso: String? = null,
-    ): List<PlaceHit> {
-        throttleNominatim()
-        coroutineContext.ensureActive()
-        val enc = URLEncoder.encode(query, StandardCharsets.UTF_8.name())
-        // Nominatim has no layer= filter (that is Photon). Address mode just
-        // uses the same free-text search; callers may bias the query string.
-        // Explicit country → hard countrycodes= filter (not soft ranking).
-        val cc =
-            countryIso
-                ?.trim()
-                ?.lowercase()
-                ?.takeIf { it.length == 2 }
-        val ccParam =
-            if (cc != null) {
-                "&countrycodes=$cc"
-            } else {
-                ""
-            }
-        val url =
-            "$NOMINATIM?q=$enc&format=jsonv2&limit=$limit&addressdetails=1$ccParam"
-        return runCatching {
-            val body = httpGet(url)
-            parseNominatimJson(body, limit)
-        }.onFailure { e ->
-            Log.w(TAG, "Nominatim search failed: ${e.message}")
-        }.getOrDefault(emptyList())
-    }
-
-    private suspend fun searchOrs(
-        query: String,
-        limit: Int,
-        apiKey: String,
-    ): List<PlaceHit> {
-        coroutineContext.ensureActive()
-        val enc = URLEncoder.encode(query, StandardCharsets.UTF_8.name())
-        val url = "$ORS_GEOCODE?text=$enc&size=$limit"
-        return runCatching {
-            val body = httpGet(url, mapOf("Authorization" to apiKey))
-            parseOrsJson(body, limit)
-        }.onFailure { e ->
-            Log.w(TAG, "ORS geocode failed: ${e.message}")
-        }.getOrDefault(emptyList())
-    }
-
     internal fun parseOrsJson(
         body: String,
         limit: Int,
@@ -383,55 +391,49 @@ object OnlinePlaceSearch {
         return out
     }
 
-    /**
-     * Nominatim polite-use gap. Uses cancellable [delay] so typing a new letter
-     * aborts the wait instead of [Thread.sleep] stacking on the IO pool.
-     */
-    internal suspend fun throttleNominatim() {
-        val now = System.currentTimeMillis()
-        val wait = 1100L - (now - lastNominatimMs)
-        if (wait > 0) {
-            delay(wait)
-        }
-        lastNominatimMs = System.currentTimeMillis()
-    }
-
-    /** Test seam: reset throttle clock between unit tests. */
-    internal fun resetThrottleForTests() {
-        lastNominatimMs = 0L
-    }
-
-    private suspend fun httpGet(
-        url: String,
-        extraHeaders: Map<String, String> = emptyMap(),
-        connectTimeoutMs: Int = 12_000,
-        readTimeoutMs: Int = 20_000,
-    ): String =
-        runInterruptible {
-            val conn = (URL(url).openConnection() as HttpURLConnection)
-            conn.connectTimeout = connectTimeoutMs
-            conn.readTimeout = readTimeoutMs
-            conn.requestMethod = "GET"
-            conn.setRequestProperty("User-Agent", USER_AGENT)
-            conn.setRequestProperty("Accept", "application/json")
-            for ((k, v) in extraHeaders) {
-                conn.setRequestProperty(k, v)
+    internal fun defaultHttpClient(): OnlineHttpClient =
+        OnlineHttpClient { request ->
+            recordRequest(request)
+            runInterruptible {
+                httpGet(request)
             }
-            try {
-                val code = conn.responseCode
-                val stream =
-                    if (code in 200..299) {
-                        conn.inputStream
-                    } else {
-                        conn.errorStream ?: conn.inputStream
-                    }
-                val body = stream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
-                if (code !in 200..299) {
-                    error("HTTP $code: ${body.take(200)}")
+        }
+
+    private fun recordRequest(request: OnlineHttpRequest) {
+        synchronized(requestLog) { requestLog.add(request.url) }
+        Log.i(TAG, "http ${request.url}")
+        NaviMapTestHooks.lastOnlinePlaceSearchCount = synchronized(requestLog) { requestLog.size }
+        NaviMapTestHooks.lastOnlinePlaceSearchUrls = snapshotRequestLog()
+        NaviMapTestHooks.lastOnlinePlaceSearchUserAgent =
+            request.headers["User-Agent"].orEmpty()
+    }
+
+    private fun httpGet(request: OnlineHttpRequest): OnlineHttpResult {
+        val conn = (URL(request.url).openConnection() as HttpURLConnection)
+        conn.connectTimeout = 12_000
+        conn.readTimeout = 20_000
+        conn.requestMethod = "GET"
+        for ((k, v) in request.headers) {
+            conn.setRequestProperty(k, v)
+        }
+        return try {
+            val code = conn.responseCode
+            val stream =
+                if (code in 200..299) {
+                    conn.inputStream
+                } else {
+                    conn.errorStream ?: conn.inputStream
                 }
-                body
-            } finally {
-                conn.disconnect()
+            val body = stream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+            if (code == 429 || code !in 200..299) {
+                OnlineHttpResult.Failure(code, body.take(200))
+            } else {
+                OnlineHttpResult.Ok(body)
             }
+        } catch (e: Exception) {
+            OnlineHttpResult.Failure(-1, e.message ?: "error")
+        } finally {
+            conn.disconnect()
         }
+    }
 }

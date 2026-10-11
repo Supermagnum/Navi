@@ -30,7 +30,7 @@ fun placeSearchBuildingMessage(
         indexRunning ->
             "Place index is still building — try coordinates, map tap, or wait for Wi‑Fi search"
         else ->
-            "No place index on device — connect to the network to search by name/address, " +
+            "No place index on device — turn on Online place search in Map settings, " +
                 "or enter coordinates / tap the map"
     }
 }
