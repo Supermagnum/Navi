@@ -18,6 +18,8 @@ object PlaceIndexIntact {
 
     /** Written count may exceed surviving rows slightly; 10% floor rejects 14-vs-1.5M. */
     const val MIN_COUNT_RATIO = 0.10
+    const val QUICK_CHECK_STAMP = "place_index_quick_check.txt"
+    const val QUICK_CHECK_MAX_AGE_MS = 12L * 60L * 60L * 1000L
 
     data class Probe(
         val intact: Boolean,
@@ -161,7 +163,61 @@ object PlaceIndexIntact {
                     .openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
                     .use { db -> db.rawQuery("PRAGMA user_version", null).use { it.moveToFirst() } }
             }.getOrDefault(false)
-        return if (opens) null else "file unreadable"
+        if (!opens) return "file unreadable"
+        return corruptionStampProblem(dataDir)
+    }
+
+    /** Idle-only stamp from [runIdleQuickCheck]; never opens SQLite here. */
+    fun corruptionStampProblem(dataDir: File): String? {
+        val stamp = File(dataDir, QUICK_CHECK_STAMP)
+        if (!stamp.isFile) return null
+        val first =
+            stamp
+                .readLines()
+                .firstOrNull()
+                ?.trim()
+                .orEmpty()
+        if (first.isEmpty() || first == "ok") return null
+        return "damaged ($first)"
+    }
+
+    fun quickCheckStampIsFresh(dataDir: File): Boolean {
+        val stamp = File(dataDir, QUICK_CHECK_STAMP)
+        if (!stamp.isFile) return false
+        return System.currentTimeMillis() - stamp.lastModified() < QUICK_CHECK_MAX_AGE_MS
+    }
+
+    /**
+     * Cheap [PRAGMA quick_check] while idle. Not on start. Writes
+     * [QUICK_CHECK_STAMP] so [fileProblem] can report a torn index.
+     */
+    fun runIdleQuickCheck(dataDir: File): String {
+        val dbFile = File(dataDir, "place_index.db")
+        if (!dbFile.isFile) {
+            writeQuickCheckStamp(dataDir, "file missing")
+            return "file missing"
+        }
+        val result =
+            runCatching {
+                SQLiteDatabase
+                    .openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
+                    .use { db ->
+                        db.rawQuery("PRAGMA quick_check", null).use { c ->
+                            if (c.moveToFirst()) c.getString(0).orEmpty() else "empty"
+                        }
+                    }
+            }.getOrElse { t -> "unreadable: ${t.message}" }
+        val line = if (result.equals("ok", ignoreCase = true)) "ok" else result
+        writeQuickCheckStamp(dataDir, line)
+        Log.i(TAG, "idle quick_check=$line")
+        return line
+    }
+
+    private fun writeQuickCheckStamp(
+        dataDir: File,
+        result: String,
+    ) {
+        File(dataDir, QUICK_CHECK_STAMP).writeText("$result\n${System.currentTimeMillis()}\n")
     }
 
     private fun probeOpen(

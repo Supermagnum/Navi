@@ -21,18 +21,32 @@ fun placeSearchBuildingMessage(
     if (!hitsEmpty) return null
     return when {
         onlineAvailable && !indexHasEntries ->
-            "No offline place index yet — showing online results (Nominatim). " +
-                "Selecting a hit also sets the Tools download region."
+            "No offline place index yet — showing online results (Nominatim)."
         onlineAvailable && indexHasEntries ->
-            "No local match — showing online results (Nominatim). " +
-                "Selecting a hit sets the Tools download region for that place."
-        indexHasEntries -> null
+            "No local match — showing online results (Nominatim)."
+        indexHasEntries ->
+            "No offline match. Turn on Online place search in Map settings, " +
+                "or download the region that contains this place."
         indexRunning ->
             "Place index is still building — try coordinates, map tap, or wait for Wi‑Fi search"
         else ->
             "No place index on device — turn on Online place search in Map settings, " +
                 "or enter coordinates / tap the map"
     }
+}
+
+/**
+ * Offline-only: a local hit exists, but it is a minor place. Point at online
+ * search or downloading another region (København farm vs the Danish city).
+ */
+fun placeSearchOfflineMoreHint(
+    onlineEnabled: Boolean,
+    topKind: String?,
+): String? {
+    if (onlineEnabled || topKind.isNullOrBlank()) return null
+    if (!isMinorPlaceKind(topKind)) return null
+    return "Turn on Online place search in Map settings, " +
+        "or download the region that contains this place."
 }
 
 /**

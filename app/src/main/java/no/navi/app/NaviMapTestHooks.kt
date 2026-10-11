@@ -571,6 +571,10 @@ object NaviMapTestHooks {
     @Volatile
     var lastSearchQuery: String = ""
 
+    /** Debug intent: text for the search field, and whether to submit it (online allowed). */
+    @Volatile
+    var pendingSearchUiQuery: Pair<String, Boolean>? = null
+
     @Volatile
     var lastSearchHitNames: List<String> = emptyList()
 
@@ -931,6 +935,18 @@ object NaviMapTestHooks {
      */
     @Volatile
     var pendingInjectFixSpeedKmh: Double? = null
+
+    /**
+     * Drop every in-memory GPS inject pin. Injected positions must not outlive
+     * the test or an activity restart. Never persisted to prefs.
+     */
+    fun clearDebugGpsInject() {
+        pendingInjectFixLatLon = null
+        pinGpsAfterPlanLatLon = null
+        ignoreLiveGpsFixes = false
+        releaseIgnoreLiveGpsAfterNextInject = false
+        pendingInjectFixSpeedKmh = null
+    }
 
     /**
      * When set, MainActivity applies this as [DriveHudState.currentStreet] once

@@ -1409,6 +1409,16 @@ const EMU_SEARCH_EXPECT: &[(&str, &str)] = &[
     ("Bergen", "Bergen"),
     ("Raufoss", "Raufoss"),
     ("Utne", "Utne"),
+    ("Dombås", "Dombås"),
+    ("Dombas", "Dombås"),
+    ("dombås", "Dombås"),
+    ("DOMBÅS", "Dombås"),
+    ("Åre", "Åre"),
+    ("Are", "Åre"),
+    ("Øra", "Øra"),
+    ("Ora", "Øra"),
+    ("Vågåvegen 80 Vågå", "Vågåvegen"),
+    ("Storgata 1 Lillehammer", "Storgata"),
 ];
 
 fn fold_place_name(s: &str) -> String {

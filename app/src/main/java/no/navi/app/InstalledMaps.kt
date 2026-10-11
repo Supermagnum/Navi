@@ -28,6 +28,7 @@ object InstalledMaps {
         LEGACY_INTACT,
         MISSING,
         QUARANTINED,
+        DAMAGED,
     }
 
     enum class PlaceIndexSource {
@@ -200,6 +201,9 @@ object InstalledMaps {
                     return@mapNotNull null
                 }
                 if (r.placeIndex == PlaceIndexState.INTACT || r.placeIndex == PlaceIndexState.LEGACY_INTACT) {
+                    return@mapNotNull null
+                }
+                if (r.placeIndex == PlaceIndexState.DAMAGED) {
                     return@mapNotNull null
                 }
                 if (PackRegionAvailability.isPublishedPackParent(r.regionId)) {
@@ -397,8 +401,10 @@ object InstalledMaps {
             val rejectReason = tiles.reason
             val probe = probeFor(nid)
             val q = placeIndexDir != null && File(placeIndexDir, "place_index.db.quarantine").isFile
+            val damaged = placeIndexDir != null && PlaceIndexIntact.corruptionStampProblem(placeIndexDir) != null
             val indexState =
                 when {
+                    damaged -> PlaceIndexState.DAMAGED
                     probe.intact && probe.legacy -> PlaceIndexState.LEGACY_INTACT
                     probe.intact -> PlaceIndexState.INTACT
                     q && probe.reason == "open_failed" -> PlaceIndexState.QUARANTINED
@@ -469,18 +475,22 @@ object InstalledMaps {
                     tilesRejected = pbfTiles.rejected,
                     tilesRejectReason = pbfTiles.reason,
                     placeIndex =
-                        if (probe.intact) {
-                            if (probe.legacy) PlaceIndexState.LEGACY_INTACT else PlaceIndexState.INTACT
-                        } else {
-                            PlaceIndexState.MISSING
+                        when {
+                            placeIndexDir != null && PlaceIndexIntact.corruptionStampProblem(placeIndexDir) != null ->
+                                PlaceIndexState.DAMAGED
+                            probe.intact && probe.legacy -> PlaceIndexState.LEGACY_INTACT
+                            probe.intact -> PlaceIndexState.INTACT
+                            else -> PlaceIndexState.MISSING
                         },
                     placeIndexRows = probe.rowCount,
                     placeIndexSource =
                         indexSourceOf(
-                            if (probe.intact) {
-                                if (probe.legacy) PlaceIndexState.LEGACY_INTACT else PlaceIndexState.INTACT
-                            } else {
-                                PlaceIndexState.MISSING
+                            when {
+                                placeIndexDir != null && PlaceIndexIntact.corruptionStampProblem(placeIndexDir) != null ->
+                                    PlaceIndexState.DAMAGED
+                                probe.intact && probe.legacy -> PlaceIndexState.LEGACY_INTACT
+                                probe.intact -> PlaceIndexState.INTACT
+                                else -> PlaceIndexState.MISSING
                             },
                             probe,
                         ),
@@ -531,7 +541,10 @@ object InstalledMaps {
         state: PlaceIndexState,
         probe: PlaceIndexIntact.Probe,
     ): PlaceIndexSource {
-        if (state == PlaceIndexState.MISSING || state == PlaceIndexState.QUARANTINED) {
+        if (state == PlaceIndexState.MISSING ||
+            state == PlaceIndexState.QUARANTINED ||
+            state == PlaceIndexState.DAMAGED
+        ) {
             return PlaceIndexSource.NONE
         }
         if (probe.indexSource == "place-source") return PlaceIndexSource.PLACE_SOURCE

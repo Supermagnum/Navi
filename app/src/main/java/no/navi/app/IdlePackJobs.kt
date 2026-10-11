@@ -28,6 +28,7 @@ object IdlePackJobs {
         FERRY_TRUCK,
         SKELETON,
         PLACE_INDEX,
+        INDEX_QUICK_CHECK,
     }
 
     data class Job(
@@ -205,7 +206,12 @@ object IdlePackJobs {
         // Place-index open of a multi-GB file has no pause check until the
         // first batch. Do not hold the planner for that whole open: request
         // pause, wait briefly for an in-batch job, then start the plan.
-        val soft = if (job?.kind == Kind.PLACE_INDEX) t0 + 300L else deadline
+        val soft =
+            if (job?.kind == Kind.PLACE_INDEX) {
+                t0 + 300L
+            } else {
+                deadline
+            }
         while (System.currentTimeMillis() < deadline) {
             if (pausedJob.get() != null) break
             if (!running.get()) break
@@ -393,6 +399,17 @@ object IdlePackJobs {
                     ),
                 )
             }
+            if (db.isFile && !PlaceIndexIntact.quickCheckStampIsFresh(indexRoot)) {
+                offer(
+                    Job(
+                        kind = Kind.INDEX_QUICK_CHECK,
+                        stem = "place_index",
+                        packDir = indexRoot,
+                        regionId = "",
+                        indexDb = db,
+                    ),
+                )
+            }
         }
     }
 
@@ -454,7 +471,13 @@ object IdlePackJobs {
 
     private fun pollNext(): Job? {
         val preferred =
-            listOf(Kind.FERRY_CAR, Kind.FERRY_TRUCK, Kind.SKELETON, Kind.PLACE_INDEX)
+            listOf(
+                Kind.INDEX_QUICK_CHECK,
+                Kind.FERRY_CAR,
+                Kind.FERRY_TRUCK,
+                Kind.SKELETON,
+                Kind.PLACE_INDEX,
+            )
         for (kind in preferred) {
             val found = queue.firstOrNull { it.kind == kind } ?: continue
             queue.remove(found)
@@ -489,6 +512,7 @@ object IdlePackJobs {
             Kind.FERRY_TRUCK -> "ferry sidecar (truck) for $name"
             Kind.SKELETON -> "corridor skeleton for $name"
             Kind.PLACE_INDEX -> "place index for $name"
+            Kind.INDEX_QUICK_CHECK -> "place index health check"
         }
     }
 
@@ -513,6 +537,15 @@ object IdlePackJobs {
             Kind.PLACE_INDEX -> {
                 val db = job.indexDb ?: return false
                 PlaceIndexBackground.runPackJob(job.packDir, db, job.regionId, job.pbf)
+            }
+            Kind.INDEX_QUICK_CHECK -> {
+                val root = job.indexDb?.parentFile ?: job.packDir
+                val result = PlaceIndexIntact.runIdleQuickCheck(root)
+                if (!result.equals("ok", ignoreCase = true)) {
+                    Log.w(TAG, "place index damaged: $result")
+                    appContext?.let { InstalledMaps.refresh(it) }
+                }
+                false
             }
         }
     }

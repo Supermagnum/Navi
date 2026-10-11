@@ -287,4 +287,27 @@ class PlaceSearchMergeTest {
         val ranked = rankPlaceHits("Raufo", hits, 60.73, 10.61, "europe/norway/ostlandet")
         assertEquals("Raufoss", ranked[0].name)
     }
+
+    @Test
+    fun townBeatsFarmAfterFold() {
+        val hits =
+            listOf(
+                PlaceHit(1L, "Are", "place:farm", 61.0, 7.0, "", "", "europe/norway/vestlandet"),
+                PlaceHit(2L, "Åre", "place:town", 63.40, 13.08, "", "Åre", "europe/sweden/jamtland"),
+            )
+        val ranked = rankPlaceHits("Are", hits, 63.4, 13.0, "europe/sweden/jamtland")
+        assertEquals("Åre", ranked[0].name)
+    }
+
+    @Test
+    fun dombasVariantsRankVillageFirst() {
+        val hits =
+            listOf(
+                PlaceHit(1L, "Dombås", "place:village", 62.07, 9.12, "", "Dovre", "europe/norway/ostlandet"),
+                PlaceHit(2L, "Dombåsveien", "highway:residential", 62.08, 9.13, "", "Dovre", "europe/norway/ostlandet"),
+            )
+        for (q in listOf("Dombås", "Dombas", "dombås", "DOMBÅS")) {
+            assertEquals("Dombås", rankPlaceHits(q, hits, 62.07, 9.12, "europe/norway/ostlandet")[0].name)
+        }
+    }
 }

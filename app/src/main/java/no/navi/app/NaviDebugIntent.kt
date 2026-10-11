@@ -23,9 +23,11 @@ import java.util.concurrent.atomic.AtomicReference
  * ignore live LocationManager fixes so emulator GPS cannot trigger off-route
  * recalculation after auto-plan.
  *
- * `navi_inject_gps` (default true): one-shot pin of the map GPS mark at
- * `navi_from_*` through plan apply; released on the first subsequent inject
- * so adb geo-fix / simulated drives can still progress.
+ * Injected GPS is process-memory only ([NaviMapTestHooks] volatiles). It is
+ * cleared when the activity is destroyed, on process start, and via
+ * `--ez navi_clear_gps true`. It is never written to SharedPreferences.
+ * Android [LocationManager.getLastKnownLocation] is a separate OS cache and
+ * is not treated as an inject.
  *
  * Settings go through the same UniFFI save/load path as the UI toggles.
  * Snapshot + restore avoids one case leaking into the next.
@@ -366,9 +368,7 @@ object NaviDebugIntent {
                     maxHours = cur.maxHours,
                 ),
             )
-            // Release GPS pin so interactive use is not stuck ignoring live fixes.
-            NaviMapTestHooks.ignoreLiveGpsFixes = false
-            NaviMapTestHooks.pinGpsAfterPlanLatLon = null
+            NaviMapTestHooks.clearDebugGpsInject()
             Log.i(
                 TAG,
                 "restored use_networked_cabins=${snap.useNetworkedCabins} " +

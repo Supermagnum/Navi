@@ -7498,15 +7498,38 @@ fn place_hits_from_names(hits: Vec<driver_break_core::search::NameHit>) -> Vec<P
         .collect()
 }
 
+fn place_index_error_hits(msg: impl std::fmt::Display) -> Vec<PlaceHit> {
+    vec![PlaceHit {
+        osm_id: 0,
+        name: format!("Place index error: {msg}"),
+        kind: "index:error".into(),
+        lat: 0.0,
+        lon: 0.0,
+        sub_area: String::new(),
+        municipality: String::new(),
+        region_id: String::new(),
+    }]
+}
+
 /// Offline place / address-style name search (FTS5 prefix).
 #[uniffi::export]
 pub fn search_places(index_db_path: String, query: String, limit: u32) -> Vec<PlaceHit> {
-    let Ok(idx) = driver_break_core::search::NameIndex::open_readonly(Path::new(&index_db_path))
-    else {
-        return Vec::new();
+    let idx = match driver_break_core::search::NameIndex::open_readonly(Path::new(&index_db_path)) {
+        Ok(idx) => idx,
+        Err(e) => {
+            log::warn!(
+                target: "NaviSearch",
+                "search_places open_readonly failed q={query}: {e}"
+            );
+            return place_index_error_hits(e);
+        }
     };
-    let Ok(hits) = idx.search(&query, limit as usize) else {
-        return Vec::new();
+    let hits = match idx.search(&query, limit as usize) {
+        Ok(hits) => hits,
+        Err(e) => {
+            log::warn!(target: "NaviSearch", "search_places search failed q={query}: {e}");
+            return place_index_error_hits(e);
+        }
     };
     place_hits_from_names(hits)
 }
@@ -7521,9 +7544,9 @@ pub fn search_places_biased(
     bias_lon: f64,
     visible_region: String,
 ) -> Vec<PlaceHit> {
-    let Ok(idx) = driver_break_core::search::NameIndex::open_readonly(Path::new(&index_db_path))
-    else {
-        return Vec::new();
+    let idx = match driver_break_core::search::NameIndex::open_readonly(Path::new(&index_db_path)) {
+        Ok(idx) => idx,
+        Err(e) => return place_index_error_hits(e),
     };
     let lat = if bias_lat.is_finite() {
         Some(bias_lat)
@@ -7535,8 +7558,9 @@ pub fn search_places_biased(
     } else {
         None
     };
-    let Ok(hits) = idx.search_biased(&query, limit as usize, lat, lon, &visible_region) else {
-        return Vec::new();
+    let hits = match idx.search_biased(&query, limit as usize, lat, lon, &visible_region) {
+        Ok(hits) => hits,
+        Err(e) => return place_index_error_hits(e),
     };
     place_hits_from_names(hits)
 }

@@ -92,4 +92,21 @@ class OnlinePlaceReverseTest {
         assertEquals(1, hits.size)
         assertEquals("Welhavens gate 11A", hits[0].name)
     }
+
+    @Test
+    fun parseNominatimJsonKeepsTheNameOfANamedPlace() {
+        val body =
+            """
+            [{
+              "lat":"37.6450","lon":"-115.7442",
+              "name":"Little A'Le'Inn",
+              "display_name":"Little A'Le'Inn, 9631, Old Mill Street, Rachel, Nevada, United States",
+              "osm_id":2,"class":"amenity","type":"restaurant",
+              "address":{"amenity":"Little A'Le'Inn","road":"Old Mill Street",
+                "house_number":"9631","village":"Rachel","country_code":"us"}
+            }]
+            """.trimIndent()
+        val hits = OnlinePlaceSearch.parseNominatimJson(body, 5)
+        assertEquals("Little A'Le'Inn", hits[0].name)
+    }
 }
