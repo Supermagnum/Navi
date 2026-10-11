@@ -15,12 +15,14 @@ on:
       - "geojson-routes/**"
       - "navi-ffi/tests/regression_gate_refs/**"
       - "**/*.md"
+      - "compiled/**"
   pull_request:
     paths-ignore:
       - "docs/**"
       - "geojson-routes/**"
       - "navi-ffi/tests/regression_gate_refs/**"
       - "**/*.md"
+      - "compiled/**"
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}

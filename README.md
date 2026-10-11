@@ -99,10 +99,9 @@ On-device and emulator results:
 **Install the signed release APK.** Testers should download and sideload
 [`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
 installable release APK** (upload keystore; not the debug build). Current build:
-**v0.3.14-beta** (`versionName` 0.3.14-beta, `versionCode` 19). Download from the
+**0.3.19-beta** (`versionName` 0.3.19-beta, `versionCode` 24). Download from the
 [`dev` branch](https://github.com/Supermagnum/Navi/tree/dev/compiled)
-(latest tester build) or the pinned
-[`v0.3.14-beta` tag](https://github.com/Supermagnum/Navi/tree/v0.3.14-beta). Android
+(latest tester build). Android
 validates the APK signature on install; the separate GPG files
 ([`compiled/SHA256SUMS`](compiled/SHA256SUMS),
 [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc)) are optional provenance
@@ -1056,7 +1055,7 @@ it as a normal install (not an unsigned or debug-only package).
 
 | Artifact | Role |
 |---|---|
-| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64, `versionName` 0.3.12-beta / tag **v0.3.12-beta**) |
+| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64-v8a + x86_64, `versionName` 0.3.19-beta, `versionCode` 24) |
 | [`compiled/SHA256SUMS`](compiled/SHA256SUMS) | SHA-256 checksum for integrity checks |
 | [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc) | Detached GPG provenance signature (not Android APK signing) |
 
@@ -1065,9 +1064,8 @@ You do not need a Rust/NDK toolchain to install it.
 1. On the device: enable **Developer options** and allow installs from your
    browser or file manager (USB debugging only needed for `adb`).
 2. Download
-   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/main/compiled/navi-release.apk)
-   (latest on `main`) or the pinned
-   [`v0.3.12-beta` tag](https://github.com/Supermagnum/Navi/raw/v0.3.12-beta/compiled/navi-release.apk).
+   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-release.apk)
+   (latest on `dev`).
 3. Optional integrity check on a PC:
 
 ```bash
@@ -1095,7 +1093,7 @@ keystore.
 ### Debug APK (developers only)
 
 A **debug-signed** APK remains in [`compiled/navi-debug.apk`](compiled/navi-debug.apk)
-(arm64, same package as `./gradlew :app:assembleDebug`). Use it only for quick
+(arm64-v8a + x86_64, same package as `./gradlew :app:assembleDebug`). Use it only for quick
 local smoke tests when you are not exercising the release signing path.
 
 ```bash
@@ -1170,8 +1168,8 @@ Debug installs use the Android **debug** keystore. A **release** package is what
 you sideload as release, hand to F-Droid-style checks, or smoke-test as an AAB.
 
 A prebuilt upload-key-signed release APK for testers is committed at
-[`compiled/navi-release.apk`](compiled/navi-release.apk) (tag **v0.3.12-beta**;
-see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
+[`compiled/navi-release.apk`](compiled/navi-release.apk) (`versionName` 0.3.19-beta,
+`versionCode` 24; see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
 
 1. **Native library** for every ABI you ship (store AABs usually need both):
 

@@ -22,10 +22,9 @@ Resultater på enhet og emulator:
 **Installer den signerte release-APK-en.** Testere skal laste ned og sideloade
 [`compiled/navi-release.apk`](../compiled/navi-release.apk) — en **riktig
 signert, installerbar release-APK** (upload-nøkkel; ikke debug-bygget). Gjeldende
-bygg: **v0.3.14-beta** (`versionName` 0.3.14-beta, `versionCode` 19). Last ned fra
-[`main`-grenen](https://github.com/Supermagnum/Navi/tree/main/compiled)
-(siste testerbygg) eller den faste
-[`v0.3.14-beta`-taggen](https://github.com/Supermagnum/Navi/tree/v0.3.14-beta).
+bygg: **0.3.19-beta** (`versionName` 0.3.19-beta, `versionCode` 24). Last ned fra
+[`dev`-grenen](https://github.com/Supermagnum/Navi/tree/dev/compiled)
+(siste testerbygg).
 Android validerer
 APK-signeringen ved installasjon; de separate GPG-filene
 ([`compiled/SHA256SUMS`](../compiled/SHA256SUMS),
@@ -674,7 +673,7 @@ den som en vanlig installasjon (ikke usignert eller bare debug).
 
 | Fil | Rolle |
 |---|---|
-| [`compiled/navi-release.apk`](../compiled/navi-release.apk) | **Installer denne** — signert release-APK (arm64, `versionName` 0.3.14-beta / tag **v0.3.14-beta**) |
+| [`compiled/navi-release.apk`](../compiled/navi-release.apk) | **Installer denne** — signert release-APK (arm64-v8a + x86_64, `versionName` 0.3.19-beta, `versionCode` 24) |
 | [`compiled/SHA256SUMS`](../compiled/SHA256SUMS) | SHA-256-sjekksum for integritet |
 | [`compiled/SHA256SUMS.asc`](../compiled/SHA256SUMS.asc) | Løsrevet GPG-proveniens (ikke Android APK-signering) |
 
@@ -683,9 +682,8 @@ Du trenger ikke Rust/NDK-verktøykjede for å installere den.
 1. På enheten: slå på **Utvikleralternativer** og tillat installasjon fra
    nettleser eller filbehandler (`adb` trengs bare for USB-installasjon).
 2. Last ned
-   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/main/compiled/navi-release.apk)
-   (siste på `main`) eller den faste
-   [`v0.3.14-beta`-taggen](https://github.com/Supermagnum/Navi/raw/v0.3.14-beta/compiled/navi-release.apk).
+   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-release.apk)
+   (siste på `dev`).
 3. Valgfri integritetssjekk på PC:
 
 ```bash
@@ -714,7 +712,7 @@ debug-nøkkelen.
 ### Debug-APK (kun utviklere)
 
 En **debug-signert** APK ligger fortsatt i
-[`compiled/navi-debug.apk`](../compiled/navi-debug.apk) (arm64, samme pakke som
+[`compiled/navi-debug.apk`](../compiled/navi-debug.apk) (arm64-v8a + x86_64, samme pakke som
 `./gradlew :app:assembleDebug`). Bruk den bare til rask lokal røyktest når du
 ikke tester release-signeringsstien.
 
