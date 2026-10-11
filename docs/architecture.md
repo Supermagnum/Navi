@@ -114,7 +114,7 @@ the default working set on ~4 GB devices.
 | Provision region | App → UniFFI `provisionRegionData` → download/parse `.pbf` + DEM → graph build/reweight → cache on disk |
 | Download basemap | App Tools → `pmtilesQueueRegion` / `pmtilesRunJob` → `{dataDir}/pmtiles/*.pmtiles` → MapLibre `pmtiles://file://` |
 | Download terrain DEM | App Tools → `pmtilesQueueDemRegion` / `pmtilesRunJob` → `{dataDir}/pmtiles/{region}_dem.pmtiles` (Mapterhorn) |
-| Search place | App → `searchPlaces` → `NameIndex` FTS5 DB |
+| Search place | App → `searchPlaces` → `NameIndex` FTS5 DB. Optional Nominatim only on explicit submit when **Online place search** is on ([`online-place-search.md`](online-place-search.md)) |
 | Route corridor | App → `runCarCorridorPipeline` → `RouteGraph` A* (+ eco weights) → polyline + POI back to MapLibre |
 | Save drive settings | App → `saveCarRestSettings` / `saveFuelConfig` / `saveEbikeConfig` / `saveEvCarConfig` → `ConfigStore` → `app_config` rows |
 | Moving icon | Test/host → `FfiTrackStore.upsert` → `TrackStore` → Compose overlay |

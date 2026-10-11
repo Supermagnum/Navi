@@ -39,6 +39,8 @@ object MapHudPrefs {
     private const val KEY_STAY_IN_COUNTRY = "stay_in_country"
     private const val KEY_ORS_API_KEY = "ors_api_key"
     private const val KEY_ORS_BASE_URL = "ors_base_url"
+    private const val KEY_ONLINE_PLACE_SEARCH = "online_place_search"
+    private const val KEY_NOMINATIM_BASE_URL = "nominatim_base_url"
     private const val KEY_POI_LOOKAHEAD_ENABLED = "poi_lookahead_enabled"
     private const val KEY_POI_LOOKAHEAD_STRICT_HOURS = "poi_lookahead_strict_hours_unknown"
     private const val KEY_POI_LOOKAHEAD_DISMISSED = "poi_lookahead_dismissed_ids"
@@ -81,6 +83,15 @@ object MapHudPrefs {
 
     /** Professional driver under driving/rest-time rules — default off. */
     const val CAMPING_PROFESSIONAL_DRIVER_DEFAULT = false
+
+    /**
+     * Online place search (Nominatim-compatible). Must remain false (opt-in).
+     * [OnlinePlaceSearchDefaultOffTest] fails the build if flipped.
+     */
+    const val ONLINE_PLACE_SEARCH_DEFAULT_ENABLED = false
+
+    /** Public Nominatim instance. Empty stored value means no online calls. */
+    const val NOMINATIM_DEFAULT_BASE_URL = "https://nominatim.openstreetmap.org"
 
     /** Settings default host; discovery prefers LAN→duckdns unless overridden. */
     const val DATEX_SETTINGS_DEFAULT_HOST = "navigate-me.duckdns.org"
@@ -680,6 +691,44 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_ORS_BASE_URL, url.trim())
+            .apply()
+    }
+
+    fun loadOnlinePlaceSearchEnabled(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_ONLINE_PLACE_SEARCH, ONLINE_PLACE_SEARCH_DEFAULT_ENABLED)
+
+    fun saveOnlinePlaceSearchEnabled(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_ONLINE_PLACE_SEARCH, enabled)
+            .apply()
+    }
+
+    /**
+     * Nominatim-compatible base URL. Missing key → public default. An explicit
+     * empty string means "none" (no online place-search calls).
+     */
+    fun loadNominatimBaseUrl(context: Context): String =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_NOMINATIM_BASE_URL, NOMINATIM_DEFAULT_BASE_URL)
+            .orEmpty()
+            .trim()
+
+    fun saveNominatimBaseUrl(
+        context: Context,
+        url: String,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_NOMINATIM_BASE_URL, url.trim())
             .apply()
     }
 

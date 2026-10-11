@@ -59,14 +59,15 @@ class PlaceSearchHintTest {
 
     @Test
     fun showsConnectMessageWhenOfflineAndNoIndexJob() {
-        assertTrue(
+        val msg =
             placeSearchBuildingMessage(
                 hitsEmpty = true,
                 indexHasEntries = false,
                 indexRunning = false,
                 onlineAvailable = false,
-            )!!.contains("connect", ignoreCase = true),
-        )
+            )!!
+        assertTrue(msg.contains("Online place search", ignoreCase = true))
+        assertTrue(msg.contains("coordinates", ignoreCase = true))
     }
 
     @Test

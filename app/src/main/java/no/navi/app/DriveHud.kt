@@ -734,6 +734,10 @@ fun MapSettingsSheet(
     onCampingProfessionalDriverChange: (Boolean) -> Unit = {},
     campingSessionDisableMessage: String? = null,
     onCampingReEnableSession: () -> Unit = {},
+    onlinePlaceSearchEnabled: Boolean = false,
+    onOnlinePlaceSearchChange: (Boolean) -> Unit = {},
+    nominatimBaseUrl: String = MapHudPrefs.NOMINATIM_DEFAULT_BASE_URL,
+    onNominatimBaseUrlChange: (String) -> Unit = {},
     onSave: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -935,6 +939,41 @@ fun MapSettingsSheet(
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("Online place search", style = MaterialTheme.typography.bodySmall)
+                Switch(
+                    checked = onlinePlaceSearchEnabled,
+                    onCheckedChange = onOnlinePlaceSearchChange,
+                    modifier = Modifier.testTag("toggle_online_place_search"),
+                )
+            }
+            Text(
+                "Searches are sent to an online OpenStreetMap service when this is on. " +
+                    "Offline search from installed regions is unaffected and always available.",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("online_place_search_explain"),
+            )
+            if (onlinePlaceSearchEnabled) {
+                OutlinedTextField(
+                    value = nominatimBaseUrl,
+                    onValueChange = onNominatimBaseUrlChange,
+                    label = { Text("Place search service URL") },
+                    placeholder = { Text(MapHudPrefs.NOMINATIM_DEFAULT_BASE_URL) },
+                    singleLine = true,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .testTag("nominatim_base_url_field"),
+                )
+                Text(
+                    "Empty means no online calls. Default is the public Nominatim instance.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
             PluginSettingsSection(
                 weatherPluginEnabled = weatherPluginEnabled,

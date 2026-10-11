@@ -578,6 +578,16 @@ object NaviMapTestHooks {
     @Volatile
     var lastSearchIndexBuildingHint: String = ""
 
+    /** Count of online place-search HTTP calls this process (request log). */
+    @Volatile
+    var lastOnlinePlaceSearchCount: Int = 0
+
+    @Volatile
+    var lastOnlinePlaceSearchUrls: List<String> = emptyList()
+
+    @Volatile
+    var lastOnlinePlaceSearchUserAgent: String = ""
+
     /** Immediate coord label from the last Use GPS tap (before roadLabelNear). */
     @Volatile
     var lastGpsImmediateCoord: String = ""
