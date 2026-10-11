@@ -687,6 +687,35 @@ internal fun formatBytesShort(bytes: Long): String {
     }
 }
 
+const val ONLINE_PLACE_SEARCH_EXPLANATION =
+    "Searches are sent to an online OpenStreetMap service when this is on. " +
+        "Offline search from installed regions is unaffected and always available."
+
+/**
+ * Labelled Online place search switch for the search panel. It reads and writes
+ * the same setting as the Map settings switch. Toggling never runs a search.
+ */
+@Composable
+fun OnlinePlaceSearchSwitch(
+    enabled: Boolean,
+    onChange: (Boolean) -> Unit,
+    switchTag: String,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+    ) {
+        Text("Online place search", style = MaterialTheme.typography.bodySmall)
+        Switch(
+            checked = enabled,
+            onCheckedChange = onChange,
+            modifier = Modifier.testTag(switchTag),
+        )
+    }
+}
+
 /**
  * Map / display settings opened from the collapsed top bar.
  * Toggles apply immediately; Save persists prefs and closes; Close dismisses.
@@ -963,8 +992,7 @@ fun MapSettingsSheet(
                 )
             }
             Text(
-                "Searches are sent to an online OpenStreetMap service when this is on. " +
-                    "Offline search from installed regions is unaffected and always available.",
+                ONLINE_PLACE_SEARCH_EXPLANATION,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag("online_place_search_explain"),
             )

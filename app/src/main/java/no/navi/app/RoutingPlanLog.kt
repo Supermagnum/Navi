@@ -64,6 +64,14 @@ object RoutingPlanLog {
         )
     }
 
+    /** Plan route was pressed but no plan was started. */
+    fun refused(
+        reason: String,
+        message: String,
+    ) {
+        Log.w(TAG, "planning_refused reason=$reason message=$message")
+    }
+
     fun progress(
         pct: Int,
         ecoEnabled: Boolean,

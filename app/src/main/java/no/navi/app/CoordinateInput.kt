@@ -104,7 +104,7 @@ private fun foldSearchLetter(ch: Char): String =
         else -> if (ch.isLetterOrDigit()) ch.toString() else ""
     }
 
-/** Selecting a search hit only frames the map. Route and Tools region stay put. */
+/** Where the map frames a selected search hit. The Tools region stays put. */
 data class SearchHitMapMove(
     val lat: Double,
     val lon: Double,

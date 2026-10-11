@@ -13,9 +13,11 @@ and is not affected by the setting.
 The base URL is a Map settings field. It can be changed without a new build.
 An empty value means no online calls.
 
-The switch is in Map settings: tap the "Map" bar at the top, then scroll to
-"Online place search". From the search screen, the "No offline match" line is a
-link that opens Map settings scrolled to the switch.
+The switch is on the search panel, next to the Search button, and in Map
+settings (tap the "Map" bar at the top, then scroll to "Online place search").
+Both show and change the same setting; toggling it does not run a search. The
+"No offline match" line is a link that opens Map settings scrolled to the
+switch.
 
 ## How the app complies
 

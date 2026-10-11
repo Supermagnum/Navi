@@ -30,7 +30,7 @@ independent toggles in map/display settings; both use the Mapterhorn DEM
 
 | Method | How |
 |---|---|
-| **Keyboard search** | Type in the search field (offline results from installed regions update as you type). Press **Search** or the keyboard Search action to submit. **Online place search** is off by default in Map settings; when it is on, that submit may query an online OpenStreetMap service ([`online-place-search.md`](online-place-search.md)). Tap a result to apply it to the selected field. While the place index is still empty/building, the list shows a building hint instead of zero hits — use coordinates, map tap, or **Use GPS**. |
+| **Keyboard search** | Type in the search field (offline results from installed regions update as you type). Press **Search** or the keyboard Search action to submit. **Online place search** is off by default; its switch is on the search panel and in Map settings. When it is on, that submit may query an online OpenStreetMap service ([`online-place-search.md`](online-place-search.md)). Tap a result to apply it to the selected field. While the place index is still empty/building, the list shows a building hint instead of zero hits — use coordinates, map tap, or **Use GPS**. |
 | **Use GPS** | Tap **Use GPS as from** / **as to** / **as via** (label follows the selected chip). Needs a device fix; otherwise status shows `GPS unavailable`. Coordinates appear immediately; an optional nearby road-name upgrade may follow. On Via, the upgrade **replaces** the last via (does not add a second copy). |
 | **Map long-press** | Hold one finger on the map for **about 4 seconds** (blue ring). The **Marked location** sheet offers **Set as From / Start**, **Add as Via** (up to 4), **Set as To / Destination**, **Save this place**, or **Cancel**. |
 | **Saved place** | Open **Saved places**, then tap **From**, **Via**, or **To** on a row. |
@@ -56,8 +56,10 @@ region.
 
 Tap **Plan route**.
 
-- If From or To is missing, status becomes **`Set From and To first`** and
-  nothing is planned.
+- If From or To is missing, a line under the button says **`Choose a starting
+  point`** or **`Choose a destination`** and nothing is planned. Any other
+  reason a plan does not start (region not downloaded, long-trip packs still
+  downloading) is shown on the same line.
 - You need a downloaded region PBF (Tools). If none is found, status asks you
   to download a region (e.g. Østlandet) first.
 - While planning, the button shows **Planning…** and a progress line/bar may

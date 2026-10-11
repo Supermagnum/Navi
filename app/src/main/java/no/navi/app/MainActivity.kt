@@ -724,6 +724,9 @@ private enum class SearchTarget { From, To, Via }
 /** Matches FFI [`uniffi.navi`] motor via cap (`MAX_ROUTE_VIA_POINTS`). */
 private const val MAX_ROUTE_VIAS = 4
 
+/** A planned start farther than this from the GPS fix is "planned from elsewhere". */
+private const val ROUTE_START_AWAY_FROM_GPS_M = 1_000.0
+
 /**
  * Pre-departure trip ETA in minutes for the HUD (before live GPS speed exists).
  *
@@ -951,12 +954,17 @@ private fun NaviMapScreen() {
     var searchTarget by remember { mutableStateOf(SearchTarget.To) }
     var query by remember { mutableStateOf("") }
     var hits by remember { mutableStateOf<List<PlaceHit>>(emptyList()) }
-    var searchHitOffer by remember { mutableStateOf<PlaceHit?>(null) }
     var searchBusy by remember { mutableStateOf(false) }
     var searchIndexHint by remember { mutableStateOf("") }
     var searchUsedOnline by remember { mutableStateOf(false) }
     var onlinePlaceSearchEnabled by remember {
         mutableStateOf(MapHudPrefs.loadOnlinePlaceSearchEnabled(context))
+    }
+
+    fun setOnlinePlaceSearch(on: Boolean) {
+        onlinePlaceSearchEnabled = on
+        MapHudPrefs.saveOnlinePlaceSearchEnabled(context, on)
+        DiagnosticLog.logToggle("online_place_search", on)
     }
     var nominatimBaseUrl by remember {
         mutableStateOf(MapHudPrefs.loadNominatimBaseUrl(context))
@@ -1346,6 +1354,9 @@ private fun NaviMapScreen() {
     var skeletonPreparingRetries by remember { mutableIntStateOf(0) }
     var routePlanProgress by remember { mutableStateOf("") }
 
+    /** Why the last Plan route press did not plan, shown under the button. */
+    var planNotice by remember { mutableStateOf("") }
+
     // Standalone long-trip seed via adb extras (see applyNaviLaunchExtras).
     // Poll so onNewIntent / warm starts still consume a fresh seed.
     LaunchedEffect(Unit) {
@@ -1427,6 +1438,13 @@ private fun NaviMapScreen() {
                 .AtomicBoolean(false)
         }
     val offRouteCoordinator = remember { OffRouteCoordinator() }
+
+    /**
+     * True while a route planned from a start away from the device has not been
+     * reached yet. Off-route replanning waits until then, so a trip planned from
+     * elsewhere is not replaced by one from the current position.
+     */
+    val routeNotJoinedRef = remember { AtomicBoolean(false) }
     var routePlanPct by remember { mutableIntStateOf(-1) }
     var weeklyReminder by remember { mutableStateOf(false) }
     var pendingUpdatePlan by remember { mutableStateOf<String?>(null) }
@@ -2129,6 +2147,12 @@ private fun NaviMapScreen() {
             ),
         )
         offRouteCoordinator.reset()
+        val hasFix = mapState.gpsLat != 0.0 || mapState.gpsLon != 0.0
+        routeNotJoinedRef.set(
+            !hasFix ||
+                haversineMApprox(mapState.gpsLat, mapState.gpsLon, startLatFix, startLonFix) >
+                ROUTE_START_AWAY_FROM_GPS_M,
+        )
         showHikingReroutePrompt = false
         recalculatingRoute = false
         NaviMapTestHooks.reroutingActive = false
@@ -2792,6 +2816,12 @@ private fun NaviMapScreen() {
                         "Route updated · ${"%.1f".format(result.distanceKm)} km " +
                         "(recalculated after detour)"
                 } finally {
+                    // A newer reroute may already own the flags; only clear our own.
+                    if (rerouteJob === coroutineContext[Job]) {
+                        recalculatingRoute = false
+                        planningRoute = false
+                        NaviMapTestHooks.reroutingActive = false
+                    }
                     foregroundPlanLeave()
                     IdlePackJobs.onPlanEnded()
                     planProgressClear()
@@ -3254,15 +3284,33 @@ private fun NaviMapScreen() {
         }
     }
 
+    LaunchedEffect(fromPoint, toPoint, viaPoints) {
+        planNotice = ""
+    }
+
     // Keep outside hideSearch: reopening Route must not re-fire planning
     // when planKick is already > 0 from an earlier Plan route / Load.
     LaunchedEffect(planKick) {
         if (planKick == 0) return@LaunchedEffect
+
+        fun refusePlan(
+            reason: String,
+            message: String,
+        ) {
+            planNotice = message
+            status = message
+            RoutingPlanLog.refused(reason, message)
+        }
         val start = fromPoint
-        if (start == null || toPoint.name.isBlank()) {
-            status = "Set From and To first"
+        if (start == null) {
+            refusePlan("no_start", "Choose a starting point")
             return@LaunchedEffect
         }
+        if (toPoint.name.isBlank()) {
+            refusePlan("no_destination", "Choose a destination")
+            return@LaunchedEffect
+        }
+        planNotice = "Checking map regions…"
         val coverageWaypoints =
             buildList {
                 add(
@@ -3306,6 +3354,7 @@ private fun NaviMapScreen() {
             NaviMapTestHooks.lastMissingCoveragePath =
                 missing.suggestedGeofabrikPath
             NaviMapTestHooks.lastMissingCoverageMessage = missing.message
+            refusePlan("region_missing", "${missing.placeName} is not in a downloaded region")
             status = missing.message
             return@LaunchedEffect
         }
@@ -3343,6 +3392,7 @@ private fun NaviMapScreen() {
                         }
                 longTripStatusLine = line
                 status = line
+                planNotice = line
                 delay(1_500)
             }
             longTripStatusLine = LongTripCoordinator.statusLine().ifBlank { longTripStatusLine }
@@ -3378,11 +3428,11 @@ private fun NaviMapScreen() {
                         .ifBlank {
                             LongTripCoordinator.statusLine()
                         }.ifBlank { "Long trip: downloading required regions…" }
-                status = line
+                refusePlan("long_trip_no_pbf", line)
                 longTripStatusLine = line
                 return@LaunchedEffect
             }
-            status = "No region PBF — download a region in Tools first"
+            refusePlan("no_pbf", "No region PBF — download a region in Tools first")
             return@LaunchedEffect
         }
         val wpsJson =
@@ -3412,6 +3462,7 @@ private fun NaviMapScreen() {
             android.util.Log.e("NaviRouting", why)
             RoutingPlanLog.failed(ecoForPlan, 0, why, null)
             status = why
+            planNotice = why
             return@LaunchedEffect
         }
         planAbort.set(false)
@@ -3428,6 +3479,7 @@ private fun NaviMapScreen() {
         )
         DownloadProgressClear.clearIfIdle()
         planProgressClear()
+        planNotice = ""
         planningRoute = true
         routePlanPct = 0
         routePlanProgress = "Planning route: starting…"
@@ -3696,7 +3748,7 @@ private fun NaviMapScreen() {
                                             .firstOrNull { it.isDirectory }
                                             ?: File(dataDir, "elevation")
                                     if (IdlePackJobs.isRunning()) {
-                                        routePlanProgress = "waiting for a background job"
+                                        routePlanProgress = "Waiting for a background job"
                                         status = routePlanProgress
                                     }
                                     if (!RoutePlanGate.tryBeginOrReplace({ cancelInFlightPlan() })) {
@@ -3845,6 +3897,7 @@ private fun NaviMapScreen() {
             if (status != "Planning cancelled") {
                 status = "Planning cancelled"
             }
+            planNotice = "Planning cancelled"
             return@LaunchedEffect
         }
         if (!result.report.contains("PASS") || result.routePolyline.isBlank()) {
@@ -3865,6 +3918,7 @@ private fun NaviMapScreen() {
                                 .orEmpty()
                         }.ifBlank { "Preparing ferry data…" }
                 status = msg
+                planNotice = msg
                 RoutingPlanLog.failed(ecoForPlan, durationMs, msg, result)
                 // Kick sidecar builds (incl. country-shared PBF leaves).
                 runCatching { FerrySidecarBackground.ensureFromInstalledMaps() }
@@ -3917,6 +3971,7 @@ private fun NaviMapScreen() {
                                 .orEmpty()
                         }.ifBlank { "Preparing corridor skeleton…" }
                 status = msg
+                planNotice = msg
                 RoutingPlanLog.failed(ecoForPlan, durationMs, msg, result)
                 val maxWaitMs = 30 * 60_000L
                 val stepMs = 2_000L
@@ -3981,6 +4036,7 @@ private fun NaviMapScreen() {
                 NaviMapTestHooks.absurdDetourPromptVisible = true
                 NaviMapTestHooks.lastAbsurdDetourMessage = msg
                 status = msg
+                planNotice = msg
                 RoutingPlanLog.failed(ecoForPlan, durationMs, msg, result)
                 return@LaunchedEffect
             }
@@ -4015,6 +4071,7 @@ private fun NaviMapScreen() {
                 NaviMapTestHooks.lastMissingCoveragePath = missing.suggestedGeofabrikPath
                 NaviMapTestHooks.lastMissingCoverageMessage = missing.message
                 status = missing.message
+                planNotice = missing.message
                 RoutingPlanLog.failed(
                     ecoForPlan,
                     durationMs,
@@ -4032,6 +4089,7 @@ private fun NaviMapScreen() {
                 status =
                     userFacingStatus(result.report).ifBlank { "Routing failed" }
             }
+            planNotice = status
             RoutingPlanLog.failed(
                 ecoForPlan,
                 durationMs,
@@ -4461,11 +4519,16 @@ private fun NaviMapScreen() {
                     NaviMapTestHooks.lastRouteSchoolPoiCount =
                         runCatching { org.json.JSONArray(routeSchoolPoisJsonRef.get()).length() }
                             .getOrDefault(0)
+                    if (!snap.offRoute) routeNotJoinedRef.set(false)
                     val offAction =
                         offRouteCoordinator.onFix(
                             offRoute = snap.offRoute,
                             hiking = profile == TravelProfile.HIKING,
-                            busy = recalculatingRoute || planningRoute || showHikingReroutePrompt,
+                            busy =
+                                recalculatingRoute ||
+                                    planningRoute ||
+                                    showHikingReroutePrompt ||
+                                    routeNotJoinedRef.get(),
                             confirmMs =
                                 NaviMapTestHooks.offRouteConfirmMsOverride
                                     ?: RouteProgressTracker.OFF_ROUTE_CONFIRM_MS,
@@ -5451,11 +5514,12 @@ private fun NaviMapScreen() {
         /** GPS label upgrade: replace the last via instead of appending another. */
         replaceLastVia: Boolean = false,
     ) {
-        val label = placeHitDisplayLabel(hit)
+        val move = searchHitMapMove(hit)
+        val label = move.name
         val (street, house, post) = parseAddressDisplayLines(combined = hit.name)
         NaviMapTestHooks.lastAppliedHitName = label
-        NaviMapTestHooks.lastAppliedHitLat = hit.lat
-        NaviMapTestHooks.lastAppliedHitLon = hit.lon
+        NaviMapTestHooks.lastAppliedHitLat = move.lat
+        NaviMapTestHooks.lastAppliedHitLon = move.lon
         val wp =
             Waypoint(
                 name = label,
@@ -5486,17 +5550,16 @@ private fun NaviMapScreen() {
         mapState =
             mapState.copy(
                 followGps = false,
-                cameraLat = hit.lat,
-                cameraLon = hit.lon,
+                cameraLat = move.lat,
+                cameraLon = move.lon,
                 cameraZoom = 12.0,
-                poiLat = hit.lat,
-                poiLon = hit.lon,
+                poiLat = move.lat,
+                poiLon = move.lon,
                 poiName = label,
                 layerEpoch = mapState.layerEpoch + 1,
             )
         NaviMapTestHooks.followGps = false
         hits = emptyList()
-        searchHitOffer = null
         // Via is a multi-slot list: clear the box so the next search can add another.
         // From / To keep the resolved label in the field (single-slot).
         if (target == SearchTarget.Via) {
@@ -5509,27 +5572,6 @@ private fun NaviMapScreen() {
             query = label
             status = userFacingStatus("Set ${target.name.lowercase()}: $label")
         }
-    }
-
-    fun flyToSearchHit(hit: PlaceHit) {
-        val move = searchHitMapMove(hit)
-        NaviMapTestHooks.lastAppliedHitName = move.name
-        NaviMapTestHooks.lastAppliedHitLat = move.lat
-        NaviMapTestHooks.lastAppliedHitLon = move.lon
-        searchHitOffer = hit
-        mapState =
-            mapState.copy(
-                followGps = false,
-                cameraLat = move.lat,
-                cameraLon = move.lon,
-                cameraZoom = 12.0,
-                poiLat = move.lat,
-                poiLon = move.lon,
-                poiName = move.name,
-                layerEpoch = mapState.layerEpoch + 1,
-            )
-        NaviMapTestHooks.followGps = false
-        status = userFacingStatus("Showing ${move.name} — set as from, via, or destination")
     }
 
     fun applyMarkAs(
@@ -5840,13 +5882,12 @@ private fun NaviMapScreen() {
     }
 
     val searchOpen =
-        query.isNotBlank() || hits.isNotEmpty() || searchHitOffer != null || searchBusy
+        query.isNotBlank() || hits.isNotEmpty() || searchBusy
     BackHandler(enabled = true) {
         when {
             searchOpen -> {
                 query = ""
                 hits = emptyList()
-                searchHitOffer = null
                 searchIndexHint = ""
                 searchBusy = false
                 searchUsedOnline = false
@@ -6458,9 +6499,9 @@ private fun NaviMapScreen() {
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    // Shared query/hits are not per-chip drafts — clear when
-                                    // switching so a resolved GPS/place label from From does
-                                    // not linger visually on To/Via (and vice versa).
+                                    // Shared query/hits are not per-chip drafts: on switching,
+                                    // the box shows the chosen field's own place (empty for Via)
+                                    // so a label from From does not linger on To/Via.
                                     fun selectSearchTarget(next: SearchTarget) {
                                         // Re-tapping Via clears the box so another via can be typed.
                                         if (searchTarget == next) {
@@ -6471,8 +6512,16 @@ private fun NaviMapScreen() {
                                             return
                                         }
                                         searchTarget = next
-                                        query = ""
+                                        searchJob?.cancel()
+                                        searchBusy = false
+                                        query =
+                                            when (next) {
+                                                SearchTarget.From -> fromPoint?.name.orEmpty()
+                                                SearchTarget.To -> toPoint.name
+                                                SearchTarget.Via -> ""
+                                            }
                                         hits = emptyList()
+                                        searchIndexHint = ""
                                     }
                                     FilterChip(
                                         selected = searchTarget == SearchTarget.From,
@@ -6608,11 +6657,47 @@ private fun NaviMapScreen() {
                                     )
                                 },
                             )
-                            TextButton(
-                                onClick = { runSearch(query, allowOnline = true) },
-                                modifier = Modifier.testTag("btn_submit_search"),
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text("Search")
+                                TextButton(
+                                    onClick = { runSearch(query, allowOnline = true) },
+                                    modifier = Modifier.testTag("btn_submit_search"),
+                                ) {
+                                    Text("Search")
+                                }
+                                TextButton(
+                                    onClick = {
+                                        searchJob?.cancel()
+                                        searchBusy = false
+                                        query = ""
+                                        hits = emptyList()
+                                        searchIndexHint = ""
+                                        searchUsedOnline = false
+                                        when (searchTarget) {
+                                            SearchTarget.From -> fromPoint = null
+                                            SearchTarget.To -> toPoint = Waypoint()
+                                            SearchTarget.Via -> Unit
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("btn_clear_route_field"),
+                                ) {
+                                    Text(
+                                        when (searchTarget) {
+                                            SearchTarget.From -> "Clear from"
+                                            SearchTarget.To -> "Clear to"
+                                            SearchTarget.Via -> "Clear"
+                                        },
+                                    )
+                                }
+                                OnlinePlaceSearchSwitch(
+                                    enabled = onlinePlaceSearchEnabled,
+                                    onChange = { on -> setOnlinePlaceSearch(on) },
+                                    switchTag = "toggle_online_place_search_search",
+                                    modifier = Modifier.weight(1f),
+                                )
                             }
                             if (searchBusy) {
                                 Text("Searching...", style = MaterialTheme.typography.bodySmall)
@@ -6664,7 +6749,7 @@ private fun NaviMapScreen() {
                                             Modifier
                                                 .fillMaxWidth()
                                                 .testTag("search_hit_$idx")
-                                                .clickable { flyToSearchHit(hit) }
+                                                .clickable { applyHit(hit, target = searchTarget) }
                                                 .padding(vertical = 6.dp, horizontal = 4.dp),
                                     ) {
                                         Text(
@@ -6675,36 +6760,11 @@ private fun NaviMapScreen() {
                                     }
                                 }
                             }
-                            searchHitOffer?.let { offered ->
-                                val offerName = placeHitDisplayLabel(offered)
-                                Text(
-                                    "Set $offerName as",
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    TextButton(
-                                        onClick = {
-                                            searchTarget = SearchTarget.From
-                                            applyHit(offered, target = SearchTarget.From)
-                                        },
-                                        modifier = Modifier.testTag("btn_search_hit_as_from"),
-                                    ) { Text("From") }
-                                    TextButton(
-                                        onClick = {
-                                            searchTarget = SearchTarget.Via
-                                            applyHit(offered, target = SearchTarget.Via)
-                                        },
-                                        modifier = Modifier.testTag("btn_search_hit_as_via"),
-                                    ) { Text("Via") }
-                                    TextButton(
-                                        onClick = {
-                                            searchTarget = SearchTarget.To
-                                            applyHit(offered, target = SearchTarget.To)
-                                        },
-                                        modifier = Modifier.testTag("btn_search_hit_as_to"),
-                                    ) { Text("To") }
-                                }
-                            }
+                            Text(
+                                ONLINE_PLACE_SEARCH_EXPLANATION,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.testTag("online_place_search_explain_search"),
+                            )
                             Button(
                                 onClick = {
                                     ferryPreparingRetries = 0
@@ -6718,6 +6778,17 @@ private fun NaviMapScreen() {
                                         .testTag("btn_plan_route"),
                             ) {
                                 NaviText(if (planningRoute) "Planning…" else "Plan route")
+                            }
+                            if (planNotice.isNotBlank() && !planningRoute) {
+                                Text(
+                                    planNotice,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .testTag("route_plan_notice"),
+                                )
                             }
                             if (mapState.polyline.isNotBlank()) {
                                 TextButton(
@@ -9428,11 +9499,7 @@ private fun NaviMapScreen() {
                     campingSessionDisableMessage = campingSessionDisableMessage,
                     onCampingReEnableSession = campingReEnableSession,
                     onlinePlaceSearchEnabled = onlinePlaceSearchEnabled,
-                    onOnlinePlaceSearchChange = { on ->
-                        onlinePlaceSearchEnabled = on
-                        MapHudPrefs.saveOnlinePlaceSearchEnabled(context, on)
-                        DiagnosticLog.logToggle("online_place_search", on)
-                    },
+                    onOnlinePlaceSearchChange = { on -> setOnlinePlaceSearch(on) },
                     nominatimBaseUrl = nominatimBaseUrl,
                     onNominatimBaseUrlChange = { url ->
                         nominatimBaseUrl = url
