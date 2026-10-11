@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -199,6 +200,9 @@ class MainActivity : ComponentActivity() {
             SystemClock.uptimeMillis() - splashStartedAtMs < SPLASH_MAX_HOLD_MS
         }
         super.onCreate(savedInstanceState)
+        // Inject pins are in-memory only. Drop leftovers from a previous
+        // activity in this process; this launch may set a new one via extras.
+        NaviMapTestHooks.clearDebugGpsInject()
         applyNaviLaunchExtras(intent)
         runCatching { uniffi.navi.initNativeLogging() }
         // Natural Earth country grid: never build on the main looper (ANR / seed stall).
@@ -241,6 +245,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onDestroy() {
+        NaviMapTestHooks.clearDebugGpsInject()
+        super.onDestroy()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -261,9 +270,16 @@ class MainActivity : ComponentActivity() {
      *   [--es navi_graph pack|pbf] [--ez navi_avoid_ferries …]
      *   [--ez navi_use_networked_cabins …] [--ez navi_network_hut_member …]
      *   [--ez navi_inject_gps true|false] (default true: pin GPS at from)
+     *
+     * Debug search field (debuggable builds only): exact text into the search box,
+     * submitted like the Search button when navi_search_ui_submit is true:
+     *   --es navi_search_ui_q 'Łódź' [--ez navi_search_ui_submit true]
      */
     private fun applyNaviLaunchExtras(intent: Intent?) {
         if (intent == null) return
+        if (intent.getBooleanExtra("navi_clear_gps", false)) {
+            NaviMapTestHooks.clearDebugGpsInject()
+        }
         if (intent.hasExtra("navi_clear_basemap_test_hooks")) {
             NaviMapTestHooks.clearForcedBasemapSettings()
         }
@@ -454,6 +470,7 @@ class MainActivity : ComponentActivity() {
                     ""
                 }
             Thread {
+                val t0 = android.os.SystemClock.elapsedRealtime()
                 if (dbFile == null || !dbFile.isFile) {
                     android.util.Log.i(
                         "NaviSearch",
@@ -478,6 +495,17 @@ class MainActivity : ComponentActivity() {
                             android.util.Log.i("NaviSearch", "app_search q=$q FAIL: ${e.message}")
                             emptyList()
                         }
+                    val indexErr = raw.firstOrNull { it.kind == "index:error" }
+                    if (indexErr != null) {
+                        android.util.Log.i(
+                            "NaviSearch",
+                            "app_search q=$q q_hex=${q.toByteArray(Charsets.UTF_8).joinToString("") { b ->
+                                "%02x".format(b)
+                            }} n=0 top= region= duration_ms=${android.os.SystemClock.elapsedRealtime() - t0} " +
+                                "results=[] error=${indexErr.name}",
+                        )
+                        return@Thread
+                    }
                     val hits =
                         rankPlaceHits(
                             q,
@@ -487,14 +515,25 @@ class MainActivity : ComponentActivity() {
                             vis,
                         )
                     val top = hits.firstOrNull()
+                    val qHex =
+                        q.toByteArray(Charsets.UTF_8).joinToString("") { b ->
+                            "%02x".format(b)
+                        }
                     android.util.Log.i(
                         "NaviSearch",
-                        "app_search q=$q n=${hits.size} top=${top?.name.orEmpty()} " +
+                        "app_search q=$q q_hex=$qHex n=${hits.size} top=${top?.name.orEmpty()} " +
                             "region=${top?.regionId.orEmpty()} " +
+                            "duration_ms=${android.os.SystemClock.elapsedRealtime() - t0} " +
                             "results=${hits.joinToString("|") { "${it.name}@${it.regionId}" }}",
                     )
                 }
             }.start()
+        }
+        intent.getStringExtra("navi_search_ui_q")?.let { q ->
+            if (NaviDebugIntent.debugBuild(this)) {
+                NaviMapTestHooks.pendingSearchUiQuery =
+                    q to intent.getBooleanExtra("navi_search_ui_submit", false)
+            }
         }
         // Trip / profile / settings / graph: debug builds only.
         val dataDirPath = filesDir.absolutePath
@@ -903,6 +942,7 @@ private fun NaviMapScreen() {
     var searchTarget by remember { mutableStateOf(SearchTarget.To) }
     var query by remember { mutableStateOf("") }
     var hits by remember { mutableStateOf<List<PlaceHit>>(emptyList()) }
+    var searchHitOffer by remember { mutableStateOf<PlaceHit?>(null) }
     var searchBusy by remember { mutableStateOf(false) }
     var searchIndexHint by remember { mutableStateOf("") }
     var searchUsedOnline by remember { mutableStateOf(false) }
@@ -1602,6 +1642,10 @@ private fun NaviMapScreen() {
     var pmtilesProgress by remember { mutableStateOf("") }
     var showDriveSettings by remember { mutableStateOf(false) }
     var showMapSettings by remember { mutableStateOf(false) }
+    var revealOnlineSearchSetting by remember { mutableStateOf(false) }
+    LaunchedEffect(showMapSettings) {
+        if (!showMapSettings) revealOnlineSearchSetting = false
+    }
     var drivingHoursSinceBreak by remember { mutableDoubleStateOf(0.0) }
     var locationPermGranted by remember {
         mutableStateOf(
@@ -5423,48 +5467,6 @@ private fun NaviMapScreen() {
                 viaPoints = next
             }
         }
-        // Online (or offline) hits carry a Geofabrik regionId — preselect Tools
-        // download path so region finder/downloader works from a name/address.
-        val fromHit =
-            hit.regionId
-                .trim()
-                .trim('/')
-                .ifBlank { null }
-        if (fromHit != null) {
-            selectedGeofabrikPath = fromHit
-            downloadContinent = GeofabrikDownloadCatalog.continentForPath(fromHit)
-            val countryHit = GeofabrikDownloadCatalog.findByPath(fromHit)
-            downloadScopeCountry =
-                countryHit != null &&
-                countryHit.path == fromHit
-            MapHudPrefs.saveGeofabrikPath(context, fromHit)
-            NaviMapTestHooks.lastSelectedGeofabrikPath = fromHit
-        } else {
-            // suggestGeofabrikPath is UniFFI — never run it on the click/GPS
-            // main-thread path (Use GPS previously froze here under load).
-            val deferLat = hit.lat
-            val deferLon = hit.lon
-            scope.launch {
-                val suggested =
-                    withContext(Dispatchers.IO) {
-                        runCatching { RegionCoverage.suggestGeofabrikPath(deferLat, deferLon) }
-                            .getOrNull()
-                            .orEmpty()
-                            .trim()
-                            .trim('/')
-                    }
-                if (suggested.isEmpty()) return@launch
-                selectedGeofabrikPath = suggested
-                downloadContinent = GeofabrikDownloadCatalog.continentForPath(suggested)
-                val countryHit = GeofabrikDownloadCatalog.findByPath(suggested)
-                downloadScopeCountry =
-                    countryHit != null &&
-                    countryHit.path == suggested
-                MapHudPrefs.saveGeofabrikPath(context, suggested)
-                NaviMapTestHooks.lastSelectedGeofabrikPath = suggested
-            }
-        }
-        val regionPath = fromHit.orEmpty()
         mapState =
             mapState.copy(
                 followGps = false,
@@ -5478,24 +5480,40 @@ private fun NaviMapScreen() {
             )
         NaviMapTestHooks.followGps = false
         hits = emptyList()
+        searchHitOffer = null
         // Via is a multi-slot list: clear the box so the next search can add another.
         // From / To keep the resolved label in the field (single-slot).
-        val regionNote =
-            if (regionPath.isNotEmpty()) {
-                " · region ${RegionCoverage.displayName(regionPath)}"
-            } else {
-                ""
-            }
         if (target == SearchTarget.Via) {
             query = ""
             status =
                 userFacingStatus(
-                    "Added via ${viaPoints.size}/$MAX_ROUTE_VIAS: $label$regionNote",
+                    "Added via ${viaPoints.size}/$MAX_ROUTE_VIAS: $label",
                 )
         } else {
             query = label
-            status = userFacingStatus("Set ${target.name.lowercase()}: $label$regionNote")
+            status = userFacingStatus("Set ${target.name.lowercase()}: $label")
         }
+    }
+
+    fun flyToSearchHit(hit: PlaceHit) {
+        val move = searchHitMapMove(hit)
+        NaviMapTestHooks.lastAppliedHitName = move.name
+        NaviMapTestHooks.lastAppliedHitLat = move.lat
+        NaviMapTestHooks.lastAppliedHitLon = move.lon
+        searchHitOffer = hit
+        mapState =
+            mapState.copy(
+                followGps = false,
+                cameraLat = move.lat,
+                cameraLon = move.lon,
+                cameraZoom = 12.0,
+                poiLat = move.lat,
+                poiLon = move.lon,
+                poiName = move.name,
+                layerEpoch = mapState.layerEpoch + 1,
+            )
+        NaviMapTestHooks.followGps = false
+        status = userFacingStatus("Showing ${move.name} — set as from, via, or destination")
     }
 
     fun applyMarkAs(
@@ -5540,6 +5558,13 @@ private fun NaviMapScreen() {
             return
         }
         // Accept WGS84 "lat, lon" for From / Via / To without place FTS.
+        if (looksLikeCoordinatePair(trimmed) && parseLatLonQuery(trimmed) == null) {
+            hits = emptyList()
+            searchIndexHint = "Not a valid coordinate"
+            searchBusy = false
+            searchUsedOnline = false
+            return
+        }
         parseLatLonQuery(trimmed)?.let { (lat, lon) ->
             val name = formatCoordWaypointName(lat, lon)
             // Leave regionId empty — applyHit suggests Geofabrik on IO.
@@ -5570,6 +5595,7 @@ private fun NaviMapScreen() {
                 // cancels prior jobs during delay (not mid Thread.sleep).
                 delay(250)
                 searchBusy = true
+                val tSearch = android.os.SystemClock.elapsedRealtime()
                 try {
                     val outcome =
                         withContext(Dispatchers.IO) {
@@ -5581,32 +5607,57 @@ private fun NaviMapScreen() {
                             val hasEntries =
                                 runCatching { placeIndexHasEntries(dbPath) }.getOrDefault(false)
                             ensureActive()
+                            val rawHits =
+                                runCatching {
+                                    val lat = mapState.cameraLat
+                                    val lon = mapState.cameraLon
+                                    if (lat != null &&
+                                        lon != null &&
+                                        lat.isFinite() &&
+                                        lon.isFinite() &&
+                                        !(lat == 0.0 && lon == 0.0)
+                                    ) {
+                                        searchPlacesBiased(
+                                            dbPath,
+                                            placeQ,
+                                            80u,
+                                            lat,
+                                            lon,
+                                            visibleSearchRegion(),
+                                        )
+                                    } else {
+                                        searchPlaces(dbPath, placeQ, 80u)
+                                    }
+                                }.getOrElse { e ->
+                                    listOf(
+                                        uniffi.navi.PlaceHit(
+                                            osmId = 0,
+                                            name = "Place index error: ${e.message}",
+                                            kind = "index:error",
+                                            lat = 0.0,
+                                            lon = 0.0,
+                                            subArea = "",
+                                            municipality = "",
+                                            regionId = "",
+                                        ),
+                                    )
+                                }
+                            val indexErr = rawHits.firstOrNull { it.kind == "index:error" }
+                            if (indexErr != null) {
+                                return@withContext PlaceSearchOutcome(
+                                    hits = emptyList(),
+                                    hasEntries = hasEntries,
+                                    usedOnline = false,
+                                    onlineOk = false,
+                                    errorLine = indexErr.name,
+                                )
+                            }
                             var list =
                                 rankPlaceHits(
                                     placeQ,
                                     PlaceIndexReady.filterHitsToReadyRegions(
                                         dataDir,
-                                        runCatching {
-                                            val lat = mapState.cameraLat
-                                            val lon = mapState.cameraLon
-                                            if (lat != null &&
-                                                lon != null &&
-                                                lat.isFinite() &&
-                                                lon.isFinite() &&
-                                                !(lat == 0.0 && lon == 0.0)
-                                            ) {
-                                                searchPlacesBiased(
-                                                    dbPath,
-                                                    placeQ,
-                                                    80u,
-                                                    lat,
-                                                    lon,
-                                                    visibleSearchRegion(),
-                                                )
-                                            } else {
-                                                searchPlaces(dbPath, placeQ, 80u)
-                                            }
-                                        }.getOrDefault(emptyList()),
+                                        rawHits,
                                     ),
                                     mapState.cameraLat,
                                     mapState.cameraLon,
@@ -5615,8 +5666,9 @@ private fun NaviMapScreen() {
                             var usedOnline = false
                             // Online Nominatim only on explicit submit, when the
                             // setting is on and the base URL is non-empty. Typing
-                            // stays local. Local exact matches stay ahead of every
-                            // online hit (follow-up 56).
+                            // stays local. Local exact of the same or smaller
+                            // class stays first; an online city/town beats a
+                            // local farm/hamlet (follow-up 64).
                             val wantOnline =
                                 allowOnline &&
                                     onlinePlaceSearchEnabled &&
@@ -5683,20 +5735,37 @@ private fun NaviMapScreen() {
                     hits = outcome.hits
                     searchUsedOnline = outcome.usedOnline
                     searchIndexHint =
-                        placeSearchBuildingMessage(
-                            outcome.hits.isEmpty(),
-                            outcome.hasEntries,
-                            PlaceIndexBackground.isRunning(),
-                            onlineAvailable =
-                                outcome.usedOnline ||
-                                    (outcome.hits.isEmpty() && outcome.onlineOk),
-                            indexProblem = InstalledMaps.current()?.placeIndexProblem,
-                        ).orEmpty()
+                        outcome.errorLine?.takeIf { it.isNotBlank() }
+                            ?: placeSearchBuildingMessage(
+                                outcome.hits.isEmpty(),
+                                outcome.hasEntries,
+                                PlaceIndexBackground.isRunning(),
+                                onlineAvailable =
+                                    outcome.usedOnline ||
+                                        (outcome.hits.isEmpty() && outcome.onlineOk),
+                                indexProblem = InstalledMaps.current()?.placeIndexProblem,
+                            ).orEmpty()
+                                .ifBlank {
+                                    placeSearchOfflineMoreHint(
+                                        onlineEnabled = onlinePlaceSearchEnabled,
+                                        topKind = outcome.hits.firstOrNull()?.kind,
+                                    ).orEmpty()
+                                }
                     NaviMapTestHooks.lastSearchHitCount = hits.size
                     NaviMapTestHooks.lastSearchQuery = trimmed
                     val disambiguate = hits.size > 1
                     NaviMapTestHooks.lastSearchHitNames =
                         hits.map { placeHitSearchLabel(it, disambiguate) }
+                    android.util.Log.i(
+                        "NaviSearch",
+                        "ui_search q=$trimmed q_hex=${trimmed.toByteArray(Charsets.UTF_8).joinToString("") { b ->
+                            "%02x".format(b)
+                        }} n=${hits.size} " +
+                            "duration_ms=${android.os.SystemClock.elapsedRealtime() - tSearch} " +
+                            "top=${hits.firstOrNull()?.name.orEmpty()} " +
+                            "online=${outcome.usedOnline} " +
+                            "top5=${hits.take(5).joinToString(" | ") { "${placeHitSearchLabel(it, disambiguate)} [${it.kind}]" }}",
+                    )
                     NaviMapTestHooks.lastSearchIndexBuildingHint = searchIndexHint
                 } finally {
                     searchBusy = false
@@ -5727,11 +5796,43 @@ private fun NaviMapScreen() {
 
     LaunchedEffect(Unit) {
         while (isActive) {
+            NaviMapTestHooks.pendingSearchUiQuery?.let { (q, submit) ->
+                NaviMapTestHooks.pendingSearchUiQuery = null
+                query = q
+                runSearch(q, allowOnline = submit)
+            }
+            delay(200)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (isActive) {
             val want = simulatingRef.get()
             if (want != simulating) {
                 simulating = want
             }
             delay(100)
+        }
+    }
+
+    val searchOpen =
+        query.isNotBlank() || hits.isNotEmpty() || searchHitOffer != null || searchBusy
+    BackHandler(enabled = true) {
+        when {
+            searchOpen -> {
+                query = ""
+                hits = emptyList()
+                searchHitOffer = null
+                searchIndexHint = ""
+                searchBusy = false
+                searchUsedOnline = false
+                status = "Ready"
+            }
+            showMapSettings -> showMapSettings = false
+            showTools -> showTools = false
+            showPlacesPanel -> showPlacesPanel = false
+            mapMarkPending != null -> mapMarkPending = null
+            else -> (context as? android.app.Activity)?.finish()
         }
     }
 
@@ -6492,14 +6593,33 @@ private fun NaviMapScreen() {
                             if (searchBusy) {
                                 Text("Searching...", style = MaterialTheme.typography.bodySmall)
                             }
-                            if (searchIndexHint.isNotBlank() && hits.isEmpty() && !searchBusy) {
+                            if (searchIndexHint.isNotBlank() && !searchBusy) {
+                                val openOnlineSettings =
+                                    searchIndexHint.contains("Online place search")
                                 Text(
                                     searchIndexHint,
                                     style = MaterialTheme.typography.bodySmall,
+                                    color =
+                                        if (openOnlineSettings) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            Color.Unspecified
+                                        },
                                     modifier =
                                         Modifier
                                             .fillMaxWidth()
-                                            .testTag("search_index_building_hint"),
+                                            .testTag("search_index_building_hint")
+                                            .then(
+                                                if (openOnlineSettings) {
+                                                    Modifier.clickable {
+                                                        showMapSettings = true
+                                                        revealOnlineSearchSetting = true
+                                                        NaviMapTestHooks.mapSettingsOpen = true
+                                                    }
+                                                } else {
+                                                    Modifier
+                                                },
+                                            ),
                                 )
                             }
                             if (searchUsedOnline && hits.isNotEmpty()) {
@@ -6520,7 +6640,7 @@ private fun NaviMapScreen() {
                                             Modifier
                                                 .fillMaxWidth()
                                                 .testTag("search_hit_$idx")
-                                                .clickable { applyHit(hit) }
+                                                .clickable { flyToSearchHit(hit) }
                                                 .padding(vertical = 6.dp, horizontal = 4.dp),
                                     ) {
                                         Text(
@@ -6529,6 +6649,36 @@ private fun NaviMapScreen() {
                                         )
                                         Text(hit.kind, style = MaterialTheme.typography.bodySmall)
                                     }
+                                }
+                            }
+                            searchHitOffer?.let { offered ->
+                                val offerName = placeHitDisplayLabel(offered)
+                                Text(
+                                    "Set $offerName as",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    TextButton(
+                                        onClick = {
+                                            searchTarget = SearchTarget.From
+                                            applyHit(offered, target = SearchTarget.From)
+                                        },
+                                        modifier = Modifier.testTag("btn_search_hit_as_from"),
+                                    ) { Text("From") }
+                                    TextButton(
+                                        onClick = {
+                                            searchTarget = SearchTarget.Via
+                                            applyHit(offered, target = SearchTarget.Via)
+                                        },
+                                        modifier = Modifier.testTag("btn_search_hit_as_via"),
+                                    ) { Text("Via") }
+                                    TextButton(
+                                        onClick = {
+                                            searchTarget = SearchTarget.To
+                                            applyHit(offered, target = SearchTarget.To)
+                                        },
+                                        modifier = Modifier.testTag("btn_search_hit_as_to"),
+                                    ) { Text("To") }
                                 }
                             }
                             Button(
@@ -9264,6 +9414,7 @@ private fun NaviMapScreen() {
                         nominatimBaseUrl = url
                         MapHudPrefs.saveNominatimBaseUrl(context, url)
                     },
+                    revealOnlinePlaceSearch = revealOnlineSearchSetting,
                     onSave = {
                         MapHudPrefs.saveAutoZoom(
                             context,
@@ -9886,7 +10037,8 @@ private fun CorridorMapView(
             "NaviMapCamera",
             "at lat=${cam.target?.latitude} lon=${cam.target?.longitude} zoom=${cam.zoom}",
         )
-        logFeatureGrid(map)
+        // Do not call logFeatureGrid here: PixelCopy callback is on the main
+        // thread, and an 8x16x3 queryRenderedFeatures grid ANRs the UI.
     }
 
     fun measureBlankShareAndLog(map: MapLibreMap) {

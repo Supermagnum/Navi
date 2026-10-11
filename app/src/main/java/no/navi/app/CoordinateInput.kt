@@ -30,6 +30,89 @@ fun parseLatLonQuery(raw: String): Pair<Double, Double>? {
     return lat to lon
 }
 
+/**
+ * True when the text is two numeric parts (lat, lon style), even if the
+ * values are out of range. Used to block Nominatim from treating a stray
+ * coordinate as a place name (`1280060.393,5.324`).
+ */
+fun looksLikeCoordinatePair(raw: String): Boolean {
+    val q = raw.trim()
+    if (q.length < 3) return false
+    val normalized = q.replace(';', ',').replace('\t', ' ')
+    val parts =
+        when {
+            normalized.contains(',') -> normalized.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+            else -> normalized.split(Regex("\\s+")).filter { it.isNotEmpty() }
+        }
+    if (parts.size != 2) return false
+    if (parts[0].toDoubleOrNull() == null || parts[1].toDoubleOrNull() == null) return false
+    return parts[0].contains('.') || parts[1].contains('.')
+}
+
+/** NFC/NFD-insensitive, Unicode lowercase, diacritics stripped. Matches core fold. */
+fun foldSearchKey(s: String): String {
+    val out = StringBuilder(s.length)
+    for (ch in s) {
+        val code = ch.code
+        if (code in 0x0300..0x036F ||
+            code in 0x1AB0..0x1AFF ||
+            code in 0x1DC0..0x1DFF ||
+            code in 0x20D0..0x20FF ||
+            code in 0xFE20..0xFE2F
+        ) {
+            continue
+        }
+        if (ch.code < 128 && ch.isLetterOrDigit()) {
+            out.append(ch.lowercaseChar())
+            continue
+        }
+        if (ch.isWhitespace() || ch == '-' || ch == '\'') {
+            out.append(ch)
+            continue
+        }
+        for (lc in ch.lowercase()) {
+            out.append(foldSearchLetter(lc))
+        }
+    }
+    return out.toString()
+}
+
+private fun foldSearchLetter(ch: Char): String =
+    when (ch) {
+        'æ', 'ǽ', 'ǣ' -> "ae"
+        'œ' -> "oe"
+        'ø', 'ǿ' -> "o"
+        'ß' -> "ss"
+        'þ' -> "th"
+        'ł' -> "l"
+        'đ', 'ð' -> "d"
+        'ħ' -> "h"
+        'ı' -> "i"
+        'ŋ' -> "n"
+        'ŧ' -> "t"
+        'å', 'ä', 'à', 'á', 'â', 'ã', 'ā', 'ă', 'ą' -> "a"
+        'ç', 'ć', 'č', 'ĉ', 'ċ' -> "c"
+        'è', 'é', 'ê', 'ë', 'ē', 'ĕ', 'ė', 'ę', 'ě' -> "e"
+        'ì', 'í', 'î', 'ï', 'ī', 'ĭ', 'į', 'ĩ' -> "i"
+        'ñ', 'ń', 'ņ', 'ň' -> "n"
+        'ò', 'ó', 'ô', 'õ', 'ö', 'ō', 'ŏ', 'ő' -> "o"
+        'ù', 'ú', 'û', 'ü', 'ū', 'ŭ', 'ů', 'ű', 'ų' -> "u"
+        'ý', 'ÿ', 'ŷ' -> "y"
+        'ś', 'š', 'ş', 'ŝ', 'ș' -> "s"
+        'ź', 'ż', 'ž' -> "z"
+        'ğ', 'ģ', 'ġ', 'ĝ' -> "g"
+        else -> if (ch.isLetterOrDigit()) ch.toString() else ""
+    }
+
+/** Selecting a search hit only frames the map. Route and Tools region stay put. */
+data class SearchHitMapMove(
+    val lat: Double,
+    val lon: Double,
+    val name: String,
+)
+
+fun searchHitMapMove(hit: uniffi.navi.PlaceHit): SearchHitMapMove = SearchHitMapMove(lat = hit.lat, lon = hit.lon, name = placeHitDisplayLabel(hit))
+
 fun formatCoordWaypointName(
     lat: Double,
     lon: Double,
@@ -230,15 +313,14 @@ fun placeNameContainsQueryTokens(
     query: String,
 ): Boolean {
     val tokens =
-        query
+        foldSearchKey(query)
             .split(Regex("[\\s,]+"))
             .map { it.trim() }
-            .filter { it.length >= 2 }
+            .filter { it.length >= 2 || it.any { c -> c.isDigit() } }
     if (tokens.isEmpty()) return true
+    val hayWords = foldSearchKey(name).split(Regex("\\s+"))
     return tokens.all { tok ->
-        Regex(
-            """(?iu)(^|[^\p{L}\p{N}])${Regex.escape(tok)}($|[^\p{L}\p{N}])""",
-        ).containsMatchIn(name)
+        hayWords.any { w -> w == tok }
     }
 }
 
@@ -284,12 +366,76 @@ fun rankPlaceHits(
     val vis = visibleRegion.trim().trim('/')
     return hits.sortedWith(
         compareBy<uniffi.navi.PlaceHit> { placeMatchClass(it.name, q) }
-            .thenBy { placeSourceClass(it.kind) }
+            .then { a, b -> compareOnlinePromote(a, b, vis) }
             .thenBy { placeRegionClass(it.regionId, vis) }
             .thenBy { placeKindClass(it.kind) }
             .thenBy { placeDistanceDecikm(it, biasLat, biasLon) }
             .thenBy { it.name.length },
     )
+}
+
+/**
+ * Local exact of the same or a smaller class stays first. An online city or
+ * town (and an online village that is not in the visible region) comes first
+ * against a local farm, hamlet, isolated dwelling, locality, bus stop or
+ * building.
+ */
+internal fun compareOnlinePromote(
+    a: uniffi.navi.PlaceHit,
+    b: uniffi.navi.PlaceHit,
+    visibleRegion: String,
+): Int {
+    val aOn = placeSourceClass(a.kind) == 1
+    val bOn = placeSourceClass(b.kind) == 1
+    if (aOn == bOn) return placeSourceClass(a.kind).compareTo(placeSourceClass(b.kind))
+    val online = if (aOn) a else b
+    val local = if (aOn) b else a
+    val promote = shouldPromoteOnlineOverLocal(online, local, visibleRegion)
+    return when {
+        !promote -> placeSourceClass(a.kind).compareTo(placeSourceClass(b.kind))
+        aOn -> -1
+        else -> 1
+    }
+}
+
+internal fun shouldPromoteOnlineOverLocal(
+    online: uniffi.navi.PlaceHit,
+    local: uniffi.navi.PlaceHit,
+    visibleRegion: String,
+): Boolean {
+    if (!isMinorPlaceKind(local.kind)) return false
+    if (isCityOrTownKind(online.kind)) return true
+    if (placeKindToken(online.kind) != "village") return false
+    return placeRegionClass(local.regionId, visibleRegion) != 0
+}
+
+internal fun placeKindToken(kind: String): String {
+    val k = kind.lowercase().substringBefore('|')
+    if (k.contains("place:")) {
+        return k.substringAfter("place:").substringBefore('/').substringBefore('|')
+    }
+    if (k.contains("/place/")) {
+        return k.substringAfter("/place/").substringBefore('/').substringBefore('|')
+    }
+    return k.substringAfterLast('/').substringAfter(':')
+}
+
+internal fun isCityOrTownKind(kind: String): Boolean {
+    val t = placeKindToken(kind)
+    return t == "city" || t == "town" || t == "municipality"
+}
+
+internal fun isMinorPlaceKind(kind: String): Boolean {
+    val t = placeKindToken(kind)
+    val k = kind.lowercase()
+    return t == "farm" ||
+        t == "hamlet" ||
+        t == "isolated_dwelling" ||
+        t == "locality" ||
+        t == "bus_stop" ||
+        t == "building" ||
+        k.contains("bus_stop") ||
+        k.contains("building")
 }
 
 /** 0 = local / installed-region hit, 1 = online (Nominatim or ORS). */
@@ -300,34 +446,47 @@ internal fun placeMatchClass(
     qLower: String,
 ): Int {
     val n = name.lowercase()
+    val q = qLower.lowercase()
+    val nf = foldSearchKey(name)
+    val qf = foldSearchKey(q)
+    val nCollapse = nf.replace("aa", "a").replace("ue", "u").replace("oe", "o")
+    val qCollapse = qf.replace("aa", "a").replace("ue", "u").replace("oe", "o")
     return when {
-        n == qLower -> 0
-        n.startsWith(qLower) -> 1
+        n == q -> 0
+        nf == qf -> 0
+        nCollapse == qCollapse -> 0
+        n.startsWith(q) || nf.startsWith(qf) || nCollapse.startsWith(qCollapse) -> 1
         else -> 2
     }
 }
 
 internal fun placeKindClass(kind: String): Int {
     val k = kind.lowercase()
-    val place = k.substringAfter("place:", "")
-    if (k.startsWith("place:") || place.isNotEmpty()) {
-        return when (place.ifBlank { k.removePrefix("place:") }) {
-            "city", "municipality" -> 0
-            "town" -> 1
-            "suburb", "borough", "quarter" -> 2
-            "village" -> 3
-            "hamlet" -> 4
-            "locality", "isolated_dwelling" -> 5
-            else -> 6
+    val place = placeKindToken(k)
+    return when (place) {
+        "city", "municipality" -> 0
+        "town" -> 1
+        "suburb", "borough", "quarter" -> 2
+        "village" -> 3
+        "hamlet" -> 4
+        "locality", "isolated_dwelling" -> 5
+        "farm" -> 7
+        "bus_stop" -> 8
+        "building" -> 9
+        else -> {
+            when {
+                k.contains("bus_stop") -> 8
+                k.contains("building") -> 9
+                k.contains("tourism") ||
+                    k.contains("amenity") ||
+                    k.contains("leisure") ||
+                    k.contains("natural") -> 10
+                k.contains("addr") || k.contains("highway") || k.contains("street") -> 20
+                k.contains("place:") || k.contains("/place/") -> 6
+                else -> 15
+            }
         }
     }
-    if (k.contains("tourism") || k.contains("amenity") || k.contains("leisure") || k.contains("natural")) {
-        return 10
-    }
-    if (k.contains("addr") || k.contains("highway") || k.contains("street")) {
-        return 20
-    }
-    return 15
 }
 
 internal fun placeRegionClass(

@@ -71,6 +71,20 @@ class PlaceSearchHintTest {
     }
 
     @Test
+    fun offlineMoreHintWhenTopHitIsMinorPlace() {
+        val msg =
+            placeSearchOfflineMoreHint(
+                onlineEnabled = false,
+                topKind = "place:farm",
+            )
+        assertTrue(msg!!.contains("Online place search", ignoreCase = true))
+        assertTrue(msg.contains("download", ignoreCase = true))
+        assertNull(placeSearchOfflineMoreHint(onlineEnabled = true, topKind = "place:farm"))
+        assertNull(placeSearchOfflineMoreHint(onlineEnabled = false, topKind = "place:city"))
+        assertNull(placeSearchOfflineMoreHint(onlineEnabled = false, topKind = "place:village"))
+    }
+
+    @Test
     fun noMessageWhenQueryHasHits() {
         assertNull(
             placeSearchBuildingMessage(
@@ -82,14 +96,16 @@ class PlaceSearchHintTest {
     }
 
     @Test
-    fun noMessageWhenPopulatedIndexHasZeroHits() {
-        assertNull(
+    fun noMatchLineWhenPopulatedIndexHasZeroHits() {
+        val msg =
             placeSearchBuildingMessage(
                 hitsEmpty = true,
                 indexHasEntries = true,
                 indexRunning = false,
-            ),
-        )
+            )
+        assertTrue(msg!!.contains("No offline match"))
+        assertTrue(msg.contains("Online place search"))
+        assertFalse(msg.contains("Sets the Tools", ignoreCase = true))
     }
 
     @Test
@@ -102,7 +118,7 @@ class PlaceSearchHintTest {
                 onlineAvailable = true,
             )
         assertTrue(msg!!.contains("online", ignoreCase = true))
-        assertTrue(msg.contains("download region", ignoreCase = true))
+        assertFalse(msg.contains("download region", ignoreCase = true))
     }
 
     @Test

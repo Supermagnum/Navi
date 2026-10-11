@@ -82,6 +82,7 @@ object OnlinePlaceSearch {
     ): List<PlaceHit> {
         val q = query.trim()
         if (q.length < 2) return emptyList()
+        if (looksLikeCoordinatePair(q) && parseLatLonQuery(q) == null) return emptyList()
         overrideForTests?.let { return it(q, limit) }
         val config =
             OnlinePlaceSearchConfig(
@@ -110,6 +111,7 @@ object OnlinePlaceSearch {
     ): List<PlaceHit> {
         val q = query.trim()
         if (q.length < 2) return emptyList()
+        if (looksLikeCoordinatePair(q) && parseLatLonQuery(q) == null) return emptyList()
         if (!shouldSendOnlinePlaceSearch(config)) return emptyList()
         val base = normalizeNominatimBaseUrl(config.baseUrl)
         if (base.isEmpty()) return emptyList()
@@ -299,9 +301,12 @@ object OnlinePlaceSearch {
             val lon = o.optString("lon").toDoubleOrNull() ?: continue
             val addr = o.optJSONObject("address")
             val display = o.optString("display_name")
+            // A named place (restaurant, town) keeps its name; houses have none.
             val name =
-                formatReverseAddress(addr, display)
-                    .ifBlank { o.optString("name") }
+                o
+                    .optString("name")
+                    .trim()
+                    .ifBlank { formatReverseAddress(addr, display) }
                     .ifBlank { formatCoordWaypointName(lat, lon) }
             val osmId = o.optLong("osm_id", 0L)
             val cls = o.optString("class").ifBlank { o.optString("category") }.ifBlank { "place" }

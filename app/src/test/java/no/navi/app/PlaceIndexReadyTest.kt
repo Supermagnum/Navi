@@ -187,6 +187,8 @@ class PlaceIndexReadyTest {
             assertEquals(emptySet<String>(), PlaceIndexReady.searchAllowedRegions(dir))
             File(dir, "place_index.db").delete()
             assertEquals("file missing", PlaceIndexIntact.fileProblem(dir))
+            File(dir, PlaceIndexIntact.QUICK_CHECK_STAMP).writeText("malformed\n1\n")
+            assertEquals("damaged (malformed)", PlaceIndexIntact.corruptionStampProblem(dir))
             assertFalse(File(dir, "place_index.db").exists())
         } finally {
             dir.deleteRecursively()

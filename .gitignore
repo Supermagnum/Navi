@@ -38,6 +38,8 @@ tools/fdroid-check/fdroidserver/
 
 # Local machine-only debug snapshots (emulator GPU/context, etc.)
 /local/
+.fu64-work/
+.fu66-work/
 
 # Integration fixtures (large)
 core/target/integration-fixtures/*.pbf

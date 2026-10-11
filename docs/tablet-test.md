@@ -103,6 +103,7 @@ None are on unless you set them. Release APKs ignore the trip extras.
 | `navi_hide_chrome` | false | Hide chrome (cleared on normal launch) |
 | `navi_camera_*` | unset | Frame the map (also disables GPS follow) |
 | `navi_search_q` | unset | Run one search |
+| `navi_search_ui_q` (+ `navi_search_ui_submit`) | unset | Put exact text in the search field; submit like the Search button when true (debug builds) |
 | `navi_extract_pmtiles` | unset | Queue a map extract |
 | `navi_place_index_pbf` / `_region` / `_db` / `_clear_region` | unset | Harness index jobs |
 | `navi_keep_splash` | false | Hold the splash for capture |

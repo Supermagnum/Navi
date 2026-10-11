@@ -8,4 +8,5 @@ internal data class PlaceSearchOutcome(
     val hasEntries: Boolean,
     val usedOnline: Boolean,
     val onlineOk: Boolean,
+    val errorLine: String? = null,
 )

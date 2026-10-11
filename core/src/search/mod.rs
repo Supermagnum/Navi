@@ -216,14 +216,474 @@ pub struct NameHit {
     pub region_id: String,
 }
 
-fn search_match_class(name: &str, q_lower: &str) -> i32 {
-    let name_l = name.to_lowercase();
-    if name_l == q_lower {
-        0
-    } else if name_l.starts_with(q_lower) {
-        1
+/// True for Unicode combining marks (Mn/Me ranges used in NFD names).
+fn is_combining_mark(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{0300}'..='\u{036F}'
+            | '\u{1AB0}'..='\u{1AFF}'
+            | '\u{1DC0}'..='\u{1DFF}'
+            | '\u{20D0}'..='\u{20FF}'
+            | '\u{FE20}'..='\u{FE2F}'
+    )
+}
+
+/// Map one letter to its fold key (may be 1–2 ASCII chars).
+fn fold_letter(ch: char) -> &'static str {
+    match ch {
+        'æ' | 'ǽ' | 'ǣ' => "ae",
+        'œ' => "oe",
+        'ø' | 'ǿ' => "o",
+        'ß' => "ss",
+        'þ' => "th",
+        'ł' => "l",
+        'đ' | 'ð' => "d",
+        'ħ' => "h",
+        'ı' => "i",
+        'ŋ' => "n",
+        'ŧ' => "t",
+        'å' | 'ä' | 'à' | 'á' | 'â' | 'ã' | 'ā' | 'ă' | 'ą' => "a",
+        'ç' | 'ć' | 'č' | 'ĉ' | 'ċ' => "c",
+        'è' | 'é' | 'ê' | 'ë' | 'ē' | 'ĕ' | 'ė' | 'ę' | 'ě' => "e",
+        'ì' | 'í' | 'î' | 'ï' | 'ī' | 'ĭ' | 'į' | 'ĩ' => "i",
+        'ñ' | 'ń' | 'ņ' | 'ň' | 'ŉ' => "n",
+        'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ō' | 'ŏ' | 'ő' => "o",
+        'ù' | 'ú' | 'û' | 'ü' | 'ū' | 'ŭ' | 'ů' | 'ű' | 'ų' => "u",
+        'ý' | 'ÿ' | 'ŷ' => "y",
+        'ś' | 'š' | 'ş' | 'ŝ' | 'ș' => "s",
+        'ź' | 'ż' | 'ž' => "z",
+        'ğ' | 'ģ' | 'ġ' | 'ĝ' => "g",
+        'ķ' | 'ĸ' => "k",
+        'ľ' | 'ļ' | 'ĺ' | 'ŀ' => "l",
+        'ř' | 'ŕ' | 'ŗ' => "r",
+        'ť' | 'ţ' | 'ț' => "t",
+        'ď' => "d",
+        'ẃ' | 'ŵ' | 'ẁ' | 'ẅ' => "w",
+        'ẋ' => "x",
+        _ => "",
+    }
+}
+
+/// NFC/NFD-insensitive, full Unicode lowercase, diacritics stripped, plus
+/// æ/ø/ß/ł and similar letter expansions. `Dombås` / `Dombas` / `DOMBÅS` all
+/// become `dombas`.
+pub fn fold_search_key(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        if is_combining_mark(ch) {
+            continue;
+        }
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+            continue;
+        }
+        if ch.is_whitespace() || ch == '-' || ch == '\'' {
+            out.push(ch);
+            continue;
+        }
+        let lower = ch.to_lowercase();
+        for lc in lower {
+            if is_combining_mark(lc) {
+                continue;
+            }
+            let mapped = fold_letter(lc);
+            if mapped.is_empty() {
+                if lc.is_alphanumeric() {
+                    out.push(lc);
+                }
+            } else {
+                out.push_str(mapped);
+            }
+        }
+    }
+    out
+}
+
+/// Extra FTS tokens so ASCII / umlaut-expanded keyboards hit the same row.
+pub fn fold_name_aliases(name: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let folded = fold_search_key(name);
+    if !folded.is_empty() && folded != name.to_lowercase() {
+        out.push(folded.clone());
+    }
+    let mut expanded = String::new();
+    for ch in name.to_lowercase().chars() {
+        if is_combining_mark(ch) {
+            continue;
+        }
+        match ch {
+            'ä' => expanded.push_str("ae"),
+            'ö' => expanded.push_str("oe"),
+            'ü' => expanded.push_str("ue"),
+            'å' => expanded.push_str("aa"),
+            other => {
+                let mapped = fold_letter(other);
+                if mapped.is_empty() {
+                    if other.is_ascii_alphanumeric() || other.is_whitespace() || other == '-' {
+                        expanded.push(other);
+                    } else if other.is_alphanumeric() {
+                        expanded.push(other);
+                    }
+                } else {
+                    expanded.push_str(mapped);
+                }
+            }
+        }
+    }
+    if !expanded.is_empty() && expanded != folded && !out.iter().any(|a| a == &expanded) {
+        out.push(expanded);
+    }
+    out
+}
+
+fn search_doc_with_fold_aliases(primary: &str) -> String {
+    let mut parts = vec![primary.to_string()];
+    let mut seen = HashSet::new();
+    seen.insert(primary.to_lowercase());
+    for alias in fold_name_aliases(primary) {
+        if seen.insert(alias.to_lowercase()) {
+            parts.push(alias);
+        }
+    }
+    parts.join(" ")
+}
+
+fn tokenize_search(s: &str) -> Vec<String> {
+    // Combining marks must stay inside the letter they belong to (NFC/NFD).
+    // Splitting on U+030A turned `Dombås` (NFD) into `Domba` + `s`.
+    let stripped: String = s.chars().filter(|c| !is_combining_mark(*c)).collect();
+    stripped
+        .split(|c: char| !(c.is_alphanumeric() || c == '\''))
+        .map(|t| t.trim())
+        .filter(|t| !t.is_empty())
+        .map(|t| t.to_string())
+        .collect()
+}
+
+fn fts_prefix_from_tokens(tokens: &[String]) -> String {
+    tokens
+        .iter()
+        .filter_map(|t| {
+            let safe = t.replace('"', "").replace('\'', " ");
+            let safe = safe.trim();
+            if safe.is_empty() {
+                return None;
+            }
+            // `"1"*` expands to every token starting with 1 (10, 1867, ...):
+            // hundreds of ms on a full index. House numbers match exactly.
+            if safe.chars().all(|c| c.is_ascii_digit()) {
+                return Some(format!("\"{safe}\""));
+            }
+            Some(format!("\"{safe}\"*"))
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Letters that FTS may have stored in place of an ASCII query letter.
+fn query_letter_expansions(ch: char) -> &'static [&'static str] {
+    match ch {
+        'a' => &["a", "å", "ä", "á", "æ"],
+        'o' => &["o", "ø", "ö", "ó"],
+        'e' => &["e", "é", "è", "æ"],
+        'u' => &["u", "ü"],
+        'c' => &["c", "ć", "č"],
+        'l' => &["l", "ł"],
+        'n' => &["n", "ñ"],
+        's' => &["s", "ś", "š"],
+        'z' => &["z", "ż", "ź", "ž"],
+        _ => &[],
+    }
+}
+
+fn letter_options(ch: char) -> Vec<String> {
+    let exp = query_letter_expansions(ch);
+    if exp.is_empty() {
+        vec![ch.to_string()]
     } else {
-        2
+        exp.iter().map(|s| (*s).to_string()).collect()
+    }
+}
+
+fn prefix_stems(query: &str) -> Vec<String> {
+    let folded = fold_search_key(query);
+    let alnum: String = folded.chars().filter(|c| c.is_alphanumeric()).collect();
+    if alnum.chars().count() < 3 {
+        return Vec::new();
+    }
+    let take_stem = |s: &str| -> String {
+        let n = s.chars().count().min(4);
+        s.chars().take(n).collect()
+    };
+    let mut stems = Vec::new();
+    let push = |stems: &mut Vec<String>, s: String| {
+        if s.chars().count() >= 3 && !stems.iter().any(|e| e == &s) {
+            stems.push(s);
+        }
+    };
+    push(&mut stems, take_stem(&alnum));
+    let ascii: String = alnum
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect();
+    if ascii.chars().count() >= 3 {
+        push(&mut stems, take_stem(&ascii));
+    }
+    const DIGRAPHS: &[(&str, &[&str])] = &[
+        ("aa", &["å"]),
+        ("ae", &["æ", "ä"]),
+        ("oe", &["ø", "ö"]),
+        ("ue", &["ü"]),
+        ("ss", &["ß"]),
+    ];
+    for (from, tos) in DIGRAPHS {
+        if let Some(i) = ascii.find(from) {
+            if i < 4 {
+                for to in *tos {
+                    let replaced = ascii.replacen(from, to, 1);
+                    push(&mut stems, take_stem(&replaced));
+                }
+            }
+        }
+    }
+    stems
+}
+
+fn expand_stem_letters(stem: &str, cap: usize) -> Vec<String> {
+    let mut acc = vec![String::new()];
+    for ch in stem.chars() {
+        let opts = letter_options(ch);
+        let mut next = Vec::new();
+        for prefix in &acc {
+            for o in &opts {
+                if next.len() >= cap {
+                    break;
+                }
+                next.push(format!("{prefix}{o}"));
+            }
+        }
+        acc = next;
+        if acc.len() >= cap {
+            break;
+        }
+    }
+    acc
+}
+
+/// One FTS5 prefix MATCH for every plausible leading-letter spelling.
+/// `"Kobe"* OR "Købe"* OR "Köbe"*` hits `København` on an unfolded index.
+fn query_time_prefix_or_match(query: &str) -> Option<String> {
+    const CAP: usize = 40;
+    let mut prefixes = Vec::new();
+    for stem in prefix_stems(query) {
+        for variant in expand_stem_letters(&stem, CAP) {
+            if variant.chars().count() < 3 {
+                continue;
+            }
+            let q = format!("\"{variant}\"*");
+            if !prefixes.iter().any(|e| e == &q) {
+                prefixes.push(q);
+            }
+            if prefixes.len() >= CAP {
+                break;
+            }
+        }
+        if prefixes.len() >= CAP {
+            break;
+        }
+    }
+    if prefixes.is_empty() {
+        None
+    } else {
+        Some(prefixes.join(" OR "))
+    }
+}
+
+/// Spellings of the longest leading part of the first word that expands to at
+/// most `cap` variants (`kobenh` -> `københ`, `kobenh`, ...).
+fn anchored_first_word_variants(query: &str, cap: usize) -> Vec<String> {
+    let folded = fold_search_key(query);
+    let Some(first) = folded.split_whitespace().next() else {
+        return Vec::new();
+    };
+    let mut combos = 1usize;
+    let mut stem = String::new();
+    for ch in first.chars().filter(|c| c.is_alphanumeric()) {
+        let k = letter_options(ch).len();
+        if combos * k > cap {
+            break;
+        }
+        combos *= k;
+        stem.push(ch);
+    }
+    if stem.chars().count() < 3 {
+        return Vec::new();
+    }
+    expand_stem_letters(&stem, cap)
+}
+
+/// Query variants: original tokens and folded / umlaut-expanded tokens.
+/// Diacritic prefixes for unfolded indexes are a separate OR MATCH.
+fn search_query_variants(query: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let raw = tokenize_search(query);
+    let raw_q = fts_prefix_from_tokens(&raw);
+    if !raw_q.is_empty() {
+        out.push(raw_q);
+    }
+    let folded: Vec<String> = raw.iter().map(|t| fold_search_key(t)).collect();
+    let folded_q = fts_prefix_from_tokens(&folded);
+    if !folded_q.is_empty() && !out.iter().any(|q| q == &folded_q) {
+        out.push(folded_q);
+    }
+    for alias in fold_name_aliases(query) {
+        let toks = tokenize_search(&alias);
+        let q = fts_prefix_from_tokens(&toks);
+        if !q.is_empty() && !out.iter().any(|e| e == &q) {
+            out.push(q);
+        }
+    }
+    let collapsed = fold_search_key(query)
+        .replace("aa", "a")
+        .replace("ue", "u")
+        .replace("oe", "o");
+    let collapsed_q = fts_prefix_from_tokens(&tokenize_search(&collapsed));
+    if !collapsed_q.is_empty() && !out.iter().any(|e| e == &collapsed_q) {
+        out.push(collapsed_q);
+    }
+    out
+}
+
+fn hit_matches_all_tokens(hit: &NameHit, query: &str) -> bool {
+    let tokens = tokenize_search(&fold_search_key(query));
+    if tokens.is_empty() {
+        return true;
+    }
+    let hay = format!(
+        "{} {} {}",
+        fold_search_key(&hit.name),
+        fold_search_key(&hit.sub_area),
+        fold_search_key(&hit.municipality),
+    );
+    let hay_words: Vec<&str> = hay.split_whitespace().collect();
+    tokens.iter().all(|tok| {
+        let f = fold_search_key(tok);
+        if f.is_empty() {
+            return true;
+        }
+        let collapsed = f.replace("aa", "a").replace("ue", "u").replace("oe", "o");
+        hay_words
+            .iter()
+            .any(|w| *w == f || *w == collapsed || w.starts_with(&f) || w.starts_with(&collapsed))
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedAddressQuery {
+    pub street: String,
+    pub number: Option<String>,
+    pub place: Option<String>,
+}
+
+fn is_house_number_token(tok: &str) -> bool {
+    let t = tok.trim();
+    if t.is_empty() {
+        return false;
+    }
+    let digits = t.chars().take_while(|c| c.is_ascii_digit()).count();
+    if digits == 0 {
+        return false;
+    }
+    t[digits..].chars().all(|c| c.is_ascii_alphabetic())
+}
+
+/// Parse "street number, place", "street number place", "place, street number".
+pub fn parse_address_query(raw: &str) -> Option<ParsedAddressQuery> {
+    let q = raw.trim();
+    if q.is_empty() {
+        return None;
+    }
+    if let Some((left, right)) = q.split_once(',') {
+        let left = left.trim();
+        let right = right.trim();
+        if left.is_empty() || right.is_empty() {
+            return None;
+        }
+        if let Some(addr) = parse_street_number(left) {
+            return Some(ParsedAddressQuery {
+                street: addr.0,
+                number: addr.1,
+                place: Some(right.to_string()),
+            });
+        }
+        if let Some(addr) = parse_street_number(right) {
+            return Some(ParsedAddressQuery {
+                street: addr.0,
+                number: addr.1,
+                place: Some(left.to_string()),
+            });
+        }
+        return None;
+    }
+    let toks = tokenize_search(q);
+    if toks.len() < 2 {
+        return None;
+    }
+    let num_idx = toks.iter().position(|t| is_house_number_token(t))?;
+    if num_idx == 0 {
+        return None;
+    }
+    let street = toks[..num_idx].join(" ");
+    let number = Some(toks[num_idx].clone());
+    let place = if num_idx + 1 < toks.len() {
+        Some(toks[num_idx + 1..].join(" "))
+    } else {
+        None
+    };
+    Some(ParsedAddressQuery {
+        street,
+        number,
+        place,
+    })
+}
+
+fn parse_street_number(s: &str) -> Option<(String, Option<String>)> {
+    let toks = tokenize_search(s);
+    if toks.len() < 2 {
+        return None;
+    }
+    let last = toks.last()?;
+    if is_house_number_token(last) {
+        return Some((toks[..toks.len() - 1].join(" "), Some(last.clone())));
+    }
+    None
+}
+
+fn house_number_of_display(name: &str) -> Option<String> {
+    tokenize_search(name)
+        .into_iter()
+        .rev()
+        .find(|t| is_house_number_token(t))
+}
+
+fn house_number_matches(name: &str, want: &str) -> bool {
+    let a = fold_search_key(want);
+    house_number_of_display(name).is_some_and(|n| fold_search_key(&n) == a)
+}
+
+fn search_match_class(name: &str, q_raw: &str) -> (i32, i32) {
+    let name_raw_l = name.to_lowercase();
+    let q_raw_l = q_raw.to_lowercase();
+    let name_f = fold_search_key(name);
+    let q_f = fold_search_key(q_raw);
+    if name_raw_l == q_raw_l {
+        (0, 0)
+    } else if name_f == q_f {
+        (0, 1)
+    } else if name_raw_l.starts_with(&q_raw_l) || name_f.starts_with(&q_f) {
+        (1, 0)
+    } else {
+        (2, 0)
     }
 }
 
@@ -236,6 +696,7 @@ fn search_kind_class(kind: &str) -> i32 {
             "village" => 3,
             "hamlet" => 4,
             "locality" | "isolated_dwelling" => 5,
+            "farm" => 7,
             _ => 6,
         };
     }
@@ -271,10 +732,10 @@ fn search_haversine_km(a_lat: f64, a_lon: f64, b_lat: f64, b_lon: f64) -> i32 {
 
 fn search_rank_key(
     h: &NameHit,
-    q_lower: &str,
+    q_raw: &str,
     bias: Option<(Option<f64>, Option<f64>, &str)>,
-) -> (i32, i32, i32, i32, usize) {
-    let match_c = search_match_class(&h.name, q_lower);
+) -> (i32, i32, i32, i32, i32, usize) {
+    let (match_bucket, spelling) = search_match_class(&h.name, q_raw);
     let kind_c = search_kind_class(&h.kind);
     let (region_c, dist) = match bias {
         Some((lat, lon, visible)) => {
@@ -298,7 +759,7 @@ fn search_rank_key(
         }
         None => (1, 0),
     };
-    (match_c, region_c, kind_c, dist, h.name.len())
+    (match_bucket, kind_c, region_c, dist, spelling, h.name.len())
 }
 
 /// Local FTS5 name index for settlements, POIs, huts, peaks, and named ways.
@@ -367,6 +828,12 @@ impl NameIndex {
         }
         phase_timing::end("place_index.open_db.backfill_legacy_complete", backfill_t0);
         Ok(Self { conn })
+    }
+
+    pub fn pragma_quick_check(&self) -> String {
+        self.conn
+            .query_row("PRAGMA quick_check", [], |row| row.get(0))
+            .unwrap_or_else(|e| e.to_string())
     }
 
     /// Query-only open: no migrate/DDL, no 30s busy wait on the UI path.
@@ -1340,7 +1807,7 @@ impl NameIndex {
             Ok(routes) => {
                 route_hits = routes.len();
                 for r in routes {
-                    let search_doc = r.name.clone();
+                    let search_doc = search_doc_with_fold_aliases(&r.name);
                     batch.push((r.osm_id, r.name, search_doc, r.kind, r.lat, r.lon));
                 }
             }
@@ -1740,7 +2207,7 @@ impl NameIndex {
         municipality: String,
         region_id: String,
     ) -> SqlResult<()> {
-        // Tests / incremental upserts: search_doc mirrors display name.
+        // New writes store display name plus ASCII / umlaut fold aliases.
         self.conn.execute(
             "INSERT OR REPLACE INTO name_entries(osm_id, name, kind, lat, lon, sub_area, municipality, region_id, search_doc)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
@@ -1753,7 +2220,7 @@ impl NameIndex {
                 &sub_area,
                 &municipality,
                 &region_id,
-                &name
+                &search_doc_with_fold_aliases(&name)
             ],
         )?;
         let rowid: i64 = self.conn.query_row(
@@ -1767,21 +2234,29 @@ impl NameIndex {
         );
         self.conn.execute(
             "INSERT INTO name_fts(rowid, search_doc, kind) VALUES (?1,?2,?3)",
-            params![rowid, &name, &kind],
+            params![rowid, search_doc_with_fold_aliases(&name), &kind],
         )?;
         Ok(())
     }
 
+    /// `name` has no index, so a plain `name = ?` scans every row (seconds on a
+    /// phone). Every `search_doc` starts with the name's tokens, so a phrase
+    /// anchored at the column start finds all candidates through FTS.
     fn exact_name_hits(&self, query: &str, limit: usize) -> SqlResult<Vec<NameHit>> {
+        if !query.chars().any(char::is_alphanumeric) {
+            return Ok(Vec::new());
+        }
+        let anchored = format!("search_doc : ^\"{}\"", query.replace('"', "\"\""));
         let mut stmt = self.conn.prepare(
             "
-            SELECT osm_id, name, kind, lat, lon, sub_area, municipality, region_id
-            FROM name_entries
-            WHERE name = ?1 COLLATE NOCASE
-            LIMIT ?2
+            SELECT e.osm_id, e.name, e.kind, e.lat, e.lon, e.sub_area, e.municipality, e.region_id
+            FROM name_fts f
+            JOIN name_entries e ON e.rowid = f.rowid
+            WHERE name_fts MATCH ?1 AND e.name = ?2 COLLATE NOCASE
+            LIMIT ?3
             ",
         )?;
-        let rows = stmt.query_map(params![query, limit as i64], |row| {
+        let rows = stmt.query_map(params![anchored, query, limit as i64], |row| {
             Ok(NameHit {
                 osm_id: row.get(0)?,
                 name: row.get(1)?,
@@ -1796,48 +2271,41 @@ impl NameIndex {
         rows.collect()
     }
 
-    pub fn search_biased(
-        &self,
-        query: &str,
-        limit: usize,
-        bias_lat: Option<f64>,
-        bias_lon: Option<f64>,
-        visible_region: &str,
-    ) -> SqlResult<Vec<NameHit>> {
-        let mut out = self.search(query, limit.saturating_mul(4).max(limit))?;
-        let q_lower = query.trim().to_lowercase();
-        let visible = visible_region.trim().trim_matches('/');
-        out.sort_by(|a, b| {
-            search_rank_key(a, &q_lower, Some((bias_lat, bias_lon, visible))).cmp(&search_rank_key(
-                b,
-                &q_lower,
-                Some((bias_lat, bias_lon, visible)),
-            ))
-        });
-        out.truncate(limit);
-        Ok(out)
-    }
-
-    pub fn search(&self, query: &str, limit: usize) -> SqlResult<Vec<NameHit>> {
-        let q = query.trim();
-        if q.is_empty() {
+    /// Rows whose folded name equals the folded query (`Kobenhavn` ->
+    /// `København`). The prefix MATCH stops at `fetch` rows, so a crowded stem
+    /// can push out the one place the user meant; this pass is not capped by it.
+    fn folded_exact_hits(&self, query: &str, limit: usize) -> SqlResult<Vec<NameHit>> {
+        const CANDIDATES: i64 = 5000;
+        let variants = anchored_first_word_variants(query, 40);
+        if variants.is_empty() {
             return Ok(Vec::new());
         }
-        let prefix = format!("{}*", q.replace('"', ""));
-        // Over-fetch then rank: FTS order is not ideal when many addr:* rows share
-        // a street-name prefix with a settlement (e.g. "Nordre Ott*" → Ottvegen).
-        let fetch = (limit.saturating_mul(8)).clamp(40, 200);
+        let want = fold_search_key(query);
+        let mut match_q = format!(
+            "({})",
+            variants
+                .iter()
+                .map(|v| format!("search_doc : ^\"{v}\"*"))
+                .collect::<Vec<_>>()
+                .join(" OR ")
+        );
+        // House numbers cannot carry a folded letter; requiring them keeps a
+        // common street stem (Storg*) from filling the candidate cap.
+        for tok in want.split_whitespace().skip(1) {
+            if tok.chars().all(|c| c.is_ascii_digit()) {
+                match_q.push_str(&format!(" AND search_doc : \"{tok}\""));
+            }
+        }
         let mut stmt = self.conn.prepare(
             "
             SELECT e.osm_id, e.name, e.kind, e.lat, e.lon, e.sub_area, e.municipality, e.region_id
             FROM name_fts f
             JOIN name_entries e ON e.rowid = f.rowid
             WHERE name_fts MATCH ?1
-            GROUP BY e.osm_id
             LIMIT ?2
             ",
         )?;
-        let rows = stmt.query_map(params![prefix, fetch as i64], |row| {
+        let rows = stmt.query_map(params![match_q, CANDIDATES], |row| {
             Ok(NameHit {
                 osm_id: row.get(0)?,
                 name: row.get(1)?,
@@ -1851,22 +2319,233 @@ impl NameIndex {
         })?;
         let mut out = Vec::new();
         for r in rows {
-            out.push(r?);
-        }
-        // FTS prefix order can drown a local exact name (Aga in Vestlandet)
-        // under hundreds of foreign AGA* rows. Fold every exact name in.
-        let exact = self.exact_name_hits(q, 200)?;
-        let mut seen = HashSet::new();
-        let mut merged = Vec::with_capacity(out.len() + exact.len());
-        for h in exact.into_iter().chain(out) {
-            if seen.insert((h.region_id.clone(), h.osm_id)) {
-                merged.push(h);
+            let h = r?;
+            if fold_search_key(&h.name) == want {
+                out.push(h);
+                if out.len() >= limit {
+                    break;
+                }
             }
         }
-        let q_lower = q.to_lowercase();
-        merged.sort_by(|a, b| {
-            search_rank_key(a, &q_lower, None).cmp(&search_rank_key(b, &q_lower, None))
+        Ok(out)
+    }
+
+    pub fn search_biased(
+        &self,
+        query: &str,
+        limit: usize,
+        bias_lat: Option<f64>,
+        bias_lon: Option<f64>,
+        visible_region: &str,
+    ) -> SqlResult<Vec<NameHit>> {
+        let mut out = self.search(query, limit.saturating_mul(4).max(limit))?;
+        let q_raw = query.trim();
+        let visible = visible_region.trim().trim_matches('/');
+        out.sort_by(|a, b| {
+            search_rank_key(a, q_raw, Some((bias_lat, bias_lon, visible))).cmp(&search_rank_key(
+                b,
+                q_raw,
+                Some((bias_lat, bias_lon, visible)),
+            ))
         });
+        out.truncate(limit);
+        Ok(out)
+    }
+
+    fn search_fts_match(&self, match_q: &str, fetch: usize) -> SqlResult<Vec<NameHit>> {
+        if match_q.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut stmt = self.conn.prepare(
+            "
+            SELECT e.osm_id, e.name, e.kind, e.lat, e.lon, e.sub_area, e.municipality, e.region_id
+            FROM name_fts f
+            JOIN name_entries e ON e.rowid = f.rowid
+            WHERE name_fts MATCH ?1
+            LIMIT ?2
+            ",
+        )?;
+        let rows = stmt.query_map(params![match_q, fetch as i64], |row| {
+            Ok(NameHit {
+                osm_id: row.get(0)?,
+                name: row.get(1)?,
+                kind: row.get(2)?,
+                lat: row.get(3)?,
+                lon: row.get(4)?,
+                sub_area: row.get(5)?,
+                municipality: row.get(6)?,
+                region_id: row.get(7)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        let mut seen = HashSet::new();
+        for r in rows {
+            match r {
+                Ok(h) => {
+                    if seen.insert((h.region_id.clone(), h.osm_id)) {
+                        out.push(h);
+                    }
+                }
+                Err(e) => {
+                    log::warn!(
+                        target: "NaviSearch",
+                        "name_fts row skipped: {e}"
+                    );
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    fn collect_search_hits(&self, query: &str, fetch: usize) -> SqlResult<Vec<NameHit>> {
+        let mut seen = HashSet::new();
+        let mut merged = Vec::new();
+        let mut db_err: Option<rusqlite::Error> = None;
+        let variants = search_query_variants(query);
+        for variant in &variants {
+            match self.search_fts_match(variant, fetch) {
+                Ok(hits) => {
+                    for h in hits {
+                        if seen.insert((h.region_id.clone(), h.osm_id)) {
+                            merged.push(h);
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!(
+                        target: "NaviSearch",
+                        "name_fts MATCH failed: {e}"
+                    );
+                    db_err = Some(e);
+                    break;
+                }
+            }
+        }
+        match self.exact_name_hits(query, 200) {
+            Ok(hits) => {
+                for h in hits {
+                    if seen.insert((h.region_id.clone(), h.osm_id)) {
+                        merged.push(h);
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    target: "NaviSearch",
+                    "exact name lookup failed: {e}"
+                );
+                if db_err.is_none() {
+                    db_err = Some(e);
+                }
+            }
+        }
+        match self.folded_exact_hits(query, 200) {
+            Ok(hits) => {
+                for h in hits {
+                    if seen.insert((h.region_id.clone(), h.osm_id)) {
+                        merged.push(h);
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    target: "NaviSearch",
+                    "folded exact lookup failed: {e}"
+                );
+                if db_err.is_none() {
+                    db_err = Some(e);
+                }
+            }
+        }
+        if let Some(or_q) = query_time_prefix_or_match(query) {
+            match self.search_fts_match(&or_q, fetch) {
+                Ok(hits) => {
+                    for h in hits {
+                        if seen.insert((h.region_id.clone(), h.osm_id)) {
+                            merged.push(h);
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!(
+                        target: "NaviSearch",
+                        "name_fts prefix MATCH failed: {e}"
+                    );
+                    if db_err.is_none() {
+                        db_err = Some(e);
+                    }
+                }
+            }
+        }
+        if let Some(e) = db_err {
+            return Err(e);
+        }
+        Ok(merged)
+    }
+
+    pub fn search(&self, query: &str, limit: usize) -> SqlResult<Vec<NameHit>> {
+        let q = query.trim();
+        if q.is_empty() {
+            return Ok(Vec::new());
+        }
+        let fetch = (limit.saturating_mul(8)).clamp(40, 200);
+        let addr = parse_address_query(q);
+        let (search_q, place_filter, want_number) = if let Some(addr) = addr.as_ref() {
+            let street_q = match addr.number.as_deref() {
+                Some(n) => format!("{} {}", addr.street, n),
+                None => addr.street.clone(),
+            };
+            (street_q, addr.place.clone(), addr.number.clone())
+        } else {
+            (q.to_string(), None, None)
+        };
+        let place_key = place_filter.as_deref().map(fold_search_key);
+        let in_place = |h: &NameHit| {
+            place_key.as_deref().is_none_or(|pf| {
+                fold_search_key(&h.municipality).contains(pf)
+                    || fold_search_key(&h.sub_area).contains(pf)
+                    || fold_search_key(&h.name).contains(pf)
+            })
+        };
+        let mut merged = self.collect_search_hits(&search_q, fetch)?;
+        if let Some(num) = want_number.as_deref() {
+            let with_num: Vec<NameHit> = merged
+                .iter()
+                .filter(|h| {
+                    house_number_matches(&h.name, num)
+                        && hit_matches_all_tokens(h, &search_q)
+                        && in_place(h)
+                })
+                .cloned()
+                .collect();
+            if with_num.is_empty() {
+                let street = addr.as_ref().unwrap().street.as_str();
+                let street_only = self.collect_search_hits(street, fetch)?;
+                let mut streets_seen = HashSet::new();
+                merged = street_only
+                    .into_iter()
+                    .filter(|h| hit_matches_all_tokens(h, street) && in_place(h))
+                    .filter_map(|mut h| {
+                        if h.kind.starts_with("addr:") || h.kind.starts_with("highway:") {
+                            // One row per street and town, not one per house.
+                            let key = (h.region_id.clone(), fold_search_key(&h.municipality));
+                            if !streets_seen.insert(key) {
+                                return None;
+                            }
+                            h.kind = "addr:street".into();
+                            if !h.name.contains("house number") {
+                                h.name = format!("{street} (house number {num} not in the index)");
+                            }
+                        }
+                        Some(h)
+                    })
+                    .collect();
+            } else {
+                merged = with_num;
+            }
+        }
+        merged.retain(|h| hit_matches_all_tokens(h, &search_q) && in_place(h));
+        merged.sort_by(|a, b| search_rank_key(a, q, None).cmp(&search_rank_key(b, q, None)));
         merged.truncate(limit);
         Ok(merged)
     }
@@ -1988,6 +2667,9 @@ fn place_search_doc(primary: &str, alt_name: Option<&str>, loc_name: Option<&str
     }
     if let Some(l) = loc_name {
         push_tag(l);
+    }
+    for alias in fold_name_aliases(primary) {
+        push_tag(&alias);
     }
     parts.join(" ")
 }
@@ -2452,18 +3134,814 @@ mod tests {
             "ü should fold to u"
         );
 
-        // æ / ø do NOT fold to ae / o — ASCII approximations miss (product quirk).
+        // Fold aliases: ASCII approximations find æ / ø after search_doc aliases.
         assert!(
-            idx.search("Baerum", 8).unwrap().is_empty(),
-            "æ must not match ae under unicode61"
+            idx.search("Baerum", 8)
+                .unwrap()
+                .iter()
+                .any(|h| h.name.contains('æ')),
+            "æ should match ae after fold aliases"
         );
         assert!(
             idx.search("Loten", 8)
                 .unwrap()
                 .iter()
-                .all(|h| h.name != "Løten"),
-            "ø must not match plain o under unicode61"
+                .any(|h| h.name == "Løten"),
+            "ø should match plain o after fold aliases"
         );
+    }
+
+    #[test]
+    fn fold_search_key_covers_required_spellings() {
+        assert_eq!(fold_search_key("Dombås"), fold_search_key("Dombas"));
+        assert_eq!(fold_search_key("dombås"), fold_search_key("DOMBÅS"));
+        assert_eq!(fold_search_key("Åre"), fold_search_key("Are"));
+        assert_eq!(fold_search_key("Øra"), fold_search_key("Ora"));
+        assert_eq!(fold_search_key("København"), fold_search_key("Kobenhavn"));
+        assert_eq!(fold_search_key("Århus"), fold_search_key("Arhus"));
+        assert_eq!(fold_search_key("Łódź"), fold_search_key("Lodz"));
+        assert_eq!(fold_search_key("München"), fold_search_key("Munchen"));
+        assert_eq!(fold_search_key("Köln"), fold_search_key("Koln"));
+        assert_eq!(fold_search_key("Görlitz"), fold_search_key("Gorlitz"));
+        assert_eq!(
+            fold_search_key("Świnoujście"),
+            fold_search_key("Swinoujscie")
+        );
+        // precomposed vs combining ring
+        let nfc = "Dombås";
+        let nfd = "Domba\u{030a}s";
+        assert_eq!(fold_search_key(nfc), fold_search_key(nfd));
+        assert!(fold_name_aliases("München")
+            .iter()
+            .any(|a| a.contains("ue") || a.contains("munchen")));
+        assert!(fold_name_aliases("Århus")
+            .iter()
+            .any(|a| a.contains("aa") || a.contains("arhus")));
+        assert_eq!(fold_search_key("Little A'Le'Inn").contains("little"), true);
+    }
+
+    #[test]
+    fn search_finds_folded_and_case_variants() {
+        let mut idx = NameIndex::open_in_memory().unwrap();
+        idx.upsert_entry_with_region(
+            1,
+            "Dombås".into(),
+            "place:village".into(),
+            62.07,
+            9.12,
+            String::new(),
+            "Dovre".into(),
+            "europe/norway/ostlandet".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            2,
+            "Åre".into(),
+            "place:town".into(),
+            63.40,
+            13.08,
+            String::new(),
+            "Åre".into(),
+            "europe/sweden/jamtland".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            3,
+            "Are".into(),
+            "place:farm".into(),
+            61.0,
+            7.0,
+            String::new(),
+            String::new(),
+            "europe/norway/vestlandet".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            4,
+            "Øra".into(),
+            "place:suburb".into(),
+            59.2,
+            10.95,
+            String::new(),
+            "Fredrikstad".into(),
+            "europe/norway/ostlandet".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            5,
+            "København".into(),
+            "place:city".into(),
+            55.68,
+            12.57,
+            String::new(),
+            String::new(),
+            "europe/denmark".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            6,
+            "København".into(),
+            "place:farm".into(),
+            60.8,
+            10.7,
+            "Brattberg".into(),
+            "Gjøvik".into(),
+            "europe/norway/ostlandet".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            7,
+            "Łódź".into(),
+            "place:city".into(),
+            51.76,
+            19.46,
+            String::new(),
+            String::new(),
+            "europe/poland".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            8,
+            "München".into(),
+            "place:city".into(),
+            48.14,
+            11.58,
+            String::new(),
+            String::new(),
+            "europe/germany/bayern".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            9,
+            "Köln".into(),
+            "place:city".into(),
+            50.94,
+            6.96,
+            String::new(),
+            String::new(),
+            "europe/germany/nordrhein-westfalen".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            10,
+            "Görlitz".into(),
+            "place:town".into(),
+            51.16,
+            14.99,
+            String::new(),
+            String::new(),
+            "europe/germany/sachsen".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            11,
+            "Świnoujście".into(),
+            "place:town".into(),
+            53.91,
+            14.25,
+            String::new(),
+            String::new(),
+            "europe/poland".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            12,
+            "Little A'Le'Inn".into(),
+            "tourism:hotel".into(),
+            37.64,
+            -115.78,
+            "Rachel".into(),
+            String::new(),
+            "north-america/us/nevada".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            17,
+            "Rødby".into(),
+            "place:town".into(),
+            54.69,
+            11.39,
+            String::new(),
+            String::new(),
+            "europe/denmark".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            18,
+            "Tønsberg".into(),
+            "place:town".into(),
+            59.27,
+            10.41,
+            String::new(),
+            String::new(),
+            "europe/norway/ostlandet".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            19,
+            "Høyanger".into(),
+            "place:town".into(),
+            61.17,
+            6.06,
+            String::new(),
+            String::new(),
+            "europe/norway/vestlandet".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            20,
+            "Ålesund".into(),
+            "place:city".into(),
+            62.47,
+            6.15,
+            String::new(),
+            String::new(),
+            "europe/norway/vestlandet".into(),
+        )
+        .unwrap();
+        for q in ["Dombås", "Dombas", "dombås", "DOMBÅS", "Domba\u{030a}s"] {
+            let hits = idx.search(q, 8).unwrap();
+            assert!(
+                !hits.is_empty() && hits[0].name == "Dombås",
+                "q={q} variants={:?} hits={:?}",
+                search_query_variants(q),
+                hits.iter().map(|h| h.name.as_str()).collect::<Vec<_>>()
+            );
+        }
+        let are = idx.search("Are", 8).unwrap();
+        assert_eq!(are[0].name, "Åre", "town must beat farm for Are");
+        assert_eq!(idx.search("Ora", 8).unwrap()[0].name, "Øra");
+        assert_eq!(idx.search("Kobenhavn", 8).unwrap()[0].name, "København");
+        assert_eq!(idx.search("København", 8).unwrap()[0].kind, "place:city");
+        assert_eq!(idx.search("Aarhus", 8).unwrap().len(), 0); // no filler
+        idx.upsert_entry_with_region(
+            13,
+            "Århus".into(),
+            "place:city".into(),
+            56.16,
+            10.20,
+            String::new(),
+            String::new(),
+            "europe/denmark".into(),
+        )
+        .unwrap();
+        assert_eq!(idx.search("Aarhus", 8).unwrap()[0].name, "Århus");
+        assert_eq!(idx.search("Lodz", 8).unwrap()[0].name, "Łódź");
+        assert_eq!(idx.search("Munchen", 8).unwrap()[0].name, "München");
+        assert_eq!(idx.search("Muenchen", 8).unwrap()[0].name, "München");
+        assert_eq!(idx.search("Koln", 8).unwrap()[0].name, "Köln");
+        assert_eq!(idx.search("Gorlitz", 8).unwrap()[0].name, "Görlitz");
+        assert_eq!(idx.search("Swinoujscie", 8).unwrap()[0].name, "Świnoujście");
+        assert_eq!(idx.search("Rodby", 8).unwrap()[0].name, "Rødby");
+        assert_eq!(idx.search("Tonsberg", 8).unwrap()[0].name, "Tønsberg");
+        assert_eq!(idx.search("Hoyanger", 8).unwrap()[0].name, "Høyanger");
+        assert_eq!(idx.search("Alesund", 8).unwrap()[0].name, "Ålesund");
+        assert_eq!(idx.search("Aalesund", 8).unwrap()[0].name, "Ålesund");
+        assert!(idx
+            .search("Little A'Le'Inn", 8)
+            .unwrap()
+            .iter()
+            .any(|h| h.name.contains("A'Le'Inn")));
+        let t0 = std::time::Instant::now();
+        let _ = idx.search("Kobenhavn", 8).unwrap();
+        let koben_ms = t0.elapsed().as_millis();
+        assert!(
+            koben_ms < 300,
+            "Kobenhavn query-time fold {koben_ms} ms exceeds 300 ms"
+        );
+    }
+
+    fn seed_fold_compare_fixture(idx: &mut NameIndex) {
+        let rows = [
+            (
+                13707878i64,
+                "København",
+                "place:city",
+                55.686724,
+                12.570072,
+                "Nørrevold",
+                "Københavns Kommune",
+                "europe/denmark",
+            ),
+            (
+                9660615548,
+                "København",
+                "place:farm",
+                60.960261,
+                10.547924,
+                "Brattberg",
+                "Gjøvik",
+                "europe/norway/ostlandet",
+            ),
+            (
+                101,
+                "Dombås",
+                "place:village",
+                62.075,
+                9.128,
+                "",
+                "Dovre",
+                "europe/norway/ostlandet",
+            ),
+            (
+                102,
+                "Åre",
+                "place:town",
+                63.398,
+                13.081,
+                "",
+                "Åre",
+                "europe/sweden/jamtland",
+            ),
+            (
+                110,
+                "Øra",
+                "place:suburb",
+                59.2,
+                10.95,
+                "",
+                "Fredrikstad",
+                "europe/norway/ostlandet",
+            ),
+            (
+                103,
+                "Łódź",
+                "place:city",
+                51.77,
+                19.46,
+                "",
+                "",
+                "europe/poland",
+            ),
+            (
+                104,
+                "München",
+                "place:city",
+                48.14,
+                11.58,
+                "",
+                "",
+                "europe/germany",
+            ),
+            (
+                105,
+                "Rødby",
+                "place:town",
+                54.69,
+                11.39,
+                "",
+                "",
+                "europe/denmark",
+            ),
+            (
+                106,
+                "Tønsberg",
+                "place:town",
+                59.27,
+                10.41,
+                "",
+                "",
+                "europe/norway/ostlandet",
+            ),
+            (
+                107,
+                "Høyanger",
+                "place:town",
+                61.17,
+                6.06,
+                "",
+                "",
+                "europe/norway/vestlandet",
+            ),
+            (
+                108,
+                "Ålesund",
+                "place:city",
+                62.47,
+                6.15,
+                "",
+                "",
+                "europe/norway/vestlandet",
+            ),
+            (
+                109,
+                "Świnoujście",
+                "place:town",
+                53.91,
+                14.25,
+                "",
+                "",
+                "europe/poland",
+            ),
+        ];
+        for (osm, name, kind, lat, lon, sub, muni, rid) in rows {
+            idx.upsert_entry_with_region(
+                osm,
+                name.into(),
+                kind.into(),
+                lat,
+                lon,
+                sub.into(),
+                muni.into(),
+                rid.into(),
+            )
+            .unwrap();
+        }
+    }
+
+    fn hit_keys(hits: &[NameHit]) -> Vec<(i64, String, String)> {
+        let mut keys: Vec<(i64, String, String)> = hits
+            .iter()
+            .map(|h| (h.osm_id, h.name.clone(), h.kind.clone()))
+            .collect();
+        keys.sort();
+        keys
+    }
+
+    #[test]
+    fn query_time_and_folded_keys_return_same_hits() {
+        let mut unfolded = NameIndex::open_in_memory().unwrap();
+        seed_fold_compare_fixture(&mut unfolded);
+        unfolded
+            .conn
+            .execute("UPDATE name_entries SET search_doc = name", [])
+            .unwrap();
+        unfolded
+            .conn
+            .execute_batch("INSERT INTO name_fts(name_fts) VALUES('rebuild');")
+            .unwrap();
+        let unfolded_doc: String = unfolded
+            .conn
+            .query_row(
+                "SELECT search_doc FROM name_entries WHERE osm_id = 101",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(unfolded_doc, "Dombås");
+
+        let mut folded = NameIndex::open_in_memory().unwrap();
+        seed_fold_compare_fixture(&mut folded);
+        let folded_doc: String = folded
+            .conn
+            .query_row(
+                "SELECT search_doc FROM name_entries WHERE osm_id = 101",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            folded_doc.contains("Dombas") || folded_doc.contains("dombas"),
+            "new build stores folded keys, got {folded_doc}"
+        );
+
+        for q in [
+            "Dombas",
+            "Dombås",
+            "Kobenhavn",
+            "København",
+            "Are",
+            "Åre",
+            "Ora",
+            "Lodz",
+            "Munchen",
+            "Muenchen",
+            "Rodby",
+            "Tonsberg",
+            "Hoyanger",
+            "Alesund",
+            "Aalesund",
+            "Swinoujscie",
+        ] {
+            let a = hit_keys(&unfolded.search(q, 8).unwrap());
+            let b = hit_keys(&folded.search(q, 8).unwrap());
+            assert_eq!(a, b, "query {q}: unfolded={a:?} folded={b:?}");
+            assert!(!a.is_empty(), "query {q} returned no hits");
+        }
+    }
+
+    /// Tablet `constraint failed` is FTS5 UNIQUE on `name_fts` rowid, not a
+    /// unique folded name. Two places named København (city vs farm) are both
+    /// valid; the clash is inserting the same content-rowid twice when a NULL
+    /// delete left the old FTS row in place (Android SQLite).
+    #[test]
+    fn fold_null_fts_delete_after_content_update_hits_unique() {
+        let mut idx = NameIndex::open_in_memory().unwrap();
+        idx.upsert_entry_with_region(
+            13707878,
+            "København".into(),
+            "place:city".into(),
+            55.686724,
+            12.570072,
+            "Nørrevold".into(),
+            "Københavns Kommune".into(),
+            "europe/denmark".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            9660615548,
+            "København".into(),
+            "place:farm".into(),
+            60.960261,
+            10.547924,
+            "Brattberg".into(),
+            "Gjøvik".into(),
+            "europe/norway/ostlandet".into(),
+        )
+        .unwrap();
+        idx.conn
+            .execute("UPDATE name_entries SET search_doc = name", [])
+            .unwrap();
+        idx.conn
+            .execute_batch("INSERT INTO name_fts(name_fts) VALUES('rebuild');")
+            .unwrap();
+        let same_name: i64 = idx
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM name_entries WHERE name = 'København'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            same_name, 2,
+            "fixture is two København rows, not a name UNIQUE"
+        );
+        // Host rusqlite FTS5 content= tables replace on the same rowid; Android
+        // SQLite on the tablet raises UNIQUE. Reproduce the constraint on a
+        // standalone FTS table (same rowid, two INSERTs, no delete).
+        idx.conn
+            .execute_batch("CREATE VIRTUAL TABLE fts_clash USING fts5(search_doc, kind);")
+            .unwrap();
+        idx.conn
+            .execute(
+                "INSERT INTO fts_clash(rowid, search_doc, kind) VALUES (10556863, 'København', 'place:farm')",
+                [],
+            )
+            .unwrap();
+        let err = idx
+            .conn
+            .execute(
+                "INSERT INTO fts_clash(rowid, search_doc, kind) VALUES (10556863, 'København Kobenhavn', 'place:farm')",
+                [],
+            )
+            .expect_err("duplicate FTS rowid must hit UNIQUE");
+        let msg = err.to_string();
+        assert!(
+            msg.to_lowercase().contains("constraint") || msg.to_lowercase().contains("unique"),
+            "expected UNIQUE/constraint on FTS rowid, got {msg}"
+        );
+    }
+
+    #[test]
+    fn search_reports_database_error_when_fts_is_unreadable() {
+        let mut idx = NameIndex::open_in_memory().unwrap();
+        idx.upsert_entry_with_region(
+            13707878,
+            "København".into(),
+            "place:city".into(),
+            55.686724,
+            12.570072,
+            "Nørrevold".into(),
+            "Københavns Kommune".into(),
+            "europe/denmark".into(),
+        )
+        .unwrap();
+        idx.conn.execute_batch("DROP TABLE name_fts;").unwrap();
+        let err = idx
+            .search("København", 8)
+            .expect_err("damaged index must not look like zero hits");
+        let msg = err.to_string().to_lowercase();
+        assert!(
+            msg.contains("fts") || msg.contains("no such") || msg.contains("malformed"),
+            "got {msg}"
+        );
+    }
+
+    #[test]
+    fn exact_name_lookup_goes_through_fts_not_a_table_scan() {
+        let mut idx = NameIndex::open_in_memory().unwrap();
+        for i in 0..300 {
+            idx.upsert_entry_with_region(
+                1000 + i,
+                format!("Oslo Gate {i}"),
+                "highway:residential".into(),
+                59.9,
+                10.7,
+                String::new(),
+                String::new(),
+                "europe/norway/ostlandet".into(),
+            )
+            .unwrap();
+        }
+        for (id, name) in [
+            (1, "Oslo"),
+            (2, "Little A'Le'Inn"),
+            (3, "Bar \"Nord\""),
+            (4, "Øra"),
+        ] {
+            idx.upsert_entry_with_region(
+                id,
+                name.into(),
+                "place:town".into(),
+                59.9,
+                10.7,
+                String::new(),
+                String::new(),
+                "europe/norway/ostlandet".into(),
+            )
+            .unwrap();
+        }
+        let names = |q: &str| -> Vec<String> {
+            idx.exact_name_hits(q, 200)
+                .unwrap()
+                .into_iter()
+                .map(|h| h.name)
+                .collect()
+        };
+        assert_eq!(names("oslo"), vec!["Oslo"]);
+        assert_eq!(names("Little A'Le'Inn"), vec!["Little A'Le'Inn"]);
+        assert_eq!(names("Bar \"Nord\""), vec!["Bar \"Nord\""]);
+        assert_eq!(names("Øra"), vec!["Øra"]);
+        assert!(names("Gate").is_empty());
+        assert!(names("--").is_empty());
+        assert_eq!(idx.search("Oslo", 8).unwrap()[0].name, "Oslo");
+
+        let mut plan = idx
+            .conn
+            .prepare(
+                "EXPLAIN QUERY PLAN
+                 SELECT e.name FROM name_fts f JOIN name_entries e ON e.rowid = f.rowid
+                 WHERE name_fts MATCH 'search_doc : ^\"Oslo\"' AND e.name = 'Oslo' COLLATE NOCASE",
+            )
+            .unwrap();
+        let details: Vec<String> = plan
+            .query_map([], |r| r.get::<_, String>(3))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert!(
+            details.iter().all(|d| !d.starts_with("SCAN e")),
+            "name_entries must not be scanned: {details:?}"
+        );
+    }
+
+    #[test]
+    fn house_number_on_another_street_does_not_hide_the_street() {
+        let mut idx = NameIndex::open_in_memory().unwrap();
+        for (id, name, municipality, region) in [
+            (1, "hjulsta torg 1", "Stockholm", "europe/sweden/halland"),
+            (
+                2,
+                "Torgallmenningen 1A",
+                "Bergen",
+                "europe/norway/vestlandet",
+            ),
+            (
+                3,
+                "Torgallmenningen 2",
+                "Bergen",
+                "europe/norway/vestlandet",
+            ),
+        ] {
+            idx.upsert_entry_with_region(
+                id,
+                name.into(),
+                "addr:housenumber".into(),
+                60.39,
+                5.32,
+                String::new(),
+                municipality.into(),
+                region.into(),
+            )
+            .unwrap();
+        }
+        let with_place = idx.search("Torgallmenningen 1, Bergen", 8).unwrap();
+        assert!(
+            with_place[0]
+                .name
+                .contains("house number 1 not in the index"),
+            "got {with_place:?}"
+        );
+        assert_eq!(
+            with_place
+                .iter()
+                .filter(|h| h.name.contains("house number"))
+                .count(),
+            1,
+            "one street row, not one per house: {with_place:?}"
+        );
+        let bare = idx.search("Torgallmenningen 1", 8).unwrap();
+        assert!(
+            bare.iter().all(|h| !h.name.contains("torg 1")),
+            "another street matched: {bare:?}"
+        );
+        assert_eq!(
+            fts_prefix_from_tokens(&["Storgata".into(), "1".into()]),
+            "\"Storgata\"* \"1\""
+        );
+    }
+
+    #[test]
+    fn folded_exact_name_survives_a_crowded_prefix() {
+        let mut idx = NameIndex::open_in_memory().unwrap();
+        for i in 0..300 {
+            idx.upsert_entry_with_region(
+                5000 + i,
+                format!("Københavns Gade {i}"),
+                "highway:residential".into(),
+                55.68,
+                12.57,
+                String::new(),
+                String::new(),
+                "europe/denmark".into(),
+            )
+            .unwrap();
+        }
+        idx.upsert_entry_with_region(
+            1,
+            "København".into(),
+            "place:farm".into(),
+            60.8,
+            10.69,
+            "Brattberg".into(),
+            "Gjøvik".into(),
+            "europe/norway/ostlandet".into(),
+        )
+        .unwrap();
+        assert!(anchored_first_word_variants("Kobenhavn", 40)
+            .iter()
+            .any(|v| v == "københ"));
+        let hits = idx.search("Kobenhavn", 8).unwrap();
+        assert_eq!(hits[0].name, "København", "got {hits:?}");
+        assert_eq!(hits[0].region_id, "europe/norway/ostlandet");
+    }
+
+    #[test]
+    fn query_time_prefix_is_one_or_match() {
+        let q = query_time_prefix_or_match("Kobenhavn").expect("prefix");
+        assert!(q.contains(" OR "), "{q}");
+        assert!(q.contains("\"Købe\"*") || q.contains("\"købe\"*"), "{q}");
+        assert_eq!(q.matches(" OR ").count() + 1, q.split(" OR ").count());
+        let one = query_time_prefix_or_match("Kobenhavn").unwrap();
+        assert!(!one.contains('\n'));
+    }
+
+    #[test]
+    fn address_forms_and_missing_house_number() {
+        let mut idx = NameIndex::open_in_memory().unwrap();
+        idx.upsert_entry_with_region(
+            1,
+            "Vågåvegen 80".into(),
+            "addr:housenumber".into(),
+            61.88,
+            9.09,
+            String::new(),
+            "Vågå".into(),
+            "europe/norway/ostlandet".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            2,
+            "Storgata".into(),
+            "highway:residential".into(),
+            61.12,
+            10.46,
+            String::new(),
+            "Lillehammer".into(),
+            "europe/norway/ostlandet".into(),
+        )
+        .unwrap();
+        let a = idx.search("Vågåvegen 80, Vågå", 8).unwrap();
+        assert_eq!(a[0].name, "Vågåvegen 80");
+        let b = idx.search("Vågåvegen 80 Vågå", 8).unwrap();
+        assert_eq!(b[0].name, "Vågåvegen 80");
+        let c = idx.search("Vågå, Vågåvegen 80", 8).unwrap();
+        assert_eq!(c[0].name, "Vågåvegen 80");
+        let missing = idx.search("Storgata 1 Lillehammer", 8).unwrap();
+        assert!(
+            missing[0].name.contains("house number 1 not in the index"),
+            "got {:?}",
+            missing[0].name
+        );
+        let nothing = idx.search("Xyzzyq NoSuchPlace 99", 8).unwrap();
+        assert!(nothing.is_empty(), "no filler, got {nothing:?}");
+    }
+
+    #[test]
+    fn parse_address_three_forms() {
+        let a = parse_address_query("Vågåvegen 80, Vågå").unwrap();
+        assert_eq!(a.street, "Vågåvegen");
+        assert_eq!(a.number.as_deref(), Some("80"));
+        assert_eq!(a.place.as_deref(), Some("Vågå"));
+        let b = parse_address_query("Vågåvegen 80 Vågå").unwrap();
+        assert_eq!(b.street, "Vågåvegen");
+        assert_eq!(b.number.as_deref(), Some("80"));
+        assert_eq!(b.place.as_deref(), Some("Vågå"));
+        let c = parse_address_query("Vågå, Vågåvegen 80").unwrap();
+        assert_eq!(c.street, "Vågåvegen");
+        assert_eq!(c.number.as_deref(), Some("80"));
+        assert_eq!(c.place.as_deref(), Some("Vågå"));
     }
 
     #[test]

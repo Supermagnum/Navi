@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -738,10 +740,15 @@ fun MapSettingsSheet(
     onOnlinePlaceSearchChange: (Boolean) -> Unit = {},
     nominatimBaseUrl: String = MapHudPrefs.NOMINATIM_DEFAULT_BASE_URL,
     onNominatimBaseUrlChange: (String) -> Unit = {},
+    revealOnlinePlaceSearch: Boolean = false,
     onSave: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val onlinePlaceSearchRow = remember { BringIntoViewRequester() }
+    LaunchedEffect(revealOnlinePlaceSearch) {
+        if (revealOnlinePlaceSearch) onlinePlaceSearchRow.bringIntoView()
+    }
     Surface(
         shape = RoundedCornerShape(12.dp),
         tonalElevation = 8.dp,
@@ -941,7 +948,10 @@ fun MapSettingsSheet(
                 }
             }
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .bringIntoViewRequester(onlinePlaceSearchRow),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
