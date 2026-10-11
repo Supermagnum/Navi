@@ -59,7 +59,7 @@ class CoordinateInputTest {
     }
 
     @Test
-    fun selectingAResultIsMapOnly() {
+    fun selectedResultMapMoveUsesHitCoordinatesAndLabel() {
         val hit =
             PlaceHit(
                 1L,

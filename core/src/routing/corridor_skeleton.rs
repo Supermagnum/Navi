@@ -3315,15 +3315,26 @@ pub fn estimated_clipped_nodes_from_tiles(
         .sum()
 }
 
-/// Estimated nodes for a direct search between two ends (band around the
-/// straight line). Cheap: no graph load.
+/// Estimated nodes for a direct search between two ends: the same ellipse
+/// strips the search clips to. Cheap: no graph load.
 pub fn estimated_direct_search_nodes(
     pack_dirs: &[&Path],
     profile: RoutingProfile,
     start: (f64, f64),
     end: (f64, f64),
 ) -> usize {
-    let clips = crate::routing::plan_bbox::direct_search_clip_bboxes(start, end);
+    estimated_direct_search_nodes_points(pack_dirs, profile, &[start, end], 0)
+}
+
+/// Estimated nodes for the direct-search area along `points` at widen step
+/// `widen` ([`crate::routing::plan_bbox::DirectSearchArea`]).
+pub fn estimated_direct_search_nodes_points(
+    pack_dirs: &[&Path],
+    profile: RoutingProfile,
+    points: &[(f64, f64)],
+    widen: u8,
+) -> usize {
+    let clips = crate::routing::plan_bbox::DirectSearchArea::new(points, widen).clip_strips();
     estimated_clipped_nodes(pack_dirs, profile, &clips)
 }
 

@@ -342,6 +342,25 @@ fun placeHitMatchesWholeQuery(
 }
 
 /**
+ * Query as it reads while typing: every word but the last is a whole word of
+ * the hit, and the last word starts one (`Domb` against `Dombås`).
+ */
+fun placeHitMatchesQueryPrefix(
+    hit: uniffi.navi.PlaceHit,
+    query: String,
+): Boolean {
+    fun words(s: String) = foldSearchKey(s).split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotEmpty() }
+    val queryWords = words(query)
+    if (queryWords.isEmpty()) return true
+    val hay = (words(hit.name) + words(placeHitDisplayLabel(hit))).toSet()
+    val hayCollapsed = hay.map(::foldCollapse).toSet()
+    val head = queryWords.dropLast(1).all { it in hay || foldCollapse(it) in hayCollapsed }
+    val last = queryWords.last()
+    return head &&
+        (hay.any { it.startsWith(last) } || hayCollapsed.any { it.startsWith(foldCollapse(last)) })
+}
+
+/**
  * Merge online geocode hits ahead of local FTS, dropping offline prefix
  * expansions that do not contain the query as whole tokens.
  */

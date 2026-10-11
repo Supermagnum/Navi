@@ -423,7 +423,10 @@ class OsmUpdateCatalogRoutingFollowupTest {
                     NaviMapTestHooks.lastPlanReport.isNotBlank() ||
                     NaviMapTestHooks.lastRoutePolylineChars > 0,
             )
-            runCatching { clickTag("btn_delete_planned_route") }
+            runCatching {
+                clickTag("btn_delete_planned_route")
+                clickTag("btn_confirm_delete_planned_route")
+            }
         }
     }
 

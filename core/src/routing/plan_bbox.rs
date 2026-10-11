@@ -500,6 +500,10 @@ pub enum PlanEdgeClipMode {
     /// Single trip AABB (`clip_bbox` / pad-expanded). Includes far cross-track
     /// detours that the band excludes.
     TripAabb,
+    /// Direct search: the [`DirectSearchArea`] ellipse of the route points at
+    /// this widen step, as latitude strips. Tile picks use `clip_bbox`, which
+    /// callers set to [`DirectSearchArea::bbox`].
+    DirectEllipse { widen: u8 },
 }
 
 /// Edge clip boxes for a plan load.
@@ -515,6 +519,11 @@ pub fn plan_edge_clips(
 ) -> Option<Vec<[f64; 4]>> {
     match mode {
         PlanEdgeClipMode::TripAabb => clip_bbox.map(|b| vec![b]),
+        PlanEdgeClipMode::DirectEllipse { widen } => route_points
+            .filter(|pts| !pts.is_empty())
+            .map(|pts| DirectSearchArea::new(pts, widen).clip_strips())
+            .filter(|b| !b.is_empty())
+            .or_else(|| clip_bbox.map(|b| vec![b])),
         PlanEdgeClipMode::CorridorBand => route_points
             .filter(|pts| pts.len() >= 2)
             .map(|pts| {
@@ -573,28 +582,272 @@ pub fn corridor_band_bboxes(
     out
 }
 
-/// Margin (degrees) added on every side of the start–end box for a direct
-/// detailed search. Floor 0.10° (~11 km) so a short hop is not a razor clip.
-/// Grows with the longer start–end span; cap 0.25° so the cheap estimate
-/// tracks the clipped graph, not whole tiles. Unused corners of the
-/// unpadded start–end box stay inside.
+/// First entry of [`direct_search_pad_schedule`]. Floor 0.10°, grows with the
+/// longer start–end span, cap 0.25°. The search area itself is the
+/// [`DirectSearchArea`] ellipse, not a box padded by this margin.
 pub fn direct_search_margin_deg(start: (f64, f64), end: (f64, f64)) -> f64 {
     let cheb = (end.0 - start.0).abs().max((end.1 - start.1).abs());
     (0.08 + 0.05 * cheb).clamp(0.10, 0.25)
 }
 
-/// Axis-aligned box of the two ends, expanded by [`direct_search_margin_deg`].
-/// One box, not a chord-only strip: the search can leave the straight line.
+/// Clip strips of the first direct-search area between two ends
+/// ([`DirectSearchArea`], widen step 0).
 pub fn direct_search_clip_bboxes(start: (f64, f64), end: (f64, f64)) -> Vec<[f64; 4]> {
-    vec![trip_bbox_points(
-        &[start, end],
-        direct_search_margin_deg(start, end),
-    )]
+    direct_search_clip_bboxes_points(&[start, end])
+}
+
+/// Clip strips of the first direct-search area along `points` (start, vias, end).
+pub fn direct_search_clip_bboxes_points(points: &[(f64, f64)]) -> Vec<[f64; 4]> {
+    DirectSearchArea::new(points, 0).clip_strips()
 }
 
 /// Axis-aligned box covering `start` and `end` with no pad.
 pub fn start_end_aabb(start: (f64, f64), end: (f64, f64)) -> [f64; 4] {
     trip_bbox_points(&[start, end], 0.0)
+}
+
+/// Detour factor of the direct-search area. A point is searched for a leg when
+/// the sum of its straight-line distances to the two leg ends is at most this
+/// factor times the leg's straight-line length plus
+/// [`DIRECT_SEARCH_ALLOWANCE_KM`].
+pub const DIRECT_SEARCH_DETOUR_FACTOR: f64 = 1.15;
+
+/// Fixed allowance (km) on the ellipse bound so short legs keep room to leave
+/// the straight line.
+pub const DIRECT_SEARCH_ALLOWANCE_KM: f64 = 10.0;
+
+/// A route edge whose sum of distances to the leg ends is within this many km
+/// of the bound runs along the area edge.
+pub const DIRECT_SEARCH_EDGE_BAND_SUM_KM: f64 = 4.0;
+
+/// Route along the edge that counts as meaningful: at least this many km and
+/// at least [`DIRECT_SEARCH_EDGE_MIN_SHARE`] of the route.
+pub const DIRECT_SEARCH_EDGE_MIN_KM: f64 = 1.0;
+pub const DIRECT_SEARCH_EDGE_MIN_SHARE: f64 = 0.01;
+
+/// Latitude height of each clip strip that covers the ellipse.
+const DIRECT_SEARCH_STRIP_DEG: f64 = 0.04;
+
+/// Longitude margin on each strip, covering the boundary between the
+/// latitudes the strip was sampled at.
+const DIRECT_SEARCH_STRIP_LON_MARGIN_DEG: f64 = 0.01;
+
+/// Direct-search area: per consecutive pair of route points, every point whose
+/// sum of straight-line distances to the pair is at most
+/// `factor * pair distance + allowance_km`. Widen step `w` doubles the factor's
+/// excess over 1 and the allowance `w` times.
+#[derive(Clone, Debug)]
+pub struct DirectSearchArea {
+    pub factor: f64,
+    pub allowance_km: f64,
+    legs: Vec<((f64, f64), (f64, f64), f64)>,
+}
+
+impl DirectSearchArea {
+    pub fn new(points: &[(f64, f64)], widen: u8) -> Self {
+        let scale = f64::from(1u32 << widen.min(4));
+        let factor = 1.0 + (DIRECT_SEARCH_DETOUR_FACTOR - 1.0) * scale;
+        let allowance_km = DIRECT_SEARCH_ALLOWANCE_KM * scale;
+        let pairs: Vec<((f64, f64), (f64, f64))> = match points {
+            [] => Vec::new(),
+            [p] => vec![(*p, *p)],
+            _ => points.windows(2).map(|w| (w[0], w[1])).collect(),
+        };
+        let legs = pairs
+            .into_iter()
+            .map(|(a, b)| {
+                (
+                    a,
+                    b,
+                    factor * haversine_km(a.0, a.1, b.0, b.1) + allowance_km,
+                )
+            })
+            .collect();
+        Self {
+            factor,
+            allowance_km,
+            legs,
+        }
+    }
+
+    fn leg_sum_km(a: (f64, f64), b: (f64, f64), lat: f64, lon: f64) -> f64 {
+        haversine_km(lat, lon, a.0, a.1) + haversine_km(lat, lon, b.0, b.1)
+    }
+
+    /// Largest `bound - sum of distances` over the legs: positive inside.
+    pub fn slack_sum_km(&self, lat: f64, lon: f64) -> f64 {
+        self.legs
+            .iter()
+            .map(|&(a, b, bound)| bound - Self::leg_sum_km(a, b, lat, lon))
+            .fold(f64::NEG_INFINITY, f64::max)
+    }
+
+    pub fn contains(&self, lat: f64, lon: f64) -> bool {
+        self.slack_sum_km(lat, lon) >= 0.0
+    }
+
+    /// Longitude interval of one leg's ellipse on the parallel `lat`.
+    fn leg_lon_range(a: (f64, f64), b: (f64, f64), bound: f64, lat: f64) -> Option<(f64, f64)> {
+        let d = haversine_km(a.0, a.1, b.0, b.1);
+        // Inside points are at most (bound + d) / 2 from each end.
+        let reach_km = (bound + d) * 0.5;
+        let cos = lat
+            .abs()
+            .max(a.0.abs())
+            .max(b.0.abs())
+            .min(89.0)
+            .to_radians()
+            .cos();
+        let reach_deg = reach_km / (111.0 * cos) * 1.2;
+        let f = |lon: f64| Self::leg_sum_km(a, b, lat, lon);
+        let (mut lo, mut hi) = (a.1.min(b.1) - reach_deg, a.1.max(b.1) + reach_deg);
+        let g = 0.618_033_988_749_895;
+        for _ in 0..80 {
+            let m1 = hi - g * (hi - lo);
+            let m2 = lo + g * (hi - lo);
+            if f(m1) < f(m2) {
+                hi = m2;
+            } else {
+                lo = m1;
+            }
+        }
+        let best = 0.5 * (lo + hi);
+        if f(best) > bound {
+            return None;
+        }
+        let edge = |mut inside: f64, mut outside: f64| {
+            for _ in 0..50 {
+                let mid = 0.5 * (inside + outside);
+                if f(mid) <= bound {
+                    inside = mid;
+                } else {
+                    outside = mid;
+                }
+            }
+            inside
+        };
+        let west = edge(best, a.1.min(b.1) - reach_deg);
+        let east = edge(best, a.1.max(b.1) + reach_deg);
+        Some((west, east))
+    }
+
+    /// Southern and northern latitude limits of one leg's ellipse.
+    fn leg_lat_range(a: (f64, f64), b: (f64, f64), bound: f64) -> (f64, f64) {
+        let d = haversine_km(a.0, a.1, b.0, b.1);
+        let reach_deg = (bound + d) * 0.5 / 111.0 * 1.2;
+        let limit = |mut inside: f64, mut outside: f64| {
+            for _ in 0..50 {
+                let mid = 0.5 * (inside + outside);
+                if Self::leg_lon_range(a, b, bound, mid).is_some() {
+                    inside = mid;
+                } else {
+                    outside = mid;
+                }
+            }
+            inside
+        };
+        let south = limit(a.0.min(b.0), a.0.min(b.0) - reach_deg);
+        let north = limit(a.0.max(b.0), a.0.max(b.0) + reach_deg);
+        (south, north)
+    }
+
+    /// Latitude strips that cover the area: each strip spans the area's
+    /// longitude range within it plus a small margin. Edge clips keep an edge
+    /// when its envelope touches a strip.
+    pub fn clip_strips(&self) -> Vec<[f64; 4]> {
+        let step = DIRECT_SEARCH_STRIP_DEG;
+        let mut per_strip: std::collections::BTreeMap<i64, Vec<(f64, f64)>> =
+            std::collections::BTreeMap::new();
+        for &(a, b, bound) in &self.legs {
+            let (south, north) = Self::leg_lat_range(a, b, bound);
+            let k0 = (south / step).floor() as i64;
+            let k1 = (north / step).floor() as i64;
+            for k in k0..=k1 {
+                let lat_lo = k as f64 * step;
+                let lat_hi = lat_lo + step;
+                let samples = [
+                    lat_lo.max(south),
+                    (0.5 * (lat_lo + lat_hi)).clamp(south, north),
+                    lat_hi.min(north),
+                ];
+                let mut range: Option<(f64, f64)> = None;
+                for lat in samples {
+                    if let Some((w, e)) = Self::leg_lon_range(a, b, bound, lat) {
+                        range = Some(match range {
+                            Some((rw, re)) => (rw.min(w), re.max(e)),
+                            None => (w, e),
+                        });
+                    }
+                }
+                if let Some(r) = range {
+                    per_strip.entry(k).or_default().push(r);
+                }
+            }
+        }
+        let mut out = Vec::new();
+        for (k, mut ranges) in per_strip {
+            ranges.sort_by(|x, y| x.0.total_cmp(&y.0));
+            let mut merged: Vec<(f64, f64)> = Vec::new();
+            for r in ranges {
+                match merged.last_mut() {
+                    Some(m) if r.0 <= m.1 + 2.0 * DIRECT_SEARCH_STRIP_LON_MARGIN_DEG => {
+                        m.1 = m.1.max(r.1);
+                    }
+                    _ => merged.push(r),
+                }
+            }
+            let lat_lo = k as f64 * step;
+            for (w, e) in merged {
+                out.push([
+                    lat_lo,
+                    w - DIRECT_SEARCH_STRIP_LON_MARGIN_DEG,
+                    lat_lo + step,
+                    e + DIRECT_SEARCH_STRIP_LON_MARGIN_DEG,
+                ]);
+            }
+        }
+        out
+    }
+
+    /// Box around [`Self::clip_strips`]; tile selection uses it.
+    pub fn bbox(&self) -> [f64; 4] {
+        let strips = self.clip_strips();
+        let mut out = [
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        ];
+        for s in &strips {
+            out[0] = out[0].min(s[0]);
+            out[1] = out[1].min(s[1]);
+            out[2] = out[2].max(s[2]);
+            out[3] = out[3].max(s[3]);
+        }
+        out
+    }
+
+    /// Route km whose edge midpoints lie within [`DIRECT_SEARCH_EDGE_BAND_SUM_KM`]
+    /// of the bound. `segments` are (start, end, length km).
+    pub fn edge_run_km(
+        &self,
+        segments: impl IntoIterator<Item = ((f64, f64), (f64, f64), f64)>,
+    ) -> f64 {
+        segments
+            .into_iter()
+            .filter(|(s, e, _)| {
+                let mid = (0.5 * (s.0 + e.0), 0.5 * (s.1 + e.1));
+                self.slack_sum_km(mid.0, mid.1) <= DIRECT_SEARCH_EDGE_BAND_SUM_KM
+            })
+            .map(|(_, _, km)| km)
+            .sum()
+    }
+}
+
+/// True when a route found in a direct-search area runs along its edge for a
+/// meaningful part of its length, so the area was too small.
+pub fn direct_search_route_hugs_edge(edge_km: f64, route_km: f64) -> bool {
+    edge_km >= DIRECT_SEARCH_EDGE_MIN_KM.max(DIRECT_SEARCH_EDGE_MIN_SHARE * route_km)
 }
 
 /// True when a direct detailed search of `nodes` stays inside the hop node
@@ -603,10 +856,9 @@ pub fn direct_search_fits_nodes(nodes: usize) -> bool {
     nodes <= MAX_PATH_NODES_PER_HOP && estimated_nodes_rss_mb(nodes) <= direct_search_rss_cap_mb()
 }
 
-/// First pad is [`direct_search_margin_deg`] (same box as the cheap estimate).
-/// Later entries are the usual widen schedule. A Direct search that starts as
-/// TripAabb must advance to these after a disconnect (Oslo→Lillehammer: the
-/// first 0.14° box misses E6 east of Mjøsa).
+/// First pad is [`direct_search_margin_deg`]; a direct search spends it on the
+/// [`DirectSearchArea`] ellipse. Later entries are the usual widen schedule as
+/// TripAabb boxes, taken after a disconnect.
 pub fn direct_search_pad_schedule(start: (f64, f64), end: (f64, f64)) -> Vec<f64> {
     let first = direct_search_margin_deg(start, end);
     let mut out = vec![first];
@@ -638,14 +890,19 @@ pub fn should_fallback_to_trip_aabb(mode: PlanEdgeClipMode, terminate: &str) -> 
     mode == PlanEdgeClipMode::CorridorBand && terminate == "disconnected"
 }
 
-/// Direct search already uses TripAabb. After a disconnect, take the next pad
-/// in [`direct_search_pad_schedule`] instead of stopping.
+/// A direct search (ellipse, then TripAabb pads) that disconnects takes the
+/// next pad in [`direct_search_pad_schedule`] instead of stopping.
 pub fn should_advance_direct_pad(
     started_direct: bool,
     mode: PlanEdgeClipMode,
     terminate: &str,
 ) -> bool {
-    started_direct && mode == PlanEdgeClipMode::TripAabb && terminate == "disconnected"
+    started_direct
+        && matches!(
+            mode,
+            PlanEdgeClipMode::TripAabb | PlanEdgeClipMode::DirectEllipse { .. }
+        )
+        && terminate == "disconnected"
 }
 
 #[cfg(test)]
@@ -987,25 +1244,52 @@ mod tests {
     }
 
     #[test]
-    fn direct_band_covers_start_end_aabb_unused_corners() {
+    fn direct_area_is_the_detour_ellipse() {
         let start = (60.27656, 10.81650);
         let end = (59.80326, 9.39866);
-        let clips = direct_search_clip_bboxes(start, end);
-        let unused_a = (start.0, end.1);
-        let unused_b = (end.0, start.1);
+        let area = DirectSearchArea::new(&[start, end], 0);
+        let strips = direct_search_clip_bboxes(start, end);
+        let bbox = area.bbox();
+        let (mut inside, mut in_strips) = (0usize, 0usize);
+        for i in 0..80 {
+            for j in 0..80 {
+                let lat = bbox[0] + (bbox[2] - bbox[0]) * (i as f64 + 0.5) / 80.0;
+                let lon = bbox[1] + (bbox[3] - bbox[1]) * (j as f64 + 0.5) / 80.0;
+                let hit = point_in_any_bbox(lat, lon, &strips);
+                if area.contains(lat, lon) {
+                    inside += 1;
+                    assert!(hit, "{lat},{lon} inside the ellipse but not in a strip");
+                }
+                if hit {
+                    in_strips += 1;
+                }
+            }
+        }
+        assert!(inside > 0);
         assert!(
-            point_in_any_bbox(unused_a.0, unused_a.1, &clips),
-            "unused AABB corner {unused_a:?} must stay inside the direct clip"
+            (in_strips as f64) < 1.15 * inside as f64,
+            "strips {in_strips} cover far more than the ellipse {inside}"
         );
-        assert!(
-            point_in_any_bbox(unused_b.0, unused_b.1, &clips),
-            "unused AABB corner {unused_b:?} must stay inside the direct clip"
-        );
-        assert!(direct_search_margin_deg(start, end) >= 0.10);
-        assert!(
-            direct_search_margin_deg(start, end)
-                > direct_search_margin_deg((60.0, 10.0), (60.05, 10.05))
-        );
+
+        // Parallel corridors: Rv 3 at Elverum, Rena and Koppang for Espa to
+        // Atnbrua, the E 6 east of Mjøsa for Oslo to Lillehammer.
+        let espa_atnbrua =
+            DirectSearchArea::new(&[(60.577811, 11.271167), (61.851508, 10.234093)], 0);
+        for p in [(60.88, 11.56), (61.13, 11.37), (61.57, 11.05)] {
+            assert!(
+                espa_atnbrua.contains(p.0, p.1),
+                "{p:?} outside Espa-Atnbrua"
+            );
+        }
+        let oslo_lillehammer =
+            DirectSearchArea::new(&[(59.913330, 10.738970), (61.114545, 10.467007)], 0);
+        for p in [(60.794721, 11.068055), (60.685121, 11.283053)] {
+            assert!(
+                oslo_lillehammer.contains(p.0, p.1),
+                "{p:?} outside Oslo-Lillehammer"
+            );
+        }
+
         let pads = direct_search_pad_schedule(start, end);
         assert!((pads[0] - direct_search_margin_deg(start, end)).abs() < 1e-9);
         assert!(direct_search_fits_nodes(722_821));

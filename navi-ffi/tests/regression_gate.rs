@@ -47,6 +47,11 @@
 //! Short cases h and j may skip the corridor stage when the clipped graph
 //! between the ends fits the hop node limit.
 //!
+//! Case p (Espa to Atnbrua) must not take the Friisvegen route (233.6 km) that
+//! a start-end box clip forced; the accepted route is 187.6 km over
+//! Venabygdsfjellet. Case m starts in central Oslo; the one-way loop into
+//! Operatunnelen is an accepted path-over-chord window.
+//!
 //! Run: `cargo test --release -p navi-ffi --features regression-gate --test regression_gate -- --ignored --nocapture`
 
 use std::collections::BTreeMap;
@@ -116,6 +121,9 @@ const BERGEN_STATION: (f64, f64) = (60.388114, 5.333857);
 /// Lillehammer → Hønefoss (~130 km). Hønefoss is the west-end town.
 const GJOVIK: (f64, f64) = (60.79474, 10.69278);
 const HONEFOSS: (f64, f64) = (60.16647, 10.25639);
+/// Østlandet extract place nodes: Espa `place:hamlet`, Atnbrua `place:quarter`.
+const ESPA: (f64, f64) = (60.577811, 11.271167);
+const ATNBRUA: (f64, f64) = (61.851508, 10.234093);
 /// Start/end must snap onto the waypoint's own roads, not a distant highway.
 const OWN_ROAD_MAX_M: f64 = 400.0;
 
@@ -386,7 +394,7 @@ const CASES: &[Case] = &[
         rv15_otta_vaga_lom: false,
         reference: None,
         expected_fail: None,
-        accepted_spikes: &[],
+        accepted_spikes: &[(59.91381, 10.73882)],
         known_distance: None,
         known_spikes: None,
         timing_runs: 1,
@@ -419,6 +427,24 @@ const CASES: &[Case] = &[
         avoid_ferries: false,
         ferries: &[],
         distance: None,
+        rv15_otta_vaga_lom: false,
+        reference: None,
+        expected_fail: None,
+        accepted_spikes: &[],
+        known_distance: None,
+        known_spikes: None,
+        timing_runs: 1,
+        compare_long_trip: true,
+    },
+    Case {
+        id: "p_espa_atnbrua",
+        start: ESPA,
+        vias: &[],
+        end: ATNBRUA,
+        pbf_stem: "ostlandet-latest",
+        avoid_ferries: false,
+        ferries: &[],
+        distance: Some((187.646, 0.01)),
         rv15_otta_vaga_lom: false,
         reference: None,
         expected_fail: None,
