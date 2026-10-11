@@ -156,6 +156,15 @@ object StatusUi {
         return pa.length >= 12 && pa == pb
     }
 
+    /**
+     * Status once no background job reports progress: blank when it still shows
+     * that job's last progress line, unchanged when something else replaced it.
+     */
+    fun clearFinishedJobLine(
+        status: String,
+        lastJobLine: String,
+    ): String = if (lastJobLine.isNotEmpty() && status == lastJobLine) "" else status
+
     private fun normalize(s: String): String =
         s
             .lowercase()

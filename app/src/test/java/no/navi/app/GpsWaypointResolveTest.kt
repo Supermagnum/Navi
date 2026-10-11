@@ -206,12 +206,12 @@ class PlaceSearchMergeTest {
             PlaceHit(
                 10L,
                 "Aga",
-                "online/place/village",
-                57.04,
-                12.54,
+                "online/place/island|no",
+                59.03,
+                5.98,
                 "",
                 "",
-                "europe/sweden/halland",
+                "europe/norway/vestlandet",
             )
         val local =
             PlaceHit(

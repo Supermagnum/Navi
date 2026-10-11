@@ -920,6 +920,15 @@ private fun NaviMapScreen() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var status by remember { mutableStateOf("Ready") }
+
+    // Last progress line a background job (download, place index, indexed maps)
+    // wrote into [status]; cleared from [status] once no job is reporting.
+    var jobProgressStatus by remember { mutableStateOf("") }
+
+    fun showJobProgress(line: String) {
+        status = line
+        jobProgressStatus = line
+    }
     var mapState by remember {
         mutableStateOf(
             NaviMapTestHooks.pendingCamera?.let { cam ->
@@ -2943,19 +2952,19 @@ private fun NaviMapScreen() {
                     // users with Tools closed must still see live progress.
                     val line = regionActivityPulse.pulse(rawLine, nowPulse)
                     pmtilesProgress = line
-                    if (!planningRoute) status = toastActivityPulse.pulse(rawLine, nowPulse)
+                    if (!planningRoute) showJobProgress(toastActivityPulse.pulse(rawLine, nowPulse))
                 } else if (labeled.contains("Place index", ignoreCase = true)) {
                     // Own Tools line so pack download % is not overwritten, but
                     // still drive the toast: place-index phases can run for
                     // minutes with no percent change and must not look frozen.
                     val line = placeActivityPulse.pulse(rawLine, nowPulse)
                     placeIndexUiLine = line
-                    if (!planningRoute) status = toastActivityPulse.pulse(rawLine, nowPulse)
+                    if (!planningRoute) showJobProgress(toastActivityPulse.pulse(rawLine, nowPulse))
                 } else {
                     val line = regionActivityPulse.pulse(rawLine, nowPulse)
                     regionDownloadProgress = line
                     if (!planningRoute) {
-                        status = toastActivityPulse.pulse(rawLine, nowPulse)
+                        showJobProgress(toastActivityPulse.pulse(rawLine, nowPulse))
                     }
                 }
             } else if (regionRunning) {
@@ -2964,7 +2973,7 @@ private fun NaviMapScreen() {
                     val nowPulse = SystemClock.elapsedRealtime()
                     val line = regionActivityPulse.pulse(rawLine, nowPulse)
                     regionDownloadProgress = line
-                    if (!planningRoute) status = toastActivityPulse.pulse(rawLine, nowPulse)
+                    if (!planningRoute) showJobProgress(toastActivityPulse.pulse(rawLine, nowPulse))
                 }
             } else if (!regionRunning && !downloadPolling) {
                 // Idle: do not keep a finished percent line on screen.
@@ -3208,10 +3217,17 @@ private fun NaviMapScreen() {
                 placeIndexUiLine = pulsedPlace
             }
             if (tick.pushIndexedToStatus) {
-                status = toastActivityPulse.pulse(tick.indexedLine, nowPulse)
+                showJobProgress(toastActivityPulse.pulse(tick.indexedLine, nowPulse))
             }
             if (tick.pushPlaceToStatus) {
-                status = toastActivityPulse.pulse(tick.placeLine, nowPulse)
+                showJobProgress(toastActivityPulse.pulse(tick.placeLine, nowPulse))
+            }
+            if (!tick.pushIndexedToStatus &&
+                !tick.pushPlaceToStatus &&
+                (planningRoute || !RegionDownloadBackground.isRunning())
+            ) {
+                status = StatusUi.clearFinishedJobLine(status, jobProgressStatus)
+                jobProgressStatus = ""
             }
             if (!tick.busy && !RegionDownloadBackground.isRunning()) {
                 toastActivityPulse.reset()
@@ -5666,9 +5682,9 @@ private fun NaviMapScreen() {
                             var usedOnline = false
                             // Online Nominatim only on explicit submit, when the
                             // setting is on and the base URL is non-empty. Typing
-                            // stays local. Local exact of the same or smaller
-                            // class stays first; an online city/town beats a
-                            // local farm/hamlet (follow-up 64).
+                            // stays local. An online city, town or village beats
+                            // a local minor feature of the same name; a local
+                            // settlement of that name stays first.
                             val wantOnline =
                                 allowOnline &&
                                     onlinePlaceSearchEnabled &&
@@ -5746,6 +5762,13 @@ private fun NaviMapScreen() {
                                 indexProblem = InstalledMaps.current()?.placeIndexProblem,
                             ).orEmpty()
                                 .ifBlank {
+                                    placeSearchNoWholeMatchHint(
+                                        query = splitCountryQualifiedQuery(trimmed).placeQuery.ifBlank { trimmed },
+                                        hits = outcome.hits,
+                                        onlineEnabled = onlinePlaceSearchEnabled,
+                                        usedOnline = outcome.usedOnline,
+                                    ).orEmpty()
+                                }.ifBlank {
                                     placeSearchOfflineMoreHint(
                                         onlineEnabled = onlinePlaceSearchEnabled,
                                         topKind = outcome.hits.firstOrNull()?.kind,
@@ -5764,6 +5787,7 @@ private fun NaviMapScreen() {
                             "duration_ms=${android.os.SystemClock.elapsedRealtime() - tSearch} " +
                             "top=${hits.firstOrNull()?.name.orEmpty()} " +
                             "online=${outcome.usedOnline} " +
+                            "hint=${searchIndexHint.take(40)} " +
                             "top5=${hits.take(5).joinToString(" | ") { "${placeHitSearchLabel(it, disambiguate)} [${it.kind}]" }}",
                     )
                     NaviMapTestHooks.lastSearchIndexBuildingHint = searchIndexHint

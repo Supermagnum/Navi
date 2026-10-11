@@ -671,19 +671,24 @@ fn house_number_matches(name: &str, want: &str) -> bool {
     house_number_of_display(name).is_some_and(|n| fold_search_key(&n) == a)
 }
 
-fn search_match_class(name: &str, q_raw: &str) -> (i32, i32) {
-    let name_raw_l = name.to_lowercase();
-    let q_raw_l = q_raw.to_lowercase();
+/// 0 = name equals the query as typed, accents and special letters included
+/// (case ignored); 1 = equal after folding; 2 = prefix; 3 = other. A query typed
+/// without special letters cannot tell Åre from Are, so for it 0 and 1 are one
+/// class and kind, region and distance decide.
+fn search_match_class(name: &str, q_raw: &str) -> i32 {
+    let name_raw_l = name.trim().to_lowercase();
+    let q_raw_l = q_raw.trim().to_lowercase();
     let name_f = fold_search_key(name);
     let q_f = fold_search_key(q_raw);
-    if name_raw_l == q_raw_l {
-        (0, 0)
-    } else if name_f == q_f {
-        (0, 1)
+    let typed_special = q_raw_l.chars().any(|c| c.is_alphabetic() && !c.is_ascii());
+    if name_raw_l == q_raw_l && typed_special {
+        0
+    } else if name_raw_l == q_raw_l || name_f == q_f {
+        1
     } else if name_raw_l.starts_with(&q_raw_l) || name_f.starts_with(&q_f) {
-        (1, 0)
+        2
     } else {
-        (2, 0)
+        3
     }
 }
 
@@ -734,8 +739,8 @@ fn search_rank_key(
     h: &NameHit,
     q_raw: &str,
     bias: Option<(Option<f64>, Option<f64>, &str)>,
-) -> (i32, i32, i32, i32, i32, usize) {
-    let (match_bucket, spelling) = search_match_class(&h.name, q_raw);
+) -> (i32, i32, i32, i32, usize) {
+    let match_bucket = search_match_class(&h.name, q_raw);
     let kind_c = search_kind_class(&h.kind);
     let (region_c, dist) = match bias {
         Some((lat, lon, visible)) => {
@@ -759,7 +764,7 @@ fn search_rank_key(
         }
         None => (1, 0),
     };
-    (match_bucket, kind_c, region_c, dist, spelling, h.name.len())
+    (match_bucket, kind_c, region_c, dist, h.name.len())
 }
 
 /// Local FTS5 name index for settlements, POIs, huts, peaks, and named ways.
@@ -5037,6 +5042,52 @@ mod tests {
             .unwrap();
         assert_eq!(hits[0].name, "Aga");
         assert_eq!(hits[0].region_id, "europe/norway/vestlandet");
+    }
+
+    #[test]
+    fn exact_as_typed_name_beats_folded_name_of_a_larger_kind() {
+        let mut idx = NameIndex::open_in_memory().unwrap();
+        idx.upsert_entry_with_region(
+            1,
+            "Åre".into(),
+            "place:farm".into(),
+            59.37,
+            10.18,
+            String::new(),
+            "Våje".into(),
+            "europe/norway/ostlandet".into(),
+        )
+        .unwrap();
+        idx.upsert_entry_with_region(
+            2,
+            "Are".into(),
+            "place:hamlet".into(),
+            59.36,
+            5.36,
+            String::new(),
+            "Bokn".into(),
+            "europe/norway/vestlandet".into(),
+        )
+        .unwrap();
+        let names = |q: &str| -> Vec<String> {
+            idx.search_biased(q, 10, Some(63.43), Some(10.40), "europe/norway/trondelag")
+                .unwrap()
+                .into_iter()
+                .map(|h| h.name)
+                .collect()
+        };
+        assert_eq!(names("Åre"), vec!["Åre", "Are"]);
+        assert_eq!(names("åre"), vec!["Åre", "Are"]);
+        assert_eq!(
+            names("Are"),
+            vec!["Are", "Åre"],
+            "plain query: hamlet before farm"
+        );
+        assert_eq!(search_match_class("Åre", "Åre"), 0);
+        assert_eq!(search_match_class("Are", "Åre"), 1);
+        assert_eq!(search_match_class("Åre", "Are"), 1);
+        assert_eq!(search_match_class("Are", "Are"), 1);
+        assert_eq!(search_match_class("Årestua", "Åre"), 2);
     }
 
     #[test]
