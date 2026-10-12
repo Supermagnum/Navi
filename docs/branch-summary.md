@@ -16,7 +16,7 @@ APK files stay on the wip branch only. The wip branch is not deleted.
 
 | Item | Issue | Notes |
 |---|---|---|
-| Neighbour country is flat fill at zoom 5 and below (Sweden from Oslo, Poland from Hamburg). The `earth` layer is what is visible. Online-alone or overview-alone did not change the picture. | [#152](https://github.com/Supermagnum/Navi/issues/152) | Open question: is this how the planet data looks at that zoom? Do not fix until a reference viewer and z5 tile contents are compared. Seen again on the tablet at Hamar z3/z5. |
+| Neighbour country is flat fill at zoom 5 and below (Sweden from Oslo, Poland from Hamburg). Online-alone or overview-alone did not change the picture. | [#152](https://github.com/Supermagnum/Navi/issues/152) | Fixed: regional land and water fills draw from z0 instead of z6 (labels, roads and boundaries keep the z6 handover); unchanged at z6 and above. Unit gate `BasemapLowZoomFillTest` passes. Emulator screenshot gate `low_zoom_mint_fill` is optional proof. See `docs/map-styles.md`. |
 | Elsa overview z15 (64.889, 19.516) is forest with almost nothing to draw. Umeå is the Swedish-town test and passes. Finland can still mount as a second source. | [#153](https://github.com/Supermagnum/Navi/issues/153) | |
 | Place search always queries OpenStreetMap Nominatim when the network is up. | [#154](https://github.com/Supermagnum/Navi/issues/154) | Fixed in follow-up 61: opt-in setting (off by default), submit-only, limiter, attribution, configurable URL. |
 | Place-index compact after a schema migration, when idle. The app migrates in place and leaves `place_index.db.bak-pk-v6` plus dead pages; it does not write a compacted copy and swap it in. | [#155](https://github.com/Supermagnum/Navi/issues/155) | Follow-up 56 tablet: 4.0 GB live file vs 2.2 GB v4 backup. Reclaim is a host/adb one-shot until the app does this itself. |
@@ -25,7 +25,7 @@ APK files stay on the wip branch only. The wip branch is not deleted.
 | Oslo to Lillestrøm needs the corridor stage and about 1.1 GB for 22 km. | (closed) | 22.4 km direct search, corridor skipped, host 228 MB. |
 | Elsa distance vs the 1944.2 km reference. | (known miss, not a gate fail) | Planned 2159.8 km / 6 hops / 0 ferries. |
 
-The gate still lists `low_zoom_mint_fill` and `elsa_overview_z15` as known tests outside the route cases.
+The gate still lists `elsa_overview_z15` as a known test outside the route cases.
 
 ## Debug-only switches
 
