@@ -207,6 +207,30 @@ Tools Geofabrik paths map to `region_key` + bbox (`core/src/routing/basemap/regi
 Download writes `{dataDir}/pmtiles/{region_key}.pmtiles` and a `pmtiles_jobs` row.
 Style load uses `pmtiles://file://{absolute_path}` plus bundled sprites/glyphs.
 
+## Overview and regional handover (z0 to z7)
+
+The native style mounts the world overview (z0 to z6), up to three regional
+archives and, when the network is usable and the view extends past the
+archives, the online planet. Layers are stacked by kind across sources (land
+fills, then water, then roads and boundaries, then labels), see
+`BasemapStyleResolver.prepareMountedStyle`.
+
+| Layer kind | Overview (when mounted without online) | Regional archive |
+|---|---|---|
+| Land and water fills (`earth`, `landcover`, `landuse`, `water`) | below z7 | from z0 |
+| Roads, boundaries | below z7 | from z6 |
+| Labels and POIs | below z6 | from z6 |
+
+Fills are not held back at z5 and below (issue 152). Protomaps z5 tiles for
+Norway and Sweden carry the same layers (`earth`, `landcover`, `landuse`,
+`water`, `boundaries`, `places`, `roads`); nothing is earth-only in the data,
+and MapLibre GL JS draws them with the bundled style. On device the overview
+alone rendered tile 5/17/9 (Sweden from Oslo) as one flat land colour while the
+Ostlandet archive rendered the same tile with landcover and lakes. Keeping the
+regional fills visible under z6 lets the archive that carries the tile draw it;
+the overview remains the fill where no regional tile exists. Nothing changes at
+z6 and above. Test: `BasemapLowZoomFillTest`.
+
 ## Style assets (bundled once)
 
 `app/src/main/assets/map-styles/protomaps-light/` — template JSON, sprites, latin
