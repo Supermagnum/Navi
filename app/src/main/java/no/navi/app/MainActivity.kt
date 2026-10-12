@@ -1066,6 +1066,7 @@ private fun NaviMapScreen() {
     var toPoint by remember { mutableStateOf(Waypoint()) }
     var viaPoints by remember { mutableStateOf<List<Waypoint>>(emptyList()) }
     var fromPoint by remember { mutableStateOf<Waypoint?>(null) }
+
     /**
      * True when From is empty or was set via Use GPS / "My position" and may
      * GPS-follow on auto-replan. Typed/picked places stay sticky ([RouteStartGpsPolicy]).
