@@ -96,7 +96,9 @@ differ for GPS, maps, GPU, and layout. Checklist:
 On-device and emulator results:
 [`docs/android-test-results.md`](docs/android-test-results.md).
 CAT radio corridor / importer evidence, dummy-`rigctld` CI, Hamlib APK packaging,
-and radio/baud UI notes (branch `CAT`): [`docs/cat-test.md`](docs/cat-test.md).
+and radio/baud UI notes (branch `CAT`): [`docs/CAT.md`](docs/CAT.md),
+[`docs/CAT-test-report.md`](docs/CAT-test-report.md),
+[`docs/cat-test.md`](docs/cat-test.md).
 
 **Install the signed release APK.** Testers should download and sideload
 [`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
@@ -178,8 +180,10 @@ checklist above and file an issue; you do not need to write code.
     - [Weather icons reference](docs/plugins/weather-icons-reference.md) — reference (assets shipped with weather)
     - [Instrument cluster (AGL)](docs/plugins/instrument-cluster-agl-spec.md) — not implemented
     - [Animated icons](docs/plugins/animated-icons-spec.md) — not implemented
-    - [CAT radio control](docs/CAT.md) — implemented (opt-in; Hamlib TCP/FFI, CatStatusSheet, radio/baud)
+    - [CAT radio plugin](#cat-radio-plugin) — implemented (opt-in; Hamlib + Benshi; never transmits)
+    - [CAT radio control](docs/CAT.md) — full spec
     - [CATS WASM guest](plugins/CATS-plugin/) — implemented (opt-in; wasmtime auto-tune / network follow)
+    - [CAT test report](docs/CAT-test-report.md) — CI / emulator / hardware evidence
     - [Custom alert sounds](docs/plugins/custom-alert-sounds-spec.md) — not implemented
     - [Horse trekking](docs/plugins/horse-trekking-spec.md) — not implemented
     - [Adaptive speed warning](docs/plugins/adaptive-speed-warning-spec.md) — not implemented
@@ -279,6 +283,7 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Look forward** | Without a planned route, GPS position + heading look ahead **300 m** (±60°) for catalogue road signs, speed humps (`NO:109`), children facilities (generic **142**), opted-in speed cameras, and an upcoming posted speed-limit plate from the existing road-label cell graph — same approach box (750 / 150 / 25 m) and jurisdiction gates as the route-corridor path. Dedicated 362 plates cover every-5 km/h values including 12 generated plates; odd OSM speeds still snap to the nearest shipped plate. Compact points load once per region. Detail: [`docs/road-signs.md`](docs/road-signs.md). | Done |
 | **Nearby attractions** | Opt-in under **Map / Tools → Plugins → Nearby attractions** (off by default). Quiet top-right HUD chip for attractions, fishing, and craft alcohol (incl. cider) in an **850 m / ±30°** heading cone — open-now filtered, not a hazard warning. Distinct from Look forward. Spec: [`docs/plugins/poi-lookahead-cone-spec.md`](docs/plugins/poi-lookahead-cone-spec.md). | Done |
 | **IMU pitch / tilt / compass** | Opt-in under **Map / Tools → Plugins → IMU pitch / tilt / compass** (off by default). Made for a phone or tablet **mounted in a vehicle**: live pitch, tilt and compass heading from the device sensors, plus an alarm tone when the vehicle tilts towards dangerous values (thresholds are yours to set). A mounted unit is never perfectly aligned with the vehicle, so calibrate once: Find a level concrete surface, like the floor of your garage, then tap Calibrate. The unit will then use the current values as level. **Reset** removes the calibration; the status line shows whether the unit is calibrated and on which date. Calibration is rejected while the vehicle is moving. Wasm guest plus Android `SensorManager` bridge; detail: [`docs/plugins/imu-plugin.md`](docs/plugins/imu-plugin.md). | Done |
+| **CAT radio** | Opt-in under **Map / Tools → Plugins** (off by default). Look up amateur repeaters within **150 km**, auto-tune **VFO A/1**, follow LA5MR-style networks with hysteresis (leave after the last site — decision C), leave **VFO B/2** to the user, and **never transmit**. Radios: Hamlib (Stable only) and native Benshi Bluetooth (VR-N76). Licence on the toggle: *You may listen, but do not transmit without an amateur radio licence.* Detail: [CAT radio plugin](#cat-radio-plugin), [`docs/CAT.md`](docs/CAT.md). | Done (this branch) |
 | **Children facilities nearby** | When no tagged children / school sign is active, schools, kindergartens, and playgrounds still trigger a generic **142 Children** approach warning (nearest facility wins; tagged `NO:142` outranks this fallback). **With a planned route:** facilities within **200 m** of the corridor. **Without a route:** covered by **Look forward** (300 m cone). Detail: [`docs/road-signs.md`](docs/road-signs.md). | Done |
 | **Speed camera warnings** | Point cameras use the existing approach distance-phase UX; average-speed / section-control zones use a distinct enter/exit box. `maxspeed:conditional` is evaluated against live local time. Jurisdiction-gated like EC561 / allemannsretten: Norway/UK opt-in (OSM-sourced, may be incomplete); Germany/France/Switzerland and unknown jurisdictions decline — see [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). First-run opt-in dialog required (not silently enabled). Works on both planned-route corridor and **Look forward**. | Done (display/warning only — no route-avoidance toggle, by deliberate product decision) |
 | **Map updates** | Only when you ask — check for OpenStreetMap updates or download a fresh region. Never silent. On-screen copy is plain language (no internal planner dumps). | Done |
@@ -286,7 +291,7 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Diagnostic logging** | **Tools → Diagnostic logging** (off by default). When on, writes a dated session log under **Internal storage → Documents → debug** (`navi_session_*.log`) for copy over USB/MTP — no adb required. Covers GPS, camera, toggles, route plan/stages, eco, POIs, pauses, instructions, fuel, system. Not uploaded. **Export diagnostic log** shares the latest file. Detail: [Settings → Tools](#tools-downloads-and-diagnostic-logging) and [`docs/debugging.md`](docs/debugging.md#3b-diagnostic-session-log-on-device-file). | Done |
 | **Weather overlay (HUD)** | **Map → Plugins → Weather overlay** (also under **Tools → Plugins**; off by default). Opt-in MET Norway → Open-Meteo fetch with SQLite cache, fill-style Meteocons icons, stale labeling when offline/throttled. Host UniFFI path; product does not yet link the WASM plugin-host. | Done |
 | **Weather symbols on map** | Nested **Show weather symbols on map** under Plugins (off by default; inert unless Weather overlay is on). `place:city` only at MapLibre zoom ≤ 8; max 10 symbols; 56 px min spacing; nearest-to-viewport-center priority. Town/village tiers and corridor overlay not shipped. | Done |
-| **Plugins** | A safe sandbox for future add-ons exists; most product plugins are not shipped yet. Weather and **Nearby attractions** use the host UniFFI path today (see rows above). **DATEX** road situations (opt-in, default OFF) use the navi-server feed — **Norway / NPRA only** today. | Host ready |
+| **Plugins** | A safe sandbox for future add-ons exists; most product plugins are not shipped yet. Weather and **Nearby attractions** use the host UniFFI path today (see rows above). **IMU** and **CAT radio** are opt-in on this branch (see rows above). **DATEX** road situations (opt-in, default OFF) use the navi-server feed — **Norway / NPRA only** today. | Host ready |
 
 **Hardware note:** Real-device checks include Samsung Galaxy Tab S6 Lite
 (**SM-P613**) and Google Pixel 9a. Car head units still need more real-world
@@ -1005,23 +1010,67 @@ via a **host-owned** UniFFI path (Map/Tools → Plugins; default **OFF**), not v
 a linked WASM guest. The **IMU** plugin (pitch / tilt / compass for a vehicle-mounted
 unit) is the exception: its wasm guest is built from source and staged into the APK
 like the camping guest, and Android `SensorManager` feeds it through UniFFI.
-**CAT / CATS** radio control is also opt-in (default
-**OFF**): host Hamlib (`navi-cat` TCP + FFI, staged `libhamlib.so`,
-`CatStatusSheet` model/baud) plus the **CATS** wasmtime guest for repeater
-select / network follow. Toggle copy: *You may listen, but do not transmit
-without an amateur radio licence.* What is actually tested (CI / emulator /
-hardware / not tested) is listed in [`docs/CAT.md`](docs/CAT.md#what-is-tested)
-and [`docs/CAT-test-report.md`](docs/CAT-test-report.md) — simulator results are
-never described as hardware results. VR-N76 host BlueZ (2026-10-12): productId
-`0x0103` as well as `0x0002`, `GET_DEV_INFO` payload `[3]`, one control
-connection, scratch channel when VFO B is selected (select VFO A to see RX
-changes). In Norway, OSM is the primary repeater source (all Norway repeaters
-are mapped there). **DATEX** road situations (Map/Tools → Plugins; default
-**OFF**) pull from navi-server; the live feed currently covers **Norway only**
-(NPRA). Overview: [`docs/plugins.md`](docs/plugins.md). Spec:
-[`docs/CAT.md`](docs/CAT.md). The system requires a per-plugin **enable/disable**
-control, and host-mediated **USB** / **Bluetooth** I/O for hardware-facing
-plugins.
+Calibration: Find a level concrete surface, like the floor of your garage, then
+tap Calibrate. The unit will then use the current values as level. Detail:
+[`docs/plugins/imu-plugin.md`](docs/plugins/imu-plugin.md).
+**CAT radio** (this branch) is also opt-in — see [CAT radio plugin](#cat-radio-plugin)
+below. **DATEX** road situations (Map/Tools → Plugins; default **OFF**) pull from
+navi-server; the live feed currently covers **Norway only** (NPRA). Overview:
+[`docs/plugins.md`](docs/plugins.md). The system requires a per-plugin
+**enable/disable** control, and host-mediated **USB** / **Bluetooth** I/O for
+hardware-facing plugins.
+
+## CAT radio plugin
+
+Opt-in under **Map / Tools → Plugins** (off by default). Host radio I/O lives in
+`navi-cat` (Hamlib TCP/FFI and native Benshi Bluetooth); guest logic for
+repeater select / network follow is the **CATS** wasmtime plugin
+([`plugins/CATS-plugin/`](plugins/CATS-plugin/)). Spec:
+[`docs/CAT.md`](docs/CAT.md).
+
+**What it does**
+
+- Repeater lookup within **150 km**.
+- Auto-tune of **VFO A/1** (output frequency, duplex offset/shift, CTCSS/DCS).
+- LA5MR-style **network follow** with hysteresis, and leaving the network after
+  its last site (**decision C**).
+- **VFO B/2** left to the user (not programmed by Navi).
+- **Never transmits.**
+
+**Supported radios and paths**
+
+- **Hamlib** — `rigctld` over TCP, or Android FFI (`libhamlib.so`); **Stable**
+  backends only.
+- **Native Benshi Bluetooth** — VGC/Vero **VR-N76** (`productId` `0x0002` /
+  `0x0103`). UV-Pro / GA-5WB not yet confirmed.
+
+**Repeater sources**
+
+- **OSM** (currently all repeaters in Norway are mapped there).
+- **OpenRepeater**.
+- **RadioID** via navi-server.
+- **RepeaterBook** via navi-server (not yet published).
+- **AnyTone CSV** from `Documents/repeater-csv/`.
+- The **Update** button in the plugin UI.
+- Consensus relocation (default **off**).
+
+Licence sentence on the toggle (exact copy):
+
+> You may listen, but do not transmit without an amateur radio licence.
+
+**What is tested**
+
+- CI / simulator (dummy-`rigctld`, corridor replays, gating).
+- Android emulator.
+- Real hardware: **VR-N76** over host Bluetooth on **2026-10-12** — read-only
+  check, both 5 s VFO A route runs, VFO B unchanged.
+
+**Not tested:** Android tablet → physical radio, Hamlib on real radios,
+UV-Pro / GA-5WB, RepeaterBook data, transmit (never). Simulator results must
+not be described as hardware results.
+
+Evidence and how to re-run: [`docs/CAT-test-report.md`](docs/CAT-test-report.md).
+Guest overview: [`plugins/CATS-plugin/README.md`](plugins/CATS-plugin/README.md).
 
 | Spec | Topic | Status |
 |---|---|---|
