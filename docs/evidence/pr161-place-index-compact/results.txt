@@ -1,0 +1,15 @@
+serial=unknown model=sdk_gphone64_x86_64
+work_dir=/data/user/0/no.navi.app/cache/place_index_compact_evidence
+out_dir=/storage/emulated/0/Android/data/no.navi.app/files/pr161-place-index-compact
+BEFORE bytes=12451840 page_count=3040 freelist_count=2428 freelist_ratio=0.7987
+bak_bytes=77824 live_bak_ratio=160.000
+live_counts={europe/norway/ostlandet=400, europe/norway/vestlandet=200}
+bak_counts={europe/norway/ostlandet=400, europe/norway/vestlandet=200}
+bak_decision_preview delete=true reason=counts_match
+compact_outcome=Done(compacted=true, bakDeleted=true, bakMismatches=[])
+AFTER bytes=2502656 page_count=611 freelist_count=0 freelist_ratio=0.0000
+delta_bytes=9949184 delta_pages=2429 delta_freelist=2428
+bak_deleted=true reason=counts_match live_vs_bak_rows_equal=true
+DEFER_FIXTURE bytes=3002368 page_count=733 freelist_count=609 freelist_ratio=0.8308
+defer_outcome=Deferred(reason=insufficient_space free=10 need=70111232 live=3002368)
+DEFER_LOG_LINE[PlaceIndexCompact] deferred: insufficient_space free=10 need=70111232 live=3002368
