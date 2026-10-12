@@ -1066,6 +1066,11 @@ private fun NaviMapScreen() {
     var toPoint by remember { mutableStateOf(Waypoint()) }
     var viaPoints by remember { mutableStateOf<List<Waypoint>>(emptyList()) }
     var fromPoint by remember { mutableStateOf<Waypoint?>(null) }
+    /**
+     * True when From is empty or was set via Use GPS / "My position" and may
+     * GPS-follow on auto-replan. Typed/picked places stay sticky ([RouteStartGpsPolicy]).
+     */
+    var fromFollowsGps by remember { mutableStateOf(true) }
     var avoidMotorways by remember { mutableStateOf(false) }
     var avoidTolls by remember { mutableStateOf(false) }
     var avoidFerries by remember { mutableStateOf(false) }
@@ -1378,6 +1383,7 @@ private fun NaviMapScreen() {
                         lat = trip.fromLat,
                         lon = trip.fromLon,
                     )
+                fromFollowsGps = false
                 toPoint =
                     Waypoint(
                         name = trip.toName,
@@ -2154,10 +2160,19 @@ private fun NaviMapScreen() {
         )
         offRouteCoordinator.reset()
         val hasFix = mapState.gpsLat != 0.0 || mapState.gpsLon != 0.0
+        val startToGpsM =
+            if (hasFix) {
+                haversineMApprox(mapState.gpsLat, mapState.gpsLon, startLatFix, startLonFix)
+            } else {
+                Double.POSITIVE_INFINITY
+            }
         routeNotJoinedRef.set(
-            !hasFix ||
-                haversineMApprox(mapState.gpsLat, mapState.gpsLon, startLatFix, startLonFix) >
-                ROUTE_START_AWAY_FROM_GPS_M,
+            RouteStartGpsPolicy.routeNotJoinedForAutoReroute(
+                fromFollowsGps = fromFollowsGps || fromPoint == null,
+                hasGpsFix = hasFix,
+                startToGpsM = startToGpsM,
+                awayThresholdM = ROUTE_START_AWAY_FROM_GPS_M,
+            ),
         )
         showHikingReroutePrompt = false
         recalculatingRoute = false
@@ -2817,6 +2832,7 @@ private fun NaviMapScreen() {
                     // the live fromPoint name from resolveLabelAt.
                     NaviMapTestHooks.routeStartLabel = ""
                     fromPoint = startWp
+                    fromFollowsGps = true
                     applyPlannedRoute(result)
                     status =
                         "Route updated · ${"%.1f".format(result.distanceKm)} km " +
@@ -4543,7 +4559,12 @@ private fun NaviMapScreen() {
                         )
                     when (offAction) {
                         OffRouteCoordinator.Action.AutoReroute -> {
-                            startRerouteFromCurrent(loc.latitude, loc.longitude)
+                            if (RouteStartGpsPolicy.shouldAutoReplanFromGps(
+                                    fromFollowsGps || fromPoint == null,
+                                )
+                            ) {
+                                startRerouteFromCurrent(loc.latitude, loc.longitude)
+                            }
                         }
                         OffRouteCoordinator.Action.PromptHikingReroute -> {
                             showHikingReroutePrompt = true
@@ -5320,7 +5341,10 @@ private fun NaviMapScreen() {
                                 )
                             var accepted = true
                             when (searchTarget) {
-                                SearchTarget.From -> fromPoint = wp
+                                SearchTarget.From -> {
+                                    fromPoint = wp
+                                    fromFollowsGps = false
+                                }
                                 SearchTarget.To -> toPoint = wp
                                 SearchTarget.Via -> {
                                     if (viaPoints.size >= MAX_ROUTE_VIAS) {
@@ -5521,6 +5545,11 @@ private fun NaviMapScreen() {
         target: SearchTarget = searchTarget,
         /** GPS label upgrade: replace the last via instead of appending another. */
         replaceLastVia: Boolean = false,
+        /**
+         * When [target] is From: true = Use GPS / My position (may auto-replan
+         * from the live fix); false = typed or picked place (sticky From).
+         */
+        fromFollowsGpsHit: Boolean = false,
     ) {
         val move = searchHitMapMove(hit)
         val label = move.name
@@ -5538,7 +5567,10 @@ private fun NaviMapScreen() {
                 postcode = post,
             )
         when (target) {
-            SearchTarget.From -> fromPoint = wp
+            SearchTarget.From -> {
+                fromPoint = wp
+                fromFollowsGps = fromFollowsGpsHit
+            }
             SearchTarget.To -> toPoint = wp
             SearchTarget.Via -> {
                 val next =
@@ -6660,7 +6692,10 @@ private fun NaviMapScreen() {
                                         searchIndexHint = ""
                                         searchUsedOnline = false
                                         when (searchTarget) {
-                                            SearchTarget.From -> fromPoint = null
+                                            SearchTarget.From -> {
+                                                fromPoint = null
+                                                fromFollowsGps = true
+                                            }
                                             SearchTarget.To -> toPoint = Waypoint()
                                             SearchTarget.Via -> Unit
                                         }
@@ -6871,7 +6906,11 @@ private fun NaviMapScreen() {
                                         val fixLon = mapState.gpsLon
                                         val targetAtClick = searchTarget
                                         val immediate = gpsImmediateCoordHit(fixLat, fixLon)
-                                        applyHit(immediate, target = targetAtClick)
+                                        applyHit(
+                                            immediate,
+                                            target = targetAtClick,
+                                            fromFollowsGpsHit = targetAtClick == SearchTarget.From,
+                                        )
                                         NaviMapTestHooks.lastGpsImmediateCoord =
                                             formatCoordWaypointName(fixLat, fixLon)
                                         // Resolve on IO — never park the Compose scope
@@ -6917,6 +6956,8 @@ private fun NaviMapScreen() {
                                                     target = targetAtClick,
                                                     replaceLastVia =
                                                         targetAtClick == SearchTarget.Via,
+                                                    fromFollowsGpsHit =
+                                                        targetAtClick == SearchTarget.From,
                                                 )
                                             }
                                         }
@@ -6944,9 +6985,11 @@ private fun NaviMapScreen() {
                                                     last.lastBreakLat!!,
                                                     last.lastBreakLon!!,
                                                 )
+                                            fromFollowsGps = false
                                             status = "Continue from last stop on ${last.endName}"
                                         } else if (viaPoints.isNotEmpty()) {
                                             fromPoint = viaPoints.last()
+                                            fromFollowsGps = false
                                             status = "Continue from via (${viaPoints.last().name})"
                                         } else {
                                             status = "No last stop saved yet"
@@ -7724,6 +7767,7 @@ private fun NaviMapScreen() {
                                                             lat = route.startLat,
                                                             lon = route.startLon,
                                                         )
+                                                    fromFollowsGps = false
                                                     toPoint =
                                                         Waypoint(
                                                             name =
@@ -7777,6 +7821,7 @@ private fun NaviMapScreen() {
                                                             lat = route.startLat,
                                                             lon = route.startLon,
                                                         )
+                                                    fromFollowsGps = false
                                                     toPoint =
                                                         Waypoint(
                                                             name =

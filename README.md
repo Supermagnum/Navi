@@ -261,7 +261,7 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Multiple vias** | Up to **4** intermediate stops for car / truck / bicycle (and hiking waypoints). The Via chip shows **Via (n/4)**; each pick **adds** a stop and clears the search box for the next. A list under the chips has **Remove** / **Clear all**. Off-route replan keeps remaining vias. | Done |
 | **Use GPS** | Fill From / Via / To from the live fix: coordinates appear immediately, then an optional nearby road-name upgrade. The field is the chip active when you tap — not whichever chip is selected after resolution finishes. GPS as Via upgrades the last via in place (does not duplicate). | Done |
 | **Map mark & saved places** | Hold on the map ~4 s to mark a point; set From / **Add as Via** / To or save a named place (separate from Saved routes). Via adds until the 4-stop cap. | Done |
-| **Off-route / reroute** | Sustained deviation shows **Off route**; motor profiles auto-replan from the live position (resolved start label); hiking prompts first. | Done |
+| **Off-route / reroute** | Sustained deviation shows **Off route**; motor profiles auto-replan from the live position only when From is empty or was set with **Use GPS** / My position. A typed or picked From stays sticky (never GPS-overwritten by auto-replan), even within 1 km of the fix. Hiking prompts first. | Done |
 | **Cancel planning** | While **Planning route…** or **Recalculating route…** is shown, **Cancel** stops the in-flight native plan. Recalc cancel keeps the original route. | Done |
 | **Breaks & rest** | Reminds you when a break is due and can suggest stops. Cars use hours between breaks; hiking/cycling use rest distances; trucks use legal driving-time rules where known. What is searched and used as pause POIs: [`docs/poi.md`](docs/poi.md). | Done |
 | **Drive bars** | Top: altitude (cutout-aware padding; metres, or feet in the US unit profile). Bottom: zoom, live GPS speed, posted limit when known, break timer, trip ETA, current street, eco leaf. Speed and distance follow **Display units**. Speed line turns the error colour when GPS speed is over the applicable limit (display only — not a spoken nag). | Done |
@@ -589,10 +589,12 @@ travel mode, then **Plan route**. You can add up to **four** vias: select the
 search again for the next — the chip shows **Via (n/4)** and a removable list
 appears under the summary. From is often set with **Use GPS** (select the
 **From** / **To** / **Via** chip first; the button label follows the chip).
-Hiking paths need the **Hiking** mode — planning with Car uses the road network
-and will not follow foot trails properly. A **Planning route…** banner includes
-**Cancel** if you want to stop an in-flight plan. Percent and stage labels are
-documented under [Progress status box](#progress-status-box-pale-yellow).
+A typed or searched From stays as entered: auto off-route replan does **not**
+replace it with the live GPS fix (only empty From or **Use GPS** / My position
+follows GPS). Hiking paths need the **Hiking** mode — planning with Car uses the
+road network and will not follow foot trails properly. A **Planning route…**
+banner includes **Cancel** if you want to stop an in-flight plan. Percent and
+stage labels are documented under [Progress status box](#progress-status-box-pale-yellow).
 
 **Trip ETA and OSM speeds.** Pre-departure motor ETA prefers OSM
 `maxspeed:practical`, then posted `maxspeed`, then `maxspeed:advisory`, then a
