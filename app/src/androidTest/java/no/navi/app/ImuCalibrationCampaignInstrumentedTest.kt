@@ -79,8 +79,10 @@ class ImuCalibrationCampaignInstrumentedTest {
         val leveled =
             awaitValuesMatching("after_calibrate_level") { pitch, roll, tilt ->
                 statusCalibrated() &&
-                    pitch != null && abs(pitch) < 2.0 &&
-                    roll != null && abs(roll) < 2.0 &&
+                    pitch != null &&
+                    abs(pitch) < 2.0 &&
+                    roll != null &&
+                    abs(roll) < 2.0 &&
                     (tilt == null || tilt < 3.0)
             }
         results["2_calibrate_levels"] = "PASS $leveled"
@@ -115,8 +117,10 @@ class ImuCalibrationCampaignInstrumentedTest {
         clickTag("btn_imu_calibrate")
         awaitValuesMatching("recalibrate_still") { pitch, roll, _ ->
             statusCalibrated() &&
-                pitch != null && abs(pitch) < 2.0 &&
-                roll != null && abs(roll) < 2.0
+                pitch != null &&
+                abs(pitch) < 2.0 &&
+                roll != null &&
+                abs(roll) < 2.0
         }
         shot("06_recalibrated_before_restart")
 
@@ -132,8 +136,10 @@ class ImuCalibrationCampaignInstrumentedTest {
         val persisted =
             awaitValuesMatching("after_restart") { pitch, roll, _ ->
                 statusCalibrated() &&
-                    pitch != null && abs(pitch) < 2.5 &&
-                    roll != null && abs(roll) < 2.5
+                    pitch != null &&
+                    abs(pitch) < 2.5 &&
+                    roll != null &&
+                    abs(roll) < 2.5
             }
         val mountKv =
             shell(
@@ -167,9 +173,11 @@ class ImuCalibrationCampaignInstrumentedTest {
     private fun shell(cmd: String): String {
         val pfd =
             InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(cmd)
-        return java.io.FileInputStream(pfd.fileDescriptor).use { input ->
-            input.readBytes().decodeToString()
-        }.also { pfd.close() }
+        return java.io
+            .FileInputStream(pfd.fileDescriptor)
+            .use { input ->
+                input.readBytes().decodeToString()
+            }.also { pfd.close() }
     }
 
     private fun writeResults(body: String) {
@@ -298,7 +306,10 @@ class ImuCalibrationCampaignInstrumentedTest {
         Thread.sleep(900)
     }
 
-    private fun pollAck(name: String, timeoutMs: Long): Boolean {
+    private fun pollAck(
+        name: String,
+        timeoutMs: Long,
+    ): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
         // UiAutomation executeShellCommand does not run a shell, so pipes are unavailable.
         while (System.currentTimeMillis() < deadline) {
@@ -318,8 +329,8 @@ class ImuCalibrationCampaignInstrumentedTest {
         return texts.joinToString(" ") { it.text }
     }
 
-    private fun statusCalibrated(): Boolean {
-        return try {
+    private fun statusCalibrated(): Boolean =
+        try {
             val status = tagText("imu_status")
             val date = tagText("imu_calibration_date")
             status.contains("Calibrated", ignoreCase = true) ||
@@ -327,10 +338,10 @@ class ImuCalibrationCampaignInstrumentedTest {
         } catch (_: Throwable) {
             false
         }
-    }
 
     private fun readImuValues(): Triple<Double?, Double?, Double?> {
         val text = tagText("imu_values")
+
         fun grab(label: String): Double? {
             val m = Pattern.compile("$label\\s+([+-]?\\d+(?:\\.\\d+)?)").matcher(text)
             return if (m.find()) m.group(1).toDoubleOrNull() else null
@@ -388,7 +399,10 @@ class ImuCalibrationCampaignInstrumentedTest {
         error("$label timed out; last=$last")
     }
 
-    private fun awaitNoticeContaining(needle: String, timeoutMs: Long): Boolean {
+    private fun awaitNoticeContaining(
+        needle: String,
+        timeoutMs: Long,
+    ): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             try {
