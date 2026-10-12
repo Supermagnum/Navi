@@ -6,6 +6,7 @@
 //! - Fail-closed backend gating
 //! - Full read-back verification with one retry
 
+pub mod benshi;
 pub mod ffi;
 pub mod gating;
 pub mod importers;
@@ -14,13 +15,13 @@ pub mod repeater;
 pub mod tcp;
 pub mod types;
 
+pub use benshi::{BenshiBackend, FakeBenshiPeer, TuningMethod};
 pub use ffi::FfiRigBackend;
 pub use gating::{gate_from_dump_caps, GateDecision, GateStatus};
 pub use program::{program_vfo1_verified, ProgramError, ProgramRequest, ReportedVfo};
 pub use repeater::{RepeaterDb, RepeaterSite, RepeaterSource};
 pub use tcp::TcpRigBackend;
 pub use types::{RigBackend, RigError, ShiftDir, VfoState};
-
 /// Shared entry used by HostApi embedders.
 pub struct CatService<B: RigBackend> {
     pub backend: B,
