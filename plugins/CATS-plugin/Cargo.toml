@@ -10,11 +10,10 @@ navi-plugin-sdk = { path = "../../plugin-sdk" }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 
-[lib]
-crate-type = ["cdylib"]
-path = "src/lib.rs"
+[dev-dependencies]
+navi-cat = { path = "../../navi-cat" }
 
-[profile.release]
-opt-level = "s"
-lto = true
-panic = "abort"
+[lib]
+# cdylib for wasmtime guest; rlib so host/CI tests can exercise follow/demo.
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"

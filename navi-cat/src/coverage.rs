@@ -2,8 +2,65 @@
 
 use serde_json::Value;
 
-use crate::follow::haversine_km;
 use crate::repeater::RepeaterSite;
+
+/// Haversine distance in km (scorer-local; follow logic lives in CATS-plugin).
+pub fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
+    const R: f64 = 6371.0;
+    let p1 = lat1.to_radians();
+    let p2 = lat2.to_radians();
+    let dp = (lat2 - lat1).to_radians();
+    let dl = (lon2 - lon1).to_radians();
+    let a = (dp / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dl / 2.0).sin().powi(2);
+    2.0 * R * a.sqrt().asin()
+}
+
+/// Sample a polyline by cumulative distance; returns (lat, lon) at `frac`.
+pub fn interpolate_polyline(points: &[(f64, f64)], frac: f64) -> Option<(f64, f64)> {
+    if points.is_empty() {
+        return None;
+    }
+    if points.len() == 1 || frac <= 0.0 {
+        return Some(points[0]);
+    }
+    if frac >= 1.0 {
+        return Some(*points.last().unwrap());
+    }
+    let mut seg_lens = Vec::new();
+    let mut total = 0.0;
+    for w in points.windows(2) {
+        let d = haversine_km(w[0].0, w[0].1, w[1].0, w[1].1);
+        seg_lens.push(d);
+        total += d;
+    }
+    if total <= 0.0 {
+        return Some(points[0]);
+    }
+    let target = total * frac;
+    let mut acc = 0.0;
+    for (i, &d) in seg_lens.iter().enumerate() {
+        if acc + d >= target {
+            let t = if d > 0.0 { (target - acc) / d } else { 0.0 };
+            let a = points[i];
+            let b = points[i + 1];
+            return Some((a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t));
+        }
+        acc += d;
+    }
+    Some(*points.last().unwrap())
+}
+
+/// Parse Navi `lon,lat;lon,lat;…` into `(lat, lon)` samples.
+pub fn parse_navi_polyline(s: &str) -> Vec<(f64, f64)> {
+    s.split(';')
+        .filter_map(|part| {
+            let mut it = part.split(',');
+            let lon: f64 = it.next()?.parse().ok()?;
+            let lat: f64 = it.next()?.parse().ok()?;
+            Some((lat, lon))
+        })
+        .collect()
+}
 
 #[derive(Debug, Clone)]
 pub struct CoverageScore {

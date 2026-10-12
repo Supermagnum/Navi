@@ -669,8 +669,10 @@ mod tests {
 
     #[test]
     fn g_gating_unknown_product() {
-        let mut cfg = FakeBenshiConfig::default();
-        cfg.product_id = 0x0001;
+        let cfg = FakeBenshiConfig {
+            product_id: 0x0001,
+            ..Default::default()
+        };
         let peer = FakeBenshiPeer::new(cfg);
         let err = BenshiBackend::connect_fake(peer, 0).err().expect("gated");
         assert!(matches!(err, RigError::Unsupported(_)));

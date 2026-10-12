@@ -1,7 +1,9 @@
-//! CATS WASM guest: repeater selection, auto-tune decisions, network follow.
+//! CATS WASM guest: repeater selection, auto-tune decisions, network follow,
+//! leave-network (decision C), and developer demo-mode sequencing.
 
-mod follow;
-mod select;
+pub mod demo;
+pub mod follow;
+pub mod select;
 
 /// Auto-tune radius (km) — must match HostApi cap and docs/CAT.md.
 pub const AUTO_TUNE_RADIUS_KM: f64 = 150.0;

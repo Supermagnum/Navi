@@ -376,6 +376,10 @@ impl FakeBenshiPeer {
         }
     }
 
+    pub fn selected_vfo(&self) -> u8 {
+        self.inner.lock().unwrap().double_channel
+    }
+
     pub fn settings_vfo2_fingerprint(&self) -> Vec<u8> {
         let g = self.inner.lock().unwrap();
         SettingsBlock::from_reply(&g.settings_reply)

@@ -1,14 +1,16 @@
-//! Demo-mode corridor stepper (5 s per switch, labelled for UI).
+//! Demo-mode corridor sequencing (developer / test only).
+//!
+//! Cadence and switch order live in the WASM guest. Host applies VFO programs
+//! and enforces interlocks / read-back. Off by default; UI must label clearly.
 
+use crate::follow::{interpolate_polyline, tick_at, FollowSite, FollowState, FollowTick};
 use serde::{Deserialize, Serialize};
-
-use crate::follow::{interpolate_polyline, tick_at, FollowState, FollowTick};
-use crate::program::{program_vfo1_verified, ProgramRequest};
-use crate::repeater::RepeaterSite;
-use crate::types::RigBackend;
 
 /// Default dwell between demo switches (issue #149).
 pub const DEMO_STEP_SECS: u64 = 5;
+
+/// Tolerance when asserting 5 s cadence in tests (±0.5 s wall, or ±1 sample).
+pub const DEMO_CADENCE_TOLERANCE_SECS: f64 = 0.5;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DemoStep {
@@ -18,6 +20,8 @@ pub struct DemoStep {
     pub lat: f64,
     pub lon: f64,
     pub label: String,
+    /// Simulated unix seconds when this step fires.
+    pub at_unix_s: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -25,13 +29,18 @@ pub struct DemoPlan {
     pub route_name: String,
     pub steps: Vec<DemoStep>,
     pub step_secs: u64,
+    /// True when this plan is for developer/test demo mode (never silent product path).
+    pub developer_test_only: bool,
 }
+
+/// Advance simulated time enough for dwell/gap between polyline samples.
+const DWELL_GAP: u64 = 60;
 
 /// Build a demo plan by sampling a polyline and recording follow switches.
 pub fn plan_demo_route(
     route_name: &str,
     polyline: &[(f64, f64)],
-    members: &[RepeaterSite],
+    members: &[FollowSite],
     network_id: &str,
 ) -> DemoPlan {
     let mut state = FollowState {
@@ -45,7 +54,6 @@ pub fn plan_demo_route(
         let Some((lat, lon)) = interpolate_polyline(polyline, frac) else {
             continue;
         };
-        // Advance simulated time enough for dwell/gap between samples.
         let now = i as u64 * DEMO_STEP_SECS.max(DWELL_GAP);
         match tick_at(&mut state, lat, lon, members, now) {
             FollowTick::Switch { site_id } => {
@@ -62,6 +70,7 @@ pub fn plan_demo_route(
                             s.callsign,
                             site_id
                         ),
+                        at_unix_s: now,
                     });
                 }
             }
@@ -73,6 +82,7 @@ pub fn plan_demo_route(
                     lat,
                     lon,
                     label: "Demo: leave network (hold last site, notify)".into(),
+                    at_unix_s: now,
                 });
                 break;
             }
@@ -83,79 +93,58 @@ pub fn plan_demo_route(
         route_name: route_name.into(),
         steps,
         step_secs: DEMO_STEP_SECS,
+        developer_test_only: true,
     }
 }
 
-const DWELL_GAP: u64 = 60;
+/// Wall-clock schedule: step `i` fires at `start + i * DEMO_STEP_SECS`.
+pub fn demo_schedule_unix_s(start_unix_s: u64, step_index: usize) -> u64 {
+    start_unix_s + step_index as u64 * DEMO_STEP_SECS
+}
 
-/// Apply one demo step to a backend (program VFO 1).
-pub fn apply_demo_step(
-    backend: &mut impl RigBackend,
-    site: &RepeaterSite,
-) -> Result<(), crate::program::ProgramError> {
-    let req = ProgramRequest {
-        freq_out_mhz: site.freq_out_mhz,
-        shift_mhz: site.shift_mhz,
-        ctcss_hz: site.ctcss_hz,
-        dcs_code: site.dcs_code,
-        mode: "FM".into(),
-        passband_hz: 12_500,
-        vfo: "VFOA".into(),
-        leaves_follow: false,
-    };
-    program_vfo1_verified(backend, &req)?;
-    Ok(())
+/// True if observed gap is within [`DEMO_CADENCE_TOLERANCE_SECS`] of [`DEMO_STEP_SECS`].
+pub fn cadence_ok(gap_secs: f64) -> bool {
+    (gap_secs - DEMO_STEP_SECS as f64).abs() <= DEMO_CADENCE_TOLERANCE_SECS
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repeater::RepeaterSource;
 
     #[test]
-    fn demo_plan_espa_dombas_has_steps() {
+    fn demo_plan_has_labelled_steps() {
         let members = vec![
-            RepeaterSite {
+            FollowSite {
                 id: "a".into(),
                 callsign: "LA5MR".into(),
-                lat: Some(60.85),
-                lon: Some(10.90),
+                lat: 60.85,
+                lon: 10.90,
                 freq_out_mhz: 145.625,
                 shift_mhz: -0.6,
                 ctcss_hz: Some(88.5),
-                dcs_code: None,
-                color_code: None,
-                modulation: "11K2F3E".into(),
-                network_id: Some("LA5MR".into()),
-                source: RepeaterSource::Osm,
-                conflict: false,
-                conflict_note: None,
-                distance_km: None,
-                position_accurate: true,
             },
-            RepeaterSite {
+            FollowSite {
                 id: "b".into(),
                 callsign: "LA6JRR".into(),
-                lat: Some(61.90),
-                lon: Some(9.28),
+                lat: 61.90,
+                lon: 9.28,
                 freq_out_mhz: 145.6625,
                 shift_mhz: -0.6,
                 ctcss_hz: Some(88.5),
-                dcs_code: None,
-                color_code: None,
-                modulation: "11K2F3E".into(),
-                network_id: Some("LA5MR".into()),
-                source: RepeaterSource::Osm,
-                conflict: false,
-                conflict_note: None,
-                distance_km: None,
-                position_accurate: true,
             },
         ];
         let poly = [(60.563, 11.257), (62.076, 9.128)];
         let plan = plan_demo_route("Espa-Dombas", &poly, &members, "LA5MR");
         assert_eq!(plan.step_secs, 5);
+        assert!(plan.developer_test_only);
         assert!(!plan.steps.is_empty());
         assert!(plan.steps[0].label.contains("Demo step"));
+    }
+
+    #[test]
+    fn cadence_tolerance() {
+        assert!(cadence_ok(5.0));
+        assert!(cadence_ok(5.4));
+        assert!(!cadence_ok(6.0));
     }
 }

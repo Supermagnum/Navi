@@ -8,9 +8,7 @@
 
 pub mod benshi;
 pub mod coverage;
-pub mod demo;
 pub mod ffi;
-pub mod follow;
 pub mod gating;
 pub mod importers;
 pub mod program;
