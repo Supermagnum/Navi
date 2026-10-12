@@ -7,6 +7,7 @@
 //! - Full read-back verification with one retry
 
 pub mod benshi;
+pub mod coverage;
 pub mod demo;
 pub mod ffi;
 pub mod follow;
@@ -24,6 +25,7 @@ pub use program::{program_vfo1_verified, ProgramError, ProgramRequest, ReportedV
 pub use repeater::{RepeaterDb, RepeaterSite, RepeaterSource};
 pub use tcp::TcpRigBackend;
 pub use types::{RigBackend, RigError, ShiftDir, VfoState};
+
 /// Shared entry used by HostApi embedders.
 pub struct CatService<B: RigBackend> {
     pub backend: B,
