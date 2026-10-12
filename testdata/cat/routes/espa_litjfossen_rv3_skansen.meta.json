@@ -1,0 +1,9 @@
+{
+  "distance_km": 241.55176566279312,
+  "eta_minutes": 188.30214612605008,
+  "ok": true,
+  "pack_hit": false,
+  "point_count": 6273,
+  "report_head": "TEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\nprofile=Car; routing=Car; start=60.563000,11.257000; end=62.350000,10.850000; vias=1; use_eco=false; long_trip_enabled=false\npath_covering_nodes=0; path_over_node_limit=false; clipped_nodes=0; clipped_fits=true; needs_corridor=false; stage_b=false\nallowed_countries=none\navoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false\ndatex_impacts=0; datex_block=0; datex_penalize=0\neco_regen=0.000\npoi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true\nbbox=60.480,10.058,62.520,12.352; pad=0.17; edge_clip=DirectEllipse { widen: 0 }; tile_budget=14; corridor_pts=3\ndirect_area=ellipse factor=1.15 allowance_km=10 strips=51\ndirect_area_edge_run_km=-0.0 route_km=241.6\nbuild_s=11.44; cache_hit=false; pack_hit=false; nodes=196332; edges=423379; pad_attempts=[0.16934999999999995]\npack_load_ms=0; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=149; search_ms=634; expansions=399736\ngraph_ferry_edges=48\nseasonal_closure_excluded_edges=0\nsnap_start=60.563064,11.256417 dist_m=33; snap_end=62.346079,10.847931 dist_m=449; snap_max_m=750\nroute_ferry_legs=0\nroute_ferry_fp=\nroute_tunnel_count=4",
+  "title": "Espa to Litjfossen via Skansen rundkjøring Rv 3 (Navi car router)"
+}

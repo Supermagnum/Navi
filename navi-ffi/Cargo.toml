@@ -15,6 +15,8 @@ name = "navi"
 default = []
 ## Link onboard Hamlib via navi-cat/ffi (Android native builds).
 hamlib-ffi = ["navi-cat/ffi", "dep:navi-hamlib-sys", "navi-hamlib-sys/link-hamlib"]
+## Host diagnostic / corridor helper binaries.
+diag-bins = []
 
 [dependencies]
 driver-break-core = { path = "../core" }
@@ -42,6 +44,10 @@ android_logger = "0.15"
 [[bin]]
 name = "uniffi-bindgen"
 path = "uniffi-bindgen.rs"
+
+[[bin]]
+name = "plan-cat-corridors"
+path = "src/bin/plan_cat_corridors.rs"
 
 [[bin]]
 name = "plan-skolla-rondvassbu"
