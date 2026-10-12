@@ -881,14 +881,6 @@ KNOWN_MAP_FAILURES = (
             "first by bounding-box overlap (Finland over Vasterbotten at 64.889, 19.516)."
         ),
     },
-    {
-        "id": "low_zoom_mint_fill",
-        "reason": (
-            "At low zoom a regional archive paints flat land fill outside its real "
-            "coverage (Sweden from Oslo/Hamar z5, Poland from Hamburg z5) because "
-            "header bounds are a rectangle and coarse world tiles fill the rest."
-        ),
-    },
 )
 
 

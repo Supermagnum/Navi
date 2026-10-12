@@ -180,6 +180,7 @@ checklist above and file an issue; you do not need to write code.
     - [Horse trekking](docs/plugins/horse-trekking-spec.md) — not implemented
     - [Adaptive speed warning](docs/plugins/adaptive-speed-warning-spec.md) — not implemented
     - [Nearby attractions (POI look-ahead)](docs/plugins/poi-lookahead-cone-spec.md) — implemented (opt-in)
+    - [IMU (pitch / tilt / compass, mount calibration)](docs/plugins/imu-plugin.md) — implemented (opt-in; Map / Tools → Plugins)
     - [LoRa convoy](docs/plugins/lora-convoy-spec.md) — not implemented
     - [Voice guidance (turn-by-turn)](docs/voice-guidance.md) — not implemented
     - [Voice command](docs/plugins/voice-command.md) — not implemented
@@ -261,7 +262,7 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Multiple vias** | Up to **4** intermediate stops for car / truck / bicycle (and hiking waypoints). The Via chip shows **Via (n/4)**; each pick **adds** a stop and clears the search box for the next. A list under the chips has **Remove** / **Clear all**. Off-route replan keeps remaining vias. | Done |
 | **Use GPS** | Fill From / Via / To from the live fix: coordinates appear immediately, then an optional nearby road-name upgrade. The field is the chip active when you tap — not whichever chip is selected after resolution finishes. GPS as Via upgrades the last via in place (does not duplicate). | Done |
 | **Map mark & saved places** | Hold on the map ~4 s to mark a point; set From / **Add as Via** / To or save a named place (separate from Saved routes). Via adds until the 4-stop cap. | Done |
-| **Off-route / reroute** | Sustained deviation shows **Off route**; motor profiles auto-replan from the live position (resolved start label); hiking prompts first. | Done |
+| **Off-route / reroute** | Sustained deviation shows **Off route**; motor profiles auto-replan from the live position only when From is empty or was set with **Use GPS** / My position. A typed or picked From stays sticky (never GPS-overwritten by auto-replan), even within 1 km of the fix. Hiking prompts first. | Done |
 | **Cancel planning** | While **Planning route…** or **Recalculating route…** is shown, **Cancel** stops the in-flight native plan. Recalc cancel keeps the original route. | Done |
 | **Breaks & rest** | Reminds you when a break is due and can suggest stops. Cars use hours between breaks; hiking/cycling use rest distances; trucks use legal driving-time rules where known. What is searched and used as pause POIs: [`docs/poi.md`](docs/poi.md). | Done |
 | **Drive bars** | Top: altitude (cutout-aware padding; metres, or feet in the US unit profile). Bottom: zoom, live GPS speed, posted limit when known, break timer, trip ETA, current street, eco leaf. Speed and distance follow **Display units**. Speed line turns the error colour when GPS speed is over the applicable limit (display only — not a spoken nag). | Done |
@@ -273,6 +274,7 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Norwegian road-sign warnings** | Vendored `NO:` catalogue approach icons in Norway; explicit OSM `traffic_sign` / `hazard` tags. Same 750 / 150 / 25 m approach phases as maneuvers. See [`docs/road-signs.md`](docs/road-signs.md). | Done |
 | **Look forward** | Without a planned route, GPS position + heading look ahead **300 m** (±60°) for catalogue road signs, speed humps (`NO:109`), children facilities (generic **142**), opted-in speed cameras, and an upcoming posted speed-limit plate from the existing road-label cell graph — same approach box (750 / 150 / 25 m) and jurisdiction gates as the route-corridor path. Dedicated 362 plates cover every-5 km/h values including 12 generated plates; odd OSM speeds still snap to the nearest shipped plate. Compact points load once per region. Detail: [`docs/road-signs.md`](docs/road-signs.md). | Done |
 | **Nearby attractions** | Opt-in under **Map / Tools → Plugins → Nearby attractions** (off by default). Quiet top-right HUD chip for attractions, fishing, and craft alcohol (incl. cider) in an **850 m / ±30°** heading cone — open-now filtered, not a hazard warning. Distinct from Look forward. Spec: [`docs/plugins/poi-lookahead-cone-spec.md`](docs/plugins/poi-lookahead-cone-spec.md). | Done |
+| **IMU pitch / tilt / compass** | Opt-in under **Map / Tools → Plugins → IMU pitch / tilt / compass** (off by default). Made for a phone or tablet **mounted in a vehicle**: live pitch, tilt and compass heading from the device sensors, plus an alarm tone when the vehicle tilts towards dangerous values (thresholds are yours to set). A mounted unit is never perfectly aligned with the vehicle, so calibrate once: Find a level concrete surface, like the floor of your garage, then tap Calibrate. The unit will then use the current values as level. **Reset** removes the calibration; the status line shows whether the unit is calibrated and on which date. Calibration is rejected while the vehicle is moving. Wasm guest plus Android `SensorManager` bridge; detail: [`docs/plugins/imu-plugin.md`](docs/plugins/imu-plugin.md). | Done |
 | **Children facilities nearby** | When no tagged children / school sign is active, schools, kindergartens, and playgrounds still trigger a generic **142 Children** approach warning (nearest facility wins; tagged `NO:142` outranks this fallback). **With a planned route:** facilities within **200 m** of the corridor. **Without a route:** covered by **Look forward** (300 m cone). Detail: [`docs/road-signs.md`](docs/road-signs.md). | Done |
 | **Speed camera warnings** | Point cameras use the existing approach distance-phase UX; average-speed / section-control zones use a distinct enter/exit box. `maxspeed:conditional` is evaluated against live local time. Jurisdiction-gated like EC561 / allemannsretten: Norway/UK opt-in (OSM-sourced, may be incomplete); Germany/France/Switzerland and unknown jurisdictions decline — see [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). First-run opt-in dialog required (not silently enabled). Works on both planned-route corridor and **Look forward**. | Done (display/warning only — no route-avoidance toggle, by deliberate product decision) |
 | **Map updates** | Only when you ask — check for OpenStreetMap updates or download a fresh region. Never silent. On-screen copy is plain language (no internal planner dumps). | Done |
@@ -438,6 +440,31 @@ is unavailable; basemap reuses on-disk work where supported. An incomplete
 the region and start from zero). After an OSM update, if the catalog generation
 is unchanged, the place-index path skips a forced full rebuild.
 
+**Place-index size and compaction.** Upgrading the place index from schema v5
+to v6 copies every row into a new table. That leaves free pages inside
+`place_index.db` and keeps a one-shot pre-migrate copy,
+`place_index.db.bak-pk-v6`, next to it, so the volume can briefly hold the
+index two or three times over. While the app is idle, a *place index
+compaction* job reclaims this:
+
+- It starts when the backup exists and the live file is much larger than it
+  (more than 1.5 times). Nothing runs during a plan or an index build.
+- It needs free space on the index volume of at least the live size plus a
+  margin (the larger of 64 MB and 10 percent). Without that it defers, logs
+  the reason, and retries at most once an hour.
+- It writes a compacted copy with `VACUUM INTO` to a temp file beside the live
+  index, checks it (`PRAGMA quick_check`, per-region row counts equal to the
+  live file), and swaps it in with one atomic rename under the place-index
+  build lock. If rows were written since the snapshot, nothing is swapped.
+  The live index is never written before that rename. `VACUUM INTO` needs
+  Android 11 or later; older devices skip the rewrite.
+- The backup is deleted only when every region present in both the backup and
+  the compacted index has the same row count. On any mismatch it is kept and
+  the regions are logged (`PlaceIndexCompact` tag).
+- A plan or index build aborts the job at its next check; the stamp
+  (`place_index_compact.txt`) stays, so it resumes on the next idle pass. A
+  temp file left by a force-close is discarded and the job starts again.
+
 While a **Plan route** (or auto-reroute) is running on that PBF fallback,
 background convert and place-index **yield** so they do not contend for the
 same extract. GPS-triggered speed-limit cone / road-near bbox builds **skip**
@@ -589,10 +616,12 @@ travel mode, then **Plan route**. You can add up to **four** vias: select the
 search again for the next — the chip shows **Via (n/4)** and a removable list
 appears under the summary. From is often set with **Use GPS** (select the
 **From** / **To** / **Via** chip first; the button label follows the chip).
-Hiking paths need the **Hiking** mode — planning with Car uses the road network
-and will not follow foot trails properly. A **Planning route…** banner includes
-**Cancel** if you want to stop an in-flight plan. Percent and stage labels are
-documented under [Progress status box](#progress-status-box-pale-yellow).
+A typed or searched From stays as entered: auto off-route replan does **not**
+replace it with the live GPS fix (only empty From or **Use GPS** / My position
+follows GPS). Hiking paths need the **Hiking** mode — planning with Car uses the
+road network and will not follow foot trails properly. A **Planning route…**
+banner includes **Cancel** if you want to stop an in-flight plan. Percent and
+stage labels are documented under [Progress status box](#progress-status-box-pale-yellow).
 
 **Trip ETA and OSM speeds.** Pre-departure motor ETA prefers OSM
 `maxspeed:practical`, then posted `maxspeed`, then `maxspeed:advisory`, then a
@@ -949,6 +978,7 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md) | Server / mirror of precomputed packs, commercial DB contrast, town-to-town route cache (direction; not shipped) |
 | [`docs/coverage.md`](docs/coverage.md) | Pack-server countries and subregions from `current.json` (TOC + region ids) |
 | [`docs/plugins.md`](docs/plugins.md) | Plugin host and roadmap (enable/disable; USB/Bluetooth I/O) |
+| [`docs/plugins/imu-plugin.md`](docs/plugins/imu-plugin.md) | IMU pitch / tilt / compass for a vehicle-mounted unit: level calibration, tilt alarm (opt-in plugin) |
 | [`docs/plugins/lora-convoy-spec.md`](docs/plugins/lora-convoy-spec.md) | LoRa convoy status over Meshtastic (Meshstick USB / BLE radio; not shipped) |
 
 See the `docs/` folder for more specialised topics (voice, APRS, ECU, formulas,
@@ -966,8 +996,10 @@ A sandboxed plugin host exists so future add-ons can run safely. **Most product
 plugins do not ship in the app yet** — that is intentional. Weather conditions
 and **Nearby attractions** (850 m look-ahead discovery cone) are available today
 via a **host-owned** UniFFI path (Map/Tools → Plugins; default **OFF**), not via
-a linked WASM guest. **DATEX** road situations (Map/Tools → Plugins; default
-**OFF**) pull from navi-server; the live feed currently covers **Norway only**
+a linked WASM guest. The **IMU** plugin (pitch / tilt / compass for a vehicle-mounted
+unit) is the exception: its wasm guest is built from source and staged into the APK
+like the camping guest, and Android `SensorManager` feeds it through UniFFI.
+**DATEX** road situations (Map/Tools → Plugins; default **OFF**) pull from navi-server; the live feed currently covers **Norway only**
 (NPRA). Overview: [`docs/plugins.md`](docs/plugins.md). The system requires a
 per-plugin **enable/disable** control, and host-mediated **USB** / **Bluetooth**
 I/O for hardware-facing plugins.
@@ -988,6 +1020,7 @@ I/O for hardware-facing plugins.
 | [`docs/plugins/horse-trekking-spec.md`](docs/plugins/horse-trekking-spec.md) | Equestrian lookahead and access guidance (Hiking is the interim stopgap) | **Not implemented** |
 | [`docs/plugins/adaptive-speed-warning-spec.md`](docs/plugins/adaptive-speed-warning-spec.md) | Spoken escalating overspeed (percentage tiers) | **Not implemented** |
 | [`docs/plugins/poi-lookahead-cone-spec.md`](docs/plugins/poi-lookahead-cone-spec.md) | Nearby attractions look-ahead cone (host UniFFI + quiet HUD; WASM scaffold; default OFF) | **Implemented** (opt-in) |
+| [`docs/plugins/imu-plugin.md`](docs/plugins/imu-plugin.md) | IMU pitch / tilt / compass for a vehicle-mounted unit, level calibration, tilt alarm (wasm guest staged into the APK, Android sensor bridge; default OFF). Calibration: Find a level concrete surface, like the floor of your garage, then tap Calibrate. The unit will then use the current values as level. | **Implemented** (opt-in) |
 | [`docs/plugins/lora-convoy-spec.md`](docs/plugins/lora-convoy-spec.md) | LoRa convoy status over Meshtastic — Meshstick USB SX1262 stick or BLE node; location/speed/fuel/charge | **Not implemented** |
 | [`docs/voice-guidance.md`](docs/voice-guidance.md) | Turn-by-turn spoken maneuver guidance — pre-recorded clips only; distinct from [`docs/plugins/voice-command.md`](docs/plugins/voice-command.md) | **Not implemented** |
 | [`docs/plugins/voice-command.md`](docs/plugins/voice-command.md) | Spoken navigate / save-place / nearest-POI alternative (on-device ASR/TTS). Distinct from turn-by-turn [`docs/voice-guidance.md`](docs/voice-guidance.md) | **Not implemented** |

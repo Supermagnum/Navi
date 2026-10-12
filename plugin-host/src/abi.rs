@@ -25,6 +25,7 @@ pub enum Capability {
     VehicleProfileRead,
     TravellerProfileRead,
     RouteDestinationRead,
+    SensorsRead,
 }
 
 impl Capability {
@@ -47,6 +48,7 @@ impl Capability {
             Self::VehicleProfileRead => "vehicle_profile_read",
             Self::TravellerProfileRead => "traveller_profile_read",
             Self::RouteDestinationRead => "route_destination_read",
+            Self::SensorsRead => "sensors_read",
         }
     }
 
@@ -69,6 +71,7 @@ impl Capability {
             "vehicle_profile_read" => Some(Self::VehicleProfileRead),
             "traveller_profile_read" => Some(Self::TravellerProfileRead),
             "route_destination_read" => Some(Self::RouteDestinationRead),
+            "sensors_read" | "sensors" => Some(Self::SensorsRead),
             _ => None,
         }
     }
@@ -93,6 +96,7 @@ impl Capability {
             Self::VehicleProfileRead,
             Self::TravellerProfileRead,
             Self::RouteDestinationRead,
+            Self::SensorsRead,
         ]
     }
 }
@@ -265,6 +269,118 @@ pub struct TravellerProfileView {
     pub residency_country: Option<String>,
 }
 
+/// Read-only device sensors the host may expose to guests.
+///
+/// Wire codes (`code()`) are the `kind` argument of the `sensor_read` import and
+/// must stay stable; `navi-plugin-imu-engine` mirrors them as constants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SensorKind {
+    Accelerometer,
+    AmbientTemperature,
+    Gravity,
+    Gyroscope,
+    Light,
+    LinearAcceleration,
+    MagneticField,
+    Pressure,
+    Proximity,
+    RelativeHumidity,
+    RotationVector,
+}
+
+impl SensorKind {
+    pub const ALL: [SensorKind; 11] = [
+        Self::Accelerometer,
+        Self::AmbientTemperature,
+        Self::Gravity,
+        Self::Gyroscope,
+        Self::Light,
+        Self::LinearAcceleration,
+        Self::MagneticField,
+        Self::Pressure,
+        Self::Proximity,
+        Self::RelativeHumidity,
+        Self::RotationVector,
+    ];
+
+    /// Stable wire code used by the `sensor_read` import (1-based).
+    pub fn code(self) -> u32 {
+        match self {
+            Self::Accelerometer => 1,
+            Self::AmbientTemperature => 2,
+            Self::Gravity => 3,
+            Self::Gyroscope => 4,
+            Self::Light => 5,
+            Self::LinearAcceleration => 6,
+            Self::MagneticField => 7,
+            Self::Pressure => 8,
+            Self::Proximity => 9,
+            Self::RelativeHumidity => 10,
+            Self::RotationVector => 11,
+        }
+    }
+
+    pub fn from_code(code: u32) -> Option<Self> {
+        Self::ALL.iter().copied().find(|k| k.code() == code)
+    }
+
+    /// `android.hardware.Sensor` type constants, most preferred first.
+    ///
+    /// Ambient temperature prefers `TYPE_AMBIENT_TEMPERATURE` (13) and only falls
+    /// back to the deprecated `TYPE_TEMPERATURE` (7). An embedder registers the
+    /// first type the device reports.
+    pub fn android_sensor_types(self) -> &'static [i32] {
+        match self {
+            Self::Accelerometer => &[1],
+            Self::AmbientTemperature => &[13, 7],
+            Self::Gravity => &[9],
+            Self::Gyroscope => &[4],
+            Self::Light => &[5],
+            Self::LinearAcceleration => &[10],
+            Self::MagneticField => &[2],
+            Self::Pressure => &[6],
+            Self::Proximity => &[8],
+            Self::RelativeHumidity => &[12],
+            Self::RotationVector => &[11],
+        }
+    }
+}
+
+/// One sensor reading in SI units (Android `SensorEvent.values` order).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SensorSample {
+    pub kind: SensorKind,
+    pub values: Vec<f64>,
+    /// Monotonic timestamp in milliseconds (host clock; only differences matter).
+    pub timestamp_ms: i64,
+    /// Android accuracy 0..=3 when the platform reports it.
+    #[serde(default)]
+    pub accuracy: Option<u8>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SensorStatus {
+    /// Sensor is absent on this device (or the host cannot back it). Never a zero reading.
+    #[default]
+    Unavailable,
+    /// Sensor exists but has not produced a sample yet.
+    NoSample,
+    Ok,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct SensorReadView {
+    pub status: SensorStatus,
+    pub sample: Option<SensorSample>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct SensorAvailabilityView {
+    pub available: Vec<SensorKind>,
+}
+
 /// Host-side callbacks the engine may invoke on behalf of a plugin.
 ///
 /// New camping capabilities default to honest **unknown / empty** so embedders
@@ -355,6 +471,17 @@ pub trait HostApi: Send + Sync {
     fn traveller_profile_read(&self) -> TravellerProfileView {
         TravellerProfileView::default()
     }
+
+    /// Sensors the device exposes. Default: none (honest unavailable).
+    fn sensor_availability(&self) -> SensorAvailabilityView {
+        SensorAvailabilityView::default()
+    }
+
+    /// Latest rate-limited sample for `kind`. Default: unavailable, never zeros.
+    fn sensor_read(&self, kind: SensorKind) -> SensorReadView {
+        let _ = kind;
+        SensorReadView::default()
+    }
 }
 
 /// In-memory KV used by tests and simple host embeds.
@@ -380,6 +507,33 @@ mod tests {
             Some(Capability::LandTenureQuery)
         );
         assert!(Capability::parse("not_a_cap").is_none());
+    }
+
+    #[test]
+    fn sensors_capability_parses_with_alias() {
+        assert_eq!(
+            Capability::parse("sensors_read"),
+            Some(Capability::SensorsRead)
+        );
+        assert_eq!(Capability::parse("sensors"), Some(Capability::SensorsRead));
+    }
+
+    #[test]
+    fn sensor_codes_round_trip_and_are_unique() {
+        for k in SensorKind::ALL {
+            assert_eq!(SensorKind::from_code(k.code()), Some(k));
+        }
+        assert!(SensorKind::from_code(0).is_none());
+        assert!(SensorKind::from_code(12).is_none());
+    }
+
+    #[test]
+    fn ambient_temperature_prefers_non_deprecated_android_type() {
+        // TYPE_AMBIENT_TEMPERATURE = 13, deprecated TYPE_TEMPERATURE = 7.
+        assert_eq!(
+            SensorKind::AmbientTemperature.android_sensor_types(),
+            &[13, 7]
+        );
     }
 
     #[test]

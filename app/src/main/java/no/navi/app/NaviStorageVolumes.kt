@@ -399,6 +399,9 @@ object NaviStorageVolumes {
         return "path:$path"
     }
 
+    /** Bytes available to the app on the volume holding [dir] (0 when unknown). */
+    fun freeBytes(dir: File): Long = usableSpace(dir)
+
     private fun usableSpace(dir: File): Long =
         runCatching {
             if (!dir.exists()) dir.mkdirs()

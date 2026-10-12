@@ -6,6 +6,12 @@ use std::path::{Path, PathBuf};
 
 use crate::abi::{HostApi, PluginKvStatus, PoiWrite, Position};
 
+/// Keys with this prefix live in memory only and are never written to disk.
+///
+/// For high-rate scratch state (live sensor display, command mailbox) where a
+/// flash write per host tick would be wasteful and a restart should start clean.
+pub const EPHEMERAL_KEY_PREFIX: &str = "live.";
+
 /// JSON map on disk; survives process restart when the path is under app data.
 #[derive(Debug, Clone)]
 pub struct FilePluginKv {
@@ -18,7 +24,9 @@ impl FilePluginKv {
         let path = path.into();
         let map = if path.is_file() {
             let text = fs::read_to_string(&path)?;
-            serde_json::from_str(&text).unwrap_or_default()
+            let mut m: HashMap<String, String> = serde_json::from_str(&text).unwrap_or_default();
+            m.retain(|k, _| !k.starts_with(EPHEMERAL_KEY_PREFIX));
+            m
         } else {
             HashMap::new()
         };
@@ -29,7 +37,12 @@ impl FilePluginKv {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let text = serde_json::to_string_pretty(&self.map)?;
+        let persistent: HashMap<&String, &String> = self
+            .map
+            .iter()
+            .filter(|(k, _)| !k.starts_with(EPHEMERAL_KEY_PREFIX))
+            .collect();
+        let text = serde_json::to_string_pretty(&persistent)?;
         fs::write(path_atomic_tmp(&self.path), &text)?;
         fs::rename(path_atomic_tmp(&self.path), &self.path)?;
         Ok(())
@@ -44,6 +57,9 @@ impl FilePluginKv {
             self.map.remove(key);
         } else {
             self.map.insert(key.to_string(), value.to_string());
+        }
+        if key.starts_with(EPHEMERAL_KEY_PREFIX) {
+            return Ok(());
         }
         self.flush()
     }
