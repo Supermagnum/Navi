@@ -1,0 +1,5 @@
+ANDROID_SERIAL=emulator-5554
+model=sdk_gphone64_x86_64
+android=15
+ro.serialno=EMULATOR36X6X11X0
+note=SM-P613 (R52TB0JQEDE) was connected but never targeted
