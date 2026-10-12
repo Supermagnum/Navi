@@ -810,6 +810,21 @@ object NaviMapTestHooks {
     @Volatile
     var pendingFromPoint: Waypoint? = null
 
+    /**
+     * When set with [pendingFromPoint], applied as the From GPS-follow flag.
+     * Null = leave [lastFromFollowsGps] / live state unchanged.
+     */
+    @Volatile
+    var pendingFromFollowsGps: Boolean? = null
+
+    /** Live mirror of MainActivity fromFollowsGps (for instrumented asserts). */
+    @Volatile
+    var lastFromFollowsGps: Boolean = true
+
+    /** Live mirror of MainActivity fromPoint?.name. */
+    @Volatile
+    var lastFromName: String = ""
+
     @Volatile
     var pendingViaPoints: List<Waypoint>? = null
 

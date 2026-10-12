@@ -1071,6 +1071,10 @@ private fun NaviMapScreen() {
      * GPS-follow on auto-replan. Typed/picked places stay sticky ([RouteStartGpsPolicy]).
      */
     var fromFollowsGps by remember { mutableStateOf(true) }
+    SideEffect {
+        NaviMapTestHooks.lastFromFollowsGps = fromFollowsGps
+        NaviMapTestHooks.lastFromName = fromPoint?.name.orEmpty()
+    }
     var avoidMotorways by remember { mutableStateOf(false) }
     var avoidTolls by remember { mutableStateOf(false) }
     var avoidFerries by remember { mutableStateOf(false) }
@@ -1934,6 +1938,12 @@ private fun NaviMapScreen() {
         NaviMapTestHooks.pendingFromPoint?.let {
             fromPoint = it
             NaviMapTestHooks.pendingFromPoint = null
+            NaviMapTestHooks.lastFromName = it.name
+            NaviMapTestHooks.pendingFromFollowsGps?.let { follows ->
+                fromFollowsGps = follows
+                NaviMapTestHooks.pendingFromFollowsGps = null
+                NaviMapTestHooks.lastFromFollowsGps = follows
+            }
         }
         NaviMapTestHooks.pendingViaPoints?.let {
             viaPoints = it
