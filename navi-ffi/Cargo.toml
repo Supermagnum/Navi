@@ -154,3 +154,8 @@ required-features = ["diag-bins"]
 name = "regression_gate"
 path = "tests/regression_gate.rs"
 required-features = ["regression-gate"]
+
+[[test]]
+name = "eco_corridor_plan_gate"
+path = "tests/eco_corridor_plan_gate.rs"
+required-features = ["regression-gate"]

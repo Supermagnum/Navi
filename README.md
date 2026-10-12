@@ -254,7 +254,7 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Glacier outlines** | Ice polygons get a teal dashed outline so they stay visible against pale fill (same dash as nature reserves, different colour). | Done |
 | **Elevation contours** | Opt-in brown isolines from the same Mapterhorn DEM as hillshade (not OSM contour vectors). Independent of **3D**. Spacing follows Kartverket map-series intervals (minor / index 5×). Index lines labelled with elevation (metres, or feet in the US unit profile). Needs DEM: online tiles, or **Download terrain DEM** for offline. Off by default. Detail: [`docs/map-styles.md`](docs/map-styles.md#elevation-contour-lines-opt-in-independent-of-hillshade). | Done |
 | **3D hillshade** | Optional hill shading from Mapterhorn DEM. Independent of contours — either, both, or neither. Offline needs **Download terrain DEM**. | Done |
-| **Eco routing** | Prefer routes that use less energy by taking hills into account. A small leaf icon shows when eco is on. | Done |
+| **Eco routing** | Prefer routes that use less energy by taking hills into account. A small leaf icon shows when eco is on. Pack-hit reweight is typically tens–hundreds of ms (`eco_reweight_ms`); long waits mean missing region packs or cold PBF, not eco math — incomplete corridors fail fast (`missing_regions`). Perf: [`docs/perf/region-to-region-graph-build.md`](docs/perf/region-to-region-graph-build.md). | Done |
 | **Offline planning** | Download a region once, then plan and see the route on the device. | Done |
 | **Long trip** | Opt-in under Drive settings (off by default). With From/To set, Navi estimates a corridor of Geofabrik regions (adjacency graph; online BRouter primary / OpenRouteService fallback for the preliminary polyline), queues pack downloads on **Wi‑Fi/Ethernet only**, and can store those packs on a removable volume. Place index and Tools downloads stay on internal storage. Offline planning then uses multi-region packs with soft rest / overnight POIs on chunked multi-day legs. Privacy disclosure is shown in settings when enabled. | Done |
 | **Indexing** | After a region download, a background job turns the OSM extract into compact routing packs so later plans are fast. You can plan while it runs; convert and place-index **pause** during a foreground plan so the PBF fallback is not starved. Interrupted place-index builds **resume without wiping** already-written rows; OSM updates skip a full place-index rebuild when the catalog generation is unchanged. | Done |
@@ -632,7 +632,11 @@ these fields — use **Tools → Rebuild indexed maps** (or re-download) if an
 older pack is still installed.
 
 **Eco vs shortest.** Shortest ignores hills. Eco makes steep climbs “cost” more.
-Electric modes get some credit for downhill recovery.
+Electric modes get some credit for downhill recovery. On installed graph packs,
+eco reweight is a short overlay (`eco_reweight_ms` typically 50–260 ms); planning
+time should stay in line with eco off. If a destination region pack is not
+installed, the plan fails fast with a clear “Install … to plan this route”
+message instead of spinning on a cold PBF build.
 
 **Official networks.** Optional soft preference for marked hiking/cycle routes
 (**Follow official hiking/cycling networks**). Ordinary paths remain available
