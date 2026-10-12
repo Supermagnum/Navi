@@ -232,27 +232,35 @@ follow.
 
 ### LA5MR usable NFM members (fixture)
 
+Refreshed from OSM relation full (`FETCH_DATE` 2026-10-12): **11** members;
+**9** usable after skipping incomplete freq/shift (never guessed). Includes
+**LA9AR** (Tronfjell, way 1005486272) and **LA6JRR** (way 1194875539).
+
 | Along GC (km) | Off-route (km) | Site | Lat, lon | Frequency |
 |---:|---:|---|---|---|
-| 0.0 | 51.5 | LA5MR (node 1011896359) | 60.22987, 10.60662 | 145.6375 |
-| 36.8 | 1.7 | LA5MR (node 1473491257) | 60.84576, 10.89618 | 145.625 |
-| 41.9 | 88.7 | LA5TRR (node 5576656416) | 61.31951, 12.18899 | 145.725 |
-| 65.5 | 99.8 | LA6NR (node 5576442558) | 60.53668, 9.06172 | 145.775 |
+| 0.0 | 55.2 | LA2KRR (node 5576656337) | 60.32422, 12.13833 | 434.65 |
+| 36.7 | 1.7 | LA5MR (node 1473491257) | 60.84576, 10.89618 | 145.625 |
+| 42.0 | 88.7 | LA5TRR (node 5576656416) | 61.31951, 12.18899 | 145.725 |
+| 65.4 | 99.8 | LA6NR (node 5576442558) | 60.53668, 9.06172 | 145.775 |
 | 72.5 | 57.7 | LA5MR / Bagn hovedsender (2641537344) | 60.80862, 9.61589 | 145.625 |
-| 73.0 | 19.6 | LA2TRR (node 5576506182) | 61.00756, 10.19180 | 145.2375 |
 | 110.8 | 72.8 | LA5MR (node 5576503609) | 61.01846, 8.97393 | 145.625 |
 | 155.1 | 91.8 | LA5MR (node 12635462528) | 61.25322, 8.20304 | 145.625 |
+| 167.3 | 74.3 | LA9AR / Tron hovedsender (way 1005486272) | 62.17419, 10.69542 | 145.6 |
+| 181.9 | 4.2 | LA6JRR (way 1194875539) | 61.89783, 9.28354 | 145.6625 |
 
-Incomplete member node 5576656337 (no frequency / modulation) was  omitted because it was missing from OSM.
-https://www.openstreetmap.org/node/5576656337
+Skipped (incomplete OSM tags — no `repeater:shift`): node 5576506182 (LA2TRR),
+node 1011896359 (LA5MR 145.6375). Do not invent offsets.
 
 ### Expected switch log (fixture-derived)
 
 | Route km | Elapsed @ 80 km/h | Tuned site | Dist to site (km) | Reason |
 |---:|---:|---|---:|---|
 | 0.0 | 0 s | LA5MR (node 1473491257) | 37.1 | Initial nearest network member at Espa |
-| 63.5 | ~2857 s | LA2TRR (node 5576506182) | 21.7 | From 1473491257; closer by 5.1 km (cur 26.8) |
-| 169.0 | ~7604 s | LA5MR (node 12635462528) | 92.8 | From LA2TRR; closer by 5.3 km (cur 98.1) |
+| 112.0 | ~5039 s | LA6JRR (way 1194875539) | 69.8 | From 1473491257; closer by 5.6 km (cur 75.3) |
+
+Østerdalen leave-network (test I, decision C) is covered by
+`navi-cat` `corridor_benshi::i_oster_dalen_leave_network_after_la9ar`, not this
+GC Espa→Dombås table.
 
 ---
 

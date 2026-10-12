@@ -15,3 +15,7 @@ wasmtime. Radio I/O is host-only via HostApi:
 
 See [`docs/CAT.md`](../../docs/CAT.md). Never transmits; never talks to the
 radio bytes directly.
+
+Host backends (Hamlib TCP / native **Benshi** GAIA) live in `navi-cat`, not
+here. The guest only asks for VFO 1 programs and follow state; the host enforces
+allowlists, gating, VFO 2 protection, and never-transmit.

@@ -276,13 +276,15 @@ Issue comment: keep a server-side copy so the client never needs an API key.
 
 ## Fixture note (prerequisite)
 
-Committed `testdata/cat/osm/la5mr/relation_18780801_full.xml` still lists
-**Bagn** and is dated `2026-10-01`. Issue: relation now has **11** members
-including LA9AR, LA6JRR, LA5MR Høykorset (Bagn replaced). Re-fetch, update
-`FETCH_DATE.txt`, regenerate Run A/B, and extend Østerdalen corridor fixtures
-before scoring H/I/J.
+Refreshed `testdata/cat/osm/la5mr/relation_18780801_full.xml` on **2026-10-12**:
+**11** members including **LA9AR** and **LA6JRR**. OSM still names node
+2641537344 **Bagn hovedsender**; SPLAT oracle uses **LA5MR_HOYKORSET** for that
+site — coverage scorer maps the id explicitly. Run B regenerated in
+`cat-test.md`. Full OSM changeset re-fetch got HTTP 403 from the API in this
+environment; relation full GET succeeded.
 
-SPLAT oracle: `test-results/LA5MR.geojson.bz2` in Supermagnum/splat (present).
+SPLAT oracle: Supermagnum/splat `test-results/LA5MR.geojson.bz2` (not committed;
+Espa→Dombås talk score **91.5 %**, 2 switches).
 
 ---
 

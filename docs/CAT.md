@@ -1,8 +1,9 @@
 # CAT (Computer Aided Transceiver)
 
-CAT control for amateur radio gear is **not implemented** yet. This document
-defines the intended behaviour for a future `cat` plugin / host service so VFO
-programming stays safe and predictable while driving.
+CAT control for amateur radio gear: Hamlib (`rigctld`) and a native **Benshi
+Bluetooth** backend (VR-N76). This document defines safe VFO programming while
+driving. Guest logic lives in `plugins/CATS-plugin/` (wasmtime); radio I/O and
+never-transmit enforcement live in the host (`navi-cat`).
 
 Vehicle / energy telemetry is separate: see [`ECU.md`](ECU.md). Plugin overview:
 [`plugins.md`](plugins.md). LoRa convoy status uses the same client/display
@@ -13,10 +14,11 @@ split (Navi does not implement the RF layer) over Meshtastic BLE:
 
 ## Goals
 
-1. Talk to a mobile transceiver via **Hamlib** (`rigctld`), not hand-written
-   vendor dialects.
-2. Only drive radios whose Hamlib backend is **Stable** and supports the
-   functions auto-tune needs.
+1. Talk to a mobile transceiver via **Hamlib** (`rigctld`) or the native
+   **Benshi** Bluetooth backend — not hand-written Kenwood/Yaesu/Icom dialects
+   in the guest.
+2. Only drive radios that pass backend gating (Hamlib **Stable** + required
+   caps, or native Benshi `productId` allowlist).
 3. Look up nearby **NFM** (narrow FM or other modes that the radio can do ) amateur **repeaters**.
 4. If one is within **150 km**, program **VFO 1** with output frequency, duplex
    offset/shift, and CTCSS/DCS (subtone).
@@ -29,8 +31,9 @@ split (Navi does not implement the RF layer) over Meshtastic BLE:
 ## Radio control via Hamlib
 
 Navi does not implement Kenwood `FA`/`FB`, Yaesu, Icom CI-V or other dialects
-itself. The host runs `rigctld` for the configured radio and the `cat` host
-service talks to it over TCP (default port 4532) using the rigctld protocol.
+itself for the Hamlib path. The host runs `rigctld` for the configured radio
+and the `cat` host service talks to it over TCP (default port 4532) using the
+rigctld protocol.
 
 ```text
 Navi cat service  ──TCP──▶  rigctld -m <model> -r <serial port> -s <baud>  ──CAT──▶  radio
@@ -137,6 +140,58 @@ C 885             # CTCSS, tenths of Hz
 After programming, read back (`f`, `m`, `r`, `o`, `c`) and compare. Some
 radios reset offset or tone when frequency changes, so always send frequency
 first and verify the full state afterwards. A mismatch counts as a failure.
+
+---
+
+## Radio control via Benshi (native Bluetooth)
+
+Separate from Hamlib. Used for VGC/Vero **VR-N76** (and later UV-Pro / GA-5WB
+when product IDs are known). Protocol facts derived from HTCommander / benlink
+(Apache-2.0); application logic is Navi's. Investigation:
+[`CAT-benshi-investigation.md`](CAT-benshi-investigation.md).
+
+```text
+Navi cat service  ──GAIA/RFCOMM──▶  Benshi radio (control UUID only)
+```
+
+### Never-transmit (Benshi path)
+
+Enforced in `navi-cat` **before I/O**, independent of the WASM guest:
+
+| Rule | Detail |
+|---|---|
+| Allowlist | Basic group (2) only: GET_DEV_INFO, REGISTER_NOTIFICATION, READ/WRITE_SETTINGS, READ/WRITE_RF_CH, GET_HT_STATUS, FREQ_MODE_SET_PAR, FREQ_MODE_GET_STATUS |
+| Forbidden | e.g. HT_SEND_DATA (31), DO_PROG_FUNC (66), STORE_SETTINGS (12), group 10 (firmware VM) |
+| Audio RFCOMM | **Never opened** (voice UUID is out of scope) |
+| PTT | No transmit-key command exists on the allowlist; program refused while `isInTx` |
+
+### Native gating
+
+At connect: `GET_DEV_INFO`. Fail closed unless `productId == 0x0002` (VR-N76).
+Unknown, malformed, or truncated identity → auto-tune disabled. Distinct from
+Hamlib `dump_caps` Stable checks.
+
+### VFO policy
+
+- Plugin / host program **VFO 1 only**; VFO 2 memory and selected-VFO are never
+  written.
+- **Frequency mode** (`FREQ_MODE_SET_PAR`) only when VFO 1 is selected or dual
+  channel is off; otherwise **scratch channel A**.
+- After each `FREQ_MODE_SET_PAR`, wait for a **fresh** notification 14 (must
+  arrive after the write) matching RX/TX/sub-audio; stale notifications do not
+  count. Timeout / mismatch → unverified (normal retry); if notification 14 is
+  unreliable for a device, fall back to scratch.
+- Read-back + VFO 2 fingerprint before/after every program.
+
+CI uses an in-process **FakeBenshiPeer** (plumbing, not a physical radio).
+
+### Tune path (same VFO 1 fields as Hamlib)
+
+Both tuning methods program RX / TX / sub-audio for the same logical state as
+the Hamlib `F`/`R`/`O`/`C` sequence. Frequency mode uses `FREQ_MODE_SET_PAR`
+plus notification 14 verify; scratch uses `WRITE_RF_CH` on the configured slot
+and `WRITE_SETTINGS` only to point channel A at that slot (channel B and
+selected-VFO untouched).
 
 ---
 
