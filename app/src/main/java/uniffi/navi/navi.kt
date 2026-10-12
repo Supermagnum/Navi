@@ -1114,6 +1114,7 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_camping_plugin_suggest_along_route(
     ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_undo_camp_here_tonight(
+    ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_configure(
     ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_connect_tcp(
@@ -1633,6 +1634,7 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_camping_plugin_suggest_along_route(`maxSuggestions`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_camping_plugin_undo_camp_here_tonight(`lat`: Double,`lon`: Double,`countryIso`: RustBuffer.ByValue,`subdivisionIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_configure(`filesDir`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`timezone`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_navi_fn_func_cat_plugin_connect_tcp(`host`: RustBuffer.ByValue,`port`: Short,`allowBeta`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -2680,6 +2682,29 @@ public object FfiConverterUByte: FfiConverter<UByte, Byte> {
 
     override fun write(value: UByte, buf: ByteBuffer) {
         buf.put(value.toByte())
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterUShort: FfiConverter<UShort, Short> {
+    override fun lift(value: Short): UShort {
+        return value.toUShort()
+    }
+
+    override fun read(buf: ByteBuffer): UShort {
+        return lift(buf.getShort())
+    }
+
+    override fun lower(value: UShort): Short {
+        return value.toShort()
+    }
+
+    override fun allocationSize(value: UShort) = 2UL
+
+    override fun write(value: UShort, buf: ByteBuffer) {
+        buf.putShort(value.toShort())
     }
 }
 

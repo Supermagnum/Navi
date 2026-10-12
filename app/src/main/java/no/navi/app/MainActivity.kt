@@ -9690,6 +9690,14 @@ private fun NaviMapScreen() {
                     },
                     campingSessionDisableMessage = campingSessionDisableMessage,
                     onCampingReEnableSession = campingReEnableSession,
+                    onlinePlaceSearchEnabled = onlinePlaceSearchEnabled,
+                    onOnlinePlaceSearchChange = { on -> setOnlinePlaceSearch(on) },
+                    nominatimBaseUrl = nominatimBaseUrl,
+                    onNominatimBaseUrlChange = { url ->
+                        nominatimBaseUrl = url
+                        MapHudPrefs.saveNominatimBaseUrl(context, url)
+                    },
+                    revealOnlinePlaceSearch = revealOnlineSearchSetting,
                     catPluginEnabled = catPluginEnabled,
                     onCatPluginChange = { on ->
                         catPluginEnabled = on
