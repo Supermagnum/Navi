@@ -2916,21 +2916,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "navi-cat"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "log",
- "navi-hamlib-sys",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
-]
-
-[[package]]
 name = "navi-desktop"
 version = "0.1.0"
 dependencies = [
@@ -2960,8 +2945,6 @@ dependencies = [
  "geo-types",
  "log",
  "memmap2 0.9.11",
- "navi-cat",
- "navi-hamlib-sys",
  "navi-plugin-host",
  "navi-right-to-roam-camping",
  "osm4routing",
@@ -2974,10 +2957,6 @@ dependencies = [
  "uniffi",
  "uuid",
 ]
-
-[[package]]
-name = "navi-hamlib-sys"
-version = "0.1.0"
 
 [[package]]
 name = "navi-linux"
@@ -2993,15 +2972,6 @@ version = "0.1.0"
 dependencies = [
  "navi-plugin-sdk",
  "wee_alloc",
-]
-
-[[package]]
-name = "navi-plugin-cats"
-version = "0.1.0"
-dependencies = [
- "navi-plugin-sdk",
- "serde",
- "serde_json",
 ]
 
 [[package]]

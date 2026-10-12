@@ -1,2 +1,0 @@
-Backend status: Stable
-Can set Repeater Shift: Y

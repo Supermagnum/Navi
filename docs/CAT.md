@@ -48,10 +48,6 @@ Benefits:
 Model number, serial port and baud rate are part of the radio profile in the
 host config. Verify baud rate against the radio manual.
 
-Product UI (`CatStatusSheet`) persists Hamlib **model** (`cat_rig_model`) and
-USB/BT **baud** (`cat_baud_rate`) in `MapHudPrefs`; baud is applied via
-`CatSerialOpenParams` when opening the serial side of `CatSerialLoopbackBridge`.
-
 ### Rust packages
 
 Existing crates (checked September 2026):
@@ -115,7 +111,7 @@ Auto-tune is enabled only if **all** of these hold:
 - Optional user override: allow **Beta** backends with an explicit warning.
   Alpha / Untested are never allowed.
 - Test builds may allow the dummy rig (model 1) regardless of its reported
-  status (CI only; see [`cat-test.md`](cat-test.md#out-of-scope)).
+  status (see [Testing](#testing)).
 
 Equivalent check if Hamlib is linked via FFI instead: `rig_caps.status ==
 RIG_STATUS_STABLE` and non-null `set_rptr_shift`, `set_rptr_offs`,
@@ -364,32 +360,17 @@ CSV, OpenRepeater, RadioID, and the last successful local imports.
 
 ## Repeater data import and cross-referencing
 
-**Status:** host importers in `navi-cat` (OSM JSON, AnyTone channel CSV,
-OpenRepeater JSON, RadioID CSV scaffold; RepeaterBook always disabled).
-On-device CSV drop directory and full format notes:
-[`cat-test.md`](cat-test.md#csv-import-path) /
-[`cat-test.md`](cat-test.md#anytone-cps-csv-format). Fixture outcomes:
-[`testdata/cat/SOURCES.md`](../testdata/cat/SOURCES.md).
-
-### CSV import directory
-
-| Role | Path |
-|---|---|
-| Android app | `{Context.filesDir}/cat/import/` (created at CAT bootstrap) |
-| Repo fixtures | [`testdata/cat/anytone/`](../testdata/cat/anytone/) |
-| Onboard SQLite | `{Context.filesDir}/cat_repeaters.sqlite` |
-
-Put AnyTone CPS exports (`channel.csv`, optional `zone.csv`,
-`gps-roaming.csv`, `offset.csv`) in the app import directory. Encoding:
-**UTF-8** or **Windows-1252**; **CRLF** or **LF**.
+**Status:** specified here; **not implemented**. Doc-only planning for the
+future `cat` plugin / host importer.
 
 ### Sources the plugin must accept
 
 #### 1. AnyTone CPS CSV exports
 
 Accept sample-shaped exports such as `channel.csv`, `zone.csv`,
-`gps-roaming.csv`, and `offset.csv`. Full column / filter rules:
-[`cat-test.md` — AnyTone CPS CSV format](cat-test.md#anytone-cps-csv-format).
+`gps-roaming.csv`, and `offset.csv`.
+
+Encoding and newlines: accept **UTF-8** and **Windows-1252**, **CRLF** or **LF**.
 
 **`channel.csv`** — one row per channel. Observed key columns:
 
@@ -400,7 +381,8 @@ Accept sample-shaped exports such as `channel.csv`, `zone.csv`,
 | Channel Type | `A-Analog` or `D-Digital` (DMR) |
 | Band Width | `12.5K` / `25K` |
 | CTCSS/DCS Encode / Decode | Analog access tones |
-| Color Code / Slot, Contact TG | DMR |
+| RX Color Code, Slot | DMR |
+| Contact / Contact TG/DMR ID | DMR talkgroup / contact |
 | APRS RX and other APRS columns | Used to **exclude** APRS rows (see Filtering) |
 
 There are **no coordinates** in `channel.csv`.
@@ -560,9 +542,15 @@ Radio control lives in the host (rigctld client), not WASM.
 
 ## Testing
 
-**Results, fixture-fetch checklist, Espa→Dombås switch logs (Run A / Run B),
-CSV path/format, and importer coverage** live in
-[`cat-test.md`](cat-test.md). Do not duplicate full tables here.
+Use the Hamlib **dummy rig** (model 1) for development and CI:
+
+```text
+rigctld -m 1 -t 4532
+```
+
+The dummy stores frequency, mode, VFO, shift, offset, tone and PTT in memory,
+so tests can program VFO 1 through the normal path and assert the result with
+read-back.
 
 Test cases:
 
@@ -577,41 +565,9 @@ Test cases:
 - Gating parser: feed saved `dump_caps` outputs (Stable, Beta, missing lines)
   and check the result.
 
-Scenario pass/fail detail, JVM bridge notes, and corridor expected-switch
-timelines: [`cat-test.md`](cat-test.md).
-
-### Emulator vs real device
-
-| Layer | What it proves |
-|---|---|
-| JVM/Robolectric bridge unit tests | Fake USB/BT sockets through loopback bridge (reconnect, partial writes, disconnect) |
-| Emulator instrumentation | Real `libhamlib.so` + CATS-plugin in wasmtime; remote `rigctld` via `10.0.2.2:4532`; USB/BT via injected boundaries (SPP data path to a real radio is **not** reproducible on emulator) |
-| Real device (manual) | USB OTG + Bluetooth SPP with a physical radio; confirm read-back for every field after checking Hamlib backend status for that model |
-
-### Fixture sources
-
-See [`testdata/cat/SOURCES.md`](../testdata/cat/SOURCES.md) and
-[`scripts/fetch-cat-fixtures.sh`](../scripts/fetch-cat-fixtures.sh).
-Server-file / pack checks and importer automation results:
-[`cat-test.md`](cat-test.md#fixture--database-fetch-checklist).
-
-Hamlib dummy (`rigctld -m 1`) is CI gating only — not product route evidence
-(see cat-test.md [Out of scope](cat-test.md#out-of-scope)).
-
-Plugin logic lives only under `plugins/CATS-plugin/`. Host radio safety is in `navi-cat`.
-
----
-
-## Future: rentable ham radio shacks (not implemented)
-
-Reference OSM way: <https://www.openstreetmap.org/way/395284738>.
-
-Fetch current tags for that way when documenting; search taginfo for
-rentable/guest amateur radio station tag combinations and usage counts.
-Possible Navi surfaces (doc only): map layer/POI, search, “near route” on long
-trips; fields such as operator, website, booking, bands/equipment if tagged.
-Other data sources beyond OSM may exist — list when researching. **No code**
-for this on the `CAT` branch.
+The dummy does not reproduce radio-specific behaviour (timing, settings reset
+on frequency change, unsupported functions). Final verification on the real
+radio is still required.
 
 ---
 
@@ -619,18 +575,14 @@ for this on the `CAT` branch.
 
 | Piece | Status |
 |---|---|
-| Architecture decisions (`RigBackend`, latest Hamlib, rejected crates) | Locked in this doc |
-| Plugin path `plugins/CATS-plugin/` + wasmtime sandbox | Implemented on `CAT` |
-| Read-back verification (app-side) | Implemented in `navi-cat` |
-| `navi-cat` + TCP/FFI backends | Implemented on `CAT` |
-| Backend gating (`dump_caps`) | Implemented on `CAT` |
-| Onboard repeater DB / OSM / CSV / OpenRepeater / RadioID | Implemented on `CAT` (RadioID/repeatermap: policy only) |
-| Cross-source merge / conflict UI | Conflict flags in DB/query; UI polish deferred |
-| RepeaterBook sync | Disabled until written API permission |
-| Auto-tune → VFO 1 / network follow | Implemented (guest + host) |
-| Hamlib Android build script + lock | Implemented (`scripts/build-hamlib-android.sh`, tag 4.7.2) |
-| Android USB/BT/remote transports | Loopback bridge + remote endpoint; JVM tests green |
-| Scenario + importer fixture suite | Scenarios 1–12 + `import_fixtures`; results in [`cat-test.md`](cat-test.md) |
-| HostApi `cat_*` / `repeater_query` | Implemented (caps + host handlers; defaults fail closed) |
-| Product CAT UI | Tools/Map toggle + `CatStatusSheet` (connect / follow / nearby); UniFFI `cat_plugin_*` |
-| Future ham-shacks | Doc only; not implemented |
+| `navi-cat` rigctld client (own crate) | Not implemented |
+| Backend gating (`dump_caps`) | Not implemented |
+| Onboard repeater DB / OSM import | Not implemented |
+| AnyTone CPS CSV import | Specified here; not implemented |
+| OpenRepeater / RadioID import | Specified here; not implemented |
+| Cross-source repeater merge / conflict UI | Specified here; not implemented |
+| RepeaterBook sync | Disabled until written API permission; not implemented |
+| Auto-tune → VFO 1 | Specified here; not implemented |
+| Network follow mode | Specified here; not implemented |
+| Dummy-rig test suite | Not implemented |
+| Plugin capability wiring | Proposed in [`plugins.md`](plugins.md) |

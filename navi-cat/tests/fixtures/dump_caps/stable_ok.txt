@@ -1,6 +1,0 @@
-Caps dump for model: 1201
-Model name:	FT-8900
-Backend status:	Stable
-Can set Repeater Shift:	Y
-Can set Repeater Offset:	Y
-Can set CTCSS Tone:	Y
