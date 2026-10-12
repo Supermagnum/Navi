@@ -14,6 +14,8 @@ members = [
     "plugins/weather",
     "plugins/datex",
     "plugins/poi-lookahead",
+    "plugins/imu",
+    "plugins/imu/engine",
     "plugins/right-to-roam-camping",
     "plugins/right-to-roam-camping/engine",
 ]
