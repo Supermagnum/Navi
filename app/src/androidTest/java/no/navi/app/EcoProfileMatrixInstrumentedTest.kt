@@ -196,10 +196,12 @@ class EcoProfileMatrixInstrumentedTest {
         // Truck/MH long fails are expected (#166) — both eco on and off.
         val truckMhLong =
             rows.filter {
-                (it.startsWith("raufoss_bergen\tTRUCK\t") ||
-                    it.startsWith("raufoss_bergen\tMOBILE_HOME\t") ||
-                    it.startsWith("espa_dombas\tTRUCK\t") ||
-                    it.startsWith("espa_dombas\tMOBILE_HOME\t"))
+                (
+                    it.startsWith("raufoss_bergen\tTRUCK\t") ||
+                        it.startsWith("raufoss_bergen\tMOBILE_HOME\t") ||
+                        it.startsWith("espa_dombas\tTRUCK\t") ||
+                        it.startsWith("espa_dombas\tMOBILE_HOME\t")
+                )
             }
         assertTrue(
             "Truck/MH long Stage-B rows must be annotated #166:\n$out",
