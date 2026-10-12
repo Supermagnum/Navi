@@ -164,9 +164,32 @@ build_one_abi() {
   local TARGET
   TARGET="$(abi_to_triple "$ABI_DIR")"
 
+  local LIB_DST_DIR="$ROOT/app/src/main/jniLibs/$ABI_DIR"
+  mkdir -p "$LIB_DST_DIR"
+
+  local HAMLIB_OUT="$ROOT/out/hamlib-android/jniLibs/$ABI_DIR/libhamlib.so"
+  local HAMLIB_DST="$LIB_DST_DIR/libhamlib.so"
+  if [[ -f "$HAMLIB_OUT" ]]; then
+    cp -f "$HAMLIB_OUT" "$HAMLIB_DST"
+    echo "Staged $HAMLIB_DST from out/hamlib-android"
+  elif [[ -f "$HAMLIB_DST" ]]; then
+    echo "Using existing $HAMLIB_DST"
+  else
+    echo "warning: libhamlib.so missing for $ABI_DIR." >&2
+    echo "  Run: ANDROID_NDK_HOME=\"\$ANDROID_NDK_HOME\" ./scripts/build-hamlib-android.sh" >&2
+    echo "  Continuing without hamlib-ffi (TCP-only CAT path)." >&2
+  fi
+
+  local CARGO_FEATURES=()
+  if [[ -f "$HAMLIB_DST" ]]; then
+    CARGO_FEATURES=(--features hamlib-ffi)
+    export RUSTFLAGS="${RUSTFLAGS:-} -L native=${LIB_DST_DIR}"
+    echo "Enabling navi-ffi feature hamlib-ffi (link libhamlib)"
+  fi
+
   echo "Building navi-ffi for $TARGET ($PROFILE) with NDK $ANDROID_NDK_HOME ($NDK_HOST_TAG)..."
 
-  cargo build -p navi-ffi --target "$TARGET" "${CARGO_PROFILE_ARGS[@]}" --lib
+  cargo build -p navi-ffi --target "$TARGET" "${CARGO_PROFILE_ARGS[@]}" "${CARGO_FEATURES[@]}" --lib
 
   local LIB_SRC="$ROOT/target/$TARGET/$PROFILE/libnavi.so"
   local LIB_DST_DIR="$ROOT/app/src/main/jniLibs/$ABI_DIR"
@@ -198,6 +221,9 @@ build_one_abi() {
 
   cp -f "$LIB_SRC" "$LIB_DST_DIR/libnavi.so"
   echo "Copied $LIB_SRC -> $LIB_DST_DIR/libnavi.so"
+  if [[ -f "$HAMLIB_DST" ]]; then
+    echo "Packaged alongside: $HAMLIB_DST"
+  fi
 }
 
 echo "Native ABIs: ${ABI_LIST[*]} (from naviAbis / NAVI_ABIS / CLI)"

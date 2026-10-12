@@ -1,0 +1,322 @@
+{
+  "description": "FM+DMR amateur repeaters within ~150 km of Espa→Dombås that are not members of any OSM type=network relation in the CAT fixtures. APRS excluded. Built from OSM fixtures only (OpenRepeater Norway empty; RadioID not redistributable).",
+  "route": {
+    "espa": {
+      "lat": 60.563,
+      "lon": 11.257
+    },
+    "dombas": {
+      "lat": 62.076,
+      "lon": 9.128
+    }
+  },
+  "count": 18,
+  "entries": [
+    {
+      "source": "openstreetmap",
+      "osm_type": "node",
+      "osm_id": 3115922468,
+      "callsign": "LA5ARR",
+      "lat": 61.2803118,
+      "lon": 10.3113599,
+      "frequency_out": "434.775 MHz",
+      "shift": "-2 MHz",
+      "ctcss": "71.9",
+      "modulation": "11K2F3E",
+      "modes": [
+        "FM"
+      ],
+      "distance_km_to_espa_dombas_route": 3.0,
+      "reason": "FM amateur repeater on OSM node 3115922468; 3.0 km from Espa→Dombås corridor (≤150 km); not a member of any type=network relation in fixtures (LA5MR/18780801); APRS/digipeater modes excluded"
+    },
+    {
+      "source": "openstreetmap",
+      "osm_type": "node",
+      "osm_id": 14228508488,
+      "callsign": "LA2JRR",
+      "lat": 61.897565,
+      "lon": 9.284453,
+      "frequency_out": "145.6625 MHz",
+      "shift": "-0.6 MHz",
+      "ctcss": "88.5",
+      "modulation": "11K2F3E",
+      "modes": [
+        "FM"
+      ],
+      "distance_km_to_espa_dombas_route": 4.2,
+      "reason": "FM amateur repeater on OSM node 14228508488; 4.2 km from Espa→Dombås corridor (≤150 km); not a member of any type=network relation in fixtures (LA5MR/18780801); APRS/digipeater modes excluded"
+    },
+    {
+      "source": "openstreetmap",
+      "osm_type": "node",
+      "osm_id": 14228508493,
+      "callsign": "LA7GRR",
+      "lat": 61.897565,
+      "lon": 9.284453,
+      "frequency_out": "434.8 MHz",
+      "shift": "-2 MHz",
+      "ctcss": "123",
+      "modulation": "11K2F3E",
+      "modes": [
+        "FM"
+      ],
+      "distance_km_to_espa_dombas_route": 4.2,
+      "reason": "FM amateur repeater on OSM node 14228508493; 4.2 km from Espa→Dombås corridor (≤150 km); not a member of any type=network relation in fixtures (LA5MR/18780801); APRS/digipeater modes excluded"
+    },
+    {
+      "source": "openstreetmap",
+      "osm_type": "node",
+      "osm_id": 5810152676,
+      "callsign": "LA7GR",
+      "lat": 61.513859,
+      "lon": 9.7946565,
+      "frequency_out": "145.725 MHz",
+      "shift": "-0.6 MHz",
+      "ctcss": "71.9",
+      "modulation": "11K2F3E",
+      "modes": [
+        "FM"
+      ],
+      "distance_km_to_espa_dombas_route": 5.5,
+      "reason": "FM amateur repeater on OSM node 5810152676; 5.5 km from Espa→Dombås corridor (≤150 km); not a member of any type=network relation in fixtures (LA5MR/18780801); APRS/digipeater modes excluded"
+    },
+    {
+      "source": "openstreetmap",
+      "osm_type": "node",
+      "osm_id": 1640276661,
+      "callsign": "LA6GR",
+      "lat": 60.569583,
+      "lon": 10.937981,
+      "frequency_out": "434.75 MHz",
+      "shift": "-2 MHz",
+      "ctcss": "71.9",
+      "modulation": "11K2F3E",
+      "modes": [
+        "FM"
+      ],
+      "distance_km_to_espa_dombas_route": 13.9,
+      "reason": "FM amateur repeater on OSM node 1640276661; 13.9 km from Espa→Dombås corridor (≤150 km); not a member of any type=network relation in fixtures (LA5MR/18780801); APRS/digipeater modes excluded"
+    },
+    {
+      "source": "openstreetmap",
+      "osm_type": "node",
+      "osm_id": 12744834761,
+      "callsign": "LA2DRR",
+      "lat": 60.7288754,
+      "lon": 10.7051927,
+      "frequency_out": "434.8250;434.825 MHz",
+      "shift": "-2Mhz;-2 MHz",
+      "ctcss": null,
+      "modulation": "7K60FXE",
+      "modes": [
+        "DMR"
+      ],
+      "distance_km_to_espa_dombas_route": 14.3,
+      "reason": "DMR amateur repeater on OSM node 12744834761; 14.3 km from Espa→Dombås corridor (≤150 km); not a member of any type=network relation in fixtures (LA5MR/18780801); APRS/digipeater modes excluded"
+    },
+    {
+      "source": "openstreetmap",
+      "osm_type": "node",
+      "osm_id": 14228508487,
+      "callsign": "LA2HRR",
+      "lat": 62.2125134,
+      "lon": 9.5389151,
+      "frequency_out": "145.7 MHz",
+      "shift": "-0.6 MHz",
+      "ctcss": "88.5",
+      "modulation": "11K2F3E",
+      "modes": [
+        "FM"
+      ],
+      "distance_km_to_espa_dombas_route": 26.2,
+      "reason": "FM amateur repeater on OSM node 14228508487; 26.2 km from Espa→Dombås corridor (≤150 km); not a member of any type=network relation in fixtures (LA5MR/18780801); APRS/digipeater modes excluded"
+    },
+    {
+      "source": "openstreetmap",
+      "osm_type": "node",
+      "osm_id": 14228508492,
+      "callsign": "LA6ZR",
+      "lat": 61.0769918,
+      "lon": 9.7883893,
+      "frequency_out": "145.75 MHz",
+      "shift": "-0.6 MHz",
+      "ctcss": "91.5",
+      "modulation": "11K2F3E",
+      "modes": [
+        "FM"
+      ],
+      "distance_km_to_espa_dombas_route": 33.1,
+      "reason": "FM amateur repeater on OSM node 14228508492; 33.1 km from Espa→Dombås corridor (≤150 km); not a member of any type=network relation in fixtures (LA5MR/18780801); APRS/digipeater modes excluded"
+    },
+    {
+      "source": "openstreetmap",
+      "osm_type": "node",
+      "osm_id": 1705107664,
+      "callsign": "LA5MR",
+      "lat": 60.4781659,
+      "lon": 10.6018219,
+      "frequency_out": "145.625 MHz",
+      "shift": "-0.6 MHz",
+      "ctcss": "88.5",
+      "modulation": "11K2F3E",
+      "modes": [
+        "FM"
+      ],
+      "distance_km_to_espa_dombas_route": 34.8,
+      "reason": "FM amateur repeater on OSM node 1705107664; 34.8 km from Espa→Dombås corridor (≤150 km); not a member of any type=network relation in fixtures (LA5MR/18780801); APRS/digipeater modes excluded"
+    },
+    {
+      "source": "openstreetmap",
+      "osm_type": "node",
+      "osm_id": 5576657770,
+      "callsign": "LA5HRR",
+      "lat": 61.3320012,
+      "lon": 11.0941649,
+      "frequency_out": "145.65 MHz",
+      "shift": "-0.6 MHz",
+      "ctcss": "88.5",
+      "modulation": "11K2F3E",
+      "modes": [
+        "FM"
+      ],
+      "distance_km_to_espa_dombas_route": 40.7,
+      "reason": "FM amateur repeater on OSM node 5576657770; 40.7 km from Espa→Dombås corridor (≤150 km); not a member of any type=network relation in fixtures (LA5MR/18780801); APRS/digipeater modes excluded"
+    },
+    {
+      "source": "openstreetmap",
+      "osm_type": "node",
+      "osm_id": 14228508489,
+      "callsign": "LA2XRR",
+      "lat": 60.324222,
+      "lon": 12.138325,
+      "frequency_out": "145.7125 MHz",
+      "shift": "-0.6 MHz",
+      "ctcss": "71.9",
+      "modulation": "11K2F3E",
+      "modes": [
+        "FM"
+      ],
+      "distance_km_to_espa_dombas_route": 55.2,
+      "reason": "FM amateur repeater on OSM node 14228508489; 55.2 km from Espa→Dombås corridor (≤150 km); not a member of any type=network relation in fixtures (LA5MR/18780801); APRS/digipeater modes excluded"
+    },
+    {
+      "source": "openstreetmap",
+      "osm_type": "node",
+      "osm_id": 14228591011,
+      "callsign": "LD2KR",
+      "lat": 60.324222,
+      "lon": 12.138325,
+      "frequency_out": "434.5625 MHz",
+      "shift": "-2 MHz",
+      "ctcss": "71.9",
+      "modulation": "11K2F3E",
+      "modes": [
+        "FM"
+      ],
+      "distance_km_to_espa_dombas_route": 55.2,
+      "reason": "FM amateur repeater on OSM node 14228591011; 55.2 km from Espa→Dombås corridor (≤150 km); not a member of any type=network relation in fixtures (LA5MR/18780801); APRS/digipeater modes excluded"
+    },
+    {
+      "source": "openstreetmap",
+      "osm_type": "node",
+      "osm_id": 471110617,
+      "callsign": "LA2RRR",
+      "lat": 60.1676114,
+      "lon": 11.994392,
+      "frequency_out": "51.83 MHz",
+      "shift": "-0.6 MHz",
+      "ctcss": "71.9",
+      "modulation": "11K2F3E",
+      "modes": [
+        "FM"
+      ],
+      "distance_km_to_espa_dombas_route": 59.8,
+      "reason": "FM amateur repeater on OSM node 471110617; 59.8 km from Espa→Dombås corridor (≤150 km); not a member of any type=network relation in fixtures (LA5MR/18780801); APRS/digipeater modes excluded"
+    },
+    {
+      "source": "openstreetmap",
+      "osm_type": "node",
+      "osm_id": 14228508491,
+      "callsign": "LA5KR",
+      "lat": 60.167611,
+      "lon": 11.994392,
+      "frequency_out": "145.65 MHz",
+      "shift": "-0.6 MHz",
+      "ctcss": "71.9",
+      "modulation": "11K2F3E",
+      "modes": [
+        "FM"
+      ],
+      "distance_km_to_espa_dombas_route": 59.8,
+      "reason": "FM amateur repeater on OSM node 14228508491; 59.8 km from Espa→Dombås corridor (≤150 km); not a member of any type=network relation in fixtures (LA5MR/18780801); APRS/digipeater modes excluded"
+    },
+    {
+      "source": "openstreetmap",
+      "osm_type": "node",
+      "osm_id": 14228508494,
+      "callsign": "LA7KR",
+      "lat": 60.167611,
+      "lon": 11.994392,
+      "frequency_out": "434.625 MHz",
+      "shift": "-2 MHz",
+      "ctcss": "71.9",
+      "modulation": "7K60FXE;6K00F7W;9K36F7W",
+      "modes": [
+        "DMR"
+      ],
+      "distance_km_to_espa_dombas_route": 59.8,
+      "reason": "DMR amateur repeater on OSM node 14228508494; 59.8 km from Espa→Dombås corridor (≤150 km); not a member of any type=network relation in fixtures (LA5MR/18780801); APRS/digipeater modes excluded"
+    },
+    {
+      "source": "openstreetmap",
+      "osm_type": "node",
+      "osm_id": 14228508490,
+      "callsign": "LA5JRR",
+      "lat": 61.6613137,
+      "lon": 8.3353893,
+      "frequency_out": "145.7875 MHz",
+      "shift": "-0.6 MHz",
+      "ctcss": "88.5",
+      "modulation": "11K2F3E",
+      "modes": [
+        "FM"
+      ],
+      "distance_km_to_espa_dombas_route": 60.2,
+      "reason": "FM amateur repeater on OSM node 14228508490; 60.2 km from Espa→Dombås corridor (≤150 km); not a member of any type=network relation in fixtures (LA5MR/18780801); APRS/digipeater modes excluded"
+    },
+    {
+      "source": "openstreetmap",
+      "osm_type": "node",
+      "osm_id": 14228508495,
+      "callsign": "LA7XR",
+      "lat": 59.960905,
+      "lon": 12.09532,
+      "frequency_out": "144.6625 MHz",
+      "shift": "-0.6 MHz",
+      "ctcss": "77.0",
+      "modulation": "11K2F3E",
+      "modes": [
+        "FM"
+      ],
+      "distance_km_to_espa_dombas_route": 81.4,
+      "reason": "FM amateur repeater on OSM node 14228508495; 81.4 km from Espa→Dombås corridor (≤150 km); not a member of any type=network relation in fixtures (LA5MR/18780801); APRS/digipeater modes excluded"
+    },
+    {
+      "source": "openstreetmap",
+      "osm_type": "node",
+      "osm_id": 5576656903,
+      "callsign": "LA5TRR",
+      "lat": 61.319375,
+      "lon": 12.1901472,
+      "frequency_out": "145.725 MHz",
+      "shift": "-0.6 MHz",
+      "ctcss": "88.5",
+      "modulation": "11K2F3E",
+      "modes": [
+        "FM"
+      ],
+      "distance_km_to_espa_dombas_route": 88.8,
+      "reason": "FM amateur repeater on OSM node 5576656903; 88.8 km from Espa→Dombås corridor (≤150 km); not a member of any type=network relation in fixtures (LA5MR/18780801); APRS/digipeater modes excluded"
+    }
+  ]
+}

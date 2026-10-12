@@ -1,0 +1,19 @@
+<?xml version='1.0' encoding='utf-8'?>
+<osm version="0.6" generator="fetch-cat-fixtures"><node id="5810152676" visible="true" version="8" changeset="189693189" timestamp="2026-09-28T18:42:26Z" user="Visaman" uid="237638" lat="61.5138590" lon="9.7946565">
+  <tag k="callsign" v="LA7GR" />
+  <tag k="communication:amateur_radio" v="yes" />
+  <tag k="communication:amateur_radio:callsign" v="LA7GR" />
+  <tag k="communication:amateur_radio:repeater" v="yes" />
+  <tag k="communication:amateur_radio:repeater:ctcss" v="71.9" />
+  <tag k="communication:amateur_radio:repeater:frequency_out" v="145.725 MHz" />
+  <tag k="communication:amateur_radio:repeater:modulation" v="11K2F3E" />
+  <tag k="communication:amateur_radio:repeater:shift" v="-0.6 MHz" />
+  <tag k="group" v="Gudbrandsdal" />
+  <tag k="man_made" v="tower" />
+  <tag k="name" v="Gålå-tårnet" />
+  <tag k="note" v="Gålå-tårnet. OSM node/5810152676 (LA7GR, LD2GG)." />
+  <tag k="nrrl:group_page" v="https://nrrl.no/grupper/innlandet/gudbrandsdalsgruppen/" />
+  <tag k="tower:type" v="observation" />
+  <tag k="website" v="https://www.la7g.no/" />
+ </node>
+ </osm>

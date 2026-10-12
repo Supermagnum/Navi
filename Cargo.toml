@@ -5,6 +5,8 @@ members = [
     "navi-ffi",
     "navi-linux",
     "navi-desktop",
+    "navi-cat",
+    "navi-hamlib-sys",
     "plugin-host",
     "plugin-sdk",
     "plugins/log-hello",
@@ -16,6 +18,7 @@ members = [
     "plugins/poi-lookahead",
     "plugins/right-to-roam-camping",
     "plugins/right-to-roam-camping/engine",
+    "plugins/CATS-plugin",
 ]
 default-members = ["core", "plugin-host"]
 
