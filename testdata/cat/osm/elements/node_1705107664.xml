@@ -1,0 +1,29 @@
+<?xml version='1.0' encoding='utf-8'?>
+<osm version="0.6" generator="fetch-cat-fixtures"><node id="1705107664" visible="true" version="12" changeset="189693189" timestamp="2026-09-28T18:42:26Z" user="Visaman" uid="237638" lat="60.4781659" lon="10.6018219">
+  <tag k="aeroway:light" v="obstacle" />
+  <tag k="aeroway:light:character" v="fixed" />
+  <tag k="aeroway:light:colour" v="red" />
+  <tag k="callsign" v="LA5MR" />
+  <tag k="communication:amateur_radio" v="yes" />
+  <tag k="communication:amateur_radio:callsign" v="LA5MR" />
+  <tag k="communication:amateur_radio:repeater" v="yes" />
+  <tag k="communication:amateur_radio:repeater:ctcss" v="88.5" />
+  <tag k="communication:amateur_radio:repeater:frequency_out" v="145.625 MHz" />
+  <tag k="communication:amateur_radio:repeater:modulation" v="11K2F3E" />
+  <tag k="communication:amateur_radio:repeater:shift" v="-0.6 MHz" />
+  <tag k="communication:microwave" v="yes" />
+  <tag k="communication:mobile_phone" v="yes" />
+  <tag k="ele" v="741" />
+  <tag k="group" v="Innlandsnettet" />
+  <tag k="height" v="78" />
+  <tag k="man_made" v="tower" />
+  <tag k="name" v="Høykorset" />
+  <tag k="note" v="Høykorset / Totenåsen. OSM node/1705107664 (LA5MR, LD2GI)." />
+  <tag k="nrrl:group_page" v="https://nrrl.no/grupper/innlandet/sambandstjenesten-innlandet/" />
+  <tag k="operator" v="Telenor" />
+  <tag k="ref:hinder" v="3398" />
+  <tag k="source" v="Kartverket Luftfartshindre" />
+  <tag k="tower:construction" v="lattice" />
+  <tag k="tower:type" v="communication" />
+ </node>
+ </osm>

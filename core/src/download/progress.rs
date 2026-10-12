@@ -234,12 +234,13 @@ impl Drop for RegionTagGuard {
     }
 }
 
-/// Process-global progress slots race under `cargo test` parallelism. Hold this
-/// around any test that `clear`/`set`/`snapshot` the default Download channel.
+/// Process-global progress slots: serialize tests that assert labels.
 #[cfg(test)]
 pub fn test_lock() -> std::sync::MutexGuard<'static, ()> {
-    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+    TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 #[cfg(test)]

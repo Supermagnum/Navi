@@ -399,6 +399,8 @@ fun PluginSettingsSection(
     onCampingProfessionalDriverChange: (Boolean) -> Unit = {},
     campingSessionDisableMessage: String? = null,
     onCampingReEnableSession: () -> Unit = {},
+    catPluginEnabled: Boolean = false,
+    onCatPluginChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -669,6 +671,24 @@ fun PluginSettingsSection(
                 modifier = Modifier.testTag("camping_settings_disclaimer"),
             )
         }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("CAT / CATS radio")
+            Switch(
+                checked = catPluginEnabled,
+                onCheckedChange = onCatPluginChange,
+                modifier = Modifier.testTag("toggle_cat_plugin"),
+            )
+        }
+        if (catPluginEnabled) {
+            Text(
+                "Amateur radio CAT: repeater query, VFO program with read-back, network follow. Never transmits.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
     }
 }
 
@@ -765,11 +785,8 @@ fun MapSettingsSheet(
     onCampingProfessionalDriverChange: (Boolean) -> Unit = {},
     campingSessionDisableMessage: String? = null,
     onCampingReEnableSession: () -> Unit = {},
-    onlinePlaceSearchEnabled: Boolean = false,
-    onOnlinePlaceSearchChange: (Boolean) -> Unit = {},
-    nominatimBaseUrl: String = MapHudPrefs.NOMINATIM_DEFAULT_BASE_URL,
-    onNominatimBaseUrlChange: (String) -> Unit = {},
-    revealOnlinePlaceSearch: Boolean = false,
+    catPluginEnabled: Boolean = false,
+    onCatPluginChange: (Boolean) -> Unit = {},
     onSave: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1047,6 +1064,8 @@ fun MapSettingsSheet(
                 onCampingProfessionalDriverChange = onCampingProfessionalDriverChange,
                 campingSessionDisableMessage = campingSessionDisableMessage,
                 onCampingReEnableSession = onCampingReEnableSession,
+                catPluginEnabled = catPluginEnabled,
+                onCatPluginChange = onCatPluginChange,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
