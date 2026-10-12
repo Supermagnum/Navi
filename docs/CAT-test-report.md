@@ -86,3 +86,7 @@ Not run in this environment (no Bluetooth / hardware). Checklist remains in
 the issue; record results separately from simulator rows above.
 
 **Status:** simulator-verified, hardware pending.
+
+## Release
+
+`versionName` **0.3.22-beta**, `versionCode` **27**, tag `v0.3.22-beta` (arm64-v8a APKs in `compiled/`).

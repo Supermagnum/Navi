@@ -101,7 +101,7 @@ and radio/baud UI notes (branch `CAT`): [`docs/cat-test.md`](docs/cat-test.md).
 **Install the signed release APK.** Testers should download and sideload
 [`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
 installable release APK** (upload keystore; not the debug build). Current build:
-**0.3.21-beta** (`versionName` 0.3.21-beta, `versionCode` 26). Download from the
+**0.3.22-beta** (`versionName` 0.3.22-beta, `versionCode` 27). Download from the
 [`dev` branch](https://github.com/Supermagnum/Navi/tree/dev/compiled)
 (latest tester build). Android
 validates the APK signature on install; the separate GPG files
@@ -1067,7 +1067,7 @@ it as a normal install (not an unsigned or debug-only package).
 
 | Artifact | Role |
 |---|---|
-| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64-v8a + x86_64, `versionName` 0.3.21-beta, `versionCode` 26) |
+| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64-v8a, `versionName` 0.3.22-beta, `versionCode` 27) |
 | [`compiled/SHA256SUMS`](compiled/SHA256SUMS) | SHA-256 checksum for integrity checks |
 | [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc) | Detached GPG provenance signature (not Android APK signing) |
 
@@ -1180,8 +1180,8 @@ Debug installs use the Android **debug** keystore. A **release** package is what
 you sideload as release, hand to F-Droid-style checks, or smoke-test as an AAB.
 
 A prebuilt upload-key-signed release APK for testers is committed at
-[`compiled/navi-release.apk`](compiled/navi-release.apk) (`versionName` 0.3.21-beta,
-`versionCode` 26; see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
+[`compiled/navi-release.apk`](compiled/navi-release.apk) (`versionName` 0.3.22-beta,
+`versionCode` 27; see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
 
 1. **Native library** for every ABI you ship (store AABs usually need both):
 
