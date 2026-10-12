@@ -50,6 +50,7 @@ class PlaceIndexCompactEvidenceInstrumentedTest {
                 it.mkdirs()
             }
         val lines = mutableListOf<String>()
+
         fun emit(msg: String) {
             lines += msg
             Log.i(TAG, msg)
