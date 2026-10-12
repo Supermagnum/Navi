@@ -438,6 +438,31 @@ is unavailable; basemap reuses on-disk work where supported. An incomplete
 the region and start from zero). After an OSM update, if the catalog generation
 is unchanged, the place-index path skips a forced full rebuild.
 
+**Place-index size and compaction.** Upgrading the place index from schema v5
+to v6 copies every row into a new table. That leaves free pages inside
+`place_index.db` and keeps a one-shot pre-migrate copy,
+`place_index.db.bak-pk-v6`, next to it, so the volume can briefly hold the
+index two or three times over. While the app is idle, a *place index
+compaction* job reclaims this:
+
+- It starts when the backup exists and the live file is much larger than it
+  (more than 1.5 times). Nothing runs during a plan or an index build.
+- It needs free space on the index volume of at least the live size plus a
+  margin (the larger of 64 MB and 10 percent). Without that it defers, logs
+  the reason, and retries at most once an hour.
+- It writes a compacted copy with `VACUUM INTO` to a temp file beside the live
+  index, checks it (`PRAGMA quick_check`, per-region row counts equal to the
+  live file), and swaps it in with one atomic rename under the place-index
+  build lock. If rows were written since the snapshot, nothing is swapped.
+  The live index is never written before that rename. `VACUUM INTO` needs
+  Android 11 or later; older devices skip the rewrite.
+- The backup is deleted only when every region present in both the backup and
+  the compacted index has the same row count. On any mismatch it is kept and
+  the regions are logged (`PlaceIndexCompact` tag).
+- A plan or index build aborts the job at its next check; the stamp
+  (`place_index_compact.txt`) stays, so it resumes on the next idle pass. A
+  temp file left by a force-close is discarded and the job starts again.
+
 While a **Plan route** (or auto-reroute) is running on that PBF fallback,
 background convert and place-index **yield** so they do not contend for the
 same extract. GPS-triggered speed-limit cone / road-near bbox builds **skip**

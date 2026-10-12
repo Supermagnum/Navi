@@ -29,6 +29,7 @@ object IdlePackJobs {
         SKELETON,
         PLACE_INDEX,
         INDEX_QUICK_CHECK,
+        PLACE_INDEX_COMPACT,
     }
 
     data class Job(
@@ -207,7 +208,7 @@ object IdlePackJobs {
         // first batch. Do not hold the planner for that whole open: request
         // pause, wait briefly for an in-batch job, then start the plan.
         val soft =
-            if (job?.kind == Kind.PLACE_INDEX) {
+            if (job?.kind == Kind.PLACE_INDEX || job?.kind == Kind.PLACE_INDEX_COMPACT) {
                 t0 + 300L
             } else {
                 deadline
@@ -225,7 +226,7 @@ object IdlePackJobs {
                 PauseOutcome("paused", paused.kind, paused.regionId, ms)
             } else if (job != null && (job.kind == Kind.SKELETON || job.kind == Kind.FERRY_CAR || job.kind == Kind.FERRY_TRUCK)) {
                 PauseOutcome("waited", job.kind, job.regionId, ms)
-            } else if (job?.kind == Kind.PLACE_INDEX) {
+            } else if (job?.kind == Kind.PLACE_INDEX || job?.kind == Kind.PLACE_INDEX_COMPACT) {
                 PauseOutcome("paused", job.kind, job.regionId, ms)
             } else {
                 PauseOutcome("none", job?.kind, job?.regionId ?: "", ms)
@@ -410,6 +411,17 @@ object IdlePackJobs {
                     ),
                 )
             }
+            if (db.isFile && PlaceIndexCompact.shouldOffer(indexRoot)) {
+                offer(
+                    Job(
+                        kind = Kind.PLACE_INDEX_COMPACT,
+                        stem = "place_index",
+                        packDir = indexRoot,
+                        regionId = "",
+                        indexDb = db,
+                    ),
+                )
+            }
         }
     }
 
@@ -477,6 +489,7 @@ object IdlePackJobs {
                 Kind.FERRY_TRUCK,
                 Kind.SKELETON,
                 Kind.PLACE_INDEX,
+                Kind.PLACE_INDEX_COMPACT,
             )
         for (kind in preferred) {
             val found = queue.firstOrNull { it.kind == kind } ?: continue
@@ -513,6 +526,7 @@ object IdlePackJobs {
             Kind.SKELETON -> "corridor skeleton for $name"
             Kind.PLACE_INDEX -> "place index for $name"
             Kind.INDEX_QUICK_CHECK -> "place index health check"
+            Kind.PLACE_INDEX_COMPACT -> "place index compaction"
         }
     }
 
@@ -546,6 +560,24 @@ object IdlePackJobs {
                     appContext?.let { InstalledMaps.refresh(it) }
                 }
                 false
+            }
+            Kind.PLACE_INDEX_COMPACT -> {
+                val root = job.indexDb?.parentFile ?: job.packDir
+                val env =
+                    PlaceIndexCompact.androidEnv {
+                        when {
+                            planBlocksIdle() -> PlaceIndexCompact.AbortReason.PLAN
+                            PlaceIndexBackground.isRunning() || RegionDownloadBackground.isRunning() ->
+                                PlaceIndexCompact.AbortReason.INDEX_BUILD
+                            else -> null
+                        }
+                    }
+                val outcome = PlaceIndexCompact.run(root, env)
+                Log.i(TAG, "place index compact outcome=$outcome")
+                // Only a plan pause resumes the job; an index build or a
+                // deferral is retried by the next idle enqueue pass.
+                outcome is PlaceIndexCompact.Outcome.Aborted &&
+                    outcome.reason == PlaceIndexCompact.AbortReason.PLAN
             }
         }
     }
