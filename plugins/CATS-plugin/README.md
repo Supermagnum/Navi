@@ -1,8 +1,8 @@
 # CATS plugin (Computer Aided Transceiver)
 
-WASM guest for Navi CAT. All auto-tune / network-follow / UI-state logic for
-amateur radio repeater selection lives in this directory and runs inside
-wasmtime. Radio I/O is host-only via HostApi:
+WASM guest for Navi CAT. Selection, network follow (hysteresis / dwell / pin),
+leave-network **decision C**, and developer **demo-mode sequencing** live in
+this directory and run inside wasmtime. Radio I/O is host-only via HostApi:
 
 | Cap | Role |
 |---|---|
@@ -16,6 +16,21 @@ wasmtime. Radio I/O is host-only via HostApi:
 See [`docs/CAT.md`](../../docs/CAT.md). Never transmits; never talks to the
 radio bytes directly.
 
+## Guest vs host
+
+| In this crate (WASM guest) | In `navi-cat` (host) |
+|---|---|
+| NFM selection (`select`) | Hamlib TCP / native Benshi GAIA I/O |
+| Follow hysteresis, dwell, pin | Never-transmit allowlist |
+| Leave-network decision C | Interlocks (PTT / squelch) |
+| Demo-mode step plan (5 s cadence) | Read-back verification, VFO 2 fingerprint |
+| | SPLAT talk-coverage **test scorer** only |
+
+Corridor replays H/I, coverage score J, and FakeBenshiPeer demo runs are
+integration tests under `tests/` (crate-type includes `rlib` for that).
+
 Host backends (Hamlib TCP / native **Benshi** GAIA) live in `navi-cat`, not
-here. The guest only asks for VFO 1 programs and follow state; the host enforces
-allowlists, gating, VFO 2 protection, and never-transmit.
+here. Android RFCOMM (`BenshiRfcommTransport`) injects a socket in tests — no
+real Bluetooth in CI.
+
+**Status:** simulator-verified, hardware pending.

@@ -184,6 +184,30 @@ Hamlib `dump_caps` Stable checks.
 - Read-back + VFO 2 fingerprint before/after every program.
 
 CI uses an in-process **FakeBenshiPeer** (plumbing, not a physical radio).
+Android opens control RFCOMM only (`BenshiRfcommTransport`, SPP UUID); the
+audio RFCOMM UUID is never opened. Transport is injectable for tests.
+
+**Status:** simulator-verified, hardware pending.
+
+### Apache-2.0 attribution (protocol facts)
+
+Protocol framing and field layouts are derived from HTCommander / benlink
+(Apache-2.0). Source headers in `navi-cat/src/benshi/` record:
+
+```text
+Copyright 2026 Ylian Saint-Hilaire / HTCommander contributors
+Licensed under the Apache License, Version 2.0.
+```
+
+Navi application logic (selection, follow, never-transmit allowlist, UI) is
+not copied from those projects.
+
+### Developer demo mode
+
+Optional **demo mode** (5 s per repeater along a planned corridor) is
+**off by default**, labelled “Developer / test only” in `CatStatusSheet`, and
+must not be used while driving. Sequencing lives in `plugins/CATS-plugin`;
+host applies VFO programs with full read-back.
 
 ### Tune path (same VFO 1 fields as Hamlib)
 
