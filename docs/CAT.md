@@ -191,9 +191,23 @@ Every position update (throttled, e.g. every 10 s):
 2. Best = nearest candidate.
 3. If Best ≠ current site AND hysteresis rules pass AND interlocks pass:
      retune VFO 1 to Best (full command sequence + read-back).
-4. If no member is within 150 km: stay on current site, notify user,
-   leave follow mode.
+4. If no member is within 150 km (network left behind):
+     hold the last networked site, notify the user, and exit network follow.
 ```
+
+### Leaving the network (decision C)
+
+When the last in-range member drops out — e.g. **LA9AR (Tronfjell)** on the
+Espa → Litjfossen / Østerdalen corridor — network follow does **not** silently
+retune to unrelated sites:
+
+1. **Hold** the last networked site on VFO 1 (no further network switches).
+2. **Notify** the user that network follow has ended (status sheet / log).
+3. **Exit** network follow mode.
+4. Non-networked NFM sites are reached only through the **normal auto-tune**
+   flow afterwards (and with confirmation if auto-apply is off).
+
+Corridor replay **test I** (Østerdalen) must assert this leave-network sequence.
 
 ### Hysteresis (avoid flapping between sites)
 
@@ -213,8 +227,9 @@ user can **pin** a site, which suspends follow mode until unpinned.
 - Never switch while PTT is active.
 - Never switch while receiving, if the backend supports carrier detect
   (`get_dcd`). If it does not, rely on the dwell rules above.
-- Only switch within the **same network**. Leaving the network requires the
-  normal auto-tune flow (and confirmation if auto-apply is off).
+- Only switch within the **same network**. Leaving the network uses
+  [Leaving the network (decision C)](#leaving-the-network-decision-c); it does
+  not auto-apply a non-networked site from inside follow mode.
 - Follow mode is opt-in per session and shown clearly in the UI.
 - Every switch is logged and announced briefly (callsign + frequency).
 
@@ -359,6 +374,27 @@ When permission exists and the user enables network: query by position/bbox,
 filter to modes the radio profile supports, upsert into onboard DB with expiry.
 API keys and ToS stay host-side. Offline search must still work from OSM,
 CSV, OpenRepeater, RadioID, and the last successful local imports.
+
+### RepeaterBook server-side copy (proposal only)
+
+Issue #149 notes that a client-held RepeaterBook API key is undesirable.
+"App #114" in that comment is RepeaterBook's registered **RepeaterBook Python
+Client** application, not a Navi PR.
+
+**Proposal (navi-server work later — not implemented here):**
+
+1. Obtain **written permission** from RepeaterBook for a server-side mirror.
+2. A server job pulls the export API with server-held credentials and stores a
+   normalized regional extract (callsign, lat, lon, freq, shift, tone, mode,
+   network_id, as-of time).
+3. The app loads that extract with plain **read-only HTTPS GET** (same trust
+   model as pack downloads). **No RepeaterBook API key in the client.**
+4. Upsert into the onboard repeater DB with expiry; OSM / CSV / OpenRepeater
+   remain the offline defaults.
+5. Until permission and the server path exist, RepeaterBook stays **disabled**
+   in the app (current behaviour).
+
+Full investigation notes: [`CAT-benshi-investigation.md`](CAT-benshi-investigation.md).
 
 ---
 

@@ -67,6 +67,23 @@ Related unit coverage (no daemon required):
 | `cargo test -p navi-cat --test never_transmit` | **PASS** (1 test) |
 | `cargo test -p navi-cat --test gating_fixtures` | **PASS** (7 tests) |
 
+### Baseline after merge of `origin/dev` (2026-10-12)
+
+`origin/dev` had reverted the prior CAT merge. CAT was re-applied on tip, then
+shared UI/UniFFI files were fixed so `dev` behaviour (online place search, etc.)
+stays and CAT wiring sits on top. **Simulator / CI only — not a physical radio.**
+
+| Check | Result |
+|---|---|
+| `cargo fmt --all -- --check` | **PASS** |
+| `cargo test -p driver-break-core --lib` | **PASS** (709 passed, 14 ignored) |
+| `cargo test -p navi-ffi --lib` | **PASS** (17 passed) |
+| `cargo test -p navi-cat --tests` | **PASS** (lib units + dummy_rigctld + gating_fixtures + import_fixtures + never_transmit + scenarios) |
+| `./gradlew :app:testDebugUnitTest --tests 'no.navi.app.Cat*' --tests 'no.navi.app.cat.*'` | **PASS** (6 tests: CatPluginDefaultOff + CatSerialLoopbackBridge) |
+| Host `rigctld` | Hamlib **4.7.0** (`/usr/local/bin/rigctld`) used by `dummy_rigctld` |
+
+Benshi investigation (issue #149): [`CAT-benshi-investigation.md`](CAT-benshi-investigation.md).
+
 This is **not** Espa→Dombås corridor evidence and does **not** prove a physical
 transceiver. Corridor expectations stay under [Corridor under test](#corridor-under-test).
 
