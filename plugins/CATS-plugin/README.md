@@ -33,4 +33,17 @@ Host backends (Hamlib TCP / native **Benshi** GAIA) live in `navi-cat`, not
 here. Android RFCOMM (`BenshiRfcommTransport`) injects a socket in tests — no
 real Bluetooth in CI.
 
-**Status:** simulator-verified, hardware pending.
+## Licence note
+
+**You may listen, but do not transmit without an amateur radio licence.**
+
+## What is tested
+
+| Layer | Covered here / related |
+|---|---|
+| CI / simulator | Guest select / follow / decision C / demo plans; host FakeBenshiPeer + Hamlib dummy via `navi-cat` |
+| Android emulator | Injected RFCOMM only (`BenshiCorridorEmulatorKTest`); no real BT |
+| Real hardware | VR-N76 host BlueZ 2026-10-12: reachability + 5 s demos PASS (see `docs/CAT-test-report.md`) |
+| Not tested | Hamlib on real radios; tablet↔physical radio; UV-Pro / GA-5WB; RepeaterBook live data |
+
+**Status:** simulator-verified; VR-N76 host BlueZ hardware Steps 5–6 PASS (2026-10-12).

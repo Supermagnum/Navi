@@ -7,17 +7,43 @@ Benshi / issue #149 investigation: [`CAT-benshi-investigation.md`](CAT-benshi-in
 
 This filename matches issue #149's `docs/CAT-test-report.md` reference.
 
-## Baseline (after origin/dev sync + CAT reapply)
+## Baseline (Step 0 — 2026-10-12)
 
-Recorded on branch `CAT` after Step 0 / Step 2 push. Re-run after Benshi Step 3
-host work:
+Branch `CAT` = `origin/CAT`; `origin/dev` had **0** commits not in CAT (no merge).
+
+Prior open items (all closed before Step 4):
+
+| Item | Status |
+|---|---|
+| Coverage J on Østerdalen | PASS — **93.3 %** talk / 3 switches |
+| J in CI from reduced fixture | PASS — `testdata/cat/splat/` |
+| Demo mode | PASS — FakeBenshiPeer 5 s/site; UI off by default |
+| Android Benshi RFCOMM transport | PASS — injectable socket + unit tests |
+| Emulator run K | PASS — SM-P613 3/3 injected |
+| Sandbox grep (guest vs host) | PASS — I/O stays in `navi-cat` |
 
 | Check | Result |
 |---|---|
-| `cargo test -p navi-cat --lib` | PASS (incl. Benshi A–G unit tests) |
+| `cargo test -p navi-cat --lib` | PASS (incl. mirror + Benshi A–G) |
 | `cargo test -p navi-plugin-cats --tests` | PASS (H/I/J + demo) |
 | Hamlib dummy `rigctld` | PASS (`dummy_rigctld`) |
 | Existing scenarios 1–12 | PASS (`scenarios.rs`) |
+
+## Step 1 — navi-server repeater mirror
+
+Fixtures: `testdata/cat/server_mirror/` (captured **2026-10-12**; RadioID live,
+RepeaterBook absent; synthetic RepeaterBook marked). Client Update button only;
+no RepeaterBook/RadioID keys; no direct upstream contact.
+
+| Case | Result |
+|---|---|
+| `current.json` RadioID only | PASS — notes RepeaterBook not available yet |
+| Synthetic RepeaterBook present | PASS — parses without code change path |
+| Checksum mismatch | PASS — rejected; last good kept |
+| Empty / failed bundles | PASS — last good kept |
+| Attribution on imported rows | PASS |
+| `exclude_recommended` / `position_null` | PASS — skipped by auto-tune `query_near`; visible in UI list |
+| RadioID = DMR info-only | By design — Benshi backend skips DMR (#149) |
 
 ## Issue #149 tests A–K
 
@@ -80,13 +106,69 @@ Decision C: hold LA9AR, notify, exit network follow (no silent fall-in).
 UI: off by default (`CAT_DEMO_MODE_DEFAULT_ENABLED = false`), labelled
 “Demo mode (5 s/site) — not for driving”.
 
-## Manual VR-N76
+## Manual VR-N76 (host BlueZ)
 
-Not run in this environment (no Bluetooth / hardware). Checklist remains in
-the issue; record results separately from simulator rows above.
+### Step 5 — read-only reachability (2026-10-12) — PASS
 
-**Status:** simulator-verified, hardware pending.
+| Item | Value |
+|---|---|
+| MAC | `38:D2:00:01:4B:E7` |
+| RFCOMM | channel 1 (also answered on 4); never audio UUID |
+| Identity | vendor `0x01`, productId `0x0103` (gate allowlist: `0x0002` \| `0x0103`) |
+| GET_HT_STATUS | selected VFO **B** (`doubleChannel=2`); idle, squelch closed |
+| VFO A (ch 0) | RX 434.6500 / TX 432.6500 MHz |
+| VFO B (ch 6) | RX 145.5125 / TX 145.5125 MHz |
+| Round-trips | ~11–24 ms |
+| Artifacts | `testdata/cat/hardware/vr-n76/` + `STEP5_SUMMARY.md` |
+
+Protocol fix from hardware: GET_DEV_INFO request payload `[3]`.
+
+### Step 6 — 5 s demo runs (2026-10-12)
+
+Scratch channel **0**; VFO B selected → scratch method; never transmit.
+
+#### Route 1 Espa→Dombås — PASS
+
+| t | Site | Requested RX | Read-back | Method |
+|---|---|---|---|---|
+| 0 s | LA5MR | 145.6250 | match (−0.6 / 88.5) | scratch_channel |
+| 5 s | LA6JRR | 145.6625 | match | scratch_channel |
+
+VFO B fingerprint identical. Log: `testdata/cat/hardware/vr-n76/STEP6_espa-dombas_*.log`.
+
+#### Route 2 Espa→Litjfossen (Østerdalen) — PASS
+
+| t | Site | Requested RX | Read-back | Method |
+|---|---|---|---|---|
+| 0 s | LA5MR | 145.6250 | match | scratch_channel |
+| 5 s | LA5TRR | 145.7250 | match | scratch_channel |
+| 10 s | LA9AR | 145.6000 | match | scratch_channel |
+
+VFO B fingerprint identical. Log: `testdata/cat/hardware/vr-n76/STEP6_osterdalen_*.log`.
+
+Operator notes:
+- First runs with VFO B selected: only saw channel name **NAV** (scratch write), not RX changes (expected — display follows selected VFO).
+- Operator requested select VFO A (display prep; not product auto-tune). Channel B content unchanged.
+- Re-runs with VFO A selected: both routes PASS; operator confirmed RX steps visible ~every 5 s.
+- Test-harness bug: earlier shell used bluetoothctl connect/disconnect between routes — fixed; `benshi-hw-demo` now holds **one** RFCOMM session for all routes.
+- Leave decision: operator chose **145.625000** (LA5MR −0.6 / 88.5). Applied single-session; VFO B fingerprint unchanged. Log `STEP6_leave-la5mr_*.log`.
+
+**Status:** simulator-verified; hardware Steps 5–6 PASS.
+
+## Open questions answered by hardware (2026-10-12)
+
+| Q | Finding |
+|---|---|
+| Q1 VFO / FREQ_MODE | With VFO B selected, scratch channel used; display follows selected VFO. Operator select-VFO-A made RX steps visible. `support_vfo` clear on this firmware → scratch primary. |
+| Q3 FREQ_MODE_GET_STATUS | Replied (~11 ms); raw saved under `testdata/cat/hardware/vr-n76/`. |
+| Q6 one control connection | Only one RFCOMM control link; hold session (no bluetoothctl churn). |
+| productId | Live unit reports `0x0103` (259); gate allows `0x0002` \| `0x0103`. |
+| GET_DEV_INFO | Request payload must be `[3]`. |
+
+## Not tested
+
+Hamlib on real radios; Android tablet RFCOMM to physical radio; UV-Pro / GA-5WB; live RepeaterBook; transmit/PTT/audio RFCOMM.
 
 ## Release
 
-`versionName` **0.3.22-beta**, `versionCode` **27**, tag `v0.3.22-beta` (arm64-v8a APKs in `compiled/`).
+`versionName` **0.3.23-beta**, `versionCode` **28**, tag `v0.3.23-beta` (arm64-v8a APKs in `compiled/`).

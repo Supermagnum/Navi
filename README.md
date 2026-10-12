@@ -971,7 +971,15 @@ via a **host-owned** UniFFI path (Map/Tools → Plugins; default **OFF**), not v
 a linked WASM guest. **CAT / CATS** radio control is also opt-in (default
 **OFF**): host Hamlib (`navi-cat` TCP + FFI, staged `libhamlib.so`,
 `CatStatusSheet` model/baud) plus the **CATS** wasmtime guest for repeater
-select / network follow. **DATEX** road situations (Map/Tools → Plugins; default
+select / network follow. Toggle copy: *You may listen, but do not transmit
+without an amateur radio licence.* What is actually tested (CI / emulator /
+hardware / not tested) is listed in [`docs/CAT.md`](docs/CAT.md#what-is-tested)
+and [`docs/CAT-test-report.md`](docs/CAT-test-report.md) — simulator results are
+never described as hardware results. VR-N76 host BlueZ (2026-10-12): productId
+`0x0103` as well as `0x0002`, `GET_DEV_INFO` payload `[3]`, one control
+connection, scratch channel when VFO B is selected (select VFO A to see RX
+changes). In Norway, OSM is the primary repeater source (all Norway repeaters
+are mapped there). **DATEX** road situations (Map/Tools → Plugins; default
 **OFF**) pull from navi-server; the live feed currently covers **Norway only**
 (NPRA). Overview: [`docs/plugins.md`](docs/plugins.md). Spec:
 [`docs/CAT.md`](docs/CAT.md). The system requires a per-plugin **enable/disable**
@@ -990,7 +998,7 @@ plugins.
 | [`docs/plugins/weather-icons-reference.md`](docs/plugins/weather-icons-reference.md) | What each weather icon slug means (fill style) | **Reference** (assets shipped with weather) |
 | [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Export nav state + approach warnings to instrument clusters | **Not implemented** |
 | [`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md) | Animated icons | **Not implemented** |
-| [`docs/CAT.md`](docs/CAT.md) | CAT radio control — Hamlib `RigBackend` (TCP `rigctld` + FFI), Android USB/BT loopback, `CatStatusSheet` model/baud, never auto-TX; `libhamlib.so` staged into APK jniLibs when built | **Implemented** (opt-in) |
+| [`docs/CAT.md`](docs/CAT.md) | CAT radio control — Hamlib `RigBackend` (TCP `rigctld` + FFI), native Benshi, `CatStatusSheet` model/baud, never auto-TX; licence: *You may listen, but do not transmit without an amateur radio licence.* See **What is tested** in that doc. | **Implemented** (opt-in) |
 | [`plugins/CATS-plugin/`](plugins/CATS-plugin/) | CATS WASM guest — repeater select / auto-tune / network follow under wasmtime (`plugin.json` name `cat`) | **Implemented** (opt-in) |
 | [`docs/plugins/custom-alert-sounds-spec.md`](docs/plugins/custom-alert-sounds-spec.md) | Short alert tones (road signs, cameras, overspeed earcon) | **Not implemented** |
 | [`docs/plugins/horse-trekking-spec.md`](docs/plugins/horse-trekking-spec.md) | Equestrian lookahead and access guidance (Hiking is the interim stopgap) | **Not implemented** |
