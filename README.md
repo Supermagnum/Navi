@@ -262,7 +262,7 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Multiple vias** | Up to **4** intermediate stops for car / truck / bicycle (and hiking waypoints). The Via chip shows **Via (n/4)**; each pick **adds** a stop and clears the search box for the next. A list under the chips has **Remove** / **Clear all**. Off-route replan keeps remaining vias. | Done |
 | **Use GPS** | Fill From / Via / To from the live fix: coordinates appear immediately, then an optional nearby road-name upgrade. The field is the chip active when you tap — not whichever chip is selected after resolution finishes. GPS as Via upgrades the last via in place (does not duplicate). | Done |
 | **Map mark & saved places** | Hold on the map ~4 s to mark a point; set From / **Add as Via** / To or save a named place (separate from Saved routes). Via adds until the 4-stop cap. | Done |
-| **Off-route / reroute** | Sustained deviation shows **Off route**; motor profiles auto-replan from the live position (resolved start label); hiking prompts first. | Done |
+| **Off-route / reroute** | Sustained deviation shows **Off route**; motor profiles auto-replan from the live position only when From is empty or was set with **Use GPS** / My position. A typed or picked From stays sticky (never GPS-overwritten by auto-replan), even within 1 km of the fix. Hiking prompts first. | Done |
 | **Cancel planning** | While **Planning route…** or **Recalculating route…** is shown, **Cancel** stops the in-flight native plan. Recalc cancel keeps the original route. | Done |
 | **Breaks & rest** | Reminds you when a break is due and can suggest stops. Cars use hours between breaks; hiking/cycling use rest distances; trucks use legal driving-time rules where known. What is searched and used as pause POIs: [`docs/poi.md`](docs/poi.md). | Done |
 | **Drive bars** | Top: altitude (cutout-aware padding; metres, or feet in the US unit profile). Bottom: zoom, live GPS speed, posted limit when known, break timer, trip ETA, current street, eco leaf. Speed and distance follow **Display units**. Speed line turns the error colour when GPS speed is over the applicable limit (display only — not a spoken nag). | Done |
@@ -440,6 +440,31 @@ is unavailable; basemap reuses on-disk work where supported. An incomplete
 the region and start from zero). After an OSM update, if the catalog generation
 is unchanged, the place-index path skips a forced full rebuild.
 
+**Place-index size and compaction.** Upgrading the place index from schema v5
+to v6 copies every row into a new table. That leaves free pages inside
+`place_index.db` and keeps a one-shot pre-migrate copy,
+`place_index.db.bak-pk-v6`, next to it, so the volume can briefly hold the
+index two or three times over. While the app is idle, a *place index
+compaction* job reclaims this:
+
+- It starts when the backup exists and the live file is much larger than it
+  (more than 1.5 times). Nothing runs during a plan or an index build.
+- It needs free space on the index volume of at least the live size plus a
+  margin (the larger of 64 MB and 10 percent). Without that it defers, logs
+  the reason, and retries at most once an hour.
+- It writes a compacted copy with `VACUUM INTO` to a temp file beside the live
+  index, checks it (`PRAGMA quick_check`, per-region row counts equal to the
+  live file), and swaps it in with one atomic rename under the place-index
+  build lock. If rows were written since the snapshot, nothing is swapped.
+  The live index is never written before that rename. `VACUUM INTO` needs
+  Android 11 or later; older devices skip the rewrite.
+- The backup is deleted only when every region present in both the backup and
+  the compacted index has the same row count. On any mismatch it is kept and
+  the regions are logged (`PlaceIndexCompact` tag).
+- A plan or index build aborts the job at its next check; the stamp
+  (`place_index_compact.txt`) stays, so it resumes on the next idle pass. A
+  temp file left by a force-close is discarded and the job starts again.
+
 While a **Plan route** (or auto-reroute) is running on that PBF fallback,
 background convert and place-index **yield** so they do not contend for the
 same extract. GPS-triggered speed-limit cone / road-near bbox builds **skip**
@@ -591,10 +616,12 @@ travel mode, then **Plan route**. You can add up to **four** vias: select the
 search again for the next — the chip shows **Via (n/4)** and a removable list
 appears under the summary. From is often set with **Use GPS** (select the
 **From** / **To** / **Via** chip first; the button label follows the chip).
-Hiking paths need the **Hiking** mode — planning with Car uses the road network
-and will not follow foot trails properly. A **Planning route…** banner includes
-**Cancel** if you want to stop an in-flight plan. Percent and stage labels are
-documented under [Progress status box](#progress-status-box-pale-yellow).
+A typed or searched From stays as entered: auto off-route replan does **not**
+replace it with the live GPS fix (only empty From or **Use GPS** / My position
+follows GPS). Hiking paths need the **Hiking** mode — planning with Car uses the
+road network and will not follow foot trails properly. A **Planning route…**
+banner includes **Cancel** if you want to stop an in-flight plan. Percent and
+stage labels are documented under [Progress status box](#progress-status-box-pale-yellow).
 
 **Trip ETA and OSM speeds.** Pre-departure motor ETA prefers OSM
 `maxspeed:practical`, then posted `maxspeed`, then `maxspeed:advisory`, then a
