@@ -181,6 +181,7 @@ checklist above and file an issue; you do not need to write code.
     - [Adaptive speed warning](docs/plugins/adaptive-speed-warning-spec.md) — not implemented
     - [Nearby attractions (POI look-ahead)](docs/plugins/poi-lookahead-cone-spec.md) — implemented (opt-in)
     - [IMU (pitch / tilt / compass, mount calibration)](docs/plugins/imu-plugin.md) — implemented (opt-in; Map / Tools → Plugins)
+    - [CAT radio](https://github.com/Supermagnum/Navi/blob/CAT/README.md#cat-radio-plugin) — developed on the [`CAT`](https://github.com/Supermagnum/Navi/tree/CAT) branch; not part of `dev` releases yet
     - [LoRa convoy](docs/plugins/lora-convoy-spec.md) — not implemented
     - [Voice guidance (turn-by-turn)](docs/voice-guidance.md) — not implemented
     - [Voice command](docs/plugins/voice-command.md) — not implemented
