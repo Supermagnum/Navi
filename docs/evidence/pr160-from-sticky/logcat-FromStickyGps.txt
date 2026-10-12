@@ -1,8 +1,0 @@
-10-12 16:25:02.783 I/TestRunner( 9652): started: typedHamarFrom_1kmFromGps_staysStickyAfterPlanAndOffRoute(no.navi.app.FromStickyGpsInstrumentedTest)
-10-12 16:25:29.697 I/FromStickyGps( 9652): SHOT 01_typed_hamar_sticky_after_offroute.png bytes=480924
-10-12 16:25:29.869 I/FromStickyGps( 9652): PASS sticky Hamar fromFollowsGps=false from=Hamar summary=From: Hamar  |  To: Near Hamar  |  Via: (none) gps=60.858633913043484,11.084980869565218 startToGpsM≈902.7546750343437
-10-12 16:25:30.663 I/TestRunner( 9652): finished: typedHamarFrom_1kmFromGps_staysStickyAfterPlanAndOffRoute(no.navi.app.FromStickyGpsInstrumentedTest)
-10-12 16:25:30.681 I/TestRunner( 9652): started: useGpsFrom_followsGpsOnAutoReplan(no.navi.app.FromStickyGpsInstrumentedTest)
-10-12 16:25:40.372 I/FromStickyGps( 9652): SHOT 02_use_gps_follows_after_replan.png bytes=156837
-10-12 16:25:40.480 I/FromStickyGps( 9652): PASS use-gps followsGps=true from=60.79446, 11.06210 reroutes=1 summary=From: GPS (60.85863, 11.08498)  |  To: Near Hamar  |  Via: (none)
-10-12 16:25:40.821 I/TestRunner( 9652): finished: useGpsFrom_followsGpsOnAutoReplan(no.navi.app.FromStickyGpsInstrumentedTest)

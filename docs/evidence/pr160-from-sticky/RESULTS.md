@@ -1,39 +1,18 @@
-# PR #160 emulator evidence — sticky typed From
+# From sticky / Use GPS — emulator results
 
-- Device: `emulator-5554` only (Navi_8c_4G_128G AVD / x86_64)
-- Branch tip at run: `65783feb9f1f04e6fc88c23b9014d4264e8ec4d8` (plus this evidence commit)
-- Instrumented class: `no.navi.app.FromStickyGpsInstrumentedTest`
-- JVM: `RouteStartGpsPolicyTest` (BUILD SUCCESSFUL)
+**Device:** emulator-5554 (`Navi_8c_4G_128G` / sdk_gphone64_x86_64). **Not** SM-P613.
 
-## Case 1 — Typed Hamar ~1 km from GPS stays sticky
+**Runner:** `FromStickyGpsInstrumentedTest` — both methods PASS.
 
-**PASS**
+| Check | Result |
+|---|---|
+| Typed From = Hamar, GPS fix ~903 m away | stays `From: Hamar`, `fromFollowsGps=false` after plan |
+| Off-route while sticky | no auto-replan (`autoRerouteTriggeredCount` unchanged) |
+| Use GPS / My position | `fromFollowsGps=true`; auto-replan follows GPS (`reroutes=1`) |
 
-- Mock GPS ~903 m west of Hamar (60.79446, 11.0621 vs Hamar 60.79446, 11.07872)
-- From set to typed/picked **Hamar** with `fromFollowsGps=false`
-- Planned short corridor; sustained off-route inject
-- After off-route window: `fromFollowsGps=false`, From label still **Hamar**, no auto-replan
-- Log: `PASS sticky Hamar fromFollowsGps=false from=Hamar summary=From: Hamar | To: Near Hamar ... startToGpsM≈902.75`
-
-Screenshot: [01_typed_hamar_sticky_after_offroute.png](01_typed_hamar_sticky_after_offroute.png)
-
-## Case 2 — Use GPS / My position follows GPS
-
-**PASS**
-
-- Tapped **Use GPS as from**; `fromFollowsGps=true`
-- Same off-route inject path; auto-replan fired (`reroutes=1`)
-- From updated to live GPS coords after replan
-- Log: `PASS use-gps followsGps=true from=60.79446, 11.06210 reroutes=1 summary=From: GPS (60.85863, 11.08498) ...`
-
-Screenshot: [02_use_gps_follows_after_replan.png](02_use_gps_follows_after_replan.png)
-
-## How to reproduce
-
-```bash
-export ANDROID_SERIAL=emulator-5554
-./gradlew :app:testDebugUnitTest --tests 'no.navi.app.RouteStartGpsPolicyTest' -PnaviAbis=x86_64
-./gradlew :app:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=no.navi.app.FromStickyGpsInstrumentedTest \
-  -PnaviAbis=x86_64
 ```
+PASS sticky Hamar fromFollowsGps=false from=Hamar summary=From: Hamar  |  To: Near Hamar  |  Via: (none) gps=60.85863,11.08498 startToGpsM≈902.75
+PASS use-gps followsGps=true from=… reroutes=1 summary=From: GPS (60.85863, 11.08498)  |  To: Near Hamar  |  Via: (none)
+```
+
+Screenshots: `01_typed_hamar_sticky_after_offroute.png`, `02_use_gps_follows_after_replan.png`.

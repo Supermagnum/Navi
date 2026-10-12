@@ -1071,9 +1071,20 @@ private fun NaviMapScreen() {
      * GPS-follow on auto-replan. Typed/picked places stay sticky ([RouteStartGpsPolicy]).
      */
     var fromFollowsGps by remember { mutableStateOf(true) }
+    // Only the resumed activity may publish From state into test hooks.
+    // A stopped duplicate MainActivity would otherwise overwrite sticky From
+    // with empty/true defaults every composition.
     SideEffect {
-        NaviMapTestHooks.lastFromFollowsGps = fromFollowsGps
-        NaviMapTestHooks.lastFromName = fromPoint?.name.orEmpty()
+        val resumed =
+            (context as? androidx.lifecycle.LifecycleOwner)
+                ?.lifecycle
+                ?.currentState
+                ?.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+                ?: false
+        if (resumed) {
+            NaviMapTestHooks.lastFromFollowsGps = fromFollowsGps
+            NaviMapTestHooks.lastFromName = fromPoint?.name.orEmpty()
+        }
     }
     var avoidMotorways by remember { mutableStateOf(false) }
     var avoidTolls by remember { mutableStateOf(false) }
