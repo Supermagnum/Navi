@@ -1194,6 +1194,7 @@ private fun NaviMapScreen() {
                 baudRate = MapHudPrefs.loadCatBaudRate(context),
                 backend = MapHudPrefs.loadCatBackend(context),
                 scratchChannel = MapHudPrefs.loadCatScratchChannel(context),
+                demoModeDeveloper = MapHudPrefs.loadCatDemoModeDeveloper(context),
             ),
         )
     }
@@ -6228,6 +6229,10 @@ private fun NaviMapScreen() {
                 onScratchChannelChange = {
                     catUi = catUi.copy(scratchChannel = it)
                     MapHudPrefs.saveCatScratchChannel(context, it)
+                },
+                onDemoModeDeveloperChange = {
+                    catUi = catUi.copy(demoModeDeveloper = it)
+                    MapHudPrefs.saveCatDemoModeDeveloper(context, it)
                 },
                 onFollowNetworkChange = { catUi = catUi.copy(followNetworkId = it) },
                 onConnect = {

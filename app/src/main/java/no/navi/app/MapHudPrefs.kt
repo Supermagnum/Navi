@@ -52,12 +52,19 @@ object MapHudPrefs {
     private const val KEY_CAT_BAUD_RATE = "cat_baud_rate"
     private const val KEY_CAT_BACKEND = "cat_backend"
     private const val KEY_CAT_SCRATCH_CHANNEL = "cat_scratch_channel"
+    private const val KEY_CAT_DEMO_MODE = "cat_demo_mode_developer"
 
     /** Hamlib TCP / FFI vs native Benshi Bluetooth. */
     const val CAT_BACKEND_HAMLIB = "hamlib"
     const val CAT_BACKEND_BENSHI = "benshi"
     const val CAT_BACKEND_DEFAULT = CAT_BACKEND_HAMLIB
     const val CAT_SCRATCH_CHANNEL_DEFAULT = 0
+
+    /**
+     * Developer/test demo mode (5 s per repeater along a corridor). Must remain
+     * false (off by default). Not a product path.
+     */
+    const val CAT_DEMO_MODE_DEFAULT_ENABLED = false
 
     /**
      * Product default for the weather plugin enable toggle.
@@ -958,6 +965,22 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putInt(KEY_CAT_SCRATCH_CHANNEL, channel.coerceIn(0, 255))
+            .apply()
+    }
+
+    fun loadCatDemoModeDeveloper(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_CAT_DEMO_MODE, CAT_DEMO_MODE_DEFAULT_ENABLED)
+
+    fun saveCatDemoModeDeveloper(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_CAT_DEMO_MODE, enabled)
             .apply()
     }
 }

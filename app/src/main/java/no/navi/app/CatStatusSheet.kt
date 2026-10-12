@@ -38,6 +38,11 @@ data class CatUiState(
     val backend: String = MapHudPrefs.CAT_BACKEND_DEFAULT,
     /** Scratch channel index for Benshi channel-A programming. */
     val scratchChannel: Int = MapHudPrefs.CAT_SCRATCH_CHANNEL_DEFAULT,
+    /**
+     * Developer/test only: step network follow at 5 s/site. Off by default;
+     * must stay labelled as non-product.
+     */
+    val demoModeDeveloper: Boolean = MapHudPrefs.CAT_DEMO_MODE_DEFAULT_ENABLED,
     val followNetworkId: String = "LA5MR",
     val lastMessage: String = "",
 )
@@ -52,6 +57,7 @@ fun CatStatusSheet(
     onBaudRateChange: (Int) -> Unit,
     onBackendChange: (String) -> Unit,
     onScratchChannelChange: (Int) -> Unit,
+    onDemoModeDeveloperChange: (Boolean) -> Unit,
     onFollowNetworkChange: (String) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
@@ -154,6 +160,21 @@ fun CatStatusSheet(
                     modifier = Modifier.fillMaxWidth().testTag("cat_scratch_channel_field"),
                 )
             }
+            Text(
+                "Developer / test only",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.testTag("cat_demo_mode_section"),
+            )
+            FilterChip(
+                selected = state.demoModeDeveloper,
+                onClick = { onDemoModeDeveloperChange(!state.demoModeDeveloper) },
+                label = { Text("Demo mode (5 s/site) — not for driving") },
+                modifier = Modifier.testTag("cat_demo_mode_developer"),
+            )
+            Text(
+                "Off by default. Steps network follow along a planned corridor for FakeBenshiPeer / lab checks.",
+                style = MaterialTheme.typography.bodySmall,
+            )
             OutlinedTextField(
                 value = state.host,
                 onValueChange = onHostChange,
