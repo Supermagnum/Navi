@@ -1,10 +1,10 @@
 # IMU plugin: pitch / tilt / compass and mount calibration
-**Status:** live display, mount calibration, reset, and the configurable tilt
-alarm are **implemented** as a wasmtime guest (`plugins/imu`, engine in
-`plugins/imu/engine`) on the new read-only `sensors_read` HostApi capability.
-The product APK does not yet bridge Android `SensorManager` into the host or show
-the settings UI (follow-up). The logging / upload / correction pipeline below is
-still **deferred** (documentation only).
+**Status:** live display, mount calibration, reset, the configurable tilt
+alarm and the Android product wiring are **implemented**: a wasmtime guest
+(`plugins/imu`, engine in `plugins/imu/engine`) on the read-only `sensors_read`
+HostApi capability, fed by an Android `SensorManager` backend through UniFFI, with
+a settings panel under Map / Tools -> Plugins. The logging / upload / correction
+pipeline below is still **deferred** (documentation only).
 
 Issue: #150. Plugin README: [`plugins/imu/README.md`](../../plugins/imu/README.md).
 This feature improves **inclination (pitch/tilt)** accuracy for a
@@ -23,18 +23,27 @@ Related: [`build-linux.md`](../build-linux.md) (gpsd + IMU on Linux),
 | Future DEM-adjacent correction downloads | Mandatory cloud account |
 ---
 ## User-facing calibration procedure
-1. Park the vehicle on a **smooth, flat, level** surface.
-2. Verify level in **both X and Y** with a **physical bubble level**. The app
-   cannot confirm true level by itself — this is an explicit user instruction.
-3. In the app, open vehicle / IMU settings and tap **Calibrate** once level is
-   confirmed.
-4. The app captures the IMU's current reading as the **zero-reference offset**
-   for pitch and roll and stores it against the **active vehicle profile**
-   (so multiple vehicles / mounts can keep different offsets).
-Until Calibrate is run, the stack may assume a default "already level" offset
-of zero or refuse eco-inclination corrections — product choice at
-implementation time.
+
+The settings panel shows this text verbatim next to the **Calibrate** button:
+
+> Find a level concrete surface, like the floor of your garage, then tap Calibrate. The unit will then use the current values as level.
+
+1. Park the vehicle on a level, smooth surface (a garage floor works well).
+2. Open Map / Tools -> Plugins -> IMU pitch / tilt / compass and tap **Calibrate**.
+3. Keep the vehicle still for about a second. The plugin captures the current
+   gravity direction and stores the rotation that makes it level; if anything
+   moves, the request is rejected and nothing is stored.
+4. **Reset** removes the stored calibration. The status line and the
+   "Calibration date" line show whether the unit is calibrated and when.
+
+Until Calibrate is run, the unit reports its orientation as mounted (a
+vehicle-mounted unit is almost never aligned with the vehicle).
+
+Storing the calibration per vehicle profile (so several vehicles can keep
+different mounts) is not done yet; there is one mount record per install.
+
 ---
+
 ## Deferred data collection and correction pipeline
 Not built in this pass. Design intent:
 ```
@@ -81,6 +90,28 @@ itself should provide, once implemented:
 | Calibration, reset, calibration date and status text | `plugins/imu/engine` |
 | Tilt alarm level with user thresholds and hysteresis (host plays the sound) | `plugins/imu/engine/src/alarm.rs` |
 
+### Android product wiring
+
+| Piece | Where |
+|---|---|
+| `SensorPlatform` (UniFFI foreign trait) + `imu_plugin_*` session API (configure, install guest, enable, tick, calibrate / reset, alarm settings, release sensors) | `navi-ffi/src/imu_plugin.rs` |
+| `SensorManager` backend: availability detection (`TYPE_AMBIENT_TEMPERATURE` first, `TYPE_TEMPERATURE` fallback via the shared `SensorKind` table), per-sensor rate limit, listener unregistered when the hub releases it | `ImuSensorBackend.kt`, `AndroidSensorSource` |
+| Controller: ticks the guest (~8 Hz) only while the plugin is enabled and the app is started, publishes state, sounds the alarm tone | `ImuPluginController.kt`, `ImuPluginRuntime.kt` |
+| Settings panel: enable switch, verbatim calibration instruction, Calibrate / Reset, date and status, live pitch / roll / tilt / heading, alarm thresholds and **Test sound** | `ImuPluginPanel.kt` (inside `PluginSettingsSection`) |
+| Alarm audio hook: `ToneGenerator` beeps on the alarm stream (warning: single beep every 4 s, danger: faster beep every 1 s) | `ImuAlarmAudio.kt` |
+| Guest staging: `scripts/build-plugin-wasm.sh` builds `plugins/imu` into `assets/plugins/imu/`; the app copies it to `filesDir/plugins/imu/` and reinstalls on a version change | same pattern as the camping guest |
+
+The plugin is **off by default** (`plugin_enable.json`, name `imu`). Turning it
+off unregisters every sensor listener and drops the live display state; the saved
+calibration stays until **Reset**. `imu_plugin_tick` disables the plugin for the
+session on a fuel / timeout / memory / trap failure and shows the reason.
+
+Tests: `cargo test -p navi-ffi --lib imu_plugin`, `cargo test -p navi-ffi --test
+imu_plugin_ffi` (staged wasm guest through the public FFI surface with a fake
+`SensorPlatform`), and the JVM tests `ImuSensorBackendTest`,
+`ImuReadoutTest`, `ImuPluginControllerTest`. On a device or emulator,
+`ImuPluginInstrumentedTest` exercises the real `SensorManager`.
+
 ### Plugin storage contract (`plugin_kv`)
 
 | Key | Persisted | Writer | Content |
@@ -107,15 +138,18 @@ register / release). No tablet is required. On an emulator, use Extended control
 > Virtual sensors to rock or hold the device for the calibrate / reject paths;
 real mount accuracy still needs a vehicle-mounted device.
 
-## Implementation checklist (future)
-1. ~~Persist mount rotation~~ (done in `plugin_kv`); key it per vehicle profile in
-   `app_config` / profile store.
-2. Settings UI: Calibrate / Reset buttons + the verbatim instruction above;
-   Android `SensorManager` bridge feeding `SensorBackend`.
+## Implementation checklist
+
+1. ~~Persist mount rotation~~ (done in `plugin_kv`); keying it per vehicle profile
+   in `app_config` / the profile store is still open.
+2. ~~Settings UI: Calibrate / Reset buttons + the verbatim instruction;
+   Android `SensorManager` bridge feeding `SensorBackend`~~ (done).
 3. Optional local logger with quality gating.
 4. Opt-in upload client + server privacy review.
 5. Correction tile format + apply path next to DEM cache.
 6. Document defaults and that rotation modes do not depend on this feature.
-7. Live pitch/tilt/compass display UI (plugin state is ready).
-8. Alarm sound playback and settings UI (plugin reports the level; thresholds and
-   enable flag live in `imu_alarm`).
+7. ~~Live pitch/tilt/compass display~~ (done in the settings panel); a map HUD
+   chip is still open.
+8. ~~Alarm sound playback and settings UI~~ (done: simple `ToneGenerator` beeps;
+   custom alert sounds remain the separate
+   [custom alert sounds spec](custom-alert-sounds-spec.md)).

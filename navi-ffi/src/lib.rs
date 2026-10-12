@@ -56,6 +56,8 @@ uniffi::setup_scaffolding!();
 
 mod camping_plugin;
 pub use camping_plugin::*;
+mod imu_plugin;
+pub use imu_plugin::*;
 
 /// One native `plan_car_route` at a time (second Activity / am start must not
 /// spawn a second planner thread).

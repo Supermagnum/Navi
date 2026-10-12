@@ -42,3 +42,8 @@ cargo test -p navi-plugin-host --test imu_plugin_wasm
 Sensor access is host-owned: availability is detected, reads are rate-limited,
 and sensor listeners are unregistered when the plugin stops reading. The plugin
 never plays sound; the host reads the alarm level from the plugin state.
+
+In the Android app the guest is staged by `scripts/build-plugin-wasm.sh`, fed by
+the `SensorManager` backend (`ImuSensorBackend.kt`) through `navi-ffi`
+(`imu_plugin_*`), and controlled from Map / Tools -> Plugins -> IMU pitch / tilt /
+compass. It is off by default.

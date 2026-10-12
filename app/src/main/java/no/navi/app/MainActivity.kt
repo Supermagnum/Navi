@@ -217,6 +217,8 @@ class MainActivity : ComponentActivity() {
             },
             "CampingBootstrap",
         ).start()
+        // IMU plugin: native setup runs off-main; sensors tick only while started and enabled.
+        ImuPluginRuntime.attach(this, this)
         WorldOverviewDownload.ensure(this)
         setContent {
             var showMap by remember { mutableStateOf(false) }
