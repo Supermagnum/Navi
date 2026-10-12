@@ -44,9 +44,7 @@ fn eco_raufoss_dombas_pack_hit_reweight_and_distance() {
         }
     };
     assert!(
-        packs
-            .join("ostlandet-latest.navi-manifest.json")
-            .is_file(),
+        packs.join("ostlandet-latest.navi-manifest.json").is_file(),
         "missing ostlandet manifest in {}",
         packs.display()
     );
