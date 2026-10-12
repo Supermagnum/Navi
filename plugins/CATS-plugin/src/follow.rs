@@ -24,6 +24,11 @@ pub struct FollowState {
     pub last_switch_unix_s: u64,
     pub site_since_unix_s: u64,
     pub stopped_reason: Option<String>,
+    /// Decision C: last networked site held after leave-network.
+    #[serde(default)]
+    pub held_site: Option<String>,
+    #[serde(default)]
+    pub leave_notified: bool,
 }
 
 pub fn should_switch(
@@ -73,6 +78,8 @@ mod tests {
             last_switch_unix_s: 0,
             site_since_unix_s: 0,
             stopped_reason: None,
+            held_site: None,
+            leave_notified: false,
         };
         assert!(!should_switch(&state, "B", 18.0, 1000));
         assert!(should_switch(&state, "B", 14.0, 1000));
@@ -88,6 +95,8 @@ mod tests {
             last_switch_unix_s: 0,
             site_since_unix_s: 0,
             stopped_reason: None,
+            held_site: None,
+            leave_notified: false,
         };
         assert!(!should_switch(&state, "B", 1.0, 1000));
     }

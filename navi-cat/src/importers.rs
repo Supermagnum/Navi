@@ -1,6 +1,7 @@
 //! Repeater import scaffolds (OSM, AnyTone CSV, OpenRepeater, RadioID).
 //! RepeaterBook is always disabled.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use crate::repeater::{dmr_dedupe_key, RepeaterDb, RepeaterSite, RepeaterSource};
@@ -323,6 +324,277 @@ pub fn import_radioid_csv(db: &RepeaterDb, csv: &str) -> anyhow::Result<usize> {
         n += 1;
     }
     Ok(n)
+}
+
+/// Parse an OSM `relation/.../full` XML (LA5MR-style network) into sites.
+/// Members missing frequency_out or shift are skipped (never guessed).
+/// Network-level CTCSS is used when a member omits its own tone.
+pub fn import_osm_relation_xml(db: &RepeaterDb, xml: &str) -> anyhow::Result<usize> {
+    let root = match xml_lite_parse(xml) {
+        Ok(r) => r,
+        Err(e) => anyhow::bail!("OSM relation XML: {e}"),
+    };
+    let mut nodes: HashMap<String, XmlEl> = HashMap::new();
+    let mut ways: HashMap<String, XmlEl> = HashMap::new();
+    let mut relation = None;
+    for el in root.children {
+        match el.name.as_str() {
+            "node" => {
+                if let Some(id) = el.attrs.get("id") {
+                    nodes.insert(id.clone(), el);
+                }
+            }
+            "way" => {
+                if let Some(id) = el.attrs.get("id") {
+                    ways.insert(id.clone(), el);
+                }
+            }
+            "relation" => relation = Some(el),
+            _ => {}
+        }
+    }
+    let relation = relation.ok_or_else(|| anyhow::anyhow!("no relation element"))?;
+    let rel_tags = tags_of(&relation);
+    let network_id = rel_tags
+        .get("name")
+        .cloned()
+        .or_else(|| rel_tags.get("network").cloned())
+        .unwrap_or_else(|| "network".into());
+    let default_ctcss = rel_tags
+        .get("communication:amateur_radio:repeater:ctcss")
+        .and_then(|s| parse_mhz(s.trim_end_matches("hz").trim_end_matches("Hz")));
+
+    let mut n = 0usize;
+    for m in relation.children.iter().filter(|c| c.name == "member") {
+        let typ = m.attrs.get("type").map(|s| s.as_str()).unwrap_or("");
+        let ref_id = m.attrs.get("ref").cloned().unwrap_or_default();
+        let (el, id_prefix) = match typ {
+            "node" => (nodes.get(&ref_id), "osm-node"),
+            "way" => (ways.get(&ref_id), "osm-way"),
+            _ => (None, "osm"),
+        };
+        let Some(el) = el else { continue };
+        let tags = tags_of(el);
+        let callsign = tags
+            .get("callsign")
+            .or_else(|| tags.get("communication:amateur_radio:callsign"))
+            .cloned()
+            .unwrap_or_else(|| ref_id.clone());
+        let freq = tags
+            .get("communication:amateur_radio:repeater:frequency_out")
+            .and_then(|s| parse_mhz(s));
+        let shift = tags
+            .get("communication:amateur_radio:repeater:shift")
+            .and_then(|s| parse_mhz(s));
+        let (Some(freq), Some(shift)) = (freq, shift) else {
+            continue; // incomplete — skip, never guess
+        };
+        let ctcss_hz = tags
+            .get("communication:amateur_radio:repeater:ctcss")
+            .and_then(|s| parse_mhz(s))
+            .or(default_ctcss);
+        let modulation = tags
+            .get("communication:amateur_radio:repeater:modulation")
+            .cloned()
+            .unwrap_or_else(|| "11K2F3E".into());
+        // Prefer FM/NFM analog; skip pure digital-only if no 11K2F3E.
+        if !modulation.contains("11K2F3E") && !modulation.to_ascii_uppercase().contains("FM") {
+            continue;
+        }
+        let (lat, lon) = match typ {
+            "node" => (
+                el.attrs.get("lat").and_then(|s| s.parse().ok()),
+                el.attrs.get("lon").and_then(|s| s.parse().ok()),
+            ),
+            "way" => way_centroid(el, &nodes),
+            _ => (None, None),
+        };
+        db.upsert_site(&RepeaterSite {
+            id: format!("{id_prefix}-{ref_id}"),
+            callsign,
+            lat,
+            lon,
+            freq_out_mhz: freq,
+            shift_mhz: shift,
+            ctcss_hz,
+            dcs_code: None,
+            color_code: None,
+            modulation,
+            network_id: Some(network_id.clone()),
+            source: RepeaterSource::Osm,
+            conflict: false,
+            conflict_note: None,
+            distance_km: None,
+            position_accurate: lat.is_some() && lon.is_some(),
+        })?;
+        n += 1;
+    }
+    Ok(n)
+}
+
+#[derive(Debug, Clone)]
+struct XmlEl {
+    name: String,
+    attrs: HashMap<String, String>,
+    children: Vec<XmlEl>,
+    #[allow(dead_code)]
+    text: String,
+}
+
+fn tags_of(el: &XmlEl) -> HashMap<String, String> {
+    let mut m = HashMap::new();
+    for c in &el.children {
+        if c.name == "tag" {
+            if let (Some(k), Some(v)) = (c.attrs.get("k"), c.attrs.get("v")) {
+                m.insert(k.clone(), v.clone());
+            }
+        }
+    }
+    m
+}
+
+fn way_centroid(way: &XmlEl, nodes: &HashMap<String, XmlEl>) -> (Option<f64>, Option<f64>) {
+    let mut lats = Vec::new();
+    let mut lons = Vec::new();
+    for c in &way.children {
+        if c.name != "nd" {
+            continue;
+        }
+        let Some(r) = c.attrs.get("ref") else {
+            continue;
+        };
+        let Some(n) = nodes.get(r) else { continue };
+        if let (Some(la), Some(lo)) = (
+            n.attrs.get("lat").and_then(|s| s.parse().ok()),
+            n.attrs.get("lon").and_then(|s| s.parse().ok()),
+        ) {
+            lats.push(la);
+            lons.push(lo);
+        }
+    }
+    if lats.is_empty() {
+        return (None, None);
+    }
+    (
+        Some(lats.iter().sum::<f64>() / lats.len() as f64),
+        Some(lons.iter().sum::<f64>() / lons.len() as f64),
+    )
+}
+
+/// Tiny non-validating XML parser for OSM API 0.6 documents (no namespaces).
+fn xml_lite_parse(xml: &str) -> Result<XmlEl, String> {
+    let bytes = xml.as_bytes();
+    let mut i = 0usize;
+    fn skip_ws(bytes: &[u8], i: &mut usize) {
+        while *i < bytes.len() && bytes[*i].is_ascii_whitespace() {
+            *i += 1;
+        }
+    }
+    fn parse_el(bytes: &[u8], i: &mut usize) -> Result<XmlEl, String> {
+        skip_ws(bytes, i);
+        if *i >= bytes.len() || bytes[*i] != b'<' {
+            return Err("expected <".into());
+        }
+        *i += 1;
+        if *i < bytes.len() && bytes[*i] == b'/' {
+            return Err("unexpected close".into());
+        }
+        if *i < bytes.len() && (bytes[*i] == b'?' || bytes[*i] == b'!') {
+            // skip <?xml ...?> or <!-- -->
+            while *i < bytes.len() && bytes[*i] != b'>' {
+                *i += 1;
+            }
+            *i += 1;
+            return parse_el(bytes, i);
+        }
+        let start = *i;
+        while *i < bytes.len() && bytes[*i].is_ascii_alphanumeric() {
+            *i += 1;
+        }
+        let name = std::str::from_utf8(&bytes[start..*i])
+            .map_err(|e| e.to_string())?
+            .to_string();
+        let mut attrs = HashMap::new();
+        loop {
+            while *i < bytes.len() && bytes[*i].is_ascii_whitespace() {
+                *i += 1;
+            }
+            if *i >= bytes.len() {
+                return Err("truncated tag".into());
+            }
+            if bytes[*i] == b'/' {
+                *i += 1;
+                if *i < bytes.len() && bytes[*i] == b'>' {
+                    *i += 1;
+                    return Ok(XmlEl {
+                        name,
+                        attrs,
+                        children: vec![],
+                        text: String::new(),
+                    });
+                }
+            }
+            if bytes[*i] == b'>' {
+                *i += 1;
+                break;
+            }
+            let k0 = *i;
+            while *i < bytes.len() && bytes[*i] != b'=' {
+                *i += 1;
+            }
+            let key = std::str::from_utf8(&bytes[k0..*i])
+                .map_err(|e| e.to_string())?
+                .trim()
+                .to_string();
+            *i += 1;
+            if *i >= bytes.len() || bytes[*i] != b'"' {
+                return Err("attr quote".into());
+            }
+            *i += 1;
+            let v0 = *i;
+            while *i < bytes.len() && bytes[*i] != b'"' {
+                *i += 1;
+            }
+            let val = std::str::from_utf8(&bytes[v0..*i])
+                .map_err(|e| e.to_string())?
+                .to_string();
+            *i += 1;
+            attrs.insert(key, val);
+        }
+        let mut children = Vec::new();
+        let mut text = String::new();
+        loop {
+            while *i < bytes.len() && bytes[*i].is_ascii_whitespace() {
+                *i += 1;
+            }
+            if *i + 1 < bytes.len() && bytes[*i] == b'<' && bytes[*i + 1] == b'/' {
+                *i += 2;
+                while *i < bytes.len() && bytes[*i] != b'>' {
+                    *i += 1;
+                }
+                *i += 1;
+                break;
+            }
+            if *i < bytes.len() && bytes[*i] == b'<' {
+                children.push(parse_el(bytes, i)?);
+            } else if *i < bytes.len() {
+                let t0 = *i;
+                while *i < bytes.len() && bytes[*i] != b'<' {
+                    *i += 1;
+                }
+                text.push_str(std::str::from_utf8(&bytes[t0..*i]).unwrap_or(""));
+            } else {
+                break;
+            }
+        }
+        Ok(XmlEl {
+            name,
+            attrs,
+            children,
+            text,
+        })
+    }
+    parse_el(bytes, &mut i)
 }
 
 /// Always disabled until written RepeaterBook API permission exists.

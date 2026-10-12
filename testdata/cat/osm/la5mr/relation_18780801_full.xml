@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<osm version="0.6" generator="openstreetmap-cgimap 2.1.0 (3498757 spike-06.openstreetmap.org)" copyright="OpenStreetMap and contributors" attribution="http://www.openstreetmap.org/copyright" license="http://opendatacommons.org/licenses/odbl/1-0/">
- <node id="1011896359" visible="true" version="7" changeset="189609168" timestamp="2026-09-27T00:04:24Z" user="Visaman" uid="237638" lat="60.2298669" lon="10.6066179">
+<osm version="0.6" generator="openstreetmap-cgimap 2.1.0 (3964680 spike-06.openstreetmap.org)" copyright="OpenStreetMap and contributors" attribution="http://www.openstreetmap.org/copyright" license="http://opendatacommons.org/licenses/odbl/1-0/">
+ <node id="1011896359" visible="true" version="8" changeset="189847435" timestamp="2026-10-01T20:41:20Z" user="Visaman" uid="237638" lat="60.2298669" lon="10.6066179">
+  <tag k="callsign" v="LA5MR"/>
   <tag k="communication:amateur_radio:callsign" v="LA5MR"/>
   <tag k="communication:amateur_radio:repeater" v="yes"/>
   <tag k="communication:amateur_radio:repeater:ctcss" v="88.5"/>
@@ -11,11 +12,15 @@
   <tag k="ele" v="683"/>
   <tag k="height" v="25"/>
   <tag k="man_made" v="mast"/>
+  <tag k="name" v="LA5MR"/>
+  <tag k="network" v="LA5MR"/>
+  <tag k="osm_relation" v="relation/18780801"/>
   <tag k="ref:hinder" v="69510"/>
   <tag k="source" v="Kartverket Luftfartshindre"/>
   <tag k="tower:type" v="communication"/>
  </node>
- <node id="1473491257" visible="true" version="5" changeset="175619448" timestamp="2025-12-07T11:54:57Z" user="Visaman" uid="237638" lat="60.8457632" lon="10.8961777">
+ <node id="1473491257" visible="true" version="6" changeset="189847435" timestamp="2026-10-01T20:41:20Z" user="Visaman" uid="237638" lat="60.8457632" lon="10.8961777">
+  <tag k="callsign" v="LA5MR"/>
   <tag k="communication:amateur_radio" v="yes"/>
   <tag k="communication:amateur_radio:callsign" v="LA5MR"/>
   <tag k="communication:amateur_radio:repeater" v="yes"/>
@@ -26,6 +31,9 @@
   <tag k="communication:mobile_phone" v="yes"/>
   <tag k="ele" v="446"/>
   <tag k="man_made" v="mast"/>
+  <tag k="name" v="LA5MR"/>
+  <tag k="network" v="LA5MR"/>
+  <tag k="osm_relation" v="relation/18780801"/>
   <tag k="source" v="Kartverket Luftfartshindre"/>
   <tag k="tower:type" v="communication"/>
  </node>
@@ -53,7 +61,8 @@
   <tag k="tower:construction" v="freestanding"/>
   <tag k="tower:type" v="communication"/>
  </node>
- <node id="5576442558" visible="true" version="5" changeset="174673638" timestamp="2025-11-15T05:05:30Z" user="roleohibachi" uid="10076920" lat="60.5366765" lon="9.0617188">
+ <node id="5576442558" visible="true" version="6" changeset="190236164" timestamp="2026-10-09T07:11:37Z" user="Visaman" uid="237638" lat="60.5366765" lon="9.0617188">
+  <tag k="callsign" v="LA6NR"/>
   <tag k="communication:amateur_radio" v="yes"/>
   <tag k="communication:amateur_radio:callsign" v="LA6NR"/>
   <tag k="communication:amateur_radio:repeater" v="yes"/>
@@ -62,15 +71,18 @@
   <tag k="communication:amateur_radio:repeater:modulation" v="11K2F3E"/>
   <tag k="communication:amateur_radio:repeater:shift" v="-0,6 Mhz"/>
   <tag k="communication:mobile_phone" v="yes"/>
-  <tag k="description" v="Syningen"/>
   <tag k="ele" v="1101"/>
   <tag k="height" v="32"/>
   <tag k="man_made" v="mast"/>
+  <tag k="name" v="LA6NR"/>
+  <tag k="network" v="LA5MR"/>
+  <tag k="osm_relation" v="relation/18780801"/>
   <tag k="ref:hinder" v="4978"/>
   <tag k="source" v="Kartverket Luftfartshindre"/>
   <tag k="tower:type" v="communication"/>
  </node>
- <node id="5576503609" visible="true" version="4" changeset="174673638" timestamp="2025-11-15T05:05:30Z" user="roleohibachi" uid="10076920" lat="61.0184625" lon="8.9739277">
+ <node id="5576503609" visible="true" version="5" changeset="189847435" timestamp="2026-10-01T20:41:20Z" user="Visaman" uid="237638" lat="61.0184625" lon="8.9739277">
+  <tag k="callsign" v="LA5MR"/>
   <tag k="communication:amateur_radio" v="yes"/>
   <tag k="communication:amateur_radio:callsign" v="LA5MR"/>
   <tag k="communication:amateur_radio:repeater" v="yes"/>
@@ -82,19 +94,22 @@
   <tag k="ele" v="1135"/>
   <tag k="height" v="18"/>
   <tag k="man_made" v="mast"/>
+  <tag k="name" v="LA5MR"/>
+  <tag k="network" v="LA5MR"/>
+  <tag k="osm_relation" v="relation/18780801"/>
   <tag k="ref:hinder" v="68670"/>
   <tag k="source" v="Kartverket Luftfartshindre"/>
   <tag k="tower:type" v="communication"/>
  </node>
- <node id="5576506182" visible="true" version="13" changeset="189693189" timestamp="2026-09-28T18:42:26Z" user="Visaman" uid="237638" lat="61.0075560" lon="10.1918000">
+ <node id="5576506182" visible="true" version="14" changeset="189847435" timestamp="2026-10-01T20:41:20Z" user="Visaman" uid="237638" lat="61.0075560" lon="10.1918000">
   <tag k="callsign" v="LA2TRR"/>
   <tag k="communication:amateur_radio" v="yes"/>
   <tag k="communication:amateur_radio:callsign" v="LA2TRR"/>
   <tag k="communication:amateur_radio:repeater" v="yes"/>
   <tag k="communication:amateur_radio:repeater:ctcss" v="88.5"/>
+  <tag k="communication:amateur_radio:repeater:frequency_in" v="433.175 MHz"/>
   <tag k="communication:amateur_radio:repeater:frequency_out" v="145.2375 MHz"/>
   <tag k="communication:amateur_radio:repeater:modulation" v="11K2F3E"/>
-  <tag k="communication:amateur_radio:repeater:shift" v="287.9375 MHz"/>
   <tag k="communication:microwave" v="yes"/>
   <tag k="communication:mobile_phone" v="yes"/>
   <tag k="description" v="Kråkhugukampen"/>
@@ -102,6 +117,7 @@
   <tag k="group" v="Lillehammer"/>
   <tag k="height" v="35"/>
   <tag k="man_made" v="mast"/>
+  <tag k="name" v="LA2TRR"/>
   <tag k="note" v="Kråkhugukampen. QRT."/>
   <tag k="nrrl:group_page" v="https://nrrl.no/grupper/innlandet/lillehammergruppen/"/>
   <tag k="ref:hinder" v="4011"/>
@@ -109,15 +125,28 @@
   <tag k="tower:type" v="communication"/>
   <tag k="website" v="http://la2l.no/"/>
  </node>
- <node id="5576656337" visible="true" version="14" changeset="189693189" timestamp="2026-09-28T18:42:26Z" user="Visaman" uid="237638" lat="60.3242222" lon="12.1383250">
+ <node id="5576656337" visible="true" version="17" changeset="189847435" timestamp="2026-10-01T20:41:20Z" user="Visaman" uid="237638" lat="60.3242222" lon="12.1383250">
+  <tag k="callsign" v="LA2KRR"/>
+  <tag k="communication:amateur_radio" v="yes"/>
+  <tag k="communication:amateur_radio:callsign" v="LA2KRR"/>
+  <tag k="communication:amateur_radio:repeater" v="yes"/>
+  <tag k="communication:amateur_radio:repeater:ctcss" v="71.9"/>
+  <tag k="communication:amateur_radio:repeater:frequency_out" v="434.65 MHz"/>
+  <tag k="communication:amateur_radio:repeater:modulation" v="11K2F3E;9K36F7W"/>
+  <tag k="communication:amateur_radio:repeater:shift" v="-2 MHz"/>
   <tag k="communication:mobile_phone" v="yes"/>
   <tag k="description" v="Rafjell RL-repeater"/>
   <tag k="ele" v="577"/>
+  <tag k="group" v="Kongsvinger"/>
   <tag k="height" v="15"/>
   <tag k="man_made" v="mast"/>
+  <tag k="name" v="LA2KRR"/>
+  <tag k="note" v="Rafjellet mast. Restore amateur-radio tags for LA2KRR on node/5576656337 if missing (siblings are separate nodes)."/>
+  <tag k="nrrl:group_page" v="https://nrrl.no/grupper/innlandet/kongsvingergruppen/"/>
   <tag k="ref:hinder" v="54399"/>
   <tag k="source" v="Kartverket Luftfartshindre"/>
   <tag k="tower:type" v="communication"/>
+  <tag k="website" v="https://www.la7v.org/"/>
  </node>
  <node id="5576656416" visible="true" version="4" changeset="175619448" timestamp="2025-12-07T11:54:57Z" user="Visaman" uid="237638" lat="61.3195136" lon="12.1889850">
   <tag k="communication:amateur_radio" v="yes"/>
@@ -171,7 +200,8 @@
  <node id="11090568844" visible="true" version="1" changeset="139460839" timestamp="2023-08-04T23:18:25Z" user="AndersAndersson" uid="113813" lat="61.8978637" lon="9.2834118"/>
  <node id="11090568845" visible="true" version="1" changeset="139460839" timestamp="2023-08-04T23:18:25Z" user="AndersAndersson" uid="113813" lat="61.8978437" lon="9.2833951"/>
  <node id="11090568846" visible="true" version="1" changeset="139460839" timestamp="2023-08-04T23:18:25Z" user="AndersAndersson" uid="113813" lat="61.8978223" lon="9.2833928"/>
- <node id="12635462528" visible="true" version="3" changeset="175619448" timestamp="2025-12-07T11:54:57Z" user="Visaman" uid="237638" lat="61.2532188" lon="8.2030446">
+ <node id="12635462528" visible="true" version="4" changeset="189847435" timestamp="2026-10-01T20:41:20Z" user="Visaman" uid="237638" lat="61.2532188" lon="8.2030446">
+  <tag k="callsign" v="LA5MR"/>
   <tag k="communication:amateur_radio" v="yes"/>
   <tag k="communication:amateur_radio:callsign" v="LA5MR"/>
   <tag k="communication:amateur_radio:repeater" v="yes"/>
@@ -181,6 +211,9 @@
   <tag k="communication:amateur_radio:repeater:shift" v="-0,6 Mhz"/>
   <tag k="ele" v="1096"/>
   <tag k="man_made" v="communications_tower"/>
+  <tag k="name" v="LA5MR"/>
+  <tag k="network" v="LA5MR"/>
+  <tag k="osm_relation" v="relation/18780801"/>
  </node>
  <way id="1005486272" visible="true" version="11" changeset="189693189" timestamp="2026-09-28T18:42:26Z" user="Visaman" uid="237638">
   <nd ref="9276920345"/>

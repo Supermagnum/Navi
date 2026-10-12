@@ -7,7 +7,9 @@
 //! - Full read-back verification with one retry
 
 pub mod benshi;
+pub mod demo;
 pub mod ffi;
+pub mod follow;
 pub mod gating;
 pub mod importers;
 pub mod program;
