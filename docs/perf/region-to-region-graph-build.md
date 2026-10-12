@@ -22,7 +22,12 @@ Raufoss → Bergen (car, eco) could take **10+ minutes** on device / hang on hos
 | (c) `MAX_PLAN_TILES=6` drops Vestlandet bridge on multi-stem trips | With tiles=6: disconnected A*; with tiles≥11: pack_hit + route | `MAX_PLAN_TILES_MULTI_STEM=14` via `effective_max_plan_tiles_for_stems(extra_stems)` |
 | (d) Soft motor multi-day POI scrape on single-day trips | After graph+search fixed: `multiday_ms≈36s` vs A*≈0.2s on Raufoss→Bergen | Skip overnight POI scrape when trip fits `MotorDailyBudget` |
 
-Eco reweight is not the hang: `eco_reweight_ms≈50–84` on pack-hit.
+Eco reweight is not the hang: `eco_reweight_ms≈50–84` on pack-hit (typically
+50–260 ms). Incomplete corridors must fail fast (`MissingRegions` /
+`missing_regions=…` / “Install … to plan this route”) instead of spinning on
+PBF. Host regression: `navi-ffi` test `eco_corridor_plan_gate` (feature
+`regression-gate`, `NAVI_GATE_PACKS`) asserts eco pack-hit with
+`eco_reweight_ms > 0`, distance band, and wall budget vs eco-off.
 
 ## Before / after (host, release)
 
