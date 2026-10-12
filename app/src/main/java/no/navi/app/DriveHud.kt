@@ -364,7 +364,7 @@ fun TopDriveHud(
 
 /**
  * Per-plugin enable toggles shared by Map settings and Tools.
- * Weather, DATEX, and Nearby attractions are host-owned controls (all default OFF).
+ * Weather, DATEX, Nearby attractions, and the IMU plugin are host-owned controls (all default OFF).
  */
 @Composable
 fun PluginSettingsSection(
@@ -696,6 +696,7 @@ fun PluginSettingsSection(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
+        ImuPluginPanel()
     }
 }
 

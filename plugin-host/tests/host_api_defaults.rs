@@ -16,8 +16,13 @@
 //! | `traveller_profile_read` | residency=None | No residency-based pass |
 //! | `route_read` | empty waypoints | No seeds → no suggestions |
 //! | `route_destination_read` | None | No destination assumed |
+//! | `sensor_availability` | empty | No sensor features offered |
+//! | `sensor_read` | Unavailable, no sample | Never a zero reading |
 
-use navi_plugin_host::{HostApi, LayerStatus, PluginKvStatus, PoiWrite, Position, TravelModeView};
+use navi_plugin_host::{
+    FilePluginKv, HostApi, LayerStatus, PluginKvStatus, PoiWrite, Position, SensorKind,
+    SensorStatus, TravelModeView,
+};
 
 struct EmptyHost;
 
@@ -98,4 +103,32 @@ fn admin_region_default_unknown_until_embedder_wires_core() {
     let r = h.admin_region_read(78.22, 15.63);
     assert!(r.country_iso.is_none());
     assert!(r.subdivision_iso.is_none());
+}
+
+#[test]
+fn sensors_default_unavailable_never_zero() {
+    let h = EmptyHost;
+    assert!(h.sensor_availability().available.is_empty());
+    for kind in SensorKind::ALL {
+        let v = h.sensor_read(kind);
+        assert_eq!(v.status, SensorStatus::Unavailable);
+        assert!(v.sample.is_none());
+    }
+}
+
+#[test]
+fn live_kv_keys_stay_in_memory_and_are_not_flushed() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("kv.json");
+    {
+        let mut kv = FilePluginKv::open(&path).unwrap();
+        kv.set("live.imu_state", "{}").unwrap();
+        assert_eq!(kv.get("live.imu_state").as_deref(), Some("{}"));
+        assert!(!path.exists(), "ephemeral set must not touch disk");
+        kv.set("imu_mount", "persisted").unwrap();
+        kv.set("live.imu_state", "{\"a\":1}").unwrap();
+    }
+    let kv = FilePluginKv::open(&path).unwrap();
+    assert_eq!(kv.get("imu_mount").as_deref(), Some("persisted"));
+    assert!(kv.get("live.imu_state").is_none());
 }

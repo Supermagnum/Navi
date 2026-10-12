@@ -23,6 +23,7 @@ driver-break-core = { path = "../core" }
 navi-plugin-host = { path = "../plugin-host" }
 navi-cat = { path = "../navi-cat" }
 navi-hamlib-sys = { path = "../navi-hamlib-sys", optional = true }
+navi-plugin-imu-engine = { path = "../plugins/imu/engine" }
 navi-right-to-roam-camping = { path = "../plugins/right-to-roam-camping/engine", default-features = false, features = ["native"] }
 chrono = { workspace = true }
 uniffi = { workspace = true, features = ["cli"] }
@@ -37,6 +38,9 @@ rkyv = { workspace = true }
 memmap2 = { workspace = true }
 pathfinding = { workspace = true }
 osmpbf = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.15"
@@ -152,4 +156,9 @@ required-features = ["diag-bins"]
 [[test]]
 name = "regression_gate"
 path = "tests/regression_gate.rs"
+required-features = ["regression-gate"]
+
+[[test]]
+name = "eco_corridor_plan_gate"
+path = "tests/eco_corridor_plan_gate.rs"
 required-features = ["regression-gate"]

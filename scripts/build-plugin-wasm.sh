@@ -53,6 +53,7 @@ stage_one() {
 
 stage_one plugins/right-to-roam-camping right_to_roam_camping
 stage_one plugins/CATS-plugin cat
+stage_one plugins/imu imu
 stage_one plugins/busy-loop busy_loop
 stage_one plugins/trap-guest trap_guest
 stage_one plugins/memory-bomb memory_bomb

@@ -228,14 +228,11 @@ fn run_demo_on_route(route_file: &str, route_name: &str) -> DemoPlan {
     );
     let mut prev_rx: Option<f64> = None;
     for (i, step) in plan.steps.iter().enumerate() {
-        let site = members
-            .iter()
-            .find(|s| s.id == step.site_id)
-            .or_else(|| {
-                members
-                    .iter()
-                    .find(|s| s.id.contains(&step.site_id) || s.callsign == step.callsign)
-            });
+        let site = members.iter().find(|s| s.id == step.site_id).or_else(|| {
+            members
+                .iter()
+                .find(|s| s.id.contains(&step.site_id) || s.callsign == step.callsign)
+        });
         if let Some(s) = site {
             let same = prev_rx
                 .map(|p| (p - s.freq_out_mhz).abs() < 1e-6)
@@ -256,7 +253,12 @@ fn run_demo_on_route(route_file: &str, route_name: &str) -> DemoPlan {
             );
             prev_rx = Some(s.freq_out_mhz);
         } else {
-            eprintln!("  t={}s  {} (unresolved) id={}", i * 5, step.callsign, step.site_id);
+            eprintln!(
+                "  t={}s  {} (unresolved) id={}",
+                i * 5,
+                step.callsign,
+                step.site_id
+            );
         }
     }
 

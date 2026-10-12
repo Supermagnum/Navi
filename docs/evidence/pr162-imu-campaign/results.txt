@@ -1,0 +1,9 @@
+1_tilted_mount=PASS (Pitch ~-15 Roll ~-10 Tilt ~18 before calibrate; emulator virtual sensors)
+2_calibrate_levels=PASS (instrumented test OK)
+3_relative_tilt=PASS (vehicle_tilt_8_3 injected after calibrate)
+4_refuse_while_moving=PASS (motion_gyro inject + notice)
+5_survives_restart=PASS (activity recreate + mount KV)
+6_reset=PASS
+7_instruction_copy=PASS (exact IMU_CALIBRATION_INSTRUCTION on screen)
+instrumented=OK (1 test) ImuCalibrationCampaignInstrumentedTest
+serial=emulator-5554

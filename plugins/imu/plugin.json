@@ -1,0 +1,10 @@
+{
+  "name": "imu",
+  "version": "0.1.0",
+  "entry": "plugin_main",
+  "capabilities": ["log", "sensors_read", "plugin_kv", "clock_read"],
+  "fuel_limit": 20000000,
+  "timeout_ms": 500,
+  "memory_limit_bytes": 8388608,
+  "wasm": "plugin.wasm"
+}

@@ -1,0 +1,20 @@
+--------- beginning of main
+10-12 16:21:21.305 I/PlaceIndexCompactEvid( 5603): serial=emulator-5554 model=sdk_gphone64_x86_64
+10-12 16:21:21.305 I/PlaceIndexCompactEvid( 5603): work_dir=/data/user/0/no.navi.app/cache/place_index_compact_evidence
+10-12 16:21:21.428 I/PlaceIndexCompactEvid( 5603): BEFORE bytes=950272 page_count=232 freelist_count=182 freelist_ratio=0.7845
+10-12 16:21:21.429 I/PlaceIndexCompactEvid( 5603): bak_bytes=77824 live_bak_ratio=12.211
+10-12 16:21:21.431 I/PlaceIndexCompactEvid( 5603): live_counts={europe/norway/ostlandet=400, europe/norway/vestlandet=200}
+10-12 16:21:21.431 I/PlaceIndexCompactEvid( 5603): bak_counts={europe/norway/ostlandet=400, europe/norway/vestlandet=200}
+10-12 16:21:21.432 I/PlaceIndexCompactEvid( 5603): bak_decision_preview delete=true reason=counts_match
+10-12 16:21:21.439 I/PlaceIndexCompact( 5603): swapped compacted index live=200704
+10-12 16:21:21.439 I/PlaceIndexCompact( 5603): bak deleted=true (counts_match)
+10-12 16:21:21.440 I/PlaceIndexCompactEvid( 5603): compact_outcome=Done(compacted=true, bakDeleted=true, bakMismatches=[])
+10-12 16:21:21.440 I/PlaceIndexCompactEvid( 5603): AFTER bytes=200704 page_count=49 freelist_count=0 freelist_ratio=0.0000
+10-12 16:21:21.440 I/PlaceIndexCompactEvid( 5603): delta_bytes=749568 delta_pages=183 delta_freelist=182
+10-12 16:21:21.440 I/PlaceIndexCompactEvid( 5603): bak_deleted=true reason=counts_match live_vs_bak_rows_equal=true
+10-12 16:21:21.459 I/PlaceIndexCompactEvid( 5603): DEFER_FIXTURE bytes=241664 page_count=59 freelist_count=47 freelist_ratio=0.7966
+10-12 16:21:21.459 W/PlaceIndexCompact( 5603): deferred: insufficient_space free=10 need=67350528 live=241664
+10-12 16:21:21.459 I/PlaceIndexCompactEvid( 5603): defer_outcome=Deferred(reason=insufficient_space free=10 need=67350528 live=241664)
+10-12 16:21:21.459 W/PlaceIndexCompact( 5603): deferred: insufficient_space free=10 need=67350528 live=241664
+10-12 16:21:21.459 I/PlaceIndexCompactEvid( 5603): DEFER_LOG_LINE[PlaceIndexCompact] deferred: insufficient_space free=10 need=67350528 live=241664
+10-12 16:21:21.464 I/PlaceIndexCompactEvid( 5603): report=/data/user/0/no.navi.app/cache/place_index_compact_evidence/results.txt

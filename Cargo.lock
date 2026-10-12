@@ -2980,6 +2980,7 @@ dependencies = [
  "navi-cat",
  "navi-hamlib-sys",
  "navi-plugin-host",
+ "navi-plugin-imu-engine",
  "navi-right-to-roam-camping",
  "osm4routing",
  "osmpbf",
@@ -2988,6 +2989,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "tempfile",
  "uniffi",
  "uuid",
 ]
@@ -3037,12 +3039,30 @@ dependencies = [
  "anyhow",
  "chrono",
  "driver-break-core",
+ "navi-plugin-imu-engine",
  "navi-right-to-roam-camping",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.20",
  "wasmtime",
+]
+
+[[package]]
+name = "navi-plugin-imu"
+version = "0.1.0"
+dependencies = [
+ "navi-plugin-imu-engine",
+ "navi-plugin-sdk",
+ "serde_json",
+]
+
+[[package]]
+name = "navi-plugin-imu-engine"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
