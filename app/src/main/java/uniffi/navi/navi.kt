@@ -2693,6 +2693,10 @@ public object FfiConverterUShort: FfiConverter<UShort, Short> {
         return value.toUShort()
     }
 
+    fun lift(value: Int): UShort {
+        return value.toUShort()
+    }
+
     override fun read(buf: ByteBuffer): UShort {
         return lift(buf.getShort())
     }
@@ -9077,7 +9081,6 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     )
     }
     
-
  fun `catPluginConfigure`(`filesDir`: kotlin.String, `dataDir`: kotlin.String, `timezone`: kotlin.String)
         = 
     uniffiRustCall() { _status ->
@@ -9217,4 +9220,5 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     )
     }
     
+
 
