@@ -1,0 +1,25 @@
+route	profile	eco	pack_hit	wall_ms	pack_load_ms	eco_reweight_ms	astar_ms	distance_km	ok	note
+raufoss_bergen	CAR	eco=false	true	29873	2282	0	101	428.60	true	
+raufoss_bergen	CAR	eco=true	true	18198	2479	468	77	424.42	true	
+raufoss_bergen	TRUCK	eco=false	false	540	-	-	-	0.00	false	expected #166 car-only corridor skeleton
+raufoss_bergen	TRUCK	eco=true	false	491	-	-	-	0.00	false	expected #166 car-only corridor skeleton
+raufoss_bergen	MOBILE_HOME	eco=false	false	553	-	-	-	0.00	false	expected #166 car-only corridor skeleton
+raufoss_bergen	MOBILE_HOME	eco=true	false	616	-	-	-	0.00	false	expected #166 car-only corridor skeleton
+raufoss_bergen	MOTORCYCLE	eco=false	true	18697	2734	0	123	428.60	true	
+raufoss_bergen	MOTORCYCLE	eco=true	true	19739	2648	453	74	424.42	true	
+espa_dombas	CAR	eco=false	true	13402	2469	0	65	241.90	true	
+espa_dombas	CAR	eco=true	true	13792	2360	423	92	241.90	true	
+espa_dombas	TRUCK	eco=false	false	528	-	-	-	0.00	false	expected #166 car-only corridor skeleton
+espa_dombas	TRUCK	eco=true	false	504	-	-	-	0.00	false	expected #166 car-only corridor skeleton
+espa_dombas	MOBILE_HOME	eco=false	false	509	-	-	-	0.00	false	expected #166 car-only corridor skeleton
+espa_dombas	MOBILE_HOME	eco=true	false	554	-	-	-	0.00	false	expected #166 car-only corridor skeleton
+espa_dombas	MOTORCYCLE	eco=false	true	13433	2459	0	69	241.90	true	
+espa_dombas	MOTORCYCLE	eco=true	true	13730	2312	420	83	241.90	true	
+hamar_lillehammer	CAR	eco=false	true	2270	1202	0	132	60.80	true	
+hamar_lillehammer	CAR	eco=true	true	1882	667	129	129	60.36	true	
+hamar_lillehammer	TRUCK	eco=false	true	2766	1565	0	140	60.80	true	
+hamar_lillehammer	TRUCK	eco=true	true	2042	717	142	125	60.36	true	
+hamar_lillehammer	MOBILE_HOME	eco=false	true	2002	800	0	149	60.80	true	
+hamar_lillehammer	MOBILE_HOME	eco=true	true	4103	2522	149	241	60.36	true	
+hamar_lillehammer	MOTORCYCLE	eco=false	true	2879	1581	0	162	60.80	true	
+hamar_lillehammer	MOTORCYCLE	eco=true	true	2266	907	140	121	58.40	true	
