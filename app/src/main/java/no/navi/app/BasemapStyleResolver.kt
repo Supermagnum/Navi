@@ -895,13 +895,20 @@ object BasemapStyleResolver {
         // Kind across sources: every earth/land, then every water, then roads,
         // then labels. Stacking one source's full set after another lets the
         // later source's land cover the earlier source's water (Hamburg z15).
-        for (kindLayers in listOf(earthLand, water, roads, labels)) {
+        val kindGroups =
+            listOf(
+                LayerKind.EarthLand to earthLand,
+                LayerKind.Water to water,
+                LayerKind.Roads to roads,
+                LayerKind.Labels to labels,
+            )
+        for ((kind, kindLayers) in kindGroups) {
             for (src in named) {
                 appendClonedLayers(
                     outLayers,
                     kindLayers,
                     src.id,
-                    src.minZoom,
+                    handoverMinZoom(kind, src.minZoom),
                     src.maxZoom,
                     keepOriginalIds = src.id == primaryId,
                 )
@@ -921,6 +928,23 @@ object BasemapStyleResolver {
         sweepStalePreparedStyles(outRoot, leaf)
         return "file://${outStyle.absolutePath}"
     }
+
+    /**
+     * Zoom at which a regional source starts drawing [kind] layers while the
+     * world overview is mounted. Land and water **fills** are never held back:
+     * the overview renders some z5 tiles as one flat land colour on device
+     * (issue 152, tile 5/17/9 from Oslo), while the regional archive carries
+     * the same tile with landcover, landuse and lakes. Roads, boundaries and
+     * labels keep the handover so the two sources do not paint them twice.
+     */
+    internal fun handoverMinZoom(
+        kind: LayerKind,
+        sourceMinZoom: Double?,
+    ): Double? =
+        when (kind) {
+            LayerKind.EarthLand, LayerKind.Water -> null
+            else -> sourceMinZoom
+        }
 
     internal enum class LayerKind {
         Background,
@@ -999,7 +1023,7 @@ object BasemapStyleResolver {
         return spec
     }
 
-    private fun appendClonedLayers(
+    internal fun appendClonedLayers(
         dest: JSONArray,
         template: JSONArray,
         sourceId: String,
