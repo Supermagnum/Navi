@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import no.navi.app.cat.CatSerialLoopbackBridge
 import no.navi.app.cat.catRigModelLabel
@@ -64,6 +65,7 @@ fun CatStatusSheet(
     onRefresh: () -> Unit,
     onFollowEnable: () -> Unit,
     onFollowDisable: () -> Unit,
+    onUpdateRepeaters: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -93,6 +95,11 @@ fun CatStatusSheet(
         ) {
             Text("CAT / CATS radio", style = MaterialTheme.typography.titleMedium)
             Text(
+                stringResource(R.string.cat_licence_listen_only),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("cat_licence_listen_only"),
+            )
+            Text(
                 "Receive-only programming. Navi never transmits (no PTT).",
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -100,6 +107,16 @@ fun CatStatusSheet(
                 "AnyTone CPS CSV: put channel.csv (and zone / gps-roaming / offset) under filesDir/cat/import/. Format: docs/cat-test.md.",
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag("cat_import_path_hint"),
+            )
+            OutlinedButton(
+                onClick = onUpdateRepeaters,
+                modifier = Modifier.fillMaxWidth().testTag("cat_update_repeaters"),
+            ) {
+                Text(stringResource(R.string.cat_update_repeaters))
+            }
+            Text(
+                stringResource(R.string.cat_update_repeaters_hint),
+                style = MaterialTheme.typography.bodySmall,
             )
             Text(
                 if (connected) {
@@ -308,11 +325,24 @@ private fun parseNearby(json: String): List<String> =
                 val freq = o.optDouble("freq_out_mhz", Double.NaN)
                 val dist = o.optDouble("distance_km", Double.NaN)
                 val mod = o.optString("modulation")
+                val src = o.optString("source")
+                val attr = o.optString("attribution").takeIf { it.isNotBlank() && it != "null" }
+                val excluded = o.optBoolean("exclude_recommended", false)
+                val posOk = o.optBoolean("position_accurate", true)
                 val distLabel =
                     if (dist.isFinite()) String.format(java.util.Locale.US, "%.1f km", dist) else "?"
                 val freqLabel =
                     if (freq.isFinite()) String.format(java.util.Locale.US, "%.3f", freq) else "?"
-                add("$call  $freqLabel MHz  $mod  $distLabel")
+                val flags =
+                    buildList {
+                        if (excluded) add("excluded")
+                        if (!posOk) add("manual-only (no position)")
+                        if (mod.equals("DMR", ignoreCase = true)) add("DMR info-only")
+                    }.joinToString(", ")
+                val attrLabel = attr?.let { " — $it" }.orEmpty()
+                val srcLabel = if (src.isNotBlank()) " [$src]" else ""
+                val flagLabel = if (flags.isNotEmpty()) " ($flags)" else ""
+                add("$call  $freqLabel MHz  $mod  $distLabel$srcLabel$flagLabel$attrLabel")
             }
         }
     } catch (_: Throwable) {

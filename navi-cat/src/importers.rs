@@ -110,6 +110,8 @@ pub fn import_osm_json(db: &RepeaterDb, json: &str) -> anyhow::Result<usize> {
             conflict_note: None,
             distance_km: None,
             position_accurate: true,
+            exclude_recommended: false,
+            attribution: None,
         })?;
         n += 1;
     }
@@ -192,6 +194,8 @@ pub fn import_anytone_channel_csv(db: &RepeaterDb, csv: &str) -> anyhow::Result<
             conflict_note: None,
             distance_km: None,
             position_accurate: false,
+            exclude_recommended: false,
+            attribution: None,
         })?;
         n += 1;
     }
@@ -267,6 +271,8 @@ pub fn import_openrepeater_json(db: &RepeaterDb, json: &str) -> anyhow::Result<u
             conflict_note: None,
             distance_km: None,
             position_accurate: true,
+            exclude_recommended: false,
+            attribution: None,
         })?;
         n += 1;
     }
@@ -320,6 +326,8 @@ pub fn import_radioid_csv(db: &RepeaterDb, csv: &str) -> anyhow::Result<usize> {
             conflict_note: None,
             distance_km: None,
             position_accurate: true,
+            exclude_recommended: false,
+            attribution: None,
         })?;
         n += 1;
     }
@@ -426,6 +434,8 @@ pub fn import_osm_relation_xml(db: &RepeaterDb, xml: &str) -> anyhow::Result<usi
             conflict_note: None,
             distance_km: None,
             position_accurate: lat.is_some() && lon.is_some(),
+            exclude_recommended: false,
+            attribution: None,
         })?;
         n += 1;
     }

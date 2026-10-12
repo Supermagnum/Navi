@@ -1,0 +1,5 @@
+Step 6 select-vfo-a mac=38:D2:00:01:4B:E7 (operator display prep)
+connect ok RFCOMM channel 4
+selected VFO A (doubleChannel=1); channel B content unchanged
+channel A now: RX=145.6000 MHz TX=145.0000 MHz (should be visible on VFO A)
+DONE select-vfo-a log=/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-CAT/navi-cat/../testdata/cat/hardware/vr-n76/STEP6_select-vfo-a_1791800082519.log

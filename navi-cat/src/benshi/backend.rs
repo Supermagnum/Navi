@@ -130,12 +130,58 @@ impl<T: BenshiTransport> BenshiBackend<T> {
         self.fallback_scratch_on_notif_fail = v;
     }
 
+    /// Hardware RFCOMM often needs a longer reply window than the in-process fake.
+    pub fn set_reply_timeout(&mut self, d: Duration) {
+        self.reply_timeout = d;
+    }
+
+    /// Drain and return any undecoded RX bytes (debug / hardware probe).
+    pub fn take_rx_buf(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.rx_buf)
+    }
+
+    pub fn pending_frames(&self) -> usize {
+        self.pending.len()
+    }
+
     pub fn last_tuning_method(&self) -> Option<TuningMethod> {
         self.last_method
     }
 
     pub fn last_vfo2_fingerprint(&self) -> &[u8] {
         &self.last_vfo2_fp
+    }
+
+    /// Re-read settings and refresh the cached VFO 2 fingerprint.
+    pub fn refresh_vfo2_fingerprint(&mut self) -> Result<Vec<u8>, RigError> {
+        let fp = self.read_vfo2_fingerprint()?;
+        self.last_vfo2_fp = fp.clone();
+        Ok(fp)
+    }
+
+    /// Hardware-test / operator request only: select VFO A without changing
+    /// channel B content. Not used by product auto-tune.
+    pub fn select_vfo_a_for_display(&mut self) -> Result<(), RigError> {
+        let before = self.read_settings()?;
+        let b_fp = before.channel_b_content_fingerprint();
+        let payload = before
+            .write_payload_select_vfo_a()
+            .map_err(RigError::Protocol)?;
+        let _ = self.send_basic(CMD_WRITE_SETTINGS, payload)?;
+        let after = self.read_settings()?;
+        if after.channel_b_content_fingerprint() != b_fp {
+            return Err(RigError::Protocol(
+                "channel B content changed while selecting VFO A".into(),
+            ));
+        }
+        if after.double_channel != 1 {
+            return Err(RigError::Protocol(format!(
+                "select VFO A failed: double_channel={}",
+                after.double_channel
+            )));
+        }
+        self.last_vfo2_fp = after.vfo2_fingerprint();
+        Ok(())
     }
 
     pub fn transport(&self) -> &T {
@@ -163,21 +209,21 @@ impl<T: BenshiTransport> BenshiBackend<T> {
     }
 
     pub fn handshake(&mut self) -> Result<(), RigError> {
-        let reply = self.send_basic(CMD_GET_DEV_INFO, vec![])?;
+        let reply = self.send_basic(CMD_GET_DEV_INFO, GET_DEV_INFO_REQ_PAYLOAD.to_vec())?;
         let info = DevInfo::from_reply(&reply).map_err(RigError::Protocol)?;
         self.product_id = info.product_id;
         self.support_vfo = info.support_vfo;
         self.gate = gate_native_identity(Some(info.vendor_id), Some(info.product_id));
-        if info.product_id == crate::benshi::gate::ALLOWED_PRODUCT_VR_N76 {
+        if crate::benshi::gate::is_allowed_vr_n76_product(info.product_id) {
             self.model_name = "VR-N76".into();
         }
         if !self.gate.allowed {
             self.connected = false;
             return Err(RigError::Unsupported(self.gate.reason.clone()));
         }
-        // Register HT status + freq-mode notifications.
-        let _ = self.send_basic(CMD_REGISTER_NOTIFICATION, vec![NOTIF_HT_STATUS_CHANGED])?;
-        let _ = self.send_basic(
+        // REGISTER_NOTIFICATION has no reply on real firmware (HTCommander).
+        self.send_basic_noreply(CMD_REGISTER_NOTIFICATION, vec![NOTIF_HT_STATUS_CHANGED])?;
+        self.send_basic_noreply(
             CMD_REGISTER_NOTIFICATION,
             vec![NOTIF_FREQ_MODE_STATUS_CHANGED],
         )?;
@@ -188,6 +234,20 @@ impl<T: BenshiTransport> BenshiBackend<T> {
 
     fn send_basic(&mut self, cmd: u16, data: Vec<u8>) -> Result<Vec<u8>, RigError> {
         self.send_command_checked(GROUP_BASIC, cmd, data)
+    }
+
+    fn send_basic_noreply(&mut self, cmd: u16, data: Vec<u8>) -> Result<(), RigError> {
+        if !is_allowed(GROUP_BASIC, cmd) {
+            return Err(RigError::Unsupported(format!(
+                "refusing Benshi cmd group={GROUP_BASIC} cmd={cmd} (never-transmit allowlist)"
+            )));
+        }
+        let c = Command {
+            group: GROUP_BASIC,
+            cmd,
+            data,
+        };
+        self.transact_noreply(&c)
     }
 
     fn transact(&mut self, cmd: &Command) -> Result<Vec<u8>, RigError> {
@@ -208,6 +268,18 @@ impl<T: BenshiTransport> BenshiBackend<T> {
                 )));
             }
         }
+    }
+
+    fn transact_noreply(&mut self, cmd: &Command) -> Result<(), RigError> {
+        let body = cmd.to_body();
+        let frame = gaia_encode(&body).map_err(RigError::Protocol)?;
+        self.transport.write_all(&frame)?;
+        // Brief drain so a surprise reply/notif does not stall the next command.
+        let deadline = Instant::now() + Duration::from_millis(50);
+        while Instant::now() < deadline {
+            self.pump_rx()?;
+        }
+        Ok(())
     }
 
     fn pump_rx(&mut self) -> Result<(), RigError> {

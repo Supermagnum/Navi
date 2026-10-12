@@ -1221,11 +1221,10 @@ private fun NaviMapScreen() {
             uniffi.navi.catPluginSetPosition(lat, lon)
         }
         val nearby =
-            uniffi.navi.catPluginRepeaterQueryJson(
+            uniffi.navi.catPluginRepeaterListUiJson(
                 lat,
                 lon,
                 150.0,
-                null,
             )
         catUi = catUi.copy(statusJson = status, nearbyJson = nearby)
     }
@@ -6235,6 +6234,16 @@ private fun NaviMapScreen() {
                     MapHudPrefs.saveCatDemoModeDeveloper(context, it)
                 },
                 onFollowNetworkChange = { catUi = catUi.copy(followNetworkId = it) },
+                onUpdateRepeaters = {
+                    // User-pressed only — no background fetch; navi-server HTTPS GET only.
+                    val msg =
+                        uniffi.navi.catPluginUpdateRepeatersFromServer(
+                            "https://navigate-me.duckdns.org",
+                        )
+                    catUi = catUi.copy(lastMessage = msg)
+                    refreshCatUi()
+                    status = "CAT repeater update: $msg"
+                },
                 onConnect = {
                     MapHudPrefs.saveCatRigModel(context, catUi.rigModel)
                     MapHudPrefs.saveCatBaudRate(context, catUi.baudRate)

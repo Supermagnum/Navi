@@ -38,9 +38,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import no.navi.app.R
 import uniffi.navi.FfiCarRestSettings
 import uniffi.navi.FfiEbikeConfig
 import uniffi.navi.FfiEvCarConfig
@@ -676,13 +678,18 @@ fun PluginSettingsSection(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text("CAT / CATS radio")
+            Text(stringResource(R.string.cat_plugin_toggle_label))
             Switch(
                 checked = catPluginEnabled,
                 onCheckedChange = onCatPluginChange,
                 modifier = Modifier.testTag("toggle_cat_plugin"),
             )
         }
+        Text(
+            stringResource(R.string.cat_licence_listen_only),
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.testTag("cat_licence_listen_only"),
+        )
         if (catPluginEnabled) {
             Text(
                 "Amateur radio CAT: repeater query, VFO program with read-back, network follow. Never transmits.",

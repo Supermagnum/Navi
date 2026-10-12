@@ -10,10 +10,17 @@
 
 pub mod allowlist;
 pub mod backend;
+#[cfg(target_os = "linux")]
+pub mod bluez_rfcomm;
 pub mod codec;
 pub mod gate;
 pub mod sim;
 
 pub use backend::{BenshiBackend, InProcessTransport, TuningMethod};
-pub use gate::{gate_native_identity, ALLOWED_PRODUCT_VR_N76};
+#[cfg(target_os = "linux")]
+pub use bluez_rfcomm::BluezRfcommTransport;
+pub use gate::{
+    gate_native_identity, is_allowed_vr_n76_product, ALLOWED_PRODUCT_VR_N76,
+    ALLOWED_PRODUCT_VR_N76_FW,
+};
 pub use sim::FakeBenshiPeer;

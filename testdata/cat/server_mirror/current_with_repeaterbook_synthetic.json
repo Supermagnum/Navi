@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "generation": "SYNTHETIC",
+  "fetched_unix": 0,
+  "sources": [
+    {
+      "source": "radioid",
+      "generation": "20261012T080332Z",
+      "fetched_unix": 1791792212,
+      "attribution": {
+        "provisional": true,
+        "text": "Data courtesy of RadioID.net",
+        "url": "https://www.radioid.net/"
+      },
+      "licence": "Provisional attribution until written approval specifies otherwise. Redistribution requires RadioID written permission; see docs/repeater-mirror.md.",
+      "countries": [
+        {
+          "api_only": 2,
+          "attribution": {
+            "provisional": true,
+            "text": "Data courtesy of RadioID.net",
+            "url": "https://www.radioid.net/"
+          },
+          "country": "Andorra",
+          "country_slug": "andorra",
+          "data_url": "/repeaters/radioid/andorra/20261012T080332Z/repeaters.json.zst",
+          "fetched_unix": 1791792212,
+          "generation": "20261012T080332Z",
+          "join_key": "locator",
+          "licence": "Provisional attribution until written approval specifies otherwise. Redistribution requires RadioID written permission; see docs/repeater-mirror.md.",
+          "manifest_url": "/repeaters/radioid/andorra/20261012T080332Z/manifest.json",
+          "map_only": 0,
+          "matched": 1,
+          "record_count": 3
+        }
+      ]
+    },
+    {
+      "source": "repeaterbook",
+      "generation": "SYNTHETIC",
+      "attribution": {
+        "text": "Data courtesy of RepeaterBook.com",
+        "url": "https://www.repeaterbook.com/",
+        "provisional": false
+      },
+      "licence": "Synthetic fixture \u2014 not live data.",
+      "countries": [
+        {
+          "country": "Norway",
+          "country_slug": "no",
+          "generation": "SYNTHETIC",
+          "record_count": 2,
+          "manifest_url": "/repeaters/repeaterbook/no/SYNTHETIC/manifest.json",
+          "data_url": "/repeaters/repeaterbook/no/SYNTHETIC/repeaters.json.zst",
+          "attribution": {
+            "text": "Data courtesy of RepeaterBook.com",
+            "url": "https://www.repeaterbook.com/",
+            "provisional": false
+          },
+          "licence": "Synthetic fixture \u2014 not live data."
+        }
+      ]
+    }
+  ],
+  "fixture_note": "SYNTHETIC: RepeaterBook present for client path tests."
+}

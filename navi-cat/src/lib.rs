@@ -11,6 +11,7 @@ pub mod coverage;
 pub mod ffi;
 pub mod gating;
 pub mod importers;
+pub mod mirror;
 pub mod program;
 pub mod repeater;
 pub mod tcp;
@@ -75,6 +76,19 @@ impl<B: RigBackend> CatService<B> {
         }
         let radius = radius_km.max(0.0);
         let sites = self.db.query_near(lat, lon, radius, network_id);
+        serde_json::to_string(&sites).unwrap_or_else(|_| "[]".into())
+    }
+
+    /// Nearby list for CAT UI: includes excluded / position_null / DMR (info-only).
+    pub fn repeater_list_ui_json(&self, lat: f64, lon: f64, radius_km: f64) -> String {
+        if radius_km > 150.0 {
+            return serde_json::json!({
+                "ok": false,
+                "error": format!("radius_km {radius_km} exceeds maximum 150")
+            })
+            .to_string();
+        }
+        let sites = self.db.list_near_ui(lat, lon, radius_km.max(0.0));
         serde_json::to_string(&sites).unwrap_or_else(|_| "[]".into())
     }
 

@@ -389,6 +389,16 @@ pub fn cat_plugin_repeater_query_json(
         .repeater_query_json(lat, lon, radius_km, network_id.as_deref())
 }
 
+/// CAT sheet list: includes excluded / position_null / DMR (info-only). Not for auto-tune.
+#[uniffi::export]
+pub fn cat_plugin_repeater_list_ui_json(lat: f64, lon: f64, radius_km: f64) -> String {
+    let guard = session_lock().lock().expect("cat session");
+    let Some(session) = guard.as_ref() else {
+        return "[]".into();
+    };
+    session.cat.repeater_list_ui_json(lat, lon, radius_km)
+}
+
 #[uniffi::export]
 pub fn cat_plugin_vfo_set_json(request_json: String) -> String {
     let mut guard = session_lock().lock().expect("cat session");
@@ -456,4 +466,43 @@ pub fn cat_plugin_tick_guest() -> String {
         Ok(outcome) => format!("OK: {outcome:?}"),
         Err(e) => format!("FAIL: {e}"),
     }
+}
+
+/// User-pressed Update only: GET navi-server `/repeaters/…`, verify checksums,
+/// atomically swap into the onboard repeater DB. Never contacts RepeaterBook or
+/// RadioID directly. Missing sources (e.g. RepeaterBook) are reported and skipped.
+#[uniffi::export]
+pub fn cat_plugin_update_repeaters_from_server(base_url: String) -> String {
+    let mut guard = session_lock().lock().expect("cat session");
+    let Some(session) = guard.as_mut() else {
+        return r#"{"ok":false,"error":"not configured","kept_last_good":true}"#.into();
+    };
+    let base = if base_url.trim().is_empty() {
+        navi_cat::mirror::DEFAULT_REPEATERS_BASE.to_string()
+    } else {
+        base_url
+    };
+    let db_path = session.files_dir.join("cat_repeaters.sqlite");
+    let report = navi_cat::mirror::fetch_and_update(&base, &db_path);
+    if report.ok {
+        // Reload DB handle so subsequent queries see the new rows.
+        let db = open_db(&session.files_dir);
+        let follow_net = session.cat.follow_network_id.clone();
+        let follow_pin = session.cat.follow_pinned.clone();
+        let follow_stop = session.cat.follow_stopped_reason.clone();
+        let connected = session.cat.backend.is_connected();
+        let model = session.cat.backend.model_name();
+        let _ = (connected, model);
+        // Preserve backend by taking ownership via replace with same offline/tcp —
+        // simplest: reopen offline if disconnected; keep TCP by reconstructing CatService.
+        let backend = std::mem::replace(&mut session.cat.backend, LiveBackend::Offline(OfflineRig));
+        let mut cat = CatService::new(backend, db);
+        cat.follow_network_id = follow_net;
+        cat.follow_pinned = follow_pin;
+        cat.follow_stopped_reason = follow_stop;
+        session.cat = cat;
+    }
+    serde_json::to_string(&report).unwrap_or_else(|_| {
+        r#"{"ok":false,"error":"serialize report","kept_last_good":true}"#.into()
+    })
 }

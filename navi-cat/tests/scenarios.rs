@@ -113,6 +113,8 @@ fn site(
         conflict_note: None,
         distance_km: None,
         position_accurate: true,
+        exclude_recommended: false,
+        attribution: None,
     }
 }
 

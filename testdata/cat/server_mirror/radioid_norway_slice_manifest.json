@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "source": "radioid",
+  "country": "Norway",
+  "country_slug": "no",
+  "generation": "20261012T080332Z",
+  "attribution": {
+    "text": "Data courtesy of RadioID.net",
+    "url": "https://www.radioid.net/",
+    "provisional": true
+  },
+  "licence": "Provisional attribution until written approval specifies otherwise. Redistribution requires RadioID written permission; see docs/repeater-mirror.md.",
+  "files": {
+    "repeaters.json.zst": {
+      "sha256": "fa3dc881bb91cadf4ff668a44c4e45c8519ffe7ecbc38adfa7582b9b46bc14c9",
+      "bytes": 1014
+    }
+  },
+  "fixture_note": "Checksums for radioid_norway_slice.json.zst only."
+}

@@ -342,6 +342,8 @@ mod tests {
                 conflict_note: None,
                 distance_km: None,
                 position_accurate: true,
+                exclude_recommended: false,
+                attribution: None,
             },
             RepeaterSite {
                 id: "osm-node-2".into(),
@@ -360,6 +362,8 @@ mod tests {
                 conflict_note: None,
                 distance_km: None,
                 position_accurate: true,
+                exclude_recommended: false,
+                attribution: None,
             },
         ];
         // Override splat key: our helper makes LA5MR_1 / LA5MR_2 from osm-node-1/2

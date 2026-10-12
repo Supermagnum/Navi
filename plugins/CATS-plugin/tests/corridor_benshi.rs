@@ -221,6 +221,44 @@ fn run_demo_on_route(route_file: &str, route_name: &str) -> DemoPlan {
     assert!(plan.developer_test_only);
     assert_eq!(plan.step_secs, DEMO_STEP_SECS);
     assert!(!plan.steps.is_empty(), "{route_name}: expected demo steps");
+    eprintln!(
+        "demo plan {route_name}: {} steps, wall ≈ {} s (5 s/site)",
+        plan.steps.len(),
+        plan.steps.len() * DEMO_STEP_SECS as usize
+    );
+    let mut prev_rx: Option<f64> = None;
+    for (i, step) in plan.steps.iter().enumerate() {
+        let site = members
+            .iter()
+            .find(|s| s.id == step.site_id)
+            .or_else(|| {
+                members
+                    .iter()
+                    .find(|s| s.id.contains(&step.site_id) || s.callsign == step.callsign)
+            });
+        if let Some(s) = site {
+            let same = prev_rx
+                .map(|p| (p - s.freq_out_mhz).abs() < 1e-6)
+                .unwrap_or(false);
+            eprintln!(
+                "  t={}s  {}  RX={:.4} MHz  shift={:+.4}  CTCSS={:?} Hz  id={}{}",
+                i * DEMO_STEP_SECS as usize,
+                s.callsign,
+                s.freq_out_mhz,
+                s.shift_mhz,
+                s.ctcss_hz,
+                s.id,
+                if same {
+                    "  [same RX as previous — display may not change]"
+                } else {
+                    ""
+                }
+            );
+            prev_rx = Some(s.freq_out_mhz);
+        } else {
+            eprintln!("  t={}s  {} (unresolved) id={}", i * 5, step.callsign, step.site_id);
+        }
+    }
 
     let peer = FakeBenshiPeer::default_vr_n76();
     peer.set_selected_vfo(2);

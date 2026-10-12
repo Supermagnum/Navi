@@ -2,8 +2,17 @@
 
 use crate::gating::{GateDecision, GateStatus};
 
-/// HTCommander productId for VGC/Vero VR-N76.
+/// HTCommander table: classic VR-N76 productId.
 pub const ALLOWED_PRODUCT_VR_N76: u16 = 0x0002;
+/// Live VR-N76 (this host's radio, 2026-10-12): GET_DEV_INFO reports 0x0103 (259).
+/// Matches HTCommander firmware-server notes that key off live productId 259.
+pub const ALLOWED_PRODUCT_VR_N76_FW: u16 = 0x0103;
+
+const ALLOWED_PRODUCTS: &[u16] = &[ALLOWED_PRODUCT_VR_N76, ALLOWED_PRODUCT_VR_N76_FW];
+
+pub fn is_allowed_vr_n76_product(product_id: u16) -> bool {
+    ALLOWED_PRODUCTS.contains(&product_id)
+}
 
 /// Fail closed on unknown / malformed / truncated identity.
 pub fn gate_native_identity(vendor_id: Option<u8>, product_id: Option<u16>) -> GateDecision {
@@ -13,9 +22,9 @@ pub fn gate_native_identity(vendor_id: Option<u8>, product_id: Option<u16>) -> G
     let Some(_vendor) = vendor_id else {
         return refused("GET_DEV_INFO missing or truncated vendorId");
     };
-    if product_id != ALLOWED_PRODUCT_VR_N76 {
+    if !ALLOWED_PRODUCTS.contains(&product_id) {
         return refused(format!(
-            "productId 0x{product_id:04x} not on native allowlist (VR-N76=0x0002)"
+            "productId 0x{product_id:04x} not on native allowlist (VR-N76=0x0002|0x0103)"
         ));
     }
     GateDecision {
@@ -24,7 +33,7 @@ pub fn gate_native_identity(vendor_id: Option<u8>, product_id: Option<u16>) -> G
         can_set_rptr_shift: true,
         can_set_rptr_offs: true,
         can_set_ctcss: true,
-        reason: "native Benshi VR-N76 (0x0002)".into(),
+        reason: format!("native Benshi VR-N76 (0x{product_id:04x})"),
         beta_override_warning: None,
     }
 }
@@ -47,8 +56,8 @@ mod tests {
 
     #[test]
     fn vr_n76_allowed() {
-        let g = gate_native_identity(Some(1), Some(ALLOWED_PRODUCT_VR_N76));
-        assert!(g.allowed);
+        assert!(gate_native_identity(Some(1), Some(ALLOWED_PRODUCT_VR_N76)).allowed);
+        assert!(gate_native_identity(Some(1), Some(ALLOWED_PRODUCT_VR_N76_FW)).allowed);
     }
 
     #[test]

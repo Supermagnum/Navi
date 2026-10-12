@@ -1,0 +1,11 @@
+Step 6 route=osterdalen mac=38:D2:00:01:4B:E7 scratch=0 steps=3 duration≈15s
+connect ok RFCOMM channel 4
+VFO B fingerprint before (11 bytes): 06 01 00 00 00 00 78 00 00 00 00
+t≈0s STEP 1 LA5MR (osm-node-1473491257) request RX=145.6250 shift=-0.6000 CTCSS=88.5
+  OK method=scratch_channel read-back: RX=145.6250 MHz shift=Minus offset_hz=600000 ctcss_tenths=Some(885)
+t≈5s STEP 2 LA5TRR (osm-node-5576656416) request RX=145.7250 shift=-0.6000 CTCSS=88.5
+  OK method=scratch_channel read-back: RX=145.7250 MHz shift=Minus offset_hz=600000 ctcss_tenths=Some(885)
+t≈10s STEP 3 LA9AR (osm-way-1005486272) request RX=145.6000 shift=-0.6000 CTCSS=88.5
+  OK method=scratch_channel read-back: RX=145.6000 MHz shift=Minus offset_hz=600000 ctcss_tenths=Some(885)
+VFO B fingerprint after: 06 01 00 00 00 00 78 00 00 00 00 identical_to_step5_start=true
+DONE route=osterdalen wall=10.4s log=/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-CAT/navi-cat/../testdata/cat/hardware/vr-n76/STEP6_osterdalen_1791800151890.log

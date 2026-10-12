@@ -1,0 +1,208 @@
+{
+  "schema": 1,
+  "source": "radioid",
+  "country": "Norway",
+  "country_slug": "no",
+  "generation": "20261012T080332Z",
+  "attribution": {
+    "text": "Data courtesy of RadioID.net",
+    "url": "https://www.radioid.net/",
+    "provisional": true
+  },
+  "licence": "Provisional attribution until written approval specifies otherwise. Redistribution requires RadioID written permission; see docs/repeater-mirror.md.",
+  "repeaters": [
+    {
+      "source": "radioid",
+      "callsign": "LD3TD",
+      "lat": null,
+      "lon": null,
+      "position_null": true,
+      "output_hz": 434562500,
+      "shift_hz": -2000000,
+      "mode": "DMR",
+      "dmr_color_code": 1,
+      "location": "Tonsberg, Vestfold",
+      "network": {
+        "ipsc_network": "BM",
+        "trustee": [
+          "LB3GE"
+        ]
+      },
+      "operational_status": "on-air",
+      "radioid_locator": "242017",
+      "radioid_identity_id": "2649",
+      "entry_kind": "repeater",
+      "exclude_recommended": false,
+      "join_key": "locator"
+    },
+    {
+      "source": "radioid",
+      "callsign": "LD1OA",
+      "lat": 59.980099,
+      "lon": 10.896087,
+      "position": {
+        "lat": 59.980099,
+        "lon": 10.896087
+      },
+      "position_null": false,
+      "coord_source": "radioid_map",
+      "output_hz": 434887500,
+      "shift_hz": -2000000,
+      "mode": "DMR",
+      "dmr_color_code": 1,
+      "talkgroups": [
+        {
+          "talkgroup": 242,
+          "description": "Norway",
+          "timeslot": 1,
+          "discovery": 0
+        },
+        {
+          "talkgroup": 2421,
+          "description": "S\u00f8r- og \u00d8stlandet",
+          "timeslot": 1,
+          "discovery": 0
+        },
+        {
+          "talkgroup": 242002,
+          "description": "",
+          "timeslot": 2,
+          "discovery": 0
+        }
+      ],
+      "location": "Roverkollen, Oslo",
+      "network": {
+        "ipsc_network": "BM",
+        "trustee": [
+          "LB9GE"
+        ]
+      },
+      "operational_status": "on-air",
+      "radioid_locator": "242002",
+      "radioid_identity_id": "2634",
+      "entry_kind": "repeater",
+      "exclude_recommended": false,
+      "join_key": "locator"
+    },
+    {
+      "source": "radioid",
+      "callsign": "LD3DV",
+      "lat": 59.911702,
+      "lon": 10.750398,
+      "position": {
+        "lat": 59.911702,
+        "lon": 10.750398
+      },
+      "position_null": false,
+      "coord_source": "radioid_map",
+      "output_hz": 434525000,
+      "shift_hz": -2000000,
+      "mode": "DMR",
+      "dmr_color_code": 1,
+      "location": "Drammen, Akershus",
+      "network": {
+        "ipsc_network": "DMR",
+        "trustee": [
+          "LA0HY"
+        ]
+      },
+      "operational_status": "on-air",
+      "radioid_locator": "242003",
+      "radioid_identity_id": "2635",
+      "entry_kind": "repeater",
+      "exclude_recommended": false,
+      "join_key": "locator"
+    },
+    {
+      "source": "radioid",
+      "callsign": "LA8OR",
+      "lat": 60.2298253,
+      "lon": 10.6066841,
+      "position": {
+        "lat": 60.2298253,
+        "lon": 10.6066841
+      },
+      "position_null": false,
+      "coord_source": "radioid_map",
+      "output_hz": 434600000,
+      "shift_hz": -2000000,
+      "mode": "DMR",
+      "dmr_color_code": 1,
+      "talkgroups": [
+        {
+          "talkgroup": 242,
+          "description": "Norway",
+          "timeslot": 1,
+          "discovery": 0
+        },
+        {
+          "talkgroup": 2421,
+          "description": "S\u00f8r- og \u00d8stlandet",
+          "timeslot": 1,
+          "discovery": 0
+        },
+        {
+          "talkgroup": 242004,
+          "description": "",
+          "timeslot": 2,
+          "discovery": 0
+        },
+        {
+          "talkgroup": 242666,
+          "description": "",
+          "timeslot": 2,
+          "discovery": 0
+        },
+        {
+          "talkgroup": 242675,
+          "description": "",
+          "timeslot": 2,
+          "discovery": 0
+        }
+      ],
+      "location": "Bislingen, Akershus",
+      "network": {
+        "ipsc_network": "BM",
+        "trustee": [
+          "LA8JKA"
+        ]
+      },
+      "operational_status": "on-air",
+      "radioid_locator": "242004",
+      "radioid_identity_id": "2636",
+      "entry_kind": "repeater",
+      "exclude_recommended": false,
+      "join_key": "locator"
+    },
+    {
+      "source": "radioid",
+      "callsign": "LD1NR",
+      "lat": 59.99530485716746,
+      "lon": 11.044386379687774,
+      "position": {
+        "lat": 59.99530485716746,
+        "lon": 11.044386379687774
+      },
+      "position_null": false,
+      "coord_source": "radioid_map",
+      "output_hz": 434637500,
+      "shift_hz": -2000000,
+      "mode": "DMR",
+      "dmr_color_code": 1,
+      "location": "Lillestr\u00f8m, Innlandet",
+      "network": {
+        "ipsc_network": "BM",
+        "trustee": [
+          "LA3EHA"
+        ]
+      },
+      "operational_status": "on-air",
+      "radioid_locator": "242005",
+      "radioid_identity_id": "2637",
+      "entry_kind": "repeater",
+      "exclude_recommended": false,
+      "join_key": "locator"
+    }
+  ],
+  "fixture_note": "Minimal slice from live navigate-me.duckdns.org RadioID Norway mirror, captured 2026-10-12."
+}

@@ -1,0 +1,25 @@
+{
+  "api_only": 2,
+  "attribution": {
+    "provisional": true,
+    "text": "Data courtesy of RadioID.net",
+    "url": "https://www.radioid.net/"
+  },
+  "country": "Andorra",
+  "country_slug": "andorra",
+  "fetched_unix": 1791792212,
+  "files": {
+    "repeaters.json.zst": {
+      "bytes": 610,
+      "sha256": "6c27fcc6186d28deb005b96a3c08690375e213a82da2789a82a5ea1bd79c1277"
+    }
+  },
+  "generation": "20261012T080332Z",
+  "join_key": "locator",
+  "licence": "Provisional attribution until written approval specifies otherwise. Redistribution requires RadioID written permission; see docs/repeater-mirror.md.",
+  "map_only": 0,
+  "matched": 1,
+  "record_count": 3,
+  "schema": 1,
+  "source": "radioid"
+}

@@ -1127,6 +1127,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_network_follow_json(
     ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_repeater_list_ui_json(
+    ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_repeater_query_json(
     ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_set_enabled(
@@ -1136,6 +1138,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_cat_plugin_status_json(
     ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_tick_guest(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_update_repeaters_from_server(
     ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_vfo_set_json(
     ): Int
@@ -1647,6 +1651,8 @@ internal object UniffiLib {
     ): Byte
     external fun uniffi_navi_fn_func_cat_plugin_network_follow_json(`requestJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_repeater_list_ui_json(`lat`: Double,`lon`: Double,`radiusKm`: Double,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_repeater_query_json(`lat`: Double,`lon`: Double,`radiusKm`: Double,`networkId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_set_enabled(`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -1656,6 +1662,8 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_cat_plugin_status_json(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_tick_guest(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_update_repeaters_from_server(`baseUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_vfo_set_json(`requestJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -2459,6 +2467,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_cat_plugin_network_follow_json() and 0xFFFF) != 10673) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_repeater_list_ui_json() and 0xFFFF) != 55266) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_cat_plugin_repeater_query_json() and 0xFFFF) != 65110) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2472,6 +2483,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_cat_plugin_tick_guest() and 0xFFFF) != 25119) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_update_repeaters_from_server() and 0xFFFF) != 43258) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_cat_plugin_vfo_set_json() and 0xFFFF) != 6218) {
@@ -9150,6 +9164,22 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     )
     }
     
+
+        /**
+         * CAT sheet list: includes excluded / position_null / DMR (info-only). Not for auto-tune.
+         */ fun `catPluginRepeaterListUiJson`(`lat`: kotlin.Double, `lon`: kotlin.Double, `radiusKm`: kotlin.Double): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_repeater_list_ui_json(
+    
+        
+        FfiConverterDouble.lower(`lat`),
+        FfiConverterDouble.lower(`lon`),
+        FfiConverterDouble.lower(`radiusKm`),_status)
+}
+    )
+    }
+    
  fun `catPluginRepeaterQueryJson`(`lat`: kotlin.Double, `lon`: kotlin.Double, `radiusKm`: kotlin.Double, `networkId`: kotlin.String?): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
@@ -9205,6 +9235,22 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     UniffiLib.uniffi_navi_fn_func_cat_plugin_tick_guest(
     
         _status)
+}
+    )
+    }
+    
+
+        /**
+         * User-pressed Update only: GET navi-server `/repeaters/…`, verify checksums,
+         * atomically swap into the onboard repeater DB. Never contacts RepeaterBook or
+         * RadioID directly. Missing sources (e.g. RepeaterBook) are reported and skipped.
+         */ fun `catPluginUpdateRepeatersFromServer`(`baseUrl`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_update_repeaters_from_server(
+    
+        
+        FfiConverterString.lower(`baseUrl`),_status)
 }
     )
     }

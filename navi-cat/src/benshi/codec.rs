@@ -10,6 +10,8 @@ pub const GAIA_SOF: u8 = 0xFF;
 pub const GAIA_VER: u8 = 0x01;
 
 pub const CMD_GET_DEV_INFO: u16 = 4;
+/// HTCommander sends a single capability-revision byte with GET_DEV_INFO.
+pub const GET_DEV_INFO_REQ_PAYLOAD: &[u8] = &[3];
 pub const CMD_REGISTER_NOTIFICATION: u16 = 6;
 pub const CMD_EVENT_NOTIFICATION: u16 = 9;
 pub const CMD_READ_SETTINGS: u16 = 10;
@@ -340,6 +342,26 @@ impl SettingsBlock {
         }
         Ok(data)
     }
+
+    /// Channel-B content fingerprint (excludes selected-VFO / doubleChannel).
+    pub fn channel_b_content_fingerprint(&self) -> Vec<u8> {
+        let mut fp = vec![self.channel_b];
+        if self.raw_reply.len() >= 25 {
+            fp.extend_from_slice(&self.raw_reply[16..25.min(self.raw_reply.len())]);
+        }
+        fp
+    }
+
+    /// Operator/hardware-test only: set doubleChannel=1 (VFO A), keep channel B.
+    /// Product auto-tune must not call this — VFO selection belongs to the user.
+    pub fn write_payload_select_vfo_a(&self) -> Result<Vec<u8>, String> {
+        if self.raw_reply.len() < 7 {
+            return Err("settings raw too short".into());
+        }
+        let mut data = self.raw_reply[5..].to_vec();
+        data[1] = (data[1] & !0x30) | (1 << 4);
+        Ok(data)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -433,7 +455,9 @@ mod tests {
 
     #[test]
     fn gaia_resync_skips_noise() {
-        let body = Command::basic(CMD_GET_DEV_INFO, vec![]).unwrap().to_body();
+        let body = Command::basic(CMD_GET_DEV_INFO, GET_DEV_INFO_REQ_PAYLOAD.to_vec())
+            .unwrap()
+            .to_body();
         let frame = gaia_encode(&body).unwrap();
         let mut buf = vec![0xAA, 0xBB];
         buf.extend_from_slice(&frame);
