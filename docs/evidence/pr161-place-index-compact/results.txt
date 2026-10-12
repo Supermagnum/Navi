@@ -1,15 +1,14 @@
-serial=unknown model=sdk_gphone64_x86_64
+serial=emulator-5554 model=sdk_gphone64_x86_64
 work_dir=/data/user/0/no.navi.app/cache/place_index_compact_evidence
-out_dir=/storage/emulated/0/Android/data/no.navi.app/files/pr161-place-index-compact
-BEFORE bytes=12451840 page_count=3040 freelist_count=2428 freelist_ratio=0.7987
-bak_bytes=77824 live_bak_ratio=160.000
+BEFORE bytes=950272 page_count=232 freelist_count=182 freelist_ratio=0.7845
+bak_bytes=77824 live_bak_ratio=12.211
 live_counts={europe/norway/ostlandet=400, europe/norway/vestlandet=200}
 bak_counts={europe/norway/ostlandet=400, europe/norway/vestlandet=200}
 bak_decision_preview delete=true reason=counts_match
 compact_outcome=Done(compacted=true, bakDeleted=true, bakMismatches=[])
-AFTER bytes=2502656 page_count=611 freelist_count=0 freelist_ratio=0.0000
-delta_bytes=9949184 delta_pages=2429 delta_freelist=2428
+AFTER bytes=200704 page_count=49 freelist_count=0 freelist_ratio=0.0000
+delta_bytes=749568 delta_pages=183 delta_freelist=182
 bak_deleted=true reason=counts_match live_vs_bak_rows_equal=true
-DEFER_FIXTURE bytes=3002368 page_count=733 freelist_count=609 freelist_ratio=0.8308
-defer_outcome=Deferred(reason=insufficient_space free=10 need=70111232 live=3002368)
-DEFER_LOG_LINE[PlaceIndexCompact] deferred: insufficient_space free=10 need=70111232 live=3002368
+DEFER_FIXTURE bytes=241664 page_count=59 freelist_count=47 freelist_ratio=0.7966
+defer_outcome=Deferred(reason=insufficient_space free=10 need=67350528 live=241664)
+DEFER_LOG_LINE[PlaceIndexCompact] deferred: insufficient_space free=10 need=67350528 live=241664

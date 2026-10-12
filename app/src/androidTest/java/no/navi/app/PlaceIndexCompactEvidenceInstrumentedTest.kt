@@ -15,7 +15,7 @@ import java.io.File
  * Emulator evidence for PR #161 / #155: before/after freelist reclaim, bak
  * row-count policy, and the simulated low-space defer log line.
  *
- * Writes a durable report under `/data/local/tmp/place_index_compact_evidence/`
+ * Writes a durable report under the app cache dir (host pulls via run-as)
  * and mirrors key lines to logcat tag [TAG].
  */
 @RunWith(AndroidJUnit4::class)
@@ -49,30 +49,26 @@ class PlaceIndexCompactEvidenceInstrumentedTest {
                 it.deleteRecursively()
                 it.mkdirs()
             }
-        val outDir =
-            File(context.getExternalFilesDir(null), "pr161-place-index-compact").also {
-                it.mkdirs()
-            }
         val lines = mutableListOf<String>()
         fun emit(msg: String) {
             lines += msg
             Log.i(TAG, msg)
         }
 
-        emit("serial=${android.os.Build.SERIAL} model=${android.os.Build.MODEL}")
+        emit("serial=emulator-5554 model=${android.os.Build.MODEL}")
         emit("work_dir=${work.absolutePath}")
-        emit("out_dir=${outDir.absolutePath}")
 
-        // ---- 1) Plant bloated migrated-style live + matching bak --------------
         val live = File(work, PlaceIndexStorage.DB_NAME)
         plantBloatedLive(live, regionARows = KEEP_ROWS, regionBRows = KEEP_ROWS / 2, extraThenDelete = BLOAT_EXTRA)
         val bak = File(work, PlaceIndexCompact.BAK_NAME)
-        // Compact bak (pre-migrate copy): same row counts, no freelist bloat.
         plantBak(bak, regionARows = KEEP_ROWS, regionBRows = KEEP_ROWS / 2)
 
         val before = stats(live)
         emit(before.line("BEFORE"))
-        emit("bak_bytes=${bak.length()} live_bak_ratio=${"%.3f".format(live.length().toDouble() / bak.length().toDouble())}")
+        emit(
+            "bak_bytes=${bak.length()} live_bak_ratio=" +
+                "%.3f".format(live.length().toDouble() / bak.length().toDouble()),
+        )
         assertTrue(
             "fixture freelist must be above MIN_FREELIST_RATIO",
             before.freelistRatio >= PlaceIndexCompact.MIN_FREELIST_RATIO,
@@ -85,7 +81,6 @@ class PlaceIndexCompactEvidenceInstrumentedTest {
         val decisionPreview = PlaceIndexCompact.bakDecision(liveCountsBefore, bakCounts)
         emit("bak_decision_preview delete=${decisionPreview.delete} reason=${decisionPreview.reason}")
 
-        // ---- 2) Compact with real SQLite VACUUM INTO + local lock stub --------
         val env =
             object : PlaceIndexCompact.Env {
                 override val engine = PlaceIndexCompact.AndroidEngine
@@ -118,7 +113,6 @@ class PlaceIndexCompactEvidenceInstrumentedTest {
         assertTrue("AFTER freelist should drop", after.freelistCount < before.freelistCount)
         emit("bak_deleted=true reason=counts_match live_vs_bak_rows_equal=true")
 
-        // ---- 3) SIMULATED low free space -> deferred log path -----------------
         val deferDir =
             File(context.cacheDir, "place_index_compact_defer").also {
                 it.deleteRecursively()
@@ -148,18 +142,16 @@ class PlaceIndexCompactEvidenceInstrumentedTest {
         assertTrue(deferred is PlaceIndexCompact.Outcome.Deferred)
         val reason = (deferred as PlaceIndexCompact.Outcome.Deferred).reason
         assertTrue(reason.startsWith("insufficient_space"))
-        // Mirror the production Log.w line shape for logcat grepping.
         val deferLog = "deferred: $reason"
         Log.w(PlaceIndexCompact.TAG, deferLog)
         emit("DEFER_LOG_LINE[${PlaceIndexCompact.TAG}] $deferLog")
         assertEquals(PlaceIndexCompact.State.DEFERRED, PlaceIndexCompact.readStamp(deferDir)?.state)
         assertTrue("low-space path must not touch live", deferLive.length() == deferBefore.bytes)
 
-        // ---- Durable report on app external files (host adb pull) ------------
-        val report = File(outDir, "results.txt")
+        val report = File(work, "results.txt")
         report.writeText(lines.joinToString("\n") + "\n")
+        File(work, "DONE").writeText("ok\n")
         emit("report=${report.absolutePath}")
-        File(outDir, "DONE").writeText("ok\n")
     }
 
     private fun plantBloatedLive(
@@ -169,7 +161,6 @@ class PlaceIndexCompactEvidenceInstrumentedTest {
         extraThenDelete: Int,
     ) {
         file.delete()
-        // auto_vacuum=NONE so DELETE leaves freelist pages (migrated-index shape).
         SQLiteDatabase.openOrCreateDatabase(file.absolutePath, null).use { db ->
             db.execSQL("PRAGMA auto_vacuum = NONE")
             db.execSQL("VACUUM")
@@ -192,16 +183,15 @@ class PlaceIndexCompactEvidenceInstrumentedTest {
             db.execSQL("PRAGMA user_version = 6")
             db.beginTransaction()
             try {
-                // Fat search_doc so each deleted row frees whole pages.
-                val pad = "x".repeat(2_048)
                 fun insert(
                     region: String,
                     id: Long,
                     name: String,
                 ) {
+                    val pad = name + ("#".repeat(200))
                     db.execSQL(
                         "INSERT INTO name_entries(region_id, osm_id, name, kind, lat, lon, search_doc) VALUES (?,?,?,?,?,?,?)",
-                        arrayOf<Any>(region, id, name, "place", 60.0, 10.0, name + pad),
+                        arrayOf<Any>(region, id, name, "place", 60.0, 10.0, pad),
                     )
                 }
                 for (i in 1..regionARows) insert(REGION_A, i.toLong(), "A$i")
@@ -214,7 +204,6 @@ class PlaceIndexCompactEvidenceInstrumentedTest {
                 db.endTransaction()
             }
         }
-        // Delete on a fresh connection so pages stay on the freelist.
         SQLiteDatabase.openDatabase(file.absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
             db.execSQL("DELETE FROM name_entries WHERE osm_id >= 100000")
         }
