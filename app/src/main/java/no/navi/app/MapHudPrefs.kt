@@ -50,6 +50,14 @@ object MapHudPrefs {
     private const val KEY_CAT_PLUGIN_ENABLED = "cat_plugin_enabled"
     private const val KEY_CAT_RIG_MODEL = "cat_rig_model"
     private const val KEY_CAT_BAUD_RATE = "cat_baud_rate"
+    private const val KEY_CAT_BACKEND = "cat_backend"
+    private const val KEY_CAT_SCRATCH_CHANNEL = "cat_scratch_channel"
+
+    /** Hamlib TCP / FFI vs native Benshi Bluetooth. */
+    const val CAT_BACKEND_HAMLIB = "hamlib"
+    const val CAT_BACKEND_BENSHI = "benshi"
+    const val CAT_BACKEND_DEFAULT = CAT_BACKEND_HAMLIB
+    const val CAT_SCRATCH_CHANNEL_DEFAULT = 0
 
     /**
      * Product default for the weather plugin enable toggle.
@@ -905,6 +913,51 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putInt(KEY_CAT_BAUD_RATE, v)
+            .apply()
+    }
+
+    fun loadCatBackend(context: Context): String {
+        val v =
+            context
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(KEY_CAT_BACKEND, CAT_BACKEND_DEFAULT)
+                ?: CAT_BACKEND_DEFAULT
+        return when (v) {
+            CAT_BACKEND_BENSHI -> CAT_BACKEND_BENSHI
+            else -> CAT_BACKEND_HAMLIB
+        }
+    }
+
+    fun saveCatBackend(
+        context: Context,
+        backend: String,
+    ) {
+        val v =
+            when (backend) {
+                CAT_BACKEND_BENSHI -> CAT_BACKEND_BENSHI
+                else -> CAT_BACKEND_HAMLIB
+            }
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_CAT_BACKEND, v)
+            .apply()
+    }
+
+    fun loadCatScratchChannel(context: Context): Int =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt(KEY_CAT_SCRATCH_CHANNEL, CAT_SCRATCH_CHANNEL_DEFAULT)
+            .coerceIn(0, 255)
+
+    fun saveCatScratchChannel(
+        context: Context,
+        channel: Int,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_CAT_SCRATCH_CHANNEL, channel.coerceIn(0, 255))
             .apply()
     }
 }

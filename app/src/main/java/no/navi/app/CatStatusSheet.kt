@@ -34,6 +34,10 @@ data class CatUiState(
     val port: String = "4532",
     val rigModel: Int = MapHudPrefs.CAT_RIG_MODEL_DEFAULT,
     val baudRate: Int = MapHudPrefs.CAT_BAUD_RATE_DEFAULT,
+    /** [MapHudPrefs.CAT_BACKEND_HAMLIB] or [MapHudPrefs.CAT_BACKEND_BENSHI]. */
+    val backend: String = MapHudPrefs.CAT_BACKEND_DEFAULT,
+    /** Scratch channel index for Benshi channel-A programming. */
+    val scratchChannel: Int = MapHudPrefs.CAT_SCRATCH_CHANNEL_DEFAULT,
     val followNetworkId: String = "LA5MR",
     val lastMessage: String = "",
 )
@@ -46,6 +50,8 @@ fun CatStatusSheet(
     onPortChange: (String) -> Unit,
     onRigModelChange: (Int) -> Unit,
     onBaudRateChange: (Int) -> Unit,
+    onBackendChange: (String) -> Unit,
+    onScratchChannelChange: (Int) -> Unit,
     onFollowNetworkChange: (String) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
@@ -106,11 +112,54 @@ fun CatStatusSheet(
             if (follow.isNotBlank()) {
                 Text("Network follow: $follow", style = MaterialTheme.typography.bodySmall)
             }
+            Text("Backend", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Plugin controls VFO 1 only; VFO 2 is left to the user.",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("cat_vfo1_only_note"),
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.testTag("cat_backend_presets"),
+            ) {
+                FilterChip(
+                    selected = state.backend == MapHudPrefs.CAT_BACKEND_HAMLIB,
+                    onClick = { onBackendChange(MapHudPrefs.CAT_BACKEND_HAMLIB) },
+                    label = { Text("Hamlib") },
+                    modifier = Modifier.testTag("cat_backend_hamlib"),
+                )
+                FilterChip(
+                    selected = state.backend == MapHudPrefs.CAT_BACKEND_BENSHI,
+                    onClick = { onBackendChange(MapHudPrefs.CAT_BACKEND_BENSHI) },
+                    label = { Text("Benshi") },
+                    modifier = Modifier.testTag("cat_backend_benshi"),
+                )
+            }
+            if (state.backend == MapHudPrefs.CAT_BACKEND_BENSHI) {
+                OutlinedTextField(
+                    value = state.scratchChannel.toString(),
+                    onValueChange = { raw ->
+                        val digits = raw.filter { it.isDigit() }
+                        onScratchChannelChange(
+                            digits.toIntOrNull()?.coerceIn(0, 255)
+                                ?: MapHudPrefs.CAT_SCRATCH_CHANNEL_DEFAULT,
+                        )
+                    },
+                    label = { Text("Scratch channel (A)") },
+                    singleLine = true,
+                    supportingText = {
+                        Text("Used when frequency mode is unavailable (e.g. on VFO 2)")
+                    },
+                    modifier = Modifier.fillMaxWidth().testTag("cat_scratch_channel_field"),
+                )
+            }
             OutlinedTextField(
                 value = state.host,
                 onValueChange = onHostChange,
                 label = { Text("rigctld host") },
                 singleLine = true,
+                enabled = state.backend == MapHudPrefs.CAT_BACKEND_HAMLIB,
                 modifier = Modifier.fillMaxWidth().testTag("cat_host_field"),
             )
             OutlinedTextField(

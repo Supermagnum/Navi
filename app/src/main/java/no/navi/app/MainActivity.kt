@@ -1192,6 +1192,8 @@ private fun NaviMapScreen() {
             CatUiState(
                 rigModel = MapHudPrefs.loadCatRigModel(context),
                 baudRate = MapHudPrefs.loadCatBaudRate(context),
+                backend = MapHudPrefs.loadCatBackend(context),
+                scratchChannel = MapHudPrefs.loadCatScratchChannel(context),
             ),
         )
     }
@@ -6219,10 +6221,20 @@ private fun NaviMapScreen() {
                     catUi = catUi.copy(baudRate = baud)
                     MapHudPrefs.saveCatBaudRate(context, baud)
                 },
+                onBackendChange = {
+                    catUi = catUi.copy(backend = it)
+                    MapHudPrefs.saveCatBackend(context, it)
+                },
+                onScratchChannelChange = {
+                    catUi = catUi.copy(scratchChannel = it)
+                    MapHudPrefs.saveCatScratchChannel(context, it)
+                },
                 onFollowNetworkChange = { catUi = catUi.copy(followNetworkId = it) },
                 onConnect = {
                     MapHudPrefs.saveCatRigModel(context, catUi.rigModel)
                     MapHudPrefs.saveCatBaudRate(context, catUi.baudRate)
+                    MapHudPrefs.saveCatBackend(context, catUi.backend)
+                    MapHudPrefs.saveCatScratchChannel(context, catUi.scratchChannel)
                     // Baud is applied when opening USB/BT serial via CatSerialOpenParams
                     // before CatSerialLoopbackBridge.fromSerialStreams(...).
                     val openParams =
