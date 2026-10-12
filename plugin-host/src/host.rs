@@ -641,6 +641,36 @@ fn install_imports(
         )?;
     }
 
+    if allowed.contains(&Capability::SensorsRead) {
+        linker.func_wrap(
+            "navi",
+            "sensor_availability",
+            |mut caller: Caller<'_, StoreData>,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
+                let view = caller.data().api.sensor_availability();
+                write_json_view(&mut caller, out_ptr, out_cap, &view, "sensor_availability")
+            },
+        )?;
+        linker.func_wrap(
+            "navi",
+            "sensor_read",
+            |mut caller: Caller<'_, StoreData>,
+             kind: u32,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
+                // Unknown kind codes read as unavailable (never a zero sample).
+                let view = match crate::abi::SensorKind::from_code(kind) {
+                    Some(k) => caller.data().api.sensor_read(k),
+                    None => crate::abi::SensorReadView::default(),
+                };
+                write_json_view(&mut caller, out_ptr, out_cap, &view, "sensor_read")
+            },
+        )?;
+    }
+
     // Always provide a no-op alloc helper so guests can request scratch space
     // without WASI. Guests that ship their own allocator ignore this.
     linker.func_wrap(
