@@ -9,11 +9,12 @@
 use std::env;
 
 use navi::{
-    plan_car_route, plan_hiking_route, set_route_plan_timing_enabled, FfiTollPolicy,
-    FfiVehicleLimits, TravelProfile,
+    ensure_corridor_skeleton, plan_car_route, plan_hiking_route, set_route_plan_timing_enabled,
+    FfiTollPolicy, FfiVehicleLimits, TravelProfile,
 };
 
 fn main() {
+    navi::bin_freshness::require_fresh_binary("navi-indexed-plan-bench");
     let args: Vec<String> = env::args().collect();
     let pbf = arg(&args, "--pbf");
     let elev = arg(&args, "--elev-dir");
@@ -29,9 +30,47 @@ fn main() {
             .as_str(),
         "1" | "true" | "yes" | "on"
     );
+    let use_t6 = matches!(
+        arg_or(&args, "--t6", "false")
+            .to_ascii_lowercase()
+            .as_str(),
+        "1" | "true" | "yes" | "on"
+    );
+    let vehicle = if use_t6 {
+        FfiVehicleLimits {
+            axle_weight_kg: Some(1661.2),
+            bogie_weight_kg: None,
+            height_m: Some(2.477),
+            width_m: Some(2.297),
+            length_m: Some(5.304),
+            total_weight_kg: Some(3020.4),
+        }
+    } else {
+        FfiVehicleLimits {
+            axle_weight_kg: None,
+            bogie_weight_kg: None,
+            height_m: None,
+            width_m: None,
+            length_m: None,
+            total_weight_kg: None,
+        }
+    };
 
     let _ = std::fs::create_dir_all(&cache);
-    eprintln!("planning profile={profile:?} eco={use_eco} pbf={pbf} elev={elev} cache={cache}");
+    eprintln!(
+        "planning profile={profile:?} eco={use_eco} t6={use_t6} pbf={pbf} elev={elev} cache={cache}"
+    );
+    if matches!(
+        arg_or(&args, "--ensure-skel", "false")
+            .to_ascii_lowercase()
+            .as_str(),
+        "1" | "true" | "yes" | "on"
+    ) {
+        for stem in ["ostlandet-latest", "vestlandet-latest"] {
+            let msg = ensure_corridor_skeleton(cache.clone(), stem.to_string(), profile);
+            eprintln!("ensure_skel {stem}: {}", msg.lines().next().unwrap_or(""));
+        }
+    }
     set_route_plan_timing_enabled(true);
 
     let t0 = std::time::Instant::now();
@@ -73,14 +112,7 @@ fn main() {
             FfiTollPolicy::Allow,
             false,
             false,
-            FfiVehicleLimits {
-                axle_weight_kg: None,
-                bogie_weight_kg: None,
-                height_m: None,
-                width_m: None,
-                length_m: None,
-                total_weight_kg: None,
-            },
+            vehicle,
             false,
             String::new(),
             String::new(),

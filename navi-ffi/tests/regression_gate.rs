@@ -1645,6 +1645,7 @@ fn run_gate_isolated(
 #[test]
 #[ignore = "needs NAVI_GATE_PACKS (device long-trip packs) and NAVI_GATE_REFS (reference lines)"]
 fn long_trip_regression_gate() {
+    navi::bin_freshness::require_fresh_binary("regression_gate");
     let packs = match std::env::var("NAVI_GATE_PACKS") {
         Ok(p) if Path::new(&p).is_dir() => PathBuf::from(p),
         _ => {

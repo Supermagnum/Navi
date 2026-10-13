@@ -54,6 +54,8 @@ use serde_json::json;
 
 uniffi::setup_scaffolding!();
 
+pub mod bin_freshness;
+
 mod camping_plugin;
 pub use camping_plugin::*;
 mod cat_plugin;
