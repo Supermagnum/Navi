@@ -1183,7 +1183,6 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_vfo_set_json(
     ): Int
-    ): Int
     external fun uniffi_navi_checksum_func_imu_plugin_android_sensor_types(
     ): Int
     external fun uniffi_navi_checksum_func_imu_plugin_calibration_instruction(
@@ -1756,7 +1755,6 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_cat_plugin_update_repeaters_from_server(`baseUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_vfo_set_json(`requestJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_imu_plugin_android_sensor_types(`kindCode`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
