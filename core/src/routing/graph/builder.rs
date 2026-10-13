@@ -3089,8 +3089,58 @@ fn directed_access(edge: &Edge, profile: RoutingProfile) -> (bool, bool) {
 }
 
 fn parse_metric(raw: &str) -> Option<f64> {
-    let cleaned = raw.trim().to_lowercase().replace("t", "").replace("m", "");
-    cleaned.trim().parse::<f64>().ok()
+    let s = raw.trim().to_lowercase();
+    if s.is_empty()
+        || matches!(
+            s.as_str(),
+            "none" | "default" | "unsigned" | "below_default" | "no" | "yes"
+        )
+    {
+        return None;
+    }
+    // Feet + inches: 6\'6\" or 6\'6
+    if let Some(ft_idx) = s.find('\'') {
+        let feet: f64 = s[..ft_idx].trim().replace(',', ".").parse().ok()?;
+        let rest = s[ft_idx + 1..].replace('"', "").trim().replace(',', ".");
+        let inches: f64 = if rest.is_empty() {
+            0.0
+        } else {
+            rest.parse().ok()?
+        };
+        return Some(feet * 0.3048 + inches * 0.0254);
+    }
+    let mut unit = None;
+    let mut num = s.as_str();
+    for (suffix, u) in [
+        ("tonnes", "t"),
+        ("tonne", "t"),
+        ("tons", "t"),
+        ("ton", "t"),
+        ("kg", "kg"),
+        ("metres", "m"),
+        ("meters", "m"),
+        ("metre", "m"),
+        ("meter", "m"),
+        ("ft", "ft"),
+        ("t", "t"),
+        ("m", "m"),
+    ] {
+        if num.ends_with(suffix) {
+            num = num[..num.len() - suffix.len()].trim();
+            unit = Some(u);
+            break;
+        }
+    }
+    let num = num.replace(',', ".").trim().to_string();
+    if num.is_empty() || !num.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-') {
+        return None;
+    }
+    let v: f64 = num.parse().ok()?;
+    match unit {
+        Some("kg") => Some(v / 1000.0), // store as tonnes when used for maxweight*
+        Some("ft") => Some(v * 0.3048),
+        _ => Some(v), // bare number / t / m — OSM default units
+    }
 }
 
 fn is_motorway_highway(highway: &str) -> bool {
@@ -4611,6 +4661,18 @@ mod tests {
     #[test]
 
     #[test]
+    fn parse_metric_units_and_sentinels() {
+        assert_eq!(parse_metric("1.9 m"), Some(1.9));
+        assert_eq!(parse_metric("3.5t"), Some(3.5));
+        assert_eq!(parse_metric("3500 kg"), Some(3.5));
+        assert_eq!(parse_metric("2,5"), Some(2.5));
+        assert_eq!(parse_metric("default"), None);
+        assert_eq!(parse_metric("none"), None);
+        assert_eq!(parse_metric("below_default"), None);
+        let ft = parse_metric("6'6\"").expect("feet-inches");
+        assert!((ft - 1.9812).abs() < 1e-4, "got {ft}");
+    }
+
     #[test]
     fn vehicle_height_snap_skips_low_clearance_destination_stub() {
         use geo_types::Coord;

@@ -485,8 +485,58 @@ fn profile_label(profile: RoutingProfile) -> &'static str {
 }
 
 fn parse_metric(raw: &str) -> Option<f64> {
-    let cleaned = raw.trim().to_lowercase().replace(['t', 'm'], "");
-    cleaned.trim().parse::<f64>().ok()
+    let s = raw.trim().to_lowercase();
+    if s.is_empty()
+        || matches!(
+            s.as_str(),
+            "none" | "default" | "unsigned" | "below_default" | "no" | "yes"
+        )
+    {
+        return None;
+    }
+    // Feet + inches: 6\'6\" or 6\'6
+    if let Some(ft_idx) = s.find('\'') {
+        let feet: f64 = s[..ft_idx].trim().replace(',', ".").parse().ok()?;
+        let rest = s[ft_idx + 1..].replace('"', "").trim().replace(',', ".");
+        let inches: f64 = if rest.is_empty() {
+            0.0
+        } else {
+            rest.parse().ok()?
+        };
+        return Some(feet * 0.3048 + inches * 0.0254);
+    }
+    let mut unit = None;
+    let mut num = s.as_str();
+    for (suffix, u) in [
+        ("tonnes", "t"),
+        ("tonne", "t"),
+        ("tons", "t"),
+        ("ton", "t"),
+        ("kg", "kg"),
+        ("metres", "m"),
+        ("meters", "m"),
+        ("metre", "m"),
+        ("meter", "m"),
+        ("ft", "ft"),
+        ("t", "t"),
+        ("m", "m"),
+    ] {
+        if num.ends_with(suffix) {
+            num = num[..num.len() - suffix.len()].trim();
+            unit = Some(u);
+            break;
+        }
+    }
+    let num = num.replace(',', ".").trim().to_string();
+    if num.is_empty() || !num.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-') {
+        return None;
+    }
+    let v: f64 = num.parse().ok()?;
+    match unit {
+        Some("kg") => Some(v / 1000.0), // store as tonnes when used for maxweight*
+        Some("ft") => Some(v * 0.3048),
+        _ => Some(v), // bare number / t / m — OSM default units
+    }
 }
 
 fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
