@@ -1278,8 +1278,8 @@ Debug installs use the Android **debug** keystore. A **release** package is what
 you sideload as release, hand to F-Droid-style checks, or smoke-test as an AAB.
 
 A prebuilt upload-key-signed release APK for testers is committed at
-[`compiled/navi-release.apk`](compiled/navi-release.apk) (`versionName` 0.3.22-beta,
-`versionCode` 27 on this branch; see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
+[`compiled/navi-release.apk`](compiled/navi-release.apk) (`versionName` 0.3.24-beta,
+`versionCode` 29; see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
 
 1. **Native library** for every ABI you ship (store AABs usually need both):
 
