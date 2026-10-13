@@ -1,0 +1,56 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/log-hello/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/busy-loop/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/trap-guest/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/memory-bomb/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/weather/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/datex/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/poi-lookahead/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/imu/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/right-to-roam-camping/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+    Finished `release` profile [optimized] target(s) in 0.47s
+     Running tests/regression_gate.rs (target/release/deps/regression_gate-3f163f2d3a877258)
+
+running 1 test
+[gate] isolated process a_bevensen_vaga_dalsoren
+
+running 1 test
+[gate] country polygons warm: 11.2 s, 2345092 bytes
+[gate] a_bevensen_vaga_dalsoren ...
+[gate] a_bevensen_vaga_dalsoren Otta-Lom on ref 15: 97.1 %; labels "Ottadalsvegen" 58.5 km, "Bergomsvegen" 0.7 km, "Byrebergtunnelen" 0.5 km, "Høgbrua" 0.3 km, "Sundbrua" 0.2 km, "15" 0.1 km
+test long_trip_regression_gate has been running for over 60 seconds
+test long_trip_regression_gate has been running for over 60 seconds
+[gate] a_bevensen_vaga_dalsoren Otta-Lom on ref 15: 97.1 %; labels "Ottadalsvegen" 58.5 km, "Bergomsvegen" 0.7 km, "Byrebergtunnelen" 0.5 km, "Høgbrua" 0.3 km, "Sundbrua" 0.2 km, "15" 0.1 km
+[gate] a_bevensen_vaga_dalsoren timing run 2: wall 33.6 s
+[gate] a_bevensen_vaga_dalsoren Otta-Lom on ref 15: 97.1 %; labels "Ottadalsvegen" 58.5 km, "Bergomsvegen" 0.7 km, "Byrebergtunnelen" 0.5 km, "Høgbrua" 0.3 km, "Sundbrua" 0.2 km, "15" 0.1 km
+[gate] a_bevensen_vaga_dalsoren timing run 3: wall 32.8 s
+[gate] a_bevensen_vaga_dalsoren PASS: 1435.2 km (polyline 1433.6), 991 min, ferries ["Rødby (DK) - Puttgarden (D)"], vias [2.0] m, wall 33.3 s, peak 909 MB, terminate found
+[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+test long_trip_regression_gate ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 111.31s
+
+[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+test long_trip_regression_gate ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 111.39s
+

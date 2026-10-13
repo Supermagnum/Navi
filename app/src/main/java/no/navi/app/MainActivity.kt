@@ -622,6 +622,10 @@ data class MapRouteState(
     val gpsLat: Double = 0.0,
     val gpsLon: Double = 0.0,
     val gpsAccuracyM: Float? = null,
+    /** True while IMU/route dead reckoning is driving the map mark (tunnel / GNSS gap). */
+    val gpsEstimated: Boolean = false,
+    /** True after DR give-up — marker frozen, guidance should not advance. */
+    val positionLost: Boolean = false,
     /**
      * When true (default), the camera centers on live GPS for zoom / GPS updates.
      * Manual pan sets this false until the user taps Recenter.
@@ -1125,6 +1129,9 @@ private fun NaviMapScreen() {
     var heightM by remember { mutableStateOf("") }
     var widthM by remember { mutableStateOf("") }
     var lengthM by remember { mutableStateOf("") }
+    // Persisted total weight (no product UI field). Must survive [persistVehicle]
+    // so T6 / clearance saves do not wipe maxweight avoidance.
+    var totalWeightKgStored by remember { mutableStateOf<Double?>(null) }
     var showProfilePanel by remember { mutableStateOf(true) }
     var showVehiclePanel by remember { mutableStateOf(true) }
     var showRoutesPanel by remember { mutableStateOf(true) }
@@ -1310,7 +1317,22 @@ private fun NaviMapScreen() {
             profile = profile,
             professionalDriver = campingProfessionalDriver,
         )
-        val call = CampingPluginApi.suggestAlongRoute(12u)
+        val call =
+            runCatching { CampingPluginApi.suggestAlongRoute(12u) }
+                .getOrElse { err ->
+                    android.util.Log.e(
+                        "NaviCamping",
+                        "suggestAlongRoute failed: ${err.message}",
+                        err,
+                    )
+                    campingSuggestStatus =
+                        CampingSuggestStatus(
+                            kind = "ERROR",
+                            message = err.message.orEmpty(),
+                        )
+                    campingSuggestResult = null
+                    return@LaunchedEffect
+                }
         campingSessionDisableMessage = uniffi.navi.campingPluginSessionDisabledReason()
         campingSuggestStatus =
             CampingSuggestStatus(
@@ -1346,6 +1368,21 @@ private fun NaviMapScreen() {
                         layerEpoch = mapState.layerEpoch + 1,
                     )
             }
+            // Debug evidence: full suggest JSON for per-region tallies / screenshots.
+            if ((context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                runCatching {
+                    val dir =
+                        PlanReportStore.canonicalDir(context, NaviAppData.resolve(context))
+                    PlanReportStore.writeText(dir, "camping-suggest.json", json)
+                    val ext = PlanReportStore.externalDir(context)
+                    if (ext != null) {
+                        PlanReportStore.mirrorTo(
+                            java.io.File(ext, "camping-suggest.json"),
+                            java.io.File(dir, "camping-suggest.json"),
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -1354,18 +1391,28 @@ private fun NaviMapScreen() {
         val n = wildCampingSiteCount(campingSuggestResult)
         val kind = campingSuggestStatus?.kind.orEmpty()
         val msg = campingSuggestStatus?.message.orEmpty()
+        val (byCountry, bySub) = wildCampingRegionTallies(campingSuggestResult)
         if (
             n != routePlanStats.wildCampingSiteCount ||
             kind != routePlanStats.wildCampingStatusKind ||
-            msg != routePlanStats.wildCampingStatusMessage
+            msg != routePlanStats.wildCampingStatusMessage ||
+            byCountry != routePlanStats.wildCampingByCountry ||
+            bySub != routePlanStats.wildCampingBySubdivision
         ) {
             routePlanStats =
                 routePlanStats.copy(
                     wildCampingSiteCount = n,
                     wildCampingStatusKind = kind,
                     wildCampingStatusMessage = msg,
+                    wildCampingByCountry = byCountry,
+                    wildCampingBySubdivision = bySub,
                 )
             NaviMapTestHooks.lastRoutePlanStatsJson = routePlanStats.toReportJson().toString()
+            PlanReportStore.patchResultEnumerations(
+                context,
+                NaviAppData.resolve(context),
+                routePlanStats.toReportJson(),
+            )
         }
     }
 
@@ -1455,15 +1502,38 @@ private fun NaviMapScreen() {
                     NaviMapTestHooks.restoreAvoidFerriesAfterPlan = avoidFerries
                     avoidFerries = on
                 }
+                trip.stayInCountry?.let { on ->
+                    stayInCountry = on
+                    MapHudPrefs.saveStayInCountry(context, on)
+                }
                 trip.ecoModeEnabled?.let { on ->
                     // driveHud is declared later in this composable; set Compose eco
                     // state + hook so the profile/eco poll applies ecoActive.
                     ecoEnabled = on
                     NaviMapTestHooks.requestEcoMode = on
                 }
-                campingPluginEnabled = false
-                uniffi.navi.campingPluginSetEnabled(false)
-                MapHudPrefs.saveCampingPluginEnabled(context, false)
+                val campingOn = trip.campingPluginEnabled == true
+                campingPluginEnabled = campingOn
+                uniffi.navi.campingPluginSetEnabled(campingOn)
+                MapHudPrefs.saveCampingPluginEnabled(context, campingOn)
+                trip.poiLookaheadEnabled?.let { on ->
+                    poiLookaheadEnabled = on
+                    MapHudPrefs.savePoiLookaheadEnabled(context, on)
+                }
+                // Debug intent may have written vehicle_limits (e.g. total_weight_kg);
+                // refresh Compose mirrors so a later Save does not wipe them.
+                runCatching {
+                    val lim = loadVehicleLimits(NaviAppData.resolve(context).absolutePath)
+                    axleKg = lim.axleWeightKg?.toString().orEmpty()
+                    bogieKg = lim.bogieWeightKg?.toString().orEmpty()
+                    heightM = lim.heightM?.toString().orEmpty()
+                    widthM = lim.widthM?.toString().orEmpty()
+                    lengthM = lim.lengthM?.toString().orEmpty()
+                    totalWeightKgStored = lim.totalWeightKg
+                }
+                trip.avoidMotorways?.let { avoidMotorways = it }
+                trip.avoidTunnels?.let { avoidTunnels = it }
+                trip.avoidTolls?.let { avoidTolls = it }
                 NaviMapTestHooks.forceLocalPbf = trip.forceLocalPbf
                 if (trip.injectGpsAtFrom) {
                     // Pin puck at from immediately and again after plan so the
@@ -1518,6 +1588,21 @@ private fun NaviMapScreen() {
     var routeManeuvers by remember { mutableStateOf<List<RouteManeuver>>(emptyList()) }
     var simulating by remember { mutableStateOf(false) }
     var routeSimulator by remember { mutableStateOf<RouteSimulator?>(null) }
+    val routeSamplesRef =
+        remember {
+            java.util.concurrent.atomic
+                .AtomicReference<List<RouteSimSample>>(emptyList())
+        }
+    routeSamplesRef.set(routeSamples)
+    val deadReckoning =
+        remember {
+            DeadReckoningController(
+                constraintProvider = {
+                    val s = routeSamplesRef.get()
+                    if (s.size >= 2) DrConstraint(s) else null
+                },
+            )
+        }
     val progressTrackerRef =
         remember {
             java.util.concurrent.atomic
@@ -1858,6 +1943,15 @@ private fun NaviMapScreen() {
         routePlanStats =
             routePlanStats.copy(attractionCount = n, attractionByType = byType)
         NaviMapTestHooks.lastRoutePlanStatsJson = routePlanStats.toReportJson().toString()
+        android.util.Log.i(
+            "NaviAttractions",
+            "lookahead tally attraction_count=$n types=${byType.size} samples=${samples.size}",
+        )
+        PlanReportStore.patchResultEnumerations(
+            context,
+            dataDir,
+            routePlanStats.toReportJson(),
+        )
     }
 
     LaunchedEffect(packCatalogEpoch) {
@@ -2820,7 +2914,8 @@ private fun NaviMapScreen() {
                             addAll(remainingVias)
                             add(dest)
                         }
-                    val ecoForPlan = if (ecoModeToggleable(profile)) ecoEnabled else true
+                    val ecoForPlan =
+                        if (ecoModeToggleable(profile)) ecoEnabled else ecoModeDefault(profile)
                     val vehicle =
                         runCatching { loadVehicleLimits(dataDir.absolutePath) }
                             .getOrElse {
@@ -2927,7 +3022,9 @@ private fun NaviMapScreen() {
                 heightM = if (showVehicleLimitsPanel) heightM.toDoubleOrNull() else null,
                 widthM = if (showVehicleClearance) widthM.toDoubleOrNull() else null,
                 lengthM = if (showVehicleClearance) lengthM.toDoubleOrNull() else null,
-                totalWeightKg = null,
+                // No product UI for total weight; keep the stored/spec value so
+                // clearance saves do not disable maxweight avoidance.
+                totalWeightKg = totalWeightKgStored,
             )
         val ok = saveVehicleLimits(dataDir.absolutePath, limits)
         if (ok) {
@@ -2936,6 +3033,7 @@ private fun NaviMapScreen() {
             limits.heightM?.let { DiagnosticLog.logSettingSaved("vehicle_height_m", it) }
             limits.widthM?.let { DiagnosticLog.logSettingSaved("vehicle_width_m", it) }
             limits.lengthM?.let { DiagnosticLog.logSettingSaved("vehicle_length_m", it) }
+            limits.totalWeightKg?.let { DiagnosticLog.logSettingSaved("vehicle_total_weight_kg", it) }
         }
         status = if (ok) "Vehicle limits saved" else "Failed to save vehicle limits"
     }
@@ -3521,7 +3619,7 @@ private fun NaviMapScreen() {
                 """{"name":${org.json.JSONObject.quote(it.name)},"lat":${it.lat},"lon":${it.lon}}"""
             }
         val ecoForPlan =
-            if (ecoModeToggleable(profile)) ecoEnabled else true
+            if (ecoModeToggleable(profile)) ecoEnabled else ecoModeDefault(profile)
         RoutingPlanLog.logPlanSettings(
             dataDir = dataDir,
             ecoEnabled = ecoForPlan,
@@ -3532,20 +3630,6 @@ private fun NaviMapScreen() {
             avoidFerries = avoidFerries,
             avoidTunnels = avoidTunnels,
         )
-        val settingsOk =
-            !(ecoModeToggleable(profile) && ecoForPlan) &&
-                !campingPluginEnabled
-        if (!settingsOk) {
-            val why =
-                "FAIL: plan_settings abort eco=$ecoForPlan camping_plugin=$campingPluginEnabled " +
-                    "avoid_mw=$avoidMotorways avoid_tolls=$avoidTolls avoid_ferries=$avoidFerries " +
-                    "avoid_tunnels=$avoidTunnels"
-            android.util.Log.e("NaviRouting", why)
-            RoutingPlanLog.failed(ecoForPlan, 0, why, null)
-            status = why
-            planNotice = why
-            return@LaunchedEffect
-        }
         planAbort.set(false)
         val planStarted = System.currentTimeMillis()
         RoutingPlanLog.start(
@@ -4241,6 +4325,7 @@ private fun NaviMapScreen() {
         heightM = limits.heightM?.toString().orEmpty()
         widthM = limits.widthM?.toString().orEmpty()
         lengthM = limits.lengthM?.toString().orEmpty()
+        totalWeightKgStored = limits.totalWeightKg
         refreshRoutes()
         refreshPlaces()
         updateReminderDue = osmWeeklyReminderDue(dataDir.absolutePath)
@@ -4338,16 +4423,63 @@ private fun NaviMapScreen() {
 
         fun applyFix(loc: Location?) {
             if (loc == null) return
-            val provider = loc.provider.orEmpty()
+            val providerIn = loc.provider.orEmpty()
+            val fromDr =
+                providerIn == DeadReckoningController.PROVIDER_ESTIMATED ||
+                    providerIn == DeadReckoningController.PROVIDER_LOST
             val testOrSim =
-                provider == "navi-route-sim" || provider == "navi-test-inject"
+                providerIn == "navi-route-sim" || providerIn == "navi-test-inject"
             // While simulating, ignore real LocationManager fixes.
             if (simulatingRef.get() && !testOrSim) return
             // Instrumented off-route injects: keep live GPS from clobbering.
-            if (NaviMapTestHooks.ignoreLiveGpsFixes && !testOrSim) return
+            if (NaviMapTestHooks.ignoreLiveGpsFixes && !testOrSim && !fromDr) return
+
+            // Host dead reckoning (tunnels / GNSS gaps). Route-sim already
+            // supplies continuous positions; DR owns live LocationManager gaps.
+            // Test injects still seed the engine so instrumented tunnel tests can
+            // enter Estimating after [NaviMapTestHooks.deadReckoningNotifyLost].
+            var loc = loc
+            var gpsEstimated = false
+            var positionLost = false
+            if (!fromDr && !simulatingRef.get()) {
+                val out = deadReckoning.onLocation(loc)
+                NaviMapTestHooks.lastDrMode = out.mode.name
+                NaviMapTestHooks.lastDrExitErrorM =
+                    out.exitErrorM ?: deadReckoning.engine().lastExitErrorM()
+                if (!testOrSim && (out.estimated || out.positionLost)) {
+                    gpsEstimated = out.estimated
+                    positionLost = out.positionLost
+                    loc =
+                        Location(
+                            if (out.positionLost) {
+                                DeadReckoningController.PROVIDER_LOST
+                            } else {
+                                DeadReckoningController.PROVIDER_ESTIMATED
+                            },
+                        ).apply {
+                            latitude = out.lat
+                            longitude = out.lon
+                            time = System.currentTimeMillis()
+                            if (out.speedMps.isFinite() && out.speedMps > 0.0) {
+                                speed = out.speedMps.toFloat()
+                            }
+                            bearing = out.bearingDeg.toFloat()
+                            accuracy = if (out.positionLost) 9_999f else 45f
+                        }
+                }
+            } else if (fromDr) {
+                gpsEstimated = providerIn == DeadReckoningController.PROVIDER_ESTIMATED
+                positionLost = providerIn == DeadReckoningController.PROVIDER_LOST
+                NaviMapTestHooks.lastDrMode =
+                    if (positionLost) DrMode.PositionLost.name else DrMode.Estimating.name
+            }
+
+            val provider = loc.provider.orEmpty()
             // Always update map GPS mark from a valid fix.
             if (loc.latitude != 0.0 || loc.longitude != 0.0) {
                 NaviMapTestHooks.lastGpsProvider = provider
+                NaviMapTestHooks.gpsEstimated = gpsEstimated
+                NaviMapTestHooks.positionLost = positionLost
                 // Mirror into native so lastGpsFix() / currentSpeedKmh() stay live.
                 val speedKmh =
                     if (loc.hasSpeed() && loc.speed.isFinite() && loc.speed >= 0f) {
@@ -4390,6 +4522,8 @@ private fun NaviMapScreen() {
                                 gpsLat = loc.latitude,
                                 gpsLon = loc.longitude,
                                 gpsAccuracyM = acc,
+                                gpsEstimated = gpsEstimated,
+                                positionLost = positionLost,
                                 followGps = false,
                                 layerEpoch = mapState.layerEpoch + 1,
                             )
@@ -4398,6 +4532,8 @@ private fun NaviMapScreen() {
                                 gpsLat = loc.latitude,
                                 gpsLon = loc.longitude,
                                 gpsAccuracyM = acc,
+                                gpsEstimated = gpsEstimated,
+                                positionLost = positionLost,
                                 cameraLat = loc.latitude,
                                 cameraLon = loc.longitude,
                                 layerEpoch = mapState.layerEpoch + 1,
@@ -4407,14 +4543,43 @@ private fun NaviMapScreen() {
                                 gpsLat = loc.latitude,
                                 gpsLon = loc.longitude,
                                 gpsAccuracyM = acc,
+                                gpsEstimated = gpsEstimated,
+                                positionLost = positionLost,
                                 layerEpoch = mapState.layerEpoch + 1,
                             )
                         }
                     if (NaviMapTestHooks.disableGpsFollow) {
                         NaviMapTestHooks.followGps = false
                     }
-                } else if (acc != mapState.gpsAccuracyM) {
-                    mapState = mapState.copy(gpsAccuracyM = acc)
+                } else if (
+                    acc != mapState.gpsAccuracyM ||
+                    gpsEstimated != mapState.gpsEstimated ||
+                    positionLost != mapState.positionLost
+                ) {
+                    mapState =
+                        mapState.copy(
+                            gpsAccuracyM = acc,
+                            gpsEstimated = gpsEstimated,
+                            positionLost = positionLost,
+                            layerEpoch =
+                                if (gpsEstimated != mapState.gpsEstimated ||
+                                    positionLost != mapState.positionLost
+                                ) {
+                                    mapState.layerEpoch + 1
+                                } else {
+                                    mapState.layerEpoch
+                                },
+                        )
+                }
+                if (positionLost) {
+                    status = "Position lost"
+                } else if (gpsEstimated && status == "Position lost") {
+                    status = "Estimated position"
+                } else if (gpsEstimated && !status.contains("Estimated")) {
+                    // Soft status — do not clobber richer guidance strings mid-maneuver.
+                    if (status.isBlank() || status == "OK" || status.startsWith("GPS")) {
+                        status = "Estimated position (IMU)"
+                    }
                 }
                 // Live guidance from GPS / simulator along the planned route.
                 val tracker = progressTrackerRef.get()
@@ -5027,8 +5192,50 @@ private fun NaviMapScreen() {
             NaviMapTestHooks.lastHudAltitudeM = alt
         }
         applyFixRef.set { loc -> applyFix(loc) }
+        deadReckoning.onOutput = { out ->
+            if (out.estimated || out.positionLost) {
+                val synth =
+                    Location(
+                        if (out.positionLost) {
+                            DeadReckoningController.PROVIDER_LOST
+                        } else {
+                            DeadReckoningController.PROVIDER_ESTIMATED
+                        },
+                    ).apply {
+                        latitude = out.lat
+                        longitude = out.lon
+                        time = System.currentTimeMillis()
+                        if (out.speedMps.isFinite() && out.speedMps > 0.0) {
+                            speed = out.speedMps.toFloat()
+                        }
+                        bearing = out.bearingDeg.toFloat()
+                        accuracy = if (out.positionLost) 9_999f else 45f
+                    }
+                applyFixRef.get().invoke(synth)
+            }
+            NaviMapTestHooks.lastDrMode = out.mode.name
+            out.exitErrorM?.let { NaviMapTestHooks.lastDrExitErrorM = it }
+            NaviMapTestHooks.gpsEstimated = out.estimated
+            NaviMapTestHooks.positionLost = out.positionLost
+        }
+        NaviMapTestHooks.deadReckoningInject = { frame ->
+            deadReckoning.injectSensorFrame(frame)
+        }
+        NaviMapTestHooks.deadReckoningNotifyLost = {
+            deadReckoning.notifyGpsLost()
+        }
+        NaviMapTestHooks.deadReckoningInjectGps = { sample ->
+            deadReckoning.injectGpsSample(sample)
+        }
+        deadReckoning.start(context)
         if (!locationPermGranted) {
-            return@DisposableEffect onDispose { }
+            return@DisposableEffect onDispose {
+                deadReckoning.stop()
+                deadReckoning.onOutput = {}
+                NaviMapTestHooks.deadReckoningInject = null
+                NaviMapTestHooks.deadReckoningNotifyLost = null
+                NaviMapTestHooks.deadReckoningInjectGps = null
+            }
         }
         val listener = LocationListener { loc -> applyFix(loc) }
         try {
@@ -5053,6 +5260,11 @@ private fun NaviMapScreen() {
         }
         onDispose {
             runCatching { lm.removeUpdates(listener) }
+            deadReckoning.stop()
+            deadReckoning.onOutput = {}
+            NaviMapTestHooks.deadReckoningInject = null
+            NaviMapTestHooks.deadReckoningNotifyLost = null
+            NaviMapTestHooks.deadReckoningInjectGps = null
         }
     }
     // Refresh DEM altitude when tiles arrive later or the GPS point moves.
@@ -11908,9 +12120,16 @@ private fun applyRouteToStyle(
     }
 
     // Current GPS / device position (dot only; no text label).
+    // Estimated (IMU DR) = amber; position lost = grey; GNSS = blue.
     if (state.gpsLat != 0.0 || state.gpsLon != 0.0) {
         val gpsFeature = Feature.fromGeometry(Point.fromLngLat(state.gpsLon, state.gpsLat))
         val gpsCollection = FeatureCollection.fromFeature(gpsFeature)
+        val (dotColor, ringColor) =
+            when {
+                state.positionLost -> "#9E9E9E" to "#BDBDBD"
+                state.gpsEstimated -> "#F9A825" to "#FF8F00"
+                else -> "#1A73E8" to "#4285F4"
+            }
         if (style.getSource("gps-src") == null) {
             style.addSource(GeoJsonSource("gps-src", gpsCollection))
             style.addLayer(
@@ -11918,7 +12137,7 @@ private fun applyRouteToStyle(
                     .CircleLayer("gps-accuracy", "gps-src")
                     .withProperties(
                         PropertyFactory.circleRadius(18f),
-                        PropertyFactory.circleColor("#4285F4"),
+                        PropertyFactory.circleColor(ringColor),
                         PropertyFactory.circleOpacity(0.22f),
                         PropertyFactory.circleStrokeWidth(0f),
                     ),
@@ -11928,13 +12147,19 @@ private fun applyRouteToStyle(
                     .CircleLayer("gps-dot", "gps-src")
                     .withProperties(
                         PropertyFactory.circleRadius(8f),
-                        PropertyFactory.circleColor("#1A73E8"),
+                        PropertyFactory.circleColor(dotColor),
                         PropertyFactory.circleStrokeColor("#FFFFFF"),
                         PropertyFactory.circleStrokeWidth(2.5f),
                     ),
             )
         } else {
             (style.getSource("gps-src") as? GeoJsonSource)?.setGeoJson(gpsCollection)
+            style.getLayer("gps-dot")?.setProperties(
+                PropertyFactory.circleColor(dotColor),
+            )
+            style.getLayer("gps-accuracy")?.setProperties(
+                PropertyFactory.circleColor(ringColor),
+            )
         }
         if (style.getLayer("gps-label") != null) style.removeLayer("gps-label")
     } else {

@@ -1,0 +1,21 @@
+{
+  "status": "done",
+  "profile": "car",
+  "eco": false,
+  "wall_s": 30.27,
+  "duration_ms": 24580,
+  "distance_km": 429.4434388181013,
+  "polyline_points": 13567,
+  "spike_count": 0,
+  "spikes": [],
+  "from": [
+    "Raufoss",
+    60.72608,
+    10.613324
+  ],
+  "to": [
+    "Bergen",
+    60.394306,
+    5.325919
+  ]
+}

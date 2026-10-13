@@ -1,5 +1,5 @@
 //! IMU plugin engine: pitch / tilt / compass, level calibration of the vehicle
-//! mount, and a configurable tilt-danger alarm.
+//! mount orientation for display.
 //!
 //! The WASM guest (`plugins/imu`) is a thin shim: it implements [`Host`] over the
 //! `navi-plugin-sdk` imports and calls [`tick`] once per host invocation. All
@@ -8,22 +8,19 @@
 //! | Key | Lifetime | Writer | Content |
 //! |---|---|---|---|
 //! | `imu_mount` | persistent | guest | [`MountRecord`] (rotation + calibration date) |
-//! | `imu_alarm` | persistent | host | [`AlarmConfig`] thresholds |
-//! | `live.imu_cmd` | ephemeral | host/guest | `{"cmd":"calibrate"\|"reset"}` |
+//! //! | `live.imu_cmd` | ephemeral | host/guest | `{"cmd":"calibrate"\|"reset"}` |
 //! | `live.imu_state` | ephemeral | guest | [`State`] for the host UI / audio |
 //! | `live.imu_hist` | ephemeral | guest | recent stationary-window samples |
 //!
 //! Keys starting with `live.` are never flushed to disk by the file-backed KV, so
 //! a 10 Hz tick does not rewrite storage.
 
-pub mod alarm;
 pub mod calibrate;
 pub mod math;
 pub mod orient;
 
 use serde::{Deserialize, Serialize};
 
-pub use alarm::{AlarmConfig, AlarmLevel};
 pub use calibrate::{CalibrationError, HistEntry};
 use math::{mat_mul, transpose, Mat3, Vec3, IDENTITY};
 
@@ -31,7 +28,6 @@ use math::{mat_mul, transpose, Mat3, Vec3, IDENTITY};
 pub const CALIBRATION_INSTRUCTION: &str = "Find a level concrete surface, like the floor of your garage, then tap Calibrate. The unit will then use the current values as level.";
 
 pub const KEY_MOUNT: &str = "imu_mount";
-pub const KEY_ALARM: &str = "imu_alarm";
 pub const KEY_CMD: &str = "live.imu_cmd";
 pub const KEY_STATE: &str = "live.imu_state";
 pub const KEY_HIST: &str = "live.imu_hist";
@@ -161,8 +157,6 @@ pub struct State {
     pub tilt_deg: Option<f64>,
     /// Magnetic heading of the vehicle forward axis (needs a magnetometer).
     pub heading_deg: Option<f64>,
-    pub alarm: AlarmLevel,
-    pub alarm_enabled: bool,
     pub sensors: SensorsPresent,
     pub updated_ms: i64,
 }
@@ -259,9 +253,6 @@ pub fn tick(host: &mut dyn Host) -> State {
     let now_ms = up_sample.map(|s| s.timestamp_ms).unwrap_or(0);
     let up = up_sample.and_then(Sample::vec3);
 
-    let alarm_cfg: AlarmConfig = load::<AlarmConfig>(host, KEY_ALARM)
-        .unwrap_or_default()
-        .sanitized();
     let prev: Option<State> = load(host, KEY_STATE);
     let cmd: Option<Command> = load(host, KEY_CMD);
     let mut mount: Option<MountRecord> = if kv_ok {
@@ -376,15 +367,6 @@ pub fn tick(host: &mut dyn Host) -> State {
         (Some(u), Some(m)) => orient::heading_deg(&r, u, m),
         _ => None,
     };
-    let alarm = match att {
-        Some(a) => alarm_cfg.evaluate(
-            prev.as_ref().map(|p| p.alarm).unwrap_or_default(),
-            a.pitch_deg,
-            a.roll_deg,
-        ),
-        None => AlarmLevel::None,
-    };
-
     let status = if up.is_none() {
         Status::NoSensor
     } else if collecting {
@@ -416,8 +398,6 @@ pub fn tick(host: &mut dyn Host) -> State {
         roll_deg: att.map(|a| a.roll_deg),
         tilt_deg: att.map(|a| a.tilt_deg),
         heading_deg: heading,
-        alarm,
-        alarm_enabled: alarm_cfg.enabled,
         sensors,
         updated_ms: now_ms,
     };

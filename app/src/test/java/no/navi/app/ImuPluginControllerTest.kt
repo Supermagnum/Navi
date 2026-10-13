@@ -11,18 +11,16 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import uniffi.navi.ImuAlarmSettings
 import uniffi.navi.ImuCallKind
 import uniffi.navi.ImuTickResult
 
 class ImuPluginControllerTest {
     private class FakeApi : ImuPluginApi {
         var enabled = false
-        var tickResult = ok(state("uncalibrated", "none"))
+        var tickResult = ok(state("uncalibrated"))
         var ticks = 0
         var releases = 0
         val commands = mutableListOf<String>()
-        var alarm = ImuAlarmSettings(true, 20.0, 30.0, 15.0, 25.0, 2.0)
 
         override fun tick(): ImuTickResult {
             ticks++
@@ -49,29 +47,10 @@ class ImuPluginControllerTest {
         override fun releaseSensors() {
             releases++
         }
-
-        override fun alarmSettings() = alarm
-
-        override fun setAlarmSettings(settings: ImuAlarmSettings): ImuAlarmSettings {
-            alarm = settings
-            return settings
-        }
-    }
-
-    private class FakePlayer : ImuAlarmTonePlayer {
-        val tones = mutableListOf<ImuAlarmTone>()
-
-        override fun play(tone: ImuAlarmTone) {
-            tones += tone
-        }
-
-        override fun release() = Unit
     }
 
     private val api = FakeApi()
-    private val player = FakePlayer()
-    private var now = 0L
-    private val controller = ImuPluginController(api, player, ImuAlarmPolicy(), { now })
+    private val controller = ImuPluginController(api)
 
     @Test
     fun nothingTicksUntilInitializedAndEnabled() {
@@ -114,31 +93,6 @@ class ImuPluginControllerTest {
     }
 
     @Test
-    fun dangerTiltSoundsTheAlarmHook() {
-        controller.markInitialized()
-        controller.setEnabled(true)
-        api.tickResult = ok(state("calibrated", "danger"))
-        now = 1_000
-        controller.tickOnce()
-        now = 1_500
-        controller.tickOnce()
-        now = 2_000
-        controller.tickOnce()
-        assertEquals(listOf(ImuAlarmTone.DANGER, ImuAlarmTone.DANGER), player.tones)
-        val readout = controller.state.value.readout
-        assertEquals(ImuAlarmLevel.DANGER, readout!!.alarm)
-    }
-
-    @Test
-    fun alarmStaysSilentWhenTheUserDisabledIt() {
-        controller.markInitialized()
-        controller.setEnabled(true)
-        api.tickResult = ok(state("calibrated", "danger", alarmEnabled = false))
-        controller.tickOnce()
-        assertTrue(player.tones.isEmpty())
-    }
-
-    @Test
     fun failedTickReleasesSensorsAndStopsTheLoop() {
         controller.markInitialized()
         controller.setEnabled(true)
@@ -177,21 +131,11 @@ class ImuPluginControllerTest {
     }
 
     @Test
-    fun calibrateResetAndAlarmSettingsReachTheNativeSession() {
+    fun calibrateResetReachTheNativeSession() {
         controller.markInitialized()
         assertEquals("OK", controller.calibrate())
         assertEquals("OK", controller.reset())
         assertEquals(listOf("calibrate", "reset"), api.commands)
-        val updated = controller.alarmSettings().copy(pitchWarnDeg = 12.0, enabled = false)
-        assertEquals(updated, controller.setAlarmSettings(updated))
-        assertEquals(12.0, api.alarm.pitchWarnDeg, 0.0)
-        assertFalse(api.alarm.enabled)
-    }
-
-    @Test
-    fun testSoundPlaysTheRequestedTone() {
-        controller.testAlarm(ImuAlarmTone.WARNING)
-        assertEquals(listOf(ImuAlarmTone.WARNING), player.tones)
     }
 
     @Test
@@ -212,15 +156,13 @@ class ImuPluginControllerTest {
     private companion object {
         fun ok(json: String) = ImuTickResult(ImuCallKind.OK, "ok", json, 1u)
 
-        fun state(
-            status: String,
-            alarm: String,
-            alarmEnabled: Boolean = true,
-        ) = """
+        fun state(status: String) =
+            """
             {"status":"$status","status_text":"t","notice":null,"instruction":"x","calibrated":false,
-             "calibrated_date":null,"calibrated_unix":null,"pitch_deg":1.0,"roll_deg":2.0,
-             "tilt_deg":2.2,"heading_deg":null,"alarm":"$alarm","alarm_enabled":$alarmEnabled,
-             "sensors":{"gravity":true},"updated_ms":1}
+             "calibrated_date":null,"pitch_deg":1.0,"roll_deg":-2.0,
+             "tilt_deg":2.2,"heading_deg":null,
+             "sensors":{"gravity":true,"accelerometer":true,"gyroscope":false,
+                        "linear_acceleration":false,"magnetic_field":false},"updated_ms":1}
             """.trimIndent()
     }
 }

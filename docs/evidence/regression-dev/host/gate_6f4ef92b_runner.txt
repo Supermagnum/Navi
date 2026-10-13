@@ -1,0 +1,522 @@
+BUILD_START 2026-10-13T18:54:08+02:00
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/log-hello/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/busy-loop/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/trap-guest/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/memory-bomb/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/weather/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/datex/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/poi-lookahead/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/imu/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/right-to-roam-camping/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.47
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling cfg-if v1.0.4
+   Compiling libc v0.2.189
+   Compiling libm v0.2.16
+   Compiling autocfg v1.5.1
+   Compiling foldhash v0.2.0
+   Compiling memchr v2.8.3
+   Compiling version_check v0.9.5
+   Compiling anyhow v1.0.104
+   Compiling once_cell v1.21.4
+   Compiling bitflags v2.13.1
+   Compiling crc32fast v1.5.0
+   Compiling equivalent v1.0.2
+   Compiling getrandom v0.4.3
+   Compiling log v0.4.34
+   Compiling stable_deref_trait v1.2.1
+   Compiling thiserror v2.0.20
+   Compiling simd-adler32 v0.3.10
+   Compiling hashbrown v0.17.1
+   Compiling itoa v1.0.18
+   Compiling typenum v1.20.1
+   Compiling find-msvc-tools v0.1.9
+   Compiling shlex v2.0.1
+   Compiling adler2 v2.0.1
+   Compiling heck v0.5.0
+   Compiling thiserror v1.0.69
+   Compiling num-traits v0.2.19
+   Compiling cc v1.3.0
+   Compiling rustix v1.1.4
+   Compiling bytes v1.12.1
+   Compiling allocator-api2 v0.2.21
+   Compiling miniz_oxide v0.9.1
+   Compiling linux-raw-sys v0.12.1
+   Compiling zlib-rs v0.6.8
+   Compiling fastrand v2.5.0
+   Compiling pin-project-lite v0.2.17
+   Compiling winnow v1.0.4
+   Compiling protobuf v3.7.2
+   Compiling wasmtime-internal-core v48.0.5
+   Compiling either v1.16.0
+   Compiling indexmap v2.14.0
+   Compiling generic-array v0.14.7
+   Compiling cranelift-srcgen v0.135.5
+   Compiling rustix v0.38.44
+   Compiling crossbeam-utils v0.8.22
+   Compiling hashbrown v0.16.1
+   Compiling cranelift-assembler-x64-meta v0.135.5
+   Compiling futures-core v0.3.34
+   Compiling crossbeam-epoch v0.9.20
+   Compiling syn v2.0.119
+   Compiling syn v3.0.2
+   Compiling linux-raw-sys v0.4.15
+   Compiling bumpalo v3.20.3
+   Compiling aho-corasick v1.1.4
+   Compiling regex-syntax v0.8.11
+   Compiling home v0.5.12
+   Compiling crossbeam-deque v0.8.7
+   Compiling byteorder v1.5.0
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.2
+   Compiling siphasher v1.0.3
+   Compiling rustc-hash v2.1.3
+   Compiling rayon-core v1.13.0
+   Compiling zmij v1.0.23
+   Compiling litemap v0.8.2
+   Compiling writeable v0.6.3
+   Compiling cranelift-isle v0.135.5
+   Compiling ring v0.17.14
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling toml_parser v1.1.2+spec-1.1.0
+   Compiling heapless v0.8.0
+   Compiling serde_json v1.0.151
+   Compiling target-lexicon v0.13.5
+   Compiling icu_normalizer_data v2.2.0
+   Compiling utf8_iter v1.0.4
+   Compiling icu_properties_data v2.2.0
+   Compiling cranelift-codegen-shared v0.135.5
+   Compiling digest v0.10.7
+   Compiling hash32 v0.3.1
+   Compiling cranelift-bitset v0.135.5
+   Compiling http v1.4.2
+   Compiling tempfile v3.27.0
+   Compiling cpufeatures v0.2.17
+   Compiling zeroize v1.9.0
+   Compiling percent-encoding v2.3.2
+   Compiling fnv v1.0.7
+   Compiling sha2 v0.10.9
+   Compiling flate2 v1.1.10
+   Compiling toml_datetime v1.1.1+spec-1.1.0
+   Compiling rustls-pki-types v1.15.0
+   Compiling getrandom v0.2.17
+   Compiling rayon v1.12.0
+   Compiling slab v0.4.12
+   Compiling utf8parse v0.2.2
+   Compiling iana-time-zone v0.1.65
+   Compiling arbitrary v1.4.2
+   Compiling semver v1.0.28
+   Compiling regex-automata v0.4.16
+   Compiling arrayvec v0.7.8
+   Compiling httparse v1.10.1
+   Compiling futures-task v0.3.34
+   Compiling http-body v1.1.0
+   Compiling ucd-trie v0.1.7
+   Compiling cranelift-assembler-x64 v0.135.5
+   Compiling untrusted v0.9.0
+   Compiling chrono v0.4.45
+   Compiling which v4.4.2
+   Compiling anstyle-parse v1.0.0
+   Compiling pest v2.8.8
+   Compiling fs-err v3.3.1
+   Compiling slotmap v1.1.1
+   Compiling colorchoice v1.0.5
+   Compiling try-lock v0.2.5
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling anstyle-query v1.1.5
+   Compiling tower-service v0.3.3
+   Compiling float-cmp v0.9.0
+   Compiling rustls v0.23.45
+   Compiling anstyle v1.0.14
+   Compiling cranelift-control v0.135.5
+   Compiling object v0.39.1
+   Compiling static_assertions v1.1.0
+   Compiling strict-num v0.1.1
+   Compiling anstream v1.0.0
+   Compiling want v0.3.1
+   Compiling polycool v0.4.0
+   Compiling toml_edit v0.25.13+spec-1.1.0
+   Compiling form_urlencoded v1.2.2
+   Compiling approx v0.5.1
+   Compiling memmap2 v0.9.11
+   Compiling num_cpus v1.17.0
+   Compiling hybrid-array v0.4.15
+   Compiling futures-channel v0.3.34
+   Compiling smartstring v1.0.1
+   Compiling tracing-core v0.1.36
+   Compiling weezl v0.1.12
+   Compiling strsim v0.11.1
+   Compiling termcolor v1.4.1
+   Compiling clap_lex v1.1.0
+   Compiling tinyvec_macros v0.1.1
+   Compiling atomic-waker v1.1.2
+   Compiling pest_meta v2.8.8
+   Compiling leb128fmt v0.1.0
+   Compiling futures v0.1.31
+   Compiling pkg-config v0.3.33
+   Compiling rustversion v1.0.23
+   Compiling gimli v0.33.0
+   Compiling synstructure v0.13.2
+   Compiling subtle v2.6.1
+   Compiling roxmltree v0.20.0
+   Compiling ryu v1.0.23
+   Compiling getrandom v0.3.4
+   Compiling zerocopy v0.8.55
+   Compiling vcpkg v0.2.15
+   Compiling arrayref v0.3.9
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.20
+   Compiling bytemuck_derive v1.12.1
+   Compiling futures-macro v0.3.34
+   Compiling ptr_meta_derive v0.3.2
+   Compiling bytecheck_derive v0.8.3
+   Compiling wasm-encoder v0.254.2
+   Compiling tracing v0.1.44
+   Compiling proc-macro-crate v3.5.0
+   Compiling regex v1.13.1
+   Compiling ptr_meta v0.3.2
+   Compiling rancor v0.1.3
+   Compiling pest_generator v2.8.8
+   Compiling fontconfig-parser v0.5.8
+   Compiling compact-calendar v2.1.4
+   Compiling clap_builder v4.6.2
+   Compiling tinyvec v1.12.0
+   Compiling libsqlite3-sys v0.38.2
+   Compiling futures-util v0.3.34
+   Compiling sync_wrapper v1.0.2
+   Compiling futures-cpupool v0.1.8
+   Compiling miniz_oxide v0.8.9
+   Compiling fdeflate v0.3.7
+   Compiling ahash v0.8.12
+   Compiling base64 v0.22.1
+   Compiling wasmtime-internal-component-util v48.0.5
+   Compiling bytemuck v1.25.2
+   Compiling pub-iterator-type v0.1.1
+   Compiling glob v0.3.4
+   Compiling camino v1.2.4
+   Compiling minimal-lexical v0.2.1
+   Compiling cobs v0.3.0
+   Compiling ipnet v2.12.0
+   Compiling zerofrom-derive v0.1.7
+   Compiling yoke-derive v0.8.2
+   Compiling thiserror-impl v1.0.69
+   Compiling zerovec-derive v0.11.3
+   Compiling displaydoc v0.2.6
+   Compiling tokio-macros v2.7.1
+   Compiling pulley-macros v48.0.5
+   Compiling uniffi_internal_macros v0.32.1
+   Compiling font-types v0.12.5
+   Compiling tiny-skia-path v0.12.0
+   Compiling wasmtime-internal-versioned-export-macros v48.0.5
+   Compiling clap_derive v4.6.3
+   Compiling pulley-interpreter v48.0.5
+   Compiling tower-layer v0.3.3
+   Compiling compression-core v0.4.32
+   Compiling read-fonts v0.41.0
+   Compiling wasmtime-internal-unwinder v48.0.5
+   Compiling simdutf8 v0.1.5
+   Compiling compression-codecs v0.4.38
+   Compiling tokio v1.53.1
+   Compiling nom v7.1.3
+   Compiling bytecheck v0.8.3
+   Compiling munge_macro v0.4.7
+   Compiling scroll_derive v0.12.1
+   Compiling pest_derive v2.8.8
+   Compiling num_enum_derive v0.7.6
+   Compiling png v0.18.1
+   Compiling uniffi_pipeline v0.32.1
+   Compiling zerofrom v0.1.8
+   Compiling par-map v0.1.4
+   Compiling yoke v0.8.3
+   Compiling protobuf-support v3.7.2
+   Compiling fontdb v0.24.0
+   Compiling opening-hours v2.1.4
+   Compiling zerovec v0.11.6
+   Compiling zerotrie v0.2.4
+   Compiling crypto-common v0.2.2
+   Compiling block-buffer v0.12.1
+   Compiling tinystr v0.8.3
+   Compiling potential_utf v0.1.5
+   Compiling webpki-roots v1.0.9
+   Compiling askama_parser v0.16.1
+   Compiling basic-toml v0.1.10
+   Compiling clap v4.6.3
+   Compiling smallvec v1.15.2
+   Compiling icu_locale_core v2.2.0
+   Compiling icu_collections v2.2.0
+   Compiling postcard v1.1.3
+   Compiling cranelift-codegen-meta v0.135.5
+   Compiling regalloc2 v0.15.2
+   Compiling rstar v0.12.2
+   Compiling wasmparser v0.254.2
+   Compiling kurbo v0.13.1
+   Compiling i_float v1.6.0
+   Compiling itertools v0.11.0
+   Compiling roxmltree v0.21.1
+   Compiling csv-core v0.1.13
+   Compiling cranelift-entity v0.135.5
+   Compiling geo-types v0.7.20
+   Compiling icu_provider v2.2.0
+   Compiling i_shape v1.6.0
+   Compiling cranelift-bforest v0.135.5
+   Compiling simplecss v0.2.2
+   Compiling icu_properties v2.2.0
+   Compiling icu_normalizer v2.2.0
+   Compiling svgtypes v0.16.1
+   Compiling const-oid v0.10.2
+   Compiling zune-core v0.5.3
+   Compiling data-url v0.3.2
+   Compiling byteorder-lite v0.1.0
+   Compiling idna_adapter v1.2.2
+   Compiling quick-error v2.0.1
+   Compiling i_tree v0.8.3
+   Compiling wasmtime-internal-cranelift v48.0.5
+   Compiling base64 v0.23.1
+   Compiling idna v1.1.0
+   Compiling protobuf-parse v3.7.2
+   Compiling askama_derive v0.16.1
+   Compiling jpeg-decoder v0.3.2
+   Compiling hyper v1.11.0
+   Compiling tower v0.5.3
+   Compiling url v2.5.8
+   Compiling unicode-script v0.5.8
+   Compiling xmlwriter v0.1.0
+   Compiling cranelift-codegen v0.135.5
+   Compiling rustls-webpki v0.103.15
+   Compiling smawk v0.3.3
+   Compiling robust v1.2.0
+   Compiling pico-args v0.5.0
+   Compiling protobuf-codegen v3.7.2
+   Compiling hyper-util v0.1.20
+   Compiling unicode-vo v0.1.0
+   Compiling i_key_sort v0.2.0
+   Compiling unicode-bidi v0.3.18
+   Compiling imagesize v0.15.0
+   Compiling flat_map v0.0.10
+   Compiling futures-sink v0.3.34
+   Compiling color_quant v1.1.0
+   Compiling self_cell v1.3.0
+   Compiling gif v0.14.2
+   Compiling tokio-util v0.7.19
+   Compiling i_overlay v1.9.4
+   Compiling spade v2.15.1
+   Compiling textwrap v0.16.2
+   Compiling tower-http v0.6.11
+   Compiling tiff v0.9.1
+   Compiling async-compression v0.4.42
+   Compiling image-webp v0.2.4
+   Compiling zune-jpeg v0.5.15
+   Compiling deprecate-until v1.0.0
+   Compiling digest v0.11.3
+   Compiling earcutr v0.4.3
+   Compiling csv v1.4.0
+   Compiling weedle2 v5.0.0
+   Compiling skrifa v0.44.0
+   Compiling harfrust v0.12.0
+   Compiling opening-hours-syntax v2.1.4
+   Compiling num_enum v0.7.6
+   Compiling osmpbfreader v0.19.1
+   Compiling osmpbf v0.3.8
+   Compiling serde_urlencoded v0.7.1
+   Compiling tiny-skia v0.12.0
+   Compiling askama_macros v0.16.1
+   Compiling scroll v0.12.0
+   Compiling munge v0.4.7
+   Compiling uniffi_meta v0.32.1
+   Compiling rend v0.5.4
+   Compiling wasmtime v48.0.5
+   Compiling rgb v0.8.53
+   Compiling rkyv_derive v0.8.18
+   Compiling sunrise v3.0.0
+   Compiling hashlink v0.12.2
+   Compiling xattr v1.6.1
+   Compiling http-body-util v0.1.4
+   Compiling cargo-platform v0.3.3
+   Compiling serde_spanned v1.1.1
+   Compiling wasmprinter v0.254.2
+   Compiling integer-sqrt v0.1.5
+   Compiling phf_shared v0.12.1
+   Compiling filetime v0.2.29
+   Compiling memmap2 v0.5.10
+   Compiling geographiclib-rs v0.2.7
+   Compiling zopfli v0.8.3
+   Compiling itertools v0.14.0
+   Compiling tokio-rustls v0.26.4
+   Compiling typed-path v0.12.3
+   Compiling toml_writer v1.1.2+spec-1.1.0
+   Compiling hyper-rustls v0.27.9
+   Compiling fallible-streaming-iterator v0.1.9
+   Compiling float_next_after v1.0.0
+   Compiling countio v0.3.0
+   Compiling plain v0.2.3
+   Compiling chrono-tz v0.10.4
+   Compiling fast_hilbert v2.1.0
+   Compiling twox-hash v2.1.3
+   Compiling varint-rs v2.2.1
+   Compiling cpufeatures v0.3.0
+   Compiling fallible-iterator v0.3.0
+   Compiling sha2 v0.11.0
+   Compiling toml v1.1.3+spec-1.1.0
+   Compiling goblin v0.8.2
+   Compiling pmtiles v0.24.0
+   Compiling reqwest v0.12.28
+   Compiling usvg v0.48.1
+   Compiling zip v8.6.0
+   Compiling wasmtime-environ v48.0.5
+   Compiling geo v0.29.3
+   Compiling tar v0.4.46
+   Compiling rkyv v0.8.18
+   Compiling resvg v0.48.1
+   Compiling phf v0.12.1
+   Compiling pathfinding v4.16.0
+   Compiling uniffi_udl v0.32.1
+   Compiling cargo_metadata v0.23.1
+   Compiling osm4routing v0.8.0
+   Compiling askama v0.16.1
+   Compiling geotiff v0.1.0
+   Compiling wasmtime-internal-jit-icache-coherence v48.0.5
+   Compiling rstar v0.13.0
+   Compiling bincode v1.3.3
+   Compiling async-trait v0.1.92
+   Compiling memfd v0.6.5
+   Compiling uuid v1.26.1
+   Compiling srtm_reader v0.5.3
+   Compiling hex v0.4.3
+   Compiling uniffi_macros v0.32.1
+   Compiling uniffi_bindgen v0.32.1
+   Compiling uniffi_core v0.32.1
+   Compiling navi-plugin-imu-engine v0.1.0 (/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/imu/engine)
+   Compiling cranelift-frontend v0.135.5
+   Compiling cranelift-native v0.135.5
+   Compiling rusqlite v0.40.2
+   Compiling driver-break-core v0.1.0 (/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/core)
+   Compiling navi-plugin-host v0.1.0 (/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugin-host)
+   Compiling navi-right-to-roam-camping v0.1.0 (/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/right-to-roam-camping/engine)
+   Compiling uniffi v0.32.1
+   Compiling navi-ffi v0.1.0 (/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/navi-ffi)
+    Finished `release` profile [optimized] target(s) in 5m 41s
+BUILD_END 2026-10-13T18:59:49+02:00 exit=0
+GATE_START 2026-10-13T18:59:49+02:00
+GATE_END 2026-10-13T19:08:33+02:00 exit=0
+32:[gate] isolated process a_bevensen_vaga_dalsoren
+35:[gate] country polygons warm: 13.8 s, 2345092 bytes
+36:[gate] a_bevensen_vaga_dalsoren ...
+37:[gate] a_bevensen_vaga_dalsoren Otta-Lom on ref 15: 97.1 %; labels "Ottadalsvegen" 58.5 km, "Bergomsvegen" 0.7 km, "Byrebergtunnelen" 0.5 km, "Høgbrua" 0.3 km, "Sundbrua" 0.2 km, "15" 0.1 km
+40:[gate] a_bevensen_vaga_dalsoren Otta-Lom on ref 15: 97.1 %; labels "Ottadalsvegen" 58.5 km, "Bergomsvegen" 0.7 km, "Byrebergtunnelen" 0.5 km, "Høgbrua" 0.3 km, "Sundbrua" 0.2 km, "15" 0.1 km
+41:[gate] a_bevensen_vaga_dalsoren timing run 2: wall 41.1 s
+42:[gate] a_bevensen_vaga_dalsoren Otta-Lom on ref 15: 97.1 %; labels "Ottadalsvegen" 58.5 km, "Bergomsvegen" 0.7 km, "Byrebergtunnelen" 0.5 km, "Høgbrua" 0.3 km, "Sundbrua" 0.2 km, "15" 0.1 km
+43:[gate] a_bevensen_vaga_dalsoren timing run 3: wall 43.3 s
+44:[gate] a_bevensen_vaga_dalsoren PASS: 1440.7 km (polyline 1439.1), 982 min, ferries ["Rødby (DK) - Puttgarden (D)"], vias [2.0] m, wall 41.1 s, peak 887 MB, terminate found
+45:[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+46:[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+49:test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 139.77s
+51:[gate] isolated process b_brenneriroa_aga
+54:[gate] country polygons warm: 14.1 s, 2345092 bytes
+55:[gate] b_brenneriroa_aga ...
+56:[gate] b_brenneriroa_aga FAIL: 375.3 km (polyline 374.9), 346 min, ferries ["Utne - Kinsarvik"], vias [] m, wall 6.9 s, peak 572 MB, terminate found
+57:[gate]   - wall 6.9 s vs baseline 4.7 s (+46 %)
+58:[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+59:[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+61:thread 'long_trip_regression_gate' (215705) panicked at navi-ffi/tests/regression_gate.rs:1854:5:
+64:test long_trip_regression_gate ... FAILED
+71:test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 21.11s
+73:[gate] isolated process c_brenneriroa_grotli_floro
+76:[gate] country polygons warm: 14.3 s, 2345092 bytes
+77:[gate] c_brenneriroa_grotli_floro ...
+78:[gate] c_brenneriroa_grotli_floro FAIL: 528.7 km (polyline 528.1), 420 min, ferries [], vias [0.0] m, wall 6.6 s, peak 648 MB, terminate found
+79:[gate]   - wall 6.6 s vs baseline 4.7 s (+39 %)
+80:[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+81:[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+83:thread 'long_trip_regression_gate' (215755) panicked at navi-ffi/tests/regression_gate.rs:1854:5:
+86:test long_trip_regression_gate ... FAILED
+93:test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.91s
+95:[gate] isolated process d_bevensen_vaga_dalsoren_avoid_ferries
+98:[gate] country polygons warm: 14.4 s, 2345092 bytes
+99:[gate] d_bevensen_vaga_dalsoren_avoid_ferries ...
+101:[gate] d_bevensen_vaga_dalsoren_avoid_ferries: no baseline entry
+102:[gate] d_bevensen_vaga_dalsoren_avoid_ferries PASS: 1586.8 km (polyline 1585.0), 955 min, ferries [], vias [2.0] m, wall 69.4 s, peak 978 MB, terminate found
+103:[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+104:[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+107:test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 83.94s
+109:[gate] isolated process e_elsa_sjuvass
+112:[gate] country polygons warm: 13.7 s, 2345092 bytes
+113:[gate] e_elsa_sjuvass ...
+114:[gate] e_elsa_sjuvass FAIL: 2159.8 km (polyline 2157.4), 1531 min, ferries [], vias [] m, wall 26.0 s, peak 883 MB, terminate found
+115:[gate]   - wall 26.0 s vs baseline 20.5 s (+27 %)
+116:[gate]   - distance 2159.8 km is 11.09 % from 1944.2 km (max 2 %); distance against the 1944.2 km reference
+117:[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+118:[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+120:thread 'long_trip_regression_gate' (215959) panicked at navi-ffi/tests/regression_gate.rs:1854:5:
+123:test long_trip_regression_gate ... FAILED
+130:test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 39.81s
+132:[gate] isolated process f_hamar_stange
+135:[gate] country polygons warm: 13.6 s, 2345092 bytes
+136:[gate] f_hamar_stange ...
+137:[gate] f_hamar_stange PASS: 16.2 km (polyline 16.2), 13 min, ferries [], vias [] m, wall 0.4 s, peak 160 MB, terminate found
+138:[gate]   hops 1 corridor skipped (short local; long_trip on/off compared)
+139:[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+140:[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+143:test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.19s
+145:[gate] isolated process g_hamar_lillehammer
+148:[gate] country polygons warm: 13.8 s, 2345092 bytes
+149:[gate] g_hamar_lillehammer ...
+150:[gate] g_hamar_lillehammer PASS: 60.8 km (polyline 60.7), 44 min, ferries [], vias [] m, wall 1.3 s, peak 265 MB, terminate found
+151:[gate]   hops 1 corridor skipped (short local; long_trip on/off compared)
+152:[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+153:[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+156:test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.80s
+158:[gate] isolated process h_oslo_lillestrom
+161:[gate] country polygons warm: 12.1 s, 2345092 bytes
+162:[gate] h_oslo_lillestrom ...
+163:[gate] h_oslo_lillestrom PASS: 22.4 km (polyline 22.4), 19 min, ferries [], vias [] m, wall 2.8 s, peak 236 MB, terminate found
+164:[gate]   hops 1 corridor skipped (short local; long_trip on/off compared)
+165:[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+166:[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+169:test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.20s
+171:[gate] isolated process i_hamburg_bergedorf
+174:[gate] country polygons warm: 11.8 s, 2345092 bytes
+175:[gate] i_hamburg_bergedorf ...
+176:[gate] i_hamburg_bergedorf: no baseline entry
+177:[gate] i_hamburg_bergedorf PASS: 19.5 km (polyline 19.5), 20 min, ferries [], vias [] m, wall 1.1 s, peak 142 MB, terminate found
+178:[gate]   hops 1 corridor skipped (short local; long_trip on/off compared)
+179:[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+180:[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+183:test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.70s
+185:[gate] isolated process j_copenhagen_taastrup
+188:[gate] country polygons warm: 13.6 s, 2345092 bytes
+189:[gate] j_copenhagen_taastrup ...
+190:[gate] j_copenhagen_taastrup PASS: 22.2 km (polyline 22.2), 19 min, ferries [], vias [] m, wall 1.5 s, peak 285 MB, terminate found
+191:[gate]   hops 1 corridor skipped (short local; long_trip on/off compared)
+192:[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+193:[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+196:test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.71s
+198:[gate] isolated process k_60_276_10_816
+201:[gate] country polygons warm: 13.5 s, 2345092 bytes
+202:[gate] k_60_276_10_816 ...
+203:[gate] k_60_276_10_816 PASS: 136.4 km (polyline 136.3), 123 min, ferries [], vias [] m, wall 2.9 s, peak 492 MB, terminate found
+204:[gate]   hops 1 corridor skipped (short local; long_trip on/off compared)
+205:[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+206:[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+209:test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.82s

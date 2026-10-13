@@ -1,0 +1,320 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/log-hello/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/busy-loop/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/trap-guest/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/memory-bomb/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/weather/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/datex/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/poi-lookahead/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/imu/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/plugins/right-to-roam-camping/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-worktrees/gate-6f4ef92b/Cargo.toml
+    Finished `release` profile [optimized] target(s) in 0.82s
+     Running tests/regression_gate.rs (target/release/deps/regression_gate-3f163f2d3a877258)
+
+running 1 test
+[gate] isolated process a_bevensen_vaga_dalsoren
+
+running 1 test
+[gate] country polygons warm: 13.8 s, 2345092 bytes
+[gate] a_bevensen_vaga_dalsoren ...
+[gate] a_bevensen_vaga_dalsoren Otta-Lom on ref 15: 97.1 %; labels "Ottadalsvegen" 58.5 km, "Bergomsvegen" 0.7 km, "Byrebergtunnelen" 0.5 km, "Høgbrua" 0.3 km, "Sundbrua" 0.2 km, "15" 0.1 km
+test long_trip_regression_gate has been running for over 60 seconds
+test long_trip_regression_gate has been running for over 60 seconds
+[gate] a_bevensen_vaga_dalsoren Otta-Lom on ref 15: 97.1 %; labels "Ottadalsvegen" 58.5 km, "Bergomsvegen" 0.7 km, "Byrebergtunnelen" 0.5 km, "Høgbrua" 0.3 km, "Sundbrua" 0.2 km, "15" 0.1 km
+[gate] a_bevensen_vaga_dalsoren timing run 2: wall 41.1 s
+[gate] a_bevensen_vaga_dalsoren Otta-Lom on ref 15: 97.1 %; labels "Ottadalsvegen" 58.5 km, "Bergomsvegen" 0.7 km, "Byrebergtunnelen" 0.5 km, "Høgbrua" 0.3 km, "Sundbrua" 0.2 km, "15" 0.1 km
+[gate] a_bevensen_vaga_dalsoren timing run 3: wall 43.3 s
+[gate] a_bevensen_vaga_dalsoren PASS: 1440.7 km (polyline 1439.1), 982 min, ferries ["Rødby (DK) - Puttgarden (D)"], vias [2.0] m, wall 41.1 s, peak 887 MB, terminate found
+[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+test long_trip_regression_gate ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 139.77s
+
+[gate] isolated process b_brenneriroa_aga
+
+running 1 test
+[gate] country polygons warm: 14.1 s, 2345092 bytes
+[gate] b_brenneriroa_aga ...
+[gate] b_brenneriroa_aga FAIL: 375.3 km (polyline 374.9), 346 min, ferries ["Utne - Kinsarvik"], vias [] m, wall 6.9 s, peak 572 MB, terminate found
+[gate]   - wall 6.9 s vs baseline 4.7 s (+46 %)
+[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+
+thread 'long_trip_regression_gate' (215705) panicked at navi-ffi/tests/regression_gate.rs:1854:5:
+regression gate failed: ["b_brenneriroa_aga"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test long_trip_regression_gate ... FAILED
+
+failures:
+
+failures:
+    long_trip_regression_gate
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 21.11s
+
+[gate] isolated process c_brenneriroa_grotli_floro
+
+running 1 test
+[gate] country polygons warm: 14.3 s, 2345092 bytes
+[gate] c_brenneriroa_grotli_floro ...
+[gate] c_brenneriroa_grotli_floro FAIL: 528.7 km (polyline 528.1), 420 min, ferries [], vias [0.0] m, wall 6.6 s, peak 648 MB, terminate found
+[gate]   - wall 6.6 s vs baseline 4.7 s (+39 %)
+[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+
+thread 'long_trip_regression_gate' (215755) panicked at navi-ffi/tests/regression_gate.rs:1854:5:
+regression gate failed: ["c_brenneriroa_grotli_floro"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test long_trip_regression_gate ... FAILED
+
+failures:
+
+failures:
+    long_trip_regression_gate
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.91s
+
+[gate] isolated process d_bevensen_vaga_dalsoren_avoid_ferries
+
+running 1 test
+[gate] country polygons warm: 14.4 s, 2345092 bytes
+[gate] d_bevensen_vaga_dalsoren_avoid_ferries ...
+test long_trip_regression_gate has been running for over 60 seconds
+[gate] d_bevensen_vaga_dalsoren_avoid_ferries: no baseline entry
+[gate] d_bevensen_vaga_dalsoren_avoid_ferries PASS: 1586.8 km (polyline 1585.0), 955 min, ferries [], vias [2.0] m, wall 69.4 s, peak 978 MB, terminate found
+[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+test long_trip_regression_gate ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 83.94s
+
+[gate] isolated process e_elsa_sjuvass
+
+running 1 test
+[gate] country polygons warm: 13.7 s, 2345092 bytes
+[gate] e_elsa_sjuvass ...
+[gate] e_elsa_sjuvass FAIL: 2159.8 km (polyline 2157.4), 1531 min, ferries [], vias [] m, wall 26.0 s, peak 883 MB, terminate found
+[gate]   - wall 26.0 s vs baseline 20.5 s (+27 %)
+[gate]   - distance 2159.8 km is 11.09 % from 1944.2 km (max 2 %); distance against the 1944.2 km reference
+[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+
+thread 'long_trip_regression_gate' (215959) panicked at navi-ffi/tests/regression_gate.rs:1854:5:
+regression gate failed: ["e_elsa_sjuvass"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test long_trip_regression_gate ... FAILED
+
+failures:
+
+failures:
+    long_trip_regression_gate
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 39.81s
+
+[gate] isolated process f_hamar_stange
+
+running 1 test
+[gate] country polygons warm: 13.6 s, 2345092 bytes
+[gate] f_hamar_stange ...
+[gate] f_hamar_stange PASS: 16.2 km (polyline 16.2), 13 min, ferries [], vias [] m, wall 0.4 s, peak 160 MB, terminate found
+[gate]   hops 1 corridor skipped (short local; long_trip on/off compared)
+[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+test long_trip_regression_gate ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.19s
+
+[gate] isolated process g_hamar_lillehammer
+
+running 1 test
+[gate] country polygons warm: 13.8 s, 2345092 bytes
+[gate] g_hamar_lillehammer ...
+[gate] g_hamar_lillehammer PASS: 60.8 km (polyline 60.7), 44 min, ferries [], vias [] m, wall 1.3 s, peak 265 MB, terminate found
+[gate]   hops 1 corridor skipped (short local; long_trip on/off compared)
+[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+test long_trip_regression_gate ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.80s
+
+[gate] isolated process h_oslo_lillestrom
+
+running 1 test
+[gate] country polygons warm: 12.1 s, 2345092 bytes
+[gate] h_oslo_lillestrom ...
+[gate] h_oslo_lillestrom PASS: 22.4 km (polyline 22.4), 19 min, ferries [], vias [] m, wall 2.8 s, peak 236 MB, terminate found
+[gate]   hops 1 corridor skipped (short local; long_trip on/off compared)
+[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+test long_trip_regression_gate ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.20s
+
+[gate] isolated process i_hamburg_bergedorf
+
+running 1 test
+[gate] country polygons warm: 11.8 s, 2345092 bytes
+[gate] i_hamburg_bergedorf ...
+[gate] i_hamburg_bergedorf: no baseline entry
+[gate] i_hamburg_bergedorf PASS: 19.5 km (polyline 19.5), 20 min, ferries [], vias [] m, wall 1.1 s, peak 142 MB, terminate found
+[gate]   hops 1 corridor skipped (short local; long_trip on/off compared)
+[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+test long_trip_regression_gate ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.70s
+
+[gate] isolated process j_copenhagen_taastrup
+
+running 1 test
+[gate] country polygons warm: 13.6 s, 2345092 bytes
+[gate] j_copenhagen_taastrup ...
+[gate] j_copenhagen_taastrup PASS: 22.2 km (polyline 22.2), 19 min, ferries [], vias [] m, wall 1.5 s, peak 285 MB, terminate found
+[gate]   hops 1 corridor skipped (short local; long_trip on/off compared)
+[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+test long_trip_regression_gate ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.71s
+
+[gate] isolated process k_60_276_10_816
+
+running 1 test
+[gate] country polygons warm: 13.5 s, 2345092 bytes
+[gate] k_60_276_10_816 ...
+[gate] k_60_276_10_816 PASS: 136.4 km (polyline 136.3), 123 min, ferries [], vias [] m, wall 2.9 s, peak 492 MB, terminate found
+[gate]   hops 1 corridor skipped (short local; long_trip on/off compared)
+[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+test long_trip_regression_gate ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.82s
+
+[gate] isolated process l_raufoss_bergen
+
+running 1 test
+[gate] country polygons warm: 13.8 s, 2345092 bytes
+[gate] l_raufoss_bergen ...
+[gate] l_raufoss_bergen PASS: 428.5 km (polyline 428.0), 344 min, ferries [], vias [] m, wall 6.1 s, peak 624 MB, terminate found
+[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+test long_trip_regression_gate ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 19.95s
+
+[gate] isolated process m_oslo_lillehammer
+
+running 1 test
+[gate] country polygons warm: 14.0 s, 2345092 bytes
+[gate] m_oslo_lillehammer ...
+[gate] m_oslo_lillehammer FAIL: 186.2 km (polyline 186.0), 116 min, ferries [], vias [] m, wall 9.2 s, peak 756 MB, terminate found
+[gate]   hops 1 corridor ran (short local; long_trip on/off compared)
+[gate]   - wall 9.2 s vs baseline 6.6 s (+40 %)
+[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+
+thread 'long_trip_regression_gate' (216628) panicked at navi-ffi/tests/regression_gate.rs:1854:5:
+regression gate failed: ["m_oslo_lillehammer"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test long_trip_regression_gate ... FAILED
+
+failures:
+
+failures:
+    long_trip_regression_gate
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 32.52s
+
+[gate] isolated process n_hamar_oslo
+
+running 1 test
+[gate] country polygons warm: 13.9 s, 2345092 bytes
+[gate] n_hamar_oslo ...
+[gate] n_hamar_oslo FAIL: 130.1 km (polyline 130.0), 81 min, ferries [], vias [] m, wall 6.9 s, peak 765 MB, terminate found
+[gate]   hops 1 corridor ran (short local; long_trip on/off compared)
+[gate]   - wall 6.9 s vs baseline 4.9 s (+39 %)
+[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+
+thread 'long_trip_regression_gate' (217015) panicked at navi-ffi/tests/regression_gate.rs:1854:5:
+regression gate failed: ["n_hamar_oslo"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test long_trip_regression_gate ... FAILED
+
+failures:
+
+failures:
+    long_trip_regression_gate
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 27.69s
+
+[gate] isolated process o_lillehammer_gjovik_honefoss
+
+running 1 test
+[gate] country polygons warm: 14.2 s, 2345092 bytes
+[gate] o_lillehammer_gjovik_honefoss ...
+[gate] o_lillehammer_gjovik_honefoss FAIL: 137.9 km (polyline 137.8), 108 min, ferries [], vias [41.0] m, wall 2.2 s, peak 214 MB, terminate found
+[gate]   hops 1 corridor skipped (short local; long_trip on/off compared)
+[gate]   - wall 2.2 s vs baseline 1.8 s (+27 %)
+[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+
+thread 'long_trip_regression_gate' (217133) panicked at navi-ffi/tests/regression_gate.rs:1854:5:
+regression gate failed: ["o_lillehammer_gjovik_honefoss"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test long_trip_regression_gate ... FAILED
+
+failures:
+
+failures:
+    long_trip_regression_gate
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 18.64s
+
+[gate] isolated process p_espa_atnbrua
+
+running 1 test
+[gate] country polygons warm: 13.9 s, 2345092 bytes
+[gate] p_espa_atnbrua ...
+[gate] p_espa_atnbrua PASS: 187.6 km (polyline 187.4), 136 min, ferries [], vias [] m, wall 4.4 s, peak 542 MB, terminate found
+[gate]   hops 1 corridor ran (short local; long_trip on/off compared)
+[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+test long_trip_regression_gate ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 22.70s
+
+[gate] emulator: not measured for this run (NAVI_GATE_EMU not set)
+[gate] known test failure outside the gate: elsa_overview_z15: Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).
+
+thread 'long_trip_regression_gate' (215403) panicked at navi-ffi/tests/regression_gate.rs:1634:5:
+regression gate failed: ["b_brenneriroa_aga", "c_brenneriroa_grotli_floro", "e_elsa_sjuvass", "m_oslo_lillehammer", "n_hamar_oslo", "o_lillehammer_gjovik_honefoss"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test long_trip_regression_gate ... FAILED
+
+failures:
+
+failures:
+    long_trip_regression_gate
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 522.23s
+
+error: test failed, to rerun pass `-p navi-ffi --test regression_gate`

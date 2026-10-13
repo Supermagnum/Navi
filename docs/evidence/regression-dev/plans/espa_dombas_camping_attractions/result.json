@@ -1,0 +1,25 @@
+{
+  "status": "timeout",
+  "profile": "car",
+  "eco": true,
+  "stay_in_country": false,
+  "graph": "pack",
+  "wall_s": 601.56,
+  "duration_ms": 9355,
+  "distance_km": null,
+  "polyline_points": 0,
+  "spike_count": 0,
+  "spikes": [],
+  "from": [
+    "Espa",
+    60.556,
+    11.227
+  ],
+  "to": [
+    "Dombas",
+    62.075,
+    9.128
+  ],
+  "enumerations": null,
+  "enum_meta": null
+}

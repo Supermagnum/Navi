@@ -1,0 +1,85 @@
+{
+  "status": "done",
+  "unlocked": true,
+  "networked": true,
+  "distance_km": 86.26045751838909,
+  "eta_minutes": null,
+  "report_head": "TEST_KIND=PLAN_HIKING_ROUTE\nDATA_SOURCE=real_pbf\nprofile=Hiking; use_eco=true\nprefer_official_networks=false; prefer_pilgrim_routes=false\navoid_motorways=true (locked for hiking)\navoid_ferries=false\nuse_networked_cabins=true\nuse_unlocked_cabins=true\nnetwork_hut_member=true\navoid_ferries=false\nwaypoints=3\npoi_search_radius_m=10500; cabin_radius_m=10500; network_hut_radius_m=25000; network_hut_pref_m=10500; require_road_link=false\nbbox=61.187,7.295,61.852,9.116; pad=0.30\nslow_road_preference=applied; profile=hiking\nbuild_s=0.35; cache_hit=false; pack_hit=true; nodes=11778; edges=27424\ngraph_ferry_edges=8\nwetland_rings=4421; wetland_soft_edges=516; wetland_hard_removed=0; wetland_boardwalk_kept=0; wetland_pack_hit=true\nroute_mode=hybrid; off_trail_m=13477\npoi_pack_hit=true; overnight_buildings_pack_hit=false\novernight_buildings=0; overnight_glaciers=138; overnight_source=pbf_corridor; overnight_corridor_margin_m=1500\nauto_via_limits: search_m=10500; lateral_m=10500; extra_floor_m=10500; extra_frac=0.15; use_networked_cabins=true\nauto_vias=3; names=Memurubu|Gjendebu|N\u00f8gla\nADVISORY: Off-trail segment: terrain analysis cannot see cliffs, dense vegetation, seasonal snow/ice, or water crossings missing from DEM/OSM. Right-to-roam access does not mean the route is safe or sensible \u2014 use your own judgment.\nhiking_multi_day: days=2; max_daily_km=40.0; total_km=86.3\nhiking_day: idx=1; start_km=0.0; end_km=39.0; distance_km=39.0; overnight_gap=false\nhiking_overnight: osm_id=4081815859; name=\"N\u00f8gla\"; network=false; membership_required=false; safety_rejected=false; safety_reason=None; dist_m=9; lat=61.54106; lon=8.24912\nhiking_day: idx=2; start_km=39.0; end_km=72.7; distance_km=33.7; overnight_gap=false\npriority_path_share_pct=100.00\nroute_ferry_legs=0\nroute_ferry_fp=\nroute_tunnel_count=0\nroute_tunnel_fp=\nrest_place_count=8\ndistance_km=86.260; eta_min=1380.2; path_nodes=105; break_pois=[{\"icon\":\"tourism-alpine_hut\",\"kind\":\"hut\",\"lat\":61.49077260000001,\"lon\":8.629799100000001,\"name",
+  "on_trail_segments": 1,
+  "off_trail_segments": 1,
+  "off_trail_advisory": "Off-trail segment: terrain analysis cannot see cliffs, dense vegetation, seasonal snow/ice, or water crossings missing from DEM/OSM. Right-to-roam access does not mean the route is safe or sensible \u2014 use your own judgment.",
+  "route_mode": "hybrid",
+  "off_trail_m": 13477.0,
+  "auto_vias": 3,
+  "auto_via_names": [
+    "Memurubu",
+    "Gjendebu",
+    "N\u00f8gla"
+  ],
+  "via_distance_m": 15.29020337027452,
+  "polyline_points": 2500,
+  "break_pois": [
+    {
+      "name": "Memurubu",
+      "kind": "hut",
+      "lat": null,
+      "lon": null
+    },
+    {
+      "name": "Gjendebu",
+      "kind": "hut",
+      "lat": null,
+      "lon": null
+    },
+    {
+      "name": "N\u00f8gla",
+      "kind": "hut",
+      "lat": null,
+      "lon": null
+    },
+    {
+      "name": "Krossbu Turiststasjon",
+      "kind": "hut",
+      "lat": null,
+      "lon": null
+    },
+    {
+      "name": "Tent site",
+      "kind": "tent",
+      "lat": null,
+      "lon": null
+    },
+    {
+      "name": "Tent site",
+      "kind": "tent",
+      "lat": null,
+      "lon": null
+    },
+    {
+      "name": "Leirvassbu",
+      "kind": "hut",
+      "lat": null,
+      "lon": null
+    },
+    {
+      "name": "N\u00f8gla",
+      "kind": "hut",
+      "lat": null,
+      "lon": null
+    }
+  ],
+  "overnight_huts": [
+    {
+      "day_index": 1,
+      "name": "N\u00f8gla",
+      "cabin_class": "unlocked",
+      "category": "hut",
+      "is_network": false,
+      "osm_id": 4081815859,
+      "lat": 61.54106470000001,
+      "lon": 8.2491185,
+      "distance_km": 39.04650549930941
+    }
+  ],
+  "priority_path_share_pct": 100.0
+}

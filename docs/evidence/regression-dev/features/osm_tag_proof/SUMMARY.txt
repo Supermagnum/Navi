@@ -1,0 +1,22 @@
+OSM tag / vehicle clearance proof (host + emulator)
+
+Bridge avoidance product toggle: NONE (confirmed no avoid_bridge in app/core).
+Bridge-related routing changes come from vehicle limits vs way tags:
+  - maxheight / maxwidth / maxweight / maxaxleload / maxbogieweight in builder.rs edge filter
+  - Host tests: core/tests/innlandet_real_world_limits.rs (CARGO_TESTS_EXIT:0)
+      * Stai bru (way 34106197): maxwidth=3.5 m, maxaxleload=6 t, maxweight=28 t, maxheight=3.7 m
+        under-limit path uses bridge; width 4.0 m and axle 8 t detour
+      * Atna hengebru: maxweight=7.5 t — 10 t vehicle detours
+  - Stay-in-country can exclude cross-border bridges (Svinesund) when ISO filter on
+
+Emulator pairs (Hamar→Lillehammer MH unless noted):
+  width 2.297 vs 1.904: same km 61.206 (no maxwidth between those values on corridor)
+  width T6 truck vs 4.5 m truck: same km 60.80 on this corridor
+  weight T6 3020.4 vs 50 t: same km 61.206
+  axle T6 1661.2 vs 10 t: same km 61.206
+  tunnels avoid ON vs OFF: 66.93 vs 60.80 km (PASS — route changes)
+  motorways avoid ON vs OFF: 68.24 vs 60.80 km (PASS — route changes)
+  German MH T6 with total_weight_kg=3020.4: 1350.158 km, Δ≈0 vs prior null-weight run
+    (weight wired; no overload warnings; corridor not forced onto tagged maxweight detours)
+
+T6 routing width used: width_m=2.297 (mirrors). Spec excl-mirrors 1.904 not selected for routing.

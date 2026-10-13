@@ -37,6 +37,10 @@ data class RoutePlanStats(
     /** Distinct from count=0 when plugin off: e.g. UNAVAILABLE / ERROR kind. */
     val wildCampingStatusKind: String = "",
     val wildCampingStatusMessage: String = "",
+    /** Accepted wild-camping sites keyed by `country_iso` from the plugin cards. */
+    val wildCampingByCountry: Map<String, Int> = emptyMap(),
+    /** Accepted sites keyed by `subdivision_iso` (falls back to country). */
+    val wildCampingBySubdivision: Map<String, Int> = emptyMap(),
 )
 
 /** Host-side camping suggest outcome kept when result JSON is absent (UNAVAILABLE). */
@@ -114,7 +118,13 @@ fun restPlaceNamesFromJson(breakPoisJson: String): List<String> {
 
 fun wildCampingSiteCount(result: CampingSuggestResult?): Int {
     if (result == null) return 0
-    val ids = linkedSetOf<String>()
+    return wildCampingAcceptedCards(result).size
+}
+
+/** Unique accepted camping cards (list + on-foot), keyed like [wildCampingSiteCount]. */
+fun wildCampingAcceptedCards(result: CampingSuggestResult): List<CampingCardModel> {
+    val seen = linkedSetOf<String>()
+    val out = ArrayList<CampingCardModel>()
 
     fun add(list: CampingSuggestionListModel) {
         for (c in list.cards) {
@@ -123,12 +133,25 @@ fun wildCampingSiteCount(result: CampingSuggestResult?): Int {
                 c.locationId.ifBlank {
                     String.format(Locale.US, "%.5f,%.5f", c.lat, c.lon)
                 }
-            ids.add(id)
+            if (seen.add(id)) out.add(c)
         }
     }
     add(result.list)
     add(result.onFootFromHere)
-    return ids.size
+    return out
+}
+
+fun wildCampingRegionTallies(result: CampingSuggestResult?): Pair<Map<String, Int>, Map<String, Int>> {
+    if (result == null) return emptyMap<String, Int>() to emptyMap()
+    val byCountry = linkedMapOf<String, Int>()
+    val bySub = linkedMapOf<String, Int>()
+    for (c in wildCampingAcceptedCards(result)) {
+        val iso = c.countryIso.trim().ifBlank { "unknown" }
+        byCountry[iso] = byCountry.getOrDefault(iso, 0) + 1
+        val sub = c.subdivisionIso?.trim()?.ifBlank { null } ?: iso
+        bySub[sub] = bySub.getOrDefault(sub, 0) + 1
+    }
+    return byCountry.toMap() to bySub.toMap()
 }
 
 fun uniqueAttractionTally(queryJsons: List<String>): Pair<Int, Map<String, Int>> {
@@ -170,6 +193,14 @@ fun RoutePlanStats.toReportJson(): JSONObject {
     for ((k, v) in attractionByType) {
         byType.put(k, v)
     }
+    val byCountry = JSONObject()
+    for ((k, v) in wildCampingByCountry) {
+        byCountry.put(k, v)
+    }
+    val bySub = JSONObject()
+    for ((k, v) in wildCampingBySubdivision) {
+        bySub.put(k, v)
+    }
     val rest = JSONArray()
     for (n in restPlaceNames) rest.put(n)
     return JSONObject()
@@ -184,6 +215,8 @@ fun RoutePlanStats.toReportJson(): JSONObject {
         .put("wild_camping_site_count", wildCampingSiteCount)
         .put("wild_camping_status_kind", wildCampingStatusKind)
         .put("wild_camping_status_message", wildCampingStatusMessage)
+        .put("wild_camping_by_country", byCountry)
+        .put("wild_camping_by_subdivision", bySub)
 }
 
 fun formatNamedFpList(fp: String): String {

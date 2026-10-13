@@ -106,7 +106,10 @@ pub use safety::{
     check_overnight_candidate, min_distance_to_glacier_rings_m, DangerBarrierIndex,
     OvernightProximityIndex, OvernightRejectReason,
 };
-pub use terrain::{least_cost_path, TerrainPath, TERRAIN_CELL_M, TERRAIN_MAX_GAP_M};
+pub use terrain::{
+    least_cost_path, least_cost_path_chained, TerrainPath, TERRAIN_CELL_M,
+    TERRAIN_MAX_CHAINED_GAP_M, TERRAIN_MAX_GAP_M,
+};
 pub use toll::{toll_applies_for_profile, TollPolicy, TOLL_AVOID_PENALTY_MULT};
 pub use wetland::{
     classify_wetland_value, tags_indicate_boardwalk, WetlandClass, WetlandIndex,

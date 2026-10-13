@@ -1,0 +1,404 @@
+{
+  "emulator": null,
+  "known_test_failures": [
+    {
+      "reason": "Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).",
+      "test": "elsa_overview_z15"
+    }
+  ],
+  "results": [
+    {
+      "corridor_ran": true,
+      "distance_km": 1440.722665138452,
+      "eta_min": 982.16198667307,
+      "expected_fail": null,
+      "failures": [],
+      "ferries": [
+        "Rødby (DK) - Puttgarden (D)"
+      ],
+      "hops": 1,
+      "id": "a_bevensen_vaga_dalsoren",
+      "known_failures": [],
+      "peak_mb": 887.0,
+      "polyline_km": 1439.1208632596752,
+      "spikes": [
+        "km 1408.4-1413.2 path 3.00 km chord 0.75 km at 61.50889,7.81425 (reference too)",
+        "km 1418.1-1422.8 path 3.00 km chord 0.87 km at 61.50210,7.71406 (reference too)"
+      ],
+      "status": "PASS",
+      "terminate": "found",
+      "via_m": [
+        1.540923022098433
+      ],
+      "wall_runs_s": [
+        41.073896812,
+        41.148839551,
+        43.320996635
+      ],
+      "wall_s": 41.148839551
+    },
+    {
+      "corridor_ran": true,
+      "distance_km": 375.3300058829843,
+      "eta_min": 346.0748444699096,
+      "expected_fail": null,
+      "failures": [
+        "wall 6.9 s vs baseline 4.7 s (+46 %)"
+      ],
+      "ferries": [
+        "Utne - Kinsarvik"
+      ],
+      "hops": 1,
+      "id": "b_brenneriroa_aga",
+      "known_failures": [],
+      "peak_mb": 572.0,
+      "polyline_km": 374.91271231002463,
+      "spikes": [
+        "km 176.3-180.3 path 3.00 km chord 0.80 km at 60.71849,8.94138 (reference too)",
+        "km 250.5-257.8 path 6.00 km chord 1.93 km at 60.50287,7.90497 (reference too)",
+        "km 303.6-306.8 path 3.00 km chord 1.14 km at 60.42263,7.24947 (reference too)",
+        "km 342.5-372.5 path 25.00 km chord 9.93 km at 60.39437,6.71074 (reference too)"
+      ],
+      "status": "FAIL",
+      "terminate": "found",
+      "via_m": [],
+      "wall_runs_s": [
+        6.924222736
+      ],
+      "wall_s": 6.924222736
+    },
+    {
+      "corridor_ran": true,
+      "distance_km": 528.7371289067369,
+      "eta_min": 419.91568224070375,
+      "expected_fail": null,
+      "failures": [
+        "wall 6.6 s vs baseline 4.7 s (+39 %)"
+      ],
+      "ferries": [],
+      "hops": 1,
+      "id": "c_brenneriroa_grotli_floro",
+      "known_failures": [],
+      "peak_mb": 648.0,
+      "polyline_km": 528.1492766108362,
+      "spikes": [
+        "km 321.8-326.8 path 3.00 km chord 0.93 km at 61.93701,7.25132 (reference too)",
+        "km 344.9-390.7 path 25.00 km chord 3.31 km at 61.88855,6.70736 (reference too)",
+        "km 400.3-407.1 path 6.00 km chord 2.16 km at 61.80703,6.51976 (reference too)",
+        "km 458.9-462.6 path 3.00 km chord 0.93 km at 61.74250,5.92739 (reference too)"
+      ],
+      "status": "FAIL",
+      "terminate": "found",
+      "via_m": [
+        0.2731594528834726
+      ],
+      "wall_runs_s": [
+        6.601163008
+      ],
+      "wall_s": 6.601163008
+    },
+    {
+      "corridor_ran": true,
+      "distance_km": 1586.812620965952,
+      "eta_min": 954.6297458591724,
+      "expected_fail": null,
+      "failures": [],
+      "ferries": [],
+      "hops": 1,
+      "id": "d_bevensen_vaga_dalsoren_avoid_ferries",
+      "known_failures": [],
+      "peak_mb": 978.0,
+      "polyline_km": 1585.0483956233354,
+      "spikes": [
+        "km 1554.3-1559.2 path 3.00 km chord 0.74 km at 61.50866,7.81443 (reference too)",
+        "km 1564.0-1568.7 path 3.00 km chord 0.88 km at 61.50215,7.71445 (reference too)"
+      ],
+      "status": "PASS",
+      "terminate": "found",
+      "via_m": [
+        1.540923022098433
+      ],
+      "wall_runs_s": [
+        69.447686901
+      ],
+      "wall_s": 69.447686901
+    },
+    {
+      "corridor_ran": true,
+      "distance_km": 2159.8248253452657,
+      "eta_min": 1531.0461825191478,
+      "expected_fail": null,
+      "failures": [
+        "wall 26.0 s vs baseline 20.5 s (+27 %)"
+      ],
+      "ferries": [],
+      "hops": 1,
+      "id": "e_elsa_sjuvass",
+      "known_failures": [
+        "distance 2159.8 km is 11.09 % from 1944.2 km (max 2 %); distance against the 1944.2 km reference"
+      ],
+      "peak_mb": 883.0,
+      "polyline_km": 2157.423522480555,
+      "spikes": [
+        "km 51.8-65.8 path 12.00 km chord 4.26 km at 69.73210,29.29742 (reference too)",
+        "km 1548.8-1582.5 path 25.00 km chord 5.78 km at 62.05240,14.61008",
+        "km 2100.8-2104.5 path 3.00 km chord 0.95 km at 59.93099,9.90672"
+      ],
+      "status": "FAIL",
+      "terminate": "found",
+      "via_m": [],
+      "wall_runs_s": [
+        26.022802389
+      ],
+      "wall_s": 26.022802389
+    },
+    {
+      "corridor_ran": false,
+      "distance_km": 16.16849392092204,
+      "eta_min": 12.556463718165652,
+      "expected_fail": null,
+      "failures": [],
+      "ferries": [],
+      "hops": 1,
+      "id": "f_hamar_stange",
+      "known_failures": [],
+      "peak_mb": 159.59375,
+      "polyline_km": 16.150517717338225,
+      "spikes": [],
+      "status": "PASS",
+      "terminate": "found",
+      "via_m": [],
+      "wall_runs_s": [
+        0.364770407
+      ],
+      "wall_s": 0.364770407
+    },
+    {
+      "corridor_ran": false,
+      "distance_km": 60.80180876997411,
+      "eta_min": 43.82100405835594,
+      "expected_fail": null,
+      "failures": [],
+      "ferries": [],
+      "hops": 1,
+      "id": "g_hamar_lillehammer",
+      "known_failures": [],
+      "peak_mb": 265.26953125,
+      "polyline_km": 60.734209048057735,
+      "spikes": [],
+      "status": "PASS",
+      "terminate": "found",
+      "via_m": [],
+      "wall_runs_s": [
+        1.267756651
+      ],
+      "wall_s": 1.267756651
+    },
+    {
+      "corridor_ran": false,
+      "distance_km": 22.42742492195823,
+      "eta_min": 19.07803527787763,
+      "expected_fail": null,
+      "failures": [],
+      "ferries": [],
+      "hops": 1,
+      "id": "h_oslo_lillestrom",
+      "known_failures": [],
+      "peak_mb": 235.640625,
+      "polyline_km": 22.40249001099531,
+      "spikes": [],
+      "status": "PASS",
+      "terminate": "found",
+      "via_m": [],
+      "wall_runs_s": [
+        2.766546041
+      ],
+      "wall_s": 2.766546041
+    },
+    {
+      "corridor_ran": false,
+      "distance_km": 19.475347940743188,
+      "eta_min": 19.53178344900909,
+      "expected_fail": null,
+      "failures": [],
+      "ferries": [],
+      "hops": 1,
+      "id": "i_hamburg_bergedorf",
+      "known_failures": [],
+      "peak_mb": 142.2890625,
+      "polyline_km": 19.453695162122845,
+      "spikes": [],
+      "status": "PASS",
+      "terminate": "found",
+      "via_m": [],
+      "wall_runs_s": [
+        1.069392175
+      ],
+      "wall_s": 1.069392175
+    },
+    {
+      "corridor_ran": false,
+      "distance_km": 22.21386421522614,
+      "eta_min": 19.008674506329942,
+      "expected_fail": null,
+      "failures": [],
+      "ferries": [],
+      "hops": 1,
+      "id": "j_copenhagen_taastrup",
+      "known_failures": [],
+      "peak_mb": 284.79296875,
+      "polyline_km": 22.189166742009125,
+      "spikes": [],
+      "status": "PASS",
+      "terminate": "found",
+      "via_m": [],
+      "wall_runs_s": [
+        1.5305221919999998
+      ],
+      "wall_s": 1.5305221919999998
+    },
+    {
+      "corridor_ran": false,
+      "distance_km": 136.44817107411052,
+      "eta_min": 123.37464703825316,
+      "expected_fail": null,
+      "failures": [],
+      "ferries": [],
+      "hops": 1,
+      "id": "k_60_276_10_816",
+      "known_failures": [],
+      "peak_mb": 491.875,
+      "polyline_km": 136.29646738951394,
+      "spikes": [
+        "km 79.6-83.4 path 3.00 km chord 0.95 km at 59.93052,9.90754"
+      ],
+      "status": "PASS",
+      "terminate": "found",
+      "via_m": [],
+      "wall_runs_s": [
+        2.867483056
+      ],
+      "wall_s": 2.867483056
+    },
+    {
+      "corridor_ran": true,
+      "distance_km": 428.4944106013674,
+      "eta_min": 343.6319127042563,
+      "expected_fail": null,
+      "failures": [],
+      "ferries": [],
+      "hops": 1,
+      "id": "l_raufoss_bergen",
+      "known_failures": [],
+      "peak_mb": 623.765625,
+      "polyline_km": 428.0180086063435,
+      "spikes": [
+        "km 259.3-266.0 path 6.00 km chord 2.22 km at 60.87634,7.14568",
+        "km 401.0-428.0 path 24.92 km chord 8.65 km at 60.41814,5.47972"
+      ],
+      "status": "PASS",
+      "terminate": "found",
+      "via_m": [],
+      "wall_runs_s": [
+        6.135540112
+      ],
+      "wall_s": 6.135540112
+    },
+    {
+      "corridor_ran": true,
+      "distance_km": 186.17341250280415,
+      "eta_min": 116.40581090707856,
+      "expected_fail": null,
+      "failures": [
+        "wall 9.2 s vs baseline 6.6 s (+40 %)"
+      ],
+      "ferries": [],
+      "hops": 1,
+      "id": "m_oslo_lillehammer",
+      "known_failures": [],
+      "peak_mb": 756.0,
+      "polyline_km": 185.9664240732175,
+      "spikes": [
+        "km 0.0-3.3 path 3.00 km chord 0.81 km at 59.91381,10.73882"
+      ],
+      "status": "FAIL",
+      "terminate": "found",
+      "via_m": [],
+      "wall_runs_s": [
+        9.201567717
+      ],
+      "wall_s": 9.201567717
+    },
+    {
+      "corridor_ran": true,
+      "distance_km": 130.13367171105756,
+      "eta_min": 80.65068904889216,
+      "expected_fail": null,
+      "failures": [
+        "wall 6.9 s vs baseline 4.9 s (+39 %)"
+      ],
+      "ferries": [],
+      "hops": 1,
+      "id": "n_hamar_oslo",
+      "known_failures": [],
+      "peak_mb": 765.0,
+      "polyline_km": 129.98898851499044,
+      "spikes": [
+        "km 126.4-130.0 path 2.99 km chord 0.42 km at 59.91032,10.73576"
+      ],
+      "status": "FAIL",
+      "terminate": "found",
+      "via_m": [],
+      "wall_runs_s": [
+        6.870848474
+      ],
+      "wall_s": 6.870848474
+    },
+    {
+      "corridor_ran": false,
+      "distance_km": 137.9470686624568,
+      "eta_min": 107.6661612528174,
+      "expected_fail": null,
+      "failures": [
+        "wall 2.2 s vs baseline 1.8 s (+27 %)"
+      ],
+      "ferries": [],
+      "hops": 1,
+      "id": "o_lillehammer_gjovik_honefoss",
+      "known_failures": [],
+      "peak_mb": 213.8671875,
+      "polyline_km": 137.79369849684048,
+      "spikes": [],
+      "status": "FAIL",
+      "terminate": "found",
+      "via_m": [
+        40.5390662490106
+      ],
+      "wall_runs_s": [
+        2.244841288
+      ],
+      "wall_s": 2.244841288
+    },
+    {
+      "corridor_ran": true,
+      "distance_km": 187.6454909386494,
+      "eta_min": 136.32197601716075,
+      "expected_fail": null,
+      "failures": [],
+      "ferries": [],
+      "hops": 1,
+      "id": "p_espa_atnbrua",
+      "known_failures": [],
+      "peak_mb": 541.82421875,
+      "polyline_km": 187.4368658456964,
+      "spikes": [],
+      "status": "PASS",
+      "terminate": "found",
+      "via_m": [],
+      "wall_runs_s": [
+        4.439540445
+      ],
+      "wall_s": 4.439540445
+    }
+  ]
+}

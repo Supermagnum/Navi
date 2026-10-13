@@ -1578,6 +1578,10 @@ fn is_named_hiking_hut_pause(kind: &str, name: &str) -> bool {
     true
 }
 
+/// Long hiking crow gaps are filled by [`driver_break_core::routing::least_cost_path_chained`]
+/// inside hybrid gap-fill — not by inserting geodesic pads as waypoints (that caused
+/// out-and-back spikes when pads snapped off-corridor).
+
 /// Extra path metres allowed when promoting a rast hut to a via.
 /// Floor comes from the Drive POI cabin-radius slider; also allow 15% of the leg.
 fn auto_via_extra_allowed_m(leg_m: f64, cabin_radius_m: f64) -> f64 {
@@ -4142,6 +4146,34 @@ fn plan_car_route_inner(
                 r.search_terminate_reason = "missing_regions".into();
                 r.off_trail_advisory = format!("missing_region:{}", missing_direct[0]);
                 return r;
+            } else if let Some(named) = err
+                .split("missing regions:")
+                .nth(1)
+                .map(|s| {
+                    s.split(';')
+                        .next()
+                        .unwrap_or(s)
+                        .trim()
+                        .trim_matches(',')
+                        .to_string()
+                })
+                .filter(|s| !s.is_empty())
+            {
+                // Stay-in-country / domestic corridor gap (e.g. Trøndelag): surface
+                // as missing_regions so the host can offer the named download.
+                let first = named
+                    .split(',')
+                    .next()
+                    .unwrap_or(named.as_str())
+                    .trim()
+                    .to_string();
+                log::warn!(target: "NaviPlan", "missing_regions_after_densify {named}");
+                let mut r = empty(format!(
+                    "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: {err}\nmissing_regions={named}\n"
+                ));
+                r.search_terminate_reason = "missing_regions".into();
+                r.off_trail_advisory = format!("missing_region:{first}");
+                return r;
             } else {
                 log::warn!(target: "NaviPlan", "stage_b densify failed: {err}");
                 let mut r = empty(format!("TEST_KIND=PLAN_CAR_ROUTE\nFAIL: {err}\n"));
@@ -6475,13 +6507,13 @@ pub fn plan_hiking_route(
     if !graph_only_ok {
         for pair in user_wps.windows(2) {
             let crow = haversine_m(pair[0].lat, pair[0].lon, pair[1].lat, pair[1].lon);
-            if crow > driver_break_core::routing::TERRAIN_MAX_GAP_M {
+            if crow > driver_break_core::routing::TERRAIN_MAX_CHAINED_GAP_M {
                 report.push_str(&format!(
                     "FAIL: no foot route {} -> {} (gap {:.0} m exceeds terrain limit {:.0} m)\n",
                     pair[0].name,
                     pair[1].name,
                     crow,
-                    driver_break_core::routing::TERRAIN_MAX_GAP_M
+                    driver_break_core::routing::TERRAIN_MAX_CHAINED_GAP_M
                 ));
                 return empty_corridor(report);
             }

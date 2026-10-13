@@ -374,21 +374,15 @@ fn car_highway_ok(highway: &str) -> bool {
 /// graphs reported `graph_ferry_edges=0` and Fehmarn-style densify hops
 /// disconnected across water.
 fn tags_indicate_ferry(tags: &HashMap<String, String>) -> bool {
-    tags.get("route")
-        .is_some_and(|v| v.eq_ignore_ascii_case("ferry"))
-        || tags
-            .get("highway")
-            .is_some_and(|v| v.eq_ignore_ascii_case("ferry"))
-        || tags
-            .get("ferry")
-            .is_some_and(|v| super::builder::is_truthy_tag(v))
+    access::tags_indicate_ferry(tags)
 }
 
 fn way_ok_for_profile(tags: &HashMap<String, String>, profile: RoutingProfile) -> bool {
     if tags_indicate_ferry(tags) {
-        // Keep ferries for every profile; [`access::tags_forbid_mode`] drops
-        // vehicle-only / pedestrian-no cases when building edges.
-        return true;
+        // Keep ferry geometry candidates; [`access::tags_forbid_mode`] drops
+        // vehicle-only / no-access cases and (for Bicycle) untagged ferries
+        // that lack an explicit yes-like `bicycle=*`.
+        return !access::tags_forbid_mode(tags, profile.access_mode());
     }
     let Some(highway) = tags.get("highway") else {
         return false;

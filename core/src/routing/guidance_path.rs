@@ -71,6 +71,9 @@ pub struct SimSample {
     /// Current-road label: OSM `name`, else `ref`, else null (UI applies highway-class label).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub street: Option<String>,
+    /// True when the underlying graph edge has OSM `tunnel=*` (`is_tunnel` on the pack edge).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_tunnel: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -837,6 +840,7 @@ pub fn build_sim_samples_from_lat_lon(
             maxspeed_kmh: None,
             maxspeed_conditional: None,
             street: None,
+            is_tunnel: false,
         });
         return out;
     }
@@ -861,6 +865,7 @@ pub fn build_sim_samples_from_lat_lon(
             maxspeed_kmh: None,
             maxspeed_conditional: None,
             street: None,
+            is_tunnel: false,
         });
     }
     out
@@ -945,6 +950,7 @@ pub fn build_sim_samples_from_edges(
                 maxspeed_kmh: e.maxspeed_kmh,
                 maxspeed_conditional: e.maxspeed_conditional.clone(),
                 street: street.clone(),
+                is_tunnel: e.is_tunnel,
             });
         }
         cum += e.length_m;
@@ -965,6 +971,7 @@ pub fn build_sim_samples_from_edges(
             maxspeed_conditional: e_last.and_then(|e| e.maxspeed_conditional.clone()),
             street: e_last
                 .and_then(|e| prefer_street_label(e.name.as_deref(), e.road_ref.as_deref())),
+            is_tunnel: e_last.map(|e| e.is_tunnel).unwrap_or(false),
         });
     }
     out

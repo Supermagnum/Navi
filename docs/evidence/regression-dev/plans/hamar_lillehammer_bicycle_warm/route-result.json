@@ -1,0 +1,27 @@
+{
+  "t_ms": 10609796,
+  "distance_km": 68.9687184642874,
+  "report": "TEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\nprofile=Bicycle; routing=Bicycle; start=60.794721,11.068055; end=61.114545,10.467007; vias=0; use_eco=true; long_trip_enabled=true\npath_covering_nodes=0; path_over_node_limit=false; clipped_nodes=0; clipped_fits=true; needs_corridor=false; stage_b=false\nallowed_countries=no\navoid_motorways=true; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=true\ndatex_impacts=0; datex_block=0; datex_penalize=0\neco_regen=0.000\npoi_search_radius_m=10500; cabin_radius_m=10500; network_hut_radius_m=25000; network_hut_pref_m=10500; require_road_link=false\nbbox=60.680,10.250,61.240,11.285; pad=0.11; edge_clip=DirectEllipse { widen: 0 }; tile_budget=14; corridor_pts=2\ndirect_area=ellipse factor=1.15 allowance_km=10 strips=14\ndirect_area_edge_run_km=-0.0 route_km=69.0\nbuild_s=17.24; cache_hit=false; pack_hit=false; nodes=114854; edges=267617; pad_attempts=[0.11005239999999994]\npack_load_ms=263; eco_reweight_ms=215; datex_bind_ms=0; snap_ms=420; search_ms=109; expansions=65310\ngraph_ferry_edges=32\nseasonal_closure_excluded_edges=0\nsnap_start=60.794531,11.068203 dist_m=23; snap_end=61.114260,10.466570 dist_m=39; snap_max_m=500\nroute_ferry_legs=6\nroute_ferry_fp=60.79241,11.06773 - 60.76157,11.04671@3.64|60.76157,11.04671 - 60.75648,10.94185@5.96|60.75648,10.94185 - 60.74639,10.88760@3.16|60.74639,10.88760 - 60.79793,10.69999@12.35|60.79793,10.69999 - 60.92430,10.68484@15.45|60.92430,10.68484 - 61.10276,10.44326@25.61\nroute_tunnel_count=0\nroute_tunnel_fp=\npoi_pack_hit=true\nmotor_break_interval_km=28.2 (soft rest-interval hours → km via trip speed)\nmotor_multi_day: days=1; multi_day=false\nrest_place_count=2\neco_climb_m=93.6; eco_descent_m=27.0; eco_uphill_j=1378549; eco_downhill_j=7122; eco_regen_credit_j=0; eco_net_j=1385671\npriority_path_share_pct=100.00; motorway_share_pct=0.00\ndistance_km=68.969; eta_min=248.1; path_nodes=88; path_cost=1609318; polyline_chars=5187; break_pois=[{\"icon\":\"shop-alcohol\",\"kind\":\"craft_bre",
+  "polyline_chars": 5187,
+  "days_json": "[]",
+  "break_poi_count": 2,
+  "start": "Hamar",
+  "end": "Lillehammer",
+  "long_trip_status": "Ostlandet (1 of 1)=Indexed",
+  "enumerations": {
+    "route_tunnel_count": 0,
+    "route_tunnel_fp": "",
+    "route_ferry_legs": 6,
+    "route_ferry_fp": "60.79241,11.06773 - 60.76157,11.04671@3.64|60.76157,11.04671 - 60.75648,10.94185@5.96|60.75648,10.94185 - 60.74639,10.88760@3.16|60.74639,10.88760 - 60.79793,10.69999@12.35|60.79793,10.69999 - 60.92430,10.68484@15.45|60.92430,10.68484 - 61.10276,10.44326@25.61",
+    "rest_place_count": 2,
+    "rest_place_names": [
+      "Vinmonopolet Gjøvik",
+      "Maihaugrestauranten"
+    ],
+    "attraction_count": 0,
+    "attraction_by_type": {},
+    "wild_camping_site_count": 0,
+    "wild_camping_status_kind": "",
+    "wild_camping_status_message": ""
+  }
+}

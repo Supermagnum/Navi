@@ -1,0 +1,37 @@
+{
+  "t_ms": 13710569,
+  "distance_km": 2214.5092650852766,
+  "report": "TEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\nlong_trip_chunked=true; hops=7; chunk_deg=1.15; stretch_joint_repair_max=4\nchunk_leg1=69.97414,29.63376 -> 69.67551,29.14187\ndatex_affected road=R92 place=Rv. 92 Jernhøgda i Sør-Varanger, Finnmark - rv. 92 Nedamä (grense) i Sør-Varange type=MaintenanceWorks validity=from 2026-09-28 07:00:00 +02:00; to 2026-10-09 21:00:00 +02:00; Mon,Tue,Wed,Thu,Fri 07:00:00-21:00:00 effect=warning penalty_min=0\ndatex_affected road=R92 place=Rv. 92 Jernhøgda i Sør-Varanger, Finnmark - rv. 92 Nedamä (grense) i Sør-Varange type=GeneralNetworkManagement validity=from 2026-09-28 07:00:00 +02:00; to 2026-10-09 21:00:00 +02:00; Mon,Tue,Wed,Thu,Fri 07:00:00-21:00:00 effect=warning penalty_min=0\nhop_mem hop=1 peak_rss_mb=568\n--- hop_try1 report ---\nTEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\nprofile=MobileHome; routing=Truck; start=69.974143,29.633757; end=69.675509,29.141873; vias=0; use_eco=true; long_trip_enabled=false\npath_covering_nodes=14850; path_over_node_limit=false; clipped_nodes=5636; clipped_fits=true; needs_corridor=false; stage_b=true\nallowed_countries=none\navoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=true\ndatex_impacts=0; datex_block=0; datex_penalize=0\neco_regen=0.000\npoi_search_radius_m=100000; cabin_radius_m=20000; network_hut_radius_m=100000; network_hut_pref_m=20000; require_road_link=true\nbbox=69.326,28.792,70.351,29.984; pad=0.35; edge_clip=CorridorBand; tile_budget=20; corridor_pts=137\nbuild_s=2.07; cache_hit=false; pack_hit=true; nodes=4457; edges=9965; pad_attempts=[0.35]\npack_load_ms=2066; eco_reweight_ms=5; datex_bind_ms=1; snap_ms=12; search_ms=2; expansions=1464\ngraph_ferry_edges=0\nseasonal_closure_excluded_edges=0\nsnap_start=69.974202,29.633423 dist_m=14; snap_end=69.675509,29.141873 dist_m=0; snap_max_m=1000\nroute_ferry_legs=0\nroute_ferry_fp=\nroute_tunnel_count=0\nroute_tunnel_fp=\npoi_skipped=chunk_leg\npoi_pack_hit=false\nmotor_break_interval_km=117.1 (soft rest-",
+  "polyline_chars": 1298711,
+  "days_json": "[{\"compensation\":\"\",\"date\":\"\",\"day_index\":1,\"distance_km\":493.7832180013253,\"driving_hours\":6.0,\"end_km\":493.7832180013253,\"is_final\":false,\"not_in_cab\":false,\"overnight_found\":true,\"overnight_name\":\"Pandomes Aurora Igloo Hotel\",\"profile\":\"mobilehome\",\"rest_hours\":0.0,\"rest_kind\":\"lodging\",\"rest_label\":\"Lodging overnight\",\"start_km\":0.0},{\"compensation\":\"\",\"date\":\"\",\"day_index\":2,\"distance_km\":493.7832180013253,\"driving_hours\":6.0,\"end_km\":987.5664360026506,\"is_final\":false,\"not_in_cab\":false,\"overnight_found\":true,\"overnight_name\":\"Trollforsens gästgiveri\",\"profile\":\"mobilehome\",\"rest_hours\":0.0,\"rest_kind\":\"lodging\",\"rest_label\":\"Lodging overnight\",\"start_km\":493.7832180013253},{\"compensation\":\"\",\"date\":\"\",\"day_index\":3,\"distance_km\":493.7832180013254,\"driving_hours\":6.0,\"end_km\":1481.349654003976,\"is_final\":false,\"not_in_cab\":false,\"overnight_found\":true,\"overnight_name\":\"Parkvillan\",\"profile\":\"mobilehome\",\"rest_hours\":0.0,\"rest_kind\":\"lodging\",\"rest_label\":\"Lodging overnight\",\"start_km\":987.5664360026506},{\"compensation\":\"\",\"date\":\"\",\"day_index\":4,\"distance_km\":493.78321800132517,\"driving_hours\":6.0,\"end_km\":1975.1328720053011,\"is_final\":false,\"not_in_cab\":false,\"overnight_found\":true,\"overnight_name\":\"Maritbu 1\",\"profile\":\"mobilehome\",\"rest_hours\":0.0,\"rest_kind\":\"lodging\",\"rest_label\":\"Lodging overnight\",\"start_km\":1481.349654003976},{\"compensation\":\"\",\"date\":\"\",\"day_index\":5,\"distance_km\":239.37639307997551,\"driving_hours\":2.9086820007641485,\"end_km\":2214.5092650852766,\"is_final\":true,\"not_in_cab\":false,\"overnight_found\":false,\"overnight_name\":\"\",\"profile\":\"mobilehome\",\"rest_hours\":0.0,\"rest_kind\":\"\",\"rest_label\":\"\",\"start_km\":1975.1328720053011}]",
+  "break_poi_count": 12,
+  "start": "Elsa Sagveien",
+  "end": "Sjuvasslia",
+  "long_trip_status": "Nord-Norge (1 of 8)=Installed · Finland (2 of 8)=Installed · Norrbotten (3 of 8)=Installed · Västerbotten (4 of 8)=Installed · Västernorrland (5 of 8)=Installed · Jämtland (6 of 8)=Installed · Dalarna (7 of 8)=Installed · Ostlandet (8 of 8)=Installed",
+  "enumerations": {
+    "route_tunnel_count": 15,
+    "route_tunnel_fp": "Valtatie 4@0.24|E 14@0.14|Værnestunnelen N@0.19|Værnestunnelen S@0.05|Helltunnelen@3.90|Stavsjøfjelltunnelen@1.72|Væretunnelen@1.62|Grillstadtunnelen@0.74|Elgtråkket Storlersbakkan@0.11|Brubakktunnelen@0.11|Hofstadtunnelen@0.11|Håggåtunnelen@0.28|E 6@0.20|Soknedalstunnelen@3.60|Gudbrandsdalsvegen@0.02",
+    "route_ferry_legs": 0,
+    "route_ferry_fp": "",
+    "rest_place_count": 12,
+    "rest_place_names": [
+      "Rest 3297560855",
+      "Rest 2052055547",
+      "Stensele",
+      "Monaplassen",
+      "Berkåk Veikro",
+      "Tallerås",
+      "Raudesteinen sør",
+      "Moan",
+      "Pandomes Aurora Igloo Hotel",
+      "Trollforsens gästgiveri",
+      "Parkvillan",
+      "Maritbu 1"
+    ],
+    "attraction_count": 0,
+    "attraction_by_type": {},
+    "wild_camping_site_count": 0,
+    "wild_camping_status_kind": "",
+    "wild_camping_status_message": ""
+  }
+}

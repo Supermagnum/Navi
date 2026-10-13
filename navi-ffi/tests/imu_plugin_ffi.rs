@@ -12,11 +12,10 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 use navi::{
-    imu_plugin_alarm_settings, imu_plugin_configure, imu_plugin_install_guest,
-    imu_plugin_is_enabled, imu_plugin_registered_sensor_codes, imu_plugin_release_sensors,
-    imu_plugin_request_calibrate, imu_plugin_request_reset, imu_plugin_set_alarm_settings,
-    imu_plugin_set_enabled, imu_plugin_tick, ImuAlarmSettings, ImuCallKind, ImuSensorSample,
-    SensorPlatform,
+    imu_plugin_configure, imu_plugin_install_guest, imu_plugin_is_enabled,
+    imu_plugin_registered_sensor_codes, imu_plugin_release_sensors, imu_plugin_request_calibrate,
+    imu_plugin_request_reset, imu_plugin_set_enabled, imu_plugin_tick, ImuCallKind,
+    ImuSensorSample, SensorPlatform,
 };
 
 const GRAVITY_CODE: u32 = 3;
@@ -190,24 +189,10 @@ fn imu_plugin_end_to_end_through_ffi_surface() {
     assert!(calibrated["tilt_deg"].as_f64().unwrap() < 0.5);
     assert!(calibrated["calibrated_date"].is_string());
 
-    // Alarm: raise the device far from the calibrated level.
-    let stored = imu_plugin_set_alarm_settings(ImuAlarmSettings {
-        enabled: true,
-        pitch_warn_deg: 10.0,
-        pitch_danger_deg: 20.0,
-        roll_warn_deg: 10.0,
-        roll_danger_deg: 20.0,
-        hysteresis_deg: 2.0,
-    });
-    assert_eq!(imu_plugin_alarm_settings(), stored);
+    // Tilt still updates when the device is raised from the calibrated level.
     platform.set_up([0.0, 0.7 * G, 0.7 * G]);
     let tilted = tick_json();
-    assert_ne!(tilted["alarm"], "none");
-    imu_plugin_set_alarm_settings(ImuAlarmSettings {
-        enabled: false,
-        ..stored
-    });
-    assert_eq!(tick_json()["alarm"], "none");
+    assert!(tilted["tilt_deg"].as_f64().unwrap() > 5.0);
 
     // Reset removes the stored calibration.
     assert_eq!(imu_plugin_request_reset(), "OK");

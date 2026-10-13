@@ -1,0 +1,23 @@
+{
+  "status": "done",
+  "profile": "car",
+  "eco": false,
+  "stay_in_country": false,
+  "graph": "pack",
+  "wall_s": 10.14,
+  "duration_ms": 4510,
+  "distance_km": 62.52351947464423,
+  "polyline_points": 2184,
+  "spike_count": 0,
+  "spikes": [],
+  "from": [
+    "Hamar",
+    60.794721,
+    11.068055
+  ],
+  "to": [
+    "Lillehammer",
+    61.114545,
+    10.467007
+  ]
+}

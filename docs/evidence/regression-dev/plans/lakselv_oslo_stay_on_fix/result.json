@@ -1,0 +1,23 @@
+{
+  "status": "failed",
+  "profile": "car",
+  "eco": false,
+  "stay_in_country": true,
+  "graph": "pack",
+  "wall_s": 30.28,
+  "duration_ms": 23161,
+  "distance_km": 19.475347940743188,
+  "polyline_points": 538,
+  "spike_count": 0,
+  "spikes": [],
+  "from": [
+    "Lakselv",
+    70.052498,
+    24.960657
+  ],
+  "to": [
+    "Oslo",
+    59.91333,
+    10.73897
+  ]
+}

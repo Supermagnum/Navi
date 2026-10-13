@@ -1,0 +1,24 @@
+{
+  "t_ms": 13882331,
+  "distance_km": 60.80180876997411,
+  "report": "TEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\nprofile=Car; routing=Car; start=60.794721,11.068055; end=61.114545,10.467007; vias=0; use_eco=false; long_trip_enabled=true\npath_covering_nodes=529104; path_over_node_limit=false; clipped_nodes=167326; clipped_fits=true; needs_corridor=false; stage_b=false\nallowed_countries=none\navoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=true\ndatex_impacts=25; datex_block=0; datex_penalize=25\neco_regen=0.000\npoi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true\nbbox=60.680,10.250,61.240,11.285; pad=0.11; edge_clip=DirectEllipse { widen: 0 }; tile_budget=14; corridor_pts=2\ndirect_area=ellipse factor=1.15 allowance_km=10 strips=14\ndirect_area_edge_run_km=-0.0 route_km=60.8\nbuild_s=1.80; cache_hit=false; pack_hit=true; nodes=74224; edges=159151; pad_attempts=[0.11005239999999994]\npack_load_ms=1803; eco_reweight_ms=0; datex_bind_ms=24; snap_ms=229; search_ms=212; expansions=65553\ngraph_ferry_edges=0\nseasonal_closure_excluded_edges=0\nsnap_start=60.794488,11.067919 dist_m=27; snap_end=61.114260,10.466570 dist_m=39; snap_max_m=750\nroute_ferry_legs=0\nroute_ferry_fp=\nroute_tunnel_count=3\nroute_tunnel_fp=Skarpsnotunnelen@0.33|Moelvtunnelen@0.20|Sorgendalstunnelen@0.29\npoi_pack_hit=true\nmotor_break_interval_km=124.9 (soft rest-interval hours → km via trip speed)\nmotor_multi_day: days=1; multi_day=false\nrest_place_count=0\npriority_path_share_pct=7.86; motorway_share_pct=92.14\ndistance_km=60.802; eta_min=43.8; path_nodes=242; path_cost=66061; polyline_chars=49834; break_pois=[]; route_uses_ferry=false\nPASS\nplan_inputs profile=Car eco=false avoid_motorways=false toll=Allow avoid_ferries=false avoid_tunnels=false long_trip=true datex=Live start=60.794721,11.068055 end=61.114545,10.467007 vias=0 via_coords=\n",
+  "polyline_chars": 49834,
+  "days_json": "[]",
+  "break_poi_count": 0,
+  "start": "Hamar",
+  "end": "Lillehammer",
+  "long_trip_status": "Ostlandet (1 of 1)=Installed",
+  "enumerations": {
+    "route_tunnel_count": 3,
+    "route_tunnel_fp": "Skarpsnotunnelen@0.33|Moelvtunnelen@0.20|Sorgendalstunnelen@0.29",
+    "route_ferry_legs": 0,
+    "route_ferry_fp": "",
+    "rest_place_count": 0,
+    "rest_place_names": [],
+    "attraction_count": 0,
+    "attraction_by_type": {},
+    "wild_camping_site_count": 0,
+    "wild_camping_status_kind": "",
+    "wild_camping_status_message": ""
+  }
+}

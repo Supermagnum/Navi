@@ -109,8 +109,22 @@ object NaviMapTestHooks {
         val vias: List<Waypoint> = emptyList(),
         val forceLocalPbf: Boolean = false,
         val avoidFerries: Boolean? = null,
+        /** When non-null, force Stay in Country for this seeded trip. */
+        val stayInCountry: Boolean? = null,
         /** When non-null, force eco on/off for this seeded trip (UI + UniFFI rest). */
         val ecoModeEnabled: Boolean? = null,
+        /**
+         * When non-null, force wild-camping plugin on/off for this seeded trip.
+         * Default debug seed turns camping off so matrix runs stay deterministic;
+         * long-trip campaigns pass true via `navi_camping`.
+         */
+        val campingPluginEnabled: Boolean? = null,
+        /** When non-null, force Nearby attractions (POI look-ahead) on/off. */
+        val poiLookaheadEnabled: Boolean? = null,
+        /** Debug-intent only drive-settings overlays (null = leave Compose defaults). */
+        val avoidMotorways: Boolean? = null,
+        val avoidTunnels: Boolean? = null,
+        val avoidTolls: Boolean? = null,
         val restoreSettingsAfter: Boolean = true,
         /**
          * When true (default for [NaviDebugIntent] trips), pin the GPS mark at
@@ -935,6 +949,37 @@ object NaviMapTestHooks {
     /** Last LocationManager provider that fed applyFix (gps/network/passive/sim). */
     @Volatile
     var lastGpsProvider: String = ""
+
+    /** Dead-reckoning mode name (Gps / Estimating / PositionLost). */
+    @Volatile
+    var lastDrMode: String = "Gps"
+
+    /** Last tunnel-exit / GPS hand-back position error (metres), if any. */
+    @Volatile
+    var lastDrExitErrorM: Double? = null
+
+    /** Map mark is IMU/route estimated (amber). */
+    @Volatile
+    var gpsEstimated: Boolean = false
+
+    /** DR give-up — position lost. */
+    @Volatile
+    var positionLost: Boolean = false
+
+    /**
+     * Inject a sensor frame into the live [DeadReckoningController] (instrumented
+     * tunnel tests). Null when the map activity is not running.
+     */
+    @Volatile
+    var deadReckoningInject: ((SensorFrame) -> DrOutput)? = null
+
+    /** Signal GNSS loss to the live dead-reckoning engine (instrumented tests). */
+    @Volatile
+    var deadReckoningNotifyLost: (() -> DrOutput)? = null
+
+    /** Feed a GNSS sample into the live dead-reckoning engine (instrumented tests). */
+    @Volatile
+    var deadReckoningInjectGps: ((GpsSample) -> DrOutput)? = null
 
     /** Last resolved applicable speed limit (km/h). */
     @Volatile

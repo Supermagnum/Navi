@@ -1,0 +1,69 @@
+{
+  "status": "done",
+  "profile": "mobile_home",
+  "eco": true,
+  "stay_in_country": false,
+  "graph": "pack",
+  "wall_s": 141.85,
+  "duration_ms": 134300,
+  "distance_km": 1350.1584722807097,
+  "polyline_points": 24471,
+  "spike_count": 0,
+  "spikes": [],
+  "from": [
+    "Bad Bevensen Kurpark",
+    53.079686,
+    10.587198
+  ],
+  "to": [
+    "Dalsoren Camping",
+    61.4433766,
+    7.4614016
+  ],
+  "enumerations": {
+    "route_tunnel_count": 44,
+    "route_tunnel_fp": "Hamburger Stra\u00dfe@0.10|Tunnel Billwerder-Moorfleet@0.25|Sydmotorvejen@0.46|\u00d8resundsmotorvejen@0.69|\u00d8resundsmotorvejen@4.05|E 6,E 20,E 06,E 20@0.27|E 6,E 06@0.10|Tingstadstunneln@0.54|E 6,E 06@0.02|E 6,E 06@0.15|Gerumsbergstunneln@0.25|Busg\u00e5rdlokket@0.05|Galteryggtunnelen@0.10|Eidettunnelen@0.86|E 6@0.03|Follotunnelen@0.89|Nordbytunnelen@3.83|Mosseveien@0.06|Operatunnelen / Bj\u00f8rvikatunnelen@1.40|Operatunnelen / Festningstunnelen@1.77|Framnestunnelen@0.12|E 18@0.02|Sj\u00f8lysttunnelen@0.17|Lysakerlokket@0.26|Bj\u00f8rneg\u00e5rdtunnelen@2.26|Brennetunnelen@1.09|Skuitunnelen@1.43|Bukkestensh\u00f8gdatunnelen@0.74|Sollih\u00f8gdatunnelen@3.33|Skartunnelen@0.45|Nestunnelen@1.28|7@0.17|Rallerudtunnelen@2.81|\u00d8rgenviktunnelen@3.65|Hallingporten@0.06|Tuft\u00e5stunnelen@1.95|Borgundstunnelen@3.04|Seltatunnelen@1.63|Fodnestunnelen@6.58|Amlatunnelen@2.96|\u00c5r\u00f8ytunnelen@0.41|Stupsh\u00f8lentunnelen@0.07|R\u00f8neidtunnelen@0.64|R\u00e5umtunnelen@0.50",
+    "route_ferry_legs": 2,
+    "route_ferry_fp": "R\u00f8dby (DK) - Puttgarden (D)@0.03|Fodnes - Mannheller@3.14",
+    "rest_place_count": 11,
+    "rest_place_names": [
+      "Autohof Roggenhorst \u2013 Bojens Truck-Wash",
+      "Rest 13759698855",
+      "Rest 10681532521",
+      "Rest 13294431938",
+      "Rest 14100770402",
+      "St\u00f8kken",
+      "Lindelia",
+      "Grensa",
+      "Veum bru",
+      "Hamnhotellet Kronan",
+      "Vestby hyttepark & gjesteg\u00e5rd"
+    ],
+    "attraction_count": 1,
+    "attraction_by_type": {
+      "amenity-restaurant": 1
+    },
+    "wild_camping_site_count": 107,
+    "wild_camping_status_kind": "OK",
+    "wild_camping_status_message": "ok",
+    "wild_camping_by_country": {
+      "se": 57,
+      "no": 50
+    },
+    "wild_camping_by_subdivision": {
+      "se": 57,
+      "no": 3,
+      "no-31": 6,
+      "no-32": 3,
+      "no-03": 5,
+      "no-33": 23,
+      "no-46": 10
+    }
+  },
+  "enum_meta": {
+    "wild_camping_site_count": 107,
+    "wild_camping_status_kind": "OK",
+    "attraction_count": 1,
+    "enum_wait_s": 120.23
+  }
+}

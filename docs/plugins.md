@@ -90,7 +90,7 @@ snapshots into the core; WASM guests must not get raw sockets.
 | `plugins/right-to-roam-camping` | Product camping guest (Phase 5a on Android); shared rule engine in `plugins/right-to-roam-camping/engine` (`navi-right-to-roam-camping`) |
 | `plugins/CATS-plugin/` | CAT / CATS WASM guest — repeater select / auto-tune / network follow ([`CAT.md`](CAT.md)); host is `navi-cat` + `navi-hamlib-sys` |
 | `plugins/weather/` | Weather plugin — Meteocons assets + guest scaffold; product HUD/map use host UniFFI ([`plugins/weather-plugin.md`](plugins/weather-plugin.md)) |
-| `plugins/imu/` | IMU guest (pitch / tilt / compass, mount calibration, tilt alarm level) on `sensors_read`; engine in `plugins/imu/engine`; staged into the APK by `scripts/build-plugin-wasm.sh` and fed by the Android `SensorManager` backend via `navi-ffi` (`imu_plugin_*`), default OFF ([`plugins/imu-plugin.md`](plugins/imu-plugin.md)) |
+| `plugins/imu/` | IMU guest (pitch / tilt / compass, mount calibration, display) on `sensors_read`; engine in `plugins/imu/engine`; staged into the APK by `scripts/build-plugin-wasm.sh` and fed by the Android `SensorManager` backend via `navi-ffi` (`imu_plugin_*`), default OFF ([`plugins/imu-plugin.md`](plugins/imu-plugin.md)) |
 | `plugins/datex/` | DATEX guest scaffold; host client in `driver-break-core::datex` ([`plugins/datex-plugin.md`](plugins/datex-plugin.md)) |
 
 ## Manifest (`plugin.json`)

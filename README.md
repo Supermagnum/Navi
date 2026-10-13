@@ -103,7 +103,7 @@ and radio/baud UI notes (branch `CAT`): [`docs/CAT.md`](docs/CAT.md),
 **Install the signed release APK.** Testers should download and sideload
 [`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
 installable release APK** (upload keystore; not the debug build). Current build:
-**0.3.22-beta** (`versionName` 0.3.22-beta, `versionCode` 27). Download from the
+**0.3.23-beta** (`versionName` 0.3.23-beta, `versionCode` 28). Download from the
 [`dev` branch](https://github.com/Supermagnum/Navi/tree/dev/compiled)
 (latest tester build). Android
 validates the APK signature on install; the separate GPG files
@@ -189,6 +189,7 @@ checklist above and file an issue; you do not need to write code.
     - [Adaptive speed warning](docs/plugins/adaptive-speed-warning-spec.md) — not implemented
     - [Nearby attractions (POI look-ahead)](docs/plugins/poi-lookahead-cone-spec.md) — implemented (opt-in)
     - [IMU (pitch / tilt / compass, mount calibration)](docs/plugins/imu-plugin.md) — implemented (opt-in; Map / Tools → Plugins)
+    - [CAT radio](https://github.com/Supermagnum/Navi/blob/CAT/README.md#cat-radio-plugin) — developed on the [`CAT`](https://github.com/Supermagnum/Navi/tree/CAT) branch; not part of `dev` releases yet
     - [LoRa convoy](docs/plugins/lora-convoy-spec.md) — not implemented
     - [Voice guidance (turn-by-turn)](docs/voice-guidance.md) — not implemented
     - [Voice command](docs/plugins/voice-command.md) — not implemented
@@ -282,7 +283,8 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Norwegian road-sign warnings** | Vendored `NO:` catalogue approach icons in Norway; explicit OSM `traffic_sign` / `hazard` tags. Same 750 / 150 / 25 m approach phases as maneuvers. See [`docs/road-signs.md`](docs/road-signs.md). | Done |
 | **Look forward** | Without a planned route, GPS position + heading look ahead **300 m** (±60°) for catalogue road signs, speed humps (`NO:109`), children facilities (generic **142**), opted-in speed cameras, and an upcoming posted speed-limit plate from the existing road-label cell graph — same approach box (750 / 150 / 25 m) and jurisdiction gates as the route-corridor path. Dedicated 362 plates cover every-5 km/h values including 12 generated plates; odd OSM speeds still snap to the nearest shipped plate. Compact points load once per region. Detail: [`docs/road-signs.md`](docs/road-signs.md). | Done |
 | **Nearby attractions** | Opt-in under **Map / Tools → Plugins → Nearby attractions** (off by default). Quiet top-right HUD chip for attractions, fishing, and craft alcohol (incl. cider) in an **850 m / ±30°** heading cone — open-now filtered, not a hazard warning. Distinct from Look forward. Spec: [`docs/plugins/poi-lookahead-cone-spec.md`](docs/plugins/poi-lookahead-cone-spec.md). | Done |
-| **IMU pitch / tilt / compass** | Opt-in under **Map / Tools → Plugins → IMU pitch / tilt / compass** (off by default). Made for a phone or tablet **mounted in a vehicle**: live pitch, tilt and compass heading from the device sensors, plus an alarm tone when the vehicle tilts towards dangerous values (thresholds are yours to set). A mounted unit is never perfectly aligned with the vehicle, so calibrate once: Find a level concrete surface, like the floor of your garage, then tap Calibrate. The unit will then use the current values as level. **Reset** removes the calibration; the status line shows whether the unit is calibrated and on which date. Calibration is rejected while the vehicle is moving. Wasm guest plus Android `SensorManager` bridge; detail: [`docs/plugins/imu-plugin.md`](docs/plugins/imu-plugin.md). | Done |
+| **IMU pitch / tilt / compass** | Opt-in under **Map / Tools → Plugins → IMU pitch / tilt / compass** (off by default). Made for a phone or tablet **mounted in a vehicle**: live pitch, tilt and compass heading from the device sensors. A mounted unit is never perfectly aligned with the vehicle, so calibrate once: Find a level concrete surface, like the floor of your garage, then tap Calibrate. The unit will then use the current values as level. **Reset** removes the calibration; the status line shows whether the unit is calibrated and on which date. Calibration is rejected while the vehicle is moving. Wasm guest plus Android `SensorManager` bridge; detail: [`docs/plugins/imu-plugin.md`](docs/plugins/imu-plugin.md). | Done |
+| **Tunnel / GNSS-gap positioning** | When GPS is lost or badly degraded (tunnels, deep cuts), the host keeps the map mark moving along the active route (or the current road edge) using IMU heading/accel and the last good speed — same mount calibration as the IMU plugin. The mark turns amber while estimated, grey with **Position lost** after a time/distance give-up, then blends back when a good fix returns. No Google Play services (`LocationManager` + `SensorManager`). Detail: [`docs/tunnel-dead-reckoning.md`](docs/tunnel-dead-reckoning.md). | Done |
 | **CAT radio** | Opt-in under **Map / Tools → Plugins** (off by default). Look up amateur repeaters within **150 km**, auto-tune **VFO A/1**, follow LA5MR-style networks with hysteresis (leave after the last site — decision C), leave **VFO B/2** to the user, and **never transmit**. Radios: Hamlib (Stable only) and native Benshi Bluetooth (VR-N76). Licence on the toggle: *You may listen, but do not transmit without an amateur radio licence.* Detail: [CAT radio plugin](#cat-radio-plugin), [`docs/CAT.md`](docs/CAT.md). | Done (this branch) |
 | **Children facilities nearby** | When no tagged children / school sign is active, schools, kindergartens, and playgrounds still trigger a generic **142 Children** approach warning (nearest facility wins; tagged `NO:142` outranks this fallback). **With a planned route:** facilities within **200 m** of the corridor. **Without a route:** covered by **Look forward** (300 m cone). Detail: [`docs/road-signs.md`](docs/road-signs.md). | Done |
 | **Speed camera warnings** | Point cameras use the existing approach distance-phase UX; average-speed / section-control zones use a distinct enter/exit box. `maxspeed:conditional` is evaluated against live local time. Jurisdiction-gated like EC561 / allemannsretten: Norway/UK opt-in (OSM-sourced, may be incomplete); Germany/France/Switzerland and unknown jurisdictions decline — see [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). First-run opt-in dialog required (not silently enabled). Works on both planned-route corridor and **Look forward**. | Done (display/warning only — no route-avoidance toggle, by deliberate product decision) |
@@ -989,7 +991,8 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md) | Server / mirror of precomputed packs, commercial DB contrast, town-to-town route cache (direction; not shipped) |
 | [`docs/coverage.md`](docs/coverage.md) | Pack-server countries and subregions from `current.json` (TOC + region ids) |
 | [`docs/plugins.md`](docs/plugins.md) | Plugin host and roadmap (enable/disable; USB/Bluetooth I/O) |
-| [`docs/plugins/imu-plugin.md`](docs/plugins/imu-plugin.md) | IMU pitch / tilt / compass for a vehicle-mounted unit: level calibration, tilt alarm (opt-in plugin) |
+| [`docs/plugins/imu-plugin.md`](docs/plugins/imu-plugin.md) | IMU pitch / tilt / compass for a vehicle-mounted unit: level calibration (opt-in plugin) |
+| [`docs/tunnel-dead-reckoning.md`](docs/tunnel-dead-reckoning.md) | Host IMU-assisted tunnel / GNSS-gap dead reckoning (estimated mark, give-up, GPS hand-back) |
 | [`docs/plugins/lora-convoy-spec.md`](docs/plugins/lora-convoy-spec.md) | LoRa convoy status over Meshtastic (Meshstick USB / BLE radio; not shipped) |
 
 See the `docs/` folder for more specialised topics (voice, APRS, ECU, formulas,
@@ -1090,7 +1093,7 @@ Guest overview: [`plugins/CATS-plugin/README.md`](plugins/CATS-plugin/README.md)
 | [`docs/plugins/horse-trekking-spec.md`](docs/plugins/horse-trekking-spec.md) | Equestrian lookahead and access guidance (Hiking is the interim stopgap) | **Not implemented** |
 | [`docs/plugins/adaptive-speed-warning-spec.md`](docs/plugins/adaptive-speed-warning-spec.md) | Spoken escalating overspeed (percentage tiers) | **Not implemented** |
 | [`docs/plugins/poi-lookahead-cone-spec.md`](docs/plugins/poi-lookahead-cone-spec.md) | Nearby attractions look-ahead cone (host UniFFI + quiet HUD; WASM scaffold; default OFF) | **Implemented** (opt-in) |
-| [`docs/plugins/imu-plugin.md`](docs/plugins/imu-plugin.md) | IMU pitch / tilt / compass for a vehicle-mounted unit, level calibration, tilt alarm (wasm guest staged into the APK, Android sensor bridge; default OFF). Calibration: Find a level concrete surface, like the floor of your garage, then tap Calibrate. The unit will then use the current values as level. | **Implemented** (opt-in) |
+| [`docs/plugins/imu-plugin.md`](docs/plugins/imu-plugin.md) | IMU pitch / tilt / compass for a vehicle-mounted unit, level calibration (wasm guest staged into the APK, Android sensor bridge; default OFF). Calibration: Find a level concrete surface, like the floor of your garage, then tap Calibrate. The unit will then use the current values as level. | **Implemented** (opt-in) |
 | [`docs/plugins/lora-convoy-spec.md`](docs/plugins/lora-convoy-spec.md) | LoRa convoy status over Meshtastic — Meshstick USB SX1262 stick or BLE node; location/speed/fuel/charge | **Not implemented** |
 | [`docs/voice-guidance.md`](docs/voice-guidance.md) | Turn-by-turn spoken maneuver guidance — pre-recorded clips only; distinct from [`docs/plugins/voice-command.md`](docs/plugins/voice-command.md) | **Not implemented** |
 | [`docs/plugins/voice-command.md`](docs/plugins/voice-command.md) | Spoken navigate / save-place / nearest-POI alternative (on-device ASR/TTS). Distinct from turn-by-turn [`docs/voice-guidance.md`](docs/voice-guidance.md) | **Not implemented** |
@@ -1162,7 +1165,7 @@ it as a normal install (not an unsigned or debug-only package).
 
 | Artifact | Role |
 |---|---|
-| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64-v8a, `versionName` 0.3.22-beta, `versionCode` 27) |
+| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64-v8a, `versionName` 0.3.22-beta, `versionCode` 27; CAT branch keeps prior APKs — use `dev` for 0.3.23-beta) |
 | [`compiled/SHA256SUMS`](compiled/SHA256SUMS) | SHA-256 checksum for integrity checks |
 | [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc) | Detached GPG provenance signature (not Android APK signing) |
 
@@ -1276,7 +1279,7 @@ you sideload as release, hand to F-Droid-style checks, or smoke-test as an AAB.
 
 A prebuilt upload-key-signed release APK for testers is committed at
 [`compiled/navi-release.apk`](compiled/navi-release.apk) (`versionName` 0.3.22-beta,
-`versionCode` 27; see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
+`versionCode` 27 on this branch; see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
 
 1. **Native library** for every ABI you ship (store AABs usually need both):
 

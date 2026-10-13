@@ -1,8 +1,8 @@
 //! IMU guest: thin wasm32 shim over `navi-plugin-imu-engine`.
 //!
 //! Pitch / tilt / compass, vehicle-mount level calibration and the tilt-danger
-//! alarm level. The guest only reads sensors and writes `plugin_kv`; the host
-//! owns sensor registration (rate-limited), UI and alarm audio.
+//! The guest only reads sensors and writes `plugin_kv`; the host owns sensor
+//! registration (rate-limited) and UI.
 
 use navi_plugin_imu_engine::{DateStamp, Host, Sample};
 

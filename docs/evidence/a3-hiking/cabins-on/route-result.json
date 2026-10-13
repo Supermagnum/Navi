@@ -1,0 +1,37 @@
+{
+  "t_ms": 2960855,
+  "distance_km": 102.86450177299045,
+  "report": "TEST_KIND=PLAN_HIKING_ROUTE\nDATA_SOURCE=real_pbf\nprofile=Hiking; use_eco=true\nprefer_official_networks=false; prefer_pilgrim_routes=false\navoid_motorways=true (locked for hiking)\navoid_ferries=false\nuse_networked_cabins=true\nuse_unlocked_cabins=true\nnetwork_hut_member=true\navoid_ferries=false\nwaypoints=3\nterrain_gap_densify_added=4\npoi_search_radius_m=10500; cabin_radius_m=10500; network_hut_radius_m=25000; network_hut_pref_m=10500; require_road_link=false\nbbox=61.187,7.295,61.852,9.116; pad=0.30\nslow_road_preference=applied; profile=hiking\nbuild_s=0.16; cache_hit=false; pack_hit=true; nodes=11778; edges=27424\ngraph_ferry_edges=8\nwetland_rings=4421; wetland_soft_edges=516; wetland_hard_removed=0; wetland_boardwalk_kept=0; wetland_pack_hit=true\nroute_mode=hybrid; off_trail_m=27359\npoi_pack_hit=true; overnight_buildings_pack_hit=false\novernight_buildings=0; overnight_glaciers=138; overnight_source=pbf_corridor; overnight_corridor_margin_m=1500\nauto_via_limits: search_m=10500; lateral_m=10500; extra_floor_m=10500; extra_frac=0.15; use_networked_cabins=true\nauto_vias=1; names=Memurubu\nADVISORY: Off-trail segment: terrain analysis cannot see cliffs, dense vegetation, seasonal snow\/ice, or water crossings missing from DEM\/OSM. Right-to-roam access does not mean the route is safe or sensible — use your own judgment.\nhiking_multi_day: days=4; max_daily_km=40.0; total_km=102.9\nhiking_day: idx=1; start_km=0.0; end_km=21.7; distance_km=21.7; overnight_gap=false\nhiking_overnight: osm_id=4082386277; name=\"Steinbu i Veslådalen\"; network=false; membership_required=false; safety_rejected=false; safety_reason=None; dist_m=3487; lat=61.43258; lon=8.44032\nhiking_day: idx=2; start_km=21.7; end_km=47.7; distance_km=26.0; overnight_gap=false\nhiking_overnight: osm_id=4081815859; name=\"Nøgla\"; network=false; membership_required=false; safety_rejected=false; safety_reason=None; dist_m=147; lat=61.54106; lon=8.24912\nhiking_day: idx=3; start_km=47.7; end_km=87.7; distance_km=40.0; overnight_g",
+  "polyline_chars": 100281,
+  "days_json": "[{\"cabin_class\":\"unlocked\",\"category\":\"hut\",\"compensation\":\"\",\"date\":\"\",\"day_index\":1,\"distance_km\":21.73707341155056,\"driving_hours\":0.0,\"end_km\":21.73707341155056,\"is_final\":false,\"is_network\":false,\"lat\":61.4325836,\"lon\":8.440318600000001,\"membership_required\":false,\"not_in_cab\":false,\"osm_id\":4082386277,\"overnight_found\":true,\"overnight_name\":\"Steinbu i Veslådalen\",\"profile\":\"hiking\",\"rest_hours\":0.0,\"rest_kind\":\"hut\",\"rest_label\":\"Hut overnight\",\"safety_reason\":\"\",\"safety_rejected\":false,\"start_km\":0.0},{\"cabin_class\":\"unlocked\",\"category\":\"hut\",\"compensation\":\"\",\"date\":\"\",\"day_index\":2,\"distance_km\":25.960444817830385,\"driving_hours\":0.0,\"end_km\":47.69751822938095,\"is_final\":false,\"is_network\":false,\"lat\":61.54106470000001,\"lon\":8.2491185,\"membership_required\":false,\"not_in_cab\":false,\"osm_id\":4081815859,\"overnight_found\":true,\"overnight_name\":\"Nøgla\",\"profile\":\"hiking\",\"rest_hours\":0.0,\"rest_kind\":\"hut\",\"rest_label\":\"Hut overnight\",\"safety_reason\":\"\",\"safety_rejected\":false,\"start_km\":21.73707341155056},{\"cabin_class\":\"networked\",\"category\":\"network_hut\",\"compensation\":\"\",\"date\":\"\",\"day_index\":3,\"distance_km\":40.0,\"driving_hours\":0.0,\"end_km\":87.69751822938095,\"is_final\":false,\"is_network\":true,\"lat\":61.738380400000004,\"lon\":7.9390799,\"membership_required\":false,\"not_in_cab\":false,\"osm_id\":1356403737,\"overnight_found\":true,\"overnight_name\":\"Trulsbu\",\"profile\":\"hiking\",\"rest_hours\":0.0,\"rest_kind\":\"network_hut\",\"rest_label\":\"Network hut overnight\",\"safety_reason\":\"\",\"safety_rejected\":false,\"start_km\":47.69751822938095},{\"cabin_class\":null,\"category\":\"\",\"compensation\":\"\",\"date\":\"\",\"day_index\":4,\"distance_km\":1.3387149943673649,\"driving_hours\":0.0,\"end_km\":89.03623322374831,\"is_final\":true,\"is_network\":null,\"lat\":null,\"lon\":null,\"membership_required\":null,\"not_in_cab\":false,\"osm_id\":null,\"overnight_found\":false,\"overnight_name\":\"\",\"profile\":\"hiking\",\"rest_hours\":0.0,\"rest_kind\":\"\",\"rest_label\":\"\",\"safety_reason\":\"\",\"safety_rejected\":false,\"start_km\":87.69751822938095}]",
+  "break_poi_count": 12,
+  "start": "Gjendesheim",
+  "end": "Skjolden_Hotel",
+  "long_trip_status": "Ostlandet (1 of 2)=Installed · Vestlandet (2 of 2)=Installed",
+  "enumerations": {
+    "route_tunnel_count": 0,
+    "route_tunnel_fp": "",
+    "route_ferry_legs": 0,
+    "route_ferry_fp": "",
+    "rest_place_count": 12,
+    "rest_place_names": [
+      "Memurubu",
+      "Tent site",
+      "Tent site",
+      "Nøgla",
+      "Krossbu",
+      "Sognefjellshytta",
+      "Tent site",
+      "Tent site",
+      "Leirvassbu",
+      "Steinbu i Veslådalen",
+      "Nøgla",
+      "Trulsbu"
+    ],
+    "attraction_count": 0,
+    "attraction_by_type": {},
+    "wild_camping_site_count": 0,
+    "wild_camping_status_kind": "",
+    "wild_camping_status_message": ""
+  }
+}

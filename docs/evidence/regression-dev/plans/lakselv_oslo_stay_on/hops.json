@@ -1,0 +1,68 @@
+{
+  "hops": [
+    {
+      "datex_bind_ms": 0,
+      "endpoints": "70.05250,24.96066->63.23494,14.76860",
+      "eta_min": 1145.7,
+      "expansions": 218894,
+      "i": 1,
+      "km": 1595.339,
+      "pack_load_ms": 27810,
+      "poly_agree_0_5pct": true,
+      "poly_km": 1593.563,
+      "result": "success",
+      "route_ferry_legs": 0,
+      "search_ms": 390,
+      "snap_ms": 401,
+      "terminate": "found"
+    },
+    {
+      "datex_bind_ms": 0,
+      "endpoints": "63.23494,14.76860->60.25585,12.51348",
+      "eta_min": 368.7,
+      "expansions": 128226,
+      "i": 2,
+      "km": 517.947,
+      "pack_load_ms": 10771,
+      "poly_agree_0_5pct": true,
+      "poly_km": 517.371,
+      "result": "success",
+      "route_ferry_legs": 0,
+      "search_ms": 272,
+      "snap_ms": 281,
+      "terminate": "found"
+    },
+    {
+      "datex_bind_ms": 0,
+      "endpoints": "60.25585,12.51348->59.91911,10.81732",
+      "eta_min": 95.7,
+      "expansions": 85146,
+      "i": 3,
+      "km": 129.244,
+      "pack_load_ms": 5862,
+      "poly_agree_0_5pct": true,
+      "poly_km": 129.1,
+      "result": "success",
+      "route_ferry_legs": 0,
+      "search_ms": 293,
+      "snap_ms": 595,
+      "terminate": "found"
+    },
+    {
+      "datex_bind_ms": 0,
+      "endpoints": "59.91911,10.81732->59.91333,10.73897",
+      "eta_min": 9.3,
+      "expansions": 55242,
+      "i": 4,
+      "km": 9.242,
+      "pack_load_ms": 2852,
+      "poly_agree_0_5pct": true,
+      "poly_km": 9.232,
+      "result": "success",
+      "route_ferry_legs": 0,
+      "search_ms": 140,
+      "snap_ms": 794,
+      "terminate": "found"
+    }
+  ]
+}

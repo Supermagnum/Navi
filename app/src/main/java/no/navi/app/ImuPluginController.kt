@@ -6,7 +6,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
-import uniffi.navi.ImuAlarmSettings
 import uniffi.navi.ImuCallKind
 import uniffi.navi.ImuTickResult
 
@@ -23,10 +22,6 @@ interface ImuPluginApi {
     fun requestReset(): String
 
     fun releaseSensors()
-
-    fun alarmSettings(): ImuAlarmSettings
-
-    fun setAlarmSettings(settings: ImuAlarmSettings): ImuAlarmSettings
 }
 
 /** What the settings UI renders. */
@@ -42,14 +37,11 @@ data class ImuUiState(
 )
 
 /**
- * Host-side IMU plugin logic: tick the guest, publish its state, sound the alarm
- * tone for the reported level, and route Calibrate / Reset / alarm settings.
+ * Host-side IMU plugin logic: tick the guest, publish its state, and route
+ * Calibrate / Reset. Live pitch / tilt / heading are display-only.
  */
 class ImuPluginController(
     private val api: ImuPluginApi,
-    private val player: ImuAlarmTonePlayer,
-    private val policy: ImuAlarmPolicy = ImuAlarmPolicy(),
-    private val clockMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ) {
     private val mutable = MutableStateFlow(ImuUiState())
     val state: StateFlow<ImuUiState> = mutable.asStateFlow()
@@ -80,7 +72,6 @@ class ImuPluginController(
         }
         if (!enabled) {
             api.releaseSensors()
-            policy.reset()
         }
         mutable.value =
             mutable.value.copy(
@@ -98,15 +89,11 @@ class ImuPluginController(
         val result = api.tick()
         if (result.kind != ImuCallKind.OK) {
             api.releaseSensors()
-            policy.reset()
             mutable.value = mutable.value.copy(readout = null, message = result.message, failed = true)
             return
         }
         val readout = ImuReadoutParser.parse(result.stateJson)
         mutable.value = mutable.value.copy(readout = readout, message = null, failed = false)
-        if (readout != null) {
-            policy.next(readout.alarm, readout.alarmEnabled, clockMs())?.let(player::play)
-        }
     }
 
     /** Tick at [tickMs] while [shouldRun]; unregisters sensors when it stops. */
@@ -118,7 +105,6 @@ class ImuPluginController(
             }
         } finally {
             api.releaseSensors()
-            policy.reset()
         }
     }
 
@@ -126,15 +112,8 @@ class ImuPluginController(
 
     fun reset(): String = api.requestReset()
 
-    fun alarmSettings(): ImuAlarmSettings = api.alarmSettings()
-
-    fun setAlarmSettings(settings: ImuAlarmSettings): ImuAlarmSettings = api.setAlarmSettings(settings)
-
-    fun testAlarm(tone: ImuAlarmTone) = player.play(tone)
-
     fun release() {
         api.releaseSensors()
-        player.release()
     }
 
     companion object {

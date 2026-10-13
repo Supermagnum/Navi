@@ -1,0 +1,360 @@
+--------- beginning of system
+10-13 19:20:52.421 W/ActivityTaskManager(  618): callingPackage for (uid=0, pid=1341) has no WPC
+10-13 19:20:52.422 W/OptProp (  618): Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_USER_ASPECT_RATIO_OVERRIDE
+10-13 19:20:52.422 W/OptProp (  618): Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_USER_ASPECT_RATIO_FULLSCREEN_OVERRIDE
+10-13 19:20:52.422 W/OptProp (  618): Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_ORIENTATION_OVERRIDE
+--------- beginning of main
+10-13 19:20:52.422 V/GrammaticalInflectionUtils(  618): AttributionSource: AttributionSource { uid = 10222, packageName = null, attributionTag = null, token = android.os.Binder@54b529f, deviceId = 0, next = null } does not have READ_SYSTEM_GRAMMATICAL_GENDER permission.
+10-13 19:20:52.422 W/OptProp (  618): Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_RESIZEABLE_ACTIVITY_OVERRIDES
+10-13 19:20:52.422 W/OptProp (  618): Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_MIN_ASPECT_RATIO_OVERRIDE
+10-13 19:20:52.423 I/ActivityTaskManager(  618): START u0 {flg=0x10000000 cmp=no.navi.app/.MainActivity (has extras)} with LAUNCH_SINGLE_TASK from uid 0 (BAL_ALLOW_ALLOWLISTED_UID) result code=3
+10-13 19:20:52.423 V/WindowManagerShell(  897): Transition requested (#354): android.os.BinderProxy@da87d80 TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=1239 displayId=0 isRunning=true baseIntent=Intent { flg=0x10000000 cmp=no.navi.app/.MainActivity } baseActivity=ComponentInfo{no.navi.app/no.navi.app.MainActivity} topActivity=ComponentInfo{no.navi.app/no.navi.app.MainActivity} origActivity=null realActivity=ComponentInfo{no.navi.app/no.navi.app.MainActivity} numActivities=1 lastActiveTime=34743681 supportsMultiWindow=true resizeMode=2 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{android.window.IWindowContainerToken$Stub$Proxy@7fa9fb9} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=null topActivityInfo=ActivityInfo{4768ffe no.navi.app.MainActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=true isVisible=true isVisibleRequested=true isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= falseisLetterboxEducationEnabled= true isLetterboxDoubleTapEnabled= false topActivityEligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=1080 topActivityLetterboxHeight=2400 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false cameraCompatTaskInfo=CameraCompatTaskInfo { cameraCompatControlState=hidden freeformCameraCompatMode=inactive}}}, pipTask = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 354 }
+10-13 19:20:52.423 D/WindowManagerShell(  897): onActivityRestartAttempt: ComponentInfo{no.navi.app/no.navi.app.MainActivity}
+10-13 19:20:52.423 I/NaviMapHooks(  301): force_online=false force_source= cleared=true fu49_offline=false fu49_simple=false fu49_overview=false fu49_second=false fu49_online=false fu49_bypass_queue=false fu49_no_keep=false
+10-13 19:20:52.424 V/WindowManagerShell(  897): onTransitionReady(transaction=2654289800410)
+10-13 19:20:52.424 V/WindowManagerShell(  897): onTransitionReady (#354) android.os.BinderProxy@da87d80: {id=354 t=OPEN f=0x0 trk=0 r=[] c=[]}
+10-13 19:20:52.424 V/WindowManagerShell(  897): No transition roots in (#354) android.os.BinderProxy@da87d80@0 so abort
+10-13 19:20:52.424 V/WindowManagerShell(  897): Transition animation finished (aborted=true), notifying core (#354) android.os.BinderProxy@da87d80@0
+10-13 19:20:52.424 V/WindowManager(  618): Sent Transition (#354) createdAt=10-13 19:20:52.422 via request=TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=1239 displayId=0 isRunning=true baseIntent=Intent { flg=0x10000000 cmp=no.navi.app/.MainActivity } baseActivity=ComponentInfo{no.navi.app/no.navi.app.MainActivity} topActivity=ComponentInfo{no.navi.app/no.navi.app.MainActivity} origActivity=null realActivity=ComponentInfo{no.navi.app/no.navi.app.MainActivity} numActivities=1 lastActiveTime=34743681 supportsMultiWindow=true resizeMode=2 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{RemoteToken{3321ea8 Task{91fa5ea #1239 type=standard A=10222:no.navi.app}}} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=null topActivityInfo=ActivityInfo{2bb966 no.navi.app.MainActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=true isVisible=true isVisibleRequested=true isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= falseisLetterboxEducationEnabled= true isLetterboxDoubleTapEnabled= false topActivityEligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=1080 topActivityLetterboxHeight=2400 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false cameraCompatTaskInfo=CameraCompatTaskInfo { cameraCompatControlState=hidden freeformCameraCompatMode=inactive}}}, pipTask = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 354 }
+10-13 19:20:52.424 V/WindowManager(  618):     startWCT=WindowContainerTransaction { changes = {} hops = [] errorCallbackToken=null taskFragmentOrganizer=null }
+10-13 19:20:52.424 V/WindowManager(  618):     info={id=354 t=OPEN f=0x0 trk=0 r=[] c=[]}
+10-13 19:20:52.424 I/BpBinder(  475): onLastStrongRef automatically unlinking death recipients: 
+10-13 19:20:52.426 V/WindowManager(  618): Finish Transition (#354): created at 10-13 19:20:52.422 collect-started=0.013ms request-sent=0.644ms started=1.206ms ready=1.2ms sent=1.516ms finished=3.847ms
+10-13 19:20:52.426 V/WindowManagerShell(  897): Track 0 became idle
+10-13 19:20:52.426 V/WindowManagerShell(  897): All active transition animations finished
+10-13 19:20:52.427 W/UserManagerService(  618): Requested status bar icon for non-badged user 0
+10-13 19:20:52.433 I/NaviDebugIntent(  301): reset to defaults use_networked_cabins=false use_unlocked_cabins=false bike_capability=trekking eco=false
+10-13 19:20:52.434 I/NaviDebugIntent(  301): applied profile=car bike=null graph=pack-hit vias=1 settings={eco_mode=false} ignored=[] avoid_ferries=null stay_in_country=false eco=false camping=null attractions=null avoid_motorways=null avoid_tunnels=null avoid_tolls=null restore=false inject_gps=true
+10-13 19:20:52.434 I/NaviTrip(  301): pendingTripPlan from=Bad Bevensen to=Dalsoren long=true plan=true profile=CAR graph=pack
+--------- beginning of kernel
+10-13 19:20:52.538 I/logd    (    0): logdr: UID=0 GID=0 PID=1344 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-13 19:20:52.480 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 19:20:52.481 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 19:20:52.481 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 19:20:52.481 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 19:20:52.482 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/817a994 blocked - too close [CONTEXT service_id=6 ]
+10-13 19:20:52.482 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 19:20:52.514 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:52.524 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.524 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.524 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.524 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.524 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.524 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.524 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.524 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.524 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.524 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.525 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.525 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.525 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.525 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.525 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.526 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:52.527 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:52.527 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.527 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.527 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.527 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.527 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.530 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.530 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.530 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.530 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.530 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.541 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.541 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.541 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.541 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.541 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.541 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.541 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.541 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.541 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.541 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.541 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.541 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.541 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.542 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.542 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.543 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:52.544 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:52.544 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.544 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.544 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.544 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.546 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.546 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.546 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.546 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.546 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.546 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.547 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.549 D/EGL_emulation(  301): app_time_stats: avg=21283.46ms min=21283.46ms max=21283.46ms count=1
+10-13 19:20:52.576 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:52.577 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:52.591 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.591 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.591 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.591 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.591 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.591 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.592 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:52.593 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:52.593 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.593 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.593 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.593 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.593 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.596 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.596 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.596 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.596 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.596 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.596 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.596 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.596 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.841 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.841 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.841 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.841 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.841 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.841 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.841 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.841 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.841 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.841 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.842 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:52.843 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:52.843 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.843 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.843 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.843 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.843 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.846 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.846 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.846 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.846 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.846 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.846 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.846 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.846 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:52.846 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.480 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 19:20:53.481 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 19:20:53.481 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 19:20:53.481 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 19:20:53.482 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/817a994 blocked - too close [CONTEXT service_id=6 ]
+10-13 19:20:53.482 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 19:20:53.724 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.724 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.724 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.725 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.725 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.725 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.725 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.725 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.726 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:53.728 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:53.728 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.728 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.728 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.728 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.728 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.731 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.731 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.731 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.731 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.731 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.731 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.732 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:53.732 I/LongTripPackStore(  301): packDownloadDir id=internal path=/data/user/0/no.navi.app/files/long-trip-packs
+10-13 19:20:53.743 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:53.745 D/EGL_emulation(  301): app_time_stats: avg=597.95ms min=299.25ms max=896.66ms count=2
+10-13 19:20:53.745 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:53.745 I/LongTripCoord(  301): status: Niedersachsen (1 of 9)=Installed · Schleswig-Holstein (2 of 9)=Installed · Denmark (3 of 9)=Installed · Skåne (4 of 9)=Installed · Halland (5 of 9)=Installed · Västra Götaland (6 of 9)=Installed · Ostlandet (7 of 9)=Installed · Sorlandet (8 of 9)=Installed · Vestlandet (9 of 9)=Installed
+10-13 19:20:53.745 I/LongTripCoord(  301): status: Niedersachsen (1 of 9)=Installed · Schleswig-Holstein (2 of 9)=Needed · Denmark (3 of 9)=Needed · Skåne (4 of 9)=Needed · Halland (5 of 9)=Needed · Västra Götaland (6 of 9)=Needed · Ostlandet (7 of 9)=Needed · Sorlandet (8 of 9)=Needed · Vestlandet (9 of 9)=Needed
+10-13 19:20:53.746 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:53.747 I/LongTripCoord(  301): status: Niedersachsen (1 of 9)=Installed · Schleswig-Holstein (2 of 9)=Needed · Denmark (3 of 9)=Needed · Skåne (4 of 9)=Needed · Halland (5 of 9)=Needed · Västra Götaland (6 of 9)=Needed · Ostlandet (7 of 9)=Needed · Sorlandet (8 of 9)=Needed · Vestlandet (9 of 9)=Needed
+10-13 19:20:53.747 I/LongTripCoord(  301): place-index missing for europe/germany/niedersachsen; not auto-building (list via InstalledMaps)
+10-13 19:20:53.747 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:53.747 I/LongTripCoord(  301): status: Niedersachsen (1 of 9)=Installed · Schleswig-Holstein (2 of 9)=Installed · Denmark (3 of 9)=Needed · Skåne (4 of 9)=Needed · Halland (5 of 9)=Needed · Västra Götaland (6 of 9)=Needed · Ostlandet (7 of 9)=Needed · Sorlandet (8 of 9)=Needed · Vestlandet (9 of 9)=Needed
+10-13 19:20:53.747 I/LongTripCoord(  301): place-index missing for europe/germany/schleswig-holstein; not auto-building (list via InstalledMaps)
+10-13 19:20:53.748 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:53.748 I/LongTripCoord(  301): status: Niedersachsen (1 of 9)=Installed · Schleswig-Holstein (2 of 9)=Installed · Denmark (3 of 9)=Installed · Skåne (4 of 9)=Needed · Halland (5 of 9)=Needed · Västra Götaland (6 of 9)=Needed · Ostlandet (7 of 9)=Needed · Sorlandet (8 of 9)=Needed · Vestlandet (9 of 9)=Needed
+10-13 19:20:53.748 I/LongTripCoord(  301): place-index missing for europe/denmark; not auto-building (list via InstalledMaps)
+10-13 19:20:53.749 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:53.749 I/LongTripCoord(  301): status: Niedersachsen (1 of 9)=Installed · Schleswig-Holstein (2 of 9)=Installed · Denmark (3 of 9)=Installed · Skåne (4 of 9)=Installed · Halland (5 of 9)=Needed · Västra Götaland (6 of 9)=Needed · Ostlandet (7 of 9)=Needed · Sorlandet (8 of 9)=Needed · Vestlandet (9 of 9)=Needed
+10-13 19:20:53.749 I/LongTripCoord(  301): place-index missing for europe/sweden/skane; not auto-building (list via InstalledMaps)
+10-13 19:20:53.750 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:53.750 I/LongTripCoord(  301): status: Niedersachsen (1 of 9)=Installed · Schleswig-Holstein (2 of 9)=Installed · Denmark (3 of 9)=Installed · Skåne (4 of 9)=Installed · Halland (5 of 9)=Installed · Västra Götaland (6 of 9)=Needed · Ostlandet (7 of 9)=Needed · Sorlandet (8 of 9)=Needed · Vestlandet (9 of 9)=Needed
+10-13 19:20:53.750 I/LongTripCoord(  301): place-index missing for europe/sweden/halland; not auto-building (list via InstalledMaps)
+10-13 19:20:53.750 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:53.750 I/LongTripCoord(  301): status: Niedersachsen (1 of 9)=Installed · Schleswig-Holstein (2 of 9)=Installed · Denmark (3 of 9)=Installed · Skåne (4 of 9)=Installed · Halland (5 of 9)=Installed · Västra Götaland (6 of 9)=Installed · Ostlandet (7 of 9)=Needed · Sorlandet (8 of 9)=Needed · Vestlandet (9 of 9)=Needed
+10-13 19:20:53.750 I/LongTripCoord(  301): place-index missing for europe/sweden/vastra_gotaland; not auto-building (list via InstalledMaps)
+10-13 19:20:53.751 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:53.751 I/LongTripCoord(  301): status: Niedersachsen (1 of 9)=Installed · Schleswig-Holstein (2 of 9)=Installed · Denmark (3 of 9)=Installed · Skåne (4 of 9)=Installed · Halland (5 of 9)=Installed · Västra Götaland (6 of 9)=Installed · Ostlandet (7 of 9)=Installed · Sorlandet (8 of 9)=Needed · Vestlandet (9 of 9)=Needed
+10-13 19:20:53.751 I/LongTripCoord(  301): place-index missing for europe/norway/ostlandet; not auto-building (list via InstalledMaps)
+10-13 19:20:53.752 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:53.752 I/LongTripCoord(  301): status: Niedersachsen (1 of 9)=Installed · Schleswig-Holstein (2 of 9)=Installed · Denmark (3 of 9)=Installed · Skåne (4 of 9)=Installed · Halland (5 of 9)=Installed · Västra Götaland (6 of 9)=Installed · Ostlandet (7 of 9)=Installed · Sorlandet (8 of 9)=Installed · Vestlandet (9 of 9)=Needed
+10-13 19:20:53.752 I/LongTripCoord(  301): place-index missing for europe/norway/sorlandet; not auto-building (list via InstalledMaps)
+10-13 19:20:53.753 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:53.753 I/LongTripCoord(  301): status: Niedersachsen (1 of 9)=Installed · Schleswig-Holstein (2 of 9)=Installed · Denmark (3 of 9)=Installed · Skåne (4 of 9)=Installed · Halland (5 of 9)=Installed · Västra Götaland (6 of 9)=Installed · Ostlandet (7 of 9)=Installed · Sorlandet (8 of 9)=Installed · Vestlandet (9 of 9)=Installed
+10-13 19:20:53.753 I/LongTripCoord(  301): place-index missing for europe/norway/vestlandet; not auto-building (list via InstalledMaps)
+10-13 19:20:53.753 I/RegionDownloadBg(  301): cancelPending cleared queue+job under /data/user/0/no.navi.app/files
+10-13 19:20:53.753 I/LongTripCoord(  301): corridor indexed — cancelled leftover download job/queue
+10-13 19:20:53.754 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:53.754 I/LongTripPackStore(  301): packDownloadDir id=internal path=/data/user/0/no.navi.app/files/long-trip-packs
+10-13 19:20:53.764 I/NaviRouting(  301): plan_settings eco=false camping_plugin=false professional_driver=false avoid_motorways=false avoid_tolls=false avoid_ferries=false avoid_tunnels=false
+10-13 19:20:53.764 I/NaviRouting(  301): planning_start profile=car eco=false legs=2 waypoints=Bad Bevensen|Vagavegen 80|Dalsoren
+10-13 19:20:53.764 I/NaviRouting(  301): planning_progress pct=0 eco=false detail=queued
+10-13 19:20:53.764 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.765 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.765 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.765 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.765 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.765 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.765 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.765 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.765 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.765 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.765 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.766 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:53.767 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:53.767 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.767 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.767 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.767 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.769 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.770 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.770 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.770 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.770 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.770 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.770 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.773 I/NaviRouting(  301): planning_progress pct=10 eco=false detail=motor_plan
+10-13 19:20:53.773 I/NaviPlan(  301): planCarRoute pbf=/data/user/0/no.navi.app/files/long-trip-packs/ostlandet-latest.osm.pbf packDir=/data/user/0/no.navi.app/files/long-trip-packs dataDir=/data/user/0/no.navi.app/files longTrip=true from=53.079686,10.587198 to=61.4433766,7.4614016 time_to_planner_ms=9
+10-13 19:20:53.773 I/NaviRouting(  301): plan_settings eco=false camping_plugin=false professional_driver=false avoid_motorways=false avoid_tolls=false avoid_ferries=false avoid_tunnels=false
+10-13 19:20:53.774 I/NaviRouting(  301): idle_job_pause action=none kind=none region= duration_ms=0
+10-13 19:20:53.774 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.774 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.774 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.774 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.774 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.774 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.774 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.774 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.774 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.774 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.775 I/NaviNative(  301): driver_break_core::routing::plan_file_log: plan_inputs profile=Car eco=false avoid_motorways=false toll=Allow avoid_ferries=false avoid_tunnels=false long_trip=true datex=Live start=53.079686,10.587198 end=61.443377,7.461402 vias=1 via_coords=61.869142,9.105513
+10-13 19:20:53.775 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:53.777 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:53.777 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.777 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.777 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.777 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.780 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.780 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.780 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.780 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.780 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.780 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.780 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.780 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.780 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:53.791 I/NaviNative(  301): navi: skeleton_preparing stems=niedersachsen-latest,schleswig-holstein-latest,denmark-latest,skane-latest,halland-latest,vastra_gotaland-latest,ostlandet-latest,sorlandet-latest,vestlandet-latest first=niedersachsen-latest
+10-13 19:20:53.791 I/NaviRouting(  301): planning_progress pct=90 eco=false detail=motor_path
+10-13 19:20:53.794 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:53.850 I/CorridorSkeletonBg(  301): corridor skeleton already ready stem=niedersachsen-latest
+10-13 19:20:53.891 I/CorridorSkeletonBg(  301): corridor skeleton already ready stem=schleswig-holstein-latest
+10-13 19:20:53.936 I/CorridorSkeletonBg(  301): corridor skeleton already ready stem=denmark-latest
+10-13 19:20:53.981 I/CorridorSkeletonBg(  301): corridor skeleton already ready stem=skane-latest
+10-13 19:20:54.025 I/CorridorSkeletonBg(  301): corridor skeleton already ready stem=halland-latest
+10-13 19:20:54.068 I/CorridorSkeletonBg(  301): corridor skeleton already ready stem=vastra_gotaland-latest
+10-13 19:20:54.116 I/CorridorSkeletonBg(  301): corridor skeleton already ready stem=ostlandet-latest
+10-13 19:20:54.160 I/CorridorSkeletonBg(  301): corridor skeleton already ready stem=sorlandet-latest
+10-13 19:20:54.201 I/CorridorSkeletonBg(  301): corridor skeleton already ready stem=vestlandet-latest
+10-13 19:20:54.243 I/CorridorSkeletonBg(  301): corridor skeleton already ready stem=jamtland-latest
+10-13 19:20:54.282 I/CorridorSkeletonBg(  301): corridor skeleton already ready stem=mecklenburg-vorpommern-latest
+10-13 19:20:54.317 I/CorridorSkeletonBg(  301): corridor skeleton already ready stem=gavleborg-latest
+10-13 19:20:54.355 I/CorridorSkeletonBg(  301): corridor skeleton already ready stem=finland-latest
+10-13 19:20:54.391 I/CorridorSkeletonBg(  301): corridor skeleton already ready stem=dalarna-latest
+10-13 19:20:54.427 I/CorridorSkeletonBg(  301): corridor skeleton already ready stem=vasterbotten-latest
+10-13 19:20:54.551 I/logd    (    0): logdr: UID=0 GID=0 PID=1347 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-13 19:20:54.464 I/CorridorSkeletonBg(  301): corridor skeleton already ready stem=varmland-latest
+10-13 19:20:54.480 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 19:20:54.481 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 19:20:54.481 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 19:20:54.481 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 19:20:54.482 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/817a994 blocked - too close [CONTEXT service_id=6 ]
+10-13 19:20:54.482 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 19:20:54.501 I/CorridorSkeletonBg(  301): corridor skeleton already ready stem=nord-norge-latest
+10-13 19:20:54.537 I/CorridorSkeletonBg(  301): corridor skeleton already ready stem=hamburg-latest
+10-13 19:20:54.574 I/CorridorSkeletonBg(  301): corridor skeleton already ready stem=vasternorrland-latest
+10-13 19:20:54.613 I/CorridorSkeletonBg(  301): corridor skeleton already ready stem=norrbotten-latest
+10-13 19:20:54.613 I/CorridorSkeletonBg(  301): skip corridor skeleton: no manifest for stem=sweden-latest
+10-13 19:20:54.613 I/CorridorSkeletonBg(  301): skip corridor skeleton: no manifest for stem=world_overview
+10-13 19:20:54.614 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:54.617 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:54.626 W/NaviRouting(  301): planning_failed eco=false duration_ms=29 reason=preparing corridor skeleton for niedersachsen toll_policy=allow pads=[] expansions=0 terminate=skeleton_preparing toll_incomplete=false route_uses_tolls=false
+10-13 19:20:54.626 I/Choreographer(  301): Skipped 49 frames!  The application may be doing too much work on its main thread.
+10-13 19:20:54.626 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.627 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.627 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.627 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.627 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.627 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.627 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.627 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.627 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.627 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.627 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.627 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.627 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.628 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:54.629 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:54.629 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.629 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.629 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.629 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.629 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.631 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.641 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.641 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.641 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.641 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.641 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.641 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.641 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.641 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.641 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.641 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.641 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.642 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:54.642 I/HWUI    (  301): Davey! duration=833ms; Flags=0, FrameTimelineVsyncId=6112752, IntendedVsync=35088228169092, Vsync=35089044835726, InputEventId=0, HandleInputStart=35089047302241, AnimationStart=35089047303032, PerformTraversalsStart=35089054288681, DrawStart=35089054328546, FrameDeadline=35088278169090, FrameInterval=35089047201932, FrameStartTime=16666666, SyncQueued=35089055910993, SyncStart=35089055933245, IssueDrawCommandsStart=35089055986805, SwapBuffers=35089056730250, FrameCompleted=35089061586365, DequeueBufferDuration=1593, QueueBufferDuration=89658, GpuCompleted=35089061586365, SwapBuffersCompleted=35089057200331, DisplayPresentTime=0, CommandSubmissionCompleted=35089056730250, 
+10-13 19:20:54.643 I/NaviAppData(  301): app data dir=/data/user/0/no.navi.app/files
+10-13 19:20:54.643 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.643 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.644 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.646 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.646 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.646 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.646 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.646 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.646 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.646 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:54.646 I/no.navi.app(  301): Method exceeds compiler instruction limit: 29436 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 19:20:55.480 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 19:20:55.481 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 19:20:55.481 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 19:20:55.481 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 19:20:55.482 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/817a994 blocked - too close [CONTEXT service_id=6 ]
+10-13 19:20:55.482 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 19:20:56.563 I/logd    (    0): logdr: UID=0 GID=0 PID=1356 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-13 19:20:56.480 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 19:20:56.481 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 19:20:56.481 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 19:20:56.481 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 19:20:56.482 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/817a994 blocked - too close [CONTEXT service_id=6 ]
+10-13 19:20:56.482 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 19:20:56.595 I/logd    (    0): logdr: UID=0 GID=0 PID=1365 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns

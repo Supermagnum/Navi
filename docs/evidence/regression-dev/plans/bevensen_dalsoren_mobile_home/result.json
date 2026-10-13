@@ -1,0 +1,23 @@
+{
+  "status": "done",
+  "profile": "mobile_home",
+  "eco": true,
+  "stay_in_country": false,
+  "graph": "pack",
+  "wall_s": 200.17,
+  "duration_ms": 119704,
+  "distance_km": 1350.1584791981345,
+  "polyline_points": 24471,
+  "spike_count": 0,
+  "spikes": [],
+  "from": [
+    "Bad Bevensen Kurpark",
+    53.079686,
+    10.587198
+  ],
+  "to": [
+    "Dalsoren Camping",
+    61.44365,
+    7.46052
+  ]
+}

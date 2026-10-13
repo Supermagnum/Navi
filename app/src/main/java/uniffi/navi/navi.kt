@@ -1183,7 +1183,6 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_vfo_set_json(
     ): Int
-    external fun uniffi_navi_checksum_func_imu_plugin_alarm_settings(
     ): Int
     external fun uniffi_navi_checksum_func_imu_plugin_android_sensor_types(
     ): Int
@@ -1206,8 +1205,6 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_imu_plugin_sensor_codes(
     ): Int
     external fun uniffi_navi_checksum_func_imu_plugin_session_disabled_reason(
-    ): Int
-    external fun uniffi_navi_checksum_func_imu_plugin_set_alarm_settings(
     ): Int
     external fun uniffi_navi_checksum_func_imu_plugin_set_enabled(
     ): Int
@@ -1760,7 +1757,6 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_vfo_set_json(`requestJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_navi_fn_func_imu_plugin_alarm_settings(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_imu_plugin_android_sensor_types(`kindCode`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1783,8 +1779,6 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_imu_plugin_sensor_codes(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_imu_plugin_session_disabled_reason(uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    external fun uniffi_navi_fn_func_imu_plugin_set_alarm_settings(`settings`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_imu_plugin_set_enabled(`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -2614,7 +2608,6 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_cat_plugin_vfo_set_json() and 0xFFFF) != 6218) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_imu_plugin_alarm_settings() and 0xFFFF) != 10485) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_imu_plugin_android_sensor_types() and 0xFFFF) != 62062) {
@@ -2648,9 +2641,6 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_imu_plugin_session_disabled_reason() and 0xFFFF) != 26765) {
-        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    }
-    if ((lib.uniffi_navi_checksum_func_imu_plugin_set_alarm_settings() and 0xFFFF) != 50832) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_imu_plugin_set_enabled() and 0xFFFF) != 53138) {
@@ -5550,67 +5540,6 @@ public object FfiConverterTypeFfiVehicleLimits: FfiConverterRustBuffer<FfiVehicl
             FfiConverterOptionalDouble.write(value.`widthM`, buf)
             FfiConverterOptionalDouble.write(value.`lengthM`, buf)
             FfiConverterOptionalDouble.write(value.`totalWeightKg`, buf)
-    }
-}
-
-
-
-/**
- * User-configurable tilt alarm (persisted by the plugin KV under `imu_alarm`).
- */
-data class ImuAlarmSettings (
-    var `enabled`: kotlin.Boolean
-    , 
-    var `pitchWarnDeg`: kotlin.Double
-    , 
-    var `pitchDangerDeg`: kotlin.Double
-    , 
-    var `rollWarnDeg`: kotlin.Double
-    , 
-    var `rollDangerDeg`: kotlin.Double
-    , 
-    var `hysteresisDeg`: kotlin.Double
-    
-){
-    
-
-    
-
-    
-    companion object
-}
-
-/**
- * @suppress
- */
-public object FfiConverterTypeImuAlarmSettings: FfiConverterRustBuffer<ImuAlarmSettings> {
-    override fun read(buf: ByteBuffer): ImuAlarmSettings {
-        return ImuAlarmSettings(
-            FfiConverterBoolean.read(buf),
-            FfiConverterDouble.read(buf),
-            FfiConverterDouble.read(buf),
-            FfiConverterDouble.read(buf),
-            FfiConverterDouble.read(buf),
-            FfiConverterDouble.read(buf),
-        )
-    }
-
-    override fun allocationSize(value: ImuAlarmSettings) = (
-            FfiConverterBoolean.allocationSize(value.`enabled`) +
-            FfiConverterDouble.allocationSize(value.`pitchWarnDeg`) +
-            FfiConverterDouble.allocationSize(value.`pitchDangerDeg`) +
-            FfiConverterDouble.allocationSize(value.`rollWarnDeg`) +
-            FfiConverterDouble.allocationSize(value.`rollDangerDeg`) +
-            FfiConverterDouble.allocationSize(value.`hysteresisDeg`)
-    )
-
-    override fun write(value: ImuAlarmSettings, buf: ByteBuffer) {
-            FfiConverterBoolean.write(value.`enabled`, buf)
-            FfiConverterDouble.write(value.`pitchWarnDeg`, buf)
-            FfiConverterDouble.write(value.`pitchDangerDeg`, buf)
-            FfiConverterDouble.write(value.`rollWarnDeg`, buf)
-            FfiConverterDouble.write(value.`rollDangerDeg`, buf)
-            FfiConverterDouble.write(value.`hysteresisDeg`, buf)
     }
 }
 
@@ -10204,19 +10133,6 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
-         * Current alarm settings (defaults when none stored; always sanitised).
-         */ fun `imuPluginAlarmSettings`(): ImuAlarmSettings {
-            return FfiConverterTypeImuAlarmSettings.lift(
-    uniffiRustCall() { _status ->
-    UniffiLib.uniffi_navi_fn_func_imu_plugin_alarm_settings(
-    
-        _status)
-}
-    )
-    }
-    
-
-        /**
          * Android `android.hardware.Sensor` types for a wire code, most preferred first.
          *
          * Single source of truth for the Kotlin backend (ambient temperature prefers
@@ -10357,20 +10273,6 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     UniffiLib.uniffi_navi_fn_func_imu_plugin_session_disabled_reason(
     
         _status)
-}
-    )
-    }
-    
-
-        /**
-         * Persist alarm settings; returns the sanitised values actually stored.
-         */ fun `imuPluginSetAlarmSettings`(`settings`: ImuAlarmSettings): ImuAlarmSettings {
-            return FfiConverterTypeImuAlarmSettings.lift(
-    uniffiRustCall() { _status ->
-    UniffiLib.uniffi_navi_fn_func_imu_plugin_set_alarm_settings(
-    
-        
-        FfiConverterTypeImuAlarmSettings.lower(`settings`),_status)
 }
     )
     }

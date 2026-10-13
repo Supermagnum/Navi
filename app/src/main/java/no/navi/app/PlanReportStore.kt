@@ -2,6 +2,7 @@ package no.navi.app
 
 import android.content.Context
 import java.io.File
+import org.json.JSONObject
 
 /**
  * Canonical on-device location for a finished plan's hop log, polyline, and
@@ -68,6 +69,30 @@ object PlanReportStore {
             for (name in listOf(LOG_NAME, POLYLINE_NAME, HOPS_NAME, RESULT_NAME)) {
                 mirrorTo(File(ext, name), File(internal, name))
             }
+        }
+    }
+
+    /**
+     * Rewrite `enumerations` on an already-published [RESULT_NAME] after async
+     * camping / attractions tallies finish. Mirrors to external when present.
+     */
+    fun patchResultEnumerations(
+        context: Context,
+        dataDir: File,
+        enumerations: JSONObject,
+    ) {
+        val internal = File(internalDir(dataDir), RESULT_NAME)
+        if (!internal.isFile) return
+        val body =
+            runCatching {
+                val o = JSONObject(internal.readText())
+                o.put("enumerations", enumerations)
+                o.toString(2)
+            }.getOrNull() ?: return
+        writeText(internalDir(dataDir), RESULT_NAME, body)
+        val ext = externalDir(context)
+        if (ext != null) {
+            mirrorTo(File(ext, RESULT_NAME), File(internalDir(dataDir), RESULT_NAME))
         }
     }
 }

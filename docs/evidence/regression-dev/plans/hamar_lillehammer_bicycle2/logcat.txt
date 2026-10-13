@@ -1,0 +1,956 @@
+--------- beginning of main
+10-13 11:47:23.413 D/BaseDepthController( 1152): setSurface:
+10-13 11:47:23.413 D/BaseDepthController( 1152): 	mWaitingOnSurfaceValidity: false
+10-13 11:47:23.413 D/BaseDepthController( 1152): 	mSurface: Surface(name=com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity)/@0x4b3e511
+10-13 11:47:23.416 I/netd    (  413): tetherGetStats() -> {[]} <0.28ms>
+10-13 11:47:23.420 I/ActivityScheduler( 1164): nextTriggerTime: 7883823, in 5982ms, detectorType: 39, FULL_TYPE alarmWindowMillis: 80000
+10-13 11:47:23.424 I/A       (15336): (REDACTED) Created gRPC endpoint for service %s
+10-13 11:47:23.425 I/BpBinder(  475): onLastStrongRef automatically unlinking death recipients: 
+10-13 11:47:23.470 W/SystemServiceRegistry( 1164): No service published for: wifirtt
+--------- beginning of system
+10-13 11:47:23.509 V/ActivityManager(  618): Got obituary of 3666:no.navi.app
+10-13 11:47:23.510 I/WindowManager(  618): WIN DEATH: Window{6a7ef2b u0 no.navi.app/no.navi.app.MainActivity}
+10-13 11:47:23.511 W/InputManager-JNI(  618): Input channel object '6a7ef2b no.navi.app/no.navi.app.MainActivity (client)' was disposed without first being removed with the input manager!
+10-13 11:47:23.511 I/libprocessgroup(  618): Removed cgroup /sys/fs/cgroup/uid_10220/pid_3666
+10-13 11:47:23.512 I/adbd    (  494): Remote process closed the socket (on MSG_PEEK)
+10-13 11:47:23.514 I/ImeTracker(  618): no.navi.app:76951dba: onRequestHide at ORIGIN_SERVER reason HIDE_REMOVE_CLIENT fromUser false
+10-13 11:47:23.514 I/ImeTracker(  618): no.navi.app:76951dba: onCancelled at PHASE_SERVER_SHOULD_HIDE
+10-13 11:47:23.515 I/WindowManager(  618): WIN DEATH: Window{9ab75d0 u0 no.navi.app/no.navi.app.MainActivity}
+10-13 11:47:23.516 W/InputManager-JNI(  618): Input channel object '9ab75d0 no.navi.app/no.navi.app.MainActivity (client)' was disposed without first being removed with the input manager!
+10-13 11:47:23.516 I/Zygote  (  414): Process 3666 exited due to signal 9 (Killed)
+10-13 11:47:23.516 W/ActivityManager(  618): setHasOverlayUi called on unknown pid: 3666
+10-13 11:47:23.538 W/ActivityTaskManager(  618): callingPackage for (uid=2000, pid=5022) has no WPC
+10-13 11:47:23.539 W/OptProp (  618): Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_USER_ASPECT_RATIO_OVERRIDE
+10-13 11:47:23.539 W/OptProp (  618): Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_USER_ASPECT_RATIO_FULLSCREEN_OVERRIDE
+10-13 11:47:23.539 W/OptProp (  618): Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_ORIENTATION_OVERRIDE
+10-13 11:47:23.539 V/GrammaticalInflectionUtils(  618): AttributionSource: AttributionSource { uid = 10220, packageName = null, attributionTag = null, token = android.os.Binder@54b529f, deviceId = 0, next = null } does not have READ_SYSTEM_GRAMMATICAL_GENDER permission.
+10-13 11:47:23.539 W/OptProp (  618): Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_RESIZEABLE_ACTIVITY_OVERRIDES
+10-13 11:47:23.540 W/OptProp (  618): Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_MIN_ASPECT_RATIO_OVERRIDE
+10-13 11:47:23.544 I/ActivityTaskManager(  618): Add Task{7ea0640 #1143 type=standard A=10220:no.navi.app} to hidden list because adding Task{408ceb5 #1144 type=standard A=10220:no.navi.app}
+10-13 11:47:23.545 I/ActivityTaskManager(  618): START u0 {flg=0x10000000 cmp=no.navi.app/.MainActivity (has extras)} with LAUNCH_SINGLE_TASK from uid 2000 (BAL_ALLOW_PERMISSION) result code=0
+10-13 11:47:23.546 V/GrammaticalInflectionUtils(  618): AttributionSource: AttributionSource { uid = 10220, packageName = null, attributionTag = null, token = android.os.Binder@54b529f, deviceId = 0, next = null } does not have READ_SYSTEM_GRAMMATICAL_GENDER permission.
+10-13 11:47:23.549 D/SplashScreenView(  897): Build android.window.SplashScreenView{fa4cffb V.E...... ......ID 0,0-0,0}
+10-13 11:47:23.549 D/SplashScreenView(  897): Icon: view: android.widget.ImageView{7ad3818 V.ED..... ......I. 0,0-0,0 #1020504 android:id/splashscreen_icon_view} drawable: com.android.wm.shell.startingsurface.SplashscreenIconDrawableFactory$ImmobileIconDrawable@6686271 size: 504
+10-13 11:47:23.549 D/SplashScreenView(  897): Branding: view: android.view.View{cd68856 G.ED..... ......I. 0,0-0,0 #1020503 android:id/splashscreen_branding_view} drawable: null size w: 0 h: 0
+10-13 11:47:23.555 W/IPCThreadState(  522): Sending oneway calls to frozen process.
+10-13 11:47:23.559 D/Zygote  (  414): Forked child process 5027
+10-13 11:47:23.559 D/CoreBackPreview(  618): Window{f7bad97 u0 Splash Screen no.navi.app}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@b911f6d, mPriority=0, mIsAnimationCallback=false}
+10-13 11:47:23.560 I/ActivityManager(  618): Start proc 5027:no.navi.app/u0a220 for next-top-activity {no.navi.app/no.navi.app.MainActivity}
+--------- beginning of kernel
+10-13 11:47:23.665 I/logd    (    0): logdr: UID=2000 GID=2000 PID=5025 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-13 11:47:23.571 I/TopTaskTracker( 1152): onTaskMovedToFront: (moved taskInfo to front) taskId=1113, baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.HOME] flg=0x10000100 cmp=com.google.android.apps.nexuslauncher/.NexusLauncherActivity }
+10-13 11:47:23.572 D/SsBaseTemplateCard( 1152): No text view can be set up
+10-13 11:47:23.572 D/SsBaseTemplateCard( 1152): Passed-in item info is null
+10-13 11:47:23.572 D/SsBaseTemplateCard( 1152): Passed-in item info is null
+10-13 11:47:23.572 D/SsBaseTemplateCard( 1152): Passed-in item info is null
+10-13 11:47:23.572 I/SsBaseTemplateCard( 1152): Secondary card pane is null
+10-13 11:47:23.574 D/WindowManagerShell(  897): setLauncherKeepClearAreaHeight: visible=false, height=527
+10-13 11:47:23.574 W/SplitSelectStateCtor( 1152): Missing session instanceIds
+10-13 11:47:23.574 D/StatsLog( 1152): LAUNCHER_SPLIT_SELECTION_EXIT_INTERRUPTED
+10-13 11:47:23.576 I/AppsFilter(  618): interaction: PackageSetting{70c3b63 com.android.microdroid.empty_payload/10190} -> PackageSetting{fec6bf0 no.navi.app/10220} BLOCKED
+10-13 11:47:23.578 I/AppWidgetServiceImpl(  618): Received broadcast: android.intent.action.PACKAGE_UNSTOPPED on user 0
+10-13 11:47:23.579 I/TopTaskTracker( 1152): onTaskMovedToFront: (moved taskInfo to front) taskId=1144, baseIntent=Intent { flg=0x10000000 cmp=no.navi.app/.MainActivity }
+10-13 11:47:23.579 I/AppWidgetServiceImpl(  618): Updating package stopped masked state for uid 10220 package no.navi.app isStopped false
+10-13 11:47:23.588 I/no.navi.app( 5027): Late-enabling -Xcheck:jni
+10-13 11:47:23.612 I/no.navi.app( 5027): Using CollectorTypeCMC GC.
+10-13 11:47:23.612 W/no.navi.app( 5027): Unexpected CPU variant for x86: x86_64.
+10-13 11:47:23.612 W/no.navi.app( 5027): Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, default
+10-13 11:47:23.615 I/adbd    (  494): jdwp connection from 5027
+10-13 11:47:23.624 D/nativeloader( 5027): Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+10-13 11:47:23.626 D/SearchTargetUtil( 1152): query= size=0
+10-13 11:47:23.644 D/ApplicationLoaders( 5027): Returning zygote-cached class loader: /system_ext/framework/androidx.window.extensions.jar
+10-13 11:47:23.644 D/ApplicationLoaders( 5027): Returning zygote-cached class loader: /system_ext/framework/androidx.window.sidecar.jar
+10-13 11:47:23.645 W/ziparchive( 5027): Unable to open '/data/app/~~N_ur3wQMkWBK3mhEIvii1A==/no.navi.app-ow5-hqLG-WarmQBcCrcZOQ==/base.dm': No such file or directory
+10-13 11:47:23.645 W/ziparchive( 5027): Unable to open '/data/app/~~N_ur3wQMkWBK3mhEIvii1A==/no.navi.app-ow5-hqLG-WarmQBcCrcZOQ==/base.dm': No such file or directory
+10-13 11:47:23.678 D/EGL_emulation( 1152): app_time_stats: avg=2935.15ms min=15.27ms max=20451.55ms count=7
+10-13 11:47:23.725 E/BpTransactionCompletedListener(  475): Failed to transact (-32)
+10-13 11:47:23.852 D/nativeloader( 5027): Configuring clns-7 for other apk /data/app/~~N_ur3wQMkWBK3mhEIvii1A==/no.navi.app-ow5-hqLG-WarmQBcCrcZOQ==/base.apk. target_sdk_version=36, uses_libraries=, library_path=/data/app/~~N_ur3wQMkWBK3mhEIvii1A==/no.navi.app-ow5-hqLG-WarmQBcCrcZOQ==/lib/x86_64:/data/app/~~N_ur3wQMkWBK3mhEIvii1A==/no.navi.app-ow5-hqLG-WarmQBcCrcZOQ==/base.apk!/lib/x86_64, permitted_path=/data:/mnt/expand:/data/user/0/no.navi.app
+10-13 11:47:23.857 V/GraphicsEnvironment( 5027): Currently set values for:
+10-13 11:47:23.857 V/GraphicsEnvironment( 5027):   angle_gl_driver_selection_pkgs=[]
+10-13 11:47:23.857 V/GraphicsEnvironment( 5027):   angle_gl_driver_selection_values=[]
+10-13 11:47:23.857 V/GraphicsEnvironment( 5027): Global.Settings values are invalid: number of packages: 0, number of values: 0
+10-13 11:47:23.857 V/GraphicsEnvironment( 5027): Neither updatable production driver nor prerelease driver is supported.
+10-13 11:47:23.870 W/OptProp (  618): Cannot read opt property android.window.PROPERTY_COMPAT_ENABLE_FAKE_FOCUS
+10-13 11:47:23.883 V/WindowManagerShell(  897): onTransitionReady(transaction=2654289791902)
+10-13 11:47:23.883 V/WindowManagerShell(  897): onTransitionReady (#81) android.os.BinderProxy@b67daff: {id=81 t=CLOSE f=0x0 trk=0 r=[0@Point(0, 0)] c=[{WCT{android.window.IWindowContainerToken$Stub$Proxy@245adeb} m=OPEN f=MOVE_TO_TOP leash=Surface(name=Task=1144)/@0x638a3cf sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 taskParent=-1},{WCT{android.window.IWindowContainerToken$Stub$Proxy@16ad748} m=CLOSE f=NONE leash=Surface(name=Task=1143)/@0x921015c sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 taskParent=-1},{null m=TO_FRONT f=IS_WALLPAPER leash=Surface(name=WallpaperWindowToken{fde9634 token=android.os.Binder@6bea507})/@0xa9fcc65 sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0}]}
+10-13 11:47:23.884 V/WindowManagerShell(  897): Playing animation for (#81) android.os.BinderProxy@b67daff@0
+10-13 11:47:23.884 V/WindowManagerShell(  897):  try handler com.android.wm.shell.transition.DefaultMixedHandler@e15b900
+10-13 11:47:23.884 V/WindowManagerShell(  897):  try handler com.android.wm.shell.keyguard.KeyguardTransitionHandler@39df539
+10-13 11:47:23.884 V/WindowManagerShell(  897):  try handler com.android.wm.shell.pip.PipTransition@e0ef77e
+10-13 11:47:23.884 V/WindowManagerShell(  897):  try handler com.android.wm.shell.activityembedding.ActivityEmbeddingController@53bf4df
+10-13 11:47:23.884 V/WindowManagerShell(  897):  try handler com.android.wm.shell.recents.RecentsTransitionHandler@29d652c
+10-13 11:47:23.884 V/ShellRecents(  897): RecentsTransitionHandler.startAnimation: no controller found
+10-13 11:47:23.884 V/WindowManagerShell(  897):  try handler com.android.wm.shell.splitscreen.StageCoordinator@ddfabf5
+10-13 11:47:23.884 V/WindowManagerShell(  897):  try handler com.android.wm.shell.transition.RemoteTransitionHandler@31f0d8a
+10-13 11:47:23.884 V/WindowManagerShell(  897): Transition doesn't have explicit remote, search filters for match for {id=81 t=CLOSE f=0x0 trk=0 r=[0@Point(0, 0)] c=[{WCT{android.window.IWindowContainerToken$Stub$Proxy@245adeb} m=OPEN f=MOVE_TO_TOP leash=Surface(name=Task=1144)/@0x638a3cf sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 taskParent=-1},{WCT{android.window.IWindowContainerToken$Stub$Proxy@16ad748} m=CLOSE f=NONE leash=Surface(name=Task=1143)/@0x921015c sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 taskParent=-1},{null m=TO_FRONT f=IS_WALLPAPER leash=Surface(name=WallpaperWindowToken{fde9634 token=android.os.Binder@6bea507})/@0xa9fcc65 sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0}]}
+10-13 11:47:23.884 V/WindowManagerShell(  897):  Checking filter Pair{{types=[] flags=0x0] notFlags=0x0 checks=[{atype=undefined independent=true modes=[OPEN,TO_FRONT] flags=IN_TASK_WITH_EMBEDDED_ACTIVITY mustBeTask=false order=ANY topActivity=ComponentInfo{com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity} launchCookie=null},{atype=undefined independent=true modes=[CLOSE,TO_BACK] flags=IN_TASK_WITH_EMBEDDED_ACTIVITY mustBeTask=false order=ANY topActivity=null launchCookie=null}]} RemoteTransition { remoteTransition = android.window.IRemoteTransition$Stub$Proxy@869878a, appThread = android.app.IApplicationThread$Stub$Proxy@af6f1fb, debugName = OverlaySwipeBack }}
+10-13 11:47:23.884 V/WindowManagerShell(  897):  Checking filter Pair{{types=[] flags=0x0] notFlags=0x0 checks=[{atype=dream independent=true modes=[OPEN,TO_FRONT] flags=NONE mustBeTask=false order=ANY topActivity=null launchCookie=null},{atype=home independent=true modes=[CLOSE,TO_BACK] flags=NONE mustBeTask=false order=ANY topActivity=null launchCookie=null}]} RemoteTransition { remoteTransition = android.window.IRemoteTransition$Stub$Proxy@c01b218, appThread = android.app.IApplicationThread$Stub$Proxy@78c5471, debugName = LauncherToDream }}
+10-13 11:47:23.884 V/WindowManagerShell(  897):  Checking filter Pair{{types=[] flags=0x0] notFlags=0x100 checks=[{atype=home independent=true modes=[OPEN,TO_FRONT] flags=NONE mustBeTask=false order=TOP topActivity=ComponentInfo{com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity} launchCookie=null},{atype=standard independent=true modes=[CLOSE,TO_BACK] flags=NONE mustBeTask=false order=ANY topActivity=null launchCookie=null}]} RemoteTransition { remoteTransition = android.window.IRemoteTransition$Stub$Proxy@8e09256, appThread = android.app.IApplicationThread$Stub$Proxy@8b8b2d7, debugName = QuickstepLaunchHome }}
+10-13 11:47:23.884 V/WindowManagerShell(  897):  Delegate animation for (#81) to null
+10-13 11:47:23.884 V/WindowManagerShell(  897):  try handler com.android.wm.shell.transition.DefaultTransitionHandler@b3e64ad
+10-13 11:47:23.884 V/WindowManager(  618): Sent Transition (#81) createdAt=10-13 11:47:23.388 via request=TransitionRequestInfo { type = CLOSE, triggerTask = TaskInfo{userId=0 taskId=1143 displayId=0 isRunning=false baseIntent=Intent { flg=0x10000000 cmp=no.navi.app/.MainActivity } baseActivity=null topActivity=null origActivity=null realActivity=ComponentInfo{no.navi.app/no.navi.app.MainActivity} numActivities=0 lastActiveTime=7778005 supportsMultiWindow=true resizeMode=2 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{RemoteToken{8b52934 Task{7ea0640 #1143 type=standard A=10220:no.navi.app}}} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=null topActivityInfo=null launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=true isVisible=true isVisibleRequested=true isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= falseisLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false topActivityEligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false cameraCompatTaskInfo=CameraCompatTaskInfo { cameraCompatControlState=hidden freeformCameraCompatMode=inactive}}}, pipTask = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 81 }
+10-13 11:47:23.884 V/WindowManager(  618):     startWCT=WindowContainerTransaction { changes = {} hops = [] errorCallbackToken=null taskFragmentOrganizer=null }
+10-13 11:47:23.884 V/WindowManagerShell(  897): start default transition animation, info = {id=81 t=CLOSE f=0x0 trk=0 r=[0@Point(0, 0)] c=[{WCT{android.window.IWindowContainerToken$Stub$Proxy@245adeb} m=OPEN f=MOVE_TO_TOP leash=Surface(name=Task=1144)/@0x638a3cf sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 taskParent=-1},{WCT{android.window.IWindowContainerToken$Stub$Proxy@16ad748} m=CLOSE f=NONE leash=Surface(name=Task=1143)/@0x921015c sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 taskParent=-1},{null m=TO_FRONT f=IS_WALLPAPER leash=Surface(name=WallpaperWindowToken{fde9634 token=android.os.Binder@6bea507})/@0xa9fcc65 sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0}]}
+10-13 11:47:23.884 V/WindowManager(  618):     info={id=81 t=CLOSE f=0x0 trk=0 r=[0@Point(0, 0)] c=[
+10-13 11:47:23.884 V/WindowManager(  618):         {WCT{RemoteToken{810389b Task{408ceb5 #1144 type=standard A=10220:no.navi.app}}} m=OPEN f=MOVE_TO_TOP leash=Surface(name=Task=1144)/@0x847cb95 sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 taskParent=-1},
+10-13 11:47:23.884 V/WindowManager(  618):         {WCT{RemoteToken{8b52934 Task{7ea0640 #1143 type=standard A=10220:no.navi.app}}} m=CLOSE f=NONE leash=Surface(name=Task=1143)/@0xacca46 sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0 taskParent=-1},
+10-13 11:47:23.884 V/WindowManager(  618):         {null m=TO_FRONT f=IS_WALLPAPER leash=Surface(name=WallpaperWindowToken{fde9634 token=android.os.Binder@6bea507})/@0xe369577 sb=Rect(0, 0 - 1080, 2400) eb=Rect(0, 0 - 1080, 2400) d=0}
+10-13 11:47:23.884 V/WindowManager(  618):     ]}
+10-13 11:47:23.885 W/ActivityTaskManager(  618): Unable to send transaction to client proc no.navi.app: no app thread
+10-13 11:47:23.887 V/WindowManagerShell(  897): loadAnimation: anim=android.view.animation.AnimationSet@cf4231d animAttr=0xb type=CLOSE isEntrance=false
+10-13 11:47:23.887 W/UserManagerService(  618): Requested status bar icon for non-badged user 0
+10-13 11:47:23.895 V/WindowManagerShell(  897): loadAnimation: anim=android.view.animation.AnimationSet@1f41cde animAttr=0xa type=CLOSE isEntrance=true
+10-13 11:47:23.895 V/WindowManagerShell(  897):  animated by com.android.wm.shell.transition.DefaultTransitionHandler@b3e64ad
+10-13 11:47:23.906 I/NaviMapHooks( 5027): force_online=false force_source= cleared=true fu49_offline=false fu49_simple=false fu49_overview=false fu49_second=false fu49_online=false fu49_bypass_queue=false fu49_no_keep=false
+10-13 11:47:23.909 I/RanchuHwc(  439): logCompositionFallbackIfChanged: layer 182 CompositionType fallback from 2 to 1
+10-13 11:47:23.910 I/RanchuHwc(  439): logCompositionFallbackIfChanged: layer 183 CompositionType fallback from 3 to 1
+10-13 11:47:23.931 D/nativeloader( 5027): Load /data/app/~~N_ur3wQMkWBK3mhEIvii1A==/no.navi.app-ow5-hqLG-WarmQBcCrcZOQ==/lib/x86_64/libjnidispatch.so using ns clns-7 from class loader (caller=/data/app/~~N_ur3wQMkWBK3mhEIvii1A==/no.navi.app-ow5-hqLG-WarmQBcCrcZOQ==/base.apk!classes6.dex): ok
+10-13 11:47:24.000 I/NaviDebugIntent( 5027): reset to defaults use_networked_cabins=false use_unlocked_cabins=false bike_capability=trekking eco=false
+10-13 11:47:24.005 W/no.navi.app( 5027): Accessing hidden method Landroid/app/ActivityThread;->currentApplication()Landroid/app/Application; (unsupported, reflection, allowed)
+10-13 11:47:24.005 I/NaviDebugIntent( 5027): applied profile=bicycle bike=null graph=pack-hit vias=0 settings={eco_mode=false} ignored=[] avoid_ferries=null eco=false restore=false inject_gps=true
+10-13 11:47:24.006 I/NaviTrip( 5027): pendingTripPlan from=Hamar to=Lillehammer long=true plan=true profile=BICYCLE graph=pack
+10-13 11:47:24.006 I/NaviNative( 5027): navi: native logging ready
+10-13 11:47:24.011 I/NaviNative( 5027): navi: native logging ready
+10-13 11:47:24.019 I/NaviNative( 5027): navi: native logging ready
+10-13 11:47:24.022 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:24.038 I/NaviFu49Net( 5027): airplane=false has_internet=true usable=true force_offline=false http_allowed=true
+10-13 11:47:24.041 I/resolv  (  413): GetAddrInfoHandler::run: {101 101 101 983141 10220 0}
+10-13 11:47:24.041 I/resolv  (  413): res_nmkquery: (QUERY, IN, AAAA)
+10-13 11:47:24.041 I/resolv  (  413): res_nmkquery: (QUERY, IN, A)
+10-13 11:47:24.041 I/resolv  (  413): resolv_cache_lookup: FOUND IN CACHE entry=0x733934fb84f0
+10-13 11:47:24.042 I/resolv  (  413): doQuery: rcode=0, ancount=2, return value=102
+10-13 11:47:24.042 I/resolv  (  413): resolv_cache_lookup: FOUND IN CACHE entry=0x7338e4fb6930
+10-13 11:47:24.042 I/resolv  (  413): doQuery: rcode=0, ancount=2, return value=78
+10-13 11:47:24.063 W/HWUI    ( 5027): Unknown dataspace 0
+10-13 11:47:24.135 I/no.navi.app( 5027): Compiler allocated 5174KB to compile void android.view.ViewRootImpl.performTraversals()
+10-13 11:47:24.186 D/CoreBackPreview(  618): Window{d9ec94e u0 no.navi.app/no.navi.app.MainActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@e71937c, mPriority=0, mIsAnimationCallback=false}
+10-13 11:47:24.191 I/EGL_emulation( 5027): Opening libGLESv1_CM_emulation.so
+10-13 11:47:24.192 I/EGL_emulation( 5027): Opening libGLESv2_emulation.so
+10-13 11:47:24.234 W/ActivityTaskManager(  618): Unable to send transaction to client proc no.navi.app: no app thread
+10-13 11:47:24.235 W/Looper  (  897): Slow delivery took 42ms wmshell.anim h=android.view.Choreographer$FrameHandler c=android.view.Choreographer$FrameDisplayEventReceiver@5a939a8 m=0
+10-13 11:47:24.238 W/HWUI    ( 5027): Failed to choose config with EGL_SWAP_BEHAVIOR_PRESERVED, retrying without...
+10-13 11:47:24.238 W/HWUI    ( 5027): Failed to initialize 101010-2 format, error = EGL_SUCCESS
+10-13 11:47:24.242 W/Looper  (  897): Drained
+10-13 11:47:24.288 D/WifiNl80211Manager(  618): Scan result ready event
+10-13 11:47:24.288 D/WifiNative(  618): Scan result ready event
+10-13 11:47:24.293 I/HalDevMgr(  618): bestIfaceCreationProposal is null, requestIface=STA, existingIface=[name=wlan0 type=STA]
+10-13 11:47:24.298 W/GLSUser ( 1164): [DeviceKeyStore] Cannot load key: Device key file not found.
+10-13 11:47:24.299 W/GLSUser ( 1164): [DeviceKeyStore] Cannot load key: Device key file not found.
+10-13 11:47:24.347 I/hwservicemanager(  202): getTransport: Cannot find entry android.hardware.graphics.mapper@4.0::IMapper/default in either framework or device VINTF manifest.
+10-13 11:47:24.347 I/Gralloc4( 5027): mapper 4.x is not supported
+10-13 11:47:24.449 I/servicemanager(    0): Caller(pid=5027,uid=10220,sid=u:r:untrusted_app:s0:c220,c256,c512,c768) Could not find android.hardware.graphics.allocator.IAllocator/default in the VINTF manifest. No alternative instances declared in VINTF.
+10-13 11:47:24.349 W/GlsClientGrpc( 1164): Voilatile gRPC failure INVALID_ARGUMENT: Application credential header not valid. Please fix the client to pass a valid application credential header. [CONTEXT service_id=6 ]
+10-13 11:47:24.349 W/GlsClientGrpc( 1164): gbzz: INVALID_ARGUMENT: Application credential header not valid. Please fix the client to pass a valid application credential header.
+10-13 11:47:24.349 W/GlsClientGrpc( 1164): 	at gbzy.h(:com.google.android.gms@242335041@24.23.35 (190800-646585959):3)
+10-13 11:47:24.349 W/GlsClientGrpc( 1164): 	at anbi.u(:com.google.android.gms@242335041@24.23.35 (190800-646585959):29)
+10-13 11:47:24.349 W/GlsClientGrpc( 1164): 	at anbi.g(:com.google.android.gms@242335041@24.23.35 (190800-646585959):97)
+10-13 11:47:24.349 W/GlsClientGrpc( 1164): 	at efkz.b(:com.google.android.gms@242335041@24.23.35 (190800-646585959):39)
+10-13 11:47:24.349 W/GlsClientGrpc( 1164): 	at efkr.a(:com.google.android.gms@242335041@24.23.35 (190800-646585959):274)
+10-13 11:47:24.349 W/GlsClientGrpc( 1164): 	at ehaz.call(:com.google.android.gms@242335041@24.23.35 (190800-646585959):1026)
+10-13 11:47:24.349 W/GlsClientGrpc( 1164): 	at java.util.concurrent.FutureTask.run(FutureTask.java:264)
+10-13 11:47:24.349 W/GlsClientGrpc( 1164): 	at angs.c(:com.google.android.gms@242335041@24.23.35 (190800-646585959):50)
+10-13 11:47:24.349 W/GlsClientGrpc( 1164): 	at angs.run(:com.google.android.gms@242335041@24.23.35 (190800-646585959):76)
+10-13 11:47:24.349 W/GlsClientGrpc( 1164): 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+10-13 11:47:24.349 W/GlsClientGrpc( 1164): 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:644)
+10-13 11:47:24.349 W/GlsClientGrpc( 1164): 	at anmg.run(:com.google.android.gms@242335041@24.23.35 (190800-646585959):8)
+10-13 11:47:24.349 W/GlsClientGrpc( 1164): 	at java.lang.Thread.run(Thread.java:1012)
+10-13 11:47:24.387 I/ActivityScheduler( 1164): nextTriggerTime: 7917434, in 38627ms, detectorType: 39, FULL_TYPE alarmWindowMillis: 80000
+10-13 11:47:24.408 W/no.navi.app( 5027): Accessing hidden method Landroid/os/SystemProperties;->addChangeCallback(Ljava/lang/Runnable;)V (unsupported, reflection, allowed)
+10-13 11:47:24.411 W/ziparchive(  618): Unable to open '/data/app/~~N_ur3wQMkWBK3mhEIvii1A==/no.navi.app-ow5-hqLG-WarmQBcCrcZOQ==/base.dm': No such file or directory
+10-13 11:47:24.410 V/WindowManagerShell(  897): Transition animation finished (aborted=false), notifying core (#81) android.os.BinderProxy@b67daff@0
+10-13 11:47:24.415 E/IPCThreadState(  618): Binder transaction failure. id: 1530913, BR_*: 29189, error: -22 (Invalid argument)
+10-13 11:47:24.415 W/ActivityManager(  618): pid 618 system sent binder code 7 with flags 1 to frozen apps and got error -32
+10-13 11:47:24.518 I/binder  (    0): 731:618 cannot find target node
+10-13 11:47:24.519 I/binder  (    0): 618:731 transaction async to 0:0 failed 1530913/29189/-22, size 64-0 line 3344
+10-13 11:47:24.416 W/WindowManager(  618): Exception thrown during dispatchAppVisibility Window{9ab75d0 u0 no.navi.app/no.navi.app.MainActivity EXITING}
+10-13 11:47:24.416 W/WindowManager(  618): android.os.DeadObjectException
+10-13 11:47:24.416 W/WindowManager(  618): 	at android.os.BinderProxy.transactNative(Native Method)
+10-13 11:47:24.416 W/WindowManager(  618): 	at android.os.BinderProxy.transact(BinderProxy.java:586)
+10-13 11:47:24.416 W/WindowManager(  618): 	at android.view.IWindow$Stub$Proxy.dispatchAppVisibility(IWindow.java:553)
+10-13 11:47:24.416 W/WindowManager(  618): 	at com.android.server.wm.WindowState.sendAppVisibilityToClients(WindowState.java:3253)
+10-13 11:47:24.416 W/WindowManager(  618): 	at com.android.server.wm.WindowContainer.sendAppVisibilityToClients(WindowContainer.java:1289)
+10-13 11:47:24.416 W/WindowManager(  618): 	at com.android.server.wm.WindowToken.setClientVisible(WindowToken.java:403)
+10-13 11:47:24.416 W/WindowManager(  618): 	at com.android.server.wm.ActivityRecord.setClientVisible(ActivityRecord.java:7166)
+10-13 11:47:24.416 W/WindowManager(  618): 	at com.android.server.wm.ActivityRecord.postApplyAnimation(ActivityRecord.java:5881)
+10-13 11:47:24.416 W/WindowManager(  618): 	at com.android.server.wm.ActivityRecord.commitVisibility(ActivityRecord.java:5823)
+10-13 11:47:24.416 W/WindowManager(  618): 	at com.android.server.wm.Transition.finishTransition(Transition.java:1286)
+10-13 11:47:24.416 W/WindowManager(  618): 	at com.android.server.wm.TransitionController.finishTransition(TransitionController.java:937)
+10-13 11:47:24.416 W/WindowManager(  618): 	at com.android.server.wm.WindowOrganizerController.finishTransition(WindowOrganizerController.java:494)
+10-13 11:47:24.416 W/WindowManager(  618): 	at android.window.IWindowOrganizerController$Stub.onTransact(IWindowOrganizerController.java:289)
+10-13 11:47:24.416 W/WindowManager(  618): 	at com.android.server.wm.WindowOrganizerController.onTransact(WindowOrganizerController.java:204)
+10-13 11:47:24.416 W/WindowManager(  618): 	at android.os.Binder.execTransactInternal(Binder.java:1500)
+10-13 11:47:24.416 W/WindowManager(  618): 	at android.os.Binder.execTransact(Binder.java:1444)
+10-13 11:47:24.416 W/Process (  618): Unable to open /proc/3666/status
+10-13 11:47:24.416 I/ActivityTaskManager(  618): Displayed no.navi.app/.MainActivity for user 0: +873ms
+10-13 11:47:24.416 V/WindowManager(  618): Finish Transition (#81): created at 10-13 11:47:23.388 collect-started=0.088ms request-sent=0.3ms started=5.918ms ready=483.045ms sent=484.164ms finished=1024.744ms
+10-13 11:47:24.421 W/UserManagerService(  618): Requested status bar icon for non-badged user 0
+10-13 11:47:24.421 V/WindowManagerShell(  897): Track 0 became idle
+10-13 11:47:24.421 V/WindowManagerShell(  897): All active transition animations finished
+10-13 11:47:24.422 W/UserManagerService(  618): Requested status bar icon for non-badged user 0
+10-13 11:47:24.422 I/TopTaskTracker( 1152): onTaskRemoved: taskId=1143
+10-13 11:47:24.423 W/UserManagerService(  618): Requested status bar icon for non-badged user 0
+10-13 11:47:24.423 I/TopTaskTracker( 1152): onTaskRemoved: taskId=1143
+10-13 11:47:24.425 D/nativeloader( 5027): Load /data/app/~~N_ur3wQMkWBK3mhEIvii1A==/no.navi.app-ow5-hqLG-WarmQBcCrcZOQ==/lib/x86_64/libmaplibre.so using ns clns-7 from class loader (caller=/data/app/~~N_ur3wQMkWBK3mhEIvii1A==/no.navi.app-ow5-hqLG-WarmQBcCrcZOQ==/base.apk!classes6.dex): ok
+10-13 11:47:24.459 E/BpTransactionCompletedListener(  475): Failed to transact (-32)
+10-13 11:47:24.460 E/BpTransactionCompletedListener(  475): Failed to transact (-32)
+10-13 11:47:24.495 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:24.500 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:24.506 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:24.507 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:24.517 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:24.777 W/IPCThreadState(  522): Sending oneway calls to frozen process.
+10-13 11:47:24.780 W/WindowOnBackDispatcher(  897): sendCancelIfRunning: isInProgress=false callback=android.view.ViewRootImpl$$ExternalSyntheticLambda11@44ad3e2
+10-13 11:47:24.780 D/CoreBackPreview(  618): Window{f7bad97 u0 Splash Screen no.navi.app EXITING}: Setting back callback null
+10-13 11:47:24.780 W/InputManager-JNI(  618): Input channel object 'f7bad97 Splash Screen no.navi.app (client)' was disposed without first being removed with the input manager!
+10-13 11:47:24.783 D/BaseDepthController( 1152): setSurface:
+10-13 11:47:24.783 D/BaseDepthController( 1152): 	mWaitingOnSurfaceValidity: false
+10-13 11:47:24.783 D/BaseDepthController( 1152): 	mSurface: null
+10-13 11:47:24.783 D/BaseDepthController( 1152): mSurface is null and mCurrentBlur is: 0
+10-13 11:47:24.784 D/StateManager( 1152): goToState - fromState: Normal, toState: Normal, partial trace:
+10-13 11:47:24.784 D/StateManager( 1152): 	at com.android.launcher3.statemanager.StateManager.moveToRestState(go/retraceme 31f9979659277bb965985aff1272c33e3c3c9e755b77166d20a2465454178f2c:4)
+10-13 11:47:24.784 D/StateManager( 1152): 	at com.android.launcher3.statemanager.StateManager.moveToRestState(go/retraceme 31f9979659277bb965985aff1272c33e3c3c9e755b77166d20a2465454178f2c:1)
+10-13 11:47:24.784 D/StateManager( 1152): 	at com.android.launcher3.statemanager.StatefulActivity.onStop(go/retraceme 31f9979659277bb965985aff1272c33e3c3c9e755b77166d20a2465454178f2c:34)
+10-13 11:47:24.784 D/StatsLog( 1152): LAUNCHER_ONSTOP
+10-13 11:47:24.784 I/AppWidgetServiceImpl(  618): setAppWidgetHidden() 0
+10-13 11:47:24.784 D/OneSearchSuggestProvider( 1152): Shut down the binder channel
+10-13 11:47:24.785 D/StatsLog( 1152): LAUNCHER_GOOGLE_SEARCH_RESTORE_LIST_SIZE_AFTER_ACTIVITY_RESTART
+10-13 11:47:24.785 D/NexusLauncherModelDelegate( 1152): notifySmartspaceEvent: SmartspaceTargetEvent{mSmartspaceTarget=null, mSmartspaceActionId='null', mEventType=7}
+10-13 11:47:24.785 I/IPCThreadState( 1152): oneway function results for code 2 on binder at 0x7e470f3f1ef0 will be dropped but finished with status UNKNOWN_TRANSACTION
+10-13 11:47:24.794 D/NexusLauncherModelDelegate( 1152): notifySmartspaceEvent: SmartspaceTargetEvent{mSmartspaceTarget=null, mSmartspaceActionId='null', mEventType=7}
+10-13 11:47:24.805 I/netd    (  413): tetherGetStats() -> {[]} <1.18ms>
+10-13 11:47:24.964 D/EGL_emulation(  897): app_time_stats: avg=301.26ms min=0.72ms max=932.26ms count=5
+10-13 11:47:24.973 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:24.977 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:24.977 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:24.983 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:24.983 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:24.988 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:24.990 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:24.990 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:24.996 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:24.996 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.003 W/no.navi.app( 5027): Accessing hidden field Landroid/graphics/Typeface;->sSystemFontMap:Ljava/util/Map; (unsupported, reflection, allowed)
+10-13 11:47:25.213 I/WorldOverview( 5027): starting extract from https://build.protomaps.com/20261013.pmtiles
+10-13 11:47:25.218 I/NaviNative( 5027): navi: [NaviDownload] pmtiles_run_job start job_id=7e96d7ce-24cc-4bcd-9edc-7bffcb1f1d7b data_dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.220 I/WorldOverview( 5027): done id=7e96d7ce-24cc-4bcd-9edc-7bffcb1f1d7b status=completed path=/data/user/0/no.navi.app/files/pmtiles/world_overview.pmtiles bytes=45059913
+10-13 11:47:25.221 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.225 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.225 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.231 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.231 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.235 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.236 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.242 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.242 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.246 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.247 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.247 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.249 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.249 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.249 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.255 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.255 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.258 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.261 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.261 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.265 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.265 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.266 D/android.hardware.gnss-service.ranchu(  942): GnssHwConn:workerThread:70
+10-13 11:47:25.269 I/ActivityScheduler( 1164): nextTriggerTime: 7917434, in 37745ms, detectorType: 39, FULL_TYPE alarmWindowMillis: 80000
+10-13 11:47:25.271 W/GLSUser ( 1164): [DeviceKeyStore] Cannot load key: Device key file not found.
+10-13 11:47:25.271 W/WindowOnBackDispatcher( 5027): OnBackInvokedCallback is not enabled for the application.
+10-13 11:47:25.271 W/WindowOnBackDispatcher( 5027): Set 'android:enableOnBackInvokedCallback="true"' in the application manifest.
+10-13 11:47:25.271 W/GLSUser ( 1164): [DeviceKeyStore] Cannot load key: Device key file not found.
+10-13 11:47:25.280 W/WorldOverviewDo( 5027): type=1400 audit(0.0:1810): avc:  denied  { ioctl } for  path="/storage/0000-0000/Android/data/no.navi.app/files/place_index.db" dev="fuse" ino=1048791 ioctlcmd=0xf50c scontext=u:r:untrusted_app:s0:c220,c256,c512,c768 tcontext=u:object_r:fuse:s0 tclass=file permissive=0 app=no.navi.app
+10-13 11:47:25.307 W/GlsClientGrpc( 1164): Voilatile gRPC failure INVALID_ARGUMENT: Application credential header not valid. Please fix the client to pass a valid application credential header. [CONTEXT service_id=6 ]
+10-13 11:47:25.307 W/GlsClientGrpc( 1164): gbzz: INVALID_ARGUMENT: Application credential header not valid. Please fix the client to pass a valid application credential header.
+10-13 11:47:25.307 W/GlsClientGrpc( 1164): 	at gbzy.h(:com.google.android.gms@242335041@24.23.35 (190800-646585959):3)
+10-13 11:47:25.307 W/GlsClientGrpc( 1164): 	at anbi.u(:com.google.android.gms@242335041@24.23.35 (190800-646585959):29)
+10-13 11:47:25.307 W/GlsClientGrpc( 1164): 	at anbi.g(:com.google.android.gms@242335041@24.23.35 (190800-646585959):97)
+10-13 11:47:25.307 W/GlsClientGrpc( 1164): 	at efkz.b(:com.google.android.gms@242335041@24.23.35 (190800-646585959):39)
+10-13 11:47:25.307 W/GlsClientGrpc( 1164): 	at efkr.a(:com.google.android.gms@242335041@24.23.35 (190800-646585959):274)
+10-13 11:47:25.307 W/GlsClientGrpc( 1164): 	at ehaz.call(:com.google.android.gms@242335041@24.23.35 (190800-646585959):1026)
+10-13 11:47:25.307 W/GlsClientGrpc( 1164): 	at java.util.concurrent.FutureTask.run(FutureTask.java:264)
+10-13 11:47:25.307 W/GlsClientGrpc( 1164): 	at angs.c(:com.google.android.gms@242335041@24.23.35 (190800-646585959):50)
+10-13 11:47:25.307 W/GlsClientGrpc( 1164): 	at angs.run(:com.google.android.gms@242335041@24.23.35 (190800-646585959):76)
+10-13 11:47:25.307 W/GlsClientGrpc( 1164): 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+10-13 11:47:25.307 W/GlsClientGrpc( 1164): 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:644)
+10-13 11:47:25.307 W/GlsClientGrpc( 1164): 	at anmg.run(:com.google.android.gms@242335041@24.23.35 (190800-646585959):8)
+10-13 11:47:25.307 W/GlsClientGrpc( 1164): 	at java.lang.Thread.run(Thread.java:1012)
+10-13 11:47:25.309 I/ActivityScheduler( 1164): nextTriggerTime: 7917434, in 37704ms, detectorType: 39, FULL_TYPE alarmWindowMillis: 80000
+10-13 11:47:25.328 W/WorldOverviewDo( 5027): type=1400 audit(0.0:1811): avc:  denied  { ioctl } for  path="/storage/0000-0000/Android/data/no.navi.app/files/place_index.db" dev="fuse" ino=1048791 ioctlcmd=0xf50c scontext=u:r:untrusted_app:s0:c220,c256,c512,c768 tcontext=u:object_r:fuse:s0 tclass=file permissive=0 app=no.navi.app
+10-13 11:47:25.392 E/platform( 5027): Failed to open rendernode: No such file or directory
+10-13 11:47:25.408 D/vulkan  ( 5027): searching for layers in '/data/app/~~N_ur3wQMkWBK3mhEIvii1A==/no.navi.app-ow5-hqLG-WarmQBcCrcZOQ==/lib/x86_64'
+10-13 11:47:25.411 D/vulkan  ( 5027): searching for layers in '/data/app/~~N_ur3wQMkWBK3mhEIvii1A==/no.navi.app-ow5-hqLG-WarmQBcCrcZOQ==/base.apk!/lib/x86_64'
+10-13 11:47:25.424 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.425 I/FontLog ( 1164): Received query Noto Color Emoji Compat, URI content://com.google.android.gms.fonts [CONTEXT service_id=132 ]
+10-13 11:47:25.425 I/FontLog ( 1164): Query [emojicompat-emoji-font] resolved to {Noto Color Emoji Compat, wdth 100.0, wght 400, ital 0.0, bestEffort false} [CONTEXT service_id=132 ]
+10-13 11:47:25.429 W/MediaProvider( 1546): isAppCloneUserPair for user 0: false
+10-13 11:47:25.429 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.430 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.430 I/FontLog ( 1164): Fetch {Noto Color Emoji Compat, wdth 100.0, wght 400, ital 0.0, bestEffort false} end status Status{statusCode=SUCCESS, resolution=null} [CONTEXT service_id=132 ]
+10-13 11:47:25.432 I/FontLog ( 1164): Pulling font file for id = 44, cache size = 5 [CONTEXT service_id=132 ]
+10-13 11:47:25.435 I/FontLog ( 1164): Pulling font file for id = 44, cache size = 5 [CONTEXT service_id=132 ]
+10-13 11:47:25.435 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.438 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.440 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.440 I/MediaProvider( 1546): Deleted 1 0 0 0 0 0 0 items on external_primary due to no.navi.app
+10-13 11:47:25.441 E/MediaProvider( 1546): Couldn't find file: /storage/emulated/0/Documents/debug/.navi_write_probe
+10-13 11:47:25.441 E/MediaProvider( 1546): java.io.FileNotFoundException: No item at content://media/external_primary/file
+10-13 11:47:25.441 E/MediaProvider( 1546): 	at com.android.providers.media.MediaProvider.queryForSingleItem(MediaProvider.java:9280)
+10-13 11:47:25.441 E/MediaProvider( 1546): 	at com.android.providers.media.MediaProvider.queryForSingleItemAsMediaProvider(MediaProvider.java:9254)
+10-13 11:47:25.441 E/MediaProvider( 1546): 	at com.android.providers.media.MediaProvider.queryForFileAttributes(MediaProvider.java:9908)
+10-13 11:47:25.441 E/MediaProvider( 1546): 	at com.android.providers.media.MediaProvider.onFileOpenForFuse(MediaProvider.java:10055)
+10-13 11:47:25.441 I/NaviDiag( 5027): diagnostic logs dir=/storage/emulated/0/Documents/debug
+10-13 11:47:25.451 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.452 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.454 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.455 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.458 I/resolv  (  413): GetAddrInfoHandler::run: {101 101 101 983141 10220 0}
+10-13 11:47:25.458 I/resolv  (  413): res_nmkquery: (QUERY, IN, AAAA)
+10-13 11:47:25.458 I/resolv  (  413): res_nmkquery: (QUERY, IN, A)
+10-13 11:47:25.459 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.460 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.470 D/ActivityManager(  618): sync unfroze 1487 com.google.android.gms for 6
+10-13 11:47:25.478 W/ProcessStats(  618): Tracking association SourceState{c1f3d22 com.google.android.gms.persistent/10143 ImpBg #7960} whose proc state 6 is better than process ProcessState{5aea627 com.google.android.gms/10143 pkg=com.google.android.gms} proc state 14 (2 skipped)
+10-13 11:47:25.483 I/NetworkScheduler.Stats( 1164): Task com.google.android.gms/com.google.android.gms.ipa.base.IpaGcmTaskService started execution. cause:9 exec_start_elapsed_seconds: 7879 [CONTEXT service_id=218 ]
+10-13 11:47:25.494 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.524 I/GmscoreIpa( 1487): Starting mediastore instant index [CONTEXT service_id=255 ]
+10-13 11:47:25.531 I/HWUI    ( 5027): Davey! duration=1416ms; Flags=0, FrameTimelineVsyncId=1464510, IntendedVsync=7878529257480, Vsync=7878845924134, InputEventId=0, HandleInputStart=7878858048132, AnimationStart=7878858048773, PerformTraversalsStart=7879696565556, DrawStart=7879810615665, FrameDeadline=7878862590800, FrameInterval=7878857970587, FrameStartTime=16666666, SyncQueued=7879834536379, SyncStart=7879834565955, IssueDrawCommandsStart=7879835183012, SwapBuffers=7879928606103, FrameCompleted=7879946002233, DequeueBufferDuration=1412, QueueBufferDuration=136035, GpuCompleted=7879946002233, SwapBuffersCompleted=7879943951968, DisplayPresentTime=187741610486462, CommandSubmissionCompleted=7879928606103, 
+10-13 11:47:25.534 I/NetworkScheduler.Stats( 1164): Task com.google.android.gms/com.google.android.gms.ipa.base.IpaGcmTaskService finished executing. cause:9 result: 1 elapsed_millis: 57 uptime_millis: 57 exec_start_elapsed_seconds: 7879 [CONTEXT service_id=218 ]
+10-13 11:47:25.546 I/NaviNative( 5027): driver_break_core::routing::indexed::load: edge_clip_mode=CorridorBand clips=1
+10-13 11:47:25.547 I/NaviNative( 5027): driver_break_core::routing::indexed::load: try_load_graph stem=dalarna-latest (pbf_stem=dalarna-latest) profile=Car need_extra=true extras=0 corridor_segs=0 dirs=/data/user/0/no.navi.app/files
+10-13 11:47:25.547 I/NaviNative( 5027): driver_break_core::routing::plan_file_log: stems primary=dalarna-latest pbf_stem=dalarna-latest extra=
+10-13 11:47:25.547 I/NaviNative( 5027): driver_break_core::routing::indexed::load: try_load_graph tile_files=0 after primary+extras (budget=6)
+10-13 11:47:25.547 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.549 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.550 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.561 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.566 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.570 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.570 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.579 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.579 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.586 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.589 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.690 I/logd    (    0): logdr: UID=2000 GID=2000 PID=5121 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-13 11:47:25.592 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.595 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff431e50 hos timage handle 0x7000400003622
+10-13 11:47:25.595 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 180
+10-13 11:47:25.596 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.597 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff432790 hos timage handle 0x70006000035d4
+10-13 11:47:25.597 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 192
+10-13 11:47:25.599 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.599 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.600 W/NaviStorageVol( 5027): getExternalFilesDirs match not writable: /storage/0000-0000/Android/data/no.navi.app/files
+10-13 11:47:25.604 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.604 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.606 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.606 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.600 W/DefaultDispatch( 5027): type=1400 audit(0.0:1812): avc:  denied  { ioctl } for  path="/storage/0000-0000/Android/data/no.navi.app/files/place_index.db" dev="fuse" ino=1048791 ioctlcmd=0xf50c scontext=u:r:untrusted_app:s0:c220,c256,c512,c768 tcontext=u:object_r:fuse:s0 tclass=file permissive=0 app=no.navi.app
+10-13 11:47:25.610 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.610 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.611 W/PlaceIndexStorage( 5027): place_index vol=uuid:0000-0000 path=/storage/0000-0000/Android/data/no.navi.app/files/place_index.db bytes=3087880192
+10-13 11:47:25.613 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.617 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.618 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.622 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.622 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.616 W/DefaultDispatch( 5027): type=1400 audit(0.0:1813): avc:  denied  { ioctl } for  path="/storage/0000-0000/Android/data/no.navi.app/files/place_index.db" dev="fuse" ino=1048791 ioctlcmd=0xf50c scontext=u:r:untrusted_app:s0:c220,c256,c512,c768 tcontext=u:object_r:fuse:s0 tclass=file permissive=0 app=no.navi.app
+10-13 11:47:25.630 I/no.navi.app( 5027): Method exceeds compiler instruction limit: 29138 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 11:47:25.649 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67133440
+10-13 11:47:25.653 I/FuseDaemon( 1546): Threshold now 45056
+10-13 11:47:25.656 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff430450 hos timage handle 0x7000500003cee
+10-13 11:47:25.656 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 200
+10-13 11:47:25.658 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff436c50 hos timage handle 0x7000300003d25
+10-13 11:47:25.658 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 205
+10-13 11:47:25.662 V/Mbgl-ConnectivityReceiver( 5027): connected - true
+10-13 11:47:25.662 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff431e50 hos timage handle 0x7000400003622
+10-13 11:47:25.662 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 209
+10-13 11:47:25.678 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff432790 hos timage handle 0x70006000035d4
+10-13 11:47:25.678 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 210
+10-13 11:47:25.679 I/ImeTracker(  618): no.navi.app:ae413523: onRequestHide at ORIGIN_SERVER reason HIDE_UNSPECIFIED_WINDOW fromUser false
+10-13 11:47:25.679 I/ImeTracker(  618): no.navi.app:ae413523: onCancelled at PHASE_SERVER_SHOULD_HIDE
+10-13 11:47:25.680 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff430450 hos timage handle 0x7000500003cee
+10-13 11:47:25.680 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 213
+10-13 11:47:25.685 I/GoogleInputMethodService( 1468): GoogleInputMethodService.onFinishInput():3157 
+10-13 11:47:25.686 I/GoogleInputMethodService( 1468): GoogleInputMethodService.updateDeviceLockedStatus():2248 repeatCheckTimes = 0, locked = false
+10-13 11:47:25.686 I/GoogleInputMethodService( 1468): GoogleInputMethodService.onStartInput():1986 onStartInput(EditorInfo{EditorInfo{packageName=no.navi.app, inputType=0, inputTypeString=NULL, enableLearning=false, autoCorrection=false, autoComplete=false, imeOptions=0, privateImeOptions=null, actionName=UNSPECIFIED, actionLabel=null, initialSelStart=-1, initialSelEnd=-1, initialCapsMode=0, label=null, fieldId=0, fieldName=null, extras=null, hintText=null, hintLocales=[]}}, false)
+10-13 11:47:25.686 I/GoogleInputMethodService( 1468): GoogleInputMethodService.updateDeviceLockedStatus():2248 repeatCheckTimes = 1, locked = false
+10-13 11:47:25.686 I/AndroidIME( 1468): InputBundleManager.loadActiveInputBundleId():450 loadActiveInputBundleId: und-Latn-x-password, password
+10-13 11:47:25.686 I/NaviNative( 5027): driver_break_core::routing::indexed::load: edge_clip_mode=CorridorBand clips=1
+10-13 11:47:25.687 W/PackageConfigPersister(  618): App-specific configuration not found for packageName: no.navi.app and userId: 0
+10-13 11:47:25.690 I/NaviNative( 5027): driver_break_core::routing::indexed::load: try_load_graph stem=dalarna-latest (pbf_stem=dalarna-latest) profile=Car need_extra=true extras=1 corridor_segs=0 dirs=/data/user/0/no.navi.app/files
+10-13 11:47:25.691 I/NaviNative( 5027): driver_break_core::routing::plan_file_log: stems primary=dalarna-latest pbf_stem=dalarna-latest extra=ostlandet-latest
+10-13 11:47:25.691 I/NaviNative( 5027): driver_break_core::routing::indexed::load: try_load_graph tile_files=2 after primary+extras (budget=14)
+10-13 11:47:25.692 I/NaviNative( 5027): driver_break_core::routing::indexed::load: load_tiled_graph file=ostlandet-latest.navi-graph-car.t1_4.rkyv (1/2)
+10-13 11:47:25.693 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.695 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff436c50 hos timage handle 0x7000300003d25
+10-13 11:47:25.695 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 212
+10-13 11:47:25.699 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.699 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.710 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.710 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.721 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.731 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.731 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.735 I/NaviNative( 5027): driver_break_core::routing::indexed::load: load_graph_pack_bbox file=ostlandet-latest.navi-graph-car.t1_4.rkyv format=9 edges=0 nodes=0 clips=1 elapsed_ms=43 mmap_ms=0 pagein_ms=0
+10-13 11:47:25.736 I/NaviNative( 5027): driver_break_core::routing::indexed::load: load_tiled_graph file=ostlandet-latest.navi-graph-car.t2_4.rkyv (2/2)
+10-13 11:47:25.737 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.738 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.749 I/NaviFu49Net( 5027): airplane=false has_internet=true usable=true force_offline=false http_allowed=true
+10-13 11:47:25.756 I/resolv  (  413): GetAddrInfoHandler::run: {101 101 101 983141 10220 0}
+10-13 11:47:25.756 I/resolv  (  413): res_nmkquery: (QUERY, IN, AAAA)
+10-13 11:47:25.756 I/resolv  (  413): resolv_cache_lookup: FOUND IN CACHE entry=0x733934fb84f0
+10-13 11:47:25.756 I/resolv  (  413): doQuery: rcode=0, ancount=2, return value=102
+10-13 11:47:25.756 I/resolv  (  413): res_nmkquery: (QUERY, IN, A)
+10-13 11:47:25.756 I/resolv  (  413): resolv_cache_lookup: FOUND IN CACHE entry=0x7338e4fb6930
+10-13 11:47:25.756 I/resolv  (  413): doQuery: rcode=0, ancount=2, return value=78
+10-13 11:47:25.757 I/NaviFu49Net( 5027): airplane=false has_internet=true usable=true force_offline=false http_allowed=true
+10-13 11:47:25.779 W/IPCThreadState(  618): Sending oneway calls to frozen process.
+10-13 11:47:25.780 W/IPCThreadState(  618): Sending oneway calls to frozen process.
+10-13 11:47:25.780 W/IPCThreadState(  618): Sending oneway calls to frozen process.
+10-13 11:47:25.780 W/IPCThreadState(  618): Sending oneway calls to frozen process.
+10-13 11:47:25.780 W/IPCThreadState(  618): Sending oneway calls to frozen process.
+10-13 11:47:25.785 I/BugleRcsEngine( 1614): handleMessage processing message:[NOTIFY_UPTIME_IGNORE_STATE_CHANGED] with [non-null]:RcsEngineImpl reference [CONTEXT log_prefix="RcsEngineImpl[DUAL_REG]:[f23c5699-6360]>Handler" thread_id=64 ]
+10-13 11:47:25.785 I/ChimeraSrvcProxy( 1164): NullBinder for android.net.action.RECOMMEND_NETWORKS triggering remote TransactionTooLargeException due to Service without Chimera impl
+10-13 11:47:25.785 W/.gms.persistent( 1164): Large reply transaction of 1056768 bytes, interface descriptor , code 1
+10-13 11:47:25.786 I/NaviFu49Net( 5027): airplane=false has_internet=true usable=true force_offline=false http_allowed=true
+10-13 11:47:25.785 I/BugleRcsEngine( 1614): Connected state: [1], networkType: [WIFI] [CONTEXT thread_id=56 ]
+10-13 11:47:25.796 I/resolv  (  413): GetAddrInfoHandler::run: {101 101 101 983141 10220 0}
+10-13 11:47:25.796 I/resolv  (  413): res_nmkquery: (QUERY, IN, AAAA)
+10-13 11:47:25.796 I/resolv  (  413): resolv_cache_lookup: FOUND IN CACHE entry=0x733934fb84f0
+10-13 11:47:25.796 I/resolv  (  413): doQuery: rcode=0, ancount=2, return value=102
+10-13 11:47:25.796 I/resolv  (  413): res_nmkquery: (QUERY, IN, A)
+10-13 11:47:25.796 I/resolv  (  413): resolv_cache_lookup: FOUND IN CACHE entry=0x7338e4fb6930
+10-13 11:47:25.796 I/resolv  (  413): doQuery: rcode=0, ancount=2, return value=78
+10-13 11:47:25.806 I/resolv  (  413): res_nsend: used send_dg 57 terrno: 0
+10-13 11:47:25.806 I/resolv  (  413): res_nsend: used send_dg 92 terrno: 0
+10-13 11:47:25.807 I/resolv  (  413): doQuery: rcode=0, ancount=0, return value=92
+10-13 11:47:25.807 I/resolv  (  413): doQuery: rcode=0, ancount=1, return value=57
+10-13 11:47:25.824 W/DefaultDispatch( 5027): type=1400 audit(0.0:1814): avc:  denied  { ioctl } for  path="/storage/0000-0000/Android/data/no.navi.app/files/place_index.db" dev="fuse" ino=1048791 ioctlcmd=0xf50c scontext=u:r:untrusted_app:s0:c220,c256,c512,c768 tcontext=u:object_r:fuse:s0 tclass=file permissive=0 app=no.navi.app
+10-13 11:47:25.837 I/NaviNative( 5027): driver_break_core::pack_server: check_connectivity host=https://navigate-me.duckdns.org outcome=ready regions=540 body_bytes=217943 ms=384.4
+10-13 11:47:25.837 I/NaviNative( 5027): driver_break_core::pack_server: check_connectivity_chain selected=server-duckdns (https://navigate-me.duckdns.org) hop_ms=384.7 chain_ms=384.7 timeout_ms=3000
+10-13 11:47:25.847 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67346432
+10-13 11:47:25.850 I/FuseDaemon( 1546): Threshold now 27746304
+10-13 11:47:25.891 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff431e50 hos timage handle 0x7000400003622
+10-13 11:47:25.891 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 172
+10-13 11:47:25.894 I/NaviPack( 5027): catalog probe source=server-duckdns ready=540 served=https://navigate-me.duckdns.org unreachable=null
+10-13 11:47:25.895 I/NaviNative( 5027): driver_break_core::routing::indexed::load: load_graph_pack_bbox file=ostlandet-latest.navi-graph-car.t2_4.rkyv format=9 edges=20999 nodes=9715 clips=1 elapsed_ms=159 mmap_ms=0 pagein_ms=0
+10-13 11:47:25.899 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff432790 hos timage handle 0x70006000035d4
+10-13 11:47:25.899 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 190
+10-13 11:47:25.901 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.905 I/NaviFu49Net( 5027): airplane=false has_internet=true usable=true force_offline=false http_allowed=true
+10-13 11:47:25.907 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.908 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.917 I/NaviFu49Net( 5027): airplane=false has_internet=true usable=true force_offline=false http_allowed=true
+10-13 11:47:25.918 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.918 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.019 W/audit   (    0): audit_lost=886 audit_rate_limit=5 audit_backlog_limit=64
+10-13 11:47:26.019 E/audit   (    0): rate limit exceeded
+10-13 11:47:25.924 I/NaviNative( 5027): driver_break_core::routing::indexed::load: load_tiled_graph done tiles=2 edges=20999 nodes=9715 merge_wall_ms=27 merge=single_pass tile_cache_hits=0 misses=2 fit_rejects=0 parallel=1 tile_cache=off
+10-13 11:47:25.927 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.933 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.933 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.940 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.940 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.944 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67190784
+10-13 11:47:25.946 I/FuseDaemon( 1546): Threshold now 28913664
+10-13 11:47:25.954 I/no.navi.app( 5027): Method exceeds compiler instruction limit: 29138 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 11:47:25.966 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff430450 hos timage handle 0x7000500003cee
+10-13 11:47:25.966 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 189
+10-13 11:47:25.974 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.977 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.978 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.981 I/NaviFu49Net( 5027): airplane=false has_internet=true usable=true force_offline=false http_allowed=true
+10-13 11:47:25.984 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.984 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.991 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:25.995 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:25.996 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:25.999 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.000 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.047 I/NaviFu49Style( 5027): generated uri=file:///data/user/0/no.navi.app/files/map-styles/protomaps-light/style.native.v3.native__data_user_0_no.navi.app_files_pm.c1085f617263d289.json leaf=style.native.v3.native__data_user_0_no.navi.app_files_pm.c1085f617263d289.json exists=true bytes=30119 mountedKey=native|/data/user/0/no.navi.app/files/pmtiles/world_overview.pmtiles|/data/user/0/no.navi.app/files/pmtiles/europe_norway_ostlandet.pmtiles|offline sameUri=false reloadBase=true
+10-13 11:47:26.050 I/NaviFu49Style( 5027): file tag=generated sources=overview:min=0:max=6:url=pmtiles://file:///data/user/0/no.navi.app/files/pmtiles/world_overview.pmtiles,region0:min=0:max=15:url=pmtiles://file:///data/user/0/no.navi.app/files/pmtiles/europe_norway_ostlandet.pmtiles layer_count=65 order=background>,earth__overview>overview,landcover__overview>overview,landuse__overview>overview,glacier_fill_over_park__overview>overview,landuse_glacier_fill_over_park__overview>overview,landuse_protected_outline__overview>overview,landcover_glacier_outline__overview>overview,landuse_glacier_outline__overview>overview,earth>region0,landcover>region0,landuse>region0,glacier_fill_over_park>region0,landuse_glacier_fill_over_park>region0,landuse_protected_outline>region0,landcover_glacier_outline>region0,landuse_glacier_outline>region0,water__overview>overview,waterway__overview>overview,water>region0,waterway>region0,buildings__overview>overview,roads_minor_tunnel__overview>overview,roads_minor__overview>overview,roads_major_tunnel__overview>overview,roads_major__overview>overview,roads_other_tunnel__overview>overview,roads_other__overview>overview,roads_rail_tunnel__overview>overview,roads_rail__overview>overview,roads_rail_hatch_tunnel__overview>overview,roads_rail_hatch__overview>overview,boundaries__overview>overview,buildings>region0,roads_minor_tunnel>region0,roads_minor>region0,roads_major_tunnel>region0,roads_major>region0,roads_other_tunnel>region0,roads_other>region0,roads_rail_tunnel>region0,roads_rail>region0,roads_rail_hatch_tunnel>region0,roads_rail_hatch>region0,boundaries>region0,water_label_lake__overview>overview,water_label_river__overview>overview,buildings_label_housenumber__overview>overview,places__overview>overview,roads_label_motorway__overview>overview,roads_label_secondary__overview>overview,roads_label_major__overview>overview,roads_label_minor__overview>overview,pois_protected__overview>overview,pois__overview>overview,water_label_lake>region0,water_label_river>region0,buildings_label_housenumber>region0,places>region0,roads_label_motorway>region0,roads_label_secondary>region0,roads_label_major>region0,roads_label_minor>region0,pois_protected>region0,pois>region0
+10-13 11:47:26.056 I/no.navi.app( 5027): Compiler allocated 13MB to compile kotlin.Unit no.navi.app.MainActivityKt.NaviMapScreen$lambda$571$37$2(androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, java.io.File, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableDoubleState, androidx.compose.runtime.MutableState, android.content.Context, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.Composer, int)
+10-13 11:47:26.058 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:26.062 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.062 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.066 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.067 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.071 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:26.073 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.073 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.078 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.078 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.103 I/NaviMapCamera( 5027): held lat=60.794721 lon=11.068055000000015 zoom=12.0 disableGpsFollow=false pending=false
+10-13 11:47:26.107 I/NaviTracks( 5027): tracks empty source created
+10-13 11:47:26.111 I/BasemapLabelPolicy( 5027): apply labels/pois zoom policy ok=true
+10-13 11:47:26.113 I/BasemapPeakElevation( 5027): patched 2 pois peak elevation units=metric
+10-13 11:47:26.114 I/NaviMapCamera( 5027): held lat=60.794721 lon=11.068055000000015 zoom=12.0 disableGpsFollow=false pending=false
+10-13 11:47:26.116 I/NaviFu49Style( 5027): file tag=live-applied sources=overview:min=0:max=6:url=pmtiles://file:///data/user/0/no.navi.app/files/pmtiles/world_overview.pmtiles,region0:min=0:max=15:url=pmtiles://file:///data/user/0/no.navi.app/files/pmtiles/europe_norway_ostlandet.pmtiles layer_count=65 order=background>,earth__overview>overview,landcover__overview>overview,landuse__overview>overview,glacier_fill_over_park__overview>overview,landuse_glacier_fill_over_park__overview>overview,landuse_protected_outline__overview>overview,landcover_glacier_outline__overview>overview,landuse_glacier_outline__overview>overview,earth>region0,landcover>region0,landuse>region0,glacier_fill_over_park>region0,landuse_glacier_fill_over_park>region0,landuse_protected_outline>region0,landcover_glacier_outline>region0,landuse_glacier_outline>region0,water__overview>overview,waterway__overview>overview,water>region0,waterway>region0,buildings__overview>overview,roads_minor_tunnel__overview>overview,roads_minor__overview>overview,roads_major_tunnel__overview>overview,roads_major__overview>overview,roads_other_tunnel__overview>overview,roads_other__overview>overview,roads_rail_tunnel__overview>overview,roads_rail__overview>overview,roads_rail_hatch_tunnel__overview>overview,roads_rail_hatch__overview>overview,boundaries__overview>overview,buildings>region0,roads_minor_tunnel>region0,roads_minor>region0,roads_major_tunnel>region0,roads_major>region0,roads_other_tunnel>region0,roads_other>region0,roads_rail_tunnel>region0,roads_rail>region0,roads_rail_hatch_tunnel>region0,roads_rail_hatch>region0,boundaries>region0,water_label_lake__overview>overview,water_label_river__overview>overview,buildings_label_housenumber__overview>overview,places__overview>overview,roads_label_motorway__overview>overview,roads_label_secondary__overview>overview,roads_label_major__overview>overview,roads_label_minor__overview>overview,pois_protected__overview>overview,pois__overview>overview,water_label_lake>region0,water_label_river>region0,buildings_label_housenumber>region0,places>region0,roads_label_motorway>region0,roads_label_secondary>region0,roads_label_major>region0,roads_label_minor>region0,pois_protected>region0,pois>region0
+10-13 11:47:26.116 I/NaviFu49Style( 5027): live_file=/data/user/0/no.navi.app/files/map-styles/protomaps-light/fu49-live-applied.json bytes=30119 uri=file:///data/user/0/no.navi.app/files/map-styles/protomaps-light/style.native.v3.native__data_user_0_no.navi.app_files_pm.c1085f617263d289.json
+10-13 11:47:26.116 I/NaviFu49Event( 5027): kind=style_loaded elapsed_ms=-1 tiles_start=0 tiles_done=0 uri=file:///data/user/0/no.navi.app/files/map-styles/protomaps-light/style.native.v3.native__data_user_0_no.navi.app_files_pm.c1085f617263d289.json
+10-13 11:47:26.117 I/NaviFu49Event( 5027): kind=style_loaded_lib elapsed_ms=-1 tiles_start=0 tiles_done=0 
+10-13 11:47:26.118 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff436c50 hos timage handle 0x7000300003d25
+10-13 11:47:26.119 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 232
+10-13 11:47:26.120 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff431e50 hos timage handle 0x7000400003622
+10-13 11:47:26.120 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 235
+10-13 11:47:26.130 I/BasemapPeakElevation( 5027): patched 2 pois peak elevation units=metric
+10-13 11:47:26.133 I/NaviTracks( 5027): tracks cleared (n=0)
+10-13 11:47:26.151 I/NaviFu49Net( 5027): airplane=false has_internet=true usable=true force_offline=false http_allowed=true
+10-13 11:47:26.170 I/NaviTracks( 5027): tracks cleared (n=0)
+10-13 11:47:26.211 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 11:47:26.211 I/no.navi.app( 5027): Method exceeds compiler instruction limit: 29138 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 11:47:26.212 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 11:47:26.212 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 11:47:26.212 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:321
+10-13 11:47:26.213 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:26.219 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.219 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.225 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.225 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.231 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:26.237 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.237 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.240 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff432790 hos timage handle 0x70006000035d4
+10-13 11:47:26.240 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 221
+10-13 11:47:26.244 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff430450 hos timage handle 0x7000500003cee
+10-13 11:47:26.244 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 216
+10-13 11:47:26.245 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.246 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.275 I/NaviFu49Style( 5027): generated uri=file:///data/user/0/no.navi.app/files/map-styles/protomaps-light/style.native.v3.native__data_user_0_no.navi.app_files_pm.764fa9bb3a8f28fe.json leaf=style.native.v3.native__data_user_0_no.navi.app_files_pm.764fa9bb3a8f28fe.json exists=true bytes=58218 mountedKey=native|/data/user/0/no.navi.app/files/pmtiles/world_overview.pmtiles|/data/user/0/no.navi.app/files/pmtiles/europe_finland.pmtiles+/data/user/0/no.navi.app/files/pmtiles/europe_germany.pmtiles+/data/user/0/no.navi.app/files/pmtiles/europe_sweden_norrbotten.pmtiles|online sameUri=false reloadBase=true
+10-13 11:47:26.281 I/NaviFu49Style( 5027): file tag=generated sources=online:min=null:max=15:url=pmtiles://https://build.protomaps.com/20261013.pmtiles,region0:min=0:max=15:url=pmtiles://file:///data/user/0/no.navi.app/files/pmtiles/europe_finland.pmtiles,region1:min=0:max=15:url=pmtiles://file:///data/user/0/no.navi.app/files/pmtiles/europe_germany.pmtiles,region2:min=0:max=15:url=pmtiles://file:///data/user/0/no.navi.app/files/pmtiles/europe_sweden_norrbotten.pmtiles layer_count=129 order=background>,earth__online>online,landcover__online>online,landuse__online>online,glacier_fill_over_park__online>online,landuse_glacier_fill_over_park__online>online,landuse_protected_outline__online>online,landcover_glacier_outline__online>online,landuse_glacier_outline__online>online,earth>region0,landcover>region0,landuse>region0,glacier_fill_over_park>region0,landuse_glacier_fill_over_park>region0,landuse_protected_outline>region0,landcover_glacier_outline>region0,landuse_glacier_outline>region0,earth__region1>region1,landcover__region1>region1,landuse__region1>region1,glacier_fill_over_park__region1>region1,landuse_glacier_fill_over_park__region1>region1,landuse_protected_outline__region1>region1,landcover_glacier_outline__region1>region1,landuse_glacier_outline__region1>region1,earth__region2>region2,landcover__region2>region2,landuse__region2>region2,glacier_fill_over_park__region2>region2,landuse_glacier_fill_over_park__region2>region2,landuse_protected_outline__region2>region2,landcover_glacier_outline__region2>region2,landuse_glacier_outline__region2>region2,water__online>online,waterway__online>online,water>region0,waterway>region0,water__region1>region1,waterway__region1>region1,water__region2>region2,waterway__region2>region2,buildings__online>online,roads_minor_tunnel__online>online,roads_minor__online>online,roads_major_tunnel__online>online,roads_major__online>online,roads_other_tunnel__online>online,roads_other__online>online,roads_rail_tunnel__online>online,roads_rail__online>online,roads_rail_hatch_tunnel__online>online,roads_rail_hatch__online>online,boundaries__online>online,buildings>region0,roads_minor_tunnel>region0,roads_minor>region0,roads_major_tunnel>region0,roads_major>region0,roads_other_tunnel>region0,roads_other>region0,roads_rail_tunnel>region0,roads_rail>region0,roads_rail_hatch_tunnel>region0,roads_rail_hatch>region0,boundaries>region0,buildings__region1>region1,roads_minor_tunnel__region1>region1,roads_minor__region1>region1,roads_major_tunnel__region1>region1,roads_major__region1>region1,roads_other_tunnel__region1>region1,roads_other__region1>region1,roads_rail_tunnel__region1>region1,roads_rail__region1>region1,roads_rail_hatch_tunnel__region1>region1,roads_rail_hatch__region1>region1,boundaries__region1>region1,buildings__region2>region2,roads_minor_tunnel__region2>region2,roads_minor__region2>region2,roads_major_tunnel__region2>region2,roads_major__region2>region2,roads_other_tunnel__region2>region2,roads_other__region2>region2,roads_rail_tunnel__region2>region2,roads_rail__region2>region2,roads_rail_hatch_tunnel__region2>region2,roads_rail_hatch__region2>region2,boundaries__region2>region2,water_label_lake__online>online,water_label_river__online>online,buildings_label_housenumber__online>online,places__online>online,roads_label_motorway__online>online,roads_label_secondary__online>online,roads_label_major__online>online,roads_label_minor__online>online,pois_protected__online>online,pois__online>online,water_label_lake>region0,water_label_river>region0,buildings_label_housenumber>region0,places>region0,roads_label_motorway>region0,roads_label_secondary>region0,roads_label_major>region0,roads_label_minor>region0,pois_protected>region0,pois>region0,water_label_lake__region1>region1,water_label_river__region1>region1,buildings_label_housenumber__region1>region1,places__region1>region1,roads_label_motorway__region1>region1,roads_label_secondary__region1>region1,roads_label_major__region1>region1,roads_label_minor__region1>region1,pois_protected__region1>region1,pois__region1>region1,water_label_la
+10-13 11:47:26.303 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:26.308 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.309 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.318 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.319 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.329 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:26.340 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.341 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.351 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.351 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.373 I/NaviMapCamera( 5027): held lat=0.0 lon=0.0 zoom=0.8376279331714048 disableGpsFollow=false pending=false
+10-13 11:47:26.373 I/NaviFu49Event( 5027): kind=style_loaded_lib elapsed_ms=-1 tiles_start=0 tiles_done=0 
+10-13 11:47:26.374 I/NaviFu49Style( 5027): generated uri=file:///data/user/0/no.navi.app/files/map-styles/protomaps-light/style.native.v3.native__data_user_0_no.navi.app_files_pm.764fa9bb3a8f28fe.json leaf=style.native.v3.native__data_user_0_no.navi.app_files_pm.764fa9bb3a8f28fe.json exists=true bytes=58218 mountedKey=native|/data/user/0/no.navi.app/files/pmtiles/world_overview.pmtiles|/data/user/0/no.navi.app/files/pmtiles/europe_finland.pmtiles+/data/user/0/no.navi.app/files/pmtiles/europe_germany.pmtiles+/data/user/0/no.navi.app/files/pmtiles/europe_sweden_norrbotten.pmtiles|online sameUri=false reloadBase=true
+10-13 11:47:26.378 I/NaviFu49Style( 5027): file tag=generated sources=online:min=null:max=15:url=pmtiles://https://build.protomaps.com/20261013.pmtiles,region0:min=0:max=15:url=pmtiles://file:///data/user/0/no.navi.app/files/pmtiles/europe_finland.pmtiles,region1:min=0:max=15:url=pmtiles://file:///data/user/0/no.navi.app/files/pmtiles/europe_germany.pmtiles,region2:min=0:max=15:url=pmtiles://file:///data/user/0/no.navi.app/files/pmtiles/europe_sweden_norrbotten.pmtiles layer_count=129 order=background>,earth__online>online,landcover__online>online,landuse__online>online,glacier_fill_over_park__online>online,landuse_glacier_fill_over_park__online>online,landuse_protected_outline__online>online,landcover_glacier_outline__online>online,landuse_glacier_outline__online>online,earth>region0,landcover>region0,landuse>region0,glacier_fill_over_park>region0,landuse_glacier_fill_over_park>region0,landuse_protected_outline>region0,landcover_glacier_outline>region0,landuse_glacier_outline>region0,earth__region1>region1,landcover__region1>region1,landuse__region1>region1,glacier_fill_over_park__region1>region1,landuse_glacier_fill_over_park__region1>region1,landuse_protected_outline__region1>region1,landcover_glacier_outline__region1>region1,landuse_glacier_outline__region1>region1,earth__region2>region2,landcover__region2>region2,landuse__region2>region2,glacier_fill_over_park__region2>region2,landuse_glacier_fill_over_park__region2>region2,landuse_protected_outline__region2>region2,landcover_glacier_outline__region2>region2,landuse_glacier_outline__region2>region2,water__online>online,waterway__online>online,water>region0,waterway>region0,water__region1>region1,waterway__region1>region1,water__region2>region2,waterway__region2>region2,buildings__online>online,roads_minor_tunnel__online>online,roads_minor__online>online,roads_major_tunnel__online>online,roads_major__online>online,roads_other_tunnel__online>online,roads_other__online>online,roads_rail_tunnel__online>online,roads_rail__online>online,roads_rail_hatch_tunnel__online>online,roads_rail_hatch__online>online,boundaries__online>online,buildings>region0,roads_minor_tunnel>region0,roads_minor>region0,roads_major_tunnel>region0,roads_major>region0,roads_other_tunnel>region0,roads_other>region0,roads_rail_tunnel>region0,roads_rail>region0,roads_rail_hatch_tunnel>region0,roads_rail_hatch>region0,boundaries>region0,buildings__region1>region1,roads_minor_tunnel__region1>region1,roads_minor__region1>region1,roads_major_tunnel__region1>region1,roads_major__region1>region1,roads_other_tunnel__region1>region1,roads_other__region1>region1,roads_rail_tunnel__region1>region1,roads_rail__region1>region1,roads_rail_hatch_tunnel__region1>region1,roads_rail_hatch__region1>region1,boundaries__region1>region1,buildings__region2>region2,roads_minor_tunnel__region2>region2,roads_minor__region2>region2,roads_major_tunnel__region2>region2,roads_major__region2>region2,roads_other_tunnel__region2>region2,roads_other__region2>region2,roads_rail_tunnel__region2>region2,roads_rail__region2>region2,roads_rail_hatch_tunnel__region2>region2,roads_rail_hatch__region2>region2,boundaries__region2>region2,water_label_lake__online>online,water_label_river__online>online,buildings_label_housenumber__online>online,places__online>online,roads_label_motorway__online>online,roads_label_secondary__online>online,roads_label_major__online>online,roads_label_minor__online>online,pois_protected__online>online,pois__online>online,water_label_lake>region0,water_label_river>region0,buildings_label_housenumber>region0,places>region0,roads_label_motorway>region0,roads_label_secondary>region0,roads_label_major>region0,roads_label_minor>region0,pois_protected>region0,pois>region0,water_label_lake__region1>region1,water_label_river__region1>region1,buildings_label_housenumber__region1>region1,places__region1>region1,roads_label_motorway__region1>region1,roads_label_secondary__region1>region1,roads_label_major__region1>region1,roads_label_minor__region1>region1,pois_protected__region1>region1,pois__region1>region1,water_label_la
+10-13 11:47:26.382 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff436c50 hos timage handle 0x7000300003d25
+10-13 11:47:26.382 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 173
+10-13 11:47:26.384 I/NaviMapCamera( 5027): held lat=0.0 lon=0.0 zoom=0.8376279331714048 disableGpsFollow=false pending=false
+10-13 11:47:26.388 I/NaviTracks( 5027): tracks empty source created
+10-13 11:47:26.390 I/BasemapLabelPolicy( 5027): apply labels/pois zoom policy ok=true
+10-13 11:47:26.393 I/BasemapPeakElevation( 5027): patched 4 pois peak elevation units=metric
+10-13 11:47:26.394 I/NaviMapCamera( 5027): held lat=0.0 lon=0.0 zoom=0.8376279331714048 disableGpsFollow=false pending=false
+10-13 11:47:26.400 D/Mbgl-HttpRequest( 5027): [HTTP] This request was cancelled (https://build.protomaps.com/20261013.pmtiles). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-13 11:47:26.407 I/resolv  (  413): GetAddrInfoHandler::run: {101 101 101 983141 10220 0}
+10-13 11:47:26.413 I/NaviFu49Style( 5027): file tag=live-applied sources=online:min=null:max=15:url=pmtiles://https://build.protomaps.com/20261013.pmtiles,region0:min=0:max=15:url=pmtiles://file:///data/user/0/no.navi.app/files/pmtiles/europe_finland.pmtiles,region1:min=0:max=15:url=pmtiles://file:///data/user/0/no.navi.app/files/pmtiles/europe_germany.pmtiles,region2:min=0:max=15:url=pmtiles://file:///data/user/0/no.navi.app/files/pmtiles/europe_sweden_norrbotten.pmtiles layer_count=129 order=background>,earth__online>online,landcover__online>online,landuse__online>online,glacier_fill_over_park__online>online,landuse_glacier_fill_over_park__online>online,landuse_protected_outline__online>online,landcover_glacier_outline__online>online,landuse_glacier_outline__online>online,earth>region0,landcover>region0,landuse>region0,glacier_fill_over_park>region0,landuse_glacier_fill_over_park>region0,landuse_protected_outline>region0,landcover_glacier_outline>region0,landuse_glacier_outline>region0,earth__region1>region1,landcover__region1>region1,landuse__region1>region1,glacier_fill_over_park__region1>region1,landuse_glacier_fill_over_park__region1>region1,landuse_protected_outline__region1>region1,landcover_glacier_outline__region1>region1,landuse_glacier_outline__region1>region1,earth__region2>region2,landcover__region2>region2,landuse__region2>region2,glacier_fill_over_park__region2>region2,landuse_glacier_fill_over_park__region2>region2,landuse_protected_outline__region2>region2,landcover_glacier_outline__region2>region2,landuse_glacier_outline__region2>region2,water__online>online,waterway__online>online,water>region0,waterway>region0,water__region1>region1,waterway__region1>region1,water__region2>region2,waterway__region2>region2,buildings__online>online,roads_minor_tunnel__online>online,roads_minor__online>online,roads_major_tunnel__online>online,roads_major__online>online,roads_other_tunnel__online>online,roads_other__online>online,roads_rail_tunnel__online>online,roads_rail__online>online,roads_rail_hatch_tunnel__online>online,roads_rail_hatch__online>online,boundaries__online>online,buildings>region0,roads_minor_tunnel>region0,roads_minor>region0,roads_major_tunnel>region0,roads_major>region0,roads_other_tunnel>region0,roads_other>region0,roads_rail_tunnel>region0,roads_rail>region0,roads_rail_hatch_tunnel>region0,roads_rail_hatch>region0,boundaries>region0,buildings__region1>region1,roads_minor_tunnel__region1>region1,roads_minor__region1>region1,roads_major_tunnel__region1>region1,roads_major__region1>region1,roads_other_tunnel__region1>region1,roads_other__region1>region1,roads_rail_tunnel__region1>region1,roads_rail__region1>region1,roads_rail_hatch_tunnel__region1>region1,roads_rail_hatch__region1>region1,boundaries__region1>region1,buildings__region2>region2,roads_minor_tunnel__region2>region2,roads_minor__region2>region2,roads_major_tunnel__region2>region2,roads_major__region2>region2,roads_other_tunnel__region2>region2,roads_other__region2>region2,roads_rail_tunnel__region2>region2,roads_rail__region2>region2,roads_rail_hatch_tunnel__region2>region2,roads_rail_hatch__region2>region2,boundaries__region2>region2,water_label_lake__online>online,water_label_river__online>online,buildings_label_housenumber__online>online,places__online>online,roads_label_motorway__online>online,roads_label_secondary__online>online,roads_label_major__online>online,roads_label_minor__online>online,pois_protected__online>online,pois__online>online,water_label_lake>region0,water_label_river>region0,buildings_label_housenumber>region0,places>region0,roads_label_motorway>region0,roads_label_secondary>region0,roads_label_major>region0,roads_label_minor>region0,pois_protected>region0,pois>region0,water_label_lake__region1>region1,water_label_river__region1>region1,buildings_label_housenumber__region1>region1,places__region1>region1,roads_label_motorway__region1>region1,roads_label_secondary__region1>region1,roads_label_major__region1>region1,roads_label_minor__region1>region1,pois_protected__region1>region1,pois__region1>region1,water_label
+10-13 11:47:26.413 I/resolv  (  413): res_nmkquery: (QUERY, IN, A)
+10-13 11:47:26.413 I/NaviFu49Style( 5027): live_file=/data/user/0/no.navi.app/files/map-styles/protomaps-light/fu49-live-applied.json bytes=58218 uri=file:///data/user/0/no.navi.app/files/map-styles/protomaps-light/style.native.v3.native__data_user_0_no.navi.app_files_pm.764fa9bb3a8f28fe.json
+10-13 11:47:26.413 I/NaviFu49Event( 5027): kind=style_loaded elapsed_ms=-1 tiles_start=0 tiles_done=0 uri=file:///data/user/0/no.navi.app/files/map-styles/protomaps-light/style.native.v3.native__data_user_0_no.navi.app_files_pm.764fa9bb3a8f28fe.json
+10-13 11:47:26.413 I/NaviFu49Event( 5027): kind=style_loaded_lib elapsed_ms=-1 tiles_start=0 tiles_done=0 
+10-13 11:47:26.415 I/resolv  (  413): res_nmkquery: (QUERY, IN, AAAA)
+10-13 11:47:26.416 I/resolv  (  413): GetAddrInfoHandler::run: {101 101 101 983141 10220 0}
+10-13 11:47:26.417 I/resolv  (  413): res_nmkquery: (QUERY, IN, A)
+10-13 11:47:26.418 I/resolv  (  413): res_nmkquery: (QUERY, IN, AAAA)
+10-13 11:47:26.437 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff431e50 hos timage handle 0x7000400003622
+10-13 11:47:26.437 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 168
+10-13 11:47:26.449 I/NaviFu49Net( 5027): airplane=false has_internet=true usable=true force_offline=false http_allowed=true
+10-13 11:47:26.449 D/Mbgl-HttpRequest( 5027): [HTTP] This request was cancelled (https://build.protomaps.com/20261013.pmtiles). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-13 11:47:26.450 I/resolv  (  413): GetAddrInfoHandler::run: {101 101 101 983141 10220 0}
+10-13 11:47:26.450 I/resolv  (  413): res_nmkquery: (QUERY, IN, A)
+10-13 11:47:26.450 I/resolv  (  413): resolv_cache_lookup: Waiting for previous request
+10-13 11:47:26.450 I/resolv  (  413): res_nmkquery: (QUERY, IN, AAAA)
+10-13 11:47:26.450 I/resolv  (  413): resolv_cache_lookup: Waiting for previous request
+10-13 11:47:26.451 I/resolv  (  413): GetAddrInfoHandler::run: {101 101 101 983141 10220 0}
+10-13 11:47:26.451 I/resolv  (  413): res_nmkquery: (QUERY, IN, AAAA)
+10-13 11:47:26.451 I/resolv  (  413): resolv_cache_lookup: FOUND IN CACHE entry=0x733934fb84f0
+10-13 11:47:26.451 I/resolv  (  413): res_nmkquery: (QUERY, IN, A)
+10-13 11:47:26.451 I/resolv  (  413): doQuery: rcode=0, ancount=2, return value=102
+10-13 11:47:26.451 I/resolv  (  413): resolv_cache_lookup: FOUND IN CACHE entry=0x7338e4fb6930
+10-13 11:47:26.451 I/resolv  (  413): doQuery: rcode=0, ancount=2, return value=78
+10-13 11:47:26.454 I/resolv  (  413): GetAddrInfoHandler::run: {101 101 101 983141 10220 0}
+10-13 11:47:26.455 I/resolv  (  413): res_nmkquery: (QUERY, IN, AAAA)
+10-13 11:47:26.455 I/resolv  (  413): res_nmkquery: (QUERY, IN, A)
+10-13 11:47:26.455 I/resolv  (  413): resolv_cache_lookup: Waiting for previous request
+10-13 11:47:26.455 I/resolv  (  413): resolv_cache_lookup: Waiting for previous request
+10-13 11:47:26.456 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff432790 hos timage handle 0x70006000035d4
+10-13 11:47:26.456 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 231
+10-13 11:47:26.460 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff430450 hos timage handle 0x7000500003cee
+10-13 11:47:26.460 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 208
+10-13 11:47:26.463 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff436c50 hos timage handle 0x7000300003d25
+10-13 11:47:26.463 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 190
+10-13 11:47:26.464 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff431e50 hos timage handle 0x7000400003622
+10-13 11:47:26.464 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 219
+10-13 11:47:26.467 D/Mbgl-HttpRequest( 5027): [HTTP] This request was cancelled (https://build.protomaps.com/20261013.pmtiles). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-13 11:47:26.478 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff432790 hos timage handle 0x70006000035d4
+10-13 11:47:26.478 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 189
+10-13 11:47:26.485 I/resolv  (  413): GetAddrInfoHandler::run: {101 101 101 983141 10220 0}
+10-13 11:47:26.485 I/resolv  (  413): res_nmkquery: (QUERY, IN, AAAA)
+10-13 11:47:26.486 I/resolv  (  413): res_nmkquery: (QUERY, IN, A)
+10-13 11:47:26.486 I/resolv  (  413): resolv_cache_lookup: Waiting for previous request
+10-13 11:47:26.491 I/resolv  (  413): resolv_cache_lookup: Waiting for previous request
+10-13 11:47:26.510 I/no.navi.app( 5027): Method exceeds compiler instruction limit: 29138 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 11:47:26.512 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:26.516 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.517 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.520 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff430450 hos timage handle 0x7000500003cee
+10-13 11:47:26.520 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 233
+10-13 11:47:26.524 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.524 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.531 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:26.536 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.537 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.543 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.543 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.543 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67362816
+10-13 11:47:26.545 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff436c50 hos timage handle 0x7000300003d25
+10-13 11:47:26.545 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 228
+10-13 11:47:26.552 I/FuseDaemon( 1546): Threshold now 36864
+10-13 11:47:26.567 I/NaviFu49Event( 5027): kind=fully elapsed_ms=-1 tiles_start=0 tiles_done=0 
+10-13 11:47:26.567 I/NaviFu49Event( 5027): kind=map_fully elapsed_ms=-1 tiles_start=0 tiles_done=0 
+10-13 11:47:26.567 I/NaviFu49Event( 5027): kind=map_loaded elapsed_ms=-1 tiles_start=0 tiles_done=0 
+10-13 11:47:26.568 D/EGL_emulation( 5027): app_time_stats: avg=130.98ms min=1.01ms max=1116.35ms count=16
+10-13 11:47:26.582 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff431e50 hos timage handle 0x7000400003622
+10-13 11:47:26.582 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 205
+10-13 11:47:26.582 I/NaviFu49Event( 5027): kind=fully elapsed_ms=-1 tiles_start=0 tiles_done=0 
+10-13 11:47:26.591 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff432790 hos timage handle 0x70006000035d4
+10-13 11:47:26.591 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 202
+10-13 11:47:26.591 I/NaviFu49Event( 5027): kind=fully elapsed_ms=-1 tiles_start=0 tiles_done=0 
+10-13 11:47:26.603 I/no.navi.app( 5027): Compiler allocated 13MB to compile kotlin.Unit no.navi.app.MainActivityKt.NaviMapScreen$lambda$571$37$1(kotlinx.coroutines.CoroutineScope, android.content.Context, java.io.File, boolean, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableIntState, androidx.compose.runtime.MutableIntState, androidx.compose.runtime.MutableIntState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableIntState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, java.util.concurrent.atomic.AtomicBoolean, java.util.concurrent.atomic.AtomicReference, java.util.concurrent.atomic.AtomicReference, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableIntState, androidx.compose.runtime.Composer, int)
+10-13 11:47:26.639 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67137536
+10-13 11:47:26.644 I/FuseDaemon( 1546): Threshold now 36864
+10-13 11:47:26.662 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:26.667 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.667 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.673 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.673 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.679 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:26.682 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.682 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.687 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.687 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.702 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff430450 hos timage handle 0x7000500003cee
+10-13 11:47:26.702 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 216
+10-13 11:47:26.703 I/NaviFu49Event( 5027): kind=fully elapsed_ms=-1 tiles_start=0 tiles_done=0 
+10-13 11:47:26.705 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:26.709 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.709 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.714 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:26.714 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:26.715 I/LongTripPackStore( 5027): packDownloadDir id=uuid:0000-0000 path=/storage/0000-0000/Android/data/no.navi.app/files/long-trip-packs appFiles=/storage/0000-0000/Android/data/no.navi.app/files
+10-13 11:47:26.722 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67203072
+10-13 11:47:26.726 I/FuseDaemon( 1546): Threshold now 36864
+10-13 11:47:26.805 I/resolv  (  413): res_nsend: used send_dg 85 terrno: 0
+10-13 11:47:26.805 I/resolv  (  413): res_nsend: used send_dg 121 terrno: 0
+10-13 11:47:26.805 I/resolv  (  413): res_nsend: used send_dg 121 terrno: 0
+10-13 11:47:26.805 I/resolv  (  413): res_nsend: used send_dg 85 terrno: 0
+10-13 11:47:26.805 I/resolv  (  413): resolv_cache_lookup: FOUND IN CACHE entry=0x733934fbad70
+10-13 11:47:26.805 I/resolv  (  413): doQuery: rcode=0, ancount=3, return value=121
+10-13 11:47:26.805 I/resolv  (  413): doQuery: rcode=0, ancount=3, return value=121
+10-13 11:47:26.805 I/resolv  (  413): resolv_cache_lookup: FOUND IN CACHE entry=0x7338e4fb64d0
+10-13 11:47:26.805 I/resolv  (  413): resolv_cache_lookup: FOUND IN CACHE entry=0x733934fbad70
+10-13 11:47:26.805 I/resolv  (  413): doQuery: rcode=0, ancount=3, return value=121
+10-13 11:47:26.805 I/resolv  (  413): doQuery: rcode=0, ancount=3, return value=85
+10-13 11:47:26.805 I/resolv  (  413): resolv_cache_lookup: FOUND IN CACHE entry=0x7338e4fb64d0
+10-13 11:47:26.805 I/resolv  (  413): doQuery: rcode=0, ancount=3, return value=85
+10-13 11:47:26.805 I/resolv  (  413): doQuery: rcode=0, ancount=3, return value=85
+10-13 11:47:26.805 I/resolv  (  413): resolv_cache_lookup: FOUND IN CACHE entry=0x7338e4fb64d0
+10-13 11:47:26.805 I/resolv  (  413): doQuery: rcode=0, ancount=3, return value=85
+10-13 11:47:26.806 I/resolv  (  413): resolv_cache_add: ALREADY IN CACHE (0x733934fbad70) ? IGNORING ADD
+10-13 11:47:26.806 I/resolv  (  413): doQuery: rcode=0, ancount=3, return value=121
+10-13 11:47:26.806 I/resolv  (  413): resolv_cache_add: ALREADY IN CACHE (0x7338e4fb64d0) ? IGNORING ADD
+10-13 11:47:26.806 I/resolv  (  413): resolv_cache_lookup: FOUND IN CACHE entry=0x733934fbad70
+10-13 11:47:26.806 I/resolv  (  413): doQuery: rcode=0, ancount=3, return value=121
+10-13 11:47:26.806 I/resolv  (  413): doQuery: rcode=0, ancount=3, return value=85
+10-13 11:47:26.808 W/Mbgl-HttpRequest( 5027): Request failed due to a permanent error: Canceled 
+10-13 11:47:26.810 D/TrafficStats( 5027): tagSocket(172) with statsTag=0xffffffff, statsUid=-1
+10-13 11:47:26.810 D/TrafficStats( 5027): tagSocket(180) with statsTag=0xffffffff, statsUid=-1
+10-13 11:47:26.811 W/Mbgl-HttpRequest( 5027): Request failed due to a permanent error: Canceled 
+10-13 11:47:26.815 W/Mbgl-HttpRequest( 5027): Request failed due to a permanent error: Canceled 
+10-13 11:47:26.831 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67289088
+10-13 11:47:26.835 I/FuseDaemon( 1546): Threshold now 36864
+10-13 11:47:26.866 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff436c50 hos timage handle 0x7000300003d25
+10-13 11:47:26.866 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 175
+10-13 11:47:26.911 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67145728
+10-13 11:47:26.916 I/FuseDaemon( 1546): Threshold now 36864
+10-13 11:47:26.976 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67108864
+10-13 11:47:26.980 I/FuseDaemon( 1546): Threshold now 36864
+10-13 11:47:27.028 W/DefaultDispatch( 5027): type=1400 audit(0.0:1828): avc:  denied  { ioctl } for  path="/storage/0000-0000/Android/data/no.navi.app/files/place_index.db" dev="fuse" ino=1048791 ioctlcmd=0xf50c scontext=u:r:untrusted_app:s0:c220,c256,c512,c768 tcontext=u:object_r:fuse:s0 tclass=file permissive=0 app=no.navi.app
+10-13 11:47:27.050 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67297280
+10-13 11:47:27.054 I/FuseDaemon( 1546): Threshold now 4751360
+10-13 11:47:27.085 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67149824
+10-13 11:47:27.089 I/FuseDaemon( 1546): Threshold now 29917184
+10-13 11:47:27.105 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67108864
+10-13 11:47:27.107 I/FuseDaemon( 1546): Threshold now 21643264
+10-13 11:47:27.112 W/WorldOverviewDo( 5027): type=1400 audit(0.0:1829): avc:  denied  { ioctl } for  path="/storage/0000-0000/Android/data/no.navi.app/files/place_index.db" dev="fuse" ino=1048791 ioctlcmd=0xf50c scontext=u:r:untrusted_app:s0:c220,c256,c512,c768 tcontext=u:object_r:fuse:s0 tclass=file permissive=0 app=no.navi.app
+10-13 11:47:27.139 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67108864
+10-13 11:47:27.143 I/FuseDaemon( 1546): Threshold now 23875584
+10-13 11:47:27.169 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67108864
+10-13 11:47:27.172 I/FuseDaemon( 1546): Threshold now 28864512
+10-13 11:47:27.176 W/DefaultDispatch( 5027): type=1400 audit(0.0:1830): avc:  denied  { ioctl } for  path="/storage/0000-0000/Android/data/no.navi.app/files/place_index.db" dev="fuse" ino=1048791 ioctlcmd=0xf50c scontext=u:r:untrusted_app:s0:c220,c256,c512,c768 tcontext=u:object_r:fuse:s0 tclass=file permissive=0 app=no.navi.app
+10-13 11:47:27.201 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67317760
+10-13 11:47:27.203 I/FuseDaemon( 1546): Threshold now 8642560
+10-13 11:47:27.211 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 11:47:27.212 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 11:47:27.212 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 11:47:27.212 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:321
+10-13 11:47:27.240 W/WorldOverviewDo( 5027): type=1400 audit(0.0:1831): avc:  denied  { ioctl } for  path="/storage/0000-0000/Android/data/no.navi.app/files/place_index.db" dev="fuse" ino=1048791 ioctlcmd=0xf50c scontext=u:r:untrusted_app:s0:c220,c256,c512,c768 tcontext=u:object_r:fuse:s0 tclass=file permissive=0 app=no.navi.app
+10-13 11:47:27.254 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67354624
+10-13 11:47:27.256 I/FuseDaemon( 1546): Threshold now 10985472
+10-13 11:47:27.337 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67293184
+10-13 11:47:27.341 I/FuseDaemon( 1546): Threshold now 16543744
+10-13 11:47:27.407 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67108864
+10-13 11:47:27.411 I/FuseDaemon( 1546): Threshold now 24690688
+10-13 11:47:27.548 E/TaskPersister(  618): File error accessing recents directory (directory doesn't exist?).
+10-13 11:47:27.673 W/audit   (    0): audit_lost=899 audit_rate_limit=5 audit_backlog_limit=64
+10-13 11:47:27.673 E/audit   (    0): rate limit exceeded
+10-13 11:47:27.564 W/DefaultDispatch( 5027): type=1400 audit(0.0:1832): avc:  denied  { ioctl } for  path="/storage/0000-0000/Android/data/no.navi.app/files/place_index.db" dev="fuse" ino=1048791 ioctlcmd=0xf50c scontext=u:r:untrusted_app:s0:c220,c256,c512,c768 tcontext=u:object_r:fuse:s0 tclass=file permissive=0 app=no.navi.app
+10-13 11:47:27.711 I/logd    (    0): logdr: UID=2000 GID=2000 PID=5264 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-13 11:47:27.658 I/NaviFu49Event( 5027): kind=fully elapsed_ms=-1 tiles_start=0 tiles_done=0 
+10-13 11:47:27.658 I/Choreographer( 5027): Skipped 57 frames!  The application may be doing too much work on its main thread.
+10-13 11:47:27.664 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:27.668 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:27.669 I/LongTripCoord( 5027): status: Ostlandet (1 of 1)=Installed
+10-13 11:47:27.673 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:27.673 D/EGL_emulation( 5027): app_time_stats: avg=1104.86ms min=1104.86ms max=1104.86ms count=1
+10-13 11:47:27.673 I/LongTripCoord( 5027): status: Ostlandet (1 of 1)=Installed
+10-13 11:47:27.673 I/LongTripCoord( 5027): place-index missing for europe/norway/ostlandet; not auto-building (list via InstalledMaps)
+10-13 11:47:27.674 I/RegionDownloadBg( 5027): cancelPending cleared queue+job under /data/user/0/no.navi.app/files
+10-13 11:47:27.674 I/LongTripCoord( 5027): corridor indexed — cancelled leftover download job/queue
+10-13 11:47:27.675 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:27.677 I/HWUI    ( 5027): Davey! duration=964ms; Flags=0, FrameTimelineVsyncId=1465719, IntendedVsync=7881129257376, Vsync=7882079257338, InputEventId=0, HandleInputStart=7882079536548, AnimationStart=7882079537410, PerformTraversalsStart=7882084071041, DrawStart=7882084138086, FrameDeadline=7881145924042, FrameInterval=7882079394602, FrameStartTime=16666666, SyncQueued=7882091525729, SyncStart=7882091543042, IssueDrawCommandsStart=7882091612412, SwapBuffers=7882093513056, FrameCompleted=7882094265787, DequeueBufferDuration=2204, QueueBufferDuration=131216, GpuCompleted=7882094265787, SwapBuffersCompleted=7882094192740, DisplayPresentTime=0, CommandSubmissionCompleted=7882093513056, 
+10-13 11:47:27.679 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:27.680 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:27.686 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:27.686 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:27.687 I/LongTripPackStore( 5027): packDownloadDir id=uuid:0000-0000 path=/storage/0000-0000/Android/data/no.navi.app/files/long-trip-packs appFiles=/storage/0000-0000/Android/data/no.navi.app/files
+10-13 11:47:27.695 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67108864
+10-13 11:47:27.703 I/FuseDaemon( 1546): Threshold now 10424320
+10-13 11:47:27.837 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67112960
+10-13 11:47:27.841 I/FuseDaemon( 1546): Threshold now 17326080
+10-13 11:47:27.870 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff431e50 hos timage handle 0x7000400003622
+10-13 11:47:27.870 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 126
+10-13 11:47:27.919 D/Mbgl-HttpRequest( 5027): [HTTP] Request with response = 304: No additional information
+10-13 11:47:27.920 D/Mbgl-HttpRequest( 5027): [HTTP] This request was cancelled (https://build.protomaps.com/20261013.pmtiles). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-13 11:47:27.940 D/Mbgl-HttpRequest( 5027): [HTTP] Request with response = 304: No additional information
+10-13 11:47:27.941 D/Mbgl-HttpRequest( 5027): [HTTP] This request was cancelled (https://build.protomaps.com/20261013.pmtiles). This is expected for tiles that were being prefetched but are no longer needed for the map to render.
+10-13 11:47:28.085 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff432790 hos timage handle 0x70006000035d4
+10-13 11:47:28.085 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 211
+10-13 11:47:28.097 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67112960
+10-13 11:47:28.101 I/FuseDaemon( 1546): Threshold now 4497408
+10-13 11:47:28.158 I/NaviRouting( 5027): plan_settings eco=true camping_plugin=false professional_driver=false avoid_motorways=false avoid_tolls=false avoid_ferries=false avoid_tunnels=false
+10-13 11:47:28.159 I/NaviRouting( 5027): planning_start profile=bicycle eco=true legs=1 waypoints=Hamar|Lillehammer
+10-13 11:47:28.159 I/NaviRouting( 5027): planning_progress pct=0 eco=true detail=queued
+10-13 11:47:28.160 I/NaviDatex( 5027): pre-plan DATEX refresh (timeout=3000ms)
+10-13 11:47:28.163 I/NaviFu49Event( 5027): kind=fully elapsed_ms=-1 tiles_start=0 tiles_done=0 
+10-13 11:47:28.164 I/NaviFu49Event( 5027): kind=fully elapsed_ms=-1 tiles_start=0 tiles_done=0 
+10-13 11:47:28.166 I/no.navi.app( 5027): Method exceeds compiler instruction limit: 29138 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 11:47:28.167 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:28.171 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:28.171 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:28.176 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:28.176 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:28.179 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:28.182 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:28.182 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:28.186 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:28.186 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:28.211 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 11:47:28.213 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 11:47:28.213 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 11:47:28.213 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:321
+10-13 11:47:28.230 I/NaviTracks( 5027): tracks cleared (n=0)
+10-13 11:47:28.286 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67108864
+10-13 11:47:28.289 I/FuseDaemon( 1546): Threshold now 15650816
+10-13 11:47:28.378 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff430450 hos timage handle 0x7000500003cee
+10-13 11:47:28.378 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 167
+10-13 11:47:28.398 W/NaviNative( 5027): driver_break_core::datex::impact: unrecognized DATEX xsi:type=EquipmentOrSystemFault; classifying Ignore
+10-13 11:47:28.399 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67108864
+10-13 11:47:28.402 I/FuseDaemon( 1546): Threshold now 22867968
+10-13 11:47:28.501 I/NaviMapTiles( 5027): visible=180 blank_pct=15.63 kind=OfflineProtomaps lat=0.0 lon=0.0 zoom=0.8376279331714048
+10-13 11:47:28.501 I/NaviMapCamera( 5027): at lat=0.0 lon=0.0 zoom=0.8376279331714048
+10-13 11:47:28.502 I/NaviFu49Event( 5027): kind=fully elapsed_ms=-1 tiles_start=0 tiles_done=0 
+10-13 11:47:28.502 I/NaviFu49Event( 5027): kind=idle elapsed_ms=-1 tiles_start=0 tiles_done=0 
+10-13 11:47:28.504 I/NaviDatex( 5027): pre-plan DATEX refresh completed
+10-13 11:47:28.510 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:28.513 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:28.513 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:28.520 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:28.520 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:28.523 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:28.526 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:28.526 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:28.530 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:28.530 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:28.602 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff436c50 hos timage handle 0x7000300003d25
+10-13 11:47:28.602 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 166
+10-13 11:47:28.618 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67129344
+10-13 11:47:28.622 I/FuseDaemon( 1546): Threshold now 14606336
+10-13 11:47:28.708 W/DefaultDispatch( 5027): type=1400 audit(0.0:1838): avc:  denied  { ioctl } for  path="/storage/0000-0000/Android/data/no.navi.app/files/place_index.db" dev="fuse" ino=1048791 ioctlcmd=0xf50c scontext=u:r:untrusted_app:s0:c220,c256,c512,c768 tcontext=u:object_r:fuse:s0 tclass=file permissive=0 app=no.navi.app
+10-13 11:47:28.712 W/WorldOverviewDo( 5027): type=1400 audit(0.0:1839): avc:  denied  { ioctl } for  path="/storage/0000-0000/Android/data/no.navi.app/files/place_index.db" dev="fuse" ino=1048791 ioctlcmd=0xf50c scontext=u:r:untrusted_app:s0:c220,c256,c512,c768 tcontext=u:object_r:fuse:s0 tclass=file permissive=0 app=no.navi.app
+10-13 11:47:28.760 W/DefaultDispatch( 5027): type=1400 audit(0.0:1840): avc:  denied  { ioctl } for  path="/storage/0000-0000/Android/data/no.navi.app/files/place_index.db" dev="fuse" ino=1048791 ioctlcmd=0xf50c scontext=u:r:untrusted_app:s0:c220,c256,c512,c768 tcontext=u:object_r:fuse:s0 tclass=file permissive=0 app=no.navi.app
+10-13 11:47:28.760 W/WorldOverviewDo( 5027): type=1400 audit(0.0:1841): avc:  denied  { ioctl } for  path="/storage/0000-0000/Android/data/no.navi.app/files/place_index.db" dev="fuse" ino=1048791 ioctlcmd=0xf50c scontext=u:r:untrusted_app:s0:c220,c256,c512,c768 tcontext=u:object_r:fuse:s0 tclass=file permissive=0 app=no.navi.app
+10-13 11:47:28.778 W/IPCThreadState(  618): Sending oneway calls to frozen process.
+10-13 11:47:28.778 I/ChimeraSrvcProxy( 1164): NullBinder for android.net.action.RECOMMEND_NETWORKS triggering remote TransactionTooLargeException due to Service without Chimera impl
+10-13 11:47:28.778 W/.gms.persistent( 1164): Large reply transaction of 1056768 bytes, interface descriptor , code 1
+10-13 11:47:28.779 I/BugleRcsEngine( 1614): handleMessage processing message:[NOTIFY_UPTIME_IGNORE_STATE_CHANGED] with [non-null]:RcsEngineImpl reference [CONTEXT log_prefix="RcsEngineImpl[DUAL_REG]:[f23c5699-6360]>Handler" thread_id=64 ]
+10-13 11:47:28.779 W/IPCThreadState(  618): Sending oneway calls to frozen process.
+10-13 11:47:28.779 W/IPCThreadState(  618): Sending oneway calls to frozen process.
+10-13 11:47:28.779 W/IPCThreadState(  618): Sending oneway calls to frozen process.
+10-13 11:47:28.780 I/BugleRcsEngine( 1614): Connected state: [1], networkType: [WIFI] [CONTEXT thread_id=56 ]
+10-13 11:47:28.780 W/IPCThreadState(  618): Sending oneway calls to frozen process.
+10-13 11:47:28.816 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff431e50 hos timage handle 0x7000400003622
+10-13 11:47:28.816 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 168
+10-13 11:47:28.820 W/DefaultDispatch( 5027): type=1400 audit(0.0:1842): avc:  denied  { ioctl } for  path="/storage/0000-0000/Android/data/no.navi.app/files/place_index.db" dev="fuse" ino=1048791 ioctlcmd=0xf50c scontext=u:r:untrusted_app:s0:c220,c256,c512,c768 tcontext=u:object_r:fuse:s0 tclass=file permissive=0 app=no.navi.app
+10-13 11:47:28.939 W/audit   (    0): audit_lost=904 audit_rate_limit=5 audit_backlog_limit=64
+10-13 11:47:28.940 E/audit   (    0): rate limit exceeded
+10-13 11:47:28.928 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67227648
+10-13 11:47:28.929 I/NaviMapTiles( 5027): visible=180 blank_pct=17.97 kind=OfflineProtomaps lat=0.0 lon=0.0 zoom=0.8376279331714048
+10-13 11:47:28.929 I/NaviMapCamera( 5027): at lat=0.0 lon=0.0 zoom=0.8376279331714048
+10-13 11:47:28.930 I/NaviFu49Event( 5027): kind=fully elapsed_ms=-1 tiles_start=0 tiles_done=0 
+10-13 11:47:28.930 I/NaviFu49Event( 5027): kind=fully elapsed_ms=-1 tiles_start=0 tiles_done=0 
+10-13 11:47:28.930 I/NaviFu49Event( 5027): kind=idle elapsed_ms=-1 tiles_start=0 tiles_done=0 
+10-13 11:47:28.932 I/NaviRouting( 5027): planning_progress pct=10 eco=true detail=motor_plan
+10-13 11:47:28.935 I/NaviPlan( 5027): planCarRoute pbf=/storage/0000-0000/Android/data/no.navi.app/files/long-trip-packs/ostlandet-latest.osm.pbf packDir=/storage/0000-0000/Android/data/no.navi.app/files/long-trip-packs dataDir=/data/user/0/no.navi.app/files longTrip=true from=60.794721,11.068055 to=61.114545,10.467007 time_to_planner_ms=776
+10-13 11:47:28.935 I/NaviRouting( 5027): plan_settings eco=true camping_plugin=false professional_driver=false avoid_motorways=false avoid_tolls=false avoid_ferries=false avoid_tunnels=false
+10-13 11:47:28.936 I/FuseDaemon( 1546): Threshold now 675840
+10-13 11:47:28.938 I/NaviRouting( 5027): idle_job_pause action=none kind=none region= duration_ms=0
+10-13 11:47:28.938 I/NaviDatex( 5027): overlay active=6
+10-13 11:47:28.944 I/NaviNative( 5027): driver_break_core::routing::plan_file_log: plan_inputs profile=Bicycle eco=true avoid_motorways=false toll=Allow avoid_ferries=false avoid_tunnels=false long_trip=true datex=None start=60.794721,11.068055 end=61.114545,10.467007 vias=0 via_coords=
+10-13 11:47:29.042 I/no.navi.app( 5027): Compiler allocated 5531KB to compile void no.navi.app.MainActivityKt$NaviMapScreen$34$1$runnable$1.run()
+10-13 11:47:29.131 I/NaviNative( 5027): driver_break_core::routing::plan_file_log: datex_snapshot impacts=0 block=0 penalize=0
+10-13 11:47:29.158 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff432790 hos timage handle 0x70006000035d4
+10-13 11:47:29.158 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 196
+10-13 11:47:29.211 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 11:47:29.212 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 11:47:29.212 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 11:47:29.212 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 11:47:29.215 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 11:47:29.215 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/674c8b5b blocked - too close [CONTEXT service_id=6 ]
+10-13 11:47:29.264 I/NaviMapTiles( 5027): visible=180 blank_pct=17.97 kind=OfflineProtomaps lat=0.0 lon=0.0 zoom=0.8376279331714048
+10-13 11:47:29.264 I/NaviMapCamera( 5027): at lat=0.0 lon=0.0 zoom=0.8376279331714048
+10-13 11:47:29.264 I/NaviFu49Event( 5027): kind=fully elapsed_ms=-1 tiles_start=0 tiles_done=0 
+10-13 11:47:29.264 I/NaviFu49Event( 5027): kind=idle elapsed_ms=-1 tiles_start=0 tiles_done=0 
+10-13 11:47:29.464 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff430450 hos timage handle 0x7000500003cee
+10-13 11:47:29.465 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 190
+10-13 11:47:29.505 I/IdlePackJobs( 5027): scheduled INDEX_QUICK_CHECK stem=place_index region=
+10-13 11:47:29.511 I/InstalledMaps( 5027): snapshot regions=21 missing_index=0 ids=[europe/denmark, europe/finland, europe/germany/hamburg, europe/germany/mecklenburg-vorpommern, europe/germany/niedersachsen, europe/germany/schleswig-holstein, europe/norway/nord-norge, europe/norway/ostlandet, europe/norway/sorlandet, europe/norway/vestlandet, europe/sweden/dalarna, europe/sweden/gavleborg, europe/sweden/halland, europe/sweden/jamtland, europe/sweden/norrbotten, europe/sweden/skane, europe/sweden/varmland, europe/sweden/vasterbotten, europe/sweden/vasternorrland, europe/sweden/vastra_gotaland, world_overview] place_index vol=uuid:0000-0000 path=/storage/0000-0000/Android/data/no.navi.app/files/place_index.db bytes=3087880192
+10-13 11:47:29.512 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:29.517 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:29.517 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:29.522 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:29.522 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:29.522 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:29.525 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:29.526 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:29.529 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:29.529 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:29.534 I/InstalledMaps( 5027): InstalledMaps regions=21 missing_index=0
+10-13 11:47:29.534 I/InstalledMaps( 5027): europe/denmark vol=uuid:0000-0000 gen=20260930T084525Z-2389780-europe_denmark-02429647 fmt=9 profiles=car,foot pbf=REAL ferry_car=true ferry_truck=true corridor_skel=true tiles=false rejected=false index=INTACT index_source=own-extract rows=2851971
+10-13 11:47:29.534 I/InstalledMaps( 5027): europe/finland vol=uuid:0000-0000 gen=20260930T074110Z-2389780-europe_finland-971e62f7 fmt=9 profiles=car,foot pbf=REAL ferry_car=true ferry_truck=true corridor_skel=true tiles=true rejected=false index=INTACT index_source=place-source rows=1445700
+10-13 11:47:29.534 I/InstalledMaps( 5027): europe/germany/hamburg vol=uuid:0000-0000 gen=20261001T134919Z-625025-europe_germany_hamburg-639f5593 fmt=9 profiles=car,foot pbf=REAL ferry_car=true ferry_truck=true corridor_skel=true tiles=true rejected=false index=INTACT index_source=own-extract rows=339055
+10-13 11:47:29.534 I/InstalledMaps( 5027): europe/germany/mecklenburg-vorpommern vol=uuid:0000-0000 gen=20260930T084347Z-2389780-europe_germany_mecklenburg_vorpommern-03a0d796 fmt=9 profiles=car,foot pbf=REAL ferry_car=true ferry_truck=true corridor_skel=true tiles=false rejected=false index=INTACT index_source=place-source rows=576504
+10-13 11:47:29.534 I/InstalledMaps( 5027): europe/germany/niedersachsen vol=uuid:0000-0000 gen=20261001T135043Z-625025-europe_germany_niedersachsen-7aa7bf38 fmt=9 profiles=car,foot pbf=REAL ferry_car=true ferry_truck=true corridor_skel=true tiles=true rejected=false index=INTACT index_source=own-extract rows=2903125
+10-13 11:47:29.534 I/InstalledMaps( 5027): europe/germany/schleswig-holstein vol=uuid:0000-0000 gen=20261001T134836Z-625025-europe_germany_schleswig_holstein-0510ee33 fmt=9 profiles=car,foot pbf=REAL ferry_car=true ferry_truck=true corridor_skel=true tiles=true rejected=false index=INTACT index_source=own-extract rows=836391
+10-13 11:47:29.534 I/InstalledMaps( 5027): europe/norway/nord-norge vol=uuid:0000-0000 gen=20261005T052031Z-1430293-ffb3478a fmt=9 profiles=car,foot pbf=REAL ferry_car=true ferry_truck=true corridor_skel=true tiles=false rejected=true no_offline_map=true reason=stat failed: No such file or directory (os error 2) index=INTACT index_source=place-source rows=414996
+10-13 11:47:29.534 I/InstalledMaps( 5027): europe/norway/ostlandet vol=uuid:0000-0000 gen=20261005T052057Z-1430818-e68bba60 fmt=9 profiles=car,foot pbf=REAL ferry_car=true ferry_truck=true corridor_skel=true tiles=true rejected=false index=INTACT index_source=own-extract rows=1483135
+10-13 11:47:29.534 I/InstalledMaps( 5027): europe/norway/sorlandet vol=uuid:0000-0000 gen=20261005T052201Z-1431436-fb1810d5 fmt=9 profiles=car,foot pbf=REAL ferry_car=true ferry_truck=true corridor_skel=true tiles=true rejected=false index=INTACT index_source=own-extract rows=235104
+10-13 11:47:29.534 I/InstalledMaps( 5027): europe/norway/vestlandet vol=uuid:0000-0000 gen=20261005T052237Z-1432334-b945afac fmt=9 profiles=car,foot pbf=REAL ferry_car=true ferry_truck=true corridor_skel=true tiles=true rejected=false index=INTACT index_source=own-extract rows=791584
+10-13 11:47:29.534 I/InstalledMaps( 5027): europe/sweden/dalarna vol=uuid:0000-0000 gen=20261005T052312Z-1432765-f0654beb fmt=9 profiles=car,foot pbf=MISSING ferry_car=true ferry_truck=true corridor_skel=true tiles=true rejected=false index=INTACT index_source=place-source rows=53435
+10-13 11:47:29.534 I/InstalledMaps( 5027): europe/sweden/gavleborg vol=uuid:0000-0000 gen=20260930T075242Z-2389780-europe_sweden_gavleborg-31faa7c4 fmt=9 profiles=car,foot pbf=MISSING ferry_car=true ferry_truck=true corridor_skel=true tiles=true rejected=false index=INTACT index_source=place-source rows=71624
+10-13 11:47:29.534 I/InstalledMaps( 5027): europe/sweden/halland vol=uuid:0000-0000 gen=20260930T084343Z-2389780-europe_sweden_halland-240e660d fmt=9 profiles=car,foot pbf=MISSING ferry_car=true ferry_truck=true corridor_skel=true tiles=true rejected=false index=INTACT index_source=own-extract rows=31298
+10-13 11:47:29.534 I/InstalledMaps( 5027): europe/sweden/jamtland vol=uuid:0000-0000 gen=20260930T075502Z-2389780-europe_sweden_jamtland-24f5d5c3 fmt=9 profiles=car,foot pbf=MISSING ferry_car=true ferry_truck=true corridor_skel=true tiles=true rejected=false index=INTACT index_source=place-source rows=35958
+10-13 11:47:29.534 I/InstalledMaps( 5027): europe/sweden/norrbotten vol=uuid:0000-0000 gen=20260930T074811Z-2389780-europe_sweden_norrbotten-b2aec977 fmt=9 profiles=car,foot pbf=MISSING ferry_car=true ferry_truck=true corridor_skel=true tiles=true rejected=false index=INTACT index_source=place-source rows=42675
+10-13 11:47:29.534 I/InstalledMaps( 5027): europe/sweden/skane vol=uuid:0000-0000 gen=20260930T075605Z-2389780-europe_sweden_skane-301fd3a5 fmt=9 profiles=car,foot pbf=MISSING ferry_car=true ferry_truck=true corridor_skel=true tiles=true rejected=false index=INTACT index_source=own-extract rows=202653
+10-13 11:47:29.534 I/InstalledMaps( 5027): europe/sweden/varmland vol=uuid:0000-0000 gen=20260930T084303Z-2389780-europe_sweden_varmland-319b7f70 fmt=9 profiles=car,foot pbf=MISSING ferry_car=true ferry_truck=true corridor_skel=true tiles=true rejected=false index=INTACT index_source=place-source rows=53164
+10-13 11:47:29.534 I/InstalledMaps( 5027): europe/sweden/vasterbotten vol=uuid:0000-0000 gen=20260930T075018Z-2389780-europe_sweden_vasterbotten-a35622e1 fmt=9 profiles=car,foot pbf=MISSING ferry_car=true ferry_truck=true corridor_skel=true tiles=true rejected=false index=INTACT index_source=place-source rows=40695
+10-13 11:47:29.534 I/InstalledMaps( 5027): europe/sweden/vasternorrland vol=uuid:0000-0000 gen=20260930T075209Z-2389780-europe_sweden_vasternorrland-ff811250 fmt=9 profiles=car,foot pbf=MISSING ferry_car=true ferry_truck=true corridor_skel=true tiles=true rejected=false index=INTACT index_source=place-source rows=56048
+10-13 11:47:29.534 I/InstalledMaps( 5027): europe/sweden/vastra_gotaland vol=uuid:0000-0000 gen=20260930T084334Z-2389780-europe_sweden_vastra_gotaland-cb1d3387 fmt=9 profiles=car,foot pbf=MISSING ferry_car=true ferry_truck=true corridor_skel=true tiles=true rejected=false index=INTACT index_source=own-extract rows=258056
+10-13 11:47:29.534 I/InstalledMaps( 5027): world_overview vol=internal gen=- fmt=0 profiles= pbf=MISSING ferry_car=false ferry_truck=false corridor_skel=false tiles=true rejected=false index=MISSING index_source=none rows=0
+10-13 11:47:29.534 I/InstalledMaps( 5027): place_index vol=uuid:0000-0000 path=/storage/0000-0000/Android/data/no.navi.app/files/place_index.db bytes=3087880192
+10-13 11:47:29.535 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:29.541 I/InstalledMaps( 5027): snapshot regions=21 missing_index=0 ids=[europe/denmark, europe/finland, europe/germany/hamburg, europe/germany/mecklenburg-vorpommern, europe/germany/niedersachsen, europe/germany/schleswig-holstein, europe/norway/nord-norge, europe/norway/ostlandet, europe/norway/sorlandet, europe/norway/vestlandet, europe/sweden/dalarna, europe/sweden/gavleborg, europe/sweden/halland, europe/sweden/jamtland, europe/sweden/norrbotten, europe/sweden/skane, europe/sweden/varmland, europe/sweden/vasterbotten, europe/sweden/vasternorrland, europe/sweden/vastra_gotaland, world_overview] place_index vol=uuid:0000-0000 path=/storage/0000-0000/Android/data/no.navi.app/files/place_index.db bytes=3087880192
+10-13 11:47:29.581 I/NaviMapTiles( 5027): visible=180 blank_pct=17.97 kind=OfflineProtomaps lat=0.0 lon=0.0 zoom=0.8376279331714048
+10-13 11:47:29.581 I/NaviMapCamera( 5027): at lat=0.0 lon=0.0 zoom=0.8376279331714048
+10-13 11:47:29.586 D/ProfileInstaller( 5027): Installing profile for no.navi.app
+10-13 11:47:29.726 I/logd    (    0): logdr: UID=2000 GID=2000 PID=5328 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-13 11:47:29.734 I/NaviNative( 5027): driver_break_core::routing::indexed::load: missing_region_candidates count=1 regions=europe/norway/ostlandet
+10-13 11:47:29.734 I/NaviNative( 5027): driver_break_core::routing::indexed::load: plan_add_ms missing_ready_preflight=94 waypoint_missing=1 candidates=1
+10-13 11:47:29.781 I/NaviRouting( 5027): planning_progress pct=90 eco=true detail=motor_path
+10-13 11:47:29.966 I/MESA    ( 5027): exportSyncFdForQSRILocked: call for image 0x7e46ff436c50 hos timage handle 0x7000300003d25
+10-13 11:47:29.966 I/MESA    ( 5027): exportSyncFdForQSRILocked: got fd: 189
+10-13 11:47:30.064 I/NaviMapTiles( 5027): visible=186 blank_pct=17.97 kind=OfflineProtomaps lat=0.0 lon=0.0 zoom=0.8376279331714048
+10-13 11:47:30.064 I/NaviMapCamera( 5027): at lat=0.0 lon=0.0 zoom=0.8376279331714048
+10-13 11:47:30.064 I/NaviFu49Event( 5027): kind=fully elapsed_ms=-1 tiles_start=0 tiles_done=0 
+10-13 11:47:30.064 I/NaviFu49Event( 5027): kind=idle elapsed_ms=-1 tiles_start=0 tiles_done=0 
+10-13 11:47:30.064 I/Choreographer( 5027): Skipped 47 frames!  The application may be doing too much work on its main thread.
+10-13 11:47:30.066 I/IdlePackJobs( 5027): start INDEX_QUICK_CHECK stem=place_index remaining=1
+10-13 11:47:30.066 W/NaviRouting( 5027): planning_failed eco=true duration_ms=1907 reason=Ostlandet is not downloaded. Download Ostlandet to plan this trip. toll_policy=allow pads=[0.11005239999999994] expansions=0 terminate=missing_regions toll_incomplete=false route_uses_tolls=false
+10-13 11:47:30.071 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:30.064 W/DefaultDispatch( 5027): type=1400 audit(0.0:1852): avc:  denied  { ioctl } for  path="/storage/0000-0000/Android/data/no.navi.app/files/long-trip-packs/place_index.db" dev="fuse" ino=1056924 ioctlcmd=0xf50c scontext=u:r:untrusted_app:s0:c220,c256,c512,c768 tcontext=u:object_r:fuse:s0 tclass=file permissive=0 app=no.navi.app
+10-13 11:47:30.076 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:30.079 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:30.079 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:30.081 I/no.navi.app( 5027): Compiler allocated 6903KB to compile java.lang.Object no.navi.app.MainActivityKt$NaviMapScreen$30$1.invokeSuspend(java.lang.Object)
+10-13 11:47:30.083 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:30.083 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:30.087 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:30.089 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:30.089 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:30.096 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:30.096 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:30.097 I/no.navi.app( 5027): Method exceeds compiler instruction limit: 29138 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 11:47:30.120 I/no.navi.app( 5027): Compiler allocated 7262KB to compile void no.navi.app.MainActivityKt.CorridorMapView(no.navi.app.MapRouteState, java.io.File, boolean, boolean, double, boolean, no.navi.app.UnitSystem, boolean, int, int, boolean, boolean, boolean, java.lang.String, java.lang.String, int, no.navi.app.DatexHudState, int, androidx.compose.ui.Modifier, kotlin.jvm.functions.Function1, kotlin.jvm.functions.Function0, kotlin.jvm.functions.Function2, kotlin.jvm.functions.Function1, kotlin.jvm.functions.Function3, kotlin.jvm.functions.Function1, kotlin.jvm.functions.Function0, androidx.compose.runtime.Composer, int, int, int, int)
+10-13 11:47:30.120 I/no.navi.app( 5027): Method exceeds compiler instruction limit: 29138 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 11:47:30.124 W/WindowOnBackDispatcher( 5027): OnBackInvokedCallback is not enabled for the application.
+10-13 11:47:30.124 W/WindowOnBackDispatcher( 5027): Set 'android:enableOnBackInvokedCallback="true"' in the application manifest.
+10-13 11:47:30.141 D/EGL_emulation( 5027): app_time_stats: avg=822.53ms min=327.80ms max=1580.19ms count=3
+10-13 11:47:30.143 I/HWUI    ( 5027): Davey! duration=866ms; Flags=0, FrameTimelineVsyncId=1465806, IntendedVsync=7883695923940, Vsync=7884479257242, InputEventId=0, HandleInputStart=7884485437136, AnimationStart=7884485438238, PerformTraversalsStart=7884548340889, DrawStart=7884548378861, FrameDeadline=7883712590606, FrameInterval=7884485315789, FrameStartTime=16666666, SyncQueued=7884558604585, SyncStart=7884558633319, IssueDrawCommandsStart=7884558699884, SwapBuffers=7884561256778, FrameCompleted=7884562668516, DequeueBufferDuration=2865, QueueBufferDuration=88917, GpuCompleted=7884562668516, SwapBuffersCompleted=7884561816558, DisplayPresentTime=0, CommandSubmissionCompleted=7884561256778, 
+10-13 11:47:30.147 D/CoreBackPreview(  618): Window{f76c522 u0 no.navi.app/no.navi.app.MainActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@8db689c, mPriority=0, mIsAnimationCallback=false}
+10-13 11:47:30.160 I/no.navi.app( 5027): Compiler allocated 4226KB to compile kotlin.Unit no.navi.app.MainActivityKt.NaviMapScreen$lambda$571$37$4(java.util.concurrent.atomic.AtomicBoolean, java.util.concurrent.atomic.AtomicReference, androidx.activity.compose.ManagedActivityResultLauncher, java.io.File, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableIntState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableDoubleState, androidx.compose.runtime.MutableIntState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.MutableState, androidx.compose.runtime.Composer, int)
+10-13 11:47:30.177 I/HWUI    ( 5027): Davey! duration=897ms; Flags=1, FrameTimelineVsyncId=1465806, IntendedVsync=7883695923940, Vsync=7884479257242, InputEventId=0, HandleInputStart=7884485437136, AnimationStart=7884485438238, PerformTraversalsStart=7884548340889, DrawStart=7884580184661, FrameDeadline=7883712590606, FrameInterval=7884485315789, FrameStartTime=16666666, SyncQueued=7884581864681, SyncStart=7884584689909, IssueDrawCommandsStart=7884584751153, SwapBuffers=7884588198417, FrameCompleted=7884595985049, DequeueBufferDuration=962, QueueBufferDuration=54132, GpuCompleted=7884595985049, SwapBuffersCompleted=7884588590392, DisplayPresentTime=4634439038376265396, CommandSubmissionCompleted=7884588198417, 
+10-13 11:47:30.211 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 11:47:30.212 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 11:47:30.212 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 11:47:30.212 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:321
+10-13 11:47:30.263 I/PlaceIndexIntact( 5027): idle quick_check=ok
+10-13 11:47:30.323 I/NaviMapTiles( 5027): visible=186 blank_pct=17.97 kind=OfflineProtomaps lat=0.0 lon=0.0 zoom=0.8376279331714048
+10-13 11:47:30.323 I/NaviMapCamera( 5027): at lat=0.0 lon=0.0 zoom=0.8376279331714048
+10-13 11:47:30.328 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:30.331 I/no.navi.app( 5027): Method exceeds compiler instruction limit: 29138 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 11:47:30.334 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:30.334 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:30.338 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:30.339 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:30.343 I/NaviAppData( 5027): app data dir=/data/user/0/no.navi.app/files
+10-13 11:47:30.346 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:30.346 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:30.350 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 11:47:30.350 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 11:47:30.351 I/no.navi.app( 5027): Method exceeds compiler instruction limit: 29138 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 11:47:30.351 I/no.navi.app( 5027): Method exceeds compiler instruction limit: 29138 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 11:47:30.351 I/no.navi.app( 5027): Method exceeds compiler instruction limit: 29138 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 11:47:30.353 I/no.navi.app( 5027): Method exceeds compiler instruction limit: 29138 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 11:47:30.359 I/no.navi.app( 5027): Method exceeds compiler instruction limit: 29138 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 11:47:30.366 I/ImeTracker(  618): no.navi.app:c8046329: onRequestHide at ORIGIN_SERVER reason HIDE_UNSPECIFIED_WINDOW fromUser false
+10-13 11:47:30.366 I/ImeTracker(  618): no.navi.app:c8046329: onCancelled at PHASE_SERVER_SHOULD_HIDE
+10-13 11:47:30.367 I/GoogleInputMethodService( 1468): GoogleInputMethodService.onFinishInput():3157 
+10-13 11:47:30.367 I/GoogleInputMethodService( 1468): GoogleInputMethodService.updateDeviceLockedStatus():2248 repeatCheckTimes = 0, locked = false
+10-13 11:47:30.367 I/GoogleInputMethodService( 1468): GoogleInputMethodService.onStartInput():1986 onStartInput(EditorInfo{EditorInfo{packageName=no.navi.app, inputType=0, inputTypeString=NULL, enableLearning=false, autoCorrection=false, autoComplete=false, imeOptions=0, privateImeOptions=null, actionName=UNSPECIFIED, actionLabel=null, initialSelStart=-1, initialSelEnd=-1, initialCapsMode=0, label=null, fieldId=0, fieldName=null, extras=null, hintText=null, hintLocales=[]}}, false)
+10-13 11:47:30.368 I/GoogleInputMethodService( 1468): GoogleInputMethodService.updateDeviceLockedStatus():2248 repeatCheckTimes = 1, locked = false
+10-13 11:47:30.368 I/AndroidIME( 1468): InputBundleManager.loadActiveInputBundleId():450 loadActiveInputBundleId: und-Latn-x-password, password
+10-13 11:47:30.368 W/PackageConfigPersister(  618): App-specific configuration not found for packageName: no.navi.app and userId: 0
+10-13 11:47:30.380 D/EGL_emulation( 1152): app_time_stats: avg=837.03ms min=14.29ms max=6586.74ms count=8
+10-13 11:47:30.636 I/netd    (  413): setProcSysNet(4, 2, wlan0, retrans_time_ms, 750) <0.07ms>
+10-13 11:47:30.636 I/netd    (  413): setProcSysNet(4, 2, wlan0, ucast_solicit, 10) <0.02ms>
+10-13 11:47:30.636 I/netd    (  413): setProcSysNet(6, 2, wlan0, retrans_time_ms, 750) <0.02ms>
+10-13 11:47:30.636 I/netd    (  413): setProcSysNet(6, 2, wlan0, ucast_solicit, 10) <0.01ms>
+10-13 11:47:31.211 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 11:47:31.212 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 11:47:31.212 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 11:47:31.212 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 11:47:31.213 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 11:47:31.213 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/674c8b5b blocked - too close [CONTEXT service_id=6 ]
+10-13 11:47:31.476 I/netd    (  413): tetherGetStats() -> {[]} <0.29ms>
+10-13 11:47:31.741 I/logd    (    0): logdr: UID=2000 GID=2000 PID=5350 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
