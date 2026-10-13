@@ -575,6 +575,7 @@ object NaviDebugIntent {
                 .getOrElse {
                     uniffi.navi.FfiVehicleLimits(null, null, null, null, null, null)
                 }
+
         fun overlay(
             key: String,
             current: Double?,

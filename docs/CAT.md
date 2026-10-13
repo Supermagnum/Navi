@@ -804,6 +804,7 @@ Evidence log: [`CAT-test-report.md`](CAT-test-report.md).
 | Backend gating (`dump_caps`) | Implemented on `CAT` |
 | Onboard repeater DB / OSM / CSV / OpenRepeater / RadioID | Implemented on `CAT` (RadioID/repeatermap: policy only) |
 | navi-server repeater mirror (Update button) | Implemented on `CAT` (checksums, atomic swap, no client keys) |
+| Host Update-path corridor harness (`repeater_corridor_check`) | `cargo run -p navi-cat --features diag-bins --bin repeater_corridor_check` (see [`regression-gate.md`](regression-gate.md)) |
 | Cross-source merge / conflict UI | Conflict flags in DB/query; UI polish deferred |
 | RepeaterBook sync | Via navi-server only when published; direct client sync disabled |
 | Auto-tune → VFO 1 / network follow | Implemented (guest + host) |

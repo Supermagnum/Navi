@@ -1561,8 +1561,13 @@ fn run_gate_isolated(
     let selected: Vec<&Case> = CASES
         .iter()
         .filter(|case| {
-            only.map(|ids| ids.iter().any(|c| c == case.id))
-                .unwrap_or(true)
+            only.map(|ids| {
+                ids.iter().any(|c| {
+                    // Accept full ids (`l_raufoss_bergen`) or letter shortcuts (`l`).
+                    c == case.id || case.id.starts_with(&format!("{c}_"))
+                })
+            })
+            .unwrap_or(true)
         })
         .collect();
     // One OS process per case. A shared long-trip process left Elsa's RSS
@@ -1695,7 +1700,10 @@ fn long_trip_regression_gate() {
 
     for case in CASES {
         if let Some(ref only) = only {
-            if !only.iter().any(|c| c == case.id) {
+            if !only
+                .iter()
+                .any(|c| c == case.id || case.id.starts_with(&format!("{c}_")))
+            {
                 continue;
             }
         }

@@ -34,6 +34,26 @@ behind the `diag-bins` feature. Build one by name:
 cargo build -p navi-ffi --features diag-bins --bin navi-place-index
 ```
 
+### CAT repeater Update-path corridor check
+
+`navi-cat` exposes `repeater_corridor_check` behind the same `diag-bins` feature
+(not built by default, release, or automatic CI). It calls the live navi-server
+Update path (`fetch_and_update` / `/repeaters/current.json` + country bundles),
+imports into a temp SQLite DB, samples corridors at 50 km, then runs Update
+again (must keep last-good / not re-download when unchanged).
+
+Use the **repo-pinned** toolchain (`rust-toolchain.toml` → 1.98.0). A throwaway
+crate outside the workspace with an older host rustc will fail because
+`navi-cat` depends on `navi-hamlib-sys` (`rust-version = "1.98"`).
+
+```bash
+cargo run -p navi-cat --features diag-bins --bin repeater_corridor_check -- \
+  --base-url https://navigate-me.duckdns.org \
+  --db /tmp/navi-cat-repeater_corridor_check.sqlite
+```
+
+See also [`docs/CAT.md`](CAT.md) (repeater mirror / Update button).
+
 ## What is not the gate
 
 Fast library tests (`cargo test -p driver-break-core --lib` and

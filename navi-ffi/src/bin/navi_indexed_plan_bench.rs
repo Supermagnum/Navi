@@ -23,9 +23,15 @@ fn main() {
     let elat: f64 = arg(&args, "--end-lat").parse().unwrap();
     let elon: f64 = arg(&args, "--end-lon").parse().unwrap();
     let profile = parse_profile(&arg_or(&args, "--profile", "car"));
+    let use_eco = matches!(
+        arg_or(&args, "--eco", "false")
+            .to_ascii_lowercase()
+            .as_str(),
+        "1" | "true" | "yes" | "on"
+    );
 
     let _ = std::fs::create_dir_all(&cache);
-    eprintln!("planning profile={profile:?} pbf={pbf} elev={elev} cache={cache}");
+    eprintln!("planning profile={profile:?} eco={use_eco} pbf={pbf} elev={elev} cache={cache}");
     set_route_plan_timing_enabled(true);
 
     let t0 = std::time::Instant::now();
@@ -63,7 +69,7 @@ fn main() {
             elon,
             false,
             profile,
-            false,
+            use_eco,
             FfiTollPolicy::Allow,
             false,
             false,

@@ -103,7 +103,7 @@ and radio/baud UI notes (branch `CAT`): [`docs/CAT.md`](docs/CAT.md),
 **Install the signed release APK.** Testers should download and sideload
 [`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
 installable release APK** (upload keystore; not the debug build). Current build:
-**0.3.23-beta** (`versionName` 0.3.23-beta, `versionCode` 28). Download from the
+**0.3.24-beta** (`versionName` 0.3.24-beta, `versionCode` 29). Download from the
 [`dev` branch](https://github.com/Supermagnum/Navi/tree/dev/compiled)
 (latest tester build). Android
 validates the APK signature on install; the separate GPG files
@@ -1165,7 +1165,7 @@ it as a normal install (not an unsigned or debug-only package).
 
 | Artifact | Role |
 |---|---|
-| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64-v8a, `versionName` 0.3.22-beta, `versionCode` 27; CAT branch keeps prior APKs — use `dev` for 0.3.23-beta) |
+| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64-v8a, `versionName` 0.3.24-beta, `versionCode` 29) |
 | [`compiled/SHA256SUMS`](compiled/SHA256SUMS) | SHA-256 checksum for integrity checks |
 | [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc) | Detached GPG provenance signature (not Android APK signing) |
 
