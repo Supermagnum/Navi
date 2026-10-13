@@ -56,14 +56,42 @@ fn profile_slug(profile: RoutingProfile) -> &'static str {
     }
 }
 
-/// Server packs ship car(+foot) graphs; Truck/MobileHome alias car tiles.
-/// Corridor skeletons are built from those same car tiles, so freshness and
-/// builds must use Car — otherwise Truck plans loop on `skeleton_preparing`
-/// forever while car sidecars sit ready on disk.
-fn skeleton_profile(profile: RoutingProfile) -> RoutingProfile {
+/// Corridor skeleton profile for freshness / builds.
+///
+/// Truck/MobileHome may reuse a **car** skeleton only when the truck graph for
+/// that stem is the car graph (manifest omits truck, points at the same tile
+/// files, or hard-links/copies the car monolith — the documented convert /
+/// pack-server fallback). When real truck graph tiles exist, freshness and the
+/// idle builder must use Truck so Stage B densifies on truck restrictions.
+fn skeleton_profile(home: &Path, stem: &str, profile: RoutingProfile) -> RoutingProfile {
     match profile {
-        RoutingProfile::Truck => RoutingProfile::Car,
+        RoutingProfile::Truck => match NaviManifest::load(&manifest_path(home, stem)) {
+            // Distinct truck archives → truck skeleton / fingerprint.
+            Ok(m) if !m.truck_graph_is_car_alias_at(home) => RoutingProfile::Truck,
+            // Missing/invalid manifest or car-alias truck graph → car skeleton.
+            Ok(_) | Err(_) => RoutingProfile::Car,
+        },
         other => other,
+    }
+}
+
+fn skeleton_bin_path(home: &Path, stem: &str, skel_profile: RoutingProfile) -> PathBuf {
+    match skel_profile {
+        RoutingProfile::Car => home.join(format!("{stem}.navi-corridor-skeleton.bin")),
+        other => home.join(format!(
+            "{stem}.navi-corridor-skeleton.{}.bin",
+            profile_slug(other)
+        )),
+    }
+}
+
+fn skeleton_meta_path_for(home: &Path, stem: &str, skel_profile: RoutingProfile) -> PathBuf {
+    match skel_profile {
+        RoutingProfile::Car => skeleton_meta_path(home, stem),
+        other => home.join(format!(
+            "{stem}.navi-corridor-skeleton.{}.meta",
+            profile_slug(other)
+        )),
     }
 }
 
@@ -205,11 +233,19 @@ fn want_fingerprint(home: &Path, stem: &str, profile: RoutingProfile) -> String 
 
 /// True when skeleton binary/JSON + meta match the current pack / neighbor fingerprint.
 pub fn skeleton_fresh(home: &Path, stem: &str, profile: RoutingProfile) -> bool {
-    let profile = skeleton_profile(profile);
-    let Some(skel) = crate::routing::corridor_skeleton::resolve_skeleton_path(home, stem) else {
+    let profile = skeleton_profile(home, stem, profile);
+    let skel = skeleton_bin_path(home, stem, profile);
+    let skel = if skel.is_file() {
+        skel
+    } else if profile == RoutingProfile::Car {
+        match crate::routing::corridor_skeleton::resolve_skeleton_path(home, stem) {
+            Some(p) => p,
+            None => return false,
+        }
+    } else {
         return false;
     };
-    let meta_path = skeleton_meta_path(home, stem);
+    let meta_path = skeleton_meta_path_for(home, stem, profile);
     if !skel.is_file() || !meta_path.is_file() {
         return false;
     }
@@ -221,6 +257,23 @@ pub fn skeleton_fresh(home: &Path, stem: &str, profile: RoutingProfile) -> bool 
 /// Whether a plan may use this stem's corridor skeleton (fresh sidecar on disk).
 pub fn corridor_skeleton_ready(home: &Path, stem: &str, profile: RoutingProfile) -> bool {
     skeleton_fresh(home, stem, profile)
+}
+
+/// On-disk skeleton path for a plan profile (car path when Truck aliases car).
+pub fn resolve_corridor_skeleton_path(
+    home: &Path,
+    stem: &str,
+    profile: RoutingProfile,
+) -> Option<PathBuf> {
+    let profile = skeleton_profile(home, stem, profile);
+    let bin = skeleton_bin_path(home, stem, profile);
+    if bin.is_file() {
+        return Some(bin);
+    }
+    if profile == RoutingProfile::Car {
+        return crate::routing::corridor_skeleton::resolve_skeleton_path(home, stem);
+    }
+    None
 }
 
 fn tile_paths(home: &Path, stem: &str, profile: RoutingProfile) -> Vec<PathBuf> {
@@ -505,7 +558,7 @@ pub fn ensure_corridor_skeleton(
     stem: &str,
     profile: RoutingProfile,
 ) -> anyhow::Result<()> {
-    let profile = skeleton_profile(profile);
+    let profile = skeleton_profile(home, stem, profile);
     if skeleton_fresh(home, stem, profile) {
         return Ok(());
     }
@@ -561,12 +614,25 @@ pub fn ensure_corridor_skeleton(
         90,
         &format!("Preparing corridor skeleton for {label}…"),
     );
-    let file_bytes = write_skeleton_file(home, &skel).map_err(|e| {
-        st.running.store(false, Ordering::Relaxed);
-        anyhow::anyhow!("write skeleton stem={stem}: {e}")
-    })?;
+    let out_bin = skeleton_bin_path(home, stem, profile);
+    let file_bytes = if profile == RoutingProfile::Car {
+        write_skeleton_file(home, &skel).map_err(|e| {
+            st.running.store(false, Ordering::Relaxed);
+            anyhow::anyhow!("write skeleton stem={stem}: {e}")
+        })?
+    } else {
+        let payload = bincode::serialize(&skel).map_err(|e| {
+            st.running.store(false, Ordering::Relaxed);
+            anyhow::anyhow!("serialize skeleton stem={stem}: {e}")
+        })?;
+        if let Err(e) = fs::write(&out_bin, &payload) {
+            st.running.store(false, Ordering::Relaxed);
+            anyhow::bail!("write skeleton stem={stem}: {e}");
+        }
+        payload.len() as u64
+    };
     let fp = want_fingerprint(home, stem, profile);
-    let _ = fs::write(skeleton_meta_path(home, stem), fp);
+    let _ = fs::write(skeleton_meta_path_for(home, stem, profile), fp);
     let hwm = peak_rss_mb();
     set_progress(stem, 100, &format!("Corridor skeleton ready for {label}"));
     st.running.store(false, Ordering::Relaxed);
@@ -602,7 +668,7 @@ pub fn stems_missing_corridor_skeleton(
     route_points: &[(f64, f64)],
     profile: RoutingProfile,
 ) -> Vec<(PathBuf, String)> {
-    let profile = skeleton_profile(profile);
+    // Truck→Car alias (when graphs alias) is applied per-stem in [`skeleton_fresh`].
     if route_points.len() < 2 {
         return Vec::new();
     }
@@ -687,6 +753,41 @@ mod tests {
     }
 
     #[test]
+    fn distinct_truck_graph_does_not_reuse_car_skeleton_fingerprint() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let man = serde_json::json!({
+            "schema": 1,
+            "stem": "a-latest",
+            "pbf_filename": "a-latest.osm.pbf",
+            "pbf_size_bytes": 3,
+            "pbf_modified_unix_secs": 1,
+            "graph_files": {
+                "car": "a-latest.navi-graph-car.rkyv",
+                "truck": "a-latest.navi-graph-truck.rkyv"
+            },
+            "graph_tiles": {},
+            "graph_format_version": 9,
+            "poi_barrier_file": "a-latest.navi-poi-barrier.rkyv",
+            "poi_barrier_format_version": 1
+        });
+        fs::write(home.join("a-latest.navi-manifest.json"), man.to_string()).unwrap();
+        fs::write(home.join("a-latest.osm.pbf"), b"pbf").unwrap();
+        fs::write(home.join("a-latest.navi-graph-car.rkyv"), b"car-graph").unwrap();
+        fs::write(home.join("a-latest.navi-graph-truck.rkyv"), b"truck-g").unwrap();
+        write_skeleton(home, "a-latest");
+        assert!(skeleton_fresh(home, "a-latest", RoutingProfile::Car));
+        assert!(
+            !skeleton_fresh(home, "a-latest", RoutingProfile::Truck),
+            "real truck graph tiles must not accept a car skeleton fingerprint"
+        );
+        assert_eq!(
+            skeleton_profile(home, "a-latest", RoutingProfile::Truck),
+            RoutingProfile::Truck
+        );
+    }
+
+    #[test]
     fn neighbour_pack_change_makes_this_skeleton_stale() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
@@ -703,5 +804,32 @@ mod tests {
         assert!(skeleton_fresh(home, "a-latest", RoutingProfile::Car));
         fs::remove_file(home.join("c-latest.navi-manifest.json")).unwrap();
         assert!(!skeleton_fresh(home, "a-latest", RoutingProfile::Car));
+    }
+
+    #[test]
+    fn real_gate_packs_truck_aliases_car_skeleton() {
+        let home =
+            std::path::Path::new("/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/navi-gate/packs");
+        if !home.join("ostlandet-latest.navi-manifest.json").is_file() {
+            return;
+        }
+        let man = NaviManifest::load(&manifest_path(home, "ostlandet-latest")).unwrap();
+        assert!(
+            man.truck_graph_is_car_alias_at(home),
+            "gate packs ship car(+foot) only"
+        );
+        assert!(skeleton_fresh(
+            home,
+            "ostlandet-latest",
+            RoutingProfile::Car
+        ));
+        assert!(
+            skeleton_fresh(home, "ostlandet-latest", RoutingProfile::Truck),
+            "truck must accept car skeleton on gate packs"
+        );
+        assert_eq!(
+            skeleton_profile(home, "ostlandet-latest", RoutingProfile::Truck),
+            RoutingProfile::Car
+        );
     }
 }

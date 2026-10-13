@@ -2734,9 +2734,16 @@ fn for_each_fresh_skeleton(
             .flatten()
             .filter_map(|e| {
                 let name = e.file_name().into_string().ok()?;
-                name.strip_suffix(".navi-corridor-skeleton.bin")
-                    .or_else(|| name.strip_suffix(".navi-corridor-skeleton.json"))
-                    .map(str::to_string)
+                if let Some(stem) = name.strip_suffix(".navi-corridor-skeleton.bin") {
+                    Some(stem.to_string())
+                } else if let Some(stem) = name.strip_suffix(".navi-corridor-skeleton.json") {
+                    Some(stem.to_string())
+                } else if let Some((stem, rest)) = name.split_once(".navi-corridor-skeleton.") {
+                    // Profile-qualified: `{stem}.navi-corridor-skeleton.{profile}.bin`
+                    rest.strip_suffix(".bin").map(|_| stem.to_string())
+                } else {
+                    None
+                }
             })
             .collect();
         stems.sort();
@@ -2750,7 +2757,9 @@ fn for_each_fresh_skeleton(
                 log::warn!(target: "NaviPlan", "stage_b skip stale skeleton stem={stem}");
                 continue;
             }
-            let Some(p) = resolve_skeleton_path(dir, &stem) else {
+            let Some(p) =
+                crate::routing::indexed::resolve_corridor_skeleton_path(dir, &stem, profile)
+            else {
                 continue;
             };
             let Ok(s) = read_skeleton_file(&p) else {

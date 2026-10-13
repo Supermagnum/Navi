@@ -1,8 +1,8 @@
 package no.navi.app
 
 import android.content.Context
-import java.io.File
 import org.json.JSONObject
+import java.io.File
 
 /**
  * Canonical on-device location for a finished plan's hop log, polyline, and
