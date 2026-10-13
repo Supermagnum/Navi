@@ -2963,11 +2963,31 @@ fn plan_car_route_chunked_legs(
                 elon
             ));
             // Put the failing leg first so truncated logs still show the cause.
-            let mut fail = format!(
-                "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: chunk_leg{} terminated {}\n",
-                i + 1,
-                leg.search_terminate_reason
-            );
+            let clearance_fail = leg
+                .report
+                .lines()
+                .find(|l| {
+                    l.starts_with("FAIL: ")
+                        && (l.contains("height limit")
+                            || l.contains("width limit")
+                            || l.contains("length limit")
+                            || l.contains("weight limit")
+                            || l.contains("axle load limit"))
+                })
+                .unwrap_or("");
+            let mut fail = if clearance_fail.is_empty() {
+                format!(
+                    "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: chunk_leg{} terminated {}\n",
+                    i + 1,
+                    leg.search_terminate_reason
+                )
+            } else {
+                format!(
+                    "TEST_KIND=PLAN_CAR_ROUTE\n{clearance_fail}\nFAIL: chunk_leg{} terminated {}\n",
+                    i + 1,
+                    leg.search_terminate_reason
+                )
+            };
             let closures: Vec<String> = hop_datex
                 .iter()
                 .filter(|c| c.impact == driver_break_core::datex::DatexImpact::Block)
@@ -5523,6 +5543,20 @@ fn plan_car_route_inner(
             report.push_str(&format!(
                 "FAIL: no route between snapped nodes; terminate={last_terminate}; expansions={last_expansions}; pads={pad_attempts:?}\n"
             ));
+            if let Some(ref lim) = vehicle_limits {
+                if let Some(msg) =
+                    driver_break_core::routing::graph::nearest_clearance_block_message(
+                        &graph, end_lat, end_lon, lim, 2_000.0,
+                    )
+                    .or_else(|| {
+                        driver_break_core::routing::graph::nearest_clearance_block_message(
+                            &graph, start_lat, start_lon, lim, 2_000.0,
+                        )
+                    })
+                {
+                    report.push_str(&format!("FAIL: {msg}\n"));
+                }
+            }
             if avoid_ferries {
                 report.push_str(
                     "no_route_without_ferry=true; FAIL: no route without ferry (avoid_ferries on)\n",

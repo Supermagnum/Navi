@@ -27,7 +27,7 @@ pub use bike_suitability::{
     edge_bike_soft_multiplier, load_way_terrain_tags, tags_unsuitable_for, way_id_from_edge_id,
     BikeCapability,
 };
-pub use builder::{options_need_filtered_components_pub, 
+pub use builder::{options_need_filtered_components_pub, clearance_restriction_user_message, nearest_clearance_block_message, 
     append_seasonal_closure_report, drop_pack_edges_replaced_by_overlay_ferry,
     edge_is_motorway_grade, ferry_base_weight_m, ferry_base_weight_m_with_interval,
     ferry_crossing_and_wait_min, ferry_crossing_minutes, ferry_drive_equiv_m_per_s,

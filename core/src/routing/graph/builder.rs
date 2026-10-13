@@ -3277,6 +3277,107 @@ fn datex_penalize_extra_m(
 
 /// True when `options` can remove edges vs an unrestricted car graph. Snap then
 /// rebuilds Union-Find; skip that O(E) pass when nothing is filtered.
+/// Short UI line when vehicle limits block routing near a point.
+///
+/// Example: `Road Garage near 60.38726,5.33397: height limit 1.9 m, your vehicle 2.48 m`.
+pub fn clearance_restriction_user_message(
+    edge: &GraphEdge,
+    limits: &crate::config::VehicleLimits,
+) -> Option<String> {
+    let road = edge
+        .name
+        .as_deref()
+        .or(edge.road_ref.as_deref())
+        .unwrap_or("Road");
+    let lat = (edge.start_lat + edge.end_lat) * 0.5;
+    let lon = (edge.start_lon + edge.end_lon) * 0.5;
+    let mut parts: Vec<String> = Vec::new();
+    if let (Some(vh), Some(max)) = (limits.height_m, edge.maxheight_m) {
+        if vh > max {
+            parts.push(format!(
+                "height limit {max:.2} m, your vehicle {vh:.2} m"
+            ));
+        }
+    }
+    if let (Some(vw), Some(max)) = (limits.width_m, edge.maxwidth_m) {
+        if vw > max {
+            parts.push(format!(
+                "width limit {max:.2} m, your vehicle {vw:.2} m"
+            ));
+        }
+    }
+    if let (Some(vl), Some(max)) = (limits.length_m, edge.maxlength_m) {
+        if vl > max {
+            parts.push(format!(
+                "length limit {max:.2} m, your vehicle {vl:.2} m"
+            ));
+        }
+    }
+    if let (Some(tw), Some(max)) = (limits.total_weight_kg, edge.maxweight_t) {
+        let t = tw / 1000.0;
+        if t > max {
+            parts.push(format!(
+                "weight limit {max:.2} t, your vehicle {t:.2} t"
+            ));
+        }
+    }
+    if let (Some(ax), Some(max)) = (limits.axle_weight_kg, edge.maxaxleload_t) {
+        let t = ax / 1000.0;
+        if t > max {
+            parts.push(format!(
+                "axle load limit {max:.2} t, your vehicle {t:.2} t"
+            ));
+        }
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "{road} near {lat:.5},{lon:.5}: {}",
+        parts.join("; ")
+    ))
+}
+
+/// Find a clearance-blocked edge near `lat,lon` that excludes `limits`.
+pub fn nearest_clearance_block_message(
+    graph: &RouteGraph,
+    lat: f64,
+    lon: f64,
+    limits: &crate::config::VehicleLimits,
+    max_m: f64,
+) -> Option<String> {
+    let mut best: Option<(f64, &GraphEdge)> = None;
+    for e in &graph.edges {
+        let mut blocked = false;
+        if let (Some(vh), Some(max)) = (limits.height_m, e.maxheight_m) {
+            blocked |= vh > max;
+        }
+        if let (Some(vw), Some(max)) = (limits.width_m, e.maxwidth_m) {
+            blocked |= vw > max;
+        }
+        if let (Some(vl), Some(max)) = (limits.length_m, e.maxlength_m) {
+            blocked |= vl > max;
+        }
+        if let (Some(tw), Some(max)) = (limits.total_weight_kg, e.maxweight_t) {
+            blocked |= tw / 1000.0 > max;
+        }
+        if let (Some(ax), Some(max)) = (limits.axle_weight_kg, e.maxaxleload_t) {
+            blocked |= ax / 1000.0 > max;
+        }
+        if !blocked {
+            continue;
+        }
+        let d = super::edge_distance_m(e, lat, lon);
+        if d > max_m {
+            continue;
+        }
+        if best.is_none_or(|(bd, _)| d < bd) {
+            best = Some((d, e));
+        }
+    }
+    best.and_then(|(_, e)| clearance_restriction_user_message(e, limits))
+}
+
 /// Public for plan-time snap role selection when options filter edges.
 pub fn options_need_filtered_components_pub(options: &RouteOptions) -> bool {
     options_need_filtered_components(options)
