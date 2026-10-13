@@ -1,0 +1,28 @@
+{
+  "t_ms": 13998472,
+  "distance_km": 424.94925524327994,
+  "report": "TEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\nlong_trip_chunked=true; hops=2; chunk_deg=1.15; stretch_joint_repair_max=4\nchunk_leg1=60.72500,10.61500 -> 60.83648,9.90816\ndatex_affected road=F33 place=Fv. 33 Kronborg i Søndre Land, Innlandet - fv. 33 Elvebakken i Søndre Land, Innl type=MaintenanceWorks validity=from 2026-07-26 00:00:00 +02:00; to 2026-10-18 23:59:00 +02:00 effect=penalty penalty_min=5\ndatex_affected road=F33 place=Fv. 33 Kronborg i Søndre Land, Innlandet - fv. 33 Elvebakken i Søndre Land, Innl type=RoadOrCarriagewayOrLaneManagement validity=from 2026-07-26 00:00:00 +02:00; to 2026-10-18 23:59:00 +02:00 effect=penalty penalty_min=3\ndatex_affected road=F33 place=Fv. 33 Kronborg i Søndre Land, Innlandet - fv. 33 Elvebakken i Søndre Land, Innl type=GeneralNetworkManagement validity=from 2026-07-26 00:00:00 +02:00; to 2026-10-18 23:59:00 +02:00 effect=penalty penalty_min=3\ndatex_affected road=F33 place=Fv. 33 Kronborg i Søndre Land, Innlandet - fv. 33 Elvebakken i Søndre Land, Innl type=GeneralNetworkManagement validity=from 2026-07-26 00:00:00 +02:00; to 2026-10-18 23:59:00 +02:00 effect=penalty penalty_min=3\ndatex_affected road=F33 place=Fv. 33 Stubberud i Søndre Land, Innlandet - fv. 33 Minaberg i Søndre Land, Innla type=MaintenanceWorks validity=from 2026-07-27 00:00:00 +02:00; to 2026-10-18 23:59:00 +02:00 effect=penalty penalty_min=5\nhop_mem hop=1 peak_rss_mb=784\n--- hop_try1 report ---\nTEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\nprofile=Car; routing=Car; start=60.725000,10.615000; end=60.836482,9.908163; vias=0; use_eco=true; long_trip_enabled=false\npath_covering_nodes=1079937; path_over_node_limit=true; clipped_nodes=186882; clipped_fits=true; needs_corridor=false; stage_b=true\nallowed_countries=none\navoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=true\ndatex_impacts=5; datex_block=0; datex_penalize=5\neco_regen=0.000\npoi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; net",
+  "polyline_chars": 390568,
+  "days_json": "[{\"compensation\":\"\",\"date\":\"\",\"day_index\":1,\"distance_km\":424.94925524327994,\"driving_hours\":5.813050041500547,\"end_km\":424.94925524327994,\"is_final\":true,\"not_in_cab\":false,\"overnight_found\":false,\"overnight_name\":\"\",\"profile\":\"car\",\"rest_hours\":0.0,\"rest_kind\":\"\",\"rest_label\":\"\",\"start_km\":0.0}]",
+  "break_poi_count": 3,
+  "start": "Raufoss",
+  "end": "Bergen",
+  "long_trip_status": "Ostlandet (1 of 2)=Indexed · Vestlandet (2 of 2)=Indexed",
+  "enumerations": {
+    "route_tunnel_count": 51,
+    "route_tunnel_fp": "Hugaviktunnelen@1.79|Rødølstunnelen@2.13|Filefjellstunnelen@5.75|Borlaugstunnelen@4.08|Tuftåstunnelen@1.95|Borgundstunnelen@3.04|Seltatunnelen@1.63|Lærdalstunnelen@24.46|Onstadtunnelen@0.66|Fretheimtunnelen@1.36|Flenjatunnelen@5.02|Gudvangatunnelen@11.39|Sivletunnelen@1.10|Stalheimtunnelen@1.18|Vangstunnelen@2.46|Knoltatunnelen@0.36|Væletunnelen@0.46|Hernestunnelen@0.52|Holemarktunnelen@0.46|Nakkagjelstunnelen@0.21|E 16@0.02|Vassendatunnelen@0.21|Bolstadtunnelen@0.39|Hyvingstunnelen@1.35|Kluftafjelltunnelen@0.47|Trollkonetunnelen@0.73|Dalseidtunnelen@1.80|Beitlatunnelen@0.66|Dalevågtunnelen@1.39|Helletunnelen@0.32|Lågaskartunnelen@0.31|Stanghelletunnelen@0.20|Steganestunnelen@0.08|Hettetunnelen@0.65|Kleinslåttunnelen@0.06|Fossmarktunnelen@0.11|Jamnatunnelen@0.79|Bogatunnelen@2.04|Kjenestunnelen@0.34|Langhelletunnelen@0.92|Stavenestunnelen@2.76|Trengereidtunnelen@1.77|Risnestunnelen@1.71|Romslotunnelen@0.60|Songstadtunnelen@0.31|Songstadtunnelen@0.29|Takvamtunnelen@0.11|Arnanipatunnelen@2.13|Brattlandtunnelen@0.02|Sædalstunnelen@0.33|Nattlandstunnelen@0.29",
+    "route_ferry_legs": 0,
+    "route_ferry_fp": "",
+    "rest_place_count": 3,
+    "rest_place_names": [
+      "Hømanberg",
+      "Koret",
+      "Rest place"
+    ],
+    "attraction_count": 0,
+    "attraction_by_type": {},
+    "wild_camping_site_count": 0,
+    "wild_camping_status_kind": "",
+    "wild_camping_status_message": ""
+  }
+}

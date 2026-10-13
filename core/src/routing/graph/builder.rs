@@ -281,10 +281,26 @@ pub fn ferry_crossing_minutes(length_m: f64, duration_raw: Option<&str>) -> f64 
     }
 }
 
+/// Bike/foot A* cost for a ferry in length-metres (same unit as land edges).
+///
+/// Crossing + expected wait at a fixed pace so water shortcuts cannot undercut
+/// a longer land path merely by mixing drive-equiv time with raw metres.
+pub fn ferry_bike_foot_length_cost_m(edge: &GraphEdge, profile: RoutingProfile) -> f64 {
+    let pace_kmh = match profile {
+        RoutingProfile::Foot => 5.0,
+        RoutingProfile::Bicycle => 15.0,
+        RoutingProfile::Car | RoutingProfile::Truck => FERRY_DRIVE_EQUIV_KMH,
+    };
+    let (crossing_min, wait_min) = ferry_crossing_and_wait_min(edge);
+    let equiv = (crossing_min + wait_min).max(0.0) / 60.0 * pace_kmh * 1000.0;
+    equiv.max(edge.length_m.max(0.0))
+}
+
 /// A* weight in drive-equivalent metres for a ferry edge.
 /// `length_m` stays the geometric length. Cost = crossing time + expected wait
 /// (from OSM `interval` when known, else growing with crossing), converted at
-/// [`FERRY_DRIVE_EQUIV_KMH`]. Foot/bike: crossing only (no vehicle wait).
+/// [`FERRY_DRIVE_EQUIV_KMH`]. Wait floor is baked for all profiles so invert
+/// via [`ferry_crossing_and_wait_min`] stays consistent.
 pub fn ferry_base_weight_m(
     length_m: f64,
     duration_raw: Option<&str>,
@@ -307,12 +323,10 @@ pub fn ferry_base_weight_m_with_interval(
 ) -> f64 {
     let crossing_min = ferry_crossing_minutes(length_m, duration_raw);
     let travel = crossing_min * 60.0 * ferry_drive_equiv_m_per_s();
-    let wait = match profile {
-        RoutingProfile::Car | RoutingProfile::Truck => {
-            FERRY_WAIT_FLOOR_MIN * 60.0 * ferry_drive_equiv_m_per_s()
-        }
-        RoutingProfile::Foot | RoutingProfile::Bicycle => 0.0,
-    };
+    // Bake the wait floor for every profile so [`ferry_crossing_and_wait_min`]
+    // can peel it uniformly (bike/foot used to omit it and invert short).
+    let _ = profile;
+    let wait = FERRY_WAIT_FLOOR_MIN * 60.0 * ferry_drive_equiv_m_per_s();
     travel + wait
 }
 
@@ -2717,12 +2731,13 @@ fn edge_meta(edge: &Edge, profile: RoutingProfile) -> EdgeMeta {
     let motor_vehicle_conditional = edge.tags.get("motor_vehicle:conditional").cloned();
     let access_conditional = edge.tags.get("access:conditional").cloned();
     let maxspeed_conditional = edge.tags.get("maxspeed:conditional").cloned();
-    let access_forbidden = access::mode_access_forbidden(
+    let access_forbidden = access::mode_access_forbidden_with_ferry(
         profile.access_mode(),
         edge.tags.get("motor_vehicle").map(String::as_str),
         edge.tags.get("access").map(String::as_str),
         edge.tags.get("foot").map(String::as_str),
         edge.tags.get("bicycle").map(String::as_str),
+        is_ferry,
     );
     let surface_quality = classify_surface_tags(
         highway.as_deref(),
@@ -3135,36 +3150,41 @@ fn edge_allowed_core(
     true
 }
 
-/// Hard country filter: start, midpoint and end must all resolve to an allowed
-/// ISO code (semantic change from midpoint-only).
+/// Hard country filter for stay-in-country.
 ///
 /// Attribution uses [`crate::routing::elevation::country_iso_at`] (Natural Earth
 /// Admin-0 polygons), not pack stem / catalog path — Norwegian extract bboxes
 /// and Geofabrik clips both spill past the border (see
 /// `ostlandet_catalog_bbox_spills_into_sweden` and the Langflon spill probe).
-/// Unresolved points (`None` after coastal snap) are excluded when the filter
-/// is active, as unknown codes were under the old midpoint rule.
+///
+/// For ordinary roads, start, midpoint and end must all resolve to an allowed
+/// ISO code. Unresolved land points (`None` after coastal snap) are excluded.
+///
+/// Domestic ferries are special: their geometric midpoint is often over open
+/// water (`None`), which would wrongly drop the only Norway-only coastal
+/// corridor (e.g. Bognes–Skarberget). For `is_ferry`, require both **endpoints**
+/// in allowed countries and skip the ocean midpoint. A ferry with one end in a
+/// foreign country is still rejected.
 fn edge_in_allowed_countries(edge: &GraphEdge, allowed: &[String]) -> bool {
     if allowed.is_empty() {
         return false;
     }
-    let mid_lat = (edge.start_lat + edge.end_lat) * 0.5;
-    let mid_lon = (edge.start_lon + edge.end_lon) * 0.5;
-    // Midpoint first: matches the old hot path and rejects cross-border edges early.
-    let points = [
-        (mid_lat, mid_lon),
-        (edge.start_lat, edge.start_lon),
-        (edge.end_lat, edge.end_lon),
-    ];
-    for (lat, lon) in points {
+    let allowed_iso = |lat: f64, lon: f64| -> bool {
         let Some(iso) = crate::routing::elevation::country_iso_at(lat, lon) else {
             return false;
         };
-        if !allowed.iter().any(|c| c.trim().eq_ignore_ascii_case(iso)) {
-            return false;
-        }
+        allowed.iter().any(|c| c.trim().eq_ignore_ascii_case(iso))
+    };
+    if edge.is_ferry {
+        return allowed_iso(edge.start_lat, edge.start_lon)
+            && allowed_iso(edge.end_lat, edge.end_lon);
     }
-    true
+    let mid_lat = (edge.start_lat + edge.end_lat) * 0.5;
+    let mid_lon = (edge.start_lon + edge.end_lon) * 0.5;
+    // Midpoint first: matches the old hot path and rejects cross-border edges early.
+    allowed_iso(mid_lat, mid_lon)
+        && allowed_iso(edge.start_lat, edge.start_lon)
+        && allowed_iso(edge.end_lat, edge.end_lon)
 }
 
 fn edge_travel_cost(
@@ -3186,10 +3206,11 @@ fn edge_travel_cost(
             // Motor: travel time so ferries compete fairly with roads.
             RoutingProfile::Car | RoutingProfile::Truck => time_base_weight_for_edge(edge),
             // Bike/foot soft prefs are tuned in length-metres; fixed-pace ETA
-            // still applies on the finished path. Ferries keep time weight.
+            // still applies on the finished path. Ferries use opportunity-cost
+            // metres at cycling/walking pace (not drive-equiv) so units match.
             RoutingProfile::Bicycle | RoutingProfile::Foot => {
                 if edge.is_ferry {
-                    time_base_weight_for_edge(edge)
+                    ferry_bike_foot_length_cost_m(edge, profile)
                 } else {
                     edge.length_m.max(0.0)
                 }
@@ -3306,12 +3327,29 @@ fn filter_edges(edges: Vec<Edge>, profile: RoutingProfile) -> Vec<Edge> {
 }
 
 fn edge_allowed(edge: &Edge, profile: RoutingProfile) -> bool {
-    if access::mode_access_forbidden(
+    // osm4routing uses ahash maps; detect ferry from the same tag keys as
+    // [`access::tags_indicate_ferry`] without converting the map type.
+    let is_ferry = edge
+        .tags
+        .get("route")
+        .is_some_and(|v| v.eq_ignore_ascii_case("ferry"))
+        || edge
+            .tags
+            .get("highway")
+            .is_some_and(|v| v.eq_ignore_ascii_case("ferry"))
+        || edge.tags.get("ferry").is_some_and(|v| {
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "yes" | "true" | "1" | "ferry"
+            )
+        });
+    if access::mode_access_forbidden_with_ferry(
         profile.access_mode(),
         edge.tags.get("motor_vehicle").map(String::as_str),
         edge.tags.get("access").map(String::as_str),
         edge.tags.get("foot").map(String::as_str),
         edge.tags.get("bicycle").map(String::as_str),
+        is_ferry,
     ) {
         return false;
     }
@@ -5060,6 +5098,87 @@ mod tests {
         );
     }
 
+    /// Lakselv→Oslo style: the Norway-only corridor needs a domestic ferry whose
+    /// midpoint is over water. Stay-in-country must keep that ferry and reject
+    /// the shorter Sweden land shortcut.
+    #[test]
+    fn allowed_countries_norway_uses_domestic_ferry_not_sweden() {
+        let mut nodes = HashMap::new();
+        for (id, n) in [
+            test_node(1, 70.05, 24.96),   // Lakselv-ish
+            test_node(2, 68.223, 16.075), // Bognes
+            test_node(3, 68.228, 16.215), // Skarberget
+            test_node(4, 59.91, 10.75),   // Oslo
+            test_node(5, 61.90, 12.27),   // Sweden waypoint
+        ] {
+            nodes.insert(id, n);
+        }
+        let mut n1_bognes = test_edge(1, 2, 70.05, 24.96, 68.223, 16.075);
+        n1_bognes.length_m = 500_000.0;
+        n1_bognes.base_weight = 500_000.0;
+        let mut ferry = test_edge(2, 3, 68.223, 16.075, 68.228, 16.215);
+        ferry.is_ferry = true;
+        ferry.length_m = 5_000.0;
+        ferry.base_weight = 5_000.0;
+        let mut skarb_oslo = test_edge(3, 4, 68.228, 16.215, 59.91, 10.75);
+        skarb_oslo.length_m = 1_200_000.0;
+        skarb_oslo.base_weight = 1_200_000.0;
+        // Shorter via Sweden (midpoint in SE).
+        let mut via_se_a = test_edge(1, 5, 70.05, 24.96, 61.90, 12.27);
+        via_se_a.length_m = 400_000.0;
+        via_se_a.base_weight = 400_000.0;
+        let mut via_se_b = test_edge(5, 4, 61.90, 12.27, 59.91, 10.75);
+        via_se_b.length_m = 400_000.0;
+        via_se_b.base_weight = 400_000.0;
+        let mut edges = vec![n1_bognes, ferry, skarb_oslo, via_se_a, via_se_b];
+        let rev: Vec<_> = edges
+            .iter()
+            .map(|e| {
+                let mut r = e.clone();
+                r.id = format!("{}-rev", e.id);
+                std::mem::swap(&mut r.source, &mut r.target);
+                std::mem::swap(&mut r.start_lat, &mut r.end_lat);
+                std::mem::swap(&mut r.start_lon, &mut r.end_lon);
+                r
+            })
+            .collect();
+        edges.extend(rev);
+        let graph = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+
+        let open = graph
+            .shortest_path_with_options(NodeId(1), NodeId(4), false, &RouteOptions::default())
+            .expect("unrestricted");
+        assert!(
+            open.0.contains(&NodeId(5)),
+            "stay off should prefer Sweden shortcut: {:?}",
+            open.0
+        );
+
+        let stay = RouteOptions {
+            allowed_countries: Some(vec!["no".into()]),
+            ..Default::default()
+        };
+        let path = graph
+            .shortest_path_with_options(NodeId(1), NodeId(4), false, &stay)
+            .expect("Norway-only via domestic ferry");
+        assert!(
+            path.0.contains(&NodeId(2)) && path.0.contains(&NodeId(3)),
+            "must use Bognes–Skarberget ferry corridor: {:?}",
+            path.0
+        );
+        assert!(
+            !path.0.contains(&NodeId(5)),
+            "must not enter Sweden: {:?}",
+            path.0
+        );
+        let ferry_used = path.1.iter().any(|&ei| graph.edges[ei].is_ferry);
+        assert!(
+            ferry_used,
+            "expected a ferry edge in path indices {:?}",
+            path.1
+        );
+    }
+
     #[test]
     fn allowed_countries_impossible_yields_outside_countries() {
         // Graph where the only path uses a Sweden midpoint — Norway filter must
@@ -5182,6 +5301,45 @@ mod tests {
         let bridge = test_edge(1, 2, 59.1200, 11.3000, 59.0800, 11.2600);
         assert!(!edge_in_allowed_countries(&bridge, &["no".into()]));
         assert!(!edge_in_allowed_countries(&bridge, &["se".into()]));
+    }
+
+    #[test]
+    fn edge_filter_domestic_ferry_kept_when_midpoint_is_ocean() {
+        // Long chord between Norwegian coastal terminals with midpoint over the
+        // Norwegian Sea (beyond coastal snap). Short hops like Bognes–Skarberget
+        // often snap the mid to NO; this fixture keeps mid unresolved.
+        let mut ferry = test_edge(1, 2, 62.4700, 6.1500, 68.4400, 17.4200);
+        ferry.is_ferry = true;
+        let mid_lat = (ferry.start_lat + ferry.end_lat) * 0.5;
+        let mid_lon = (ferry.start_lon + ferry.end_lon) * 0.5;
+        assert_eq!(
+            crate::routing::elevation::country_iso_at(ferry.start_lat, ferry.start_lon),
+            Some("no")
+        );
+        assert_eq!(
+            crate::routing::elevation::country_iso_at(ferry.end_lat, ferry.end_lon),
+            Some("no")
+        );
+        assert!(
+            crate::routing::elevation::country_iso_at(mid_lat, mid_lon).is_none(),
+            "fixture midpoint must be unresolved ocean for this regression (got {:?})",
+            crate::routing::elevation::country_iso_at(mid_lat, mid_lon)
+        );
+        assert!(
+            edge_in_allowed_countries(&ferry, &["no".into()]),
+            "domestic ferry must stay when stay-in-country is on"
+        );
+        // Same geometry without the ferry flag: ocean midpoint excludes the edge.
+        ferry.is_ferry = false;
+        assert!(!edge_in_allowed_countries(&ferry, &["no".into()]));
+    }
+
+    #[test]
+    fn edge_filter_cross_border_ferry_still_excluded() {
+        // Synthetic: Norwegian pier to Swedish pier (midpoint may also be water).
+        let mut ferry = test_edge(1, 2, 59.1200, 11.3000, 58.9400, 11.1700);
+        ferry.is_ferry = true;
+        assert!(!edge_in_allowed_countries(&ferry, &["no".into()]));
     }
 
     #[test]
@@ -5508,7 +5666,24 @@ mod tests {
         let expected = 1_000.0 * (FERRY_DRIVE_EQUIV_KMH / FERRY_FALLBACK_SPEED_KMH) + boarding;
         assert!((fallback - expected).abs() < 1e-6);
         let foot = ferry_base_weight_m(1_000.0, Some("0:10"), RoutingProfile::Foot);
-        assert!((foot - 600.0 * mps).abs() < 1e-6);
+        assert!((foot - (600.0 * mps + boarding)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn bike_ferry_length_cost_exceeds_short_land_hop() {
+        let mut ferry = test_edge(1, 2, 60.80, 10.70, 60.92, 10.68);
+        ferry.is_ferry = true;
+        ferry.length_m = 15_450.0;
+        // Bike-style pack: crossing-only was historical; now includes floor.
+        ferry.base_weight =
+            ferry_base_weight_m(ferry.length_m, Some("0:50"), RoutingProfile::Bicycle);
+        let ferry_cost = ferry_bike_foot_length_cost_m(&ferry, RoutingProfile::Bicycle);
+        // 50 min + >=10 min wait at 15 km/h ≈ 15 km equiv (not 20): must still
+        // beat a shorter land hop and never undercut geometric length.
+        assert!(
+            ferry_cost >= ferry.length_m && ferry_cost > 12_000.0,
+            "ferry_cost={ferry_cost} should price at/above length and above a 12 km land hop"
+        );
     }
 
     /// Length-only ferry weights make a long unnamed coastal chain look competitive

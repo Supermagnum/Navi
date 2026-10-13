@@ -11,12 +11,9 @@ const val IMU_CALIBRATION_INSTRUCTION =
 
 /** What the plugin is for, shown in settings. */
 const val IMU_PLUGIN_PURPOSE =
-    "For a phone or tablet mounted in a vehicle: shows pitch, tilt and compass heading " +
-        "and warns when the vehicle tilts towards dangerous values."
+    "For a phone or tablet mounted in a vehicle: shows pitch, tilt and compass heading."
 
 enum class ImuStatus { NO_SENSOR, UNCALIBRATED, CALIBRATED, COLLECTING }
-
-enum class ImuAlarmLevel { NONE, WARNING, DANGER }
 
 data class ImuSensorsPresent(
     val gravity: Boolean = false,
@@ -46,8 +43,6 @@ data class ImuReadout(
     val rollDeg: Double?,
     val tiltDeg: Double?,
     val headingDeg: Double?,
-    val alarm: ImuAlarmLevel,
-    val alarmEnabled: Boolean,
     val sensors: ImuSensorsPresent,
 )
 
@@ -68,8 +63,6 @@ object ImuReadoutParser {
                 rollDeg = o.optDoubleOrNull("roll_deg"),
                 tiltDeg = o.optDoubleOrNull("tilt_deg"),
                 headingDeg = o.optDoubleOrNull("heading_deg"),
-                alarm = alarm(o.optString("alarm", "none")),
-                alarmEnabled = o.optBoolean("alarm_enabled", false),
                 sensors =
                     ImuSensorsPresent(
                         gravity = sensors?.optBoolean("gravity", false) ?: false,
@@ -93,13 +86,6 @@ object ImuReadoutParser {
             else -> null
         }
 
-    private fun alarm(raw: String): ImuAlarmLevel =
-        when (raw) {
-            "warning" -> ImuAlarmLevel.WARNING
-            "danger" -> ImuAlarmLevel.DANGER
-            else -> ImuAlarmLevel.NONE
-        }
-
     private fun JSONObject.optDoubleOrNull(key: String): Double? = if (isNull(key) || !has(key)) null else optDouble(key).takeIf { it.isFinite() }
 
     private fun JSONObject.optStringOrNull(key: String): String? = if (isNull(key) || !has(key)) null else optString(key).takeIf { it.isNotBlank() }
@@ -116,9 +102,3 @@ fun formatImuHeading(value: Double?): String =
         val d = ((value % 360.0) + 360.0) % 360.0
         String.format(Locale.US, "%03.0f\u00B0", d)
     }
-
-/** Parse a threshold field (accepts a decimal comma). Valid thresholds are in 1..89 degrees. */
-fun parseImuThresholdDegrees(text: String): Double? {
-    val v = text.trim().replace(',', '.').toDoubleOrNull() ?: return null
-    return v.takeIf { it.isFinite() && it >= 1.0 && it <= 89.0 }
-}

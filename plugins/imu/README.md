@@ -1,7 +1,7 @@
 # IMU plugin (`imu`)
 
 Live pitch, tilt and compass heading for a vehicle-mounted unit, plus a
-configurable tilt-danger alarm level. It runs as a wasmtime guest and reads the
+live pitch, tilt and compass. It runs as a wasmtime guest and reads the
 device sensors through the read-only `sensors_read` HostApi capability. Full
 design and storage contract: [`docs/plugins/imu-plugin.md`](../../docs/plugins/imu-plugin.md).
 
@@ -10,7 +10,7 @@ design and storage contract: [`docs/plugins/imu-plugin.md`](../../docs/plugins/i
 A tablet or phone in a dash mount is almost never perfectly aligned with the
 vehicle. Without calibration, a car parked on level ground reads a few degrees
 of pitch and roll, which would corrupt the inclination used for the tilt display,
-the alarm, and the gradient input to eco routing. Calibration measures that mount
+and the gradient input to eco routing. Calibration measures that mount
 offset once and stores it as a rotation, so the unit reports the **vehicle's**
 pitch and roll instead of the unit's.
 
@@ -27,7 +27,7 @@ The status line shows whether the unit is calibrated and on which date.
 
 | Path | Role |
 |---|---|
-| `engine/` | Native-testable maths, calibration, alarm, and the per-tick state machine |
+| `engine/` | Native-testable maths, calibration, and the per-tick state machine |
 | `src/lib.rs` | wasm32 shim: implements the engine `Host` over `navi-plugin-sdk` |
 | `plugin.json` | Capabilities: `log`, `sensors_read`, `plugin_kv`, `clock_read` |
 
@@ -41,7 +41,7 @@ cargo test -p navi-plugin-host --test imu_plugin_wasm
 
 Sensor access is host-owned: availability is detected, reads are rate-limited,
 and sensor listeners are unregistered when the plugin stops reading. The plugin
-never plays sound; the host reads the alarm level from the plugin state.
+does not play sound; the host shows pitch / tilt / heading from the plugin state.
 
 In the Android app the guest is staged by `scripts/build-plugin-wasm.sh`, fed by
 the `SensorManager` backend (`ImuSensorBackend.kt`) through `navi-ffi`

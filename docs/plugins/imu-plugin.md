@@ -1,10 +1,10 @@
 # IMU plugin: pitch / tilt / compass and mount calibration
-**Status:** live display, mount calibration, reset, the configurable tilt
-alarm and the Android product wiring are **implemented**: a wasmtime guest
-(`plugins/imu`, engine in `plugins/imu/engine`) on the read-only `sensors_read`
-HostApi capability, fed by an Android `SensorManager` backend through UniFFI, with
-a settings panel under Map / Tools -> Plugins. The logging / upload / correction
-pipeline below is still **deferred** (documentation only).
+**Status:** live display, mount calibration, reset, and the Android product
+wiring are **implemented**: a wasmtime guest (`plugins/imu`, engine in
+`plugins/imu/engine`) on the read-only `sensors_read` HostApi capability, fed by
+an Android `SensorManager` backend through UniFFI, with a settings panel under
+Map / Tools -> Plugins. The logging / upload / correction pipeline below is
+still **deferred** (documentation only).
 
 Issue: #150. Plugin README: [`plugins/imu/README.md`](../../plugins/imu/README.md).
 This feature improves **inclination (pitch/tilt)** accuracy for a
@@ -73,10 +73,8 @@ aggregation, no re-identification), not merely an opt-in checkbox.
 ---
 ## Also in scope for this plugin (live sensor display)
 Beyond the deferred calibration/correction pipeline above, the IMU plugin
-itself should provide, once implemented:
-- Live **pitch/tilt** and **compass course** display, useful for off-road driving.
-- A **configurable alarm** that sounds when pitch/tilt approaches
-  dangerous values (thresholds must be user-configurable, not hardcoded).
+itself provides live **pitch/tilt** and **compass course** display (useful for
+off-road driving), plus mount calibration.
 ---
 ## Implemented in this pass
 
@@ -88,17 +86,15 @@ itself should provide, once implemented:
 | Android mapping (`SensorKind::android_sensor_types`): ambient temperature prefers `TYPE_AMBIENT_TEMPERATURE` (13) over deprecated `TYPE_TEMPERATURE` (7) | `plugin-host/src/abi.rs` |
 | Pitch / roll / tilt from gravity (accelerometer fallback), tilt-compensated magnetic heading | `plugins/imu/engine` |
 | Calibration, reset, calibration date and status text | `plugins/imu/engine` |
-| Tilt alarm level with user thresholds and hysteresis (host plays the sound) | `plugins/imu/engine/src/alarm.rs` |
 
 ### Android product wiring
 
 | Piece | Where |
 |---|---|
-| `SensorPlatform` (UniFFI foreign trait) + `imu_plugin_*` session API (configure, install guest, enable, tick, calibrate / reset, alarm settings, release sensors) | `navi-ffi/src/imu_plugin.rs` |
+| `SensorPlatform` (UniFFI foreign trait) + `imu_plugin_*` session API (configure, install guest, enable, tick, calibrate / reset, release sensors) | `navi-ffi/src/imu_plugin.rs` |
 | `SensorManager` backend: availability detection (`TYPE_AMBIENT_TEMPERATURE` first, `TYPE_TEMPERATURE` fallback via the shared `SensorKind` table), per-sensor rate limit, listener unregistered when the hub releases it | `ImuSensorBackend.kt`, `AndroidSensorSource` |
-| Controller: ticks the guest (~8 Hz) only while the plugin is enabled and the app is started, publishes state (no alarm audio) | `ImuPluginController.kt`, `ImuPluginRuntime.kt` |
-| Settings panel: enable switch, verbatim calibration instruction, Calibrate / Reset, date and status, live pitch / roll / tilt / heading, tilt warning thresholds | `ImuPluginPanel.kt` (inside `PluginSettingsSection`) |
-| Tilt warning levels are display-only; host does not play IMU alarm audio | (removed `ImuAlarmAudio.kt`) |
+| Controller: ticks the guest (~8 Hz) only while the plugin is enabled and the app is started, publishes state | `ImuPluginController.kt`, `ImuPluginRuntime.kt` |
+| Settings panel: enable switch, verbatim calibration instruction, Calibrate / Reset, date and status, live pitch / roll / tilt / heading | `ImuPluginPanel.kt` (inside `PluginSettingsSection`) |
 | Guest staging: `scripts/build-plugin-wasm.sh` builds `plugins/imu` into `assets/plugins/imu/`; the app copies it to `filesDir/plugins/imu/` and reinstalls on a version change | same pattern as the camping guest |
 
 The plugin is **off by default** (`plugin_enable.json`, name `imu`). Turning it
@@ -117,9 +113,8 @@ imu_plugin_ffi` (staged wasm guest through the public FFI surface with a fake
 | Key | Persisted | Writer | Content |
 |---|---|---|---|
 | `imu_mount` | yes | plugin | rotation matrix, `unix_secs`, `date` |
-| `imu_alarm` | yes | host UI | `{"enabled","pitch_warn_deg","pitch_danger_deg","roll_warn_deg","roll_danger_deg","hysteresis_deg"}` (sanitised on read) |
 | `live.imu_cmd` | no | host UI | `{"cmd":"calibrate"}` or `{"cmd":"reset"}`; consumed by the plugin |
-| `live.imu_state` | no | plugin | status, notice, instruction, pitch / roll / tilt / heading, alarm level, calibration date, sensor presence |
+| `live.imu_state` | no | plugin | status, notice, instruction, pitch / roll / tilt / heading, calibration date, sensor presence |
 | `live.imu_hist` | no | plugin | recent samples for the stationary check |
 
 Keys prefixed `live.` stay in memory in `FilePluginKv` so a 10 Hz tick does not
@@ -132,7 +127,7 @@ roll right-side-down positive; heading is magnetic (no declination).
 
 `cargo test -p navi-plugin-imu-engine` (synthetic 15 deg pitch / 10 deg roll mount
 levels after calibrate, rejection while moving, persistence, reset, missing
-sensors, alarm, heading) and `cargo test -p navi-plugin-host --test
+sensors, heading) and `cargo test -p navi-plugin-host --test
 imu_plugin_wasm` (same flows through wasmtime with `FilePluginKv`, plus hub
 register / release). No tablet is required. On an emulator, use Extended controls
 > Virtual sensors to rock or hold the device for the calibrate / reject paths;
@@ -150,6 +145,3 @@ real mount accuracy still needs a vehicle-mounted device.
 6. Document defaults and that rotation modes do not depend on this feature.
 7. ~~Live pitch/tilt/compass display~~ (done in the settings panel); a map HUD
    chip is still open.
-8. ~~Alarm sound playback and settings UI~~ (host alarm audio removed; thresholds/UI remain;
-   custom alert sounds remain the separate
-   [custom alert sounds spec](custom-alert-sounds-spec.md)).

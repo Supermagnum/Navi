@@ -8,6 +8,11 @@
 //! Explicit yes-like values grant access even when `access=no`.
 //! Explicit no-like values forbid. Unset → not forbidden here (highway class
 //! filtering already decided the edge belongs in the profile graph).
+//!
+//! **Ferry exception (Bicycle):** untagged `route=ferry` / `ferry=yes` ways are
+//! treated as **not** bike-boardable. Only an explicit yes-like `bicycle=*`
+//! allows the ferry into the bicycle (and e-bike) graph. Car lake ferries
+//! without `bicycle=*` must not undercut land corridors (e.g. Mjøsa).
 
 use osm4routing::NodeId;
 use std::collections::{HashMap, HashSet};
@@ -35,13 +40,44 @@ pub enum AccessMode {
     Bicycle,
 }
 
+/// True when tags describe an OSM ferry way (`route=ferry`, `highway=ferry`, or
+/// truthy `ferry=*`). Shared by access filtering and graph builders.
+pub fn tags_indicate_ferry(tags: &HashMap<String, String>) -> bool {
+    tags.get("route")
+        .is_some_and(|v| v.eq_ignore_ascii_case("ferry"))
+        || tags
+            .get("highway")
+            .is_some_and(|v| v.eq_ignore_ascii_case("ferry"))
+        || tags.get("ferry").is_some_and(|v| {
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "yes" | "true" | "1" | "ferry"
+            )
+        })
+}
+
 /// True when static way/node tags forbid `mode` (OSM specificity rules).
+///
+/// When `is_ferry` is true and `mode` is [`AccessMode::Bicycle`], an explicit
+/// yes-like `bicycle=*` is required; otherwise the ferry is forbidden.
 pub fn mode_access_forbidden(
     mode: AccessMode,
     motor_vehicle: Option<&str>,
     access: Option<&str>,
     foot: Option<&str>,
     bicycle: Option<&str>,
+) -> bool {
+    mode_access_forbidden_with_ferry(mode, motor_vehicle, access, foot, bicycle, false)
+}
+
+/// Like [`mode_access_forbidden`], with ferry-aware bicycle boarding rules.
+pub fn mode_access_forbidden_with_ferry(
+    mode: AccessMode,
+    motor_vehicle: Option<&str>,
+    access: Option<&str>,
+    foot: Option<&str>,
+    bicycle: Option<&str>,
+    is_ferry: bool,
 ) -> bool {
     let specific = match mode {
         AccessMode::Motor => motor_vehicle,
@@ -59,16 +95,24 @@ pub fn mode_access_forbidden(
         // restricted for through-routing.
         return true;
     }
-    access.is_some_and(is_access_no)
+    if access.is_some_and(is_access_no) {
+        return true;
+    }
+    // Untagged ferry: motor/foot keep prior default; bicycle must opt in.
+    if is_ferry && mode == AccessMode::Bicycle {
+        return true;
+    }
+    false
 }
 
 pub fn tags_forbid_mode(tags: &HashMap<String, String>, mode: AccessMode) -> bool {
-    mode_access_forbidden(
+    mode_access_forbidden_with_ferry(
         mode,
         tags.get("motor_vehicle").map(String::as_str),
         tags.get("access").map(String::as_str),
         tags.get("foot").map(String::as_str),
         tags.get("bicycle").map(String::as_str),
+        tags_indicate_ferry(tags),
     )
 }
 
@@ -186,5 +230,31 @@ mod tests {
         let mut tags = HashMap::new();
         tags.insert("barrier".into(), "gate".into());
         assert!(!barrier_node_forbids_mode(&tags, AccessMode::Motor));
+    }
+
+    #[test]
+    fn untagged_ferry_blocks_bicycle_not_motor() {
+        let mut tags = HashMap::new();
+        tags.insert("route".into(), "ferry".into());
+        assert!(tags_forbid_mode(&tags, AccessMode::Bicycle));
+        assert!(!tags_forbid_mode(&tags, AccessMode::Motor));
+        assert!(!tags_forbid_mode(&tags, AccessMode::Foot));
+    }
+
+    #[test]
+    fn ferry_with_bicycle_yes_allows_bike() {
+        let mut tags = HashMap::new();
+        tags.insert("route".into(), "ferry".into());
+        tags.insert("bicycle".into(), "yes".into());
+        assert!(!tags_forbid_mode(&tags, AccessMode::Bicycle));
+    }
+
+    #[test]
+    fn ferry_yes_tag_without_bicycle_blocks_bike() {
+        let mut tags = HashMap::new();
+        tags.insert("ferry".into(), "yes".into());
+        assert!(tags_forbid_mode(&tags, AccessMode::Bicycle));
+        tags.insert("bicycle".into(), "designated".into());
+        assert!(!tags_forbid_mode(&tags, AccessMode::Bicycle));
     }
 }

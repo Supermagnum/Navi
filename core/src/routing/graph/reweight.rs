@@ -12,6 +12,18 @@ fn eco_joules_for_edge(
     eco: &EcoConfig,
     live: Option<&LiveEnergySnapshot>,
 ) -> f64 {
+    // Ferries: never charge geometric water length as flat driving. Lake-level
+    // DEM made Mjøsa `route=ferry` chains undercut the land corridor for bike
+    // (eco locked on) — Hamar→Lillehammer took six ferry legs. Price the ferry
+    // clock time as equivalent highway metres at [`FERRY_DRIVE_EQUIV_KMH`].
+    if edge.is_ferry {
+        let (crossing_min, wait_min) = super::builder::ferry_crossing_and_wait_min(edge);
+        let equiv_m = (crossing_min + wait_min).max(0.0) / 60.0
+            * super::builder::FERRY_DRIVE_EQUIV_KMH
+            * 1000.0;
+        let charged_m = equiv_m.max(edge.length_m.max(0.0));
+        return refine_energy_cost(eco.flat_energy_joules(charged_m), charged_m, live).max(0.0);
+    }
     let h_start = elevation.get_elevation(edge.start_lat, edge.start_lon);
     let h_end = elevation.get_elevation(edge.end_lat, edge.end_lon);
     let predicted = match (h_start, h_end) {

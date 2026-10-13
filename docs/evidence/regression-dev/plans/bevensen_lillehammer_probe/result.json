@@ -1,0 +1,32 @@
+{
+  "status": "failed",
+  "profile": "car",
+  "eco": true,
+  "stay_in_country": false,
+  "graph": "pack",
+  "wall_s": 20.18,
+  "duration_ms": 13660,
+  "distance_km": 68.97649067649131,
+  "polyline_points": 180,
+  "spike_count": 1,
+  "spikes": [
+    {
+      "kind": "offset",
+      "i": 51,
+      "lat": 60.924302000000004,
+      "lon": 10.684837400000001,
+      "xt": 427.386116059345,
+      "chord": 875.038107609941
+    }
+  ],
+  "from": [
+    "BadBevensen",
+    53.079686,
+    10.587198
+  ],
+  "to": [
+    "Lillehammer",
+    61.114545,
+    10.467007
+  ]
+}

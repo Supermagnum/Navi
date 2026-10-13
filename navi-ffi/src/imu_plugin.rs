@@ -23,16 +23,11 @@ use navi_plugin_host::{
     Position, SensorAvailabilityView, SensorBackend, SensorHub, SensorHubConfig, SensorKind,
     SensorReadView, SensorSample,
 };
-use navi_plugin_imu_engine::{
-    AlarmConfig, CALIBRATION_INSTRUCTION, KEY_ALARM, KEY_CMD, KEY_HIST, KEY_STATE,
-};
+use navi_plugin_imu_engine::{CALIBRATION_INSTRUCTION, KEY_CMD, KEY_HIST, KEY_STATE};
 
 const IMU_NAME: &str = "imu";
 const ENABLE_FILE: &str = "plugin_enable.json";
 const KV_REL: &str = "plugin_kv/imu.json";
-/// One-shot: older builds persisted `imu_alarm.enabled=true` for STREAM_ALARM beeps.
-/// Host alarm audio is gone; clear that flag once so legacy KV cannot look "armed".
-const KEY_ALARM_AUDIO_CLEARED: &str = "imu_alarm_audio_cleared_v1";
 const PLUGINS_REL: &str = "plugins";
 
 /// Reads faster than this get the cached sample; also the sensor sampling period.
@@ -138,43 +133,6 @@ pub struct ImuTickResult {
     /// Plugin display state (`live.imu_state` JSON) when the guest ran.
     pub state_json: Option<String>,
     pub elapsed_ms: u64,
-}
-
-/// User-configurable tilt alarm (persisted by the plugin KV under `imu_alarm`).
-#[derive(uniffi::Record, Debug, Clone, PartialEq)]
-pub struct ImuAlarmSettings {
-    pub enabled: bool,
-    pub pitch_warn_deg: f64,
-    pub pitch_danger_deg: f64,
-    pub roll_warn_deg: f64,
-    pub roll_danger_deg: f64,
-    pub hysteresis_deg: f64,
-}
-
-impl From<AlarmConfig> for ImuAlarmSettings {
-    fn from(c: AlarmConfig) -> Self {
-        Self {
-            enabled: c.enabled,
-            pitch_warn_deg: c.pitch_warn_deg,
-            pitch_danger_deg: c.pitch_danger_deg,
-            roll_warn_deg: c.roll_warn_deg,
-            roll_danger_deg: c.roll_danger_deg,
-            hysteresis_deg: c.hysteresis_deg,
-        }
-    }
-}
-
-impl From<ImuAlarmSettings> for AlarmConfig {
-    fn from(s: ImuAlarmSettings) -> Self {
-        Self {
-            enabled: s.enabled,
-            pitch_warn_deg: s.pitch_warn_deg,
-            pitch_danger_deg: s.pitch_danger_deg,
-            roll_warn_deg: s.roll_warn_deg,
-            roll_danger_deg: s.roll_danger_deg,
-            hysteresis_deg: s.hysteresis_deg,
-        }
-    }
 }
 
 struct Session {
@@ -354,38 +312,16 @@ fn ensure_loaded(session: &mut Session) -> Result<Arc<PluginHost>, (ImuCallKind,
     Ok(host)
 }
 
-fn clear_legacy_alarm_sound_enabled(kv: &mut FilePluginKv) {
-    if kv.get(KEY_ALARM_AUDIO_CLEARED).is_some() {
-        return;
-    }
-    if let Some(raw) = kv.get(KEY_ALARM) {
-        if let Ok(mut cfg) = serde_json::from_str::<AlarmConfig>(&raw) {
-            if cfg.enabled {
-                cfg.enabled = false;
-                if let Ok(json) = serde_json::to_string(&cfg.sanitized()) {
-                    if let Err(e) = kv.set(KEY_ALARM, &json) {
-                        log::warn!(target: "NaviImu", "legacy alarm clear failed: {e}");
-                    }
-                }
-            }
-        }
-    }
-    if let Err(e) = kv.set(KEY_ALARM_AUDIO_CLEARED, "1") {
-        log::warn!(target: "NaviImu", "alarm audio clear marker failed: {e}");
-    }
-}
-
 /// Bind the plugin session to the app files dir and the Android sensor backend.
 /// Safe to call more than once: the previous session's sensors are released.
 #[uniffi::export]
 pub fn imu_plugin_configure(files_dir: String, platform: Arc<dyn SensorPlatform>) -> String {
     crate::init_native_logging();
     let files_dir = PathBuf::from(files_dir);
-    let mut kv = match FilePluginKv::open(files_dir.join(KV_REL)) {
+    let kv = match FilePluginKv::open(files_dir.join(KV_REL)) {
         Ok(kv) => kv,
         Err(e) => return format!("FAIL: plugin kv: {e}"),
     };
-    clear_legacy_alarm_sound_enabled(&mut kv);
     let hub = SensorHub::new(
         Box::new(PlatformBackend { platform }),
         SensorHubConfig {
@@ -583,33 +519,6 @@ pub fn imu_plugin_request_reset() -> String {
     send_command("reset")
 }
 
-/// Current alarm settings (defaults when none stored; always sanitised).
-#[uniffi::export]
-pub fn imu_plugin_alarm_settings() -> ImuAlarmSettings {
-    let guard = session_lock().lock().expect("imu session lock");
-    let stored = guard
-        .as_ref()
-        .and_then(|s| s.kv.lock().ok().and_then(|kv| kv.get(KEY_ALARM)))
-        .and_then(|raw| serde_json::from_str::<AlarmConfig>(&raw).ok())
-        .unwrap_or_default();
-    stored.sanitized().into()
-}
-
-/// Persist alarm settings; returns the sanitised values actually stored.
-#[uniffi::export]
-pub fn imu_plugin_set_alarm_settings(settings: ImuAlarmSettings) -> ImuAlarmSettings {
-    let cfg = AlarmConfig::from(settings).sanitized();
-    let guard = session_lock().lock().expect("imu session lock");
-    if let Some(session) = guard.as_ref() {
-        if let (Ok(json), Ok(mut kv)) = (serde_json::to_string(&cfg), session.kv.lock()) {
-            if let Err(e) = kv.set(KEY_ALARM, &json) {
-                log::warn!(target: "NaviImu", "alarm settings not saved: {e}");
-            }
-        }
-    }
-    cfg.into()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -692,36 +601,5 @@ mod tests {
             imu_plugin_calibration_instruction(),
             "Find a level concrete surface, like the floor of your garage, then tap Calibrate. The unit will then use the current values as level."
         );
-    }
-
-    #[test]
-    fn alarm_settings_round_trip_and_sanitise() {
-        let dir = tempfile::tempdir().unwrap();
-        let platform: Arc<dyn SensorPlatform> = Arc::new(FakePlatform::default());
-        assert_eq!(
-            imu_plugin_configure(dir.path().display().to_string(), platform),
-            "OK"
-        );
-        let defaults = imu_plugin_alarm_settings();
-        assert!(!defaults.enabled);
-
-        let stored = imu_plugin_set_alarm_settings(ImuAlarmSettings {
-            enabled: true,
-            pitch_warn_deg: 35.0,
-            pitch_danger_deg: 10.0,
-            roll_warn_deg: f64::NAN,
-            roll_danger_deg: 200.0,
-            hysteresis_deg: 1.0,
-        });
-        // Danger is raised to at least warn; NaN falls back to the default; clamp to 89.
-        assert_eq!(stored.pitch_danger_deg, 35.0);
-        assert_eq!(stored.roll_warn_deg, AlarmConfig::default().roll_warn_deg);
-        assert_eq!(stored.roll_danger_deg, 89.0);
-        assert_eq!(imu_plugin_alarm_settings(), stored);
-
-        // Persisted across a new session over the same files dir.
-        let platform: Arc<dyn SensorPlatform> = Arc::new(FakePlatform::default());
-        imu_plugin_configure(dir.path().display().to_string(), platform);
-        assert_eq!(imu_plugin_alarm_settings(), stored);
     }
 }

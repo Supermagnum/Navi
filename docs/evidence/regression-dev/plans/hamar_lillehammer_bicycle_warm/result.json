@@ -1,0 +1,32 @@
+{
+  "status": "done",
+  "profile": "bicycle",
+  "eco": false,
+  "stay_in_country": false,
+  "graph": "pack",
+  "wall_s": 26.2,
+  "duration_ms": 22694,
+  "distance_km": 68.9687184642874,
+  "polyline_points": 179,
+  "spike_count": 1,
+  "spikes": [
+    {
+      "kind": "offset",
+      "i": 50,
+      "lat": 60.924302000000004,
+      "lon": 10.684837400000001,
+      "xt": 427.386116059345,
+      "chord": 875.038107609941
+    }
+  ],
+  "from": [
+    "Hamar",
+    60.794721,
+    11.068055
+  ],
+  "to": [
+    "Lillehammer",
+    61.114545,
+    10.467007
+  ]
+}

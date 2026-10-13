@@ -1,0 +1,26 @@
+{
+  "t_ms": 7625253,
+  "distance_km": 241.05117327002108,
+  "report": "TEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\nlong_trip_chunked=true; hops=2; chunk_deg=1.15; stretch_joint_repair_max=4\nchunk_leg1=60.57781,11.27117 -> 60.90991,10.81569\nhop_mem hop=1 peak_rss_mb=640\n--- hop_try1 report ---\nTEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\nprofile=Car; routing=Car; start=60.577811,11.271167; end=60.909913,10.815688; vias=0; use_eco=true; long_trip_enabled=false\npath_covering_nodes=769423; path_over_node_limit=false; clipped_nodes=209304; clipped_fits=true; needs_corridor=false; stage_b=true\nallowed_countries=none\navoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=true\ndatex_impacts=0; datex_block=0; datex_penalize=0\neco_regen=0.000\npoi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true\nbbox=60.228,10.466,61.260,11.660; pad=0.35; edge_clip=CorridorBand; tile_budget=20; corridor_pts=106\nbuild_s=2.71; cache_hit=false; pack_hit=true; nodes=140690; edges=302264; pad_attempts=[0.35]\npack_load_ms=2285; eco_reweight_ms=420; datex_bind_ms=0; snap_ms=427; search_ms=93; expansions=41036\ngraph_ferry_edges=0\nseasonal_closure_excluded_edges=4\nsnap_start=60.577845,11.270888 dist_m=16; snap_end=60.909913,10.815688 dist_m=0; snap_max_m=750\nroute_ferry_legs=0\nroute_ferry_fp=\nroute_tunnel_count=0\nroute_tunnel_fp=\npoi_skipped=chunk_leg\npoi_pack_hit=false\nmotor_break_interval_km=148.4 (soft rest-interval hours → km via trip speed)\nmotor_multi_day: days=1; multi_day=false\nrest_place_count=0\neco_climb_m=433.6; eco_descent_m=365.1; eco_uphill_j=20590041; eco_downhill_j=9453432; eco_regen_credit_j=0; eco_net_j=30043473\npriority_path_share_pct=15.94; motorway_share_pct=84.06\ndistance_km=51.846; eta_min=31.4; path_nodes=162; path_cost=30463238; polyline_chars=32204; break_pois=[]; route_uses_ferry=false\nPASS\nhop1_poly_km=51.788; hop1_km=51.846; hop1_poly_agree_0_5pct=true\n--- leg1 report ---\nTEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\nprofile=",
+  "polyline_chars": 184217,
+  "days_json": "[{\"compensation\":\"\",\"date\":\"\",\"day_index\":1,\"distance_km\":241.05117327002108,\"driving_hours\":2.91525755525811,\"end_km\":241.05117327002108,\"is_final\":true,\"not_in_cab\":false,\"overnight_found\":false,\"overnight_name\":\"\",\"profile\":\"car\",\"rest_hours\":0.0,\"rest_kind\":\"\",\"rest_label\":\"\",\"start_km\":0.0}]",
+  "break_poi_count": 1,
+  "start": "Espa",
+  "end": "Dombas",
+  "long_trip_status": "Ostlandet (1 of 1)=Installed",
+  "enumerations": {
+    "route_tunnel_count": 9,
+    "route_tunnel_fp": "Skarpsnotunnelen@0.33|Moelvtunnelen@0.20|Mosoddentunnelen@0.21|Øyertunnelen@3.85|Hundorptunnelen@4.29|E 6@0.04|Teigkamptunnelen@3.76|E 6@0.05|Gudbrandsdalsvegen@0.02",
+    "route_ferry_legs": 0,
+    "route_ferry_fp": "",
+    "rest_place_count": 1,
+    "rest_place_names": [
+      "Krekke rasteplass"
+    ],
+    "attraction_count": 0,
+    "attraction_by_type": {},
+    "wild_camping_site_count": 0,
+    "wild_camping_status_kind": "",
+    "wild_camping_status_message": ""
+  }
+}

@@ -6,7 +6,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
-import uniffi.navi.ImuAlarmSettings
 import uniffi.navi.ImuCallKind
 import uniffi.navi.ImuTickResult
 
@@ -23,10 +22,6 @@ interface ImuPluginApi {
     fun requestReset(): String
 
     fun releaseSensors()
-
-    fun alarmSettings(): ImuAlarmSettings
-
-    fun setAlarmSettings(settings: ImuAlarmSettings): ImuAlarmSettings
 }
 
 /** What the settings UI renders. */
@@ -43,8 +38,7 @@ data class ImuUiState(
 
 /**
  * Host-side IMU plugin logic: tick the guest, publish its state, and route
- * Calibrate / Reset / alarm settings. Tilt levels are display-only; the host
- * never plays alarm audio.
+ * Calibrate / Reset. Live pitch / tilt / heading are display-only.
  */
 class ImuPluginController(
     private val api: ImuPluginApi,
@@ -117,10 +111,6 @@ class ImuPluginController(
     fun calibrate(): String = api.requestCalibrate()
 
     fun reset(): String = api.requestReset()
-
-    fun alarmSettings(): ImuAlarmSettings = api.alarmSettings()
-
-    fun setAlarmSettings(settings: ImuAlarmSettings): ImuAlarmSettings = api.setAlarmSettings(settings)
 
     fun release() {
         api.releaseSensors()

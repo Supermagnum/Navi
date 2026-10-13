@@ -1,0 +1,25 @@
+{
+  "status": "failed",
+  "profile": "car",
+  "eco": false,
+  "stay_in_country": false,
+  "graph": "pack",
+  "wall_s": 347.55,
+  "duration_ms": 29,
+  "distance_km": null,
+  "polyline_points": 0,
+  "spike_count": 0,
+  "spikes": [],
+  "from": [
+    "Bad Bevensen",
+    53.079686,
+    10.587198
+  ],
+  "to": [
+    "Dalsoren",
+    61.4433766,
+    7.4614016
+  ],
+  "enumerations": null,
+  "enum_meta": null
+}

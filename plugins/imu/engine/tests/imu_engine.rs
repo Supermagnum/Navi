@@ -1,13 +1,13 @@
 //! Engine behaviour against a scripted host: synthetic tilted mount, calibration
-//! accept / reject, persistence, reset, missing sensors, alarm, heading.
+//! accept / reject, persistence, reset, missing sensors, heading.
 
 use std::collections::HashMap;
 
 use navi_plugin_imu_engine::math::{mat_vec, rot_x, rot_y, Mat3, Vec3};
 use navi_plugin_imu_engine::{
-    tick, AlarmLevel, DateStamp, Host, NoticeKind, Sample, State, Status, CALIBRATION_INSTRUCTION,
-    KEY_ALARM, KEY_CMD, KEY_MOUNT, SENSOR_ACCELEROMETER, SENSOR_GRAVITY, SENSOR_GYROSCOPE,
-    SENSOR_LINEAR_ACCELERATION, SENSOR_MAGNETIC_FIELD,
+    tick, DateStamp, Host, NoticeKind, Sample, State, Status, CALIBRATION_INSTRUCTION, KEY_CMD,
+    KEY_MOUNT, SENSOR_ACCELEROMETER, SENSOR_GRAVITY, SENSOR_GYROSCOPE, SENSOR_LINEAR_ACCELERATION,
+    SENSOR_MAGNETIC_FIELD,
 };
 
 const G: f64 = 9.806_65;
@@ -302,7 +302,6 @@ fn missing_sensor_reports_no_sensor_and_refuses_calibration() {
     let s = tick(&mut h);
     assert_eq!(s.status, Status::NoSensor);
     assert!(s.pitch_deg.is_none() && s.roll_deg.is_none() && s.heading_deg.is_none());
-    assert_eq!(s.alarm, AlarmLevel::None);
     assert_eq!(s.notice.map(|n| n.kind), Some(NoticeKind::NoSensor));
     assert!(!h.kv.contains_key(KEY_MOUNT));
 }
@@ -348,70 +347,6 @@ fn storage_unavailable_refuses_to_calibrate_and_says_so() {
         s.notice.map(|n| n.kind),
         Some(NoticeKind::StorageUnavailable)
     );
-}
-
-#[test]
-fn alarm_levels_follow_user_thresholds_with_hysteresis() {
-    let (mut h, mut i) = calibrated_host(SENSOR_GRAVITY);
-    h.kv.insert(
-        KEY_ALARM.into(),
-        r#"{"enabled":true,"pitch_warn_deg":10,"pitch_danger_deg":20,"roll_warn_deg":8,"roll_danger_deg":16,"hysteresis_deg":2}"#.into(),
-    );
-    let mut level = |h: &mut TestHost, pitch: f64, roll: f64| {
-        i += 1;
-        feed_still(h, SENSOR_GRAVITY, pitch, roll, i, 1).alarm
-    };
-    assert_eq!(level(&mut h, 5.0, 0.0), AlarmLevel::None);
-    assert_eq!(level(&mut h, 11.0, 0.0), AlarmLevel::Warning);
-    assert_eq!(
-        level(&mut h, 9.0, 0.0),
-        AlarmLevel::Warning,
-        "hysteresis holds"
-    );
-    assert_eq!(level(&mut h, 6.0, 0.0), AlarmLevel::None);
-    assert_eq!(level(&mut h, 0.0, 17.0), AlarmLevel::Danger);
-    assert_eq!(
-        level(&mut h, 0.0, 15.0),
-        AlarmLevel::Danger,
-        "hysteresis holds"
-    );
-    assert_eq!(level(&mut h, 0.0, 12.0), AlarmLevel::Warning);
-    assert_eq!(
-        level(&mut h, -21.0, 0.0),
-        AlarmLevel::Danger,
-        "nose down counts"
-    );
-}
-
-#[test]
-fn alarm_can_be_disabled_and_bad_config_is_sanitised() {
-    let (mut h, i) = calibrated_host(SENSOR_GRAVITY);
-    h.kv.insert(KEY_ALARM.into(), r#"{"enabled":false}"#.into());
-    let s = feed_still(&mut h, SENSOR_GRAVITY, 40.0, 0.0, i, 1);
-    assert_eq!(s.alarm, AlarmLevel::None);
-    assert!(!s.alarm_enabled);
-
-    // danger below warn is raised to warn; garbage falls back to defaults
-    // (alarm stays off unless enabled is set — default is opt-in).
-    h.kv.insert(
-        KEY_ALARM.into(),
-        r#"{"enabled":true,"pitch_warn_deg":25,"pitch_danger_deg":5}"#.into(),
-    );
-    let s = feed_still(&mut h, SENSOR_GRAVITY, 26.0, 0.0, i + 1, 1);
-    assert_eq!(s.alarm, AlarmLevel::Danger);
-    h.kv.insert(KEY_ALARM.into(), "not json".into());
-    let s = feed_still(&mut h, SENSOR_GRAVITY, 35.0, 0.0, i + 2, 1);
-    assert_eq!(
-        s.alarm,
-        AlarmLevel::None,
-        "corrupt config → defaults (alarm off)"
-    );
-    h.kv.insert(
-        KEY_ALARM.into(),
-        r#"{"enabled":true,"pitch_warn_deg":20,"pitch_danger_deg":30}"#.into(),
-    );
-    let s = feed_still(&mut h, SENSOR_GRAVITY, 35.0, 0.0, i + 3, 1);
-    assert_eq!(s.alarm, AlarmLevel::Danger, "enabled + defaults 20/30");
 }
 
 #[test]

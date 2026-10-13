@@ -16,7 +16,7 @@ use navi_plugin_host::{
 };
 use navi_plugin_imu_engine::math::{mat_mul, mat_vec, rot_x, rot_y, Vec3};
 use navi_plugin_imu_engine::{
-    AlarmLevel, NoticeKind, State, Status, CALIBRATION_INSTRUCTION, KEY_CMD, KEY_MOUNT, KEY_STATE,
+    NoticeKind, State, Status, CALIBRATION_INSTRUCTION, KEY_CMD, KEY_MOUNT, KEY_STATE,
 };
 
 const G: f64 = 9.806_65;
@@ -362,28 +362,6 @@ fn missing_sensors_degrade_without_trapping_in_wasm() {
     rig.host.call(Box::new(rig.world.clone())).unwrap();
     let s = rig.state();
     assert!(s.pitch_deg.is_some() && s.heading_deg.is_none());
-}
-
-#[test]
-fn alarm_level_comes_from_host_written_thresholds_in_wasm() {
-    let mut rig = Rig::new(ALL_IMU);
-    rig.world
-        .0
-        .lock()
-        .unwrap()
-        .kv
-        .set(
-            "imu_alarm",
-            r#"{"pitch_warn_deg":10,"pitch_danger_deg":18}"#,
-        )
-        .unwrap();
-    rig.command("calibrate");
-    for _ in 0..13 {
-        rig.tick_still(0.0, 0.0);
-    }
-    assert_eq!(rig.tick_still(4.0, 0.0).alarm, AlarmLevel::None);
-    assert_eq!(rig.tick_still(12.0, 0.0).alarm, AlarmLevel::Warning);
-    assert_eq!(rig.tick_still(19.0, 0.0).alarm, AlarmLevel::Danger);
 }
 
 #[test]

@@ -15,7 +15,7 @@ smoothly when a good fix returns.
 | Mount calibration (#162) | IMU plugin KV (`imu_mount`); host reads offsets for vehicle-frame heading | Calibration stays one place; DR reuses it. |
 | Road / route geometry | Active route sample chain, else nearest graph edge (`is_tunnel` on edges) | Host already has `RouteProgressTracker` samples; graph edges come from installed packs. |
 
-The IMU wasm guest stays pitch / tilt / compass + tilt alarm. It does **not**
+The IMU wasm guest stays pitch / tilt / compass. It does **not**
 publish a map position. If a future design moved estimate generation into a
 plugin, the guest would deliver an estimated fix only through a HostApi write
 capability that the host sanity-checks (accuracy bounds, road snap, give-up)

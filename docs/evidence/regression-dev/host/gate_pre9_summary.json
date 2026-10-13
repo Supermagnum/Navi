@@ -1,0 +1,211 @@
+{
+  "binary": "clean worktree gate-6f4ef92b @ 6f4ef92b (no WIP)",
+  "packs": "/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/navi-gate/packs",
+  "refs": "/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi/geojson-routes",
+  "settings": "car, eco=false, toll=allow, long_trip=true, vias as stored",
+  "rows": [
+    {
+      "id": "a_bevensen_vaga_dalsoren",
+      "km": 1440.723,
+      "baseline_km": 1440.7,
+      "wall_s": 41.15,
+      "baseline_wall_s": 33.884609387,
+      "via_m": [
+        1.540923022098433
+      ],
+      "ferries": [
+        "R\u00f8dby (DK) - Puttgarden (D)"
+      ],
+      "gate_status": "PASS",
+      "verdict": "PASS identical"
+    },
+    {
+      "id": "b_brenneriroa_aga",
+      "km": 375.33,
+      "baseline_km": null,
+      "wall_s": 6.92,
+      "baseline_wall_s": 4.744616305,
+      "via_m": [],
+      "ferries": [
+        "Utne - Kinsarvik"
+      ],
+      "gate_status": "FAIL",
+      "verdict": "EXPLAINED wall-only; route identical"
+    },
+    {
+      "id": "c_brenneriroa_grotli_floro",
+      "km": 528.737,
+      "baseline_km": null,
+      "wall_s": 6.6,
+      "baseline_wall_s": 4.732729963,
+      "via_m": [
+        0.2731594528834726
+      ],
+      "ferries": [],
+      "gate_status": "FAIL",
+      "verdict": "EXPLAINED wall-only; route identical"
+    },
+    {
+      "id": "d_bevensen_vaga_dalsoren_avoid_ferries",
+      "km": 1586.813,
+      "baseline_km": null,
+      "wall_s": 69.45,
+      "baseline_wall_s": null,
+      "via_m": [
+        1.540923022098433
+      ],
+      "ferries": [],
+      "gate_status": "PASS",
+      "verdict": "PASS identical"
+    },
+    {
+      "id": "e_elsa_sjuvass",
+      "km": 2159.825,
+      "baseline_km": 2159.825,
+      "wall_s": 26.02,
+      "baseline_wall_s": 20.540905392,
+      "via_m": [],
+      "ferries": [],
+      "gate_status": "FAIL",
+      "verdict": "EXPLAINED wall-only; route identical"
+    },
+    {
+      "id": "f_hamar_stange",
+      "km": 16.168,
+      "baseline_km": null,
+      "wall_s": 0.36,
+      "baseline_wall_s": 0.836881336,
+      "via_m": [],
+      "ferries": [],
+      "gate_status": "PASS",
+      "verdict": "PASS identical"
+    },
+    {
+      "id": "g_hamar_lillehammer",
+      "km": 60.802,
+      "baseline_km": null,
+      "wall_s": 1.27,
+      "baseline_wall_s": 1.423699624,
+      "via_m": [],
+      "ferries": [],
+      "gate_status": "PASS",
+      "verdict": "PASS identical"
+    },
+    {
+      "id": "h_oslo_lillestrom",
+      "km": 22.427,
+      "baseline_km": 22.427,
+      "wall_s": 2.77,
+      "baseline_wall_s": 2.244608624,
+      "via_m": [],
+      "ferries": [],
+      "gate_status": "PASS",
+      "verdict": "PASS identical"
+    },
+    {
+      "id": "i_hamburg_bergedorf",
+      "km": 19.475,
+      "baseline_km": null,
+      "wall_s": 1.07,
+      "baseline_wall_s": null,
+      "via_m": [],
+      "ferries": [],
+      "gate_status": "PASS",
+      "verdict": "PASS identical"
+    },
+    {
+      "id": "j_copenhagen_taastrup",
+      "km": 22.214,
+      "baseline_km": 22.214,
+      "wall_s": 1.53,
+      "baseline_wall_s": 1.23120516,
+      "via_m": [],
+      "ferries": [],
+      "gate_status": "PASS",
+      "verdict": "PASS identical"
+    },
+    {
+      "id": "k_60_276_10_816",
+      "km": 136.448,
+      "baseline_km": 136.448,
+      "wall_s": 2.87,
+      "baseline_wall_s": 2.431549182,
+      "via_m": [],
+      "ferries": [],
+      "gate_status": "PASS",
+      "verdict": "PASS identical"
+    },
+    {
+      "id": "l_raufoss_bergen",
+      "km": 428.494,
+      "baseline_km": 428.494,
+      "wall_s": 6.14,
+      "baseline_wall_s": 5.44801756,
+      "via_m": [],
+      "ferries": [],
+      "gate_status": "PASS",
+      "verdict": "PASS identical"
+    },
+    {
+      "id": "m_oslo_lillehammer",
+      "km": 186.173,
+      "baseline_km": 186.2,
+      "wall_s": 9.2,
+      "baseline_wall_s": 6.56944103,
+      "via_m": [],
+      "ferries": [],
+      "gate_status": "FAIL",
+      "verdict": "EXPLAINED wall-only; route identical"
+    },
+    {
+      "id": "n_hamar_oslo",
+      "km": 130.134,
+      "baseline_km": 130.1,
+      "wall_s": 6.87,
+      "baseline_wall_s": 4.940829616,
+      "via_m": [],
+      "ferries": [],
+      "gate_status": "FAIL",
+      "verdict": "EXPLAINED wall-only; route identical"
+    },
+    {
+      "id": "o_lillehammer_gjovik_honefoss",
+      "km": 137.947,
+      "baseline_km": 137.9,
+      "wall_s": 2.24,
+      "baseline_wall_s": 1.7717832119999999,
+      "via_m": [
+        40.5390662490106
+      ],
+      "ferries": [],
+      "gate_status": "FAIL",
+      "verdict": "EXPLAINED wall-only; route identical"
+    },
+    {
+      "id": "p_espa_atnbrua",
+      "km": 187.645,
+      "baseline_km": 187.6,
+      "wall_s": 4.44,
+      "baseline_wall_s": 3.663438493,
+      "via_m": [],
+      "ferries": [],
+      "gate_status": "PASS",
+      "verdict": "PASS identical"
+    }
+  ],
+  "bevensen_eco": {
+    "off": {
+      "km": 1440.723,
+      "via_m": 1.54,
+      "ferry": "R\u00f8dby-Puttgarden",
+      "rv15_otta_lom": "pass"
+    },
+    "on": {
+      "km": 1435.169,
+      "via_m": 1.54,
+      "ferry": "R\u00f8dby-Puttgarden",
+      "rv15_otta_lom": "97.1% Ottadalsvegen"
+    }
+  },
+  "issue": "https://github.com/Supermagnum/Navi/issues/168"
+}

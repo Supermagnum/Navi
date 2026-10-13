@@ -1,0 +1,5 @@
+No avoid-bridges routing flag or UI toggle in app/core/navi-ffi.
+Bridge-related avoidance is via vehicle clearance tags on ways
+(maxheight/maxwidth/maxweight/maxaxleload), e.g. Stai bru / Atna hengebru
+in core/tests/innlandet_real_world_limits.rs.
+Stay-in-country can exclude cross-border bridges (Svinesund) when ISO filter on.

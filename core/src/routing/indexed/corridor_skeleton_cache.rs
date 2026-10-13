@@ -56,6 +56,17 @@ fn profile_slug(profile: RoutingProfile) -> &'static str {
     }
 }
 
+/// Server packs ship car(+foot) graphs; Truck/MobileHome alias car tiles.
+/// Corridor skeletons are built from those same car tiles, so freshness and
+/// builds must use Car — otherwise Truck plans loop on `skeleton_preparing`
+/// forever while car sidecars sit ready on disk.
+fn skeleton_profile(profile: RoutingProfile) -> RoutingProfile {
+    match profile {
+        RoutingProfile::Truck => RoutingProfile::Car,
+        other => other,
+    }
+}
+
 fn region_label(stem: &str) -> String {
     stem.trim_end_matches("-latest")
         .trim_end_matches("-latest.osm")
@@ -194,6 +205,7 @@ fn want_fingerprint(home: &Path, stem: &str, profile: RoutingProfile) -> String 
 
 /// True when skeleton binary/JSON + meta match the current pack / neighbor fingerprint.
 pub fn skeleton_fresh(home: &Path, stem: &str, profile: RoutingProfile) -> bool {
+    let profile = skeleton_profile(profile);
     let Some(skel) = crate::routing::corridor_skeleton::resolve_skeleton_path(home, stem) else {
         return false;
     };
@@ -493,6 +505,7 @@ pub fn ensure_corridor_skeleton(
     stem: &str,
     profile: RoutingProfile,
 ) -> anyhow::Result<()> {
+    let profile = skeleton_profile(profile);
     if skeleton_fresh(home, stem, profile) {
         return Ok(());
     }
@@ -589,6 +602,7 @@ pub fn stems_missing_corridor_skeleton(
     route_points: &[(f64, f64)],
     profile: RoutingProfile,
 ) -> Vec<(PathBuf, String)> {
+    let profile = skeleton_profile(profile);
     if route_points.len() < 2 {
         return Vec::new();
     }
@@ -657,6 +671,19 @@ mod tests {
         write_skeleton(home, "b-latest");
         assert!(skeleton_fresh(home, "a-latest", RoutingProfile::Car));
         assert!(skeleton_fresh(home, "b-latest", RoutingProfile::Car));
+    }
+
+    #[test]
+    fn truck_reuses_car_corridor_skeleton_fingerprint() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        install(home, "a-latest", b"pack a");
+        write_skeleton(home, "a-latest");
+        assert!(skeleton_fresh(home, "a-latest", RoutingProfile::Car));
+        assert!(
+            skeleton_fresh(home, "a-latest", RoutingProfile::Truck),
+            "Truck/MobileHome must accept car skeletons (graphs alias car tiles)"
+        );
     }
 
     #[test]

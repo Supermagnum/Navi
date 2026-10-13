@@ -5,4 +5,7 @@
 
 mod path;
 
-pub use path::{least_cost_path, TerrainPath, TERRAIN_CELL_M, TERRAIN_MAX_GAP_M};
+pub use path::{
+    least_cost_path, least_cost_path_chained, TerrainPath, TERRAIN_CELL_M,
+    TERRAIN_MAX_CHAINED_GAP_M, TERRAIN_MAX_GAP_M,
+};

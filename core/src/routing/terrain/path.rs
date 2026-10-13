@@ -9,8 +9,12 @@ use crate::routing::wetland::{WetlandClass, WetlandIndex, WETLAND_SOFT_COST_MULT
 /// Nominal cell size for the terrain cost surface (metres).
 pub const TERRAIN_CELL_M: f64 = 40.0;
 
-/// Refuse terrain gap-fill when crow-flies distance exceeds this (metres).
+/// Refuse a *single* terrain A* when crow-flies distance exceeds this (metres).
 pub const TERRAIN_MAX_GAP_M: f64 = 15_000.0;
+
+/// Absolute ceiling for chained terrain gap-fill across geodesic pads (metres).
+/// Pads are only stitching points for A* chunks — they are not route waypoints.
+pub const TERRAIN_MAX_CHAINED_GAP_M: f64 = 120_000.0;
 
 const STEEP_GRADE: f64 = 0.45;
 const IMPASSABLE: f64 = 1.0e12;
@@ -174,6 +178,58 @@ pub fn least_cost_path(
     Ok(TerrainPath { coords, length_m })
 }
 
+/// Least-cost off-trail path that may exceed [`TERRAIN_MAX_GAP_M`] by chaining
+/// geodesic chunks. Intermediate chunk joints are **not** graph snaps / vias —
+/// they only bound each A* so the polyline does not spur out-and-back to pads.
+pub fn least_cost_path_chained(
+    elevation: &ElevationService,
+    wetlands: &WetlandIndex,
+    eco: &EcoConfig,
+    a_lat: f64,
+    a_lon: f64,
+    b_lat: f64,
+    b_lon: f64,
+) -> Result<TerrainPath, String> {
+    let crow = haversine_m(a_lat, a_lon, b_lat, b_lon);
+    if crow <= TERRAIN_MAX_GAP_M {
+        return least_cost_path(elevation, wetlands, eco, a_lat, a_lon, b_lat, b_lon);
+    }
+    if crow > TERRAIN_MAX_CHAINED_GAP_M {
+        return Err(format!(
+            "terrain gap too large ({crow:.0} m > {TERRAIN_MAX_CHAINED_GAP_M:.0} m)"
+        ));
+    }
+    let step = TERRAIN_MAX_GAP_M * 0.9;
+    let n = (crow / step).ceil() as usize;
+    if n < 2 {
+        return least_cost_path(elevation, wetlands, eco, a_lat, a_lon, b_lat, b_lon);
+    }
+    let mut coords: Vec<(f64, f64)> = Vec::new();
+    let mut length_m = 0.0;
+    let mut prev_lat = a_lat;
+    let mut prev_lon = a_lon;
+    for i in 1..=n {
+        let t = (i as f64) / (n as f64);
+        let lat = a_lat + (b_lat - a_lat) * t;
+        let lon = a_lon + (b_lon - a_lon) * t;
+        let chunk = least_cost_path(elevation, wetlands, eco, prev_lat, prev_lon, lat, lon)?;
+        if coords.is_empty() {
+            coords = chunk.coords;
+        } else {
+            // Skip duplicate joint.
+            coords.extend(chunk.coords.into_iter().skip(1));
+        }
+        length_m += chunk.length_m;
+        prev_lat = lat;
+        prev_lon = lon;
+    }
+    // Ensure exact endpoint.
+    if let Some(last) = coords.last_mut() {
+        *last = (b_lat, b_lon);
+    }
+    Ok(TerrainPath { coords, length_m })
+}
+
 fn cost_to_u64(cost: f64) -> u64 {
     (cost.max(0.0) * 1000.0).round() as u64
 }
@@ -199,6 +255,16 @@ mod tests {
         let wet = WetlandIndex::default();
         let eco = EcoConfig::for_profile(crate::config::Profile::Hiking);
         let err = least_cost_path(&elev, &wet, &eco, 60.0, 10.0, 61.0, 11.0).unwrap_err();
+        assert!(err.contains("too large"), "{err}");
+    }
+
+    #[test]
+    fn chained_refuses_absurd_ocean_gap() {
+        let elev = ElevationService::new(ElevationCache::new(PathBuf::from("/tmp/no-elev")));
+        let wet = WetlandIndex::default();
+        let eco = EcoConfig::for_profile(crate::config::Profile::Hiking);
+        // ~500 km — above TERRAIN_MAX_CHAINED_GAP_M.
+        let err = least_cost_path_chained(&elev, &wet, &eco, 60.0, 10.0, 64.0, 15.0).unwrap_err();
         assert!(err.contains("too large"), "{err}");
     }
 }

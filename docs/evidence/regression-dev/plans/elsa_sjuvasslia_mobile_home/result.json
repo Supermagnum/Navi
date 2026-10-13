@@ -1,0 +1,23 @@
+{
+  "status": "done",
+  "profile": "mobile_home",
+  "eco": true,
+  "stay_in_country": false,
+  "graph": "pack",
+  "wall_s": 100.95,
+  "duration_ms": 95298,
+  "distance_km": 2214.5092650852766,
+  "polyline_points": 46756,
+  "spike_count": 0,
+  "spikes": [],
+  "from": [
+    "Elsa Sagveien",
+    69.9741435,
+    29.6337571
+  ],
+  "to": [
+    "Sjuvasslia",
+    59.80318,
+    9.39787
+  ]
+}

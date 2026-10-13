@@ -1,0 +1,79 @@
+{
+  "route_km": 1350.1584722807097,
+  "total_wild_camping": 107,
+  "by_country": {
+    "se": 57,
+    "no": 50
+  },
+  "de_dk_accepted": 0,
+  "de_dk_note": "Accepted DE/DK wild-camp cards: 0 (expected for this corridor). Plugin rules: Denmark (dk)=Tier C designated TentSite POIs only (no general wild-camp right); Germany (de)=Land packs (SH/MV/BB Tier B, other L\u00e4nder Tier C germany_other) \u2014 not allemansr\u00e4tt-style wild suggest. Corridor seeds on DE/DK produced no accepted designated TentSite hits in this run; SE/NO Tier A cards dominate. Day1 (0\u2013483 km, overnight Hamnhotellet Kronan) includes DE\u2192DK\u2192SE approaches but only 6 SE accepted sites after entering Sweden.",
+  "stages": [
+    {
+      "day_index": 1,
+      "start_km": 0.0,
+      "end_km": 482.85245676412126,
+      "distance_km": 482.85245676412126,
+      "driving_hours": 6.0,
+      "overnight_name": "Hamnhotellet Kronan",
+      "overnight_found": true,
+      "wild_camping_site_count": 6,
+      "wild_camping_by_country": {
+        "se": 6
+      },
+      "wild_camping_by_subdivision": {
+        "se": 6
+      }
+    },
+    {
+      "day_index": 2,
+      "start_km": 482.85245676412126,
+      "end_km": 965.7049135282425,
+      "distance_km": 482.85245676412126,
+      "driving_hours": 6.0,
+      "overnight_name": "Vestby hyttepark & gjesteg\u00e5rd",
+      "overnight_found": true,
+      "wild_camping_site_count": 61,
+      "wild_camping_by_country": {
+        "se": 51,
+        "no": 10
+      },
+      "wild_camping_by_subdivision": {
+        "se": 51,
+        "no": 2,
+        "no-31": 6,
+        "no-32": 2
+      }
+    },
+    {
+      "day_index": 3,
+      "start_km": 965.7049135282425,
+      "end_km": 1350.1584722807097,
+      "distance_km": 384.4535587524672,
+      "driving_hours": 4.7772799334469624,
+      "overnight_name": null,
+      "overnight_found": false,
+      "wild_camping_site_count": 40,
+      "wild_camping_by_country": {
+        "no": 40
+      },
+      "wild_camping_by_subdivision": {
+        "no-03": 5,
+        "no": 1,
+        "no-32": 1,
+        "no-33": 23,
+        "no-46": 10
+      }
+    }
+  ],
+  "attractions_total": 1,
+  "attractions_by_type": {
+    "amenity-restaurant": 1
+  },
+  "screenshots": [
+    "camping_sheet.png",
+    "camping_map_pins.png",
+    "attractions_hud.png",
+    "route.png"
+  ],
+  "attractions_note": "German T6 route-result attraction_count=1 (amenity-restaurant) from 8 look-ahead samples over 1350 km \u2014 thin by design of uniqueAttractionTally sampling. Live HUD on same build showed POI look-ahead (e.g. Il Teatro). Hamar\u2192Lillehammer with --attractions previously tallied 5 types. Toggle navi_attractions / poiLookaheadEnabled wiring verified; data depends on POI look-ahead packs covering sample points."
+}

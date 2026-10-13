@@ -1,0 +1,27 @@
+{
+  "t_ms": 13538022,
+  "distance_km": 79.60477304288597,
+  "report": "TEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\nprofile=Bicycle; routing=Bicycle; start=60.794721,11.068055; end=61.114545,10.467007; vias=0; use_eco=true; long_trip_enabled=true\npath_covering_nodes=0; path_over_node_limit=false; clipped_nodes=0; clipped_fits=true; needs_corridor=false; stage_b=false\nallowed_countries=none\navoid_motorways=true; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=true\ndatex_impacts=25; datex_block=0; datex_penalize=25\neco_regen=0.000\npoi_search_radius_m=10500; cabin_radius_m=10500; network_hut_radius_m=25000; network_hut_pref_m=10500; require_road_link=false\nbbox=60.680,10.250,61.240,11.285; pad=0.11; edge_clip=DirectEllipse { widen: 0 }; tile_budget=14; corridor_pts=2\ndirect_area=ellipse factor=1.15 allowance_km=10 strips=14\ndirect_area_edge_run_km=-0.0 route_km=79.6\nbuild_s=17.20; cache_hit=false; pack_hit=false; nodes=114846; edges=267585; pad_attempts=[0.11005239999999994]\npack_load_ms=274; eco_reweight_ms=184; datex_bind_ms=45; snap_ms=373; search_ms=215; expansions=129696\ngraph_ferry_edges=0\nseasonal_closure_excluded_edges=0\nsnap_start=60.794531,11.068203 dist_m=23; snap_end=61.114260,10.466570 dist_m=39; snap_max_m=500\nroute_ferry_legs=0\nroute_ferry_fp=\nroute_tunnel_count=6\nroute_tunnel_fp=unnamed@0.02|unnamed@0.01|unnamed@0.02|unnamed@0.01|unnamed@0.02|unnamed@0.01\npoi_pack_hit=true\nmotor_break_interval_km=28.2 (soft rest-interval hours → km via trip speed)\nmotor_multi_day: days=1; multi_day=false\nrest_place_count=2\neco_climb_m=1251.6; eco_descent_m=1183.8; eco_uphill_j=2061541; eco_downhill_j=659268; eco_regen_credit_j=0; eco_net_j=2720809\npriority_path_share_pct=100.00; motorway_share_pct=0.00\ndistance_km=79.605; eta_min=157.0; path_nodes=690; path_cost=5091480; polyline_chars=97933; break_pois=[{\"icon\":\"highway-rest_area\",\"kind\":\"rest_area\",\"lat\":60.917418000000005,\"lon\":10.9435509,\"name\":\"Bjørgeberget\"},{\"icon\":\"tourism-attraction\",\"kind\":\"amenity\",\"lat\":61.110747,\"lon\":10.797428,\"name\":\"Sjusjøen Hus",
+  "polyline_chars": 97933,
+  "days_json": "[]",
+  "break_poi_count": 2,
+  "start": "Hamar",
+  "end": "Lillehammer",
+  "long_trip_status": "Ostlandet (1 of 1)=Indexed",
+  "enumerations": {
+    "route_tunnel_count": 6,
+    "route_tunnel_fp": "unnamed@0.02|unnamed@0.01|unnamed@0.02|unnamed@0.01|unnamed@0.02|unnamed@0.01",
+    "route_ferry_legs": 0,
+    "route_ferry_fp": "",
+    "rest_place_count": 2,
+    "rest_place_names": [
+      "Bjørgeberget",
+      "Sjusjøen Husky Tours"
+    ],
+    "attraction_count": 0,
+    "attraction_by_type": {},
+    "wild_camping_site_count": 0,
+    "wild_camping_status_kind": "",
+    "wild_camping_status_message": ""
+  }
+}

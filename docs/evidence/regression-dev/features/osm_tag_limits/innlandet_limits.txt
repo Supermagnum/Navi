@@ -1,0 +1,40 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugins/log-hello/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugins/busy-loop/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugins/trap-guest/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugins/memory-bomb/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugins/weather/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugins/datex/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugins/poi-lookahead/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugins/imu/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugins/right-to-roam-camping/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/Cargo.toml
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running tests/innlandet_real_world_limits.rs (/tmp/cursor-sandbox-cache/a3c24bba34e27029c88efcc9f22b30a9/cargo-target/debug/deps/innlandet_real_world_limits-408e41d8723e8091)
+
+running 5 tests
+test pack_path_atna_maxlength_finds_detour ... ok
+test pack_path_atna_maxweight_finds_detour ... ok
+test pack_path_stai_maxwidth_and_maxaxleload_enforced ... ok
+test pack_path_liabrue_maxbogieweight_enforced ... ok
+test pack_path_fokholgutua_maxheight_finds_detour ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.66s
+
+INNLANDET_EXIT:0

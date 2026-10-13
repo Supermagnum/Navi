@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "IMU pitch/tilt/compass, mount calibration and tilt alarm (native; WASM guest wraps this)"
+description = "IMU pitch/tilt/compass and mount calibration (native; WASM guest wraps this)"
 rust-version.workspace = true
 publish = false
 

@@ -3494,7 +3494,61 @@ pub fn try_stage_b_densify_from_skeletons(
     let plan = match plan {
         Some(p) => p,
         None => {
-            return Err("stage_b no coarse path between attached waypoints".into());
+            let installed: Vec<String> = coarse
+                .regions
+                .iter()
+                .map(|s| {
+                    if s.region_id.is_empty() {
+                        s.leaf_stem.clone()
+                    } else {
+                        s.region_id.clone()
+                    }
+                })
+                .collect();
+            // When stay-in-country is on, restrict the corridor to that ISO so
+            // the error names domestic gaps (e.g. Trøndelag) instead of the
+            // Sweden band that is already installed.
+            let stay_iso = route_options.allowed_countries.as_ref().and_then(|v| {
+                if v.len() == 1 {
+                    Some(v[0].as_str())
+                } else {
+                    None
+                }
+            });
+            let band_missing = crate::long_trip::geometric_missing_regions_for_trip(
+                waypoints, &installed, stay_iso,
+            )
+            .unwrap_or_default();
+            let corridor_missing =
+                crate::long_trip::ordered_needed_regions_for_trip(waypoints, &installed, stay_iso)
+                    .unwrap_or_default();
+            let mut named = band_missing;
+            for id in corridor_missing {
+                if !named.iter().any(|x| x == &id) {
+                    named.push(id);
+                }
+            }
+            let stay = route_options
+                .allowed_countries
+                .as_ref()
+                .filter(|v| !v.is_empty())
+                .map(|v| {
+                    format!(
+                        "; stay_in_country={}",
+                        v.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(",")
+                    )
+                })
+                .unwrap_or_default();
+            if !named.is_empty() {
+                return Err(format!(
+                    "stage_b no coarse path between attached waypoints; \
+                     missing regions: {}{stay}",
+                    named.join(", ")
+                ));
+            }
+            return Err(format!(
+                "stage_b no coarse path between attached waypoints{stay}"
+            ));
         }
     };
     let snap_ms = plan.snap_ms;

@@ -9,16 +9,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import uniffi.navi.ImuAlarmSettings
 import uniffi.navi.ImuTickResult
-import uniffi.navi.imuPluginAlarmSettings
 import uniffi.navi.imuPluginConfigure
 import uniffi.navi.imuPluginInstallGuest
 import uniffi.navi.imuPluginIsEnabled
 import uniffi.navi.imuPluginReleaseSensors
 import uniffi.navi.imuPluginRequestCalibrate
 import uniffi.navi.imuPluginRequestReset
-import uniffi.navi.imuPluginSetAlarmSettings
 import uniffi.navi.imuPluginSetEnabled
 import uniffi.navi.imuPluginTick
 import java.io.File
@@ -37,10 +34,6 @@ object UniffiImuPluginApi : ImuPluginApi {
     override fun requestReset(): String = imuPluginRequestReset()
 
     override fun releaseSensors() = imuPluginReleaseSensors()
-
-    override fun alarmSettings(): ImuAlarmSettings = imuPluginAlarmSettings()
-
-    override fun setAlarmSettings(settings: ImuAlarmSettings): ImuAlarmSettings = imuPluginSetAlarmSettings(settings)
 }
 
 /**

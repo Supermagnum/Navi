@@ -128,6 +128,45 @@ fn installed_ready_region_ids(dirs: &[&Path], profile: RoutingProfile) -> Vec<St
     out
 }
 
+/// True when [region_id] has a real OSM extract under [dirs] (not a pack stub).
+///
+/// Server packs are often car+foot only. Bicycle (and other on-device profiles)
+/// still need a local graph build from the extract — that must not surface as
+/// "region not downloaded".
+fn region_has_real_pbf_extract(dirs: &[&Path], region_id: &str) -> bool {
+    let want = region_id.trim().trim_matches('/').to_ascii_lowercase();
+    for d in dirs {
+        let Ok(entries) = fs::read_dir(d) else {
+            continue;
+        };
+        for ent in entries.flatten() {
+            let name = ent.file_name();
+            let name = name.to_string_lossy();
+            let Some(stem) = name.strip_suffix(".navi-manifest.json") else {
+                continue;
+            };
+            let Ok(man) = load_ready_manifest(d, stem) else {
+                continue;
+            };
+            let Some(path) = pbf_stem_to_geofabrik_path(stem) else {
+                continue;
+            };
+            let path = path.to_ascii_lowercase();
+            let covers = path == want
+                || want.starts_with(&format!("{path}/"))
+                || path.starts_with(&format!("{want}/"));
+            if !covers {
+                continue;
+            }
+            let pbf = d.join(&man.pbf_filename);
+            if pbf_is_real_extract(&pbf) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Fail-fast list: waypoint regions that lack a Ready pack for [profile].
 ///
 /// Does not load skeletons or scan main-road ends. User-facing names come from
@@ -143,6 +182,9 @@ pub fn missing_ready_regions_for_trip(
     }
     let installed = installed_ready_region_ids(dirs, profile);
     waypoint_uninstalled_regions(route_points, &installed)
+        .into_iter()
+        .filter(|id| !region_has_real_pbf_extract(dirs, id))
+        .collect()
 }
 
 /// Geometric-band region ids that lack a Ready pack. Log-only candidates.
@@ -1317,7 +1359,12 @@ fn try_load_graph_for_plan_corridor_dirs(
                                 || id.starts_with(&format!("{inst}/"))
                                 || inst.starts_with(&format!("{id}/"))
                         });
-                        (!covered).then_some(id)
+                        // Real local extract → allow PBF cold-build (bicycle etc.).
+                        if covered || region_has_real_pbf_extract(dirs, &id) {
+                            None
+                        } else {
+                            Some(id)
+                        }
                     })
                     .collect();
                 let mut seen = HashSet::new();

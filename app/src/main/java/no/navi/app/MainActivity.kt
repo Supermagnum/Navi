@@ -1127,6 +1127,9 @@ private fun NaviMapScreen() {
     var heightM by remember { mutableStateOf("") }
     var widthM by remember { mutableStateOf("") }
     var lengthM by remember { mutableStateOf("") }
+    // Persisted total weight (no product UI field). Must survive [persistVehicle]
+    // so T6 / clearance saves do not wipe maxweight avoidance.
+    var totalWeightKgStored by remember { mutableStateOf<Double?>(null) }
     var showProfilePanel by remember { mutableStateOf(true) }
     var showVehiclePanel by remember { mutableStateOf(true) }
     var showRoutesPanel by remember { mutableStateOf(true) }
@@ -1279,7 +1282,22 @@ private fun NaviMapScreen() {
             profile = profile,
             professionalDriver = campingProfessionalDriver,
         )
-        val call = CampingPluginApi.suggestAlongRoute(12u)
+        val call =
+            runCatching { CampingPluginApi.suggestAlongRoute(12u) }
+                .getOrElse { err ->
+                    android.util.Log.e(
+                        "NaviCamping",
+                        "suggestAlongRoute failed: ${err.message}",
+                        err,
+                    )
+                    campingSuggestStatus =
+                        CampingSuggestStatus(
+                            kind = "ERROR",
+                            message = err.message.orEmpty(),
+                        )
+                    campingSuggestResult = null
+                    return@LaunchedEffect
+                }
         campingSessionDisableMessage = uniffi.navi.campingPluginSessionDisabledReason()
         campingSuggestStatus =
             CampingSuggestStatus(
@@ -1315,6 +1333,21 @@ private fun NaviMapScreen() {
                         layerEpoch = mapState.layerEpoch + 1,
                     )
             }
+            // Debug evidence: full suggest JSON for per-region tallies / screenshots.
+            if ((context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                runCatching {
+                    val dir =
+                        PlanReportStore.canonicalDir(context, NaviAppData.resolve(context))
+                    PlanReportStore.writeText(dir, "camping-suggest.json", json)
+                    val ext = PlanReportStore.externalDir(context)
+                    if (ext != null) {
+                        PlanReportStore.mirrorTo(
+                            java.io.File(ext, "camping-suggest.json"),
+                            java.io.File(dir, "camping-suggest.json"),
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -1323,18 +1356,28 @@ private fun NaviMapScreen() {
         val n = wildCampingSiteCount(campingSuggestResult)
         val kind = campingSuggestStatus?.kind.orEmpty()
         val msg = campingSuggestStatus?.message.orEmpty()
+        val (byCountry, bySub) = wildCampingRegionTallies(campingSuggestResult)
         if (
             n != routePlanStats.wildCampingSiteCount ||
             kind != routePlanStats.wildCampingStatusKind ||
-            msg != routePlanStats.wildCampingStatusMessage
+            msg != routePlanStats.wildCampingStatusMessage ||
+            byCountry != routePlanStats.wildCampingByCountry ||
+            bySub != routePlanStats.wildCampingBySubdivision
         ) {
             routePlanStats =
                 routePlanStats.copy(
                     wildCampingSiteCount = n,
                     wildCampingStatusKind = kind,
                     wildCampingStatusMessage = msg,
+                    wildCampingByCountry = byCountry,
+                    wildCampingBySubdivision = bySub,
                 )
             NaviMapTestHooks.lastRoutePlanStatsJson = routePlanStats.toReportJson().toString()
+            PlanReportStore.patchResultEnumerations(
+                context,
+                NaviAppData.resolve(context),
+                routePlanStats.toReportJson(),
+            )
         }
     }
 
@@ -1424,15 +1467,38 @@ private fun NaviMapScreen() {
                     NaviMapTestHooks.restoreAvoidFerriesAfterPlan = avoidFerries
                     avoidFerries = on
                 }
+                trip.stayInCountry?.let { on ->
+                    stayInCountry = on
+                    MapHudPrefs.saveStayInCountry(context, on)
+                }
                 trip.ecoModeEnabled?.let { on ->
                     // driveHud is declared later in this composable; set Compose eco
                     // state + hook so the profile/eco poll applies ecoActive.
                     ecoEnabled = on
                     NaviMapTestHooks.requestEcoMode = on
                 }
-                campingPluginEnabled = false
-                uniffi.navi.campingPluginSetEnabled(false)
-                MapHudPrefs.saveCampingPluginEnabled(context, false)
+                val campingOn = trip.campingPluginEnabled == true
+                campingPluginEnabled = campingOn
+                uniffi.navi.campingPluginSetEnabled(campingOn)
+                MapHudPrefs.saveCampingPluginEnabled(context, campingOn)
+                trip.poiLookaheadEnabled?.let { on ->
+                    poiLookaheadEnabled = on
+                    MapHudPrefs.savePoiLookaheadEnabled(context, on)
+                }
+                // Debug intent may have written vehicle_limits (e.g. total_weight_kg);
+                // refresh Compose mirrors so a later Save does not wipe them.
+                runCatching {
+                    val lim = loadVehicleLimits(NaviAppData.resolve(context).absolutePath)
+                    axleKg = lim.axleWeightKg?.toString().orEmpty()
+                    bogieKg = lim.bogieWeightKg?.toString().orEmpty()
+                    heightM = lim.heightM?.toString().orEmpty()
+                    widthM = lim.widthM?.toString().orEmpty()
+                    lengthM = lim.lengthM?.toString().orEmpty()
+                    totalWeightKgStored = lim.totalWeightKg
+                }
+                trip.avoidMotorways?.let { avoidMotorways = it }
+                trip.avoidTunnels?.let { avoidTunnels = it }
+                trip.avoidTolls?.let { avoidTolls = it }
                 NaviMapTestHooks.forceLocalPbf = trip.forceLocalPbf
                 if (trip.injectGpsAtFrom) {
                     // Pin puck at from immediately and again after plan so the
@@ -1842,6 +1908,15 @@ private fun NaviMapScreen() {
         routePlanStats =
             routePlanStats.copy(attractionCount = n, attractionByType = byType)
         NaviMapTestHooks.lastRoutePlanStatsJson = routePlanStats.toReportJson().toString()
+        android.util.Log.i(
+            "NaviAttractions",
+            "lookahead tally attraction_count=$n types=${byType.size} samples=${samples.size}",
+        )
+        PlanReportStore.patchResultEnumerations(
+            context,
+            dataDir,
+            routePlanStats.toReportJson(),
+        )
     }
 
     LaunchedEffect(packCatalogEpoch) {
@@ -2804,7 +2879,8 @@ private fun NaviMapScreen() {
                             addAll(remainingVias)
                             add(dest)
                         }
-                    val ecoForPlan = if (ecoModeToggleable(profile)) ecoEnabled else true
+                    val ecoForPlan =
+                        if (ecoModeToggleable(profile)) ecoEnabled else ecoModeDefault(profile)
                     val vehicle =
                         runCatching { loadVehicleLimits(dataDir.absolutePath) }
                             .getOrElse {
@@ -2911,7 +2987,9 @@ private fun NaviMapScreen() {
                 heightM = if (showVehicleLimitsPanel) heightM.toDoubleOrNull() else null,
                 widthM = if (showVehicleClearance) widthM.toDoubleOrNull() else null,
                 lengthM = if (showVehicleClearance) lengthM.toDoubleOrNull() else null,
-                totalWeightKg = null,
+                // No product UI for total weight; keep the stored/spec value so
+                // clearance saves do not disable maxweight avoidance.
+                totalWeightKg = totalWeightKgStored,
             )
         val ok = saveVehicleLimits(dataDir.absolutePath, limits)
         if (ok) {
@@ -2920,6 +2998,7 @@ private fun NaviMapScreen() {
             limits.heightM?.let { DiagnosticLog.logSettingSaved("vehicle_height_m", it) }
             limits.widthM?.let { DiagnosticLog.logSettingSaved("vehicle_width_m", it) }
             limits.lengthM?.let { DiagnosticLog.logSettingSaved("vehicle_length_m", it) }
+            limits.totalWeightKg?.let { DiagnosticLog.logSettingSaved("vehicle_total_weight_kg", it) }
         }
         status = if (ok) "Vehicle limits saved" else "Failed to save vehicle limits"
     }
@@ -3505,7 +3584,7 @@ private fun NaviMapScreen() {
                 """{"name":${org.json.JSONObject.quote(it.name)},"lat":${it.lat},"lon":${it.lon}}"""
             }
         val ecoForPlan =
-            if (ecoModeToggleable(profile)) ecoEnabled else true
+            if (ecoModeToggleable(profile)) ecoEnabled else ecoModeDefault(profile)
         RoutingPlanLog.logPlanSettings(
             dataDir = dataDir,
             ecoEnabled = ecoForPlan,
@@ -4211,6 +4290,7 @@ private fun NaviMapScreen() {
         heightM = limits.heightM?.toString().orEmpty()
         widthM = limits.widthM?.toString().orEmpty()
         lengthM = limits.lengthM?.toString().orEmpty()
+        totalWeightKgStored = limits.totalWeightKg
         refreshRoutes()
         refreshPlaces()
         updateReminderDue = osmWeeklyReminderDue(dataDir.absolutePath)

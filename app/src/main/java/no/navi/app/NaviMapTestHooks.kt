@@ -109,8 +109,22 @@ object NaviMapTestHooks {
         val vias: List<Waypoint> = emptyList(),
         val forceLocalPbf: Boolean = false,
         val avoidFerries: Boolean? = null,
+        /** When non-null, force Stay in Country for this seeded trip. */
+        val stayInCountry: Boolean? = null,
         /** When non-null, force eco on/off for this seeded trip (UI + UniFFI rest). */
         val ecoModeEnabled: Boolean? = null,
+        /**
+         * When non-null, force wild-camping plugin on/off for this seeded trip.
+         * Default debug seed turns camping off so matrix runs stay deterministic;
+         * long-trip campaigns pass true via `navi_camping`.
+         */
+        val campingPluginEnabled: Boolean? = null,
+        /** When non-null, force Nearby attractions (POI look-ahead) on/off. */
+        val poiLookaheadEnabled: Boolean? = null,
+        /** Debug-intent only drive-settings overlays (null = leave Compose defaults). */
+        val avoidMotorways: Boolean? = null,
+        val avoidTunnels: Boolean? = null,
+        val avoidTolls: Boolean? = null,
         val restoreSettingsAfter: Boolean = true,
         /**
          * When true (default for [NaviDebugIntent] trips), pin the GPS mark at

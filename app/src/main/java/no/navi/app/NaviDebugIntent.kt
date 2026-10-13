@@ -74,6 +74,7 @@ object NaviDebugIntent {
         val vias: List<Pair<Double, Double>>,
         val graph: String,
         val avoidFerries: Boolean?,
+        val stayInCountry: Boolean?,
         val appliedSettings: Map<String, Boolean>,
         val ignoredSettings: List<String>,
         val restoreAfter: Boolean,
@@ -144,10 +145,59 @@ object NaviDebugIntent {
             } else {
                 null
             }
+        val stayInCountry =
+            if (intent.hasExtra("navi_stay_in_country")) {
+                intent.getBooleanExtra("navi_stay_in_country", false)
+            } else {
+                null
+            }
         val ecoMode =
             when {
                 intent.hasExtra("navi_eco") -> intent.getBooleanExtra("navi_eco", false)
                 intent.hasExtra("navi_eco_mode") -> intent.getBooleanExtra("navi_eco_mode", false)
+                else -> null
+            }
+        val campingPlugin =
+            if (intent.hasExtra("navi_camping") || intent.hasExtra("navi_wild_camping")) {
+                intent.getBooleanExtra(
+                    if (intent.hasExtra("navi_camping")) "navi_camping" else "navi_wild_camping",
+                    false,
+                )
+            } else {
+                null
+            }
+        val poiLookahead =
+            if (intent.hasExtra("navi_attractions") || intent.hasExtra("navi_poi_lookahead")) {
+                intent.getBooleanExtra(
+                    if (intent.hasExtra("navi_attractions")) {
+                        "navi_attractions"
+                    } else {
+                        "navi_poi_lookahead"
+                    },
+                    false,
+                )
+            } else {
+                null
+            }
+        val avoidMotorways =
+            if (intent.hasExtra("navi_avoid_motorways")) {
+                intent.getBooleanExtra("navi_avoid_motorways", false)
+            } else {
+                null
+            }
+        val avoidTunnels =
+            if (intent.hasExtra("navi_avoid_tunnels")) {
+                intent.getBooleanExtra("navi_avoid_tunnels", false)
+            } else {
+                null
+            }
+        val avoidTolls =
+            when {
+                intent.hasExtra("navi_avoid_tolls") ->
+                    intent.getBooleanExtra("navi_avoid_tolls", false)
+                intent.hasExtra("navi_toll_policy") ->
+                    intent.getStringExtra("navi_toll_policy").orEmpty().lowercase() in
+                        setOf("penalize", "never_use", "avoid")
                 else -> null
             }
         val restoreAfter =
@@ -191,6 +241,7 @@ object NaviDebugIntent {
         val applied = linkedMapOf<String, Boolean>()
         val ignored = mutableListOf<String>()
         applyCabinExtras(intent, dataDirPath, applied, ignored)
+        applyVehicleLimitExtras(intent, dataDirPath)
 
         if (bikeCap != null) {
             runCatching {
@@ -229,6 +280,7 @@ object NaviDebugIntent {
                 vias = vias.map { it.lat to it.lon },
                 graph = graphLabel,
                 avoidFerries = avoidFerries,
+                stayInCountry = stayInCountry,
                 appliedSettings = applied.toMap(),
                 ignoredSettings = ignored.toList(),
                 restoreAfter = restoreAfter,
@@ -242,8 +294,10 @@ object NaviDebugIntent {
             "applied profile=${ctx.profile} bike=${ctx.bikeCapability} " +
                 "graph=${ctx.graph} vias=${ctx.vias.size} " +
                 "settings=${ctx.appliedSettings} ignored=${ctx.ignoredSettings} " +
-                "avoid_ferries=${ctx.avoidFerries} eco=$ecoMode restore=$restoreAfter " +
-                "inject_gps=$injectGps",
+                "avoid_ferries=${ctx.avoidFerries} stay_in_country=${ctx.stayInCountry} " +
+                "eco=$ecoMode camping=$campingPlugin attractions=$poiLookahead " +
+                "avoid_motorways=$avoidMotorways avoid_tunnels=$avoidTunnels " +
+                "avoid_tolls=$avoidTolls restore=$restoreAfter inject_gps=$injectGps",
         )
 
         return NaviMapTestHooks.PendingTripPlan(
@@ -260,7 +314,13 @@ object NaviDebugIntent {
             vias = vias,
             forceLocalPbf = forcePbf,
             avoidFerries = avoidFerries,
+            stayInCountry = stayInCountry,
             ecoModeEnabled = ecoMode,
+            campingPluginEnabled = campingPlugin,
+            poiLookaheadEnabled = poiLookahead,
+            avoidMotorways = avoidMotorways,
+            avoidTunnels = avoidTunnels,
+            avoidTolls = avoidTolls,
             restoreSettingsAfter = restoreAfter,
             injectGpsAtFrom = injectGps,
         )
@@ -311,9 +371,24 @@ object NaviDebugIntent {
                 emptyList()
             }
         val eco = if (o.has("eco")) o.optBoolean("eco", false) else false
+        val camping =
+            if (o.has("camping") || o.has("wild_camping")) {
+                o.optBoolean("camping", o.optBoolean("wild_camping", false))
+            } else {
+                false
+            }
+        val attractions =
+            if (o.has("attractions") || o.has("poi_lookahead")) {
+                o.optBoolean("attractions", o.optBoolean("poi_lookahead", false))
+            } else {
+                null
+            }
         runCatching {
-            MapHudPrefs.saveCampingPluginEnabled(context, false)
-            uniffi.navi.campingPluginSetEnabled(false)
+            MapHudPrefs.saveCampingPluginEnabled(context, camping)
+            uniffi.navi.campingPluginSetEnabled(camping)
+            if (attractions != null) {
+                MapHudPrefs.savePoiLookaheadEnabled(context, attractions)
+            }
             val cur = uniffi.navi.loadCarRestSettings(dataDirPath)
             uniffi.navi.saveCarRestSettings(
                 dataDirPath,
@@ -325,7 +400,11 @@ object NaviDebugIntent {
                 ),
             )
         }
-        Log.i(TAG, "consumed pending-debug-trip.json eco=$eco camping_plugin=false")
+        Log.i(
+            TAG,
+            "consumed pending-debug-trip.json eco=$eco camping_plugin=$camping " +
+                "attractions=$attractions",
+        )
         if (o.has("datex")) {
             runCatching {
                 File(dataDirPath, "datex_plan_mode").writeText(o.optString("datex", "live").lowercase())
@@ -346,6 +425,8 @@ object NaviDebugIntent {
             forceLocalPbf = false,
             avoidFerries = o.optBoolean("avoid_ferries", false),
             ecoModeEnabled = eco,
+            campingPluginEnabled = camping,
+            poiLookaheadEnabled = attractions,
             restoreSettingsAfter = o.optBoolean("restore_settings", false),
             injectGpsAtFrom = o.optBoolean("inject_gps", true),
         )
@@ -413,6 +494,7 @@ object NaviDebugIntent {
                 "navi_network_hut_member",
                 "navi_use_unlocked_cabins",
                 "navi_avoid_ferries",
+                "navi_stay_in_country",
                 "navi_bike_capability",
                 "navi_bike_mode",
                 "navi_datex",
@@ -468,6 +550,57 @@ object NaviDebugIntent {
                 Log.w(TAG, "navi_network_hut_member ignored (navi_use_networked_cabins present)")
             }
         }
+    }
+
+    /**
+     * Debug-only vehicle clearance overlays. Merges with existing stored limits
+     * so a single `navi_total_weight_kg` does not clear height/width/etc.
+     */
+    private fun applyVehicleLimitExtras(
+        intent: Intent,
+        dataDirPath: String,
+    ) {
+        val keys =
+            listOf(
+                "navi_axle_weight_kg",
+                "navi_bogie_weight_kg",
+                "navi_height_m",
+                "navi_width_m",
+                "navi_length_m",
+                "navi_total_weight_kg",
+            )
+        if (keys.none { intent.hasExtra(it) }) return
+        val cur =
+            runCatching { uniffi.navi.loadVehicleLimits(dataDirPath) }
+                .getOrElse {
+                    uniffi.navi.FfiVehicleLimits(null, null, null, null, null, null)
+                }
+        fun overlay(
+            key: String,
+            current: Double?,
+        ): Double? {
+            if (!intent.hasExtra(key)) return current
+            val v = intentDouble(intent, key)
+            return if (v.isNaN()) current else v
+        }
+        val next =
+            uniffi.navi.FfiVehicleLimits(
+                axleWeightKg = overlay("navi_axle_weight_kg", cur.axleWeightKg),
+                bogieWeightKg = overlay("navi_bogie_weight_kg", cur.bogieWeightKg),
+                heightM = overlay("navi_height_m", cur.heightM),
+                widthM = overlay("navi_width_m", cur.widthM),
+                lengthM = overlay("navi_length_m", cur.lengthM),
+                totalWeightKg = overlay("navi_total_weight_kg", cur.totalWeightKg),
+            )
+        val ok =
+            runCatching { uniffi.navi.saveVehicleLimits(dataDirPath, next) }
+                .getOrDefault(false)
+        Log.i(
+            TAG,
+            "vehicle_limits ok=$ok axle=${next.axleWeightKg} bogie=${next.bogieWeightKg} " +
+                "h=${next.heightM} w=${next.widthM} l=${next.lengthM} " +
+                "total_kg=${next.totalWeightKg}",
+        )
     }
 
     private fun parseForcePbf(intent: Intent): Boolean {
