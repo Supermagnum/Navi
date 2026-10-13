@@ -29,7 +29,9 @@ pub struct AlarmConfig {
 impl Default for AlarmConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
+            // Off by default. Host no longer plays tilt-alarm audio; this flag only
+            // gates guest alarm *level* reporting for the tilt warning UI.
+            enabled: false,
             pitch_warn_deg: 20.0,
             pitch_danger_deg: 30.0,
             roll_warn_deg: 15.0,

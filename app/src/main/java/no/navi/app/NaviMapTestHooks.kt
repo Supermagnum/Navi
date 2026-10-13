@@ -936,6 +936,37 @@ object NaviMapTestHooks {
     @Volatile
     var lastGpsProvider: String = ""
 
+    /** Dead-reckoning mode name (Gps / Estimating / PositionLost). */
+    @Volatile
+    var lastDrMode: String = "Gps"
+
+    /** Last tunnel-exit / GPS hand-back position error (metres), if any. */
+    @Volatile
+    var lastDrExitErrorM: Double? = null
+
+    /** Map mark is IMU/route estimated (amber). */
+    @Volatile
+    var gpsEstimated: Boolean = false
+
+    /** DR give-up — position lost. */
+    @Volatile
+    var positionLost: Boolean = false
+
+    /**
+     * Inject a sensor frame into the live [DeadReckoningController] (instrumented
+     * tunnel tests). Null when the map activity is not running.
+     */
+    @Volatile
+    var deadReckoningInject: ((SensorFrame) -> DrOutput)? = null
+
+    /** Signal GNSS loss to the live dead-reckoning engine (instrumented tests). */
+    @Volatile
+    var deadReckoningNotifyLost: (() -> DrOutput)? = null
+
+    /** Feed a GNSS sample into the live dead-reckoning engine (instrumented tests). */
+    @Volatile
+    var deadReckoningInjectGps: ((GpsSample) -> DrOutput)? = null
+
     /** Last resolved applicable speed limit (km/h). */
     @Volatile
     var lastCurrentSpeedLimitKmh: Double? = null

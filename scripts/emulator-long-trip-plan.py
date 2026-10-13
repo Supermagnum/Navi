@@ -101,6 +101,12 @@ TRIPS = {
         "vias": [],
         "to": (61.114545, 10.467007, "Lillehammer"),
     },
+    # A2 tunnel-DR car corridor (Halden area → Sunndalsøra area).
+    "halden_sunndal": {
+        "from": (59.1094807, 11.2638478, "Start"),
+        "vias": [],
+        "to": (62.2887627, 8.1311054, "End"),
+    },
 }
 
 DATEX_MODES = {"none": "None", "saved": "Saved", "live": "Live"}
@@ -219,14 +225,14 @@ def clear_previous_plan():
         )
 
 
-def start_plan(trip, avoid_ferries, datex, long_trip=True):
+def start_plan(trip, avoid_ferries, datex, long_trip=True, eco=False):
     f_lat, f_lon, f_name = trip["from"]
     t_lat, t_lon, t_name = trip["to"]
     args = [
         "shell", "am", "start", "-n", f"{PKG}/.MainActivity",
         "--ez", "navi_long_trip", "true" if long_trip else "false",
         "--ez", "navi_auto_plan", "true",
-        "--ez", "navi_eco", "false",
+        "--ez", "navi_eco", "true" if eco else "false",
         "--ez", "navi_restore_settings", "false",
         "--ez", "navi_avoid_ferries", "true" if avoid_ferries else "false",
         "--es", "navi_datex", datex,
@@ -1586,7 +1592,7 @@ def wait_plan(deadline_s):
     return "timeout", "", time.time() - t0, peak
 
 
-def check_inputs(text, trip, avoid_ferries, datex, long_trip=True):
+def check_inputs(text, trip, avoid_ferries, datex, long_trip=True, eco=False):
     """Compare what the plan received with what was sent; return mismatches."""
     bad = []
     pi = last_line(text, "plan_inputs ")
@@ -1598,9 +1604,10 @@ def check_inputs(text, trip, avoid_ferries, datex, long_trip=True):
         bad.append("no plan_settings line")
     if not st:
         bad.append("no planning_start line")
+    eco_s = "true" if eco else "false"
     want_pi = {
         "profile": "Car",
-        "eco": "false",
+        "eco": eco_s,
         "avoid_motorways": "false",
         "avoid_ferries": str(avoid_ferries).lower(),
         "avoid_tunnels": "false",
@@ -1620,7 +1627,7 @@ def check_inputs(text, trip, avoid_ferries, datex, long_trip=True):
     ):
         bad.append(f"plan_inputs via_coords={coords} (sent {[v[:2] for v in trip['vias']]})")
     want_ps = {
-        "eco": "false",
+        "eco": eco_s,
         "camping_plugin": "false",
         "avoid_motorways": "false",
         "avoid_tolls": "false",
@@ -2542,6 +2549,11 @@ def main():
     ap.add_argument("trip", nargs="?", choices=sorted(TRIPS))
     ap.add_argument("--datex", choices=sorted(DATEX_MODES), default="none")
     ap.add_argument("--avoid-ferries", action="store_true")
+    ap.add_argument(
+        "--eco",
+        action="store_true",
+        help="send navi_eco=true (default false)",
+    )
     ap.add_argument("--out", required=True)
     ap.add_argument("--timeout-min", type=float, default=60)
     ap.add_argument("--search-check", action="store_true")
@@ -2747,7 +2759,13 @@ def main():
         clear_previous_plan()
         adb("logcat", "-c")
         peak_reset = reset_peak()
-        start_plan(trip, a.avoid_ferries, a.datex, long_trip=not a.long_trip_off)
+        start_plan(
+            trip,
+            a.avoid_ferries,
+            a.datex,
+            long_trip=not a.long_trip_off,
+            eco=a.eco,
+        )
         status, end, wall, peak_kb = wait_plan(deadline - time.time())
         log(f"{status} after {wall:.0f} s: {end[-200:]}")
         if status != "preparing" or time.time() > deadline:
@@ -2757,7 +2775,14 @@ def main():
 
     text = logcat()
     (out / "logcat.txt").write_text(text)
-    bad, lines = check_inputs(text, trip, a.avoid_ferries, a.datex, long_trip=not a.long_trip_off)
+    bad, lines = check_inputs(
+        text,
+        trip,
+        a.avoid_ferries,
+        a.datex,
+        long_trip=not a.long_trip_off,
+        eco=a.eco,
+    )
     files = pull(out)
     stages, native_peak = plan_stage_peaks(text)
     sampled_mb = round(peak_kb / 1024) if peak_kb else 0

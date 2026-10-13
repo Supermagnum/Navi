@@ -1,0 +1,7 @@
+10-13 10:25:20.573 I/NaviDebugIntent(21273): reset to defaults use_networked_cabins=false use_unlocked_cabins=false bike_capability=trekking eco=false
+10-13 10:25:20.584 I/NaviDebugIntent(21273): applied profile=hiking bike=null graph=pack-hit vias=1 settings={use_networked_cabins=true, use_unlocked_cabins=true, eco_mode=false} ignored=[] avoid_ferries=null eco=false restore=false inject_gps=true
+10-13 10:25:24.655 I/NaviRouting(21273): planning_start profile=hiking eco=true legs=2 waypoints=Gjendesheim|Leirvassbu|Skjolden_Hotel
+10-13 10:25:26.377 I/NaviRouting(21273): planning_done eco=true duration_ms=1722 distance_km=102.865 polyline_chars=100281 toll_policy=allow pads=[] expansions=0 terminate=ok toll_incomplete=false route_uses_tolls=false
+10-13 10:25:26.378 I/NaviRouting(21273): planning_pois count=12 names=Memurubu|Tent site|Tent site|Nøgla|Krossbu|Sognefjellshytta|Tent site|Tent site|Leirvassbu|Steinbu i Veslådalen|Nøgla|Trulsbu kinds=hut|tent|tent|hut|tent|hut|tent|tent|hut|hut|hut|network_hut
+10-13 10:25:26.411 W/NaviRoute(21273): waypoint pin 'Gjendesheim' 45 m from place (prefer <= 12 m); using corridor point
+10-13 10:25:26.418 W/NaviRoute(21273): waypoint pin 'Leirvassbu' 15 m from place (prefer <= 12 m); using corridor point

@@ -96,9 +96,9 @@ itself should provide, once implemented:
 |---|---|
 | `SensorPlatform` (UniFFI foreign trait) + `imu_plugin_*` session API (configure, install guest, enable, tick, calibrate / reset, alarm settings, release sensors) | `navi-ffi/src/imu_plugin.rs` |
 | `SensorManager` backend: availability detection (`TYPE_AMBIENT_TEMPERATURE` first, `TYPE_TEMPERATURE` fallback via the shared `SensorKind` table), per-sensor rate limit, listener unregistered when the hub releases it | `ImuSensorBackend.kt`, `AndroidSensorSource` |
-| Controller: ticks the guest (~8 Hz) only while the plugin is enabled and the app is started, publishes state, sounds the alarm tone | `ImuPluginController.kt`, `ImuPluginRuntime.kt` |
-| Settings panel: enable switch, verbatim calibration instruction, Calibrate / Reset, date and status, live pitch / roll / tilt / heading, alarm thresholds and **Test sound** | `ImuPluginPanel.kt` (inside `PluginSettingsSection`) |
-| Alarm audio hook: `ToneGenerator` beeps on the alarm stream (warning: single beep every 4 s, danger: faster beep every 1 s) | `ImuAlarmAudio.kt` |
+| Controller: ticks the guest (~8 Hz) only while the plugin is enabled and the app is started, publishes state (no alarm audio) | `ImuPluginController.kt`, `ImuPluginRuntime.kt` |
+| Settings panel: enable switch, verbatim calibration instruction, Calibrate / Reset, date and status, live pitch / roll / tilt / heading, tilt warning thresholds | `ImuPluginPanel.kt` (inside `PluginSettingsSection`) |
+| Tilt warning levels are display-only; host does not play IMU alarm audio | (removed `ImuAlarmAudio.kt`) |
 | Guest staging: `scripts/build-plugin-wasm.sh` builds `plugins/imu` into `assets/plugins/imu/`; the app copies it to `filesDir/plugins/imu/` and reinstalls on a version change | same pattern as the camping guest |
 
 The plugin is **off by default** (`plugin_enable.json`, name `imu`). Turning it
@@ -150,6 +150,6 @@ real mount accuracy still needs a vehicle-mounted device.
 6. Document defaults and that rotation modes do not depend on this feature.
 7. ~~Live pitch/tilt/compass display~~ (done in the settings panel); a map HUD
    chip is still open.
-8. ~~Alarm sound playback and settings UI~~ (done: simple `ToneGenerator` beeps;
+8. ~~Alarm sound playback and settings UI~~ (host alarm audio removed; thresholds/UI remain;
    custom alert sounds remain the separate
    [custom alert sounds spec](custom-alert-sounds-spec.md)).

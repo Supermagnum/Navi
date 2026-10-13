@@ -58,20 +58,8 @@ class ImuPluginControllerTest {
         }
     }
 
-    private class FakePlayer : ImuAlarmTonePlayer {
-        val tones = mutableListOf<ImuAlarmTone>()
-
-        override fun play(tone: ImuAlarmTone) {
-            tones += tone
-        }
-
-        override fun release() = Unit
-    }
-
     private val api = FakeApi()
-    private val player = FakePlayer()
-    private var now = 0L
-    private val controller = ImuPluginController(api, player, ImuAlarmPolicy(), { now })
+    private val controller = ImuPluginController(api)
 
     @Test
     fun nothingTicksUntilInitializedAndEnabled() {
@@ -114,28 +102,14 @@ class ImuPluginControllerTest {
     }
 
     @Test
-    fun dangerTiltSoundsTheAlarmHook() {
+    fun dangerTiltPublishesLevelWithoutAudioHook() {
         controller.markInitialized()
         controller.setEnabled(true)
         api.tickResult = ok(state("calibrated", "danger"))
-        now = 1_000
         controller.tickOnce()
-        now = 1_500
-        controller.tickOnce()
-        now = 2_000
-        controller.tickOnce()
-        assertEquals(listOf(ImuAlarmTone.DANGER, ImuAlarmTone.DANGER), player.tones)
         val readout = controller.state.value.readout
         assertEquals(ImuAlarmLevel.DANGER, readout!!.alarm)
-    }
-
-    @Test
-    fun alarmStaysSilentWhenTheUserDisabledIt() {
-        controller.markInitialized()
-        controller.setEnabled(true)
-        api.tickResult = ok(state("calibrated", "danger", alarmEnabled = false))
-        controller.tickOnce()
-        assertTrue(player.tones.isEmpty())
+        assertTrue(readout.alarmEnabled)
     }
 
     @Test
@@ -189,12 +163,6 @@ class ImuPluginControllerTest {
     }
 
     @Test
-    fun testSoundPlaysTheRequestedTone() {
-        controller.testAlarm(ImuAlarmTone.WARNING)
-        assertEquals(listOf(ImuAlarmTone.WARNING), player.tones)
-    }
-
-    @Test
     fun loopTicksWhileRunnableAndUnregistersSensorsWhenStopped() =
         runBlocking {
             controller.markInitialized()
@@ -218,9 +186,10 @@ class ImuPluginControllerTest {
             alarmEnabled: Boolean = true,
         ) = """
             {"status":"$status","status_text":"t","notice":null,"instruction":"x","calibrated":false,
-             "calibrated_date":null,"calibrated_unix":null,"pitch_deg":1.0,"roll_deg":2.0,
+             "calibrated_date":null,"pitch_deg":1.0,"roll_deg":-2.0,
              "tilt_deg":2.2,"heading_deg":null,"alarm":"$alarm","alarm_enabled":$alarmEnabled,
-             "sensors":{"gravity":true},"updated_ms":1}
+             "sensors":{"gravity":true,"accelerometer":true,"gyroscope":false,
+                        "linear_acceleration":false,"magnetic_field":false},"updated_ms":1}
             """.trimIndent()
     }
 }

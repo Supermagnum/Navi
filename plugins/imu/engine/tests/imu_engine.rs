@@ -391,16 +391,27 @@ fn alarm_can_be_disabled_and_bad_config_is_sanitised() {
     assert_eq!(s.alarm, AlarmLevel::None);
     assert!(!s.alarm_enabled);
 
-    // danger below warn is raised to warn; garbage falls back to defaults.
+    // danger below warn is raised to warn; garbage falls back to defaults
+    // (alarm stays off unless enabled is set — default is opt-in).
     h.kv.insert(
         KEY_ALARM.into(),
-        r#"{"pitch_warn_deg":25,"pitch_danger_deg":5}"#.into(),
+        r#"{"enabled":true,"pitch_warn_deg":25,"pitch_danger_deg":5}"#.into(),
     );
     let s = feed_still(&mut h, SENSOR_GRAVITY, 26.0, 0.0, i + 1, 1);
     assert_eq!(s.alarm, AlarmLevel::Danger);
     h.kv.insert(KEY_ALARM.into(), "not json".into());
     let s = feed_still(&mut h, SENSOR_GRAVITY, 35.0, 0.0, i + 2, 1);
-    assert_eq!(s.alarm, AlarmLevel::Danger, "defaults 20/30");
+    assert_eq!(
+        s.alarm,
+        AlarmLevel::None,
+        "corrupt config → defaults (alarm off)"
+    );
+    h.kv.insert(
+        KEY_ALARM.into(),
+        r#"{"enabled":true,"pitch_warn_deg":20,"pitch_danger_deg":30}"#.into(),
+    );
+    let s = feed_still(&mut h, SENSOR_GRAVITY, 35.0, 0.0, i + 3, 1);
+    assert_eq!(s.alarm, AlarmLevel::Danger, "enabled + defaults 20/30");
 }
 
 #[test]

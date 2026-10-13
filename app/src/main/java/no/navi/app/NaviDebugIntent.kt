@@ -527,7 +527,7 @@ object NaviDebugIntent {
 
     private fun parseVias(intent: Intent): List<Waypoint> {
         val out = ArrayList<Waypoint>(4)
-        for (i in 1..4) {
+        for (i in 1..12) {
             val lat = intentDouble(intent, "navi_via${i}_lat")
             val lon = intentDouble(intent, "navi_via${i}_lon")
             if (lat.isNaN() || lon.isNaN()) continue

@@ -58,7 +58,7 @@ object ImuPluginRuntime {
     private var startedActivities = 0
 
     val controller: ImuPluginController by lazy {
-        ImuPluginController(UniffiImuPluginApi, ToneImuAlarmPlayer())
+        ImuPluginController(UniffiImuPluginApi)
     }
 
     /**

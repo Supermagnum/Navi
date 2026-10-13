@@ -1,0 +1,31 @@
+plan_inputs profile=Car eco=false avoid_motorways=false toll=Allow avoid_ferries=false avoid_tunnels=false long_trip=true datex=None start=59.109481,11.263848 end=62.288763,8.131105 vias=0 via_coords=
+waypoint_attach lat=59.10948 lon=11.26385 role=Origin tiles=ostlandet-latest.navi-graph-car.t0_4.rkyv tiles_n=1 mb=92.5 load_ms=317 snap_ms=103 dijkstra_ms=0 expansions=28 hits=12 spurs=1 spur_ms=0 already_on_skel=false snap_m=7
+waypoint_attach lat=62.28876 lon=8.13111 role=Destination tiles=ostlandet-latest.navi-graph-car.t3_0.rkyv tiles_n=1 mb=3.4 load_ms=15 snap_ms=3 dijkstra_ms=0 expansions=0 hits=0 spurs=0 spur_ms=0 already_on_skel=true snap_m=86
+datex_snapshot sits=0 mode=None
+stems primary=ostlandet-latest pbf_stem=ostlandet-latest extra=vastra_gotaland-latest
+datex_bind_ms=0 impacts=0
+hop endpoints=59.10948,11.26385->59.37431,10.78459 snap_a=59.10942,11.26388 snap_a_m=7.3 snap_b=59.37431,10.78459 snap_b_m=0.0 nodes=192442 pack_hit=true comp_a=252584643 comp_b=252584643 weak_ok=true directed_ok=true
+hop_result=success km=44.500 eta_min=25.2 terminate=found route_ferry_legs=0 nodes=106 pack_hit=true expansions=3301
+hop_result=success i=1 km=44.500 poly_km=44.451 poly_agree_0_5pct=true poly_rel_pct=0.111 eta_min=25.2 terminate=found route_ferry_legs=0 expansions=3301 pack_load_ms=2998 datex_bind_ms=0 snap_ms=597 search_ms=77 nodes=192442 vm_hwm_mb=921
+stems primary=ostlandet-latest pbf_stem=ostlandet-latest extra=
+datex_bind_ms=0 impacts=0
+hop endpoints=59.37431,10.78459->59.75908,10.81083 snap_a=59.37431,10.78459 snap_a_m=0.0 snap_b=59.75908,10.81083 snap_b_m=0.0 nodes=245280 pack_hit=true comp_a=299654374 comp_b=299654374 weak_ok=true directed_ok=true
+hop_result=success km=47.779 eta_min=27.7 terminate=found route_ferry_legs=0 nodes=91 pack_hit=true expansions=5908
+hop_result=success i=2 km=47.779 poly_km=47.725 poly_agree_0_5pct=true poly_rel_pct=0.111 eta_min=27.7 terminate=found route_ferry_legs=0 expansions=5908 pack_load_ms=2640 datex_bind_ms=0 snap_ms=822 search_ms=86 nodes=245280 vm_hwm_mb=1058
+stems primary=ostlandet-latest pbf_stem=ostlandet-latest extra=
+datex_bind_ms=0 impacts=0
+hop endpoints=59.75908,10.81083->60.08364,11.14906 snap_a=59.75908,10.81083 snap_a_m=0.0 snap_b=60.08364,11.14906 snap_b_m=0.0 nodes=288617 pack_hit=true comp_a=299654374 comp_b=299654374 weak_ok=true directed_ok=true
+hop_result=success km=49.124 eta_min=33.4 terminate=found route_ferry_legs=0 nodes=209 pack_hit=true expansions=64828
+hop_result=success i=3 km=49.124 poly_km=49.070 poly_agree_0_5pct=true poly_rel_pct=0.111 eta_min=33.4 terminate=found route_ferry_legs=0 expansions=64828 pack_load_ms=4023 datex_bind_ms=0 snap_ms=973 search_ms=303 nodes=288617 vm_hwm_mb=1258
+stems primary=ostlandet-latest pbf_stem=ostlandet-latest extra=
+datex_bind_ms=0 impacts=0
+hop endpoints=60.08364,11.14906->60.90991,10.81569 snap_a=60.08364,11.14906 snap_a_m=0.0 snap_b=60.90991,10.81569 snap_b_m=0.0 nodes=258799 pack_hit=true comp_a=3165356347 comp_b=3165356347 weak_ok=true directed_ok=true
+hop_result=success km=110.772 eta_min=60.5 terminate=found route_ferry_legs=0 nodes=203 pack_hit=true expansions=39438
+hop_result=success i=4 km=110.772 poly_km=110.649 poly_agree_0_5pct=true poly_rel_pct=0.111 eta_min=60.5 terminate=found route_ferry_legs=0 expansions=39438 pack_load_ms=3311 datex_bind_ms=0 snap_ms=844 search_ms=235 nodes=258799 vm_hwm_mb=1258
+stems primary=ostlandet-latest pbf_stem=ostlandet-latest extra=vestlandet-latest
+datex_bind_ms=0 impacts=0
+hop endpoints=60.90991,10.81569->62.28876,8.13111 snap_a=60.90991,10.81569 snap_a_m=0.0 snap_b=62.28953,8.13094 snap_b_m=85.7 nodes=151164 pack_hit=true comp_a=7058604769 comp_b=7058604769 weak_ok=true directed_ok=true
+hop_result=success km=250.013 eta_min=192.5 terminate=found route_ferry_legs=0 nodes=1014 pack_hit=true expansions=278436
+hop_result=success i=5 km=250.013 poly_km=249.734 poly_agree_0_5pct=true poly_rel_pct=0.111 eta_min=192.5 terminate=found route_ferry_legs=0 expansions=278436 pack_load_ms=7756 datex_bind_ms=0 snap_ms=464 search_ms=542 nodes=151164 vm_hwm_mb=1258
+total_poly_agree km=502.188 poly_km=501.629 agree_0_5pct=true rel_pct=0.111
+plan_summary km=502.188 eta_min=339.3 route_ferry_legs=0 terminate=found hops=5 total_poly_agree_0_5pct=true

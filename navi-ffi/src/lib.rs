@@ -1576,6 +1576,41 @@ fn is_named_hiking_hut_pause(kind: &str, name: &str) -> bool {
     true
 }
 
+/// Insert geodesic intermediates so consecutive crow gaps stay within
+/// [`TERRAIN_MAX_GAP_M`]. Used when the foot graph cannot connect a long leg
+/// on-trail; hybrid planning can then gap-fill each short segment.
+fn densify_hiking_waypoints_for_terrain_gaps(wps: &[HikingWp]) -> Vec<HikingWp> {
+    let max_gap = driver_break_core::routing::TERRAIN_MAX_GAP_M;
+    if wps.len() < 2 {
+        return wps.to_vec();
+    }
+    let step = max_gap * 0.9;
+    let mut out: Vec<HikingWp> = Vec::with_capacity(wps.len());
+    for pair in wps.windows(2) {
+        let a = &pair[0];
+        let b = &pair[1];
+        out.push(a.clone());
+        let crow = haversine_m(a.lat, a.lon, b.lat, b.lon);
+        if crow <= max_gap || step <= 0.0 {
+            continue;
+        }
+        let n = (crow / step).ceil() as usize;
+        if n < 2 {
+            continue;
+        }
+        for i in 1..n {
+            let t = (i as f64) / (n as f64);
+            out.push(HikingWp {
+                name: format!("terrain_pad_{}_{}", a.name, i),
+                lat: a.lat + (b.lat - a.lat) * t,
+                lon: a.lon + (b.lon - a.lon) * t,
+            });
+        }
+    }
+    out.push(wps[wps.len() - 1].clone());
+    out
+}
+
 /// Extra path metres allowed when promoting a rast hut to a via.
 /// Floor comes from the Drive POI cabin-radius slider; also allow 15% of the leg.
 fn auto_via_extra_allowed_m(leg_m: f64, cabin_radius_m: f64) -> f64 {
@@ -6304,6 +6339,13 @@ pub fn plan_hiking_route(
         return empty_corridor(report);
     }
     report.push_str(&format!("waypoints={}\n", user_wps.len()));
+    let plan_wps = densify_hiking_waypoints_for_terrain_gaps(&user_wps);
+    if plan_wps.len() > user_wps.len() {
+        report.push_str(&format!(
+            "terrain_gap_densify_added={}\n",
+            plan_wps.len() - user_wps.len()
+        ));
+    }
 
     let plan = WorkerPoolPlan::detect();
     WorkerPoolPlan::lower_current_thread_priority();
@@ -6458,7 +6500,7 @@ pub fn plan_hiking_route(
     // Prefer graph-first: if every leg snaps and connects on-trail, we still apply
     // wetlands then replan. If graph fails, refuse absurd crow-flies gaps before the
     // expensive wetland PBF scan (e.g. destination in open ocean).
-    let graph_only_ok = hike_path_through_waypoints(&graph, &user_wps).is_ok();
+    let graph_only_ok = hike_path_through_waypoints(&graph, &plan_wps).is_ok();
     if driver_break_core::download::plan_cancel::is_cancelled() {
         return plan_cancelled_result(
             report,
@@ -6471,7 +6513,7 @@ pub fn plan_hiking_route(
         );
     }
     if !graph_only_ok {
-        for pair in user_wps.windows(2) {
+        for pair in plan_wps.windows(2) {
             let crow = haversine_m(pair[0].lat, pair[0].lon, pair[1].lat, pair[1].lon);
             if crow > driver_break_core::routing::TERRAIN_MAX_GAP_M {
                 report.push_str(&format!(
@@ -6543,7 +6585,7 @@ pub fn plan_hiking_route(
         &elevation,
         &wetlands,
         &eco,
-        &to_hiking_waypoints(&user_wps),
+        &to_hiking_waypoints(&plan_wps),
         &hike_opts,
     ) {
         Ok(h) => h,
@@ -6707,12 +6749,13 @@ pub fn plan_hiking_route(
             names.join("|")
         ));
         let merged = merge_hiking_waypoints_with_auto_vias(&user_wps, &user_cum_km, &autos);
+        let merged_plan = densify_hiking_waypoints_for_terrain_gaps(&merged);
         match plan_hybrid_hiking_path_with_options(
             &graph,
             &elevation,
             &wetlands,
             &eco,
-            &to_hiking_waypoints(&merged),
+            &to_hiking_waypoints(&merged_plan),
             &hike_opts,
         ) {
             Ok(h) => {
@@ -11199,6 +11242,38 @@ mod hiking_auto_via_tests {
         assert!((auto_via_extra_allowed_m(100_000.0, 10_500.0) - 15_000.0).abs() < 1e-9);
         // Raising the slider raises the absolute floor.
         assert!((auto_via_extra_allowed_m(1_000.0, 20_000.0) - 20_000.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn densify_inserts_pads_when_crow_exceeds_terrain_gap() {
+        let wps = vec![
+            HikingWp {
+                name: "A".into(),
+                lat: 61.4943459,
+                lon: 8.8126376,
+            },
+            HikingWp {
+                name: "B".into(),
+                lat: 61.5485603,
+                lon: 8.2476038,
+            },
+        ];
+        let crow = haversine_m(wps[0].lat, wps[0].lon, wps[1].lat, wps[1].lon);
+        assert!(crow > driver_break_core::routing::TERRAIN_MAX_GAP_M);
+        let dense = densify_hiking_waypoints_for_terrain_gaps(&wps);
+        assert!(dense.len() > wps.len());
+        assert_eq!(dense.first().unwrap().name, "A");
+        assert_eq!(dense.last().unwrap().name, "B");
+        for pair in dense.windows(2) {
+            let d = haversine_m(pair[0].lat, pair[0].lon, pair[1].lat, pair[1].lon);
+            assert!(
+                d <= driver_break_core::routing::TERRAIN_MAX_GAP_M + 1.0,
+                "gap {} -> {} is {:.0} m",
+                pair[0].name,
+                pair[1].name,
+                d
+            );
+        }
     }
 
     #[test]

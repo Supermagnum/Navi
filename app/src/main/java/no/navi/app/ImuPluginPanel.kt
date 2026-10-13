@@ -162,7 +162,7 @@ private fun ImuAlarmSettingsBlock(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text("Sound alarm on dangerous tilt")
+        Text("Show tilt warning levels")
         Switch(
             checked = current.enabled,
             onCheckedChange = { on ->
@@ -181,40 +181,34 @@ private fun ImuAlarmSettingsBlock(
         ThresholdField("Roll warn", rollWarn, "imu_roll_warn", Modifier.weight(1f)) { rollWarn = it }
         ThresholdField("Roll danger", rollDanger, "imu_roll_danger", Modifier.weight(1f)) { rollDanger = it }
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(
-            onClick = {
-                val pw = parseImuThresholdDegrees(pitchWarn)
-                val pd = parseImuThresholdDegrees(pitchDanger)
-                val rw = parseImuThresholdDegrees(rollWarn)
-                val rd = parseImuThresholdDegrees(rollDanger)
-                if (pw == null || pd == null || rw == null || rd == null) {
-                    feedback = "Enter thresholds between 1 and 89 degrees."
-                } else {
-                    scope.launch {
-                        val saved =
-                            withContext(Dispatchers.IO) {
-                                controller.setAlarmSettings(
-                                    current.copy(
-                                        pitchWarnDeg = pw,
-                                        pitchDangerDeg = pd,
-                                        rollWarnDeg = rw,
-                                        rollDangerDeg = rd,
-                                    ),
-                                )
-                            }
-                        show(saved)
-                        feedback = "Alarm thresholds saved."
-                    }
+    Button(
+        onClick = {
+            val pw = parseImuThresholdDegrees(pitchWarn)
+            val pd = parseImuThresholdDegrees(pitchDanger)
+            val rw = parseImuThresholdDegrees(rollWarn)
+            val rd = parseImuThresholdDegrees(rollDanger)
+            if (pw == null || pd == null || rw == null || rd == null) {
+                feedback = "Enter thresholds between 1 and 89 degrees."
+            } else {
+                scope.launch {
+                    val saved =
+                        withContext(Dispatchers.IO) {
+                            controller.setAlarmSettings(
+                                current.copy(
+                                    pitchWarnDeg = pw,
+                                    pitchDangerDeg = pd,
+                                    rollWarnDeg = rw,
+                                    rollDangerDeg = rd,
+                                ),
+                            )
+                        }
+                    show(saved)
+                    feedback = "Alarm thresholds saved."
                 }
-            },
-            modifier = Modifier.testTag("btn_imu_alarm_save"),
-        ) { Text("Save alarm") }
-        OutlinedButton(
-            onClick = { controller.testAlarm(ImuAlarmTone.DANGER) },
-            modifier = Modifier.testTag("btn_imu_alarm_test"),
-        ) { Text("Test sound") }
-    }
+            }
+        },
+        modifier = Modifier.testTag("btn_imu_alarm_save"),
+    ) { Text("Save alarm") }
     feedback?.let {
         Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("imu_alarm_feedback"))
     }

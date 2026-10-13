@@ -91,40 +91,4 @@ class ImuReadoutTest {
         assertNull(parseImuThresholdDegrees("90"))
         assertNull(parseImuThresholdDegrees("NaN"))
     }
-
-    @Test
-    fun alarmIsSilentWhenDisabledOrLevel() {
-        val p = ImuAlarmPolicy()
-        assertNull(p.next(ImuAlarmLevel.NONE, true, 0))
-        assertNull(p.next(ImuAlarmLevel.DANGER, false, 10))
-        // Disabled must not arm a later repeat: enabling sounds immediately.
-        assertEquals(ImuAlarmTone.DANGER, p.next(ImuAlarmLevel.DANGER, true, 20))
-    }
-
-    @Test
-    fun dangerSoundsAtOnceThenRepeatsEverySecond() {
-        val p = ImuAlarmPolicy()
-        assertEquals(ImuAlarmTone.DANGER, p.next(ImuAlarmLevel.DANGER, true, 1_000))
-        assertNull(p.next(ImuAlarmLevel.DANGER, true, 1_500))
-        assertEquals(ImuAlarmTone.DANGER, p.next(ImuAlarmLevel.DANGER, true, 2_000))
-    }
-
-    @Test
-    fun warningRepeatsSlowerAndEscalationSoundsImmediately() {
-        val p = ImuAlarmPolicy()
-        assertEquals(ImuAlarmTone.WARNING, p.next(ImuAlarmLevel.WARNING, true, 0))
-        assertNull(p.next(ImuAlarmLevel.WARNING, true, 2_000))
-        assertEquals(ImuAlarmTone.DANGER, p.next(ImuAlarmLevel.DANGER, true, 2_100))
-        // Dropping back to warning does not re-sound at once.
-        assertNull(p.next(ImuAlarmLevel.WARNING, true, 2_200))
-        assertEquals(ImuAlarmTone.WARNING, p.next(ImuAlarmLevel.WARNING, true, 6_200))
-    }
-
-    @Test
-    fun clearingTheAlarmRearmsTheImmediateTone() {
-        val p = ImuAlarmPolicy()
-        assertEquals(ImuAlarmTone.WARNING, p.next(ImuAlarmLevel.WARNING, true, 0))
-        assertNull(p.next(ImuAlarmLevel.NONE, true, 100))
-        assertEquals(ImuAlarmTone.WARNING, p.next(ImuAlarmLevel.WARNING, true, 200))
-    }
 }

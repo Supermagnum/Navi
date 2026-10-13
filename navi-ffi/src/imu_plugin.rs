@@ -30,6 +30,9 @@ use navi_plugin_imu_engine::{
 const IMU_NAME: &str = "imu";
 const ENABLE_FILE: &str = "plugin_enable.json";
 const KV_REL: &str = "plugin_kv/imu.json";
+/// One-shot: older builds persisted `imu_alarm.enabled=true` for STREAM_ALARM beeps.
+/// Host alarm audio is gone; clear that flag once so legacy KV cannot look "armed".
+const KEY_ALARM_AUDIO_CLEARED: &str = "imu_alarm_audio_cleared_v1";
 const PLUGINS_REL: &str = "plugins";
 
 /// Reads faster than this get the cached sample; also the sensor sampling period.
@@ -351,16 +354,38 @@ fn ensure_loaded(session: &mut Session) -> Result<Arc<PluginHost>, (ImuCallKind,
     Ok(host)
 }
 
+fn clear_legacy_alarm_sound_enabled(kv: &mut FilePluginKv) {
+    if kv.get(KEY_ALARM_AUDIO_CLEARED).is_some() {
+        return;
+    }
+    if let Some(raw) = kv.get(KEY_ALARM) {
+        if let Ok(mut cfg) = serde_json::from_str::<AlarmConfig>(&raw) {
+            if cfg.enabled {
+                cfg.enabled = false;
+                if let Ok(json) = serde_json::to_string(&cfg.sanitized()) {
+                    if let Err(e) = kv.set(KEY_ALARM, &json) {
+                        log::warn!(target: "NaviImu", "legacy alarm clear failed: {e}");
+                    }
+                }
+            }
+        }
+    }
+    if let Err(e) = kv.set(KEY_ALARM_AUDIO_CLEARED, "1") {
+        log::warn!(target: "NaviImu", "alarm audio clear marker failed: {e}");
+    }
+}
+
 /// Bind the plugin session to the app files dir and the Android sensor backend.
 /// Safe to call more than once: the previous session's sensors are released.
 #[uniffi::export]
 pub fn imu_plugin_configure(files_dir: String, platform: Arc<dyn SensorPlatform>) -> String {
     crate::init_native_logging();
     let files_dir = PathBuf::from(files_dir);
-    let kv = match FilePluginKv::open(files_dir.join(KV_REL)) {
+    let mut kv = match FilePluginKv::open(files_dir.join(KV_REL)) {
         Ok(kv) => kv,
         Err(e) => return format!("FAIL: plugin kv: {e}"),
     };
+    clear_legacy_alarm_sound_enabled(&mut kv);
     let hub = SensorHub::new(
         Box::new(PlatformBackend { platform }),
         SensorHubConfig {
@@ -678,7 +703,7 @@ mod tests {
             "OK"
         );
         let defaults = imu_plugin_alarm_settings();
-        assert!(defaults.enabled);
+        assert!(!defaults.enabled);
 
         let stored = imu_plugin_set_alarm_settings(ImuAlarmSettings {
             enabled: true,
