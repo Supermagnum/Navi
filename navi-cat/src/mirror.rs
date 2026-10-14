@@ -415,6 +415,25 @@ pub fn apply_bundles_atomic(
     report
 }
 
+fn generation_sidecar_path(live_db_path: &Path) -> PathBuf {
+    let mut p = live_db_path.as_os_str().to_os_string();
+    p.push(".generation");
+    PathBuf::from(p)
+}
+
+fn read_applied_generation(live_db_path: &Path) -> Option<String> {
+    let path = generation_sidecar_path(live_db_path);
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn write_applied_generation(live_db_path: &Path, generation: &str) {
+    let path = generation_sidecar_path(live_db_path);
+    let _ = std::fs::write(path, format!("{generation}\n"));
+}
+
 /// Blocking HTTPS fetch of current.json + each country (for UniFFI / desktop).
 pub fn fetch_and_update(base_url: &str, live_db_path: &Path) -> UpdateReport {
     let base = base_url.trim_end_matches('/');
@@ -462,6 +481,31 @@ pub fn fetch_and_update(base_url: &str, live_db_path: &Path) -> UpdateReport {
             };
         }
     };
+
+    // Same server generation already applied → do not re-download country zsts.
+    if live_db_path.is_file() {
+        if let Some(prev) = read_applied_generation(live_db_path) {
+            if prev == catalog.generation {
+                let mut report = UpdateReport {
+                    ok: true,
+                    generation: catalog.generation.clone(),
+                    imported: 0,
+                    kept_last_good: true,
+                    ..Default::default()
+                };
+                if !catalog
+                    .sources
+                    .iter()
+                    .any(|s| s.source.eq_ignore_ascii_case("repeaterbook"))
+                {
+                    report
+                        .sources_missing
+                        .push("repeaterbook: not available yet".into());
+                }
+                return report;
+            }
+        }
+    }
 
     let mut bundles = Vec::new();
     let mut report_early = UpdateReport {
@@ -553,6 +597,9 @@ pub fn fetch_and_update(base_url: &str, live_db_path: &Path) -> UpdateReport {
         &bundles,
         &["radioid", "repeaterbook"],
     );
+    if report.ok {
+        write_applied_generation(live_db_path, &catalog.generation);
+    }
     // Preserve missing notes from early scan.
     for m in report_early.sources_missing {
         if !report.sources_missing.contains(&m) {
@@ -648,6 +695,19 @@ mod tests {
         let db = RepeaterDb::open_path(&db_path).unwrap();
         let sites = db.query_near(60.0, 10.0, 50.0, None);
         assert!(sites.iter().any(|s| s.id == "keep-me"));
+    }
+
+    #[test]
+    fn generation_sidecar_round_trip() {
+        let live = tempfile::tempdir().unwrap();
+        let db_path = live.path().join("cat_repeaters.sqlite");
+        fs::write(&db_path, b"sqlite-placeholder").unwrap();
+        assert!(read_applied_generation(&db_path).is_none());
+        write_applied_generation(&db_path, "20261013T091219Z");
+        assert_eq!(
+            read_applied_generation(&db_path).as_deref(),
+            Some("20261013T091219Z")
+        );
     }
 
     #[test]

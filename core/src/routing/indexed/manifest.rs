@@ -302,6 +302,60 @@ impl NaviManifest {
         None
     }
 
+    /// True when Truck/MobileHome must load the car graph (documented fallback).
+    ///
+    /// Server/convert packs either omit a truck key or point truck at the same
+    /// car tile files / hard-linked monolith. Distinct truck archives mean the
+    /// region has real truck restrictions and must not reuse a car corridor
+    /// skeleton.
+    pub fn truck_graph_is_car_alias(&self) -> bool {
+        let car_tiles = self
+            .graph_tiles
+            .get(GRAPH_PROFILE_CAR)
+            .filter(|t| !t.is_empty());
+        let truck_tiles = self
+            .graph_tiles
+            .get(GRAPH_PROFILE_TRUCK)
+            .filter(|t| !t.is_empty());
+        match (car_tiles, truck_tiles) {
+            (Some(car), Some(truck)) => car
+                .iter()
+                .map(|e| e.file.as_str())
+                .eq(truck.iter().map(|e| e.file.as_str())),
+            (_, Some(_)) => false,
+            (Some(_), None) | (None, None) => match (
+                self.graph_files.get(GRAPH_PROFILE_CAR),
+                self.graph_files.get(GRAPH_PROFILE_TRUCK),
+            ) {
+                (Some(c), Some(t)) => c == t,
+                (Some(_), None) => true,
+                (None, Some(_)) => false,
+                (None, None) => true,
+            },
+        }
+    }
+
+    /// Like [`Self::truck_graph_is_car_alias`], also treating a distinct truck
+    /// monolith filename as an alias when it is the same inode or byte-identical
+    /// to the car archive (convert hard-link / copy).
+    pub fn truck_graph_is_car_alias_at(&self, data_dir: &Path) -> bool {
+        if self.truck_graph_is_car_alias() {
+            return true;
+        }
+        let Some(car_name) = self.graph_files.get(GRAPH_PROFILE_CAR) else {
+            return false;
+        };
+        let Some(truck_name) = self.graph_files.get(GRAPH_PROFILE_TRUCK) else {
+            return false;
+        };
+        if car_name == truck_name {
+            return true;
+        }
+        let car = data_dir.join(car_name);
+        let truck = data_dir.join(truck_name);
+        same_graph_archive(&car, &truck)
+    }
+
     pub fn poi_barrier_path(&self, data_dir: &Path) -> PathBuf {
         data_dir.join(&self.poi_barrier_file)
     }
@@ -316,6 +370,29 @@ impl NaviManifest {
 
     pub fn uses_wetland_tiles(&self) -> bool {
         !self.wetland_tiles.is_empty()
+    }
+}
+
+fn same_graph_archive(a: &Path, b: &Path) -> bool {
+    let Ok(ma) = fs::metadata(a) else {
+        return false;
+    };
+    let Ok(mb) = fs::metadata(b) else {
+        return false;
+    };
+    if ma.len() != mb.len() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if ma.dev() == mb.dev() && ma.ino() == mb.ino() {
+            return true;
+        }
+    }
+    match (fs::read(a), fs::read(b)) {
+        (Ok(xa), Ok(xb)) => xa == xb,
+        _ => false,
     }
 }
 

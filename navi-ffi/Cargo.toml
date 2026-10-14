@@ -17,6 +17,9 @@ default = []
 hamlib-ffi = ["navi-cat/ffi", "dep:navi-hamlib-sys", "navi-hamlib-sys/link-hamlib"]
 ## Host diagnostic / corridor helper binaries.
 diag-bins = []
+## Host regression gate (needs device long-trip packs). Off by default so a
+## plain `cargo test` neither fails nor spends time without packs.
+regression-gate = []
 
 [dependencies]
 driver-break-core = { path = "../core" }
@@ -141,6 +144,11 @@ required-features = ["diag-bins"]
 [[bin]]
 name = "navi-dest-hop-probe"
 path = "src/bin/navi_dest_hop_probe.rs"
+required-features = ["diag-bins"]
+
+[[bin]]
+name = "navi-t6-clearance-cut"
+path = "src/bin/navi_t6_clearance_cut.rs"
 required-features = ["diag-bins"]
 
 [[bin]]

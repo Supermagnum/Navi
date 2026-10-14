@@ -27,6 +27,9 @@ object IdlePackJobs {
         FERRY_CAR,
         FERRY_TRUCK,
         SKELETON,
+
+        /** Truck/MobileHome corridor skeleton when the pack has distinct truck graphs. */
+        SKELETON_TRUCK,
         PLACE_INDEX,
         INDEX_QUICK_CHECK,
         PLACE_INDEX_COMPACT,
@@ -224,7 +227,14 @@ object IdlePackJobs {
         val outcome =
             if (paused != null) {
                 PauseOutcome("paused", paused.kind, paused.regionId, ms)
-            } else if (job != null && (job.kind == Kind.SKELETON || job.kind == Kind.FERRY_CAR || job.kind == Kind.FERRY_TRUCK)) {
+            } else if (job != null &&
+                (
+                    job.kind == Kind.SKELETON ||
+                        job.kind == Kind.SKELETON_TRUCK ||
+                        job.kind == Kind.FERRY_CAR ||
+                        job.kind == Kind.FERRY_TRUCK
+                )
+            ) {
                 PauseOutcome("waited", job.kind, job.regionId, ms)
             } else if (job?.kind == Kind.PLACE_INDEX || job?.kind == Kind.PLACE_INDEX_COMPACT) {
                 PauseOutcome("paused", job.kind, job.regionId, ms)
@@ -264,8 +274,15 @@ object IdlePackJobs {
     fun offerSkeleton(
         packDir: File,
         stem: String,
+        profile: TravelProfile = TravelProfile.CAR,
     ) {
-        offer(Job(Kind.SKELETON, stem, packDir, regionIdOf(packDir, stem)))
+        val kind =
+            when (profile) {
+                TravelProfile.TRUCK, TravelProfile.TRUCK_ELECTRIC, TravelProfile.MOBILE_HOME ->
+                    Kind.SKELETON_TRUCK
+                else -> Kind.SKELETON
+            }
+        offer(Job(kind, stem, packDir, regionIdOf(packDir, stem)))
         drainIfAllowed()
     }
 
@@ -346,6 +363,10 @@ object IdlePackJobs {
             if (!r.corridorSkeleton) {
                 offer(Job(Kind.SKELETON, r.stem, r.packDir, r.regionId))
             }
+            // Motor profiles that use Stage B: always enqueue a Truck ensure.
+            // When the pack's truck graph aliases car, Rust no-ops immediately;
+            // when distinct truck tiles exist, this builds the truck skeleton.
+            offer(Job(Kind.SKELETON_TRUCK, r.stem, r.packDir, r.regionId))
         }
         val indexRoot =
             indexDir
@@ -488,6 +509,7 @@ object IdlePackJobs {
                 Kind.FERRY_CAR,
                 Kind.FERRY_TRUCK,
                 Kind.SKELETON,
+                Kind.SKELETON_TRUCK,
                 Kind.PLACE_INDEX,
                 Kind.PLACE_INDEX_COMPACT,
             )
@@ -524,6 +546,7 @@ object IdlePackJobs {
             Kind.FERRY_CAR -> "ferry sidecar (car) for $name"
             Kind.FERRY_TRUCK -> "ferry sidecar (truck) for $name"
             Kind.SKELETON -> "corridor skeleton for $name"
+            Kind.SKELETON_TRUCK -> "corridor skeleton (truck) for $name"
             Kind.PLACE_INDEX -> "place index for $name"
             Kind.INDEX_QUICK_CHECK -> "place index health check"
             Kind.PLACE_INDEX_COMPACT -> "place index compaction"
@@ -546,6 +569,10 @@ object IdlePackJobs {
             }
             Kind.SKELETON -> {
                 CorridorSkeletonBackground.runJob(job.packDir, job.stem, TravelProfile.CAR)
+                false
+            }
+            Kind.SKELETON_TRUCK -> {
+                CorridorSkeletonBackground.runJob(job.packDir, job.stem, TravelProfile.TRUCK)
                 false
             }
             Kind.PLACE_INDEX -> {

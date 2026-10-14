@@ -56,7 +56,7 @@ object CorridorSkeletonBackground {
             Log.i(TAG, "corridor skeleton already ready stem=$trimmed")
             return
         }
-        IdlePackJobs.offerSkeleton(packDir, trimmed)
+        IdlePackJobs.offerSkeleton(packDir, trimmed, profile)
     }
 
     internal fun runJob(
@@ -99,6 +99,9 @@ object CorridorSkeletonBackground {
         if (RoutePlanGate.isRunning() || NaviMapTestHooks.pendingTripPlan != null) return
         for (r in snap.regions.values) {
             ensureStarted(r.packDir, r.stem, TravelProfile.CAR)
+            // Truck/MobileHome Stage B: enqueue truck ensure for every motor pack.
+            // Rust aliases to the car skeleton when truck graphs are the car fallback.
+            ensureStarted(r.packDir, r.stem, TravelProfile.TRUCK)
         }
         IdlePackJobs.onAppIdle()
     }
