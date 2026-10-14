@@ -31,9 +31,7 @@ fn main() {
         "1" | "true" | "yes" | "on"
     );
     let use_t6 = matches!(
-        arg_or(&args, "--t6", "false")
-            .to_ascii_lowercase()
-            .as_str(),
+        arg_or(&args, "--t6", "false").to_ascii_lowercase().as_str(),
         "1" | "true" | "yes" | "on"
     );
     let vehicle = if use_t6 {

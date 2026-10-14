@@ -157,7 +157,10 @@ fn main() {
             println!("SNAP FAIL without limits");
             continue;
         };
-        println!("snap_no_lim start_m={sm:.1} dest_m={dm:.1} s={} d={}", s.0, d.0);
+        println!(
+            "snap_no_lim start_m={sm:.1} dest_m={dm:.1} s={} d={}",
+            s.0, d.0
+        );
         match (
             g.nearest_routable_with_options(start.0, start.1, &opts_t6, false),
             g.nearest_routable_with_options(dest.0, dest.1, &opts_t6, false),
@@ -184,9 +187,7 @@ fn main() {
                 // How does planning fail with T6 snaps?
                 let dir_mixed = g.same_weak_component(s2, d)
                     && g.directed_reachable_with_options(s2, d, &opts_t6);
-                println!(
-                    "t6_start_to_nolim_dest directed={dir_mixed} (simulates bad dest snap)"
-                );
+                println!("t6_start_to_nolim_dest directed={dir_mixed} (simulates bad dest snap)");
             }
             (a, b) => println!("snap_t6 FAIL start={a:?} dest={b:?}"),
         }
@@ -235,8 +236,7 @@ fn main() {
         ] {
             let mut o = RouteOptions::default();
             o.vehicle = Some(partial);
-            let ok = g.same_weak_component(s, d)
-                && g.directed_reachable_with_options(s, d, &o);
+            let ok = g.same_weak_component(s, d) && g.directed_reachable_with_options(s, d, &o);
             println!("  ablate_{name}_only directed_ok={ok}");
         }
 
@@ -256,11 +256,7 @@ fn main() {
         println!("excluded_edges={excluded_n} reasons={by_reason:?}");
 
         if let Some((path, edges, _cost)) = g.shortest_path_with_options(s, d, false, &opts0) {
-            println!(
-                "undirected_path_nodes={} edges={}",
-                path.len(),
-                edges.len()
-            );
+            println!("undirected_path_nodes={} edges={}", path.len(), edges.len());
             let mut path_blocked = 0u64;
             for &ei in &edges {
                 let e = &g.edges[ei];

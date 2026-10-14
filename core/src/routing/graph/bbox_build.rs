@@ -528,7 +528,11 @@ fn parse_metric(raw: &str) -> Option<f64> {
         }
     }
     let num = num.replace(',', ".").trim().to_string();
-    if num.is_empty() || !num.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-') {
+    if num.is_empty()
+        || !num
+            .chars()
+            .all(|c| c.is_ascii_digit() || c == '.' || c == '-')
+    {
         return None;
     }
     let v: f64 = num.parse().ok()?;

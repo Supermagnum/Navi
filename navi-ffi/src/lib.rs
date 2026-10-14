@@ -4889,9 +4889,10 @@ fn plan_car_route_inner(
             // Vehicle clearance changes directed reachability; Any-first snap
             // can land behind a low bridge that A* then refuses. Use roles when
             // options filter edges (option-filtered dest/origin rejects).
-            let roles_first = driver_break_core::routing::graph::options_need_filtered_components_pub(
-                &route_opts,
-            );
+            let roles_first =
+                driver_break_core::routing::graph::options_need_filtered_components_pub(
+                    &route_opts,
+                );
             match snap_stops(&built, &route_opts, roles_first) {
                 Ok(first) => {
                     snapped = first;

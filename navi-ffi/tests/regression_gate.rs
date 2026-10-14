@@ -861,11 +861,7 @@ fn plan_inputs_mismatch(report: &str, case: &Case, long_trip: bool) -> Vec<Strin
             .to_string()
     };
     let mut out = Vec::new();
-    let want_profile = if case.t6_limits {
-        "MobileHome"
-    } else {
-        "Car"
-    };
+    let want_profile = if case.t6_limits { "MobileHome" } else { "Car" };
     let want = [
         ("profile", want_profile.to_string()),
         ("eco", "false".to_string()),
@@ -1027,7 +1023,11 @@ fn run_case(case: &Case, packs: &Path, refs: &Path, work: &Path) -> Outcome {
             FfiTollPolicy::Allow,
             case.avoid_ferries,
             false,
-            if case.t6_limits { t6_vehicle() } else { empty_vehicle() },
+            if case.t6_limits {
+                t6_vehicle()
+            } else {
+                empty_vehicle()
+            },
             false,
             data_dir.display().to_string(),
             packs.display().to_string(),

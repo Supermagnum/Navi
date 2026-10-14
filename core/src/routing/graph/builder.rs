@@ -1130,9 +1130,7 @@ impl RouteGraph {
                     in_filtered_giant(id) && !dest_rej.contains(&id)
                 }
                 (Some((_, _, origin_rej, dest_rej)), SnapRole::Via) => {
-                    in_filtered_giant(id)
-                        && !origin_rej.contains(&id)
-                        && !dest_rej.contains(&id)
+                    in_filtered_giant(id) && !origin_rej.contains(&id) && !dest_rej.contains(&id)
                 }
                 (Some(_), SnapRole::Any) => true,
                 (None, _) => self.directed_snap_ok(id, role),
@@ -3140,7 +3138,11 @@ fn parse_metric(raw: &str) -> Option<f64> {
         }
     }
     let num = num.replace(',', ".").trim().to_string();
-    if num.is_empty() || !num.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '-') {
+    if num.is_empty()
+        || !num
+            .chars()
+            .all(|c| c.is_ascii_digit() || c == '.' || c == '-')
+    {
         return None;
     }
     let v: f64 = num.parse().ok()?;
@@ -3302,39 +3304,29 @@ pub fn clearance_restriction_user_message(
     let mut parts: Vec<String> = Vec::new();
     if let (Some(vh), Some(max)) = (limits.height_m, edge.maxheight_m) {
         if vh > max {
-            parts.push(format!(
-                "height limit {max:.2} m, your vehicle {vh:.2} m"
-            ));
+            parts.push(format!("height limit {max:.2} m, your vehicle {vh:.2} m"));
         }
     }
     if let (Some(vw), Some(max)) = (limits.width_m, edge.maxwidth_m) {
         if vw > max {
-            parts.push(format!(
-                "width limit {max:.2} m, your vehicle {vw:.2} m"
-            ));
+            parts.push(format!("width limit {max:.2} m, your vehicle {vw:.2} m"));
         }
     }
     if let (Some(vl), Some(max)) = (limits.length_m, edge.maxlength_m) {
         if vl > max {
-            parts.push(format!(
-                "length limit {max:.2} m, your vehicle {vl:.2} m"
-            ));
+            parts.push(format!("length limit {max:.2} m, your vehicle {vl:.2} m"));
         }
     }
     if let (Some(tw), Some(max)) = (limits.total_weight_kg, edge.maxweight_t) {
         let t = tw / 1000.0;
         if t > max {
-            parts.push(format!(
-                "weight limit {max:.2} t, your vehicle {t:.2} t"
-            ));
+            parts.push(format!("weight limit {max:.2} t, your vehicle {t:.2} t"));
         }
     }
     if let (Some(ax), Some(max)) = (limits.axle_weight_kg, edge.maxaxleload_t) {
         let t = ax / 1000.0;
         if t > max {
-            parts.push(format!(
-                "axle load limit {max:.2} t, your vehicle {t:.2} t"
-            ));
+            parts.push(format!("axle load limit {max:.2} t, your vehicle {t:.2} t"));
         }
     }
     if parts.is_empty() {
@@ -4801,7 +4793,15 @@ mod tests {
                 },
             );
         }
-        let edge = |id: &str, s: i64, t: i64, lat0: f64, lon0: f64, lat1: f64, lon1: f64, max_h: Option<f64>, oneway: bool| {
+        let edge = |id: &str,
+                    s: i64,
+                    t: i64,
+                    lat0: f64,
+                    lon0: f64,
+                    lat1: f64,
+                    lon1: f64,
+                    max_h: Option<f64>,
+                    oneway: bool| {
             let mut e = GraphEdge {
                 id: id.into(),
                 source: NodeId(s),
@@ -4815,14 +4815,25 @@ mod tests {
                 end_lat: lat1,
                 end_lon: lon1,
                 shape: Vec::new(),
-                highway: Some(if max_h.is_some() { "service" } else { "primary" }.into()),
+                highway: Some(
+                    if max_h.is_some() {
+                        "service"
+                    } else {
+                        "primary"
+                    }
+                    .into(),
+                ),
                 maxspeed_kmh: None,
                 maxspeed_practical_kmh: None,
                 maxspeed_advisory_kmh: None,
                 maxspeed_type: None,
                 maxspeed_variable: false,
                 minspeed_kmh: None,
-                name: if max_h.is_some() { Some("Garage".into()) } else { Some("Main".into()) },
+                name: if max_h.is_some() {
+                    Some("Garage".into())
+                } else {
+                    Some("Main".into())
+                },
                 road_ref: None,
                 is_motorroad: false,
                 is_expressway: false,
@@ -4853,7 +4864,17 @@ mod tests {
             edge("21", 2, 1, 60.0, 10.01, 60.0, 10.0, None, false),
             edge("23", 2, 3, 60.0, 10.01, 60.0, 10.02, None, false),
             edge("32", 3, 2, 60.0, 10.02, 60.0, 10.01, None, false),
-            edge("low", 3, 4, 60.0, 10.02, 60.00005, 10.02005, Some(1.9), true),
+            edge(
+                "low",
+                3,
+                4,
+                60.0,
+                10.02,
+                60.00005,
+                10.02005,
+                Some(1.9),
+                true,
+            ),
         ];
         let g = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
         let mut opts = RouteOptions {
