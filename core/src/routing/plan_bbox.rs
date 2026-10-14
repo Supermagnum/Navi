@@ -42,6 +42,31 @@ pub fn stage_b_active() -> bool {
     STAGE_B_ACTIVE.load(Ordering::Relaxed)
 }
 
+/// Serializes unit tests that flip process-global [`STAGE_B_ACTIVE`]. Without
+/// this, parallel `cargo test` threads race `set_stage_b_active(false)` and
+/// `ensure_coarse_path_tiles` early-returns `Ok(())` mid-assertion.
+#[cfg(test)]
+pub struct StageBTestGuard {
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+impl StageBTestGuard {
+    pub fn activate() -> Self {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let lock = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        set_stage_b_active(true);
+        Self { _lock: lock }
+    }
+}
+
+#[cfg(test)]
+impl Drop for StageBTestGuard {
+    fn drop(&mut self) {
+        set_stage_b_active(false);
+    }
+}
+
 pub fn set_stage_b_coarse_path(path: Vec<(f64, f64)>) {
     STAGE_B_COARSE_PATH.with(|c| *c.borrow_mut() = Some(path));
 }

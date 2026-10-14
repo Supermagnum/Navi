@@ -3389,7 +3389,7 @@ mod select_tiles_budget_tests {
 
     #[test]
     fn hop_end_tile_outside_first_selection_is_forced_in() {
-        crate::routing::plan_bbox::set_stage_b_active(true);
+        let _stage_b = crate::routing::plan_bbox::StageBTestGuard::activate();
         let first = vec![
             "leaf-latest.navi-graph-car.t0_0.rkyv".to_string(),
             "leaf-latest.navi-graph-car.t0_1.rkyv".to_string(),
@@ -3412,7 +3412,6 @@ mod select_tiles_budget_tests {
         ];
         let pts = [(60.1_f64, 10.1), (60.25, 10.05), (60.35, 10.10)];
         ensure_coarse_path_tiles(&mut selected, &all_ready, &pts).expect("end tile exists");
-        crate::routing::plan_bbox::set_stage_b_active(false);
         assert!(
             selected
                 .iter()
@@ -3424,7 +3423,7 @@ mod select_tiles_budget_tests {
 
     #[test]
     fn hop_without_end_tile_fails_loudly() {
-        crate::routing::plan_bbox::set_stage_b_active(true);
+        let _stage_b = crate::routing::plan_bbox::StageBTestGuard::activate();
         let mut selected = vec!["leaf-latest.navi-graph-car.t0_0.rkyv".to_string()];
         let all_ready = vec![(
             "leaf-latest.navi-graph-car.t0_0.rkyv".into(),
@@ -3433,7 +3432,6 @@ mod select_tiles_budget_tests {
         let pts = [(60.1_f64, 10.1), (61.0, 12.0)];
         let err = ensure_coarse_path_tiles(&mut selected, &all_ready, &pts)
             .expect_err("end is outside every Ready tile");
-        crate::routing::plan_bbox::set_stage_b_active(false);
         assert!(
             matches!(err, PackLoadError::MissingEndTile(_)),
             "got {err:?}"
