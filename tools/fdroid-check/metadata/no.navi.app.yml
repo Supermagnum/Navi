@@ -1,8 +1,12 @@
 AntiFeatures:
   TetheredNet:
-    en-US: Optional map downloads use Geofabrik OpenStreetMap extracts, OpenFreeMap
-      for online basemap tiles, and Mapterhorn for elevation data. Routing and navigation
-      run offline after those files are on the device.
+    en-US: Optional online features talk to specific hosts that are not trivial
+      to replace without changing the app or a config the user does not see
+      first: map packs from navigate-me.duckdns.org (Geofabrik-derived extracts),
+      OpenFreeMap basemap tiles, Mapterhorn elevation, DATEX traffic feeds, and
+      amateur-radio repeater bundles from the same pack server. Optional online
+      place search (off by default) queries a Nominatim-compatible geocoder.
+      Routing and navigation run offline after map data is on the device.
 Categories:
   - Navigation
 License: GPL-3.0-or-later
@@ -18,14 +22,16 @@ AutoName: Navi
 RepoType: git
 Repo: https://github.com/Supermagnum/Navi.git
 
-# Convenience prebuilts under jniLibs/ are for local/CI Gradle-only assemble.
-# F-Droid must not package them: rm: deletes those files, then the recipe
-# cross-compiles from Rust source.
+# Convenience prebuilts under jniLibs/ and compiled/ are for local/CI Gradle-only
+# assemble and sideload. F-Droid must not package them: scandelete/rm remove
+# those files, then the recipe cross-compiles from Rust source and rebuilds
+# plugin wasm guests. Liberation Sans (SIL OFL 1.1) under res/font/ is source
+# font data, not a prebuilt binary.
 
 Builds:
-  - versionName: 0.3.6-beta
-    versionCode: 11
-    commit: 2ae24b3be0288e6b7f00e67be9b18d41a88e1b6f
+  - versionName: 0.3.25-beta
+    versionCode: 30
+    commit: v0.3.25-beta
     timeout: 14400
     subdir: app
     sudo:
@@ -40,6 +46,10 @@ Builds:
         libssl-dev
       - update-java-alternatives -a || true
     gradle: yes
+    scandelete:
+      - compiled/
+      - app/src/main/jniLibs/
+      - app/src/main/assets/plugins/
     rm:
       - app/src/main/jniLibs/arm64-v8a/libnavi.so
       - app/src/main/jniLibs/x86_64/libnavi.so
@@ -70,6 +80,9 @@ Builds:
           'rustflags = ["-C", "link-arg=-lc++_shared"]' \
           > ../.cargo/config.toml
       - printf 'sdk.dir=%s\nndk.dir=%s\n' "$$SDK$$" "$$NDK$$" > ../local.properties
+      - test ! -e ../compiled/navi-release.apk
+      - test ! -e ../app/src/main/jniLibs/arm64-v8a/libnavi.so
+      - test ! -e ../app/src/main/assets/plugins/right_to_roam_camping/plugin.wasm
     build:
       - export PATH="/usr/local/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${HOME}/.cargo/bin:${PATH:-}"
       - . "$HOME/.cargo/env"
@@ -80,25 +93,36 @@ Builds:
       - test ! -e ../app/src/main/jniLibs/arm64-v8a/libnavi.so
       - test ! -e ../app/src/main/jniLibs/x86_64/libnavi.so
       # Builds every ABI listed in gradle.properties naviAbis (default both 64-bit).
+      # assembleRelease also runs scripts/build-plugin-wasm.sh (right_to_roam_camping,
+      # cat/CATS, imu, and test guests) for wasm32-unknown-unknown.
       - ../scripts/build-android-native.sh all release
       - test -f ../app/src/main/jniLibs/arm64-v8a/libnavi.so
       - test -f ../app/src/main/jniLibs/x86_64/libnavi.so
+      - ../scripts/build-plugin-wasm.sh
       - test -f ../app/src/main/assets/plugins/right_to_roam_camping/plugin.wasm
       - test -f ../app/src/main/assets/plugins/imu/plugin.wasm
+      - test -f ../app/src/main/assets/plugins/cat/plugin.wasm
+      - test -f ../app/src/main/res/font/liberation_sans.ttf
       - sha256sum ../app/src/main/jniLibs/arm64-v8a/libnavi.so ../app/src/main/jniLibs/x86_64/libnavi.so
-      - sha256sum ../app/src/main/assets/plugins/right_to_roam_camping/plugin.wasm ../app/src/main/assets/plugins/imu/plugin.wasm
+      - sha256sum ../app/src/main/assets/plugins/right_to_roam_camping/plugin.wasm ../app/src/main/assets/plugins/imu/plugin.wasm ../app/src/main/assets/plugins/cat/plugin.wasm
       - gradle assembleRelease
     ndk: r27c
 
 MaintainerNotes: |
-  Local F-Droid buildability check metadata (not the fdroiddata submission).
-  sudo: installs apt packages only (no rustup package, no rustup as root).
-  Rust 1.98.0 is installed in prebuild as the fdroid build user, with
+  Local F-Droid buildability check metadata (also the paste source for
+  supermag/fdroiddata !45644). sudo: apt packages only (no rustup as root).
+  Rust 1.98.0 via rustup in prebuild as the build user, with
   aarch64-linux-android, x86_64-linux-android, and wasm32-unknown-unknown.
-  rm: repo-root paths to prebuilt libnavi.so only.
-  build: scripts/build-android-native.sh all (reads gradle.properties naviAbis),
-  asserts plugin.wasm, then Gradle. Shipped ABIs: naviAbis (default arm64-v8a,x86_64).
+  scandelete: compiled/ sideload APKs, jniLibs/ prebuilt .so, and assets/plugins/
+  committed wasm guests. build: scripts/build-android-native.sh all, then
+  scripts/build-plugin-wasm.sh, then Gradle. Liberation Sans Regular
+  (app/src/main/res/font/liberation_sans.ttf) is SIL OFL 1.1 source font data.
+  Shipped ABIs: naviAbis (default arm64-v8a,x86_64). UpdateCheckMode allows
+  -beta tags (v0.3.25-beta).
 
 ArchivePolicy: 0 versions
-CurrentVersion: 0.3.6-beta
-CurrentVersionCode: 11
+AutoUpdateMode: Version
+UpdateCheckMode: Tags ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9]+)?$
+UpdateCheckData: app/build.gradle.kts|versionCode\s=\s(\d+)|.|versionName\s=\s"(.*)"
+CurrentVersion: 0.3.25-beta
+CurrentVersionCode: 30
