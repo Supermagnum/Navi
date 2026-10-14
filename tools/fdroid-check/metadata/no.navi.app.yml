@@ -1,6 +1,7 @@
 AntiFeatures:
   TetheredNet:
-    en-US: Optional online features talk to specific hosts that are not trivial
+    en-US: >
+      Optional online features talk to specific hosts that are not trivial
       to replace without changing the app or a config the user does not see
       first: map packs from navigate-me.duckdns.org (Geofabrik-derived extracts),
       OpenFreeMap basemap tiles, Mapterhorn elevation, DATEX traffic feeds, and
