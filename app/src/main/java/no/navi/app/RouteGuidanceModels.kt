@@ -15,6 +15,8 @@ data class RouteSimSample(
     val maxspeedConditional: String? = null,
     /** OSM name, else ref; null → UI uses [highwayClassDisplayLabel]. */
     val street: String? = null,
+    /** True when the densified sample sits on an OSM `tunnel=*` graph edge. */
+    val isTunnel: Boolean = false,
 )
 
 data class RouteManeuver(
@@ -104,6 +106,7 @@ fun parseRouteSimSamples(json: String): List<RouteSimSample> {
                                     .optString("street")
                                     .takeIf { it.isNotBlank() && it != "null" }
                             },
+                        isTunnel = o.optBoolean("is_tunnel", false),
                     ),
                 )
             }

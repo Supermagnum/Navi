@@ -5,37 +5,48 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
-import org.junit.Before
 import org.junit.Test
 import kotlin.system.measureTimeMillis
 
 /**
- * Typing cancels in-flight place search. Nominatim polite-use wait must use
- * cancellable [delay], not [Thread.sleep], or cancelled jobs stack ~1s each on
- * the IO pool and the search field feels frozen (double-letter typos).
+ * A replaced / cancelled limiter wait must abort instead of blocking the
+ * caller for the full one-second gap.
  */
 class OnlinePlaceSearchThrottleTest {
-    @Before
-    fun resetThrottle() {
-        OnlinePlaceSearch.resetThrottleForTests()
-        // Seed a recent request so the next throttle waits the full gap.
-        runBlocking { OnlinePlaceSearch.throttleNominatim() }
-    }
-
     @Test
-    fun throttleNominatim_isCancelledQuickly() =
+    fun limiterWaitIsCancelledQuickly() =
         runBlocking {
+            val limiter =
+                OnlinePlaceSearchLimiter(
+                    minIntervalMs = 1_000L,
+                    clockMs = { 10_000L },
+                    wait = { delay(it) },
+                )
+            val client =
+                OnlineHttpClient {
+                    OnlineHttpResult.Ok("[]")
+                }
+            // Seed lastStartMs so the next get() waits the full gap.
+            limiter.get(
+                "seed",
+                OnlineHttpRequest("https://example.test/seed", emptyMap()),
+                client,
+            )
             val job =
                 async {
-                    OnlinePlaceSearch.throttleNominatim()
+                    limiter.get(
+                        "next",
+                        OnlineHttpRequest("https://example.test/next", emptyMap()),
+                        client,
+                    )
                 }
-            delay(50)
+            delay(40)
             val elapsed =
                 measureTimeMillis {
                     job.cancelAndJoin()
                 }
             assertTrue(
-                "cancelled Nominatim throttle should abort in well under 1s, was ${elapsed}ms",
+                "cancelled limiter wait should abort in well under 1s, was ${elapsed}ms",
                 elapsed < 400,
             )
         }

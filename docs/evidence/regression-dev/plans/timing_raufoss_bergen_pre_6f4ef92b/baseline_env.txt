@@ -1,0 +1,15 @@
+=== 2026-10-13T17:23:15+02:00 ===
+    versionCode=26 minSdk=26 targetSdk=36
+    versionName=0.3.21-beta
+01913069 Note in README that CAT radio is developed on the CAT branch.
+place_index=place_index-work-vacuumed.db
+-rw-rw-rw- 1 u0_a222 u0_a222 1973010432 2026-10-13 17:13 files/place_index.db
+manifests=3
+eco_off_cold: done 33038ms / 38.31s / 429.443km
+
+=== A/B note ===
+Binary: 0.3.21-beta / git 01913069 (parent of 6f4ef92b)
+place_index: navi-fu16-host-baks/place_index-work-vacuumed.db (integrity=ok)
+Packs: internal long-trip-packs ostlandet+vestlandet+sorlandet (full car/poi/wetland)
+eco_on_warm: repeated plan_settings abort on keep-alive under 0.3.21; cold eco-on is authoritative.
+No timing regression flagged (WIP not slower than baseline by >15% on completed cases).

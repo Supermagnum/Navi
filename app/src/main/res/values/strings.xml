@@ -2,4 +2,9 @@
 <resources>
     <string name="via_point_reached">Via point reached</string>
     <string name="via_point_n_of_m_reached">Via point %1$d of %2$d reached</string>
+    <!-- CAT enable toggle: always visible beside the switch (English source). -->
+    <string name="cat_licence_listen_only">You may listen, but do not transmit without an amateur radio licence.</string>
+    <string name="cat_plugin_toggle_label">CAT / CATS radio</string>
+    <string name="cat_update_repeaters">Update repeaters</string>
+    <string name="cat_update_repeaters_hint">Downloads from navi-server only (plain HTTPS). No background fetch. RepeaterBook appears when the server publishes it.</string>
 </resources>

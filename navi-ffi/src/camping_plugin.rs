@@ -43,6 +43,10 @@ const PLUGINS_REL: &str = "plugins";
 /// multi-country graph co-resident with POI buildings (Automotive 4 GB).
 const CAMPING_SEGMENT_WAYPOINTS: usize = 6;
 const CAMPING_MAX_SEEDS: usize = 80;
+/// Max road∩track seeds kept from one 6-waypoint segment so Germany cannot
+/// fill the global cap before Norway is scanned.
+const CAMPING_SEEDS_PER_SEGMENT: usize = 8;
+const CAMPING_MAX_JOB_BUILDINGS: usize = 400;
 
 #[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CampingCallKind {
@@ -159,17 +163,26 @@ fn corridor_bbox_from_waypoints(waypoints: &[[f64; 2]]) -> Option<[f64; 4]> {
     Some([min_lat - pad, min_lon - pad, max_lat + pad, max_lon + pad])
 }
 
-fn iter_pack_search_dirs<'a>(
-    data_dir: &'a Path,
-    pack_dirs: &'a [PathBuf],
-) -> impl Iterator<Item = &'a Path> + 'a {
-    std::iter::once(data_dir).chain(pack_dirs.iter().map(|p| p.as_path()))
-}
-
-/// Prefer a `-latest.osm.pbf` under `data_dir` or any long-trip pack root.
+/// Prefer a `-latest.osm.pbf` under long-trip pack roots, then `data_dir`.
+///
+/// Skip country extracts that have no sibling (or search-dir) Ready manifest —
+/// `files/sweden-latest.osm.pbf` without `sweden-latest.navi-manifest.json` made
+/// every camping corridor segment fail with `indexed pack missing` before PIP
+/// re-home could pick Niedersachsen / Ostlandet leaf packs.
 fn find_planning_pbf(data_dir: &Path, pack_dirs: &[PathBuf]) -> Option<PathBuf> {
-    let mut fallback = None;
-    for dir in iter_pack_search_dirs(data_dir, pack_dirs) {
+    // Pack roots first: they hold leaf Ready packs. filesDir often has leftover
+    // country PBFs (sweden) that are not planning stems.
+    let mut dirs: Vec<&Path> = pack_dirs.iter().map(|p| p.as_path()).collect();
+    if !dirs.contains(&data_dir) {
+        dirs.push(data_dir);
+    }
+    let has_manifest = |stem: &str| {
+        dirs.iter()
+            .any(|d| d.join(format!("{stem}.navi-manifest.json")).is_file())
+    };
+    let mut fallback_no_man = None;
+    let mut fallback_non_latest = None;
+    for dir in &dirs {
         let Ok(entries) = fs::read_dir(dir) else {
             continue;
         };
@@ -185,14 +198,21 @@ fn find_planning_pbf(data_dir: &Path, pack_dirs: &[PathBuf]) -> Option<PathBuf> 
                 continue;
             }
             if name.contains("-latest.osm.pbf") {
-                return Some(path);
+                let stem = name.trim_end_matches(".osm.pbf");
+                if has_manifest(stem) {
+                    return Some(path);
+                }
+                if fallback_no_man.is_none() {
+                    fallback_no_man = Some(path);
+                }
+                continue;
             }
-            if fallback.is_none() {
-                fallback = Some(path);
+            if fallback_non_latest.is_none() {
+                fallback_non_latest = Some(path);
             }
         }
     }
-    fallback
+    fallback_no_man.or(fallback_non_latest)
 }
 
 fn parse_pack_dirs_json(raw: &str) -> Vec<PathBuf> {
@@ -241,9 +261,13 @@ fn load_overnight_geometry_near_probes(
         prox.glacier_rings.retain(|ring| {
             ring.iter().any(|p| {
                 let (rlon, rlat) = (p[0], p[1]);
-                (rlat - lat).abs() <= 0.5 && (rlon - lon).abs() <= 0.5
+                (rlat - lat).abs() <= 0.08 && (rlon - lon).abs() <= 0.08
             })
         });
+        // Pack overnight_buildings is region-wide; keep only the probe cell so
+        // the wasm guest job stays under the 1 MiB rtr_suggest_job buffer.
+        prox.buildings
+            .retain(|&(blat, blon)| (blat - lat).abs() <= 0.02 && (blon - lon).abs() <= 0.02);
         buildings.extend(prox.buildings);
         glacier_rings.extend(prox.glacier_rings);
         drop(poi);
@@ -633,6 +657,10 @@ pub fn camping_plugin_session_disabled_reason() -> Option<String> {
 }
 
 /// Push live navigation context (closes production destination-null).
+///
+/// `waypoints_json` is `[[lat, lon], …]` — not the MapLibre overlay string
+/// `"lon,lat;lon,lat;…"`. The Android host converts via
+/// `sampleCampingCorridorWaypoints`.
 #[uniffi::export]
 pub fn camping_plugin_set_nav_context(
     waypoints_json: String,
@@ -921,6 +949,30 @@ pub fn camping_plugin_run_suggest(job_json: String, timezone: String) -> Camping
     run_camping_guest(Some(job_json))
 }
 
+fn subsample_even<T: Clone>(items: &[T], max: usize) -> Vec<T> {
+    if max == 0 || items.is_empty() {
+        return Vec::new();
+    }
+    if items.len() <= max {
+        return items.to_vec();
+    }
+    if max == 1 {
+        return vec![items[items.len() / 2].clone()];
+    }
+    let n = items.len();
+    let mut out = Vec::with_capacity(max);
+    let mut last = usize::MAX;
+    for i in 0..max {
+        let idx = i * (n - 1) / (max - 1);
+        if idx == last {
+            continue;
+        }
+        out.push(items[idx].clone());
+        last = idx;
+    }
+    out
+}
+
 /// Discover overnight spots along the live nav corridor.
 /// Host: graph load, road∩track junctions, probe walk, nearby buildings.
 /// Guest: every rule, filter, and card decision via wasmtime.
@@ -995,6 +1047,12 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
             peak_guest_memory_bytes: 0,
         };
     };
+    log::info!(
+        target: "NaviCamping",
+        "suggest_along_route planning_pbf={} pack_dirs={}",
+        pbf.display(),
+        pack_dirs.len()
+    );
     let cache_key = geometry_cache_key(&waypoints, &pbf, &data_dir, &pack_dirs, max_suggestions);
     let cached_geometry = {
         let guard = session_lock().lock().expect("camping session lock");
@@ -1068,6 +1126,9 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
             Ok(graph) => {
                 let mut seg_seeds =
                     find_road_track_junctions(&graph, chunk, CORRIDOR_SEED_RADIUS_M);
+                if seg_seeds.len() > CAMPING_SEEDS_PER_SEGMENT {
+                    seg_seeds = subsample_even(&seg_seeds, CAMPING_SEEDS_PER_SEGMENT);
+                }
                 let walked = probe_along_tracks(&graph, &seg_seeds, DEFAULT_TRACK_WALK_M, None);
                 drop(graph);
                 for s in seg_seeds.drain(..) {
@@ -1077,16 +1138,24 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
                     probes.push((p.lat, p.lon));
                 }
             }
-            Err(_) => {
+            Err(e) => {
                 segment_errors += 1;
+                // Info (not Warn): android_logger max is Info, so Warn never reaches logcat.
+                log::info!(
+                    target: "NaviCamping",
+                    "corridor segment graph load failed seg=[{seg_start}..{end}) \
+                     bbox={seg_bbox:?} err={e:#}"
+                );
             }
-        }
-        if seeds.len() >= CAMPING_MAX_SEEDS {
-            break;
         }
         start = end;
     }
-    seeds.truncate(CAMPING_MAX_SEEDS);
+    let seeds_raw = seeds.len();
+    let probes_raw = probes.len();
+    seeds = subsample_even(&seeds, CAMPING_MAX_SEEDS);
+    if probes.len() > CAMPING_MAX_SEEDS * 2 {
+        probes = subsample_even(&probes, CAMPING_MAX_SEEDS * 2);
+    }
     if probes.is_empty() {
         probes = seeds.iter().map(|s| (s.lat, s.lon)).collect();
     }
@@ -1107,9 +1176,12 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
     }
 
     let t_bldg = Instant::now();
-    let (all_buildings, glacier_rings) =
+    let (all_buildings, mut glacier_rings) =
         load_overnight_geometry_near_probes(&data_dir, &pack_dirs, &probes);
-    let buildings = buildings_near_probes(&all_buildings, &probes, 0.008);
+    let mut buildings = buildings_near_probes(&all_buildings, &probes, 0.008);
+    if buildings.len() > CAMPING_MAX_JOB_BUILDINGS {
+        buildings = subsample_even(&buildings, CAMPING_MAX_JOB_BUILDINGS);
+    }
     let buildings_ms = t_bldg.elapsed().as_millis() as u64;
 
     let t_admin = Instant::now();
@@ -1132,6 +1204,12 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
     };
 
     let t_ser = Instant::now();
+    if buildings.len() > CAMPING_MAX_SEEDS * 24 {
+        buildings = subsample_even(&buildings, CAMPING_MAX_SEEDS * 24);
+    }
+    if glacier_rings.len() > 32 {
+        glacier_rings = subsample_even(&glacier_rings, 32);
+    }
     let job = serde_json::json!({
         "probes": probes.iter().map(|&(la, lo)| [la, lo]).collect::<Vec<_>>(),
         "max_suggestions": max,
@@ -1146,7 +1224,24 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
         "vehicle_class": vehicle_class_job_str(travel_profile),
         "is_professional_driver_under_rest_rules": professional_driver,
     });
-    let job_json = job.to_string();
+    let mut job_json = job.to_string();
+    const CAMPING_GUEST_JOB_MAX_BYTES: usize = 900_000;
+    if job_json.len() > CAMPING_GUEST_JOB_MAX_BYTES {
+        log::warn!(
+            target: "NaviCamping",
+            "suggest job {} bytes exceeds guest kv buffer; dropping glaciers then subsample buildings",
+            job_json.len()
+        );
+        let mut compact = job.clone();
+        if let Some(obj) = compact.as_object_mut() {
+            obj.insert("glaciers".into(), serde_json::json!([]));
+            if let Some(b) = obj.get("buildings").and_then(|v| v.as_array()) {
+                let keep = subsample_even(b, CAMPING_MAX_SEEDS * 8);
+                obj.insert("buildings".into(), serde_json::Value::Array(keep));
+            }
+        }
+        job_json = compact.to_string();
+    }
     let job_bytes = job_json.len();
     let serialize_ms = t_ser.elapsed().as_millis() as u64;
     if let Some(session) = session_lock()
@@ -1173,9 +1268,12 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
     });
     log::info!(
         target: "NaviCamping",
-        "suggest_along_route via=wasmtime job_bytes={job_bytes} probes={} buildings={} timing={timing}",
+        "suggest_along_route via=wasmtime job_bytes={job_bytes} seeds_raw={seeds_raw} \
+         probes_raw={probes_raw} probes={} buildings={} first_lat={:.4} last_lat={:.4} timing={timing}",
         probes.len(),
-        buildings.len()
+        buildings.len(),
+        probes.first().map(|p| p.0).unwrap_or(0.0),
+        probes.last().map(|p| p.0).unwrap_or(0.0),
     );
     call.result_json = merge_guest_meta(call.result_json, timing, call.peak_guest_memory_bytes);
     call.elapsed_ms = started.elapsed().as_millis() as u64;
@@ -1738,6 +1836,28 @@ mod geometry_cache_tests {
         let _ = fs::remove_dir_all(&root);
     }
 
+    #[test]
+    fn find_planning_pbf_prefers_manifest_backed_over_sweden_country() {
+        let root = temp_dir();
+        let data = root.join("files");
+        let ltp = root.join("long-trip-packs");
+        fs::create_dir_all(&data).unwrap();
+        fs::create_dir_all(&ltp).unwrap();
+        // Country extract without a graph pack (device landmine).
+        fs::write(data.join("sweden-latest.osm.pbf"), b"pbf").unwrap();
+        // Leaf Ready stem next to its PBF under pack_dirs.
+        fs::write(ltp.join("niedersachsen-latest.osm.pbf"), b"pbf").unwrap();
+        fs::write(ltp.join("niedersachsen-latest.navi-manifest.json"), b"{}").unwrap();
+        let found =
+            find_planning_pbf(&data, std::slice::from_ref(&ltp)).expect("must pick leaf PBF");
+        assert!(
+            found.ends_with("niedersachsen-latest.osm.pbf"),
+            "got {}",
+            found.display()
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
     /// Regression: warm path must clone the cached job and drop the session lock
     /// before `run_camping_guest` (which re-acquires the same Mutex). Holding the
     /// lock across the guest call deadlocks the warm path (~9 ms target).
@@ -1765,6 +1885,26 @@ mod geometry_cache_tests {
         assert!(
             before_call.contains("drop(guard)"),
             "run_camping_guest must drop session lock before guest call"
+        );
+    }
+
+    #[test]
+    fn corridor_bbox_treats_waypoints_as_lat_lon() {
+        // Host JSON is [[lat, lon], …]. Feeding overlay lon,lat as-is puts
+        // Bugøynes in Pakistan latitudes (~29N).
+        let overlay_as_latlon = [[29.6337571_f64, 69.9741435]];
+        let converted = [[69.9741435_f64, 29.6337571]];
+        let swapped = corridor_bbox_from_waypoints(&overlay_as_latlon).unwrap();
+        let norway = corridor_bbox_from_waypoints(&converted).unwrap();
+        assert!(
+            norway[0] > 60.0,
+            "min_lat after lon,lat conversion must stay in Nord-Norge, got {}",
+            norway[0]
+        );
+        assert!(
+            swapped[0] < 40.0,
+            "unconverted overlay would request ~Pakistan latitudes, got {}",
+            swapped[0]
         );
     }
 }

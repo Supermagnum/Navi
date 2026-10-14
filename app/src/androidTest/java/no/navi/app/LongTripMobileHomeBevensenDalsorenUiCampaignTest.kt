@@ -224,17 +224,16 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         confirmPluginsAndLongTripViaToolsUi()
         screenshot("03_tools_plugins")
 
-        // Hang-fix retest: DO NOT wipe SD packs / index DBs — reuse Indexed corridor
-        // already on removable storage. Long-trip auto-download only fills gaps.
-        // (Cold-wipe path remains in deleteDownloadedRegionsViaUi for full campaigns.)
-        report.put("downloads_mode", "long_trip_reuse_existing_packs")
+        // Cold corridor: Tools UI delete, then Plan with long trip ON so the app
+        // auto-downloads local-first then along-route packs to SD (no curl/adb push).
+        report.put("downloads_mode", "long_trip_auto_corridor_only")
         report.put(
             "downloads_policy",
-            "Reuse existing SD long-trip-packs + place index; no Tools UI wipe; auto-download only if missing",
+            "Tools UI wipe of corridor (+ leftover) regions; long-trip Plan auto-downloads to SD",
         )
-        report.put("regions_deleted_via_ui", org.json.JSONArray())
-        noteUi("packs_policy", "reuse_existing_no_wipe")
-        screenshot("03b_regions_reused")
+        deleteDownloadedRegionsViaUi()
+        noteUi("packs_policy", "ui_wipe_then_auto_download")
+        screenshot("03b_regions_wiped")
 
         // Ensure long trip stays ON before plan.
         confirmPluginsAndLongTripViaToolsUi()
@@ -387,7 +386,9 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                 break
             }
             // Finished with hard failure (do not treat nested leg PASS as success).
+            // Overlay sidecars rebuild in the background after a rebake; wait.
             if ((rep.contains("FAIL: chunk_leg") || rep.contains("FAIL: no route")) &&
+                !rep.contains("ferry_preparing") &&
                 rep.length > 80
             ) {
                 noteUi("plan_failed", rep.take(240))

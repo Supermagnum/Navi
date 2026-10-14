@@ -12,15 +12,36 @@ import java.io.File
  * mid-composite hydro soft edge that does not appear during live interactive use.
  */
 object InstrumentedMapCapture {
-    fun awaitStyleReady(timeoutMs: Long = 60_000): Boolean {
+    /**
+     * Wait until the current MapLibre style apply is ready.
+     *
+     * @param afterReadyGeneration when > 0, require a successful apply whose ready
+     * generation is strictly greater (survives mid-wait reloads that flip readiness
+     * false then true again). When 0, any current [NaviMapTestHooks.styleReady]
+     * (or a reported overlay layer) counts.
+     */
+    fun awaitStyleReady(
+        timeoutMs: Long = 60_000,
+        afterReadyGeneration: Int = 0,
+    ): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
-            if (NaviMapTestHooks.styleReady || NaviMapTestHooks.lastReportedLayerCount >= 1) {
+            if (isStyleReady(afterReadyGeneration)) {
                 return true
             }
             Thread.sleep(100)
         }
-        return NaviMapTestHooks.styleReady || NaviMapTestHooks.lastReportedLayerCount >= 1
+        return isStyleReady(afterReadyGeneration)
+    }
+
+    private fun isStyleReady(afterReadyGeneration: Int): Boolean {
+        val readyGen = NaviMapTestHooks.styleReadyGeneration()
+        if (NaviMapTestHooks.styleReady && readyGen > afterReadyGeneration) {
+            return true
+        }
+        // Layer count is only a boot-strap signal for the first wait, not for
+        // "wait until the next style apply finishes".
+        return afterReadyGeneration == 0 && NaviMapTestHooks.lastReportedLayerCount >= 1
     }
 
     /**

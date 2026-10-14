@@ -247,12 +247,8 @@ pub fn clip_route_graph(graph: &RouteGraph, clips: Option<&[[f64; 4]]>) -> Route
         // at call site. Here return a structural clone for merge assembly.
         return graph.clone();
     };
-    let in_box =
-        |lat: f64, lon: f64, b: &[f64; 4]| lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3];
     let edge_ok = |e: &crate::routing::graph::GraphEdge| {
-        clips
-            .iter()
-            .any(|b| in_box(e.start_lat, e.start_lon, b) || in_box(e.end_lat, e.end_lon, b))
+        super::graph_pack::clip_keeps_edge(e.start_lat, e.start_lon, e.end_lat, e.end_lon, clips)
     };
     let mut nodes = HashMap::new();
     let mut edges = Vec::new();

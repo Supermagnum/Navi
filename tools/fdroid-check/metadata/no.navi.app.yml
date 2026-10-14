@@ -84,8 +84,9 @@ Builds:
       - test -f ../app/src/main/jniLibs/arm64-v8a/libnavi.so
       - test -f ../app/src/main/jniLibs/x86_64/libnavi.so
       - test -f ../app/src/main/assets/plugins/right_to_roam_camping/plugin.wasm
+      - test -f ../app/src/main/assets/plugins/imu/plugin.wasm
       - sha256sum ../app/src/main/jniLibs/arm64-v8a/libnavi.so ../app/src/main/jniLibs/x86_64/libnavi.so
-      - sha256sum ../app/src/main/assets/plugins/right_to_roam_camping/plugin.wasm
+      - sha256sum ../app/src/main/assets/plugins/right_to_roam_camping/plugin.wasm ../app/src/main/assets/plugins/imu/plugin.wasm
       - gradle assembleRelease
     ndk: r27c
 

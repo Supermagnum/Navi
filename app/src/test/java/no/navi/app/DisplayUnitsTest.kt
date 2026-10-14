@@ -105,6 +105,30 @@ class DisplayUnitsTest {
     }
 
     @Test
+    fun breakHudLineNullWhenRemindersDisabled() {
+        assertEquals(
+            null,
+            formatBreakHudLine(
+                routePlanned = true,
+                breakRemindersEnabled = false,
+                minutesToBreak = 240.0,
+                breakAsDistance = false,
+                unitSystem = UnitSystem.METRIC,
+            ),
+        )
+        assertEquals(
+            null,
+            formatBreakHudLine(
+                routePlanned = true,
+                breakRemindersEnabled = false,
+                minutesToBreak = 240.0,
+                breakAsDistance = true,
+                unitSystem = UnitSystem.METRIC,
+            ),
+        )
+    }
+
+    @Test
     fun speedCameraTitleUsesDisplayUnits() {
         val metric =
             SpeedCameraWarningState(

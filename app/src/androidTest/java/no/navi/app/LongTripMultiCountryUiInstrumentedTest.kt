@@ -336,6 +336,7 @@ class LongTripMultiCountryUiInstrumentedTest {
         // For search-only probes, pick the first matching UI name and resolve
         // coords from a single OnlinePlaceSearch (merged online-first list).
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        OnlinePlaceSearch.enabledOverrideForTests = true
         val online =
             runBlocking {
                 OnlinePlaceSearch.search(ctx, query, limit = 5, addressMode = true)

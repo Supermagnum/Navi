@@ -23,6 +23,7 @@ use super::poi_barrier_pack::{FlatPoiBarrierPack, MAGIC_POI_BARRIER, POI_BARRIER
 use super::wetland_pack::{FlatWetlandPack, MAGIC_WETLAND, WETLAND_FORMAT_VERSION};
 use crate::download::progress as download_progress;
 use crate::download::DownloadControl;
+use crate::routing::basemap::{pbf_stem_to_geofabrik_path, region_bbox};
 use crate::routing::elevation::{ElevationCache, ElevationService};
 use crate::routing::graph::{RouteGraph, RoutingProfile};
 use crate::routing::region_lock::{
@@ -302,15 +303,32 @@ fn stem_of(pbf: &Path) -> String {
     stem.to_string()
 }
 
+fn union_latlon_bbox(a: [f64; 4], b: [f64; 4]) -> [f64; 4] {
+    [
+        a[0].min(b[0]),
+        a[1].min(b[1]),
+        a[2].max(b[2]),
+        a[3].max(b[3]),
+    ]
+}
+
 /// Scan PBF node extents so we can use the memory-safe bbox builder.
 ///
-/// Uses 0.5–99.5 percentiles over all node coordinates (parallel merge-sort,
-/// order-independent) so a few garbage OSM coordinates do not inflate tiling
-/// into hundreds of empty cells.
+/// Uses 0.5–99.5 percentiles over node coordinates so a few garbage OSM
+/// coordinates do not inflate tiling into hundreds of empty cells, then unions
+/// the catalog extract bbox. Percentiles alone drop Fehmarn/Rødby tails
+/// (installed SH max_lon ~11.17 vs Puttgarden 11.23; DK min_lat ~54.68 vs
+/// Rødby 54.66). Catalog union keeps those real OSM coasts in the tile grid.
 fn pbf_node_bbox(pbf: &Path) -> anyhow::Result<[f64; 4]> {
     let raw = crate::download::pbf_priority::pbf_latlon_percentile_bounds(pbf, 0.005, 0.995)?;
     // Small pad so boundary ways are not clipped away.
-    Ok([raw[0] - 0.02, raw[1] - 0.02, raw[2] + 0.02, raw[3] + 0.02])
+    let mut out = [raw[0] - 0.02, raw[1] - 0.02, raw[2] + 0.02, raw[3] + 0.02];
+    if let Some(path) = pbf_stem_to_geofabrik_path(&stem_of(pbf)) {
+        if let Some(cat) = region_bbox(&path) {
+            out = union_latlon_bbox(out, cat);
+        }
+    }
+    Ok(out)
 }
 
 fn highway_barrier_segs(graph: &RouteGraph) -> Vec<(f64, f64, f64, f64)> {
@@ -1205,5 +1223,30 @@ mod resume_tests {
             Some((2, 5))
         );
         assert_eq!(parse_graph_tile_rc("no-tile.rkyv"), None);
+    }
+
+    #[test]
+    fn catalog_union_tile_grid_covers_fehmarn_terminals() {
+        // Installed percentile tiles (SH east ~11.17, DK south ~54.68) omit
+        // Puttgarden / Rødby. Union with catalog bboxes must put them in grid.
+        let scanned_sh = [53.4081, 8.2926, 54.9282, 11.1658];
+        let cat_sh = region_bbox("europe/germany/schleswig-holstein").expect("SH catalog");
+        let sh = union_latlon_bbox(scanned_sh, cat_sh);
+        assert!(
+            tile_grid(sh, 1.0)
+                .iter()
+                .any(|(_, _, b)| crate::routing::basemap::bbox_covers_point(*b, 54.503, 11.227)),
+            "rebake grid must include Puttgarden"
+        );
+
+        let scanned_dk = [54.6773, 8.0721, 57.7520, 12.7904];
+        let cat_dk = region_bbox("europe/denmark").expect("DK catalog");
+        let dk = union_latlon_bbox(scanned_dk, cat_dk);
+        assert!(
+            tile_grid(dk, 1.0)
+                .iter()
+                .any(|(_, _, b)| crate::routing::basemap::bbox_covers_point(*b, 54.655, 11.352)),
+            "rebake grid must include Rødby"
+        );
     }
 }

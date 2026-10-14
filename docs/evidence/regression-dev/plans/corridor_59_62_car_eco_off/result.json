@@ -1,0 +1,21 @@
+{
+  "status": "done",
+  "profile": "car",
+  "eco": false,
+  "wall_s": 46.4,
+  "duration_ms": 40783,
+  "distance_km": 502.18795247966347,
+  "polyline_points": 12242,
+  "spike_count": 0,
+  "spikes": [],
+  "from": [
+    "Start",
+    59.1094807,
+    11.2638478
+  ],
+  "to": [
+    "End",
+    62.2887627,
+    8.1311054
+  ]
+}

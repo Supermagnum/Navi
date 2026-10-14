@@ -8,6 +8,30 @@ import org.junit.Test
 
 class PlaceSearchHintTest {
     @Test
+    fun saysOfflineSearchUnavailableWhenIndexFileUnusable() {
+        val offline =
+            placeSearchBuildingMessage(
+                hitsEmpty = true,
+                indexHasEntries = false,
+                indexRunning = false,
+                indexProblem = "file missing",
+            )
+        assertEquals(
+            "Offline place search unavailable (place index file missing) — enter coordinates or tap the map",
+            offline,
+        )
+        val online =
+            placeSearchBuildingMessage(
+                hitsEmpty = false,
+                indexHasEntries = false,
+                indexRunning = false,
+                onlineAvailable = true,
+                indexProblem = "pack volume unavailable",
+            )
+        assertTrue(online!!.startsWith("Offline place search unavailable (place index pack volume unavailable)"))
+    }
+
+    @Test
     fun showsOnlineMessageWhenNetworkAvailableAndIndexEmpty() {
         val msg =
             placeSearchBuildingMessage(
@@ -35,14 +59,58 @@ class PlaceSearchHintTest {
 
     @Test
     fun showsConnectMessageWhenOfflineAndNoIndexJob() {
-        assertTrue(
+        val msg =
             placeSearchBuildingMessage(
                 hitsEmpty = true,
                 indexHasEntries = false,
                 indexRunning = false,
                 onlineAvailable = false,
-            )!!.contains("connect", ignoreCase = true),
+            )!!
+        assertTrue(msg.contains("Online place search", ignoreCase = true))
+        assertTrue(msg.contains("coordinates", ignoreCase = true))
+    }
+
+    @Test
+    fun offlineMoreHintWhenTopHitIsMinorPlace() {
+        val msg =
+            placeSearchOfflineMoreHint(
+                onlineEnabled = false,
+                topKind = "place:farm",
+            )
+        assertTrue(msg!!.contains("Online place search", ignoreCase = true))
+        assertTrue(msg.contains("download", ignoreCase = true))
+        assertNull(placeSearchOfflineMoreHint(onlineEnabled = true, topKind = "place:farm"))
+        assertNull(placeSearchOfflineMoreHint(onlineEnabled = false, topKind = "place:city"))
+        assertNull(placeSearchOfflineMoreHint(onlineEnabled = false, topKind = "place:village"))
+    }
+
+    @Test
+    fun noOfflineMatchShownAbovePrefixOnlyHits() {
+        val islet =
+            uniffi.navi.PlaceHit(1L, "Kolnesholmane", "place:islet", 63.5, 10.0, "", "Frøya", "europe/norway/trondelag")
+        val msg = placeSearchNoWholeMatchHint("Köln", listOf(islet), onlineEnabled = false, usedOnline = false)
+        assertTrue(msg!!.startsWith("No offline match."))
+        assertTrue(msg.contains("Online place search"))
+        assertEquals(
+            "No offline match.",
+            placeSearchNoWholeMatchHint("Köln", listOf(islet), onlineEnabled = true, usedOnline = false),
         )
+        assertNull(placeSearchNoWholeMatchHint("Köln", listOf(islet), onlineEnabled = true, usedOnline = true))
+        assertNull(placeSearchNoWholeMatchHint("Köln", emptyList(), onlineEnabled = false, usedOnline = false))
+    }
+
+    @Test
+    fun noOfflineMatchHiddenWhenAHitMatchesTheWholeQuery() {
+        val farm =
+            uniffi.navi.PlaceHit(2L, "København", "place:farm", 60.96, 10.55, "", "Gjøvik", "europe/norway/ostlandet")
+        val islet =
+            uniffi.navi.PlaceHit(3L, "Kobenhavnholmen", "place:islet", 63.5, 10.0, "", "", "europe/norway/trondelag")
+        for (q in listOf("København", "Kobenhavn", "københavn")) {
+            assertNull(q, placeSearchNoWholeMatchHint(q, listOf(islet, farm), onlineEnabled = false, usedOnline = false))
+        }
+        val dombas =
+            uniffi.navi.PlaceHit(4L, "Dombås", "place:village", 62.07, 9.12, "", "Dovre", "europe/norway/ostlandet")
+        assertNull(placeSearchNoWholeMatchHint("Dombas", listOf(dombas), onlineEnabled = false, usedOnline = false))
     }
 
     @Test
@@ -57,14 +125,16 @@ class PlaceSearchHintTest {
     }
 
     @Test
-    fun noMessageWhenPopulatedIndexHasZeroHits() {
-        assertNull(
+    fun noMatchLineWhenPopulatedIndexHasZeroHits() {
+        val msg =
             placeSearchBuildingMessage(
                 hitsEmpty = true,
                 indexHasEntries = true,
                 indexRunning = false,
-            ),
-        )
+            )
+        assertTrue(msg!!.contains("No offline match"))
+        assertTrue(msg.contains("Online place search"))
+        assertFalse(msg.contains("Sets the Tools", ignoreCase = true))
     }
 
     @Test
@@ -77,7 +147,7 @@ class PlaceSearchHintTest {
                 onlineAvailable = true,
             )
         assertTrue(msg!!.contains("online", ignoreCase = true))
-        assertTrue(msg.contains("download region", ignoreCase = true))
+        assertFalse(msg.contains("download region", ignoreCase = true))
     }
 
     @Test

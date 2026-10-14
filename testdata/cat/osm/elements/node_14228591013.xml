@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='utf-8'?>
+<osm version="0.6" generator="fetch-cat-fixtures"><node id="14228591013" visible="true" version="1" changeset="189693189" timestamp="2026-09-28T18:42:26Z" user="Visaman" uid="237638" lat="61.1458330" lon="10.5416670">
+  <tag k="callsign" v="LD2LH" />
+  <tag k="communication:amateur_radio" v="yes" />
+  <tag k="communication:amateur_radio:callsign" v="LD2LH" />
+  <tag k="communication:amateur_radio:repeater" v="yes" />
+  <tag k="communication:amateur_radio:repeater:frequency_out" v="144.8 MHz" />
+  <tag k="communication:amateur_radio:repeater:modulation" v="20K0F2D" />
+  <tag k="frequency" v="144.8" />
+  <tag k="group" v="Lillehammer" />
+  <tag k="locator" v="JP51GD" />
+  <tag k="name" v="LD2LH" />
+  <tag k="note" v="best position from nrrl_locator" />
+  <tag k="nrrl:group_page" v="https://nrrl.no/grupper/innlandet/lillehammergruppen/" />
+  <tag k="qth" v="Lillehammer" />
+  <tag k="website" v="http://la2l.no/" />
+ </node>
+ </osm>

@@ -5,14 +5,28 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "UniFFI bindings for Navi / driver-break-core on Android and other hosts"
+autobins = false
 
 [lib]
 crate-type = ["cdylib", "staticlib", "rlib"]
 name = "navi"
 
+[features]
+default = []
+## Link onboard Hamlib via navi-cat/ffi (Android native builds).
+hamlib-ffi = ["navi-cat/ffi", "dep:navi-hamlib-sys", "navi-hamlib-sys/link-hamlib"]
+## Host diagnostic / corridor helper binaries.
+diag-bins = []
+## Host regression gate (needs device long-trip packs). Off by default so a
+## plain `cargo test` neither fails nor spends time without packs.
+regression-gate = []
+
 [dependencies]
 driver-break-core = { path = "../core" }
 navi-plugin-host = { path = "../plugin-host" }
+navi-cat = { path = "../navi-cat" }
+navi-hamlib-sys = { path = "../navi-hamlib-sys", optional = true }
+navi-plugin-imu-engine = { path = "../plugins/imu/engine" }
 navi-right-to-roam-camping = { path = "../plugins/right-to-roam-camping/engine", default-features = false, features = ["native"] }
 chrono = { workspace = true }
 uniffi = { workspace = true, features = ["cli"] }
@@ -28,6 +42,9 @@ memmap2 = { workspace = true }
 pathfinding = { workspace = true }
 osmpbf = { workspace = true }
 
+[dev-dependencies]
+tempfile = "3"
+
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.15"
 
@@ -36,61 +53,120 @@ name = "uniffi-bindgen"
 path = "uniffi-bindgen.rs"
 
 [[bin]]
+name = "plan-cat-corridors"
+path = "src/bin/plan_cat_corridors.rs"
+
+[[bin]]
 name = "plan-skolla-rondvassbu"
 path = "src/bin/plan_skolla_rondvassbu.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "plan-nashaugs-skriurusten-matrix"
 path = "src/bin/plan_nashaugs_skriurusten_matrix.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "plan-truck-live-gps"
 path = "src/bin/plan_truck_live_gps.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "indexed-rtree-poc"
 path = "src/bin/indexed_rtree_poc.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "rkyv-mmap-graph-poc"
 path = "src/bin/rkyv_mmap_graph_poc.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "rkyv-mmap-poi-barrier-poc"
 path = "src/bin/rkyv_mmap_poi_barrier_poc.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "navi-indexed-convert"
 path = "src/bin/navi_indexed_convert.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "navi-indexed-bench"
 path = "src/bin/navi_indexed_bench.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "navi-indexed-plan-bench"
 path = "src/bin/navi_indexed_plan_bench.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "navi-wetland-bench"
 path = "src/bin/navi_wetland_bench.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "live-hazard-extract"
 path = "src/bin/live_hazard_extract.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "plan-drammen-berlevag-budget"
 path = "src/bin/plan_drammen_berlevag_budget.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "plan-hop-budget"
 path = "src/bin/plan_hop_budget.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "region-to-region-perf-matrix"
 path = "src/bin/region_to_region_perf_matrix.rs"
+required-features = ["diag-bins"]
+
+[[bin]]
+name = "navi-ferry-probe"
+path = "src/bin/navi_ferry_probe.rs"
+required-features = ["diag-bins"]
+
+[[bin]]
+name = "navi-corridor-skeleton"
+path = "src/bin/navi_corridor_skeleton.rs"
+required-features = ["diag-bins"]
+
+[[bin]]
+name = "navi-corridor-coarse"
+path = "src/bin/navi_corridor_coarse.rs"
+required-features = ["diag-bins"]
+
+[[bin]]
+name = "navi-dest-hop-probe"
+path = "src/bin/navi_dest_hop_probe.rs"
+required-features = ["diag-bins"]
+
+[[bin]]
+name = "navi-t6-clearance-cut"
+path = "src/bin/navi_t6_clearance_cut.rs"
+required-features = ["diag-bins"]
+
+[[bin]]
+name = "navi-place-index"
+path = "src/bin/navi_place_index.rs"
+required-features = ["diag-bins"]
 
 [[bin]]
 name = "directed-snap-diag"
 path = "src/bin/directed_snap_diag.rs"
+required-features = ["diag-bins"]
+
+[[test]]
+name = "regression_gate"
+path = "tests/regression_gate.rs"
+required-features = ["regression-gate"]
+
+[[test]]
+name = "eco_corridor_plan_gate"
+path = "tests/eco_corridor_plan_gate.rs"
+required-features = ["regression-gate"]

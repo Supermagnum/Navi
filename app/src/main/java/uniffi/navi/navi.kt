@@ -650,6 +650,46 @@ internal open class UniffiForeignFutureResultVoid(
 internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
     fun callback(`callbackData`: Long,`result`: UniffiForeignFutureResultVoid.UniffiByValue,)
 }
+internal interface UniffiCallbackInterfaceSensorPlatformMethod0 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`kindCode`: Int,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,)
+}
+internal interface UniffiCallbackInterfaceSensorPlatformMethod1 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`kindCode`: Int,`samplingPeriodUs`: Int,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,)
+}
+internal interface UniffiCallbackInterfaceSensorPlatformMethod2 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`kindCode`: Int,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
+}
+internal interface UniffiCallbackInterfaceSensorPlatformMethod3 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`kindCode`: Int,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,)
+}
+@Structure.FieldOrder("uniffiFree", "uniffiClone", "isSensorAvailable", "registerSensor", "unregisterSensor", "latestSensorSample")
+internal open class UniffiVTableCallbackInterfaceSensorPlatform(
+    @JvmField internal var `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+    @JvmField internal var `uniffiClone`: UniffiCallbackInterfaceClone? = null,
+    @JvmField internal var `isSensorAvailable`: UniffiCallbackInterfaceSensorPlatformMethod0? = null,
+    @JvmField internal var `registerSensor`: UniffiCallbackInterfaceSensorPlatformMethod1? = null,
+    @JvmField internal var `unregisterSensor`: UniffiCallbackInterfaceSensorPlatformMethod2? = null,
+    @JvmField internal var `latestSensorSample`: UniffiCallbackInterfaceSensorPlatformMethod3? = null,
+) : Structure() {
+    class UniffiByValue(
+        `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+        `uniffiClone`: UniffiCallbackInterfaceClone? = null,
+        `isSensorAvailable`: UniffiCallbackInterfaceSensorPlatformMethod0? = null,
+        `registerSensor`: UniffiCallbackInterfaceSensorPlatformMethod1? = null,
+        `unregisterSensor`: UniffiCallbackInterfaceSensorPlatformMethod2? = null,
+        `latestSensorSample`: UniffiCallbackInterfaceSensorPlatformMethod3? = null,
+    ): UniffiVTableCallbackInterfaceSensorPlatform(`uniffiFree`,`uniffiClone`,`isSensorAvailable`,`registerSensor`,`unregisterSensor`,`latestSensorSample`,), Structure.ByValue
+
+   internal fun uniffiSetValue(other: UniffiVTableCallbackInterfaceSensorPlatform) {
+        `uniffiFree` = other.`uniffiFree`
+        `uniffiClone` = other.`uniffiClone`
+        `isSensorAvailable` = other.`isSensorAvailable`
+        `registerSensor` = other.`registerSensor`
+        `unregisterSensor` = other.`unregisterSensor`
+        `latestSensorSample` = other.`latestSensorSample`
+    }
+
+}
 
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
@@ -694,6 +734,10 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_convert_progress_clear(
     ): Int
     external fun uniffi_navi_checksum_func_convert_progress_snapshot(
+    ): Int
+    external fun uniffi_navi_checksum_func_corridor_skeleton_is_ready(
+    ): Int
+    external fun uniffi_navi_checksum_func_corridor_skeleton_progress_snapshot(
     ): Int
     external fun uniffi_navi_checksum_func_country_iso_at(
     ): Int
@@ -741,6 +785,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_elevation_at(
     ): Int
+    external fun uniffi_navi_checksum_func_ensure_corridor_skeleton(
+    ): Int
     external fun uniffi_navi_checksum_func_ensure_ferry_sidecar(
     ): Int
     external fun uniffi_navi_checksum_func_ensure_indexed_maps(
@@ -750,6 +796,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_ensure_pack_region_place_index(
     ): Int
     external fun uniffi_navi_checksum_func_ensure_place_index(
+    ): Int
+    external fun uniffi_navi_checksum_func_ensure_place_index_for_pack_region(
     ): Int
     external fun uniffi_navi_checksum_func_ensure_poi_lookahead_covering(
     ): Int
@@ -887,6 +935,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_place_index_has_entries(
     ): Int
+    external fun uniffi_navi_checksum_func_place_index_source_sha256(
+    ): Int
     external fun uniffi_navi_checksum_func_plan_car_route(
     ): Int
     external fun uniffi_navi_checksum_func_plan_car_route_at(
@@ -921,6 +971,10 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_pmtiles_queue_region(
     ): Int
+    external fun uniffi_navi_checksum_func_pmtiles_queue_world_overview(
+    ): Int
+    external fun uniffi_navi_checksum_func_pmtiles_recheck_rejected(
+    ): Int
     external fun uniffi_navi_checksum_func_pmtiles_region_bbox(
     ): Int
     external fun uniffi_navi_checksum_func_pmtiles_region_key(
@@ -952,6 +1006,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_regions_cover_point(
     ): Int
     external fun uniffi_navi_checksum_func_rename_saved_place(
+    ): Int
+    external fun uniffi_navi_checksum_func_request_idle_pause(
     ): Int
     external fun uniffi_navi_checksum_func_resolve_speed_limit_kmh(
     ): Int
@@ -1009,9 +1065,15 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_search_places(
     ): Int
+    external fun uniffi_navi_checksum_func_search_places_biased(
+    ): Int
+    external fun uniffi_navi_checksum_func_set_accept_absurd_detour(
+    ): Int
     external fun uniffi_navi_checksum_func_set_osm_weekly_reminder(
     ): Int
     external fun uniffi_navi_checksum_func_set_route_plan_timing_enabled(
+    ): Int
+    external fun uniffi_navi_checksum_func_set_test_index_phase_sleep_ms(
     ): Int
     external fun uniffi_navi_checksum_func_set_truck_exceptional_extension_armed(
     ): Int
@@ -1093,6 +1155,60 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_undo_camp_here_tonight(
     ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_configure(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_connect_tcp(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_disconnect(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_install_guest(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_is_enabled(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_network_follow_json(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_repeater_list_ui_json(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_repeater_query_json(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_set_enabled(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_set_position(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_status_json(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_tick_guest(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_update_repeaters_from_server(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_vfo_set_json(
+    ): Int
+    external fun uniffi_navi_checksum_func_imu_plugin_android_sensor_types(
+    ): Int
+    external fun uniffi_navi_checksum_func_imu_plugin_calibration_instruction(
+    ): Int
+    external fun uniffi_navi_checksum_func_imu_plugin_configure(
+    ): Int
+    external fun uniffi_navi_checksum_func_imu_plugin_install_guest(
+    ): Int
+    external fun uniffi_navi_checksum_func_imu_plugin_is_enabled(
+    ): Int
+    external fun uniffi_navi_checksum_func_imu_plugin_registered_sensor_codes(
+    ): Int
+    external fun uniffi_navi_checksum_func_imu_plugin_release_sensors(
+    ): Int
+    external fun uniffi_navi_checksum_func_imu_plugin_request_calibrate(
+    ): Int
+    external fun uniffi_navi_checksum_func_imu_plugin_request_reset(
+    ): Int
+    external fun uniffi_navi_checksum_func_imu_plugin_sensor_codes(
+    ): Int
+    external fun uniffi_navi_checksum_func_imu_plugin_session_disabled_reason(
+    ): Int
+    external fun uniffi_navi_checksum_func_imu_plugin_set_enabled(
+    ): Int
+    external fun uniffi_navi_checksum_func_imu_plugin_tick(
+    ): Int
     external fun uniffi_navi_checksum_method_ffitrackstore_all(
     ): Int
     external fun uniffi_navi_checksum_method_ffitrackstore_expire(
@@ -1106,6 +1222,14 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_method_ffitrackstore_upsert(
     ): Int
     external fun uniffi_navi_checksum_method_ffitrackstore_visible(
+    ): Int
+    external fun uniffi_navi_checksum_method_sensorplatform_is_sensor_available(
+    ): Int
+    external fun uniffi_navi_checksum_method_sensorplatform_register_sensor(
+    ): Int
+    external fun uniffi_navi_checksum_method_sensorplatform_unregister_sensor(
+    ): Int
+    external fun uniffi_navi_checksum_method_sensorplatform_latest_sensor_sample(
     ): Int
     external fun uniffi_navi_checksum_constructor_ffitrackstore_new(
     ): Int
@@ -1125,6 +1249,7 @@ internal object UniffiLib {
 
     init {
         Native.register(UniffiLib::class.java, findLibraryName(componentName = "navi"))
+        uniffiCallbackInterfaceSensorPlatform.register(this)
         
     }
     external fun uniffi_navi_fn_clone_ffitrackstore(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1147,6 +1272,20 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_method_ffitrackstore_visible(`ptr`: Long,`centerLat`: Double,`centerLon`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_clone_sensorplatform(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Long
+    external fun uniffi_navi_fn_free_sensorplatform(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_init_callback_vtable_sensorplatform(`vtable`: UniffiVTableCallbackInterfaceSensorPlatform,
+    ): Unit
+    external fun uniffi_navi_fn_method_sensorplatform_is_sensor_available(`ptr`: Long,`kindCode`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_method_sensorplatform_register_sensor(`ptr`: Long,`kindCode`: Int,`samplingPeriodUs`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_method_sensorplatform_unregister_sensor(`ptr`: Long,`kindCode`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_method_sensorplatform_latest_sensor_sample(`ptr`: Long,`kindCode`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_apply_osm_update(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_approach_appear_m(uniffi_out_err: UniffiRustCallStatus, 
@@ -1168,6 +1307,10 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_convert_progress_clear(uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_navi_fn_func_convert_progress_snapshot(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_corridor_skeleton_is_ready(`packDir`: RustBuffer.ByValue,`stem`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_corridor_skeleton_progress_snapshot(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_country_iso_at(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1215,6 +1358,8 @@ internal object UniffiLib {
     ): Byte
     external fun uniffi_navi_fn_func_elevation_at(`elevDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_ensure_corridor_skeleton(`packDir`: RustBuffer.ByValue,`stem`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_ensure_ferry_sidecar(`packDir`: RustBuffer.ByValue,`stem`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_ensure_indexed_maps(`pbfPath`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,`progressOnConvertChannel`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -1224,6 +1369,8 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_ensure_pack_region_place_index(`dataDir`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,`forceRebuild`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_ensure_place_index(`pbfPath`: RustBuffer.ByValue,`indexDbPath`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_ensure_place_index_for_pack_region(`packDir`: RustBuffer.ByValue,`indexDbPath`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_ensure_poi_lookahead_covering(`dataDir`: RustBuffer.ByValue,`packDirsJson`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1361,6 +1508,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_place_index_has_entries(`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    external fun uniffi_navi_fn_func_place_index_source_sha256(`indexDbPath`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_plan_car_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`avoidTunnels`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`dataDir`: RustBuffer.ByValue,`packDir`: RustBuffer.ByValue,`longTripEnabled`: Byte,`allowedCountries`: RustBuffer.ByValue,`viaPoints`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_plan_car_route_at(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`avoidTunnels`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`departureLocalIso`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`packDir`: RustBuffer.ByValue,`longTripEnabled`: Byte,`allowedCountries`: RustBuffer.ByValue,`viaPoints`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1395,6 +1544,10 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_pmtiles_queue_region(`dataDir`: RustBuffer.ByValue,`geofabrikPath`: RustBuffer.ByValue,`baseUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_pmtiles_queue_world_overview(`dataDir`: RustBuffer.ByValue,`baseUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_pmtiles_recheck_rejected(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Int
     external fun uniffi_navi_fn_func_pmtiles_region_bbox(`geofabrikPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_pmtiles_region_key(`geofabrikPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1427,6 +1580,8 @@ internal object UniffiLib {
     ): Byte
     external fun uniffi_navi_fn_func_rename_saved_place(`dataDir`: RustBuffer.ByValue,`id`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    external fun uniffi_navi_fn_func_request_idle_pause(uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_navi_fn_func_resolve_speed_limit_kmh(`postedKmh`: RustBuffer.ByValue,`maxspeedConditional`: RustBuffer.ByValue,`highway`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Double
     external fun uniffi_navi_fn_func_road_label_near(`pbfPath`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`profile`: RustBuffer.ByValue,`maxM`: Double,uniffi_out_err: UniffiRustCallStatus, 
@@ -1483,9 +1638,15 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_search_places(`indexDbPath`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_search_places_biased(`indexDbPath`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,`limit`: Int,`biasLat`: Double,`biasLon`: Double,`visibleRegion`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_set_accept_absurd_detour(`accept`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_navi_fn_func_set_osm_weekly_reminder(`dataDir`: RustBuffer.ByValue,`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_navi_fn_func_set_route_plan_timing_enabled(`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_set_test_index_phase_sleep_ms(`ms`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_navi_fn_func_set_truck_exceptional_extension_armed(`dataDir`: RustBuffer.ByValue,`armed`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
@@ -1566,6 +1727,60 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_camping_plugin_suggest_along_route(`maxSuggestions`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_camping_plugin_undo_camp_here_tonight(`lat`: Double,`lon`: Double,`countryIso`: RustBuffer.ByValue,`subdivisionIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_configure(`filesDir`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`timezone`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_cat_plugin_connect_tcp(`host`: RustBuffer.ByValue,`port`: Short,`allowBeta`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_disconnect(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_install_guest(`name`: RustBuffer.ByValue,`manifestJson`: RustBuffer.ByValue,`wasmBytes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_is_enabled(uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_cat_plugin_network_follow_json(`requestJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_repeater_list_ui_json(`lat`: Double,`lon`: Double,`radiusKm`: Double,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_repeater_query_json(`lat`: Double,`lon`: Double,`radiusKm`: Double,`networkId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_set_enabled(`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_set_position(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_cat_plugin_status_json(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_tick_guest(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_update_repeaters_from_server(`baseUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_vfo_set_json(`requestJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_imu_plugin_android_sensor_types(`kindCode`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_imu_plugin_calibration_instruction(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_imu_plugin_configure(`filesDir`: RustBuffer.ByValue,`platform`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_imu_plugin_install_guest(`manifestJson`: RustBuffer.ByValue,`wasmBytes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_imu_plugin_is_enabled(uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_imu_plugin_registered_sensor_codes(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_imu_plugin_release_sensors(uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_imu_plugin_request_calibrate(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_imu_plugin_request_reset(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_imu_plugin_sensor_codes(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_imu_plugin_session_disabled_reason(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_imu_plugin_set_enabled(`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_imu_plugin_tick(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun ffi_navi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1719,6 +1934,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_convert_progress_snapshot() and 0xFFFF) != 28171) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_corridor_skeleton_is_ready() and 0xFFFF) != 52338) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_corridor_skeleton_progress_snapshot() and 0xFFFF) != 31391) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_country_iso_at() and 0xFFFF) != 819) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1788,7 +2009,10 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_elevation_at() and 0xFFFF) != 35410) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_ensure_ferry_sidecar() and 0xFFFF) != 516) {
+    if ((lib.uniffi_navi_checksum_func_ensure_corridor_skeleton() and 0xFFFF) != 12784) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_ensure_ferry_sidecar() and 0xFFFF) != 32373) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_ensure_indexed_maps() and 0xFFFF) != 55582) {
@@ -1803,6 +2027,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_ensure_place_index() and 0xFFFF) != 27043) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_ensure_place_index_for_pack_region() and 0xFFFF) != 44667) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_ensure_poi_lookahead_covering() and 0xFFFF) != 9302) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1812,7 +2039,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_export_saved_route_gpx() and 0xFFFF) != 43605) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_ferry_sidecar_is_ready() and 0xFFFF) != 31014) {
+    if ((lib.uniffi_navi_checksum_func_ferry_sidecar_is_ready() and 0xFFFF) != 28118) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_ferry_sidecar_progress_snapshot() and 0xFFFF) != 35556) {
@@ -2007,7 +2234,10 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_place_index_has_entries() and 0xFFFF) != 5969) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_plan_car_route() and 0xFFFF) != 20547) {
+    if ((lib.uniffi_navi_checksum_func_place_index_source_sha256() and 0xFFFF) != 14354) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_plan_car_route() and 0xFFFF) != 25656) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_plan_car_route_at() and 0xFFFF) != 44788) {
@@ -2058,6 +2288,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_pmtiles_queue_region() and 0xFFFF) != 49048) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_pmtiles_queue_world_overview() and 0xFFFF) != 12504) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_pmtiles_recheck_rejected() and 0xFFFF) != 53510) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_pmtiles_region_bbox() and 0xFFFF) != 27835) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2104,6 +2340,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_rename_saved_place() and 0xFFFF) != 32947) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_request_idle_pause() and 0xFFFF) != 15188) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_resolve_speed_limit_kmh() and 0xFFFF) != 57610) {
@@ -2190,10 +2429,19 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_search_places() and 0xFFFF) != 63913) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_search_places_biased() and 0xFFFF) != 15263) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_set_accept_absurd_detour() and 0xFFFF) != 1999) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_set_osm_weekly_reminder() and 0xFFFF) != 15431) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_set_route_plan_timing_enabled() and 0xFFFF) != 33373) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_set_test_index_phase_sleep_ms() and 0xFFFF) != 64805) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_set_truck_exceptional_extension_armed() and 0xFFFF) != 48179) {
@@ -2298,7 +2546,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_camping_plugin_set_enabled() and 0xFFFF) != 4893) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_camping_plugin_set_nav_context() and 0xFFFF) != 46018) {
+    if ((lib.uniffi_navi_checksum_func_camping_plugin_set_nav_context() and 0xFFFF) != 26649) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_camping_plugin_set_pack_dirs() and 0xFFFF) != 40747) {
@@ -2314,6 +2562,87 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_camping_plugin_undo_camp_here_tonight() and 0xFFFF) != 24878) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_configure() and 0xFFFF) != 24407) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_connect_tcp() and 0xFFFF) != 56713) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_disconnect() and 0xFFFF) != 16475) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_install_guest() and 0xFFFF) != 63782) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_is_enabled() and 0xFFFF) != 24464) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_network_follow_json() and 0xFFFF) != 10673) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_repeater_list_ui_json() and 0xFFFF) != 55266) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_repeater_query_json() and 0xFFFF) != 65110) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_set_enabled() and 0xFFFF) != 56854) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_set_position() and 0xFFFF) != 22746) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_status_json() and 0xFFFF) != 60742) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_tick_guest() and 0xFFFF) != 25119) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_update_repeaters_from_server() and 0xFFFF) != 43258) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_vfo_set_json() and 0xFFFF) != 6218) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_imu_plugin_android_sensor_types() and 0xFFFF) != 62062) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_imu_plugin_calibration_instruction() and 0xFFFF) != 54179) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_imu_plugin_configure() and 0xFFFF) != 64235) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_imu_plugin_install_guest() and 0xFFFF) != 3625) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_imu_plugin_is_enabled() and 0xFFFF) != 20389) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_imu_plugin_registered_sensor_codes() and 0xFFFF) != 47237) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_imu_plugin_release_sensors() and 0xFFFF) != 9066) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_imu_plugin_request_calibrate() and 0xFFFF) != 33471) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_imu_plugin_request_reset() and 0xFFFF) != 35324) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_imu_plugin_sensor_codes() and 0xFFFF) != 58769) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_imu_plugin_session_disabled_reason() and 0xFFFF) != 26765) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_imu_plugin_set_enabled() and 0xFFFF) != 53138) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_imu_plugin_tick() and 0xFFFF) != 13373) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_method_ffitrackstore_all() and 0xFFFF) != 684) {
@@ -2335,6 +2664,18 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_method_ffitrackstore_visible() and 0xFFFF) != 63653) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_method_sensorplatform_is_sensor_available() and 0xFFFF) != 40725) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_method_sensorplatform_register_sensor() and 0xFFFF) != 55213) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_method_sensorplatform_unregister_sensor() and 0xFFFF) != 24247) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_method_sensorplatform_latest_sensor_sample() and 0xFFFF) != 28221) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_constructor_ffitrackstore_new() and 0xFFFF) != 16107) {
@@ -2431,7 +2772,38 @@ object UniffiWithHandle
  *
  * @suppress
  * */
-object NoHandle
+object NoHandle// Magic number for the Rust proxy to call using the same mechanism as every other method,
+// to free the callback once it's dropped by Rust.
+internal const val IDX_CALLBACK_FREE = 0
+// Callback return codes
+internal const val UNIFFI_CALLBACK_SUCCESS = 0
+internal const val UNIFFI_CALLBACK_ERROR = 1
+internal const val UNIFFI_CALLBACK_UNEXPECTED_ERROR = 2
+
+/**
+ * @suppress
+ */
+public abstract class FfiConverterCallbackInterface<CallbackInterface: Any>: FfiConverter<CallbackInterface, Long> {
+    internal val handleMap = UniffiHandleMap<CallbackInterface>()
+
+    internal fun drop(handle: Long) {
+        handleMap.remove(handle)
+    }
+
+    override fun lift(value: Long): CallbackInterface {
+        return handleMap.get(value)
+    }
+
+    override fun read(buf: ByteBuffer) = lift(buf.getLong())
+
+    override fun lower(value: CallbackInterface) = handleMap.insert(value)
+
+    override fun allocationSize(value: CallbackInterface) = 8UL
+
+    override fun write(value: CallbackInterface, buf: ByteBuffer) {
+        buf.putLong(lower(value))
+    }
+}
 /**
  * The cleaner interface for Object finalization code to run.
  * This is the entry point to any implementation that we're using.
@@ -2521,6 +2893,33 @@ public object FfiConverterUByte: FfiConverter<UByte, Byte> {
 
     override fun write(value: UByte, buf: ByteBuffer) {
         buf.put(value.toByte())
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterUShort: FfiConverter<UShort, Short> {
+    override fun lift(value: Short): UShort {
+        return value.toUShort()
+    }
+
+    fun lift(value: Int): UShort {
+        return value.toUShort()
+    }
+
+    override fun read(buf: ByteBuffer): UShort {
+        return lift(buf.getShort())
+    }
+
+    override fun lower(value: UShort): Short {
+        return value.toShort()
+    }
+
+    override fun allocationSize(value: UShort) = 2UL
+
+    override fun write(value: UShort, buf: ByteBuffer) {
+        buf.putShort(value.toShort())
     }
 }
 
@@ -3111,6 +3510,436 @@ public object FfiConverterTypeFfiTrackStore: FfiConverter<FfiTrackStore, Long> {
 }
 
 
+// This template implements a class for working with a Rust struct via a handle
+// to the live Rust struct on the other side of the FFI.
+//
+// There's some subtlety here, because we have to be careful not to operate on a Rust
+// struct after it has been dropped, and because we must expose a public API for freeing
+// theq Kotlin wrapper object in lieu of reliable finalizers. The core requirements are:
+//
+//   * Each instance holds an opaque handle to the underlying Rust struct.
+//     Method calls need to read this handle from the object's state and pass it in to
+//     the Rust FFI.
+//
+//   * When an instance is no longer needed, its handle should be passed to a
+//     special destructor function provided by the Rust FFI, which will drop the
+//     underlying Rust struct.
+//
+//   * Given an instance, calling code is expected to call the special
+//     `destroy` method in order to free it after use, either by calling it explicitly
+//     or by using a higher-level helper like the `use` method. Failing to do so risks
+//     leaking the underlying Rust struct.
+//
+//   * We can't assume that calling code will do the right thing, and must be prepared
+//     to handle Kotlin method calls executing concurrently with or even after a call to
+//     `destroy`, and to handle multiple (possibly concurrent!) calls to `destroy`.
+//
+//   * We must never allow Rust code to operate on the underlying Rust struct after
+//     the destructor has been called, and must never call the destructor more than once.
+//     Doing so may trigger memory unsafety.
+//
+//   * To mitigate many of the risks of leaking memory and use-after-free unsafety, a `Cleaner`
+//     is implemented to call the destructor when the Kotlin object becomes unreachable.
+//     This is done in a background thread. This is not a panacea, and client code should be aware that
+//      1. the thread may starve if some there are objects that have poorly performing
+//     `drop` methods or do significant work in their `drop` methods.
+//      2. the thread is shared across the whole library. This can be tuned by using `android_cleaner = true`,
+//         or `android = true` in the [`kotlin` section of the `uniffi.toml` file](https://mozilla.github.io/uniffi-rs/kotlin/configuration.html).
+//
+// If we try to implement this with mutual exclusion on access to the handle, there is the
+// possibility of a race between a method call and a concurrent call to `destroy`:
+//
+//    * Thread A starts a method call, reads the value of the handle, but is interrupted
+//      before it can pass the handle over the FFI to Rust.
+//    * Thread B calls `destroy` and frees the underlying Rust struct.
+//    * Thread A resumes, passing the already-read handle value to Rust and triggering
+//      a use-after-free.
+//
+// One possible solution would be to use a `ReadWriteLock`, with each method call taking
+// a read lock (and thus allowed to run concurrently) and the special `destroy` method
+// taking a write lock (and thus blocking on live method calls). However, we aim not to
+// generate methods with any hidden blocking semantics, and a `destroy` method that might
+// block if called incorrectly seems to meet that bar.
+//
+// So, we achieve our goals by giving each instance an associated `AtomicLong` counter to track
+// the number of in-flight method calls, and an `AtomicBoolean` flag to indicate whether `destroy`
+// has been called. These are updated according to the following rules:
+//
+//    * The initial value of the counter is 1, indicating a live object with no in-flight calls.
+//      The initial value for the flag is false.
+//
+//    * At the start of each method call, we atomically check the counter.
+//      If it is 0 then the underlying Rust struct has already been destroyed and the call is aborted.
+//      If it is nonzero them we atomically increment it by 1 and proceed with the method call.
+//
+//    * At the end of each method call, we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+//    * When `destroy` is called, we atomically flip the flag from false to true.
+//      If the flag was already true we silently fail.
+//      Otherwise we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+// Astute readers may observe that this all sounds very similar to the way that Rust's `Arc<T>` works,
+// and indeed it is, with the addition of a flag to guard against multiple calls to `destroy`.
+//
+// The overall effect is that the underlying Rust struct is destroyed only when `destroy` has been
+// called *and* all in-flight method calls have completed, avoiding violating any of the expectations
+// of the underlying Rust code.
+//
+// This makes a cleaner a better alternative to _not_ calling `destroy()` as
+// and when the object is finished with, but the abstraction is not perfect: if the Rust object's `drop`
+// method is slow, and/or there are many objects to cleanup, and it's on a low end Android device, then the cleaner
+// thread may be starved, and the app will leak memory.
+//
+// In this case, `destroy`ing manually may be a better solution.
+//
+// The cleaner can live side by side with the manual calling of `destroy`. In the order of responsiveness, uniffi objects
+// with Rust peers are reclaimed:
+//
+// 1. By calling the `destroy` method of the object, which calls `rustObject.free()`. If that doesn't happen:
+// 2. When the object becomes unreachable, AND the Cleaner thread gets to call `rustObject.free()`. If the thread is starved then:
+// 3. The memory is reclaimed when the process terminates.
+//
+// [1] https://stackoverflow.com/questions/24376768/can-java-finalize-an-object-when-it-is-still-in-scope/24380219
+//
+
+
+/**
+ * Platform sensor access, implemented in Kotlin on `SensorManager`.
+ *
+ * `kind_code` is the stable `SensorKind::code()` wire code. Implementations
+ * must be cheap and must not call back into this library.
+ */
+public interface SensorPlatform {
+    
+    /**
+     * Whether the device has a sensor for `kind_code`.
+     */
+    fun `isSensorAvailable`(`kindCode`: kotlin.UInt): kotlin.Boolean
+    
+    /**
+     * Start delivering `kind_code` no faster than `sampling_period_us`.
+     */
+    fun `registerSensor`(`kindCode`: kotlin.UInt, `samplingPeriodUs`: kotlin.UInt): kotlin.Boolean
+    
+    fun `unregisterSensor`(`kindCode`: kotlin.UInt)
+    
+    /**
+     * Most recent sample delivered since registration.
+     */
+    fun `latestSensorSample`(`kindCode`: kotlin.UInt): ImuSensorSample?
+    
+    companion object
+}
+
+/**
+ * Platform sensor access, implemented in Kotlin on `SensorManager`.
+ *
+ * `kind_code` is the stable `SensorKind::code()` wire code. Implementations
+ * must be cheap and must not call back into this library.
+ */
+open class SensorPlatformImpl: Disposable, AutoCloseable, SensorPlatform
+{
+
+    @Suppress("UNUSED_PARAMETER")
+    /**
+     * @suppress
+     */
+    constructor(withHandle: UniffiWithHandle, handle: Long) {
+        this.handle = handle
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(handle))
+    }
+
+    /**
+     * @suppress
+     *
+     * This constructor can be used to instantiate a fake object. Only used for tests. Any
+     * attempt to actually use an object constructed this way will fail as there is no
+     * connected Rust object.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    constructor(noHandle: NoHandle) {
+        this.handle = 0
+        this.cleanable = null
+    }
+
+    protected val handle: Long
+    protected val cleanable: UniffiCleaner.Cleanable?
+
+    private val wasDestroyed = AtomicBoolean(false)
+    private val callCounter = AtomicLong(1)
+
+    /**
+     * Whether the current object has been destroyed and its reference is gone in the Rust side.
+     */
+    val uniffiIsDestroyed: Boolean get() = wasDestroyed.get()
+
+    override fun destroy() {
+        // Only allow a single call to this method.
+        // TODO: maybe we should log a warning if called more than once?
+        if (this.wasDestroyed.compareAndSet(false, true)) {
+            // This decrement always matches the initial count of 1 given at creation time.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable?.clean()
+            }
+        }
+    }
+
+    @Synchronized
+    override fun close() {
+        this.destroy()
+    }
+
+    internal inline fun <R> callWithHandle(block: (handle: Long) -> R): R {
+        // Check and increment the call counter, to keep the object alive.
+        // This needs a compare-and-set retry loop in case of concurrent updates.
+        do {
+            val c = this.callCounter.get()
+            if (c == 0L) {
+                throw IllegalStateException("${this.javaClass.simpleName} object has already been destroyed")
+            }
+            if (c == Long.MAX_VALUE) {
+                throw IllegalStateException("${this.javaClass.simpleName} call counter would overflow")
+            }
+        } while (! this.callCounter.compareAndSet(c, c + 1L))
+        // Now we can safely do the method call without the handle being freed concurrently.
+        try {
+            return block(this.uniffiCloneHandle())
+        } finally {
+            // This decrement always matches the increment we performed above.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable?.clean()
+            }
+        }
+    }
+
+    // Use a static inner class instead of a closure so as not to accidentally
+    // capture `this` as part of the cleanable's action.
+    private class UniffiCleanAction(private val handle: Long) : Runnable {
+        override fun run() {
+            if (handle == 0.toLong()) {
+                // Fake object created with `NoHandle`, don't try to free.
+                return;
+            }
+            uniffiRustCall { status ->
+                UniffiLib.uniffi_navi_fn_free_sensorplatform(handle, status)
+            }
+        }
+    }
+
+    /**
+     * @suppress
+     */
+    fun uniffiCloneHandle(): Long {
+        if (handle == 0.toLong()) {
+            throw InternalException("uniffiCloneHandle() called on NoHandle object");
+        }
+        return uniffiRustCall() { status ->
+            UniffiLib.uniffi_navi_fn_clone_sensorplatform(handle, status)
+        }
+    }
+
+    
+    /**
+     * Whether the device has a sensor for `kind_code`.
+     */override fun `isSensorAvailable`(`kindCode`: kotlin.UInt): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_method_sensorplatform_is_sensor_available(
+        it,
+        
+        FfiConverterUInt.lower(`kindCode`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * Start delivering `kind_code` no faster than `sampling_period_us`.
+     */override fun `registerSensor`(`kindCode`: kotlin.UInt, `samplingPeriodUs`: kotlin.UInt): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_method_sensorplatform_register_sensor(
+        it,
+        
+        FfiConverterUInt.lower(`kindCode`),
+        FfiConverterUInt.lower(`samplingPeriodUs`),_status)
+}
+    }
+    )
+    }
+    
+
+    override fun `unregisterSensor`(`kindCode`: kotlin.UInt)
+        = 
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_method_sensorplatform_unregister_sensor(
+        it,
+        
+        FfiConverterUInt.lower(`kindCode`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Most recent sample delivered since registration.
+     */override fun `latestSensorSample`(`kindCode`: kotlin.UInt): ImuSensorSample? {
+            return FfiConverterOptionalTypeImuSensorSample.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_method_sensorplatform_latest_sensor_sample(
+        it,
+        
+        FfiConverterUInt.lower(`kindCode`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+
+    
+
+
+    
+    
+    /**
+     * @suppress
+     */
+    companion object
+    
+}
+
+
+
+// Put the implementation in an object so we don't pollute the top-level namespace
+internal object uniffiCallbackInterfaceSensorPlatform {
+    internal object `isSensorAvailable`: UniffiCallbackInterfaceSensorPlatformMethod0 {
+        override fun callback(`uniffiHandle`: Long,`kindCode`: Int,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeSensorPlatform.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`isSensorAvailable`(
+                    FfiConverterUInt.lift(`kindCode`),
+                )
+            }
+            val writeReturn = { value: kotlin.Boolean -> uniffiOutReturn.setValue(FfiConverterBoolean.lower(value)) }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+    internal object `registerSensor`: UniffiCallbackInterfaceSensorPlatformMethod1 {
+        override fun callback(`uniffiHandle`: Long,`kindCode`: Int,`samplingPeriodUs`: Int,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeSensorPlatform.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`registerSensor`(
+                    FfiConverterUInt.lift(`kindCode`),
+                    FfiConverterUInt.lift(`samplingPeriodUs`),
+                )
+            }
+            val writeReturn = { value: kotlin.Boolean -> uniffiOutReturn.setValue(FfiConverterBoolean.lower(value)) }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+    internal object `unregisterSensor`: UniffiCallbackInterfaceSensorPlatformMethod2 {
+        override fun callback(`uniffiHandle`: Long,`kindCode`: Int,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeSensorPlatform.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`unregisterSensor`(
+                    FfiConverterUInt.lift(`kindCode`),
+                )
+            }
+            val writeReturn = { _: Unit -> Unit }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+    internal object `latestSensorSample`: UniffiCallbackInterfaceSensorPlatformMethod3 {
+        override fun callback(`uniffiHandle`: Long,`kindCode`: Int,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeSensorPlatform.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`latestSensorSample`(
+                    FfiConverterUInt.lift(`kindCode`),
+                )
+            }
+            val writeReturn = { value: ImuSensorSample? -> uniffiOutReturn.setValue(FfiConverterOptionalTypeImuSensorSample.lower(value)) }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+
+    internal object uniffiFree: UniffiCallbackInterfaceFree {
+        override fun callback(handle: Long) {
+            FfiConverterTypeSensorPlatform.handleMap.remove(handle)
+        }
+    }
+
+    internal object uniffiClone: UniffiCallbackInterfaceClone {
+        override fun callback(handle: Long): Long {
+            return FfiConverterTypeSensorPlatform.handleMap.clone(handle)
+        }
+    }
+
+    internal var vtable = UniffiVTableCallbackInterfaceSensorPlatform.UniffiByValue(
+        uniffiFree,
+        uniffiClone,
+        `isSensorAvailable`,
+        `registerSensor`,
+        `unregisterSensor`,
+        `latestSensorSample`,
+    )
+
+    // Registers the foreign callback with the Rust side.
+    // This method is generated for each callback interface.
+    internal fun register(lib: UniffiLib) {
+        lib.uniffi_navi_fn_init_callback_vtable_sensorplatform(vtable)
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSensorPlatform: FfiConverter<SensorPlatform, Long> {
+    internal val handleMap = UniffiHandleMap<SensorPlatform>()
+
+    override fun lower(value: SensorPlatform): Long {
+        if (value is SensorPlatformImpl) {
+             // Rust-implemented object.  Clone the handle and return it
+            return value.uniffiCloneHandle()
+         } else {
+            // Kotlin object, generate a new vtable handle and return that.
+            return handleMap.insert(value)
+         }
+    }
+
+    override fun lift(value: Long): SensorPlatform {
+        if ((value and 1.toLong()) == 0.toLong()) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return SensorPlatformImpl(UniffiWithHandle, value)
+        } else {
+            // Kotlin-generated handle, get the object from the handle map
+            return handleMap.remove(value)
+        }
+    }
+
+    override fun read(buf: ByteBuffer): SensorPlatform {
+        return lift(buf.getLong())
+    }
+
+    override fun allocationSize(value: SensorPlatform) = 8UL
+
+    override fun write(value: SensorPlatform, buf: ByteBuffer) {
+        buf.putLong(lower(value))
+    }
+}
+
+
 
 data class CampingCallResult (
     var `kind`: CampingCallKind
@@ -3496,6 +4325,59 @@ public object FfiConverterTypeFfiCarRestSettings: FfiConverterRustBuffer<FfiCarR
             FfiConverterUInt.write(value.`restDurationMinutes`, buf)
             FfiConverterBoolean.write(value.`ecoModeEnabled`, buf)
             FfiConverterDouble.write(value.`maxHours`, buf)
+    }
+}
+
+
+
+data class FfiCorridorSkeletonProgress (
+    var `stem`: kotlin.String
+    , 
+    var `regionLabel`: kotlin.String
+    , 
+    var `running`: kotlin.Boolean
+    , 
+    var `pct`: kotlin.UByte
+    , 
+    var `message`: kotlin.String
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiCorridorSkeletonProgress: FfiConverterRustBuffer<FfiCorridorSkeletonProgress> {
+    override fun read(buf: ByteBuffer): FfiCorridorSkeletonProgress {
+        return FfiCorridorSkeletonProgress(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterUByte.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiCorridorSkeletonProgress) = (
+            FfiConverterString.allocationSize(value.`stem`) +
+            FfiConverterString.allocationSize(value.`regionLabel`) +
+            FfiConverterBoolean.allocationSize(value.`running`) +
+            FfiConverterUByte.allocationSize(value.`pct`) +
+            FfiConverterString.allocationSize(value.`message`)
+    )
+
+    override fun write(value: FfiCorridorSkeletonProgress, buf: ByteBuffer) {
+            FfiConverterString.write(value.`stem`, buf)
+            FfiConverterString.write(value.`regionLabel`, buf)
+            FfiConverterBoolean.write(value.`running`, buf)
+            FfiConverterUByte.write(value.`pct`, buf)
+            FfiConverterString.write(value.`message`, buf)
     }
 }
 
@@ -4659,6 +5541,112 @@ public object FfiConverterTypeFfiVehicleLimits: FfiConverterRustBuffer<FfiVehicl
 
 
 
+/**
+ * One reading handed over by the Android `SensorManager` backend.
+ */
+data class ImuSensorSample (
+    /**
+     * `SensorEvent.values` in SI units.
+     */
+    var `values`: List<kotlin.Double>
+    , 
+    /**
+     * Monotonic milliseconds (`SensorEvent.timestamp` / 1e6); only differences matter.
+     */
+    var `timestampMs`: kotlin.Long
+    , 
+    /**
+     * Android accuracy 0..=3, or -1 when unknown.
+     */
+    var `accuracy`: kotlin.Int
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeImuSensorSample: FfiConverterRustBuffer<ImuSensorSample> {
+    override fun read(buf: ByteBuffer): ImuSensorSample {
+        return ImuSensorSample(
+            FfiConverterSequenceDouble.read(buf),
+            FfiConverterLong.read(buf),
+            FfiConverterInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ImuSensorSample) = (
+            FfiConverterSequenceDouble.allocationSize(value.`values`) +
+            FfiConverterLong.allocationSize(value.`timestampMs`) +
+            FfiConverterInt.allocationSize(value.`accuracy`)
+    )
+
+    override fun write(value: ImuSensorSample, buf: ByteBuffer) {
+            FfiConverterSequenceDouble.write(value.`values`, buf)
+            FfiConverterLong.write(value.`timestampMs`, buf)
+            FfiConverterInt.write(value.`accuracy`, buf)
+    }
+}
+
+
+
+data class ImuTickResult (
+    var `kind`: ImuCallKind
+    , 
+    var `message`: kotlin.String
+    , 
+    /**
+     * Plugin display state (`live.imu_state` JSON) when the guest ran.
+     */
+    var `stateJson`: kotlin.String?
+    , 
+    var `elapsedMs`: kotlin.ULong
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeImuTickResult: FfiConverterRustBuffer<ImuTickResult> {
+    override fun read(buf: ByteBuffer): ImuTickResult {
+        return ImuTickResult(
+            FfiConverterTypeImuCallKind.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ImuTickResult) = (
+            FfiConverterTypeImuCallKind.allocationSize(value.`kind`) +
+            FfiConverterString.allocationSize(value.`message`) +
+            FfiConverterOptionalString.allocationSize(value.`stateJson`) +
+            FfiConverterULong.allocationSize(value.`elapsedMs`)
+    )
+
+    override fun write(value: ImuTickResult, buf: ByteBuffer) {
+            FfiConverterTypeImuCallKind.write(value.`kind`, buf)
+            FfiConverterString.write(value.`message`, buf)
+            FfiConverterOptionalString.write(value.`stateJson`, buf)
+            FfiConverterULong.write(value.`elapsedMs`, buf)
+    }
+}
+
+
+
 data class PlaceHit (
     var `osmId`: kotlin.Long
     , 
@@ -4945,6 +5933,46 @@ public object FfiConverterTypeFfiTollPolicy: FfiConverterRustBuffer<FfiTollPolic
 
 
 
+enum class ImuCallKind {
+    
+    OK,
+    FUEL_EXHAUSTED,
+    TIMEOUT,
+    MEMORY_EXCEEDED,
+    TRAP,
+    DISABLED,
+    UNAVAILABLE,
+    ERROR;
+
+    
+
+
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeImuCallKind: FfiConverterRustBuffer<ImuCallKind> {
+    override fun read(buf: ByteBuffer) = try {
+        ImuCallKind.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: ImuCallKind) = 4UL
+
+    override fun write(value: ImuCallKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
 enum class TravelProfile {
     
     CAR,
@@ -5217,6 +6245,38 @@ public object FfiConverterOptionalTypeFfiPmtilesJob: FfiConverterRustBuffer<FfiP
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeImuSensorSample: FfiConverterRustBuffer<ImuSensorSample?> {
+    override fun read(buf: ByteBuffer): ImuSensorSample? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeImuSensorSample.read(buf)
+    }
+
+    override fun allocationSize(value: ImuSensorSample?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeImuSensorSample.allocationSize(value)
+        }
+    }
+
+    override fun write(value: ImuSensorSample?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeImuSensorSample.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalSequenceDouble: FfiConverterRustBuffer<List<kotlin.Double>?> {
     override fun read(buf: ByteBuffer): List<kotlin.Double>? {
         if (buf.get().toInt() == 0) {
@@ -5271,6 +6331,62 @@ public object FfiConverterOptionalSequenceString: FfiConverterRustBuffer<List<ko
         } else {
             buf.put(1)
             FfiConverterSequenceString.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceUInt: FfiConverterRustBuffer<List<kotlin.UInt>> {
+    override fun read(buf: ByteBuffer): List<kotlin.UInt> {
+        val len = buf.getInt()
+        return List<kotlin.UInt>(len) {
+            FfiConverterUInt.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.UInt>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterUInt.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.UInt>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterUInt.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceInt: FfiConverterRustBuffer<List<kotlin.Int>> {
+    override fun read(buf: ByteBuffer): List<kotlin.Int> {
+        val len = buf.getInt()
+        return List<kotlin.Int>(len) {
+            FfiConverterInt.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.Int>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterInt.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.Int>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterInt.write(it, buf)
         }
     }
 }
@@ -5674,6 +6790,35 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * True when the stem corridor skeleton meta matches the pack and neighbour-pack fingerprints.
+         */ fun `corridorSkeletonIsReady`(`packDir`: kotlin.String, `stem`: kotlin.String, `profile`: TravelProfile): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_corridor_skeleton_is_ready(
+    
+        
+        FfiConverterString.lower(`packDir`),
+        FfiConverterString.lower(`stem`),
+        FfiConverterTypeTravelProfile.lower(`profile`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Progress for an in-flight corridor skeleton build (empty stem when idle).
+         */ fun `corridorSkeletonProgressSnapshot`(): FfiCorridorSkeletonProgress {
+            return FfiConverterTypeFfiCorridorSkeletonProgress.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_corridor_skeleton_progress_snapshot(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
          * Offline ISO-3166-1 alpha-2 for a WGS84 point (Natural Earth Admin-0).
          *
          * Safe to call from a background thread. Avoid the Android main looper —
@@ -6014,7 +7159,25 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
-         * Build/refresh `{stem}.navi-ferry-overlay-{profile}.rkyv` from the region PBF.
+         * Build/refresh `{stem}.navi-corridor-skeleton.bin` from installed graph packs.
+         * Call from pack install / idle background work — not from the plan path.
+         */ fun `ensureCorridorSkeleton`(`packDir`: kotlin.String, `stem`: kotlin.String, `profile`: TravelProfile): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_ensure_corridor_skeleton(
+    
+        
+        FfiConverterString.lower(`packDir`),
+        FfiConverterString.lower(`stem`),
+        FfiConverterTypeTravelProfile.lower(`profile`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Build/refresh `{stem}.navi-ferry-overlay-{profile}.rkyv` from the region PBF
+         * (or shared country extract, e.g. `sweden-latest.osm.pbf` for Norrbotten).
          * Call from pack install / refresh background work — not from the plan path.
          */ fun `ensureFerrySidecar`(`packDir`: kotlin.String, `stem`: kotlin.String, `profile`: TravelProfile): kotlin.String {
             return FfiConverterString.lift(
@@ -6114,6 +7277,23 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Build this pack-server region's place index from the place-source file when
+         * the region's manifest lists it; otherwise the existing extract path.
+         */ fun `ensurePlaceIndexForPackRegion`(`packDir`: kotlin.String, `indexDbPath`: kotlin.String, `regionId`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_ensure_place_index_for_pack_region(
+    
+        
+        FfiConverterString.lower(`packDir`),
+        FfiConverterString.lower(`indexDbPath`),
+        FfiConverterString.lower(`regionId`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Load the Ready POI pack that covers `lat,lon` (long-trip-packs / Removable
          * roots via `pack_dirs_json`). One pack at a time — never co-resident with a
          * route graph. Cell key (~0.5°) avoids thrashing when GPS jitters inside a region.
@@ -6167,7 +7347,8 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
-         * True when the stem ferry sidecar meta matches the on-disk PBF fingerprint.
+         * True when the stem ferry sidecar meta matches the on-disk PBF fingerprint
+         * (leaf or shared country extract).
          */ fun `ferrySidecarIsReady`(`packDir`: kotlin.String, `stem`: kotlin.String, `profile`: TravelProfile): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     uniffiRustCall() { _status ->
@@ -7104,6 +8285,21 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Read-only: place-source sha256 recorded with this region's index, or empty.
+         */ fun `placeIndexSourceSha256`(`indexDbPath`: kotlin.String, `regionId`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_place_index_source_sha256(
+    
+        
+        FfiConverterString.lower(`indexDbPath`),
+        FfiConverterString.lower(`regionId`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Plan a motor / bicycle route between two WGS84 points using a local OSM `.pbf`.
          *
          * Always builds a **bbox-clipped** graph (`[min_lat,min_lon,max_lat,max_lon]` padded
@@ -7117,11 +8313,10 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
          * Android). Empty: search `data_dir` and `data_dir/long-trip-packs` when present.
          * Pass `""` only when the PBF already lives next to the packs.
          *
-         * `long_trip_enabled` gates densify/chunk for spans above [`LONG_TRIP_CHUNK_DEG`].
-         * Ordinary UI plans pass `false` so cross-stem mid trips (Raufoss→Bergen) stay
-         * on one A*. Same-stem coastal ODs with span > CHUNK densify even when longTrip
-         * is off so Automotive never materialises the full Vestlandet single-shot graph
-         * (Bergen→Stavanger ~259k nodes / ~985 MiB peak vs densify hops ~167k / ≤933).
+         * `long_trip_enabled` controls region download-along-route only (Kotlin
+         * LongTripCoordinator). Corridor densify runs for every multi-region trip and
+         * for same-stem coastal spans above CHUNK — independent of this flag. Inland
+         * same-stem ODs (ostlandet) stay single-shot so Hamar→Dombås is not detoured.
          *
          * `allowed_countries`: when `Some` (non-empty), hard-filters the graph to those
          * ISO-3166-1 alpha-2 codes ([`RouteOptions::allowed_countries`]). Host "Stay in
@@ -7405,6 +8600,36 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     )
     }
     
+
+        /**
+         * Queue the z0–z6 world overview extract if it is not already completed.
+         */ fun `pmtilesQueueWorldOverview`(`dataDir`: kotlin.String, `baseUrl`: kotlin.String?): FfiPmtilesJob {
+            return FfiConverterTypeFfiPmtilesJob.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_pmtiles_queue_world_overview(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterOptionalString.lower(`baseUrl`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Re-validate `*.pmtiles.rejected` under [data_dir]/pmtiles. Valid archives
+         * are accepted in place (no download). Returns how many were accepted.
+         */ fun `pmtilesRecheckRejected`(`dataDir`: kotlin.String): kotlin.UInt {
+            return FfiConverterUInt.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_pmtiles_recheck_rejected(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
  fun `pmtilesRegionBbox`(`geofabrikPath`: kotlin.String): List<kotlin.Double>? {
             return FfiConverterOptionalSequenceDouble.lift(
     uniffiRustCall() { _status ->
@@ -7636,6 +8861,18 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
 }
     )
     }
+    
+
+        /**
+         * Ask idle jobs to stop at the next committed batch so a plan can start.
+         */ fun `requestIdlePause`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_request_idle_pause(
+    
+        _status)
+}
+    
     
 
         /**
@@ -8061,6 +9298,38 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Same as [`search_places`], ranked with the map centre and visible region.
+         */ fun `searchPlacesBiased`(`indexDbPath`: kotlin.String, `query`: kotlin.String, `limit`: kotlin.UInt, `biasLat`: kotlin.Double, `biasLon`: kotlin.Double, `visibleRegion`: kotlin.String): List<PlaceHit> {
+            return FfiConverterSequenceTypePlaceHit.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_search_places_biased(
+    
+        
+        FfiConverterString.lower(`indexDbPath`),
+        FfiConverterString.lower(`query`),
+        FfiConverterUInt.lower(`limit`),
+        FfiConverterDouble.lower(`biasLat`),
+        FfiConverterDouble.lower(`biasLon`),
+        FfiConverterString.lower(`visibleRegion`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Arm a one-shot accept for the absurd installed-only detour gate (product UI).
+         */ fun `setAcceptAbsurdDetour`(`accept`: kotlin.Boolean)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_set_accept_absurd_detour(
+    
+        
+        FfiConverterBoolean.lower(`accept`),_status)
+}
+    
+    
+
+        /**
          * Weekly reminder opt-in (surfaces a check prompt; never auto-applies).
          */ fun `setOsmWeeklyReminder`(`dataDir`: kotlin.String, `enabled`: kotlin.Boolean): kotlin.Boolean {
             return FfiConverterBoolean.lift(
@@ -8084,6 +9353,20 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
         
         FfiConverterBoolean.lower(`enabled`),_status)
+}
+    
+    
+
+        /**
+         * Test-only: slow each index-build phase check so a harness can start a plan
+         * while that phase is active. Zero clears the delay.
+         */ fun `setTestIndexPhaseSleepMs`(`ms`: kotlin.ULong)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_set_test_index_phase_sleep_ms(
+    
+        
+        FfiConverterULong.lower(`ms`),_status)
 }
     
     
@@ -8581,6 +9864,10 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
 
         /**
          * Push live navigation context (closes production destination-null).
+         *
+         * `waypoints_json` is `[[lat, lon], …]` — not the MapLibre overlay string
+         * `"lon,lat;lon,lat;…"`. The Android host converts via
+         * `sampleCampingCorridorWaypoints`.
          */ fun `campingPluginSetNavContext`(`waypointsJson`: kotlin.String, `destLat`: kotlin.Double?, `destLon`: kotlin.Double?, `profile`: TravelProfile, `professionalDriver`: kotlin.Boolean): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
@@ -8665,6 +9952,353 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         FfiConverterDouble.lower(`lon`),
         FfiConverterOptionalString.lower(`countryIso`),
         FfiConverterOptionalString.lower(`subdivisionIso`),_status)
+}
+    )
+    }
+    
+ fun `catPluginConfigure`(`filesDir`: kotlin.String, `dataDir`: kotlin.String, `timezone`: kotlin.String)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_configure(
+    
+        
+        FfiConverterString.lower(`filesDir`),
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`timezone`),_status)
+}
+    
+    
+ fun `catPluginConnectTcp`(`host`: kotlin.String, `port`: kotlin.UShort, `allowBeta`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_connect_tcp(
+    
+        
+        FfiConverterString.lower(`host`),
+        FfiConverterUShort.lower(`port`),
+        FfiConverterBoolean.lower(`allowBeta`),_status)
+}
+    )
+    }
+    
+ fun `catPluginDisconnect`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_disconnect(
+    
+        _status)
+}
+    )
+    }
+    
+ fun `catPluginInstallGuest`(`name`: kotlin.String, `manifestJson`: kotlin.String, `wasmBytes`: kotlin.ByteArray): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_install_guest(
+    
+        
+        FfiConverterString.lower(`name`),
+        FfiConverterString.lower(`manifestJson`),
+        FfiConverterByteArray.lower(`wasmBytes`),_status)
+}
+    )
+    }
+    
+ fun `catPluginIsEnabled`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_is_enabled(
+    
+        _status)
+}
+    )
+    }
+    
+ fun `catPluginNetworkFollowJson`(`requestJson`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_network_follow_json(
+    
+        
+        FfiConverterString.lower(`requestJson`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * CAT sheet list: includes excluded / position_null / DMR (info-only). Not for auto-tune.
+         */ fun `catPluginRepeaterListUiJson`(`lat`: kotlin.Double, `lon`: kotlin.Double, `radiusKm`: kotlin.Double): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_repeater_list_ui_json(
+    
+        
+        FfiConverterDouble.lower(`lat`),
+        FfiConverterDouble.lower(`lon`),
+        FfiConverterDouble.lower(`radiusKm`),_status)
+}
+    )
+    }
+    
+ fun `catPluginRepeaterQueryJson`(`lat`: kotlin.Double, `lon`: kotlin.Double, `radiusKm`: kotlin.Double, `networkId`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_repeater_query_json(
+    
+        
+        FfiConverterDouble.lower(`lat`),
+        FfiConverterDouble.lower(`lon`),
+        FfiConverterDouble.lower(`radiusKm`),
+        FfiConverterOptionalString.lower(`networkId`),_status)
+}
+    )
+    }
+    
+ fun `catPluginSetEnabled`(`enabled`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_set_enabled(
+    
+        
+        FfiConverterBoolean.lower(`enabled`),_status)
+}
+    )
+    }
+    
+ fun `catPluginSetPosition`(`lat`: kotlin.Double, `lon`: kotlin.Double)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_set_position(
+    
+        
+        FfiConverterDouble.lower(`lat`),
+        FfiConverterDouble.lower(`lon`),_status)
+}
+    
+    
+ fun `catPluginStatusJson`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_status_json(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Load + run the CATS wasm guest once (selection / follow decision helpers).
+         */ fun `catPluginTickGuest`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_tick_guest(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * User-pressed Update only: GET navi-server `/repeaters/…`, verify checksums,
+         * atomically swap into the onboard repeater DB. Never contacts RepeaterBook or
+         * RadioID directly. Missing sources (e.g. RepeaterBook) are reported and skipped.
+         */ fun `catPluginUpdateRepeatersFromServer`(`baseUrl`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_update_repeaters_from_server(
+    
+        
+        FfiConverterString.lower(`baseUrl`),_status)
+}
+    )
+    }
+    
+ fun `catPluginVfoSetJson`(`requestJson`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_vfo_set_json(
+    
+        
+        FfiConverterString.lower(`requestJson`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Android `android.hardware.Sensor` types for a wire code, most preferred first.
+         *
+         * Single source of truth for the Kotlin backend (ambient temperature prefers
+         * `TYPE_AMBIENT_TEMPERATURE` over the deprecated `TYPE_TEMPERATURE`).
+         */ fun `imuPluginAndroidSensorTypes`(`kindCode`: kotlin.UInt): List<kotlin.Int> {
+            return FfiConverterSequenceInt.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_imu_plugin_android_sensor_types(
+    
+        
+        FfiConverterUInt.lower(`kindCode`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Calibration copy shown verbatim next to the Calibrate button.
+         */ fun `imuPluginCalibrationInstruction`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_imu_plugin_calibration_instruction(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Bind the plugin session to the app files dir and the Android sensor backend.
+         * Safe to call more than once: the previous session's sensors are released.
+         */ fun `imuPluginConfigure`(`filesDir`: kotlin.String, `platform`: SensorPlatform): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_imu_plugin_configure(
+    
+        
+        FfiConverterString.lower(`filesDir`),
+        FfiConverterTypeSensorPlatform.lower(`platform`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Install or replace the guest under `filesDir/plugins/imu/`. `wasm_bytes` and
+         * `manifest_json` are staged from source at APK build time (assets).
+         */ fun `imuPluginInstallGuest`(`manifestJson`: kotlin.String, `wasmBytes`: kotlin.ByteArray): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_imu_plugin_install_guest(
+    
+        
+        FfiConverterString.lower(`manifestJson`),
+        FfiConverterByteArray.lower(`wasmBytes`),_status)
+}
+    )
+    }
+    
+ fun `imuPluginIsEnabled`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_imu_plugin_is_enabled(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Sensor wire codes currently registered with the platform (diagnostics / tests).
+         */ fun `imuPluginRegisteredSensorCodes`(): List<kotlin.UInt> {
+            return FfiConverterSequenceUInt.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_imu_plugin_registered_sensor_codes(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Unregister every sensor listener (app backgrounded, settings closed).
+         */ fun `imuPluginReleaseSensors`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_imu_plugin_release_sensors(
+    
+        _status)
+}
+    
+    
+
+        /**
+         * Ask the guest to calibrate the vehicle mount to level on its next ticks.
+         */ fun `imuPluginRequestCalibrate`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_imu_plugin_request_calibrate(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Ask the guest to remove the stored calibration on its next tick.
+         */ fun `imuPluginRequestReset`(): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_imu_plugin_request_reset(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Wire codes of every sensor the host may expose to guests.
+         */ fun `imuPluginSensorCodes`(): List<kotlin.UInt> {
+            return FfiConverterSequenceUInt.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_imu_plugin_sensor_codes(
+    
+        _status)
+}
+    )
+    }
+    
+ fun `imuPluginSessionDisabledReason`(): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_imu_plugin_session_disabled_reason(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Enable / disable via [`PluginEnableStore`] (default OFF). Disabling releases
+         * every sensor listener and drops the ephemeral display state; the saved level
+         * calibration is kept (use reset to remove it).
+         */ fun `imuPluginSetEnabled`(`enabled`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_imu_plugin_set_enabled(
+    
+        
+        FfiConverterBoolean.lower(`enabled`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Run one guest tick. Call a few times per second from a background thread
+         * while the plugin is enabled and the app is in the foreground.
+         */ fun `imuPluginTick`(): ImuTickResult {
+            return FfiConverterTypeImuTickResult.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_imu_plugin_tick(
+    
+        _status)
 }
     )
     }

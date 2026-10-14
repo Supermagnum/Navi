@@ -48,7 +48,7 @@ class ForestLandcoverCompareScreenshotTest {
         auto.grantRuntimePermission(context.packageName, android.Manifest.permission.ACCESS_FINE_LOCATION)
         auto.grantRuntimePermission(context.packageName, android.Manifest.permission.ACCESS_COARSE_LOCATION)
         NaviMapTestHooks.hideUiChrome = true
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         NaviMapTestHooks.forceOnlineBasemap = false
         MapHudPrefs.saveOptIn3d(context, false)
         MapHudPrefs.saveCameraTiltDeg(context, 0.0)
@@ -234,7 +234,7 @@ class ForestLandcoverCompareScreenshotTest {
         MapHudPrefs.saveCameraTiltDeg(context, 0.0)
         NaviMapTestHooks.requestOptIn3d = false
         NaviMapTestHooks.requestCameraTiltDeg = 0.0
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         NaviMapTestHooks.lastBasemapKind = ""
         NaviMapTestHooks.forceOnlineBasemap = false
         NaviMapTestHooks.hideUiChrome = true

@@ -149,4 +149,12 @@ class StatusUiStabilityTest {
         assertTrue(held.endsWith(" · 2s"))
         assertFalse(held.contains("5s"))
     }
+
+    @Test
+    fun finished_job_line_is_cleared_but_other_status_kept() {
+        val job = "Place index: building (Trondelag) · 1s"
+        assertEquals("", StatusUi.clearFinishedJobLine(job, job))
+        assertEquals("Set to: Dombås", StatusUi.clearFinishedJobLine("Set to: Dombås", job))
+        assertEquals("Ready", StatusUi.clearFinishedJobLine("Ready", ""))
+    }
 }

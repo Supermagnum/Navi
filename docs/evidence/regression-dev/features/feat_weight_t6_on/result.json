@@ -1,0 +1,39 @@
+{
+  "status": "done",
+  "profile": "mobile_home",
+  "eco": false,
+  "stay_in_country": false,
+  "graph": "pack",
+  "wall_s": 6.06,
+  "duration_ms": 2851,
+  "distance_km": 61.20602294653191,
+  "polyline_points": 1744,
+  "spike_count": 0,
+  "spikes": [],
+  "from": [
+    "Hamar",
+    60.7945,
+    11.068
+  ],
+  "to": [
+    "Lillehammer",
+    61.1153,
+    10.4662
+  ],
+  "enumerations": {
+    "route_tunnel_count": 3,
+    "route_tunnel_fp": "Skarpsnotunnelen@0.33|Moelvtunnelen@0.20|Sorgendalstunnelen@0.29",
+    "route_ferry_legs": 0,
+    "route_ferry_fp": "",
+    "rest_place_count": 0,
+    "rest_place_names": [],
+    "attraction_count": 0,
+    "attraction_by_type": {},
+    "wild_camping_site_count": 0,
+    "wild_camping_status_kind": "",
+    "wild_camping_status_message": "",
+    "wild_camping_by_country": {},
+    "wild_camping_by_subdivision": {}
+  },
+  "enum_meta": null
+}

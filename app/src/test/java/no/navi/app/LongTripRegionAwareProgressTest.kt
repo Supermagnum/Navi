@@ -40,18 +40,11 @@ class LongTripRegionAwareProgressTest {
         LongTripCoordinator.setPackTargetResolverForTests { _, _ ->
             LongTripPackStorage.PackTarget.DownloadTo(packDir, "internal", false)
         }
-        LongTripCoordinator.setDownloadStarterForTests { _, dataDir, _, _, path, pack, requireUnmetered ->
-            RegionDownloadBackground.ensureStartedWithNetworkState(
-                context = null,
-                dataDir = dataDir,
-                url = "https://example.test/${path.substringAfterLast('/')}-latest.osm.pbf",
-                filename = "${path.substringAfterLast('/')}-latest.osm.pbf",
-                geofabrikPath = path,
-                packDir = pack,
-                requireUnmetered = requireUnmetered,
-                unmeteredNow = true,
-            )
-        }
+        // Do not start the real download worker: ensureStarted races ahead to
+        // Downloading, and onBackgroundPhase intentionally ignores a later
+        // synthetic "queued" (never regress past Queued). Phases are driven
+        // only via emitPhaseForTests below.
+        LongTripCoordinator.setDownloadStarterForTests { _, _, _, _, _, _, _ -> }
 
         LongTripCoordinator.enableWithDataDir(
             context = null,
@@ -105,8 +98,10 @@ class LongTripRegionAwareProgressTest {
             )
         }
 
+        // enableWithDataDir already starts downloads (Downloading). A late
+        // "queued" from ensureStarted must not regress past Queued (Phase C).
         RegionDownloadBackground.emitPhaseForTests(regions[0], "queued")
-        assertLineNamesRegion(LongTripCoordinator.statusLine(), 0, "Queued")
+        assertLineNamesRegion(LongTripCoordinator.statusLine(), 0, "Downloading")
 
         RegionDownloadBackground.emitPhaseForTests(regions[0], "downloading")
         assertLineNamesRegion(LongTripCoordinator.statusLine(), 0, "Downloading")
@@ -133,6 +128,10 @@ class LongTripRegionAwareProgressTest {
 
         RegionDownloadBackground.emitPhaseForTests(regions[3], "failed")
         assertLineNamesRegion(LongTripCoordinator.statusLine(), 3, "Failed")
+
+        // Queued is still allowed from Failed / Paused / Needed.
+        RegionDownloadBackground.emitPhaseForTests(regions[3], "queued")
+        assertLineNamesRegion(LongTripCoordinator.statusLine(), 3, "Queued")
 
         val downloadLine =
             RegionProgressMessages.phaseForRegion(

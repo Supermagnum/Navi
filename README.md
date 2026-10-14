@@ -95,14 +95,17 @@ differ for GPS, maps, GPU, and layout. Checklist:
 [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md).
 On-device and emulator results:
 [`docs/android-test-results.md`](docs/android-test-results.md).
+CAT radio corridor / importer evidence, dummy-`rigctld` CI, Hamlib APK packaging,
+and radio/baud UI notes (branch `CAT`): [`docs/CAT.md`](docs/CAT.md),
+[`docs/CAT-test-report.md`](docs/CAT-test-report.md),
+[`docs/cat-test.md`](docs/cat-test.md).
 
 **Install the signed release APK.** Testers should download and sideload
 [`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
 installable release APK** (upload keystore; not the debug build). Current build:
-**v0.3.14-beta** (`versionName` 0.3.14-beta, `versionCode` 19). Download from the
+**0.3.25-beta** (`versionName` 0.3.25-beta, `versionCode` 30). Download from the
 [`dev` branch](https://github.com/Supermagnum/Navi/tree/dev/compiled)
-(latest tester build) or the pinned
-[`v0.3.14-beta` tag](https://github.com/Supermagnum/Navi/tree/v0.3.14-beta). Android
+(latest tester build). Android
 validates the APK signature on install; the separate GPG files
 ([`compiled/SHA256SUMS`](compiled/SHA256SUMS),
 [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc)) are optional provenance
@@ -177,10 +180,16 @@ checklist above and file an issue; you do not need to write code.
     - [Weather icons reference](docs/plugins/weather-icons-reference.md) — reference (assets shipped with weather)
     - [Instrument cluster (AGL)](docs/plugins/instrument-cluster-agl-spec.md) — not implemented
     - [Animated icons](docs/plugins/animated-icons-spec.md) — not implemented
+    - [CAT radio plugin](#cat-radio-plugin) — implemented (opt-in; Hamlib + Benshi; never transmits)
+    - [CAT radio control](docs/CAT.md) — full spec
+    - [CATS WASM guest](plugins/CATS-plugin/) — implemented (opt-in; wasmtime auto-tune / network follow)
+    - [CAT test report](docs/CAT-test-report.md) — CI / emulator / hardware evidence
     - [Custom alert sounds](docs/plugins/custom-alert-sounds-spec.md) — not implemented
     - [Horse trekking](docs/plugins/horse-trekking-spec.md) — not implemented
     - [Adaptive speed warning](docs/plugins/adaptive-speed-warning-spec.md) — not implemented
     - [Nearby attractions (POI look-ahead)](docs/plugins/poi-lookahead-cone-spec.md) — implemented (opt-in)
+    - [IMU (pitch / tilt / compass, mount calibration)](docs/plugins/imu-plugin.md) — implemented (opt-in; Map / Tools → Plugins)
+    - [CAT radio](https://github.com/Supermagnum/Navi/blob/CAT/README.md#cat-radio-plugin) — developed on the [`CAT`](https://github.com/Supermagnum/Navi/tree/CAT) branch; not part of `dev` releases yet
     - [LoRa convoy](docs/plugins/lora-convoy-spec.md) — not implemented
     - [Voice guidance (turn-by-turn)](docs/voice-guidance.md) — not implemented
     - [Voice command](docs/plugins/voice-command.md) — not implemented
@@ -254,15 +263,15 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Glacier outlines** | Ice polygons get a teal dashed outline so they stay visible against pale fill (same dash as nature reserves, different colour). | Done |
 | **Elevation contours** | Opt-in brown isolines from the same Mapterhorn DEM as hillshade (not OSM contour vectors). Independent of **3D**. Spacing follows Kartverket map-series intervals (minor / index 5×). Index lines labelled with elevation (metres, or feet in the US unit profile). Needs DEM: online tiles, or **Download terrain DEM** for offline. Off by default. Detail: [`docs/map-styles.md`](docs/map-styles.md#elevation-contour-lines-opt-in-independent-of-hillshade). | Done |
 | **3D hillshade** | Optional hill shading from Mapterhorn DEM. Independent of contours — either, both, or neither. Offline needs **Download terrain DEM**. | Done |
-| **Eco routing** | Prefer routes that use less energy by taking hills into account. A small leaf icon shows when eco is on. | Done |
+| **Eco routing** | Prefer routes that use less energy by taking hills into account. A small leaf icon shows when eco is on. Pack-hit reweight is typically tens–hundreds of ms (`eco_reweight_ms`); long waits mean missing region packs or cold PBF, not eco math — incomplete corridors fail fast (`missing_regions`). Perf: [`docs/perf/region-to-region-graph-build.md`](docs/perf/region-to-region-graph-build.md). | Done |
 | **Offline planning** | Download a region once, then plan and see the route on the device. | Done |
 | **Long trip** | Opt-in under Drive settings (off by default). With From/To set, Navi estimates a corridor of Geofabrik regions (adjacency graph; online BRouter primary / OpenRouteService fallback for the preliminary polyline), queues pack downloads on **Wi‑Fi/Ethernet only**, and can store those packs on a removable volume. Place index and Tools downloads stay on internal storage. Offline planning then uses multi-region packs with soft rest / overnight POIs on chunked multi-day legs. Privacy disclosure is shown in settings when enabled. | Done |
 | **Indexing** | After a region download, a background job turns the OSM extract into compact routing packs so later plans are fast. You can plan while it runs; convert and place-index **pause** during a foreground plan so the PBF fallback is not starved. Interrupted place-index builds **resume without wiping** already-written rows; OSM updates skip a full place-index rebuild when the catalog generation is unchanged. | Done |
-| **Place search** | Search places and set From / Via / To. While the place index is still empty/building, search shows a building hint (coordinates and map tap still work). | Done |
+| **Place search** | Search places and set From / Via / To from the local place index (always). Optional **Online place search** is off by default; when on, an explicit Search submit may query Nominatim. Details: [`docs/online-place-search.md`](docs/online-place-search.md). | Done |
 | **Multiple vias** | Up to **4** intermediate stops for car / truck / bicycle (and hiking waypoints). The Via chip shows **Via (n/4)**; each pick **adds** a stop and clears the search box for the next. A list under the chips has **Remove** / **Clear all**. Off-route replan keeps remaining vias. | Done |
 | **Use GPS** | Fill From / Via / To from the live fix: coordinates appear immediately, then an optional nearby road-name upgrade. The field is the chip active when you tap — not whichever chip is selected after resolution finishes. GPS as Via upgrades the last via in place (does not duplicate). | Done |
 | **Map mark & saved places** | Hold on the map ~4 s to mark a point; set From / **Add as Via** / To or save a named place (separate from Saved routes). Via adds until the 4-stop cap. | Done |
-| **Off-route / reroute** | Sustained deviation shows **Off route**; motor profiles auto-replan from the live position (resolved start label); hiking prompts first. | Done |
+| **Off-route / reroute** | Sustained deviation shows **Off route**; motor profiles auto-replan from the live position only when From is empty or was set with **Use GPS** / My position. A typed or picked From stays sticky (never GPS-overwritten by auto-replan), even within 1 km of the fix. Hiking prompts first. | Done |
 | **Cancel planning** | While **Planning route…** or **Recalculating route…** is shown, **Cancel** stops the in-flight native plan. Recalc cancel keeps the original route. | Done |
 | **Breaks & rest** | Reminds you when a break is due and can suggest stops. Cars use hours between breaks; hiking/cycling use rest distances; trucks use legal driving-time rules where known. What is searched and used as pause POIs: [`docs/poi.md`](docs/poi.md). | Done |
 | **Drive bars** | Top: altitude (cutout-aware padding; metres, or feet in the US unit profile). Bottom: zoom, live GPS speed, posted limit when known, break timer, trip ETA, current street, eco leaf. Speed and distance follow **Display units**. Speed line turns the error colour when GPS speed is over the applicable limit (display only — not a spoken nag). | Done |
@@ -274,6 +283,9 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Norwegian road-sign warnings** | Vendored `NO:` catalogue approach icons in Norway; explicit OSM `traffic_sign` / `hazard` tags. Same 750 / 150 / 25 m approach phases as maneuvers. See [`docs/road-signs.md`](docs/road-signs.md). | Done |
 | **Look forward** | Without a planned route, GPS position + heading look ahead **300 m** (±60°) for catalogue road signs, speed humps (`NO:109`), children facilities (generic **142**), opted-in speed cameras, and an upcoming posted speed-limit plate from the existing road-label cell graph — same approach box (750 / 150 / 25 m) and jurisdiction gates as the route-corridor path. Dedicated 362 plates cover every-5 km/h values including 12 generated plates; odd OSM speeds still snap to the nearest shipped plate. Compact points load once per region. Detail: [`docs/road-signs.md`](docs/road-signs.md). | Done |
 | **Nearby attractions** | Opt-in under **Map / Tools → Plugins → Nearby attractions** (off by default). Quiet top-right HUD chip for attractions, fishing, and craft alcohol (incl. cider) in an **850 m / ±30°** heading cone — open-now filtered, not a hazard warning. Distinct from Look forward. Spec: [`docs/plugins/poi-lookahead-cone-spec.md`](docs/plugins/poi-lookahead-cone-spec.md). | Done |
+| **IMU pitch / tilt / compass** | Opt-in under **Map / Tools → Plugins → IMU pitch / tilt / compass** (off by default). Made for a phone or tablet **mounted in a vehicle**: live pitch, tilt and compass heading from the device sensors. A mounted unit is never perfectly aligned with the vehicle, so calibrate once: Find a level concrete surface, like the floor of your garage, then tap Calibrate. The unit will then use the current values as level. **Reset** removes the calibration; the status line shows whether the unit is calibrated and on which date. Calibration is rejected while the vehicle is moving. Wasm guest plus Android `SensorManager` bridge; detail: [`docs/plugins/imu-plugin.md`](docs/plugins/imu-plugin.md). | Done |
+| **Tunnel / GNSS-gap positioning** | When GPS is lost or badly degraded (tunnels, deep cuts), the host keeps the map mark moving along the active route (or the current road edge) using IMU heading/accel and the last good speed — same mount calibration as the IMU plugin. The mark turns amber while estimated, grey with **Position lost** after a time/distance give-up, then blends back when a good fix returns. No Google Play services (`LocationManager` + `SensorManager`). Detail: [`docs/tunnel-dead-reckoning.md`](docs/tunnel-dead-reckoning.md). | Done |
+| **CAT radio** | Opt-in under **Map / Tools → Plugins** (off by default). Look up amateur repeaters within **150 km**, auto-tune **VFO A/1**, follow LA5MR-style networks with hysteresis (leave after the last site — decision C), leave **VFO B/2** to the user, and **never transmit**. Radios: Hamlib (Stable only) and native Benshi Bluetooth (VR-N76). Licence on the toggle: *You may listen, but do not transmit without an amateur radio licence.* Detail: [CAT radio plugin](#cat-radio-plugin), [`docs/CAT.md`](docs/CAT.md). | Done (this branch) |
 | **Children facilities nearby** | When no tagged children / school sign is active, schools, kindergartens, and playgrounds still trigger a generic **142 Children** approach warning (nearest facility wins; tagged `NO:142` outranks this fallback). **With a planned route:** facilities within **200 m** of the corridor. **Without a route:** covered by **Look forward** (300 m cone). Detail: [`docs/road-signs.md`](docs/road-signs.md). | Done |
 | **Speed camera warnings** | Point cameras use the existing approach distance-phase UX; average-speed / section-control zones use a distinct enter/exit box. `maxspeed:conditional` is evaluated against live local time. Jurisdiction-gated like EC561 / allemannsretten: Norway/UK opt-in (OSM-sourced, may be incomplete); Germany/France/Switzerland and unknown jurisdictions decline — see [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). First-run opt-in dialog required (not silently enabled). Works on both planned-route corridor and **Look forward**. | Done (display/warning only — no route-avoidance toggle, by deliberate product decision) |
 | **Map updates** | Only when you ask — check for OpenStreetMap updates or download a fresh region. Never silent. On-screen copy is plain language (no internal planner dumps). | Done |
@@ -281,7 +293,7 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Diagnostic logging** | **Tools → Diagnostic logging** (off by default). When on, writes a dated session log under **Internal storage → Documents → debug** (`navi_session_*.log`) for copy over USB/MTP — no adb required. Covers GPS, camera, toggles, route plan/stages, eco, POIs, pauses, instructions, fuel, system. Not uploaded. **Export diagnostic log** shares the latest file. Detail: [Settings → Tools](#tools-downloads-and-diagnostic-logging) and [`docs/debugging.md`](docs/debugging.md#3b-diagnostic-session-log-on-device-file). | Done |
 | **Weather overlay (HUD)** | **Map → Plugins → Weather overlay** (also under **Tools → Plugins**; off by default). Opt-in MET Norway → Open-Meteo fetch with SQLite cache, fill-style Meteocons icons, stale labeling when offline/throttled. Host UniFFI path; product does not yet link the WASM plugin-host. | Done |
 | **Weather symbols on map** | Nested **Show weather symbols on map** under Plugins (off by default; inert unless Weather overlay is on). `place:city` only at MapLibre zoom ≤ 8; max 10 symbols; 56 px min spacing; nearest-to-viewport-center priority. Town/village tiers and corridor overlay not shipped. | Done |
-| **Plugins** | A safe sandbox for future add-ons exists; most product plugins are not shipped yet. Weather and **Nearby attractions** use the host UniFFI path today (see rows above). **DATEX** road situations (opt-in, default OFF) use the navi-server feed — **Norway / NPRA only** today. | Host ready |
+| **Plugins** | A safe sandbox for future add-ons exists; most product plugins are not shipped yet. Weather and **Nearby attractions** use the host UniFFI path today (see rows above). **IMU** and **CAT radio** are opt-in on this branch (see rows above). **DATEX** road situations (opt-in, default OFF) use the navi-server feed — **Norway / NPRA only** today. | Host ready |
 
 **Hardware note:** Real-device checks include Samsung Galaxy Tab S6 Lite
 (**SM-P613**) and Google Pixel 9a. Car head units still need more real-world
@@ -439,6 +451,31 @@ is unavailable; basemap reuses on-disk work where supported. An incomplete
 the region and start from zero). After an OSM update, if the catalog generation
 is unchanged, the place-index path skips a forced full rebuild.
 
+**Place-index size and compaction.** Upgrading the place index from schema v5
+to v6 copies every row into a new table. That leaves free pages inside
+`place_index.db` and keeps a one-shot pre-migrate copy,
+`place_index.db.bak-pk-v6`, next to it, so the volume can briefly hold the
+index two or three times over. While the app is idle, a *place index
+compaction* job reclaims this:
+
+- It starts when the backup exists and the live file is much larger than it
+  (more than 1.5 times). Nothing runs during a plan or an index build.
+- It needs free space on the index volume of at least the live size plus a
+  margin (the larger of 64 MB and 10 percent). Without that it defers, logs
+  the reason, and retries at most once an hour.
+- It writes a compacted copy with `VACUUM INTO` to a temp file beside the live
+  index, checks it (`PRAGMA quick_check`, per-region row counts equal to the
+  live file), and swaps it in with one atomic rename under the place-index
+  build lock. If rows were written since the snapshot, nothing is swapped.
+  The live index is never written before that rename. `VACUUM INTO` needs
+  Android 11 or later; older devices skip the rewrite.
+- The backup is deleted only when every region present in both the backup and
+  the compacted index has the same row count. On any mismatch it is kept and
+  the regions are logged (`PlaceIndexCompact` tag).
+- A plan or index build aborts the job at its next check; the stamp
+  (`place_index_compact.txt`) stays, so it resumes on the next idle pass. A
+  temp file left by a force-close is discarded and the job starts again.
+
 While a **Plan route** (or auto-reroute) is running on that PBF fallback,
 background convert and place-index **yield** so they do not contend for the
 same extract. GPS-triggered speed-limit cone / road-near bbox builds **skip**
@@ -590,10 +627,12 @@ travel mode, then **Plan route**. You can add up to **four** vias: select the
 search again for the next — the chip shows **Via (n/4)** and a removable list
 appears under the summary. From is often set with **Use GPS** (select the
 **From** / **To** / **Via** chip first; the button label follows the chip).
-Hiking paths need the **Hiking** mode — planning with Car uses the road network
-and will not follow foot trails properly. A **Planning route…** banner includes
-**Cancel** if you want to stop an in-flight plan. Percent and stage labels are
-documented under [Progress status box](#progress-status-box-pale-yellow).
+A typed or searched From stays as entered: auto off-route replan does **not**
+replace it with the live GPS fix (only empty From or **Use GPS** / My position
+follows GPS). Hiking paths need the **Hiking** mode — planning with Car uses the
+road network and will not follow foot trails properly. A **Planning route…**
+banner includes **Cancel** if you want to stop an in-flight plan. Percent and
+stage labels are documented under [Progress status box](#progress-status-box-pale-yellow).
 
 **Trip ETA and OSM speeds.** Pre-departure motor ETA prefers OSM
 `maxspeed:practical`, then posted `maxspeed`, then `maxspeed:advisory`, then a
@@ -604,7 +643,11 @@ these fields — use **Tools → Rebuild indexed maps** (or re-download) if an
 older pack is still installed.
 
 **Eco vs shortest.** Shortest ignores hills. Eco makes steep climbs “cost” more.
-Electric modes get some credit for downhill recovery.
+Electric modes get some credit for downhill recovery. On installed graph packs,
+eco reweight is a short overlay (`eco_reweight_ms` typically 50–260 ms); planning
+time should stay in line with eco off. If a destination region pack is not
+installed, the plan fails fast with a clear “Install … to plan this route”
+message instead of spinning on a cold PBF build.
 
 **Official networks.** Optional soft preference for marked hiking/cycle routes
 (**Follow official hiking/cycling networks**). Ordinary paths remain available
@@ -924,6 +967,7 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/poi-icon-whitelist.md`](docs/poi-icon-whitelist.md) | Which offline POI kinds draw, and which shop kinds are held back |
 | [`docs/poi.md`](docs/poi.md) | Place types and search |
 | [How to use Navi](docs/how-to-use.md) | End-user how-to (planning, Tools, breaks, saved places/routes, profiles) |
+| [`docs/online-place-search.md`](docs/online-place-search.md) | Optional Nominatim place search: setting, usage policy, limiter |
 | [`docs/cider-route.md`](docs/cider-route.md) | Suggested **Norwegian Cider Route** (Siderveien): OSM `brewery=cider` stops south→north, with Navi region/leg notes |
 | [`docs/road-signs.md`](docs/road-signs.md) | Norwegian road-sign catalogue, children-zone proximity, Look forward (300 m cone), approach phases |
 | [`docs/map-marking-saved-places.md`](docs/map-marking-saved-places.md) | Map long-press (4 s) and Saved places detail (Norwegian: [`kartmerking-lagrede-steder.md`](docs/kartmerking-lagrede-steder.md)) |
@@ -938,6 +982,8 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/debugging.md`](docs/debugging.md) | Debugging |
 | [`docs/real-hardware-testing.md`](docs/real-hardware-testing.md) | Physical device checklist |
 | [`docs/android-test-results.md`](docs/android-test-results.md) | Chronological on-device / emulator instrumented evidence |
+| [`docs/CAT.md`](docs/CAT.md) | CAT / CATS radio control (Hamlib, auto-tune, network follow, safety) |
+| [`docs/cat-test.md`](docs/cat-test.md) | CAT test report: dummy-`rigctld` CI, Hamlib in APKs, radio/baud UI, Espa→Dombås logs, CSV import |
 | [`docs/bevensen-mobilehome-campaign.md`](docs/bevensen-mobilehome-campaign.md) | Bad Bevensen → Norway MobileHome AVD campaign (setup, bug fixes, corrected retest) |
 | [`docs/status.md`](docs/status.md) | Which docs are live status vs historical evidence |
 | [`docs/future-proofing-audit-2026-07.md`](docs/future-proofing-audit-2026-07.md) | Tracked future-proofing / open risk items |
@@ -945,6 +991,8 @@ Full gallery: [`docs/pictures.md`](docs/pictures.md) (Norwegian:
 | [`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md) | Server / mirror of precomputed packs, commercial DB contrast, town-to-town route cache (direction; not shipped) |
 | [`docs/coverage.md`](docs/coverage.md) | Pack-server countries and subregions from `current.json` (TOC + region ids) |
 | [`docs/plugins.md`](docs/plugins.md) | Plugin host and roadmap (enable/disable; USB/Bluetooth I/O) |
+| [`docs/plugins/imu-plugin.md`](docs/plugins/imu-plugin.md) | IMU pitch / tilt / compass for a vehicle-mounted unit: level calibration (opt-in plugin) |
+| [`docs/tunnel-dead-reckoning.md`](docs/tunnel-dead-reckoning.md) | Host IMU-assisted tunnel / GNSS-gap dead reckoning (estimated mark, give-up, GPS hand-back) |
 | [`docs/plugins/lora-convoy-spec.md`](docs/plugins/lora-convoy-spec.md) | LoRa convoy status over Meshtastic (Meshstick USB / BLE radio; not shipped) |
 
 See the `docs/` folder for more specialised topics (voice, APRS, ECU, formulas,
@@ -962,11 +1010,70 @@ A sandboxed plugin host exists so future add-ons can run safely. **Most product
 plugins do not ship in the app yet** — that is intentional. Weather conditions
 and **Nearby attractions** (850 m look-ahead discovery cone) are available today
 via a **host-owned** UniFFI path (Map/Tools → Plugins; default **OFF**), not via
-a linked WASM guest. **DATEX** road situations (Map/Tools → Plugins; default
-**OFF**) pull from navi-server; the live feed currently covers **Norway only**
-(NPRA). Overview: [`docs/plugins.md`](docs/plugins.md). The system requires a
-per-plugin **enable/disable** control, and host-mediated **USB** / **Bluetooth**
-I/O for hardware-facing plugins.
+a linked WASM guest. The **IMU** plugin (pitch / tilt / compass for a vehicle-mounted
+unit) is the exception: its wasm guest is built from source and staged into the APK
+like the camping guest, and Android `SensorManager` feeds it through UniFFI.
+Calibration: Find a level concrete surface, like the floor of your garage, then
+tap Calibrate. The unit will then use the current values as level. Detail:
+[`docs/plugins/imu-plugin.md`](docs/plugins/imu-plugin.md).
+**CAT radio** (this branch) is also opt-in — see [CAT radio plugin](#cat-radio-plugin)
+below. **DATEX** road situations (Map/Tools → Plugins; default **OFF**) pull from
+navi-server; the live feed currently covers **Norway only** (NPRA). Overview:
+[`docs/plugins.md`](docs/plugins.md). The system requires a per-plugin
+**enable/disable** control, and host-mediated **USB** / **Bluetooth** I/O for
+hardware-facing plugins.
+
+## CAT radio plugin
+
+Opt-in under **Map / Tools → Plugins** (off by default). Host radio I/O lives in
+`navi-cat` (Hamlib TCP/FFI and native Benshi Bluetooth); guest logic for
+repeater select / network follow is the **CATS** wasmtime plugin
+([`plugins/CATS-plugin/`](plugins/CATS-plugin/)). Spec:
+[`docs/CAT.md`](docs/CAT.md).
+
+**What it does**
+
+- Repeater lookup within **150 km**.
+- Auto-tune of **VFO A/1** (output frequency, duplex offset/shift, CTCSS/DCS).
+- LA5MR-style **network follow** with hysteresis, and leaving the network after
+  its last site (**decision C**).
+- **VFO B/2** left to the user (not programmed by Navi).
+- **Never transmits.**
+
+**Supported radios and paths**
+
+- **Hamlib** — `rigctld` over TCP, or Android FFI (`libhamlib.so`); **Stable**
+  backends only.
+- **Native Benshi Bluetooth** — VGC/Vero **VR-N76** (`productId` `0x0002` /
+  `0x0103`). UV-Pro / GA-5WB not yet confirmed.
+
+**Repeater sources**
+
+- **OSM** (currently all repeaters in Norway are mapped there).
+- **OpenRepeater**.
+- **RadioID** via navi-server.
+- **RepeaterBook** via navi-server (not yet published).
+- **AnyTone CSV** from `Documents/repeater-csv/`.
+- The **Update** button in the plugin UI.
+- Consensus relocation (default **off**).
+
+Licence sentence on the toggle (exact copy):
+
+> You may listen, but do not transmit without an amateur radio licence.
+
+**What is tested**
+
+- CI / simulator (dummy-`rigctld`, corridor replays, gating).
+- Android emulator.
+- Real hardware: **VR-N76** over host Bluetooth on **2026-10-12** — read-only
+  check, both 5 s VFO A route runs, VFO B unchanged.
+
+**Not tested:** Android tablet → physical radio, Hamlib on real radios,
+UV-Pro / GA-5WB, RepeaterBook data, transmit (never). Simulator results must
+not be described as hardware results.
+
+Evidence and how to re-run: [`docs/CAT-test-report.md`](docs/CAT-test-report.md).
+Guest overview: [`plugins/CATS-plugin/README.md`](plugins/CATS-plugin/README.md).
 
 | Spec | Topic | Status |
 |---|---|---|
@@ -980,10 +1087,13 @@ I/O for hardware-facing plugins.
 | [`docs/plugins/weather-icons-reference.md`](docs/plugins/weather-icons-reference.md) | What each weather icon slug means (fill style) | **Reference** (assets shipped with weather) |
 | [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | Export nav state + approach warnings to instrument clusters | **Not implemented** |
 | [`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md) | Animated icons | **Not implemented** |
+| [`docs/CAT.md`](docs/CAT.md) | CAT radio control — Hamlib `RigBackend` (TCP `rigctld` + FFI), native Benshi, `CatStatusSheet` model/baud, never auto-TX; licence: *You may listen, but do not transmit without an amateur radio licence.* See **What is tested** in that doc. | **Implemented** (opt-in) |
+| [`plugins/CATS-plugin/`](plugins/CATS-plugin/) | CATS WASM guest — repeater select / auto-tune / network follow under wasmtime (`plugin.json` name `cat`) | **Implemented** (opt-in) |
 | [`docs/plugins/custom-alert-sounds-spec.md`](docs/plugins/custom-alert-sounds-spec.md) | Short alert tones (road signs, cameras, overspeed earcon) | **Not implemented** |
 | [`docs/plugins/horse-trekking-spec.md`](docs/plugins/horse-trekking-spec.md) | Equestrian lookahead and access guidance (Hiking is the interim stopgap) | **Not implemented** |
 | [`docs/plugins/adaptive-speed-warning-spec.md`](docs/plugins/adaptive-speed-warning-spec.md) | Spoken escalating overspeed (percentage tiers) | **Not implemented** |
 | [`docs/plugins/poi-lookahead-cone-spec.md`](docs/plugins/poi-lookahead-cone-spec.md) | Nearby attractions look-ahead cone (host UniFFI + quiet HUD; WASM scaffold; default OFF) | **Implemented** (opt-in) |
+| [`docs/plugins/imu-plugin.md`](docs/plugins/imu-plugin.md) | IMU pitch / tilt / compass for a vehicle-mounted unit, level calibration (wasm guest staged into the APK, Android sensor bridge; default OFF). Calibration: Find a level concrete surface, like the floor of your garage, then tap Calibrate. The unit will then use the current values as level. | **Implemented** (opt-in) |
 | [`docs/plugins/lora-convoy-spec.md`](docs/plugins/lora-convoy-spec.md) | LoRa convoy status over Meshtastic — Meshstick USB SX1262 stick or BLE node; location/speed/fuel/charge | **Not implemented** |
 | [`docs/voice-guidance.md`](docs/voice-guidance.md) | Turn-by-turn spoken maneuver guidance — pre-recorded clips only; distinct from [`docs/plugins/voice-command.md`](docs/plugins/voice-command.md) | **Not implemented** |
 | [`docs/plugins/voice-command.md`](docs/plugins/voice-command.md) | Spoken navigate / save-place / nearest-POI alternative (on-device ASR/TTS). Distinct from turn-by-turn [`docs/voice-guidance.md`](docs/voice-guidance.md) | **Not implemented** |
@@ -1055,7 +1165,7 @@ it as a normal install (not an unsigned or debug-only package).
 
 | Artifact | Role |
 |---|---|
-| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64, `versionName` 0.3.12-beta / tag **v0.3.12-beta**) |
+| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64-v8a, `versionName` 0.3.25-beta, `versionCode` 30) |
 | [`compiled/SHA256SUMS`](compiled/SHA256SUMS) | SHA-256 checksum for integrity checks |
 | [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc) | Detached GPG provenance signature (not Android APK signing) |
 
@@ -1064,9 +1174,8 @@ You do not need a Rust/NDK toolchain to install it.
 1. On the device: enable **Developer options** and allow installs from your
    browser or file manager (USB debugging only needed for `adb`).
 2. Download
-   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/main/compiled/navi-release.apk)
-   (latest on `main`) or the pinned
-   [`v0.3.12-beta` tag](https://github.com/Supermagnum/Navi/raw/v0.3.12-beta/compiled/navi-release.apk).
+   [`navi-release.apk`](https://github.com/Supermagnum/Navi/raw/dev/compiled/navi-release.apk)
+   (latest on `dev`).
 3. Optional integrity check on a PC:
 
 ```bash
@@ -1094,7 +1203,7 @@ keystore.
 ### Debug APK (developers only)
 
 A **debug-signed** APK remains in [`compiled/navi-debug.apk`](compiled/navi-debug.apk)
-(arm64, same package as `./gradlew :app:assembleDebug`). Use it only for quick
+(arm64-v8a + x86_64, same package as `./gradlew :app:assembleDebug`). Use it only for quick
 local smoke tests when you are not exercising the release signing path.
 
 ```bash
@@ -1169,8 +1278,8 @@ Debug installs use the Android **debug** keystore. A **release** package is what
 you sideload as release, hand to F-Droid-style checks, or smoke-test as an AAB.
 
 A prebuilt upload-key-signed release APK for testers is committed at
-[`compiled/navi-release.apk`](compiled/navi-release.apk) (tag **v0.3.12-beta**;
-see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
+[`compiled/navi-release.apk`](compiled/navi-release.apk) (`versionName` 0.3.25-beta,
+`versionCode` 30; see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
 
 1. **Native library** for every ABI you ship (store AABs usually need both):
 

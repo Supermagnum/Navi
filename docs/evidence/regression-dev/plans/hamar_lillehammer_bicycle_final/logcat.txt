@@ -1,0 +1,1177 @@
+--------- beginning of system
+10-13 13:21:17.883 W/ActivityTaskManager(  618): callingPackage for (uid=2000, pid=29467) has no WPC
+10-13 13:21:17.889 W/OptProp (  618): Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_USER_ASPECT_RATIO_OVERRIDE
+10-13 13:21:17.889 W/OptProp (  618): Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_USER_ASPECT_RATIO_FULLSCREEN_OVERRIDE
+10-13 13:21:17.889 W/OptProp (  618): Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_ORIENTATION_OVERRIDE
+--------- beginning of main
+10-13 13:21:17.890 V/GrammaticalInflectionUtils(  618): AttributionSource: AttributionSource { uid = 10220, packageName = null, attributionTag = null, token = android.os.Binder@54b529f, deviceId = 0, next = null } does not have READ_SYSTEM_GRAMMATICAL_GENDER permission.
+10-13 13:21:17.890 W/OptProp (  618): Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_RESIZEABLE_ACTIVITY_OVERRIDES
+10-13 13:21:17.891 W/OptProp (  618): Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_MIN_ASPECT_RATIO_OVERRIDE
+10-13 13:21:17.896 I/ActivityTaskManager(  618): START u0 {flg=0x10000000 cmp=no.navi.app/.MainActivity (has extras)} with LAUNCH_SINGLE_TASK from uid 2000 (BAL_ALLOW_PERMISSION) result code=3
+10-13 13:21:17.897 D/KeyguardService(  897): setOccluded(false)
+10-13 13:21:17.897 D/KeyguardViewMediator(  897): setOccluded(false)
+10-13 13:21:17.897 D/KeyguardViewMediator(  897): handleSetOccluded(false)
+10-13 13:21:17.898 D/KeyguardViewMediator(  897): KeyguardViewMediator queue processing message: SET_OCCLUDED
+10-13 13:21:17.898 D/WindowManagerShell(  897): onActivityRestartAttempt: ComponentInfo{no.navi.app/no.navi.app.MainActivity}
+10-13 13:21:17.899 I/NaviMapHooks(23929): force_online=false force_source= cleared=true fu49_offline=false fu49_simple=false fu49_overview=false fu49_second=false fu49_online=false fu49_bypass_queue=false fu49_no_keep=false
+--------- beginning of kernel
+10-13 13:21:18.013 I/logd    (    0): logdr: UID=2000 GID=2000 PID=29470 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-13 13:21:17.912 I/NaviDebugIntent(23929): reset to defaults use_networked_cabins=false use_unlocked_cabins=false bike_capability=trekking eco=false
+10-13 13:21:17.913 I/NaviDebugIntent(23929): applied profile=bicycle bike=null graph=pack-hit vias=0 settings={eco_mode=false} ignored=[] avoid_ferries=null stay_in_country=false eco=false camping=null attractions=null restore=false inject_gps=true
+10-13 13:21:17.913 I/NaviTrip(23929): pendingTripPlan from=Hamar to=Lillehammer long=true plan=true profile=BICYCLE graph=pack
+10-13 13:21:17.938 I/netd    (  413): tetherGetStats() -> {[]} <3.75ms>
+10-13 13:21:18.108 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.108 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.109 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.109 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.109 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.109 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.109 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.109 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.109 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.109 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.109 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.111 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:18.114 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:18.114 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:18.119 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:18.119 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:18.123 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:18.126 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:18.126 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:18.130 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:18.130 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:18.131 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.132 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.132 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.135 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.135 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.148 D/EGL_emulation(23929): app_time_stats: avg=186712.91ms min=6.81ms max=373418.97ms count=2
+10-13 13:21:18.217 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:18.217 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:18.217 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.220 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:18.220 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:18.225 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:18.225 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:18.229 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:18.230 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:18.232 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:18.233 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:18.237 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:18.237 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:18.238 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.238 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.239 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.239 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.239 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.239 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.250 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.342 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.342 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.342 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.342 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.342 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.342 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.343 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.343 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.343 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.345 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:18.348 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:18.349 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:18.355 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:18.355 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:18.361 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:18.364 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:18.365 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:18.365 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67313664
+10-13 13:21:18.369 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:18.369 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:18.370 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:18.371 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.371 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.371 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.371 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.372 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.374 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.374 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.375 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.375 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.375 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.375 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.437 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67149824
+10-13 13:21:18.441 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:18.507 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67231744
+10-13 13:21:18.512 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:18.526 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.526 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.526 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.526 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.526 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.526 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.526 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.526 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.526 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.526 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.526 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.526 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.526 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.526 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.526 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.526 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.526 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.526 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.528 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:18.532 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:18.532 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:18.537 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:18.537 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:18.542 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:18.546 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:18.546 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:18.550 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:18.550 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:18.551 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.551 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.551 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.552 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.552 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.558 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.558 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.558 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.558 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.558 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.558 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.558 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.558 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:18.580 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67112960
+10-13 13:21:18.585 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:18.647 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67174400
+10-13 13:21:18.653 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:18.673 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:18.673 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:18.673 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:18.673 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 13:21:18.675 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:18.675 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/674c8b5b blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:18.718 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67153920
+10-13 13:21:18.724 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:18.789 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67145728
+10-13 13:21:18.796 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:18.853 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67149824
+10-13 13:21:18.856 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:18.914 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67153920
+10-13 13:21:18.918 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:18.976 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67141632
+10-13 13:21:18.982 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:19.041 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67149824
+10-13 13:21:19.045 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:19.089 I/BistoHotwordHelper( 1596): (REDACTED) getHotwordActive::active query: %s, watch: %s, devices connected: %s
+10-13 13:21:19.105 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67149824
+10-13 13:21:19.109 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:19.163 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67149824
+10-13 13:21:19.166 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:19.233 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67149824
+10-13 13:21:19.238 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:19.309 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:19.309 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:19.309 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:19.309 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:19.309 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:19.309 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:19.309 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:19.310 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67149824
+10-13 13:21:19.311 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:19.314 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:19.314 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:19.315 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:19.318 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:19.319 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:19.322 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:19.325 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:19.326 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:19.330 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:19.331 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:19.331 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:19.332 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:19.332 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:19.332 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:19.332 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:19.334 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:19.335 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:19.335 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:19.335 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:19.335 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:19.335 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:19.335 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:19.337 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:19.340 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:19.340 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:19.344 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:19.344 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:19.345 I/LongTripPackStore(23929): packDownloadDir id=uuid:0000-0000 path=/storage/0000-0000/Android/data/no.navi.app/files/long-trip-packs appFiles=/storage/0000-0000/Android/data/no.navi.app/files
+10-13 13:21:19.386 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67149824
+10-13 13:21:19.389 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:19.463 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67158016
+10-13 13:21:19.467 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:19.533 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67145728
+10-13 13:21:19.537 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:19.599 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67145728
+10-13 13:21:19.603 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:19.673 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:19.673 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:19.673 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:19.673 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:321
+10-13 13:21:19.737 I/ActivityScheduler( 1164): nextTriggerTime: 13572762, in 58605ms, detectorType: 39, FULL_TYPE alarmWindowMillis: 80000
+10-13 13:21:19.737 W/SystemServiceRegistry( 1164): No service published for: wifirtt
+10-13 13:21:19.760 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67203072
+10-13 13:21:19.763 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:20.029 I/logd    (    0): logdr: UID=2000 GID=2000 PID=29493 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-13 13:21:20.051 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67112960
+10-13 13:21:20.054 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:20.232 I/Choreographer(23929): Skipped 53 frames!  The application may be doing too much work on its main thread.
+10-13 13:21:20.233 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:20.236 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:20.236 I/LongTripCoord(23929): status: Niedersachsen (1 of 9)=Installed · Schleswig-Holstein (2 of 9)=Installed · Denmark (3 of 9)=Installed · Skåne (4 of 9)=Installed · Halland (5 of 9)=Installed · Västra Götaland (6 of 9)=Installed · Ostlandet (7 of 9)=Installed · Sorlandet (8 of 9)=Installed · Vestlandet (9 of 9)=Installed
+10-13 13:21:20.236 I/LongTripCoord(23929): status: Ostlandet (1 of 1)=Indexed
+10-13 13:21:20.236 I/RegionDownloadBg(23929): cancelPending cleared queue+job under /data/user/0/no.navi.app/files
+10-13 13:21:20.236 I/LongTripCoord(23929): corridor indexed — cancelled leftover download job/queue
+10-13 13:21:20.238 D/EGL_emulation(23929): app_time_stats: avg=98.74ms min=0.79ms max=1661.17ms count=19
+10-13 13:21:20.238 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:20.241 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:20.241 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:20.243 I/HWUI    (23929): Davey! duration=900ms; Flags=0, FrameTimelineVsyncId=2526121, IntendedVsync=13513762365404, Vsync=13514645698702, InputEventId=0, HandleInputStart=13514653304162, AnimationStart=13514653305395, PerformTraversalsStart=13514654346176, DrawStart=13514654405648, FrameDeadline=13513779032070, FrameInterval=13514652912779, FrameStartTime=16666666, SyncQueued=13514657302951, SyncStart=13514657340531, IssueDrawCommandsStart=13514657409691, SwapBuffers=13514658299128, FrameCompleted=13514662465151, DequeueBufferDuration=3086, QueueBufferDuration=115807, GpuCompleted=13514662465151, SwapBuffersCompleted=13514658970006, DisplayPresentTime=0, CommandSubmissionCompleted=13514658299128, 
+10-13 13:21:20.245 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:20.246 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:20.246 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67244032
+10-13 13:21:20.246 I/LongTripPackStore(23929): packDownloadDir id=uuid:0000-0000 path=/storage/0000-0000/Android/data/no.navi.app/files/long-trip-packs appFiles=/storage/0000-0000/Android/data/no.navi.app/files
+10-13 13:21:20.251 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:20.457 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67317760
+10-13 13:21:20.460 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:20.559 D/WifiNl80211Manager(  618): Scan result ready event
+10-13 13:21:20.559 D/WifiNative(  618): Scan result ready event
+10-13 13:21:20.561 I/HalDevMgr(  618): bestIfaceCreationProposal is null, requestIface=STA, existingIface=[name=wlan0 type=STA]
+10-13 13:21:20.563 W/GLSUser ( 1164): [DeviceKeyStore] Cannot load key: Device key file not found.
+10-13 13:21:20.563 W/GLSUser ( 1164): [DeviceKeyStore] Cannot load key: Device key file not found.
+10-13 13:21:20.598 W/GlsClientGrpc( 1164): Voilatile gRPC failure INVALID_ARGUMENT: Application credential header not valid. Please fix the client to pass a valid application credential header. [CONTEXT service_id=6 ]
+10-13 13:21:20.598 W/GlsClientGrpc( 1164): gbzz: INVALID_ARGUMENT: Application credential header not valid. Please fix the client to pass a valid application credential header.
+10-13 13:21:20.598 W/GlsClientGrpc( 1164): 	at gbzy.h(:com.google.android.gms@242335041@24.23.35 (190800-646585959):3)
+10-13 13:21:20.598 W/GlsClientGrpc( 1164): 	at anbi.u(:com.google.android.gms@242335041@24.23.35 (190800-646585959):29)
+10-13 13:21:20.598 W/GlsClientGrpc( 1164): 	at anbi.g(:com.google.android.gms@242335041@24.23.35 (190800-646585959):97)
+10-13 13:21:20.598 W/GlsClientGrpc( 1164): 	at efkz.b(:com.google.android.gms@242335041@24.23.35 (190800-646585959):39)
+10-13 13:21:20.598 W/GlsClientGrpc( 1164): 	at efkr.a(:com.google.android.gms@242335041@24.23.35 (190800-646585959):274)
+10-13 13:21:20.598 W/GlsClientGrpc( 1164): 	at ehaz.call(:com.google.android.gms@242335041@24.23.35 (190800-646585959):1026)
+10-13 13:21:20.598 W/GlsClientGrpc( 1164): 	at java.util.concurrent.FutureTask.run(FutureTask.java:264)
+10-13 13:21:20.598 W/GlsClientGrpc( 1164): 	at angs.c(:com.google.android.gms@242335041@24.23.35 (190800-646585959):50)
+10-13 13:21:20.598 W/GlsClientGrpc( 1164): 	at angs.run(:com.google.android.gms@242335041@24.23.35 (190800-646585959):76)
+10-13 13:21:20.598 W/GlsClientGrpc( 1164): 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+10-13 13:21:20.598 W/GlsClientGrpc( 1164): 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:644)
+10-13 13:21:20.598 W/GlsClientGrpc( 1164): 	at anmg.run(:com.google.android.gms@242335041@24.23.35 (190800-646585959):8)
+10-13 13:21:20.598 W/GlsClientGrpc( 1164): 	at java.lang.Thread.run(Thread.java:1012)
+10-13 13:21:20.600 I/ActivityScheduler( 1164): nextTriggerTime: 13572762, in 57742ms, detectorType: 39, FULL_TYPE alarmWindowMillis: 80000
+10-13 13:21:20.630 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67137536
+10-13 13:21:20.633 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:20.673 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:20.673 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:20.673 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:20.673 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 13:21:20.674 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:20.674 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/674c8b5b blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:20.689 I/NaviRouting(23929): plan_settings eco=true camping_plugin=false professional_driver=false avoid_motorways=false avoid_tolls=false avoid_ferries=false avoid_tunnels=false
+10-13 13:21:20.690 I/NaviRouting(23929): planning_start profile=bicycle eco=true legs=1 waypoints=Hamar|Lillehammer
+10-13 13:21:20.690 I/NaviRouting(23929): planning_progress pct=0 eco=true detail=queued
+10-13 13:21:20.692 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.692 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.692 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.692 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.692 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.692 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.692 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.693 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.693 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.693 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.693 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.694 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:20.697 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:20.698 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:20.702 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:20.702 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:20.707 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:20.710 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:20.710 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:20.715 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:20.715 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:20.716 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.716 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.717 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.717 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.721 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.722 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.722 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.722 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.722 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.722 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.731 I/NaviRouting(23929): planning_progress pct=10 eco=true detail=motor_plan
+10-13 13:21:20.731 I/NaviPlan(23929): planCarRoute pbf=/storage/0000-0000/Android/data/no.navi.app/files/long-trip-packs/ostlandet-latest.osm.pbf packDir=/storage/0000-0000/Android/data/no.navi.app/files/long-trip-packs dataDir=/data/user/0/no.navi.app/files longTrip=true from=60.794721,11.068055 to=61.114545,10.467007 time_to_planner_ms=41
+10-13 13:21:20.731 I/NaviRouting(23929): plan_settings eco=true camping_plugin=false professional_driver=false avoid_motorways=false avoid_tolls=false avoid_ferries=false avoid_tunnels=false
+10-13 13:21:20.731 I/NaviRouting(23929): idle_job_pause action=none kind=none region= duration_ms=0
+10-13 13:21:20.735 I/NaviNative(23929): driver_break_core::routing::plan_file_log: plan_inputs profile=Bicycle eco=true avoid_motorways=false toll=Allow avoid_ferries=false avoid_tunnels=false long_trip=true datex=Live start=60.794721,11.068055 end=61.114545,10.467007 vias=0 via_coords=
+10-13 13:21:20.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.743 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:20.746 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:20.747 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:20.752 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:20.752 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:20.757 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:20.760 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:20.760 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:20.765 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:20.765 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:20.766 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.766 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.766 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.766 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.767 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.772 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.772 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.772 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.772 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.772 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.772 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.772 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.772 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.772 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.772 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.772 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.772 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:20.803 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67108864
+10-13 13:21:20.806 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:21.053 W/NaviNative(23929): driver_break_core::datex::impact: unrecognized DATEX xsi:type=EquipmentOrSystemFault; classifying Ignore
+10-13 13:21:21.175 I/NaviNative(23929): driver_break_core::routing::plan_file_log: datex_snapshot impacts=32 block=0 penalize=25
+10-13 13:21:21.184 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67133440
+10-13 13:21:21.189 I/FuseDaemon( 1546): Threshold now 1077248
+10-13 13:21:21.464 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67211264
+10-13 13:21:21.466 I/FuseDaemon( 1546): Threshold now 7630848
+10-13 13:21:21.673 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:21.673 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:21.673 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:21.673 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 13:21:21.674 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:21.675 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/674c8b5b blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:21.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.742 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.744 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:21.747 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:21.747 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:21.752 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:21.752 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:21.756 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:21.760 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:21.760 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:21.765 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:21.765 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:21.766 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.766 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.766 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.767 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.767 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.769 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.770 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.770 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.770 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.770 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.770 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.770 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.770 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.770 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.774 I/NaviNative(23929): driver_break_core::routing::indexed::load: missing_region_candidates count=1 regions=europe/norway/ostlandet
+10-13 13:21:21.774 I/NaviNative(23929): driver_break_core::routing::indexed::load: plan_add_ms missing_ready_preflight=129 waypoint_missing=0 candidates=1
+10-13 13:21:21.775 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.775 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.775 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.775 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.775 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.775 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.775 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.775 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.776 D/EGL_emulation(23929): app_time_stats: avg=512.50ms min=43.29ms max=999.49ms count=3
+10-13 13:21:21.776 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.776 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.776 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.776 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.777 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:21.780 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:21.780 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:21.785 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:21.785 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:21.789 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:21.791 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:21.792 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:21.795 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:21.796 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:21.796 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.796 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.796 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.797 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.797 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.799 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.799 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.799 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.799 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.799 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.799 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.881 I/NaviNative(23929): driver_break_core::routing::indexed::load: edge_clip_mode=DirectEllipse { widen: 0 } clips=14
+10-13 13:21:21.916 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67137536
+10-13 13:21:21.918 I/NaviNative(23929): driver_break_core::routing::indexed::load: try_load_graph stem=ostlandet-latest (pbf_stem=ostlandet-latest) profile=Bicycle need_extra=false extras=0 corridor_segs=1 dirs=/storage/0000-0000/Android/data/no.navi.app/files/long-trip-packs;/data/user/0/no.navi.app/files/long-trip-packs;/data/user/0/no.navi.app/files
+10-13 13:21:21.918 I/NaviNative(23929): driver_break_core::routing::plan_file_log: stems primary=ostlandet-latest pbf_stem=ostlandet-latest extra=
+10-13 13:21:21.918 W/NaviNative(23929): driver_break_core::routing::indexed::load: try_load_graph: no graph tiles for profile=Bicycle on stem=ostlandet-latest
+10-13 13:21:21.918 I/NaviNative(23929): driver_break_core::routing::indexed::load: tile_select_widen_to=10 files=0 (endpoint coverage)
+10-13 13:21:21.918 I/NaviNative(23929): driver_break_core::routing::indexed::load: tile_select_widen_to=14 files=0 (endpoint coverage)
+10-13 13:21:21.918 I/NaviNative(23929): driver_break_core::routing::indexed::load: tile_select_widen_to=18 files=0 (endpoint coverage)
+10-13 13:21:21.918 I/NaviNative(23929): driver_break_core::routing::indexed::load: tile_select_widen_to=20 files=0 (endpoint coverage)
+10-13 13:21:21.918 I/NaviNative(23929): driver_break_core::routing::indexed::load: try_load_graph tile_files=0 after primary+extras (budget=20)
+10-13 13:21:21.920 I/FuseDaemon( 1546): Threshold now 40960
+10-13 13:21:22.054 I/logd    (    0): logdr: UID=2000 GID=2000 PID=29522 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-13 13:21:21.992 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:21.994 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:21.999 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:22.000 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:22.006 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:22.006 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:22.011 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:22.013 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:22.014 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:22.020 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:22.020 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:22.021 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.022 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.024 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.025 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.025 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.075 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.075 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.076 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.076 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.078 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:22.081 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:22.081 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:22.085 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:22.086 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:22.091 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:22.094 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:22.095 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:22.100 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:22.100 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:22.102 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.102 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.102 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.102 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.102 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.108 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.195 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67354624
+10-13 13:21:22.197 I/FuseDaemon( 1546): Threshold now 17866752
+10-13 13:21:22.379 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67108864
+10-13 13:21:22.380 I/FuseDaemon( 1546): Threshold now 32231424
+10-13 13:21:22.509 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67129344
+10-13 13:21:22.512 I/FuseDaemon( 1546): Threshold now 27455488
+10-13 13:21:22.648 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67108864
+10-13 13:21:22.651 I/FuseDaemon( 1546): Threshold now 8364032
+10-13 13:21:22.673 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:22.673 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:22.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:22.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 13:21:22.675 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:22.675 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/674c8b5b blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:22.887 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67194880
+10-13 13:21:22.890 I/FuseDaemon( 1546): Threshold now 16891904
+10-13 13:21:22.925 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.925 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.925 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.925 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.926 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.926 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.926 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.928 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:22.930 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:22.931 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:22.935 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:22.935 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:22.938 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:22.940 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:22.941 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:22.945 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:22.945 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:22.946 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.949 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.949 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.949 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.949 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.950 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:22.954 D/EGL_emulation(23929): app_time_stats: avg=235.68ms min=13.20ms max=841.02ms count=5
+10-13 13:21:23.341 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67108864
+10-13 13:21:23.344 I/FuseDaemon( 1546): Threshold now 0
+10-13 13:21:23.513 W/IPCThreadState(  618): Sending oneway calls to frozen process.
+10-13 13:21:23.513 W/JobService( 1873): onNetworkChanged() not implemented in androidx.work.impl.background.systemjob.SystemJobService. Must override in a subclass.
+10-13 13:21:23.513 I/BugleRcsEngine( 1614): handleMessage processing message:[NOTIFY_UPTIME_IGNORE_STATE_CHANGED] with [non-null]:RcsEngineImpl reference [CONTEXT log_prefix="RcsEngineImpl[DUAL_REG]:[f23c5699-6360]>Handler" thread_id=64 ]
+10-13 13:21:23.514 I/BugleRcsEngine( 1614): Connected state: [1], networkType: [WIFI] [CONTEXT thread_id=56 ]
+10-13 13:21:23.516 I/ChimeraSrvcProxy( 1164): NullBinder for android.net.action.RECOMMEND_NETWORKS triggering remote TransactionTooLargeException due to Service without Chimera impl
+10-13 13:21:23.516 W/.gms.persistent( 1164): Large reply transaction of 1056768 bytes, interface descriptor , code 1
+10-13 13:21:23.673 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:23.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:23.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:23.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 13:21:23.675 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:23.675 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/674c8b5b blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:23.694 E/DiscreteRegistry(  618): Deleting file 1791285573909tl
+10-13 13:21:23.778 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67145728
+10-13 13:21:23.782 I/FuseDaemon( 1546): Threshold now 0
+10-13 13:21:24.070 I/logd    (    0): logdr: UID=2000 GID=2000 PID=29541 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-13 13:21:24.456 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67166208
+10-13 13:21:24.460 I/FuseDaemon( 1546): Threshold now 0
+10-13 13:21:24.673 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:24.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:24.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:24.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:321
+10-13 13:21:25.673 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:25.674 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67108864
+10-13 13:21:25.676 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:25.676 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:25.676 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 13:21:25.678 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:25.679 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/674c8b5b blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:25.680 I/FuseDaemon( 1546): Threshold now 0
+10-13 13:21:25.743 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:25.743 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:25.743 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:25.743 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:25.745 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:25.751 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:25.752 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:25.756 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:25.756 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:25.759 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:25.763 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:25.763 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:25.767 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:25.767 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:25.769 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:25.769 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:25.769 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:25.772 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:25.772 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:25.772 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:25.772 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:25.776 D/EGL_emulation(23929): app_time_stats: avg=2822.32ms min=2822.32ms max=2822.32ms count=1
+10-13 13:21:25.793 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:25.794 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:25.798 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:25.799 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:25.803 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:25.803 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:25.806 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:25.809 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:25.809 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:25.821 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:25.821 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:25.822 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:25.826 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:25.827 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:25.827 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:25.827 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:26.083 I/logd    (    0): logdr: UID=2000 GID=2000 PID=29559 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-13 13:21:26.517 W/JobService( 1873): onNetworkChanged() not implemented in androidx.work.impl.background.systemjob.SystemJobService. Must override in a subclass.
+10-13 13:21:26.518 I/BugleRcsEngine( 1614): Connected state: [1], networkType: [WIFI] [CONTEXT thread_id=56 ]
+10-13 13:21:26.519 I/BugleRcsEngine( 1614): handleMessage processing message:[NOTIFY_UPTIME_IGNORE_STATE_CHANGED] with [non-null]:RcsEngineImpl reference [CONTEXT log_prefix="RcsEngineImpl[DUAL_REG]:[f23c5699-6360]>Handler" thread_id=64 ]
+10-13 13:21:26.519 I/ChimeraSrvcProxy( 1164): NullBinder for android.net.action.RECOMMEND_NETWORKS triggering remote TransactionTooLargeException due to Service without Chimera impl
+10-13 13:21:26.519 W/.gms.persistent( 1164): Large reply transaction of 1056768 bytes, interface descriptor , code 1
+10-13 13:21:26.519 W/IPCThreadState(  618): Sending oneway calls to frozen process.
+10-13 13:21:26.673 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:26.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:26.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:26.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:321
+10-13 13:21:26.975 I/FuseDaemon( 1546): Threshold exceeded - fadvising 67129344
+10-13 13:21:26.980 I/FuseDaemon( 1546): Threshold now 0
+10-13 13:21:27.673 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:27.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:27.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:27.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 13:21:27.675 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:27.675 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/674c8b5b blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:27.960 D/ActivityManager(  618): freezing 23933 android.process.acore
+10-13 13:21:27.961 D/ActivityManager(  618): freezing 23854 com.google.android.apps.wellbeing
+10-13 13:21:27.963 D/InetDiagMessage(  618): Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14
+10-13 13:21:27.964 D/InetDiagMessage(  618): Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14
+10-13 13:21:27.964 D/InetDiagMessage(  618): Destroyed live tcp sockets for uids={10091} in 2ms
+10-13 13:21:27.971 D/InetDiagMessage(  618): Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14
+10-13 13:21:27.972 D/InetDiagMessage(  618): Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14
+10-13 13:21:27.972 D/InetDiagMessage(  618): Destroyed live tcp sockets for uids={10142} in 0ms
+10-13 13:21:28.096 I/logd    (    0): logdr: UID=2000 GID=2000 PID=29577 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-13 13:21:28.523 I/wpa_supplicant(  885): wlan0: CTRL-EVENT-BEACON-LOSS 
+10-13 13:21:28.673 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:28.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:28.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:28.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 13:21:28.675 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:28.675 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/674c8b5b blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:29.520 W/JobService( 1873): onNetworkChanged() not implemented in androidx.work.impl.background.systemjob.SystemJobService. Must override in a subclass.
+10-13 13:21:29.522 W/IPCThreadState(  618): Sending oneway calls to frozen process.
+10-13 13:21:29.522 I/ChimeraSrvcProxy( 1164): NullBinder for android.net.action.RECOMMEND_NETWORKS triggering remote TransactionTooLargeException due to Service without Chimera impl
+10-13 13:21:29.522 W/.gms.persistent( 1164): Large reply transaction of 1056768 bytes, interface descriptor , code 1
+10-13 13:21:29.522 I/BugleRcsEngine( 1614): Connected state: [1], networkType: [WIFI] [CONTEXT thread_id=56 ]
+10-13 13:21:29.522 I/BugleRcsEngine( 1614): handleMessage processing message:[NOTIFY_UPTIME_IGNORE_STATE_CHANGED] with [non-null]:RcsEngineImpl reference [CONTEXT log_prefix="RcsEngineImpl[DUAL_REG]:[f23c5699-6360]>Handler" thread_id=64 ]
+10-13 13:21:29.673 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:29.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:29.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:29.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 13:21:29.675 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:29.675 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/674c8b5b blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:30.110 I/logd    (    0): logdr: UID=2000 GID=2000 PID=29596 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-13 13:21:30.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:30.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:30.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:30.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 13:21:30.675 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:30.675 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/674c8b5b blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:31.258 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.259 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.259 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.259 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.259 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.259 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.261 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:31.264 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:31.264 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:31.268 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:31.268 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:31.271 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:31.274 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:31.275 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:31.279 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:31.279 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:31.280 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.280 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.280 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.280 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.284 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.284 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.284 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.284 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.284 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.284 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.288 D/EGL_emulation(23929): app_time_stats: avg=2756.02ms min=53.86ms max=5458.17ms count=2
+10-13 13:21:31.293 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.293 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.293 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.293 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.293 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.294 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.294 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.294 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.295 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:31.298 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:31.299 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:31.303 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:31.304 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:31.308 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:31.311 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:31.311 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:31.318 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:31.318 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:31.319 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.319 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.319 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.319 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.319 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.322 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.323 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.323 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.323 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.323 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.323 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.323 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.323 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.323 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.323 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.323 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:31.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:31.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:31.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:31.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:321
+10-13 13:21:32.124 I/logd    (    0): logdr: UID=2000 GID=2000 PID=29614 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-13 13:21:32.675 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:32.675 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:32.675 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:32.675 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 13:21:32.676 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:32.676 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/674c8b5b blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:33.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:33.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:33.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:33.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:321
+10-13 13:21:34.137 I/logd    (    0): logdr: UID=2000 GID=2000 PID=29632 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-13 13:21:34.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:34.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:34.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:34.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 13:21:34.675 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:34.676 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/674c8b5b blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:35.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:35.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:35.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:35.674 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 13:21:35.676 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:35.676 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/674c8b5b blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:36.152 I/logd    (    0): logdr: UID=2000 GID=2000 PID=29651 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-13 13:21:36.459 I/wpa_supplicant(  885): wlan0: CTRL-EVENT-BEACON-LOSS 
+10-13 13:21:36.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:36.675 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:36.675 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:36.675 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 13:21:36.676 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:36.676 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/674c8b5b blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:37.525 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.525 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.525 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.525 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.525 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.525 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.525 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.527 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:37.530 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:37.531 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:37.535 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:37.535 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:37.540 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:37.542 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:37.542 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:37.546 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:37.546 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:37.547 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.547 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.548 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.548 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.548 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.551 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.552 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.552 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.552 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.552 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.552 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.552 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.552 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.552 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.557 D/EGL_emulation(23929): app_time_stats: avg=3134.18ms min=38.44ms max=6229.92ms count=2
+10-13 13:21:37.559 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.559 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.559 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.559 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.559 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.559 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.559 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.564 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:37.568 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:37.569 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:37.573 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:37.574 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:37.578 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:37.580 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:37.581 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:37.585 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:37.585 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:37.586 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.586 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.587 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.587 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.587 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.591 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.591 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.592 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.592 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.592 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.592 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.592 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.592 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:37.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:37.675 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:37.675 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:37.675 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:321
+10-13 13:21:38.168 I/logd    (    0): logdr: UID=2000 GID=2000 PID=29669 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-13 13:21:38.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:38.675 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:38.675 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:38.675 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 13:21:38.676 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:38.676 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/674c8b5b blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:38.775 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:38.778 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:38.781 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:38.782 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:38.786 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:38.786 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:38.790 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:38.792 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:38.792 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:38.796 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:38.796 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:38.797 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:38.797 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:38.800 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:38.800 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:38.800 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:38.800 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:38.805 D/EGL_emulation(23929): app_time_stats: avg=624.04ms min=38.50ms max=1209.58ms count=2
+10-13 13:21:38.809 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:38.811 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:38.815 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:38.815 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:38.819 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:38.819 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:38.824 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:38.827 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:38.827 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:38.832 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:38.832 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:38.835 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:38.839 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:38.842 I/NaviNative(23929): navi: graph_ready pack_hit=false nodes=114846 edges=274737 build_s=17.20 pack_load_ms=274 eco_reweight_ms=184
+10-13 13:21:38.888 I/NaviNative(23929): driver_break_core::routing::plan_file_log: datex_bind_ms=45 impacts=32
+10-13 13:21:39.026 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:39.026 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:39.028 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:39.036 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:39.037 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:39.041 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:39.042 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:39.046 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:39.048 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:39.049 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:39.053 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:39.053 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:39.054 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:39.054 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:39.057 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:39.057 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:39.057 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:39.057 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:39.057 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:39.109 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:39.111 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:39.115 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:39.115 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:39.123 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:39.123 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:39.128 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:39.132 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:39.132 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:39.140 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:39.140 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:39.141 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:39.144 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:39.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:39.675 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:39.675 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:39.675 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 13:21:39.676 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:39.676 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/674c8b5b blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:39.737 I/ActivityScheduler( 1164): nextTriggerTime: 13572762, in 38604ms, detectorType: 39, FULL_TYPE alarmWindowMillis: 80000
+10-13 13:21:39.741 W/GLSUser ( 1164): [DeviceKeyStore] Cannot load key: Device key file not found.
+10-13 13:21:39.741 W/GLSUser ( 1164): [DeviceKeyStore] Cannot load key: Device key file not found.
+10-13 13:21:39.776 W/GlsClientGrpc( 1164): Voilatile gRPC failure INVALID_ARGUMENT: Application credential header not valid. Please fix the client to pass a valid application credential header. [CONTEXT service_id=6 ]
+10-13 13:21:39.776 W/GlsClientGrpc( 1164): gbzz: INVALID_ARGUMENT: Application credential header not valid. Please fix the client to pass a valid application credential header.
+10-13 13:21:39.776 W/GlsClientGrpc( 1164): 	at gbzy.h(:com.google.android.gms@242335041@24.23.35 (190800-646585959):3)
+10-13 13:21:39.776 W/GlsClientGrpc( 1164): 	at anbi.u(:com.google.android.gms@242335041@24.23.35 (190800-646585959):29)
+10-13 13:21:39.776 W/GlsClientGrpc( 1164): 	at anbi.g(:com.google.android.gms@242335041@24.23.35 (190800-646585959):97)
+10-13 13:21:39.776 W/GlsClientGrpc( 1164): 	at efkz.b(:com.google.android.gms@242335041@24.23.35 (190800-646585959):39)
+10-13 13:21:39.776 W/GlsClientGrpc( 1164): 	at efkr.a(:com.google.android.gms@242335041@24.23.35 (190800-646585959):274)
+10-13 13:21:39.776 W/GlsClientGrpc( 1164): 	at ehaz.call(:com.google.android.gms@242335041@24.23.35 (190800-646585959):1026)
+10-13 13:21:39.776 W/GlsClientGrpc( 1164): 	at java.util.concurrent.FutureTask.run(FutureTask.java:264)
+10-13 13:21:39.776 W/GlsClientGrpc( 1164): 	at angs.c(:com.google.android.gms@242335041@24.23.35 (190800-646585959):50)
+10-13 13:21:39.776 W/GlsClientGrpc( 1164): 	at angs.run(:com.google.android.gms@242335041@24.23.35 (190800-646585959):76)
+10-13 13:21:39.776 W/GlsClientGrpc( 1164): 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+10-13 13:21:39.776 W/GlsClientGrpc( 1164): 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:644)
+10-13 13:21:39.776 W/GlsClientGrpc( 1164): 	at anmg.run(:com.google.android.gms@242335041@24.23.35 (190800-646585959):8)
+10-13 13:21:39.776 W/GlsClientGrpc( 1164): 	at java.lang.Thread.run(Thread.java:1012)
+10-13 13:21:39.778 I/ActivityScheduler( 1164): nextTriggerTime: 13572762, in 38563ms, detectorType: 39, FULL_TYPE alarmWindowMillis: 80000
+10-13 13:21:40.181 I/logd    (    0): logdr: UID=2000 GID=2000 PID=29689 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-13 13:21:40.566 D/TelephonyManager(  618): requestModemActivityInfo: Sending result to app: ModemActivityInfo{ mTimestamp=13534985 mSleepTimeMs=0 mIdleTimeMs=13534943 mActivityStatsTechSpecificInfo=[{mRat=UNKNOWN,mFrequencyRange=UNKNOWN,mTxTimeMs[]=[0, 0, 0, 0, 0],mRxTimeMs=0}]}
+10-13 13:21:40.596 I/netd    (  413): tetherGetStats() -> {[]} <0.36ms>
+10-13 13:21:40.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:40.675 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:40.675 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:40.675 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:321
+10-13 13:21:41.674 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:41.675 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:41.675 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:41.675 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 13:21:41.676 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:41.676 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/674c8b5b blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:42.198 I/logd    (    0): logdr: UID=2000 GID=2000 PID=29708 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-13 13:21:42.675 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:42.675 I/NaviNative(23929): navi: pre_snap nodes=114846 edges=267585
+10-13 13:21:42.675 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:42.675 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:42.675 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:333
+10-13 13:21:42.676 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[earthquake_alerting]/444b446c blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:42.677 I/FusedLocation( 1164): location delivery to 10143/com.google.android.gms[.personalsafety]/674c8b5b blocked - too close [CONTEXT service_id=6 ]
+10-13 13:21:43.113 I/NaviNative(23929): driver_break_core::routing::plan_file_log: hop endpoints=60.79472,11.06805->61.11454,10.46701 snap_a=60.79453,11.06820 snap_a_m=22.6 snap_b=61.11426,10.46657 snap_b_m=39.5 nodes=114846 pack_hit=false comp_a=428597213 comp_b=428597213 weak_ok=true directed_ok=true
+10-13 13:21:43.113 I/NaviNative(23929): navi: snap_ok stops=2 — starting A*
+10-13 13:21:43.292 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.292 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.292 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.292 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.292 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.292 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.294 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:43.297 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.298 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.303 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.303 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.307 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:43.309 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.310 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.314 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.314 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.315 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.315 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.316 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.316 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.316 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.318 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.318 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.318 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.319 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.319 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.319 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.319 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.319 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.319 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.325 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.325 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.325 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.325 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.325 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.325 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.326 D/EGL_emulation(23929): app_time_stats: avg=904.12ms min=17.12ms max=4178.02ms count=5
+10-13 13:21:43.327 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:43.330 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.330 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.334 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.335 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.339 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:43.341 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.342 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.346 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.347 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.348 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.348 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.348 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.348 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.351 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.351 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.352 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.352 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.352 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.352 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.352 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.352 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.352 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.352 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.352 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.468 I/NaviNative(23929): driver_break_core::routing::indexed::load: load_poi_barrier_pack file=ostlandet-latest.navi-poi-barrier.rkyv bytes=68453088 poi=607 buildings=0 glaciers=0 clip=true elapsed_ms=53
+10-13 13:21:43.493 I/NaviNative(23929): driver_break_core::routing::plan_file_log: hop_result=success km=79.605 eta_min=157.0 terminate=found route_ferry_legs=0 nodes=690 pack_hit=false expansions=129696
+10-13 13:21:43.542 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.542 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.542 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.542 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.542 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.542 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.542 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.542 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.544 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:43.548 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.548 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.553 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.553 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.563 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:43.566 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.566 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.571 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.571 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.572 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.572 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.572 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.572 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.572 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.576 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.576 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.576 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.576 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.576 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.576 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.576 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.576 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.578 I/NaviRouting(23929): planning_progress pct=90 eco=true detail=motor_path
+10-13 13:21:43.580 I/NaviRouting(23929): planning_progress pct=100 eco=true detail=done
+10-13 13:21:43.581 I/NaviRouting(23929): planning_done eco=true duration_ms=22890 distance_km=79.605 polyline_chars=97933 toll_policy=allow pads=[0.11005239999999994] expansions=129696 terminate=found toll_incomplete=false route_uses_tolls=false
+10-13 13:21:43.581 I/NaviRouting(23929): planning_pois count=2 names=Bjørgeberget|Sjusjøen Husky Tours kinds=rest_area|amenity
+10-13 13:21:43.589 I/NaviManeuverDump(23929): 1/7 {"profile":"bicycle","pack_hit":false,"graph":"pack-hit","distance_km":79.60477304288597,"eta_minutes":157.03864955582202,"edge_hash":"7107f6bcdc249acd0e3531e89f1acacb5f33daa3b1abb7de714d95761904e6d5","maneuvers":[{"lat":60.794563100000005,"lon":11.067182500000001,"cum_m":55.53424810970485,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.793925300000005,"lon":11.066386600000001,"cum_m":159.2607207691719,"kind":"straight","street":null,"roundabout_exit":null,"icon":"nav_straight"},{"lat":60.7939711,"lon":11.0650089,"cum_m":234.2691486897939,"kind":"straight","street":null,"roundabout_exit":null,"icon":"nav_straight"},{"lat":60.7940174,"lon":11.063626800000002,"cum_m":309.5190038487124,"kind":"right","street":"Høyensalgata","roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.794638600000006,"lon":11.063723900000001,"cum_m":378.8763621773444,"kind":"straight","street":"Høyensalgata","roundabout_exit":null,"icon":"nav_straight"},{"lat":60.79593680000001,"lon":11.063901900000001,"cum_m":523.716753085488,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.795993200000005,"lon":11.062702700000001,"cum_m":589.4296814528715,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2","then":"left"},{"lat":60.79629980000001,"lon":11.062423,"cum_m":632.2352192746885,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.796472300000005,"lon":11.061166100000001,"cum_m":707.6172367783361,"kind":"right","street":"Bryggerigata","roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.7986397,"lon":11.058985100000001,"cum_m":991.4743096073447,"kind":"right","street":"Hakabekkvegen (1734)","roundabout_exit":null,"icon":"nav_right_2","then":"left"},{"lat":60.79887420000001,"lon":11.059018700000001,"cum_m":1027.0201245852877,"kind":"left","street":"Fredrik Monsens gate","roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.8004035,"lon":11.055305800000001,"cum_m":1292.8657029664437,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.801193500000004,"lon":11.054885500000001,"cum_m":1410.40313371628,"kind":"right","street":"Bekkelivegen","roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.8040091,"lon":11.0559325,"cum_m":1759.2790594784478,"kind":"right","street":"Elias Blix gate","roundabout_exit":null,"icon":"nav_right_2","then":"left"},{"lat":60.8041301,"lon":11.056528700000001,"cum_m":1794.3436402334587,"kind":"left","street":"Bekkelivegen","roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.804793800000006,"lon":11.0560893,"cum_m":1871.9830464622596,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2","then":"left"},{"lat":60.805057100000006,"lon":11.056520800000001,"cum_m":1923.6967052668497,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.8044999,"lon":11.0528508,"cum_m":2132.9234225845344,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.805305100000005,"lon":11.052082400000002,"cum_m":2231.80014695472,"kind":"right","street":"Øverlitunet","roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.8068808,"lon":11.0519239,"cum_m":2448.3446686070297,"kind":"right","street":"Øverlitunet","roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.80796410000001,"lon":11.0527197,"cum_m":2584.1006077454795,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2","then":"right"},{"lat":60.8080585,"lon":11.051848000000001,"cum_
+10-13 13:21:43.589 I/NaviManeuverDump(23929): 2/7 m":2634.1963124501062,"kind":"right","street":"Vognvegen (186)","roundabout_exit":null,"icon":"nav_right_2","then":"left"},{"lat":60.8083917,"lon":11.0523298,"cum_m":2679.6897035146117,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.8092613,"lon":11.0510664,"cum_m":2798.982913940025,"kind":"right","street":"Sven Morens gate","roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.8101588,"lon":11.053626600000001,"cum_m":2978.532678822295,"kind":"right","street":"Sven Morens gate","roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.810824800000006,"lon":11.056281700000001,"cum_m":3140.6351410979514,"kind":"left","street":"Ajerhagan","roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.813200300000005,"lon":11.0592717,"cum_m":3524.9524097455333,"kind":"sharp_right","street":null,"roundabout_exit":null,"icon":"nav_right_3"},{"lat":60.8139966,"lon":11.060500000000001,"cum_m":3668.9257783513813,"kind":"left","street":"Skisporet","roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.814931200000004,"lon":11.062030700000001,"cum_m":3804.0666985167504,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2","then":"right"},{"lat":60.815073700000006,"lon":11.0624921,"cum_m":3842.1629523982956,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2","then":"sharp_left"},{"lat":60.8150016,"lon":11.0629726,"cum_m":3876.7684842737194,"kind":"sharp_left","street":null,"roundabout_exit":null,"icon":"nav_left_3","then":"right"},{"lat":60.815252400000006,"lon":11.0633006,"cum_m":3913.302087812617,"kind":"right","street":"Veslehagan","roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.818259000000005,"lon":11.063709900000001,"cum_m":4308.679546044515,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.822555,"lon":11.061909,"cum_m":4862.153051014227,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2","then":"right"},{"lat":60.8228627,"lon":11.0615705,"cum_m":4901.392334026049,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.827481000000006,"lon":11.066562000000001,"cum_m":5500.018350033054,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2","then":"right"},{"lat":60.827913,"lon":11.066288,"cum_m":5551.244220735048,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2","then":"sharp_left"},{"lat":60.8281305,"lon":11.066710700000002,"cum_m":5586.61145718663,"kind":"sharp_left","street":null,"roundabout_exit":null,"icon":"nav_left_3"},{"lat":60.8312006,"lon":11.063978,"cum_m":6017.988916935941,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.831808,"lon":11.066884,"cum_m":6194.422363983372,"kind":"left","street":"Krokstadvegen","roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.8410433,"lon":11.0525944,"cum_m":7505.581547651346,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.8410135,"lon":11.0507512,"cum_m":7611.369158039084,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.8406784,"lon":11.049859900000001,"cum_m":7678.028753188172,"kind":"sharp_left","street":null,"roundabout_exit":null,"icon":"nav_left_3","then":"left"},{"lat":60.8408445,"lon":11.0505341,"cum_m":7722.035398102954,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.844916600000005,"lon":11.044695800000001,"cum_m":8291.260290105709,"kind":"left","street":"Øvermarka","
+10-13 13:21:43.589 I/NaviManeuverDump(23929): 3/7 roundabout_exit":null,"icon":"nav_left_2","then":"right"},{"lat":60.844574900000005,"lon":11.0441564,"cum_m":8339.305256857648,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.84485050000001,"lon":11.043231200000001,"cum_m":8400.68204662413,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2","then":"right"},{"lat":60.845075200000004,"lon":11.042802,"cum_m":8434.949380469141,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.8458668,"lon":11.042718200000001,"cum_m":8548.9235220689,"kind":"left","street":"Lyksetvegen","roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.846057800000004,"lon":11.043757600000001,"cum_m":8631.047824030396,"kind":"left","street":"Nydalsenga","roundabout_exit":null,"icon":"nav_left_2","then":"left"},{"lat":60.846401900000004,"lon":11.0435736,"cum_m":8671.66834729098,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.84744010000001,"lon":11.0407624,"cum_m":8876.6819138839,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.84814780000001,"lon":11.0417331,"cum_m":8999.504372532949,"kind":"left","street":"Nydalsenga","roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.8494979,"lon":11.0417698,"cum_m":9166.197007012153,"kind":"left","street":"Nydalsenga","roundabout_exit":null,"icon":"nav_left_2","then":"straight"},{"lat":60.84964900000001,"lon":11.041274000000001,"cum_m":9197.909494582847,"kind":"straight","street":"Gjerluvegen","roundabout_exit":null,"icon":"nav_straight"},{"lat":60.85159900000001,"lon":11.033905,"cum_m":9680.274695413444,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.848061,"lon":11.027409,"cum_m":10246.060274044205,"kind":"right","street":"Nydal","roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.84955,"lon":11.021752000000001,"cum_m":10595.52133332243,"kind":"straight","street":"Nydal","roundabout_exit":null,"icon":"nav_straight"},{"lat":60.850169,"lon":11.01871,"cum_m":10774.283142853596,"kind":"straight","street":"Nydal","roundabout_exit":null,"icon":"nav_straight"},{"lat":60.850882000000006,"lon":11.01524,"cum_m":10978.493521054592,"kind":"straight","street":"Nydal","roundabout_exit":null,"icon":"nav_straight"},{"lat":60.852562000000006,"lon":11.007971000000001,"cum_m":11414.7988056878,"kind":"straight","street":"Nydal","roundabout_exit":null,"icon":"nav_straight"},{"lat":60.853891000000004,"lon":11.00168,"cum_m":11786.936846165661,"kind":"straight","street":"Nydal","roundabout_exit":null,"icon":"nav_straight"},{"lat":60.855914000000006,"lon":10.991671,"cum_m":12390.271923044025,"kind":"straight","street":null,"roundabout_exit":null,"icon":"nav_straight"},{"lat":60.857352000000006,"lon":10.986786,"cum_m":12699.80774819659,"kind":"straight","street":null,"roundabout_exit":null,"icon":"nav_straight"},{"lat":60.859336000000006,"lon":10.981285000000002,"cum_m":13072.888051479515,"kind":"straight","street":null,"roundabout_exit":null,"icon":"nav_straight"},{"lat":60.863637000000004,"lon":10.977642000000001,"cum_m":13592.588301386391,"kind":"straight","street":null,"roundabout_exit":null,"icon":"nav_straight"},{"lat":60.86424400000001,"lon":10.976711,"cum_m":13677.156135838432,"kind":"straight","street":null,"roundabout_exit":null,"icon":"nav_straight"},{"lat":60.864903000000005,"lon":10.975321000000001,"cum_m":13785.116751541957,"kind":"straight","street":null,"roundabout_exit":null,"icon":"nav_straight"
+10-13 13:21:43.589 I/NaviManeuverDump(23929): 4/7 },{"lat":60.865496,"lon":10.973317000000002,"cum_m":13916.273360559899,"kind":"straight","street":null,"roundabout_exit":null,"icon":"nav_straight"},{"lat":60.867795,"lon":10.969634000000001,"cum_m":14240.903133764969,"kind":"straight","street":null,"roundabout_exit":null,"icon":"nav_straight"},{"lat":60.870719,"lon":10.96578,"cum_m":14627.9554793472,"kind":"straight","street":null,"roundabout_exit":null,"icon":"nav_straight"},{"lat":60.871270900000006,"lon":10.9651647,"cum_m":14697.85648315945,"kind":"straight","street":null,"roundabout_exit":null,"icon":"nav_straight"},{"lat":60.87468080000001,"lon":10.962127200000001,"cum_m":15111.803777049432,"kind":"sharp_right","street":null,"roundabout_exit":null,"icon":"nav_right_3"},{"lat":60.874301200000005,"lon":10.9610175,"cum_m":15215.083314929432,"kind":"straight","street":"Kongelholgutua","roundabout_exit":null,"icon":"nav_straight"},{"lat":60.873775,"lon":10.957476100000001,"cum_m":15415.720808193777,"kind":"right","street":"Fredheimvegen","roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.8755262,"lon":10.9557769,"cum_m":15631.828535643415,"kind":"left","street":"Møllerstuvegen","roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.8751856,"lon":10.9535627,"cum_m":15758.23685408424,"kind":"right","street":"Kongsvegen","roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.88361080000001,"lon":10.945086400000001,"cum_m":16853.489915687296,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2","then":"left"},{"lat":60.884006500000005,"lon":10.9453581,"cum_m":16907.221286462252,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.884845600000006,"lon":10.9447927,"cum_m":17020.73058664704,"kind":"straight","street":null,"roundabout_exit":null,"icon":"nav_straight"},{"lat":60.88526950000001,"lon":10.943683,"cum_m":17097.67455560034,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.8855797,"lon":10.9421206,"cum_m":17200.873183674994,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.8867175,"lon":10.9404167,"cum_m":17390.695729596035,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.88715560000001,"lon":10.940548300000001,"cum_m":17452.126643869524,"kind":"left","street":"Lillevegen","roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.887807200000005,"lon":10.9385841,"cum_m":17580.88311039362,"kind":"right","street":"Skolevegen","roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.8908355,"lon":10.9414821,"cum_m":17953.593766291495,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2","then":"right"},{"lat":60.8911384,"lon":10.940635200000001,"cum_m":18011.08440037565,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.8919744,"lon":10.941372600000001,"cum_m":18113.178803896535,"kind":"right","street":"Bausbakkvegen","roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.891712500000004,"lon":10.9428798,"cum_m":18199.84972206243,"kind":"left","street":"Skolevegen","roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.8930159,"lon":10.9429516,"cum_m":18357.043461775953,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2","then":"left"},{"lat":60.893072200000006,"lon":10.943432900000001,"cum_m":18394.121325871445,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.8961583,"lon":10.9421294,"cum_m":18750.338301619493,"kind":"left","street":"Viulveg
+10-13 13:21:43.589 I/NaviManeuverDump(23929): 5/7 en","roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.898956500000004,"lon":10.940961000000001,"cum_m":19095.340360020073,"kind":"right","street":"Kvalvegen","roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.899222200000004,"lon":10.941954,"cum_m":19156.701993033348,"kind":"left","street":"Kvalvegen","roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.9009026,"lon":10.9400217,"cum_m":19373.265319289498,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2","then":"left"},{"lat":60.901250600000004,"lon":10.9406335,"cum_m":19424.232827933727,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.90199870000001,"lon":10.944576300000001,"cum_m":19681.70468274489,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.904723000000004,"lon":10.942163,"cum_m":20036.121974549726,"kind":"right","street":"Bjørgevegen","roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.907231,"lon":10.942077000000001,"cum_m":20318.70327439306,"kind":"straight","street":"Bjørgevegen","roundabout_exit":null,"icon":"nav_straight"},{"lat":60.924579,"lon":10.934489000000001,"cum_m":22347.393770360195,"kind":"left","street":"Dalaustvegen","roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.923617500000006,"lon":10.9231098,"cum_m":23087.83194866503,"kind":"sharp_right","street":null,"roundabout_exit":null,"icon":"nav_right_3"},{"lat":60.9357187,"lon":10.9243158,"cum_m":24593.714052280073,"kind":"right","street":"Rognstadvegen (1712)","roundabout_exit":null,"icon":"nav_right_2"},{"lat":60.93899150000001,"lon":10.925899900000001,"cum_m":24970.703739826826,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.939221100000005,"lon":10.932683500000001,"cum_m":25740.503652591837,"kind":"left","street":"Rognstadvegen (1712)","roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.939704000000006,"lon":10.936031,"cum_m":25929.708253918492,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2","then":"sharp_right"},{"lat":60.940058,"lon":10.935779,"cum_m":25971.415633350378,"kind":"sharp_right","street":null,"roundabout_exit":null,"icon":"nav_right_3"},{"lat":60.939726,"lon":10.936626,"cum_m":26040.89443107153,"kind":"left","street":"Rognstadvegen (1712)","roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.939811000000006,"lon":10.943810000000001,"cum_m":26433.57678885248,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":60.962300000000006,"lon":10.933254,"cum_m":29092.187920395747,"kind":"straight","street":"Danseråsvegen","roundabout_exit":null,"icon":"nav_straight"},{"lat":61.013498000000006,"lon":10.864721000000001,"cum_m":37387.57861158044,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2"},{"lat":61.020015,"lon":10.86588,"cum_m":38204.08284683667,"kind":"right","street":"Fellesvegen","roundabout_exit":null,"icon":"nav_right_2"},{"lat":61.0435936,"lon":10.893969,"cum_m":41820.38839634781,"kind":"left","street":"Blekavegen","roundabout_exit":null,"icon":"nav_left_2"},{"lat":61.0826356,"lon":10.8426463,"cum_m":47465.287683408904,"kind":"sharp_right","street":"Ljøsheimvegen","roundabout_exit":null,"icon":"nav_right_3"},{"lat":61.092544800000006,"lon":10.844333500000001,"cum_m":48716.02993881263,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":61.107805400000004,"lon":10.799608000000001,"cum_m":52186.04712379515,"kind":"sharp_right","street":null,"roundabout_exit":null,
+10-13 13:21:43.589 I/NaviManeuverDump(23929): 6/7 "icon":"nav_right_3"},{"lat":61.108294900000004,"lon":10.799076600000001,"cum_m":52248.64263028894,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":61.098015800000006,"lon":10.777835000000001,"cum_m":54029.078963802196,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2"},{"lat":61.1133608,"lon":10.7056406,"cum_m":58560.12559646123,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2"},{"lat":61.117440900000005,"lon":10.702884300000001,"cum_m":59042.709161630075,"kind":"straight","street":null,"roundabout_exit":null,"icon":"nav_straight"},{"lat":61.120885300000005,"lon":10.7030107,"cum_m":59428.71740511684,"kind":"right","street":"Nedre Rømåsveg","roundabout_exit":null,"icon":"nav_right_2"},{"lat":61.126691,"lon":10.701997,"cum_m":60172.74992122417,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":61.127985200000005,"lon":10.6988786,"cum_m":60403.87176874419,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":61.12775130000001,"lon":10.6970693,"cum_m":60558.13178149056,"kind":"left","street":"Sjusjøvegen (1600)","roundabout_exit":null,"icon":"nav_left_2"},{"lat":61.12563780000001,"lon":10.696397600000001,"cum_m":60802.81770949498,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":61.125200400000004,"lon":10.693793000000001,"cum_m":60965.35964264202,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":61.1244919,"lon":10.6949249,"cum_m":61069.550104470305,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2","then":"sharp_right"},{"lat":61.124418600000006,"lon":10.6958909,"cum_m":61122.194273057576,"kind":"sharp_right","street":null,"roundabout_exit":null,"icon":"nav_right_3"},{"lat":61.12354380000001,"lon":10.695085800000001,"cum_m":61234.65650909035,"kind":"keep_right","street":null,"roundabout_exit":null,"icon":"nav_keep_right"},{"lat":61.12144910000001,"lon":10.6822285,"cum_m":62024.025443578044,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2"},{"lat":61.1376622,"lon":10.642650600000001,"cum_m":64999.249282187884,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":61.1388285,"lon":10.6229451,"cum_m":66224.48391858516,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":61.131327600000006,"lon":10.628491400000001,"cum_m":67179.96080178325,"kind":"right","street":"Sjøsetervegen","roundabout_exit":null,"icon":"nav_right_2"},{"lat":61.1364123,"lon":10.507543700000001,"cum_m":74431.8709353002,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":61.13527860000001,"lon":10.5066764,"cum_m":74568.01624510923,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":61.13405890000001,"lon":10.5068376,"cum_m":74705.72211744639,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":61.122733000000004,"lon":10.4961325,"cum_m":76740.61947488367,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2","then":"left"},{"lat":61.1229529,"lon":10.4957384,"cum_m":76773.51810483365,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":61.12269010000001,"lon":10.493895400000001,"cum_m":76876.82576915728,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":61.1218458,"lon":10.4945129,"cum_m":76979.37740315522,"kind":"sharp_right","street":"Birkebeinerve
+10-13 13:21:43.589 I/NaviManeuverDump(23929): 7/7 gen","roundabout_exit":null,"icon":"nav_right_3"},{"lat":61.1227856,"lon":10.491371200000001,"cum_m":77179.90764574127,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2"},{"lat":61.1233584,"lon":10.4898845,"cum_m":77288.56104860606,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2"},{"lat":61.123855000000006,"lon":10.488040100000001,"cum_m":77452.23057610479,"kind":"sharp_left","street":null,"roundabout_exit":null,"icon":"nav_left_3"},{"lat":61.122269700000004,"lon":10.480521600000001,"cum_m":78002.63206545971,"kind":"left","street":"Birkebeinervegen","roundabout_exit":null,"icon":"nav_left_2"},{"lat":61.1192367,"lon":10.4739749,"cum_m":78579.98716034464,"kind":"left","street":"Sigrid Undsets veg","roundabout_exit":null,"icon":"nav_left_2"},{"lat":61.1152382,"lon":10.475221300000001,"cum_m":79063.57776009999,"kind":"right","street":"Bankgata","roundabout_exit":null,"icon":"nav_right_2"},{"lat":61.1139827,"lon":10.4673081,"cum_m":79511.8006989456,"kind":"left","street":null,"roundabout_exit":null,"icon":"nav_left_2","then":"right"},{"lat":61.1139007,"lon":10.4665317,"cum_m":79559.07258971919,"kind":"right","street":null,"roundabout_exit":null,"icon":"nav_right_2"},{"lat":61.114260300000005,"lon":10.4665697,"cum_m":79604.77304288596,"kind":"destination","street":null,"roundabout_exit":null,"icon":"nav_destination"}],"overnight_stops":[],"route_uses_ferry":false,"no_route_without_ferry":null,"route_ferry_legs":0,"route_tunnel_count":6,"rest_place_count":2,"vias":[],"settings_applied":{"eco_mode":false}}
+10-13 13:21:43.600 W/NaviRoute(23929): waypoint pin 'Hamar' 23 m from place (prefer <= 12 m); using corridor point
+10-13 13:21:43.600 W/NaviRoute(23929): waypoint pin 'Lillehammer' 39 m from place (prefer <= 12 m); using corridor point
+10-13 13:21:43.672 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.672 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.672 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.672 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.672 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.672 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.672 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.672 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.672 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.674 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:43.675 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=64
+10-13 13:21:43.675 D/android.hardware.gnss-service.ranchu(  942): GnssHwListener:consume:87 sz=62
+10-13 13:21:43.675 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:311
+10-13 13:21:43.675 D/android.hardware.gnss-service.ranchu(  942): Gnss:onGnssLocationCb:321
+10-13 13:21:43.677 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.677 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.682 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.682 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.686 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:43.689 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.690 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.694 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.694 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.695 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.695 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.696 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.699 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.699 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.700 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.700 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.700 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.700 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.758 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.758 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.759 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.759 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.759 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.759 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.759 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.759 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.759 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.759 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.759 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.759 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.761 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:43.765 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.766 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.771 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.772 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.778 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:43.781 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.781 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.786 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.786 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.787 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.787 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.787 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.788 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.790 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.790 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.790 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.799 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.799 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.800 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.800 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.929 W/NaviNative(23929): driver_break_core::datex::impact: unrecognized DATEX xsi:type=EquipmentOrSystemFault; classifying Ignore
+10-13 13:21:43.975 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.975 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.975 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.975 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.975 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.975 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.977 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:43.981 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.981 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.986 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.986 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.990 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:43.993 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.993 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.998 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:43.998 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:43.999 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.999 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.999 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:43.999 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.000 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.002 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.002 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.002 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.002 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.002 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.002 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.002 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.003 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.003 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.003 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.003 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.007 I/NaviDatex(23929): refresh source=server-duckdns overlay=true active=9 inactive=6 warn=cache_poll_window
+10-13 13:21:44.008 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.008 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.008 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.008 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.009 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.009 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.009 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.009 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.009 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.009 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.009 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.010 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:44.013 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:44.014 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:44.018 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:44.018 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:44.021 I/NaviAppData(23929): app data dir=/data/user/0/no.navi.app/files
+10-13 13:21:44.024 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:44.025 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:44.028 W/MediaProvider( 1546): Ignoring param:deletedata post U for external apps
+10-13 13:21:44.029 I/MediaProvider( 1546): Deleted 0 0 0 0 0 0 0 items on 0000-0000 due to no.navi.app
+10-13 13:21:44.030 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.030 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.030 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.030 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.030 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.033 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.033 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.033 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.033 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.033 I/no.navi.app(23929): Method exceeds compiler instruction limit: 29080 in void no.navi.app.MainActivityKt.NaviMapScreen(androidx.compose.runtime.Composer, int)
+10-13 13:21:44.211 I/logd    (    0): logdr: UID=2000 GID=2000 PID=29727 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-13 13:21:44.223 I/logd    (    0): logdr: UID=2000 GID=2000 PID=29730 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns

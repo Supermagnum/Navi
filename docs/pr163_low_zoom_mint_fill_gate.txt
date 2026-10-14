@@ -1,0 +1,5 @@
+PASS low_zoom_mint_fill oslo z5 before_top=0.438 after_top=0.186 before_std=10.45 after_std=12.23 before_bytes=615020 after_bytes=743134 improved=True
+PASS low_zoom_mint_fill hamar z5 before_top=0.319 after_top=0.192 before_std=11.53 after_std=12.7 before_bytes=615192 after_bytes=755357 improved=True
+PASS low_zoom_mint_fill hamburg z5 before_top=0.276 after_top=0.195 before_std=28.17 after_std=27.8 before_bytes=807940 after_bytes=958831 improved=True
+GATE_SUMMARY low_zoom_mint_fill PASS
+Note: known-failure list already dropped this id on the PR branch; this is device screenshot proof on the fixed build.

@@ -33,7 +33,7 @@ class ToolsButtonStyleScreenshotTest {
         NaviMapTestHooks.hideUiChrome = false
         NaviMapTestHooks.hideSearchChrome = true
         NaviMapTestHooks.requestCloseTools = true
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
     }
 
     @Test

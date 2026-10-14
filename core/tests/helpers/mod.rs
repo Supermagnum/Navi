@@ -10,6 +10,7 @@
 )]
 
 pub mod hiking;
+pub mod spike_detect;
 
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -162,4 +162,152 @@ class PlaceSearchMergeTest {
         val merged = mergeOnlineAndOfflinePlaceHits("Hamar", online, offline)
         assertEquals(2, merged.size)
     }
+
+    @Test
+    fun agaRanksUllensvangAheadOfHallandWhenMapIsOverVestlandet() {
+        val hits =
+            listOf(
+                PlaceHit(
+                    2L,
+                    "Agardh",
+                    "place:hamlet",
+                    56.67,
+                    12.86,
+                    "",
+                    "",
+                    "europe/sweden/halland",
+                ),
+                PlaceHit(
+                    1L,
+                    "Aga",
+                    "place:hamlet",
+                    60.30,
+                    6.60,
+                    "",
+                    "Ullensvang",
+                    "europe/norway/vestlandet",
+                ),
+            )
+        val ranked =
+            rankPlaceHits(
+                "Aga",
+                hits,
+                60.39,
+                6.50,
+                "europe/norway/vestlandet",
+            )
+        assertEquals("Aga", ranked[0].name)
+        assertEquals("europe/norway/vestlandet", ranked[0].regionId)
+    }
+
+    @Test
+    fun localExactBeatsOnlineExactWhenMapIsOverHardanger() {
+        val online =
+            PlaceHit(
+                10L,
+                "Aga",
+                "online/place/island|no",
+                59.03,
+                5.98,
+                "",
+                "",
+                "europe/norway/vestlandet",
+            )
+        val local =
+            PlaceHit(
+                11L,
+                "Aga",
+                "place:hamlet",
+                60.29870,
+                6.60322,
+                "",
+                "Ullensvang",
+                "europe/norway/vestlandet",
+            )
+        val merged =
+            mergeOnlineAndOfflinePlaceHits(
+                "Aga",
+                listOf(online),
+                listOf(local),
+                60.39,
+                6.50,
+                "europe/norway/vestlandet",
+            )
+        assertEquals("Aga", merged[0].name)
+        assertEquals("europe/norway/vestlandet", merged[0].regionId)
+        assertEquals("Ullensvang", merged[0].municipality)
+        assertTrue(merged[0].kind.startsWith("place:"))
+    }
+
+    @Test
+    fun expectedPlacesRankFirst() {
+        fun hit(
+            name: String,
+            kind: String,
+            lat: Double,
+            lon: Double,
+            region: String,
+            muni: String = "",
+        ) = PlaceHit(name.hashCode().toLong(), name, kind, lat, lon, "", muni, region)
+
+        val cases =
+            listOf(
+                "Hamar" to
+                    listOf(
+                        hit("Hamar", "place:town", 60.79, 11.07, "europe/norway/ostlandet", "Hamar"),
+                        hit("Hamarvegen", "highway:residential", 60.80, 11.10, "europe/norway/ostlandet"),
+                    ),
+                "Bergen" to
+                    listOf(
+                        hit("Bergen", "place:city", 60.39, 5.32, "europe/norway/vestlandet", "Bergen"),
+                        hit("Bergenhus", "place:suburb", 60.40, 5.32, "europe/norway/vestlandet"),
+                    ),
+                "Raufoss" to
+                    listOf(
+                        hit("Raufoss", "place:town", 60.73, 10.61, "europe/norway/ostlandet"),
+                        hit("Raufossvegen", "highway:tertiary", 60.73, 10.62, "europe/norway/ostlandet"),
+                    ),
+                "Utne" to
+                    listOf(
+                        hit("Utne", "place:village", 60.42, 6.62, "europe/norway/vestlandet"),
+                        hit("Utne kyrkje", "amenity:place_of_worship", 60.42, 6.63, "europe/norway/vestlandet"),
+                    ),
+            )
+        for ((q, hits) in cases) {
+            assertEquals(q, rankPlaceHits(q, hits, hits[0].lat, hits[0].lon, hits[0].regionId)[0].name)
+        }
+    }
+
+    @Test
+    fun prefixOnlyQueryStillFindsResults() {
+        val hits =
+            listOf(
+                PlaceHit(1L, "Raufoss", "place:town", 60.73, 10.61, "", "", "europe/norway/ostlandet"),
+            )
+        val ranked = rankPlaceHits("Raufo", hits, 60.73, 10.61, "europe/norway/ostlandet")
+        assertEquals("Raufoss", ranked[0].name)
+    }
+
+    @Test
+    fun townBeatsFarmAfterFold() {
+        val hits =
+            listOf(
+                PlaceHit(1L, "Are", "place:farm", 61.0, 7.0, "", "", "europe/norway/vestlandet"),
+                PlaceHit(2L, "Åre", "place:town", 63.40, 13.08, "", "Åre", "europe/sweden/jamtland"),
+            )
+        val ranked = rankPlaceHits("Are", hits, 63.4, 13.0, "europe/sweden/jamtland")
+        assertEquals("Åre", ranked[0].name)
+    }
+
+    @Test
+    fun dombasVariantsRankVillageFirst() {
+        val hits =
+            listOf(
+                PlaceHit(1L, "Dombås", "place:village", 62.07, 9.12, "", "Dovre", "europe/norway/ostlandet"),
+                PlaceHit(2L, "Dombåsveien", "highway:residential", 62.08, 9.13, "", "Dovre", "europe/norway/ostlandet"),
+            )
+        for (q in listOf("Dombås", "Dombas", "dombås", "DOMBÅS")) {
+            assertEquals("Dombås", rankPlaceHits(q, hits, 62.07, 9.12, "europe/norway/ostlandet")[0].name)
+        }
+    }
 }

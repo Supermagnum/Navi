@@ -29,6 +29,38 @@ class RoutePlanStatsTest {
     }
 
     @Test
+    fun ferryCountPrefersPlanSummaryOverEarlierHopZero() {
+        val report =
+            """
+            hop_result=success i=1 km=1.0 route_ferry_legs=0
+            --- leg1 report ---
+            route_ferry_legs=0
+            hop_result=success i=4 km=10.0 route_ferry_legs=1
+            plan_summary km=11.0 eta_min=20.0 route_ferry_legs=1 terminate=found hops=4
+            """.trimIndent()
+        val stats = routePlanStatsFromPlan(report, "[]")
+        assertEquals(1, stats.ferryLegCount)
+    }
+
+    @Test
+    fun ferryFpPrefersLastNonEmptyOverEarlierEmptyHop() {
+        val report =
+            """
+            --- leg1 report ---
+            route_ferry_legs=0
+            route_ferry_fp=
+            --- leg6 report ---
+            route_ferry_legs=1
+            route_ferry_fp=Puttgarden - Rodby@18.90
+            route_ferry_legs=1
+            route_ferry_fp=Puttgarden - Rodby@18.90
+            """.trimIndent()
+        val stats = routePlanStatsFromPlan(report, "[]")
+        assertEquals(1, stats.ferryLegCount)
+        assertEquals("Puttgarden - Rodby@18.90", stats.ferryFp)
+    }
+
+    @Test
     fun parsesCarFerryTunnelAndRestPlaces() {
         val report =
             """
@@ -77,5 +109,25 @@ class RoutePlanStatsTest {
     @Test
     fun wildCampingCountIsZeroWithoutPluginResult() {
         assertEquals(0, wildCampingSiteCount(null))
+    }
+
+    @Test
+    fun wildCampingStatsLineDistinguishesUnavailableFromPluginOff() {
+        assertEquals("Wild camping: plugin off", formatWildCampingStatsLine(false, 0, null))
+        assertEquals(
+            "Wild camping: UNAVAILABLE (corridor graph segments produced no seeds)",
+            formatWildCampingStatsLine(
+                true,
+                0,
+                CampingSuggestStatus(
+                    kind = "UNAVAILABLE",
+                    message = "corridor graph segments produced no seeds",
+                ),
+            ),
+        )
+        assertEquals(
+            "Wild camping sites: 3",
+            formatWildCampingStatsLine(true, 3, CampingSuggestStatus("OK", "")),
+        )
     }
 }

@@ -34,6 +34,19 @@ data class RoutePlanStats(
     val attractionCount: Int = 0,
     val attractionByType: Map<String, Int> = emptyMap(),
     val wildCampingSiteCount: Int = 0,
+    /** Distinct from count=0 when plugin off: e.g. UNAVAILABLE / ERROR kind. */
+    val wildCampingStatusKind: String = "",
+    val wildCampingStatusMessage: String = "",
+    /** Accepted wild-camping sites keyed by `country_iso` from the plugin cards. */
+    val wildCampingByCountry: Map<String, Int> = emptyMap(),
+    /** Accepted sites keyed by `subdivision_iso` (falls back to country). */
+    val wildCampingBySubdivision: Map<String, Int> = emptyMap(),
+)
+
+/** Host-side camping suggest outcome kept when result JSON is absent (UNAVAILABLE). */
+data class CampingSuggestStatus(
+    val kind: String,
+    val message: String,
 )
 
 fun parseReportUIntToken(
@@ -41,8 +54,9 @@ fun parseReportUIntToken(
     key: String,
 ): Int? {
     val prefix = "$key="
-    for (line in report.lineSequence()) {
-        val trimmed = line.trim()
+
+    fun parseFrom(hay: String): Int? {
+        val trimmed = hay.trim()
         if (trimmed.startsWith(prefix)) {
             return trimmed
                 .removePrefix(prefix)
@@ -55,8 +69,18 @@ fun parseReportUIntToken(
                 return part.removePrefix(prefix).toIntOrNull()
             }
         }
+        return null
     }
-    return null
+    var last: Int? = null
+    var summary: Int? = null
+    for (line in report.lineSequence()) {
+        val trimmed = line.trim()
+        if (trimmed.startsWith("plan_summary")) {
+            summary = parseFrom(trimmed)
+        }
+        parseFrom(trimmed)?.let { last = it }
+    }
+    return summary ?: last
 }
 
 fun parseReportTokenValue(
@@ -64,13 +88,18 @@ fun parseReportTokenValue(
     key: String,
 ): String? {
     val prefix = "$key="
+    // Prefer the last non-empty value: chunked plans emit empty
+    // `route_ferry_fp=` on early land hops before the corridor summary.
+    var lastNonEmpty: String? = null
+    var lastAny: String? = null
     for (line in report.lineSequence()) {
         val trimmed = line.trim()
-        if (trimmed.startsWith(prefix)) {
-            return trimmed.removePrefix(prefix).trim()
-        }
+        if (!trimmed.startsWith(prefix)) continue
+        val v = trimmed.removePrefix(prefix).trim()
+        lastAny = v
+        if (v.isNotEmpty()) lastNonEmpty = v
     }
-    return null
+    return lastNonEmpty ?: lastAny
 }
 
 fun restPlaceNamesFromJson(breakPoisJson: String): List<String> {
@@ -89,20 +118,40 @@ fun restPlaceNamesFromJson(breakPoisJson: String): List<String> {
 
 fun wildCampingSiteCount(result: CampingSuggestResult?): Int {
     if (result == null) return 0
-    val ids = linkedSetOf<String>()
+    return wildCampingAcceptedCards(result).size
+}
+
+/** Unique accepted camping cards (list + on-foot), keyed like [wildCampingSiteCount]. */
+fun wildCampingAcceptedCards(result: CampingSuggestResult): List<CampingCardModel> {
+    val seen = linkedSetOf<String>()
+    val out = ArrayList<CampingCardModel>()
 
     fun add(list: CampingSuggestionListModel) {
         for (c in list.cards) {
+            if (!c.accepted) continue
             val id =
                 c.locationId.ifBlank {
                     String.format(Locale.US, "%.5f,%.5f", c.lat, c.lon)
                 }
-            ids.add(id)
+            if (seen.add(id)) out.add(c)
         }
     }
     add(result.list)
     add(result.onFootFromHere)
-    return ids.size
+    return out
+}
+
+fun wildCampingRegionTallies(result: CampingSuggestResult?): Pair<Map<String, Int>, Map<String, Int>> {
+    if (result == null) return emptyMap<String, Int>() to emptyMap()
+    val byCountry = linkedMapOf<String, Int>()
+    val bySub = linkedMapOf<String, Int>()
+    for (c in wildCampingAcceptedCards(result)) {
+        val iso = c.countryIso.trim().ifBlank { "unknown" }
+        byCountry[iso] = byCountry.getOrDefault(iso, 0) + 1
+        val sub = c.subdivisionIso?.trim()?.ifBlank { null } ?: iso
+        bySub[sub] = bySub.getOrDefault(sub, 0) + 1
+    }
+    return byCountry.toMap() to bySub.toMap()
 }
 
 fun uniqueAttractionTally(queryJsons: List<String>): Pair<Int, Map<String, Int>> {
@@ -144,6 +193,14 @@ fun RoutePlanStats.toReportJson(): JSONObject {
     for ((k, v) in attractionByType) {
         byType.put(k, v)
     }
+    val byCountry = JSONObject()
+    for ((k, v) in wildCampingByCountry) {
+        byCountry.put(k, v)
+    }
+    val bySub = JSONObject()
+    for ((k, v) in wildCampingBySubdivision) {
+        bySub.put(k, v)
+    }
     val rest = JSONArray()
     for (n in restPlaceNames) rest.put(n)
     return JSONObject()
@@ -156,6 +213,10 @@ fun RoutePlanStats.toReportJson(): JSONObject {
         .put("attraction_count", attractionCount)
         .put("attraction_by_type", byType)
         .put("wild_camping_site_count", wildCampingSiteCount)
+        .put("wild_camping_status_kind", wildCampingStatusKind)
+        .put("wild_camping_status_message", wildCampingStatusMessage)
+        .put("wild_camping_by_country", byCountry)
+        .put("wild_camping_by_subdivision", bySub)
 }
 
 fun formatNamedFpList(fp: String): String {
@@ -187,6 +248,9 @@ fun headingBetweenDeg(
 @Composable
 fun RoutePlanStatsCard(
     stats: RoutePlanStats,
+    breakRemindersEnabled: Boolean = true,
+    campingPluginEnabled: Boolean = false,
+    campingSuggestStatus: CampingSuggestStatus? = null,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -223,17 +287,19 @@ fun RoutePlanStatsCard(
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag("route_plan_stats_ferries"),
             )
-            val restLine =
-                if (stats.restPlaceNames.isNotEmpty()) {
-                    "Rest places: ${stats.restPlaceCount} (${stats.restPlaceNames.take(8).joinToString(", ")})"
-                } else {
-                    "Rest places: ${stats.restPlaceCount}"
-                }
-            Text(
-                restLine,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.testTag("route_plan_stats_rest"),
-            )
+            if (breakRemindersEnabled) {
+                val restLine =
+                    if (stats.restPlaceNames.isNotEmpty()) {
+                        "Rest places: ${stats.restPlaceCount} (${stats.restPlaceNames.take(8).joinToString(", ")})"
+                    } else {
+                        "Rest places: ${stats.restPlaceCount}"
+                    }
+                Text(
+                    restLine,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("route_plan_stats_rest"),
+                )
+            }
             val attrTypes =
                 stats.attractionByType.entries
                     .sortedByDescending { it.value }
@@ -250,10 +316,38 @@ fun RoutePlanStatsCard(
                 modifier = Modifier.testTag("route_plan_stats_attractions"),
             )
             Text(
-                "Wild camping sites: ${stats.wildCampingSiteCount}",
+                formatWildCampingStatsLine(
+                    pluginEnabled = campingPluginEnabled,
+                    siteCount = stats.wildCampingSiteCount,
+                    status = campingSuggestStatus,
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag("route_plan_stats_wild_camping"),
             )
         }
     }
+}
+
+fun formatWildCampingStatsLine(
+    pluginEnabled: Boolean,
+    siteCount: Int,
+    status: CampingSuggestStatus?,
+): String {
+    if (!pluginEnabled) return "Wild camping: plugin off"
+    val kind = status?.kind.orEmpty()
+    if (kind.isNotEmpty() && !kind.equals("OK", ignoreCase = true)) {
+        val msg = status?.message.orEmpty().trim()
+        val short =
+            if (msg.length > 72) {
+                msg.take(69) + "..."
+            } else {
+                msg
+            }
+        return if (short.isNotEmpty()) {
+            "Wild camping: $kind ($short)"
+        } else {
+            "Wild camping: $kind"
+        }
+    }
+    return "Wild camping sites: $siteCount"
 }

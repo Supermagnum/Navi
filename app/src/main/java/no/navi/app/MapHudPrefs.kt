@@ -12,6 +12,7 @@ object MapHudPrefs {
     private const val KEY_AUTO_ZOOM_LEVEL = "auto_zoom_level"
     private const val KEY_AUTO_ZOOM_ON = "auto_zoom_on"
     private const val KEY_BREAK_AS_DISTANCE = "break_as_distance"
+    private const val KEY_BREAK_REMINDERS_ENABLED = "break_reminders_enabled"
     private const val KEY_PREFER_METRIC = "prefer_metric"
     private const val KEY_UNIT_SYSTEM = "unit_system"
     private const val KEY_OPT_IN_3D = "opt_in_3d"
@@ -38,12 +39,32 @@ object MapHudPrefs {
     private const val KEY_STAY_IN_COUNTRY = "stay_in_country"
     private const val KEY_ORS_API_KEY = "ors_api_key"
     private const val KEY_ORS_BASE_URL = "ors_base_url"
+    private const val KEY_ONLINE_PLACE_SEARCH = "online_place_search"
+    private const val KEY_NOMINATIM_BASE_URL = "nominatim_base_url"
     private const val KEY_POI_LOOKAHEAD_ENABLED = "poi_lookahead_enabled"
     private const val KEY_POI_LOOKAHEAD_STRICT_HOURS = "poi_lookahead_strict_hours_unknown"
     private const val KEY_POI_LOOKAHEAD_DISMISSED = "poi_lookahead_dismissed_ids"
     private const val KEY_CAMPING_PLUGIN_ENABLED = "camping_plugin_enabled"
     private const val KEY_CAMPING_RESIDENCY_COUNTRY = "camping_residency_country"
     private const val KEY_CAMPING_PROFESSIONAL_DRIVER = "camping_professional_driver"
+    private const val KEY_CAT_PLUGIN_ENABLED = "cat_plugin_enabled"
+    private const val KEY_CAT_RIG_MODEL = "cat_rig_model"
+    private const val KEY_CAT_BAUD_RATE = "cat_baud_rate"
+    private const val KEY_CAT_BACKEND = "cat_backend"
+    private const val KEY_CAT_SCRATCH_CHANNEL = "cat_scratch_channel"
+    private const val KEY_CAT_DEMO_MODE = "cat_demo_mode_developer"
+
+    /** Hamlib TCP / FFI vs native Benshi Bluetooth. */
+    const val CAT_BACKEND_HAMLIB = "hamlib"
+    const val CAT_BACKEND_BENSHI = "benshi"
+    const val CAT_BACKEND_DEFAULT = CAT_BACKEND_HAMLIB
+    const val CAT_SCRATCH_CHANNEL_DEFAULT = 0
+
+    /**
+     * Developer/test demo mode (5 s per repeater along a corridor). Must remain
+     * false (off by default). Not a product path.
+     */
+    const val CAT_DEMO_MODE_DEFAULT_ENABLED = false
 
     /**
      * Product default for the weather plugin enable toggle.
@@ -75,11 +96,32 @@ object MapHudPrefs {
     /** Right-to-roam camping plugin — defaults OFF (opt-in). */
     const val CAMPING_PLUGIN_DEFAULT_ENABLED = false
 
+    /** CATS / CAT radio plugin — defaults OFF (opt-in). */
+    const val CAT_PLUGIN_DEFAULT_ENABLED = false
+
+    /**
+     * Default Hamlib model: NET rigctl (remote / emulator TCP path).
+     * Onboard FFI / USB-BT loopback should use the radio's real model id.
+     */
+    const val CAT_RIG_MODEL_DEFAULT = 2
+
+    /** Default USB/BT serial baud for CAT loopback bridges. */
+    const val CAT_BAUD_RATE_DEFAULT = 9600
+
     /** Residency ISO 3166-1 alpha-2; empty = unknown. */
     const val CAMPING_RESIDENCY_DEFAULT = ""
 
     /** Professional driver under driving/rest-time rules — default off. */
     const val CAMPING_PROFESSIONAL_DRIVER_DEFAULT = false
+
+    /**
+     * Online place search (Nominatim-compatible). Must remain false (opt-in).
+     * [OnlinePlaceSearchDefaultOffTest] fails the build if flipped.
+     */
+    const val ONLINE_PLACE_SEARCH_DEFAULT_ENABLED = false
+
+    /** Public Nominatim instance. Empty stored value means no online calls. */
+    const val NOMINATIM_DEFAULT_BASE_URL = "https://nominatim.openstreetmap.org"
 
     /** Settings default host; discovery prefers LAN→duckdns unless overridden. */
     const val DATEX_SETTINGS_DEFAULT_HOST = "navigate-me.duckdns.org"
@@ -189,6 +231,25 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_BREAK_AS_DISTANCE, asDistance)
+            .apply()
+    }
+
+    /** Drive "Breaks" toggle — default on (match [DriveHudState.breakRemindersEnabled]). */
+    const val BREAK_REMINDERS_DEFAULT_ENABLED = true
+
+    fun loadBreakRemindersEnabled(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_BREAK_REMINDERS_ENABLED, BREAK_REMINDERS_DEFAULT_ENABLED)
+
+    fun saveBreakRemindersEnabled(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_BREAK_REMINDERS_ENABLED, enabled)
             .apply()
     }
 
@@ -663,6 +724,44 @@ object MapHudPrefs {
             .apply()
     }
 
+    fun loadOnlinePlaceSearchEnabled(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_ONLINE_PLACE_SEARCH, ONLINE_PLACE_SEARCH_DEFAULT_ENABLED)
+
+    fun saveOnlinePlaceSearchEnabled(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_ONLINE_PLACE_SEARCH, enabled)
+            .apply()
+    }
+
+    /**
+     * Nominatim-compatible base URL. Missing key → public default. An explicit
+     * empty string means "none" (no online place-search calls).
+     */
+    fun loadNominatimBaseUrl(context: Context): String =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_NOMINATIM_BASE_URL, NOMINATIM_DEFAULT_BASE_URL)
+            .orEmpty()
+            .trim()
+
+    fun saveNominatimBaseUrl(
+        context: Context,
+        url: String,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_NOMINATIM_BASE_URL, url.trim())
+            .apply()
+    }
+
     /** Nearby attractions cone — defaults OFF. */
     fun loadPoiLookaheadEnabled(context: Context): Boolean =
         context
@@ -765,6 +864,123 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_CAMPING_PROFESSIONAL_DRIVER, on)
+            .apply()
+    }
+
+    fun loadCatPluginEnabled(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_CAT_PLUGIN_ENABLED, CAT_PLUGIN_DEFAULT_ENABLED)
+
+    fun saveCatPluginEnabled(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_CAT_PLUGIN_ENABLED, enabled)
+            .apply()
+    }
+
+    fun loadCatRigModel(context: Context): Int =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt(KEY_CAT_RIG_MODEL, CAT_RIG_MODEL_DEFAULT)
+            .coerceAtLeast(1)
+
+    fun saveCatRigModel(
+        context: Context,
+        model: Int,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_CAT_RIG_MODEL, model.coerceAtLeast(1))
+            .apply()
+    }
+
+    fun loadCatBaudRate(context: Context): Int {
+        val v =
+            context
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getInt(KEY_CAT_BAUD_RATE, CAT_BAUD_RATE_DEFAULT)
+        return no.navi.app.cat.CatSerialLoopbackBridge
+            .normalizeBaud(v)
+    }
+
+    fun saveCatBaudRate(
+        context: Context,
+        baud: Int,
+    ) {
+        val v =
+            no.navi.app.cat.CatSerialLoopbackBridge
+                .normalizeBaud(baud)
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_CAT_BAUD_RATE, v)
+            .apply()
+    }
+
+    fun loadCatBackend(context: Context): String {
+        val v =
+            context
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(KEY_CAT_BACKEND, CAT_BACKEND_DEFAULT)
+                ?: CAT_BACKEND_DEFAULT
+        return when (v) {
+            CAT_BACKEND_BENSHI -> CAT_BACKEND_BENSHI
+            else -> CAT_BACKEND_HAMLIB
+        }
+    }
+
+    fun saveCatBackend(
+        context: Context,
+        backend: String,
+    ) {
+        val v =
+            when (backend) {
+                CAT_BACKEND_BENSHI -> CAT_BACKEND_BENSHI
+                else -> CAT_BACKEND_HAMLIB
+            }
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_CAT_BACKEND, v)
+            .apply()
+    }
+
+    fun loadCatScratchChannel(context: Context): Int =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt(KEY_CAT_SCRATCH_CHANNEL, CAT_SCRATCH_CHANNEL_DEFAULT)
+            .coerceIn(0, 255)
+
+    fun saveCatScratchChannel(
+        context: Context,
+        channel: Int,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_CAT_SCRATCH_CHANNEL, channel.coerceIn(0, 255))
+            .apply()
+    }
+
+    fun loadCatDemoModeDeveloper(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_CAT_DEMO_MODE, CAT_DEMO_MODE_DEFAULT_ENABLED)
+
+    fun saveCatDemoModeDeveloper(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_CAT_DEMO_MODE, enabled)
             .apply()
     }
 }

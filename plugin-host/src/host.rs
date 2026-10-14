@@ -641,6 +641,119 @@ fn install_imports(
         )?;
     }
 
+    if allowed.contains(&Capability::CatStatus) {
+        linker.func_wrap(
+            "navi",
+            "cat_status",
+            |mut caller: Caller<'_, StoreData>,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
+                let json = caller.data().api.cat_status();
+                let written = write_guest_bytes(&mut caller, out_ptr, out_cap, json.as_bytes())?;
+                Ok(written as i32)
+            },
+        )?;
+    }
+
+    if allowed.contains(&Capability::RepeaterQuery) {
+        linker.func_wrap(
+            "navi",
+            "repeater_query",
+            |mut caller: Caller<'_, StoreData>,
+             lat_bits: u64,
+             lon_bits: u64,
+             radius_km_bits: u64,
+             net_ptr: u32,
+             net_len: u32,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
+                let lat = f64::from_bits(lat_bits);
+                let lon = f64::from_bits(lon_bits);
+                let radius_km = f64::from_bits(radius_km_bits).clamp(0.0, 150.0);
+                let network_id = if net_len == 0 {
+                    None
+                } else {
+                    Some(read_guest_string(&mut caller, net_ptr, net_len)?)
+                };
+                let json =
+                    caller
+                        .data()
+                        .api
+                        .repeater_query(lat, lon, radius_km, network_id.as_deref());
+                let written = write_guest_bytes(&mut caller, out_ptr, out_cap, json.as_bytes())?;
+                Ok(written as i32)
+            },
+        )?;
+    }
+
+    if allowed.contains(&Capability::CatVfoSet) {
+        linker.func_wrap(
+            "navi",
+            "cat_vfo_set",
+            |mut caller: Caller<'_, StoreData>,
+             req_ptr: u32,
+             req_len: u32,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
+                let req = read_guest_string(&mut caller, req_ptr, req_len)?;
+                let json = caller.data_mut().api.cat_vfo_set(&req);
+                let written = write_guest_bytes(&mut caller, out_ptr, out_cap, json.as_bytes())?;
+                Ok(written as i32)
+            },
+        )?;
+    }
+
+    if allowed.contains(&Capability::CatNetworkFollow) {
+        linker.func_wrap(
+            "navi",
+            "cat_network_follow",
+            |mut caller: Caller<'_, StoreData>,
+             req_ptr: u32,
+             req_len: u32,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
+                let req = read_guest_string(&mut caller, req_ptr, req_len)?;
+                let json = caller.data_mut().api.cat_network_follow(&req);
+                let written = write_guest_bytes(&mut caller, out_ptr, out_cap, json.as_bytes())?;
+                Ok(written as i32)
+            },
+        )?;
+    }
+
+    if allowed.contains(&Capability::SensorsRead) {
+        linker.func_wrap(
+            "navi",
+            "sensor_availability",
+            |mut caller: Caller<'_, StoreData>,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
+                let view = caller.data().api.sensor_availability();
+                write_json_view(&mut caller, out_ptr, out_cap, &view, "sensor_availability")
+            },
+        )?;
+        linker.func_wrap(
+            "navi",
+            "sensor_read",
+            |mut caller: Caller<'_, StoreData>,
+             kind: u32,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
+                // Unknown kind codes read as unavailable (never a zero sample).
+                let view = match crate::abi::SensorKind::from_code(kind) {
+                    Some(k) => caller.data().api.sensor_read(k),
+                    None => crate::abi::SensorReadView::default(),
+                };
+                write_json_view(&mut caller, out_ptr, out_cap, &view, "sensor_read")
+            },
+        )?;
+    }
+
     // Always provide a no-op alloc helper so guests can request scratch space
     // without WASI. Guests that ship their own allocator ignore this.
     linker.func_wrap(

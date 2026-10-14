@@ -1,0 +1,41 @@
+{
+  "emulator": null,
+  "known_test_failures": [
+    {
+      "reason": "Elsa overview z15 is blank because a neighbouring archive is ranked first by bounding-box overlap (Finland over Västerbotten at 64.889, 19.516).",
+      "test": "elsa_overview_z15"
+    }
+  ],
+  "results": [
+    {
+      "corridor_ran": true,
+      "distance_km": 1435.168619818201,
+      "eta_min": 991.4161371398066,
+      "expected_fail": null,
+      "failures": [],
+      "ferries": [
+        "Rødby (DK) - Puttgarden (D)"
+      ],
+      "hops": 1,
+      "id": "a_bevensen_vaga_dalsoren",
+      "known_failures": [],
+      "peak_mb": 887.0,
+      "polyline_km": 1433.5729929517595,
+      "spikes": [
+        "km 1402.8-1407.7 path 3.00 km chord 0.74 km at 61.50846,7.81466 (reference too)",
+        "km 1412.6-1417.3 path 3.00 km chord 0.88 km at 61.50199,7.71477 (reference too)"
+      ],
+      "status": "PASS",
+      "terminate": "found",
+      "via_m": [
+        1.540923022098433
+      ],
+      "wall_runs_s": [
+        34.14308274,
+        33.261842532,
+        34.417310206
+      ],
+      "wall_s": 34.14308274
+    }
+  ]
+}

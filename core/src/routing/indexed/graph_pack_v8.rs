@@ -9,7 +9,10 @@ use geo_types::Coord;
 use osm4routing::{Node, NodeId};
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 
-use super::graph_pack::{densify_skeleton_edge, densify_skeleton_only_active};
+use super::graph_pack::{
+    clip_keeps_edge, corridor_skeleton_hydrate_active, densify_skeleton_edge,
+    densify_skeleton_only_active,
+};
 use crate::routing::elevation::ElevationService;
 use crate::routing::graph::{GraphEdge, RouteGraph, RoutingProfile, SurfaceQuality};
 
@@ -296,19 +299,13 @@ impl FlatGraphPackV8 {
             let Some(clips) = clips else {
                 return true;
             };
-            if clips.is_empty() {
-                return true;
-            }
-            let slat = self.edge_start_lat[i];
-            let slon = self.edge_start_lon[i];
-            let elat = self.edge_end_lat[i];
-            let elon = self.edge_end_lon[i];
-            let in_box = |lat: f64, lon: f64, b: &[f64; 4]| {
-                lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3]
-            };
-            clips
-                .iter()
-                .any(|b| in_box(slat, slon, b) || in_box(elat, elon, b))
+            clip_keeps_edge(
+                self.edge_start_lat[i],
+                self.edge_start_lon[i],
+                self.edge_end_lat[i],
+                self.edge_end_lon[i],
+                clips,
+            )
         };
         let ferry_nodes: HashSet<u32> = if skeleton {
             let mut s = HashSet::new();
@@ -323,15 +320,17 @@ impl FlatGraphPackV8 {
         } else {
             HashSet::new()
         };
+        let corridor = corridor_skeleton_hydrate_active();
         let edge_ok = |i: usize| -> bool {
             if skeleton {
                 let hw = self.edge_highway[i].as_str();
                 let ferry = self.edge_is_ferry.get(i).copied().unwrap_or(0) != 0;
                 let major = densify_skeleton_edge(hw, ferry);
+                let secondary = corridor && matches!(hw, "secondary" | "secondary_link");
                 let pier = !ferry
                     && (ferry_nodes.contains(&self.edge_src[i])
                         || ferry_nodes.contains(&self.edge_tgt[i]));
-                if !major && !pier {
+                if !major && !secondary && !pier {
                     return false;
                 }
             }
@@ -382,6 +381,7 @@ impl FlatGraphPackV8 {
                 target: tgt,
                 length_m: self.edge_length_m[i],
                 base_weight: self.edge_base_weight[i],
+                cost_mult: 1.0,
                 eco_weight: Some(self.edge_base_weight[i]),
                 start_lat: self.edge_start_lat[i],
                 start_lon: self.edge_start_lon[i],
@@ -443,6 +443,7 @@ impl FlatGraphPackV8 {
                 maxlength_m: unpack_opt_metric(&self.edge_maxlength_m, i),
                 is_toll: self.edge_is_toll[i] != 0,
                 is_ferry: self.edge_is_ferry[i] != 0,
+                ferry_interval_min: None,
                 // Not in v8 pack wire format (pending navi-server v9 sign-off).
                 // Soft-avoid still works for graphs built from PBF in-process.
                 is_tunnel: false,
@@ -600,19 +601,13 @@ impl ArchivedFlatGraphPackV8 {
             let Some(clips) = clips else {
                 return true;
             };
-            if clips.is_empty() {
-                return true;
-            }
-            let slat = arch_f64(self.edge_start_lat[i]);
-            let slon = arch_f64(self.edge_start_lon[i]);
-            let elat = arch_f64(self.edge_end_lat[i]);
-            let elon = arch_f64(self.edge_end_lon[i]);
-            let in_box = |lat: f64, lon: f64, b: &[f64; 4]| {
-                lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3]
-            };
-            clips
-                .iter()
-                .any(|b| in_box(slat, slon, b) || in_box(elat, elon, b))
+            clip_keeps_edge(
+                arch_f64(self.edge_start_lat[i]),
+                arch_f64(self.edge_start_lon[i]),
+                arch_f64(self.edge_end_lat[i]),
+                arch_f64(self.edge_end_lon[i]),
+                clips,
+            )
         };
         let ferry_nodes: HashSet<u32> = if skeleton {
             let mut s = HashSet::new();
@@ -628,6 +623,7 @@ impl ArchivedFlatGraphPackV8 {
         } else {
             HashSet::new()
         };
+        let corridor = corridor_skeleton_hydrate_active();
         let edge_ok = |i: usize| -> bool {
             if skeleton {
                 let hw = self.edge_highway[i].as_str();
@@ -635,8 +631,9 @@ impl ArchivedFlatGraphPackV8 {
                 let src = arch_u32(self.edge_src[i]);
                 let tgt = arch_u32(self.edge_tgt[i]);
                 let major = densify_skeleton_edge(hw, ferry);
+                let secondary = corridor && matches!(hw, "secondary" | "secondary_link");
                 let pier = !ferry && (ferry_nodes.contains(&src) || ferry_nodes.contains(&tgt));
-                if !major && !pier {
+                if !major && !secondary && !pier {
                     return false;
                 }
             }
@@ -686,6 +683,7 @@ impl ArchivedFlatGraphPackV8 {
                 target: tgt,
                 length_m: arch_f64(self.edge_length_m[i]),
                 base_weight: arch_f64(self.edge_base_weight[i]),
+                cost_mult: 1.0,
                 eco_weight: Some(arch_f64(self.edge_base_weight[i])),
                 start_lat: arch_f64(self.edge_start_lat[i]),
                 start_lon: arch_f64(self.edge_start_lon[i]),
@@ -756,6 +754,7 @@ impl ArchivedFlatGraphPackV8 {
                 maxlength_m: archived_opt_metric_at(&self.edge_maxlength_m, i),
                 is_toll: arch_u8(self.edge_is_toll[i]) != 0,
                 is_ferry: arch_u8(self.edge_is_ferry[i]) != 0,
+                ferry_interval_min: None,
                 is_tunnel: false,
                 is_boardwalk_crossing: arch_u8(self.edge_is_boardwalk[i]) != 0,
                 is_roundabout: arch_u8(self.edge_is_roundabout[i]) != 0,

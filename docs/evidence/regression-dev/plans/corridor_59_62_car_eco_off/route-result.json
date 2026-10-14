@@ -1,0 +1,28 @@
+{
+  "t_ms": 7764548,
+  "distance_km": 502.18795247966347,
+  "report": "TEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\nlong_trip_chunked=true; hops=5; chunk_deg=1.15; stretch_joint_repair_max=4\nchunk_leg1=59.10948,11.26385 -> 59.37431,10.78459\nhop_mem hop=1 peak_rss_mb=683\n--- hop_try1 report ---\nTEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\nprofile=Car; routing=Car; start=59.109481,11.263848; end=59.374310,10.784585; vias=0; use_eco=false; long_trip_enabled=false\npath_covering_nodes=1305426; path_over_node_limit=true; clipped_nodes=234933; clipped_fits=true; needs_corridor=false; stage_b=true\nallowed_countries=none\navoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=true\ndatex_impacts=0; datex_block=0; datex_penalize=0\neco_regen=0.000\npoi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true\nbbox=58.759,10.435,59.724,11.621; pad=0.35; edge_clip=CorridorBand; tile_budget=20; corridor_pts=102\nbuild_s=3.08; cache_hit=false; pack_hit=true; nodes=192442; edges=406167; pad_attempts=[0.35]\npack_load_ms=3076; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=574; search_ms=72; expansions=3301\ngraph_ferry_edges=18\nseasonal_closure_excluded_edges=8\nsnap_start=59.109417,11.263879 dist_m=7; snap_end=59.374310,10.784585 dist_m=0; snap_max_m=750\nroute_ferry_legs=0\nroute_ferry_fp=\nroute_tunnel_count=4\nroute_tunnel_fp=Busgårdlokket@0.05|Galteryggtunnelen@0.10|Eidettunnelen@0.86|E 6@0.03\npoi_skipped=chunk_leg\npoi_pack_hit=false\nmotor_break_interval_km=158.8 (soft rest-interval hours → km via trip speed)\nmotor_multi_day: days=1; multi_day=false\nrest_place_count=0\npriority_path_share_pct=0.60; motorway_share_pct=99.40\ndistance_km=44.500; eta_min=25.2; path_nodes=106; path_cost=34121; polyline_chars=26983; break_pois=[]; route_uses_ferry=false\nPASS\nhop1_poly_km=44.451; hop1_km=44.500; hop1_poly_agree_0_5pct=true\n--- leg1 report ---\nTEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\nprofile=Car; routing=Car; start=59.109481,11.263848; end=59.374310,10.784",
+  "polyline_chars": 348293,
+  "days_json": "[{\"compensation\":\"\",\"date\":\"\",\"day_index\":1,\"distance_km\":502.18795247966347,\"driving_hours\":5.655557618240179,\"end_km\":502.18795247966347,\"is_final\":true,\"not_in_cab\":false,\"overnight_found\":false,\"overnight_name\":\"\",\"profile\":\"car\",\"rest_hours\":0.0,\"rest_kind\":\"\",\"rest_label\":\"\",\"start_km\":0.0}]",
+  "break_poi_count": 3,
+  "start": "Start",
+  "end": "End",
+  "long_trip_status": "Ostlandet (1 of 1)=Installed",
+  "enumerations": {
+    "route_tunnel_count": 27,
+    "route_tunnel_fp": "Busgårdlokket@0.05|Galteryggtunnelen@0.10|Eidettunnelen@0.86|E 6@0.03|Follotunnelen@0.89|Nordbytunnelen@3.83|Nøstvettunnelen@1.74|Nøstvettunnelen@1.89|Europaveien@0.08|Brynstunnelen@0.29|Hauerseterlokket@0.06|Elstadmolokket@0.04|E 6@0.05|Eidsvolltunnelen@1.19|Korslundtunnelen@0.63|Morskogstunnelen@2.35|E 6@0.10|Espatunnelen@0.68|Skarpsnotunnelen@0.33|Moelvtunnelen@0.20|Mosoddentunnelen@0.21|Øyertunnelen@3.85|Hundorptunnelen@4.29|E 6@0.04|Teigkamptunnelen@3.76|E 6@0.05|Gudbrandsdalsvegen@0.02",
+    "route_ferry_legs": 0,
+    "route_ferry_fp": "",
+    "rest_place_count": 3,
+    "rest_place_names": [
+      "Skibakk",
+      "Strandengen",
+      "Rosten"
+    ],
+    "attraction_count": 0,
+    "attraction_by_type": {},
+    "wild_camping_site_count": 0,
+    "wild_camping_status_kind": "",
+    "wild_camping_status_message": ""
+  }
+}

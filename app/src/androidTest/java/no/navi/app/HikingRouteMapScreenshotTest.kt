@@ -39,7 +39,7 @@ class HikingRouteMapScreenshotTest {
             NaviMapTestHooks.lastTerrainAttached = false
             NaviMapTestHooks.lastCameraPitch = 0.0
             NaviMapTestHooks.lastBasemapKind = ""
-            NaviMapTestHooks.styleReady = false
+            NaviMapTestHooks.resetStyleLoadState()
             NaviMapTestHooks.lastRoutePolylineChars = 0
             NaviMapTestHooks.lastBreakPoiCount = 0
             val context = InstrumentationRegistry.getInstrumentation().targetContext

@@ -3,6 +3,7 @@
 pub mod access;
 pub mod basemap;
 pub mod conditional;
+pub mod corridor_skeleton;
 pub mod dnt_winter;
 pub mod ebike_route;
 pub mod elevation;
@@ -13,8 +14,10 @@ pub mod hiking_hybrid;
 pub mod indexed;
 pub mod live_hazard;
 pub mod osm_update;
+pub mod path_repair;
 pub mod pbf_extract;
 pub mod plan_bbox;
+pub mod plan_file_log;
 pub mod plan_perf;
 pub mod region;
 pub mod region_lock;
@@ -24,6 +27,7 @@ pub mod safety;
 pub mod speed_camera;
 pub mod terrain;
 pub mod toll;
+pub mod waypoint_attach;
 pub mod wetland;
 pub mod workers;
 
@@ -102,7 +106,10 @@ pub use safety::{
     check_overnight_candidate, min_distance_to_glacier_rings_m, DangerBarrierIndex,
     OvernightProximityIndex, OvernightRejectReason,
 };
-pub use terrain::{least_cost_path, TerrainPath, TERRAIN_CELL_M, TERRAIN_MAX_GAP_M};
+pub use terrain::{
+    least_cost_path, least_cost_path_chained, TerrainPath, TERRAIN_CELL_M,
+    TERRAIN_MAX_CHAINED_GAP_M, TERRAIN_MAX_GAP_M,
+};
 pub use toll::{toll_applies_for_profile, TollPolicy, TOLL_AVOID_PENALTY_MULT};
 pub use wetland::{
     classify_wetland_value, tags_indicate_boardwalk, WetlandClass, WetlandIndex,

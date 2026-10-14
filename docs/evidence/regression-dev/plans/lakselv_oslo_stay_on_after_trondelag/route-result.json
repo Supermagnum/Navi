@@ -1,0 +1,24 @@
+{
+  "t_ms": 8206566,
+  "distance_km": 19.475347940743188,
+  "report": "TEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\nprofile=Car; routing=Car; start=53.550341,9.993682; end=53.486110,10.232780; vias=0; use_eco=false; long_trip_enabled=true\npath_covering_nodes=758768; path_over_node_limit=false; clipped_nodes=99266; clipped_fits=true; needs_corridor=false; stage_b=false\nallowed_countries=de\navoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=true\ndatex_impacts=0; datex_block=0; datex_penalize=0\neco_regen=0.000\npoi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true\nbbox=53.400,9.883,53.640,10.343; pad=0.10; edge_clip=DirectEllipse { widen: 0 }; tile_budget=14; corridor_pts=2\ndirect_area=ellipse factor=1.15 allowance_km=10 strips=6\ndirect_area_edge_run_km=-0.0 route_km=19.5\nbuild_s=1.44; cache_hit=false; pack_hit=true; nodes=78904; edges=160804; pad_attempts=[0.1]\npack_load_ms=1444; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=476; search_ms=318; expansions=88027\ngraph_ferry_edges=0\nseasonal_closure_excluded_edges=5\nsnap_start=53.550009,9.993876 dist_m=39; snap_end=53.485362,10.232614 dist_m=84; snap_max_m=750\nroute_ferry_legs=0\nroute_ferry_fp=\nroute_tunnel_count=1\nroute_tunnel_fp=Deichtortunnel@0.13\npoi_pack_hit=true\nmotor_break_interval_km=89.7 (soft rest-interval hours → km via trip speed)\nmotor_multi_day: days=1; multi_day=false\nrest_place_count=0\npriority_path_share_pct=66.59; motorway_share_pct=33.41\ndistance_km=19.475; eta_min=19.5; path_nodes=277; path_cost=30918; polyline_chars=15257; break_pois=[]; route_uses_ferry=false\nPASS\nplan_inputs profile=Car eco=false avoid_motorways=false toll=Allow avoid_ferries=false avoid_tunnels=false long_trip=true datex=None start=53.550341,9.993682 end=53.486110,10.232780 vias=0 via_coords=\n",
+  "polyline_chars": 15257,
+  "days_json": "[]",
+  "break_poi_count": 0,
+  "start": "Hamburg",
+  "end": "Bergedorf",
+  "long_trip_status": "Hamburg (1 of 1)=Installed",
+  "enumerations": {
+    "route_tunnel_count": 1,
+    "route_tunnel_fp": "Deichtortunnel@0.13",
+    "route_ferry_legs": 0,
+    "route_ferry_fp": "",
+    "rest_place_count": 0,
+    "rest_place_names": [],
+    "attraction_count": 0,
+    "attraction_by_type": {},
+    "wild_camping_site_count": 0,
+    "wild_camping_status_kind": "",
+    "wild_camping_status_message": ""
+  }
+}

@@ -22,12 +22,12 @@ use crate::tracks::haversine_km;
 /// v3: `region_id` column so multi-region indexes are additive.
 /// v4: `building=*` + `name=*` classified as `kind=building` (was `named`).
 /// v5: `search_doc` + FTS on `alt_name` / `loc_name` (display `name` unchanged).
+/// v6: PRIMARY KEY (region_id, osm_id); search still one hit per osm_id.
 ///
 /// Bumping this makes [`NameIndex::is_current_schema`] fail on older on-device
-/// DBs so `ensure_place_index` / pack-install rebuild on next open — without a
-/// manual wipe. Stale DBs are deleted before rebuild so multi-region indexes
-/// do not keep pre-bump row kinds / FTS docs after `user_version` advances.
-pub const PLACE_INDEX_SCHEMA_VERSION: i32 = 5;
+/// DBs so `ensure_place_index` migrates in place on next writer open. The shared
+/// file is never deleted for a schema bump.
+pub const PLACE_INDEX_SCHEMA_VERSION: i32 = 6;
 
 const SUB_AREA_MAX_M: f64 = 4_000.0;
 const SUB_AREA_VILLAGE_MAX_M: f64 = 2_000.0;
@@ -313,7 +313,7 @@ pub(crate) fn load_admin_from_pbf(
             &format!("{phase_prefix}admin boundaries: relations…"),
         );
         let t0 = phase_timing::start("place_index.admin.relations");
-        crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
+        crate::download::pbf_priority::for_each_pbf_elements_pausable(path, |element| {
             let Element::Relation(rel) = element else {
                 return;
             };
@@ -361,7 +361,7 @@ pub(crate) fn load_admin_from_pbf(
             &format!("{phase_prefix}admin boundaries: ways…"),
         );
         let t0 = phase_timing::start("place_index.admin.ways");
-        crate::download::pbf_priority::for_each_pbf_elements(path, |element| {
+        crate::download::pbf_priority::for_each_pbf_elements_pausable(path, |element| {
             let Element::Way(way) = element else {
                 return;
             };
@@ -407,17 +407,20 @@ pub(crate) fn load_admin_from_pbf(
             &format!("{phase_prefix}admin boundaries: nodes…"),
         );
         let t0 = phase_timing::start("place_index.admin.nodes");
-        crate::download::pbf_priority::for_each_pbf_elements(path, |element| match element {
-            Element::Node(n) => {
-                if needed_nodes.contains(&n.id()) {
-                    coords.insert(n.id(), (n.lat(), n.lon()));
+        crate::download::pbf_priority::for_each_pbf_elements_pausable(
+            path,
+            |element| match element {
+                Element::Node(n) => {
+                    if needed_nodes.contains(&n.id()) {
+                        coords.insert(n.id(), (n.lat(), n.lon()));
+                    }
                 }
-            }
-            Element::DenseNode(n) if needed_nodes.contains(&n.id) => {
-                coords.insert(n.id, (n.lat(), n.lon()));
-            }
-            _ => {}
-        })?;
+                Element::DenseNode(n) if needed_nodes.contains(&n.id) => {
+                    coords.insert(n.id, (n.lat(), n.lon()));
+                }
+                _ => {}
+            },
+        )?;
         phase_timing::end_detail(
             "place_index.admin.nodes",
             t0,
@@ -638,6 +641,7 @@ mod tests {
 
     #[test]
     fn load_admin_sets_relations_label_before_missing_pbf() {
+        let _lock = crate::download::progress::test_lock();
         crate::download::progress::clear();
         let err = load_admin_from_pbf("/no/such/region.osm.pbf", "Place index: ");
         assert!(err.is_err());

@@ -1,0 +1,41 @@
+{
+  "status": "done",
+  "profile": "car",
+  "eco": true,
+  "stay_in_country": false,
+  "graph": "pack",
+  "wall_s": 52.44,
+  "duration_ms": 32055,
+  "distance_km": 425.92877714846446,
+  "polyline_points": 14057,
+  "spike_count": 0,
+  "spikes": [],
+  "from": [
+    "Raufoss",
+    60.72608,
+    10.613324
+  ],
+  "to": [
+    "Bergen",
+    60.394306,
+    5.325919
+  ],
+  "enumerations": {
+    "route_tunnel_count": 52,
+    "route_tunnel_fp": "Hugaviktunnelen@1.79|R\u00f8d\u00f8lstunnelen@2.13|Filefjellstunnelen@5.75|Borlaugstunnelen@4.08|Tuft\u00e5stunnelen@1.95|Borgundstunnelen@3.04|Seltatunnelen@1.63|L\u00e6rdalstunnelen@24.46|Onstadtunnelen@0.66|Fretheimtunnelen@1.36|Flenjatunnelen@5.02|Gudvangatunnelen@11.39|Sivletunnelen@1.10|Stalheimtunnelen@1.18|Vangstunnelen@2.46|Knoltatunnelen@0.36|V\u00e6letunnelen@0.46|Hernestunnelen@0.52|Holemarktunnelen@0.46|Nakkagjelstunnelen@0.21|E 16@0.02|Vassendatunnelen@0.21|Bolstadtunnelen@0.39|Hyvingstunnelen@1.35|Kluftafjelltunnelen@0.47|Trollkonetunnelen@0.73|Dalseidtunnelen@1.80|Beitlatunnelen@0.66|Dalev\u00e5gtunnelen@1.39|Helletunnelen@0.32|L\u00e5gaskartunnelen@0.31|Stanghelletunnelen@0.20|Steganestunnelen@0.08|Hettetunnelen@0.65|Kleinsl\u00e5ttunnelen@0.06|Fossmarktunnelen@0.11|Jamnatunnelen@0.79|Bogatunnelen@2.04|Kjenestunnelen@0.34|Langhelletunnelen@0.92|Stavenestunnelen@2.76|Trengereidtunnelen@1.77|Risnestunnelen@1.71|Romslotunnelen@0.60|Songstadtunnelen@0.31|Songstadtunnelen@0.29|Takvamtunnelen@0.11|Arnanipatunnelen@2.13|Brattlandtunnelen@0.02|S\u00e6dalstunnelen@0.33|Nattlandstunnelen@0.29|Haukelandtunnelen@0.35",
+    "route_ferry_legs": 0,
+    "route_ferry_fp": "",
+    "rest_place_count": 1,
+    "rest_place_names": [
+      "\u00c5sbrekkegjelet"
+    ],
+    "attraction_count": 0,
+    "attraction_by_type": {},
+    "wild_camping_site_count": 0,
+    "wild_camping_status_kind": "",
+    "wild_camping_status_message": "",
+    "wild_camping_by_country": {},
+    "wild_camping_by_subdivision": {}
+  },
+  "enum_meta": null
+}

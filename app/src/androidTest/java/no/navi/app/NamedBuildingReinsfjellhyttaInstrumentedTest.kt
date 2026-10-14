@@ -37,7 +37,7 @@ class NamedBuildingReinsfjellhyttaInstrumentedTest {
         shell("mkdir -p /data/local/tmp/navi_named_building && chmod 777 /data/local/tmp/navi_named_building")
         NaviMapTestHooks.hideUiChrome = true
         NaviMapTestHooks.disableGpsFollow = true
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         MapHudPrefs.saveOptIn3d(context, false)
         MapHudPrefs.saveCameraTiltDeg(context, 0.0)
     }

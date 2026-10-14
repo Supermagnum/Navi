@@ -1,0 +1,26 @@
+plan_inputs profile=Car eco=false avoid_motorways=false toll=Allow avoid_ferries=false avoid_tunnels=false long_trip=true datex=None start=70.052498,24.960657 end=59.913330,10.738970 vias=0 via_coords=
+waypoint_attach lat=70.05250 lon=24.96066 role=Origin tiles=nord-norge-latest.navi-graph-car.t5_13.rkyv tiles_n=1 mb=3.7 load_ms=20 snap_ms=7 dijkstra_ms=0 expansions=77 hits=12 spurs=2 spur_ms=0 already_on_skel=false snap_m=21
+waypoint_attach lat=59.91333 lon=10.73897 role=Destination tiles=ostlandet-latest.navi-graph-car.t1_3.rkyv tiles_n=1 mb=112.3 load_ms=607 snap_ms=204 dijkstra_ms=0 expansions=35 hits=12 spurs=1 spur_ms=0 already_on_skel=false snap_m=54
+datex_snapshot sits=0 mode=None
+stems primary=jamtland-latest pbf_stem=nord-norge-latest extra=finland-latest,nord-norge-latest,norrbotten-latest,vasterbotten-latest,vasternorrland-latest
+datex_bind_ms=0 impacts=0
+hop endpoints=70.05250,24.96066->63.23494,14.76860 snap_a=70.05259,24.96114 snap_a_m=21.3 snap_b=63.23494,14.76860 snap_b_m=0.0 nodes=137494 pack_hit=true comp_a=4159442571 comp_b=4159442571 weak_ok=true directed_ok=true
+hop_result=success km=1595.339 eta_min=1145.7 terminate=found route_ferry_legs=0 nodes=4923 pack_hit=true expansions=218894
+hop_result=success i=1 km=1595.339 poly_km=1593.563 poly_agree_0_5pct=true poly_rel_pct=0.111 eta_min=1145.7 terminate=found route_ferry_legs=0 expansions=218894 pack_load_ms=27810 datex_bind_ms=0 snap_ms=401 search_ms=390 nodes=137494 vm_hwm_mb=960
+stems primary=varmland-latest pbf_stem=nord-norge-latest extra=dalarna-latest,gavleborg-latest,jamtland-latest,ostlandet-latest,vasterbotten-latest,vasternorrland-latest
+datex_bind_ms=0 impacts=0
+hop endpoints=63.23494,14.76860->60.25585,12.51348 snap_a=63.23494,14.76860 snap_a_m=0.0 snap_b=60.25585,12.51348 snap_b_m=0.0 nodes=106755 pack_hit=true comp_a=11476979307 comp_b=11476979307 weak_ok=true directed_ok=true
+hop_result=success km=517.947 eta_min=368.7 terminate=found route_ferry_legs=0 nodes=1231 pack_hit=true expansions=128226
+hop_result=success i=2 km=517.947 poly_km=517.371 poly_agree_0_5pct=true poly_rel_pct=0.111 eta_min=368.7 terminate=found route_ferry_legs=0 expansions=128226 pack_load_ms=10771 datex_bind_ms=0 snap_ms=281 search_ms=272 nodes=106755 vm_hwm_mb=960
+stems primary=ostlandet-latest pbf_stem=nord-norge-latest extra=dalarna-latest,varmland-latest
+datex_bind_ms=0 impacts=0
+hop endpoints=60.25585,12.51348->59.91911,10.81732 snap_a=60.25585,12.51348 snap_a_m=0.0 snap_b=59.91911,10.81732 snap_b_m=0.0 nodes=193666 pack_hit=true comp_a=3183474238 comp_b=3183474238 weak_ok=true directed_ok=true
+hop_result=success km=129.244 eta_min=95.7 terminate=found route_ferry_legs=0 nodes=612 pack_hit=true expansions=85146
+hop_result=success i=3 km=129.244 poly_km=129.100 poly_agree_0_5pct=true poly_rel_pct=0.111 eta_min=95.7 terminate=found route_ferry_legs=0 expansions=85146 pack_load_ms=5862 datex_bind_ms=0 snap_ms=595 search_ms=293 nodes=193666 vm_hwm_mb=960
+stems primary=ostlandet-latest pbf_stem=nord-norge-latest extra=
+datex_bind_ms=0 impacts=0
+hop endpoints=59.91911,10.81732->59.91333,10.73897 snap_a=59.91911,10.81732 snap_a_m=0.0 snap_b=59.91381,10.73882 snap_b_m=53.6 nodes=231659 pack_hit=true comp_a=299654374 comp_b=299654374 weak_ok=true directed_ok=true
+hop_result=success km=9.242 eta_min=9.3 terminate=found route_ferry_legs=0 nodes=74 pack_hit=true expansions=55242
+hop_result=success i=4 km=9.242 poly_km=9.232 poly_agree_0_5pct=true poly_rel_pct=0.111 eta_min=9.3 terminate=found route_ferry_legs=0 expansions=55242 pack_load_ms=2852 datex_bind_ms=0 snap_ms=794 search_ms=140 nodes=231659 vm_hwm_mb=1030
+total_poly_agree km=2251.772 poly_km=2249.266 agree_0_5pct=true rel_pct=0.111
+plan_summary km=2251.772 eta_min=1619.4 route_ferry_legs=0 terminate=found hops=4 total_poly_agree_0_5pct=true

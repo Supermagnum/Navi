@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Post-splash app theme (Compose content). -->
-    <style name="Theme.Navi" parent="@android:style/Theme.Material.Light.NoActionBar" />
+    <style name="Theme.Navi" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:letterSpacing">0</item>
+        <item name="android:fontFamily">@font/liberation_sans</item>
+    </style>
 
     <!-- Cold-start splash (Androidx Splash Screen API; API 26+ via compat). -->
     <style name="Theme.Navi.Splash" parent="Theme.SplashScreen">

@@ -4,6 +4,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -30,8 +31,13 @@ class LongTripCoordinatorPhaseCTest {
             "europe/norway/trondelag",
         )
 
+    @Before
+    fun installPlaceIndexRows() {
+        FakePlaceIndexRows.install()
+    }
+
     /**
-     * Ready manifest + place-index stamp so ReuseInternal counts as Indexed.
+     * Ready manifest + place-index rows so ReuseInternal counts as Indexed.
      * Coordinator readiness is pack-manifest based ([PackRegionAvailability.localBakeReady]);
      * a full-size PBF alone no longer skips re-download.
      */
@@ -43,11 +49,12 @@ class LongTripCoordinatorPhaseCTest {
         java.io.File(dir, "$stem.navi-manifest.json").writeText("{}")
         val pbf = java.io.File(dir, "$stem.osm.pbf")
         java.io.RandomAccessFile(pbf, "rw").use { it.setLength(RegionDownloadBackground.MIN_PBF_BYTES) }
-        PlaceIndexReady.markReady(dir, regionId)
+        FakePlaceIndexRows.putRows(dir, regionId, 1_000L)
     }
 
     @After
     fun tearDown() {
+        FakePlaceIndexRows.reset()
         LongTripCoordinator.resetForTests()
         NetworkUnmetered.forceForTests = null
         if (RegionDownloadBackground.isRunning()) {
@@ -212,6 +219,17 @@ class LongTripCoordinatorPhaseCTest {
 
         val deadline = System.currentTimeMillis() + 2_000
         while (System.currentTimeMillis() < deadline && enqueued.size < 2) {
+            Thread.sleep(20)
+        }
+        // Wait for async ensureStarted coroutines to emit "queued" before we
+        // advance phases — otherwise a late queued can race synthetic emits.
+        while (System.currentTimeMillis() < deadline) {
+            val st = LongTripCoordinator.currentPlan()?.states ?: break
+            if (st[regions[1]] == LongTripCoordinator.State.Queued &&
+                st[regions[2]] == LongTripCoordinator.State.Queued
+            ) {
+                break
+            }
             Thread.sleep(20)
         }
 

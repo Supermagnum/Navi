@@ -88,7 +88,9 @@ snapshots into the core; WASM guests must not get raw sockets.
 | `plugins/trap-guest` | Reference plugin: deliberate trap |
 | `plugins/memory-bomb` | Reference plugin: grow memory until limit |
 | `plugins/right-to-roam-camping` | Product camping guest (Phase 5a on Android); shared rule engine in `plugins/right-to-roam-camping/engine` (`navi-right-to-roam-camping`) |
+| `plugins/CATS-plugin/` | CAT / CATS WASM guest — repeater select / auto-tune / network follow ([`CAT.md`](CAT.md)); host is `navi-cat` + `navi-hamlib-sys` |
 | `plugins/weather/` | Weather plugin — Meteocons assets + guest scaffold; product HUD/map use host UniFFI ([`plugins/weather-plugin.md`](plugins/weather-plugin.md)) |
+| `plugins/imu/` | IMU guest (pitch / tilt / compass, mount calibration, display) on `sensors_read`; engine in `plugins/imu/engine`; staged into the APK by `scripts/build-plugin-wasm.sh` and fed by the Android `SensorManager` backend via `navi-ffi` (`imu_plugin_*`), default OFF ([`plugins/imu-plugin.md`](plugins/imu-plugin.md)) |
 | `plugins/datex/` | DATEX guest scaffold; host client in `driver-break-core::datex` ([`plugins/datex-plugin.md`](plugins/datex-plugin.md)) |
 
 ## Manifest (`plugin.json`)
@@ -309,10 +311,11 @@ internet weather overlay.
 | | |
 |---|---|
 | **Benefit** | Set VFO frequency / offset / CTCSS from nearby NFM repeaters while driving |
-| **Docs** | [`CAT.md`](CAT.md) — Hamlib 4.6.5 (NDK + FFI), Android transport, auto-tune, RepeaterBook + OSM onboard DB, Innlandsnettet example |
-| **Host duties** | CAT through **Hamlib 4.6.5** (NDK-built `libhamlib.so` + Navi’s minimal FFI crate); host owns the transport (USB/BT serial → loopback TCP, or remote `rigctld`) — see [`CAT.md`](CAT.md). Never auto-TX (`rig_get_ptt` interlock; never `rig_set_ptt`). Honour plugin enable/disable (close sessions when off). |
-| **Proposed caps** | `position_read`, `repeater_query` (new), `cat_vfo_set` (new, host-gated), `accessory_*` (USB), `log` |
-| **Safety** | Read/query free; **TX inhibited** unless user explicitly arms PTT path |
+| **Path** | [`plugins/CATS-plugin/`](../plugins/CATS-plugin/) — all guest logic here; wasmtime only |
+| **Docs** | [`CAT.md`](CAT.md) — `RigBackend` (TCP + FFI), latest-stable Hamlib lock, Android transports, read-back verification, auto-tune, network follow, onboard DB (OSM / AnyTone CSV / OpenRepeater / RadioID; RepeaterBook disabled). Test report / CSV path: [`cat-test.md`](cat-test.md) |
+| **Host duties** | `navi-cat` + `navi-hamlib-sys` + USB/BT loopback / remote `rigctld`; never auto-TX (`rig_get_ptt` interlock; never `rig_set_ptt` / `T`); enforce gating + read-back even if the guest misbehaves; close sessions on plugin disable |
+| **Caps** | `position_read`, `log`, `cat_status`, `repeater_query`, `cat_vfo_set`, `cat_network_follow` |
+| **Safety** | Read/query free; **TX inhibited**; program only when PTT clear and read-back matches |
 
 Auto-tune summary (full detail in CAT.md): if a NFM amateur repeater is within
 **150 km**, resolve output frequency, shift/offset, and CTCSS/DCS, then program

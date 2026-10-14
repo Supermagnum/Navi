@@ -1,0 +1,1095 @@
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+long_trip_chunked=true; hops=18; chunk_deg=1.15; stretch_joint_repair_max=4
+chunk_leg1=53.07969,10.58720 -> 53.35206,10.13703
+hop_mem hop=1 peak_rss_mb=558
+--- hop_try1 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=53.079686,10.587198; end=53.352065,10.137027; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=491044; path_over_node_limit=false; clipped_nodes=139199; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=52.711,9.787,53.702,10.937; pad=0.35; edge_clip=CorridorBand; tile_budget=20; corridor_pts=248
+build_s=1.32; cache_hit=false; pack_hit=true; nodes=141223; edges=324246; pad_attempts=[0.35]
+pack_load_ms=1315; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=40; search_ms=144; expansions=41240
+graph_ferry_edges=10
+seasonal_closure_excluded_edges=57
+snap_start=53.079869,10.587303 dist_m=22; snap_end=53.352065,10.137027 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=0
+route_tunnel_fp=
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=395.4 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=38.33; motorway_share_pct=61.67
+distance_km=54.400; eta_min=37.1; path_nodes=275; path_cost=54946; polyline_chars=25002; break_pois=[]; route_uses_ferry=false
+PASS
+hop1_poly_km=54.340; hop1_km=54.400; hop1_poly_agree_0_5pct=true
+--- leg1 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=53.079686,10.587198; end=53.352065,10.137027; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=491044; path_over_node_limit=false; clipped_nodes=139199; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=52.711,9.787,53.702,10.937; pad=0.35; edge_clip=CorridorBand; tile_budget=20; corridor_pts=248
+build_s=1.32; cache_hit=false; pack_hit=true; nodes=141223; edges=324246; pad_attempts=[0.35]
+pack_load_ms=1315; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=40; search_ms=144; expansions=41240
+graph_ferry_edges=10
+seasonal_closure_excluded_edges=57
+snap_start=53.079869,10.587303 dist_m=22; snap_end=53.352065,10.137027 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=0
+route_tunnel_fp=
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=395.4 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=38.33; motorway_share_pct=61.67
+distance_km=54.400; eta_min=37.1; path_nodes=275; path_cost=54946; polyline_chars=25002; break_pois=[]; route_uses_ferry=false
+PASS
+chunk_leg2=53.35206,10.13703 -> 53.69520,10.32368
+hop_mem hop=2 peak_rss_mb=887
+--- hop_try2 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=53.352065,10.137027; end=53.695198,10.323677; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=931571; path_over_node_limit=true; clipped_nodes=265348; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=53.002,9.673,54.045,10.674; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=162
+build_s=3.23; cache_hit=false; pack_hit=true; nodes=377144; edges=818129; pad_attempts=[0.35]
+pack_load_ms=3232; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=106; search_ms=176; expansions=21164
+graph_ferry_edges=10
+seasonal_closure_excluded_edges=72
+snap_start=53.352065,10.137027 dist_m=0; snap_end=53.695198,10.323677 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=1
+route_tunnel_fp=Tunnel Billwerder-Moorfleet@0.25
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=467.9 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=52.924; eta_min=30.5; path_nodes=158; path_cost=42246; polyline_chars=15647; break_pois=[]; route_uses_ferry=false
+PASS
+hop2_poly_km=52.866; hop2_km=52.924; hop2_poly_agree_0_5pct=true
+--- leg2 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=53.352065,10.137027; end=53.695198,10.323677; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=931571; path_over_node_limit=true; clipped_nodes=265348; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=53.002,9.673,54.045,10.674; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=162
+build_s=3.23; cache_hit=false; pack_hit=true; nodes=377144; edges=818129; pad_attempts=[0.35]
+pack_load_ms=3232; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=106; search_ms=176; expansions=21164
+graph_ferry_edges=10
+seasonal_closure_excluded_edges=72
+snap_start=53.352065,10.137027 dist_m=0; snap_end=53.695198,10.323677 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=1
+route_tunnel_fp=Tunnel Billwerder-Moorfleet@0.25
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=467.9 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=52.924; eta_min=30.5; path_nodes=158; path_cost=42246; polyline_chars=15647; break_pois=[]; route_uses_ferry=false
+PASS
+chunk_leg3=53.69520,10.32368 -> 54.20772,10.90035
+hop_mem hop=3 peak_rss_mb=722
+--- hop_try3 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=53.695198,10.323677; end=54.207720,10.900347; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=881200; path_over_node_limit=false; clipped_nodes=362730; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=53.345,9.974,54.558,11.250; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=193
+build_s=2.12; cache_hit=false; pack_hit=true; nodes=296756; edges=641278; pad_attempts=[0.35]
+pack_load_ms=2116; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=71; search_ms=272; expansions=87709
+graph_ferry_edges=50
+seasonal_closure_excluded_edges=15
+snap_start=53.695198,10.323677 dist_m=0; snap_end=54.207720,10.900347 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=0
+route_tunnel_fp=
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=469.4 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=74.948; eta_min=43.1; path_nodes=188; path_cost=65585; polyline_chars=19730; break_pois=[]; route_uses_ferry=false
+PASS
+hop3_poly_km=74.865; hop3_km=74.948; hop3_poly_agree_0_5pct=true
+--- leg3 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=53.695198,10.323677; end=54.207720,10.900347; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=881200; path_over_node_limit=false; clipped_nodes=362730; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=53.345,9.974,54.558,11.250; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=193
+build_s=2.12; cache_hit=false; pack_hit=true; nodes=296756; edges=641278; pad_attempts=[0.35]
+pack_load_ms=2116; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=71; search_ms=272; expansions=87709
+graph_ferry_edges=50
+seasonal_closure_excluded_edges=15
+snap_start=53.695198,10.323677 dist_m=0; snap_end=54.207720,10.900347 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=0
+route_tunnel_fp=
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=469.4 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=74.948; eta_min=43.1; path_nodes=188; path_cost=65585; polyline_chars=19730; break_pois=[]; route_uses_ferry=false
+PASS
+chunk_leg4=54.20772,10.90035 -> 54.50282,11.22822
+hop_mem hop=4 peak_rss_mb=510
+--- hop_try4 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=54.207720,10.900347; end=54.502816,11.228221; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=541864; path_over_node_limit=false; clipped_nodes=80360; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=53.858,10.521,54.853,11.578; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=165
+build_s=0.50; cache_hit=false; pack_hit=true; nodes=93081; edges=205320; pad_attempts=[0.35]
+pack_load_ms=502; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=17; search_ms=211; expansions=139448
+graph_ferry_edges=44
+seasonal_closure_excluded_edges=0
+snap_start=54.207720,10.900347 dist_m=0; snap_end=54.502816,11.228221 dist_m=0; snap_max_m=750
+route_ferry_legs=1
+route_ferry_fp=Rødby (DK) - Puttgarden (D)@0.03
+route_tunnel_count=0
+route_tunnel_fp=
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=141.8 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=47.70; motorway_share_pct=52.30
+distance_km=45.594; eta_min=86.8; path_nodes=170; path_cost=119536; polyline_chars=17094; break_pois=[]; route_uses_ferry=true
+PASS
+hop4_poly_km=45.544; hop4_km=45.594; hop4_poly_agree_0_5pct=true
+--- leg4 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=54.207720,10.900347; end=54.502816,11.228221; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=541864; path_over_node_limit=false; clipped_nodes=80360; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=53.858,10.521,54.853,11.578; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=165
+build_s=0.50; cache_hit=false; pack_hit=true; nodes=93081; edges=205320; pad_attempts=[0.35]
+pack_load_ms=502; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=17; search_ms=211; expansions=139448
+graph_ferry_edges=44
+seasonal_closure_excluded_edges=0
+snap_start=54.207720,10.900347 dist_m=0; snap_end=54.502816,11.228221 dist_m=0; snap_max_m=750
+route_ferry_legs=1
+route_ferry_fp=Rødby (DK) - Puttgarden (D)@0.03
+route_tunnel_count=0
+route_tunnel_fp=
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=141.8 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=47.70; motorway_share_pct=52.30
+distance_km=45.594; eta_min=86.8; path_nodes=170; path_cost=119536; polyline_chars=17094; break_pois=[]; route_uses_ferry=true
+PASS
+chunk_leg5=54.50282,11.22822 -> 54.65431,11.35081
+hop_mem hop=5 peak_rss_mb=414
+--- hop_try5 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=54.502816,11.228221; end=54.654307,11.350812; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=337600; path_over_node_limit=false; clipped_nodes=36976; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=54.153,10.878,55.004,11.701; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=2
+build_s=0.15; cache_hit=false; pack_hit=true; nodes=42618; edges=94663; pad_attempts=[0.35]
+pack_load_ms=146; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=5; search_ms=8; expansions=1
+graph_ferry_edges=42
+seasonal_closure_excluded_edges=0
+snap_start=54.502816,11.228221 dist_m=0; snap_end=54.654307,11.350812 dist_m=0; snap_max_m=750
+route_ferry_legs=1
+route_ferry_fp=Rødby (DK) - Puttgarden (D)@18.94
+route_tunnel_count=0
+route_tunnel_fp=
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=90.9 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=100.00; motorway_share_pct=0.00
+distance_km=18.935; eta_min=56.2; path_nodes=2; path_cost=75000; polyline_chars=246; break_pois=[]; route_uses_ferry=true
+PASS
+hop5_poly_km=18.914; hop5_km=18.935; hop5_poly_agree_0_5pct=true
+--- leg5 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=54.502816,11.228221; end=54.654307,11.350812; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=337600; path_over_node_limit=false; clipped_nodes=36976; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=54.153,10.878,55.004,11.701; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=2
+build_s=0.15; cache_hit=false; pack_hit=true; nodes=42618; edges=94663; pad_attempts=[0.35]
+pack_load_ms=146; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=5; search_ms=8; expansions=1
+graph_ferry_edges=42
+seasonal_closure_excluded_edges=0
+snap_start=54.502816,11.228221 dist_m=0; snap_end=54.654307,11.350812 dist_m=0; snap_max_m=750
+route_ferry_legs=1
+route_ferry_fp=Rødby (DK) - Puttgarden (D)@18.94
+route_tunnel_count=0
+route_tunnel_fp=
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=90.9 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=100.00; motorway_share_pct=0.00
+distance_km=18.935; eta_min=56.2; path_nodes=2; path_cost=75000; polyline_chars=246; break_pois=[]; route_uses_ferry=true
+PASS
+chunk_leg6=54.65431,11.35081 -> 55.34543,12.05400
+hop_mem hop=6 peak_rss_mb=563
+--- hop_try6 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=54.654307,11.350812; end=55.345434,12.054000; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=430488; path_over_node_limit=false; clipped_nodes=299228; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=54.304,11.001,55.695,12.404; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=97
+build_s=0.64; cache_hit=false; pack_hit=true; nodes=114116; edges=249027; pad_attempts=[0.35]
+pack_load_ms=637; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=25; search_ms=54; expansions=17465
+graph_ferry_edges=64
+seasonal_closure_excluded_edges=0
+snap_start=54.654307,11.350812 dist_m=0; snap_end=55.345434,12.054000 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=1
+route_tunnel_fp=Sydmotorvejen@0.46
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=524.8 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.79; motorway_share_pct=99.21
+distance_km=104.413; eta_min=53.7; path_nodes=96; path_cost=71626; polyline_chars=25186; break_pois=[]; route_uses_ferry=false
+PASS
+hop6_poly_km=104.297; hop6_km=104.413; hop6_poly_agree_0_5pct=true
+--- leg6 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=54.654307,11.350812; end=55.345434,12.054000; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=430488; path_over_node_limit=false; clipped_nodes=299228; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=54.304,11.001,55.695,12.404; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=97
+build_s=0.64; cache_hit=false; pack_hit=true; nodes=114116; edges=249027; pad_attempts=[0.35]
+pack_load_ms=637; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=25; search_ms=54; expansions=17465
+graph_ferry_edges=64
+seasonal_closure_excluded_edges=0
+snap_start=54.654307,11.350812 dist_m=0; snap_end=55.345434,12.054000 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=1
+route_tunnel_fp=Sydmotorvejen@0.46
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=524.8 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.79; motorway_share_pct=99.21
+distance_km=104.413; eta_min=53.7; path_nodes=96; path_cost=71626; polyline_chars=25186; break_pois=[]; route_uses_ferry=false
+PASS
+chunk_leg7=55.34543,12.05400 -> 55.61556,12.48565
+hop_mem hop=7 peak_rss_mb=861
+--- hop_try7 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=55.345434,12.054000; end=55.615564,12.485650; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=1139119; path_over_node_limit=true; clipped_nodes=283365; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=54.995,11.704,55.980,12.836; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=63
+build_s=2.31; cache_hit=false; pack_hit=true; nodes=351680; edges=746534; pad_attempts=[0.35]
+pack_load_ms=2305; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=103; search_ms=132; expansions=36053
+graph_ferry_edges=56
+seasonal_closure_excluded_edges=118
+snap_start=55.345434,12.054000 dist_m=0; snap_end=55.615564,12.485650 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=0
+route_tunnel_fp=
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=516.7 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=47.719; eta_min=24.9; path_nodes=62; path_cost=33250; polyline_chars=13819; break_pois=[]; route_uses_ferry=false
+PASS
+hop7_poly_km=47.666; hop7_km=47.719; hop7_poly_agree_0_5pct=true
+--- leg7 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=55.345434,12.054000; end=55.615564,12.485650; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=1139119; path_over_node_limit=true; clipped_nodes=283365; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=54.995,11.704,55.980,12.836; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=63
+build_s=2.31; cache_hit=false; pack_hit=true; nodes=351680; edges=746534; pad_attempts=[0.35]
+pack_load_ms=2305; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=103; search_ms=132; expansions=36053
+graph_ferry_edges=56
+seasonal_closure_excluded_edges=118
+snap_start=55.345434,12.054000 dist_m=0; snap_end=55.615564,12.485650 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=0
+route_tunnel_fp=
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=516.7 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=47.719; eta_min=24.9; path_nodes=62; path_cost=33250; polyline_chars=13819; break_pois=[]; route_uses_ferry=false
+PASS
+chunk_leg8=55.61556,12.48565 -> 55.56547,12.89251
+hop_mem hop=8 peak_rss_mb=845
+--- hop_try8 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=55.615564,12.485650; end=55.565475,12.892508; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=1102868; path_over_node_limit=true; clipped_nodes=149078; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=55.215,12.136,55.983,13.243; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=38
+build_s=1.52; cache_hit=false; pack_hit=true; nodes=289357; edges=617889; pad_attempts=[0.35]
+pack_load_ms=1518; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=87; search_ms=63; expansions=8300
+graph_ferry_edges=34
+seasonal_closure_excluded_edges=126
+snap_start=55.615564,12.485650 dist_m=0; snap_end=55.565475,12.892508 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=2
+route_tunnel_fp=Øresundsmotorvejen@0.69|Øresundsmotorvejen@4.05
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=467.4 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=28.625; eta_min=16.5; path_nodes=38; path_cost=22049; polyline_chars=6843; break_pois=[]; route_uses_ferry=false
+PASS
+hop8_poly_km=28.593; hop8_km=28.625; hop8_poly_agree_0_5pct=true
+--- leg8 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=55.615564,12.485650; end=55.565475,12.892508; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=1102868; path_over_node_limit=true; clipped_nodes=149078; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=55.215,12.136,55.983,13.243; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=38
+build_s=1.52; cache_hit=false; pack_hit=true; nodes=289357; edges=617889; pad_attempts=[0.35]
+pack_load_ms=1518; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=87; search_ms=63; expansions=8300
+graph_ferry_edges=34
+seasonal_closure_excluded_edges=126
+snap_start=55.615564,12.485650 dist_m=0; snap_end=55.565475,12.892508 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=2
+route_tunnel_fp=Øresundsmotorvejen@0.69|Øresundsmotorvejen@4.05
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=467.4 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=28.625; eta_min=16.5; path_nodes=38; path_cost=22049; polyline_chars=6843; break_pois=[]; route_uses_ferry=false
+PASS
+chunk_leg9=55.56547,12.89251 -> 57.27131,12.21551
+hop_mem hop=9 peak_rss_mb=748
+--- hop_try9 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=55.565475,12.892508; end=57.271308,12.215505; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=1458762; path_over_node_limit=true; clipped_nodes=1527272; clipped_fits=false; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=54.949,11.618,57.868,13.714; pad=0.60; edge_clip=CorridorBand; tile_budget=14; corridor_pts=494
+build_s=1.00; cache_hit=false; pack_hit=true; nodes=184151; edges=410030; pad_attempts=[0.5970418300000002]
+pack_load_ms=1000; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=42; search_ms=332; expansions=167844
+graph_ferry_edges=42
+seasonal_closure_excluded_edges=8
+snap_start=55.565475,12.892508 dist_m=0; snap_end=57.271308,12.215505 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=1
+route_tunnel_fp=E 6,E 20,E 06,E 20@0.27
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=506.7 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=231.548; eta_min=123.4; path_nodes=494; path_cost=164505; polyline_chars=59339; break_pois=[]; route_uses_ferry=false
+PASS
+hop9_poly_km=231.290; hop9_km=231.548; hop9_poly_agree_0_5pct=true
+--- leg9 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=55.565475,12.892508; end=57.271308,12.215505; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=1458762; path_over_node_limit=true; clipped_nodes=1527272; clipped_fits=false; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=54.949,11.618,57.868,13.714; pad=0.60; edge_clip=CorridorBand; tile_budget=14; corridor_pts=494
+build_s=1.00; cache_hit=false; pack_hit=true; nodes=184151; edges=410030; pad_attempts=[0.5970418300000002]
+pack_load_ms=1000; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=42; search_ms=332; expansions=167844
+graph_ferry_edges=42
+seasonal_closure_excluded_edges=8
+snap_start=55.565475,12.892508 dist_m=0; snap_end=57.271308,12.215505 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=1
+route_tunnel_fp=E 6,E 20,E 06,E 20@0.27
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=506.7 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=231.548; eta_min=123.4; path_nodes=494; path_cost=164505; polyline_chars=59339; break_pois=[]; route_uses_ferry=false
+PASS
+chunk_leg10=57.27131,12.21551 -> 57.88450,11.94552
+hop_mem hop=10 peak_rss_mb=777
+--- hop_try10 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=57.271308,12.215505; end=57.884496,11.945517; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=676350; path_over_node_limit=false; clipped_nodes=418177; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=56.921,11.596,58.234,12.566; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=260
+build_s=1.30; cache_hit=false; pack_hit=true; nodes=226671; edges=472746; pad_attempts=[0.35]
+pack_load_ms=1295; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=64; search_ms=243; expansions=90516
+graph_ferry_edges=26
+seasonal_closure_excluded_edges=4
+snap_start=57.271308,12.215505 dist_m=0; snap_end=57.884496,11.945517 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=2
+route_tunnel_fp=E 6,E 06@0.10|Tingstadstunneln@0.54
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=420.9 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=75.274; eta_min=48.3; path_nodes=260; path_cost=64387; polyline_chars=26947; break_pois=[]; route_uses_ferry=false
+PASS
+hop10_poly_km=75.190; hop10_km=75.274; hop10_poly_agree_0_5pct=true
+--- leg10 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=57.271308,12.215505; end=57.884496,11.945517; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=676350; path_over_node_limit=false; clipped_nodes=418177; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=56.921,11.596,58.234,12.566; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=260
+build_s=1.30; cache_hit=false; pack_hit=true; nodes=226671; edges=472746; pad_attempts=[0.35]
+pack_load_ms=1295; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=64; search_ms=243; expansions=90516
+graph_ferry_edges=26
+seasonal_closure_excluded_edges=4
+snap_start=57.271308,12.215505 dist_m=0; snap_end=57.884496,11.945517 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=2
+route_tunnel_fp=E 6,E 06@0.10|Tingstadstunneln@0.54
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=420.9 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=75.274; eta_min=48.3; path_nodes=260; path_cost=64387; polyline_chars=26947; break_pois=[]; route_uses_ferry=false
+PASS
+chunk_leg11=57.88450,11.94552 -> 58.88162,11.27375
+hop_mem hop=11 peak_rss_mb=803
+--- hop_try11 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=57.884496,11.945517; end=58.881620,11.273746; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=1076975; path_over_node_limit=true; clipped_nodes=557293; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=57.534,10.923,59.232,12.296; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=303
+build_s=1.45; cache_hit=false; pack_hit=true; nodes=243387; edges=506516; pad_attempts=[0.35]
+pack_load_ms=1453; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=69; search_ms=218; expansions=20852
+graph_ferry_edges=40
+seasonal_closure_excluded_edges=4
+snap_start=57.884496,11.945517 dist_m=0; snap_end=58.881620,11.273746 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=3
+route_tunnel_fp=E 6,E 06@0.02|E 6,E 06@0.15|Gerumsbergstunneln@0.25
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=495.0 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=130.567; eta_min=71.2; path_nodes=303; path_cost=94958; polyline_chars=67535; break_pois=[]; route_uses_ferry=false
+PASS
+hop11_poly_km=130.422; hop11_km=130.567; hop11_poly_agree_0_5pct=true
+--- leg11 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=57.884496,11.945517; end=58.881620,11.273746; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=1076975; path_over_node_limit=true; clipped_nodes=557293; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=57.534,10.923,59.232,12.296; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=303
+build_s=1.45; cache_hit=false; pack_hit=true; nodes=243387; edges=506516; pad_attempts=[0.35]
+pack_load_ms=1453; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=69; search_ms=218; expansions=20852
+graph_ferry_edges=40
+seasonal_closure_excluded_edges=4
+snap_start=57.884496,11.945517 dist_m=0; snap_end=58.881620,11.273746 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=3
+route_tunnel_fp=E 6,E 06@0.02|E 6,E 06@0.15|Gerumsbergstunneln@0.25
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=495.0 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=130.567; eta_min=71.2; path_nodes=303; path_cost=94958; polyline_chars=67535; break_pois=[]; route_uses_ferry=false
+PASS
+chunk_leg12=58.88162,11.27375 -> 59.10257,11.25175
+hop_mem hop=12 peak_rss_mb=658
+--- hop_try12 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=58.881620,11.273746; end=59.102566,11.251745; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=701419; path_over_node_limit=false; clipped_nodes=123641; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=58.532,10.882,59.453,11.624; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=84
+build_s=0.59; cache_hit=false; pack_hit=true; nodes=95034; edges=200685; pad_attempts=[0.35]
+pack_load_ms=594; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=20; search_ms=29; expansions=291
+graph_ferry_edges=4
+seasonal_closure_excluded_edges=0
+snap_start=58.881620,11.273746 dist_m=0; snap_end=59.102566,11.251745 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=0
+route_tunnel_fp=
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=482.5 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=25.830; eta_min=14.5; path_nodes=84; path_cost=19272; polyline_chars=16084; break_pois=[]; route_uses_ferry=false
+PASS
+hop12_poly_km=25.801; hop12_km=25.830; hop12_poly_agree_0_5pct=true
+--- leg12 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=58.881620,11.273746; end=59.102566,11.251745; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=701419; path_over_node_limit=false; clipped_nodes=123641; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=58.532,10.882,59.453,11.624; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=84
+build_s=0.59; cache_hit=false; pack_hit=true; nodes=95034; edges=200685; pad_attempts=[0.35]
+pack_load_ms=594; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=20; search_ms=29; expansions=291
+graph_ferry_edges=4
+seasonal_closure_excluded_edges=0
+snap_start=58.881620,11.273746 dist_m=0; snap_end=59.102566,11.251745 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=0
+route_tunnel_fp=
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=482.5 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=25.830; eta_min=14.5; path_nodes=84; path_cost=19272; polyline_chars=16084; break_pois=[]; route_uses_ferry=false
+PASS
+chunk_leg13=59.10257,11.25175 -> 59.37431,10.78459
+hop_mem hop=13 peak_rss_mb=691
+--- hop_try13 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=59.102566,11.251745; end=59.374310,10.784585; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=1305426; path_over_node_limit=true; clipped_nodes=238302; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=58.753,10.435,59.724,11.621; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=104
+build_s=1.07; cache_hit=false; pack_hit=true; nodes=192654; edges=406605; pad_attempts=[0.35]
+pack_load_ms=1067; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=53; search_ms=68; expansions=3210
+graph_ferry_edges=18
+seasonal_closure_excluded_edges=0
+snap_start=59.102566,11.251745 dist_m=0; snap_end=59.374310,10.784585 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=4
+route_tunnel_fp=Busgårdlokket@0.05|Galteryggtunnelen@0.10|Eidettunnelen@0.86|E 6@0.03
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=479.1 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=45.376; eta_min=25.6; path_nodes=104; path_cost=34095; polyline_chars=26811; break_pois=[]; route_uses_ferry=false
+PASS
+hop13_poly_km=45.326; hop13_km=45.376; hop13_poly_agree_0_5pct=true
+--- leg13 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=59.102566,11.251745; end=59.374310,10.784585; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=1305426; path_over_node_limit=true; clipped_nodes=238302; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=58.753,10.435,59.724,11.621; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=104
+build_s=1.07; cache_hit=false; pack_hit=true; nodes=192654; edges=406605; pad_attempts=[0.35]
+pack_load_ms=1067; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=53; search_ms=68; expansions=3210
+graph_ferry_edges=18
+seasonal_closure_excluded_edges=0
+snap_start=59.102566,11.251745 dist_m=0; snap_end=59.374310,10.784585 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=4
+route_tunnel_fp=Busgårdlokket@0.05|Galteryggtunnelen@0.10|Eidettunnelen@0.86|E 6@0.03
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=479.1 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=45.376; eta_min=25.6; path_nodes=104; path_cost=34095; polyline_chars=26811; break_pois=[]; route_uses_ferry=false
+PASS
+chunk_leg14=59.37431,10.78459 -> 59.75908,10.81083
+hop_mem hop=14 peak_rss_mb=783
+--- hop_try14 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=59.374310,10.784585; end=59.759084,10.810834; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=604007; path_over_node_limit=false; clipped_nodes=226898; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=59.024,10.349,60.109,11.161; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=91
+build_s=1.71; cache_hit=false; pack_hit=true; nodes=245280; edges=511232; pad_attempts=[0.35]
+pack_load_ms=1710; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=78; search_ms=81; expansions=5922
+graph_ferry_edges=18
+seasonal_closure_excluded_edges=0
+snap_start=59.374310,10.784585 dist_m=0; snap_end=59.759084,10.810834 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=3
+route_tunnel_fp=Follotunnelen@0.89|Nordbytunnelen@3.83|Nøstvettunnelen@1.74
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=465.8 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=47.779; eta_min=27.7; path_nodes=91; path_cost=36928; polyline_chars=17112; break_pois=[]; route_uses_ferry=false
+PASS
+hop14_poly_km=47.725; hop14_km=47.779; hop14_poly_agree_0_5pct=true
+--- leg14 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=59.374310,10.784585; end=59.759084,10.810834; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=604007; path_over_node_limit=false; clipped_nodes=226898; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=59.024,10.349,60.109,11.161; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=91
+build_s=1.71; cache_hit=false; pack_hit=true; nodes=245280; edges=511232; pad_attempts=[0.35]
+pack_load_ms=1710; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=78; search_ms=81; expansions=5922
+graph_ferry_edges=18
+seasonal_closure_excluded_edges=0
+snap_start=59.374310,10.784585 dist_m=0; snap_end=59.759084,10.810834 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=3
+route_tunnel_fp=Follotunnelen@0.89|Nordbytunnelen@3.83|Nøstvettunnelen@1.74
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=465.8 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=47.779; eta_min=27.7; path_nodes=91; path_cost=36928; polyline_chars=17112; break_pois=[]; route_uses_ferry=false
+PASS
+chunk_leg15=59.75908,10.81083 -> 60.08364,11.14906
+hop_mem hop=15 peak_rss_mb=843
+--- hop_try15 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=59.759084,10.810834; end=60.083637,11.149061; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=1642796; path_over_node_limit=true; clipped_nodes=214496; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=59.409,10.454,60.434,11.502; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=202
+build_s=2.11; cache_hit=false; pack_hit=true; nodes=288617; edges=600078; pad_attempts=[0.35]
+pack_load_ms=2111; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=95; search_ms=272; expansions=64880
+graph_ferry_edges=16
+seasonal_closure_excluded_edges=6
+snap_start=59.759084,10.810834 dist_m=0; snap_end=60.083637,11.149061 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=3
+route_tunnel_fp=Nøstvettunnelen@1.89|Europaveien@0.08|Brynstunnelen@0.29
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=396.6 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=22.30; motorway_share_pct=77.70
+distance_km=49.124; eta_min=33.4; path_nodes=209; path_cost=44590; polyline_chars=37501; break_pois=[]; route_uses_ferry=false
+PASS
+hop15_poly_km=49.070; hop15_km=49.124; hop15_poly_agree_0_5pct=true
+--- leg15 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=59.759084,10.810834; end=60.083637,11.149061; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=1642796; path_over_node_limit=true; clipped_nodes=214496; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=59.409,10.454,60.434,11.502; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=202
+build_s=2.11; cache_hit=false; pack_hit=true; nodes=288617; edges=600078; pad_attempts=[0.35]
+pack_load_ms=2111; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=95; search_ms=272; expansions=64880
+graph_ferry_edges=16
+seasonal_closure_excluded_edges=6
+snap_start=59.759084,10.810834 dist_m=0; snap_end=60.083637,11.149061 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=3
+route_tunnel_fp=Nøstvettunnelen@1.89|Europaveien@0.08|Brynstunnelen@0.29
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=396.6 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=22.30; motorway_share_pct=77.70
+distance_km=49.124; eta_min=33.4; path_nodes=209; path_cost=44590; polyline_chars=37501; break_pois=[]; route_uses_ferry=false
+PASS
+chunk_leg16=60.08364,11.14906 -> 60.90991,10.81569
+hop_mem hop=16 peak_rss_mb=824
+--- hop_try16 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=60.083637,11.149061; end=60.909913,10.815688; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=769423; path_over_node_limit=false; clipped_nodes=729199; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=59.734,10.466,61.260,11.660; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=203
+build_s=1.83; cache_hit=false; pack_hit=true; nodes=258799; edges=546814; pad_attempts=[0.35]
+pack_load_ms=1831; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=76; search_ms=216; expansions=39442
+graph_ferry_edges=0
+seasonal_closure_excluded_edges=0
+snap_start=60.083637,11.149061 dist_m=0; snap_end=60.909913,10.815688 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=8
+route_tunnel_fp=Hauerseterlokket@0.06|Elstadmolokket@0.04|E 6@0.05|Eidsvolltunnelen@1.19|Korslundtunnelen@0.63|Morskogstunnelen@2.35|E 6@0.10|Espatunnelen@0.68
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=494.5 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=110.772; eta_min=60.5; path_nodes=203; path_cost=80648; polyline_chars=53408; break_pois=[]; route_uses_ferry=false
+PASS
+hop16_poly_km=110.649; hop16_km=110.772; hop16_poly_agree_0_5pct=true
+--- leg16 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=60.083637,11.149061; end=60.909913,10.815688; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=769423; path_over_node_limit=false; clipped_nodes=729199; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=59.734,10.466,61.260,11.660; pad=0.35; edge_clip=CorridorBand; tile_budget=14; corridor_pts=203
+build_s=1.83; cache_hit=false; pack_hit=true; nodes=258799; edges=546814; pad_attempts=[0.35]
+pack_load_ms=1831; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=76; search_ms=216; expansions=39442
+graph_ferry_edges=0
+seasonal_closure_excluded_edges=0
+snap_start=60.083637,11.149061 dist_m=0; snap_end=60.909913,10.815688 dist_m=0; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=8
+route_tunnel_fp=Hauerseterlokket@0.06|Elstadmolokket@0.04|E 6@0.05|Eidsvolltunnelen@1.19|Korslundtunnelen@0.63|Morskogstunnelen@2.35|E 6@0.10|Espatunnelen@0.68
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=494.5 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=0.00; motorway_share_pct=100.00
+distance_km=110.772; eta_min=60.5; path_nodes=203; path_cost=80648; polyline_chars=53408; break_pois=[]; route_uses_ferry=false
+PASS
+chunk_leg17=60.90991,10.81569 -> 61.86914,9.10551
+hop_mem hop=17 peak_rss_mb=646
+--- hop_try17 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=60.909913,10.815688; end=61.869142,9.105513; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=775754; path_over_node_limit=false; clipped_nodes=600337; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=60.311,8.507,62.475,11.414; pad=0.60; edge_clip=CorridorBand; tile_budget=14; corridor_pts=783
+build_s=0.98; cache_hit=false; pack_hit=true; nodes=139755; edges=299512; pad_attempts=[0.5985611449999998]
+pack_load_ms=982; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=35; search_ms=470; expansions=234744
+graph_ferry_edges=0
+seasonal_closure_excluded_edges=0
+snap_start=60.909913,10.815688 dist_m=0; snap_end=61.869157,9.105631 dist_m=6; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=8
+route_tunnel_fp=Skarpsnotunnelen@0.33|Moelvtunnelen@0.20|Mosoddentunnelen@0.21|Øyertunnelen@3.85|Hundorptunnelen@4.29|E 6@0.04|Teigkamptunnelen@3.76|E 6@0.05
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=357.2 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=45.01; motorway_share_pct=54.99
+distance_km=173.758; eta_min=131.3; path_nodes=584; path_cost=175390; polyline_chars=138440; break_pois=[]; route_uses_ferry=false
+PASS
+hop17_poly_km=173.565; hop17_km=173.758; hop17_poly_agree_0_5pct=true
+--- leg17 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=60.909913,10.815688; end=61.869142,9.105513; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=775754; path_over_node_limit=false; clipped_nodes=600337; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=60.311,8.507,62.475,11.414; pad=0.60; edge_clip=CorridorBand; tile_budget=14; corridor_pts=783
+build_s=0.98; cache_hit=false; pack_hit=true; nodes=139755; edges=299512; pad_attempts=[0.5985611449999998]
+pack_load_ms=982; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=35; search_ms=470; expansions=234744
+graph_ferry_edges=0
+seasonal_closure_excluded_edges=0
+snap_start=60.909913,10.815688 dist_m=0; snap_end=61.869157,9.105631 dist_m=6; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=8
+route_tunnel_fp=Skarpsnotunnelen@0.33|Moelvtunnelen@0.20|Mosoddentunnelen@0.21|Øyertunnelen@3.85|Hundorptunnelen@4.29|E 6@0.04|Teigkamptunnelen@3.76|E 6@0.05
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=357.2 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=45.01; motorway_share_pct=54.99
+distance_km=173.758; eta_min=131.3; path_nodes=584; path_cost=175390; polyline_chars=138440; break_pois=[]; route_uses_ferry=false
+PASS
+chunk_leg18=61.86916,9.10563 -> 61.44338,7.46140
+hop_mem hop=18 peak_rss_mb=475
+--- hop_try18 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=61.869157,9.105631; end=61.443377,7.461402; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=264738; path_over_node_limit=false; clipped_nodes=101546; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=60.868,6.885,62.445,9.681; pad=0.58; edge_clip=CorridorBand; tile_budget=14; corridor_pts=442
+build_s=0.24; cache_hit=false; pack_hit=true; nodes=29386; edges=63500; pad_attempts=[0.5754803249999999]
+pack_load_ms=238; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=6; search_ms=53; expansions=20065
+graph_ferry_edges=4
+seasonal_closure_excluded_edges=6
+snap_start=61.869157,9.105631 dist_m=0; snap_end=61.443490,7.461187 dist_m=17; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=3
+route_tunnel_fp=Byrebergtunnelen@0.52|Gullringtunnelen@1.21|Ottatunnelen@0.56
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=342.1 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=100.00; motorway_share_pct=0.00
+distance_km=123.135; eta_min=97.2; path_nodes=466; path_cost=130027; polyline_chars=126119; break_pois=[]; route_uses_ferry=false
+PASS
+hop18_poly_km=122.998; hop18_km=123.135; hop18_poly_agree_0_5pct=true
+--- leg18 report ---
+TEST_KIND=PLAN_CAR_ROUTE
+DATA_SOURCE=real_pbf
+profile=Car; routing=Car; start=61.869157,9.105631; end=61.443377,7.461402; vias=0; use_eco=false; long_trip_enabled=false
+path_covering_nodes=264738; path_over_node_limit=false; clipped_nodes=101546; clipped_fits=true; needs_corridor=false; stage_b=true
+allowed_countries=none
+avoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=false
+datex_impacts=0; datex_block=0; datex_penalize=0
+eco_regen=0.000
+poi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true
+bbox=60.868,6.885,62.445,9.681; pad=0.58; edge_clip=CorridorBand; tile_budget=14; corridor_pts=442
+build_s=0.24; cache_hit=false; pack_hit=true; nodes=29386; edges=63500; pad_attempts=[0.5754803249999999]
+pack_load_ms=238; eco_reweight_ms=0; datex_bind_ms=0; snap_ms=6; search_ms=53; expansions=20065
+graph_ferry_edges=4
+seasonal_closure_excluded_edges=6
+snap_start=61.869157,9.105631 dist_m=0; snap_end=61.443490,7.461187 dist_m=17; snap_max_m=750
+route_ferry_legs=0
+route_ferry_fp=
+route_tunnel_count=3
+route_tunnel_fp=Byrebergtunnelen@0.52|Gullringtunnelen@1.21|Ottatunnelen@0.56
+poi_skipped=chunk_leg
+poi_pack_hit=false
+motor_break_interval_km=342.1 (soft rest-interval hours → km via trip speed)
+motor_multi_day: days=1; multi_day=false
+rest_place_count=0
+priority_path_share_pct=100.00; motorway_share_pct=0.00
+distance_km=123.135; eta_min=97.2; path_nodes=466; path_cost=130027; polyline_chars=126119; break_pois=[]; route_uses_ferry=false
+PASS
+chunked_soft_breaks=true; break_interval_km=396.1; search_radius_m=35000
+chunked_poi_packs_loaded=5; overnight_candidates=249; rest_candidates=48; marks=5
+motor_multi_day: days=3; budget=Hours(8.0); total_driving_h=16.37; total_km=1440.7
+motor_day: idx=1; start_km=0.0; end_km=704.1; driving_h=8.00; distance_km=704.1
+motor_overnight: kind=lodging; poi_found=true; name=Some("Hotell Eken"); lat=Some(57.6015287); lon=Some(12.053034)
+motor_day: idx=2; start_km=704.1; end_km=1408.2; driving_h=8.00; distance_km=704.1
+motor_overnight: kind=lodging; poi_found=true; name=Some("Turtagrø Hotel"); lat=Some(61.504377000000005); lon=Some(7.801611200000001)
+motor_day: idx=3; start_km=1408.2; end_km=1440.7; driving_h=0.37; distance_km=32.5
+chunked_rest_pauses=3; break_pois_total=5
+chunked_break_poi: idx=0; name=Rest 3370692285; kind=rest_area; lat=55.703810700000005; lon=12.4241583; along_km=396.06004392925655
+chunked_break_poi: idx=1; name=Rastplats Delsjön; kind=rest_area; lat=57.676662500000006; lon=12.027964; along_km=792.1200878585131
+chunked_break_poi: idx=2; name=Rest 5691481525; kind=rest_area; lat=61.1717567; lon=10.3334785; along_km=1188.1801317877696
+chunked_break_poi: idx=3; name=Hotell Eken; kind=lodging; lat=57.6015287; lon=12.053034; along_km=704.1067447631227
+chunked_break_poi: idx=4; name=Turtagrø Hotel; kind=lodging; lat=61.504377000000005; lon=7.801611200000001; along_km=1408.2134895262454
+graph_ferry_edges=64
+route_ferry_legs=1
+route_ferry_fp=Rødby (DK) - Puttgarden (D)@0.03
+route_tunnel_count=39
+route_tunnel_fp=Tunnel Billwerder-Moorfleet@0.25|Sydmotorvejen@0.46|Øresundsmotorvejen@0.69|Øresundsmotorvejen@4.05|E 6,E 20,E 06,E 20@0.27|E 6,E 06@0.10|Tingstadstunneln@0.54|E 6,E 06@0.02|E 6,E 06@0.15|Gerumsbergstunneln@0.25|Busgårdlokket@0.05|Galteryggtunnelen@0.10|Eidettunnelen@0.86|E 6@0.03|Follotunnelen@0.89|Nordbytunnelen@3.83|Nøstvettunnelen@1.74|Nøstvettunnelen@1.89|Europaveien@0.08|Brynstunnelen@0.29|Hauerseterlokket@0.06|Elstadmolokket@0.04|E 6@0.05|Eidsvolltunnelen@1.19|Korslundtunnelen@0.63|Morskogstunnelen@2.35|E 6@0.10|Espatunnelen@0.68|Skarpsnotunnelen@0.33|Moelvtunnelen@0.20|Mosoddentunnelen@0.21|Øyertunnelen@3.85|Hundorptunnelen@4.29|E 6@0.04|Teigkamptunnelen@3.76|E 6@0.05|Byrebergtunnelen@0.52|Gullringtunnelen@1.21|Ottatunnelen@0.56
+rest_place_count=5
+datex_plan_sits=0
+total_poly_km=1439.119; total_km=1440.723; total_poly_agree_0_5pct=true; total_poly_rel_pct=0.111
+chunked_distance_km=1440.723; chunked_eta_min=982.2; hops=18; route_uses_ferry=true
+PASS
+stage_b_timing skels=14 widened=false graph_nodes=302334 graph_edges=553857 load_ms=161 graph_ms=1780 plan_ms=1299 snap_ms=338 assemble_ms=34 total_ms=7651 corridor_peak_rss_mb=579 after_attach_rss_mb=476 after_release_rss_mb=296
+stage_b_release rss_before_mb=579 rss_after_mb=296
+stage_b_leg=1 alt=free km=1330.1 min=886.5 ferries=1 eligible=true pick=true search_ms=653
+stage_b_leg=1 alt=excl_Rødby (DK)_Puttgarden (D) km=1476.2 min=924.9 ferries=0 eligible=false pick=false search_ms=574
+stage_b_leg=2 alt=free km=123.1 min=102.5 ferries=0 eligible=true pick=true search_ms=52
+plan_inputs profile=Car eco=false avoid_motorways=false toll=Allow avoid_ferries=false avoid_tunnels=false long_trip=true datex=Live start=53.079686,10.587198 end=61.443377,7.461402 vias=1 via_coords=61.869142,9.105513

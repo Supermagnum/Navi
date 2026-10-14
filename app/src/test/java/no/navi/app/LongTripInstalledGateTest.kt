@@ -10,10 +10,8 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 
 /**
- * Corridor route planning waits until every region is Indexed (place-index
- * ready). Packs Installed alone must not open the planning gate — concurrent
- * place-index + graph-build contends on PBF/Rayon. Place search for
- * Installed-but-not-Indexed regions stays gated by [PlaceIndexReady].
+ * Corridor routing may start when packs are Installed. Place search for
+ * Installed-but-not-intact regions stays gated by [PlaceIndexReady].
  */
 class LongTripInstalledGateTest {
     @get:Rule
@@ -75,37 +73,20 @@ class LongTripInstalledGateTest {
             "packs Ready for every corridor region",
             LongTripCoordinator.corridorPacksReady(),
         )
-        assertFalse(
-            "Installed-only corridor must wait for place-index before planning",
+        assertTrue(
+            "Installed packs open the routing gate; place-index is separate",
             LongTripCoordinator.corridorReadyForPlanning(),
         )
 
-        // Place-index in progress: show Indexing; still not planning-ready.
+        // Place-index in progress: Indexing still counts as packs-ready for routing.
         RegionDownloadBackground.emitPhaseForTests(regions[1], "indexing")
         assertEquals(
             LongTripCoordinator.State.Indexing,
             LongTripCoordinator.currentPlan()!!.states[regions[1]],
         )
-        assertFalse(LongTripCoordinator.corridorReadyForPlanning())
+        assertTrue(LongTripCoordinator.corridorReadyForPlanning())
         assertTrue(
             LongTripCoordinator.statusLine().contains("Indexing", ignoreCase = true),
-        )
-
-        // One region Indexed is not enough.
-        RegionDownloadBackground.emitPhaseForTests(regions[1], "indexed")
-        assertEquals(
-            LongTripCoordinator.State.Indexed,
-            LongTripCoordinator.currentPlan()!!.states[regions[1]],
-        )
-        assertFalse(LongTripCoordinator.corridorReadyForPlanning())
-
-        for (id in regions) {
-            if (id == regions[1]) continue
-            RegionDownloadBackground.emitPhaseForTests(id, "indexed")
-        }
-        assertTrue(
-            "all Indexed opens the planning gate",
-            LongTripCoordinator.corridorReadyForPlanning(),
         )
     }
 
@@ -148,8 +129,8 @@ class LongTripInstalledGateTest {
             )
         }
         assertTrue(LongTripCoordinator.corridorPacksReady())
-        assertFalse(
-            "reuse Installed packs must still wait for Indexed before planning",
+        assertTrue(
+            "reuse Installed packs is enough to plan; place-index stays separate",
             LongTripCoordinator.corridorReadyForPlanning(),
         )
     }
@@ -166,7 +147,10 @@ class LongTripInstalledGateTest {
             PlaceIndexReady.filterHitsToReadyRegions(dir, emptyList()).isEmpty(),
         )
         PlaceIndexReady.markReady(dir, regions[0])
-        assertTrue(PlaceIndexReady.isReady(dir, regions[0]))
+        assertFalse(
+            "stamp without rows is not intact",
+            PlaceIndexReady.isReady(dir, regions[0]),
+        )
         assertFalse(
             "sibling Installed region stays unsearchable until Indexed",
             PlaceIndexReady.isReady(dir, regions[1]),

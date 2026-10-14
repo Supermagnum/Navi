@@ -89,6 +89,7 @@ class PlaceSearchDisambiguationProbeInstrumentedTest {
             Thread.sleep(300)
         }
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        OnlinePlaceSearch.enabledOverrideForTests = true
         val online =
             runCatching {
                 runBlocking {

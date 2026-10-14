@@ -7,9 +7,9 @@ import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Long-trip pack download location: optional redirect onto a removable volume's
- * app-specific directory ([Context.getExternalFilesDirs]), while place index,
- * Tools downloads, DEM, and ordinary region installs stay on
- * [NaviAppData.resolve] (internal).
+ * app-specific directory ([Context.getExternalFilesDirs]). Place index follows
+ * the same pack volume ([PlaceIndexStorage]); Tools downloads, DEM, and ordinary
+ * region installs stay on [NaviAppData.resolve] (internal).
  *
  * Reuse policy: if packs for a region are already installed under internal
  * [NaviAppData], a long-trip plan **reuses them in place** and does not copy or
@@ -251,9 +251,13 @@ object LongTripPackStorage {
                     }
                     is NaviStorageVolumes.Event.Unmounted -> {
                         val stems = handleVolumeUnavailable(context, event.volumeId)
+                        runCatching { InstalledMaps.refresh(context) }
                         onUnavailable(event.volumeId, stems)
                     }
-                    is NaviStorageVolumes.Event.Mounted -> onMounted(event.volumeId)
+                    is NaviStorageVolumes.Event.Mounted -> {
+                        runCatching { InstalledMaps.refresh(context) }
+                        onMounted(event.volumeId)
+                    }
                 }
             }
         volumeWatch.set(watch)

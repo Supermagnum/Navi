@@ -1,0 +1,30 @@
+{
+  "t_ms": 23751246,
+  "distance_km": 431.0436865029207,
+  "report": "TEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\nlong_trip_chunked=true; hops=2; chunk_deg=1.15; stretch_joint_repair_max=4\nchunk_leg1=60.72608,10.61332 -> 60.83648,9.90816\nhop_mem hop=1 peak_rss_mb=727\n--- hop_try1 report ---\nTEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\nprofile=Car; routing=Car; start=60.726080,10.613324; end=60.836482,9.908163; vias=0; use_eco=false; long_trip_enabled=false\npath_covering_nodes=1079937; path_over_node_limit=true; clipped_nodes=182793; clipped_fits=true; needs_corridor=false; stage_b=true\nallowed_countries=none\navoid_motorways=false; toll_policy=allow; avoid_ferries=false; avoid_tunnels=false; vehicle_limits=true\ndatex_impacts=5; datex_block=0; datex_penalize=5\neco_regen=0.000\npoi_search_radius_m=240000; cabin_radius_m=5000; network_hut_radius_m=25000; network_hut_pref_m=11000; require_road_link=true\nbbox=60.376,9.558,61.193,11.002; pad=0.35; edge_clip=CorridorBand; tile_budget=20; corridor_pts=242\nbuild_s=3.24; cache_hit=false; pack_hit=true; nodes=111165; edges=237471; pad_attempts=[0.35]\npack_load_ms=3236; eco_reweight_ms=0; datex_bind_ms=32; snap_ms=389; search_ms=157; expansions=42567\ngraph_ferry_edges=2\nseasonal_closure_excluded_edges=0\nsnap_start=60.726091,10.613272 dist_m=3; snap_end=60.836482,9.908163 dist_m=0; snap_max_m=750\nroute_ferry_legs=0\nroute_ferry_fp=\nroute_tunnel_count=0\nroute_tunnel_fp=\npoi_skipped=chunk_leg\npoi_pack_hit=false\nmotor_break_interval_km=109.7 (soft rest-interval hours → km via trip speed)\nmotor_multi_day: days=1; multi_day=false\nrest_place_count=0\npriority_path_share_pct=90.60; motorway_share_pct=9.40\ndistance_km=56.032; eta_min=46.0; path_nodes=267; path_cost=63722; polyline_chars=52067; break_pois=[]; route_uses_ferry=false\nPASS\nhop1_poly_km=55.970; hop1_km=56.032; hop1_poly_agree_0_5pct=true\n--- leg1 report ---\nTEST_KIND=PLAN_CAR_ROUTE\nDATA_SOURCE=real_pbf\nprofile=Car; routing=Car; start=60.726080,10.613324; end=60.836482,9.908163; vias=0; use_eco=false; long_trip_enabled=false\npath_covering_nodes=",
+  "polyline_chars": 389313,
+  "days_json": "[{\"compensation\":\"\",\"date\":\"\",\"day_index\":1,\"distance_km\":431.0436865029207,\"driving_hours\":5.786519244064525,\"end_km\":431.0436865029207,\"is_final\":true,\"not_in_cab\":false,\"overnight_found\":false,\"overnight_name\":\"\",\"profile\":\"car\",\"rest_hours\":0.0,\"rest_kind\":\"\",\"rest_label\":\"\",\"start_km\":0.0}]",
+  "break_poi_count": 3,
+  "start": "Raufoss",
+  "end": "Bergen",
+  "long_trip_status": "Ostlandet (1 of 2)=Installed · Vestlandet (2 of 2)=Installed",
+  "enumerations": {
+    "route_tunnel_count": 55,
+    "route_tunnel_fp": "Hugaviktunnelen@1.79|Rødølstunnelen@2.13|Filefjellstunnelen@5.75|Borlaugstunnelen@4.08|Tuftåstunnelen@1.95|Borgundstunnelen@3.04|Seltatunnelen@1.63|Lærdalstunnelen@24.46|Onstadtunnelen@0.66|Fretheimtunnelen@1.36|Flenjatunnelen@5.02|Gudvangatunnelen@11.39|Sivletunnelen@1.10|Stalheimtunnelen@1.18|Vangstunnelen@2.46|Knoltatunnelen@0.36|Væletunnelen@0.46|Hernestunnelen@0.52|Holemarktunnelen@0.46|Nakkagjelstunnelen@0.21|E 16@0.02|Vassendatunnelen@0.21|Bolstadtunnelen@0.39|Hyvingstunnelen@1.35|Kluftafjelltunnelen@0.47|Trollkonetunnelen@0.73|Dalseidtunnelen@1.80|Beitlatunnelen@0.66|Dalevågtunnelen@1.39|Helletunnelen@0.32|Lågaskartunnelen@0.31|Stanghelletunnelen@0.20|Steganestunnelen@0.08|Hettetunnelen@0.65|Kleinslåttunnelen@0.06|Fossmarktunnelen@0.11|Jamnatunnelen@0.79|Bogatunnelen@2.04|Kjenestunnelen@0.34|Langhelletunnelen@0.92|Stavenestunnelen@2.76|Trengereidtunnelen@1.77|Risnestunnelen@1.71|Romslotunnelen@0.60|Songstadtunnelen@0.31|Songstadtunnelen@0.29|Takvamtunnelen@0.11|Arnanipatunnelen@2.13|Bjørkhaugtunnelen@0.56|Sætretunnelen@0.72|Gaupåstunnelen@0.34|Glaskartunnelen@0.58|Selviktunnelen@0.11|Eidsvågtunnelen@0.86|Fløyfjelltunnelen@3.19",
+    "route_ferry_legs": 0,
+    "route_ferry_fp": "",
+    "rest_place_count": 3,
+    "rest_place_names": [
+      "Hømanberg",
+      "Koret",
+      "Jorna"
+    ],
+    "attraction_count": 0,
+    "attraction_by_type": {},
+    "wild_camping_site_count": 0,
+    "wild_camping_status_kind": "",
+    "wild_camping_status_message": "",
+    "wild_camping_by_country": {},
+    "wild_camping_by_subdivision": {}
+  }
+}

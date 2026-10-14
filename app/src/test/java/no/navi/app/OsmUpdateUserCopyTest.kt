@@ -58,4 +58,14 @@ class OsmUpdateUserCopyTest {
         val msg = OsmUpdateUserCopy.sanitize(leaked)
         assertEquals(OsmUpdateUserCopy.UPDATED, msg)
     }
+
+    @Test
+    fun sanitize_planFail_doesNotShowMapDataUpdated() {
+        val leaked =
+            "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: corridor disconnected — origin and destination " +
+                "are not connected\npack_hit=true; PASS leftover\nsearch_terminate_reason=corridor_disconnected\n"
+        val msg = OsmUpdateUserCopy.sanitize(leaked)
+        assertEquals(OsmUpdateUserCopy.FAILED, msg)
+        assertFalse(msg.contains("updated", ignoreCase = true))
+    }
 }

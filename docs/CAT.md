@@ -1,8 +1,9 @@
 # CAT (Computer Aided Transceiver)
 
-CAT control for amateur radio gear is **not implemented** yet. This document
-defines the intended behaviour for a future `cat` plugin / host service so VFO
-programming stays safe and predictable while driving.
+CAT control for amateur radio gear: Hamlib (`rigctld`) and a native **Benshi
+Bluetooth** backend (VR-N76). This document defines safe VFO programming while
+driving. Guest logic lives in `plugins/CATS-plugin/` (wasmtime); radio I/O and
+never-transmit enforcement live in the host (`navi-cat`).
 
 Vehicle / energy telemetry is separate: see [`ECU.md`](ECU.md). Plugin overview:
 [`plugins.md`](plugins.md). LoRa convoy status uses the same client/display
@@ -13,10 +14,11 @@ split (Navi does not implement the RF layer) over Meshtastic BLE:
 
 ## Goals
 
-1. Talk to a mobile transceiver via **Hamlib** (`rigctld`), not hand-written
-   vendor dialects.
-2. Only drive radios whose Hamlib backend is **Stable** and supports the
-   functions auto-tune needs.
+1. Talk to a mobile transceiver via **Hamlib** (`rigctld`) or the native
+   **Benshi** Bluetooth backend — not hand-written Kenwood/Yaesu/Icom dialects
+   in the guest.
+2. Only drive radios that pass backend gating (Hamlib **Stable** + required
+   caps, or native Benshi `productId` allowlist).
 3. Look up nearby **NFM** (narrow FM or other modes that the radio can do ) amateur **repeaters**.
 4. If one is within **150 km**, program **VFO 1** with output frequency, duplex
    offset/shift, and CTCSS/DCS (subtone).
@@ -29,8 +31,9 @@ split (Navi does not implement the RF layer) over Meshtastic BLE:
 ## Radio control via Hamlib
 
 Navi does not implement Kenwood `FA`/`FB`, Yaesu, Icom CI-V or other dialects
-itself. The host runs `rigctld` for the configured radio and the `cat` host
-service talks to it over TCP (default port 4532) using the rigctld protocol.
+itself for the Hamlib path. The host runs `rigctld` for the configured radio
+and the `cat` host service talks to it over TCP (default port 4532) using the
+rigctld protocol.
 
 ```text
 Navi cat service  ──TCP──▶  rigctld -m <model> -r <serial port> -s <baud>  ──CAT──▶  radio
@@ -47,6 +50,10 @@ Benefits:
 
 Model number, serial port and baud rate are part of the radio profile in the
 host config. Verify baud rate against the radio manual.
+
+Product UI (`CatStatusSheet`) persists Hamlib **model** (`cat_rig_model`) and
+USB/BT **baud** (`cat_baud_rate`) in `MapHudPrefs`; baud is applied via
+`CatSerialOpenParams` when opening the serial side of `CatSerialLoopbackBridge`.
 
 ### Rust packages
 
@@ -111,7 +118,7 @@ Auto-tune is enabled only if **all** of these hold:
 - Optional user override: allow **Beta** backends with an explicit warning.
   Alpha / Untested are never allowed.
 - Test builds may allow the dummy rig (model 1) regardless of its reported
-  status (see [Testing](#testing)).
+  status (CI only; see [`cat-test.md`](cat-test.md#out-of-scope)).
 
 Equivalent check if Hamlib is linked via FFI instead: `rig_caps.status ==
 RIG_STATUS_STABLE` and non-null `set_rptr_shift`, `set_rptr_offs`,
@@ -133,6 +140,90 @@ C 885             # CTCSS, tenths of Hz
 After programming, read back (`f`, `m`, `r`, `o`, `c`) and compare. Some
 radios reset offset or tone when frequency changes, so always send frequency
 first and verify the full state afterwards. A mismatch counts as a failure.
+
+---
+
+## Radio control via Benshi (native Bluetooth)
+
+Separate from Hamlib. Used for VGC/Vero **VR-N76** (and later UV-Pro / GA-5WB
+when product IDs are known). Protocol facts derived from HTCommander / benlink
+(Apache-2.0); application logic is Navi's. Investigation:
+[`CAT-benshi-investigation.md`](CAT-benshi-investigation.md).
+
+```text
+Navi cat service  ──GAIA/RFCOMM──▶  Benshi radio (control UUID only)
+```
+
+### Never-transmit (Benshi path)
+
+Enforced in `navi-cat` **before I/O**, independent of the WASM guest:
+
+| Rule | Detail |
+|---|---|
+| Allowlist | Basic group (2) only: GET_DEV_INFO, REGISTER_NOTIFICATION, READ/WRITE_SETTINGS, READ/WRITE_RF_CH, GET_HT_STATUS, FREQ_MODE_SET_PAR, FREQ_MODE_GET_STATUS |
+| Forbidden | e.g. HT_SEND_DATA (31), DO_PROG_FUNC (66), STORE_SETTINGS (12), group 10 (firmware VM) |
+| Audio RFCOMM | **Never opened** (voice UUID is out of scope) |
+| PTT | No transmit-key command exists on the allowlist; program refused while `isInTx` |
+
+### Native gating
+
+At connect: `GET_DEV_INFO` with request payload **`[3]`** (empty payload yields a
+short/wrong reply on live firmware). Fail closed unless `productId` is on the
+VR-N76 allowlist: classic **`0x0002`** or live unit **`0x0103`** (259, observed
+2026-10-12). Unknown, malformed, or truncated identity → auto-tune disabled.
+Distinct from Hamlib `dump_caps` Stable checks.
+
+### VFO policy
+
+- Plugin / host program **VFO 1 only**; VFO 2 memory and selected-VFO are never
+  written by product auto-tune.
+- **Frequency mode** (`FREQ_MODE_SET_PAR`) only when VFO 1 is selected or dual
+  channel is off; otherwise **scratch channel A**. On the 2026-10-12 VR-N76,
+  `support_vfo` was clear → scratch is the primary path.
+- When **VFO B is selected**, programming still targets channel A in the
+  background; the display follows the selected VFO, so RX steps are not visible
+  until the operator selects **VFO A** (product code does not switch VFOs).
+- Hold **one** control RFCOMM connection for a session; do not churn
+  connect/disconnect between commands.
+- After each `FREQ_MODE_SET_PAR`, wait for a **fresh** notification 14 (must
+  arrive after the write) matching RX/TX/sub-audio; stale notifications do not
+  count. Timeout / mismatch → unverified (normal retry); if notification 14 is
+  unreliable for a device, fall back to scratch.
+- Read-back + VFO 2 fingerprint before/after every program.
+
+CI uses an in-process **FakeBenshiPeer** (plumbing, not a physical radio).
+Android opens control RFCOMM only (`BenshiRfcommTransport`, SPP UUID); the
+audio RFCOMM UUID is never opened. Transport is injectable for tests.
+
+**Status:** simulator-verified, hardware pending.
+
+### Apache-2.0 attribution (protocol facts)
+
+Protocol framing and field layouts are derived from HTCommander / benlink
+(Apache-2.0). Source headers in `navi-cat/src/benshi/` record:
+
+```text
+Copyright 2026 Ylian Saint-Hilaire / HTCommander contributors
+Licensed under the Apache License, Version 2.0.
+```
+
+Navi application logic (selection, follow, never-transmit allowlist, UI) is
+not copied from those projects.
+
+### Developer demo mode
+
+Optional **demo mode** (5 s per repeater along a planned corridor) is
+**off by default**, labelled “Developer / test only” in `CatStatusSheet`, and
+must not be used while driving. Sequencing lives in `plugins/CATS-plugin`;
+host applies VFO programs with full read-back.
+
+### Tune path (same VFO 1 fields as Hamlib)
+
+Both tuning methods program RX / TX / sub-audio for the same logical state as
+the Hamlib `F`/`R`/`O`/`C` sequence. Frequency mode uses `FREQ_MODE_SET_PAR`
+plus notification 14 verify; scratch uses `WRITE_RF_CH` on the configured slot
+and `WRITE_SETTINGS` only to point channel A at that slot (channel B and
+selected-VFO untouched).
 
 ---
 
@@ -187,9 +278,23 @@ Every position update (throttled, e.g. every 10 s):
 2. Best = nearest candidate.
 3. If Best ≠ current site AND hysteresis rules pass AND interlocks pass:
      retune VFO 1 to Best (full command sequence + read-back).
-4. If no member is within 150 km: stay on current site, notify user,
-   leave follow mode.
+4. If no member is within 150 km (network left behind):
+     hold the last networked site, notify the user, and exit network follow.
 ```
+
+### Leaving the network (decision C)
+
+When the last in-range member drops out — e.g. **LA9AR (Tronfjell)** on the
+Espa → Litjfossen / Østerdalen corridor — network follow does **not** silently
+retune to unrelated sites:
+
+1. **Hold** the last networked site on VFO 1 (no further network switches).
+2. **Notify** the user that network follow has ended (status sheet / log).
+3. **Exit** network follow mode.
+4. Non-networked NFM sites are reached only through the **normal auto-tune**
+   flow afterwards (and with confirmation if auto-apply is off).
+
+Corridor replay **test I** (Østerdalen) must assert this leave-network sequence.
 
 ### Hysteresis (avoid flapping between sites)
 
@@ -209,8 +314,9 @@ user can **pin** a site, which suspends follow mode until unpinned.
 - Never switch while PTT is active.
 - Never switch while receiving, if the backend supports carrier detect
   (`get_dcd`). If it does not, rely on the dwell rules above.
-- Only switch within the **same network**. Leaving the network requires the
-  normal auto-tune flow (and confirmation if auto-apply is off).
+- Only switch within the **same network**. Leaving the network uses
+  [Leaving the network (decision C)](#leaving-the-network-decision-c); it does
+  not auto-apply a non-networked site from inside follow mode.
 - Follow mode is opt-in per session and shown clearly in the UI.
 - Every switch is logged and announced briefly (callsign + frequency).
 
@@ -337,12 +443,16 @@ Populate by importing and cross-referencing the sources in
 1. **OSM** — nodes/ways tagged
    `communication:amateur_radio:repeater=yes` (and related frequency / CTCSS /
    shift / modulation tags), grouped by `type=network` relations.
+   **Norway:** as of 2026-10, all amateur repeaters in Norway are mapped in
+   OpenStreetMap, so OSM is the **primary** source for Norway (LA5MR and other
+   networks). navi-server RadioID/RepeaterBook mirrors supplement elsewhere.
 2. **User AnyTone CPS CSV** — channel / zone / gps-roaming / offset exports.
-3. **OpenRepeater** / **RadioID** — community / DMR directories (downloadable).
+3. **OpenRepeater** / **RadioID** — community / DMR directories (downloadable; DMR is
+   information-only for the Benshi backend).
 4. **Bundled extract** — regional SQLite table (callsign, lat, lon, freq_out_mhz,
    shift_mhz, ctcss_hz, modulation, network_id) shipped or built from the above.
-5. **RepeaterBook** — optional online sync only after written API permission
-   (see below); never required for the 150 km search.
+5. **RepeaterBook** — via navi-server mirror when published (client never holds
+   keys); never required for the 150 km search.
 
 ### RepeaterBook (optional online)
 
@@ -356,21 +466,57 @@ filter to modes the radio profile supports, upsert into onboard DB with expiry.
 API keys and ToS stay host-side. Offline search must still work from OSM,
 CSV, OpenRepeater, RadioID, and the last successful local imports.
 
+### RepeaterBook server-side copy (proposal only)
+
+Issue #149 notes that a client-held RepeaterBook API key is undesirable.
+"App #114" in that comment is RepeaterBook's registered **RepeaterBook Python
+Client** application, not a Navi PR.
+
+**Proposal (navi-server work later — not implemented here):**
+
+1. Obtain **written permission** from RepeaterBook for a server-side mirror.
+2. A server job pulls the export API with server-held credentials and stores a
+   normalized regional extract (callsign, lat, lon, freq, shift, tone, mode,
+   network_id, as-of time).
+3. The app loads that extract with plain **read-only HTTPS GET** (same trust
+   model as pack downloads). **No RepeaterBook API key in the client.**
+4. Upsert into the onboard repeater DB with expiry; OSM / CSV / OpenRepeater
+   remain the offline defaults.
+5. Until permission and the server path exist, RepeaterBook stays **disabled**
+   in the app (current behaviour).
+
+Full investigation notes: [`CAT-benshi-investigation.md`](CAT-benshi-investigation.md).
+
 ---
 
 ## Repeater data import and cross-referencing
 
-**Status:** specified here; **not implemented**. Doc-only planning for the
-future `cat` plugin / host importer.
+**Status:** host importers in `navi-cat` (OSM JSON, AnyTone channel CSV,
+OpenRepeater JSON, RadioID CSV scaffold; RepeaterBook always disabled).
+On-device CSV drop directory and full format notes:
+[`cat-test.md`](cat-test.md#csv-import-path) /
+[`cat-test.md`](cat-test.md#anytone-cps-csv-format). Fixture outcomes:
+[`testdata/cat/SOURCES.md`](../testdata/cat/SOURCES.md).
+
+### CSV import directory
+
+| Role | Path |
+|---|---|
+| Android app | `{Context.filesDir}/cat/import/` (created at CAT bootstrap) |
+| Repo fixtures | [`testdata/cat/anytone/`](../testdata/cat/anytone/) |
+| Onboard SQLite | `{Context.filesDir}/cat_repeaters.sqlite` |
+
+Put AnyTone CPS exports (`channel.csv`, optional `zone.csv`,
+`gps-roaming.csv`, `offset.csv`) in the app import directory. Encoding:
+**UTF-8** or **Windows-1252**; **CRLF** or **LF**.
 
 ### Sources the plugin must accept
 
 #### 1. AnyTone CPS CSV exports
 
 Accept sample-shaped exports such as `channel.csv`, `zone.csv`,
-`gps-roaming.csv`, and `offset.csv`.
-
-Encoding and newlines: accept **UTF-8** and **Windows-1252**, **CRLF** or **LF**.
+`gps-roaming.csv`, and `offset.csv`. Full column / filter rules:
+[`cat-test.md` — AnyTone CPS CSV format](cat-test.md#anytone-cps-csv-format).
 
 **`channel.csv`** — one row per channel. Observed key columns:
 
@@ -381,8 +527,7 @@ Encoding and newlines: accept **UTF-8** and **Windows-1252**, **CRLF** or **LF**
 | Channel Type | `A-Analog` or `D-Digital` (DMR) |
 | Band Width | `12.5K` / `25K` |
 | CTCSS/DCS Encode / Decode | Analog access tones |
-| RX Color Code, Slot | DMR |
-| Contact / Contact TG/DMR ID | DMR talkgroup / contact |
+| Color Code / Slot, Contact TG | DMR |
 | APRS RX and other APRS columns | Used to **exclude** APRS rows (see Filtering) |
 
 There are **no coordinates** in `channel.csv`.
@@ -542,15 +687,9 @@ Radio control lives in the host (rigctld client), not WASM.
 
 ## Testing
 
-Use the Hamlib **dummy rig** (model 1) for development and CI:
-
-```text
-rigctld -m 1 -t 4532
-```
-
-The dummy stores frequency, mode, VFO, shift, offset, tone and PTT in memory,
-so tests can program VFO 1 through the normal path and assert the result with
-read-back.
+**Results, fixture-fetch checklist, Espa→Dombås switch logs (Run A / Run B),
+CSV path/format, and importer coverage** live in
+[`cat-test.md`](cat-test.md). Do not duplicate full tables here.
 
 Test cases:
 
@@ -565,24 +704,114 @@ Test cases:
 - Gating parser: feed saved `dump_caps` outputs (Stable, Beta, missing lines)
   and check the result.
 
-The dummy does not reproduce radio-specific behaviour (timing, settings reset
-on frequency change, unsupported functions). Final verification on the real
-radio is still required.
+Scenario pass/fail detail, JVM bridge notes, and corridor expected-switch
+timelines: [`cat-test.md`](cat-test.md).
+
+### Emulator vs real device
+
+| Layer | What it proves |
+|---|---|
+| JVM/Robolectric bridge unit tests | Fake USB/BT sockets through loopback bridge (reconnect, partial writes, disconnect) |
+| Emulator instrumentation | Real `libhamlib.so` + CATS-plugin in wasmtime; remote `rigctld` via `10.0.2.2:4532`; USB/BT via injected boundaries (SPP data path to a real radio is **not** reproducible on emulator) |
+| Real device (manual) | USB OTG + Bluetooth SPP with a physical radio; confirm read-back for every field after checking Hamlib backend status for that model |
+
+### Fixture sources
+
+See [`testdata/cat/SOURCES.md`](../testdata/cat/SOURCES.md) and
+[`scripts/fetch-cat-fixtures.sh`](../scripts/fetch-cat-fixtures.sh).
+Server-file / pack checks and importer automation results:
+[`cat-test.md`](cat-test.md#fixture--database-fetch-checklist).
+
+Hamlib dummy (`rigctld -m 1`) is CI gating only — not product route evidence
+(see cat-test.md [Out of scope](cat-test.md#out-of-scope)).
+
+Plugin logic lives only under `plugins/CATS-plugin/`. Host radio safety is in `navi-cat`.
 
 ---
+
+## Future: rentable ham radio shacks (not implemented)
+
+Reference OSM way: <https://www.openstreetmap.org/way/395284738>.
+
+Fetch current tags for that way when documenting; search taginfo for
+rentable/guest amateur radio station tag combinations and usage counts.
+Possible Navi surfaces (doc only): map layer/POI, search, “near route” on long
+trips; fields such as operator, website, booking, bands/equipment if tagged.
+Other data sources beyond OSM may exist — list when researching. **No code**
+for this on the `CAT` branch.
+
+---
+
+## Licence note
+
+**You may listen, but do not transmit without an amateur radio licence.**
+
+That sentence is the CAT enable-toggle description (string resource
+`cat_licence_listen_only`) and must stay visible whenever the toggle is shown.
+Navi never keys PTT and never opens the Benshi audio RFCOMM link.
+
+## What is tested
+
+Honest split — simulator results are never described as hardware results.
+Evidence log: [`CAT-test-report.md`](CAT-test-report.md).
+
+### CI / simulator
+
+- Hamlib dummy `rigctld` (model 1) gating + program/read-back
+- `FakeBenshiPeer` GAIA peer: codec, allowlist (never-transmit), interlocks,
+  VFO 2 fingerprint, productId gating (`0x0002` / `0x0103`)
+- Corridor replays H (Espa→Dombås) / I (Østerdalen leave-network decision C)
+- Coverage J: Espa→Dombås **100.0 %** talk / 2 switches; Østerdalen **93.3 %** /
+  3 switches (reduced SPLAT fixture in CI)
+- Demo mode 5 s/site against FakeBenshiPeer
+- navi-server repeater mirror: checksum reject keeps last good; RepeaterBook
+  absent; synthetic RepeaterBook present; attribution / exclusions
+
+### Android emulator / device (injected socket)
+
+- `BenshiRfcommTransport` with injectable streams (no real Bluetooth in CI)
+- Emulator K on SM-P613: corridor H/I + demo via injected peer (3/3)
+
+### Real hardware
+
+**VR-N76 host BlueZ (2026-10-12)** — see [`CAT-test-report.md`](CAT-test-report.md):
+
+- MAC `38:D2:00:01:4B:E7`; productId **`0x0103`**; GET_DEV_INFO payload `[3]`
+- One control RFCOMM session; never audio UUID / never PTT
+- Step 5 read-only PASS; Step 6 both 5 s routes PASS (scratch; VFO B fingerprint
+  unchanged)
+- With VFO B selected, only channel name **NAV** visible; after operator select
+  VFO A, RX steps ~every 5 s confirmed
+- Left VFO A on 145.625000 (LA5MR) per operator
+- Artifacts: `testdata/cat/hardware/vr-n76/`
+
+### Not tested
+
+- Hamlib against real radios (non-dummy)
+- Android tablet RFCOMM to a physical radio
+- BTECH UV-Pro / Radioddity GA-5WB
+- Live RepeaterBook data (navi-server has not published it yet)
+- Transmit / PTT / audio RFCOMM (intentionally never)
 
 ## Status
 
 | Piece | Status |
 |---|---|
-| `navi-cat` rigctld client (own crate) | Not implemented |
-| Backend gating (`dump_caps`) | Not implemented |
-| Onboard repeater DB / OSM import | Not implemented |
-| AnyTone CPS CSV import | Specified here; not implemented |
-| OpenRepeater / RadioID import | Specified here; not implemented |
-| Cross-source repeater merge / conflict UI | Specified here; not implemented |
-| RepeaterBook sync | Disabled until written API permission; not implemented |
-| Auto-tune → VFO 1 | Specified here; not implemented |
-| Network follow mode | Specified here; not implemented |
-| Dummy-rig test suite | Not implemented |
-| Plugin capability wiring | Proposed in [`plugins.md`](plugins.md) |
+| Architecture decisions (`RigBackend`, latest Hamlib, rejected crates) | Locked in this doc |
+| Plugin path `plugins/CATS-plugin/` + wasmtime sandbox | Implemented on `CAT` |
+| Read-back verification (app-side) | Implemented in `navi-cat` |
+| `navi-cat` + TCP/FFI backends | Implemented on `CAT` |
+| Backend gating (`dump_caps`) | Implemented on `CAT` |
+| Onboard repeater DB / OSM / CSV / OpenRepeater / RadioID | Implemented on `CAT` (RadioID/repeatermap: policy only) |
+| navi-server repeater mirror (Update button) | Implemented on `CAT` (checksums, atomic swap, no client keys) |
+| Host Update-path corridor harness (`repeater_corridor_check`) | `cargo run -p navi-cat --features diag-bins --bin repeater_corridor_check` (see [`regression-gate.md`](regression-gate.md)) |
+| Cross-source merge / conflict UI | Conflict flags in DB/query; UI polish deferred |
+| RepeaterBook sync | Via navi-server only when published; direct client sync disabled |
+| Auto-tune → VFO 1 / network follow | Implemented (guest + host) |
+| Hamlib Android build script + lock | Implemented (`scripts/build-hamlib-android.sh`, tag 4.7.2) |
+| Android USB/BT/remote transports | Loopback bridge + remote endpoint; JVM tests green |
+| Host BlueZ RFCOMM (`benshi-hw-probe` / `benshi-hw-demo`) | Implemented; VR-N76 Steps 5–6 PASS 2026-10-12 |
+| Scenario + importer fixture suite | Scenarios 1–12 + `import_fixtures`; results in [`cat-test.md`](cat-test.md) |
+| HostApi `cat_*` / `repeater_query` | Implemented (caps + host handlers; defaults fail closed) |
+| Product CAT UI | Tools/Map toggle + licence text + `CatStatusSheet` (Update / connect / follow / nearby); UniFFI `cat_plugin_*` |
+| Future ham-shacks | Doc only; not implemented |

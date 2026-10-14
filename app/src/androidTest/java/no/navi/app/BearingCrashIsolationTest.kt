@@ -41,7 +41,7 @@ class BearingCrashIsolationTest {
         NaviMapTestHooks.applyBearingToMap = true
         NaviMapTestHooks.magneticHeadingDeg = null
         NaviMapTestHooks.gpsBearingDeg = null
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         NaviMapTestHooks.pendingCamera = Triple(centerLat, centerLon, zoom)
         // Compass + null magnetic: NorthUp would force bearing 0 every poll tick.
         NaviMapTestHooks.requestRotationMode = MapRotationMode.Compass
@@ -60,12 +60,7 @@ class BearingCrashIsolationTest {
 
     private fun waitStyle() {
         activityRule.launchActivity(null)
-        val deadline = System.currentTimeMillis() + 25_000
-        while (System.currentTimeMillis() < deadline) {
-            if (NaviMapTestHooks.styleReady) break
-            Thread.sleep(200)
-        }
-        assertTrue("styleReady", NaviMapTestHooks.styleReady)
+        assertTrue("styleReady", InstrumentedMapCapture.awaitStyleReady(25_000))
         NaviMapTestHooks.requestRotationMode = MapRotationMode.Compass
         NaviMapTestHooks.pendingCamera = Triple(centerLat, centerLon, zoom)
         Thread.sleep(3_000)

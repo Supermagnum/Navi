@@ -1,0 +1,13 @@
+[package]
+name = "navi-plugin-imu-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "IMU pitch/tilt/compass and mount calibration (native; WASM guest wraps this)"
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

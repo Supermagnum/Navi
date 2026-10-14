@@ -43,8 +43,8 @@ android {
         applicationId = "no.navi.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 21
-        versionName = "0.3.16-beta"
+        versionCode = 30
+        versionName = "0.3.25-beta"
         testInstrumentationRunner = "no.navi.app.NaviAndroidTestRunner"
         // Restrict packaging to naviAbis so every lib/<abi>/ folder contains the
         // same .so set (libnavi + MapLibre + JNA + graphics.path). Strips JNA's
@@ -199,11 +199,21 @@ tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
 }
 
 // F-Droid / reproducible: stage wasm guests from source (no committed binaries).
+// Hook assemble/bundle only — not preBuild — so JVM unit tests do not compile wasm.
 tasks.register<Exec>("buildPluginWasm") {
     workingDir = rootProject.projectDir
     commandLine("bash", "scripts/build-plugin-wasm.sh")
 }
 
-tasks.named("preBuild").configure {
+val packageTasks =
+    setOf(
+        "assemble",
+        "assembleDebug",
+        "assembleRelease",
+        "bundle",
+        "bundleDebug",
+        "bundleRelease",
+    )
+tasks.matching { it.name in packageTasks }.configureEach {
     dependsOn("buildPluginWasm")
 }

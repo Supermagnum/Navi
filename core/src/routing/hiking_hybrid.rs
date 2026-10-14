@@ -6,7 +6,9 @@ use serde_json::json;
 use crate::config::EcoConfig;
 use crate::routing::elevation::ElevationService;
 use crate::routing::graph::RouteGraph;
-use crate::routing::terrain::{least_cost_path, TERRAIN_MAX_GAP_M};
+use crate::routing::terrain::{
+    least_cost_path_chained, TERRAIN_MAX_CHAINED_GAP_M, TERRAIN_MAX_GAP_M,
+};
 use crate::routing::wetland::WetlandIndex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -231,10 +233,10 @@ fn gap_fill_leg(
         return Err("cancelled".into());
     }
     let crow = haversine_m(a.lat, a.lon, b.lat, b.lon);
-    if crow > TERRAIN_MAX_GAP_M {
+    if crow > TERRAIN_MAX_CHAINED_GAP_M {
         return Err(format!(
             "no foot route {} -> {} (gap {:.0} m exceeds terrain limit {:.0} m)",
-            a.name, b.name, crow, TERRAIN_MAX_GAP_M
+            a.name, b.name, crow, TERRAIN_MAX_CHAINED_GAP_M
         ));
     }
 
@@ -255,11 +257,10 @@ fn gap_fill_leg(
                             length_m: on_m,
                         });
                         let (tlat, tlon) = node_latlon(graph, tb);
-                        let terrain =
-                            least_cost_path(elevation, wetlands, eco, tlat, tlon, b.lat, b.lon)
-                                .map_err(|e| {
-                                    format!("terrain gap {} -> {}: {e}", a.name, b.name)
-                                })?;
+                        let terrain = least_cost_path_chained(
+                            elevation, wetlands, eco, tlat, tlon, b.lat, b.lon,
+                        )
+                        .map_err(|e| format!("terrain gap {} -> {}: {e}", a.name, b.name))?;
                         segments.push(RouteSegment {
                             kind: SegmentKind::OffTrail,
                             coords: terrain.coords,
@@ -285,11 +286,10 @@ fn gap_fill_leg(
                     if path.len() >= 2 {
                         let mut segments = Vec::new();
                         let (tlat, tlon) = node_latlon(graph, ta);
-                        let terrain =
-                            least_cost_path(elevation, wetlands, eco, a.lat, a.lon, tlat, tlon)
-                                .map_err(|e| {
-                                    format!("terrain gap {} -> {}: {e}", a.name, b.name)
-                                })?;
+                        let terrain = least_cost_path_chained(
+                            elevation, wetlands, eco, a.lat, a.lon, tlat, tlon,
+                        )
+                        .map_err(|e| format!("terrain gap {} -> {}: {e}", a.name, b.name))?;
                         segments.push(RouteSegment {
                             kind: SegmentKind::OffTrail,
                             coords: terrain.coords,
@@ -313,7 +313,7 @@ fn gap_fill_leg(
     }
 
     // Pure off-trail between actual coordinates.
-    let terrain = least_cost_path(elevation, wetlands, eco, a.lat, a.lon, b.lat, b.lon)
+    let terrain = least_cost_path_chained(elevation, wetlands, eco, a.lat, a.lon, b.lat, b.lon)
         .map_err(|e| format!("no foot route {} -> {} ({e})", a.name, b.name))?;
     Ok(LegResult {
         segments: vec![RouteSegment {

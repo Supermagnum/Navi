@@ -184,24 +184,76 @@ private fun parseTier(raw: String?): CampingTier =
         else -> CampingTier.UNKNOWN
     }
 
-/** Sample corridor polyline `"lat,lon;..."` into `[lat, lon]` pairs for native suggest. */
+/**
+ * Sample Navi overlay polyline `"lon,lat;lon,lat;…"` into `[lat, lon]` pairs
+ * for [campingPluginSetNavContext] (native HostApi / corridor graph load).
+ *
+ * Prefer ~[targetSpacingKm] spacing so long corridors still hit road∩track seeds
+ * within the host seed radius. Cap at [maxPoints] — native still loads graphs in
+ * short waypoint segments (not the whole multi-country corridor at once).
+ */
 fun sampleCampingCorridorWaypoints(
     polyline: String,
-    maxPoints: Int = 80,
+    maxPoints: Int = 240,
+    targetSpacingKm: Double = 2.5,
 ): List<DoubleArray> {
     if (polyline.isBlank()) return emptyList()
     val raw =
         polyline.split(';').mapNotNull { seg ->
             val parts = seg.trim().split(',')
             if (parts.size != 2) return@mapNotNull null
-            val lat = parts[0].trim().toDoubleOrNull() ?: return@mapNotNull null
-            val lon = parts[1].trim().toDoubleOrNull() ?: return@mapNotNull null
+            val lon = parts[0].trim().toDoubleOrNull() ?: return@mapNotNull null
+            val lat = parts[1].trim().toDoubleOrNull() ?: return@mapNotNull null
             doubleArrayOf(lat, lon)
         }
     if (raw.isEmpty()) return emptyList()
-    if (raw.size <= maxPoints) return raw
-    val step = (raw.size / maxPoints).coerceAtLeast(1)
-    return raw.filterIndexed { idx, _ -> idx % step == 0 }
+    if (raw.size <= 2) return raw
+    var totalKm = 0.0
+    for (i in 1 until raw.size) {
+        totalKm += haversineKm(raw[i - 1][0], raw[i - 1][1], raw[i][0], raw[i][1])
+    }
+    val denom = (maxPoints - 1).coerceAtLeast(1).toDouble()
+    val minSpacingKm = maxOf(targetSpacingKm, totalKm / denom).coerceAtLeast(0.25)
+    val spaced = ArrayList<DoubleArray>(maxPoints.coerceAtMost(raw.size))
+    spaced.add(raw.first())
+    var lastLat = raw.first()[0]
+    var lastLon = raw.first()[1]
+    for (i in 1 until raw.lastIndex) {
+        if (spaced.size >= maxPoints - 1) break
+        val lat = raw[i][0]
+        val lon = raw[i][1]
+        if (haversineKm(lastLat, lastLon, lat, lon) >= minSpacingKm) {
+            spaced.add(raw[i])
+            lastLat = lat
+            lastLon = lon
+        }
+    }
+    val end = raw.last()
+    if (spaced.last()[0] != end[0] || spaced.last()[1] != end[1]) {
+        if (spaced.size >= maxPoints) {
+            spaced[spaced.lastIndex] = end
+        } else {
+            spaced.add(end)
+        }
+    }
+    return spaced
+}
+
+private fun haversineKm(
+    lat1: Double,
+    lon1: Double,
+    lat2: Double,
+    lon2: Double,
+): Double {
+    val r = 6371.0
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLon = Math.toRadians(lon2 - lon1)
+    val a =
+        kotlin.math.sin(dLat / 2) * kotlin.math.sin(dLat / 2) +
+            kotlin.math.cos(Math.toRadians(lat1)) *
+            kotlin.math.cos(Math.toRadians(lat2)) *
+            kotlin.math.sin(dLon / 2) * kotlin.math.sin(dLon / 2)
+    return 2 * r * kotlin.math.asin(kotlin.math.sqrt(a))
 }
 
 fun campingWaypointsJson(waypoints: List<DoubleArray>): String {

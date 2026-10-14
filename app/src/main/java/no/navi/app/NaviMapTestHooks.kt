@@ -59,9 +59,36 @@ object NaviMapTestHooks {
     @Volatile
     var forceOnlineBasemap: Boolean = false
 
+    /** Optional absolute PMTiles path that overrides covering selection. */
+    @Volatile
+    var forceBasemapSource: String? = null
+
+    fun forcedBasemapSettingsCleared(): Boolean =
+        !forceOnlineBasemap &&
+            forceBasemapSource == null &&
+            !Fu49MapDiag.forceOffline &&
+            !Fu49MapDiag.simpleMount
+
+    fun clearForcedBasemapSettings() {
+        forceOnlineBasemap = false
+        forceBasemapSource = null
+        Fu49MapDiag.forceOffline = false
+        Fu49MapDiag.simpleMount = false
+        Fu49MapDiag.enableOverview = false
+        Fu49MapDiag.enableSecondRegional = false
+        Fu49MapDiag.enableOnline = false
+        Fu49MapDiag.bypassStyleQueue = false
+        Fu49MapDiag.disableKeepPrevious = false
+        Fu49MapDiag.forceSetStyle = false
+    }
+
     /** Triple of lat, lon, zoom. Consumed by MainActivity. */
     @Volatile
     var pendingCamera: Triple<Double, Double, Double>? = null
+
+    /** Debug overlay: apply this polyline without planning. */
+    @Volatile
+    var pendingOverlayPolyline: String? = null
 
     /**
      * Cold-start / adb trip seed for standalone long-trip runs (not under
@@ -82,8 +109,22 @@ object NaviMapTestHooks {
         val vias: List<Waypoint> = emptyList(),
         val forceLocalPbf: Boolean = false,
         val avoidFerries: Boolean? = null,
+        /** When non-null, force Stay in Country for this seeded trip. */
+        val stayInCountry: Boolean? = null,
         /** When non-null, force eco on/off for this seeded trip (UI + UniFFI rest). */
         val ecoModeEnabled: Boolean? = null,
+        /**
+         * When non-null, force wild-camping plugin on/off for this seeded trip.
+         * Default debug seed turns camping off so matrix runs stay deterministic;
+         * long-trip campaigns pass true via `navi_camping`.
+         */
+        val campingPluginEnabled: Boolean? = null,
+        /** When non-null, force Nearby attractions (POI look-ahead) on/off. */
+        val poiLookaheadEnabled: Boolean? = null,
+        /** Debug-intent only drive-settings overlays (null = leave Compose defaults). */
+        val avoidMotorways: Boolean? = null,
+        val avoidTunnels: Boolean? = null,
+        val avoidTolls: Boolean? = null,
         val restoreSettingsAfter: Boolean = true,
         /**
          * When true (default for [NaviDebugIntent] trips), pin the GPS mark at
@@ -156,9 +197,71 @@ object NaviMapTestHooks {
     @Volatile
     var toolsOpen: Boolean = false
 
-    /** True after MapLibre style finished loading (basemap ready for overlays). */
-    @Volatile
-    var styleReady: Boolean = false
+    /**
+     * Style-load generation mirrored from MapLibre apply in MainActivity.
+     *
+     * [beginStyleApply] advances the in-flight id; [completeStyleApply] marks ready
+     * only when [applyGen] is still current. Late callbacks for older generations
+     * must not flip ready; a successful apply for the current generation always does.
+     *
+     * Tests that need a hard clear before activity launch should call
+     * [resetStyleLoadState]. Assigning `styleReady = false` is soft: it will not
+     * drop an already-completed signal for the active generation (the classic
+     * reset-after-callback race).
+     */
+    private val styleLoadGen =
+        java.util.concurrent.atomic
+            .AtomicInteger(0)
+    private val styleReadyGen =
+        java.util.concurrent.atomic
+            .AtomicInteger(0)
+
+    /** In-flight / last-started style apply id (0 = none since reset). */
+    fun styleLoadGeneration(): Int = styleLoadGen.get()
+
+    /** Apply id that last completed successfully (0 = never / after reset). */
+    fun styleReadyGeneration(): Int = styleReadyGen.get()
+
+    /** Hard-clear style readiness. Call before activity launch / between activities. */
+    fun resetStyleLoadState() {
+        styleLoadGen.set(0)
+        styleReadyGen.set(0)
+    }
+
+    /** Start a style apply; invalidates readiness until [completeStyleApply] for [applyGen]. */
+    fun beginStyleApply(applyGen: Int) {
+        if (applyGen <= 0) return
+        styleLoadGen.set(applyGen)
+    }
+
+    /** Mark style ready when [applyGen] is still the current load id. */
+    fun completeStyleApply(applyGen: Int) {
+        if (applyGen <= 0) return
+        if (applyGen == styleLoadGen.get()) {
+            styleReadyGen.set(applyGen)
+        }
+    }
+
+    /** True after the current MapLibre style apply finished (basemap ready for overlays). */
+    var styleReady: Boolean
+        get() {
+            val load = styleLoadGen.get()
+            return load != 0 && styleReadyGen.get() == load
+        }
+        set(value) {
+            if (value) {
+                val load = styleLoadGen.get()
+                if (load != 0) {
+                    styleReadyGen.set(load)
+                }
+            } else if (styleLoadGen.get() == 0) {
+                // Already reset; keep ready gen cleared.
+                styleReadyGen.set(0)
+            }
+            // Soft no-op when a load is active or already completed: clearing here
+            // after the style callback is what left instrumented tests stuck on
+            // "MapLibre style not ready". Use resetStyleLoadState() before launch.
+        }
 
     /**
      * When true, [CorridorMapView] pauses/stops the MapView but skips `onDestroy`
@@ -176,6 +279,90 @@ object NaviMapTestHooks {
     /** Last basemap kind from [BasemapStyleResolver] (OnlineLiberty / Online3d / OfflineProtomaps). */
     @Volatile
     var lastBasemapKind: String = ""
+
+    /** Rendered basemap features in the viewport (excludes the route overlay). */
+    @Volatile
+    var lastVisibleBasemapFeatures: Int = 0
+
+    /**
+     * Share of the map framebuffer that is the style background cream (#f8f4f0),
+     * in percent. Replaces a feature count for "is the view drawn".
+     */
+    @Volatile
+    var lastBlankSharePct: Double = Double.NaN
+
+    /** Last 8x16 renderer feature grid (`c,r,r=,w=,l=,b=;...`). */
+    @Volatile
+    var lastFeatureGridJson: String = ""
+
+    /** Style background cream used by the offline Protomaps template. */
+    const val BLANK_BG_R = 248
+    const val BLANK_BG_G = 244
+    const val BLANK_BG_B = 240
+
+    fun isBlankBackgroundPixel(
+        r: Int,
+        g: Int,
+        b: Int,
+    ): Boolean {
+        val cream =
+            kotlin.math.abs(r - BLANK_BG_R) <= 6 &&
+                kotlin.math.abs(g - BLANK_BG_G) <= 6 &&
+                kotlin.math.abs(b - BLANK_BG_B) <= 6
+        val mx = maxOf(r, g, b)
+        val mn = minOf(r, g, b)
+        val emptyGray = mx >= 215 && mx - mn <= 16
+        // Unloaded offline tiles screenshot as ~218,214,211, not style cream.
+        val cutoff =
+            kotlin.math.abs(r - 218) <= 8 &&
+                kotlin.math.abs(g - 214) <= 8 &&
+                kotlin.math.abs(b - 211) <= 8
+        return cream || emptyGray || cutoff
+    }
+
+    /**
+     * Share of the map that is a solid blank background, in percent.
+     * Uses a coarse grid so a half-screen cutoff counts and a drawn city
+     * (roads and water cutting the cream) does not.
+     */
+    fun blankSharePercent(bmp: android.graphics.Bitmap): Double {
+        val w = bmp.width
+        val h = bmp.height
+        if (w <= 0 || h <= 0) return 100.0
+        val pixels = IntArray(w * h)
+        bmp.getPixels(pixels, 0, w, 0, 0, w, h)
+        val cols = 8
+        val rows = 16
+        val top = (h * 0.0375).toInt().coerceAtLeast(1)
+        val bot = (h * 0.02).toInt().coerceAtLeast(1)
+        val y0 = top
+        val y1 = (h - bot).coerceAtLeast(y0 + 1)
+        val cw = w / cols
+        val ch = (y1 - y0) / rows
+        if (cw <= 0 || ch <= 0) return 100.0
+        var blankCells = 0
+        val total = cols * rows
+        for (row in 0 until rows) {
+            for (col in 0 until cols) {
+                val x0 = col * cw
+                val yy0 = y0 + row * ch
+                var empty = 0
+                val n = cw * ch
+                for (yy in yy0 until yy0 + ch) {
+                    val rowOff = yy * w
+                    for (xx in x0 until x0 + cw) {
+                        val c = pixels[rowOff + xx]
+                        val r = (c shr 16) and 0xff
+                        val g = (c shr 8) and 0xff
+                        val b = c and 0xff
+                        if (isBlankBackgroundPixel(r, g, b)) empty++
+                    }
+                }
+                if (n > 0 && empty.toDouble() / n >= 0.92) blankCells++
+            }
+        }
+        return 100.0 * blankCells / total
+    }
 
     /** Last MapLibre style load failure message, if any. */
     @Volatile
@@ -230,6 +417,8 @@ object NaviMapTestHooks {
     /** Whether the missing-coverage download dialog is visible. */
     @Volatile
     var missingCoveragePromptVisible: Boolean = false
+    var absurdDetourPromptVisible: Boolean = false
+    var lastAbsurdDetourMessage: String = ""
 
     /**
      * When true, Plan route (Hiking) may load a host-staged polyline + breaks
@@ -396,12 +585,26 @@ object NaviMapTestHooks {
     @Volatile
     var lastSearchQuery: String = ""
 
+    /** Debug intent: text for the search field, and whether to submit it (online allowed). */
+    @Volatile
+    var pendingSearchUiQuery: Pair<String, Boolean>? = null
+
     @Volatile
     var lastSearchHitNames: List<String> = emptyList()
 
     /** Non-empty when place search showed the building-index hint. */
     @Volatile
     var lastSearchIndexBuildingHint: String = ""
+
+    /** Count of online place-search HTTP calls this process (request log). */
+    @Volatile
+    var lastOnlinePlaceSearchCount: Int = 0
+
+    @Volatile
+    var lastOnlinePlaceSearchUrls: List<String> = emptyList()
+
+    @Volatile
+    var lastOnlinePlaceSearchUserAgent: String = ""
 
     /** Immediate coord label from the last Use GPS tap (before roadLabelNear). */
     @Volatile
@@ -621,6 +824,21 @@ object NaviMapTestHooks {
     @Volatile
     var pendingFromPoint: Waypoint? = null
 
+    /**
+     * When set with [pendingFromPoint], applied as the From GPS-follow flag.
+     * Null = leave [lastFromFollowsGps] / live state unchanged.
+     */
+    @Volatile
+    var pendingFromFollowsGps: Boolean? = null
+
+    /** Live mirror of MainActivity fromFollowsGps (for instrumented asserts). */
+    @Volatile
+    var lastFromFollowsGps: Boolean = true
+
+    /** Live mirror of MainActivity fromPoint?.name. */
+    @Volatile
+    var lastFromName: String = ""
+
     @Volatile
     var pendingViaPoints: List<Waypoint>? = null
 
@@ -732,6 +950,37 @@ object NaviMapTestHooks {
     @Volatile
     var lastGpsProvider: String = ""
 
+    /** Dead-reckoning mode name (Gps / Estimating / PositionLost). */
+    @Volatile
+    var lastDrMode: String = "Gps"
+
+    /** Last tunnel-exit / GPS hand-back position error (metres), if any. */
+    @Volatile
+    var lastDrExitErrorM: Double? = null
+
+    /** Map mark is IMU/route estimated (amber). */
+    @Volatile
+    var gpsEstimated: Boolean = false
+
+    /** DR give-up — position lost. */
+    @Volatile
+    var positionLost: Boolean = false
+
+    /**
+     * Inject a sensor frame into the live [DeadReckoningController] (instrumented
+     * tunnel tests). Null when the map activity is not running.
+     */
+    @Volatile
+    var deadReckoningInject: ((SensorFrame) -> DrOutput)? = null
+
+    /** Signal GNSS loss to the live dead-reckoning engine (instrumented tests). */
+    @Volatile
+    var deadReckoningNotifyLost: (() -> DrOutput)? = null
+
+    /** Feed a GNSS sample into the live dead-reckoning engine (instrumented tests). */
+    @Volatile
+    var deadReckoningInjectGps: ((GpsSample) -> DrOutput)? = null
+
     /** Last resolved applicable speed limit (km/h). */
     @Volatile
     var lastCurrentSpeedLimitKmh: Double? = null
@@ -746,6 +995,18 @@ object NaviMapTestHooks {
      */
     @Volatile
     var pendingInjectFixSpeedKmh: Double? = null
+
+    /**
+     * Drop every in-memory GPS inject pin. Injected positions must not outlive
+     * the test or an activity restart. Never persisted to prefs.
+     */
+    fun clearDebugGpsInject() {
+        pendingInjectFixLatLon = null
+        pinGpsAfterPlanLatLon = null
+        ignoreLiveGpsFixes = false
+        releaseIgnoreLiveGpsAfterNextInject = false
+        pendingInjectFixSpeedKmh = null
+    }
 
     /**
      * When set, MainActivity applies this as [DriveHudState.currentStreet] once

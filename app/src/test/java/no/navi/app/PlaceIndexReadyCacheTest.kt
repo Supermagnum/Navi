@@ -9,12 +9,12 @@ class PlaceIndexReadyCacheTest {
     @Test
     fun searchAllowedRegions_cacheSurvivesRepeatedCalls() {
         val dir = createTempDirectory("place-ready-cache").toFile()
+        FakePlaceIndexRows.install()
         try {
-            PlaceIndexReady.invalidateAllowedRegionsCache()
-            PlaceIndexReady.markReady(dir, "europe/norway/ostlandet")
+            FakePlaceIndexRows.putRows(dir, "europe/norway/ostlandet", 1_483_135L)
             val first = PlaceIndexReady.searchAllowedRegions(dir)
             assertTrue(first.any { it.contains("ostlandet") })
-            // Stamp file unchanged: second call must hit TTL cache (same set).
+            // Rows unchanged: second call must hit TTL cache (same set).
             val second = PlaceIndexReady.searchAllowedRegions(dir)
             assertEquals(first, second)
             PlaceIndexReady.clearReady(dir, "europe/norway/ostlandet")
@@ -22,7 +22,7 @@ class PlaceIndexReadyCacheTest {
             assertTrue(afterClear.none { it.contains("ostlandet") })
         } finally {
             dir.deleteRecursively()
-            PlaceIndexReady.invalidateAllowedRegionsCache()
+            FakePlaceIndexRows.reset()
         }
     }
 }

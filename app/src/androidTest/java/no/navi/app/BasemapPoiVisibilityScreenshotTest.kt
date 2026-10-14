@@ -44,7 +44,7 @@ class BasemapPoiVisibilityScreenshotTest {
         NaviMapTestHooks.hideSearchChrome = true
         NaviMapTestHooks.disableGpsFollow = true
         NaviMapTestHooks.followGps = false
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
     }
 
     @After
@@ -122,7 +122,7 @@ class BasemapPoiVisibilityScreenshotTest {
         tilt: Double,
         expectKindPrefix: String,
     ) {
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         NaviMapTestHooks.forceOnlineBasemap = forceOnline
         NaviMapTestHooks.requestOptIn3d = optIn3d
         NaviMapTestHooks.requestCameraTiltDeg = tilt

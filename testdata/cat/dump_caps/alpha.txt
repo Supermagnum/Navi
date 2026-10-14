@@ -1,0 +1,6 @@
+Rig model: 2
+Model name: Test
+Backend status: Alpha
+Can set Repeater Shift: Y
+Can set Repeater Offset: Y
+Can set CTCSS Tone: Y

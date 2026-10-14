@@ -1,0 +1,6 @@
+Caps dump for model: 2040
+Model name: ExampleStable
+Backend status: Stable
+Can set Repeater Shift: Y
+Can set Repeater Offset: Y
+Can set CTCSS Tone: Y

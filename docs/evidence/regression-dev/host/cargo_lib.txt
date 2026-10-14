@@ -1,0 +1,873 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugins/log-hello/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugins/busy-loop/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugins/trap-guest/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugins/memory-bomb/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugins/weather/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugins/datex/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugins/poi-lookahead/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugins/imu/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/Cargo.toml
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugins/right-to-roam-camping/Cargo.toml
+workspace: /mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/Cargo.toml
+   Compiling hyper-util v0.1.20
+   Compiling tower-http v0.6.11
+   Compiling pathfinding v4.16.0
+   Compiling gpsd_proto v1.0.0
+   Compiling navi-plugin-imu-engine v0.1.0 (/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugins/imu/engine)
+   Compiling cargo_metadata v0.23.1
+   Compiling navi-plugin-host v0.1.0 (/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugin-host)
+   Compiling uniffi_bindgen v0.32.1
+   Compiling hyper-rustls v0.27.9
+   Compiling reqwest v0.12.28
+   Compiling driver-break-core v0.1.0 (/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/core)
+   Compiling navi-right-to-roam-camping v0.1.0 (/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugins/right-to-roam-camping/engine)
+   Compiling navi-plugin-right-to-roam-camping v0.1.0 (/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/plugins/right-to-roam-camping)
+   Compiling uniffi v0.32.1
+   Compiling navi-ffi v0.1.0 (/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-dev-wip-mirror/navi-ffi)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 55.63s
+     Running unittests src/lib.rs (target/debug/deps/driver_break_core-cbac3dd9a49d87d1)
+
+running 734 tests
+test admin_region::tests::bjornoya_is_sj ... ok
+test admin_region::tests::jan_mayen_is_sj ... ok
+test admin_region::tests::gibraltar_centre_is_gi ... ok
+test admin_region::tests::longyearbyen_is_sj_not_no ... ok
+test admin_region::tests::svalbard_margin_is_ambiguous_unknown_not_no ... ok
+test admin_region::tests::subdivision_field_is_none_on_override_hits ... ok
+test admin_region::tests::tromso_not_claimed_by_sj_override ... ok
+test config::ebike::tests::defaults_match_spec_examples ... ok
+test config::ebike::tests::motor_efficiency_increases_draw ... ok
+test config::ebike::tests::flat_only_max_grade_matches_formula ... ok
+test config::ebike::tests::range_pct_scales_with_capacity ... ok
+test config::ebike::tests::tractive_force_hand_check_85nm_27_5in ... ok
+test config::ebike::tests::zero_tractive_yields_zero_grade ... ok
+test config::eco::tests::climb_costs_pe_descent_does_not_refund_without_regen ... ok
+test config::eco::tests::electric_regen_makes_descent_cheaper_than_combustion ... ok
+test config::eco::tests::floor_is_in_joules_not_metres ... ok
+test config::eco::tests::non_electric_profiles_keep_zero_regen ... ok
+test config::ev_car::tests::defaults_match_spec_example ... ok
+test config::ev_car::tests::pct_scales_with_capacity ... ok
+test config::poi_radii::tests::hike_cycle_default_matches_slider_floor ... ok
+test config::poi_radii::tests::motor_requires_road_link_by_default ... ok
+test config::poi_radii::tests::sanitize_clamps_extreme_values ... ok
+test config::traveller_profile::tests::unknown_residency_is_stricter_ontario_path ... ok
+test config::truck_history::tests::compensation_deadline_is_sunday_of_week_plus_three ... ok
+test config::truck_history::tests::iso_week_monday_known_friday ... ok
+test config::vehicle_overnight::tests::mobile_home_maps_to_campervan_not_hgv ... ok
+test config::truck_history::tests::thirty_hour_rest_repays_twenty_one_shortfall ... ok
+test config::truck_history::tests::reduced_weekly_records_debt_and_regular_repay ... ok
+test config::vehicle_overnight::tests::professional_driver_defaults_false_never_inferred_from_weight ... ok
+test datex::config::tests::plugin_defaults_off ... ok
+test datex::config::tests::poll_interval_clamped_to_server_ttl ... ok
+test datex::impact::tests::delay_scale_thirty_minutes_exceeds_thirty_seconds ... ok
+test datex::impact::tests::infrastructure_damage_passable_is_penalize_not_block ... ok
+test datex::impact::tests::maintenance_stengt_text_is_penalty_not_block ... ok
+test datex::impact::tests::maintenance_two_lanes_without_closure_text_is_penalize ... ok
+test datex::impact::tests::none_severity_zero_lanes_maintenance_is_penalty ... ok
+test datex::impact::tests::one_lane_maintenance_is_penalize ... ok
+test datex::impact::tests::partial_lane_stengt_text_does_not_block_from_phrase_alone ... ok
+test datex::impact::tests::planner_impacts_copies_delay_scaled_multiplier ... ok
+test datex::impact::tests::planner_impacts_drops_ignore_and_keeps_block ... ok
+test datex::impact::tests::risk_phrasing_fare_for_stengt_does_not_block ... ok
+test datex::impact::tests::stengt_i_periode_is_not_a_full_closure_phrase ... ok
+test download::http::tests::geofabrik_backoff_grows_and_caps ... ok
+test download::http::tests::is_geofabrik_latest_detects_slash_forms ... ok
+test download::http::tests::is_geofabrik_osm_pbf_covers_dated_and_latest ... ok
+test download::http::tests::keep_partial_on_transient_http ... ok
+test download::http::tests::parse_latest_parts_sweden_and_landsdel ... ok
+test download::http::tests::newest_dated_pbf_href_picks_latest_yymmdd ... ok
+test download::http::tests::recent_yymmdd_candidates_walk_back ... ok
+test download::http::tests::streams_small_http_object ... ignored, network: stream a small public object to disk
+test download::http::tests::resume_progress_label_switches_when_offset_nonzero ... ok
+test datex::impact::tests::stengt_comment_does_not_block_construction ... ok
+test download::http::tests::short_url_keeps_host_and_leaf ... ok
+test download::http::tests::strip_trailing_slash_osm_pbf_only_dated_slash ... ok
+test datex::parse::tests::kind_mapping_covers_live_and_unused_types ... ok
+test download::phase_timing::tests::contention_flags_slow_sqlite_write ... ok
+test download::http::tests::redirect_location_builds_dated_url ... ok
+test download::plan_cancel::tests::cancel_stops_matching_id_not_later_plan ... ok
+test download::phase_timing::tests::parse_meminfo_line ... ok
+test download::http::tests::timeout_scales ... ok
+test download::pbf_priority::tests::cancelled_plan_aborts_pbf_element_scan ... ok
+test download::progress::tests::channels_do_not_clobber ... ok
+test download::progress::tests::region_tag_annotates_bare_labels ... ok
+test export::gpx::tests::empty_track_still_valid_rte ... ok
+test download::pbf_priority::tests::bbox_content_hash_is_deterministic_and_near_period ... ok
+test export::gpx::tests::parse_route_polyline_bugoynes_is_lon_then_lat ... ok
+test export::gpx::tests::to_gpx_direct_start_end_no_vias ... ok
+test export::gpx::tests::to_gpx_with_vias_and_polyline_roundtrip ... ok
+test download::progress::tests::thread_local_channel_selects_slot ... ok
+test download::phase_timing::tests::host_snapshot_line_is_nonempty ... ok
+test icons::tests::resolves_leaf_for_eco ... ok
+test download::phase_timing::tests::io_proxy_logs_after_start_end ... ok
+test long_trip::adjacency::tests::fu23_detour_ratios_elsa_vs_working ... ok
+test long_trip::adjacency::tests::fu24_vestlandet_fjord_ratios_never_absurd_when_installed ... ok
+test icons::tests::rasterizes_leaf_svg ... ok
+test long_trip::brouter::tests::no_straight_line_in_brouter_module ... ok
+test long_trip::brouter::tests::url_uses_lon_lat_pipe_and_car_eco ... ok
+test long_trip::estimate::tests::shortfall_when_free_below_needed ... ok
+test long_trip::missing_geom::tests::advisory_drops_major_end_outside_the_band ... ok
+test long_trip::missing_geom::tests::band_only_region_is_not_named ... ok
+test icons::tests::rasterizes_nav_icon_by_key ... ok
+test long_trip::missing_geom::tests::far_from_coarse_path_is_ignored ... ok
+test long_trip::missing_geom::tests::installed_continuation_is_silent ... ok
+test long_trip::missing_geom::tests::sliver_between_two_installed_regions_is_named ... ok
+test long_trip::neighbours::tests::pinned_ors_country_ids_match_official_list ... ok
+test long_trip::neighbours::tests::norway_avoids_se_fi_ru ... ok
+test long_trip::neighbours::tests::us_avoids_ca_mx ... ok
+test long_trip::neighbours::tests::table_is_symmetric ... ok
+test long_trip::ors::tests::body_uses_lon_lat_avoids_ferries_and_us_neighbours ... ok
+test long_trip::ors::tests::no_straight_line_fallback_in_module ... ok
+test long_trip::ors::tests::parse_geojson_feature_collection ... ok
+test long_trip::ors::tests::too_many_waypoints_is_request_too_large ... ok
+test long_trip::preliminary::tests::default_brouter_base_is_public ... ok
+test long_trip::preliminary::tests::disclosure_mentions_third_parties_and_brouter_logging ... ok
+test long_trip::preliminary::tests::no_straight_line_in_preliminary_module ... ok
+test nav::tests::current_road_prefers_name_then_ref_then_class ... ok
+test nav::tests::current_road_preserves_norwegian_special_chars ... ok
+test nav::tests::format_altitude_metric_and_imperial ... ok
+test nav::tests::format_distance_metric_and_imperial ... ok
+test nav::tests::format_speed_metric_and_imperial ... ok
+test nav::tests::investigation_route_turn_icons_use_normal_tier ... ok
+test nav::tests::phases_match_locked_thresholds ... ok
+test nav::tests::maneuver_street_formats_multi_value_refs ... ok
+test nav::tests::prefer_name_over_ref ... ok
+test nav::tests::same_road_normalises_ref_spacing ... ok
+test nav::tests::turn_tier_icon_key_full_table ... ok
+test pack_server::acquisition::tests::classify_unreachable_and_fetch_tokens ... ok
+test pack_server::acquisition::tests::catalog_parent_fallback_resolves_danish_leaves_to_country ... ok
+test pack_server::acquisition::tests::discovery_bases_default_chain ... ok
+test pack_server::acquisition::tests::leaf_stem_helpers ... ok
+test pack_server::acquisition::tests::path_covered_exact_and_child ... ok
+test pack_server::acquisition::tests::resolve_empty_catalog ... ok
+test pack_server::acquisition::tests::resolve_normalizes_slashes ... ok
+test pack_server::acquisition::tests::resolve_reachable_region_missing ... ok
+test pack_server::acquisition::tests::resolve_reachable_region_ready ... ok
+test pack_server::acquisition::tests::resolve_region_source_uses_parent_fallback ... ok
+test pack_server::acquisition::tests::resolve_unreachable ... ok
+test pack_server::acquisition::tests::vastra_gotaland_catalog_alias_resolves_to_published_underscore_id ... ok
+test long_trip::adjacency::tests::bugoynes_lon_lat_is_nord_norge_not_pakistan ... ok
+test long_trip::adjacency::tests::asset_loads_and_has_named_links ... ok
+test long_trip::adjacency::tests::bevensen_pip_is_niedersachsen_not_mv ... ok
+test long_trip::adjacency::tests::finland_is_absent_from_adjacency ... ok
+test long_trip::adjacency::tests::klecken_and_innlandet_pip ... ok
+test long_trip::adjacency::tests::expected_isolates_include_gotland_and_overseas ... ok
+test long_trip::adjacency::tests::bevensen_ottadal_sd_stems_name_hamburg_if_uninstalled ... ok
+test pack_server::corridor_regions::tests::all_road_current_catalog_lists_seven_after_niedersachsen ... ok
+test pack_server::corridor_regions::tests::straight_klecken_to_dest_misses_sweden ... ok
+test pack_server::corridor_regions::tests::all_road_with_danish_leaves_prefers_leaves ... ok
+test icons::tests::rasterizes_gzipped_svgz_country_flag ... ok
+test pack_server::fetch::tests::leaf_stem_from_path ... ok
+test pack_server::fetch::tests::remap_prefixes_bake_stem ... ok
+test icons::tests::rasterizes_poi_fuel_by_key ... ok
+test admin_subdivision::tests::lillehammer_is_innlandet ... ok
+test admin_subdivision::tests::current_iso_codes_tromso_alta_bodo_trondheim ... ok
+test admin_subdivision::tests::never_emits_pre_2024_northern_codes ... ok
+test pack_server::fetch::tests::preferred_graph_format_prefers_v9_when_both_offered ... ok
+test pack_server::place_index_after::tests::pbf_filename_uses_geofabrik_leaf_stem ... ok
+test pack_server::place_index_after::tests::report_string_marks_pass ... ok
+test pack_server::place_index_after::tests::build_rejects_missing_pbf ... ok
+test pack_server::place_index_after::tests::refuse_region_id_that_is_not_an_installed_pack ... ok
+test pack_server::place_source::tests::finds_manifest_entry_by_suffix ... ok
+test pack_server::place_index_after::tests::refuse_covering_extract_when_leaf_packs_installed ... ok
+test pack_server::fetch::tests::http_download_verified_resumes_partial_with_range ... ok
+test pack_server::place_index_after::tests::sweden_lan_without_leaf_pbf_cannot_index_yet ... ok
+test pack_server::place_source::tests::manifest_without_key_is_none ... ok
+test long_trip::adjacency::tests::gotland_trip_is_missing_corridor ... ok
+test pack_server::region_plan::tests::terminate_reason_outside_countries_maps_to_typed_error ... ok
+test pack_server::region_plan::tests::trip_waypoints_preserve_via_order ... ok
+test pack_server::region_plan::tests::incomplete_niedersachsen_returns_seven_missing_regions ... ok
+test pack_server::region_plan::tests::via_on_uninstalled_region_is_reported_in_missing_regions ... ok
+test pack_server::tests::base_url_omits_default_http_port ... ok
+test pack_server::tests::joins_current_json_without_double_slash ... ok
+test pack_server::tests::live_pack_host_discovery ... ignored, network: live navi-server pack host
+test pack_server::region_plan::tests::full_install_is_ok_and_snap_stays_distinct ... ok
+test pack_server::tests::malformed_json_is_unreachable ... ok
+test pack_server::tests::migration_catalog_generation_is_not_region_bake_id ... ok
+test long_trip::adjacency::tests::gate_cases_a_to_d_band_names_nothing_with_host_stems ... ok
+test pack_server::tests::parses_minimal_catalog ... ok
+test pack_server::tests::region_catalog_status_distinguishes_missing_region ... ok
+test download::pbf_priority::tests::cancel_during_blob_aborts_after_that_blob ... ok
+test pack_server::tests::mock_404_is_soft_unreachable ... ok
+test poi::classifier::tests::craft_brewery_does_not_require_all_three_tags ... ok
+test pack_server::tests::mock_ready_returns_regions ... ok
+test pack_server::place_source::tests::partial_file_is_not_indexed ... ok
+test poi::classifier::tests::fishing_matches_leisure_and_related ... ok
+test poi::classifier::tests::craft_brewery_matches_beer_cider_wine_spirits_and_retail ... ok
+test pack_server::place_source::tests::manifest_without_key_falls_back ... ok
+test poi::classifier::tests::general_matches_tourism_artwork ... ok
+test pack_server::place_source::tests::checksum_mismatch_is_rejected ... ok
+test poi::classifier::tests::lodging_matches_hotel_motel_guest_house_or_hostel ... ok
+test poi::classifier::tests::rest_area_matches_highway_or_hgv_parking ... ok
+test poi::classifier::tests::rest_area_weekly_suitable_for_services_not_bare_rest_area ... ok
+test poi::classifier::tests::unlocked_requires_locked_no_or_non_network_basic_shelter ... ok
+test poi::corridor_band::tests::drops_building_far_from_corridor ... ok
+test poi::index::tests::craft_brewery_surfaces_in_nearest_query ... ok
+test poi::lookahead::tests::brewery_cider_is_craft_brewery ... ok
+test poi::corridor_band::tests::keeps_building_near_150m_boundary ... ok
+test poi::corridor_band::tests::filter_preserves_near_drops_far ... ok
+test long_trip::adjacency::tests::fu23_elsa_direct_corridor_and_missing ... ok
+test poi::corridor_band::tests::keeps_building_within_exact_threshold ... ok
+test poi::lookahead::tests::cone_isotropic_without_heading ... ok
+test poi::lookahead::tests::category_filter_excludes_cabin_and_plain_water ... ok
+test pack_server::fetch::tests::fetch_rejects_old_graph_format_without_promoting ... ok
+test poi::lookahead::tests::cone_rejects_behind_and_beyond_radius ... ok
+test poi::lookahead::tests::defaults_are_opt_in_off ... ok
+test routing::access::tests::access_no_blocks_all_unless_specific_yes ... ok
+test routing::access::tests::barrier_without_access_tags_does_not_block ... ok
+test poi::lookahead::tests::hours_unknown_label_and_strict_filter ... ok
+test routing::access::tests::bollard_with_motor_no_blocks_motor_only ... ok
+test routing::access::tests::ferry_with_bicycle_yes_allows_bike ... ok
+test routing::access::tests::ferry_yes_tag_without_bicycle_blocks_bike ... ok
+test routing::access::tests::motor_vehicle_no_blocks_motor_not_foot ... ok
+test routing::basemap::downloader::tests::extract_with_pause_resume_flags ... ignored, network: real Protomaps extract + pause
+test routing::access::tests::untagged_ferry_blocks_bicycle_not_motor ... ok
+test routing::basemap::extract::tests::extract_tiny_oslo_dem_from_mapterhorn ... ignored, network: real Mapterhorn DEM range extract
+test routing::access::tests::specific_motor_yes_overrides_access_no ... ok
+test routing::basemap::extract::tests::extract_tiny_oslo_from_planet ... ignored, network: real Protomaps range extract
+test routing::basemap::extract::tests::extract_world_overview_z6 ... ignored, network: real Protomaps range extract of the z0-6 world overview
+test routing::basemap::downloader::tests::pause_cancel_flags ... ok
+test routing::basemap::extract::tests::ostlandet_extract_throughput ... ignored, network: measures Ostlandet extract tiles/s
+test routing::basemap::extract::tests::oslo_tile_count_z3_small ... ok
+test routing::basemap::extract::tests::staging_dir_suffix ... ok
+test routing::basemap::extract::tests::timeout_scales_with_chunk_size ... ok
+test poi::lookahead::tests::opening_hours_open_closed_unknown ... ok
+test poi::lookahead::tests::hardanger_ulvik_cone_categories_and_hours ... ok
+test routing::basemap::extract::tests::download_workers_in_range ... ok
+test routing::basemap::extract::tests::validate_dem_skips_vector_floors ... ok
+test poi::lookahead::tests::query_suppresses_closed_and_orders_nearest ... ok
+test routing::basemap::extract::tests::validate_test_region_allows_small_mz12 ... ok
+test routing::basemap::extract::tests::interrupted_write_leaves_existing_dest ... ok
+test routing::basemap::range_coalesce::tests::coalesce_progress_counts_inflight_and_completed ... ok
+test routing::basemap::range_coalesce::tests::merge_adjacent_with_small_gap ... ok
+test routing::basemap::range_coalesce::tests::merge_orders_smallest_first ... ok
+test routing::basemap::range_coalesce::tests::merge_respects_max_chunk ... ok
+test routing::basemap::range_coalesce::tests::no_merge_when_overfetch_zero ... ok
+test routing::basemap::extract::tests::validate_rejects_archive_with_no_tiles ... ok
+test routing::basemap::regions::tests::coarse_longitude_fallback_only_when_no_tighter_match ... ok
+test routing::basemap::regions::tests::coverage_uses_downloaded_paths_only ... ok
+test routing::basemap::regions::tests::catalog_aligned_country_paths_have_bbox ... ok
+test routing::basemap::regions::tests::germany_nested_leaf_falls_back_to_country_bbox ... ok
+test routing::basemap::regions::tests::london_point_prefers_greater_london_over_great_britain ... ok
+test routing::basemap::regions::tests::long_trip_boundary_bboxes_intersect_neighbours ... ok
+test routing::basemap::regions::tests::ostlandet_bbox_covers_oslo ... ok
+test routing::basemap::extract::tests::validate_rejects_truncated_archive ... ok
+test routing::basemap::extract::tests::validate_world_overview_allows_maxzoom_6 ... ok
+test routing::basemap::regions::tests::pbf_stem_unknown_leaves_are_not_invented_under_norway ... ok
+test routing::basemap::regions::tests::planet_url_passthrough ... ok
+test routing::basemap::regions::tests::region_key_from_geofabrik_path ... ok
+test routing::basemap::regions::tests::pack_leaf_stems_map_to_catalog_paths ... ok
+test routing::basemap::regions::tests::suggest_landsdel_prefers_specific_over_country ... ok
+test routing::basemap::regions::tests::us_state_beats_global_longitude_country_extracts ... ok
+test routing::basemap::regions::tests::sweden_border_town_is_sweden_not_ostlandet ... ok
+test routing::basemap::regions::tests::pbf_stem_maps_to_geofabrik_path ... ok
+test routing::basemap::extract::tests::validate_accepts_small_archive_with_large_bbox ... ok
+test routing::basemap::tile_read::tests::reads_mapterhorn_dem_tile_when_fixture_present ... ok
+test routing::basemap::extract::tests::validate_sample_decode_inside_current_thread_runtime ... ok
+test routing::corridor_skeleton::tests::border_approach_keeps_both_directed_edges ... ok
+test routing::conditional::tests::unparseable_snow_declined ... ok
+test routing::conditional::tests::unparseable_march_full_name_declined ... ok
+test routing::conditional::tests::conditional_maxspeed_picks_matching_window ... ok
+test routing::conditional::tests::friisvegen_nov_jun_closed_in_january ... ok
+test routing::corridor_skeleton::tests::border_touch_and_return_is_not_a_joint ... ok
+test routing::conditional::tests::parenthesized_and_bare_forms ... ok
+test routing::corridor_skeleton::tests::coarse_names_stay_off_the_graph_until_applied ... ok
+test routing::corridor_skeleton::tests::coarse_avoid_motorways_skips_motorway_corridor ... ok
+test routing::corridor_skeleton::tests::coord_out_and_back_is_collapsed ... ok
+test routing::corridor_skeleton::tests::coarse_avoid_tolls_never_use_skips_toll_corridor ... ok
+test routing::corridor_skeleton::tests::coarse_avoid_ferries_skips_ferry_corridor ... ok
+test routing::corridor_skeleton::tests::fu23_elsa_stage_b_after_stitch ... ignored, needs .tmp-fu23-device-skels from emulator pull
+test routing::corridor_skeleton::tests::coarse_avoid_tunnels_prefers_surface_corridor ... ok
+test routing::corridor_skeleton::tests::ferry_terminal_never_merged ... ok
+test routing::corridor_skeleton::tests::detailed_pack_never_carries_skeleton_carriageway_link_name ... ok
+test routing::corridor_skeleton::tests::hop_end_far_from_coarse_path_is_rejected ... ok
+test routing::corridor_skeleton::tests::long_secondary_chain_to_major_is_kept ... ok
+test routing::corridor_skeleton::tests::last_reachable_coarse_node_skips_disconnected_joint ... ok
+test routing::corridor_skeleton::tests::multi_hop_service_chain_to_primary_kept ... ok
+test pack_server::fetch::tests::fetch_accepts_v8_graph_format_and_promotes ... ok
+test pack_server::fetch::tests::fetch_installs_tiny_region_with_checksum ... ok
+test routing::corridor_skeleton::tests::near_equal_pick_follows_the_approved_rule ... ok
+test routing::corridor_skeleton::tests::net_country_crossing_is_a_joint ... ok
+test icons::tests::resolves_and_rasterizes_speed_camera ... ok
+test routing::corridor_skeleton::tests::path_that_returns_to_a_node_is_collapsed ... ok
+test routing::corridor_skeleton::tests::region_crossing_never_merged ... ok
+test routing::corridor_skeleton::tests::opposite_oneway_carriageways_get_stitch_link ... ok
+test routing::corridor_skeleton::tests::secondary_to_border_kept ... ok
+test routing::corridor_skeleton::tests::secondary_to_ferry_kept_far_secondary_dropped ... ok
+test routing::corridor_skeleton::tests::shared_osm_detects_border ... ok
+test routing::corridor_skeleton::tests::roundtrip_binary_counts ... ok
+test routing::corridor_skeleton::tests::merged_hop_over_node_limit_moves_joint ... ok
+test routing::corridor_skeleton::tests::stage_b_alternative_must_visit_every_via_in_order ... ok
+test routing::corridor_skeleton::tests::shared_approach_node_joins_when_major_ids_miss ... ok
+test routing::corridor_skeleton::tests::reversal_with_clipped_fit_is_direct ... ok
+test routing::corridor_skeleton::tests::unclassified_pier_stub_to_ferry_kept ... ok
+test routing::corridor_skeleton::tests::user_via_never_merged ... ok
+test routing::corridor_skeleton::tests::streaming_merge_matches_per_region_merge ... ok
+test routing::dnt_winter::tests::advisory_text_non_blocking ... ok
+test routing::dnt_winter::tests::winter_months_active ... ok
+test routing::ebike_route::tests::climb_warning_fires_only_above_computed_max ... ok
+test routing::ebike_route::tests::eco_energy_breakdown_report_separates_climb_and_descent ... ok
+test routing::ebike_route::tests::format_ev_car_report_uses_kwh ... ok
+test routing::ebike_route::tests::format_report_includes_capacity_and_climb_warning ... ok
+test routing::corridor_skeleton::tests::split_joint_off_natural_route_is_merged_away ... ok
+test routing::ebike_route::tests::regen_reduces_battery_draw_on_undulating_route ... ok
+test routing::ebike_route::tests::range_pct_changes_when_battery_capacity_edited ... ok
+test routing::elevation::country_polys::tests::asset_within_budget ... ok
+test routing::corridor_skeleton::tests::clipped_share_fits_when_whole_tiles_do_not ... ok
+test routing::corridor_skeleton::tests::full_overlap_still_uses_corridor ... ok
+test routing::corridor_skeleton::tests::intra_skeleton_stitch_bridges_region_component_cut ... ok
+test download::pbf_priority::tests::background_indexer_waits_for_foreground_plan ... ok
+test download::pbf_priority::tests::skip_bbox_when_plan_active_on_other_channels ... ok
+test download::pbf_priority::tests::plan_thread_does_not_self_deadlock ... ok
+test download::pbf_priority::tests::bbox_lock_serializes_callers ... ok
+test download::pbf_priority::tests::background_pbf_scan_does_not_starve_plan_rayon ... ok
+test pack_server::place_source::tests::existing_intact_not_rebuilt_when_file_first_appears ... ok
+test routing::elevation::sources::copernicus::tests::streams_one_copernicus_tile ... ignored, network: live Copernicus COG stream-to-disk
+test routing::eta::tests::advisory_used_when_no_posted ... ok
+test routing::eta::tests::ferry_eta_fallback_10kmh_only_without_duration ... ok
+test routing::eta::tests::ferry_eta_uses_overlay_duration_plus_boarding ... ok
+test routing::eta::tests::highway_display_labels_align_with_fallback_classes ... ok
+test routing::eta::tests::highway_fallback_table ... ok
+test routing::eta::tests::hiking_and_cycling_fixed_pace ... ok
+test routing::eta::tests::minspeed_floors_motor_eta ... ok
+test routing::eta::tests::missing_maxspeed_uses_highway_fallback_not_zero ... ok
+test routing::eta::tests::parse_maxspeed_numeric_and_units ... ok
+test routing::eta::tests::practical_beats_posted_for_eta ... ok
+test routing::eta::tests::tagged_maxspeed_overrides_fallback ... ok
+test routing::graph::bbox_build::bbox_tests::bbox_build_gps_atnbrua_from_ostlandet ... ok
+test routing::graph::bbox_build::bbox_tests::ferry_approach_promotes_footway_pier_link_for_car ... ok
+test routing::graph::bbox_build::bbox_tests::keep_way_tag_retains_tunnel_for_avoid_tunnels ... ok
+test routing::graph::bbox_build::bbox_tests::route_ferry_without_highway_is_kept_for_car ... ok
+test routing::graph::bike_suitability::tests::gravel_prefers_gravel_over_shorter_asphalt_arterial ... ok
+test routing::graph::bike_suitability::tests::missing_tags_never_unsuitable ... ok
+test routing::graph::bike_suitability::tests::mtb_and_gravel_diverge_on_mixed_asphalt_gravel_path ... ok
+test routing::graph::bike_suitability::tests::mtb_prefers_path_over_shorter_paved_local ... ok
+test routing::graph::bike_suitability::tests::pack_hit_soft_only_road_avoids_short_poor_path ... ok
+test routing::graph::bike_suitability::tests::pack_hit_soft_only_trekking_avoids_short_poor_path ... ok
+test routing::graph::bike_suitability::tests::paved_road_unaffected ... ok
+test routing::graph::bike_suitability::tests::road_excludes_mtb_scale_and_mtb_route ... ok
+test routing::graph::bike_suitability::tests::road_prefers_asphalt_over_shorter_path ... ok
+test routing::graph::bike_suitability::tests::road_soft_cost_does_not_block_short_path_connector_when_only_option ... ok
+test pack_server::place_source::tests::unchanged_sha256_does_not_rebuild ... ok
+test routing::graph::builder::tests::allowed_countries_none_keeps_shortest_cross_border_path ... ok
+test routing::basemap::extract::tests::validate_rejects_mz12_large_region_fixture ... ok
+test pack_server::place_source::tests::build_and_intact_records_sha256 ... ok
+test routing::graph::builder::tests::avoid_motorways_blocks_motorway_class_motorroad_and_dual_fast_not_e_ref ... ok
+test routing::graph::builder::tests::avoid_toll_and_ferry_flags ... ok
+test routing::graph::builder::tests::avoid_tunnels_soft_cost_keeps_edge_allowed ... ok
+test routing::graph::builder::tests::bike_ferry_length_cost_exceeds_short_land_hop ... ok
+test routing::graph::builder::tests::car_directed_access_respects_oneway ... ok
+test routing::graph::builder::tests::car_directed_access_two_way ... ok
+test routing::graph::builder::tests::census_parallel_edges_ostlandet_car ... ignored, ostlandet PBF census probe — run with --ignored --nocapture
+test routing::graph::builder::tests::clearance_excludes_low_bridge_and_finds_alternate ... ok
+test routing::graph::builder::tests::construction_or_proposed_highway_detected ... ok
+test routing::graph::builder::tests::datex_grid_bind_hits_nearby_edge_and_skips_far_impacts ... ok
+test routing::graph::builder::tests::destination_skips_one_way_dead_end_stub ... ok
+test pack_server::place_index_after::tests::build_cache_hit_skips_rebuild_when_index_present ... ok
+test pack_server::place_source::tests::delete_removes_only_that_region ... ok
+test pack_server::place_source::tests::changed_sha256_rebuilds_only_that_region ... ok
+test pack_server::tests::unreachable_host_fails_soft ... ok
+test pack_server::tests::chain_skips_dead_first_host ... ok
+test routing::basemap::regions::tests::ostlandet_catalog_bbox_spills_into_sweden has been running for over 60 seconds
+test routing::corridor_skeleton::tests::joints_are_border_ferry_via_not_even_spacing has been running for over 60 seconds
+test routing::corridor_skeleton::tests::stage_b_delivered_route_passes_every_via has been running for over 60 seconds
+test routing::corridor_skeleton::tests::stage_b_every_leg_alternative_runs_between_its_waypoints has been running for over 60 seconds
+test routing::elevation::country_polys::tests::canada_and_mexico_present has been running for over 60 seconds
+test routing::elevation::country_polys::tests::flensburg_is_germany_not_denmark has been running for over 60 seconds
+test routing::elevation::country_polys::tests::iso_at_if_ready_matches_iso_at_after_warm has been running for over 60 seconds
+test routing::elevation::country_polys::tests::kansas_is_us has been running for over 60 seconds
+test routing::elevation::country_polys::tests::kautokeino_is_norway_not_sweden has been running for over 60 seconds
+test routing::elevation::country_polys::tests::liechtenstein_before_neighbours has been running for over 60 seconds
+test routing::elevation::country_polys::tests::london_is_gb has been running for over 60 seconds
+test routing::elevation::country_polys::tests::mid_atlantic_is_none has been running for over 60 seconds
+test routing::elevation::country_polys::tests::oslo_is_norway has been running for over 60 seconds
+test routing::elevation::country_polys::tests::ready_false_until_index_built_in_isolation has been running for over 60 seconds
+test routing::elevation::country_polys::tests::warm_reports_nonzero_memory has been running for over 60 seconds
+test routing::graph::builder::tests::allowed_countries_impossible_yields_outside_countries has been running for over 60 seconds
+test routing::graph::builder::tests::allowed_countries_norway_only_takes_longer_domestic_path has been running for over 60 secondtest routing::elevation::country_polys::tests::mid_atlantic_is_none ... ok
+test routing::elevation::country_polys::tests::london_is_gb ... ok
+test routing::elevation::country_polys::tests::kautokeino_is_norway_not_sweden ... ok
+test routing::elevation::country_polys::tests::canada_and_mexico_present ... ok
+test routing::basemap::regions::tests::ostlandet_catalog_bbox_spills_into_sweden ... ok
+test routing::elevation::country_polys::tests::kansas_is_us ... ok
+test routing::elevation::country_polys::tests::flensburg_is_germany_not_denmark ... ok
+test routing::elevation::country_polys::tests::liechtenstein_before_neighbours ... ok
+test routing::elevation::country_polys::tests::oslo_is_norway ... ok
+test routing::graph::builder::tests::edge_filter_cross_border_ferry_still_excluded ... ok
+test routing::graph::builder::tests::edge_filter_flensburg_padborg_excluded_ftest routing::basemap::regions::tests::ostlandet_catalog_bbox_spills_into_sweden ... ok
+test routing::elevation::country_polys::tests::oslo_is_norway ... ok
+test routing::elevation::country_polys::tests::london_is_gb ... ok
+test routing::elevation::country_polys::tests::canada_and_mexico_present ... ok
+test routing::elevation::country_polys::tests::kansas_is_us ... ok
+test routing::elevation::country_polys::tests::liechtenstein_before_neighbours ... ok
+test routing::elevation::country_polys::tests::flensburg_is_germany_not_denmark ... ok
+test routing::elevation::country_polys::tests::kautokeino_is_norway_not_sweden ... ok
+test routing::elevation::country_polys::tests::mid_atlantic_is_none ... ok
+test routing::graph::builder::tests::edge_filter_flensburg_padborg_excluded_for_germany ... ok
+test routing::graph::builder::tests::edge_filter_cross_border_ferry_still_excluded ... ok
+test routing::graph::builder::tests::edge_filter_roros_halden_style_allowed_for_norway ... ok
+test routing::graph::builder::tests::edge_filter_kautokeino_alta_vs_karesuando ... ok
+test routing::graph::builder::tests::edge_filter_svinesund_bridge_excluded_for_no_and_se ... ok
+test routing::corridor_skeleton::tests::joints_are_border_ferry_via_not_even_spacing ... ok
+test routing::graph::builder::tests::allowed_countries_norway_only_takes_longer_domestic_path ... ok
+test routing::graph::builder::tests::edge_filter_domestic_ferry_kept_when_midpoint_is_ocean ... ok
+test routing::corridor_skeleton::tests::stage_b_every_leg_alternative_runs_between_its_waypoints ... ok
+test routing::graph::builder::tests::ferry_base_weight_matches_server_formula ... ok
+test routing::graph::builder::tests::ferry_costing_rejects_long_unnamed_chain_vs_short_tagged ... ok
+test routing::graph::builder::tests::ferry_interval_side_channel_affects_wait ... ok
+test routing::graph::builder::tests::mobile_home_maps_to_truck_graph ... ok
+test routing::graph::builder::tests::foot_and_bicycle_always_avoid_motorway_grade ... ok
+test routing::corridor_skeleton::tests::stage_b_delivered_route_passes_every_via ... ok
+test routing::graph::builder::tests::allowed_countries_impossible_yields_outside_countries ... ok
+test routing::graph::builder::tests::motorway_grade_from_parts_and_lane_parse ... ok
+test routing::graph::builder::tests::edge_filter_us_border_crossings_excluded_for_us ... ok
+test routing::graph::builder::tests::nearest_routable_accepts_inside_hiking_snap_budget ... ok
+test routing::graph::builder::tests::nearest_routable_endpoint_keeps_near_gravel_over_distant_paved ... ok
+test routing::graph::builder::tests::nearest_routable_prefers_good_surface_on_same_component ... ok
+test routing::graph::builder::tests::nearest_routable_prefers_better_surface_within_snap_budget ... ok
+test routing::graph::builder::tests::nearest_routable_via_surface_does_not_jump_across_full_budget ... ok
+test routing::graph::builder::tests::parallel_edges_resolve_to_cheapest_for_path_geometry ... ok
+test routing::graph::builder::tests::nearest_routable_prefers_public_network_over_nearby_island ... ok
+test routing::graph::builder::tests::overlay_ferry_match_skips_oresund_and_storebaelt_bridges ... ok
+test routing::graph::builder::tests::parse_osm_interval_minutes_accepts_forms ... ok
+test routing::graph::builder::tests::format_route_avoidance_report_reflects_all_toll_policies ... ok
+test routing::graph::builder::tests::path_ferry_and_tunnel_legs_count_contiguous_runs ... ok
+test routing::graph::builder::tests::nearest_routable_keeps_island_when_public_road_is_beyond_budget ... ok
+test routing::graph::builder::tests::nearest_routable_rejects_outside_hiking_snap_budget ... ok
+test routing::graph::builder::tests::profile_mapping ... ok
+test routing::graph::cache::tests::graph_cache_path_is_deterministic ... ok
+test routing::graph::builder::tests::allowed_countries_norway_uses_domestic_ferry_not_sweden ... ok
+test routing::graph::builder::tests::via_points_are_visited_in_order ... ok
+test routing::graph::network_pref::tests::ostlandet_has_pilgrim_routes_when_fixture_present ... ignored, needs ostlandet fixture under core/target/integration-fixtures
+test routing::graph::builder::tests::nearest_routable_via_prefers_better_surface_within_slack ... ok
+test routing::graph::builder::tests::shortest_path_avoids_paved_to_poor_transition_when_alternate_exists ... ok
+test routing::graph::builder::tests::origin_rejects_tiny_isolated_sink ... ok
+test routing::graph::network_pref::tests::pilgrim_route_tag_and_name_hints_match ... ok
+test routing::graph::network_pref::tests::high_speed_edge_gets_penalty_multiplier ... ok
+test routing::graph::network_pref::tests::slow_road_pref_does_not_affect_car_profile_costing ... ok
+test routing::graph::network_pref::tests::hiking_network_tiers_match ... ok
+test routing::graph::builder::tests::overlay_ferry_replaces_pack_edge_not_stamp ... ok
+test routing::graph::network_pref::tests::slow_road_pref_fallback_when_only_high_speed_connects ... ok
+test routing::graph::network_pref::tests::cycling_network_tiers_match ... ok
+test routing::graph::road_near::tests::peer_gyntvegen_from_ostlandet_bbox ... ok
+test routing::graph::builder::tests::shortest_path_reaches_public_snap_from_other_end ... ok
+test routing::graph::road_near::tests::prefers_named_through_road_over_closer_unnamed_stub ... ok
+test routing::graph::road_near::tests::shape_distance_beats_endpoint_chord ... ok
+test routing::graph::road_near::tests::furnes_e6_from_ostlandet_bbox_sticky ... ok
+test routing::graph::road_near::tests::highway_fallback_when_no_maxspeed_tag ... ok
+test routing::graph::road_near::tests::shaped_edge_ignores_endpoint_chord_near_miss ... ok
+test routing::graph::builder::tests::seasonal_conditional_blocks_car_not_foot ... ok
+test routing::graph::road_near::tests::sticky_switches_after_sustained_clear_move_to_e6 ... ok
+test routing::graph::road_near::tests::sticky_speed_limit_holds_with_furnes_label ... ok
+test routing::graph::cache::tests::fingerprint_mismatch_returns_none ... ok
+test routing::graph::cache::tests::roundtrip_reweighted_graph_cache ... ok
+test routing::graph::road_near::tests::sticky_holds_furnes_under_midpoint_gps_noise ... ok
+test routing::graph::road_near::tests::conditional_maxspeed_overrides_base_on_hit ... ok
+test routing::graph::surface_quality::tests::classify_good_paved_and_grade1 ... ok
+test routing::graph::surface_quality::tests::all_good_prefers_trunk_over_shorter_tertiary ... ok
+test routing::graph::surface_quality::tests::legacy_v8_baked_good_degrades_gracefully ... ok
+test routing::graph::surface_quality::tests::low_maxspeed_gravel_still_used_when_no_asphalt_alternative ... ok
+test routing::graph::surface_quality::tests::classify_marginal_gravel_and_grade2 ... ok
+test routing::graph::surface_quality::tests::edge_multipliers_per_profile_and_offroad ... ok
+test routing::graph::surface_quality::tests::gravel_40_beats_absurdly_long_asphalt_detour ... ok
+test routing::graph::network_pref::tests::pilgrim_soft_pref_still_allows_non_network_path ... ok
+test routing::graph::network_pref::tests::soft_preference_raises_non_network_cost ... ok
+test routing::graph::surface_quality::tests::missing_maxspeed_multipliers ... ok
+test routing::graph::surface_quality::tests::transition_penalty_applies_on_first_edge_from_snap ... ok
+test routing::graph::surface_quality::tests::transition_penalty_only_on_large_drop ... ok
+test routing::graph::surface_quality::tests::travel_profile_maps_to_soft_cost ... ok
+test routing::graph::surface_quality::tests::untagged_per_highway_class_table ... ok
+test routing::graph::surface_quality::tests::prefers_asphalt_maxspeed_over_50_to_shorter_gravel_60 ... ok
+test routing::graph::surface_quality::tests::untagged_residential_still_routable_when_no_alternative ... ok
+test routing::graph::cache::tests::bbox_build_skips_before_opening_pbf_when_plan_active ... ok
+test routing::graph::surface_quality::tests::untagged_track_is_poor ... ok
+test routing::graph::surface_quality::tests::wire_encoding_preserves_v8_ordinals_and_appends_unknown ... ok
+test routing::graph::network_pref::tests::pilgrim_pref_chooses_pilgrim_over_shorter_parallel ... ok
+test routing::elevation::country_polys::tests::iso_at_if_ready_matches_iso_at_after_warm ... ok
+test routing::graph::surface_quality::tests::rough_speed_factor_only_boosts_non_good_with_posted_maxspeed ... ok
+test routing::guidance_path::tests::navit_isolated_turn_never_uses_slight_tier ... ok
+test routing::guidance_path::tests::navit_easily_tier_requires_same_dir_alternative ... ok
+test routing::graph::network_pref::tests::slow_road_pref_prefers_lower_speed_parallel ... ok
+test routing::elevation::country_polys::tests::ready_false_until_index_built_in_isolation ... ok
+test routing::guidance_path::tests::samples_use_posted_and_residential_fallback ... ok
+test routing::graph::surface_quality::tests::untagged_tertiary_loses_to_asphalt_tertiary_when_lengths_close ... ok
+test routing::guidance_path::tests::primary_ra4_deltas_map_consistently_through_sector_math ... ok
+test routing::guidance_path::tests::navit_roundabout_r5_r6_sector_boundary ... ok
+test routing::guidance_path::tests::navit_roundabout_icon_sectors ... ok
+test routing::guidance_path::tests::samples_preserve_norwegian_street_utf8 ... ok
+test routing::elevation::country_polys::tests::warm_reports_nonzero_memory ... ok
+test routing::guidance_path::tests::stitch_chunk_legs_drops_mid_destinations_and_offsets_cum ... ok
+test routing::guidance_path::tests::densify_lat_lon_polyline_has_spacing_and_cum ... ok
+test routing::guidance_path::tests::roundabout_emits_kind_with_exit_number_not_ring_turns ... ok
+test routing::guidance_path::tests::roundabout_first_exit_is_one ... ok
+test routing::guidance_path::tests::straight_emitted_only_at_real_junction ... ok
+test routing::indexed::convert::resume_tests::catalog_union_tile_grid_covers_fehmarn_terminals ... ok
+test routing::guidance_path::tests::thin_route_maneuvers_drops_straights_and_spaces_by_route_length ... ok
+test routing::guidance_path::tests::thin_route_maneuvers_keeps_via_and_destination_anchors ... ok
+test routing::indexed::convert::resume_tests::parse_graph_tile_rc_reads_row_col ... ok
+test routing::indexed::corridor_cache::tests::reclamp_keeps_mru_when_over_soft_cap ... ok
+test routing::indexed::corridor_cache::tests::insert_keeps_only_one_mru_corridor ... ok
+test routing::indexed::graph_pack::tests::clip_keeps_oresund_span_when_terminals_miss_band_square ... ok
+test routing::indexed::graph_pack::tests::graph_format_version_write_is_v9_and_accepts_v8 ... ok
+test routing::indexed::graph_pack::tests::manifest_accepts_v8_and_v9_rejects_neighbors ... ok
+test routing::indexed::graph_pack::tests::pack_roundtrip_preserves_motorway_grade_tags ... ok
+test routing::indexed::header::tests::mismatch_version_is_detectable ... ok
+test routing::indexed::graph_pack::tests::pack_roundtrip_preserves_edge_shape ... ok
+test routing::indexed::load::ferry_overlay_tests::fehmarn_rebake_tiles_have_puttgarden ... ignored
+test routing::indexed::corridor_cache::tests::lru_hit_shares_arc ... ok
+test routing::indexed::header::tests::preamble_roundtrip ... ok
+test routing::indexed::graph_pack::tests::pack_roundtrip_preserves_surface_quality ... ok
+test routing::indexed::graph_pack::tests::pack_materialize_preserves_edge_is_tunnel_owned_and_archived ... ok
+test routing::indexed::graph_pack::tests::pack_roundtrip_preserves_vehicle_physical_limits ... ok
+test routing::indexed::load::ferry_overlay_tests::disconnected_pack_with_orphan_ferry_does_not_skip_overlay ... ok
+test routing::indexed::load::ferry_overlay_tests::connected_hop_skips_overlay_gate ... ok
+test routing::indexed::corridor_skeleton_cache::tests::truck_reuses_car_corridor_skeleton_fingerprint ... ok
+test routing::indexed::corridor_cache::tests::evict_before_load_clears_retained_mru ... ok
+test routing::indexed::graph_pack::tests::pack_roundtrip_height_limit_changes_planned_route ... ok
+test routing::indexed::graph_pack::tests::archived_bbox_matches_owned_materialize ... ok
+test routing::indexed::load::fingerprint_pbf_tests::rejects_different_logical_extract ... ok
+test routing::indexed::graph_pack::tests::mixed_v8_v9_manifests_coexist_in_status_paths ... ok
+test routing::indexed::load::fingerprint_pbf_tests::truck_graph_tiles_fall_back_to_car_when_truck_key_absent ... ok
+test routing::indexed::load::ferry_overlay_tests::skane_leaf_shares_sweden_country_pbf_stem ... ok
+test routing::indexed::load::ferry_overlay_tests::stub_pbf_is_not_treated_as_real_extract ... ok
+test routing::indexed::load::fingerprint_pbf_tests::uses_data_dir_copy_when_filename_matches ... ok
+test routing::indexed::corridor_skeleton_cache::tests::neighbour_pack_change_makes_this_skeleton_stale ... ok
+test routing::indexed::load::hop_primary_tests::dest_primary_when_leaves_differ ... ok
+test routing::indexed::corridor_skeleton_cache::tests::rebuilding_a_neighbour_skeleton_keeps_this_skeleton_fresh ... ok
+test routing::indexed::load::multi_stem_corridor_tests::bbox_contained_requires_full_inclusion ... ok
+test routing::indexed::load::merge_tile_graphs_tests::merge_dedupes_identical_tile_boundary_edge ... ok
+test routing::indexed::load::merge_tile_graphs_tests::merge_keeps_parallel_edges_with_colliding_string_ids ... ok
+test routing::indexed::load::multi_stem_corridor_tests::corridor_needs_extra_only_when_bbox_leaves_primary_region ... ok
+test routing::indexed::load::raufoss_bergen_load_probe::probe_raufoss_bergen_pack_load ... ignored, needs /tmp/navi_pack_install with ostlandet+vestlandet v9 packs
+test routing::indexed::load::select_tiles_budget_tests::country_spill_tile_does_not_cover_foreign_leaf_endpoint ... ok
+test routing::indexed::load::select_tiles_budget_tests::hop_end_tile_outside_first_selection_is_forced_in ... ok
+test routing::indexed::load::select_tiles_budget_tests::hop_without_end_tile_fails_loudly ... ok
+test routing::indexed::load::multi_stem_corridor_tests::corridor_needs_extra_when_endpoint_has_pip_hole ... ok
+test routing::indexed::load::select_tiles_budget_tests::tile_bboxes_adjacent_detects_shared_grid_edge ... ok
+test routing::indexed::load::multi_stem_corridor_tests::mv_aabb_spill_does_not_justify_fehmarn_hop_extra ... ok
+test routing::indexed::load::multi_stem_corridor_tests::home_dir_prefers_newer_format_when_stem_duplicated ... ok
+test routing::indexed::load::multi_stem_corridor_tests::missing_regions_names_vestlandet_before_any_graph_load ... ok
+test routing::indexed::wetland_pack::tests::roundtrip_soft_hard_rings ... ok
+test routing::live_hazard::tests::cell_key_stable_inside_cell ... ok
+test routing::indexed::load::ferry_overlay_tests::supplement_without_real_pbf_does_not_invent_ferry_edges ... ok
+test routing::live_hazard::tests::cone_rejects_behind_and_beyond_radius ... ok
+test routing::live_hazard::tests::generated_speed_plates_use_dedicated_icons ... ok
+test routing::live_hazard::tests::odd_maxspeed_still_snaps_to_nearest_shipped_plate ... ok
+test routing::indexed::load::multi_stem_corridor_tests::corridor_needs_extra_when_endpoint_in_foreign_ready_leaf ... ok
+test routing::live_hazard::tests::speed_limit_20_maps_to_standin_icon ... ok
+test routing::indexed::tile_cache::tests::tile_lru_hit_and_disabled_gate ... ok
+test routing::osm_update::tests::catalog_generation_change_requires_rebuild ... ok
+test routing::indexed::load::select_tiles_budget_tests::trip_aabb_fill_keeps_off_chord_valley_tile ... ok
+test routing::osm_update::tests::catalog_generation_same_does_not_require_rebuild ... ok
+test routing::indexed::load::select_tiles_budget_tests::espa_atnbrua_keeps_t2_3 ... ok
+test routing::osm_update::tests::check_without_meta_is_unsupported ... ok
+test routing::indexed::load::select_tiles_budget_tests::r4b_bridge_keeps_western_e6_t2_3 ... ok
+test routing::osm_update::tests::parse_state_txt_strips_escaped_colons ... ok
+test routing::osm_update::tests::osc_url_pads_sequence_path ... ok
+test routing::osm_update::tests::plan_diff_when_osmium_and_fresh_enough ... ok
+test routing::indexed::load::select_tiles_budget_tests::intervening_sample_tile_not_dropped_by_count_budget ... ok
+test routing::osm_update::tests::plan_full_when_osmium_unavailable_instead_of_diff ... ok
+test routing::osm_update::tests::discover_installed_regions_from_server_stamp ... ok
+test routing::osm_update::tests::plan_fresh_is_up_to_date ... ok
+test routing::osm_update::tests::meta_round_trip ... ok
+test routing::osm_update::tests::plan_full_when_stale_ge_28_days ... ok
+test routing::osm_update::tests::retired_london_borough_paths_remap_to_greater_london ... ok
+test routing::osm_update::tests::plan_full_when_sequence_unknown ... ok
+test routing::osm_update::tests::retired_norway_fylke_paths_remap_to_ostlandet ... ok
+test routing::osm_update::tests::sweden_lan_extract_uses_country_pbf ... ok
+test routing::path_repair::tests::delivered_out_and_back_at_user_via_is_explained ... ok
+test routing::path_repair::tests::cosmetic_path_repair_fns_removed ... ok
+test routing::path_repair::tests::delivered_out_and_back_without_via_fails ... ok
+test routing::osm_update::tests::plan_full_redownload_when_stale ... ok
+test routing::osm_update::tests::no_osmium_apply_skips_osc_gz_downloads ... ok
+test routing::indexed::load::multi_stem_corridor_tests::try_load_fails_fast_when_destination_region_missing ... ok
+test routing::path_repair::tests::encode_roundtrip_matches_parse ... ok
+test routing::path_repair::tests::hop_polyline_length_agrees_with_distance_within_half_percent ... ok
+test routing::path_repair::tests::through_route_is_not_an_out_and_back ... ok
+test routing::pbf_extract::tests::stai_bru_fixture_is_real_extract ... ok
+test routing::pbf_extract::tests::pack_server_zero_stub_is_not_real_extract ... ok
+test routing::pbf_extract::tests::sixteen_kib_nonzero_garbage_is_not_real_extract ... ok
+test routing::plan_bbox::tests::corridor_band_excludes_diagonal_aabb_corners ... ok
+test routing::plan_bbox::tests::corridor_segments_tighter_than_trip_aabb ... ok
+test routing::pbf_extract::tests::stub_sized_file_is_never_real_even_with_blob_header ... ok
+test routing::pbf_extract::tests::midsize_zeros_without_blob_header_are_not_real ... ok
+test routing::plan_bbox::tests::centroid_densify_and_hardcoded_anchors_removed ... ok
+test routing::osm_update::tests::plan_full_when_over_400_diffs ... ok
+test routing::plan_bbox::tests::oslo_lillehammer_first_pad_misses_e6_east_of_mjosa ... ok
+test routing::plan_bbox::tests::pad_widen_does_not_expand_corridor_band_but_aabb_clip_does ... ok
+test routing::plan_bbox::tests::points_bbox_includes_via ... ok
+test routing::plan_bbox::tests::schedule_is_finite ... ok
+test routing::plan_bbox::tests::schedule_starts_clamped_and_caps ... ok
+test routing::plan_bbox::trip_aabb_fallback_tests::disconnected_corridor_band_falls_back_once ... ok
+test routing::plan_bbox::trip_aabb_fallback_tests::hop_pair_detour_trigger ... ok
+test routing::region_lock::tests::fixture_and_production_paths_share_lock_id ... ok
+test routing::plan_perf::tests::disabled_is_noop ... ok
+test routing::rest::fmcsa_multi_day::tests::fmcsa_allows_more_first_day_than_ec561_nine ... ok
+test routing::pbf_extract::tests::large_file_counts_as_real_extract ... ok
+test routing::region_lock::tests::oppland_aliases_ostlandet ... ok
+test routing::rest::fmcsa_multi_day::tests::fmcsa_day_cap_is_eleven_hours ... ok
+test routing::rest::fmcsa_multi_day::tests::same_20h_trip_ec_vs_fmcsa_first_day_hours_differ ... ok
+test routing::pbf_extract::tests::small_file_with_osm_blob_header_is_real_extract ... ok
+test routing::rest::hiking_multi_day::tests::short_hike_stays_single_day ... ok
+test routing::plan_perf::tests::enabled_collects_notes ... ok
+test routing::region_lock::tests::second_convert_refuses ... ok
+test routing::rest::hiking_multi_day::tests::long_hike_splits_and_attaches_hut ... ok
+test routing::region_lock::tests::dead_pid_reclaims_and_cleans_spills ... ok
+test routing::rest::hiking_multi_day::tests::non_member_network_only_marks_membership_required ... ok
+test routing::rest::hiking_multi_day::tests::non_member_prefers_open_hut_over_network ... ok
+test routing::rest::hos_jurisdiction::tests::dublin_ie_is_ec561 ... ok
+test routing::rest::hos_jurisdiction::tests::kansas_point_resolves_fmcsa ... ok
+test routing::rest::hos_jurisdiction::tests::london_gb_declines_ec561_pack ... ok
+test routing::rest::hos_jurisdiction::tests::mid_atlantic_declines_unknown ... ok
+test routing::rest::hos_jurisdiction::tests::near_no_se_border_oslo_side_stays_ec561 ... ok
+test routing::rest::hos_jurisdiction::tests::norway_point_resolves_ec561 ... ok
+test routing::rest::motor_multi_day::tests::cycle_trip_splits_on_distance ... ok
+test routing::plan_file_log::tests::writes_log_and_sidecar_under_long_trip_ui_report ... ok
+test routing::rest::motor_multi_day::tests::cycling_budget_is_distance ... ok
+test routing::rest::motor_multi_day::tests::lodging_candidate_attached_near_boundary ... ok
+test routing::rest::motor_multi_day::tests::long_car_trip_inserts_overnight ... ok
+test routing::rest::motor_multi_day::tests::motorcycle_uses_same_hours_budget_as_car ... ok
+test routing::rest::motor_multi_day::tests::short_trip_stays_single_day ... ok
+test routing::rest::motor_multi_day::tests::soft_rest_pauses_dedupe_chunk_boundary_duplicate ... ok
+test routing::rest::motor_multi_day::tests::twenty_six_hour_trip_is_multi_day_with_overnight_slots ... ok
+test routing::rest::tests::cycling_interval_uses_main_break_distance_km ... ok
+test routing::rest::tests::motor_interval_uses_truck_params_for_truck_profile ... ok
+test routing::rest::tests::soft_car_interval_honors_configured_break_hours ... ok
+test routing::rest::tests::split_break_parts_match_regulation ... ok
+test routing::rest::motor_multi_day::tests::prefers_lodging_over_rest_area_when_both_near ... ok
+test routing::rest::tests::truck_break_spacing_follows_mandatory_hours_not_car_heuristic ... ok
+test routing::rest::truck_duty::tests::daily_extension_only_twice_per_week ... ok
+test routing::rest::truck_duty::tests::exceptional_extension_requires_arming ... ok
+test routing::osm_update::tests::osmium_diff_path_records_osc_before_apply ... ok
+test routing::rest::truck_multi_day::tests::history_room_already_used_shortens_first_day ... ok
+test routing::rest::truck_multi_day::tests::reduced_daily_rest_when_preferred ... ok
+test routing::rest::truck_multi_day::tests::weekly_rest_after_six_consecutive_working_days ... ok
+test routing::rest::truck_multi_day::tests::long_trip_inserts_daily_rest_between_days ... ok
+test routing::rest::truck_duty::tests::fortnightly_cap_uses_rolling_history ... ok
+test routing::rest::truck_multi_day::tests::short_trip_stays_single_day ... ok
+test routing::rest::truck_multi_day::tests::split_daily_rest_when_configured ... ok
+test routing::road_sign::tests::fareskilt_outranks_nearby_speed_plate ... ok
+test routing::road_sign::tests::phase_thresholds_match_approach_model ... ok
+test routing::road_sign::tests::vallset_innlandet_counts_as_norway_despite_coarse_sweden_ring ... ok
+test routing::safety::barriers::tests::blocks_access_across_indexed_barrier ... ok
+test routing::safety::barriers::tests::detects_crossing_segments ... ok
+test routing::safety::barriers::tests::glacier_interior_blocks ... ok
+test routing::safety::tests::building_rejection ... ok
+test routing::safety::tests::edge_distance_not_centroid ... ok
+test routing::safety::tests::glacier_override_for_hut ... ok
+test routing::safety::tests::tent_rejected_near_glacier ... ok
+test routing::speed_camera::tests::germany_france_switzerland_decline ... ok
+test routing::speed_camera::tests::norway_allows_opt_in ... ok
+test routing::speed_camera::tests::uk_allows_opt_in ... ok
+test routing::speed_camera::tests::unknown_ocean_declines ... ok
+test routing::terrain::path::tests::chained_refuses_absurd_ocean_gap ... ok
+test routing::speed_camera::tests::warning_requires_opt_in ... ok
+test routing::terrain::path::tests::refuses_huge_gap ... ok
+test routing::toll::tests::avoid_tolls_bool_maps_to_allow_or_penalize ... ok
+test routing::toll::tests::bike_specific_no_overrides_generic_yes ... ok
+test routing::toll::tests::generic_toll_yes ... ok
+test routing::toll::tests::motor_vehicle_only_tolls_car_not_bike_or_foot ... ok
+test routing::toll::tests::summary_json_legacy_avoid_tolls_true ... ok
+test routing::toll::tests::summary_json_prefers_toll_policy_over_legacy_bool ... ok
+test routing::wetland::tests::boardwalk_carve_out_tags ... ok
+test routing::wetland::tests::classifies_soft_and_hard ... ok
+test routing::waypoint_attach::tests::attach_errors_when_skeleton_is_unreachable ... ok
+test routing::wetland::tests::point_in_wetland_ring ... ok
+test routing::rest::truck_multi_day::tests::overnight_prefers_services_over_closer_bare_rest_area ... ok
+test routing::rest::truck_multi_day::tests::rest_candidate_attached_when_near_boundary ... ok
+test routing::wetland::tests::indexes_for_tiles_matches_per_tile_rewalk ... ok
+test routing::rest::truck_multi_day::tests::commit_records_and_repays_reduced_weekly_compensation ... ok
+test routing::rest::truck_multi_day::tests::overnight_keeps_near_rest_area_when_services_detour_is_large ... ok
+test routing::waypoint_attach::tests::attach_minor_road_between_two_mains ... ok
+test routing::waypoint_attach::tests::each_waypoint_is_attached_once_per_plan ... ok
+test routing::workers::tests::leaves_headroom ... ok
+test routing::waypoint_attach::tests::attach_prefers_travel_time_over_nearest_distance ... ok
+test search::place_context::tests::format_skips_empty_and_duplicate_parts ... ok
+test search::place_context::tests::prefers_smaller_admin_level_eight_over_seven ... ok
+test search::place_context::tests::baberg_farms_get_distinct_hamlet_and_kommune ... ok
+test search::place_context::tests::stitch_two_ways_into_closed_ring ... ok
+test search::place_context::tests::unique_settlement_keeps_municipality_without_inventing_sub_area ... ok
+test search::place_context::tests::load_admin_sets_relations_label_before_missing_pbf ... ok
+test search::tests::classify_named_building_kind_and_amenity_override ... ok
+test routing::plan_bbox::tests::direct_area_is_the_detour_ellipse ... ok
+test search::tests::fold_search_key_covers_required_spellings ... ok
+test routing::road_sign::tests::hazard_companion_tag_matches_catalogue ... ok
+test routing::road_sign::tests::catalog_excludes_variable_content_and_null_svg ... ok
+test routing::indexed::io::tests::atomic_write_no_partial_left ... ok
+test routing::indexed::graph_pack::tests::load_v9_pack_preserves_tunnel_bits ... ok
+test routing::road_sign::tests::dotted_zone_suffix_falls_back_to_base_catalogue_code ... ok
+test routing::road_sign::tests::compound_traffic_sign_prefers_first_usable_base_sign ... ok
+test search::tests::has_entries_missing_file_does_not_create ... ok
+test routing::indexed::graph_pack::tests::load_v8_pack_materializes_is_tunnel_false ... ok
+test routing::indexed::graph_pack::tests::load_rejects_v7_and_v10_graph_preamble ... ok
+test routing::region_lock::tests::stale_lock_from_exited_subprocess_is_reclaimed ... ok
+test routing::graph::builder::tests::unfiltered_snap_unaffected_on_large_synthetic_graph ... ok
+test search::tests::fold_null_fts_delete_after_content_update_hits_unique ... ok
+test search::tests::exact_as_typed_name_beats_folded_name_of_a_larger_kind ... ok
+test search::tests::address_forms_and_missing_house_number ... ok
+test search::tests::ffi_acquire_release_blocks_concurrent_builder ... ok
+test search::tests::open_two_million_rows_prints_timings ... ignored
+test search::tests::parse_address_three_forms ... ok
+test search::tests::exact_name_lookup_goes_through_fts_not_a_table_scan ... ok
+test search::tests::discard_if_schema_stale_removes_pre_v4_db ... ok
+test routing::graph::builder::tests::vehicle_filtered_snap_uses_o1_incident_not_full_edge_scan ... ok
+test routing::region_lock::tests::plan_waits_until_convert_releases ... ok
+test search::tests::place_index_build_lock_serializes_concurrent_callers ... ok
+test search::tests::place_index_build_lock_wait_sets_progress_label ... ok
+test search::tests::keep_both_regions_on_osm_id_clash ... ok
+test search::tests::query_time_prefix_is_one_or_match ... ok
+test search::tests::fts_matches_norwegian_special_chars ... ok
+test search::tests::house_number_on_another_street_does_not_hide_the_street ... ok
+test search::tests::fts_unicode61_folds_aa_but_not_ae_oe ... ok
+test search::tests::folded_exact_name_survives_a_crowded_prefix ... ok
+test search::tests::place_store_insert_list_rename_delete ... ok
+test search::tests::route_store_get_and_gpx_export_roundtrip ... ok
+test routing::indexed::convert::resume_tests::resume_skips_complete_graphs_when_checkpoint_matches ... ok
+test search::tests::search_returns_precomputed_area_context ... ok
+test sensors::gpsd::tests::sample_from_tpv_fields ... ok
+test sensors::linux_imu::tests::publish_reaches_bus ... ok
+test sensors::tests::bus_publish_poll ... ok
+test storage::config_store::tests::avoid_ferries_round_trip_distinct_from_cabin_keys ... ok
+test storage::config_store::tests::round_trip_ebike_config ... ok
+test storage::config_store::tests::round_trip_ev_car_config ... ok
+test storage::config_store::tests::round_trip_profile_poi_radii ... ok
+test search::tests::open_backfills_legacy_db_without_build_table ... ok
+test tracks::tests::expire_removes_stale_station ... ok
+test tracks::tests::range_clamped_and_nearby_visible ... ok
+test tracks::tests::symbol_preserved_across_position_update ... ok
+test tracks::tests::timeout_clamped_to_3600 ... ok
+test tracks::tests::upsert_updates_in_place_no_duplicate ... ok
+test weather::cache::tests::round_trip_sample ... ok
+test weather::icons::tests::rejects_path_traversal_slug ... ok
+test weather::icons::tests::relative_path_uses_fill_style_once ... ok
+test weather::icons::tests::resolves_clear_day_and_fallback ... ok
+test weather::map::tests::manifest_skips_nulls ... ok
+test storage::config_store::tests::round_trip_rest_config ... ok
+test weather::map::tests::maps_clear_and_precip_and_alert ... ok
+test weather::map::tests::select_near_picks_closest ... ok
+test weather::nordic::tests::oslo_is_nordic ... ok
+test weather::nordic::tests::svalbard_is_nordic ... ok
+test weather::nordic::tests::tokyo_is_not ... ok
+test weather::places::tests::cap_trimming_keeps_nearest_to_center ... ok
+test weather::places::tests::declutter_drops_close_neighbours ... ok
+test weather::places::tests::map_weather_symbols_default_off ... ok
+test weather::places::tests::place_fetch_due_respects_next_fetch ... ok
+test weather::places::tests::place_kind_is_city_only ... ok
+test weather::places::tests::spacing_before_cap_frees_slots_for_farther_places ... ok
+test weather::providers::tests::parse_met_norway_fixture ... ok
+test weather::providers::tests::parse_open_meteo_fixture ... ok
+test weather::providers::tests::provider_diag_never_says_yr ... ok
+test weather::providers::tests::truncates_to_four_decimals ... ok
+test weather::providers::tests::user_agent_identifies_app ... ok
+test weather::tests::attribution_never_mentions_yr_brand ... ok
+test weather::tests::weather_plugin_default_enabled_is_false ... ok
+test weather::throttle::tests::avoid_exact_minute_boundary ... ok
+test weather::throttle::tests::jittered_interval_exceeds_base ... ok
+test weather::throttle::tests::manual_bypasses_active_interval_but_has_floor ... ok
+test weather::throttle::tests::scheduled_wait_serves_cache ... ok
+test search::tests::migrate_adds_context_columns_to_legacy_table ... ok
+test search::tests::open_skips_backfill_when_build_table_already_exists ... ok
+test search::tests::wal_readonly_query_does_not_wait_on_writer_transaction ... ok
+test search::tests::nearby_finds_peer_gyntvegen_address ... ok
+test search::tests::named_buildings_in_bbox_round_trip_espedal ... ok
+test search::tests::same_region_osm_id_replace_allowed ... ok
+test search::tests::search_keeps_prefix_only_hits ... ok
+test search::tests::migrate_resumes_after_repeated_pauses ... ok
+test search::tests::file_index_uses_wal_and_synchronous_normal ... ok
+test search::tests::search_finds_folded_and_case_variants ... ok
+test search::tests::clear_region_rebuild_drops_orphan_fts_hits ... ok
+test search::tests::query_time_and_folded_keys_return_same_hits ... ok
+test weather::places::tests::place_cache_independent_of_hud_row ... ok
+test search::tests::clear_place_index_region_rows_api_waits_on_build_lock ... ok
+test search::tests::incomplete_build_is_not_region_index_complete ... ok
+test search::tests::multi_region_index_is_additive_and_reindex_preserves_other ... ok
+test search::tests::has_entries_false_on_empty_and_true_after_upsert ... ok
+test search::tests::search_ranks_exact_local_place_before_foreign_prefix ... ok
+test search::tests::search_reports_database_error_when_fts_is_unreadable ... ok
+test search::tests::pause_request_honoured_in_every_index_phase ... ok
+test search::tests::clear_region_rows_serializes_against_build_lock_stress ... ok
+test search::tests::pause_request_stops_each_index_phase_within_two_seconds ... ok
+test search::tests::plan_during_index_pauses_and_resumes_same_rows ... ok
+
+test result: ok. 720 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out; finished in 171.26s
+
+     Running unittests src/lib.rs (target/debug/deps/navi-a962944503faec86)
+
+running 20 tests
+test hiking_auto_via_tests::detour_allowance_uses_max_of_cabin_radius_and_frac ... ok
+test camping_plugin::geometry_cache_tests::corridor_bbox_treats_waypoints_as_lat_lon ... ok
+test imu_plugin::tests::calibration_instruction_is_verbatim ... ok
+test hiking_auto_via_tests::parse_graph_ferry_edges_token_reads_report_line ... ok
+test imu_plugin::tests::ambient_temperature_prefers_type_ambient_temperature ... ok
+test hiking_auto_via_tests::merge_dedupes_auto_via_near_user_waypoint ... ok
+test hiking_auto_via_tests::merge_inserts_auto_via_between_user_waypoints ... ok
+test gps_speed_ffi_tests::current_speed_tracks_update_gps_fix ... ok
+test camping_plugin::geometry_cache_tests::warm_path_releases_lock_before_guest ... ok
+test hiking_auto_via_tests::named_hut_pause_filter ... ok
+test imu_plugin::tests::platform_backend_maps_codes_and_accuracy ... ok
+test hiking_auto_via_tests::sample_polyline_km_returns_lat_lon_order ... ok
+test hiking_auto_via_tests::named_path_legs_and_rest_place_count_emit_zero_and_listed ... ok
+test camping_plugin::geometry_cache_tests::live_profile_overlay_keeps_geometry_but_refreshes_travel ... ok
+test camping_plugin::geometry_cache_tests::find_planning_pbf_prefers_manifest_backed_over_sweden_country ... ok
+test camping_plugin::geometry_cache_tests::find_planning_pbf_sees_long_trip_pack_dirs ... ok
+test hiking_auto_via_tests::long_trip_pack_fingerprint_changes_with_manifest_bytes ... ok
+test gps_speed_ffi_tests::resolve_speed_limit_uses_conditional_and_fallback ... ok
+test camping_plugin::geometry_cache_tests::geometry_cache_key_omits_travel_clock_and_residency ... ok
+test camping_plugin::geometry_cache_tests::geometry_cache_key_changes_on_route_pack_and_safety ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.35s
+
+     Running unittests src/lib.rs (target/debug/deps/navi_plugin_host-914006fc55c4c82f)
+
+running 13 tests
+test abi::tests::all_capabilities_round_trip_as_str ... ok
+test abi::tests::ambient_temperature_prefers_non_deprecated_android_type ... ok
+test abi::tests::parses_camping_capabilities_including_storage_alias ... ok
+test abi::tests::sensors_capability_parses_with_alias ... ok
+test abi::tests::sensor_codes_round_trip_and_are_unique ... ok
+test sensor_hub::tests::availability_lists_only_backend_sensors ... ok
+test sensor_hub::tests::reads_are_rate_limited_and_registered_with_that_period ... ok
+test sensor_hub::tests::release_all_and_drop_unregister_everything ... ok
+test sensor_hub::tests::idle_sensors_are_unregistered_and_reregistered_on_demand ... ok
+test sensor_hub::tests::missing_sensor_reads_unavailable_and_is_never_registered ... ok
+test plugin_enable::tests::defaults_disabled_until_user_enables ... ok
+test plugin_enable::tests::set_enabled_persists ... ok
+test plugin_enable::tests::list_reads_manifest_names ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/navi_plugin_imu_engine-d87cd5f094525460)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/navi_plugin_right_to_roam_camping-7522f816846a0e5f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/navi_plugin_sdk-0ff46dc4bb6ad248)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+CARGO_LIB_EXIT:0

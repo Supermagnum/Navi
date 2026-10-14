@@ -1,0 +1,107 @@
+{
+  "baseline_commit": "01913069",
+  "baseline_version": "0.3.21-beta",
+  "wip_version": "0.3.22-beta",
+  "coords": {
+    "from": [
+      60.72608,
+      10.613324
+    ],
+    "to": [
+      60.394306,
+      5.325919
+    ]
+  },
+  "regression_threshold_pct": 15,
+  "rows": [
+    {
+      "case": "eco_off_cold",
+      "pre": {
+        "status": "done",
+        "duration_ms": 33038,
+        "wall_s": 38.31,
+        "distance_km": 429.4434388181013,
+        "spike_count": 0,
+        "note": null
+      },
+      "wip": {
+        "status": "done",
+        "duration_ms": 29497,
+        "wall_s": 36.34,
+        "distance_km": 431.0436865029207,
+        "spike_count": 0
+      }
+    },
+    {
+      "case": "eco_off_warm",
+      "pre": {
+        "status": "done",
+        "duration_ms": 25466,
+        "wall_s": 28.22,
+        "distance_km": 429.4434388181013,
+        "spike_count": 0,
+        "note": null
+      },
+      "wip": {
+        "status": "done",
+        "duration_ms": 25537,
+        "wall_s": 28.24,
+        "distance_km": 431.0436865029207,
+        "spike_count": 0
+      }
+    },
+    {
+      "case": "eco_on_cold",
+      "pre": {
+        "status": "failed",
+        "duration_ms": null,
+        "wall_s": 36.31,
+        "distance_km": null,
+        "spike_count": 0,
+        "note": "0.3.21-beta planning_failed: plan_settings abort eco=true (spike/debug-intent path). duration_ms/km in prior scrape were stale WIP route-result; not a valid baseline timing. See logcat planning_failed."
+      },
+      "wip": {
+        "status": "done",
+        "duration_ms": 29155,
+        "wall_s": 36.4,
+        "distance_km": 424.8857507950074,
+        "spike_count": 0
+      }
+    },
+    {
+      "case": "eco_on_warm",
+      "pre": {
+        "status": "failed",
+        "duration_ms": null,
+        "wall_s": 300.21,
+        "distance_km": null,
+        "spike_count": 0,
+        "note": "0.3.21-beta planning_failed: plan_settings abort eco=true (spike/debug-intent path). duration_ms/km in prior scrape were stale WIP route-result; not a valid baseline timing. See logcat planning_failed."
+      },
+      "wip": {
+        "status": "done",
+        "duration_ms": 24621,
+        "wall_s": 28.23,
+        "distance_km": 424.8857507950074,
+        "spike_count": 0
+      }
+    }
+  ],
+  "wip_verify_after_restore": {
+    "eco_off": {
+      "status": "done",
+      "duration_ms": 31706,
+      "wall_s": 36.32,
+      "distance_km": 429.4434388181013,
+      "spike_count": 0
+    },
+    "eco_on": {
+      "status": "done",
+      "duration_ms": 32055,
+      "wall_s": 52.44,
+      "distance_km": 425.92877714846446,
+      "spike_count": 0
+    }
+  },
+  "verdict": "No WIP timing regression on eco-off like-for-like vs 0.3.21. Baseline eco-on aborted via plan_settings on 0.3.21 spike path (inconclusive). WIP eco-on verify PASS after restore."
+}

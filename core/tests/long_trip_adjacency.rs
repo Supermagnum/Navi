@@ -197,6 +197,35 @@ fn trip_kautokeino_roros_norway_only() {
         .any(|r| r.contains("trondelag") || r.contains("ostlandet")));
 }
 
+/// Lakselv→Oslo stay-in-country: domestic corridor needs Trøndelag between
+/// Nord-Norge and Østlandet (Sweden packs must not hide this gap).
+#[test]
+fn trip_lakselv_oslo_norway_only_needs_trondelag() {
+    let lakselv = (70.052498, 24.960657);
+    let oslo = (59.91333, 10.73897);
+    let installed = [
+        "europe/norway/nord-norge".into(),
+        "europe/norway/ostlandet".into(),
+        "europe/norway/vestlandet".into(),
+        "europe/norway/sorlandet".into(),
+        "europe/sweden/jamtland".into(),
+        "europe/sweden/varmland".into(),
+    ];
+    let needed =
+        ordered_needed_regions_for_trip(&[lakselv, oslo], &installed, Some("no")).expect("NO");
+    eprintln!("Lakselv→Oslo Norway-only missing: {needed:?}");
+    assert!(
+        needed.iter().any(|r| r.contains("trondelag")),
+        "expected Trøndelag gap, got {needed:?}"
+    );
+    for r in &needed {
+        assert!(
+            r.starts_with("europe/norway"),
+            "Norway-only leaked {r} in {needed:?}"
+        );
+    }
+}
+
 #[test]
 fn trip_us_a_and_b_real_geometry_storage() {
     let (start, dest_a, dest_b) = us_endpoints();

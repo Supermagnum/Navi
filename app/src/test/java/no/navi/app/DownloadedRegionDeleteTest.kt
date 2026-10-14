@@ -1,8 +1,10 @@
 package no.navi.app
 
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -15,6 +17,16 @@ class DownloadedRegionDeleteTest {
     private val region = "europe/norway/ostlandet"
     private val stem = "ostlandet-latest"
     private val regionKey = "europe_norway_ostlandet"
+
+    @Before
+    fun installPlaceIndexRows() {
+        FakePlaceIndexRows.install()
+    }
+
+    @After
+    fun resetPlaceIndexRows() {
+        FakePlaceIndexRows.reset()
+    }
 
     private fun seedInstalled(dir: File): Long {
         var bytes = 0L
@@ -39,6 +51,7 @@ class DownloadedRegionDeleteTest {
         File(dir, "graph-cache-$stem-car/entry.bin").writeBytes(ByteArray(800))
         bytes += 800
         PlaceIndexReady.readyFile(dir).writeText("""["$region"]""")
+        FakePlaceIndexRows.putRows(dir, region, 1_483_135L)
         RegionDownloadBackground.writeJob(
             dir,
             RegionDownloadBackground.Job(
@@ -146,6 +159,7 @@ class DownloadedRegionDeleteTest {
         File(packs, "$stem.osm.pbf").writeText("trunc")
         val internal = tmp.newFolder("internal-pi")
         PlaceIndexReady.readyFile(internal).writeText("""["$region"]""")
+        FakePlaceIndexRows.putRows(internal, region, 1_483_135L)
         File(internal, "$stem.navi-manifest.json").writeText("{}")
 
         val stems = LongTripPackStorage.scrubIncompletePacks(packs)

@@ -18,6 +18,19 @@ class BasemapStyleResolverDemFilterTest {
     @get:Rule
     val tmp = TemporaryFolder()
 
+    @org.junit.Before
+    fun installLenientArchiveGate() {
+        PmtilesArchiveGate.resetForTests()
+        PmtilesArchiveGate.validateContent = { file, _ ->
+            if (!file.isFile || file.length() == 0L) "empty archive" else null
+        }
+    }
+
+    @org.junit.After
+    fun resetArchiveGate() {
+        PmtilesArchiveGate.resetForTests()
+    }
+
     @Test
     fun isDemArchive_detects_region_key_and_path() {
         assertTrue(BasemapStyleResolver.isDemArchive("europe_norway_ostlandet_dem"))

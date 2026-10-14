@@ -36,7 +36,7 @@ class GalleryPeakPoiRetakeScreenshotTest {
         NaviMapTestHooks.hideSearchChrome = true
         NaviMapTestHooks.disableGpsFollow = true
         NaviMapTestHooks.followGps = false
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         MapHudPrefs.saveOptIn3d(context, true)
         MapHudPrefs.saveCameraTiltDeg(context, 45.0)
     }
@@ -83,7 +83,6 @@ class GalleryPeakPoiRetakeScreenshotTest {
         want3d: Boolean = true,
     ) {
         setWifi(online)
-        NaviMapTestHooks.styleReady = false
         NaviMapTestHooks.forceOnlineBasemap = online
         NaviMapTestHooks.requestOptIn3d = want3d
         NaviMapTestHooks.requestCameraTiltDeg = tilt

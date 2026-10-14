@@ -2,6 +2,7 @@ package no.navi.app
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -125,6 +126,44 @@ class PackRegionAvailabilityTest {
     }
 
     @Test
+    fun resolvePlaceIndexPbf_sweden_lan_requires_leaf_not_country() {
+        val dir = createTempDirectory("navi-se-place").toFile()
+        try {
+            val country = File(dir, "sweden-latest.osm.pbf")
+            java.io.RandomAccessFile(country, "rw").use { raf ->
+                raf.setLength(RegionDownloadBackground.MIN_PBF_BYTES)
+            }
+            assertNull(
+                PackRegionAvailability.resolvePlaceIndexPbf(dir, "europe/sweden/skane"),
+            )
+            val leaf = File(dir, "skane-latest.osm.pbf")
+            java.io.RandomAccessFile(leaf, "rw").use { raf ->
+                raf.setLength(RegionDownloadBackground.MIN_PBF_BYTES)
+            }
+            assertEquals(
+                leaf.canonicalFile,
+                PackRegionAvailability
+                    .resolvePlaceIndexPbf(dir, "europe/sweden/skane")
+                    ?.canonicalFile,
+            )
+            assertFalse(
+                PackRegionAvailability.pbfMatchesRegionForPlaceIndex(
+                    country,
+                    "europe/sweden/skane",
+                ),
+            )
+            assertTrue(
+                PackRegionAvailability.pbfMatchesRegionForPlaceIndex(
+                    leaf,
+                    "europe/sweden/skane",
+                ),
+            )
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun scrub_pack_server_leaf_stub_after_country_extract() {
         val dir = createTempDirectory("navi-scrub-stub").toFile()
         try {
@@ -181,5 +220,31 @@ class PackRegionAvailabilityTest {
         assertFalse(PackRegionAvailability.downloadRegionUsesReadyStyle(false))
         assertTrue(PackRegionAvailability.osmCheckUsesReadyStyle(true))
         assertFalse(PackRegionAvailability.osmCheckUsesReadyStyle(false))
+    }
+
+    @Test
+    fun mayIndex_refuses_parent_and_non_installed_on_product_db() {
+        val country = File("sweden-latest.osm.pbf")
+        val leaves = setOf("europe/sweden/norrbotten", "europe/sweden/dalarna")
+        assertFalse(
+            PackRegionAvailability.mayIndexRegion("europe/sweden", country, leaves, true),
+        )
+        assertFalse(
+            PackRegionAvailability.mayIndexRegion("test/fu38-pause", country, leaves, true),
+        )
+        assertTrue(
+            PackRegionAvailability.mayIndexRegion(
+                "europe/sweden/norrbotten",
+                File("norrbotten-latest.osm.pbf"),
+                leaves,
+                true,
+            ),
+        )
+        assertTrue(
+            PackRegionAvailability.mayIndexRegion("test/fu38-pause", country, leaves, false),
+        )
+        assertTrue(PackRegionAvailability.isPublishedPackParent("europe/sweden"))
+        assertFalse(PackRegionAvailability.isPublishedPackParent("europe/sweden/norrbotten"))
+        assertFalse(PackRegionAvailability.isPublishedPackParent("europe/norway/ostlandet"))
     }
 }

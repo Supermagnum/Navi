@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -36,9 +38,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import no.navi.app.R
 import uniffi.navi.FfiCarRestSettings
 import uniffi.navi.FfiEbikeConfig
 import uniffi.navi.FfiEvCarConfig
@@ -271,7 +275,8 @@ fun formatBreakHudLine(
     cruiseSpeedKmh: Double = MapHudPrefs.BREAK_DISPLAY_SPEED_KMH,
 ): String? {
     if (!routePlanned) return null
-    if (!breakRemindersEnabled) return "Break reminders off"
+    // Breaks off: hide the HUD line entirely (do not show "Break reminders off").
+    if (!breakRemindersEnabled) return null
     val mins = minutesToBreak ?: return null
     return if (breakAsDistance) {
         val km = (mins / 60.0) * cruiseSpeedKmh
@@ -359,7 +364,7 @@ fun TopDriveHud(
 
 /**
  * Per-plugin enable toggles shared by Map settings and Tools.
- * Weather, DATEX, and Nearby attractions are host-owned controls (all default OFF).
+ * Weather, DATEX, Nearby attractions, and the IMU plugin are host-owned controls (all default OFF).
  */
 @Composable
 fun PluginSettingsSection(
@@ -396,6 +401,8 @@ fun PluginSettingsSection(
     onCampingProfessionalDriverChange: (Boolean) -> Unit = {},
     campingSessionDisableMessage: String? = null,
     onCampingReEnableSession: () -> Unit = {},
+    catPluginEnabled: Boolean = false,
+    onCatPluginChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -666,6 +673,30 @@ fun PluginSettingsSection(
                 modifier = Modifier.testTag("camping_settings_disclaimer"),
             )
         }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(stringResource(R.string.cat_plugin_toggle_label))
+            Switch(
+                checked = catPluginEnabled,
+                onCheckedChange = onCatPluginChange,
+                modifier = Modifier.testTag("toggle_cat_plugin"),
+            )
+        }
+        Text(
+            stringResource(R.string.cat_licence_listen_only),
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.testTag("cat_licence_listen_only"),
+        )
+        if (catPluginEnabled) {
+            Text(
+                "Amateur radio CAT: repeater query, VFO program with read-back, network follow. Never transmits.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        ImuPluginPanel()
     }
 }
 
@@ -681,6 +712,35 @@ internal fun formatBytesShort(bytes: Long): String {
         String.format(java.util.Locale.US, "%.1f GB", gb)
     } else {
         String.format(java.util.Locale.US, "%.1f TB", gb / 1024.0)
+    }
+}
+
+const val ONLINE_PLACE_SEARCH_EXPLANATION =
+    "Searches are sent to an online OpenStreetMap service when this is on. " +
+        "Offline search from installed regions is unaffected and always available."
+
+/**
+ * Labelled Online place search switch for the search panel. It reads and writes
+ * the same setting as the Map settings switch. Toggling never runs a search.
+ */
+@Composable
+fun OnlinePlaceSearchSwitch(
+    enabled: Boolean,
+    onChange: (Boolean) -> Unit,
+    switchTag: String,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+    ) {
+        Text("Online place search", style = MaterialTheme.typography.bodySmall)
+        Switch(
+            checked = enabled,
+            onCheckedChange = onChange,
+            modifier = Modifier.testTag(switchTag),
+        )
     }
 }
 
@@ -733,10 +793,21 @@ fun MapSettingsSheet(
     onCampingProfessionalDriverChange: (Boolean) -> Unit = {},
     campingSessionDisableMessage: String? = null,
     onCampingReEnableSession: () -> Unit = {},
+    onlinePlaceSearchEnabled: Boolean = false,
+    onOnlinePlaceSearchChange: (Boolean) -> Unit = {},
+    nominatimBaseUrl: String = MapHudPrefs.NOMINATIM_DEFAULT_BASE_URL,
+    onNominatimBaseUrlChange: (String) -> Unit = {},
+    revealOnlinePlaceSearch: Boolean = false,
+    catPluginEnabled: Boolean = false,
+    onCatPluginChange: (Boolean) -> Unit = {},
     onSave: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val onlinePlaceSearchRow = remember { BringIntoViewRequester() }
+    LaunchedEffect(revealOnlinePlaceSearch) {
+        if (revealOnlinePlaceSearch) onlinePlaceSearchRow.bringIntoView()
+    }
     Surface(
         shape = RoundedCornerShape(12.dp),
         tonalElevation = 8.dp,
@@ -935,6 +1006,43 @@ fun MapSettingsSheet(
                     )
                 }
             }
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .bringIntoViewRequester(onlinePlaceSearchRow),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("Online place search", style = MaterialTheme.typography.bodySmall)
+                Switch(
+                    checked = onlinePlaceSearchEnabled,
+                    onCheckedChange = onOnlinePlaceSearchChange,
+                    modifier = Modifier.testTag("toggle_online_place_search"),
+                )
+            }
+            Text(
+                ONLINE_PLACE_SEARCH_EXPLANATION,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("online_place_search_explain"),
+            )
+            if (onlinePlaceSearchEnabled) {
+                OutlinedTextField(
+                    value = nominatimBaseUrl,
+                    onValueChange = onNominatimBaseUrlChange,
+                    label = { Text("Place search service URL") },
+                    placeholder = { Text(MapHudPrefs.NOMINATIM_DEFAULT_BASE_URL) },
+                    singleLine = true,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .testTag("nominatim_base_url_field"),
+                )
+                Text(
+                    "Empty means no online calls. Default is the public Nominatim instance.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             PluginSettingsSection(
                 weatherPluginEnabled = weatherPluginEnabled,
                 onWeatherPluginChange = onWeatherPluginChange,
@@ -969,6 +1077,8 @@ fun MapSettingsSheet(
                 onCampingProfessionalDriverChange = onCampingProfessionalDriverChange,
                 campingSessionDisableMessage = campingSessionDisableMessage,
                 onCampingReEnableSession = onCampingReEnableSession,
+                catPluginEnabled = catPluginEnabled,
+                onCatPluginChange = onCatPluginChange,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(

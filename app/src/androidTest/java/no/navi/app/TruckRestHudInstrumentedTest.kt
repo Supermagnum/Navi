@@ -41,7 +41,7 @@ class TruckRestHudInstrumentedTest {
             }
             NaviMapTestHooks.hideUiChrome = false
             NaviMapTestHooks.hideSearchChrome = true
-            NaviMapTestHooks.styleReady = false
+            NaviMapTestHooks.resetStyleLoadState()
         }
     }
 
@@ -63,12 +63,10 @@ class TruckRestHudInstrumentedTest {
     }
 
     private fun waitStyle() {
-        val deadline = System.currentTimeMillis() + 25_000
-        while (System.currentTimeMillis() < deadline) {
-            if (NaviMapTestHooks.styleReady) break
-            Thread.sleep(200)
-        }
-        assertTrue("MapLibre style not ready", NaviMapTestHooks.styleReady)
+        assertTrue(
+            "MapLibre style not ready",
+            InstrumentedMapCapture.awaitStyleReady(25_000),
+        )
         Thread.sleep(500)
     }
 

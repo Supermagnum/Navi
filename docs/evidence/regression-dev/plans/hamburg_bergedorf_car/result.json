@@ -1,0 +1,21 @@
+{
+  "status": "done",
+  "profile": "car",
+  "eco": false,
+  "wall_s": 16.15,
+  "duration_ms": 10869,
+  "distance_km": 19.475347940743188,
+  "polyline_points": 538,
+  "spike_count": 0,
+  "spikes": [],
+  "from": [
+    "Hamburg",
+    53.550341,
+    9.993682
+  ],
+  "to": [
+    "Bergedorf",
+    53.48611,
+    10.23278
+  ]
+}

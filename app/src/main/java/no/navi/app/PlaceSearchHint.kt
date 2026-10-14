@@ -9,22 +9,68 @@ fun placeSearchBuildingMessage(
     indexHasEntries: Boolean,
     indexRunning: Boolean,
     onlineAvailable: Boolean = false,
+    indexProblem: String? = null,
 ): String? {
+    if (indexProblem != null) {
+        return if (onlineAvailable || !hitsEmpty) {
+            "Offline place search unavailable (place index $indexProblem) — showing online results (Nominatim)."
+        } else {
+            "Offline place search unavailable (place index $indexProblem) — enter coordinates or tap the map"
+        }
+    }
     if (!hitsEmpty) return null
     return when {
         onlineAvailable && !indexHasEntries ->
-            "No offline place index yet — showing online results (Nominatim). " +
-                "Selecting a hit also sets the Tools download region."
+            "No offline place index yet — showing online results (Nominatim)."
         onlineAvailable && indexHasEntries ->
-            "No local match — showing online results (Nominatim). " +
-                "Selecting a hit sets the Tools download region for that place."
-        indexHasEntries -> null
+            "No local match — showing online results (Nominatim)."
+        indexHasEntries ->
+            "No offline match. Turn on Online place search in Map settings, " +
+                "or download the region that contains this place."
         indexRunning ->
             "Place index is still building — try coordinates, map tap, or wait for Wi‑Fi search"
         else ->
-            "No place index on device — connect to the network to search by name/address, " +
+            "No place index on device — turn on Online place search in Map settings, " +
                 "or enter coordinates / tap the map"
     }
+}
+
+/**
+ * Local-only list where no hit matches the whole query after folding: the
+ * prefix and partial hits stay listed below this line (`Köln` over
+ * `Kolnesholmane`). While the query is still being typed ([submitted] false)
+ * and a hit continues it (`Domb` and `Dombås`), there is no hint.
+ */
+fun placeSearchNoWholeMatchHint(
+    query: String,
+    hits: List<uniffi.navi.PlaceHit>,
+    onlineEnabled: Boolean,
+    usedOnline: Boolean,
+    submitted: Boolean = true,
+): String? {
+    if (usedOnline || hits.isEmpty()) return null
+    if (hits.any { placeHitMatchesWholeQuery(it, query) }) return null
+    if (!submitted && hits.any { placeHitMatchesQueryPrefix(it, query) }) return null
+    return if (onlineEnabled) {
+        "No offline match."
+    } else {
+        "No offline match. Turn on Online place search in Map settings, " +
+            "or download the region that contains this place."
+    }
+}
+
+/**
+ * Offline-only: a local hit exists, but it is a minor place. Point at online
+ * search or downloading another region (København farm vs the Danish city).
+ */
+fun placeSearchOfflineMoreHint(
+    onlineEnabled: Boolean,
+    topKind: String?,
+): String? {
+    if (onlineEnabled || topKind.isNullOrBlank()) return null
+    if (!isMinorPlaceKind(topKind)) return null
+    return "Turn on Online place search in Map settings, " +
+        "or download the region that contains this place."
 }
 
 /**

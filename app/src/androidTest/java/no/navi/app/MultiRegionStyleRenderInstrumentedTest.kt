@@ -79,7 +79,7 @@ class MultiRegionStyleRenderInstrumentedTest {
         NaviMapTestHooks.hideUiChrome = true
         NaviMapTestHooks.disableGpsFollow = true
         NaviMapTestHooks.forceOnlineBasemap = false
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         MapHudPrefs.saveOptIn3d(context, false)
         MapHudPrefs.saveCameraTiltDeg(context, 0.0)
         report.appendLine("dataDir=${dataDir.absolutePath}")
@@ -352,7 +352,7 @@ class MultiRegionStyleRenderInstrumentedTest {
     ): Pair<BasemapStyleResolver.ResolvedStyle, Double> {
         runCatching { activityRule.finishActivity() }
         Thread.sleep(400)
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         NaviMapTestHooks.lastBasemapKind = ""
         NaviMapTestHooks.lastStyleLoadError = null
         NaviMapTestHooks.forceOnlineBasemap = false

@@ -1,0 +1,32 @@
+<?xml version='1.0' encoding='utf-8'?>
+<osm version="0.6" generator="fetch-cat-fixtures"><node id="471110617" visible="true" version="15" changeset="189693189" timestamp="2026-09-28T18:42:26Z" user="Visaman" uid="237638" lat="60.1676114" lon="11.9943920">
+  <tag k="aeroway:light" v="obstacle" />
+  <tag k="aeroway:light:character" v="fixed" />
+  <tag k="aeroway:light:colour" v="red" />
+  <tag k="alt_name" v="Kongsvinger" />
+  <tag k="callsign" v="LA2RRR" />
+  <tag k="communication:amateur_radio" v="yes" />
+  <tag k="communication:amateur_radio:callsign" v="LA2RRR" />
+  <tag k="communication:amateur_radio:repeater" v="yes" />
+  <tag k="communication:amateur_radio:repeater:ctcss" v="71.9" />
+  <tag k="communication:amateur_radio:repeater:frequency_in" v="51.23 MHZ" />
+  <tag k="communication:amateur_radio:repeater:frequency_out" v="51.83 MHz" />
+  <tag k="communication:amateur_radio:repeater:modulation" v="11K2F3E" />
+  <tag k="communication:amateur_radio:repeater:shift" v="-0.6 MHz" />
+  <tag k="communication:microwave" v="yes" />
+  <tag k="communication:mobile_phone" v="yes" />
+  <tag k="communication:television" v="yes" />
+  <tag k="ele" v="393" />
+  <tag k="group" v="Kongsvinger" />
+  <tag k="height" v="163" />
+  <tag k="man_made" v="communications_tower" />
+  <tag k="name" v="Holtbergmasta hovedsender" />
+  <tag k="note" v="Holtberget" />
+  <tag k="nrrl:group_page" v="https://nrrl.no/grupper/innlandet/kongsvingergruppen/" />
+  <tag k="ref:hinder" v="3259" />
+  <tag k="source" v="Kartverket Luftfartshindre" />
+  <tag k="tower:construction" v="guyed_lattice" />
+  <tag k="tower:type" v="communication" />
+  <tag k="website" v="https://www.la7v.org/" />
+ </node>
+ </osm>

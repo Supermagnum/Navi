@@ -38,6 +38,32 @@ pub fn graph_format_version_accepted(v: u32) -> bool {
     v == GRAPH_FORMAT_VERSION_V8 || v == GRAPH_FORMAT_VERSION
 }
 
+/// Corridor-band clip: keep an edge when its lat/lon envelope overlaps any clip
+/// square (not only when a terminal sits inside a square).
+///
+/// Endpoint-only clip drops real OSM ferries and long bridges whose terminals
+/// lie outside the 0.40° band while the span still crosses the hop chord
+/// (Øresundsbron on a Zealand→Skåne densify hop; Fehmarn belt similarly).
+#[must_use]
+pub(crate) fn clip_keeps_edge(
+    slat: f64,
+    slon: f64,
+    elat: f64,
+    elon: f64,
+    clips: &[[f64; 4]],
+) -> bool {
+    if clips.is_empty() {
+        return true;
+    }
+    let emin_lat = slat.min(elat);
+    let emax_lat = slat.max(elat);
+    let emin_lon = slon.min(elon);
+    let emax_lon = slon.max(elon);
+    clips
+        .iter()
+        .any(|b| emin_lat <= b[2] && emax_lat >= b[0] && emin_lon <= b[3] && emax_lon >= b[1])
+}
+
 /// Among accepted candidates, prefer the newest (v9 over v8). Used when a region
 /// could ever offer more than one compatible staged pack.
 #[must_use]
@@ -68,18 +94,61 @@ pub fn densify_skeleton_edge(highway: &str, is_ferry: bool) -> bool {
 /// Vestlandet nodes — the tablet RSS spike above 933 MiB.
 static DENSIFY_SKELETON_ONLY: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
+/// Corridor skeleton build: also keep secondary when densify-skeleton filter is on.
+static CORRIDOR_SKELETON_HYDRATE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Exclusive hydrate gate: densify-skeleton builds and plan pack loads must not
+/// interleave. A process-wide densify flag would otherwise make the plan load
+/// keep only skeleton edges (FU22 Elsa snap_failed under concurrent rebuild).
+fn pack_hydrate_lock() -> &'static std::sync::Mutex<()> {
+    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| std::sync::Mutex::new(()))
+}
 
 /// Run `f` so pack→graph materialization keeps only densify-skeleton edges.
 pub fn with_densify_skeleton_only<R>(f: impl FnOnce() -> R) -> R {
     use std::sync::atomic::Ordering;
+    let _gate = pack_hydrate_lock()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let prev = DENSIFY_SKELETON_ONLY.swap(true, Ordering::SeqCst);
     let out = f();
     DENSIFY_SKELETON_ONLY.store(prev, Ordering::SeqCst);
     out
 }
 
+/// Like densify-skeleton hydrate, but also keeps secondary / secondary_link so
+/// rim-band selection can close pack cuts without shared primary OSM ids.
+pub fn with_corridor_skeleton_hydrate<R>(f: impl FnOnce() -> R) -> R {
+    use std::sync::atomic::Ordering;
+    let _gate = pack_hydrate_lock()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let prev_d = DENSIFY_SKELETON_ONLY.swap(true, Ordering::SeqCst);
+    let prev_c = CORRIDOR_SKELETON_HYDRATE.swap(true, Ordering::SeqCst);
+    let out = f();
+    CORRIDOR_SKELETON_HYDRATE.store(prev_c, Ordering::SeqCst);
+    DENSIFY_SKELETON_ONLY.store(prev_d, Ordering::SeqCst);
+    out
+}
+
+/// Run `f` with densify-skeleton filtering guaranteed off (waits for any
+/// in-flight [`with_densify_skeleton_only`] tile load).
+pub fn with_plan_pack_hydrate<R>(f: impl FnOnce() -> R) -> R {
+    let _gate = pack_hydrate_lock()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    debug_assert!(!densify_skeleton_only_active());
+    f()
+}
+
 pub(crate) fn densify_skeleton_only_active() -> bool {
     DENSIFY_SKELETON_ONLY.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+pub(crate) fn corridor_skeleton_hydrate_active() -> bool {
+    CORRIDOR_SKELETON_HYDRATE.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone)]
@@ -156,12 +225,12 @@ pub struct FlatGraphPack {
 }
 
 /// Pack optional finite metric; `None` / non-finite → NaN (matches `edge_maxspeed_kmh`).
-fn pack_opt_metric(v: Option<f64>) -> f64 {
+pub(crate) fn pack_opt_metric(v: Option<f64>) -> f64 {
     v.filter(|x| x.is_finite()).unwrap_or(f64::NAN)
 }
 
 /// Unpack NaN-sentinel metric vector entry.
-fn unpack_opt_metric(vals: &[f64], i: usize) -> Option<f64> {
+pub(crate) fn unpack_opt_metric(vals: &[f64], i: usize) -> Option<f64> {
     vals.get(i).copied().filter(|v| v.is_finite())
 }
 
@@ -358,31 +427,36 @@ impl FlatGraphPack {
         }
     }
 
-    /// Like [`Self::to_route_graph_bbox`], keeping edges whose endpoints fall in
-    /// **any** clip box (corridor band of small squares along the OD polyline).
+    /// Like [`Self::to_route_graph_bbox`], keeping edges whose lat/lon envelope
+    /// overlaps **any** clip box (corridor band along the OD polyline).
     pub fn to_route_graph_clips(
         &self,
         profile: RoutingProfile,
         clips: Option<&[[f64; 4]]>,
+    ) -> RouteGraph {
+        self.to_route_graph_clips_with_ferry_intervals(profile, clips, None)
+    }
+
+    /// Like [`Self::to_route_graph_clips`], applying optional per-edge ferry
+    /// departure intervals (ferry overlay sidecar only; region packs pass `None`).
+    pub fn to_route_graph_clips_with_ferry_intervals(
+        &self,
+        profile: RoutingProfile,
+        clips: Option<&[[f64; 4]]>,
+        ferry_intervals: Option<&[f64]>,
     ) -> RouteGraph {
         let skeleton = densify_skeleton_only_active();
         let in_clips = |i: usize| -> bool {
             let Some(clips) = clips else {
                 return true;
             };
-            if clips.is_empty() {
-                return true;
-            }
-            let slat = self.edge_start_lat[i];
-            let slon = self.edge_start_lon[i];
-            let elat = self.edge_end_lat[i];
-            let elon = self.edge_end_lon[i];
-            let in_box = |lat: f64, lon: f64, b: &[f64; 4]| {
-                lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3]
-            };
-            clips
-                .iter()
-                .any(|b| in_box(slat, slon, b) || in_box(elat, elon, b))
+            clip_keeps_edge(
+                self.edge_start_lat[i],
+                self.edge_start_lon[i],
+                self.edge_end_lat[i],
+                self.edge_end_lon[i],
+                clips,
+            )
         };
         // Ferry terminals often hang off secondary/service stubs. Keep every
         // clipped edge that touches a ferry endpoint without importing the
@@ -400,15 +474,17 @@ impl FlatGraphPack {
         } else {
             HashSet::new()
         };
+        let corridor = corridor_skeleton_hydrate_active();
         let edge_ok = |i: usize| -> bool {
             if skeleton {
                 let hw = self.edge_highway[i].as_str();
                 let ferry = self.edge_is_ferry.get(i).copied().unwrap_or(0) != 0;
                 let major = densify_skeleton_edge(hw, ferry);
+                let secondary = corridor && matches!(hw, "secondary" | "secondary_link");
                 let pier = !ferry
                     && (ferry_nodes.contains(&self.edge_src[i])
                         || ferry_nodes.contains(&self.edge_tgt[i]));
-                if !major && !pier {
+                if !major && !secondary && !pier {
                     return false;
                 }
             }
@@ -459,6 +535,7 @@ impl FlatGraphPack {
                 target: tgt,
                 length_m: self.edge_length_m[i],
                 base_weight: self.edge_base_weight[i],
+                cost_mult: 1.0,
                 eco_weight: Some(self.edge_base_weight[i]),
                 start_lat: self.edge_start_lat[i],
                 start_lon: self.edge_start_lon[i],
@@ -520,6 +597,9 @@ impl FlatGraphPack {
                 maxlength_m: unpack_opt_metric(&self.edge_maxlength_m, i),
                 is_toll: self.edge_is_toll[i] != 0,
                 is_ferry: self.edge_is_ferry[i] != 0,
+                ferry_interval_min: ferry_intervals
+                    .and_then(|v| unpack_opt_metric(v, i))
+                    .filter(|_| self.edge_is_ferry[i] != 0),
                 is_tunnel: self.edge_is_tunnel[i] != 0,
                 is_boardwalk_crossing: self.edge_is_boardwalk[i] != 0,
                 is_roundabout: self.edge_is_roundabout[i] != 0,
@@ -662,12 +742,23 @@ impl ArchivedFlatGraphPack {
         }
     }
 
-    /// Like [`Self::to_route_graph_bbox`], keeping edges whose endpoints fall in
-    /// **any** clip box (corridor band along the OD).
+    /// Like [`Self::to_route_graph_bbox`], keeping edges whose lat/lon envelope
+    /// overlaps **any** clip box (corridor band along the OD).
     pub fn to_route_graph_clips(
         &self,
         profile: RoutingProfile,
         clips: Option<&[[f64; 4]]>,
+    ) -> RouteGraph {
+        self.to_route_graph_clips_with_ferry_intervals(profile, clips, None)
+    }
+
+    /// Like [`Self::to_route_graph_clips`], applying optional per-edge ferry
+    /// departure intervals (ferry overlay sidecar only).
+    pub fn to_route_graph_clips_with_ferry_intervals(
+        &self,
+        profile: RoutingProfile,
+        clips: Option<&[[f64; 4]]>,
+        ferry_intervals: Option<&[f64]>,
     ) -> RouteGraph {
         let n_edges = self.edge_src.len();
         let skeleton = densify_skeleton_only_active();
@@ -675,19 +766,13 @@ impl ArchivedFlatGraphPack {
             let Some(clips) = clips else {
                 return true;
             };
-            if clips.is_empty() {
-                return true;
-            }
-            let slat = arch_f64(self.edge_start_lat[i]);
-            let slon = arch_f64(self.edge_start_lon[i]);
-            let elat = arch_f64(self.edge_end_lat[i]);
-            let elon = arch_f64(self.edge_end_lon[i]);
-            let in_box = |lat: f64, lon: f64, b: &[f64; 4]| {
-                lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3]
-            };
-            clips
-                .iter()
-                .any(|b| in_box(slat, slon, b) || in_box(elat, elon, b))
+            clip_keeps_edge(
+                arch_f64(self.edge_start_lat[i]),
+                arch_f64(self.edge_start_lon[i]),
+                arch_f64(self.edge_end_lat[i]),
+                arch_f64(self.edge_end_lon[i]),
+                clips,
+            )
         };
         let ferry_nodes: HashSet<u32> = if skeleton {
             let mut s = HashSet::new();
@@ -703,6 +788,7 @@ impl ArchivedFlatGraphPack {
         } else {
             HashSet::new()
         };
+        let corridor = corridor_skeleton_hydrate_active();
         let edge_ok = |i: usize| -> bool {
             if skeleton {
                 let hw = self.edge_highway[i].as_str();
@@ -710,8 +796,9 @@ impl ArchivedFlatGraphPack {
                 let src = arch_u32(self.edge_src[i]);
                 let tgt = arch_u32(self.edge_tgt[i]);
                 let major = densify_skeleton_edge(hw, ferry);
+                let secondary = corridor && matches!(hw, "secondary" | "secondary_link");
                 let pier = !ferry && (ferry_nodes.contains(&src) || ferry_nodes.contains(&tgt));
-                if !major && !pier {
+                if !major && !secondary && !pier {
                     return false;
                 }
             }
@@ -761,6 +848,7 @@ impl ArchivedFlatGraphPack {
                 target: tgt,
                 length_m: arch_f64(self.edge_length_m[i]),
                 base_weight: arch_f64(self.edge_base_weight[i]),
+                cost_mult: 1.0,
                 eco_weight: Some(arch_f64(self.edge_base_weight[i])),
                 start_lat: arch_f64(self.edge_start_lat[i]),
                 start_lon: arch_f64(self.edge_start_lon[i]),
@@ -831,6 +919,9 @@ impl ArchivedFlatGraphPack {
                 maxlength_m: archived_opt_metric_at(&self.edge_maxlength_m, i),
                 is_toll: arch_u8(self.edge_is_toll[i]) != 0,
                 is_ferry: arch_u8(self.edge_is_ferry[i]) != 0,
+                ferry_interval_min: ferry_intervals
+                    .and_then(|v| unpack_opt_metric(v, i))
+                    .filter(|_| arch_u8(self.edge_is_ferry[i]) != 0),
                 is_tunnel: arch_u8(self.edge_is_tunnel[i]) != 0,
                 is_boardwalk_crossing: arch_u8(self.edge_is_boardwalk[i]) != 0,
                 is_roundabout: arch_u8(self.edge_is_roundabout[i]) != 0,
@@ -942,6 +1033,7 @@ mod tests {
             target: n2,
             length_m: 1_000.0,
             base_weight: 1_000.0,
+            cost_mult: 1.0,
             eco_weight: Some(1_000.0),
             start_lat: 60.0,
             start_lon: 10.0,
@@ -969,6 +1061,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -1078,6 +1171,7 @@ mod tests {
             target,
             length_m,
             base_weight: length_m,
+            cost_mult: 1.0,
             eco_weight: Some(length_m),
             start_lat,
             start_lon,
@@ -1105,6 +1199,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout: false,
@@ -1247,6 +1342,24 @@ mod tests {
         assert_eq!(preferred_graph_format_version([8, 9, 7]), Some(9));
         assert_eq!(preferred_graph_format_version([8, 8]), Some(8));
         assert_eq!(preferred_graph_format_version([7, 10]), None);
+    }
+
+    #[test]
+    fn clip_keeps_oresund_span_when_terminals_miss_band_square() {
+        // Kastrup / Lernacken-class terminals sit outside a water-only clip
+        // square that still overlaps the bridge envelope.
+        let slat = 55.628_f64;
+        let slon = 12.647;
+        let elat = 55.573;
+        let elon = 12.891;
+        let water = [[55.58, 12.75, 55.62, 12.80]];
+        let in_box = |lat: f64, lon: f64, b: [f64; 4]| {
+            lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3]
+        };
+        assert!(!in_box(slat, slon, water[0]) && !in_box(elat, elon, water[0]));
+        assert!(clip_keeps_edge(slat, slon, elat, elon, &water));
+        let miss = [[56.2, 13.5, 56.3, 13.6]];
+        assert!(!clip_keeps_edge(slat, slon, elat, elon, &miss));
     }
 
     fn tunnel_pair_graph() -> RouteGraph {

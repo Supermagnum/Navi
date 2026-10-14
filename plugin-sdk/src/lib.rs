@@ -42,6 +42,21 @@ extern "C" {
     fn travel_mode_read(out_ptr: u32, out_cap: u32) -> i32;
     fn vehicle_profile_read(out_ptr: u32, out_cap: u32) -> i32;
     fn traveller_profile_read(out_ptr: u32, out_cap: u32) -> i32;
+    fn cat_status(out_ptr: u32, out_cap: u32) -> i32;
+    fn repeater_query(
+        lat_bits: u64,
+        lon_bits: u64,
+        radius_km_bits: u64,
+        net_ptr: u32,
+        net_len: u32,
+        out_ptr: u32,
+        out_cap: u32,
+    ) -> i32;
+    fn cat_vfo_set(req_ptr: u32, req_len: u32, out_ptr: u32, out_cap: u32) -> i32;
+    fn cat_network_follow(req_ptr: u32, req_len: u32, out_ptr: u32, out_cap: u32) -> i32;
+    fn sensor_availability(out_ptr: u32, out_cap: u32) -> i32;
+    fn sensor_read(kind: u32, out_ptr: u32, out_cap: u32) -> i32;
+    fn plugin_kv_status() -> i32;
     fn host_nop();
 }
 
@@ -237,6 +252,80 @@ pub fn host_traveller_profile_read(out: &mut [u8]) -> usize {
         traveller_profile_read(out.as_mut_ptr() as u32, out.len() as u32),
         out
     )
+}
+
+pub fn host_cat_status(out: &mut [u8]) -> usize {
+    host_json_buf!(cat_status(out.as_mut_ptr() as u32, out.len() as u32), out)
+}
+
+pub fn host_repeater_query(
+    lat: f64,
+    lon: f64,
+    radius_km: f64,
+    network_id: Option<&str>,
+    out: &mut [u8],
+) -> usize {
+    let (net_ptr, net_len) = match network_id {
+        Some(s) => (s.as_ptr() as u32, s.len() as u32),
+        None => (0u32, 0u32),
+    };
+    host_json_buf!(
+        repeater_query(
+            lat.to_bits(),
+            lon.to_bits(),
+            radius_km.to_bits(),
+            net_ptr,
+            net_len,
+            out.as_mut_ptr() as u32,
+            out.len() as u32,
+        ),
+        out
+    )
+}
+
+pub fn host_cat_vfo_set(request_json: &str, out: &mut [u8]) -> usize {
+    host_json_buf!(
+        cat_vfo_set(
+            request_json.as_ptr() as u32,
+            request_json.len() as u32,
+            out.as_mut_ptr() as u32,
+            out.len() as u32,
+        ),
+        out
+    )
+}
+
+pub fn host_cat_network_follow(request_json: &str, out: &mut [u8]) -> usize {
+    host_json_buf!(
+        cat_network_follow(
+            request_json.as_ptr() as u32,
+            request_json.len() as u32,
+            out.as_mut_ptr() as u32,
+            out.len() as u32,
+        ),
+        out
+    )
+}
+
+/// JSON `{"available":[...]}` of sensors the device exposes (`sensors_read`).
+pub fn host_sensor_availability(out: &mut [u8]) -> usize {
+    host_json_buf!(
+        sensor_availability(out.as_mut_ptr() as u32, out.len() as u32),
+        out
+    )
+}
+
+/// JSON `{"status":..,"sample":..}` for one sensor `kind` code (`sensors_read`).
+pub fn host_sensor_read(kind: u32, out: &mut [u8]) -> usize {
+    host_json_buf!(
+        sensor_read(kind, out.as_mut_ptr() as u32, out.len() as u32),
+        out
+    )
+}
+
+/// `true` when the host backs `plugin_kv` (`plugin_kv` capability).
+pub fn host_plugin_kv_available() -> bool {
+    unsafe { plugin_kv_status() == 1 }
 }
 
 /// Touch the host (useful for proving the import table is wired).

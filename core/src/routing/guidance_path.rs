@@ -71,6 +71,9 @@ pub struct SimSample {
     /// Current-road label: OSM `name`, else `ref`, else null (UI applies highway-class label).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub street: Option<String>,
+    /// True when the underlying graph edge has OSM `tunnel=*` (`is_tunnel` on the pack edge).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_tunnel: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -837,6 +840,7 @@ pub fn build_sim_samples_from_lat_lon(
             maxspeed_kmh: None,
             maxspeed_conditional: None,
             street: None,
+            is_tunnel: false,
         });
         return out;
     }
@@ -861,6 +865,7 @@ pub fn build_sim_samples_from_lat_lon(
             maxspeed_kmh: None,
             maxspeed_conditional: None,
             street: None,
+            is_tunnel: false,
         });
     }
     out
@@ -945,6 +950,7 @@ pub fn build_sim_samples_from_edges(
                 maxspeed_kmh: e.maxspeed_kmh,
                 maxspeed_conditional: e.maxspeed_conditional.clone(),
                 street: street.clone(),
+                is_tunnel: e.is_tunnel,
             });
         }
         cum += e.length_m;
@@ -965,6 +971,7 @@ pub fn build_sim_samples_from_edges(
             maxspeed_conditional: e_last.and_then(|e| e.maxspeed_conditional.clone()),
             street: e_last
                 .and_then(|e| prefer_street_label(e.name.as_deref(), e.road_ref.as_deref())),
+            is_tunnel: e_last.map(|e| e.is_tunnel).unwrap_or(false),
         });
     }
     out
@@ -1873,6 +1880,7 @@ fn count_roundabout_exit(
                 target: node,
                 length_m: 100.0,
                 base_weight: 100.0,
+                cost_mult: 1.0,
                 eco_weight: None,
                 start_lat: 0.0,
                 start_lon: 0.0,
@@ -1900,6 +1908,7 @@ fn count_roundabout_exit(
                 maxlength_m: None,
                 is_toll: false,
                 is_ferry: false,
+                ferry_interval_min: None,
                 is_tunnel: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,
@@ -2109,6 +2118,7 @@ mod tests {
             target: NodeId(t),
             length_m: 200.0,
             base_weight: 200.0,
+            cost_mult: 1.0,
             eco_weight: None,
             start_lat: lat0,
             start_lon: lon0,
@@ -2136,6 +2146,7 @@ mod tests {
             maxlength_m: None,
             is_toll: false,
             is_ferry: false,
+            ferry_interval_min: None,
             is_tunnel: false,
             is_boardwalk_crossing: false,
             is_roundabout,
@@ -2520,6 +2531,7 @@ mod tests {
                 target: NodeId(t),
                 length_m: 100.0,
                 base_weight: 100.0,
+                cost_mult: 1.0,
                 eco_weight: None,
                 start_lat: lat0,
                 start_lon: lon0,
@@ -2547,6 +2559,7 @@ mod tests {
                 maxlength_m: None,
                 is_toll: false,
                 is_ferry: false,
+                ferry_interval_min: None,
                 is_tunnel: false,
                 is_boardwalk_crossing: false,
                 is_roundabout: false,

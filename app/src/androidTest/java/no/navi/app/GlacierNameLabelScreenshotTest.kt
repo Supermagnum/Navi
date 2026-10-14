@@ -33,7 +33,7 @@ class GlacierNameLabelScreenshotTest {
         NaviMapTestHooks.hideSearchChrome = true
         NaviMapTestHooks.disableGpsFollow = true
         NaviMapTestHooks.followGps = false
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         NaviMapTestHooks.requestOptIn3d = false
         MapHudPrefs.saveOptIn3d(context, false)
         MapHudPrefs.saveCameraTiltDeg(context, 0.0)
@@ -84,7 +84,7 @@ class GlacierNameLabelScreenshotTest {
     ) {
         runCatching { activityRule.finishActivity() }
         Thread.sleep(500)
-        NaviMapTestHooks.styleReady = false
+        NaviMapTestHooks.resetStyleLoadState()
         NaviMapTestHooks.lastBasemapKind = ""
         NaviMapTestHooks.forceOnlineBasemap = forceOnline
         NaviMapTestHooks.requestOptIn3d = false

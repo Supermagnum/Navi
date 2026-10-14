@@ -92,6 +92,7 @@ fn keep_way_tag(key: &str) -> bool {
             | "access:conditional"
             | "_ferry_approach_promoted"
             | "duration"
+            | "interval"
     )
 }
 
@@ -332,6 +333,16 @@ fn in_bbox(lat: f64, lon: f64, bbox: [f64; 4]) -> bool {
     lat >= bbox[0] && lat <= bbox[2] && lon >= bbox[1] && lon <= bbox[3]
 }
 
+fn in_chebyshev_vacuum(lat: f64, lon: f64, terminals: &[(f64, f64)], deg: f64) -> bool {
+    terminals
+        .iter()
+        .any(|(tlat, tlon)| (lat - tlat).abs() <= deg && (lon - tlon).abs() <= deg)
+}
+
+/// Chebyshev radius (degrees) for pier/footway promotion vacuum around a
+/// terminal (~1.7 km).
+const TERMINAL_PIER_VACUUM_DEG: f64 = 0.015;
+
 fn car_highway_ok(highway: &str) -> bool {
     matches!(
         highway,
@@ -363,25 +374,22 @@ fn car_highway_ok(highway: &str) -> bool {
 /// graphs reported `graph_ferry_edges=0` and Fehmarn-style densify hops
 /// disconnected across water.
 fn tags_indicate_ferry(tags: &HashMap<String, String>) -> bool {
-    tags.get("route")
-        .is_some_and(|v| v.eq_ignore_ascii_case("ferry"))
-        || tags
-            .get("highway")
-            .is_some_and(|v| v.eq_ignore_ascii_case("ferry"))
-        || tags
-            .get("ferry")
-            .is_some_and(|v| super::builder::is_truthy_tag(v))
+    access::tags_indicate_ferry(tags)
 }
 
 fn way_ok_for_profile(tags: &HashMap<String, String>, profile: RoutingProfile) -> bool {
     if tags_indicate_ferry(tags) {
-        // Keep ferries for every profile; [`access::tags_forbid_mode`] drops
-        // vehicle-only / pedestrian-no cases when building edges.
-        return true;
+        // Keep ferry geometry candidates; [`access::tags_forbid_mode`] drops
+        // vehicle-only / no-access cases and (for Bicycle) untagged ferries
+        // that lack an explicit yes-like `bicycle=*`.
+        return !access::tags_forbid_mode(tags, profile.access_mode());
     }
     let Some(highway) = tags.get("highway") else {
         return false;
     };
+    if crate::routing::graph::is_construction_or_proposed_highway(Some(highway.as_str())) {
+        return false;
+    }
     highway_ok_for_profile(highway, profile)
 }
 
@@ -477,8 +485,62 @@ fn profile_label(profile: RoutingProfile) -> &'static str {
 }
 
 fn parse_metric(raw: &str) -> Option<f64> {
-    let cleaned = raw.trim().to_lowercase().replace(['t', 'm'], "");
-    cleaned.trim().parse::<f64>().ok()
+    let s = raw.trim().to_lowercase();
+    if s.is_empty()
+        || matches!(
+            s.as_str(),
+            "none" | "default" | "unsigned" | "below_default" | "no" | "yes"
+        )
+    {
+        return None;
+    }
+    // Feet + inches: 6\'6\" or 6\'6
+    if let Some(ft_idx) = s.find('\'') {
+        let feet: f64 = s[..ft_idx].trim().replace(',', ".").parse().ok()?;
+        let rest = s[ft_idx + 1..].replace('"', "").trim().replace(',', ".");
+        let inches: f64 = if rest.is_empty() {
+            0.0
+        } else {
+            rest.parse().ok()?
+        };
+        return Some(feet * 0.3048 + inches * 0.0254);
+    }
+    let mut unit = None;
+    let mut num = s.as_str();
+    for (suffix, u) in [
+        ("tonnes", "t"),
+        ("tonne", "t"),
+        ("tons", "t"),
+        ("ton", "t"),
+        ("kg", "kg"),
+        ("metres", "m"),
+        ("meters", "m"),
+        ("metre", "m"),
+        ("meter", "m"),
+        ("ft", "ft"),
+        ("t", "t"),
+        ("m", "m"),
+    ] {
+        if num.ends_with(suffix) {
+            num = num[..num.len() - suffix.len()].trim();
+            unit = Some(u);
+            break;
+        }
+    }
+    let num = num.replace(',', ".").trim().to_string();
+    if num.is_empty()
+        || !num
+            .chars()
+            .all(|c| c.is_ascii_digit() || c == '.' || c == '-')
+    {
+        return None;
+    }
+    let v: f64 = num.parse().ok()?;
+    match unit {
+        Some("kg") => Some(v / 1000.0), // store as tonnes when used for maxweight*
+        Some("ft") => Some(v * 0.3048),
+        _ => Some(v), // bare number / t / m — OSM default units
+    }
 }
 
 fn haversine_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
@@ -619,19 +681,11 @@ impl RouteGraph {
     }
 
     /// Ferry overlay from a region `.osm.pbf`: OSM `route=ferry` ways plus
-    /// highway approaches that share terminal nodes with those ferries.
-    /// Approach stubs bridge pier tips that pack tiles may have clipped off
-    /// (e.g. Denmark south of ~54.677 vs Rødby ~54.655) so merge-by-OSM-id
-    /// connects into pack land. No preferential ferry bias — edges use normal
-    /// weights; A* chooses them when competitive and ferries are allowed.
-    /// Approach depth is four hops plus a ~1.5 km terminal-radius vacuum, and
-    /// includes `man_made=pier` / platform ways (as service) so collection can
-    /// leave the pier onto inland highways.
+    /// pier / footway promotions that share terminal nodes.
     ///
-    /// **Streaming (≤2 PBF reads):** formerly ~10 full-file scans which cost
-    /// ~18 min for Vestlandet on SM-P613. Now: (1) collect ferries + pier /
-    /// footway / platform promotions only, (2) one node pass for coords; BFS +
-    /// terminal-radius vacuum run in memory. Pack highways are not duplicated.
+    /// Does not invent water crossings or land hops. Overlay only materializes
+    /// ferries already present in the extract. Pack convert must tile the
+    /// full catalog/PBF extent so those ways are also in loaded graph tiles.
     pub fn build_ferry_overlay_from_pbf(
         path: impl AsRef<Path>,
         profile: RoutingProfile,
@@ -640,10 +694,7 @@ impl RouteGraph {
         let path = path.as_ref();
         let t_all = Instant::now();
 
-        // Pass 1 — ways only: ferries + pier/footway/platform promotions.
-        // Pack tiles already carry car highways; overlay only needs shared OSM
-        // ids at the pier–road join (BFS over every residential approach was
-        // multi-minute on Østlandet and unnecessary for Halhjem/Arsvågen).
+        // Pass 1 — ferries + pier/footway/platform promotions.
         let t0 = Instant::now();
         let mut ferry_ways: Vec<RawWay> = Vec::new();
         let mut approach_ways: Vec<RawWay> = Vec::new();
@@ -714,7 +765,6 @@ impl RouteGraph {
             all_ref_ids.extend(w.nodes.iter().copied());
         }
 
-        const TERMINAL_VACUUM_DEG: f64 = 0.015; // ~1.7 km
         let t_n = Instant::now();
         let mut coords: HashMap<i64, (f64, f64)> =
             HashMap::with_capacity(all_ref_ids.len().min(200_000));
@@ -793,21 +843,15 @@ impl RouteGraph {
                 terminal_coords.push((lat, lon));
             }
         }
-        let near_terminal = |lat: f64, lon: f64| -> bool {
-            terminal_coords.iter().any(|(tlat, tlon)| {
-                (lat - tlat).abs() <= TERMINAL_VACUUM_DEG
-                    && (lon - tlon).abs() <= TERMINAL_VACUUM_DEG
-            })
-        };
         let mut vacuum_added = 0usize;
         for (i, w) in approach_ways.iter().enumerate() {
             if selected_approach.contains(&i) {
                 continue;
             }
             let near = w.nodes.iter().any(|id| {
-                coords
-                    .get(id)
-                    .is_some_and(|&(lat, lon)| near_terminal(lat, lon))
+                coords.get(id).is_some_and(|&(lat, lon)| {
+                    in_chebyshev_vacuum(lat, lon, &terminal_coords, TERMINAL_PIER_VACUUM_DEG)
+                })
             });
             if near {
                 selected_approach.insert(i);
@@ -1377,6 +1421,13 @@ fn graph_from_raw_ways(
         } else {
             None
         };
+        let ferry_interval_min = if is_ferry {
+            way.tags
+                .get("interval")
+                .and_then(|v| super::builder::parse_osm_interval_minutes(v))
+        } else {
+            None
+        };
         let is_tunnel = way
             .tags
             .get("tunnel")
@@ -1470,6 +1521,7 @@ fn graph_from_raw_ways(
                 maxlength_m,
                 is_toll,
                 is_ferry,
+                ferry_interval_min,
                 ferry_duration.as_deref(),
                 is_tunnel,
                 is_boardwalk_crossing,
@@ -1513,6 +1565,7 @@ fn graph_from_raw_ways(
                     maxlength_m,
                     is_toll,
                     is_ferry,
+                    ferry_interval_min,
                     ferry_duration.as_deref(),
                     is_tunnel,
                     is_boardwalk_crossing,
@@ -1572,6 +1625,7 @@ fn bbox_edge(
     maxlength_m: Option<f64>,
     is_toll: bool,
     is_ferry: bool,
+    ferry_interval_min: Option<f64>,
     ferry_duration: Option<&str>,
     is_tunnel: bool,
     is_boardwalk_crossing: bool,
@@ -1594,6 +1648,7 @@ fn bbox_edge(
         target,
         length_m,
         base_weight,
+        cost_mult: 1.0,
         eco_weight: None,
         start_lat,
         start_lon,
@@ -1621,6 +1676,7 @@ fn bbox_edge(
         maxlength_m,
         is_toll,
         is_ferry,
+        ferry_interval_min,
         is_tunnel,
         is_boardwalk_crossing,
         is_roundabout,

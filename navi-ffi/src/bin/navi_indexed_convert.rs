@@ -4,7 +4,9 @@ use std::env;
 use std::path::PathBuf;
 
 use driver_break_core::routing::graph::RoutingProfile;
-use driver_break_core::routing::indexed::{convert_region_packs, ConvertOptions};
+use driver_break_core::routing::indexed::{
+    convert_region_packs, ensure_ferry_sidecar, ConvertOptions,
+};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -12,9 +14,14 @@ fn main() {
     let mut pbf = None;
     let mut elev = None;
     let mut profiles = vec![RoutingProfile::Car, RoutingProfile::Foot];
+    let mut ferry_sidecar_only = false;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
+            "--ferry-sidecar-only" => {
+                ferry_sidecar_only = true;
+                i += 1;
+            }
             "--data-dir" => {
                 data_dir = Some(PathBuf::from(&args[i + 1]));
                 i += 2;
@@ -45,6 +52,32 @@ fn main() {
     }
     let data_dir = data_dir.expect("--data-dir");
     let pbf = pbf.expect("--pbf");
+    if ferry_sidecar_only {
+        let stem = pbf
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("region.osm.pbf")
+            .trim_end_matches(".osm.pbf")
+            .trim_end_matches(".pbf")
+            .to_string();
+        let overlay_profiles = if profiles.is_empty() {
+            vec![RoutingProfile::Truck, RoutingProfile::Car]
+        } else {
+            profiles
+        };
+        for profile in overlay_profiles {
+            match ensure_ferry_sidecar(&data_dir, &stem, profile, &pbf) {
+                Ok(wrote) => println!(
+                    "PASS ferry_sidecar stem={stem} profile={profile:?} wrote_or_fresh={wrote}"
+                ),
+                Err(e) => {
+                    eprintln!("FAIL ferry_sidecar stem={stem} profile={profile:?}: {e:#}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        return;
+    }
     let mut opts = ConvertOptions::new(&data_dir, &pbf);
     opts.elev_dir = elev;
     opts.profiles = profiles;

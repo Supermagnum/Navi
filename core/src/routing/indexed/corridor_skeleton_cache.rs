@@ -1,0 +1,835 @@
+//! On-device corridor skeleton build (FU22 Step 1).
+//!
+//! Host CLI [`navi-corridor-skeleton`] builds skeletons offline; this module
+//! mirrors that tile-at-a-time pipeline for idle background work beside installed
+//! packs. Peak RSS stays far below 4 GB by loading one tile under
+//! [`super::with_corridor_skeleton_hydrate`] then converting to [`FlatGraphPack`]
+//! before the next tile.
+//!
+//! Soft RSS bound: [`SKELETON_BUILD_SOFT_RSS_MB`]. After each tile load, if
+//! VmRSS exceeds that budget the tile is skipped (warn) and the build continues.
+//! VmHWM is logged for diagnostics. Densify-only materialization is the primary
+//! bound mechanism; the soft check aborts pathological tiles.
+
+use std::collections::HashSet;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
+
+use super::ferry_overlay_cache::{ferry_sidecar_path, load_ferry_overlay_as_flat};
+use super::graph_pack::{with_corridor_skeleton_hydrate, FlatGraphPack};
+use super::load::load_graph_pack_clips;
+use super::manifest::{manifest_path, NaviManifest};
+use crate::routing::corridor_skeleton::{
+    border_band_bbox, border_candidate_osm_ids, build_skeleton_from_pack, merge_skeleton_files,
+    read_skeleton_file, write_skeleton_file, CorridorSkeletonFile,
+    CORRIDOR_SKELETON_FORMAT_VERSION,
+};
+use crate::routing::graph::RoutingProfile;
+
+/// Soft peak RSS (VmRSS) after a single densify-only tile load. Above this the
+/// tile is skipped with a warn; other tiles still build. Densify-only keep the
+/// typical peak far below 4 GB; this is a safety rail for pathological packs.
+pub const SKELETON_BUILD_SOFT_RSS_MB: u64 = 1800;
+
+/// Schema / algorithm revision in the `.meta` fingerprint. Bump to invalidate
+/// all on-disk skeletons (border rule, densify filter, ferry merge, …).
+/// Bumped when border detection / rim-secondary selection changes so installed
+/// skeletons rebuild (FU23: jamtland↔dalarna had a 25 km major-only gap).
+/// FU24: bump when rim secondary/tertiary/unclassified/residential selection changes.
+/// FU25: binary skeleton + border-crossing-only rim (no full AABB rim keep).
+/// FU27: neighbour fingerprint by installed pack identity, not skeleton mtime.
+/// FU30: border candidates include approach-class nodes (secondary through
+/// residential), not only major/ferry. Pass 5 walks metres to the major
+/// skeleton (50 km), not a 12-hop cap that dropped rural county cuts.
+/// Both directed edges of a bidirectional approach are kept.
+pub const CORRIDOR_SKELETON_BUILD: u32 = 9;
+
+fn profile_slug(profile: RoutingProfile) -> &'static str {
+    match profile {
+        RoutingProfile::Car => "car",
+        RoutingProfile::Bicycle => "bicycle",
+        RoutingProfile::Foot => "foot",
+        RoutingProfile::Truck => "truck",
+    }
+}
+
+/// Corridor skeleton profile for freshness / builds.
+///
+/// Truck/MobileHome may reuse a **car** skeleton only when the truck graph for
+/// that stem is the car graph (manifest omits truck, points at the same tile
+/// files, or hard-links/copies the car monolith — the documented convert /
+/// pack-server fallback). When real truck graph tiles exist, freshness and the
+/// idle builder must use Truck so Stage B densifies on truck restrictions.
+fn skeleton_profile(home: &Path, stem: &str, profile: RoutingProfile) -> RoutingProfile {
+    match profile {
+        RoutingProfile::Truck => match NaviManifest::load(&manifest_path(home, stem)) {
+            // Distinct truck archives → truck skeleton / fingerprint.
+            Ok(m) if !m.truck_graph_is_car_alias_at(home) => RoutingProfile::Truck,
+            // Missing/invalid manifest or car-alias truck graph → car skeleton.
+            Ok(_) | Err(_) => RoutingProfile::Car,
+        },
+        other => other,
+    }
+}
+
+fn skeleton_bin_path(home: &Path, stem: &str, skel_profile: RoutingProfile) -> PathBuf {
+    match skel_profile {
+        RoutingProfile::Car => home.join(format!("{stem}.navi-corridor-skeleton.bin")),
+        other => home.join(format!(
+            "{stem}.navi-corridor-skeleton.{}.bin",
+            profile_slug(other)
+        )),
+    }
+}
+
+fn skeleton_meta_path_for(home: &Path, stem: &str, skel_profile: RoutingProfile) -> PathBuf {
+    match skel_profile {
+        RoutingProfile::Car => skeleton_meta_path(home, stem),
+        other => home.join(format!(
+            "{stem}.navi-corridor-skeleton.{}.meta",
+            profile_slug(other)
+        )),
+    }
+}
+
+fn region_label(stem: &str) -> String {
+    stem.trim_end_matches("-latest")
+        .trim_end_matches("-latest.osm")
+        .replace(['_', '-'], " ")
+}
+
+fn leaf_to_region(stem: &str) -> String {
+    crate::routing::basemap::pbf_stem_to_geofabrik_path(stem)
+        .unwrap_or_else(|| format!("europe/{}", stem.trim_end_matches("-latest")))
+}
+
+fn skeleton_meta_path(home: &Path, stem: &str) -> PathBuf {
+    home.join(format!("{stem}.navi-corridor-skeleton.meta"))
+}
+
+fn peak_rss_mb() -> u64 {
+    proc_status_kb("VmHWM:") / 1024
+}
+
+fn current_rss_mb() -> u64 {
+    proc_status_kb("VmRSS:") / 1024
+}
+
+fn proc_status_kb(key: &str) -> u64 {
+    let Ok(s) = fs::read_to_string("/proc/self/status") else {
+        return 0;
+    };
+    for line in s.lines() {
+        if let Some(rest) = line.strip_prefix(key) {
+            return rest
+                .split_whitespace()
+                .next()
+                .and_then(|x| x.parse().ok())
+                .unwrap_or(0);
+        }
+    }
+    0
+}
+
+fn file_mtime_secs(path: &Path) -> u64 {
+    fs::metadata(path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn file_len(path: &Path) -> u64 {
+    fs::metadata(path).map(|m| m.len()).unwrap_or(0)
+}
+
+fn pack_generation(home: &Path, stem: &str) -> String {
+    let install = home.join(format!("{stem}.navi-server-install.json"));
+    if !install.is_file() {
+        return String::new();
+    }
+    let Ok(text) = fs::read_to_string(&install) else {
+        return String::new();
+    };
+    serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .and_then(|v| {
+            v.get("generation")
+                .and_then(|g| g.as_str())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_default()
+}
+
+fn pack_fingerprint_parts(home: &Path, stem: &str, profile: RoutingProfile) -> (u64, u64, String) {
+    let man = NaviManifest::load(&manifest_path(home, stem)).ok();
+    let (len, mtime) = if let Some(ref m) = man {
+        (m.pbf_size_bytes, m.pbf_modified_unix_secs)
+    } else {
+        let pbf = home.join(format!("{stem}.osm.pbf"));
+        (file_len(&pbf), file_mtime_secs(&pbf))
+    };
+    let mut gen = pack_generation(home, stem);
+    if gen.is_empty() {
+        // Fall back to primary graph archive mtime/len so local-bake packs still
+        // invalidate when tiles are rewritten.
+        if let Some(path) = primary_graph_path(home, stem, profile) {
+            gen = format!("graph:{}:{}", file_len(&path), file_mtime_secs(&path));
+        }
+    }
+    (len, mtime, gen)
+}
+
+fn primary_graph_path(home: &Path, stem: &str, profile: RoutingProfile) -> Option<PathBuf> {
+    let man = NaviManifest::load(&manifest_path(home, stem)).ok()?;
+    if let Some(tiles) = man.graph_tiles_for(profile) {
+        if let Some(first) = tiles.first() {
+            return Some(home.join(&first.file));
+        }
+    }
+    let key = profile_slug(profile);
+    man.graph_files.get(key).map(|rel| home.join(rel))
+}
+
+/// Pack identity (generation, PBF size, PBF time) of every other installed pack
+/// in `home`. Border OSM ids come from those packs
+/// ([`border_osm_from_neighbor_packs`]), so this stem rebuilds when a neighbour
+/// pack is installed, removed or updated. Skeleton files are not part of it:
+/// rebuilding one skeleton must not invalidate the others.
+fn neighbor_fingerprint(home: &Path, stem: &str, profile: RoutingProfile) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let Ok(rd) = fs::read_dir(home) else {
+        return String::new();
+    };
+    for ent in rd.flatten() {
+        let name = ent.file_name();
+        let name = name.to_string_lossy();
+        let Some(other) = name.strip_suffix(".navi-manifest.json") else {
+            continue;
+        };
+        if other == stem {
+            continue;
+        }
+        let (len, mtime, gen) = pack_fingerprint_parts(home, other, profile);
+        parts.push(format!("{other}:{gen}:{len}:{mtime}"));
+    }
+    parts.sort();
+    parts.join(",")
+}
+
+fn want_fingerprint(home: &Path, stem: &str, profile: RoutingProfile) -> String {
+    let (len, mtime, gen) = pack_fingerprint_parts(home, stem, profile);
+    let neighbors = neighbor_fingerprint(home, stem, profile);
+    format!(
+        "build={CORRIDOR_SKELETON_BUILD};skel_fmt={CORRIDOR_SKELETON_FORMAT_VERSION};\
+         profile={};gen={gen};len={len};mtime={mtime};neighbors={neighbors}",
+        profile_slug(profile)
+    )
+}
+
+/// True when skeleton binary/JSON + meta match the current pack / neighbor fingerprint.
+pub fn skeleton_fresh(home: &Path, stem: &str, profile: RoutingProfile) -> bool {
+    let profile = skeleton_profile(home, stem, profile);
+    let skel = skeleton_bin_path(home, stem, profile);
+    let skel = if skel.is_file() {
+        skel
+    } else if profile == RoutingProfile::Car {
+        match crate::routing::corridor_skeleton::resolve_skeleton_path(home, stem) {
+            Some(p) => p,
+            None => return false,
+        }
+    } else {
+        return false;
+    };
+    let meta_path = skeleton_meta_path_for(home, stem, profile);
+    if !skel.is_file() || !meta_path.is_file() {
+        return false;
+    }
+    let want = want_fingerprint(home, stem, profile);
+    let got = fs::read_to_string(&meta_path).unwrap_or_default();
+    got.trim() == want
+}
+
+/// Whether a plan may use this stem's corridor skeleton (fresh sidecar on disk).
+pub fn corridor_skeleton_ready(home: &Path, stem: &str, profile: RoutingProfile) -> bool {
+    skeleton_fresh(home, stem, profile)
+}
+
+/// On-disk skeleton path for a plan profile (car path when Truck aliases car).
+pub fn resolve_corridor_skeleton_path(
+    home: &Path,
+    stem: &str,
+    profile: RoutingProfile,
+) -> Option<PathBuf> {
+    let profile = skeleton_profile(home, stem, profile);
+    let bin = skeleton_bin_path(home, stem, profile);
+    if bin.is_file() {
+        return Some(bin);
+    }
+    if profile == RoutingProfile::Car {
+        return crate::routing::corridor_skeleton::resolve_skeleton_path(home, stem);
+    }
+    None
+}
+
+fn tile_paths(home: &Path, stem: &str, profile: RoutingProfile) -> Vec<PathBuf> {
+    let Ok(man) = NaviManifest::load(&manifest_path(home, stem)) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    if let Some(tiles) = man.graph_tiles_for(profile) {
+        for rel in tiles {
+            out.push(home.join(&rel.file));
+        }
+    }
+    if out.is_empty() {
+        let key = profile_slug(profile);
+        if let Some(rel) = man.graph_files.get(key) {
+            out.push(home.join(rel));
+        }
+    }
+    out
+}
+
+/// Load one pack tile for corridor-skeleton build (major + secondary), convert
+/// to flat, drop RouteGraph. Returns `None` when load fails or soft RSS is
+/// exceeded (tile skipped).
+fn load_flat_tile_bounded(
+    path: &Path,
+    profile: RoutingProfile,
+    stem: &str,
+) -> Option<FlatGraphPack> {
+    let g = match with_corridor_skeleton_hydrate(|| load_graph_pack_clips(path, profile, None)) {
+        Ok(g) => g,
+        Err(e) => {
+            log::warn!(
+                target: "NaviPlan",
+                "corridor_skeleton skip tile {}: load failed: {e:#}",
+                path.display()
+            );
+            return None;
+        }
+    };
+    let rss = current_rss_mb();
+    let hwm = peak_rss_mb();
+    log::info!(
+        target: "NaviPlan",
+        "corridor_skeleton tile stem={stem} path={} nodes={} edges={} VmRSS_mb={rss} VmHWM_mb={hwm}",
+        path.file_name().and_then(|n| n.to_str()).unwrap_or("?"),
+        g.nodes.len(),
+        g.edges.len(),
+    );
+    if rss > SKELETON_BUILD_SOFT_RSS_MB {
+        log::warn!(
+            target: "NaviPlan",
+            "corridor_skeleton abort tile stem={stem} path={}: VmRSS_mb={rss} > \
+             SKELETON_BUILD_SOFT_RSS_MB={SKELETON_BUILD_SOFT_RSS_MB} (continue other tiles)",
+            path.display()
+        );
+        drop(g);
+        return None;
+    }
+    let flat = FlatGraphPack::from_route_graph(&g, None);
+    drop(g);
+    Some(flat)
+}
+
+fn collect_border_candidates(
+    home: &Path,
+    stem: &str,
+    profile: RoutingProfile,
+    within: Option<[f64; 4]>,
+) -> HashSet<i64> {
+    let mut ids = HashSet::new();
+    for p in tile_paths(home, stem, profile) {
+        let Some(flat) = load_flat_tile_bounded(&p, profile, stem) else {
+            continue;
+        };
+        ids.extend(border_candidate_osm_ids(&flat, within.as_ref()));
+        drop(flat);
+    }
+    ids
+}
+
+/// Border OSM ids = intersection of this stem's border-candidate ids with
+/// candidate (or skeleton) ids from bbox-adjacent installed neighbours.
+///
+/// Candidates are major, ferry and approach-class nodes (secondary through
+/// residential). Using major ids alone missed county cuts that Geofabrik
+/// splits on a secondary or minor road: the two major spines never share an
+/// OSM id, Stage B has no land path, and the search widens through unrelated
+/// packs and ferries. Adjacent-pack candidates in the shared bbox band close
+/// that. Non-adjacent neighbours still contribute existing skeleton ids
+/// (shared ferries).
+fn border_osm_from_neighbor_packs(
+    home: &Path,
+    stem: &str,
+    profile: RoutingProfile,
+    mine: &HashSet<i64>,
+) -> HashSet<i64> {
+    let my_region = leaf_to_region(stem);
+    let my_bbox = crate::routing::basemap::region_bbox(&my_region);
+    let mut neighbor_nodes = HashSet::new();
+    let mut seen = HashSet::new();
+    let Ok(rd) = fs::read_dir(home) else {
+        return HashSet::new();
+    };
+    for ent in rd.flatten() {
+        let name = ent.file_name();
+        let name = name.to_string_lossy();
+        let Some(other) = name.strip_suffix(".navi-manifest.json") else {
+            continue;
+        };
+        if other == stem || !seen.insert(other.to_string()) {
+            continue;
+        }
+        let other_region = leaf_to_region(other);
+        let other_bbox = crate::routing::basemap::region_bbox(&other_region);
+        let adjacent = match (my_bbox, other_bbox) {
+            (Some(a), Some(b)) => crate::long_trip::regions_bbox_adjacent(&a, &b, 0.15),
+            _ => true,
+        };
+        if adjacent {
+            let band = match (my_bbox, other_bbox) {
+                (Some(a), Some(b)) => Some(border_band_bbox(&a, &b, 0.15)),
+                _ => None,
+            };
+            neighbor_nodes.extend(collect_border_candidates(home, other, profile, band));
+        } else if let Some(skel_path) =
+            crate::routing::corridor_skeleton::resolve_skeleton_path(home, other)
+        {
+            if let Ok(skel) = read_skeleton_file(&skel_path) {
+                neighbor_nodes.extend(skel.node_ids.iter().copied());
+            }
+        }
+    }
+    mine.intersection(&neighbor_nodes).copied().collect()
+}
+
+fn build_stem_skeleton(
+    home: &Path,
+    stem: &str,
+    profile: RoutingProfile,
+    border_osm: &HashSet<i64>,
+) -> Option<CorridorSkeletonFile> {
+    let region = leaf_to_region(stem);
+    let prof = profile_slug(profile);
+    let mut parts = Vec::new();
+    for p in tile_paths(home, stem, profile) {
+        let Some(flat) = load_flat_tile_bounded(&p, profile, stem) else {
+            continue;
+        };
+        let part = build_skeleton_from_pack(&flat, &region, stem, prof, border_osm);
+        drop(flat);
+        parts.push(part);
+    }
+    // Ferry overlay sidecar (MAGIC_FERRY) — pier/approach stubs packs omit.
+    let side = ferry_sidecar_path(home, stem, profile);
+    if side.is_file() {
+        match load_ferry_overlay_as_flat(home, stem, profile) {
+            Some(flat) => {
+                let ferry_n = flat.edge_is_ferry.iter().filter(|&&v| v != 0).count();
+                log::info!(
+                    target: "NaviPlan",
+                    "corridor_skeleton overlay stem={stem} nodes={} edges={} ferry_edges≈{ferry_n}",
+                    flat.node_ids.len(),
+                    flat.edge_src.len(),
+                );
+                let part = build_skeleton_from_pack(&flat, &region, stem, prof, border_osm);
+                drop(flat);
+                parts.push(part);
+            }
+            None => {
+                log::warn!(
+                    target: "NaviPlan",
+                    "corridor_skeleton skip overlay {}: load failed",
+                    side.display()
+                );
+            }
+        }
+    }
+    merge_skeleton_files(parts)
+}
+
+/// Snapshot of an in-flight / last corridor-skeleton build for UI status lines.
+#[derive(Debug, Clone)]
+pub struct CorridorSkeletonProgress {
+    pub stem: String,
+    pub region_label: String,
+    pub running: bool,
+    pub pct: u8,
+    pub message: String,
+}
+
+struct BuildState {
+    pct: AtomicU8,
+    running: AtomicBool,
+    message: Mutex<String>,
+}
+
+fn build_state() -> &'static BuildState {
+    static STATE: OnceLock<BuildState> = OnceLock::new();
+    STATE.get_or_init(|| BuildState {
+        pct: AtomicU8::new(0),
+        running: AtomicBool::new(false),
+        message: Mutex::new(String::new()),
+    })
+}
+
+static BUILD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn build_lock() -> &'static Mutex<()> {
+    BUILD_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+static ACTIVE_STEM: OnceLock<Mutex<String>> = OnceLock::new();
+
+fn set_active_stem(stem: &str) {
+    let slot = ACTIVE_STEM.get_or_init(|| Mutex::new(String::new()));
+    if let Ok(mut g) = slot.lock() {
+        *g = stem.to_string();
+    }
+}
+
+fn set_progress(stem: &str, pct: u8, message: &str) {
+    let st = build_state();
+    st.pct.store(pct.min(100), Ordering::Relaxed);
+    if let Ok(mut m) = st.message.lock() {
+        *m = message.to_string();
+    }
+    let label = region_label(stem);
+    crate::download::progress::set(
+        pct as u64,
+        Some(100),
+        &format!("Preparing corridor skeleton for {label}…"),
+    );
+    let _ = stem;
+}
+
+/// Current corridor-skeleton build progress (empty stem when idle).
+pub fn corridor_skeleton_progress() -> CorridorSkeletonProgress {
+    let st = build_state();
+    let running = st.running.load(Ordering::Relaxed);
+    let pct = st.pct.load(Ordering::Relaxed);
+    let message = st.message.lock().map(|m| m.clone()).unwrap_or_default();
+    let stem = ACTIVE_STEM
+        .get()
+        .and_then(|m| m.lock().ok().map(|g| g.clone()))
+        .unwrap_or_default();
+    let region = if stem.is_empty() {
+        String::new()
+    } else {
+        region_label(&stem)
+    };
+    let message = if message.is_empty() && running {
+        format!("Preparing corridor skeleton for {region}…")
+    } else {
+        message
+    };
+    CorridorSkeletonProgress {
+        stem,
+        region_label: region,
+        running,
+        pct,
+        message,
+    }
+}
+
+/// Human-readable status when a plan is blocked on corridor skeleton build.
+pub fn corridor_skeleton_preparing_status(stem: &str) -> (String, u8) {
+    let label = region_label(stem);
+    let prog = corridor_skeleton_progress();
+    let pct = if prog.running && (prog.stem == stem || prog.stem.is_empty()) {
+        prog.pct
+    } else {
+        0
+    };
+    (format!("preparing corridor skeleton for {label}"), pct)
+}
+
+/// Build or refresh `{stem}.navi-corridor-skeleton.bin` from installed packs.
+/// Safe to call from a background job at pack install / idle refresh.
+pub fn ensure_corridor_skeleton(
+    home: &Path,
+    stem: &str,
+    profile: RoutingProfile,
+) -> anyhow::Result<()> {
+    let profile = skeleton_profile(home, stem, profile);
+    if skeleton_fresh(home, stem, profile) {
+        return Ok(());
+    }
+    let _guard = build_lock().lock().unwrap_or_else(|e| e.into_inner());
+    if skeleton_fresh(home, stem, profile) {
+        return Ok(());
+    }
+    let st = build_state();
+    st.running.store(true, Ordering::Relaxed);
+    set_active_stem(stem);
+    let label = region_label(stem);
+    set_progress(
+        stem,
+        0,
+        &format!("Preparing corridor skeleton for {label}…"),
+    );
+    let t0 = Instant::now();
+    let hwm_before = peak_rss_mb();
+
+    set_progress(
+        stem,
+        15,
+        &format!("Preparing corridor skeleton for {label}…"),
+    );
+    let mine = collect_border_candidates(home, stem, profile, None);
+    set_progress(
+        stem,
+        45,
+        &format!("Preparing corridor skeleton for {label}…"),
+    );
+    let border = border_osm_from_neighbor_packs(home, stem, profile, &mine);
+    log::info!(
+        target: "NaviPlan",
+        "corridor_skeleton candidate_ids={} border_ids={} stem={stem} VmHWM_mb={}",
+        mine.len(),
+        border.len(),
+        peak_rss_mb()
+    );
+    drop(mine);
+
+    set_progress(
+        stem,
+        55,
+        &format!("Preparing corridor skeleton for {label}…"),
+    );
+    let Some(skel) = build_stem_skeleton(home, stem, profile, &border) else {
+        st.running.store(false, Ordering::Relaxed);
+        set_progress(stem, 0, &format!("Corridor skeleton failed for {label}"));
+        anyhow::bail!("corridor skeleton build produced no output stem={stem}");
+    };
+    set_progress(
+        stem,
+        90,
+        &format!("Preparing corridor skeleton for {label}…"),
+    );
+    let out_bin = skeleton_bin_path(home, stem, profile);
+    let file_bytes = if profile == RoutingProfile::Car {
+        write_skeleton_file(home, &skel).map_err(|e| {
+            st.running.store(false, Ordering::Relaxed);
+            anyhow::anyhow!("write skeleton stem={stem}: {e}")
+        })?
+    } else {
+        let payload = bincode::serialize(&skel).map_err(|e| {
+            st.running.store(false, Ordering::Relaxed);
+            anyhow::anyhow!("serialize skeleton stem={stem}: {e}")
+        })?;
+        if let Err(e) = fs::write(&out_bin, &payload) {
+            st.running.store(false, Ordering::Relaxed);
+            anyhow::bail!("write skeleton stem={stem}: {e}");
+        }
+        payload.len() as u64
+    };
+    let fp = want_fingerprint(home, stem, profile);
+    let _ = fs::write(skeleton_meta_path_for(home, stem, profile), fp);
+    let hwm = peak_rss_mb();
+    set_progress(stem, 100, &format!("Corridor skeleton ready for {label}"));
+    st.running.store(false, Ordering::Relaxed);
+    st.pct.store(100, Ordering::Relaxed);
+    crate::routing::plan_perf::note(
+        "corridor_skeleton",
+        format!(
+            "bg_build;stem={stem};nodes={};edges={};border={};file_bytes={file_bytes};\
+             build_ms={};wall_ms={};VmHWM_mb={hwm};delta_hwm_mb={}",
+            skel.node_count,
+            skel.edge_count,
+            skel.border_node_count,
+            skel.build_ms,
+            t0.elapsed().as_millis(),
+            hwm.saturating_sub(hwm_before),
+        ),
+    );
+    log::info!(
+        target: "NaviPlan",
+        "corridor_skeleton ready stem={stem} nodes={} edges={} border={} \
+         file_bytes={file_bytes} VmHWM_mb={hwm}",
+        skel.node_count,
+        skel.edge_count,
+        skel.border_node_count,
+    );
+    Ok(())
+}
+
+/// Stems among `pack_dirs` that are on the trip corridor but lack a fresh
+/// skeleton ([`skeleton_fresh`]).
+pub fn stems_missing_corridor_skeleton(
+    pack_dirs: &[&Path],
+    route_points: &[(f64, f64)],
+    profile: RoutingProfile,
+) -> Vec<(PathBuf, String)> {
+    // Truck→Car alias (when graphs alias) is applied per-stem in [`skeleton_fresh`].
+    if route_points.len() < 2 {
+        return Vec::new();
+    }
+    let needed = match crate::long_trip::ordered_needed_regions_for_trip(route_points, &[], None) {
+        Ok(v) => v,
+        Err(_) => {
+            let mut v = Vec::new();
+            for &(lat, lon) in route_points {
+                if let Some(id) = crate::long_trip::region_containing(lat, lon, None) {
+                    v.push(id.to_string());
+                }
+            }
+            v
+        }
+    };
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for region_id in needed {
+        let stem = crate::pack_server::leaf_stem_for_region_id(&region_id);
+        if !seen.insert(stem.clone()) {
+            continue;
+        }
+        let Some(home) = pack_dirs.iter().find(|d| {
+            manifest_path(d, &stem).is_file()
+                || crate::routing::corridor_skeleton::resolve_skeleton_path(d, &stem).is_some()
+        }) else {
+            continue;
+        };
+        if !skeleton_fresh(home, &stem, profile) {
+            out.push(((*home).to_path_buf(), stem));
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn install(home: &Path, stem: &str, pbf_bytes: &[u8]) {
+        fs::write(home.join(format!("{stem}.navi-manifest.json")), "{}").unwrap();
+        fs::write(home.join(format!("{stem}.osm.pbf")), pbf_bytes).unwrap();
+    }
+
+    fn write_skeleton(home: &Path, stem: &str) {
+        fs::write(
+            home.join(format!("{stem}.navi-corridor-skeleton.bin")),
+            b"x",
+        )
+        .unwrap();
+        let fp = want_fingerprint(home, stem, RoutingProfile::Car);
+        fs::write(skeleton_meta_path(home, stem), fp).unwrap();
+    }
+
+    #[test]
+    fn rebuilding_a_neighbour_skeleton_keeps_this_skeleton_fresh() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        install(home, "a-latest", b"pack a");
+        install(home, "b-latest", b"pack b");
+        write_skeleton(home, "a-latest");
+        write_skeleton(home, "b-latest");
+        assert!(skeleton_fresh(home, "a-latest", RoutingProfile::Car));
+
+        fs::remove_file(home.join("b-latest.navi-corridor-skeleton.bin")).unwrap();
+        write_skeleton(home, "b-latest");
+        assert!(skeleton_fresh(home, "a-latest", RoutingProfile::Car));
+        assert!(skeleton_fresh(home, "b-latest", RoutingProfile::Car));
+    }
+
+    #[test]
+    fn truck_reuses_car_corridor_skeleton_fingerprint() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        install(home, "a-latest", b"pack a");
+        write_skeleton(home, "a-latest");
+        assert!(skeleton_fresh(home, "a-latest", RoutingProfile::Car));
+        assert!(
+            skeleton_fresh(home, "a-latest", RoutingProfile::Truck),
+            "Truck/MobileHome must accept car skeletons (graphs alias car tiles)"
+        );
+    }
+
+    #[test]
+    fn distinct_truck_graph_does_not_reuse_car_skeleton_fingerprint() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let man = serde_json::json!({
+            "schema": 1,
+            "stem": "a-latest",
+            "pbf_filename": "a-latest.osm.pbf",
+            "pbf_size_bytes": 3,
+            "pbf_modified_unix_secs": 1,
+            "graph_files": {
+                "car": "a-latest.navi-graph-car.rkyv",
+                "truck": "a-latest.navi-graph-truck.rkyv"
+            },
+            "graph_tiles": {},
+            "graph_format_version": 9,
+            "poi_barrier_file": "a-latest.navi-poi-barrier.rkyv",
+            "poi_barrier_format_version": 1
+        });
+        fs::write(home.join("a-latest.navi-manifest.json"), man.to_string()).unwrap();
+        fs::write(home.join("a-latest.osm.pbf"), b"pbf").unwrap();
+        fs::write(home.join("a-latest.navi-graph-car.rkyv"), b"car-graph").unwrap();
+        fs::write(home.join("a-latest.navi-graph-truck.rkyv"), b"truck-g").unwrap();
+        write_skeleton(home, "a-latest");
+        assert!(skeleton_fresh(home, "a-latest", RoutingProfile::Car));
+        assert!(
+            !skeleton_fresh(home, "a-latest", RoutingProfile::Truck),
+            "real truck graph tiles must not accept a car skeleton fingerprint"
+        );
+        assert_eq!(
+            skeleton_profile(home, "a-latest", RoutingProfile::Truck),
+            RoutingProfile::Truck
+        );
+    }
+
+    #[test]
+    fn neighbour_pack_change_makes_this_skeleton_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        install(home, "a-latest", b"pack a");
+        install(home, "b-latest", b"pack b");
+        write_skeleton(home, "a-latest");
+        assert!(skeleton_fresh(home, "a-latest", RoutingProfile::Car));
+
+        install(home, "b-latest", b"pack b, new extract");
+        assert!(!skeleton_fresh(home, "a-latest", RoutingProfile::Car));
+
+        install(home, "c-latest", b"pack c");
+        write_skeleton(home, "a-latest");
+        assert!(skeleton_fresh(home, "a-latest", RoutingProfile::Car));
+        fs::remove_file(home.join("c-latest.navi-manifest.json")).unwrap();
+        assert!(!skeleton_fresh(home, "a-latest", RoutingProfile::Car));
+    }
+
+    #[test]
+    fn real_gate_packs_truck_aliases_car_skeleton() {
+        let home =
+            std::path::Path::new("/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/navi-gate/packs");
+        if !home.join("ostlandet-latest.navi-manifest.json").is_file() {
+            return;
+        }
+        let man = NaviManifest::load(&manifest_path(home, "ostlandet-latest")).unwrap();
+        assert!(
+            man.truck_graph_is_car_alias_at(home),
+            "gate packs ship car(+foot) only"
+        );
+        assert!(skeleton_fresh(
+            home,
+            "ostlandet-latest",
+            RoutingProfile::Car
+        ));
+        assert!(
+            skeleton_fresh(home, "ostlandet-latest", RoutingProfile::Truck),
+            "truck must accept car skeleton on gate packs"
+        );
+        assert_eq!(
+            skeleton_profile(home, "ostlandet-latest", RoutingProfile::Truck),
+            RoutingProfile::Car
+        );
+    }
+}
