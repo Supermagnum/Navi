@@ -155,6 +155,8 @@ struct Case {
     timing_runs: usize,
     /// Plan again with `long_trip` off and require the same polyline.
     compare_long_trip: bool,
+    /// When true, plan with the campaign VW T6 MobileHome limits.
+    t6_limits: bool,
 }
 
 const CASES: &[Case] = &[
@@ -175,6 +177,7 @@ const CASES: &[Case] = &[
         known_spikes: None,
         timing_runs: 3,
         compare_long_trip: false,
+        t6_limits: false,
     },
     Case {
         id: "b_brenneriroa_aga",
@@ -194,6 +197,7 @@ const CASES: &[Case] = &[
         known_spikes: None,
         timing_runs: 1,
         compare_long_trip: false,
+        t6_limits: false,
     },
     Case {
         id: "c_brenneriroa_grotli_floro",
@@ -212,6 +216,7 @@ const CASES: &[Case] = &[
         known_spikes: None,
         timing_runs: 1,
         compare_long_trip: false,
+        t6_limits: false,
     },
     Case {
         id: "d_bevensen_vaga_dalsoren_avoid_ferries",
@@ -231,6 +236,7 @@ const CASES: &[Case] = &[
         known_spikes: None,
         timing_runs: 1,
         compare_long_trip: false,
+        t6_limits: false,
     },
     Case {
         id: "e_elsa_sjuvass",
@@ -249,6 +255,7 @@ const CASES: &[Case] = &[
         known_spikes: None,
         timing_runs: 1,
         compare_long_trip: false,
+        t6_limits: false,
     },
     Case {
         id: "f_hamar_stange",
@@ -267,6 +274,7 @@ const CASES: &[Case] = &[
         known_spikes: None,
         timing_runs: 1,
         compare_long_trip: true,
+        t6_limits: false,
     },
     Case {
         id: "g_hamar_lillehammer",
@@ -285,6 +293,7 @@ const CASES: &[Case] = &[
         known_spikes: None,
         timing_runs: 1,
         compare_long_trip: true,
+        t6_limits: false,
     },
     Case {
         id: "h_oslo_lillestrom",
@@ -303,6 +312,7 @@ const CASES: &[Case] = &[
         known_spikes: None,
         timing_runs: 1,
         compare_long_trip: true,
+        t6_limits: false,
     },
     Case {
         id: "i_hamburg_bergedorf",
@@ -321,6 +331,7 @@ const CASES: &[Case] = &[
         known_spikes: None,
         timing_runs: 1,
         compare_long_trip: true,
+        t6_limits: false,
     },
     Case {
         id: "j_copenhagen_taastrup",
@@ -339,6 +350,7 @@ const CASES: &[Case] = &[
         known_spikes: None,
         timing_runs: 1,
         compare_long_trip: true,
+        t6_limits: false,
     },
     Case {
         id: "k_60_276_10_816",
@@ -357,6 +369,7 @@ const CASES: &[Case] = &[
         known_spikes: None,
         timing_runs: 1,
         compare_long_trip: true,
+        t6_limits: false,
     },
     Case {
         id: "l_raufoss_bergen",
@@ -375,6 +388,7 @@ const CASES: &[Case] = &[
         known_spikes: None,
         timing_runs: 1,
         compare_long_trip: false,
+        t6_limits: false,
     },
     Case {
         id: "m_oslo_lillehammer",
@@ -393,6 +407,7 @@ const CASES: &[Case] = &[
         known_spikes: None,
         timing_runs: 1,
         compare_long_trip: true,
+        t6_limits: false,
     },
     Case {
         id: "n_hamar_oslo",
@@ -411,6 +426,7 @@ const CASES: &[Case] = &[
         known_spikes: None,
         timing_runs: 1,
         compare_long_trip: true,
+        t6_limits: false,
     },
     Case {
         id: "o_lillehammer_gjovik_honefoss",
@@ -429,6 +445,7 @@ const CASES: &[Case] = &[
         known_spikes: None,
         timing_runs: 1,
         compare_long_trip: true,
+        t6_limits: false,
     },
     Case {
         id: "p_espa_atnbrua",
@@ -447,6 +464,29 @@ const CASES: &[Case] = &[
         known_spikes: None,
         timing_runs: 1,
         compare_long_trip: true,
+        t6_limits: false,
+    },
+    Case {
+        id: "q_raufoss_bergen_mh_t6",
+        start: RAUFOSS,
+        vias: &[],
+        end: BERGEN_STATION,
+        pbf_stem: "ostlandet-latest",
+        avoid_ferries: false,
+        ferries: &[],
+        // Host MH+T6 after clearance-aware dest snap (~428.4 km).
+        distance: Some((428.43, 0.02)),
+        rv15_otta_vaga_lom: false,
+        reference: None,
+        expected_fail: None,
+        // Clearance-aware dest snap + MH soft costs take Filefjell / Bergen approaches
+        // that fail the default path-over-chord window (same OD as case l).
+        accepted_spikes: &[(60.87634, 7.14568), (60.41857, 5.48132)],
+        known_distance: None,
+        known_spikes: None,
+        timing_runs: 1,
+        compare_long_trip: true,
+        t6_limits: true,
     },
 ];
 
@@ -468,6 +508,17 @@ struct Outcome {
     terminate: String,
     hops: usize,
     corridor_ran: bool,
+}
+
+fn t6_vehicle() -> FfiVehicleLimits {
+    FfiVehicleLimits {
+        axle_weight_kg: Some(1661.2),
+        bogie_weight_kg: None,
+        height_m: Some(2.477),
+        width_m: Some(2.297),
+        length_m: Some(5.304),
+        total_weight_kg: Some(3020.4),
+    }
 }
 
 fn empty_vehicle() -> FfiVehicleLimits {
@@ -810,8 +861,9 @@ fn plan_inputs_mismatch(report: &str, case: &Case, long_trip: bool) -> Vec<Strin
             .to_string()
     };
     let mut out = Vec::new();
+    let want_profile = if case.t6_limits { "MobileHome" } else { "Car" };
     let want = [
-        ("profile", "Car".to_string()),
+        ("profile", want_profile.to_string()),
         ("eco", "false".to_string()),
         ("avoid_ferries", case.avoid_ferries.to_string()),
         ("long_trip", long_trip.to_string()),
@@ -962,12 +1014,20 @@ fn run_case(case: &Case, packs: &Path, refs: &Path, work: &Path) -> Outcome {
             case.end.0,
             case.end.1,
             false,
-            TravelProfile::Car,
+            if case.t6_limits {
+                TravelProfile::MobileHome
+            } else {
+                TravelProfile::Car
+            },
             false,
             FfiTollPolicy::Allow,
             case.avoid_ferries,
             false,
-            empty_vehicle(),
+            if case.t6_limits {
+                t6_vehicle()
+            } else {
+                empty_vehicle()
+            },
             false,
             data_dir.display().to_string(),
             packs.display().to_string(),
@@ -1645,6 +1705,7 @@ fn run_gate_isolated(
 #[test]
 #[ignore = "needs NAVI_GATE_PACKS (device long-trip packs) and NAVI_GATE_REFS (reference lines)"]
 fn long_trip_regression_gate() {
+    navi::bin_freshness::require_fresh_binary("regression_gate");
     let packs = match std::env::var("NAVI_GATE_PACKS") {
         Ok(p) if Path::new(&p).is_dir() => PathBuf::from(p),
         _ => {

@@ -1104,7 +1104,7 @@ impl RouteGraph {
             |e: &GraphEdge| -> bool { endpoint_in_pad(e.source) || endpoint_in_pad(e.target) };
         let in_filtered_giant = |id: NodeId| -> bool {
             match &filtered {
-                Some((filtered_root, filtered_giant)) => {
+                Some((filtered_root, filtered_giant, _, _)) => {
                     match (*filtered_giant, filtered_root.get(&id)) {
                         (Some(giant), Some(root)) => *root == giant,
                         _ => self.in_giant_component(id),
@@ -1117,11 +1117,25 @@ impl RouteGraph {
         // filtered Union-Find map keys *are* the allowed-incident set — O(1).
         let has_allowed_incident = |id: NodeId| -> bool {
             match &filtered {
-                Some((filtered_root, _)) => filtered_root.contains_key(&id),
+                Some((filtered_root, _, _, _)) => filtered_root.contains_key(&id),
                 None => self.node_has_allowed_incident_unfiltered(id, options),
             }
         };
-        let directed_ok = |id: NodeId| -> bool { self.directed_snap_ok(id, role) };
+        let directed_ok = |id: NodeId| -> bool {
+            match (&filtered, role) {
+                (Some((_, _, origin_rej, _dest_rej)), SnapRole::Origin) => {
+                    in_filtered_giant(id) && !origin_rej.contains(&id)
+                }
+                (Some((_, _, _origin_rej, dest_rej)), SnapRole::Destination) => {
+                    in_filtered_giant(id) && !dest_rej.contains(&id)
+                }
+                (Some((_, _, origin_rej, dest_rej)), SnapRole::Via) => {
+                    in_filtered_giant(id) && !origin_rej.contains(&id) && !dest_rej.contains(&id)
+                }
+                (Some(_), SnapRole::Any) => true,
+                (None, _) => self.directed_snap_ok(id, role),
+            }
+        };
         // Same edge-distance choice as dig (`SnapRole::Any`): nearest polyline,
         // then closer endpoint. Directed filter only rejects an endpoint that
         // fails the role gate — dig's node is kept whenever it is directed-usable.
@@ -1262,30 +1276,46 @@ impl RouteGraph {
         self.incident.contains(&id)
     }
 
-    /// Weak components using only edges allowed under `options`.
+    /// Weak components + directed origin/dest rejects using only edges allowed
+    /// under `options` (vehicle clearance, avoid-*, DATEX, …).
+    ///
+    /// Base-graph [`Self::directed_snap_ok`] labels ignore option filters, so a
+    /// destination behind a low bridge can still snap as Destination-OK and then
+    /// fail A* under the same vehicle limits. These rejects close that gap.
     fn option_filtered_components(
         &self,
         options: &RouteOptions,
-    ) -> (HashMap<NodeId, NodeId>, Option<NodeId>) {
+    ) -> (
+        HashMap<NodeId, NodeId>,
+        Option<NodeId>,
+        HashSet<NodeId>,
+        HashSet<NodeId>,
+    ) {
         let mut parent: HashMap<NodeId, NodeId> = HashMap::new();
         let mut size: HashMap<NodeId, usize> = HashMap::new();
         let mut incident: HashSet<NodeId> = HashSet::new();
+        // Directed adjacency for snap rejects: two-way roads contribute both
+        // directions (same as A* on a single stored edge with `is_oneway: false`).
+        // One-way-only lists make every node its own SCC, so largest-SCC
+        // tie-breaks become HashSet-order lottery and spuriously reject O/D.
+        let mut allowed_edges: Vec<(NodeId, NodeId)> = Vec::new();
         for (idx, edge) in self.edges.iter().enumerate() {
             if !edge_allowed_at(edge, idx, options, self.profile) {
                 continue;
             }
             incident.insert(edge.source);
             incident.insert(edge.target);
+            allowed_edges.push((edge.source, edge.target));
+            if !edge.is_oneway {
+                allowed_edges.push((edge.target, edge.source));
+            }
         }
         for &id in &incident {
             parent.insert(id, id);
             size.insert(id, 1);
         }
-        for (idx, edge) in self.edges.iter().enumerate() {
-            if !edge_allowed_at(edge, idx, options, self.profile) {
-                continue;
-            }
-            uf_union(&mut parent, &mut size, edge.source, edge.target);
+        for &(s, t) in &allowed_edges {
+            uf_union(&mut parent, &mut size, s, t);
         }
         let mut roots = HashMap::new();
         let mut giant: Option<(NodeId, usize)> = None;
@@ -1297,7 +1327,164 @@ impl RouteGraph {
                 giant = Some((root, n));
             }
         }
-        (roots, giant.map(|(r, _)| r))
+        let giant_root = giant.map(|(r, _)| r);
+        let (origin_reject, dest_reject) = match giant_root {
+            Some(g) => {
+                let mut giant_nodes: Vec<NodeId> = incident
+                    .iter()
+                    .copied()
+                    .filter(|id| roots.get(id) == Some(&g))
+                    .collect();
+                giant_nodes.sort_unstable_by_key(|id| id.0);
+                self.directed_rejects_on_edge_list(&giant_nodes, &allowed_edges)
+            }
+            None => (HashSet::new(), HashSet::new()),
+        };
+        (roots, giant_root, origin_reject, dest_reject)
+    }
+
+    /// Largest-SCC directed origin/dest rejects on an explicit edge list.
+    fn directed_rejects_on_edge_list(
+        &self,
+        giant_nodes: &[NodeId],
+        edges: &[(NodeId, NodeId)],
+    ) -> (HashSet<NodeId>, HashSet<NodeId>) {
+        let mut origin_reject = HashSet::new();
+        let mut dest_reject = HashSet::new();
+        if giant_nodes.is_empty() {
+            return (origin_reject, dest_reject);
+        }
+        let n = giant_nodes.len();
+        let mut id_rank: Vec<(NodeId, u32)> = Vec::with_capacity(n);
+        for (i, &id) in giant_nodes.iter().enumerate() {
+            id_rank.push((id, i as u32));
+        }
+        id_rank.sort_unstable_by_key(|(id, _)| id.0);
+        let idx_of = |id: NodeId| -> Option<u32> {
+            id_rank
+                .binary_search_by_key(&id.0, |(nid, _)| nid.0)
+                .ok()
+                .map(|p| id_rank[p].1)
+        };
+        let mut fwd: Vec<Vec<u32>> = vec![Vec::new(); n];
+        let mut rev_deg = vec![0u32; n];
+        let mut edge_n = 0usize;
+        for &(s, t) in edges {
+            let Some(si) = idx_of(s) else { continue };
+            let Some(ti) = idx_of(t) else { continue };
+            fwd[si as usize].push(ti);
+            rev_deg[ti as usize] = rev_deg[ti as usize].saturating_add(1);
+            edge_n = edge_n.saturating_add(1);
+        }
+        let mut rev_off = vec![0u32; n + 1];
+        for i in 0..n {
+            rev_off[i + 1] = rev_off[i].saturating_add(rev_deg[i]);
+        }
+        let mut rev_flat = vec![0u32; edge_n];
+        let mut cursor = rev_off.clone();
+        for &(s, t) in edges {
+            let Some(si) = idx_of(s) else { continue };
+            let Some(ti) = idx_of(t) else { continue };
+            let slot = cursor[ti as usize] as usize;
+            rev_flat[slot] = si;
+            cursor[ti as usize] = cursor[ti as usize].saturating_add(1);
+        }
+        let mut visited = vec![false; n];
+        let mut order: Vec<u32> = Vec::with_capacity(n);
+        let mut stack: Vec<(u32, usize)> = Vec::new();
+        for start in 0..n as u32 {
+            if visited[start as usize] {
+                continue;
+            }
+            stack.push((start, 0));
+            visited[start as usize] = true;
+            while let Some((u, ei)) = stack.pop() {
+                let outs = &fwd[u as usize];
+                if ei < outs.len() {
+                    stack.push((u, ei + 1));
+                    let v = outs[ei];
+                    if !visited[v as usize] {
+                        visited[v as usize] = true;
+                        stack.push((v, 0));
+                    }
+                } else {
+                    order.push(u);
+                }
+            }
+        }
+        visited.fill(false);
+        let mut best_scc: Vec<u32> = Vec::new();
+        let mut rev_stack: Vec<u32> = Vec::new();
+        for &start in order.iter().rev() {
+            if visited[start as usize] {
+                continue;
+            }
+            let mut comp: Vec<u32> = Vec::new();
+            rev_stack.clear();
+            rev_stack.push(start);
+            visited[start as usize] = true;
+            while let Some(u) = rev_stack.pop() {
+                comp.push(u);
+                let a = rev_off[u as usize] as usize;
+                let b = rev_off[u as usize + 1] as usize;
+                for &p in &rev_flat[a..b] {
+                    if !visited[p as usize] {
+                        visited[p as usize] = true;
+                        rev_stack.push(p);
+                    }
+                }
+            }
+            if comp.len() > best_scc.len() {
+                best_scc = comp;
+            }
+        }
+        if best_scc.is_empty() {
+            best_scc = (0..n as u32).collect();
+        }
+        let mut reach_fwd = vec![false; n];
+        let mut reach_rev = vec![false; n];
+        let mut q: Vec<u32> = best_scc.clone();
+        for &i in &best_scc {
+            reach_fwd[i as usize] = true;
+        }
+        let mut qi = 0usize;
+        while qi < q.len() {
+            let u = q[qi];
+            qi += 1;
+            for &v in &fwd[u as usize] {
+                if !reach_fwd[v as usize] {
+                    reach_fwd[v as usize] = true;
+                    q.push(v);
+                }
+            }
+        }
+        q.clear();
+        q.extend(best_scc.iter().copied());
+        for &i in &best_scc {
+            reach_rev[i as usize] = true;
+        }
+        qi = 0;
+        while qi < q.len() {
+            let u = q[qi];
+            qi += 1;
+            let a = rev_off[u as usize] as usize;
+            let b = rev_off[u as usize + 1] as usize;
+            for &p in &rev_flat[a..b] {
+                if !reach_rev[p as usize] {
+                    reach_rev[p as usize] = true;
+                    q.push(p);
+                }
+            }
+        }
+        for (i, &id) in giant_nodes.iter().enumerate() {
+            if !reach_rev[i] {
+                origin_reject.insert(id);
+            }
+            if !reach_fwd[i] {
+                dest_reject.insert(id);
+            }
+        }
+        (origin_reject, dest_reject)
     }
 
     fn in_giant_component(&self, id: NodeId) -> bool {
@@ -2908,8 +3095,62 @@ fn directed_access(edge: &Edge, profile: RoutingProfile) -> (bool, bool) {
 }
 
 fn parse_metric(raw: &str) -> Option<f64> {
-    let cleaned = raw.trim().to_lowercase().replace("t", "").replace("m", "");
-    cleaned.trim().parse::<f64>().ok()
+    let s = raw.trim().to_lowercase();
+    if s.is_empty()
+        || matches!(
+            s.as_str(),
+            "none" | "default" | "unsigned" | "below_default" | "no" | "yes"
+        )
+    {
+        return None;
+    }
+    // Feet + inches: 6\'6\" or 6\'6
+    if let Some(ft_idx) = s.find('\'') {
+        let feet: f64 = s[..ft_idx].trim().replace(',', ".").parse().ok()?;
+        let rest = s[ft_idx + 1..].replace('"', "").trim().replace(',', ".");
+        let inches: f64 = if rest.is_empty() {
+            0.0
+        } else {
+            rest.parse().ok()?
+        };
+        return Some(feet * 0.3048 + inches * 0.0254);
+    }
+    let mut unit = None;
+    let mut num = s.as_str();
+    for (suffix, u) in [
+        ("tonnes", "t"),
+        ("tonne", "t"),
+        ("tons", "t"),
+        ("ton", "t"),
+        ("kg", "kg"),
+        ("metres", "m"),
+        ("meters", "m"),
+        ("metre", "m"),
+        ("meter", "m"),
+        ("ft", "ft"),
+        ("t", "t"),
+        ("m", "m"),
+    ] {
+        if num.ends_with(suffix) {
+            num = num[..num.len() - suffix.len()].trim();
+            unit = Some(u);
+            break;
+        }
+    }
+    let num = num.replace(',', ".").trim().to_string();
+    if num.is_empty()
+        || !num
+            .chars()
+            .all(|c| c.is_ascii_digit() || c == '.' || c == '-')
+    {
+        return None;
+    }
+    let v: f64 = num.parse().ok()?;
+    match unit {
+        Some("kg") => Some(v / 1000.0), // store as tonnes when used for maxweight*
+        Some("ft") => Some(v * 0.3048),
+        _ => Some(v), // bare number / t / m — OSM default units
+    }
 }
 
 fn is_motorway_highway(highway: &str) -> bool {
@@ -3046,6 +3287,102 @@ fn datex_penalize_extra_m(
 
 /// True when `options` can remove edges vs an unrestricted car graph. Snap then
 /// rebuilds Union-Find; skip that O(E) pass when nothing is filtered.
+/// Short UI line when vehicle limits block routing near a point.
+///
+/// Example: `Road Garage near 60.38726,5.33397: height limit 1.9 m, your vehicle 2.48 m`.
+pub fn clearance_restriction_user_message(
+    edge: &GraphEdge,
+    limits: &crate::config::VehicleLimits,
+) -> Option<String> {
+    let road = edge
+        .name
+        .as_deref()
+        .or(edge.road_ref.as_deref())
+        .unwrap_or("Road");
+    let lat = (edge.start_lat + edge.end_lat) * 0.5;
+    let lon = (edge.start_lon + edge.end_lon) * 0.5;
+    let mut parts: Vec<String> = Vec::new();
+    if let (Some(vh), Some(max)) = (limits.height_m, edge.maxheight_m) {
+        if vh > max {
+            parts.push(format!("height limit {max:.2} m, your vehicle {vh:.2} m"));
+        }
+    }
+    if let (Some(vw), Some(max)) = (limits.width_m, edge.maxwidth_m) {
+        if vw > max {
+            parts.push(format!("width limit {max:.2} m, your vehicle {vw:.2} m"));
+        }
+    }
+    if let (Some(vl), Some(max)) = (limits.length_m, edge.maxlength_m) {
+        if vl > max {
+            parts.push(format!("length limit {max:.2} m, your vehicle {vl:.2} m"));
+        }
+    }
+    if let (Some(tw), Some(max)) = (limits.total_weight_kg, edge.maxweight_t) {
+        let t = tw / 1000.0;
+        if t > max {
+            parts.push(format!("weight limit {max:.2} t, your vehicle {t:.2} t"));
+        }
+    }
+    if let (Some(ax), Some(max)) = (limits.axle_weight_kg, edge.maxaxleload_t) {
+        let t = ax / 1000.0;
+        if t > max {
+            parts.push(format!("axle load limit {max:.2} t, your vehicle {t:.2} t"));
+        }
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "{road} near {lat:.5},{lon:.5}: {}",
+        parts.join("; ")
+    ))
+}
+
+/// Find a clearance-blocked edge near `lat,lon` that excludes `limits`.
+pub fn nearest_clearance_block_message(
+    graph: &RouteGraph,
+    lat: f64,
+    lon: f64,
+    limits: &crate::config::VehicleLimits,
+    max_m: f64,
+) -> Option<String> {
+    let mut best: Option<(f64, &GraphEdge)> = None;
+    for e in &graph.edges {
+        let mut blocked = false;
+        if let (Some(vh), Some(max)) = (limits.height_m, e.maxheight_m) {
+            blocked |= vh > max;
+        }
+        if let (Some(vw), Some(max)) = (limits.width_m, e.maxwidth_m) {
+            blocked |= vw > max;
+        }
+        if let (Some(vl), Some(max)) = (limits.length_m, e.maxlength_m) {
+            blocked |= vl > max;
+        }
+        if let (Some(tw), Some(max)) = (limits.total_weight_kg, e.maxweight_t) {
+            blocked |= tw / 1000.0 > max;
+        }
+        if let (Some(ax), Some(max)) = (limits.axle_weight_kg, e.maxaxleload_t) {
+            blocked |= ax / 1000.0 > max;
+        }
+        if !blocked {
+            continue;
+        }
+        let d = super::edge_distance_m(e, lat, lon);
+        if d > max_m {
+            continue;
+        }
+        if best.is_none_or(|(bd, _)| d < bd) {
+            best = Some((d, e));
+        }
+    }
+    best.and_then(|(_, e)| clearance_restriction_user_message(e, limits))
+}
+
+/// Public for plan-time snap role selection when options filter edges.
+pub fn options_need_filtered_components_pub(options: &RouteOptions) -> bool {
+    options_need_filtered_components(options)
+}
+
 fn options_need_filtered_components(options: &RouteOptions) -> bool {
     options.avoid_motorways
         || options.avoid_ferries
@@ -4418,6 +4755,162 @@ mod tests {
             RoutingProfile::from(Profile::MobileHome),
             RoutingProfile::Truck
         );
+    }
+
+    #[test]
+    fn parse_metric_units_and_sentinels() {
+        assert_eq!(parse_metric("1.9 m"), Some(1.9));
+        assert_eq!(parse_metric("3.5t"), Some(3.5));
+        assert_eq!(parse_metric("3500 kg"), Some(3.5));
+        assert_eq!(parse_metric("2,5"), Some(2.5));
+        assert_eq!(parse_metric("default"), None);
+        assert_eq!(parse_metric("none"), None);
+        assert_eq!(parse_metric("below_default"), None);
+        let ft = parse_metric("6'6\"").expect("feet-inches");
+        assert!((ft - 1.9812).abs() < 1e-4, "got {ft}");
+    }
+
+    #[test]
+    fn vehicle_height_snap_skips_low_clearance_destination_stub() {
+        use geo_types::Coord;
+        use std::collections::HashMap;
+
+        // Main bidirectional spine 1↔2↔3. Destination query near node 4, which is
+        // only inbound via a maxheight=1.9 oneway from 3 (parking/service stub).
+        let mut nodes = HashMap::new();
+        for (id, lat, lon) in [
+            (1_i64, 60.0, 10.0),
+            (2, 60.0, 10.01),
+            (3, 60.0, 10.02),
+            (4, 60.00005, 10.02005),
+        ] {
+            nodes.insert(
+                NodeId(id),
+                Node {
+                    id: NodeId(id),
+                    coord: Coord { x: lon, y: lat },
+                    uses: 0,
+                },
+            );
+        }
+        let edge = |id: &str,
+                    s: i64,
+                    t: i64,
+                    lat0: f64,
+                    lon0: f64,
+                    lat1: f64,
+                    lon1: f64,
+                    max_h: Option<f64>,
+                    oneway: bool| {
+            let mut e = GraphEdge {
+                id: id.into(),
+                source: NodeId(s),
+                target: NodeId(t),
+                length_m: 100.0,
+                base_weight: 100.0,
+                cost_mult: 1.0,
+                eco_weight: None,
+                start_lat: lat0,
+                start_lon: lon0,
+                end_lat: lat1,
+                end_lon: lon1,
+                shape: Vec::new(),
+                highway: Some(
+                    if max_h.is_some() {
+                        "service"
+                    } else {
+                        "primary"
+                    }
+                    .into(),
+                ),
+                maxspeed_kmh: None,
+                maxspeed_practical_kmh: None,
+                maxspeed_advisory_kmh: None,
+                maxspeed_type: None,
+                maxspeed_variable: false,
+                minspeed_kmh: None,
+                name: if max_h.is_some() {
+                    Some("Garage".into())
+                } else {
+                    Some("Main".into())
+                },
+                road_ref: None,
+                is_motorroad: false,
+                is_expressway: false,
+                is_oneway: oneway,
+                lanes: None,
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: max_h,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: false,
+                is_ferry: false,
+                ferry_interval_min: None,
+                is_tunnel: false,
+                is_boardwalk_crossing: false,
+                is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
+                access_forbidden: false,
+                surface_quality: SurfaceQuality::Good,
+            };
+            e
+        };
+        let edges = vec![
+            edge("12", 1, 2, 60.0, 10.0, 60.0, 10.01, None, false),
+            edge("21", 2, 1, 60.0, 10.01, 60.0, 10.0, None, false),
+            edge("23", 2, 3, 60.0, 10.01, 60.0, 10.02, None, false),
+            edge("32", 3, 2, 60.0, 10.02, 60.0, 10.01, None, false),
+            edge(
+                "low",
+                3,
+                4,
+                60.0,
+                10.02,
+                60.00005,
+                10.02005,
+                Some(1.9),
+                true,
+            ),
+        ];
+        let g = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        let mut opts = RouteOptions {
+            vehicle: Some(crate::config::VehicleLimits {
+                height_m: Some(2.477),
+                ..Default::default()
+            }),
+            snap_role: SnapRole::Destination,
+            ..Default::default()
+        };
+        let (id, _) = g
+            .nearest_routable_with_options(60.00005, 10.02005, &opts, false)
+            .expect("must snap onto clearance-legal spine");
+        assert_ne!(id, NodeId(4), "must not snap onto height-restricted stub");
+        assert!(
+            matches!(id.0, 2 | 3),
+            "expected main-road node 2 or 3, got {id:?}"
+        );
+        // With roles + vehicle, directed reachability from spine start must hold.
+        let (start, _) = g
+            .nearest_routable_with_options(
+                60.0,
+                10.0,
+                &RouteOptions {
+                    vehicle: opts.vehicle.clone(),
+                    snap_role: SnapRole::Origin,
+                    ..Default::default()
+                },
+                false,
+            )
+            .unwrap();
+        assert!(
+            g.directed_reachable_with_options(start, id, &opts),
+            "snapped dest must be directed-reachable under vehicle limits"
+        );
+        let _ = &mut opts;
     }
 
     #[test]

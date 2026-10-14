@@ -147,6 +147,11 @@ path = "src/bin/navi_dest_hop_probe.rs"
 required-features = ["diag-bins"]
 
 [[bin]]
+name = "navi-t6-clearance-cut"
+path = "src/bin/navi_t6_clearance_cut.rs"
+required-features = ["diag-bins"]
+
+[[bin]]
 name = "navi-place-index"
 path = "src/bin/navi_place_index.rs"
 required-features = ["diag-bins"]
