@@ -1296,6 +1296,10 @@ impl RouteGraph {
         let mut parent: HashMap<NodeId, NodeId> = HashMap::new();
         let mut size: HashMap<NodeId, usize> = HashMap::new();
         let mut incident: HashSet<NodeId> = HashSet::new();
+        // Directed adjacency for snap rejects: two-way roads contribute both
+        // directions (same as A* on a single stored edge with `is_oneway: false`).
+        // One-way-only lists make every node its own SCC, so largest-SCC
+        // tie-breaks become HashSet-order lottery and spuriously reject O/D.
         let mut allowed_edges: Vec<(NodeId, NodeId)> = Vec::new();
         for (idx, edge) in self.edges.iter().enumerate() {
             if !edge_allowed_at(edge, idx, options, self.profile) {
@@ -1304,6 +1308,9 @@ impl RouteGraph {
             incident.insert(edge.source);
             incident.insert(edge.target);
             allowed_edges.push((edge.source, edge.target));
+            if !edge.is_oneway {
+                allowed_edges.push((edge.target, edge.source));
+            }
         }
         for &id in &incident {
             parent.insert(id, id);
@@ -1324,14 +1331,15 @@ impl RouteGraph {
         }
         let giant_root = giant.map(|(r, _)| r);
         let (origin_reject, dest_reject) = match giant_root {
-            Some(g) => self.directed_rejects_on_edge_list(
-                &incident
+            Some(g) => {
+                let mut giant_nodes: Vec<NodeId> = incident
                     .iter()
                     .copied()
                     .filter(|id| roots.get(id) == Some(&g))
-                    .collect::<Vec<_>>(),
-                &allowed_edges,
-            ),
+                    .collect();
+                giant_nodes.sort_unstable_by_key(|id| id.0);
+                self.directed_rejects_on_edge_list(&giant_nodes, &allowed_edges)
+            }
             None => (HashSet::new(), HashSet::new()),
         };
         (roots, giant_root, origin_reject, dest_reject)
@@ -4758,10 +4766,6 @@ mod tests {
     }
 
     #[test]
-
-    #[test]
-
-    #[test]
     fn parse_metric_units_and_sentinels() {
         assert_eq!(parse_metric("1.9 m"), Some(1.9));
         assert_eq!(parse_metric("3.5t"), Some(3.5));
@@ -4888,6 +4892,7 @@ mod tests {
         let _ = &mut opts;
     }
 
+    #[test]
     fn clearance_excludes_low_bridge_and_finds_alternate() {
         use geo_types::Coord;
         use std::collections::HashMap;
