@@ -4453,7 +4453,7 @@ private fun NaviMapScreen() {
             // While simulating, ignore real LocationManager fixes.
             if (simulatingRef.get() && !testOrSim) return
             // Instrumented off-route injects: keep live GPS from clobbering.
-            if (NaviMapTestHooks.ignoreLiveGpsFixes && !testOrSim && !fromDr) return
+            if (NaviMapTestHooks.shouldIgnoreLiveGpsFixes() && !testOrSim && !fromDr) return
 
             // Host dead reckoning (tunnels / GNSS gaps). Route-sim already
             // supplies continuous positions; DR owns live LocationManager gaps.
@@ -5263,18 +5263,20 @@ private fun NaviMapScreen() {
             NaviMapTestHooks.gpsEstimated = out.estimated
             NaviMapTestHooks.positionLost = out.positionLost
         }
-        NaviMapTestHooks.deadReckoningInject = { frame ->
-            deadReckoning.injectSensorFrame(frame)
-        }
-        NaviMapTestHooks.deadReckoningNotifyLost = {
-            deadReckoning.notifyGpsLost()
-        }
-        NaviMapTestHooks.deadReckoningInjectGps = { sample ->
-            deadReckoning.injectGpsSample(sample)
-        }
-        NaviMapTestHooks.deadReckoningReset = { deadReckoning.reset() }
-        NaviMapTestHooks.deadReckoningSuspendHardware = { suspend ->
-            deadReckoning.suspendHardwareTicks = suspend
+        if (NaviMapTestHooks.replayHooksEnabled()) {
+            NaviMapTestHooks.deadReckoningInject = { frame ->
+                deadReckoning.injectSensorFrame(frame)
+            }
+            NaviMapTestHooks.deadReckoningNotifyLost = {
+                deadReckoning.notifyGpsLost()
+            }
+            NaviMapTestHooks.deadReckoningInjectGps = { sample ->
+                deadReckoning.injectGpsSample(sample)
+            }
+            NaviMapTestHooks.deadReckoningReset = { deadReckoning.reset() }
+            NaviMapTestHooks.deadReckoningSuspendHardware = { suspend ->
+                deadReckoning.suspendHardwareTicks = suspend
+            }
         }
         deadReckoning.start(context)
         if (!locationPermGranted) {
@@ -5342,8 +5344,10 @@ private fun NaviMapScreen() {
             java.util.concurrent.atomic.AtomicBoolean(
                 NaviMapTestHooks.hideSearchChrome,
             )
-        hideChrome = NaviMapTestHooks.hideUiChrome
-        hideSearch = NaviMapTestHooks.hideSearchChrome
+        if (NaviMapTestHooks.replayHooksEnabled()) {
+            hideChrome = NaviMapTestHooks.hideUiChrome
+            hideSearch = NaviMapTestHooks.hideSearchChrome
+        }
         val routeApplier: (uniffi.navi.CorridorRouteResult) -> Unit = { pending ->
             applyPlannedRoute(pending)
         }
@@ -5356,7 +5360,8 @@ private fun NaviMapScreen() {
                         // Only the resumed activity may consume test-hook routes. A stopped
                         // duplicate MainActivity (pre-singleTask launches) would otherwise
                         // steal pendingRoute and leave the visible map without a polyline.
-                        if (pending != null) {
+                        // Release builds never apply a hook route.
+                        if (pending != null && NaviMapTestHooks.replayHooksEnabled()) {
                             val resumed =
                                 (context as? androidx.lifecycle.LifecycleOwner)
                                     ?.lifecycle
@@ -5571,12 +5576,14 @@ private fun NaviMapScreen() {
                             NaviMapTestHooks.simulatingActive = true
                             routeSimulator?.seekToCumM(seekCum)
                         }
-                        val wantHideChrome = NaviMapTestHooks.hideUiChrome
+                        val wantHideChrome =
+                            NaviMapTestHooks.replayHooksEnabled() && NaviMapTestHooks.hideUiChrome
                         if (wantHideChrome != lastHookHideChrome.get()) {
                             hideChrome = wantHideChrome
                             lastHookHideChrome.set(wantHideChrome)
                         }
-                        val wantHideSearch = NaviMapTestHooks.hideSearchChrome
+                        val wantHideSearch =
+                            NaviMapTestHooks.replayHooksEnabled() && NaviMapTestHooks.hideSearchChrome
                         if (wantHideSearch != lastHookHideSearch.get()) {
                             hideSearch = wantHideSearch
                             lastHookHideSearch.set(wantHideSearch)

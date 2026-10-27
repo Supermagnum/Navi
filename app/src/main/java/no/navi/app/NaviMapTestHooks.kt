@@ -888,6 +888,15 @@ object NaviMapTestHooks {
     @Volatile
     var ignoreLiveGpsFixes: Boolean = false
 
+    /**
+     * Replay controls (live-fix ignore, sensor injection, mock routes) run
+     * only in debug. Release keeps the fields, and every effect stays off.
+     */
+    fun replayHooksEnabled(): Boolean = BuildConfig.DEBUG
+
+    /** Live GPS is dropped only while replay hooks are enabled and the flag is set. */
+    fun shouldIgnoreLiveGpsFixes(): Boolean = replayHooksEnabled() && ignoreLiveGpsFixes
+
     /** Last map GPS mark (after applyFix); for off-route assertions. */
     @Volatile
     var lastGpsLat: Double = Double.NaN

@@ -8,6 +8,8 @@ import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.ActivityTestRule
+import org.junit.After
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -29,7 +31,38 @@ class TabletTunnelReplayTest {
     val activityRule = ActivityTestRule(MainActivity::class.java, false, false)
 
     @Before
-    fun enableDiagnostics() {
+    fun resetHookObservation() {
+        NaviMapTestHooks.lastRoutePolyline = ""
+    }
+
+    @After
+    fun removeReplayProvider() {
+        NaviMapTestHooks.ignoreLiveGpsFixes = false
+        NaviMapTestHooks.hideSearchChrome = false
+        NaviMapTestHooks.deadReckoningSuspendHardware?.invoke(false)
+        val lm =
+            InstrumentationRegistry
+                .getInstrumentation()
+                .targetContext
+                .getSystemService(LocationManager::class.java)
+                ?: return
+        runCatching { lm.removeTestProvider(PROVIDER) }
+    }
+
+    @Test
+    fun clearReplayTestProvider() {
+        val lm =
+            InstrumentationRegistry
+                .getInstrumentation()
+                .targetContext
+                .getSystemService(LocationManager::class.java)
+        assertNotNull(lm)
+        runCatching { lm!!.removeTestProvider(PROVIDER) }
+        assertFalse(lm!!.allProviders.contains(PROVIDER))
+    }
+
+    @Test
+    fun steady50_steady80_andCrawl_stayWithin50m() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         context
             .getSharedPreferences("navi_map_hud", Context.MODE_PRIVATE)
@@ -38,11 +71,6 @@ class TabletTunnelReplayTest {
             .commit()
         NaviMapTestHooks.ignoreLiveGpsFixes = true
         NaviMapTestHooks.hideSearchChrome = true
-        NaviMapTestHooks.lastRoutePolyline = ""
-    }
-
-    @Test
-    fun steady50_steady80_andCrawl_stayWithin50m() {
         val samples = straightTunnel()
         val route = routeOf(samples)
         activityRule.launchActivity(null)

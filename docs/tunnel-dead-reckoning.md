@@ -66,10 +66,15 @@ Works without Google Play services (`LocationManager` + `SensorManager` only).
 Defaults (overridable in code / prefs): loss timeout ~2 s, degrade accuracy
 ~40 m. Outside a tunnel, give-up is 6 min or 15 km. While the estimate is on
 a tunnel span of the active route (`is_tunnel` from the graph), give-up waits
-until along-track has passed that span's end by 300 m. No route means no
-tunnel span, so the 6 min / 15 km limits apply. The previous 120 s / 3 km
-give-up froze the estimate inside a 3 km tunnel at 50 km/h. A silent provider
-is treated as loss after the same 2 s timeout.
+until along-track has passed that span's end by 300 m. With no route, or on a
+v8 pack (those tiles have no `is_tunnel`), there is no tunnel span, so give-up
+applies at 6 min / 15 km. The previous 120 s / 3 km give-up froze the estimate
+inside a 3 km tunnel at 50 km/h. A silent provider is treated as loss after
+the same 2 s timeout.
+
+Speed changes gentler than the 0.20 m/s² deadband are not tracked while
+estimating. The held GNSS speed stays constant until both the raw sample and
+its low-pass leave that band.
 
 ## Tests
 
@@ -142,11 +147,15 @@ shown position, speed, or mode. With diagnostics off there is no extra cost.
 
 ## Validation
 
-- **Stationary behaviour** is verified on a real tablet (SM-P613) with an
-  anonymised indoor replay fixture and a live rest session after the fix.
-- **Moving and tunnel behaviour** is verified in **simulation** (and emulator
-  when an AVD is available) and by a generated GNSS+IMU replay on the SM-P613.
-  There has been **no real drive** and no real tunnel. The suite uses a
+- **Measured margin:** on-device crawl exit was 48.7 m against the 50 m limit
+  (steady 50 was 35.0 m, steady 80 was 25.5 m, cross-track 0).
+- **Known limits:** speed changes gentler than the 0.20 m/s² deadband are not
+  tracked in a tunnel. With no route, or on v8 packs, there is no tunnel-span
+  knowledge and give-up applies at 6 min / 15 km.
+- **Stationary behaviour** is verified on a real tablet (SM-P613).
+- **Moving and tunnel behaviour** is verified in simulation and by on-device
+  injection of a generated GNSS+IMU trace only. There has been no real drive
+  and no real tunnel. The suite uses a
   shortened Raufoss→Bergen slice with Lærdalstunnelen (straight) and
   Gudvangatunnelen (curved), generated GNSS + IMU, vibration RMS steps, and
   accelerometer biases ±0.02 / ±0.05 / ±0.1 m/s².
