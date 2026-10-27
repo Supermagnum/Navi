@@ -82,34 +82,34 @@ A reported GNSS speed of 0 stays 0: it is never raised to `minSpeedMps` and
 never replaced by the planned route speed. Planned speed is used only when
 speed is **missing** and the IMU shows motion (or no IMU is present).
 
-After GNSS loss, speed is seeded from the last good GNSS value and then updated
-by integrating longitudinal acceleration (device forward axis learned while GNSS
-was available by correlating GNSS Δv/Δt with forwardAccel). Trust in the seed
-decays with τ = 8 s; a positive GNSS speed is never left unchanged past the
-2 s loss timeout. Planned route speed is only an upper bound, or a fallback
-when no IMU is present.
+When linear acceleration and yaw stay below the standstill thresholds for the
+hold time, DR speed is forced to 0 and along-track advance stops. Missing IMU
+does not latch the gate; the speed rule alone still applies.
 
-Standstill is **braking-aware**: latch only after a braking event
-(forward accel ≤ −0.75 m/s²) has brought estimated speed below 0.5 m/s, followed
-by a quiet hold (accel 0.15 m/s² / yaw 2 deg/s, hold 1 s). Quiet cruise alone
-never latches. Release on forward thrust ≥ 1.0 m/s² (or a sharp yaw); the speed
-estimate then restarts from 0. A reported GNSS speed of 0 is still immediate 0.
+Defaults: accel 0.15 m/s², yaw 2 deg/s, hold 1 s. Thresholds were chosen from
+a stationary indoor log (noise well below the gates) plus synthetic tunnel and
+stop tests. They are **not yet verified on a real moving drive**.
 
-While **Location diagnostics** is on, a shadow standstill evaluator mirrors the
-braking-aware gate on every IMU sample in every DR mode. It never changes the
-shown position, speed, or mode. With diagnostics off there is no extra cost.
+While **Location diagnostics** is on, a shadow standstill evaluator runs on every
+IMU sample in every DR mode (including GPS). It pretends GNSS speed is missing,
+logs quiet / holding / would-latch plus accel, yaw, and GNSS speed/accuracy, and
+emits false-standstill / missed-standstill events. It never changes the shown
+position, speed, or mode. With diagnostics off there is no extra cost.
 
 ## Validation
 
 - **Stationary behaviour** is verified on a real tablet (SM-P613) with an
   anonymised indoor replay fixture and a live rest session after the fix.
-- **Moving and tunnel behaviour** is verified in **simulation** (and emulator
-  when an AVD is available). There has been **no real drive**. The suite uses a
-  shortened Raufoss→Bergen slice with Lærdalstunnelen (straight) and
-  Gudvangatunnelen (curved), generated GNSS + IMU, vibration RMS steps, and
-  accelerometer biases ±0.02 / ±0.05 / ±0.1 m/s².
-- **Vibration:** with the braking-aware gate, steady cruise must not false-latch
-  at any step including 0.40 and near-zero RMS.
+- **Moving and tunnel behaviour** is verified in **simulation only**. There has
+  been no real drive. The simulated suite uses a shortened Raufoss→Bergen slice
+  with Lærdalstunnelen (straight) and Gudvangatunnelen (curved), generated GNSS
+  + IMU streams, and a vibration RMS sweep.
+- **Vibration margin (simulation):** lowest cabin-vibration RMS with no shadow
+  false-latch on the straight tunnel at 50 / 80 / 100 km/h is **0.25 m/s²**.
+  At a typical car level of **0.15 m/s²** the shadow gate (speed treated as
+  missing) still false-latches — proposed later change: raise hold time or the
+  accel threshold; **not applied** in this round. The live gate is additionally
+  protected today by retaining the last GNSS speed while coasting.
 - Unit tests: `StationaryDeadReckoningTest`, `StandstillSimulatedDriveTest`.
 
 ## Drive verification checklist
