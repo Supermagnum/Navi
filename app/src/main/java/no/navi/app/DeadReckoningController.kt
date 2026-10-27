@@ -34,6 +34,9 @@ class DeadReckoningController(
     private var lastGyro: FloatArray? = null
     private var lastLinAccel: FloatArray? = null
     private var lastSensorWallMs: Long = 0L
+    private var lastGnssSpeedMps: Double? = null
+    private var lastGnssAccuracyM: Float? = null
+    private val shadowGate = StandstillShadowGate()
 
     private val tickRunnable =
         object : Runnable {
@@ -89,6 +92,9 @@ class DeadReckoningController(
 
     fun reset() {
         engine.reset()
+        shadowGate.reset()
+        lastGnssSpeedMps = null
+        lastGnssAccuracyM = null
     }
 
     /**
@@ -119,6 +125,8 @@ class DeadReckoningController(
                 bearingDeg = bearing,
                 available = available,
             )
+        lastGnssSpeedMps = speed
+        lastGnssAccuracyM = acc
         val out = engine.onGps(sample, constraintProvider())
         onOutput(out)
         return out
@@ -126,6 +134,7 @@ class DeadReckoningController(
 
     /** Test / script injection of a sensor frame (bypasses SensorManager). */
     fun injectSensorFrame(frame: SensorFrame): DrOutput {
+        maybeShadow(frame)
         val out = engine.onSensorTick(frame, constraintProvider())
         onOutput(out)
         return out
@@ -133,6 +142,8 @@ class DeadReckoningController(
 
     /** Test helper: feed a GNSS sample straight into the engine. */
     fun injectGpsSample(sample: GpsSample): DrOutput {
+        lastGnssSpeedMps = sample.speedMps
+        lastGnssAccuracyM = sample.accuracyM
         val out = engine.onGps(sample, constraintProvider())
         onOutput(out)
         return out
@@ -174,6 +185,9 @@ class DeadReckoningController(
             sensorSource?.latest(now)
                 ?: buildFrameFromHardware(now)
                 ?: SensorFrame(tMs = now)
+        // Shadow standstill runs in every DR mode while diagnostics are on.
+        // It never feeds back into [engine].
+        maybeShadow(frame)
         val mode = engine.mode()
         if (mode == DrMode.Gps && !frameHasMotion(frame)) {
             // Keep heading warm cheaply; full ticks only needed while estimating.
@@ -186,6 +200,12 @@ class DeadReckoningController(
         if (out.estimated || out.positionLost || out.exitErrorM != null) {
             onOutput(out)
         }
+    }
+
+    private fun maybeShadow(frame: SensorFrame) {
+        if (!LocationDiagnostics.isEnabled()) return
+        val sample = shadowGate.observe(frame, lastGnssSpeedMps, lastGnssAccuracyM)
+        LocationDiagnostics.logStandstillShadow(sample, engine.mode().name)
     }
 
     private fun frameHasMotion(frame: SensorFrame): Boolean = frame.headingDeg != null || frame.yawRateDegPerS != null || frame.forwardAccelMps2 != null

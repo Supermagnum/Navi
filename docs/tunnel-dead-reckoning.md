@@ -88,7 +88,29 @@ does not latch the gate; the speed rule alone still applies.
 
 Defaults: accel 0.15 m/s², yaw 2 deg/s, hold 1 s. Thresholds were chosen from
 a stationary indoor log (noise well below the gates) plus synthetic tunnel and
-stop tests. They are **not yet verified on a real drive**.
+stop tests. They are **not yet verified on a real moving drive**.
+
+While **Location diagnostics** is on, a shadow standstill evaluator runs on every
+IMU sample in every DR mode (including GPS). It pretends GNSS speed is missing,
+logs quiet / holding / would-latch plus accel, yaw, and GNSS speed/accuracy, and
+emits false-standstill / missed-standstill events. It never changes the shown
+position, speed, or mode. With diagnostics off there is no extra cost.
+
+## Validation
+
+- **Stationary behaviour** is verified on a real tablet (SM-P613) with an
+  anonymised indoor replay fixture and a live rest session after the fix.
+- **Moving and tunnel behaviour** is verified in **simulation only**. There has
+  been no real drive. The simulated suite uses a shortened Raufoss→Bergen slice
+  with Lærdalstunnelen (straight) and Gudvangatunnelen (curved), generated GNSS
+  + IMU streams, and a vibration RMS sweep.
+- **Vibration margin (simulation):** lowest cabin-vibration RMS with no shadow
+  false-latch on the straight tunnel at 50 / 80 / 100 km/h is **0.25 m/s²**.
+  At a typical car level of **0.15 m/s²** the shadow gate (speed treated as
+  missing) still false-latches — proposed later change: raise hold time or the
+  accel threshold; **not applied** in this round. The live gate is additionally
+  protected today by retaining the last GNSS speed while coasting.
+- Unit tests: `StationaryDeadReckoningTest`, `StandstillSimulatedDriveTest`.
 
 ## Drive verification checklist
 

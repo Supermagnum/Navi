@@ -420,6 +420,66 @@ object LocationDiagnostics {
         overlay = cur.copy(accuracyM = accuracyM)
     }
 
+    /**
+     * Shadow standstill sample. Log-only; does not change positioning.
+     * No-ops when diagnostics are off.
+     */
+    fun logStandstillShadow(
+        sample: StandstillShadowGate.Sample,
+        drMode: String,
+    ) {
+        if (!enabled.get()) return
+        val o =
+            JSONObject()
+                .put("kind", "standstill_shadow")
+                .put("wall_ms", sample.tMs)
+                .put("elapsed_realtime_ms", SystemClock.elapsedRealtime())
+                .put("dr_mode", drMode)
+                .put("gate_state", sample.state.name.lowercase())
+                .put(
+                    "accel_abs_mps2",
+                    sample.accelAbsMps2?.let { num(it) } ?: JSONObject.NULL,
+                ).put(
+                    "yaw_abs_deg_per_s",
+                    sample.yawAbsDegPerS?.let { num(it) } ?: JSONObject.NULL,
+                ).put(
+                    "gnss_speed_mps",
+                    sample.gnssSpeedMps?.let { num(it) } ?: JSONObject.NULL,
+                ).put(
+                    "gnss_accuracy_m",
+                    sample.gnssAccuracyM?.toDouble()?.let { num(it) } ?: JSONObject.NULL,
+                )
+        enqueue(o)
+        if (sample.falseStandstill) {
+            enqueue(
+                JSONObject()
+                    .put("kind", "false_standstill")
+                    .put("wall_ms", sample.tMs)
+                    .put("elapsed_realtime_ms", SystemClock.elapsedRealtime())
+                    .put("dr_mode", drMode)
+                    .put("gnss_speed_mps", num(sample.gnssSpeedMps ?: Double.NaN))
+                    .put(
+                        "gnss_accuracy_m",
+                        sample.gnssAccuracyM?.toDouble()?.let { num(it) } ?: JSONObject.NULL,
+                    ),
+            )
+        }
+        if (sample.missedStandstill) {
+            enqueue(
+                JSONObject()
+                    .put("kind", "missed_standstill")
+                    .put("wall_ms", sample.tMs)
+                    .put("elapsed_realtime_ms", SystemClock.elapsedRealtime())
+                    .put("dr_mode", drMode)
+                    .put("gnss_speed_mps", num(sample.gnssSpeedMps ?: Double.NaN))
+                    .put(
+                        "gnss_accuracy_m",
+                        sample.gnssAccuracyM?.toDouble()?.let { num(it) } ?: JSONObject.NULL,
+                    ),
+            )
+        }
+    }
+
     fun logRoute(
         wallMs: Long,
         samples: List<RouteSimSample>,
