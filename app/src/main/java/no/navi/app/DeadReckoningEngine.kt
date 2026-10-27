@@ -98,12 +98,37 @@ data class DrConfig(
      */
     val speedTrustTauS: Double = 8.0,
     /**
-     * Positive forward accel at or above this releases standstill (m/s²).
-     * Idle engine vibration in the suite is 0.05–0.15, so 0.22 is 0.07 above
-     * that and 0.08 below a gentle queue pull-away of 0.30. The old 1.0
-     * threshold never saw 0.3–0.8 m/s².
+     * Smoothed forward accel at or above this can release standstill (m/s²).
+     * Release also requires the raw sample to stay above [accelDeadbandMps2]
+     * for [pullAwaySustainMs], so a spike or a zero-mean idle does not clear
+     * the latch. 0.22 is below a sustained 0.30 m/s² pull.
      */
     val pullAwayAccelMps2: Double = 0.22,
+    /**
+     * How long the smoothed accel must stay above [pullAwayAccelMps2], with
+     * the raw sample still above the deadband, before the latch releases.
+     * 200 ms keeps a 0.30 m/s² pull inside the 1 s limit (the smoother
+     * crosses 0.22 at about 0.8 s) and rejects a single slam or a 200 ms rev.
+     */
+    val pullAwaySustainMs: Long = 200L,
+    /**
+     * Time constant for the forward-axis accelerometer bias (seconds).
+     * Slow enough that cabin vibration averages out on the approach, fast
+     * enough that a ±0.1 m/s² bias is learned before a tunnel a kilometre ahead.
+     */
+    val accelBiasTauS: Double = 4.0,
+    /**
+     * |IMU − reference| above this is not a bias observation (m/s²).
+     * A door slam or a one-sample GNSS lag sits above it; a ±0.1 bias does not.
+     */
+    val accelBiasOutlierMps2: Double = 1.0,
+    /**
+     * While the estimate is still on a tunnel span of the active route, give-up
+     * waits until along-track has passed that span's end by this much (metres).
+     * Outside any tunnel the 6 min / 15 km limits apply. No route means no
+     * tunnel span, so those limits apply immediately.
+     */
+    val tunnelExitMarginM: Double = 300.0,
 )
 
 data class GpsSample(
@@ -171,6 +196,18 @@ data class DrDiagSnapshot(
      * `confident` — fitted forward axis is in use.
      */
     val forwardAxisState: String = "scalar",
+    /**
+     * Estimated accelerometer bias along the forward axis (m/s²).
+     * Subtracted before the deadband and before integration.
+     */
+    val accelBiasMps2: Double = 0.0,
+    /** 0 until bias observations accumulate, approaching 1. */
+    val accelBiasConfidence: Double = 0.0,
+    /**
+     * `linear`, `accel_minus_gravity`, `accel_minus_lowpass`, `scalar`, or `none`.
+     * Set by the controller. The engine does not choose the sensor.
+     */
+    val linearAccelSource: String = "scalar",
 )
 
 /** Polyline constraint (active route or a single graph-edge chain). */
@@ -258,6 +295,12 @@ class DeadReckoningEngine(
     private var lastGnssAccelMps2: Double? = null
     private var filteredLongAccel: Double = 0.0
     private var speedUncertaintyMps: Double = 0.0
+    private var pullSustainSinceMs: Long? = null
+    private var accelBiasMps2: Double = 0.0
+    private var accelBiasConfidence: Double = 0.0
+    private var biasObsCount: Int = 0
+    private var lastBiasMs: Long = 0L
+    private var linearAccelSource: String = "scalar"
 
     fun mode(): DrMode = mode
 
@@ -305,7 +348,15 @@ class DeadReckoningEngine(
             standstill = standstill,
             speedUncertaintyMps = speedUncertaintyMps,
             forwardAxisState = forwardAxisState(),
+            accelBiasMps2 = accelBiasMps2,
+            accelBiasConfidence = accelBiasConfidence,
+            linearAccelSource = linearAccelSource,
         )
+
+    /** Controller reports which accelerometer path built the device vector. */
+    fun noteLinearAccelSource(source: String) {
+        linearAccelSource = source
+    }
 
     fun lastExitErrorM(): Double? = lastExitErrorM
 
@@ -353,6 +404,12 @@ class DeadReckoningEngine(
         lastGnssAccelMps2 = null
         filteredLongAccel = 0.0
         speedUncertaintyMps = 0.0
+        pullSustainSinceMs = null
+        accelBiasMps2 = 0.0
+        accelBiasConfidence = 0.0
+        biasObsCount = 0
+        lastBiasMs = 0L
+        linearAccelSource = "scalar"
     }
 
     /**
@@ -463,6 +520,7 @@ class DeadReckoningEngine(
             // Opportunistically keep heading warm and learn the forward axis.
             frame.headingDeg?.let { estBearingDeg = normalizeDeg(it) }
             observeForwardAxis(frame)
+            learnAccelBias(frame)
             // The loss timeout has not fired yet. Hold the last GNSS speed
             // and keep moving, instead of freezing until Estimating starts.
             if (degradeSinceMs != null) {
@@ -488,7 +546,9 @@ class DeadReckoningEngine(
         }
 
         // Mark braking from this frame before integrating so the speed update
-        // and the latch see the same brake/speed state.
+        // and the latch see the same brake/speed state. Bias is updated first
+        // so the correction uses the latest estimate.
+        learnAccelBias(frame)
         noteBraking(frame)
         smoothLongitudinal(frame, dt)
         val reportedStop = lastGnssSpeedMps != null && lastGnssSpeedMps!! <= 0.0
@@ -524,7 +584,7 @@ class DeadReckoningEngine(
             estLon = moved.second
         }
 
-        if (shouldGiveUp(frame.tMs)) {
+        if (shouldGiveUp(frame.tMs, constraint)) {
             mode = DrMode.PositionLost
         }
         return output(frame.tMs)
@@ -721,11 +781,57 @@ class DeadReckoningEngine(
         return frame.forwardAccelMps2
     }
 
+    /** Longitudinal accel with the learned bias removed. Null while the axis is learning. */
+    private fun correctedLongitudinal(frame: SensorFrame): Double? {
+        val raw = longitudinalAccel(frame) ?: return null
+        return raw - accelBiasMps2
+    }
+
+    /**
+     * Bias along the forward axis. While GNSS is good the reference is Δv/Δt.
+     * While standstill is latched the reference is zero. A large residual is
+     * a spike, not a bias, and is ignored. The estimate is kept across DR entry.
+     */
+    private fun learnAccelBias(frame: SensorFrame) {
+        val raw = longitudinalAccel(frame) ?: return
+        val dt =
+            if (lastBiasMs > 0L) {
+                ((frame.tMs - lastBiasMs) / 1000.0).coerceIn(0.0, 1.0)
+            } else {
+                0.1
+            }
+        lastBiasMs = frame.tMs
+        if (dt <= 0.0) return
+        val gnssAccel = lastGnssAccelMps2
+        val gnssFresh =
+            mode == DrMode.Gps &&
+                degradeSinceMs == null &&
+                gnssAccel != null &&
+                kotlin.math.abs(gnssAccel) < 0.8 &&
+                frame.tMs - prevGnssSpeedMs <= 1_500L
+        val reference =
+            when {
+                // A latched stop has true accel 0, but only the quiet samples
+                // are bias. A pull-away is real motion and must not be absorbed.
+                standstill && kotlin.math.abs(raw) <= config.accelDeadbandMps2 -> 0.0
+                gnssFresh -> lastGnssAccelMps2
+                else -> null
+            } ?: return
+        val err = raw - reference
+        if (kotlin.math.abs(err) > config.accelBiasOutlierMps2) return
+        val tau = config.accelBiasTauS.coerceAtLeast(0.5)
+        val alpha = (dt / (tau + dt)).coerceIn(0.0, 1.0)
+        accelBiasMps2 += alpha * (err - accelBiasMps2)
+        biasObsCount += 1
+        accelBiasConfidence =
+            (1.0 - kotlin.math.exp(-biasObsCount / 40.0)).coerceIn(0.0, 1.0)
+    }
+
     private fun smoothLongitudinal(
         frame: SensorFrame,
         dt: Double,
     ) {
-        val raw = longitudinalAccel(frame) ?: return
+        val raw = correctedLongitudinal(frame) ?: return
         val tau = config.longitudinalFilterTauS.coerceAtLeast(0.05)
         val alpha = (dt / (tau + dt)).coerceIn(0.0, 1.0)
         filteredLongAccel += alpha * (raw - filteredLongAccel)
@@ -750,7 +856,7 @@ class DeadReckoningEngine(
         constraint: DrConstraint?,
     ) {
         noteSpeedUncertainty(frame.tMs)
-        val raw = longitudinalAccel(frame)
+        val raw = correctedLongitudinal(frame)
         val noDevice =
             raw == null &&
                 frame.forwardAccelMps2 == null &&
@@ -804,7 +910,7 @@ class DeadReckoningEngine(
     }
 
     private fun noteBraking(frame: SensorFrame) {
-        val accel = longitudinalAccel(frame) ?: return
+        val accel = correctedLongitudinal(frame) ?: return
         if (accel <= config.brakeAccelMps2) {
             brakeSeenSinceLoss = true
             return
@@ -831,7 +937,7 @@ class DeadReckoningEngine(
      */
     private fun observeImu(frame: SensorFrame) {
         observeForwardAxis(frame)
-        val accel = longitudinalAccel(frame)
+        val accel = correctedLongitudinal(frame)
         val gyro = frame.yawRateDegPerS
         if (accel == null && gyro == null) {
             imuMissing = true
@@ -841,14 +947,24 @@ class DeadReckoningEngine(
         }
         imuMissing = false
 
-        // Release on the smoothed accel so a zero-mean 0.15 m/s² idle (or a
-        // 0.40 m/s² vibration spike) cannot clear the latch, while a sustained
-        // 0.30 m/s² pull still crosses 0.22 within the 0.5 s smoother.
-        // A single signed sample at 1.0 used to miss 0.3–0.8 m/s² entirely,
-        // and the idle test kept its window open into the later 2.5 m/s²
-        // pull, which is what cleared the latch while creep was still 0.
+        // Release only while smoothed accel stays above the pull threshold and
+        // the raw sample stays above the deadband, for [DrConfig.pullAwaySustainMs].
+        // A door slam, a short rev, or zero-mean idle fails the sustain. A
+        // 0.30 m/s² pull holds both and still releases inside 1 s.
+        val directional =
+            accel != null &&
+                accel >= config.accelDeadbandMps2 &&
+                filteredLongAccel >= config.pullAwayAccelMps2
+        if (directional) {
+            if (pullSustainSinceMs == null) pullSustainSinceMs = frame.tMs
+        } else {
+            pullSustainSinceMs = null
+        }
+        val sustained =
+            pullSustainSinceMs != null &&
+                frame.tMs - pullSustainSinceMs!! >= config.pullAwaySustainMs
         val pullAway =
-            filteredLongAccel >= config.pullAwayAccelMps2 ||
+            sustained ||
                 (gyro != null && kotlin.math.abs(gyro) >= config.standstillGyroDegPerS * 4.0)
         if (standstill) {
             if (pullAway) {
@@ -857,6 +973,7 @@ class DeadReckoningEngine(
                 standstill = false
                 estSpeedMps = 0.0
                 brakeSeenSinceLoss = false
+                pullSustainSinceMs = null
             }
             return
         }
@@ -955,10 +1072,45 @@ class DeadReckoningEngine(
         return output(tMs)
     }
 
-    private fun shouldGiveUp(tMs: Long): Boolean {
+    private fun shouldGiveUp(
+        tMs: Long,
+        constraint: DrConstraint?,
+    ): Boolean {
         if (mode != DrMode.Estimating) return false
+        // On a tunnel span of the active route, keep estimating until the
+        // along-track position has passed that span's end plus the margin.
+        // No route, or a span that is not a tunnel, keeps the time and
+        // distance limits.
+        if (onOpenTunnelSpan(constraint)) return false
         if (tMs - drStartedMs >= config.maxDrDurationMs) return true
         if (drDistanceM >= config.maxDrDistanceM) return true
+        return false
+    }
+
+    /**
+     * True while [estAlongM] is inside a contiguous tunnel run of [constraint],
+     * or still short of that run's end plus [DrConfig.tunnelExitMarginM].
+     * Tunnel flags come from the route samples (graph `is_tunnel`). No names.
+     */
+    private fun onOpenTunnelSpan(constraint: DrConstraint?): Boolean {
+        val samples = constraint?.samples ?: return false
+        if (samples.size < 2) return false
+        var i = 0
+        while (i < samples.size) {
+            if (!samples[i].isTunnel) {
+                i += 1
+                continue
+            }
+            val start = samples[i].cumM
+            var end = start
+            while (i < samples.size && samples[i].isTunnel) {
+                end = samples[i].cumM
+                i += 1
+            }
+            if (estAlongM >= start && estAlongM <= end + config.tunnelExitMarginM) {
+                return true
+            }
+        }
         return false
     }
 

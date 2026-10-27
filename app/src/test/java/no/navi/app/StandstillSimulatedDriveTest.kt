@@ -915,13 +915,11 @@ class StandstillSimulatedDriveTest {
                             "lead_lag=${fmt(r.maxLeadLagM)} exit=${fmt(r.exitErrorM)} " +
                             "phases=${fmtPhases(r.phaseLeadLagM)}",
                     )
-                    if (kotlin.math.abs(bias) <= 0.02) {
-                        val jump = r.exitErrorM
-                        assertTrue(
-                            "steady exit jump $jump at $speed vib=$vib bias=$bias",
-                            jump != null && jump <= 0.05 * tunnels[0].lengthM,
-                        )
-                    }
+                    val jump = r.exitErrorM
+                    assertTrue(
+                        "steady exit jump $jump at $speed vib=$vib bias=$bias",
+                        jump != null && jump <= 0.05 * tunnels[0].lengthM,
+                    )
                 }
             }
         }
@@ -980,16 +978,10 @@ class StandstillSimulatedDriveTest {
             )
             report.appendLine("crawl phases=${fmtPhases(crawl.phaseLeadLagM)}")
             val crawlPhase = crawl.phaseLeadLagM["crawl"]
-            // A bias inside the deadband still adds a little extra braking
-            // while the pedal is down, and that speed error integrates over
-            // the 60 s hold. The pass line is the unbiased and ±0.02 cases.
-            // Larger bias is reported.
-            if (kotlin.math.abs(bias) <= 0.02) {
-                assertTrue(
-                    "crawl-phase lead/lag bias=$bias $crawlPhase phases=${fmtPhases(crawl.phaseLeadLagM)}",
-                    crawlPhase != null && kotlin.math.abs(crawlPhase) <= 50.0,
-                )
-            }
+            assertTrue(
+                "crawl-phase lead/lag bias=$bias $crawlPhase phases=${fmtPhases(crawl.phaseLeadLagM)}",
+                crawlPhase != null && kotlin.math.abs(crawlPhase) <= 50.0,
+            )
         }
 
         val afterExit =

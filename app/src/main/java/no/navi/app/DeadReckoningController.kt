@@ -33,7 +33,11 @@ class DeadReckoningController(
     private var lastRv: FloatArray? = null
     private var lastGyro: FloatArray? = null
     private var lastLinAccel: FloatArray? = null
+    private var lastAccel: FloatArray? = null
     private var lastGravity: FloatArray? = null
+    private val gravLp = doubleArrayOf(0.0, 0.0, 9.81)
+    private var gravLpInit = false
+    private var lastGravLpMs = 0L
     private var lastSensorWallMs: Long = 0L
     private var lastGnssSpeedMps: Double? = null
     private var lastGnssAccuracyM: Float? = null
@@ -55,6 +59,7 @@ class DeadReckoningController(
                     Sensor.TYPE_ROTATION_VECTOR -> lastRv = event.values.clone()
                     Sensor.TYPE_GYROSCOPE -> lastGyro = event.values.clone()
                     Sensor.TYPE_LINEAR_ACCELERATION -> lastLinAccel = event.values.clone()
+                    Sensor.TYPE_ACCELEROMETER -> lastAccel = event.values.clone()
                     Sensor.TYPE_GRAVITY -> lastGravity = event.values.clone()
                 }
             }
@@ -79,6 +84,9 @@ class DeadReckoningController(
                 sm?.registerListener(listener, it, SensorManager.SENSOR_DELAY_GAME)
             }
             sm?.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)?.let {
+                sm?.registerListener(listener, it, SensorManager.SENSOR_DELAY_GAME)
+            }
+            sm?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)?.let {
                 sm?.registerListener(listener, it, SensorManager.SENSOR_DELAY_GAME)
             }
             sm?.getDefaultSensor(Sensor.TYPE_GRAVITY)?.let {
@@ -226,7 +234,9 @@ class DeadReckoningController(
     private fun buildFrameFromHardware(now: Long): SensorFrame? {
         val heading = headingFromRv(lastRv)
         val yawRate = lastGyro?.getOrNull(2)?.let { Math.toDegrees(it.toDouble()) }
-        val lin = lastLinAccel
+        val resolved = resolveLinearAccel(now)
+        val lin = resolved.first
+        engine.noteLinearAccelSource(resolved.second)
         val grav = lastGravity
         val forward = forwardAccel(lin, heading)
         if (heading == null && yawRate == null && forward == null && lin == null) return null
@@ -261,6 +271,60 @@ class DeadReckoningController(
     }
 
     /**
+     * Prefer [Sensor.TYPE_LINEAR_ACCELERATION]. When it is missing, or it is
+     * not tracking a real accelerometer reading, subtract gravity
+     * ([Sensor.TYPE_GRAVITY], else a low-pass of the accelerometer).
+     * Returns the vector and a source name for the diag log.
+     */
+    private fun resolveLinearAccel(nowMs: Long): Pair<FloatArray?, String> {
+        val derived = derivedLinear(nowMs)
+        val lin = lastLinAccel
+        if (lin == null) {
+            return if (derived == null) null to "none" else derived to derivedSource()
+        }
+        if (derived != null) {
+            val linH = hypot2(lin[0], lin[1])
+            val derH = hypot2(derived[0], derived[1])
+            // A present linear sensor that stays near zero while the
+            // accelerometer shows horizontal specific force is not the motion.
+            if (derH > 0.4f && linH < derH * 0.25f) {
+                return derived to derivedSource()
+            }
+        }
+        return lin to "linear"
+    }
+
+    private fun derivedSource(): String = if (lastGravity != null) "accel_minus_gravity" else "accel_minus_lowpass"
+
+    private fun derivedLinear(nowMs: Long): FloatArray? {
+        val acc = lastAccel ?: return null
+        val grav =
+            lastGravity ?: run {
+                gravLpInit =
+                    LinearAccelFallback.stepLowpass(
+                        gravLp,
+                        acc,
+                        gravityDt(nowMs),
+                        GRAVITY_LP_TAU_S,
+                        gravLpInit,
+                    )
+                floatArrayOf(gravLp[0].toFloat(), gravLp[1].toFloat(), gravLp[2].toFloat())
+            }
+        return LinearAccelFallback.minus(acc, grav)
+    }
+
+    private fun gravityDt(nowMs: Long): Double {
+        val dt = if (lastGravLpMs == 0L) 0.05 else ((nowMs - lastGravLpMs) / 1000.0).coerceIn(0.01, 0.5)
+        lastGravLpMs = nowMs
+        return dt
+    }
+
+    private fun hypot2(
+        a: Float,
+        b: Float,
+    ): Float = sqrt((a * a + b * b).toDouble()).toFloat()
+
+    /**
      * Project device linear acceleration onto vehicle forward using current
      * heading. Without calibration this is approximate; road constraint limits
      * damage.
@@ -293,6 +357,46 @@ class DeadReckoningController(
         const val TICK_MS = 100L
         const val PROVIDER_ESTIMATED = "navi-dead-reckon"
         const val PROVIDER_LOST = "navi-position-lost"
+        const val GRAVITY_LP_TAU_S = 2.0
+    }
+}
+
+/**
+ * Gravity removal when [android.hardware.Sensor.TYPE_LINEAR_ACCELERATION] is
+ * missing. [minus] is accelerometer minus gravity. [stepLowpass] is the
+ * gravity estimate used when [android.hardware.Sensor.TYPE_GRAVITY] is also
+ * missing. Both are pure so unit tests can drive the fallback without a device.
+ */
+internal object LinearAccelFallback {
+    fun minus(
+        accel: FloatArray,
+        gravity: FloatArray,
+    ): FloatArray =
+        floatArrayOf(
+            accel[0] - gravity[0],
+            accel[1] - gravity[1],
+            accel[2] - gravity[2],
+        )
+
+    /** Updates [state] in place. Returns whether [state] is initialised. */
+    fun stepLowpass(
+        state: DoubleArray,
+        accel: FloatArray,
+        dt: Double,
+        tau: Double,
+        init: Boolean,
+    ): Boolean {
+        if (!init) {
+            state[0] = accel[0].toDouble()
+            state[1] = accel[1].toDouble()
+            state[2] = accel[2].toDouble()
+            return true
+        }
+        val alpha = (dt / (tau + dt)).coerceIn(0.0, 1.0)
+        state[0] += alpha * (accel[0] - state[0])
+        state[1] += alpha * (accel[1] - state[1])
+        state[2] += alpha * (accel[2] - state[2])
+        return true
     }
 }
 

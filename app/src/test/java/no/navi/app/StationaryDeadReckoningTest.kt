@@ -253,10 +253,38 @@ class StationaryDeadReckoningTest {
                 } else {
                     SensorFrame(tMs = t)
                 }
+            engine.onGnssSilence(t)
             trace.note(engine.onSensorTick(frame, road))
             t += 100L
         }
         return trace
+    }
+
+    @Test
+    fun gpsGap20s_distanceFilter_entersEstimatingAndStaysStill() {
+        val engine = DeadReckoningEngine()
+        val road = routeAt(30.0)
+        val held = engine.onGps(fix(0L, road, 5f, 0.0), road)
+        val trace = Trace()
+        trace.note(held)
+        var sawEstimating = false
+        var t = 100L
+        var last = held
+        while (t <= 20_000L) {
+            engine.onGnssSilence(t)
+            if (engine.mode() == DrMode.Estimating) sawEstimating = true
+            last = engine.onSensorTick(rest(t), road)
+            trace.note(last)
+            t += 100L
+        }
+        assertTrue(sawEstimating)
+        assertEquals(DrMode.Estimating, engine.mode())
+        assertTrue(
+            "gap along=${trace.maxAlongM} speed=${trace.maxSpeedMps} shown=${last.speedMps}",
+            trace.maxAlongM <= 1.0 && trace.maxSpeedMps == 0.0 && last.speedMps == 0.0,
+        )
+        assertEquals(held.lat, last.lat, 1e-5)
+        assertEquals(held.lon, last.lon, 1e-5)
     }
 
     private fun sampleFromFix(row: JSONObject): GpsSample {
