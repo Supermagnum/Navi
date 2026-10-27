@@ -44,6 +44,8 @@ real Bluetooth in CI.
 | CI / simulator | Guest select / follow / decision C / demo plans; host FakeBenshiPeer + Hamlib dummy via `navi-cat` |
 | Android emulator | Injected RFCOMM only (`BenshiCorridorEmulatorKTest`); no real BT |
 | Real hardware | VR-N76 host BlueZ 2026-10-12: reachability + 5 s demos PASS (see `docs/CAT-test-report.md`) |
-| Not tested | Hamlib on real radios; tablet↔physical radio; UV-Pro / GA-5WB; RepeaterBook live data |
+| Not tested | Hamlib on real radios; tablet↔physical radio; UV-Pro / GA-5WB; a real drive with a user-copied RepeaterBook KML |
+
+RepeaterBook is not fetched. The host reads KML/KMZ/CSV from the drop folder and passes parsed records to this guest. The guest never receives a path. Network choice `auto` follows the nearest programmable network; a named network with no members in the current area falls back to `auto` and the host shows a notice. Switching uses the live position (and dead reckoning when GNSS is lost). A planned route is not required. A drive with a physical radio and a user-copied KML is still a manual check: find `Android/data/no.navi.app/files/repeaters` over MTP, press Update, select the network, and confirm VFO A follows it with no route set.
 
 **Status:** simulator-verified; VR-N76 host BlueZ hardware Steps 5–6 PASS (2026-10-12).

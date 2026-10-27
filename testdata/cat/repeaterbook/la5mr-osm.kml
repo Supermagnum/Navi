@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+<Style id="IDLE"><IconStyle><color>ff00ff00</color></IconStyle></Style>
+<Placemark>
+<name>LA5MR</name>
+<styleUrl>#IDLE</styleUrl>
+<description><![CDATA[
+Hoykorset<br>
+145.625000 88.5<br>
+On-air: Yes<br>
+<a href='https://www.repeaterbook.com/row_repeaters/details.php?state_id=NO&ID=1'>Click for Details</a>
+]]></description>
+<Point><coordinates>10.6018219,60.4781659,0</coordinates></Point>
+</Placemark>
+<Placemark>
+<name>LA6GR</name>
+<styleUrl>#IDLE</styleUrl>
+<description><![CDATA[
+Totenasen<br>
+434.750000 71.9<br>
+On-air: Yes<br>
+<a href='https://www.repeaterbook.com/row_repeaters/details.php?state_id=NO&ID=2'>Click for Details</a>
+]]></description>
+<Point><coordinates>10.9379810,60.5695830,0</coordinates></Point>
+</Placemark>
+<Placemark>
+<name>LA2RRR</name>
+<styleUrl>#IDLE</styleUrl>
+<description><![CDATA[
+Kongsvinger<br>
+51.830000 71.9<br>
+On-air: Yes<br>
+<a href='https://www.repeaterbook.com/row_repeaters/details.php?state_id=NO&ID=3'>Click for Details</a>
+]]></description>
+<Point><coordinates>11.9943920,60.1676114,0</coordinates></Point>
+</Placemark>
+<Placemark>
+<name>LA5ARR</name>
+<styleUrl>#IDLE</styleUrl>
+<description><![CDATA[
+Tretten<br>
+434.775000 71.9<br>
+On-air: Yes<br>
+<a href='https://www.repeaterbook.com/row_repeaters/details.php?state_id=NO&ID=4'>Click for Details</a>
+]]></description>
+<Point><coordinates>10.3113599,61.2803118,0</coordinates></Point>
+</Placemark>
+</Document></kml>

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -45,7 +46,18 @@ data class CatUiState(
      */
     val demoModeDeveloper: Boolean = MapHudPrefs.CAT_DEMO_MODE_DEFAULT_ENABLED,
     val followNetworkId: String = "LA5MR",
+    val networkChoice: String = MapHudPrefs.CAT_NETWORK_AUTO,
+    val networkNotice: String = "",
+    val repeaterDropPath: String = "",
+    val networkNames: List<CatNetworkChip> = emptyList(),
     val lastMessage: String = "",
+)
+
+/** One dropdown row: name, programmable members in the region, nearest member. */
+data class CatNetworkChip(
+    val name: String,
+    val members: Int,
+    val nearestKm: Double,
 )
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -104,10 +116,16 @@ fun CatStatusSheet(
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                "AnyTone CPS CSV: put channel.csv (and zone / gps-roaming / offset) under filesDir/cat/import/. Format: docs/cat-test.md.",
+                "Download one RepeaterBook KML per country and copy it into this folder.",
                 style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.testTag("cat_import_path_hint"),
             )
+            SelectionContainer {
+                Text(
+                    state.repeaterDropPath.ifBlank { "Android/data/no.navi.app/files/repeaters" },
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("cat_repeater_drop_path"),
+                )
+            }
             OutlinedButton(
                 onClick = onUpdateRepeaters,
                 modifier = Modifier.fillMaxWidth().testTag("cat_update_repeaters"),
@@ -118,6 +136,40 @@ fun CatStatusSheet(
                 stringResource(R.string.cat_update_repeaters_hint),
                 style = MaterialTheme.typography.bodySmall,
             )
+            Text("Repeater network", style = MaterialTheme.typography.titleSmall)
+            if (state.networkNotice.isNotBlank()) {
+                Text(
+                    state.networkNotice,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("cat_network_notice"),
+                )
+            }
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.testTag("cat_network_choices"),
+            ) {
+                FilterChip(
+                    selected = state.networkChoice == MapHudPrefs.CAT_NETWORK_AUTO,
+                    onClick = { onFollowNetworkChange(MapHudPrefs.CAT_NETWORK_AUTO) },
+                    label = { Text("Nearest network (auto)") },
+                    modifier = Modifier.testTag("cat_network_auto"),
+                )
+                for (chip in state.networkNames) {
+                    val km = String.format(java.util.Locale.US, "%.0f", chip.nearestKm)
+                    FilterChip(
+                        selected = state.networkChoice == chip.name,
+                        onClick = { onFollowNetworkChange(chip.name) },
+                        label = { Text("${chip.name} (${chip.members}, $km km)") },
+                    )
+                }
+                FilterChip(
+                    selected = state.networkChoice == MapHudPrefs.CAT_NETWORK_OFF,
+                    onClick = { onFollowNetworkChange(MapHudPrefs.CAT_NETWORK_OFF) },
+                    label = { Text("Off / manual") },
+                    modifier = Modifier.testTag("cat_network_off"),
+                )
+            }
             Text(
                 if (connected) {
                     "Connected${if (model.isNotBlank()) " ($model)" else ""}"

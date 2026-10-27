@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
 use navi_cat::gating::{GateDecision, GateStatus};
+use navi_cat::program::{program_vfo1_verified, ProgramRequest};
 use navi_cat::types::{RigBackend, RigError, VfoState};
 use navi_cat::{CatService, RepeaterDb, TcpRigBackend};
 use navi_plugin_host::{
@@ -462,7 +463,33 @@ pub fn cat_plugin_tick_guest() -> String {
         Ok(h) => h,
         Err(e) => return format!("FAIL: load: {e}"),
     };
-    match host.call(Box::new(api)) {
+    let call = host.call(Box::new(api));
+    if let Ok(kv) = FilePluginKv::open(session.kv_path()) {
+        if let Some(site_id) = kv.get("cat_follow_switch") {
+            let mut kv = kv;
+            let _ = kv.set("cat_follow_switch", "");
+            if let Some(site) = session
+                .cat
+                .db
+                .list_sites()
+                .into_iter()
+                .find(|s| s.id == site_id)
+            {
+                let req = ProgramRequest {
+                    freq_out_mhz: site.freq_out_mhz,
+                    shift_mhz: site.shift_mhz,
+                    ctcss_hz: site.ctcss_hz,
+                    dcs_code: site.dcs_code,
+                    mode: "FM".into(),
+                    passband_hz: 12_500,
+                    vfo: "VFOA".into(),
+                    leaves_follow: false,
+                };
+                let _ = program_vfo1_verified(&mut session.cat.backend, &req);
+            }
+        }
+    }
+    match call {
         Ok(outcome) => format!("OK: {outcome:?}"),
         Err(e) => format!("FAIL: {e}"),
     }
@@ -477,14 +504,28 @@ pub fn cat_plugin_update_repeaters_from_server(base_url: String) -> String {
     let Some(session) = guard.as_mut() else {
         return r#"{"ok":false,"error":"not configured","kept_last_good":true}"#.into();
     };
-    let base = if base_url.trim().is_empty() {
-        navi_cat::mirror::DEFAULT_REPEATERS_BASE.to_string()
+    let (drop_dir, base) = if base_url.trim_start().starts_with('{') {
+        let v: serde_json::Value = serde_json::from_str(&base_url).unwrap_or_default();
+        let dir = v.get("dir").and_then(|d| d.as_str()).map(|s| s.to_string());
+        let base = v
+            .get("base")
+            .and_then(|d| d.as_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or(navi_cat::mirror::DEFAULT_REPEATERS_BASE)
+            .to_string();
+        (dir, base)
+    } else if base_url.trim().is_empty() {
+        (None, navi_cat::mirror::DEFAULT_REPEATERS_BASE.to_string())
     } else {
-        base_url
+        (None, base_url)
     };
     let db_path = session.files_dir.join("cat_repeaters.sqlite");
+    let local = drop_dir.as_ref().map(|dir| {
+        navi_cat::repeaterbook::import_directory(std::path::Path::new(dir), &db_path, None)
+    });
     let report = navi_cat::mirror::fetch_and_update(&base, &db_path);
-    if report.ok {
+    let local_ok = local.as_ref().map(|l| l.ok).unwrap_or(false);
+    if report.ok || local_ok {
         // Reload DB handle so subsequent queries see the new rows.
         let db = open_db(&session.files_dir);
         let follow_net = session.cat.follow_network_id.clone();
@@ -502,7 +543,12 @@ pub fn cat_plugin_update_repeaters_from_server(base_url: String) -> String {
         cat.follow_stopped_reason = follow_stop;
         session.cat = cat;
     }
-    serde_json::to_string(&report).unwrap_or_else(|_| {
-        r#"{"ok":false,"error":"serialize report","kept_last_good":true}"#.into()
-    })
+    let mut combined = serde_json::to_value(&report).unwrap_or_else(|_| serde_json::json!({}));
+    if let Some(local) = local {
+        combined["local_files"] = serde_json::to_value(&local).unwrap_or(serde_json::json!(null));
+        if local.ok {
+            combined["ok"] = serde_json::json!(true);
+        }
+    }
+    combined.to_string()
 }

@@ -445,45 +445,50 @@ Populate by importing and cross-referencing the sources in
    shift / modulation tags), grouped by `type=network` relations.
    **Norway:** as of 2026-10, all amateur repeaters in Norway are mapped in
    OpenStreetMap, so OSM is the **primary** source for Norway (LA5MR and other
-   networks). navi-server RadioID/RepeaterBook mirrors supplement elsewhere.
+   networks). RadioID still comes from navi-server. RepeaterBook does not.
 2. **User AnyTone CPS CSV** — channel / zone / gps-roaming / offset exports.
 3. **OpenRepeater** / **RadioID** — community / DMR directories (downloadable; DMR is
    information-only for the Benshi backend).
 4. **Bundled extract** — regional SQLite table (callsign, lat, lon, freq_out_mhz,
    shift_mhz, ctcss_hz, modulation, network_id) shipped or built from the above.
-5. **RepeaterBook** — via navi-server mirror when published (client never holds
-   keys); never required for the 150 km search.
+5. **RepeaterBook** — only from KML, KMZ, or CSV the user downloads and copies
+   into the drop folder. The app never contacts repeaterbook.com. There is no
+   API client and no server mirror.
 
-### RepeaterBook (optional online)
+### RepeaterBook files
 
-RepeaterBook remains an optional source as sketched here, but its API requires
-**written permission from RepeaterBook** for use inside an app. Until that
-permission is obtained, RepeaterBook sync stays **disabled**, and no other
-import path, auto-tune path, or onboard DB build may depend on it.
+Android path (applicationId `no.navi.app`, no suffix):
+`Android/data/no.navi.app/files/repeaters`. Desktop default:
+`repeaters/` under the app data directory. The folder and a `README.txt` are
+created on first run. Android deletes the folder when the app is uninstalled.
+The old `Documents/repeater-csv` location is not used.
 
-When permission exists and the user enables network: query by position/bbox,
-filter to modes the radio profile supports, upsert into onboard DB with expiry.
-API keys and ToS stay host-side. Offline search must still work from OSM,
-CSV, OpenRepeater, RadioID, and the last successful local imports.
+KML/KMZ is the primary source. Real exports put the callsign in `<name>`, the
+place, output frequency, optional tone, and on-air flag in the description,
+the country in the details link `state_id`, and the position in
+`<coordinates>` as longitude, latitude. They do not include offset, mode, or
+a network name. A second number above 260 Hz (1750) is a tone burst, not CTCSS.
 
-### RepeaterBook server-side copy (proposal only)
+CSV latitude/longitude columns (`latitude`/`lat`, `longitude`/`lon`/`lng`/`long`)
+are used only when every value parses, is in range, is not 0,0, and has at
+least 3 digits after the decimal point. Otherwise rows are matched to KML or
+OSM by callsign and output frequency. Unmatched rows without a position are
+kept and listed, and are not placed on the map or used for switching.
 
-Issue #149 notes that a client-held RepeaterBook API key is undesirable.
-"App #114" in that comment is RepeaterBook's registered **RepeaterBook Python
-Client** application, not a Navi PR.
+Norway: OSM stays the source of truth. A RepeaterBook row merges when the
+frequency, CTCSS, and shift agree. A difference in one of those fields
+overrides OSM and the report names the field. A row OSM does not have is
+added. The same callsign and output frequency within 1 km is one repeater
+(border files).
 
-**Proposal (navi-server work later — not implemented here):**
-
-1. Obtain **written permission** from RepeaterBook for a server-side mirror.
-2. A server job pulls the export API with server-held credentials and stores a
-   normalized regional extract (callsign, lat, lon, freq, shift, tone, mode,
-   network_id, as-of time).
-3. The app loads that extract with plain **read-only HTTPS GET** (same trust
-   model as pack downloads). **No RepeaterBook API key in the client.**
-4. Upsert into the onboard repeater DB with expiry; OSM / CSV / OpenRepeater
-   remain the offline defaults.
-5. Until permission and the server path exist, RepeaterBook stays **disabled**
-   in the app (current behaviour).
+The CAT sheet lists programmable FM networks within 100 km of the current
+position, sorted by distance to the nearest member. "Nearest network (auto)"
+is the default. "Off / manual" stops follow. A saved network with no members
+in the new area shows a notice and falls back to auto. Switching uses the
+live position, including dead reckoning when GNSS is lost, and does not
+require a planned route. With a route, the same position scorer runs along
+the travelled track. Removing the route does not stop it. RadioID still
+comes from navi-server. VFO A only, with read-back, is unchanged.
 
 Full investigation notes: [`CAT-benshi-investigation.md`](CAT-benshi-investigation.md).
 
@@ -492,7 +497,7 @@ Full investigation notes: [`CAT-benshi-investigation.md`](CAT-benshi-investigati
 ## Repeater data import and cross-referencing
 
 **Status:** host importers in `navi-cat` (OSM JSON, AnyTone channel CSV,
-OpenRepeater JSON, RadioID CSV scaffold; RepeaterBook always disabled).
+OpenRepeater JSON, RadioID from navi-server, RepeaterBook from user files only).
 On-device CSV drop directory and full format notes:
 [`cat-test.md`](cat-test.md#csv-import-path) /
 [`cat-test.md`](cat-test.md#anytone-cps-csv-format). Fixture outcomes:
@@ -713,7 +718,7 @@ timelines: [`cat-test.md`](cat-test.md).
 |---|---|
 | JVM/Robolectric bridge unit tests | Fake USB/BT sockets through loopback bridge (reconnect, partial writes, disconnect) |
 | Emulator instrumentation | Real `libhamlib.so` + CATS-plugin in wasmtime; remote `rigctld` via `10.0.2.2:4532`; USB/BT via injected boundaries (SPP data path to a real radio is **not** reproducible on emulator) |
-| Real device (manual) | USB OTG + Bluetooth SPP with a physical radio; confirm read-back for every field after checking Hamlib backend status for that model |
+| Real device (manual) | USB OTG + Bluetooth SPP with a physical radio; confirm read-back for every field after checking Hamlib backend status for that model. Also: connect to a computer, find `Android/data/no.navi.app/files/repeaters` over MTP, copy in a RepeaterBook KML, press Update, and check the import report. Select a network, drive without a route, and confirm VFO A follows that network. |
 
 ### Fixture sources
 

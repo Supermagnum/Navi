@@ -1052,8 +1052,8 @@ repeater select / network follow is the **CATS** wasmtime plugin
 - **OSM** (currently all repeaters in Norway are mapped there).
 - **OpenRepeater**.
 - **RadioID** via navi-server.
-- **RepeaterBook** via navi-server (not yet published).
-- **AnyTone CSV** from `Documents/repeater-csv/`.
+- **RepeaterBook** only from KML/KMZ/CSV the user copies into `Android/data/no.navi.app/files/repeaters`. The app never contacts repeaterbook.com. Android deletes that folder on uninstall.
+- **AnyTone CSV** from `filesDir/cat/import/`.
 - The **Update** button in the plugin UI.
 - Consensus relocation (default **off**).
 

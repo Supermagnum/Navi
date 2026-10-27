@@ -1233,6 +1233,9 @@ private fun NaviMapScreen() {
                 backend = MapHudPrefs.loadCatBackend(context),
                 scratchChannel = MapHudPrefs.loadCatScratchChannel(context),
                 demoModeDeveloper = MapHudPrefs.loadCatDemoModeDeveloper(context),
+                networkChoice = MapHudPrefs.loadCatNetworkChoice(context),
+                followNetworkId = MapHudPrefs.loadCatNetworkChoice(context),
+                repeaterDropPath = CatBootstrap.repeaterDropDir(context).absolutePath,
             ),
         )
     }
@@ -1241,6 +1244,21 @@ private fun NaviMapScreen() {
     var showCampingSheet by remember { mutableStateOf(false) }
     var campingSessionDisableMessage by remember { mutableStateOf<String?>(null) }
     var hideChrome by remember { mutableStateOf(false) }
+    var lastCatFollowTickMs by remember { mutableStateOf(0L) }
+
+    fun applyCatNetworkFollow() {
+        val choice = MapHudPrefs.loadCatNetworkChoice(context)
+        val req =
+            if (choice == MapHudPrefs.CAT_NETWORK_OFF) {
+                org.json.JSONObject().put("enabled", false)
+            } else {
+                org.json
+                    .JSONObject()
+                    .put("enabled", true)
+                    .put("network_id", choice)
+            }
+        uniffi.navi.catPluginNetworkFollowJson(req.toString())
+    }
 
     LaunchedEffect(Unit) {
         CampingBootstrap.ensureInitialized(context)
@@ -1249,6 +1267,31 @@ private fun NaviMapScreen() {
         uniffi.navi.campingPluginSetEnabled(want)
         campingSessionDisableMessage = uniffi.navi.campingPluginSessionDisabledReason()
         uniffi.navi.catPluginSetEnabled(MapHudPrefs.loadCatPluginEnabled(context))
+        if (MapHudPrefs.loadCatPluginEnabled(context)) {
+            applyCatNetworkFollow()
+        }
+    }
+
+    fun networkNamesFromNearby(json: String): List<CatNetworkChip> {
+        val arr = runCatching { org.json.JSONArray(json) }.getOrNull() ?: return emptyList()
+        val counts = linkedMapOf<String, Int>()
+        val nearest = linkedMapOf<String, Double>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            if (!o.optBoolean("position_accurate", true)) continue
+            if (o.optBoolean("exclude_recommended", false)) continue
+            val name = o.optString("network_id")
+            if (name.isBlank()) continue
+            val dist = o.optDouble("distance_km", Double.NaN)
+            if (!dist.isFinite() || dist > 100.0) continue
+            counts[name] = (counts[name] ?: 0) + 1
+            val prev = nearest[name]
+            if (prev == null || dist < prev) nearest[name] = dist
+        }
+        return counts.keys
+            .map { name ->
+                CatNetworkChip(name, counts[name] ?: 0, nearest[name] ?: 0.0)
+            }.sortedBy { it.nearestKm }
     }
 
     fun refreshCatUi() {
@@ -1264,7 +1307,27 @@ private fun NaviMapScreen() {
                 lon,
                 150.0,
             )
-        catUi = catUi.copy(statusJson = status, nearbyJson = nearby)
+        val names = networkNamesFromNearby(nearby)
+        val saved = MapHudPrefs.loadCatNetworkChoice(context)
+        val (choice, notice) =
+            if (saved == MapHudPrefs.CAT_NETWORK_OFF || saved == MapHudPrefs.CAT_NETWORK_AUTO) {
+                saved to ""
+            } else if (names.any { it.name.equals(saved, ignoreCase = true) }) {
+                saved to ""
+            } else {
+                MapHudPrefs.saveCatNetworkChoice(context, MapHudPrefs.CAT_NETWORK_AUTO)
+                MapHudPrefs.CAT_NETWORK_AUTO to
+                    "$saved has no programmable repeaters in this region; using nearest network"
+            }
+        catUi =
+            catUi.copy(
+                statusJson = status,
+                nearbyJson = nearby,
+                networkNames = names,
+                networkChoice = choice,
+                networkNotice = notice,
+                repeaterDropPath = CatBootstrap.repeaterDropDir(context).absolutePath,
+            )
     }
 
     val campingReEnableSession: () -> Unit = {
@@ -2633,6 +2696,18 @@ private fun NaviMapScreen() {
         val lat = mapState.gpsLat
         val lon = mapState.gpsLon
         if (lat == 0.0 && lon == 0.0) return@LaunchedEffect
+        if (catPluginEnabled &&
+            MapHudPrefs.loadCatNetworkChoice(context) != MapHudPrefs.CAT_NETWORK_OFF
+        ) {
+            val nowMs = SystemClock.elapsedRealtime()
+            if (nowMs - lastCatFollowTickMs >= 5_000L) {
+                lastCatFollowTickMs = nowMs
+                withContext(Dispatchers.Default) {
+                    uniffi.navi.catPluginSetPosition(lat, lon)
+                    uniffi.navi.catPluginTickGuest()
+                }
+            }
+        }
         roadSignJurisdictionAllowedRef.set(RegionCoverage.roadSignHudAllowed(lat, lon))
         if (RegionCoverage.speedCameraHudOptInAllowed(lat, lon) &&
             !MapHudPrefs.loadSpeedCameraPromptShown(context)
@@ -6572,13 +6647,21 @@ private fun NaviMapScreen() {
                     catUi = catUi.copy(demoModeDeveloper = it)
                     MapHudPrefs.saveCatDemoModeDeveloper(context, it)
                 },
-                onFollowNetworkChange = { catUi = catUi.copy(followNetworkId = it) },
+                onFollowNetworkChange = {
+                    MapHudPrefs.saveCatNetworkChoice(context, it)
+                    catUi = catUi.copy(followNetworkId = it, networkChoice = it, networkNotice = "")
+                    if (catPluginEnabled) {
+                        applyCatNetworkFollow()
+                    }
+                },
                 onUpdateRepeaters = {
-                    // User-pressed only — no background fetch; navi-server HTTPS GET only.
-                    val msg =
-                        uniffi.navi.catPluginUpdateRepeatersFromServer(
-                            "https://navigate-me.duckdns.org",
-                        )
+                    val payload =
+                        org.json
+                            .JSONObject()
+                            .put("dir", CatBootstrap.repeaterDropDir(context).absolutePath)
+                            .put("base", "https://navigate-me.duckdns.org")
+                            .toString()
+                    val msg = uniffi.navi.catPluginUpdateRepeatersFromServer(payload)
                     catUi = catUi.copy(lastMessage = msg)
                     refreshCatUi()
                     status = "CAT repeater update: $msg"
@@ -6614,10 +6697,13 @@ private fun NaviMapScreen() {
                     refreshCatUi()
                 },
                 onFollowEnable = {
+                    val choice =
+                        catUi.networkChoice.ifBlank { MapHudPrefs.CAT_NETWORK_AUTO }
+                    MapHudPrefs.saveCatNetworkChoice(context, choice)
                     val req =
                         org.json
                             .JSONObject()
-                            .put("network_id", catUi.followNetworkId)
+                            .put("network_id", choice)
                             .put("enabled", true)
                             .toString()
                     val msg = uniffi.navi.catPluginNetworkFollowJson(req)
@@ -8861,6 +8947,7 @@ private fun NaviMapScreen() {
                                 DiagnosticLog.logToggle("cat_plugin", on)
                                 uniffi.navi.catPluginSetEnabled(on)
                                 if (on) {
+                                    applyCatNetworkFollow()
                                     showCatSheet = true
                                     refreshCatUi()
                                     status = "CAT plugin on"
@@ -10125,6 +10212,7 @@ private fun NaviMapScreen() {
                         DiagnosticLog.logToggle("cat_plugin", on)
                         uniffi.navi.catPluginSetEnabled(on)
                         if (on) {
+                            applyCatNetworkFollow()
                             showCatSheet = true
                             refreshCatUi()
                             status = "CAT plugin on"

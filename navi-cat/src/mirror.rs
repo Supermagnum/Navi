@@ -486,22 +486,13 @@ pub fn fetch_and_update(base_url: &str, live_db_path: &Path) -> UpdateReport {
     if live_db_path.is_file() {
         if let Some(prev) = read_applied_generation(live_db_path) {
             if prev == catalog.generation {
-                let mut report = UpdateReport {
+                let report = UpdateReport {
                     ok: true,
                     generation: catalog.generation.clone(),
                     imported: 0,
                     kept_last_good: true,
                     ..Default::default()
                 };
-                if !catalog
-                    .sources
-                    .iter()
-                    .any(|s| s.source.eq_ignore_ascii_case("repeaterbook"))
-                {
-                    report
-                        .sources_missing
-                        .push("repeaterbook: not available yet".into());
-                }
                 return report;
             }
         }
@@ -513,17 +504,10 @@ pub fn fetch_and_update(base_url: &str, live_db_path: &Path) -> UpdateReport {
         kept_last_good: true,
         ..Default::default()
     };
-    if !catalog
-        .sources
-        .iter()
-        .any(|s| s.source.eq_ignore_ascii_case("repeaterbook"))
-    {
-        report_early
-            .sources_missing
-            .push("repeaterbook: not available yet".into());
-    }
-
     for src in &catalog.sources {
+        if !crate::repeaterbook::online_mirror_source(&src.source) {
+            continue;
+        }
         for c in &src.countries {
             let man_url = abs_url(base, &c.manifest_url);
             let data_url = abs_url(base, &c.data_url);
@@ -591,12 +575,7 @@ pub fn fetch_and_update(base_url: &str, live_db_path: &Path) -> UpdateReport {
         return report_early;
     }
 
-    let mut report = apply_bundles_atomic(
-        live_db_path,
-        &catalog,
-        &bundles,
-        &["radioid", "repeaterbook"],
-    );
+    let mut report = apply_bundles_atomic(live_db_path, &catalog, &bundles, &["radioid"]);
     if report.ok {
         write_applied_generation(live_db_path, &catalog.generation);
     }
@@ -774,13 +753,13 @@ mod tests {
         };
         let cat = parse_current(&fs::read_to_string(fixture("current_radioid_only.json")).unwrap())
             .unwrap();
-        let report = apply_bundles_atomic(&db_path, &cat, &[bundle], &["radioid", "repeaterbook"]);
+        let report = apply_bundles_atomic(&db_path, &cat, &[bundle], &["radioid"]);
         assert!(report.ok, "{report:?}");
         assert!(report.imported >= 1);
         assert!(report
             .sources_missing
             .iter()
-            .any(|m| m.contains("repeaterbook")));
+            .all(|m| !m.to_ascii_lowercase().contains("repeaterbook")));
         let db = RepeaterDb::open_path(&db_path).unwrap();
         // Auto-tune query must skip position_null / exclude_recommended.
         let near = db.query_near(60.0, 10.0, 2000.0, None);

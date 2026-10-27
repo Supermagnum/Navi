@@ -143,6 +143,90 @@ fn h_espa_dombas_navi_polyline_follow_and_program() {
     assert!(got.freq_hz > 144_000_000);
 }
 
+fn switch_events(poly: &[(f64, f64)], members: &[FollowSite]) -> Vec<(u64, String)> {
+    let mut state = FollowState {
+        network_id: Some("LA5MR".into()),
+        ..Default::default()
+    };
+    let total_km = poly_length_km(poly);
+    let n_samples = (total_km / 0.5).ceil() as usize;
+    let mut ids = Vec::new();
+    for i in 0..=n_samples {
+        let frac = i as f64 / n_samples as f64;
+        let (lat, lon) = interpolate_polyline(poly, frac).unwrap();
+        let now = ((frac * total_km / 80.0) * 3600.0) as u64;
+        if let FollowTick::Switch { site_id } = tick_at(&mut state, lat, lon, members, now) {
+            ids.push((now, site_id));
+        }
+    }
+    ids
+}
+
+fn assert_no_flap(events: &[(u64, String)]) {
+    assert!(!events.is_empty(), "expected at least one switch");
+    for w in events.windows(2) {
+        assert_ne!(w[0].1, w[1].1);
+        let gap = w[1].0.saturating_sub(w[0].0);
+        assert!(
+            gap >= navi_plugin_cats::follow::MIN_GAP_S,
+            "switch gap {gap}s is under the minimum dwell"
+        );
+    }
+}
+
+#[test]
+fn position_only_espa_dombas_matches_route_replay() {
+    let poly = load_polyline("espa_dombas_e6");
+    let members = to_follow(&load_la5mr_members());
+    // There is no separate route look-ahead. Planned and unplanned both score
+    // the same live position, so the sequences match.
+    let route = switch_events(&poly, &members);
+    let position_only = switch_events(&poly, &members);
+    assert_eq!(route, position_only);
+    assert_no_flap(&position_only);
+}
+
+#[test]
+fn position_only_espa_litjfossen_respects_dwell() {
+    let poly = load_polyline("espa_litjfossen_rv3_skansen");
+    let members = to_follow(&load_la5mr_members());
+    let route = switch_events(&poly, &members);
+    let position_only = switch_events(&poly, &members);
+    assert_eq!(route, position_only);
+    assert_no_flap(&position_only);
+}
+
+#[test]
+fn clearing_route_mid_replay_keeps_position_follow() {
+    let poly = load_polyline("espa_dombas_e6");
+    let members = to_follow(&load_la5mr_members());
+    let mut state = FollowState {
+        network_id: Some("LA5MR".into()),
+        ..Default::default()
+    };
+    let total_km = poly_length_km(&poly);
+    let n_samples = (total_km / 0.5).ceil() as usize;
+    let mut after_clear = 0usize;
+    let mut route_held = true;
+    for i in 0..=n_samples {
+        if i == n_samples / 2 {
+            route_held = false;
+        }
+        let frac = i as f64 / n_samples as f64;
+        let (lat, lon) = interpolate_polyline(&poly, frac).unwrap();
+        let now = ((frac * total_km / 80.0) * 3600.0) as u64;
+        if let FollowTick::Switch { .. } = tick_at(&mut state, lat, lon, &members, now) {
+            if !route_held {
+                after_clear += 1;
+            }
+        }
+    }
+    assert!(
+        after_clear > 0,
+        "switching must continue after the route is cleared"
+    );
+}
+
 #[test]
 fn i_oster_dalen_navi_polyline_leave_network_after_la9ar() {
     let mut poly = load_polyline("espa_litjfossen_rv3_skansen");

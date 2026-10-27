@@ -280,6 +280,85 @@ impl RepeaterDb {
         });
         out
     }
+
+    /// Programmable FM networks near a position. Sorted by distance to the nearest member.
+    pub fn list_networks(&self, lat: f64, lon: f64, radius_km: f64) -> Vec<NetworkListing> {
+        let mut groups: std::collections::BTreeMap<String, NetworkListing> =
+            std::collections::BTreeMap::new();
+        for s in self.list_sites() {
+            if !is_fm_programmable(&s) {
+                continue;
+            }
+            let Some(name_raw) = s.network_id.as_deref() else {
+                continue;
+            };
+            let name = normalize_network_name(name_raw);
+            if name.is_empty() {
+                continue;
+            }
+            let (Some(slat), Some(slon)) = (s.lat, s.lon) else {
+                continue;
+            };
+            let d = haversine_km(lat, lon, slat, slon);
+            if d > radius_km {
+                continue;
+            }
+            let entry = groups
+                .entry(name.clone())
+                .or_insert_with(|| NetworkListing {
+                    name: name.clone(),
+                    members: 0,
+                    nearest_km: f64::MAX,
+                    sources: Vec::new(),
+                });
+            entry.members += 1;
+            if d < entry.nearest_km {
+                entry.nearest_km = d;
+            }
+            let src = source_key(s.source);
+            if !entry.sources.iter().any(|x| x == &src) {
+                entry.sources.push(src);
+            }
+        }
+        let mut out: Vec<_> = groups.into_values().collect();
+        out.sort_by(|a, b| {
+            a.nearest_km
+                .partial_cmp(&b.nearest_km)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.name.cmp(&b.name))
+        });
+        out
+    }
+}
+
+/// FM sites the tuning backend may program. Off-air rows are excluded via
+/// `exclude_recommended`. Digital modes are kept in the DB but not programmed.
+pub fn is_fm_programmable(s: &RepeaterSite) -> bool {
+    if !s.position_accurate || s.exclude_recommended || s.lat.is_none() || s.lon.is_none() {
+        return false;
+    }
+    let m = s.modulation.to_ascii_uppercase();
+    if m.contains("DMR")
+        || m.contains("D-STAR")
+        || m.contains("DSTAR")
+        || m.contains("C4FM")
+        || m.contains("P25")
+    {
+        return false;
+    }
+    m.is_empty() || m.contains("FM") || m.contains("11K2") || m.contains("F3E")
+}
+
+pub fn normalize_network_name(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct NetworkListing {
+    pub name: String,
+    pub members: usize,
+    pub nearest_km: f64,
+    pub sources: Vec<String>,
 }
 
 fn source_key(s: RepeaterSource) -> String {
@@ -333,9 +412,26 @@ fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     2.0 * r * a.sqrt().asin()
 }
 
-/// Direct client RepeaterBook sync remains disabled; server mirror is the path.
+/// Direct client RepeaterBook sync stays off. Files are imported locally.
 pub fn repeaterbook_sync_enabled() -> bool {
     false
+}
+
+/// How a follow choice maps onto `query_near`. `auto` is not a network name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FollowQuery {
+    All,
+    None,
+    Named(String),
+}
+
+pub fn follow_query_filter(network_id: Option<&str>) -> FollowQuery {
+    match network_id.map(str::trim).filter(|s| !s.is_empty()) {
+        None => FollowQuery::All,
+        Some(s) if s.eq_ignore_ascii_case("auto") => FollowQuery::All,
+        Some(s) if s.eq_ignore_ascii_case("off") => FollowQuery::None,
+        Some(s) => FollowQuery::Named(s.to_string()),
+    }
 }
 
 #[cfg(test)]
@@ -423,5 +519,15 @@ mod tests {
     #[test]
     fn repeaterbook_off() {
         assert!(!repeaterbook_sync_enabled());
+    }
+
+    #[test]
+    fn auto_and_off_are_not_network_names() {
+        assert_eq!(follow_query_filter(Some("auto")), FollowQuery::All);
+        assert_eq!(follow_query_filter(Some("off")), FollowQuery::None);
+        assert_eq!(
+            follow_query_filter(Some("LA5MR")),
+            FollowQuery::Named("LA5MR".into())
+        );
     }
 }

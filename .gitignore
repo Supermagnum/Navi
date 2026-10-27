@@ -70,3 +70,6 @@ plugins/right-to-roam-camping/pkg/
 __pycache__/
 scripts/__pycache__/
 .campaign-datex/
+
+# User RepeaterBook downloads. Never commit.
+testdata/cat/local/

@@ -26,6 +26,95 @@ pub extern "C" fn plugin_main() {
                 navi_plugin_sdk::host_log(&format!("cat: candidate {}", best.callsign));
             }
         }
-        let _ = follow::tick_follow(pos.lat, pos.lon);
+        run_position_follow(pos.lat, pos.lon);
+    }
+}
+
+/// Position-only follow. The host supplies parsed sites and a clock in status JSON.
+/// This function records the next site id in plugin KV. It does not open files.
+fn run_position_follow(lat: f64, lon: f64) {
+    let mut status_buf = [0u8; 4096];
+    let n = navi_plugin_sdk::host_cat_status(&mut status_buf);
+    let status = std::str::from_utf8(&status_buf[..n]).unwrap_or("{}");
+    let status_v: serde_json::Value = serde_json::from_str(status).unwrap_or_default();
+    let choice = status_v
+        .get("follow_network_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if choice.is_empty() || choice.eq_ignore_ascii_case(follow::NETWORK_OFF) {
+        return;
+    }
+    let now = status_v
+        .get("now_unix_s")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let mut buf = [0u8; 65536];
+    let n = navi_plugin_sdk::host_repeater_query(lat, lon, AUTO_TUNE_RADIUS_KM, None, &mut buf);
+    if n == 0 {
+        return;
+    }
+    let json = std::str::from_utf8(&buf[..n]).unwrap_or("[]");
+    let rows: Vec<serde_json::Value> = serde_json::from_str(json).unwrap_or_default();
+    let mut live = Vec::new();
+    for row in rows {
+        let Some(id) = row.get("id").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(lat_s) = row.get("lat").and_then(|v| v.as_f64()) else {
+            continue;
+        };
+        let Some(lon_s) = row.get("lon").and_then(|v| v.as_f64()) else {
+            continue;
+        };
+        let network = row
+            .get("network_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        if network.is_empty() {
+            continue;
+        }
+        let distance = row
+            .get("distance_km")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(f64::MAX);
+        live.push(follow::LiveMember {
+            site: follow::FollowSite {
+                id: id.to_string(),
+                callsign: row
+                    .get("callsign")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                lat: lat_s,
+                lon: lon_s,
+                freq_out_mhz: row
+                    .get("freq_out_mhz")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0),
+                shift_mhz: row.get("shift_mhz").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                ctcss_hz: row.get("ctcss_hz").and_then(|v| v.as_f64()),
+            },
+            network,
+            distance_km: distance,
+        });
+    }
+    let members = follow::select_members(choice, &live);
+    if members.is_empty() {
+        return;
+    }
+    let mut state_buf = [0u8; 4096];
+    let mut state = navi_plugin_sdk::host_plugin_kv_get(follow::FOLLOW_STATE_KEY, &mut state_buf)
+        .and_then(|n| std::str::from_utf8(&state_buf[..n]).ok())
+        .and_then(|s| serde_json::from_str::<follow::FollowState>(s).ok())
+        .unwrap_or_default();
+    state.network_id = Some(choice.to_string());
+    if let follow::FollowTick::Switch { site_id } =
+        follow::tick_at(&mut state, lat, lon, &members, now)
+    {
+        let _ = navi_plugin_sdk::host_plugin_kv_set(follow::FOLLOW_SWITCH_KEY, &site_id);
+    }
+    if let Ok(encoded) = serde_json::to_string(&state) {
+        let _ = navi_plugin_sdk::host_plugin_kv_set(follow::FOLLOW_STATE_KEY, &encoded);
     }
 }

@@ -14,6 +14,7 @@ pub mod importers;
 pub mod mirror;
 pub mod program;
 pub mod repeater;
+pub mod repeaterbook;
 pub mod tcp;
 pub mod types;
 
@@ -56,6 +57,10 @@ impl<B: RigBackend> CatService<B> {
             "follow_network_id": self.follow_network_id,
             "follow_pinned": self.follow_pinned,
             "follow_stopped_reason": self.follow_stopped_reason,
+            "now_unix_s": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
         })
         .to_string()
     }
@@ -75,6 +80,12 @@ impl<B: RigBackend> CatService<B> {
             .to_string();
         }
         let radius = radius_km.max(0.0);
+        let filter = crate::repeater::follow_query_filter(network_id);
+        let network_id = match &filter {
+            crate::repeater::FollowQuery::None => return "[]".into(),
+            crate::repeater::FollowQuery::All => None,
+            crate::repeater::FollowQuery::Named(name) => Some(name.as_str()),
+        };
         let sites = self.db.query_near(lat, lon, radius, network_id);
         serde_json::to_string(&sites).unwrap_or_else(|_| "[]".into())
     }
@@ -133,16 +144,21 @@ impl<B: RigBackend> CatService<B> {
                     .to_string();
             }
         };
-        if !req.enabled {
+        let raw = req.network_id.unwrap_or_default();
+        let trimmed = raw.trim();
+        if !req.enabled || trimmed.eq_ignore_ascii_case("off") {
             self.follow_network_id = None;
             self.follow_pinned = None;
             self.follow_stopped_reason = None;
             return serde_json::json!({"ok":true,"enabled":false}).to_string();
         }
-        let Some(nid) = req.network_id else {
-            return serde_json::json!({"ok":false,"error":"network_id required"}).to_string();
+        // "auto" is the nearest-network choice. It is not a network id to query.
+        let stored = if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("auto") {
+            "auto".to_string()
+        } else {
+            trimmed.to_string()
         };
-        self.follow_network_id = Some(nid);
+        self.follow_network_id = Some(stored);
         self.follow_pinned = req.pinned_site;
         self.follow_stopped_reason = None;
         serde_json::json!({
