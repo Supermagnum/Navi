@@ -73,3 +73,6 @@ scripts/__pycache__/
 
 # User RepeaterBook downloads. Never commit.
 testdata/cat/local/
+
+# User-downloaded RepeaterBook KML exports. Must never be committed.
+/klm/
