@@ -888,6 +888,15 @@ object NaviMapTestHooks {
     @Volatile
     var ignoreLiveGpsFixes: Boolean = false
 
+    /**
+     * Replay controls (live-fix ignore, sensor injection, mock routes) run
+     * only in debug. Release keeps the fields, and every effect stays off.
+     */
+    fun replayHooksEnabled(): Boolean = BuildConfig.DEBUG
+
+    /** Live GPS is dropped only while replay hooks are enabled and the flag is set. */
+    fun shouldIgnoreLiveGpsFixes(): Boolean = replayHooksEnabled() && ignoreLiveGpsFixes
+
     /** Last map GPS mark (after applyFix); for off-route assertions. */
     @Volatile
     var lastGpsLat: Double = Double.NaN
@@ -980,6 +989,17 @@ object NaviMapTestHooks {
     /** Feed a GNSS sample into the live dead-reckoning engine (instrumented tests). */
     @Volatile
     var deadReckoningInjectGps: ((GpsSample) -> DrOutput)? = null
+
+    /** Clear engine state between instrumented replays. Null when the activity is down. */
+    @Volatile
+    var deadReckoningReset: (() -> Unit)? = null
+
+    /**
+     * Stop live sensor ticks for the duration of an injected replay.
+     * A wall-clock tick between synthetic samples rewinds the engine clock.
+     */
+    @Volatile
+    var deadReckoningSuspendHardware: ((Boolean) -> Unit)? = null
 
     /** Last resolved applicable speed limit (km/h). */
     @Volatile

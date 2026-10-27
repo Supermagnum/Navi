@@ -988,6 +988,12 @@ private fun NaviMapScreen() {
     var diagnosticLogging by remember {
         mutableStateOf(MapHudPrefs.loadDiagnosticLogging(context))
     }
+    var locationDiagnostics by remember {
+        mutableStateOf(MapHudPrefs.loadLocationDiagnostics(context))
+    }
+    var locationDiagOverlay by remember {
+        mutableStateOf(MapHudPrefs.loadLocationDiagOverlay(context))
+    }
     var downloadScopeCountry by remember { mutableStateOf(false) }
     var selectedGeofabrikPath by remember {
         mutableStateOf(MapHudPrefs.loadGeofabrikPath(context))
@@ -1055,6 +1061,8 @@ private fun NaviMapScreen() {
     LaunchedEffect(Unit) {
         DiagnosticLog.restoreFromPrefs(context)
         diagnosticLogging = DiagnosticLog.isEnabled()
+        LocationDiagnostics.restoreFromPrefs(context)
+        locationDiagnostics = LocationDiagnostics.isEnabled()
         while (true) {
             val pendingPath = NaviMapTestHooks.pendingGeofabrikPath
             if (pendingPath != null) {
@@ -2327,6 +2335,14 @@ private fun NaviMapScreen() {
                 awayThresholdM = ROUTE_START_AWAY_FROM_GPS_M,
             ),
         )
+        if (LocationDiagnostics.isEnabled()) {
+            LocationDiagnostics.logRoute(
+                wallMs = System.currentTimeMillis(),
+                samples = routeSamples,
+                fromFollowsGps = fromFollowsGps || fromPoint == null,
+                routeNotJoined = routeNotJoinedRef.get(),
+            )
+        }
         showHikingReroutePrompt = false
         recalculatingRoute = false
         NaviMapTestHooks.reroutingActive = false
@@ -4421,9 +4437,14 @@ private fun NaviMapScreen() {
     DisposableEffect(locationPermGranted) {
         val lm = context.getSystemService(LocationManager::class.java)
 
-        fun applyFix(loc: Location?) {
-            if (loc == null) return
-            val providerIn = loc.provider.orEmpty()
+        fun applyFix(locIn: Location?) {
+            if (locIn == null) return
+            val rawLoc = locIn
+            var diagSnap: RouteProgressSnapshot? = null
+            var diagOffAction = "none"
+            var diagReroute = false
+            var diagRerouteTrigger: String? = null
+            val providerIn = locIn.provider.orEmpty()
             val fromDr =
                 providerIn == DeadReckoningController.PROVIDER_ESTIMATED ||
                     providerIn == DeadReckoningController.PROVIDER_LOST
@@ -4432,13 +4453,13 @@ private fun NaviMapScreen() {
             // While simulating, ignore real LocationManager fixes.
             if (simulatingRef.get() && !testOrSim) return
             // Instrumented off-route injects: keep live GPS from clobbering.
-            if (NaviMapTestHooks.ignoreLiveGpsFixes && !testOrSim && !fromDr) return
+            if (NaviMapTestHooks.shouldIgnoreLiveGpsFixes() && !testOrSim && !fromDr) return
 
             // Host dead reckoning (tunnels / GNSS gaps). Route-sim already
             // supplies continuous positions; DR owns live LocationManager gaps.
             // Test injects still seed the engine so instrumented tunnel tests can
             // enter Estimating after [NaviMapTestHooks.deadReckoningNotifyLost].
-            var loc = loc
+            var loc = locIn
             var gpsEstimated = false
             var positionLost = false
             if (!fromDr && !simulatingRef.get()) {
@@ -4460,7 +4481,7 @@ private fun NaviMapScreen() {
                             latitude = out.lat
                             longitude = out.lon
                             time = System.currentTimeMillis()
-                            if (out.speedMps.isFinite() && out.speedMps > 0.0) {
+                            if (out.speedMps.isFinite() && out.speedMps >= 0.0) {
                                 speed = out.speedMps.toFloat()
                             }
                             bearing = out.bearingDeg.toFloat()
@@ -4637,6 +4658,7 @@ private fun NaviMapScreen() {
                     val man = snap.maneuver
                     NaviMapTestHooks.lastOffRoute = snap.offRoute
                     NaviMapTestHooks.lastCrossTrackM = snap.crossTrackM
+                    diagSnap = snap
                     if (snap.offRoute) {
                         approachGuidance =
                             ApproachGuidanceState(
@@ -4781,13 +4803,18 @@ private fun NaviMapScreen() {
                                 NaviMapTestHooks.offRouteConfirmMsOverride
                                     ?: RouteProgressTracker.OFF_ROUTE_CONFIRM_MS,
                         )
+                    diagOffAction = offAction.name
                     when (offAction) {
                         OffRouteCoordinator.Action.AutoReroute -> {
                             if (RouteStartGpsPolicy.shouldAutoReplanFromGps(
                                     fromFollowsGps || fromPoint == null,
                                 )
                             ) {
+                                diagReroute = true
+                                diagRerouteTrigger = "off_route_confirmed"
                                 startRerouteFromCurrent(loc.latitude, loc.longitude)
+                            } else {
+                                diagRerouteTrigger = "blocked_from_not_gps_follow"
                             }
                         }
                         OffRouteCoordinator.Action.PromptHikingReroute -> {
@@ -5127,6 +5154,24 @@ private fun NaviMapScreen() {
                     }
                 }
             }
+            // Location diagnostics (off by default). The branch is a single
+            // volatile read while disabled; JSON and disk I/O run only when on.
+            if (LocationDiagnostics.isEnabled() && (loc.latitude != 0.0 || loc.longitude != 0.0)) {
+                LocationDiagnostics.logDisplayed(
+                    raw = rawLoc,
+                    shown = loc,
+                    estimated = gpsEstimated,
+                    positionLost = positionLost,
+                    dr = deadReckoning.engine().diagSnapshot(),
+                    snap = diagSnap,
+                    offRouteAction = diagOffAction,
+                    reroute = diagReroute,
+                    rerouteTrigger = diagRerouteTrigger,
+                    fromFollowsGps = fromFollowsGps || fromPoint == null,
+                    routeNotJoined = routeNotJoinedRef.get(),
+                    simulating = simulatingRef.get(),
+                )
+            }
             // Diagnostic GPS (rate-limited in DiagnosticLog). Log before altitude
             // early-returns so a DEM/GPS alt skip does not skip the GPS line.
             if (loc.latitude != 0.0 || loc.longitude != 0.0) {
@@ -5205,7 +5250,7 @@ private fun NaviMapScreen() {
                         latitude = out.lat
                         longitude = out.lon
                         time = System.currentTimeMillis()
-                        if (out.speedMps.isFinite() && out.speedMps > 0.0) {
+                        if (out.speedMps.isFinite() && out.speedMps >= 0.0) {
                             speed = out.speedMps.toFloat()
                         }
                         bearing = out.bearingDeg.toFloat()
@@ -5218,14 +5263,20 @@ private fun NaviMapScreen() {
             NaviMapTestHooks.gpsEstimated = out.estimated
             NaviMapTestHooks.positionLost = out.positionLost
         }
-        NaviMapTestHooks.deadReckoningInject = { frame ->
-            deadReckoning.injectSensorFrame(frame)
-        }
-        NaviMapTestHooks.deadReckoningNotifyLost = {
-            deadReckoning.notifyGpsLost()
-        }
-        NaviMapTestHooks.deadReckoningInjectGps = { sample ->
-            deadReckoning.injectGpsSample(sample)
+        if (NaviMapTestHooks.replayHooksEnabled()) {
+            NaviMapTestHooks.deadReckoningInject = { frame ->
+                deadReckoning.injectSensorFrame(frame)
+            }
+            NaviMapTestHooks.deadReckoningNotifyLost = {
+                deadReckoning.notifyGpsLost()
+            }
+            NaviMapTestHooks.deadReckoningInjectGps = { sample ->
+                deadReckoning.injectGpsSample(sample)
+            }
+            NaviMapTestHooks.deadReckoningReset = { deadReckoning.reset() }
+            NaviMapTestHooks.deadReckoningSuspendHardware = { suspend ->
+                deadReckoning.suspendHardwareTicks = suspend
+            }
         }
         deadReckoning.start(context)
         if (!locationPermGranted) {
@@ -5235,6 +5286,8 @@ private fun NaviMapScreen() {
                 NaviMapTestHooks.deadReckoningInject = null
                 NaviMapTestHooks.deadReckoningNotifyLost = null
                 NaviMapTestHooks.deadReckoningInjectGps = null
+                NaviMapTestHooks.deadReckoningReset = null
+                NaviMapTestHooks.deadReckoningSuspendHardware = null
             }
         }
         val listener = LocationListener { loc -> applyFix(loc) }
@@ -5265,6 +5318,8 @@ private fun NaviMapScreen() {
             NaviMapTestHooks.deadReckoningInject = null
             NaviMapTestHooks.deadReckoningNotifyLost = null
             NaviMapTestHooks.deadReckoningInjectGps = null
+            NaviMapTestHooks.deadReckoningReset = null
+            NaviMapTestHooks.deadReckoningSuspendHardware = null
         }
     }
     // Refresh DEM altitude when tiles arrive later or the GPS point moves.
@@ -5289,8 +5344,10 @@ private fun NaviMapScreen() {
             java.util.concurrent.atomic.AtomicBoolean(
                 NaviMapTestHooks.hideSearchChrome,
             )
-        hideChrome = NaviMapTestHooks.hideUiChrome
-        hideSearch = NaviMapTestHooks.hideSearchChrome
+        if (NaviMapTestHooks.replayHooksEnabled()) {
+            hideChrome = NaviMapTestHooks.hideUiChrome
+            hideSearch = NaviMapTestHooks.hideSearchChrome
+        }
         val routeApplier: (uniffi.navi.CorridorRouteResult) -> Unit = { pending ->
             applyPlannedRoute(pending)
         }
@@ -5303,7 +5360,8 @@ private fun NaviMapScreen() {
                         // Only the resumed activity may consume test-hook routes. A stopped
                         // duplicate MainActivity (pre-singleTask launches) would otherwise
                         // steal pendingRoute and leave the visible map without a polyline.
-                        if (pending != null) {
+                        // Release builds never apply a hook route.
+                        if (pending != null && NaviMapTestHooks.replayHooksEnabled()) {
                             val resumed =
                                 (context as? androidx.lifecycle.LifecycleOwner)
                                     ?.lifecycle
@@ -5518,12 +5576,14 @@ private fun NaviMapScreen() {
                             NaviMapTestHooks.simulatingActive = true
                             routeSimulator?.seekToCumM(seekCum)
                         }
-                        val wantHideChrome = NaviMapTestHooks.hideUiChrome
+                        val wantHideChrome =
+                            NaviMapTestHooks.replayHooksEnabled() && NaviMapTestHooks.hideUiChrome
                         if (wantHideChrome != lastHookHideChrome.get()) {
                             hideChrome = wantHideChrome
                             lastHookHideChrome.set(wantHideChrome)
                         }
-                        val wantHideSearch = NaviMapTestHooks.hideSearchChrome
+                        val wantHideSearch =
+                            NaviMapTestHooks.replayHooksEnabled() && NaviMapTestHooks.hideSearchChrome
                         if (wantHideSearch != lastHookHideSearch.get()) {
                             hideSearch = wantHideSearch
                             lastHookHideSearch.set(wantHideSearch)
@@ -6301,6 +6361,17 @@ private fun NaviMapScreen() {
                 styleEpoch += 1
             },
         )
+
+        if (locationDiagOverlay) {
+            Box(
+                modifier =
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 72.dp),
+            ) {
+                LocationDiagnosticsOverlay()
+            }
+        }
 
         mapMarkPending?.let { pending ->
             if (!showSavePlaceDialog) {
@@ -9486,6 +9557,48 @@ private fun NaviMapScreen() {
                                 "fuel, system. Off by default; not uploaded.",
                             style = MaterialTheme.typography.bodySmall,
                         )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text("Location diagnostics")
+                            Switch(
+                                checked = locationDiagnostics,
+                                onCheckedChange = { on ->
+                                    LocationDiagnostics.setEnabled(context, on)
+                                    locationDiagnostics = on
+                                    status =
+                                        if (on) {
+                                            "Location diagnostics on — " +
+                                                LocationDiagnostics.publicLocationDescription()
+                                        } else {
+                                            "Location diagnostics off"
+                                        }
+                                },
+                                modifier = Modifier.testTag("toggle_location_diagnostics"),
+                            )
+                        }
+                        Text(
+                            "Per-fix and navigation log under Android/data/no.navi.app/files/location-diag " +
+                                "(adb pull, no root). Off by default. Does not change positioning.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text("Location diagnostics overlay")
+                            Switch(
+                                checked = locationDiagOverlay,
+                                onCheckedChange = { on ->
+                                    MapHudPrefs.saveLocationDiagOverlay(context, on)
+                                    locationDiagOverlay = on
+                                },
+                                modifier = Modifier.testTag("toggle_location_diag_overlay"),
+                            )
+                        }
                         Button(
                             onClick = {
                                 val ok = DiagnosticLog.shareLatest(context)

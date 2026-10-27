@@ -26,6 +26,8 @@ object MapHudPrefs {
     const val PMTILES_BASE_URL_DEFAULT = ""
     private const val KEY_GEOFABRIK_PATH = "geofabrik_path"
     private const val KEY_DIAGNOSTIC_LOGGING = "diagnostic_logging"
+    private const val KEY_LOCATION_DIAGNOSTICS = "location_diagnostics"
+    private const val KEY_LOCATION_DIAG_OVERLAY = "location_diag_overlay"
     private const val KEY_DOWNLOADED_PMTILES_REGIONS = "downloaded_pmtiles_regions"
     private const val KEY_SNAP_ROTATION_BACK = "snap_rotation_back"
     private const val KEY_WEATHER_PLUGIN_ENABLED = "weather_plugin_enabled"
@@ -458,6 +460,40 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_DIAGNOSTIC_LOGGING, enabled)
+            .apply()
+    }
+
+    /** Per-fix location diagnostics (default off). Independent of [loadDiagnosticLogging]. */
+    fun loadLocationDiagnostics(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_LOCATION_DIAGNOSTICS, false)
+
+    fun saveLocationDiagnostics(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_LOCATION_DIAGNOSTICS, enabled)
+            .apply()
+    }
+
+    /** On-screen location diagnostics overlay (default off). */
+    fun loadLocationDiagOverlay(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_LOCATION_DIAG_OVERLAY, false)
+
+    fun saveLocationDiagOverlay(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_LOCATION_DIAG_OVERLAY, enabled)
             .apply()
     }
 
