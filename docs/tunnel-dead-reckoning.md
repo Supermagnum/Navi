@@ -91,11 +91,16 @@ A reported GNSS speed of 0 stays 0: it is never raised to `minSpeedMps` and
 never replaced by the planned route speed. Planned speed is used only when
 speed is **missing** and the IMU shows motion (or no IMU is present).
 
-After GNSS loss, speed is seeded from the last good GNSS value and then held
-(constant velocity). It changes only when both the raw longitudinal sample and
-its low-pass are outside a 0.20 m/s² deadband; the integrated quantity is the
-raw sample. Noise and vibration inside that deadband do
-not move the speed. An uncertainty value grows with τ = 8 s and is logged; it
+After GNSS loss, speed is seeded from the median of the recent good GNSS
+speeds that are within 1 m/s of the latest report. Older speeds from a stop
+or another regime are left out, and the latest report is kept until three
+nearby samples exist. One sample's report noise, held for minutes, was tens
+of metres. The seeded speed is then held (constant velocity). Along-track at
+that fix is the projection
+onto the route segment, not the nearest vertex. Speed changes only when both
+the raw longitudinal sample and its low-pass are outside a 0.20 m/s² deadband;
+the integrated quantity is the raw sample. Noise and vibration inside that
+deadband do not move the speed. An uncertainty value grows with τ = 8 s and is logged; it
 is never applied to the speed, and the speed is not decayed toward 0 or toward
 the planned route speed. Planned speed remains a fallback only when no IMU is
 present and no GNSS speed was reported.
@@ -111,14 +116,21 @@ Standstill is **braking-aware**: latch only after a braking event
 by a quiet hold (accel 0.15 m/s² / yaw 2 deg/s, hold 1 s). Quiet cruise alone
 never latches. Release requires the smoothed forward accel to stay at or above
 0.22 m/s², and the raw sample to stay above the 0.20 m/s² deadband, for 200 ms.
-A single slam, a short rev, or zero-mean idle does not clear the latch. A
-sustained 0.30 m/s² pull-away still releases within 1 s. The speed estimate
-then restarts from 0. A reported GNSS speed of 0 is still immediate 0.
+Yaw at or above 8 deg/s must hold for the same 200 ms. A reported GNSS speed
+above 0.5 m/s must hold for 1 s before it clears the latch; one noisy indoor
+fix does not. A latched stop stays latched when estimating starts again
+after a GNSS gap. Clearing the flag on every new loss was a one-second
+flicker while speed and along-track stayed at 0. A single slam, a short rev, or zero-mean idle does not clear
+the latch. A sustained 0.30 m/s² pull-away still releases within 1 s. The
+speed estimate then restarts from 0. A reported GNSS speed of 0 is still
+immediate 0.
 
 A bias along the fitted forward axis is learned from IMU minus GNSS Δv/Δt
-while fixes are good, and from the IMU alone while standstill is latched
-(true acceleration is zero). It is subtracted before the deadband and before
-integration, kept across DR entry, and logged with a confidence.
+while fixes are good, from the IMU alone while standstill is latched
+(true acceleration is zero), and during dead reckoning while the corrected
+sample stays inside the deadband (a slow ramp is bias, a brake or pull is not).
+It is subtracted before the deadband and before integration, kept across DR
+entry, and logged with a confidence.
 
 DR keeps estimating for 6 min or 15 km. The previous 120 s / 3 km give-up froze
 the puck inside a 3 km tunnel at 50 km/h (about 216 s) and was the steady-cruise
@@ -133,7 +145,8 @@ shown position, speed, or mode. With diagnostics off there is no extra cost.
 - **Stationary behaviour** is verified on a real tablet (SM-P613) with an
   anonymised indoor replay fixture and a live rest session after the fix.
 - **Moving and tunnel behaviour** is verified in **simulation** (and emulator
-  when an AVD is available). There has been **no real drive**. The suite uses a
+  when an AVD is available) and by a generated GNSS+IMU replay on the SM-P613.
+  There has been **no real drive** and no real tunnel. The suite uses a
   shortened Raufoss→Bergen slice with Lærdalstunnelen (straight) and
   Gudvangatunnelen (curved), generated GNSS + IMU, vibration RMS steps, and
   accelerometer biases ±0.02 / ±0.05 / ±0.1 m/s².

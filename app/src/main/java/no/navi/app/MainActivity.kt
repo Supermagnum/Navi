@@ -5272,6 +5272,10 @@ private fun NaviMapScreen() {
         NaviMapTestHooks.deadReckoningInjectGps = { sample ->
             deadReckoning.injectGpsSample(sample)
         }
+        NaviMapTestHooks.deadReckoningReset = { deadReckoning.reset() }
+        NaviMapTestHooks.deadReckoningSuspendHardware = { suspend ->
+            deadReckoning.suspendHardwareTicks = suspend
+        }
         deadReckoning.start(context)
         if (!locationPermGranted) {
             return@DisposableEffect onDispose {
@@ -5280,6 +5284,8 @@ private fun NaviMapScreen() {
                 NaviMapTestHooks.deadReckoningInject = null
                 NaviMapTestHooks.deadReckoningNotifyLost = null
                 NaviMapTestHooks.deadReckoningInjectGps = null
+                NaviMapTestHooks.deadReckoningReset = null
+                NaviMapTestHooks.deadReckoningSuspendHardware = null
             }
         }
         val listener = LocationListener { loc -> applyFix(loc) }
@@ -5310,6 +5316,8 @@ private fun NaviMapScreen() {
             NaviMapTestHooks.deadReckoningInject = null
             NaviMapTestHooks.deadReckoningNotifyLost = null
             NaviMapTestHooks.deadReckoningInjectGps = null
+            NaviMapTestHooks.deadReckoningReset = null
+            NaviMapTestHooks.deadReckoningSuspendHardware = null
         }
     }
     // Refresh DEM altitude when tiles arrive later or the GPS point moves.

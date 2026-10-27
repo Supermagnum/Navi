@@ -112,6 +112,20 @@ data class DrConfig(
      */
     val pullAwaySustainMs: Long = 200L,
     /**
+     * Yaw at or above 4× [standstillGyroDegPerS] must hold this long before
+     * it releases standstill. A one-sample spike does not. 200 ms matches
+     * the accel sustain, so a real turn is not held noticeably longer than
+     * a pull-away.
+     */
+    val standstillGyroSustainMs: Long = 200L,
+    /**
+     * Reported GNSS speed must stay above [standstillSpeedMps] for this long
+     * before it clears the latch. One indoor fix with a noisy speed does not.
+     * Position in GPS mode still follows the fix immediately; this hold is
+     * only the latch. The IMU path still releases a real pull inside 1 s.
+     */
+    val gnssMotionHoldMs: Long = 1_000L,
+    /**
      * Time constant for the forward-axis accelerometer bias (seconds).
      * Slow enough that cabin vibration averages out on the approach, fast
      * enough that a ±0.1 m/s² bias is learned before a tunnel a kilometre ahead.
@@ -266,6 +280,11 @@ class DeadReckoningEngine(
     private var lastGnssReportMs: Long = 0L
     private var quietSinceMs: Long? = null
     private var standstill: Boolean = false
+    private var gnssMotionSinceMs: Long? = null
+    private var gyroReleaseSinceMs: Long? = null
+
+    /** Last good GNSS speeds, oldest first. The DR seed is their median. */
+    private val recentGnssSpeeds = ArrayDeque<Double>()
     private var imuMissing: Boolean = true
     private var imuMotion: Boolean = false
 
@@ -383,6 +402,9 @@ class DeadReckoningEngine(
         lastGnssReportMs = 0L
         quietSinceMs = null
         standstill = false
+        gnssMotionSinceMs = null
+        gyroReleaseSinceMs = null
+        recentGnssSpeeds.clear()
         imuMissing = true
         imuMotion = false
         brakeSeenSinceLoss = false
@@ -427,7 +449,8 @@ class DeadReckoningEngine(
             lastGoodGps = sample
             lastGnssReportMs = sample.tMs
             if (sample.speedMps != null && sample.speedMps.isFinite() && sample.speedMps >= 0.0) {
-                applyReportedSpeed(sample.speedMps)
+                rememberGnssSpeed(sample.speedMps)
+                applyReportedSpeed(sample.speedMps, sample.tMs)
                 updateGnssAccel(sample)
             }
             if (sample.bearingDeg != null && sample.bearingDeg.isFinite()) {
@@ -533,6 +556,12 @@ class DeadReckoningEngine(
         }
 
         val dt = if (lastTickMs > 0L) (frame.tMs - lastTickMs) / 1000.0 else 0.0
+        // An older timestamp (a live sensor tick during a replay) must not
+        // rewind the clock. The next sample would then see a multi-second gap
+        // and be dropped.
+        if (lastTickMs > 0L && frame.tMs < lastTickMs) {
+            return output(frame.tMs)
+        }
         lastTickMs = frame.tMs
         if (dt <= 0.0 || dt > 2.0) {
             return output(frame.tMs)
@@ -605,16 +634,20 @@ class DeadReckoningEngine(
         seedLon = estLon
         seedKind = if (lastGoodGps != null) "last_good_gps" else "last_any_gps"
         quietSinceMs = null
-        standstill = false
+        // A latched stop stays latched across the loss. Clearing it here made
+        // the flag drop for about a second every time estimating restarted.
+        gyroReleaseSinceMs = null
         filteredLongAccel = 0.0
         // The fitted forward axis belongs to the mount session. Do not reset
         // it here — a gap must keep the axis learned on the way in.
         if (seed.speedMps != null && seed.speedMps.isFinite() && seed.speedMps > 0.0) {
-            lastGnssSpeedMps = seed.speedMps
+            // One GNSS speed carries about ±0.2 m/s of report noise. Holding
+            // that single sample for a multi-minute tunnel is tens of metres.
+            // The median of the recent good reports rejects that one sample.
+            val seeded = medianRecentSpeed(seed.speedMps) ?: seed.speedMps
+            lastGnssSpeedMps = seeded
             lastGnssReportMs = seed.tMs
-            // Constant-velocity seed. Later ticks change it only by integrating
-            // longitudinal accel above the deadband.
-            estSpeedMps = seed.speedMps.coerceAtMost(config.maxSpeedMps).coerceAtLeast(0.0)
+            estSpeedMps = seeded.coerceAtMost(config.maxSpeedMps).coerceAtLeast(0.0)
             brakeSeenSinceLoss = estSpeedMps <= config.standstillSpeedMps
         } else if (seed.speedMps != null && seed.speedMps.isFinite()) {
             lastGnssSpeedMps = 0.0
@@ -646,6 +679,7 @@ class DeadReckoningEngine(
         constraint: DrConstraint?,
     ) {
         val dt = if (lastTickMs > 0L) (frame.tMs - lastTickMs) / 1000.0 else 0.0
+        if (lastTickMs > 0L && frame.tMs < lastTickMs) return
         lastTickMs = frame.tMs
         if (dt <= 0.0 || dt > 2.0 || estSpeedMps <= 0.0) return
         val ds = estSpeedMps * dt
@@ -658,21 +692,50 @@ class DeadReckoningEngine(
         }
     }
 
-    /** A reported speed of 0 stays 0. A positive speed may release standstill. */
-    private fun applyReportedSpeed(speed: Double) {
+    /** A reported speed of 0 stays 0. A sustained speed above the latch may release standstill. */
+    private fun applyReportedSpeed(
+        speed: Double,
+        tMs: Long,
+    ) {
         lastGnssSpeedMps = speed
-        lastGnssReportMs = lastGnssReportMs // kept by caller; also set in onGps
-        if (speed <= 0.0) {
-            estSpeedMps = 0.0
-            brakeSeenSinceLoss = true
+        lastGnssReportMs = tMs
+        if (speed <= config.standstillSpeedMps) {
+            gnssMotionSinceMs = null
+            if (speed <= 0.0) {
+                estSpeedMps = 0.0
+                brakeSeenSinceLoss = true
+            } else {
+                estSpeedMps = speed.coerceIn(0.0, config.maxSpeedMps)
+            }
             return
         }
         estSpeedMps = speed.coerceIn(config.minSpeedMps, config.maxSpeedMps)
-        if (speed > config.minSpeedMps) {
+        val since = gnssMotionSinceMs ?: tMs.also { gnssMotionSinceMs = it }
+        if (tMs - since >= config.gnssMotionHoldMs) {
             standstill = false
             quietSinceMs = null
             brakeSeenSinceLoss = false
         }
+    }
+
+    private fun rememberGnssSpeed(speed: Double) {
+        if (!speed.isFinite() || speed < 0.0) return
+        recentGnssSpeeds.addLast(speed)
+        while (recentGnssSpeeds.size > RECENT_GNSS_SPEEDS) {
+            recentGnssSpeeds.removeFirst()
+        }
+    }
+
+    /**
+     * Median of recent speeds near [latest]. Older speeds from a different
+     * regime (a stop, or a training trace) are left out. Null until three
+     * nearby reports exist, in which case the caller keeps [latest].
+     */
+    private fun medianRecentSpeed(latest: Double): Double? {
+        val close = recentGnssSpeeds.filter { kotlin.math.abs(it - latest) <= 1.0 }
+        if (close.size < 3) return null
+        val sorted = close.sorted()
+        return sorted[sorted.size / 2]
     }
 
     /**
@@ -815,6 +878,13 @@ class DeadReckoningEngine(
                 // are bias. A pull-away is real motion and must not be absorbed.
                 standstill && kotlin.math.abs(raw) <= config.accelDeadbandMps2 -> 0.0
                 gnssFresh -> lastGnssAccelMps2
+                // Inside a gap there is no GNSS Δv/Δt. A residual that stays
+                // inside the deadband is bias, including a slow ramp. A real
+                // brake or pull is outside the deadband and is not absorbed.
+                mode == DrMode.Estimating &&
+                    !standstill &&
+                    kotlin.math.abs(raw - accelBiasMps2) <= config.accelDeadbandMps2 &&
+                    kotlin.math.abs(filteredLongAccel) <= config.accelDeadbandMps2 -> 0.0
                 else -> null
             } ?: return
         val err = raw - reference
@@ -963,9 +1033,17 @@ class DeadReckoningEngine(
         val sustained =
             pullSustainSinceMs != null &&
                 frame.tMs - pullSustainSinceMs!! >= config.pullAwaySustainMs
-        val pullAway =
-            sustained ||
-                (gyro != null && kotlin.math.abs(gyro) >= config.standstillGyroDegPerS * 4.0)
+        val gyroHot =
+            gyro != null && kotlin.math.abs(gyro) >= config.standstillGyroDegPerS * 4.0
+        if (gyroHot) {
+            if (gyroReleaseSinceMs == null) gyroReleaseSinceMs = frame.tMs
+        } else {
+            gyroReleaseSinceMs = null
+        }
+        val gyroSustained =
+            gyroReleaseSinceMs != null &&
+                frame.tMs - gyroReleaseSinceMs!! >= config.standstillGyroSustainMs
+        val pullAway = sustained || gyroSustained
         if (standstill) {
             if (pullAway) {
                 imuMotion = true
@@ -1006,6 +1084,9 @@ class DeadReckoningEngine(
         ) {
             standstill = true
             estSpeedMps = 0.0
+            // The motion timer from before the stop must not let one later
+            // noisy speed clear the latch.
+            gnssMotionSinceMs = null
         }
     }
 
@@ -1147,6 +1228,8 @@ class DeadReckoningEngine(
     }
 
     companion object {
+        private const val RECENT_GNSS_SPEEDS = 8
+
         fun normalizeDeg(deg: Double): Double {
             var d = deg % 360.0
             if (d < 0) d += 360.0
@@ -1158,17 +1241,42 @@ class DeadReckoningEngine(
             lat: Double,
             lon: Double,
         ): Double {
-            if (constraint.samples.isEmpty()) return 0.0
-            var best = constraint.samples[0]
+            val samples = constraint.samples
+            if (samples.isEmpty()) return 0.0
+            if (samples.size == 1) return samples[0].cumM
+            // Project onto the nearest segment. Snapping to the nearest
+            // vertex left up to half a sample (12.5 m) of along-track lag
+            // at the last fix, and that lag was held through the tunnel.
+            val mPerDegLat = 110_540.0
+            val mPerDegLon = 111_320.0 * kotlin.math.cos(Math.toRadians(lat))
             var bestD = Double.MAX_VALUE
-            for (s in constraint.samples) {
-                val d = RouteProgressTracker.haversineM(lat, lon, s.lat, s.lon)
+            var bestAlong = samples[0].cumM
+            for (i in 0 until samples.lastIndex) {
+                val a = samples[i]
+                val b = samples[i + 1]
+                val ax = (a.lon - lon) * mPerDegLon
+                val ay = (a.lat - lat) * mPerDegLat
+                val bx = (b.lon - lon) * mPerDegLon
+                val by = (b.lat - lat) * mPerDegLat
+                val vx = bx - ax
+                val vy = by - ay
+                val len2 = vx * vx + vy * vy
+                val t =
+                    if (len2 < 1e-4) {
+                        0.0
+                    } else {
+                        ((-ax) * vx + (-ay) * vy) / len2
+                    }
+                val tc = t.coerceIn(0.0, 1.0)
+                val dx = ax + vx * tc
+                val dy = ay + vy * tc
+                val d = dx * dx + dy * dy
                 if (d < bestD) {
                     bestD = d
-                    best = s
+                    bestAlong = a.cumM + (b.cumM - a.cumM) * tc
                 }
             }
-            return best.cumM
+            return bestAlong
         }
 
         fun sampleAtAlong(

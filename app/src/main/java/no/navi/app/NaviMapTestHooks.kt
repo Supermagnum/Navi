@@ -981,6 +981,17 @@ object NaviMapTestHooks {
     @Volatile
     var deadReckoningInjectGps: ((GpsSample) -> DrOutput)? = null
 
+    /** Clear engine state between instrumented replays. Null when the activity is down. */
+    @Volatile
+    var deadReckoningReset: (() -> Unit)? = null
+
+    /**
+     * Stop live sensor ticks for the duration of an injected replay.
+     * A wall-clock tick between synthetic samples rewinds the engine clock.
+     */
+    @Volatile
+    var deadReckoningSuspendHardware: ((Boolean) -> Unit)? = null
+
     /** Last resolved applicable speed limit (km/h). */
     @Volatile
     var lastCurrentSpeedLimitKmh: Double? = null
