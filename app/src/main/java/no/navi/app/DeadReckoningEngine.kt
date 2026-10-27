@@ -30,17 +30,35 @@ data class DrConfig(
     val gpsDegradeHoldMs: Long = 1_500L,
     /** Accuracy at or below this is "good" enough to leave DR / finish blend. */
     val goodAccuracyM: Float = 25f,
-    /** Give up after this long without a good fix. */
-    val maxDrDurationMs: Long = 120_000L,
-    /** Give up after this along-road distance without a good fix. */
-    val maxDrDistanceM: Double = 3_000.0,
+    /**
+     * Give up after this long without a good fix.
+     * A 3 km tunnel at 50 km/h takes about 216 s. 360 s leaves 144 s (40%)
+     * so the estimate is still running at the exit. The previous 120 s
+     * froze the puck inside that tunnel and was the steady-cruise lag.
+     */
+    val maxDrDurationMs: Long = 360_000L,
+    /**
+     * Give up after this along-road distance without a good fix.
+     * 15 km is five times the 3 km simulated tunnel.
+     */
+    val maxDrDistanceM: Double = 15_000.0,
     /** Smooth hand-back duration when GPS returns with an offset. */
     val blendDurationMs: Long = 800L,
     /** Clamp integrated speed (m/s). */
     val minSpeedMps: Double = 0.5,
     val maxSpeedMps: Double = 50.0,
-    /** Forward-accel deadband (m/s^2) to ignore noise. */
-    val accelDeadbandMps2: Double = 0.3,
+    /**
+     * |low-passed longitudinal accel| at or above this changes speed (m/s²).
+     * 0.20 is ten times a ±0.02 m/s² bias and above a zero-mean cabin
+     * vibration of 0.40 m/s² RMS after the 0.5 s smoother. A sustained
+     * 0.30 m/s² pull-away sits 0.10 above it.
+     */
+    val accelDeadbandMps2: Double = 0.20,
+    /**
+     * Smoother for longitudinal accel before the deadband (seconds).
+     * Zero-mean vibration averages out; a real pull or brake remains.
+     */
+    val longitudinalFilterTauS: Double = 0.5,
     /**
      * |forward accel| below this is still (m/s^2).
      * The indoor tablet log stayed under 0.003 m/s^2 mean and 0.04 m/s^2 std.
@@ -73,18 +91,19 @@ data class DrConfig(
      */
     val brakeAccelMps2: Double = -0.75,
     /**
-     * Trust of the GNSS-seeded speed after loss decays with this time
-     * constant (seconds). After about one loss timeout the seed is no longer
-     * used unchanged; by ~3τ the estimate is treated as IMU-only. 8 s sits
-     * above the 2 s loss timeout and below a typical short tunnel transit.
+     * Time constant for the logged speed uncertainty after GNSS loss
+     * (seconds). Uncertainty grows as exp(age / τ). It is never applied to
+     * the speed. 8 s matches the previous trust constant and sits above the
+     * 2 s loss timeout.
      */
     val speedTrustTauS: Double = 8.0,
     /**
-     * Positive forward accel at or above this releases standstill / cancels a
-     * pending stop hold (m/s²). 1.0 is above cabin vibration (0.40 RMS) and
-     * at or below a light pull-away; margin to vib 0.40 is about 0.5 m/s².
+     * Positive forward accel at or above this releases standstill (m/s²).
+     * Idle engine vibration in the suite is 0.05–0.15, so 0.22 is 0.07 above
+     * that and 0.08 below a gentle queue pull-away of 0.30. The old 1.0
+     * threshold never saw 0.3–0.8 m/s².
      */
-    val pullAwayAccelMps2: Double = 1.0,
+    val pullAwayAccelMps2: Double = 0.22,
 )
 
 data class GpsSample(
@@ -108,7 +127,20 @@ data class SensorFrame(
     val tMs: Long,
     val headingDeg: Double? = null,
     val yawRateDegPerS: Double? = null,
+    /**
+     * Vehicle-longitudinal accel when the caller already applied mount
+     * calibration. Ignored for speed and braking once a device-frame fit
+     * is in use.
+     */
     val forwardAccelMps2: Double? = null,
+    /** Device-frame linear acceleration (gravity already removed), m/s². */
+    val linAccelX: Double? = null,
+    val linAccelY: Double? = null,
+    val linAccelZ: Double? = null,
+    /** Device-frame specific force of gravity, m/s². Null skips the projection. */
+    val gravityX: Double? = null,
+    val gravityY: Double? = null,
+    val gravityZ: Double? = null,
 )
 
 /**
@@ -127,6 +159,18 @@ data class DrDiagSnapshot(
     val alongM: Double,
     val blending: Boolean,
     val standstill: Boolean?,
+    /**
+     * Growth of speed doubt after GNSS loss. Logged only; never subtracted
+     * from [speedMps].
+     */
+    val speedUncertaintyMps: Double = 0.0,
+    /**
+     * `scalar` — caller already supplied longitudinal accel.
+     * `learning` — device-frame samples seen, fit not confident yet, so
+     * speed is held and braking is not detected.
+     * `confident` — fitted forward axis is in use.
+     */
+    val forwardAxisState: String = "scalar",
 )
 
 /** Polyline constraint (active route or a single graph-edge chain). */
@@ -192,21 +236,56 @@ class DeadReckoningEngine(
     private var brakeSeenSinceLoss: Boolean = false
 
     /**
-     * Sign that maps device [SensorFrame.forwardAccelMps2] onto the vehicle
-     * longitudinal axis. Learned while GNSS is available (see [updateGnssAccel]).
+     * Fitted vehicle-forward unit vector in the device frame, projected onto
+     * the horizontal plane. Learned from GNSS Δv/Δt while fixes are good and
+     * kept across DR entry. Reset only in [reset] (a new mount session).
      */
-    private var forwardSign: Double = 1.0
-    private var forwardSignAgree: Int = 0
-    private var forwardSignDisagree: Int = 0
+    private var fwdX: Double = 0.0
+    private var fwdY: Double = 1.0
+    private var fwdZ: Double = 0.0
+    private var axisSumX: Double = 0.0
+    private var axisSumY: Double = 0.0
+    private var axisSumZ: Double = 0.0
+    private var axisAccelCount: Int = 0
+    private var axisBrakeCount: Int = 0
+    private var forwardAxisConfident: Boolean = false
+    private var sawDeviceAccel: Boolean = false
+    private var lastHorizX: Double? = null
+    private var lastHorizY: Double? = null
+    private var lastHorizZ: Double? = null
     private var prevGnssSpeedMps: Double? = null
     private var prevGnssSpeedMs: Long = 0L
     private var lastGnssAccelMps2: Double? = null
-    private var lastDeviceForwardAccel: Double? = null
+    private var filteredLongAccel: Double = 0.0
+    private var speedUncertaintyMps: Double = 0.0
 
     fun mode(): DrMode = mode
 
-    /** Test/diagnostics: current forward-axis sign (+1 or −1). */
-    fun forwardSign(): Double = forwardSign
+    /**
+     * Test/diagnostics. +1 when the fitted horizontal forward has a positive
+     * device-Y component (portrait, yaw near 0), −1 otherwise. 0 before a fit.
+     */
+    fun forwardSign(): Double =
+        if (!forwardAxisConfident) {
+            0.0
+        } else if (fwdY >= 0.0) {
+            1.0
+        } else {
+            -1.0
+        }
+
+    /** `scalar`, `learning`, or `confident`. See [DrDiagSnapshot.forwardAxisState]. */
+    fun forwardAxisState(): String =
+        when {
+            forwardAxisConfident -> "confident"
+            sawDeviceAccel -> "learning"
+            else -> "scalar"
+        }
+
+    fun forwardAxisConfident(): Boolean = forwardAxisConfident
+
+    /** Horizontal forward unit vector in the device frame, or null while learning. */
+    fun forwardAxisDevice(): DoubleArray? = if (forwardAxisConfident) doubleArrayOf(fwdX, fwdY, fwdZ) else null
 
     /** Test/diagnostics: whether a braking event has been seen since DR entry. */
     fun brakeSeenSinceLoss(): Boolean = brakeSeenSinceLoss
@@ -224,6 +303,8 @@ class DeadReckoningEngine(
             alongM = estAlongM,
             blending = blending,
             standstill = standstill,
+            speedUncertaintyMps = speedUncertaintyMps,
+            forwardAxisState = forwardAxisState(),
         )
 
     fun lastExitErrorM(): Double? = lastExitErrorM
@@ -254,13 +335,24 @@ class DeadReckoningEngine(
         imuMissing = true
         imuMotion = false
         brakeSeenSinceLoss = false
-        forwardSign = 1.0
-        forwardSignAgree = 0
-        forwardSignDisagree = 0
+        fwdX = 0.0
+        fwdY = 1.0
+        fwdZ = 0.0
+        axisSumX = 0.0
+        axisSumY = 0.0
+        axisSumZ = 0.0
+        axisAccelCount = 0
+        axisBrakeCount = 0
+        forwardAxisConfident = false
+        sawDeviceAccel = false
+        lastHorizX = null
+        lastHorizY = null
+        lastHorizZ = null
         prevGnssSpeedMps = null
         prevGnssSpeedMs = 0L
         lastGnssAccelMps2 = null
-        lastDeviceForwardAccel = null
+        filteredLongAccel = 0.0
+        speedUncertaintyMps = 0.0
     }
 
     /**
@@ -318,14 +410,45 @@ class DeadReckoningEngine(
         return when (mode) {
             DrMode.Gps -> {
                 // Still trusting last good / current weak fix for display.
+                // An available portal fix (accuracy between good and degraded)
+                // moves along-track too, so the puck is not stuck at the last
+                // good sample while lat/lon have already moved.
                 val lat = if (sample.available) sample.lat else (lastGoodGps?.lat ?: sample.lat)
                 val lon = if (sample.available) sample.lon else (lastGoodGps?.lon ?: sample.lon)
                 estLat = lat
                 estLon = lon
+                if (
+                    sample.available &&
+                    constraint != null &&
+                    constraint.samples.size >= 2 &&
+                    !(lat == 0.0 && lon == 0.0)
+                ) {
+                    estAlongM = alongOf(constraint, lat, lon)
+                }
                 output(sample.tMs)
             }
             DrMode.Estimating, DrMode.PositionLost -> output(sample.tMs)
         }
+    }
+
+    /**
+     * A silent provider never delivers an unavailable fix. Once the last good
+     * fix is older than [DrConfig.gpsLossTimeoutMs], treat that silence as
+     * loss so dead reckoning can start. A fix newer than the timeout is a
+     * no-op. No fix yet is a no-op.
+     */
+    fun onGnssSilence(tMs: Long) {
+        if (mode != DrMode.Gps || blending) return
+        val last = lastGoodGps ?: return
+        if (tMs - last.tMs < config.gpsLossTimeoutMs) return
+        onGps(
+            GpsSample(
+                tMs = tMs,
+                lat = 0.0,
+                lon = 0.0,
+                available = false,
+            ),
+        )
     }
 
     /**
@@ -340,6 +463,11 @@ class DeadReckoningEngine(
             // Opportunistically keep heading warm and learn the forward axis.
             frame.headingDeg?.let { estBearingDeg = normalizeDeg(it) }
             observeForwardAxis(frame)
+            // The loss timeout has not fired yet. Hold the last GNSS speed
+            // and keep moving, instead of freezing until Estimating starts.
+            if (degradeSinceMs != null) {
+                coastAtHeldSpeed(frame, constraint)
+            }
             return output(frame.tMs)
         }
         if (mode == DrMode.PositionLost && !blending) {
@@ -359,17 +487,16 @@ class DeadReckoningEngine(
                 estBearingDeg = normalizeDeg(estBearingDeg + frame.yawRateDegPerS * dt)
         }
 
-        // Stale GNSS speed is never used unchanged past the loss timeout.
-        clearStaleGnssSpeed(frame.tMs)
-
         // Mark braking from this frame before integrating so the speed update
         // and the latch see the same brake/speed state.
         noteBraking(frame)
+        smoothLongitudinal(frame, dt)
         val reportedStop = lastGnssSpeedMps != null && lastGnssSpeedMps!! <= 0.0
         if (standstill || reportedStop) {
             // A reported 0, or the zero-velocity gate, is 0. Do not raise it to
             // minSpeedMps and do not replace it with the planned route speed.
             estSpeedMps = 0.0
+            noteSpeedUncertainty(frame.tMs)
         } else {
             updateSpeedFromImu(frame, dt, constraint)
         }
@@ -412,21 +539,21 @@ class DeadReckoningEngine(
         drStartedMs = tMs
         drDistanceM = 0.0
         lastTickMs = tMs
-        seedLat = seed.lat
-        seedLon = seed.lon
+        // Position is already the last fix, plus any coast during the loss
+        // timeout. Do not rewind to the stale fix.
+        seedLat = estLat
+        seedLon = estLon
         seedKind = if (lastGoodGps != null) "last_good_gps" else "last_any_gps"
-        estLat = seed.lat
-        estLon = seed.lon
         quietSinceMs = null
         standstill = false
-        // Prefer the calibrated mount axis (+1) for the gap; sparse GNSS
-        // correlation during approach is too weak to trust a flip here.
-        forwardSign = 1.0
+        filteredLongAccel = 0.0
+        // The fitted forward axis belongs to the mount session. Do not reset
+        // it here — a gap must keep the axis learned on the way in.
         if (seed.speedMps != null && seed.speedMps.isFinite() && seed.speedMps > 0.0) {
             lastGnssSpeedMps = seed.speedMps
             lastGnssReportMs = seed.tMs
-            // Seed from last good GNSS; IMU integration takes over within the
-            // loss timeout (stale speed is cleared, never held unchanged).
+            // Constant-velocity seed. Later ticks change it only by integrating
+            // longitudinal accel above the deadband.
             estSpeedMps = seed.speedMps.coerceAtMost(config.maxSpeedMps).coerceAtLeast(0.0)
             brakeSeenSinceLoss = estSpeedMps <= config.standstillSpeedMps
         } else if (seed.speedMps != null && seed.speedMps.isFinite()) {
@@ -445,8 +572,29 @@ class DeadReckoningEngine(
         if (seed.bearingDeg != null) {
             estBearingDeg = normalizeDeg(seed.bearingDeg)
         }
-        if (constraint != null) {
-            estAlongM = alongOf(constraint, seed.lat, seed.lon)
+        if (constraint != null && estAlongM <= 0.0 && constraint.samples.size >= 2) {
+            estAlongM = alongOf(constraint, estLat, estLon)
+        }
+    }
+
+    /**
+     * Move at the held GNSS speed while a loss is pending and [mode] is still
+     * [DrMode.Gps]. Speed is not changed here.
+     */
+    private fun coastAtHeldSpeed(
+        frame: SensorFrame,
+        constraint: DrConstraint?,
+    ) {
+        val dt = if (lastTickMs > 0L) (frame.tMs - lastTickMs) / 1000.0 else 0.0
+        lastTickMs = frame.tMs
+        if (dt <= 0.0 || dt > 2.0 || estSpeedMps <= 0.0) return
+        val ds = estSpeedMps * dt
+        if (constraint != null && constraint.samples.size >= 2) {
+            estAlongM = (estAlongM + ds).coerceAtMost(constraint.samples.last().cumM)
+            val p = pointAtAlong(constraint, estAlongM)
+            estLat = p.lat
+            estLon = p.lon
+            estBearingDeg = p.bearingDeg
         }
     }
 
@@ -468,21 +616,9 @@ class DeadReckoningEngine(
     }
 
     /**
-     * Drop a positive GNSS speed report once it is older than the loss timeout
-     * so DR never coasts on the stale value unchanged.
-     */
-    private fun clearStaleGnssSpeed(tMs: Long) {
-        val last = lastGnssSpeedMps ?: return
-        if (last <= 0.0) return
-        if (lastGnssReportMs <= 0L) return
-        if (tMs - lastGnssReportMs >= config.gpsLossTimeoutMs) {
-            lastGnssSpeedMps = null
-        }
-    }
-
-    /**
      * While GNSS is available, longitudinal accel from successive speeds is
-     * correlated with the device forwardAccel to learn [forwardSign].
+     * paired with the latest horizontal device acceleration to fit the
+     * vehicle forward axis. Both speeding up and braking are required.
      */
     private fun updateGnssAccel(sample: GpsSample) {
         val v = sample.speedMps ?: return
@@ -492,56 +628,135 @@ class DeadReckoningEngine(
             val dt = (sample.tMs - prevT) / 1000.0
             if (dt in 0.05..3.0) {
                 lastGnssAccelMps2 = (v - prev) / dt
-                maybeUpdateForwardSign()
+                val hx = lastHorizX
+                val hy = lastHorizY
+                val hz = lastHorizZ
+                if (hx != null && hy != null && hz != null) {
+                    accumulateForwardAxis(lastGnssAccelMps2!!, doubleArrayOf(hx, hy, hz))
+                }
             }
         }
         prevGnssSpeedMps = v
         prevGnssSpeedMs = sample.tMs
     }
 
+    /**
+     * Store the gravity-free horizontal acceleration. Does not reset a fit
+     * that is already confident.
+     */
     private fun observeForwardAxis(frame: SensorFrame) {
-        lastDeviceForwardAccel = frame.forwardAccelMps2
-        maybeUpdateForwardSign()
-    }
-
-    private fun maybeUpdateForwardSign() {
-        val aGnss = lastGnssAccelMps2 ?: return
-        val aDev = lastDeviceForwardAccel ?: return
-        if (kotlin.math.abs(aGnss) < 0.5) return
-        if (kotlin.math.abs(aDev) < 0.2) return
-        if (aGnss * aDev > 0.0) {
-            forwardSignAgree++
-        } else {
-            forwardSignDisagree++
-        }
-        // Require a clear majority before flipping; default remains +1 (mount
-        // calibration already aims the device forward axis along the vehicle).
-        forwardSign =
-            if (forwardSignDisagree > forwardSignAgree + 5) {
-                -1.0
-            } else if (forwardSignAgree >= forwardSignDisagree) {
-                1.0
-            } else {
-                forwardSign
-            }
+        val horiz = horizontalDeviceAccel(frame) ?: return
+        sawDeviceAccel = true
+        lastHorizX = horiz[0]
+        lastHorizY = horiz[1]
+        lastHorizZ = horiz[2]
     }
 
     /**
-     * Integrate longitudinal accel into [estSpeedMps] after GNSS loss.
-     * Planned route speed is an upper bound, or a fallback when no IMU is
-     * present — never a driver while the IMU shows a stop.
+     * Linear acceleration with gravity removed, then projected onto the plane
+     * perpendicular to gravity. Without a gravity vector, X/Y are treated as
+     * already horizontal (the linear-acceleration path has removed gravity).
+     */
+    private fun horizontalDeviceAccel(frame: SensorFrame): DoubleArray? {
+        val ax = frame.linAccelX ?: return null
+        val ay = frame.linAccelY ?: return null
+        val az = frame.linAccelZ ?: 0.0
+        val gx = frame.gravityX
+        val gy = frame.gravityY
+        val gz = frame.gravityZ
+        if (gx == null || gy == null || gz == null) {
+            return doubleArrayOf(ax, ay, 0.0)
+        }
+        val g2 = gx * gx + gy * gy + gz * gz
+        if (g2 < 1.0) return doubleArrayOf(ax, ay, 0.0)
+        val inv = 1.0 / kotlin.math.sqrt(g2)
+        val nx = gx * inv
+        val ny = gy * inv
+        val nz = gz * inv
+        val dot = ax * nx + ay * ny + az * nz
+        return doubleArrayOf(ax - dot * nx, ay - dot * ny, az - dot * nz)
+    }
+
+    private fun accumulateForwardAxis(
+        aGnss: Double,
+        horiz: DoubleArray,
+    ) {
+        val mag =
+            kotlin.math.sqrt(
+                horiz[0] * horiz[0] + horiz[1] * horiz[1] + horiz[2] * horiz[2],
+            )
+        if (kotlin.math.abs(aGnss) < 0.5 || mag < 0.2) return
+        val sign = if (aGnss >= 0.0) 1.0 else -1.0
+        axisSumX += sign * horiz[0] / mag
+        axisSumY += sign * horiz[1] / mag
+        axisSumZ += sign * horiz[2] / mag
+        if (aGnss >= 0.5) axisAccelCount++ else axisBrakeCount++
+        val n = axisAccelCount + axisBrakeCount
+        val sm =
+            kotlin.math.sqrt(
+                axisSumX * axisSumX + axisSumY * axisSumY + axisSumZ * axisSumZ,
+            )
+        // Both signs, and the samples must agree (mean resultant ≥ 0.75).
+        if (axisAccelCount >= 3 && axisBrakeCount >= 3 && sm / n >= 0.75) {
+            val inv = 1.0 / sm
+            fwdX = axisSumX * inv
+            fwdY = axisSumY * inv
+            fwdZ = axisSumZ * inv
+            forwardAxisConfident = true
+        }
+    }
+
+    /**
+     * Longitudinal accel in the vehicle frame, or null when a device-frame
+     * fit is still learning (speed then holds, and braking is not detected).
+     * A scalar [SensorFrame.forwardAccelMps2] is used only when no device
+     * vector is present — the caller already resolved the mount.
+     */
+    private fun longitudinalAccel(frame: SensorFrame): Double? {
+        val horiz = horizontalDeviceAccel(frame)
+        if (horiz != null) {
+            if (!forwardAxisConfident) return null
+            return horiz[0] * fwdX + horiz[1] * fwdY + horiz[2] * fwdZ
+        }
+        return frame.forwardAccelMps2
+    }
+
+    private fun smoothLongitudinal(
+        frame: SensorFrame,
+        dt: Double,
+    ) {
+        val raw = longitudinalAccel(frame) ?: return
+        val tau = config.longitudinalFilterTauS.coerceAtLeast(0.05)
+        val alpha = (dt / (tau + dt)).coerceIn(0.0, 1.0)
+        filteredLongAccel += alpha * (raw - filteredLongAccel)
+    }
+
+    private fun noteSpeedUncertainty(tMs: Long) {
+        if (drStartedMs <= 0L) return
+        val ageS = ((tMs - drStartedMs).coerceAtLeast(0L)) / 1000.0
+        speedUncertaintyMps =
+            (0.5 * kotlin.math.exp(ageS / config.speedTrustTauS)).coerceAtMost(50.0)
+    }
+
+    /**
+     * Constant-velocity speed. Holds the GNSS seed. Changes only when both the
+     * current sample and the low-pass gate are outside [DrConfig.accelDeadbandMps2].
+     * Planned route speed is a fallback only when no IMU exists and no GNSS
+     * speed was ever reported. It never pulls the estimate toward itself.
      */
     private fun updateSpeedFromImu(
         frame: SensorFrame,
         dt: Double,
         constraint: DrConstraint?,
     ) {
-        val raw = frame.forwardAccelMps2
-        val plannedMps =
-            constraint?.let { sampleAtAlong(it, estAlongM)?.speedKmh }?.let { it / 3.6 }
-
-        if (raw == null && frame.yawRateDegPerS == null) {
-            // No IMU: keep the previous no-IMU fallback (planned when missing).
+        noteSpeedUncertainty(frame.tMs)
+        val raw = longitudinalAccel(frame)
+        val noDevice =
+            raw == null &&
+                frame.forwardAccelMps2 == null &&
+                frame.linAccelX == null &&
+                frame.yawRateDegPerS == null
+        if (noDevice) {
             if (
                 constraint != null &&
                 lastGnssSpeedMps == null &&
@@ -554,48 +769,42 @@ class DeadReckoningEngine(
             }
             return
         }
-
-        val accel = (raw ?: 0.0) * forwardSign
-        // After braking has brought speed into the latch band and accel has
-        // settled (no longer hard-braking through a crawl target), hold at 0
-        // unless there is real positive thrust. Cabin vibration must not
-        // re-accelerate the estimate and defeat the stop.
-        val settledStop =
-            brakeSeenSinceLoss &&
-                estSpeedMps <= config.standstillSpeedMps &&
-                accel > config.brakeAccelMps2
-        if (settledStop) {
-            if (accel >= config.pullAwayAccelMps2) {
-                estSpeedMps = (estSpeedMps + accel * dt).coerceAtLeast(0.0)
-            } else {
-                estSpeedMps = 0.0
-            }
-        } else {
-            // Integrate only real braking or pull-away. Cabin vibration lives in
-            // the mid-band and must not random-walk the coasting speed.
-            val integrate =
-                accel <= config.brakeAccelMps2 ||
-                    accel >= config.pullAwayAccelMps2
-            if (integrate) {
-                estSpeedMps = (estSpeedMps + accel * dt).coerceAtLeast(0.0)
+        if (raw == null) {
+            // Learning a device-frame axis, or no longitudinal sample: hold.
+            return
+        }
+        // The smoother is only a gate. Once it is open, integrate the current
+        // sample so a lagged average cannot keep braking after the taper.
+        // A sample inside the deadband never changes speed, even if the
+        // smoother has not decayed yet.
+        if (
+            kotlin.math.abs(raw) >= config.accelDeadbandMps2 &&
+            kotlin.math.abs(filteredLongAccel) >= config.accelDeadbandMps2
+        ) {
+            estSpeedMps =
+                (estSpeedMps + raw * dt)
+                    .coerceAtLeast(0.0)
+                    .coerceAtMost(config.maxSpeedMps)
+        }
+        // Missing GNSS speed plus real motion: planned speed is the fallback
+        // and the cap. A GNSS-seeded speed is not pulled toward the plan.
+        if (lastGnssSpeedMps == null && kotlin.math.abs(filteredLongAccel) >= config.accelDeadbandMps2) {
+            val planned =
+                constraint?.let { sampleAtAlong(it, estAlongM)?.speedKmh }?.let { it / 3.6 }
+            if (planned != null && planned > 1.0 && estSpeedMps > planned) {
+                estSpeedMps = planned
+            } else if (
+                planned != null &&
+                planned > 1.0 &&
+                estSpeedMps < config.minSpeedMps
+            ) {
+                estSpeedMps = planned.coerceAtMost(config.maxSpeedMps)
             }
         }
-
-        // Trust decay of the GNSS seed (documentation / diagnostics). After
-        // ~loss-timeout the seed is cleared; τ keeps the estimate IMU-led.
-        val ageS = ((frame.tMs - drStartedMs).coerceAtLeast(0L)) / 1000.0
-        val trust = kotlin.math.exp(-ageS / config.speedTrustTauS)
-        // Planned speed is only an upper bound while we have IMU.
-        if (plannedMps != null && plannedMps > 1.0 && estSpeedMps > plannedMps) {
-            // Allow a small overshoot early (high trust), tighten as trust fades.
-            val cap = plannedMps * (1.0 + 0.15 * trust)
-            if (estSpeedMps > cap) estSpeedMps = cap
-        }
-        estSpeedMps = estSpeedMps.coerceAtMost(config.maxSpeedMps)
     }
 
     private fun noteBraking(frame: SensorFrame) {
-        val accel = frame.forwardAccelMps2?.let { it * forwardSign } ?: return
+        val accel = longitudinalAccel(frame) ?: return
         if (accel <= config.brakeAccelMps2) {
             brakeSeenSinceLoss = true
             return
@@ -622,7 +831,7 @@ class DeadReckoningEngine(
      */
     private fun observeImu(frame: SensorFrame) {
         observeForwardAxis(frame)
-        val accel = frame.forwardAccelMps2?.let { it * forwardSign }
+        val accel = longitudinalAccel(frame)
         val gyro = frame.yawRateDegPerS
         if (accel == null && gyro == null) {
             imuMissing = true
@@ -632,11 +841,15 @@ class DeadReckoningEngine(
         }
         imuMissing = false
 
-        // Release needs real forward thrust / turn — not cabin vibration and
-        // not continued braking (abs(raw) would treat −2 m/s² as pull-away).
+        // Release on the smoothed accel so a zero-mean 0.15 m/s² idle (or a
+        // 0.40 m/s² vibration spike) cannot clear the latch, while a sustained
+        // 0.30 m/s² pull still crosses 0.22 within the 0.5 s smoother.
+        // A single signed sample at 1.0 used to miss 0.3–0.8 m/s² entirely,
+        // and the idle test kept its window open into the later 2.5 m/s²
+        // pull, which is what cleared the latch while creep was still 0.
         val pullAway =
-            (accel != null && accel >= config.pullAwayAccelMps2) ||
-                (gyro != null && kotlin.math.abs(gyro) >= config.standstillGyroDegPerS * 2.0)
+            filteredLongAccel >= config.pullAwayAccelMps2 ||
+                (gyro != null && kotlin.math.abs(gyro) >= config.standstillGyroDegPerS * 4.0)
         if (standstill) {
             if (pullAway) {
                 imuMotion = true

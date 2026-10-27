@@ -51,6 +51,8 @@ class StandstillSimulatedDriveTest {
         /** Max est−truth along inside the first tunnel (lead +, lag −). */
         val maxLeadLagM: Double,
         val stayedLatchedUnderIdleVib: Boolean?,
+        /** est − truth along (m) at the last sample of each phase. */
+        val phaseLeadLagM: Map<String, Double> = emptyMap(),
     )
 
     /** Public test origin (Oslo Opera plaza). Test data only. */
@@ -154,6 +156,8 @@ class StandstillSimulatedDriveTest {
     private fun profileQueueInTunnel(
         road: DrConstraint,
         cruiseKmh: Double,
+        pullAccelMps2: Double = 0.5,
+        holdOnly: Boolean = false,
     ): List<TrueState> {
         val ranges = tunnelRanges(road)
         val stopAlong = (ranges.first().first + ranges.first().second) / 2.0
@@ -188,10 +192,17 @@ class StandstillSimulatedDriveTest {
                     accel = if (stopTicks < 15) -2.0 else 0.0
                     speed = 0.0
                     stopTicks++
-                    if (stopTicks >= 600) phase = 3 // 60 s
+                    if (holdOnly) {
+                        if (stopTicks >= 200) break
+                    } else if (stopTicks >= 600) {
+                        phase = 3 // 60 s
+                    }
                 }
                 else -> {
-                    accel = 2.5
+                    // Once cruise speed is reached the pedal is released.
+                    // Leaving +0.5 on the accel channel made truth hold speed
+                    // with coerceAtMost while the engine kept integrating.
+                    accel = if (speed < cruise - 0.2) pullAccelMps2 else 0.0
                     speed = (speed + accel * 0.1).coerceAtMost(cruise)
                     along += speed * 0.1
                 }
@@ -325,8 +336,8 @@ class StandstillSimulatedDriveTest {
         return out
     }
 
-    /** Queue stop then idle cabin vibration while latched (engine running). */
-    private fun profileQueueThenIdleVib(road: DrConstraint): List<TrueState> = profileQueueInTunnel(road, 80.0)
+    /** Queue stop then idle cabin vibration while latched. No pull-away. */
+    private fun profileQueueThenIdleVib(road: DrConstraint): List<TrueState> = profileQueueInTunnel(road, 80.0, holdOnly = true)
 
     private fun profileStopAfterExit(road: DrConstraint): List<TrueState> {
         val ranges = tunnelRanges(road)
@@ -485,6 +496,9 @@ class StandstillSimulatedDriveTest {
         var wasStopped = false
         var maxLeadLag = 0.0
         var stayedLatchedUnderIdleVib: Boolean? = null
+        val phaseLead = linkedMapOf<String, Double>()
+        var phaseName: String? = null
+        var tunnelEnterMs: Long? = null
         var idlePhase = false
         var stopCyclesOk = 0
         var stopCyclesBad = 0
@@ -602,6 +616,22 @@ class StandstillSimulatedDriveTest {
                 liveStandstill ||
                     (s.speedMps < 0.3 && out.speedMps < 0.05)
 
+            if (s.inTunnel && tunnelEnterMs == null) tunnelEnterMs = s.tMs
+            val phaseNow =
+                when {
+                    !s.inTunnel && (tunnelEnterMs == null) -> "approach"
+                    !s.inTunnel -> "exit"
+                    s.speedMps < 0.3 -> "stop"
+                    s.speedMps < 2.0 -> "crawl"
+                    s.forwardAccelMps2 <= -0.5 -> "brake"
+                    s.forwardAccelMps2 >= 0.25 -> "pull-away"
+                    tunnelEnterMs != null && s.tMs - tunnelEnterMs!! < 2_000L -> "enter"
+                    else -> "cruise"
+                }
+            if (phaseName != null && phaseName != phaseNow) {
+                phaseLead[phaseName!!] = along - truth[i - 1].alongM
+            }
+            phaseName = phaseNow
             if (s.inTunnel) {
                 val leadLag = along - s.alongM
                 if (kotlin.math.abs(leadLag) > kotlin.math.abs(maxLeadLag)) {
@@ -647,6 +677,15 @@ class StandstillSimulatedDriveTest {
                 }
                 val creep = kotlin.math.abs(along - (stopAlong ?: along))
                 if (creep > maxCreep) maxCreep = creep
+                // Clock the release from the first pull-away accel, not from
+                // the later moment truth speed crosses 0.3 m/s. A 0.30 m/s²
+                // pull clears the latch before speed reaches 0.3.
+                if (pullStartMs == null && s.forwardAccelMps2 >= 0.25) {
+                    pullStartMs = s.tMs
+                }
+                if (pullStartMs != null && !liveStandstill && releaseAtMs == null) {
+                    releaseAtMs = s.tMs
+                }
             } else {
                 if (wasStopped) {
                     wasStopped = false
@@ -668,6 +707,10 @@ class StandstillSimulatedDriveTest {
                     releaseAtMs = s.tMs
                 }
                 if (!liveStandstill) cycleReleased = true
+            }
+
+            if (i == truth.lastIndex && phaseName != null) {
+                phaseLead[phaseName!!] = along - s.alongM
             }
 
             // Exit error after first tunnel.
@@ -763,6 +806,7 @@ class StandstillSimulatedDriveTest {
             crawlExitJumpM = crawlExitJump,
             maxLeadLagM = maxLeadLag,
             stayedLatchedUnderIdleVib = stayedLatchedUnderIdleVib,
+            phaseLeadLagM = phaseLead,
         )
     }
 
@@ -868,8 +912,16 @@ class StandstillSimulatedDriveTest {
                     report.appendLine(
                         "steady speed=$speed vib=$vib bias=$bias " +
                             "false=${r.falseLatchWhileMoving} shadow_false=${r.shadowFalseLatchWhileMoving} " +
-                            "lead_lag=${fmt(r.maxLeadLagM)} exit=${fmt(r.exitErrorM)}",
+                            "lead_lag=${fmt(r.maxLeadLagM)} exit=${fmt(r.exitErrorM)} " +
+                            "phases=${fmtPhases(r.phaseLeadLagM)}",
                     )
+                    if (kotlin.math.abs(bias) <= 0.02) {
+                        val jump = r.exitErrorM
+                        assertTrue(
+                            "steady exit jump $jump at $speed vib=$vib bias=$bias",
+                            jump != null && jump <= 0.05 * tunnels[0].lengthM,
+                        )
+                    }
                 }
             }
         }
@@ -888,7 +940,8 @@ class StandstillSimulatedDriveTest {
                 report.appendLine(
                     "queue vib=$vib bias=$bias latch=${queue.latchDelayAfterStopMs} " +
                         "release=${queue.releaseDelayAfterPullMs} creep=${fmt(queue.maxStopCreepM)} " +
-                        "lead_lag=${fmt(queue.maxLeadLagM)} exit=${fmt(queue.exitErrorM)}",
+                        "lead_lag=${fmt(queue.maxLeadLagM)} exit=${fmt(queue.exitErrorM)} " +
+                        "phases=${fmtPhases(queue.phaseLeadLagM)}",
                 )
             }
         }
@@ -925,10 +978,18 @@ class StandstillSimulatedDriveTest {
                     "exit=${fmt(crawl.exitErrorM)} jump=${fmt(crawl.crawlExitJumpM)} " +
                     "latch=${crawl.latchDelayAfterStopMs}",
             )
-            assertTrue(
-                "crawl lead/lag too large: ${crawl.maxLeadLagM}",
-                kotlin.math.abs(crawl.maxLeadLagM) < 2_000.0,
-            )
+            report.appendLine("crawl phases=${fmtPhases(crawl.phaseLeadLagM)}")
+            val crawlPhase = crawl.phaseLeadLagM["crawl"]
+            // A bias inside the deadband still adds a little extra braking
+            // while the pedal is down, and that speed error integrates over
+            // the 60 s hold. The pass line is the unbiased and ±0.02 cases.
+            // Larger bias is reported.
+            if (kotlin.math.abs(bias) <= 0.02) {
+                assertTrue(
+                    "crawl-phase lead/lag bias=$bias $crawlPhase phases=${fmtPhases(crawl.phaseLeadLagM)}",
+                    crawlPhase != null && kotlin.math.abs(crawlPhase) <= 50.0,
+                )
+            }
         }
 
         val afterExit =
@@ -953,7 +1014,7 @@ class StandstillSimulatedDriveTest {
 
         val idle =
             runScenario(
-                name = "queue_idle_vib",
+                name = "idle_vib",
                 road = road,
                 truth = profileQueueThenIdleVib(road),
                 vibrationRms = 0.0,
@@ -963,13 +1024,37 @@ class StandstillSimulatedDriveTest {
             )
         report.appendLine(
             "idle_vib_after_stop stayed_latched=${idle.stayedLatchedUnderIdleVib} " +
-                "latch=${idle.latchDelayAfterStopMs}",
+                "latch=${idle.latchDelayAfterStopMs} phases=${fmtPhases(idle.phaseLeadLagM)}",
         )
+        assertTrue(
+            "idle vibration must stay latched, stayed=${idle.stayedLatchedUnderIdleVib}",
+            idle.stayedLatchedUnderIdleVib == true &&
+                idle.latchDelayAfterStopMs != null &&
+                idle.latchDelayAfterStopMs!! <= 2_000L,
+        )
+
+        for (pull in listOf(0.3, 0.5, 0.8)) {
+            val gentle =
+                runScenario(
+                    name = "queue",
+                    road = road,
+                    truth = profileQueueInTunnel(road, 80.0, pullAccelMps2 = pull),
+                    vibrationRms = 0.15,
+                    accelBiasMps2 = 0.0,
+                    assertPass = true,
+                )
+            report.appendLine(
+                "gentle_pull accel=$pull release=${gentle.releaseDelayAfterPullMs} " +
+                    "latch=${gentle.latchDelayAfterStopMs} creep=${fmt(gentle.maxStopCreepM)}",
+            )
+        }
 
         println(report.toString())
         assertTrue(report.contains("Lærdalstunnelen"))
         assertTrue(report.contains("Gudvangatunnelen"))
     }
+
+    private fun fmtPhases(phases: Map<String, Double>): String = phases.entries.joinToString(",") { "${it.key}=${fmt(it.value)}" }
 
     private fun fmt(v: Double?): String =
         if (v == null) {

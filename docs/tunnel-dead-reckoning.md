@@ -26,11 +26,12 @@ before touching the map — that path is not used here.
 1. **Heading change:** prefer `TYPE_ROTATION_VECTOR`; fall back to integrating
    `TYPE_GYROSCOPE`. Apply the #162 mount rotation so device yaw maps to vehicle
    yaw along the road.
-2. **Speed change:** project `TYPE_LINEAR_ACCELERATION` onto the vehicle forward
-   axis and integrate; clamp to sensible bounds.
-3. **Speed carry:** if accel is missing or unusable, keep the **last good GPS
-   speed** (and, on an active route, prefer the planned sample speed when the
-   carried speed is wildly off).
+2. **Speed change:** project `TYPE_LINEAR_ACCELERATION` onto the fitted vehicle
+   forward axis. After GNSS loss the speed holds the last good GNSS value and
+   changes only when longitudinal acceleration is outside the deadband.
+3. **Speed carry:** if accel is missing or still inside the deadband, keep the
+   last good GPS speed. Do not decay it toward 0 or toward the planned sample
+   speed. Planned speed is only a fallback when no GNSS speed was reported.
 4. **No calibration:** identity mount; heading still tracks relative gyro/RV
    change from the last GPS course. Absolute compass bias may be wrong; road
    constraint limits lateral drift.
@@ -60,7 +61,8 @@ Works without Google Play services (`LocationManager` + `SensorManager` only).
 | Give up | After `max_dr_duration_s` or `max_dr_distance_m` without a good fix: show "Position lost", stop advancing, keep last estimate. |
 
 Defaults (overridable in code / prefs): loss timeout ~2 s, degrade accuracy
-~40 m, give-up ~120 s or ~3 km.
+~40 m, give-up 6 min or 15 km. The previous 120 s / 3 km give-up froze the
+estimate inside a 3 km tunnel at 50 km/h.
 
 ## Tests
 
@@ -82,18 +84,31 @@ A reported GNSS speed of 0 stays 0: it is never raised to `minSpeedMps` and
 never replaced by the planned route speed. Planned speed is used only when
 speed is **missing** and the IMU shows motion (or no IMU is present).
 
-After GNSS loss, speed is seeded from the last good GNSS value and then updated
-by integrating longitudinal acceleration (device forward axis learned while GNSS
-was available by correlating GNSS Δv/Δt with forwardAccel). Trust in the seed
-decays with τ = 8 s; a positive GNSS speed is never left unchanged past the
-2 s loss timeout. Planned route speed is only an upper bound, or a fallback
-when no IMU is present.
+After GNSS loss, speed is seeded from the last good GNSS value and then held
+(constant velocity). It changes only when low-passed longitudinal acceleration
+is outside a 0.20 m/s² deadband. Noise and vibration inside that deadband do
+not move the speed. An uncertainty value grows with τ = 8 s and is logged; it
+is never applied to the speed, and the speed is not decayed toward 0 or toward
+the planned route speed. Planned speed remains a fallback only when no IMU is
+present and no GNSS speed was reported.
+
+The vehicle forward axis is fitted in the device frame while GNSS is available:
+linear acceleration (gravity already removed) is projected onto the horizontal
+plane and correlated with GNSS Δv/Δt for both speeding up and braking. The fit
+is kept for the mount session, including across DR entry. Until it is
+confident the speed holds and braking is not detected.
 
 Standstill is **braking-aware**: latch only after a braking event
 (forward accel ≤ −0.75 m/s²) has brought estimated speed below 0.5 m/s, followed
 by a quiet hold (accel 0.15 m/s² / yaw 2 deg/s, hold 1 s). Quiet cruise alone
-never latches. Release on forward thrust ≥ 1.0 m/s² (or a sharp yaw); the speed
-estimate then restarts from 0. A reported GNSS speed of 0 is still immediate 0.
+never latches. Release uses the smoothed forward accel at ≥ 0.22 m/s² so idle
+vibration of 0.05–0.15 m/s² stays latched and a gentle 0.30 m/s² pull-away
+releases within 1 s. The speed estimate then restarts from 0. A reported GNSS
+speed of 0 is still immediate 0.
+
+DR keeps estimating for 6 min or 15 km. The previous 120 s / 3 km give-up froze
+the puck inside a 3 km tunnel at 50 km/h (about 216 s) and was the steady-cruise
+lag.
 
 While **Location diagnostics** is on, a shadow standstill evaluator mirrors the
 braking-aware gate on every IMU sample in every DR mode. It never changes the

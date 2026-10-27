@@ -33,6 +33,7 @@ class DeadReckoningController(
     private var lastRv: FloatArray? = null
     private var lastGyro: FloatArray? = null
     private var lastLinAccel: FloatArray? = null
+    private var lastGravity: FloatArray? = null
     private var lastSensorWallMs: Long = 0L
     private var lastGnssSpeedMps: Double? = null
     private var lastGnssAccuracyM: Float? = null
@@ -54,6 +55,7 @@ class DeadReckoningController(
                     Sensor.TYPE_ROTATION_VECTOR -> lastRv = event.values.clone()
                     Sensor.TYPE_GYROSCOPE -> lastGyro = event.values.clone()
                     Sensor.TYPE_LINEAR_ACCELERATION -> lastLinAccel = event.values.clone()
+                    Sensor.TYPE_GRAVITY -> lastGravity = event.values.clone()
                 }
             }
 
@@ -77,6 +79,9 @@ class DeadReckoningController(
                 sm?.registerListener(listener, it, SensorManager.SENSOR_DELAY_GAME)
             }
             sm?.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)?.let {
+                sm?.registerListener(listener, it, SensorManager.SENSOR_DELAY_GAME)
+            }
+            sm?.getDefaultSensor(Sensor.TYPE_GRAVITY)?.let {
                 sm?.registerListener(listener, it, SensorManager.SENSOR_DELAY_GAME)
             }
         }
@@ -188,6 +193,10 @@ class DeadReckoningController(
         // Shadow standstill runs in every DR mode while diagnostics are on.
         // It never feeds back into [engine].
         maybeShadow(frame)
+        // Fixes that simply stop (tunnel, or the GPS provider turned off)
+        // never arrive as an unavailable sample. Silence past the loss
+        // timeout is what enters estimating.
+        engine.onGnssSilence(now)
         val mode = engine.mode()
         if (mode == DrMode.Gps && !frameHasMotion(frame)) {
             // Keep heading warm cheaply; full ticks only needed while estimating.
@@ -208,18 +217,30 @@ class DeadReckoningController(
         LocationDiagnostics.logStandstillShadow(sample, engine.mode().name)
     }
 
-    private fun frameHasMotion(frame: SensorFrame): Boolean = frame.headingDeg != null || frame.yawRateDegPerS != null || frame.forwardAccelMps2 != null
+    private fun frameHasMotion(frame: SensorFrame): Boolean =
+        frame.headingDeg != null ||
+            frame.yawRateDegPerS != null ||
+            frame.forwardAccelMps2 != null ||
+            frame.linAccelX != null
 
     private fun buildFrameFromHardware(now: Long): SensorFrame? {
         val heading = headingFromRv(lastRv)
         val yawRate = lastGyro?.getOrNull(2)?.let { Math.toDegrees(it.toDouble()) }
-        val forward = forwardAccel(lastLinAccel, heading)
-        if (heading == null && yawRate == null && forward == null) return null
+        val lin = lastLinAccel
+        val grav = lastGravity
+        val forward = forwardAccel(lin, heading)
+        if (heading == null && yawRate == null && forward == null && lin == null) return null
         return SensorFrame(
             tMs = now,
             headingDeg = heading,
             yawRateDegPerS = yawRate,
             forwardAccelMps2 = forward,
+            linAccelX = lin?.getOrNull(0)?.toDouble(),
+            linAccelY = lin?.getOrNull(1)?.toDouble(),
+            linAccelZ = lin?.getOrNull(2)?.toDouble(),
+            gravityX = grav?.getOrNull(0)?.toDouble(),
+            gravityY = grav?.getOrNull(1)?.toDouble(),
+            gravityZ = grav?.getOrNull(2)?.toDouble(),
         )
     }
 

@@ -394,6 +394,8 @@ object LocationDiagnostics {
                 .put("dr_seed_kind", dr.seedKind)
                 .put("dr_integrated_m", num(dr.integratedM))
                 .put("dr_speed_mps", num(dr.speedMps))
+                .put("dr_speed_uncertainty_mps", num(dr.speedUncertaintyMps))
+                .put("dr_forward_axis", dr.forwardAxisState)
                 .put("dr_bearing_deg", num(dr.bearingDeg))
                 .put("dr_along_m", num(dr.alongM))
                 .put("dr_blending", dr.blending)
