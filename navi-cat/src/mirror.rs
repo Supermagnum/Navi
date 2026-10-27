@@ -174,7 +174,10 @@ fn access_from_mirror(r: &Value) -> (AccessTone, Option<f64>, Option<u32>) {
             return (AccessTone::ToneBurst1750, None, None);
         }
     }
-    if let Some(code) = r.get("dcs_encode").and_then(|v| v.as_u64()) {
+    if let Some(code) = r.get("dcs_encode").and_then(|v| {
+        v.as_u64()
+            .or_else(|| v.as_str().and_then(|s| s.trim().parse::<u64>().ok()))
+    }) {
         return (AccessTone::Dcs, None, Some(code as u32));
     }
     if let Some(hz) = r.get("ctcss_encode_hz").and_then(|v| v.as_f64()) {
@@ -944,7 +947,7 @@ mod tests {
               {"callsign":"LA5MR","osm_type":"node","osm_id":12635462528,"output_hz":145625000,"shift_hz":-600000,"ctcss_encode_hz":88.5,"lat":61.2532188,"lon":8.2030446,"mode":"FM","network":{"name":"LA5MR"}},
               {"callsign":"LA5YR","osm_type":"node","osm_id":5574482764,"output_hz":434900000,"shift_hz":-2000000,"toneburst_hz":1750.0,"lat":59.7802919,"lon":11.0038215,"mode":"FM"},
               {"callsign":"LA5MR","osm_type":"node","osm_id":1011896359,"output_hz":145637500,"shift_hz":null,"lat":60.2298669,"lon":10.6066179,"mode":"FM"},
-              {"callsign":"LD1FR","osm_type":"node","osm_id":14266941716,"output_hz":145687500,"dcs_encode":125,"lat":59.2285626,"lon":10.9411588,"mode":"FM"}
+              {"callsign":"LD1FR","osm_type":"node","osm_id":14266941716,"output_hz":145687500,"dcs_encode":"125","lat":59.2285626,"lon":10.9411588,"mode":"FM"}
             ]
         }"#;
         import_mirror_payload(&db, json, "user", None).unwrap();

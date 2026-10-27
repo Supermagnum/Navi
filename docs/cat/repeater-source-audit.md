@@ -1,6 +1,8 @@
 # Repeater source audit
 
-Read-only audit of what CAT stores after the real importers run. No rule was changed.
+The tables in sections 1a–1f are the before state, measured on `dad2b3a9b`. Section "After the source-handling fix" is the same data imported again on `833a61b29`, plus the DCS string read found by that re-run.
+
+Read-only audit of what CAT stores after the real importers run. No rule was changed in the before measurement.
 
 Catalog fetched from `https://navigate-me.duckdns.org/repeaters/current.json` (catalog generation `20261021T033207Z`). Country bundles were decompressed and passed through `import_mirror_payload`. The KML files and the one CSV in the local repeater folder were passed through `parse_kml_bytes`, `parse_csv_bytes`, and `merge_records`. Installed map packs are not a repeater source: nothing in the app reads `amateur_radio` tags out of a pack.
 
@@ -181,3 +183,40 @@ What the code does instead:
 9. Consensus relocation is not implemented. The README line does not describe a code path.
 
 SE, DK, and DE have no OSM payload, so "OSM is the source of truth" cannot be applied there with this catalog.
+
+## After the source-handling fix
+
+Same catalog and the same local files, imported by `import_mirror_payload` and `merge_directory_into` after `833a61b29`. The DCS code in the Norway bundle is the string `"125"`, not a number. The first re-run stored that row with access unknown. The importer now accepts a numeric string. The counts below include that read. `list_sites` still hides APRS, so mode rows sum to 383. `count_sites` is the table, including APRS.
+
+| What | Before | After |
+|---|---|---|
+| OSM source tag | `User` | `Osm` |
+| OSM rows stored | 665 handed in, collapsed by callsign (389 callsigns; 232 left after the APRS filter) | 665 stored. One published record has no callsign and is skipped. No further collapse |
+| `LA5MR` at 145.625 MHz | 1 stored row | 5 stored rows, including nodes `1705107664` and `12635462528` |
+| OSM CTCSS rows visible in `list_sites` | 0 | 212 |
+| OSM DCS rows | 0 | 1 (`LD1FR`, node `14266941716`, code 125) |
+| OSM 1750 Hz burst | not read | 54, stored as burst, CTCSS empty |
+| OSM shift left unknown | stored as 0 | 12 visible rows have no shift. It is not written as 0 |
+| OSM rows with a network | 0 | 32 rows, 5 names: Agder net, Bergen-voss, Fylkesnettet, LA5MR, Sandnes net |
+| RadioID NO | 90 own rows, never matched | 41 folded into an OSM row, 49 kept as RadioID |
+| RadioID SE / DK / DE | 164 / 104 / 756 | 164 / 104 / 756 (no OSM bundle to match) |
+| `LD1OA` 434.8875 MHz | separate from OSM node `14266844182` (1.3 m) | 1 row, source `Osm`, latitude 59.9800956 |
+| CSV `repeaters_merged.csv` | rejected (no `tx` column) | 402 read, 399 placed, 38 of them 1750 Hz burst, 162 added, 153 merged, 82 override notes, 4 rejected, 1 without a position |
+| Norway KML `repeaters_2610270617.kml` | 205 placemarks, 200 stored, 0 merged | 204 rows after the within-file duplicate drop: 78 merged, 60 added, 61 override notes, 5 rejected |
+| Sweden KML | 359 placemarks, 355 stored, 0 merged | 347 rows after that drop: 317 added, 26 override notes, 4 rejected |
+| Denmark KML | 139 placemarks, 139 stored, 0 merged | 138 rows after that drop: 133 added, 5 override notes |
+| Germany KML files | 1603 placemarks in the largest file, 1596 stored across the files, 0 merged | 1596 rows after that drop across the four files: 1258 added, 331 override notes, 7 rejected |
+| "position differs from OSM" notes | not produced | 61 across the file import |
+| Rows with access 1750 Hz burst after OSM and the files | 0 | 183 |
+| File rows after a server apply | deleted | rebuilt from the drop folder in the same staging swap |
+| Dropdown radius | 100 km after a 150 km query | 150 km, the same value follow uses |
+| Dropdown networks on this bundle | none (`network_id` empty) | the 5 FM network names, plus Nearest network (auto), Standalone repeaters (nearest), and Off / manual |
+| Consensus relocation | no code | implemented, default off. An OSM row is not moved |
+
+Norway KML merged into OSM where callsign, output frequency within 12.5 kHz, and position within 1 km all held. A field that differed is named on the override note. A file row more than 1 km from every OSM site of that callsign stayed a separate row. Outside Norway, RadioID was left as its own row except where a file matched it. Sweden, Denmark, and Germany have no OSM bundle, so their file rows were not moved onto an OSM position.
+
+`LD1OA` did not match before because RadioID was never compared with OSM, and the OSM row was source `User`, which the file matcher ignored. The frequency difference is 0 and the positions are 1.3 m apart, so the new key matches. The stored position is the OSM node's.
+
+navi-server does not drop CTCSS, DCS, 1750 Hz, shift, or LA5MR relation membership. Those were dropped in the app, and the app reads them now. The published bundle still omits non-radio tags the consensus target wants: `man_made`, `tower:type`, `ele`, and `height`. The exporter is not in the local navi-server checkout, so this audit cannot name its function. LA5MR follow uses the relation name, which the bundle keeps. Consensus therefore uses a DEM peak unless a caller supplies a structure. A missing DEM tile does not move the row.
+
+The code matches the section 1 rules on this data. The re-audit gate does not stop here.
