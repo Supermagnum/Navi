@@ -29,6 +29,8 @@ data class RouteProgressSnapshot(
      * not treat the nearest-sample snap as trustworthy corridor progress.
      */
     val offRoute: Boolean = false,
+    /** Index into the planned sample chain from the global nearest-sample search. */
+    val snapIndex: Int = -1,
 )
 
 /**
@@ -63,6 +65,8 @@ class RouteProgressTracker(
 
     fun maneuverCount(): Int = maneuvers.size
 
+    fun offRouteThresholdMetres(): Double = offRouteThresholdM
+
     fun reset() {
         maneuverCursor = 0
         viaReached = -1
@@ -88,6 +92,7 @@ class RouteProgressTracker(
                 bearingDeg = 0.0,
                 crossTrackM = Double.POSITIVE_INFINITY,
                 offRoute = true,
+                snapIndex = -1,
             )
         }
         val nearest = nearestSampleIndex(lat, lon)
@@ -120,6 +125,7 @@ class RouteProgressTracker(
                 bearingDeg = 0.0,
                 crossTrackM = crossTrack,
                 offRoute = true,
+                snapIndex = nearest,
             )
         }
 
@@ -163,6 +169,7 @@ class RouteProgressTracker(
             bearingDeg = bearing,
             crossTrackM = crossTrack,
             offRoute = false,
+            snapIndex = nearest,
         )
     }
 

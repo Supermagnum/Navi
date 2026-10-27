@@ -67,6 +67,25 @@ data class SensorFrame(
     val forwardAccelMps2: Double? = null,
 )
 
+/**
+ * Read-only dead-reckoning state for diagnostics.
+ *
+ * [standstill] is null because [DeadReckoningEngine] has no zero-velocity
+ * detector. Callers must not treat null as "moving".
+ */
+data class DrDiagSnapshot(
+    val mode: DrMode,
+    val seedLat: Double?,
+    val seedLon: Double?,
+    val seedKind: String,
+    val integratedM: Double,
+    val speedMps: Double,
+    val bearingDeg: Double,
+    val alongM: Double,
+    val blending: Boolean,
+    val standstill: Boolean?,
+)
+
 /** Polyline constraint (active route or a single graph-edge chain). */
 data class DrConstraint(
     val samples: List<RouteSimSample>,
@@ -109,7 +128,30 @@ class DeadReckoningEngine(
     private var pendingExitErrorM: Double? = null
     private var lastExitErrorM: Double? = null
 
+    /** Captured at [enterEstimating]. Not a positioning input. */
+    private var seedLat: Double? = null
+    private var seedLon: Double? = null
+    private var seedKind: String = "none"
+
     fun mode(): DrMode = mode
+
+    /**
+     * Read-only snapshot for location diagnostics. Does not alter integration.
+     * [DrDiagSnapshot.standstill] is null: this engine has no zero-velocity detector.
+     */
+    fun diagSnapshot(): DrDiagSnapshot =
+        DrDiagSnapshot(
+            mode = mode,
+            seedLat = seedLat,
+            seedLon = seedLon,
+            seedKind = seedKind,
+            integratedM = drDistanceM,
+            speedMps = estSpeedMps,
+            bearingDeg = estBearingDeg,
+            alongM = estAlongM,
+            blending = blending,
+            standstill = null,
+        )
 
     fun lastExitErrorM(): Double? = lastExitErrorM
 
@@ -129,6 +171,9 @@ class DeadReckoningEngine(
         blending = false
         pendingExitErrorM = null
         lastExitErrorM = null
+        seedLat = null
+        seedLon = null
+        seedKind = "none"
     }
 
     /**
@@ -272,6 +317,9 @@ class DeadReckoningEngine(
         drStartedMs = tMs
         drDistanceM = 0.0
         lastTickMs = tMs
+        seedLat = seed.lat
+        seedLon = seed.lon
+        seedKind = if (lastGoodGps != null) "last_good_gps" else "last_any_gps"
         estLat = seed.lat
         estLon = seed.lon
         if (seed.speedMps != null && seed.speedMps.isFinite() && seed.speedMps > 0.0) {
