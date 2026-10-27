@@ -445,6 +445,7 @@ class StandstillSimulatedDriveTest {
         accelBiasMps2: Double = 0.0,
         assertPass: Boolean,
         idleVibAfterLatch: Boolean = false,
+        biasAtMs: ((Long) -> Double)? = null,
     ): RunResult {
         val engine = DeadReckoningEngine()
         val shadow = StandstillShadowGate()
@@ -472,7 +473,7 @@ class StandstillSimulatedDriveTest {
                     tMs = t.coerceAtLeast(0L) + 50L,
                     headingDeg = seed.bearingDeg,
                     yawRateDegPerS = 0.1,
-                    forwardAccelMps2 = 0.0 + accelBiasMps2,
+                    forwardAccelMps2 = 0.0 + (biasAtMs?.invoke(t.coerceAtLeast(0L)) ?: accelBiasMps2),
                 ),
                 road,
             )
@@ -526,7 +527,7 @@ class StandstillSimulatedDriveTest {
                     headingDeg = s.bearingDeg,
                     yawRateDegPerS = s.yawRateDegPerS + yawNoise,
                     forwardAccelMps2 =
-                        s.forwardAccelMps2 + vib + accelBiasMps2 + idleSign * idleVib,
+                        s.forwardAccelMps2 + vib + (biasAtMs?.invoke(s.tMs) ?: accelBiasMps2) + idleSign * idleVib,
                 )
 
             // Network 100 m every 20 s.
@@ -1040,6 +1041,48 @@ class StandstillSimulatedDriveTest {
                     "latch=${gentle.latchDelayAfterStopMs} creep=${fmt(gentle.maxStopCreepM)}",
             )
         }
+
+        // Bias drifts from 0 to -0.1 m/s² over 10 min, starting at t = 0,
+        // which is on the approach before the first tunnel. Reported even
+        // when the steady exit is outside the constant-bias limit. The crawl
+        // phase still has to stay within 50 m.
+        val rampMs = 10.0 * 60.0 * 1000.0
+        val ramp: (Long) -> Double = { t ->
+            -0.1 * (t.coerceAtLeast(0L).toDouble() / rampMs).coerceAtMost(1.0)
+        }
+        for (speed in listOf(50.0, 80.0)) {
+            val drifted =
+                runScenario(
+                    name = "steady_${speed.toInt()}_drift",
+                    road = road,
+                    truth = profileSteady(road, speed),
+                    vibrationRms = 0.15,
+                    biasAtMs = ramp,
+                    assertPass = true,
+                )
+            report.appendLine(
+                "drift_steady speed=$speed exit=${fmt(drifted.exitErrorM)} " +
+                    "lead_lag=${fmt(drifted.maxLeadLagM)} phases=${fmtPhases(drifted.phaseLeadLagM)}",
+            )
+        }
+        val driftCrawl =
+            runScenario(
+                name = "crawl_drift",
+                road = road,
+                truth = profileCrawl(road),
+                vibrationRms = 0.15,
+                biasAtMs = ramp,
+                assertPass = true,
+            )
+        val driftCrawlPhase = driftCrawl.phaseLeadLagM["crawl"]
+        report.appendLine(
+            "drift_crawl phase=${fmt(driftCrawlPhase)} exit=${fmt(driftCrawl.exitErrorM)} " +
+                "jump=${fmt(driftCrawl.crawlExitJumpM)} phases=${fmtPhases(driftCrawl.phaseLeadLagM)}",
+        )
+        assertTrue(
+            "drifting-bias crawl phase $driftCrawlPhase",
+            driftCrawlPhase != null && kotlin.math.abs(driftCrawlPhase) <= 50.0,
+        )
 
         println(report.toString())
         assertTrue(report.contains("Lærdalstunnelen"))
