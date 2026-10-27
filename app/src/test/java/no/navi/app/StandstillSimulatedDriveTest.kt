@@ -39,16 +39,18 @@ class StandstillSimulatedDriveTest {
     data class RunResult(
         val name: String,
         val vibrationRms: Double,
+        val accelBiasMps2: Double,
         val falseLatchWhileMoving: Boolean,
-        /** Shadow would-latch while true speed > 2 (speed treated as missing). */
         val shadowFalseLatchWhileMoving: Boolean,
         val latchDelayAfterStopMs: Long?,
         val releaseDelayAfterPullMs: Long?,
         val maxStopCreepM: Double,
         val exitErrorM: Double?,
         val crawlLagM: Double?,
-        /** Along-track jump at tunnel exit after crawl, if any. */
         val crawlExitJumpM: Double?,
+        /** Max est−truth along inside the first tunnel (lead +, lag −). */
+        val maxLeadLagM: Double,
+        val stayedLatchedUnderIdleVib: Boolean?,
     )
 
     /** Public test origin (Oslo Opera plaza). Test data only. */
@@ -64,6 +66,9 @@ class StandstillSimulatedDriveTest {
     /** Typical car cabin vibration RMS steps (m/s²), then near-zero / sensor noise. */
     private val vibrationSteps =
         listOf(0.40, 0.25, 0.15, 0.08, 0.04, 0.02, 0.005)
+
+    private val accelBiases =
+        listOf(0.0, 0.02, -0.02, 0.05, -0.05, 0.1, -0.1)
 
     private fun buildRoute(): DrConstraint {
         val samples = mutableListOf<RouteSimSample>()
@@ -152,37 +157,42 @@ class StandstillSimulatedDriveTest {
     ): List<TrueState> {
         val ranges = tunnelRanges(road)
         val stopAlong = (ranges.first().first + ranges.first().second) / 2.0
+        val cruise = cruiseKmh / 3.6
         val out = mutableListOf<TrueState>()
         var t = 0L
         var along = 0.0
-        var speed = cruiseKmh / 3.6
-        var stoppedFor = 0L
-        var pulling = false
+        var speed = cruise
+        var phase = 0 // 0 cruise, 1 brake, 2 stop, 3 pull
+        var stopTicks = 0
         val end = ranges.first().second + 200.0
-        while (along < end) {
-            when {
-                !pulling && along >= stopAlong && stoppedFor < 60_000L -> {
+        while (along < end && t < 900_000L) {
+            val accel: Double
+            when (phase) {
+                0 -> {
+                    accel = 0.0
+                    speed = cruise
+                    along += speed * 0.1
+                    if (along >= stopAlong - (cruise * cruise) / 4.0 - 40.0) phase = 1
+                }
+                1 -> {
+                    accel = -2.0
+                    speed = (speed + accel * 0.1).coerceAtLeast(0.0)
+                    along += speed * 0.1
+                    if (speed <= 0.05 || along >= stopAlong) {
+                        speed = 0.0
+                        along = along.coerceAtMost(stopAlong)
+                        phase = 2
+                    }
+                }
+                2 -> {
+                    accel = if (stopTicks < 15) -2.0 else 0.0
                     speed = 0.0
-                    stoppedFor += 100L
-                }
-                !pulling && along >= stopAlong && stoppedFor >= 60_000L -> {
-                    pulling = true
-                    speed = 1.5
-                }
-                pulling && speed < cruiseKmh / 3.6 -> {
-                    speed = (speed + 1.2 * 0.1).coerceAtMost(cruiseKmh / 3.6)
-                    along += speed * 0.1
-                }
-                along < stopAlong - 30.0 -> {
-                    speed = cruiseKmh / 3.6
-                    along += speed * 0.1
-                }
-                along < stopAlong -> {
-                    speed = (speed - 2.0 * 0.1).coerceAtLeast(0.0)
-                    along += speed * 0.1
+                    stopTicks++
+                    if (stopTicks >= 600) phase = 3 // 60 s
                 }
                 else -> {
-                    speed = cruiseKmh / 3.6
+                    accel = 2.5
+                    speed = (speed + accel * 0.1).coerceAtMost(cruise)
                     along += speed * 0.1
                 }
             }
@@ -199,16 +209,9 @@ class StandstillSimulatedDriveTest {
                     lon = p.lon,
                     bearingDeg = p.bearingDeg,
                     yawRateDegPerS = 0.0,
-                    forwardAccelMps2 =
-                        when {
-                            stoppedFor in 1..60_000L && !pulling -> 0.0
-                            pulling && speed < cruiseKmh / 3.6 -> 1.2
-                            along < stopAlong && along > stopAlong - 30.0 -> -2.0
-                            else -> 0.0
-                        },
+                    forwardAccelMps2 = accel,
                 )
             t += 100L
-            if (t > 900_000L) break
         }
         return out
     }
@@ -220,19 +223,27 @@ class StandstillSimulatedDriveTest {
         var t = 0L
         var along = 0.0
         var speed = 80.0 / 3.6
-        val end = mid + 400.0
-        while (along < end) {
-            val cycle = ((t / 1000L) % 20L).toInt()
+        val end = mid + 600.0
+        // Long enough phases: cruise 10 s, brake+stop 15 s, pull 10 s.
+        while (along < end && t < 900_000L) {
+            val cycle = ((t / 1000L) % 35L).toInt()
             val target =
                 when {
-                    cycle < 8 -> 80.0 / 3.6
-                    cycle < 12 -> 0.0
+                    cycle < 10 -> 80.0 / 3.6
+                    cycle < 25 -> 0.0
                     else -> 40.0 / 3.6
                 }
-            val accel = ((target - speed) / 0.5).coerceIn(-2.5, 2.5)
+            val accel =
+                when {
+                    target <= 0.05 && speed > 0.05 -> -2.0
+                    target <= 0.05 -> 0.0
+                    speed < target - 0.2 -> 2.5
+                    else -> 0.0
+                }
             speed = (speed + accel * 0.1).coerceAtLeast(0.0)
+            if (target <= 0.05 && speed < 0.05) speed = 0.0
             along += speed * 0.1
-            val p = DeadReckoningEngine.pointAtAlong(road, along)
+            val p = DeadReckoningEngine.pointAtAlong(road, along.coerceAtMost(road.samples.last().cumM))
             val inTunnel = road.samples.minByOrNull { kotlin.math.abs(it.cumM - along) }?.isTunnel == true
             out +=
                 TrueState(
@@ -263,18 +274,33 @@ class StandstillSimulatedDriveTest {
         var crawledFor = 0L
         val end = ranges.first().second + 200.0
         while (along < end) {
+            val accel: Double
             when {
                 along < crawlStartAlong -> {
+                    accel = 0.0
                     speed = cruiseMps
                     along += speed * 0.1
                 }
                 crawledFor < 60_000L -> {
-                    speed = crawlMps
+                    // Brake into the crawl, then hold constant (no further accel).
+                    accel =
+                        if (speed > crawlMps + 0.2) {
+                            ((crawlMps - speed) / 0.8).coerceIn(-2.5, 0.0)
+                        } else {
+                            0.0
+                        }
+                    speed = (speed + accel * 0.1).coerceAtLeast(crawlMps)
                     along += speed * 0.1
                     crawledFor += 100L
                 }
                 else -> {
-                    speed = cruiseMps
+                    accel =
+                        if (speed < cruiseMps - 0.2) {
+                            2.5
+                        } else {
+                            0.0
+                        }
+                    speed = (speed + accel * 0.1).coerceAtMost(cruiseMps)
                     along += speed * 0.1
                 }
             }
@@ -291,13 +317,16 @@ class StandstillSimulatedDriveTest {
                     lon = p.lon,
                     bearingDeg = p.bearingDeg,
                     yawRateDegPerS = 0.0,
-                    forwardAccelMps2 = 0.0,
+                    forwardAccelMps2 = accel,
                 )
             t += 100L
             if (t > 900_000L) break
         }
         return out
     }
+
+    /** Queue stop then idle cabin vibration while latched (engine running). */
+    private fun profileQueueThenIdleVib(road: DrConstraint): List<TrueState> = profileQueueInTunnel(road, 80.0)
 
     private fun profileStopAfterExit(road: DrConstraint): List<TrueState> {
         val ranges = tunnelRanges(road)
@@ -402,26 +431,41 @@ class StandstillSimulatedDriveTest {
         road: DrConstraint,
         truth: List<TrueState>,
         vibrationRms: Double,
+        accelBiasMps2: Double = 0.0,
         assertPass: Boolean,
+        idleVibAfterLatch: Boolean = false,
     ): RunResult {
         val engine = DeadReckoningEngine()
         val shadow = StandstillShadowGate()
         val ranges = tunnelRanges(road)
         val firstTunnel = ranges.first()
 
-        // Seed outside the first tunnel.
+        // Seed outside the first tunnel with a short GNSS approach so the
+        // forward-axis correlator sees a speed history.
         val seed = truth.first { it.alongM < firstTunnel.first - 50.0 }
-        engine.onGps(
-            GpsSample(
-                tMs = seed.tMs,
-                lat = seed.lat,
-                lon = seed.lon,
-                accuracyM = 5f,
-                speedMps = seed.speedMps,
-                bearingDeg = seed.bearingDeg,
-            ),
-            road,
-        )
+        for (k in 0..5) {
+            val t = seed.tMs - (6 - k) * 200L
+            engine.onGps(
+                GpsSample(
+                    tMs = t.coerceAtLeast(0L),
+                    lat = seed.lat,
+                    lon = seed.lon,
+                    accuracyM = 5f,
+                    speedMps = seed.speedMps,
+                    bearingDeg = seed.bearingDeg,
+                ),
+                road,
+            )
+            engine.onSensorTick(
+                SensorFrame(
+                    tMs = t.coerceAtLeast(0L) + 50L,
+                    headingDeg = seed.bearingDeg,
+                    yawRateDegPerS = 0.1,
+                    forwardAccelMps2 = 0.0 + accelBiasMps2,
+                ),
+                road,
+            )
+        }
 
         var falseLatch = false
         var shadowFalseLatch = false
@@ -439,25 +483,36 @@ class StandstillSimulatedDriveTest {
         var lastGnssSpeed: Double? = seed.speedMps
         var lastGnssAcc: Float? = 5f
         var wasStopped = false
+        var maxLeadLag = 0.0
+        var stayedLatchedUnderIdleVib: Boolean? = null
+        var idlePhase = false
+        var stopCyclesOk = 0
+        var stopCyclesBad = 0
+        var cycleStopStart: Long? = null
+        var cycleLatched = false
+        var cycleReleased = false
 
         for ((i, s) in truth.withIndex()) {
-            // Cabin vibration near the requested RMS (not zero-mean). Zero-mean
-            // noise dips under the accel gate for >1 s and false-triggers the
-            // shadow latch at every step; a real mount has a sustained floor.
-            val vibMag =
-                vibrationRms *
-                    (
-                        0.75 + 0.25 * ((noise(1, i) + 1.0) / 2.0) +
-                            0.15 * sin(i * 0.37)
-                    ).coerceAtLeast(0.0)
-            val vib = if (noise(9, i) < 0.0) -vibMag else vibMag
+            // Zero-mean cabin vibration at the requested RMS. Braking-aware
+            // latch does not false-trigger on quiet dips; a non-zero mean would
+            // bias the integrated brake and delay the stop.
+            val vib =
+                vibrationRms * (0.85 * noise(1, i) + 0.15 * sin(i * 0.37))
             val yawNoise = (0.3 + vibrationRms * 3.0) * noise(2, i)
+            val idleVib =
+                if (idlePhase) {
+                    0.05 + 0.10 * ((noise(11, i) + 1.0) / 2.0)
+                } else {
+                    0.0
+                }
+            val idleSign = if (noise(12, i) < 0.0) -1.0 else 1.0
             val frame =
                 SensorFrame(
                     tMs = s.tMs,
                     headingDeg = s.bearingDeg,
                     yawRateDegPerS = s.yawRateDegPerS + yawNoise,
-                    forwardAccelMps2 = s.forwardAccelMps2 + vib,
+                    forwardAccelMps2 =
+                        s.forwardAccelMps2 + vib + accelBiasMps2 + idleSign * idleVib,
                 )
 
             // Network 100 m every 20 s.
@@ -540,39 +595,79 @@ class StandstillSimulatedDriveTest {
             val along = out.alongM ?: lastAlong
             lastAlong = along
             val liveStandstill = engine.diagSnapshot().standstill == true
-            // Reported GNSS 0 holds speed without needing the IMU gate (GPS mode
-            // never runs observeImu). Count either as a successful latch.
-            val heldStopped = liveStandstill || out.speedMps < 0.05
+            // While truth is still stopped, a near-zero estimate also counts as
+            // held. Once truth pulls away, only the standstill flag matters so
+            // a post-release speed of 0 (restarting from rest) is not "held".
+            val heldStopped =
+                liveStandstill ||
+                    (s.speedMps < 0.3 && out.speedMps < 0.05)
 
-            if (s.trueMoving() && shadowSample.state == StandstillShadowGate.State.WouldLatch) {
-                // Shadow pretends GNSS speed is missing — this is the vibration
-                // margin for the gate thresholds themselves.
+            if (s.inTunnel) {
+                val leadLag = along - s.alongM
+                if (kotlin.math.abs(leadLag) > kotlin.math.abs(maxLeadLag)) {
+                    maxLeadLag = leadLag
+                }
+            }
+
+            if (
+                s.trueMoving() &&
+                s.forwardAccelMps2 > -0.5 &&
+                shadowSample.state == StandstillShadowGate.State.WouldLatch
+            ) {
                 shadowFalseLatch = true
             }
-            if (out.speedMps < 0.05 && s.speedMps > 2.0 && liveStandstill) {
+            // Standstill while truth is still braking into a stop is expected
+            // briefly; count a false latch only during non-braking motion.
+            if (liveStandstill && s.speedMps > 2.0 && s.forwardAccelMps2 > -0.5) {
                 falseLatch = true
             }
 
             if (s.speedMps < 0.3) {
                 if (!wasStopped) {
                     wasStopped = true
-                    stopStartMs = s.tMs
+                    stopStartMs = stopStartMs ?: s.tMs
                     stopAlong = along
-                    latchAtMs = null
+                    if (latchAtMs == null) {
+                        // first stop only for latchDelay
+                    }
+                    cycleStopStart = s.tMs
+                    cycleLatched = false
+                    cycleReleased = false
                 }
-                if (heldStopped && latchAtMs == null) {
-                    latchAtMs = s.tMs
+                if (heldStopped) {
+                    if (latchAtMs == null) latchAtMs = s.tMs
+                    cycleLatched = true
+                    if (idleVibAfterLatch && liveStandstill && !idlePhase) {
+                        idlePhase = true
+                        stayedLatchedUnderIdleVib = true
+                    }
+                }
+                if (idlePhase && !liveStandstill) {
+                    stayedLatchedUnderIdleVib = false
                 }
                 val creep = kotlin.math.abs(along - (stopAlong ?: along))
                 if (creep > maxCreep) maxCreep = creep
             } else {
                 if (wasStopped) {
                     wasStopped = false
+                    idlePhase = false
                     if (pullStartMs == null) pullStartMs = s.tMs
+                    if (cycleStopStart != null) {
+                        if (cycleLatched && cycleReleased) {
+                            stopCyclesOk++
+                        } else if (cycleLatched && !heldStopped) {
+                            cycleReleased = true
+                            stopCyclesOk++
+                        } else {
+                            stopCyclesBad++
+                        }
+                    }
+                    cycleStopStart = null
                 }
-                if (pullStartMs != null && !heldStopped && releaseAtMs == null) {
+                if (pullStartMs != null && !liveStandstill && releaseAtMs == null) {
                     releaseAtMs = s.tMs
                 }
+                if (!liveStandstill) cycleReleased = true
             }
 
             // Exit error after first tunnel.
@@ -612,22 +707,52 @@ class StandstillSimulatedDriveTest {
             }
 
         if (assertPass) {
-            assertFalse("$name false latch at vib=$vibrationRms", falseLatch)
-            // Stop latch/release are reported even when the live gate keeps a
-            // stale pre-tunnel GNSS speed (coasting). That case is a known
-            // limitation — see the simulated-drive report — not a hard fail here.
-            if (stopStartMs != null && latchDelay != null) {
-                assertTrue("$name latch delay $latchDelay", latchDelay <= 2_000L)
-                assertTrue("$name creep $maxCreep", maxCreep <= 1.0)
+            assertFalse(
+                "$name false latch vib=$vibrationRms bias=$accelBiasMps2",
+                falseLatch,
+            )
+            assertFalse(
+                "$name shadow false latch vib=$vibrationRms bias=$accelBiasMps2",
+                shadowFalseLatch,
+            )
+            if (name.startsWith("queue") || name == "stop_after_exit") {
+                assertTrue(
+                    "$name must latch: delay=$latchDelay creep=$maxCreep",
+                    latchDelay != null && latchDelay <= 2_000L,
+                )
+                val creepLimit = if (name == "stop_after_exit") 1.0 else 5.0
+                assertTrue("$name creep $maxCreep", maxCreep <= creepLimit)
             }
-            if (pullStartMs != null && releaseDelay != null) {
-                assertTrue("$name release delay $releaseDelay", releaseDelay <= 1_000L)
+            if (name.startsWith("queue")) {
+                assertTrue(
+                    "$name release $releaseDelay",
+                    releaseDelay != null && releaseDelay <= 1_000L,
+                )
+            }
+            if (name.startsWith("stop_go")) {
+                assertTrue(
+                    "$name must latch and release: latch=$latchDelay release=$releaseDelay " +
+                        "cyclesOk=$stopCyclesOk",
+                    latchDelay != null &&
+                        latchDelay <= 2_000L &&
+                        releaseDelay != null &&
+                        releaseDelay <= 1_000L,
+                )
+            }
+            if (idleVibAfterLatch) {
+                // Position must stay held under engine-idle vibration; the
+                // standstill flag may clear briefly if vib crosses pull-away.
+                assertTrue(
+                    "$name idle vib creep $maxCreep stayed=$stayedLatchedUnderIdleVib",
+                    maxCreep <= 5.0,
+                )
             }
         }
 
         return RunResult(
             name = name,
             vibrationRms = vibrationRms,
+            accelBiasMps2 = accelBiasMps2,
             falseLatchWhileMoving = falseLatch,
             shadowFalseLatchWhileMoving = shadowFalseLatch,
             latchDelayAfterStopMs = latchDelay,
@@ -636,6 +761,8 @@ class StandstillSimulatedDriveTest {
             exitErrorM = exitError,
             crawlLagM = crawlLag,
             crawlExitJumpM = crawlExitJump,
+            maxLeadLagM = maxLeadLag,
+            stayedLatchedUnderIdleVib = stayedLatchedUnderIdleVib,
         )
     }
 
@@ -717,104 +844,92 @@ class StandstillSimulatedDriveTest {
         val report = StringBuilder()
         report.appendLine("route=Raufoss→Bergen (timing_raufoss_bergen) shortened slice")
         report.appendLine("tunnels=${tunnels.joinToString { "${it.name}@${it.lengthM / 1000.0}km" }}")
+        report.appendLine(
+            "thresholds: standstillAccel=${DrConfig().standstillAccelMps2} " +
+                "brakeAccel=${DrConfig().brakeAccelMps2} " +
+                "standstillSpeed=${DrConfig().standstillSpeedMps} " +
+                "holdMs=${DrConfig().standstillHoldMs} " +
+                "trustTauS=${DrConfig().speedTrustTauS} " +
+                "lossTimeoutMs=${DrConfig().gpsLossTimeoutMs}",
+        )
 
-        val steadyResults = mutableListOf<RunResult>()
         for (speed in listOf(50.0, 80.0, 100.0)) {
             for (vib in vibrationSteps) {
-                val r =
-                    runScenario(
-                        name = "steady_${speed.toInt()}",
-                        road = road,
-                        truth = profileSteady(road, speed),
-                        vibrationRms = vib,
-                        assertPass = false,
+                for (bias in accelBiases) {
+                    val r =
+                        runScenario(
+                            name = "steady_${speed.toInt()}",
+                            road = road,
+                            truth = profileSteady(road, speed),
+                            vibrationRms = vib,
+                            accelBiasMps2 = bias,
+                            assertPass = true,
+                        )
+                    report.appendLine(
+                        "steady speed=$speed vib=$vib bias=$bias " +
+                            "false=${r.falseLatchWhileMoving} shadow_false=${r.shadowFalseLatchWhileMoving} " +
+                            "lead_lag=${fmt(r.maxLeadLagM)} exit=${fmt(r.exitErrorM)}",
                     )
-                steadyResults += r
+                }
+            }
+        }
+
+        for (vib in vibrationSteps) {
+            for (bias in accelBiases) {
+                val queue =
+                    runScenario(
+                        name = "queue",
+                        road = road,
+                        truth = profileQueueInTunnel(road, 80.0),
+                        vibrationRms = vib,
+                        accelBiasMps2 = bias,
+                        assertPass = true,
+                    )
                 report.appendLine(
-                    "steady speed=$speed vib=$vib live_false=${r.falseLatchWhileMoving} " +
-                        "shadow_false=${r.shadowFalseLatchWhileMoving} " +
-                        "exit_err=${r.exitErrorM?.let { String.format(Locale.US, "%.1f", it) }}",
+                    "queue vib=$vib bias=$bias latch=${queue.latchDelayAfterStopMs} " +
+                        "release=${queue.releaseDelayAfterPullMs} creep=${fmt(queue.maxStopCreepM)} " +
+                        "lead_lag=${fmt(queue.maxLeadLagM)} exit=${fmt(queue.exitErrorM)}",
                 )
             }
         }
 
-        // Safety margin from the shadow gate (speed treated as missing): lowest
-        // vib that never would-latch on the straight tunnel at each speed.
-        for (speed in listOf(50.0, 80.0, 100.0)) {
-            val rows = steadyResults.filter { it.name == "steady_${speed.toInt()}" }
-            val safe =
-                rows.filter { !it.shadowFalseLatchWhileMoving }.minByOrNull { it.vibrationRms }
-            val unsafe =
-                rows.filter { it.shadowFalseLatchWhileMoving }.maxByOrNull { it.vibrationRms }
+        for (bias in accelBiases) {
+            val stopGo =
+                runScenario(
+                    name = "stop_go",
+                    road = road,
+                    truth = profileStopAndGo(road),
+                    vibrationRms = 0.15,
+                    accelBiasMps2 = bias,
+                    assertPass = true,
+                )
             report.appendLine(
-                "margin_straight speed=$speed lowest_safe_vib=${safe?.vibrationRms} " +
-                    "highest_shadow_false_vib=${unsafe?.vibrationRms}",
+                "stop_go bias=$bias latch=${stopGo.latchDelayAfterStopMs} " +
+                    "release=${stopGo.releaseDelayAfterPullMs} creep=${fmt(stopGo.maxStopCreepM)} " +
+                    "lead_lag=${fmt(stopGo.maxLeadLagM)}",
             )
-            // Live gate must not false-latch at realistic car vibration (coasting
-            // plus vib). Shadow may latch near-zero vib — that is the margin.
-            val realistic = rows.filter { it.vibrationRms >= 0.15 }
-            val liveBad = realistic.filter { it.falseLatchWhileMoving }
+        }
+
+        for (bias in accelBiases) {
+            val crawl =
+                runScenario(
+                    name = "crawl",
+                    road = road,
+                    truth = profileCrawl(road),
+                    vibrationRms = 0.15,
+                    accelBiasMps2 = bias,
+                    assertPass = true,
+                )
+            report.appendLine(
+                "crawl bias=$bias lag=${fmt(crawl.crawlLagM)} lead_lag=${fmt(crawl.maxLeadLagM)} " +
+                    "exit=${fmt(crawl.exitErrorM)} jump=${fmt(crawl.crawlExitJumpM)} " +
+                    "latch=${crawl.latchDelayAfterStopMs}",
+            )
             assertTrue(
-                "live false latch at realistic vib for ${speed.toInt()} km/h: $liveBad",
-                liveBad.isEmpty(),
-            )
-            val shadowBad = realistic.filter { it.shadowFalseLatchWhileMoving }
-            if (shadowBad.isNotEmpty()) {
-                report.appendLine(
-                    "FINDING: shadow false-latch at realistic vib>=0.15 for " +
-                        "${speed.toInt()} km/h (do not change thresholds this round): " +
-                        shadowBad.joinToString { "vib=${it.vibrationRms}" },
-                )
-            }
-        }
-
-        val queue =
-            runScenario(
-                name = "queue",
-                road = road,
-                truth = profileQueueInTunnel(road, 80.0),
-                vibrationRms = 0.15,
-                assertPass = false,
-            )
-        report.appendLine(
-            "queue latch=${queue.latchDelayAfterStopMs} release=${queue.releaseDelayAfterPullMs} " +
-                "creep=${queue.maxStopCreepM} false=${queue.falseLatchWhileMoving}",
-        )
-        if (queue.latchDelayAfterStopMs == null) {
-            report.appendLine(
-                "FINDING: tunnel queue did not latch. Live gate keeps last GNSS speed " +
-                    "while coasting, so a quiet stop inside a tunnel after driving never " +
-                    "zero-velocity-updates. Proposed later change: clear lastGnssSpeedMps " +
-                    "when GNSS becomes unavailable (do not apply in this round).",
+                "crawl lead/lag too large: ${crawl.maxLeadLagM}",
+                kotlin.math.abs(crawl.maxLeadLagM) < 2_000.0,
             )
         }
-
-        val stopGo =
-            runScenario(
-                name = "stop_go",
-                road = road,
-                truth = profileStopAndGo(road),
-                vibrationRms = 0.15,
-                assertPass = false,
-            )
-        report.appendLine(
-            "stop_go latch=${stopGo.latchDelayAfterStopMs} release=${stopGo.releaseDelayAfterPullMs} " +
-                "creep=${stopGo.maxStopCreepM}",
-        )
-
-        val crawl =
-            runScenario(
-                name = "crawl",
-                road = road,
-                truth = profileCrawl(road),
-                vibrationRms = 0.15,
-                assertPass = false,
-            )
-        report.appendLine(
-            "crawl lag_m=${crawl.crawlLagM} shadow_false=${crawl.shadowFalseLatchWhileMoving} " +
-                "exit_err=${crawl.exitErrorM} exit_jump=${crawl.crawlExitJumpM} " +
-                "live_latch=${crawl.latchDelayAfterStopMs}",
-        )
 
         val afterExit =
             runScenario(
@@ -822,25 +937,46 @@ class StandstillSimulatedDriveTest {
                 road = road,
                 truth = profileStopAfterExit(road),
                 vibrationRms = 0.15,
-                assertPass = false,
+                accelBiasMps2 = 0.0,
+                assertPass = true,
             )
         report.appendLine(
-            "stop_after_exit latch=${afterExit.latchDelayAfterStopMs} creep=${afterExit.maxStopCreepM} " +
-                "release=${afterExit.releaseDelayAfterPullMs}",
+            "stop_after_exit latch=${afterExit.latchDelayAfterStopMs} " +
+                "creep=${fmt(afterExit.maxStopCreepM)}",
         )
-        // Print before hard asserts so the PR report is always in the log.
-        println(report.toString())
-        // Stop after exit has GNSS again at speed 0 — hold must work there.
         assertTrue(
-            "stop_after_exit must hold with reported speed 0: latch=${afterExit.latchDelayAfterStopMs} " +
-                "creep=${afterExit.maxStopCreepM}",
+            "stop_after_exit latch=${afterExit.latchDelayAfterStopMs}",
             afterExit.latchDelayAfterStopMs != null &&
-                afterExit.latchDelayAfterStopMs!! <= 2_000L &&
+                afterExit.latchDelayAfterStopMs!! <= 600L &&
                 afterExit.maxStopCreepM <= 1.0,
         )
+
+        val idle =
+            runScenario(
+                name = "queue_idle_vib",
+                road = road,
+                truth = profileQueueThenIdleVib(road),
+                vibrationRms = 0.0,
+                accelBiasMps2 = 0.0,
+                assertPass = true,
+                idleVibAfterLatch = true,
+            )
+        report.appendLine(
+            "idle_vib_after_stop stayed_latched=${idle.stayedLatchedUnderIdleVib} " +
+                "latch=${idle.latchDelayAfterStopMs}",
+        )
+
+        println(report.toString())
         assertTrue(report.contains("Lærdalstunnelen"))
         assertTrue(report.contains("Gudvangatunnelen"))
     }
+
+    private fun fmt(v: Double?): String =
+        if (v == null) {
+            "n/a"
+        } else {
+            String.format(Locale.US, "%.1f", v)
+        }
 
     @Test
     fun stationaryAtRouteStart_matchesReplayBounds() {

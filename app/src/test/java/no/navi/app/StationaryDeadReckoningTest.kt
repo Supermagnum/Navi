@@ -63,7 +63,9 @@ class StationaryDeadReckoningTest {
             tMs = tMs,
             headingDeg = 0.0,
             yawRateDegPerS = 15.0,
-            forwardAccelMps2 = 0.01,
+            // Real longitudinal accel so DR integrates speed (planned speed is
+            // only an upper bound / no-IMU fallback after the braking-aware fix).
+            forwardAccelMps2 = 1.2,
         )
 
     private fun fix(
@@ -168,8 +170,9 @@ class StationaryDeadReckoningTest {
             speed = out.speedMps
             t += 100L
         }
-        assertTrue("along=$along", along > 50.0)
-        assertEquals(30.0 / 3.6, speed, 0.05)
+        assertTrue("along=$along speed=$speed", along > 50.0 && speed > 5.0)
+        // Planned 30 km/h is an upper bound, not a driver.
+        assertTrue("speed capped by planned: $speed", speed <= 30.0 / 3.6 + 0.5)
     }
 
     @Test
