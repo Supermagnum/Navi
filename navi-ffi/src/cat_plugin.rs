@@ -475,11 +475,12 @@ pub fn cat_plugin_tick_guest() -> String {
                 .into_iter()
                 .find(|s| s.id == site_id)
             {
+                let burst = site.access == navi_cat::AccessTone::ToneBurst1750;
                 let req = ProgramRequest {
                     freq_out_mhz: site.freq_out_mhz,
-                    shift_mhz: site.shift_mhz,
-                    ctcss_hz: site.ctcss_hz,
-                    dcs_code: site.dcs_code,
+                    shift_mhz: site.shift_mhz.unwrap_or(f64::NAN),
+                    ctcss_hz: if burst { None } else { site.ctcss_hz },
+                    dcs_code: if burst { None } else { site.dcs_code },
                     mode: "FM".into(),
                     passband_hz: 12_500,
                     vfo: "VFOA".into(),
@@ -504,27 +505,59 @@ pub fn cat_plugin_update_repeaters_from_server(base_url: String) -> String {
     let Some(session) = guard.as_mut() else {
         return r#"{"ok":false,"error":"not configured","kept_last_good":true}"#.into();
     };
-    let (drop_dir, base) = if base_url.trim_start().starts_with('{') {
+    let (drop_dir, base, consensus, elev_dir) = if base_url.trim_start().starts_with('{') {
         let v: serde_json::Value = serde_json::from_str(&base_url).unwrap_or_default();
         let dir = v.get("dir").and_then(|d| d.as_str()).map(|s| s.to_string());
+        let consensus = v
+            .get("consensus")
+            .and_then(|d| d.as_bool())
+            .unwrap_or(false);
+        let elev = v
+            .get("elev")
+            .and_then(|d| d.as_str())
+            .map(|s| s.to_string());
         let base = v
             .get("base")
             .and_then(|d| d.as_str())
             .filter(|s| !s.is_empty())
             .unwrap_or(navi_cat::mirror::DEFAULT_REPEATERS_BASE)
             .to_string();
-        (dir, base)
+        (dir, base, consensus, elev)
     } else if base_url.trim().is_empty() {
-        (None, navi_cat::mirror::DEFAULT_REPEATERS_BASE.to_string())
+        (
+            None,
+            navi_cat::mirror::DEFAULT_REPEATERS_BASE.to_string(),
+            false,
+            None,
+        )
     } else {
-        (None, base_url)
+        (None, base_url, false, None)
     };
     let db_path = session.files_dir.join("cat_repeaters.sqlite");
     let local = drop_dir.as_ref().map(|dir| {
         navi_cat::repeaterbook::import_directory(std::path::Path::new(dir), &db_path, None)
     });
-    let report = navi_cat::mirror::fetch_and_update(&base, &db_path);
+    let report = navi_cat::mirror::fetch_and_update_with_files(
+        &base,
+        &db_path,
+        drop_dir.as_deref().map(std::path::Path::new),
+    );
     let local_ok = local.as_ref().map(|l| l.ok).unwrap_or(false);
+    if report.ok {
+        if let Ok(db) = navi_cat::RepeaterDb::open_path(&db_path) {
+            if consensus {
+                let elev_owned = elev_dir.clone();
+                let sample = move |lat: f64, lon: f64| {
+                    elev_owned
+                        .as_ref()
+                        .and_then(|dir| crate::elevation_at(dir.clone(), lat, lon))
+                };
+                let _ = navi_cat::consensus::apply(&db, true, &sample, &[]);
+            } else {
+                let _ = navi_cat::consensus::revert_all(&db);
+            }
+        }
+    }
     if report.ok || local_ok {
         // Reload DB handle so subsequent queries see the new rows.
         let db = open_db(&session.files_dir);

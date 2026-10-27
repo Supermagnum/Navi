@@ -71,9 +71,6 @@ fn run_position_follow(lat: f64, lon: f64) {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        if network.is_empty() {
-            continue;
-        }
         let distance = row
             .get("distance_km")
             .and_then(|v| v.as_f64())

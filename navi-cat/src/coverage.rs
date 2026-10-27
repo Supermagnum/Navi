@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 
-use crate::repeater::RepeaterSite;
+use crate::repeater::{AccessTone, RepeaterSite};
 
 /// Haversine distance in km (scorer-local; follow logic lives in CATS-plugin).
 pub fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
@@ -331,7 +331,7 @@ mod tests {
                 lat: Some(0.5),
                 lon: Some(0.5),
                 freq_out_mhz: 145.625,
-                shift_mhz: -0.6,
+                shift_mhz: Some(-0.6),
                 ctcss_hz: Some(88.5),
                 dcs_code: None,
                 color_code: None,
@@ -344,6 +344,13 @@ mod tests {
                 position_accurate: true,
                 exclude_recommended: false,
                 attribution: None,
+                access: AccessTone::Ctcss,
+                country: Some("NO".into()),
+                file_kind: None,
+                original_lat: None,
+                original_lon: None,
+                relocated: false,
+                relocation_note: None,
             },
             RepeaterSite {
                 id: "osm-node-2".into(),
@@ -351,7 +358,7 @@ mod tests {
                 lat: Some(2.0),
                 lon: Some(2.0),
                 freq_out_mhz: 145.625,
-                shift_mhz: -0.6,
+                shift_mhz: Some(-0.6),
                 ctcss_hz: Some(88.5),
                 dcs_code: None,
                 color_code: None,
@@ -364,6 +371,13 @@ mod tests {
                 position_accurate: true,
                 exclude_recommended: false,
                 attribution: None,
+                access: AccessTone::Ctcss,
+                country: Some("NO".into()),
+                file_kind: None,
+                original_lat: None,
+                original_lon: None,
+                relocated: false,
+                relocation_note: None,
             },
         ];
         // Override splat key: our helper makes LA5MR_1 / LA5MR_2 from osm-node-1/2

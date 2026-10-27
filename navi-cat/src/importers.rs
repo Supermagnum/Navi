@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::repeater::{dmr_dedupe_key, RepeaterDb, RepeaterSite, RepeaterSource};
+use crate::repeater::{dmr_dedupe_key, AccessTone, RepeaterDb, RepeaterSite, RepeaterSource};
 
 /// On-device / host relative directory for user AnyTone CPS CSV drops.
 pub const CAT_IMPORT_REL: &str = "cat/import";
@@ -68,15 +68,11 @@ pub fn import_osm_json(db: &RepeaterDb, json: &str) -> anyhow::Result<usize> {
                     .and_then(parse_mhz)
             })
             .unwrap_or(0.0);
-        let shift = item
-            .get("shift_mhz")
-            .and_then(|v| v.as_f64())
-            .or_else(|| {
-                item.get("shift")
-                    .and_then(|v| v.as_str())
-                    .and_then(parse_mhz)
-            })
-            .unwrap_or(0.0);
+        let shift = item.get("shift_mhz").and_then(|v| v.as_f64()).or_else(|| {
+            item.get("shift")
+                .and_then(|v| v.as_str())
+                .and_then(parse_mhz)
+        });
         let ctcss_hz = item.get("ctcss_hz").and_then(|v| v.as_f64()).or_else(|| {
             item.get("ctcss")
                 .and_then(|v| v.as_str())
@@ -112,6 +108,17 @@ pub fn import_osm_json(db: &RepeaterDb, json: &str) -> anyhow::Result<usize> {
             position_accurate: true,
             exclude_recommended: false,
             attribution: None,
+            access: if ctcss_hz.is_some() {
+                AccessTone::Ctcss
+            } else {
+                AccessTone::Unknown
+            },
+            country: None,
+            file_kind: None,
+            original_lat: None,
+            original_lon: None,
+            relocated: false,
+            relocation_note: None,
         })?;
         n += 1;
     }
@@ -183,7 +190,7 @@ pub fn import_anytone_channel_csv(db: &RepeaterDb, csv: &str) -> anyhow::Result<
             lat: None,
             lon: None,
             freq_out_mhz: rx,
-            shift_mhz: tx - rx,
+            shift_mhz: Some(tx - rx),
             ctcss_hz: None,
             dcs_code: None,
             color_code: Some(cc),
@@ -196,6 +203,13 @@ pub fn import_anytone_channel_csv(db: &RepeaterDb, csv: &str) -> anyhow::Result<
             position_accurate: false,
             exclude_recommended: false,
             attribution: None,
+            access: AccessTone::Unknown,
+            country: None,
+            file_kind: None,
+            original_lat: None,
+            original_lon: None,
+            relocated: false,
+            relocation_note: None,
         })?;
         n += 1;
     }
@@ -257,7 +271,7 @@ pub fn import_openrepeater_json(db: &RepeaterDb, json: &str) -> anyhow::Result<u
             lat: item.get("lat").and_then(|v| v.as_f64()),
             lon: item.get("lon").and_then(|v| v.as_f64()),
             freq_out_mhz: rx,
-            shift_mhz: tx - rx,
+            shift_mhz: Some(tx - rx),
             ctcss_hz: item.get("ctcss").and_then(|v| v.as_f64()),
             dcs_code: None,
             color_code: item
@@ -273,6 +287,13 @@ pub fn import_openrepeater_json(db: &RepeaterDb, json: &str) -> anyhow::Result<u
             position_accurate: true,
             exclude_recommended: false,
             attribution: None,
+            access: AccessTone::Unknown,
+            country: None,
+            file_kind: None,
+            original_lat: None,
+            original_lon: None,
+            relocated: false,
+            relocation_note: None,
         })?;
         n += 1;
     }
@@ -315,7 +336,7 @@ pub fn import_radioid_csv(db: &RepeaterDb, csv: &str) -> anyhow::Result<usize> {
             lat: get(i_lat).parse().ok(),
             lon: get(i_lon).parse().ok(),
             freq_out_mhz: rx,
-            shift_mhz: tx - rx,
+            shift_mhz: Some(tx - rx),
             ctcss_hz: None,
             dcs_code: None,
             color_code: Some(cc),
@@ -328,6 +349,13 @@ pub fn import_radioid_csv(db: &RepeaterDb, csv: &str) -> anyhow::Result<usize> {
             position_accurate: true,
             exclude_recommended: false,
             attribution: None,
+            access: AccessTone::Unknown,
+            country: None,
+            file_kind: None,
+            original_lat: None,
+            original_lon: None,
+            relocated: false,
+            relocation_note: None,
         })?;
         n += 1;
     }
@@ -423,7 +451,7 @@ pub fn import_osm_relation_xml(db: &RepeaterDb, xml: &str) -> anyhow::Result<usi
             lat,
             lon,
             freq_out_mhz: freq,
-            shift_mhz: shift,
+            shift_mhz: Some(shift),
             ctcss_hz,
             dcs_code: None,
             color_code: None,
@@ -436,6 +464,13 @@ pub fn import_osm_relation_xml(db: &RepeaterDb, xml: &str) -> anyhow::Result<usi
             position_accurate: lat.is_some() && lon.is_some(),
             exclude_recommended: false,
             attribution: None,
+            access: AccessTone::Unknown,
+            country: None,
+            file_kind: None,
+            original_lat: None,
+            original_lon: None,
+            relocated: false,
+            relocation_note: None,
         })?;
         n += 1;
     }

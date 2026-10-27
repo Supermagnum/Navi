@@ -1055,7 +1055,7 @@ repeater select / network follow is the **CATS** wasmtime plugin
 - **RepeaterBook** only from KML/KMZ/CSV the user copies into `Android/data/no.navi.app/files/repeaters`. The app never contacts repeaterbook.com. Android deletes that folder on uninstall.
 - **AnyTone CSV** from `filesDir/cat/import/`.
 - The **Update** button in the plugin UI.
-- Consensus relocation (default **off**).
+- Consensus relocation (default **off**): "Move non-OSM repeaters to the most likely site". When on, a repeater with no OSM row is moved only if at least two independent sources (RadioID, RepeaterBook KML, CSV) agree within 1 km. The target is a tall structure (`man_made=mast|tower|communications_tower`, `tower:type=communication`) when its top is at least 15 m above the highest Mapterhorn sample in that circle, otherwise that sample. Elevation is `elevation_at` (`ElevationService` / `ElevationCache`). A missing DEM tile means no move. Turning the setting off restores each original position. An OSM repeater is never moved. The published Norway bundle does not include structure tags, so a structure is used only when a caller supplies one.
 
 Licence sentence on the toggle (exact copy):
 

@@ -24,6 +24,8 @@ pub enum ShiftDir {
     None,
     Minus,
     Plus,
+    /// Shift is unknown. Do not program it, and do not treat it as zero.
+    Leave,
 }
 
 impl ShiftDir {
@@ -32,6 +34,7 @@ impl ShiftDir {
             Self::None => "None",
             Self::Minus => "-",
             Self::Plus => "+",
+            Self::Leave => "None",
         }
     }
 

@@ -4,7 +4,7 @@
 //! Program + read-back + VFO 2: `navi-cat` host.
 
 use navi_cat::benshi::{BenshiBackend, FakeBenshiPeer, InProcessTransport};
-use navi_cat::importers::import_osm_relation_xml;
+use navi_cat::mirror::import_mirror_payload;
 use navi_cat::program::{program_vfo1_verified, ProgramRequest};
 use navi_cat::repeater::{RepeaterDb, RepeaterSite};
 use navi_cat::types::RigBackend;
@@ -32,14 +32,14 @@ fn load_polyline(name: &str) -> Vec<(f64, f64)> {
 }
 
 fn load_la5mr_members() -> Vec<RepeaterSite> {
-    let xml = std::fs::read_to_string(concat!(
+    let json = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../testdata/cat/osm/la5mr/relation_18780801_full.xml"
+        "/../../testdata/cat/osm/la5mr/bundle_members.json"
     ))
-    .expect("LA5MR fixture");
+    .expect("LA5MR bundle fixture");
     let db = RepeaterDb::open_memory().unwrap();
-    let n = import_osm_relation_xml(&db, &xml).unwrap();
-    assert!(n >= 8, "expected refreshed LA5MR members, got {n}");
+    let n = import_mirror_payload(&db, &json, "osm", None).unwrap();
+    assert!(n >= 8, "expected LA5MR members, got {n}");
     db.query_near(61.3, 10.5, 500.0, Some("LA5MR"))
 }
 
@@ -54,7 +54,7 @@ fn to_follow(sites: &[RepeaterSite]) -> Vec<FollowSite> {
                 lat,
                 lon,
                 freq_out_mhz: s.freq_out_mhz,
-                shift_mhz: s.shift_mhz,
+                shift_mhz: s.shift_mhz.unwrap_or(0.0),
                 ctcss_hz: s.ctcss_hz,
             })
         })
@@ -64,8 +64,12 @@ fn to_follow(sites: &[RepeaterSite]) -> Vec<FollowSite> {
 fn program_site(backend: &mut BenshiBackend<InProcessTransport>, s: &RepeaterSite) {
     let req = ProgramRequest {
         freq_out_mhz: s.freq_out_mhz,
-        shift_mhz: s.shift_mhz,
-        ctcss_hz: s.ctcss_hz,
+        shift_mhz: s.shift_mhz.unwrap_or(f64::NAN),
+        ctcss_hz: if s.access == navi_cat::AccessTone::ToneBurst1750 {
+            None
+        } else {
+            s.ctcss_hz
+        },
         dcs_code: s.dcs_code,
         mode: "FM".into(),
         passband_hz: 12_500,
@@ -322,7 +326,7 @@ fn run_demo_on_route(route_file: &str, route_name: &str) -> DemoPlan {
                 .map(|p| (p - s.freq_out_mhz).abs() < 1e-6)
                 .unwrap_or(false);
             eprintln!(
-                "  t={}s  {}  RX={:.4} MHz  shift={:+.4}  CTCSS={:?} Hz  id={}{}",
+                "  t={}s  {}  RX={:.4} MHz  shift={:?}  CTCSS={:?} Hz  id={}{}",
                 i * DEMO_STEP_SECS as usize,
                 s.callsign,
                 s.freq_out_mhz,
@@ -379,7 +383,7 @@ fn run_demo_on_route(route_file: &str, route_name: &str) -> DemoPlan {
             peer.set_squelch_open(true);
             let req = ProgramRequest {
                 freq_out_mhz: site.freq_out_mhz,
-                shift_mhz: site.shift_mhz,
+                shift_mhz: site.shift_mhz.unwrap_or(f64::NAN),
                 ctcss_hz: site.ctcss_hz,
                 dcs_code: site.dcs_code,
                 mode: "FM".into(),

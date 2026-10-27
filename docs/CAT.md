@@ -469,26 +469,56 @@ the country in the details link `state_id`, and the position in
 `<coordinates>` as longitude, latitude. They do not include offset, mode, or
 a network name. A second number above 260 Hz (1750) is a tone burst, not CTCSS.
 
-CSV latitude/longitude columns (`latitude`/`lat`, `longitude`/`lon`/`lng`/`long`)
-are used only when every value parses, is in range, is not 0,0, and has at
-least 3 digits after the decimal point. Otherwise rows are matched to KML or
-OSM by callsign and output frequency. Unmatched rows without a position are
+CSV latitude/longitude columns (`latitude`/`lat`, `longitude`/`lon`/`lng`/`long`,
+and the same names prefixed `best_`, `local_`, `repeaterbook_`, `radioid_`,
+`osm_`, `locator_`) are read per row. `tx` is the output frequency and `rx`
+is the input. A missing coordinate does not attach the row to another source:
+a match needs the callsign, an output frequency within 12.5 kHz, and a
+position within 1 km. Mode is reported when one side is analog and the other
+is digital. It does not split the row. Unmatched rows without a position are
 kept and listed, and are not placed on the map or used for switching.
 
-Norway: OSM stays the source of truth. A RepeaterBook row merges when the
-frequency, CTCSS, and shift agree. A difference in one of those fields
-overrides OSM and the report names the field. A row OSM does not have is
-added. The same callsign and output frequency within 1 km is one repeater
-(border files).
+Norway: OSM is the source of truth, including position. RadioID and a
+RepeaterBook file may override output frequency, CTCSS, DCS, a 1750 Hz burst,
+or shift when that value is known and different. The import report names the
+field. They may add a repeater OSM does not have, and that row keeps the
+file or RadioID position. The same callsign and frequency more than 1 km from
+every OSM site of that callsign stays a separate row, flagged "position
+differs from OSM" with the distance. It is not moved onto the OSM site.
 
-The CAT sheet lists programmable FM networks within 100 km of the current
-position, sorted by distance to the nearest member. "Nearest network (auto)"
-is the default. "Off / manual" stops follow. A saved network with no members
-in the new area shows a notice and falls back to auto. Switching uses the
-live position, including dead reckoning when GNSS is lost, and does not
-require a planned route. With a route, the same position scorer runs along
-the travelled track. Removing the route does not stop it. RadioID still
-comes from navi-server. VFO A only, with read-back, is unchanged.
+Outside Norway: when RadioID and a RepeaterBook file match, RadioID's
+position, frequency, tone, and shift are kept. A field RadioID does not have
+is filled from the file, and the report names any field that differs. A row
+present in only one source keeps that source's position. OSM data outside
+Norway is stored as its own source. No precedence is applied to it.
+
+The CAT sheet lists programmable FM networks within 150 km of the current
+position, sorted by distance to the nearest member. 150 km is also the follow
+radius. Installed packs have no polygon, so one circle is the region for both
+the dropdown and the scorer. "Nearest network (auto)" is the default: the
+nearest network that has a programmable member, or standalone repeaters when
+no network member is in range. "Standalone repeaters (nearest)" follows
+standalones only. "Off / manual" stops follow. A saved network is not
+replaced by a closer standalone. It falls back, with the existing notice,
+only when that network has no members in range. Switching uses the live
+position, including dead reckoning when GNSS is lost, and does not require a
+planned route. With a route, the same position scorer runs along the
+travelled track. Removing the route does not stop it.
+
+A 1750 Hz burst repeater is tuned with CTCSS and DCS encode off. The app
+never enables a tone-burst function. The operator sends the burst. You may
+listen, but do not transmit without an amateur radio licence.
+
+Consensus relocation is off by default ("Move non-OSM repeaters to the most
+likely site"). It moves a repeater only when that repeater has no OSM row and
+at least two independent sources agree within 1 km. The target is a tall
+structure (`man_made=mast`, `man_made=tower`, `man_made=communications_tower`,
+`tower:type=communication`) when its top is at least 15 m above the highest
+Mapterhorn sample in the circle, otherwise that sample. Elevation is
+`elevation_at` (`ElevationService` over `ElevationCache`). A missing DEM tile
+means no move. Turning the setting off restores each original position.
+
+RadioID still comes from navi-server. VFO A only, with read-back, is unchanged.
 
 Full investigation notes: [`CAT-benshi-investigation.md`](CAT-benshi-investigation.md).
 

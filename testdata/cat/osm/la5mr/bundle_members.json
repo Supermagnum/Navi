@@ -1,0 +1,544 @@
+{
+  "source": "osm",
+  "country_slug": "no",
+  "attribution": {
+    "text": "OpenStreetMap contributors, ODbL. navi-server bundle 20261013T091219Z."
+  },
+  "repeaters": [
+    {
+      "source": "osm",
+      "osm_type": "node",
+      "osm_id": 1011896359,
+      "osm_version": 8,
+      "osm_timestamp": "2026-10-01T20:41:20Z",
+      "updated_at": "2026-10-01T20:41:20Z",
+      "callsign": "LA5MR",
+      "name": "LA5MR",
+      "lat": 60.2298669,
+      "lon": 10.6066179,
+      "position_null": false,
+      "coord_source": "osm_node",
+      "output_hz": 145637500,
+      "shift_hz": null,
+      "ctcss_encode_hz": 88.5,
+      "mode": "FM",
+      "modes": [
+        "FM"
+      ],
+      "emission_designators": [
+        "11K2F3E"
+      ],
+      "network": {
+        "name": "LA5MR",
+        "relations": [
+          {
+            "relation_id": 18780801,
+            "relation_version": 3,
+            "relation_timestamp": "2025-03-08T22:09:44Z",
+            "name": "LA5MR",
+            "network": null,
+            "role": null
+          }
+        ]
+      },
+      "osm_tags": {
+        "communication:amateur_radio:callsign": "LA5MR",
+        "communication:amateur_radio:repeater": "yes",
+        "communication:amateur_radio:repeater:ctcss": "88.5",
+        "communication:amateur_radio:repeater:frequency_out": "145.6375",
+        "communication:amateur_radio:repeater:modulation": "11K2F3E",
+        "name": "LA5MR",
+        "network": "LA5MR"
+      },
+      "entry_kind": "repeater",
+      "exclude_recommended": false
+    },
+    {
+      "source": "osm",
+      "osm_type": "node",
+      "osm_id": 1473491257,
+      "osm_version": 6,
+      "osm_timestamp": "2026-10-01T20:41:20Z",
+      "updated_at": "2026-10-01T20:41:20Z",
+      "callsign": "LA5MR",
+      "name": "LA5MR",
+      "lat": 60.8457632,
+      "lon": 10.8961777,
+      "position_null": false,
+      "coord_source": "osm_node",
+      "output_hz": 145625000,
+      "shift_hz": -600000,
+      "ctcss_encode_hz": 88.5,
+      "mode": "FM",
+      "modes": [
+        "FM"
+      ],
+      "emission_designators": [
+        "11K2F3E"
+      ],
+      "network": {
+        "name": "LA5MR",
+        "relations": [
+          {
+            "relation_id": 18780801,
+            "relation_version": 3,
+            "relation_timestamp": "2025-03-08T22:09:44Z",
+            "name": "LA5MR",
+            "network": null,
+            "role": null
+          }
+        ]
+      },
+      "osm_tags": {
+        "communication:amateur_radio": "yes",
+        "communication:amateur_radio:callsign": "LA5MR",
+        "communication:amateur_radio:repeater": "yes",
+        "communication:amateur_radio:repeater:ctcss": "88.5",
+        "communication:amateur_radio:repeater:frequency_out": "145.625000",
+        "communication:amateur_radio:repeater:modulation": "11K2F3E",
+        "communication:amateur_radio:repeater:shift": "-0,6 Mhz",
+        "name": "LA5MR",
+        "network": "LA5MR"
+      },
+      "entry_kind": "repeater",
+      "exclude_recommended": false
+    },
+    {
+      "source": "osm",
+      "osm_type": "node",
+      "osm_id": 2641537344,
+      "osm_version": 7,
+      "osm_timestamp": "2025-11-15T05:05:30Z",
+      "updated_at": "2025-11-15T05:05:30Z",
+      "callsign": "LA5MR",
+      "name": "Bagn hovedsender",
+      "lat": 60.8086194,
+      "lon": 9.6158917,
+      "position_null": false,
+      "coord_source": "osm_node",
+      "output_hz": 145625000,
+      "shift_hz": -600000,
+      "ctcss_encode_hz": 88.5,
+      "mode": "FM",
+      "modes": [
+        "FM"
+      ],
+      "emission_designators": [
+        "11K2F3E"
+      ],
+      "osm_tags": {
+        "communication:amateur_radio": "yes",
+        "communication:amateur_radio:callsign": "LA5MR",
+        "communication:amateur_radio:repeater": "yes",
+        "communication:amateur_radio:repeater:ctcss": "88.5",
+        "communication:amateur_radio:repeater:frequency_out": "145.625000",
+        "communication:amateur_radio:repeater:modulation": "11K2F3E",
+        "communication:amateur_radio:repeater:shift": "-0,6 Mhz",
+        "name": "Bagn hovedsender"
+      },
+      "entry_kind": "repeater",
+      "exclude_recommended": false,
+      "network": {
+        "relations": [
+          {
+            "relation_id": 18780801,
+            "relation_version": 3,
+            "relation_timestamp": "2025-03-08T22:09:44Z",
+            "name": "LA5MR",
+            "network": null,
+            "role": null
+          }
+        ]
+      }
+    },
+    {
+      "source": "osm",
+      "osm_type": "node",
+      "osm_id": 5576442558,
+      "osm_version": 6,
+      "osm_timestamp": "2026-10-09T07:11:37Z",
+      "updated_at": "2026-10-09T07:11:37Z",
+      "callsign": "LA6NR",
+      "name": "LA6NR",
+      "lat": 60.5366765,
+      "lon": 9.0617188,
+      "position_null": false,
+      "coord_source": "osm_node",
+      "output_hz": 145775000,
+      "shift_hz": -600000,
+      "ctcss_encode_hz": 88.5,
+      "mode": "FM",
+      "modes": [
+        "FM"
+      ],
+      "emission_designators": [
+        "11K2F3E"
+      ],
+      "network": {
+        "name": "LA5MR",
+        "relations": [
+          {
+            "relation_id": 18780801,
+            "relation_version": 3,
+            "relation_timestamp": "2025-03-08T22:09:44Z",
+            "name": "LA5MR",
+            "network": null,
+            "role": null
+          }
+        ]
+      },
+      "osm_tags": {
+        "communication:amateur_radio": "yes",
+        "communication:amateur_radio:callsign": "LA6NR",
+        "communication:amateur_radio:repeater": "yes",
+        "communication:amateur_radio:repeater:ctcss": "88.5",
+        "communication:amateur_radio:repeater:frequency_out": "145.775000",
+        "communication:amateur_radio:repeater:modulation": "11K2F3E",
+        "communication:amateur_radio:repeater:shift": "-0,6 Mhz",
+        "name": "LA6NR",
+        "network": "LA5MR"
+      },
+      "entry_kind": "repeater",
+      "exclude_recommended": false
+    },
+    {
+      "source": "osm",
+      "osm_type": "node",
+      "osm_id": 5576503609,
+      "osm_version": 5,
+      "osm_timestamp": "2026-10-01T20:41:20Z",
+      "updated_at": "2026-10-01T20:41:20Z",
+      "callsign": "LA5MR",
+      "name": "LA5MR",
+      "lat": 61.0184625,
+      "lon": 8.9739277,
+      "position_null": false,
+      "coord_source": "osm_node",
+      "output_hz": 145625000,
+      "shift_hz": -600000,
+      "ctcss_encode_hz": 88.5,
+      "mode": "FM",
+      "modes": [
+        "FM"
+      ],
+      "emission_designators": [
+        "11K2F3E"
+      ],
+      "network": {
+        "name": "LA5MR",
+        "relations": [
+          {
+            "relation_id": 18780801,
+            "relation_version": 3,
+            "relation_timestamp": "2025-03-08T22:09:44Z",
+            "name": "LA5MR",
+            "network": null,
+            "role": null
+          }
+        ]
+      },
+      "osm_tags": {
+        "communication:amateur_radio": "yes",
+        "communication:amateur_radio:callsign": "LA5MR",
+        "communication:amateur_radio:repeater": "yes",
+        "communication:amateur_radio:repeater:ctcss": "88.5",
+        "communication:amateur_radio:repeater:frequency_out": "145.625000",
+        "communication:amateur_radio:repeater:modulation": "11K2F3E",
+        "communication:amateur_radio:repeater:shift": "-0,6 Mhz",
+        "name": "LA5MR",
+        "network": "LA5MR"
+      },
+      "entry_kind": "repeater",
+      "exclude_recommended": false
+    },
+    {
+      "source": "osm",
+      "osm_type": "node",
+      "osm_id": 5576506182,
+      "osm_version": 14,
+      "osm_timestamp": "2026-10-01T20:41:20Z",
+      "updated_at": "2026-10-01T20:41:20Z",
+      "callsign": "LA2TRR",
+      "name": "LA2TRR",
+      "lat": 61.007556,
+      "lon": 10.1918,
+      "position_null": false,
+      "coord_source": "osm_node",
+      "output_hz": 145237500,
+      "shift_hz": 287937500,
+      "input_hz": 433175000,
+      "ctcss_encode_hz": 88.5,
+      "mode": "FM",
+      "modes": [
+        "FM"
+      ],
+      "emission_designators": [
+        "11K2F3E"
+      ],
+      "osm_tags": {
+        "communication:amateur_radio": "yes",
+        "communication:amateur_radio:callsign": "LA2TRR",
+        "communication:amateur_radio:repeater": "yes",
+        "communication:amateur_radio:repeater:ctcss": "88.5",
+        "communication:amateur_radio:repeater:frequency_in": "433.175 MHz",
+        "communication:amateur_radio:repeater:frequency_out": "145.2375 MHz",
+        "communication:amateur_radio:repeater:modulation": "11K2F3E",
+        "name": "LA2TRR"
+      },
+      "entry_kind": "repeater",
+      "exclude_recommended": false,
+      "network": {
+        "relations": [
+          {
+            "relation_id": 18780801,
+            "relation_version": 3,
+            "relation_timestamp": "2025-03-08T22:09:44Z",
+            "name": "LA5MR",
+            "network": null,
+            "role": null
+          }
+        ]
+      }
+    },
+    {
+      "source": "osm",
+      "osm_type": "node",
+      "osm_id": 5576656337,
+      "osm_version": 17,
+      "osm_timestamp": "2026-10-01T20:41:20Z",
+      "updated_at": "2026-10-01T20:41:20Z",
+      "callsign": "LA2KRR",
+      "name": "LA2KRR",
+      "lat": 60.3242222,
+      "lon": 12.138325,
+      "position_null": false,
+      "coord_source": "osm_node",
+      "output_hz": 434650000,
+      "shift_hz": -2000000,
+      "ctcss_encode_hz": 71.9,
+      "mode": "FM",
+      "modes": [
+        "FM",
+        "C4FM"
+      ],
+      "emission_designators": [
+        "11K2F3E",
+        "9K36F7W"
+      ],
+      "osm_tags": {
+        "communication:amateur_radio": "yes",
+        "communication:amateur_radio:callsign": "LA2KRR",
+        "communication:amateur_radio:repeater": "yes",
+        "communication:amateur_radio:repeater:ctcss": "71.9",
+        "communication:amateur_radio:repeater:frequency_out": "434.65 MHz",
+        "communication:amateur_radio:repeater:modulation": "11K2F3E;9K36F7W",
+        "communication:amateur_radio:repeater:shift": "-2 MHz",
+        "name": "LA2KRR"
+      },
+      "entry_kind": "repeater",
+      "exclude_recommended": false,
+      "network": {
+        "relations": [
+          {
+            "relation_id": 18780801,
+            "relation_version": 3,
+            "relation_timestamp": "2025-03-08T22:09:44Z",
+            "name": "LA5MR",
+            "network": null,
+            "role": null
+          }
+        ]
+      }
+    },
+    {
+      "source": "osm",
+      "osm_type": "node",
+      "osm_id": 5576656416,
+      "osm_version": 4,
+      "osm_timestamp": "2025-12-07T11:54:57Z",
+      "updated_at": "2025-12-07T11:54:57Z",
+      "callsign": "LA5TRR",
+      "lat": 61.3195136,
+      "lon": 12.188985,
+      "position_null": false,
+      "coord_source": "osm_node",
+      "output_hz": 145725000,
+      "shift_hz": -600000,
+      "ctcss_encode_hz": 88.5,
+      "mode": "FM",
+      "modes": [
+        "FM"
+      ],
+      "emission_designators": [
+        "11K2F3E"
+      ],
+      "osm_tags": {
+        "communication:amateur_radio": "yes",
+        "communication:amateur_radio:callsign": "LA5TRR",
+        "communication:amateur_radio:repeater": "yes",
+        "communication:amateur_radio:repeater:ctcss": "88.5",
+        "communication:amateur_radio:repeater:frequency_out": "145.7250",
+        "communication:amateur_radio:repeater:modulation": "11K2F3E",
+        "communication:amateur_radio:repeater:shift": "-0,6 Mhz"
+      },
+      "entry_kind": "repeater",
+      "exclude_recommended": false,
+      "network": {
+        "relations": [
+          {
+            "relation_id": 18780801,
+            "relation_version": 3,
+            "relation_timestamp": "2025-03-08T22:09:44Z",
+            "name": "LA5MR",
+            "network": null,
+            "role": null
+          }
+        ]
+      }
+    },
+    {
+      "source": "osm",
+      "osm_type": "node",
+      "osm_id": 12635462528,
+      "osm_version": 4,
+      "osm_timestamp": "2026-10-01T20:41:20Z",
+      "updated_at": "2026-10-01T20:41:20Z",
+      "callsign": "LA5MR",
+      "name": "LA5MR",
+      "lat": 61.2532188,
+      "lon": 8.2030446,
+      "position_null": false,
+      "coord_source": "osm_node",
+      "output_hz": 145625000,
+      "shift_hz": -600000,
+      "ctcss_encode_hz": 88.5,
+      "mode": "FM",
+      "modes": [
+        "FM"
+      ],
+      "emission_designators": [
+        "11K2F3E"
+      ],
+      "network": {
+        "name": "LA5MR",
+        "relations": [
+          {
+            "relation_id": 18780801,
+            "relation_version": 3,
+            "relation_timestamp": "2025-03-08T22:09:44Z",
+            "name": "LA5MR",
+            "network": null,
+            "role": null
+          }
+        ]
+      },
+      "osm_tags": {
+        "communication:amateur_radio": "yes",
+        "communication:amateur_radio:callsign": "LA5MR",
+        "communication:amateur_radio:repeater": "yes",
+        "communication:amateur_radio:repeater:ctcss": "88.5",
+        "communication:amateur_radio:repeater:frequency_out": "145.625000",
+        "communication:amateur_radio:repeater:modulation": "11K2F3E",
+        "communication:amateur_radio:repeater:shift": "-0,6 Mhz",
+        "name": "LA5MR",
+        "network": "LA5MR"
+      },
+      "entry_kind": "repeater",
+      "exclude_recommended": false
+    },
+    {
+      "source": "osm",
+      "osm_type": "way",
+      "osm_id": 1005486272,
+      "osm_version": 11,
+      "osm_timestamp": "2026-09-28T18:42:26Z",
+      "updated_at": "2026-09-28T18:42:26Z",
+      "callsign": "LA9AR",
+      "name": "Tron hovedsender",
+      "lat": 62.174188655555554,
+      "lon": 10.69542591111111,
+      "position_null": false,
+      "coord_source": "osm_way_centroid",
+      "output_hz": 145600000,
+      "shift_hz": -600000,
+      "ctcss_encode_hz": 88.5,
+      "mode": "FM",
+      "modes": [
+        "FM"
+      ],
+      "emission_designators": [
+        "11K2F3E"
+      ],
+      "osm_tags": {
+        "communication:amateur_radio": "yes",
+        "communication:amateur_radio:callsign": "LA9AR",
+        "communication:amateur_radio:repeater": "yes",
+        "communication:amateur_radio:repeater:ctcss": "88.5",
+        "communication:amateur_radio:repeater:frequency_out": "145.6 MHz",
+        "communication:amateur_radio:repeater:modulation": "11K2F3E",
+        "communication:amateur_radio:repeater:shift": "-0.6 MHz",
+        "name": "Tron hovedsender"
+      },
+      "entry_kind": "repeater",
+      "exclude_recommended": false,
+      "network": {
+        "relations": [
+          {
+            "relation_id": 18780801,
+            "relation_version": 3,
+            "relation_timestamp": "2025-03-08T22:09:44Z",
+            "name": "LA5MR",
+            "network": null,
+            "role": null
+          }
+        ]
+      }
+    },
+    {
+      "source": "osm",
+      "osm_type": "way",
+      "osm_id": 1194875539,
+      "osm_version": 4,
+      "osm_timestamp": "2025-12-07T11:54:57Z",
+      "updated_at": "2025-12-07T11:54:57Z",
+      "callsign": "LA6JRR",
+      "lat": 61.8978305,
+      "lon": 9.28353254736842,
+      "position_null": false,
+      "coord_source": "osm_way_centroid",
+      "output_hz": 145662500,
+      "shift_hz": -600000,
+      "ctcss_encode_hz": 88.5,
+      "mode": "FM",
+      "modes": [
+        "FM"
+      ],
+      "emission_designators": [
+        "11K2F3E"
+      ],
+      "osm_tags": {
+        "communication:amateur_radio": "yes",
+        "communication:amateur_radio:callsign": "LA6JRR",
+        "communication:amateur_radio:repeater": "yes",
+        "communication:amateur_radio:repeater:ctcss": "88.5",
+        "communication:amateur_radio:repeater:frequency_out": "145.662500",
+        "communication:amateur_radio:repeater:modulation": "11K2F3E",
+        "communication:amateur_radio:repeater:shift": "-0,6 Mhz"
+      },
+      "entry_kind": "repeater",
+      "exclude_recommended": false,
+      "network": {
+        "relations": [
+          {
+            "relation_id": 18780801,
+            "relation_version": 3,
+            "relation_timestamp": "2025-03-08T22:09:44Z",
+            "name": "LA5MR",
+            "network": null,
+            "role": null
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::repeater::{RepeaterDb, RepeaterSite, RepeaterSource};
+use crate::repeater::{AccessTone, RepeaterDb, RepeaterSite, RepeaterSource};
 
 /// Default public navi-server repeater root.
 pub const DEFAULT_REPEATERS_BASE: &str = "https://navigate-me.duckdns.org";
@@ -131,12 +131,79 @@ fn parse_source_name(s: &str) -> RepeaterSource {
     match s.to_ascii_lowercase().as_str() {
         "radioid" | "radio_id" => RepeaterSource::RadioId,
         "repeaterbook" | "repeater_book" => RepeaterSource::RepeaterBook,
+        "osm" => RepeaterSource::Osm,
         _ => RepeaterSource::User,
     }
 }
 
 fn hz_to_mhz(hz: f64) -> f64 {
     hz / 1_000_000.0
+}
+
+fn json_id(v: &Value) -> String {
+    if let Some(n) = v.as_i64() {
+        n.to_string()
+    } else if let Some(n) = v.as_u64() {
+        n.to_string()
+    } else if let Some(s) = v.as_str() {
+        s.to_string()
+    } else {
+        v.to_string().trim_matches('"').to_string()
+    }
+}
+
+fn country_code(slug_or_name: &str) -> Option<String> {
+    let s = slug_or_name.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let code = match s.to_ascii_lowercase().as_str() {
+        "no" | "norway" => "NO",
+        "se" | "sweden" => "SE",
+        "dk" | "denmark" => "DK",
+        "de" | "germany" => "DE",
+        other if other.len() == 2 => return Some(other.to_ascii_uppercase()),
+        _ => return Some(s.to_string()),
+    };
+    Some(code.to_string())
+}
+
+fn access_from_mirror(r: &Value) -> (AccessTone, Option<f64>, Option<u32>) {
+    if let Some(hz) = r.get("toneburst_hz").and_then(|v| v.as_f64()) {
+        if hz > 260.0 {
+            return (AccessTone::ToneBurst1750, None, None);
+        }
+    }
+    if let Some(code) = r.get("dcs_encode").and_then(|v| v.as_u64()) {
+        return (AccessTone::Dcs, None, Some(code as u32));
+    }
+    if let Some(hz) = r.get("ctcss_encode_hz").and_then(|v| v.as_f64()) {
+        return (AccessTone::Ctcss, Some(hz), None);
+    }
+    (AccessTone::Unknown, None, None)
+}
+
+fn network_from_mirror(r: &Value) -> Option<String> {
+    let net = r.get("network")?;
+    if let Some(name) = net.as_str() {
+        let name = name.trim();
+        return (!name.is_empty()).then(|| name.to_string());
+    }
+    if let Some(name) = net.get("name").and_then(|v| v.as_str()) {
+        let name = name.trim();
+        if !name.is_empty() {
+            return Some(name.to_string());
+        }
+    }
+    net.get("relations")
+        .and_then(|v| v.as_array())
+        .and_then(|rels| {
+            rels.iter()
+                .find_map(|rel| rel.get("name").and_then(|n| n.as_str()))
+        })
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 /// Import one decompressed `repeaters.json` payload into `db` (no delete).
@@ -177,17 +244,6 @@ pub fn import_mirror_payload(
             .or_else(|| r.get("locator"))
             .and_then(|x| x.as_str())
             .unwrap_or("");
-        let id = if !locator.is_empty() {
-            format!("{source_str}-{locator}")
-        } else {
-            format!(
-                "{source_str}-{}",
-                r.get("radioid_identity_id")
-                    .or_else(|| r.get("id"))
-                    .map(|x| x.to_string())
-                    .unwrap_or_else(|| callsign.clone())
-            )
-        };
         let position_null = r
             .get("position_null")
             .and_then(|x| x.as_bool())
@@ -211,10 +267,13 @@ pub fn import_mirror_payload(
             })
         };
         let out_hz = r.get("output_hz").and_then(|x| x.as_f64()).unwrap_or(0.0);
-        let shift_hz = r.get("shift_hz").and_then(|x| x.as_f64()).unwrap_or(0.0);
         if out_hz <= 0.0 {
             continue;
         }
+        let shift_mhz = match r.get("shift_hz") {
+            Some(v) if !v.is_null() => v.as_f64().map(hz_to_mhz),
+            _ => None,
+        };
         let mode = r
             .get("mode")
             .and_then(|x| x.as_str())
@@ -228,18 +287,37 @@ pub fn import_mirror_payload(
             .get("dmr_color_code")
             .and_then(|x| x.as_u64())
             .map(|c| c as u8);
+        let (access, ctcss_hz, dcs_code) = access_from_mirror(r);
+        let id = if source == RepeaterSource::Osm {
+            let typ = r.get("osm_type").and_then(|x| x.as_str()).unwrap_or("node");
+            let osm_id = r
+                .get("osm_id")
+                .map(json_id)
+                .unwrap_or_else(|| callsign.clone());
+            format!("osm-{typ}-{osm_id}")
+        } else if !locator.is_empty() {
+            format!("{source_str}-{locator}")
+        } else {
+            format!(
+                "{source_str}-{}",
+                r.get("radioid_identity_id")
+                    .or_else(|| r.get("id"))
+                    .map(json_id)
+                    .unwrap_or_else(|| callsign.clone())
+            )
+        };
         let site = RepeaterSite {
             id,
             callsign,
             lat,
             lon,
             freq_out_mhz: hz_to_mhz(out_hz),
-            shift_mhz: hz_to_mhz(shift_hz),
-            ctcss_hz: None,
-            dcs_code: None,
+            shift_mhz,
+            ctcss_hz,
+            dcs_code,
             color_code: color,
             modulation: mode,
-            network_id: None,
+            network_id: network_from_mirror(r),
             source,
             conflict: false,
             conflict_note: None,
@@ -247,8 +325,19 @@ pub fn import_mirror_payload(
             position_accurate: !position_null && lat.is_some() && lon.is_some(),
             exclude_recommended: exclude,
             attribution: attr_text.clone(),
+            access,
+            country: country_code(v.get("country_slug").and_then(|c| c.as_str()).unwrap_or("")),
+            file_kind: Some(if source == RepeaterSource::Osm {
+                "osm".into()
+            } else {
+                "radioid".into()
+            }),
+            original_lat: None,
+            original_lon: None,
+            relocated: false,
+            relocation_note: None,
         };
-        db.upsert_site(&site)?;
+        crate::resolve::merge_incoming(db, &site);
         n += 1;
     }
     Ok(n)
@@ -297,6 +386,7 @@ pub fn apply_bundles_atomic(
     catalog: &CurrentCatalog,
     bundles: &[CountryBundle],
     expected_sources: &[&str],
+    drop_dir: Option<&Path>,
 ) -> UpdateReport {
     let mut report = UpdateReport {
         ok: false,
@@ -355,15 +445,25 @@ pub fn apply_bundles_atomic(
         }
     };
 
-    // Drop previous server-mirror rows only (keep OSM / CSV / OpenRepeater / User).
-    if let Err(e) = db.delete_sources(&[RepeaterSource::RadioId, RepeaterSource::RepeaterBook]) {
+    // Server-owned rows only. RepeaterBook files are re-applied by the caller
+    // into this same staging database so a new generation cannot drop them.
+    if let Err(e) = db.delete_sources(&[RepeaterSource::RadioId, RepeaterSource::Osm]) {
         report.error = Some(format!("clear server sources: {e}"));
         let _ = std::fs::remove_file(&staging);
         return report;
     }
 
     let mut imported = 0usize;
-    for b in bundles {
+    let mut ordered: Vec<&CountryBundle> = bundles
+        .iter()
+        .filter(|b| b.source.eq_ignore_ascii_case("osm"))
+        .collect();
+    ordered.extend(
+        bundles
+            .iter()
+            .filter(|b| !b.source.eq_ignore_ascii_case("osm")),
+    );
+    for b in ordered {
         match decode_country_bundle(b) {
             Ok((json, _)) => {
                 match import_mirror_payload(&db, &json, &b.source, b.attribution.as_ref()) {
@@ -393,6 +493,25 @@ pub fn apply_bundles_atomic(
             }
         }
     }
+
+    if let Some(dir) = drop_dir {
+        if dir.is_dir() {
+            if let Err(e) = db.delete_sources(&[RepeaterSource::RepeaterBook]) {
+                report.error = Some(format!("clear file rows before reimport: {e}"));
+                let _ = std::fs::remove_file(&staging);
+                return report;
+            }
+            let file_batch = crate::repeaterbook::merge_directory_into(&db, dir);
+            if !file_batch.ok {
+                report.error = file_batch.error.or_else(|| {
+                    Some("repeater folder reimport failed; kept last good data".into())
+                });
+                let _ = std::fs::remove_file(&staging);
+                return report;
+            }
+        }
+    }
+    drop(db);
 
     // Atomic replace
     let bak = parent.join("cat_repeaters.sqlite.bak");
@@ -436,6 +555,16 @@ fn write_applied_generation(live_db_path: &Path, generation: &str) {
 
 /// Blocking HTTPS fetch of current.json + each country (for UniFFI / desktop).
 pub fn fetch_and_update(base_url: &str, live_db_path: &Path) -> UpdateReport {
+    fetch_and_update_with_files(base_url, live_db_path, None)
+}
+
+/// Like [`fetch_and_update`], then rebuilds RepeaterBook rows from `drop_dir`
+/// inside the same staging database before the atomic swap.
+pub fn fetch_and_update_with_files(
+    base_url: &str,
+    live_db_path: &Path,
+    drop_dir: Option<&Path>,
+) -> UpdateReport {
     let base = base_url.trim_end_matches('/');
     let client = match reqwest::blocking::Client::builder()
         .user_agent("Navi-CAT/0.3.22 (+https://github.com/Supermagnum/Navi)")
@@ -575,7 +704,7 @@ pub fn fetch_and_update(base_url: &str, live_db_path: &Path) -> UpdateReport {
         return report_early;
     }
 
-    let mut report = apply_bundles_atomic(live_db_path, &catalog, &bundles, &["radioid"]);
+    let mut report = apply_bundles_atomic(live_db_path, &catalog, &bundles, &["radioid"], drop_dir);
     if report.ok {
         write_applied_generation(live_db_path, &catalog.generation);
     }
@@ -636,7 +765,7 @@ mod tests {
                 lat: Some(60.0),
                 lon: Some(10.0),
                 freq_out_mhz: 145.0,
-                shift_mhz: -0.6,
+                shift_mhz: Some(-0.6),
                 ctcss_hz: Some(88.5),
                 dcs_code: None,
                 color_code: None,
@@ -649,6 +778,13 @@ mod tests {
                 position_accurate: true,
                 exclude_recommended: false,
                 attribution: None,
+                access: crate::repeater::AccessTone::Ctcss,
+                country: Some("NO".into()),
+                file_kind: Some("osm".into()),
+                original_lat: None,
+                original_lon: None,
+                relocated: false,
+                relocation_note: None,
             })
             .unwrap();
         }
@@ -668,7 +804,7 @@ mod tests {
             sources: vec![],
             fixture_note: None,
         };
-        let report = apply_bundles_atomic(&db_path, &cat, &[bundle], &["radioid"]);
+        let report = apply_bundles_atomic(&db_path, &cat, &[bundle], &["radioid"], None);
         assert!(!report.ok);
         assert!(report.kept_last_good);
         let db = RepeaterDb::open_path(&db_path).unwrap();
@@ -701,7 +837,7 @@ mod tests {
                 lat: Some(60.0),
                 lon: Some(10.0),
                 freq_out_mhz: 145.0,
-                shift_mhz: -0.6,
+                shift_mhz: Some(-0.6),
                 ctcss_hz: Some(88.5),
                 dcs_code: None,
                 color_code: None,
@@ -714,6 +850,13 @@ mod tests {
                 position_accurate: true,
                 exclude_recommended: false,
                 attribution: None,
+                access: crate::repeater::AccessTone::Ctcss,
+                country: Some("NO".into()),
+                file_kind: Some("osm".into()),
+                original_lat: None,
+                original_lon: None,
+                relocated: false,
+                relocation_note: None,
             })
             .unwrap();
         }
@@ -723,7 +866,7 @@ mod tests {
             sources: vec![],
             fixture_note: None,
         };
-        let report = apply_bundles_atomic(&db_path, &cat, &[], &["radioid"]);
+        let report = apply_bundles_atomic(&db_path, &cat, &[], &["radioid"], None);
         assert!(!report.ok || report.imported == 0);
         let db = RepeaterDb::open_path(&db_path).unwrap();
         assert!(db
@@ -753,7 +896,7 @@ mod tests {
         };
         let cat = parse_current(&fs::read_to_string(fixture("current_radioid_only.json")).unwrap())
             .unwrap();
-        let report = apply_bundles_atomic(&db_path, &cat, &[bundle], &["radioid"]);
+        let report = apply_bundles_atomic(&db_path, &cat, &[bundle], &["radioid"], None);
         assert!(report.ok, "{report:?}");
         assert!(report.imported >= 1);
         assert!(report
@@ -776,5 +919,148 @@ mod tests {
         assert!(all
             .iter()
             .any(|s| s.attribution.as_deref() == Some("Data courtesy of RadioID.net")));
+    }
+
+    fn bundle(source: &str, country: &str, json: &str) -> CountryBundle {
+        let zst = zstd::stream::encode_all(json.as_bytes(), 1).unwrap();
+        let hex = sha256_hex(&zst);
+        CountryBundle {
+            source: source.into(),
+            country_slug: country.into(),
+            manifest_json: format!(r#"{{"files":{{"repeaters.json.zst":{{"sha256":"{hex}"}}}}}}"#),
+            checksums_text: format!("{hex}  repeaters.json.zst\n"),
+            zst_bytes: zst,
+            attribution: None,
+        }
+    }
+
+    #[test]
+    fn osm_rows_keep_element_ids_and_unknown_shift_and_burst() {
+        let db = RepeaterDb::open_memory().unwrap();
+        let json = r#"{
+            "source":"osm","country_slug":"no",
+            "repeaters":[
+              {"callsign":"LA5MR","osm_type":"node","osm_id":1705107664,"output_hz":145625000,"shift_hz":-600000,"ctcss_encode_hz":88.5,"lat":60.4781659,"lon":10.6018219,"mode":"FM"},
+              {"callsign":"LA5MR","osm_type":"node","osm_id":12635462528,"output_hz":145625000,"shift_hz":-600000,"ctcss_encode_hz":88.5,"lat":61.2532188,"lon":8.2030446,"mode":"FM","network":{"name":"LA5MR"}},
+              {"callsign":"LA5YR","osm_type":"node","osm_id":5574482764,"output_hz":434900000,"shift_hz":-2000000,"toneburst_hz":1750.0,"lat":59.7802919,"lon":11.0038215,"mode":"FM"},
+              {"callsign":"LA5MR","osm_type":"node","osm_id":1011896359,"output_hz":145637500,"shift_hz":null,"lat":60.2298669,"lon":10.6066179,"mode":"FM"},
+              {"callsign":"LD1FR","osm_type":"node","osm_id":14266941716,"output_hz":145687500,"dcs_encode":125,"lat":59.2285626,"lon":10.9411588,"mode":"FM"}
+            ]
+        }"#;
+        import_mirror_payload(&db, json, "user", None).unwrap();
+        assert_eq!(db.count_sites(), 5);
+        let sites = db.list_sites();
+        assert!(sites.iter().all(|s| s.source == RepeaterSource::Osm));
+        assert!(sites.iter().any(|s| s.id == "osm-node-1705107664"));
+        assert!(sites.iter().any(|s| s.id == "osm-node-12635462528"));
+        let burst = sites
+            .iter()
+            .find(|s| s.id == "osm-node-5574482764")
+            .unwrap();
+        assert_eq!(burst.access, AccessTone::ToneBurst1750);
+        assert!(burst.ctcss_hz.is_none());
+        let missing = sites
+            .iter()
+            .find(|s| s.id == "osm-node-1011896359")
+            .unwrap();
+        assert!(missing.shift_mhz.is_none());
+        let dcs = sites
+            .iter()
+            .find(|s| s.id == "osm-node-14266941716")
+            .unwrap();
+        assert_eq!(dcs.access, AccessTone::Dcs);
+        assert_eq!(dcs.dcs_code, Some(125));
+    }
+
+    #[test]
+    fn radioid_ld1oa_matches_the_osm_node_1m_away() {
+        let db = RepeaterDb::open_memory().unwrap();
+        let osm = r#"{"source":"osm","country_slug":"no","repeaters":[
+            {"callsign":"LD1OA","osm_type":"node","osm_id":14266844182,"output_hz":434887500,"shift_hz":-2000000,"lat":59.9800956,"lon":10.8960642,"mode":"DMR"}
+        ]}"#;
+        let radio = r#"{"source":"radioid","country_slug":"no","repeaters":[
+            {"callsign":"LD1OA","output_hz":434887500,"shift_hz":-2000000,"lat":59.980099,"lon":10.896087,"mode":"DMR"}
+        ]}"#;
+        import_mirror_payload(&db, osm, "osm", None).unwrap();
+        import_mirror_payload(&db, radio, "radioid", None).unwrap();
+        let rows: Vec<_> = db
+            .list_sites()
+            .into_iter()
+            .filter(|s| s.callsign == "LD1OA")
+            .collect();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].source, RepeaterSource::Osm);
+        assert!((rows[0].lat.unwrap() - 59.9800956).abs() < 1e-6);
+    }
+
+    #[test]
+    fn kml_rows_survive_a_server_generation() {
+        let live = tempfile::tempdir().unwrap();
+        let db_path = live.path().join("cat_repeaters.sqlite");
+        let drop = live.path().join("repeaters");
+        fs::create_dir(&drop).unwrap();
+        fs::write(drop.join("la5mr.kml"), r#"<?xml version="1.0"?>
+<kml><Document><Placemark><name>LA5ARR</name>
+<description><![CDATA[Tretten<br>434.775000 71.9<br>On-air: Yes<br>
+<a href='https://www.repeaterbook.com/row_repeaters/details.php?state_id=NO&amp;ID=2'>Click for Details</a>
+]]></description>
+<Point><coordinates>10.3113599,61.2803118,0</coordinates></Point>
+</Placemark></Document></kml>"#).unwrap();
+        crate::repeaterbook::import_directory(&drop, &db_path, None);
+        let json = r#"{"source":"osm","country_slug":"no","repeaters":[
+            {"callsign":"LA5MR","osm_type":"node","osm_id":1705107664,"output_hz":145625000,"shift_hz":-600000,"ctcss_encode_hz":88.5,"lat":60.4781659,"lon":10.6018219,"mode":"FM"}
+        ]}"#;
+        let cat = CurrentCatalog {
+            schema: 1,
+            generation: "test".into(),
+            sources: vec![],
+            fixture_note: None,
+        };
+        let report = apply_bundles_atomic(
+            &db_path,
+            &cat,
+            &[bundle("osm", "no", json)],
+            &[],
+            Some(&drop),
+        );
+        assert!(report.ok, "{:?}", report.error);
+        let db = RepeaterDb::open_path(&db_path).unwrap();
+        let sites = db.list_sites();
+        assert!(sites.iter().any(|s| s.id == "osm-node-1705107664"));
+        assert!(sites
+            .iter()
+            .any(|s| s.callsign == "LA5ARR" && s.source == RepeaterSource::RepeaterBook));
+    }
+
+    #[test]
+    fn outside_norway_radioid_position_wins() {
+        let db = RepeaterDb::open_memory().unwrap();
+        let radio = r#"{"source":"radioid","country_slug":"se","repeaters":[
+            {"callsign":"SG0SZK","output_hz":434587500,"shift_hz":-2000000,"lat":59.3306,"lon":18.3852,"mode":"DMR"}
+        ]}"#;
+        import_mirror_payload(&db, radio, "radioid", None).unwrap();
+        let kml = r#"<?xml version="1.0"?>
+<kml><Document><Placemark><name>SG0SZK</name>
+<description><![CDATA[Stockholm<br>434.587500<br>On-air: Yes<br>
+<a href='https://www.repeaterbook.com/row_repeaters/details.php?state_id=SE&amp;ID=1'>Click for Details</a>
+]]></description>
+<Point><coordinates>18.3870,59.3306,0</coordinates></Point>
+</Placemark></Document></kml>"#;
+        let recs = crate::repeaterbook::parse_kml_bytes("se.kml", kml.as_bytes()).unwrap();
+        crate::repeaterbook::merge_records(&db, &recs);
+        let rows: Vec<_> = db
+            .list_sites()
+            .into_iter()
+            .filter(|s| s.callsign == "SG0SZK")
+            .collect();
+        assert_eq!(
+            rows.len(),
+            1,
+            "{:?}",
+            rows.iter().map(|s| &s.id).collect::<Vec<_>>()
+        );
+        assert_eq!(rows[0].source, RepeaterSource::RadioId);
+        assert!((rows[0].lat.unwrap() - 59.3306).abs() < 1e-6);
+        assert!((rows[0].lon.unwrap() - 18.3852).abs() < 1e-6);
     }
 }

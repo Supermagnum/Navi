@@ -7,6 +7,7 @@
 //! - Full read-back verification with one retry
 
 pub mod benshi;
+pub mod consensus;
 pub mod coverage;
 pub mod ffi;
 pub mod gating;
@@ -15,6 +16,7 @@ pub mod mirror;
 pub mod program;
 pub mod repeater;
 pub mod repeaterbook;
+pub mod resolve;
 pub mod tcp;
 pub mod types;
 
@@ -22,7 +24,7 @@ pub use benshi::{BenshiBackend, FakeBenshiPeer, TuningMethod};
 pub use ffi::FfiRigBackend;
 pub use gating::{gate_from_dump_caps, GateDecision, GateStatus};
 pub use program::{program_vfo1_verified, ProgramError, ProgramRequest, ReportedVfo};
-pub use repeater::{RepeaterDb, RepeaterSite, RepeaterSource};
+pub use repeater::{AccessTone, RepeaterDb, RepeaterSite, RepeaterSource};
 pub use tcp::TcpRigBackend;
 pub use types::{RigBackend, RigError, ShiftDir, VfoState};
 

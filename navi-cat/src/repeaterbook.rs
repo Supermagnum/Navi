@@ -23,8 +23,11 @@ use crate::repeater::{RepeaterDb, RepeaterSite, RepeaterSource};
 pub const DEDUP_DISTANCE_KM: f64 = 1.0;
 /// Minimum fractional digits before a CSV coordinate column is trusted (~111 m).
 pub const COORD_MIN_DECIMALS: usize = 3;
-/// Default radius when the position is outside every installed map pack.
-pub const DEFAULT_REGION_RADIUS_KM: f64 = 100.0;
+/// One radius for the dropdown and for follow. Installed packs have no
+/// polygon, so the circle is the whole "region". 150 km is the distance the
+/// follow scorer and the host query already use. A tighter dropdown would
+/// hide a network that follow can still select.
+pub const DEFAULT_REGION_RADIUS_KM: f64 = 150.0;
 
 const FREQ_MATCH_MHZ: f64 = 0.0125;
 
@@ -41,6 +44,7 @@ pub struct RbRecord {
     pub country: Option<String>,
     pub on_air: bool,
     pub network: Option<String>,
+    pub access: crate::repeater::AccessTone,
     pub file_name: String,
     pub kind: String,
 }
@@ -131,6 +135,7 @@ fn parse_kml_str(file_name: &str, text: &str) -> Result<Vec<RbRecord>, String> {
                     country: None,
                     on_air: true,
                     network: None,
+                    access: crate::repeater::AccessTone::Unknown,
                     file_name: file_name.to_string(),
                     kind: "kml".into(),
                 });
@@ -182,6 +187,7 @@ fn placemark_record(
         country: fields.country,
         on_air: fields.on_air,
         network: None,
+        access: fields.access,
         file_name: file_name.to_string(),
         kind: "kml".into(),
     })
@@ -221,6 +227,7 @@ struct DescFields {
     on_air: bool,
     country: Option<String>,
     mode: String,
+    access: crate::repeater::AccessTone,
 }
 
 fn parse_description(raw: &str) -> DescFields {
@@ -236,6 +243,7 @@ fn parse_description(raw: &str) -> DescFields {
     let mut ctcss_hz = None;
     let mut on_air = true;
     let mut mode = "FM".to_string();
+    let mut access = crate::repeater::AccessTone::Unknown;
     for (i, line) in plain.iter().enumerate() {
         let lower = line.to_ascii_lowercase();
         if let Some(rest) = lower.strip_prefix("on-air:") {
@@ -252,7 +260,17 @@ fn parse_description(raw: &str) -> DescFields {
         if freq_mhz.is_none() {
             if let Some((f, tone)) = parse_freq_tone(line) {
                 freq_mhz = Some(f);
-                ctcss_hz = tone;
+                match tone {
+                    Some(hz) if hz > 260.0 => {
+                        access = crate::repeater::AccessTone::ToneBurst1750;
+                        ctcss_hz = None;
+                    }
+                    Some(hz) => {
+                        access = crate::repeater::AccessTone::Ctcss;
+                        ctcss_hz = Some(hz);
+                    }
+                    None => {}
+                }
                 continue;
             }
         }
@@ -267,6 +285,7 @@ fn parse_description(raw: &str) -> DescFields {
         on_air,
         country,
         mode,
+        access,
     }
 }
 
@@ -323,18 +342,15 @@ fn unescape_basic(s: &str) -> String {
         .replace("&nbsp;", " ")
 }
 
-/// CTCSS is the second number when it is at most 260 Hz. 1750 Hz is a tone burst,
-/// not a CTCSS tone, and is not stored as `ctcss_hz`.
+/// The second number is CTCSS when it is 60 to 260 Hz. Anything above 260 Hz,
+/// including 1750, is a tone burst and is not a CTCSS value.
 fn parse_freq_tone(line: &str) -> Option<(f64, Option<f64>)> {
     let mut nums = line.split_whitespace();
     let freq: f64 = nums.next()?.parse().ok()?;
     if !(1.0..=1300.0).contains(&freq) {
         return None;
     }
-    let tone = nums
-        .next()
-        .and_then(|s| s.parse::<f64>().ok())
-        .filter(|t| (60.0..=260.0).contains(t));
+    let tone = nums.next().and_then(|s| s.parse::<f64>().ok());
     Some((freq, tone))
 }
 
@@ -369,22 +385,32 @@ fn parse_csv_str(file_name: &str, text: &str) -> Result<Vec<RbRecord>, String> {
         "output",
         "output frequency",
         "downlink",
+        "tx",
     ])
     .ok_or_else(|| "csv missing frequency column".to_string())?;
-    let i_lat = idx(&["latitude", "lat"]);
-    let i_lon = idx(&["longitude", "lon", "lng", "long"]);
+    let i_rx = idx(&["rx", "input", "uplink"]);
+    let i_lat = idx(&["latitude", "lat"])
+        .or_else(|| idx(&["best_lat"]))
+        .or_else(|| idx(&["local_lat"]))
+        .or_else(|| idx(&["repeaterbook_lat"]))
+        .or_else(|| idx(&["radioid_lat"]))
+        .or_else(|| idx(&["osm_lat"]))
+        .or_else(|| idx(&["locator_lat"]));
+    let i_lon = idx(&["longitude", "lon", "lng", "long"])
+        .or_else(|| idx(&["best_lon"]))
+        .or_else(|| idx(&["local_lon"]))
+        .or_else(|| idx(&["repeaterbook_lon"]))
+        .or_else(|| idx(&["radioid_lon"]))
+        .or_else(|| idx(&["osm_lon"]))
+        .or_else(|| idx(&["locator_lon"]));
     let i_shift = idx(&["offset", "shift"]);
     let i_ctcss = idx(&["ctcss", "tone", "ctcss tx", "ctcss rx"]);
-    let i_mode = idx(&["mode"]);
+    let i_mode = idx(&["mode", "type"]);
     let i_net = idx(&["network", "system"]);
     let i_loc = idx(&["location", "city", "nearest city"]);
     let i_status = idx(&["status", "on-air", "on air"]);
 
     let rows: Vec<Vec<String>> = lines.map(split_csv).collect();
-    let coords_ok = match (i_lat, i_lon) {
-        (Some(la), Some(lo)) => rows.iter().all(|r| row_coords_ok(r, la, lo)),
-        _ => false,
-    };
 
     let mut out = Vec::new();
     for row in rows {
@@ -399,12 +425,31 @@ fn parse_csv_str(file_name: &str, text: &str) -> Result<Vec<RbRecord>, String> {
             .get(i_freq)
             .and_then(|s| s.trim().replace(',', ".").parse().ok())
             .unwrap_or(f64::NAN);
-        let (lat, lon) = if coords_ok {
-            let lat = row[i_lat.unwrap()].trim().parse().unwrap();
-            let lon = row[i_lon.unwrap()].trim().parse().unwrap();
-            (Some(lat), Some(lon))
-        } else {
-            (None, None)
+        let (lat, lon) = match (i_lat, i_lon) {
+            (Some(la), Some(lo)) if row_coords_ok(&row, la, lo) => {
+                let lat = row[la].trim().parse().unwrap();
+                let lon = row[lo].trim().parse().unwrap();
+                (Some(lat), Some(lon))
+            }
+            _ => (None, None),
+        };
+        let rx: Option<f64> = i_rx
+            .and_then(|i| row.get(i))
+            .and_then(|s| s.trim().replace(',', ".").parse().ok());
+        let shift_mhz = i_shift
+            .and_then(|i| row.get(i))
+            .and_then(|s| s.trim().replace(',', ".").parse().ok())
+            .or_else(|| rx.map(|rx| rx - freq).filter(|_| freq.is_finite()));
+        let tone: Option<f64> = i_ctcss
+            .and_then(|i| row.get(i))
+            .and_then(|s| s.trim().replace(',', ".").parse().ok());
+        let (access, ctcss_hz) = match tone {
+            Some(hz) if hz > 260.0 => (crate::repeater::AccessTone::ToneBurst1750, None),
+            Some(hz) if (60.0..=260.0).contains(&hz) => {
+                (crate::repeater::AccessTone::Ctcss, Some(hz))
+            }
+            Some(_) => (crate::repeater::AccessTone::Unknown, None),
+            None => (crate::repeater::AccessTone::Unknown, None),
         };
         let mode = i_mode
             .and_then(|i| row.get(i))
@@ -425,12 +470,8 @@ fn parse_csv_str(file_name: &str, text: &str) -> Result<Vec<RbRecord>, String> {
                 .map(|s| s.trim().to_string())
                 .unwrap_or_default(),
             freq_out_mhz: freq,
-            shift_mhz: i_shift
-                .and_then(|i| row.get(i))
-                .and_then(|s| s.trim().parse().ok()),
-            ctcss_hz: i_ctcss
-                .and_then(|i| row.get(i))
-                .and_then(|s| s.trim().parse().ok()),
+            shift_mhz,
+            ctcss_hz,
             mode,
             lat,
             lon,
@@ -440,6 +481,7 @@ fn parse_csv_str(file_name: &str, text: &str) -> Result<Vec<RbRecord>, String> {
                 .and_then(|i| row.get(i))
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
+            access,
             file_name: file_name.to_string(),
             kind: "csv".into(),
         });
@@ -556,53 +598,8 @@ enum Apply {
 }
 
 fn apply_one(db: &RepeaterDb, rec: &RbRecord) -> Apply {
-    let osm: Vec<RepeaterSite> = db
-        .list_sites()
-        .into_iter()
-        .filter(|s| {
-            s.source == RepeaterSource::Osm && s.callsign.eq_ignore_ascii_case(&rec.callsign)
-        })
-        .collect();
-    if let Some(hit) = best_osm_match(&osm, rec) {
-        let mut fields = Vec::new();
-        let mut updated = hit.clone();
-        if (hit.freq_out_mhz - rec.freq_out_mhz).abs() > FREQ_MATCH_MHZ {
-            updated.freq_out_mhz = rec.freq_out_mhz;
-            fields.push("frequency");
-        }
-        if let Some(tone) = rec.ctcss_hz {
-            if hit
-                .ctcss_hz
-                .map(|c| (c - tone).abs() > 0.05)
-                .unwrap_or(true)
-            {
-                updated.ctcss_hz = Some(tone);
-                fields.push("ctcss");
-            }
-        }
-        if let Some(shift) = rec.shift_mhz {
-            if (hit.shift_mhz - shift).abs() > 0.001 {
-                updated.shift_mhz = shift;
-                fields.push("shift");
-            }
-        }
-        if fields.is_empty() {
-            if updated.attribution.is_none() {
-                updated.attribution = Some(provenance(rec));
-            }
-            let _ = db.upsert_site(&updated);
-            return Apply::Merged;
-        }
-        updated.conflict = true;
-        updated.conflict_note = Some(format!(
-            "RepeaterBook override ({}) from {}",
-            fields.join(","),
-            rec.file_name
-        ));
-        updated.attribution = Some(provenance(rec));
-        let note = updated.conflict_note.clone().unwrap_or_default();
-        let _ = db.upsert_site(&updated);
-        return Apply::Override(note);
+    if !rec.freq_out_mhz.is_finite() {
+        return Apply::Unplaced;
     }
     let placed = rec.lat.is_some() && rec.lon.is_some();
     let site = RepeaterSite {
@@ -611,7 +608,7 @@ fn apply_one(db: &RepeaterDb, rec: &RbRecord) -> Apply {
         lat: rec.lat,
         lon: rec.lon,
         freq_out_mhz: rec.freq_out_mhz,
-        shift_mhz: rec.shift_mhz.unwrap_or(0.0),
+        shift_mhz: rec.shift_mhz,
         ctcss_hz: rec.ctcss_hz,
         dcs_code: None,
         color_code: None,
@@ -628,12 +625,28 @@ fn apply_one(db: &RepeaterDb, rec: &RbRecord) -> Apply {
         position_accurate: placed,
         exclude_recommended: !rec.on_air || !is_fm_mode(&rec.mode),
         attribution: Some(provenance(rec)),
+        access: rec.access,
+        country: rec.country.clone(),
+        file_kind: Some(rec.kind.clone()),
+        original_lat: None,
+        original_lon: None,
+        relocated: false,
+        relocation_note: None,
     };
-    let _ = db.upsert_site(&site);
-    if placed {
-        Apply::Added
-    } else {
-        Apply::Unplaced
+    if !placed {
+        let _ = db.upsert_site(&site);
+        return Apply::Unplaced;
+    }
+    match crate::resolve::merge_incoming(db, &site) {
+        crate::resolve::MergeOutcome::Added => Apply::Added,
+        crate::resolve::MergeOutcome::Merged { fields } if fields.is_empty() => Apply::Merged,
+        crate::resolve::MergeOutcome::Merged { fields } => {
+            Apply::Override(format!("{}: {}", rec.callsign, fields.join(", ")))
+        }
+        crate::resolve::MergeOutcome::PositionDiffers { distance_km } => Apply::Override(format!(
+            "{}: position differs from OSM ({distance_km:.1} km)",
+            rec.callsign
+        )),
     }
 }
 
@@ -651,28 +664,79 @@ fn provenance(rec: &RbRecord) -> String {
     format!("{kind}: {}", rec.file_name)
 }
 
-fn best_osm_match(osm: &[RepeaterSite], rec: &RbRecord) -> Option<RepeaterSite> {
-    let mut best: Option<(f64, RepeaterSite)> = None;
-    for s in osm {
-        let freq_d = (s.freq_out_mhz - rec.freq_out_mhz).abs();
-        let pos_ok = match (s.lat, s.lon, rec.lat, rec.lon) {
-            (Some(a), Some(b), Some(c), Some(d)) => haversine_km(a, b, c, d) <= DEDUP_DISTANCE_KM,
-            (None, None, _, _) => true,
-            (_, _, None, None) => freq_d <= FREQ_MATCH_MHZ,
-            _ => freq_d <= FREQ_MATCH_MHZ,
-        };
-        if !pos_ok && freq_d > FREQ_MATCH_MHZ {
+/// Parse the drop folder into an already-open database. Does not swap files.
+/// The caller decides whether to delete previous RepeaterBook rows first.
+pub fn merge_directory_into(db: &RepeaterDb, dir: &Path) -> ImportBatch {
+    let rd = match std::fs::read_dir(dir) {
+        Ok(rd) => rd,
+        Err(e) => {
+            return ImportBatch {
+                ok: false,
+                kept_last_good: true,
+                error: Some(format!("read dir: {e}")),
+                ..ImportBatch::default()
+            };
+        }
+    };
+    let mut files: Vec<(String, Vec<u8>)> = Vec::new();
+    for ent in rd.flatten() {
+        let name = ent.file_name().to_string_lossy().to_string();
+        let lower = name.to_ascii_lowercase();
+        if !(lower.ends_with(".kml") || lower.ends_with(".kmz") || lower.ends_with(".csv")) {
             continue;
         }
-        if !pos_ok {
-            continue;
-        }
-        let score = freq_d;
-        if best.as_ref().map(|(d, _)| score < *d).unwrap_or(true) {
-            best = Some((score, s.clone()));
+        match std::fs::read(ent.path()) {
+            Ok(bytes) => files.push((name, bytes)),
+            Err(e) => {
+                return ImportBatch {
+                    ok: false,
+                    kept_last_good: true,
+                    error: Some(format!("{name}: {e}")),
+                    ..ImportBatch::default()
+                };
+            }
         }
     }
-    best.map(|(_, s)| s)
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut reports = Vec::new();
+    for (name, bytes) in &files {
+        let lower = name.to_ascii_lowercase();
+        let parsed = if lower.ends_with(".kmz") {
+            parse_kmz_bytes(name, bytes)
+        } else if lower.ends_with(".csv") {
+            parse_csv_bytes(name, bytes)
+        } else {
+            parse_kml_bytes(name, bytes)
+        };
+        match parsed {
+            Ok(mut recs) => {
+                let dropped = dedup_records(&mut recs);
+                let mut report = merge_records(db, &recs);
+                report.file_name = name.clone();
+                report.kind = if lower.ends_with(".csv") {
+                    "csv".into()
+                } else if lower.ends_with(".kmz") {
+                    "kmz".into()
+                } else {
+                    "kml".into()
+                };
+                report.duplicates_dropped = dropped;
+                reports.push(report);
+            }
+            Err(e) => reports.push(FileReport {
+                file_name: name.clone(),
+                kind: "kml".into(),
+                error: Some(e),
+                ..FileReport::default()
+            }),
+        }
+    }
+    ImportBatch {
+        ok: true,
+        kept_last_good: false,
+        files: reports,
+        error: None,
+    }
 }
 
 /// Read a drop directory. Unknown extensions are ignored. One bad file does not
@@ -980,7 +1044,8 @@ On-air: Yes<br>
         let recs = parse_csv_bytes("without.csv", without).unwrap();
         assert!(recs[0].lat.is_none());
         let report = merge_records(&db, &recs);
-        assert_eq!(report.merged_osm, 1);
+        assert_eq!(report.csv_without_position, 1);
+        assert_eq!(report.merged_osm, 0);
 
         let bad = b"Callsign,Frequency,Latitude,Longitude\nLA6GR,434.75,0.000,0.000\nLA5MR,145.625,91.000,10.000\n";
         let recs = parse_csv_bytes("bad.csv", bad).unwrap();
@@ -1082,5 +1147,39 @@ On-air: Yes<br>
             );
         }
         assert!(!batch.files.is_empty());
+    }
+
+    #[test]
+    fn csv_tx_is_output_and_1750_is_a_burst() {
+        let bytes =
+            b"callsign,tx,rx,tone,best_lat,best_lon\nLA5YR,434.900,432.900,1750,59.780,11.004\n";
+        let recs = parse_csv_bytes("tx.csv", bytes).unwrap();
+        assert_eq!(recs.len(), 1);
+        assert!((recs[0].freq_out_mhz - 434.9).abs() < 1e-4);
+        assert!((recs[0].shift_mhz.unwrap() - (-2.0)).abs() < 1e-3);
+        assert_eq!(recs[0].access, crate::repeater::AccessTone::ToneBurst1750);
+        assert!(recs[0].ctcss_hz.is_none());
+    }
+
+    #[test]
+    fn real_merged_csv_counts_when_the_file_is_present() {
+        let Some(path) = std::env::var_os("NAVI_REPEATER_CSV") else {
+            return;
+        };
+        let path = std::path::PathBuf::from(path);
+        let bytes = std::fs::read(path).unwrap();
+        let recs = parse_csv_bytes("repeaters_merged.csv", &bytes).unwrap();
+        let placed = recs.iter().filter(|r| r.lat.is_some()).count();
+        let burst = recs
+            .iter()
+            .filter(|r| r.access == crate::repeater::AccessTone::ToneBurst1750)
+            .count();
+        eprintln!(
+            "merged csv parsed={} placed={} burst={}",
+            recs.len(),
+            placed,
+            burst
+        );
+        assert!(recs.len() > 300);
     }
 }

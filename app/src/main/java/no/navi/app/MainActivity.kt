@@ -1236,6 +1236,7 @@ private fun NaviMapScreen() {
                 networkChoice = MapHudPrefs.loadCatNetworkChoice(context),
                 followNetworkId = MapHudPrefs.loadCatNetworkChoice(context),
                 repeaterDropPath = CatBootstrap.repeaterDropDir(context).absolutePath,
+                consensusRelocation = MapHudPrefs.loadCatConsensusRelocation(context),
             ),
         )
     }
@@ -1283,7 +1284,16 @@ private fun NaviMapScreen() {
             val name = o.optString("network_id")
             if (name.isBlank()) continue
             val dist = o.optDouble("distance_km", Double.NaN)
-            if (!dist.isFinite() || dist > 100.0) continue
+            if (!dist.isFinite() || dist > 150.0) continue
+            val modulation = o.optString("modulation")
+            if (modulation.contains("DMR", ignoreCase = true) ||
+                modulation.contains("DSTAR", ignoreCase = true) ||
+                modulation.contains("D-STAR", ignoreCase = true) ||
+                modulation.contains("C4FM", ignoreCase = true) ||
+                modulation.contains("APRS", ignoreCase = true)
+            ) {
+                continue
+            }
             counts[name] = (counts[name] ?: 0) + 1
             val prev = nearest[name]
             if (prev == null || dist < prev) nearest[name] = dist
@@ -1310,7 +1320,10 @@ private fun NaviMapScreen() {
         val names = networkNamesFromNearby(nearby)
         val saved = MapHudPrefs.loadCatNetworkChoice(context)
         val (choice, notice) =
-            if (saved == MapHudPrefs.CAT_NETWORK_OFF || saved == MapHudPrefs.CAT_NETWORK_AUTO) {
+            if (saved == MapHudPrefs.CAT_NETWORK_OFF ||
+                saved == MapHudPrefs.CAT_NETWORK_AUTO ||
+                saved == MapHudPrefs.CAT_NETWORK_STANDALONE
+            ) {
                 saved to ""
             } else if (names.any { it.name.equals(saved, ignoreCase = true) }) {
                 saved to ""
@@ -6660,11 +6673,17 @@ private fun NaviMapScreen() {
                             .JSONObject()
                             .put("dir", CatBootstrap.repeaterDropDir(context).absolutePath)
                             .put("base", "https://navigate-me.duckdns.org")
+                            .put("consensus", catUi.consensusRelocation)
+                            .put("elev", java.io.File(dataDir, "elevation").absolutePath)
                             .toString()
                     val msg = uniffi.navi.catPluginUpdateRepeatersFromServer(payload)
                     catUi = catUi.copy(lastMessage = msg)
                     refreshCatUi()
                     status = "CAT repeater update: $msg"
+                },
+                onConsensusRelocationChange = { enabled ->
+                    MapHudPrefs.saveCatConsensusRelocation(context, enabled)
+                    catUi = catUi.copy(consensusRelocation = enabled)
                 },
                 onConnect = {
                     MapHudPrefs.saveCatRigModel(context, catUi.rigModel)

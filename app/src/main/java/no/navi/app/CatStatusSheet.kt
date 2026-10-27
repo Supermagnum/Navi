@@ -15,6 +15,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -51,6 +52,7 @@ data class CatUiState(
     val repeaterDropPath: String = "",
     val networkNames: List<CatNetworkChip> = emptyList(),
     val lastMessage: String = "",
+    val consensusRelocation: Boolean = false,
 )
 
 /** One dropdown row: name, programmable members in the region, nearest member. */
@@ -78,6 +80,7 @@ fun CatStatusSheet(
     onFollowEnable: () -> Unit,
     onFollowDisable: () -> Unit,
     onUpdateRepeaters: () -> Unit,
+    onConsensusRelocationChange: (Boolean) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -111,6 +114,28 @@ fun CatStatusSheet(
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag("cat_licence_listen_only"),
             )
+            Text(
+                "A 1750 Hz burst repeater is tuned with CTCSS and DCS off. Navi never sends the burst; you do that on the radio.",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("cat_toneburst_note"),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Move non-OSM repeaters to the most likely site")
+                    Text(
+                        "Off by default. Uses agreeing RadioID and file positions only. OSM sites stay put.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(
+                    checked = state.consensusRelocation,
+                    onCheckedChange = onConsensusRelocationChange,
+                    modifier = Modifier.testTag("cat_consensus_relocation"),
+                )
+            }
             Text(
                 "Receive-only programming. Navi never transmits (no PTT).",
                 style = MaterialTheme.typography.bodySmall,
@@ -163,6 +188,12 @@ fun CatStatusSheet(
                         label = { Text("${chip.name} (${chip.members}, $km km)") },
                     )
                 }
+                FilterChip(
+                    selected = state.networkChoice == MapHudPrefs.CAT_NETWORK_STANDALONE,
+                    onClick = { onFollowNetworkChange(MapHudPrefs.CAT_NETWORK_STANDALONE) },
+                    label = { Text("Standalone repeaters (nearest)") },
+                    modifier = Modifier.testTag("cat_network_standalone"),
+                )
                 FilterChip(
                     selected = state.networkChoice == MapHudPrefs.CAT_NETWORK_OFF,
                     onClick = { onFollowNetworkChange(MapHudPrefs.CAT_NETWORK_OFF) },
@@ -385,11 +416,22 @@ private fun parseNearby(json: String): List<String> =
                     if (dist.isFinite()) String.format(java.util.Locale.US, "%.1f km", dist) else "?"
                 val freqLabel =
                     if (freq.isFinite()) String.format(java.util.Locale.US, "%.3f", freq) else "?"
+                val access = o.optString("access")
+                val relocated = o.optBoolean("relocated", false)
+                val relocation = o.optString("relocation_note")
                 val flags =
                     buildList {
                         if (excluded) add("excluded")
                         if (!posOk) add("manual-only (no position)")
                         if (mod.equals("DMR", ignoreCase = true)) add("DMR info-only")
+                        if (access.contains("toneburst", ignoreCase = true) ||
+                            access.contains("1750", ignoreCase = true)
+                        ) {
+                            add("1750 Hz burst")
+                        }
+                        if (relocated && relocation.isNotBlank() && relocation != "null") {
+                            add(relocation)
+                        }
                     }.joinToString(", ")
                 val attrLabel = attr?.let { " — $it" }.orEmpty()
                 val srcLabel = if (src.isNotBlank()) " [$src]" else ""

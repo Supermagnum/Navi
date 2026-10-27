@@ -56,10 +56,12 @@ object MapHudPrefs {
     private const val KEY_CAT_SCRATCH_CHANNEL = "cat_scratch_channel"
     private const val KEY_CAT_DEMO_MODE = "cat_demo_mode_developer"
     private const val KEY_CAT_NETWORK_CHOICE = "cat_network_choice"
+    private const val KEY_CAT_CONSENSUS = "cat_consensus_relocation"
     private const val KEY_CAT_DROP_IMPORTED = "cat_drop_imported"
 
     const val CAT_NETWORK_AUTO = "auto"
     const val CAT_NETWORK_OFF = "off"
+    const val CAT_NETWORK_STANDALONE = "standalone"
 
     /** Hamlib TCP / FFI vs native Benshi Bluetooth. */
     const val CAT_BACKEND_HAMLIB = "hamlib"
@@ -978,6 +980,22 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_CAT_NETWORK_CHOICE, choice)
+            .apply()
+    }
+
+    fun loadCatConsensusRelocation(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_CAT_CONSENSUS, false)
+
+    fun saveCatConsensusRelocation(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_CAT_CONSENSUS, enabled)
             .apply()
     }
 

@@ -4,7 +4,7 @@ use navi_cat::coverage::{
     interpolate_polyline, parse_navi_polyline, score_route_talk_coverage,
     talk_polygons_by_callsign, CoverageScore,
 };
-use navi_cat::importers::import_osm_relation_xml;
+use navi_cat::mirror::import_mirror_payload;
 use navi_cat::repeater::{RepeaterDb, RepeaterSite};
 use navi_plugin_cats::follow::{haversine_km, tick_at, FollowSite, FollowState, FollowTick};
 
@@ -20,13 +20,13 @@ fn load_polyline(name: &str) -> Vec<(f64, f64)> {
 }
 
 fn load_members() -> Vec<RepeaterSite> {
-    let xml = std::fs::read_to_string(concat!(
+    let json = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../testdata/cat/osm/la5mr/relation_18780801_full.xml"
+        "/../../testdata/cat/osm/la5mr/bundle_members.json"
     ))
     .unwrap();
     let db = RepeaterDb::open_memory().unwrap();
-    import_osm_relation_xml(&db, &xml).unwrap();
+    import_mirror_payload(&db, &json, "osm", None).unwrap();
     db.query_near(61.3, 10.5, 500.0, Some("LA5MR"))
 }
 
@@ -40,7 +40,7 @@ fn to_follow(sites: &[RepeaterSite]) -> Vec<FollowSite> {
                 lat: s.lat?,
                 lon: s.lon?,
                 freq_out_mhz: s.freq_out_mhz,
-                shift_mhz: s.shift_mhz,
+                shift_mhz: s.shift_mhz.unwrap_or(0.0),
                 ctcss_hz: s.ctcss_hz,
             })
         })
