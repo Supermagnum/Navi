@@ -26,11 +26,15 @@ before touching the map — that path is not used here.
 1. **Heading change:** prefer `TYPE_ROTATION_VECTOR`; fall back to integrating
    `TYPE_GYROSCOPE`. Apply the #162 mount rotation so device yaw maps to vehicle
    yaw along the road.
-2. **Speed change:** project `TYPE_LINEAR_ACCELERATION` onto the vehicle forward
-   axis and integrate; clamp to sensible bounds.
-3. **Speed carry:** if accel is missing or unusable, keep the **last good GPS
-   speed** (and, on an active route, prefer the planned sample speed when the
-   carried speed is wildly off).
+2. **Speed change:** project linear acceleration onto the fitted vehicle
+   forward axis. Prefer `TYPE_LINEAR_ACCELERATION`. When that sensor is missing
+   or not tracking, use `TYPE_ACCELEROMETER` minus `TYPE_GRAVITY`, or minus a
+   low-pass gravity estimate. The source in use is logged. After GNSS loss the
+   speed holds the last good GNSS value and changes only when longitudinal
+   acceleration is outside the deadband.
+3. **Speed carry:** if accel is missing or still inside the deadband, keep the
+   last good GPS speed. Do not decay it toward 0 or toward the planned sample
+   speed. Planned speed is only a fallback when no GNSS speed was reported.
 4. **No calibration:** identity mount; heading still tracks relative gyro/RV
    change from the last GPS course. Absolute compass bias may be wrong; road
    constraint limits lateral drift.
@@ -60,7 +64,12 @@ Works without Google Play services (`LocationManager` + `SensorManager` only).
 | Give up | After `max_dr_duration_s` or `max_dr_distance_m` without a good fix: show "Position lost", stop advancing, keep last estimate. |
 
 Defaults (overridable in code / prefs): loss timeout ~2 s, degrade accuracy
-~40 m, give-up ~120 s or ~3 km.
+~40 m. Outside a tunnel, give-up is 6 min or 15 km. While the estimate is on
+a tunnel span of the active route (`is_tunnel` from the graph), give-up waits
+until along-track has passed that span's end by 300 m. No route means no
+tunnel span, so the 6 min / 15 km limits apply. The previous 120 s / 3 km
+give-up froze the estimate inside a 3 km tunnel at 50 km/h. A silent provider
+is treated as loss after the same 2 s timeout.
 
 ## Tests
 
@@ -75,6 +84,91 @@ Unit tests use injectable clock, location, and sensor sources:
 Instrumented / emulator route replay drops GPS inside every tunnel and feeds
 motion-consistent sensor data; reports whether the marker kept moving, stayed
 on road, exit error, and hand-back smoothness.
+
+## Standstill gate
+
+A reported GNSS speed of 0 stays 0: it is never raised to `minSpeedMps` and
+never replaced by the planned route speed. Planned speed is used only when
+speed is **missing** and the IMU shows motion (or no IMU is present).
+
+After GNSS loss, speed is seeded from the last good GNSS value and then held
+(constant velocity). It changes only when both the raw longitudinal sample and
+its low-pass are outside a 0.20 m/s² deadband; the integrated quantity is the
+raw sample. Noise and vibration inside that deadband do
+not move the speed. An uncertainty value grows with τ = 8 s and is logged; it
+is never applied to the speed, and the speed is not decayed toward 0 or toward
+the planned route speed. Planned speed remains a fallback only when no IMU is
+present and no GNSS speed was reported.
+
+The vehicle forward axis is fitted in the device frame while GNSS is available:
+linear acceleration (gravity already removed) is projected onto the horizontal
+plane and correlated with GNSS Δv/Δt for both speeding up and braking. The fit
+is kept for the mount session, including across DR entry. Until it is
+confident the speed holds and braking is not detected.
+
+Standstill is **braking-aware**: latch only after a braking event
+(forward accel ≤ −0.75 m/s²) has brought estimated speed below 0.5 m/s, followed
+by a quiet hold (accel 0.15 m/s² / yaw 2 deg/s, hold 1 s). Quiet cruise alone
+never latches. Release requires the smoothed forward accel to stay at or above
+0.22 m/s², and the raw sample to stay above the 0.20 m/s² deadband, for 200 ms.
+A single slam, a short rev, or zero-mean idle does not clear the latch. A
+sustained 0.30 m/s² pull-away still releases within 1 s. The speed estimate
+then restarts from 0. A reported GNSS speed of 0 is still immediate 0.
+
+A bias along the fitted forward axis is learned from IMU minus GNSS Δv/Δt
+while fixes are good, and from the IMU alone while standstill is latched
+(true acceleration is zero). It is subtracted before the deadband and before
+integration, kept across DR entry, and logged with a confidence.
+
+DR keeps estimating for 6 min or 15 km. The previous 120 s / 3 km give-up froze
+the puck inside a 3 km tunnel at 50 km/h (about 216 s) and was the steady-cruise
+lag.
+
+While **Location diagnostics** is on, a shadow standstill evaluator mirrors the
+braking-aware gate on every IMU sample in every DR mode. It never changes the
+shown position, speed, or mode. With diagnostics off there is no extra cost.
+
+## Validation
+
+- **Stationary behaviour** is verified on a real tablet (SM-P613) with an
+  anonymised indoor replay fixture and a live rest session after the fix.
+- **Moving and tunnel behaviour** is verified in **simulation** (and emulator
+  when an AVD is available). There has been **no real drive**. The suite uses a
+  shortened Raufoss→Bergen slice with Lærdalstunnelen (straight) and
+  Gudvangatunnelen (curved), generated GNSS + IMU, vibration RMS steps, and
+  accelerometer biases ±0.02 / ±0.05 / ±0.1 m/s².
+- **Vibration:** with the braking-aware gate, steady cruise must not false-latch
+  at any step including 0.40 and near-zero RMS.
+- Unit tests: `StationaryDeadReckoningTest`, `StandstillSimulatedDriveTest`.
+
+## Drive verification checklist
+
+Run with **Location diagnostics** on (Tools). Leave the overlay optional.
+
+1. Steady-speed tunnel: enter a tunnel at constant speed. The standstill gate
+   must **not** latch. Position must keep advancing along the route.
+2. Stop inside or immediately after a tunnel: speed must go to 0 and along-track
+   must stop advancing (position held).
+3. Pull away from standstill: the gate must release within 1 s of motion, and
+   displayed speed / along-track must resume.
+
+Pull the session and print the timeline (no root required):
+
+```bash
+adb pull /storage/emulated/0/Android/data/no.navi.app/files/location-diag/ \
+  ./local/location-diag-raw/
+python3 tools/location_diag_timeline.py \
+  ./local/location-diag-raw/location-diag-*.jsonl
+```
+
+Raw pulls stay under `local/location-diag-raw/` (gitignored). If a fixture is
+needed for unit tests, anonymise first:
+
+```bash
+python3 tools/anonymise_location_diag.py \
+  ./local/location-diag-raw/location-diag-YYYYMMDD-HHMMSS.jsonl \
+  -o app/src/test/resources/location-diag-replay.jsonl
+```
 
 ## Limits
 

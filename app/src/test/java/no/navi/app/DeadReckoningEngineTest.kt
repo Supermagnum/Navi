@@ -377,4 +377,29 @@ class DeadReckoningEngineTest {
         assertTrue("exit error $err should be near 15 m", abs(err!! - 15.0) < 25.0)
         println("position error at tunnel exit: ${"%.1f".format(err)} m")
     }
+
+    @Test
+    fun gnssSilence_entersEstimatingAfterLossTimeout() {
+        val engine = DeadReckoningEngine()
+        val road = straightTunnel()
+        val p = DeadReckoningEngine.pointAtAlong(road, 100.0)
+        engine.onGps(
+            GpsSample(
+                tMs = 1_000L,
+                lat = p.lat,
+                lon = p.lon,
+                accuracyM = 5f,
+                speedMps = 20.0,
+                bearingDeg = p.bearingDeg,
+            ),
+            road,
+        )
+        engine.onGnssSilence(2_000L)
+        assertEquals(DrMode.Gps, engine.mode())
+        engine.onGnssSilence(1_000L + 2_000L)
+        assertEquals(DrMode.Estimating, engine.mode())
+        val out = engine.onSensorTick(SensorFrame(tMs = 3_200L, headingDeg = p.bearingDeg), road)
+        assertTrue(out.estimated)
+        assertEquals(20.0, out.speedMps, 0.05)
+    }
 }
