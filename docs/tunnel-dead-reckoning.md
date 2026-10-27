@@ -76,6 +76,49 @@ Instrumented / emulator route replay drops GPS inside every tunnel and feeds
 motion-consistent sensor data; reports whether the marker kept moving, stayed
 on road, exit error, and hand-back smoothness.
 
+## Standstill gate
+
+A reported GNSS speed of 0 stays 0: it is never raised to `minSpeedMps` and
+never replaced by the planned route speed. Planned speed is used only when
+speed is **missing** and the IMU shows motion (or no IMU is present).
+
+When linear acceleration and yaw stay below the standstill thresholds for the
+hold time, DR speed is forced to 0 and along-track advance stops. Missing IMU
+does not latch the gate; the speed rule alone still applies.
+
+Defaults: accel 0.15 m/s², yaw 2 deg/s, hold 1 s. Thresholds were chosen from
+a stationary indoor log (noise well below the gates) plus synthetic tunnel and
+stop tests. They are **not yet verified on a real drive**.
+
+## Drive verification checklist
+
+Run with **Location diagnostics** on (Tools). Leave the overlay optional.
+
+1. Steady-speed tunnel: enter a tunnel at constant speed. The standstill gate
+   must **not** latch. Position must keep advancing along the route.
+2. Stop inside or immediately after a tunnel: speed must go to 0 and along-track
+   must stop advancing (position held).
+3. Pull away from standstill: the gate must release within 1 s of motion, and
+   displayed speed / along-track must resume.
+
+Pull the session and print the timeline (no root required):
+
+```bash
+adb pull /storage/emulated/0/Android/data/no.navi.app/files/location-diag/ \
+  ./local/location-diag-raw/
+python3 tools/location_diag_timeline.py \
+  ./local/location-diag-raw/location-diag-*.jsonl
+```
+
+Raw pulls stay under `local/location-diag-raw/` (gitignored). If a fixture is
+needed for unit tests, anonymise first:
+
+```bash
+python3 tools/anonymise_location_diag.py \
+  ./local/location-diag-raw/location-diag-YYYYMMDD-HHMMSS.jsonl \
+  -o app/src/test/resources/location-diag-replay.jsonl
+```
+
 ## Limits
 
 - Not a substitute for GNSS outdoors; only bridges gaps while constrained to a

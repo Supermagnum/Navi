@@ -41,6 +41,25 @@ data class DrConfig(
     val maxSpeedMps: Double = 50.0,
     /** Forward-accel deadband (m/s^2) to ignore noise. */
     val accelDeadbandMps2: Double = 0.3,
+    /**
+     * |forward accel| below this is still (m/s^2).
+     * The indoor tablet log stayed under 0.003 m/s^2 mean and 0.04 m/s^2 std.
+     * 0.15 is above that noise and below the 0.3 integration deadband, so a
+     * resting device latches and a real acceleration still counts as motion.
+     */
+    val standstillAccelMps2: Double = 0.15,
+    /**
+     * |yaw rate| below this is still (deg/s).
+     * Indoor gyro noise was about 0.06 deg/s std. 2 deg/s sits above that and
+     * below a deliberate turn.
+     */
+    val standstillGyroDegPerS: Double = 2.0,
+    /**
+     * Quiet IMU must last this long before the zero-velocity gate latches.
+     * A reported GNSS speed of 0 still zeros immediately. 1 s ignores a single
+     * quiet sample during tunnel cruise without letting a stopped device creep.
+     */
+    val standstillHoldMs: Long = 1_000L,
 )
 
 data class GpsSample(
@@ -70,8 +89,7 @@ data class SensorFrame(
 /**
  * Read-only dead-reckoning state for diagnostics.
  *
- * [standstill] is null because [DeadReckoningEngine] has no zero-velocity
- * detector. Callers must not treat null as "moving".
+ * [standstill] is true while the zero-velocity gate is holding the position.
  */
 data class DrDiagSnapshot(
     val mode: DrMode,
@@ -133,12 +151,19 @@ class DeadReckoningEngine(
     private var seedLon: Double? = null
     private var seedKind: String = "none"
 
+    /**
+     * Last GNSS speed that was actually reported. Null means the speed was
+     * missing, which is the only case that may adopt the planned route speed.
+     */
+    private var lastGnssSpeedMps: Double? = null
+    private var quietSinceMs: Long? = null
+    private var standstill: Boolean = false
+    private var imuMissing: Boolean = true
+    private var imuMotion: Boolean = false
+
     fun mode(): DrMode = mode
 
-    /**
-     * Read-only snapshot for location diagnostics. Does not alter integration.
-     * [DrDiagSnapshot.standstill] is null: this engine has no zero-velocity detector.
-     */
+    /** Read-only snapshot for location diagnostics. Does not alter integration. */
     fun diagSnapshot(): DrDiagSnapshot =
         DrDiagSnapshot(
             mode = mode,
@@ -150,7 +175,7 @@ class DeadReckoningEngine(
             bearingDeg = estBearingDeg,
             alongM = estAlongM,
             blending = blending,
-            standstill = null,
+            standstill = standstill,
         )
 
     fun lastExitErrorM(): Double? = lastExitErrorM
@@ -174,6 +199,11 @@ class DeadReckoningEngine(
         seedLat = null
         seedLon = null
         seedKind = "none"
+        lastGnssSpeedMps = null
+        quietSinceMs = null
+        standstill = false
+        imuMissing = true
+        imuMotion = false
     }
 
     /**
@@ -190,7 +220,7 @@ class DeadReckoningEngine(
             degradeSinceMs = null
             lastGoodGps = sample
             if (sample.speedMps != null && sample.speedMps.isFinite() && sample.speedMps >= 0.0) {
-                estSpeedMps = sample.speedMps.coerceIn(config.minSpeedMps, config.maxSpeedMps)
+                applyReportedSpeed(sample.speedMps)
             }
             if (sample.bearingDeg != null && sample.bearingDeg.isFinite()) {
                 estBearingDeg = normalizeDeg(sample.bearingDeg)
@@ -269,22 +299,38 @@ class DeadReckoningEngine(
                 estBearingDeg = normalizeDeg(estBearingDeg + frame.yawRateDegPerS * dt)
         }
 
-        // Speed update from forward accel, else carry.
-        val accel = frame.forwardAccelMps2
-        if (accel != null && kotlin.math.abs(accel) >= config.accelDeadbandMps2) {
-            estSpeedMps =
-                (estSpeedMps + accel * dt).coerceIn(config.minSpeedMps, config.maxSpeedMps)
-        }
-        // Prefer planned speed on route when carried speed is tiny and we have constraint.
-        if (constraint != null && estSpeedMps < config.minSpeedMps + 0.1) {
-            val planned = sampleAtAlong(constraint, estAlongM)?.speedKmh
-            if (planned != null && planned > 1.0) {
-                estSpeedMps = (planned / 3.6).coerceIn(config.minSpeedMps, config.maxSpeedMps)
+        observeImu(frame)
+        val reportedStop = lastGnssSpeedMps != null && lastGnssSpeedMps!! <= 0.0
+        if (standstill || reportedStop) {
+            // A reported 0, or the zero-velocity gate, is 0. Do not raise it to
+            // minSpeedMps and do not replace it with the planned route speed.
+            estSpeedMps = 0.0
+        } else {
+            val accel = frame.forwardAccelMps2
+            if (accel != null && kotlin.math.abs(accel) >= config.accelDeadbandMps2) {
+                estSpeedMps =
+                    (estSpeedMps + accel * dt).coerceIn(config.minSpeedMps, config.maxSpeedMps)
+            }
+            // Planned speed only when GNSS speed is missing and the device is
+            // not sitting still. No IMU falls through to this path.
+            if (
+                constraint != null &&
+                lastGnssSpeedMps == null &&
+                (imuMotion || imuMissing) &&
+                estSpeedMps < config.minSpeedMps + 0.1
+            ) {
+                val planned = sampleAtAlong(constraint, estAlongM)?.speedKmh
+                if (planned != null && planned > 1.0) {
+                    estSpeedMps = (planned / 3.6).coerceIn(config.minSpeedMps, config.maxSpeedMps)
+                }
             }
         }
 
         if (blending) {
             return tickBlend(frame.tMs, constraint)
+        }
+        if (standstill || reportedStop) {
+            return output(frame.tMs)
         }
 
         val ds = estSpeedMps * dt
@@ -323,22 +369,69 @@ class DeadReckoningEngine(
         estLat = seed.lat
         estLon = seed.lon
         if (seed.speedMps != null && seed.speedMps.isFinite() && seed.speedMps > 0.0) {
+            lastGnssSpeedMps = seed.speedMps
             estSpeedMps = seed.speedMps.coerceIn(config.minSpeedMps, config.maxSpeedMps)
-        } else if (estSpeedMps <= 0.0) {
-            estSpeedMps = config.minSpeedMps
+        } else if (seed.speedMps != null && seed.speedMps.isFinite()) {
+            lastGnssSpeedMps = 0.0
+            estSpeedMps = 0.0
+        } else {
+            // Speed was not reported. Leave 0 here; a later tick may adopt the
+            // planned speed only when the IMU shows motion or no IMU is present.
+            lastGnssSpeedMps = null
+            estSpeedMps = 0.0
         }
         if (seed.bearingDeg != null) {
             estBearingDeg = normalizeDeg(seed.bearingDeg)
         }
         if (constraint != null) {
             estAlongM = alongOf(constraint, seed.lat, seed.lon)
-            val planned = sampleAtAlong(constraint, estAlongM)?.speedKmh
-            if (planned != null &&
-                planned > 1.0 &&
-                (seed.speedMps == null || seed.speedMps <= 0.0)
-            ) {
-                estSpeedMps = (planned / 3.6).coerceIn(config.minSpeedMps, config.maxSpeedMps)
-            }
+        }
+    }
+
+    /** A reported speed of 0 stays 0. A positive speed may release standstill. */
+    private fun applyReportedSpeed(speed: Double) {
+        lastGnssSpeedMps = speed
+        if (speed <= 0.0) {
+            estSpeedMps = 0.0
+            return
+        }
+        estSpeedMps = speed.coerceIn(config.minSpeedMps, config.maxSpeedMps)
+        if (speed > config.minSpeedMps) {
+            standstill = false
+            quietSinceMs = null
+        }
+    }
+
+    /**
+     * Latch standstill when linear accel and yaw stay quiet for the hold time.
+     * A GNSS speed above [DrConfig.minSpeedMps] is constant-velocity cruise:
+     * linear accel is near zero then too, so that speed keeps the gate open.
+     * Missing IMU does not latch and does not clear a gate that already latched.
+     */
+    private fun observeImu(frame: SensorFrame) {
+        val accel = frame.forwardAccelMps2
+        val gyro = frame.yawRateDegPerS
+        if (accel == null && gyro == null) {
+            imuMissing = true
+            imuMotion = false
+            quietSinceMs = null
+            return
+        }
+        imuMissing = false
+        val accelQuiet = accel == null || kotlin.math.abs(accel) < config.standstillAccelMps2
+        val gyroQuiet = gyro == null || kotlin.math.abs(gyro) < config.standstillGyroDegPerS
+        if (!accelQuiet || !gyroQuiet) {
+            imuMotion = true
+            quietSinceMs = null
+            standstill = false
+            return
+        }
+        imuMotion = false
+        val since = quietSinceMs ?: frame.tMs.also { quietSinceMs = it }
+        val coasting = (lastGnssSpeedMps ?: 0.0) > config.minSpeedMps
+        if (!coasting && frame.tMs - since >= config.standstillHoldMs) {
+            standstill = true
+            estSpeedMps = 0.0
         }
     }
 

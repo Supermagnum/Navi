@@ -4481,7 +4481,7 @@ private fun NaviMapScreen() {
                             latitude = out.lat
                             longitude = out.lon
                             time = System.currentTimeMillis()
-                            if (out.speedMps.isFinite() && out.speedMps > 0.0) {
+                            if (out.speedMps.isFinite() && out.speedMps >= 0.0) {
                                 speed = out.speedMps.toFloat()
                             }
                             bearing = out.bearingDeg.toFloat()
@@ -5250,7 +5250,7 @@ private fun NaviMapScreen() {
                         latitude = out.lat
                         longitude = out.lon
                         time = System.currentTimeMillis()
-                        if (out.speedMps.isFinite() && out.speedMps > 0.0) {
+                        if (out.speedMps.isFinite() && out.speedMps >= 0.0) {
                             speed = out.speedMps.toFloat()
                         }
                         bearing = out.bearingDeg.toFloat()
