@@ -53,6 +53,17 @@ class StandstillSimulatedDriveTest {
         val stayedLatchedUnderIdleVib: Boolean?,
         /** est − truth along (m) at the last sample of each phase. */
         val phaseLeadLagM: Map<String, Double> = emptyMap(),
+        /** est − truth along at the exit sample (m). */
+        val exitAlongErrM: Double? = null,
+        /** Haversine remainder after the along component (m). */
+        val exitCrossErrM: Double? = null,
+        val exitEstSpeedMps: Double? = null,
+        val exitTruthSpeedMps: Double? = null,
+        val exitBiasMps2: Double? = null,
+        val exitMode: String? = null,
+        val enterEstSpeedMps: Double? = null,
+        val enterTruthSpeedMps: Double? = null,
+        val enterAlongErrM: Double? = null,
     )
 
     /** Public test origin (Oslo Opera plaza). Test data only. */
@@ -489,6 +500,15 @@ class StandstillSimulatedDriveTest {
         var stopAlong: Double? = null
         var lastAlong = 0.0
         var exitError: Double? = null
+        var exitAlongErr: Double? = null
+        var exitCrossErr: Double? = null
+        var exitEstSpeed: Double? = null
+        var exitTruthSpeed: Double? = null
+        var exitBias: Double? = null
+        var exitMode: String? = null
+        var enterSpeed: Double? = null
+        var enterTruthSpeed: Double? = null
+        var enterAlongErr: Double? = null
         var crawlLag: Double? = null
         var crawlExitJump: Double? = null
         var crawlEndEstAlong: Double? = null
@@ -714,9 +734,26 @@ class StandstillSimulatedDriveTest {
                 phaseLead[phaseName!!] = along - s.alongM
             }
 
-            // Exit error after first tunnel.
+            // Exit error after first tunnel. Along is est−truth on the route.
+            // Cross-track is whatever remains of the haversine after that.
             if (exitError == null && s.alongM >= firstTunnel.second + 20.0 && !s.inTunnel) {
                 exitError = RouteProgressTracker.haversineM(out.lat, out.lon, s.lat, s.lon)
+                exitAlongErr = along - s.alongM
+                val snap = engine.diagSnapshot()
+                exitEstSpeed = snap.speedMps
+                exitTruthSpeed = s.speedMps
+                exitBias = snap.accelBiasMps2
+                exitMode = out.mode.name
+                val alongPart = exitAlongErr ?: 0.0
+                val hav = exitError ?: 0.0
+                val cross2 = hav * hav - alongPart * alongPart
+                exitCrossErr = if (cross2 > 0.0) kotlin.math.sqrt(cross2) else 0.0
+            }
+            if (enterSpeed == null && out.mode == DrMode.Estimating && s.inTunnel) {
+                val snap = engine.diagSnapshot()
+                enterSpeed = snap.speedMps
+                enterTruthSpeed = s.speedMps
+                enterAlongErr = along - s.alongM
             }
         }
 
@@ -808,6 +845,15 @@ class StandstillSimulatedDriveTest {
             maxLeadLagM = maxLeadLag,
             stayedLatchedUnderIdleVib = stayedLatchedUnderIdleVib,
             phaseLeadLagM = phaseLead,
+            exitAlongErrM = exitAlongErr,
+            exitCrossErrM = exitCrossErr,
+            exitEstSpeedMps = exitEstSpeed,
+            exitTruthSpeedMps = exitTruthSpeed,
+            exitBiasMps2 = exitBias,
+            exitMode = exitMode,
+            enterEstSpeedMps = enterSpeed,
+            enterTruthSpeedMps = enterTruthSpeed,
+            enterAlongErrM = enterAlongErr,
         )
     }
 
@@ -917,10 +963,17 @@ class StandstillSimulatedDriveTest {
                             "phases=${fmtPhases(r.phaseLeadLagM)}",
                     )
                     val jump = r.exitErrorM
+                    // Pre-existing spec: 5% of the 3 km tunnel (150 m). Left as-is.
                     assertTrue(
                         "steady exit jump $jump at $speed vib=$vib bias=$bias",
                         jump != null && jump <= 0.05 * tunnels[0].lengthM,
                     )
+                    if (vib == 0.15 && speed <= 80.0) {
+                        assertTrue(
+                            "steady exit $jump at $speed bias=$bias must be within 50 m",
+                            jump != null && jump <= 50.0,
+                        )
+                    }
                 }
             }
         }
@@ -982,6 +1035,10 @@ class StandstillSimulatedDriveTest {
             assertTrue(
                 "crawl-phase lead/lag bias=$bias $crawlPhase phases=${fmtPhases(crawl.phaseLeadLagM)}",
                 crawlPhase != null && kotlin.math.abs(crawlPhase) <= 50.0,
+            )
+            assertTrue(
+                "crawl exit ${crawl.exitErrorM} bias=$bias",
+                crawl.exitErrorM != null && crawl.exitErrorM!! <= 50.0,
             )
         }
 
@@ -1064,6 +1121,10 @@ class StandstillSimulatedDriveTest {
                 "drift_steady speed=$speed exit=${fmt(drifted.exitErrorM)} " +
                     "lead_lag=${fmt(drifted.maxLeadLagM)} phases=${fmtPhases(drifted.phaseLeadLagM)}",
             )
+            assertTrue(
+                "drifting-bias steady $speed exit ${drifted.exitErrorM}",
+                drifted.exitErrorM != null && drifted.exitErrorM!! <= 50.0,
+            )
         }
         val driftCrawl =
             runScenario(
@@ -1082,6 +1143,10 @@ class StandstillSimulatedDriveTest {
         assertTrue(
             "drifting-bias crawl phase $driftCrawlPhase",
             driftCrawlPhase != null && kotlin.math.abs(driftCrawlPhase) <= 50.0,
+        )
+        assertTrue(
+            "drifting-bias crawl exit ${driftCrawl.exitErrorM}",
+            driftCrawl.exitErrorM != null && driftCrawl.exitErrorM!! <= 50.0,
         )
 
         println(report.toString())
@@ -1162,6 +1227,73 @@ class StandstillSimulatedDriveTest {
         assertTrue(
             "after-network along=$maxAlong speed=$maxSpeed mode=${engine.mode()}",
             maxAlong <= 1.0 && maxSpeed == 0.0,
+        )
+    }
+
+    @Test
+    fun exitBudget_constantAndDrifting() {
+        val road = buildRoute()
+        val rampMs = 10.0 * 60.0 * 1000.0
+        val ramp: (Long) -> Double = { t ->
+            -0.1 * (t.coerceAtLeast(0L).toDouble() / rampMs).coerceAtMost(1.0)
+        }
+
+        fun line(
+            label: String,
+            r: RunResult,
+        ) {
+            println(
+                "BUDGET $label hav=${fmt(r.exitErrorM)} along=${fmt(r.exitAlongErrM)} " +
+                    "cross=${fmt(r.exitCrossErrM)} estV=${fmt(r.exitEstSpeedMps)} " +
+                    "truthV=${fmt(r.exitTruthSpeedMps)} bias=${fmt(r.exitBiasMps2)} " +
+                    "mode=${r.exitMode} enterV=${fmt(r.enterEstSpeedMps)} " +
+                    "enterTruth=${fmt(r.enterTruthSpeedMps)} enterAlong=${fmt(r.enterAlongErrM)} " +
+                    "phases=${fmtPhases(r.phaseLeadLagM)}",
+            )
+        }
+        for (speed in listOf(50.0, 80.0)) {
+            line(
+                "steady_$speed",
+                runScenario(
+                    name = "steady_${speed.toInt()}",
+                    road = road,
+                    truth = profileSteady(road, speed),
+                    vibrationRms = 0.15,
+                    assertPass = true,
+                ),
+            )
+            line(
+                "drift_$speed",
+                runScenario(
+                    name = "steady_${speed.toInt()}_drift",
+                    road = road,
+                    truth = profileSteady(road, speed),
+                    vibrationRms = 0.15,
+                    biasAtMs = ramp,
+                    assertPass = true,
+                ),
+            )
+        }
+        line(
+            "crawl",
+            runScenario(
+                name = "crawl",
+                road = road,
+                truth = profileCrawl(road),
+                vibrationRms = 0.15,
+                assertPass = true,
+            ),
+        )
+        line(
+            "crawl_drift",
+            runScenario(
+                name = "crawl_drift",
+                road = road,
+                truth = profileCrawl(road),
+                vibrationRms = 0.15,
+                biasAtMs = ramp,
+                assertPass = true,
+            ),
         )
     }
 }

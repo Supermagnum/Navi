@@ -28,6 +28,13 @@ class DeadReckoningController(
     var constraintProvider: () -> DrConstraint? = { null },
     var onOutput: (DrOutput) -> Unit = {},
 ) {
+    /**
+     * Instrumented replays set this so a live sensor tick cannot rewind
+     * [DeadReckoningEngine] time. Production leaves it false.
+     */
+    @Volatile
+    var suspendHardwareTicks: Boolean = false
+
     private var listening = false
     private var sm: SensorManager? = null
     private var lastRv: FloatArray? = null
@@ -47,6 +54,10 @@ class DeadReckoningController(
         object : Runnable {
             override fun run() {
                 if (!listening) return
+                if (suspendHardwareTicks) {
+                    mainHandler.postDelayed(this, TICK_MS)
+                    return
+                }
                 publishSensorTick()
                 mainHandler.postDelayed(this, TICK_MS)
             }

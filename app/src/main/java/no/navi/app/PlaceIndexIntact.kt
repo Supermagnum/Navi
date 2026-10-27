@@ -310,7 +310,11 @@ object PlaceIndexIntact {
                 reason = if (ok) "legacy_rows" else "no_rows_no_build",
             )
         }
-        val (complete, expected, written, sourceSha, indexSource) = build
+        val complete = build.complete
+        val expected = build.expected
+        val written = build.written
+        val sourceSha = build.sourceSha
+        val indexSource = build.indexSource
         if (complete == 0) {
             return Probe(
                 intact = false,

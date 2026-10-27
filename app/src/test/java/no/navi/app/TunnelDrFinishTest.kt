@@ -29,6 +29,100 @@ class TunnelDrFinishTest {
     }
 
     @Test
+    fun standstillFlag_noisyStationaryStaysLatched_andPullReleasesPromptly() {
+        val stopped = runUntilLatched()
+        val engine = stopped.first
+        val road = stopped.second
+        var t = stopped.third
+        val settleEnd = t + 2_000L
+        while (t < settleEnd) {
+            engine.onGps(GpsSample(tMs = t, lat = 0.0, lon = 0.0, available = false), road)
+            engine.onSensorTick(
+                SensorFrame(tMs = t, headingDeg = 0.0, yawRateDegPerS = 0.0, forwardAccelMps2 = 0.0),
+                road,
+            )
+            t += 100L
+        }
+        // One-sample gyro spike and one-sample accel slam. Neither holds for 200 ms.
+        engine.onSensorTick(
+            SensorFrame(tMs = t, headingDeg = 0.0, yawRateDegPerS = 20.0, forwardAccelMps2 = 0.0),
+            road,
+        )
+        t += 100L
+        engine.onSensorTick(
+            SensorFrame(tMs = t, headingDeg = 0.0, yawRateDegPerS = 0.2, forwardAccelMps2 = 12.0),
+            road,
+        )
+        t += 100L
+        repeat(10) {
+            engine.onSensorTick(
+                SensorFrame(tMs = t, headingDeg = 0.0, yawRateDegPerS = 0.2, forwardAccelMps2 = 0.05),
+                road,
+            )
+            t += 100L
+        }
+        assertTrue(engine.diagSnapshot().standstill == true)
+
+        // A single GNSS speed above the latch, then zero again, must not clear it.
+        val p = DeadReckoningEngine.pointAtAlong(road, engine.diagSnapshot().alongM ?: 0.0)
+        engine.onGps(
+            GpsSample(
+                tMs = t,
+                lat = p.lat,
+                lon = p.lon,
+                accuracyM = 8f,
+                speedMps = 1.2,
+                bearingDeg = p.bearingDeg,
+            ),
+            road,
+        )
+        t += 1_000L
+        engine.onGps(
+            GpsSample(
+                tMs = t,
+                lat = p.lat,
+                lon = p.lon,
+                accuracyM = 8f,
+                speedMps = 0.0,
+                bearingDeg = p.bearingDeg,
+            ),
+            road,
+        )
+        assertTrue(
+            "one noisy GNSS speed cleared standstill",
+            engine.diagSnapshot().standstill == true,
+        )
+
+        // Let the slam decay out of the 0.5 s filter before timing the pull.
+        val calmEnd = t + 3_000L
+        while (t < calmEnd) {
+            engine.onGps(GpsSample(tMs = t, lat = 0.0, lon = 0.0, available = false), road)
+            engine.onSensorTick(
+                SensorFrame(tMs = t, headingDeg = 0.0, yawRateDegPerS = 0.0, forwardAccelMps2 = 0.0),
+                road,
+            )
+            t += 100L
+        }
+        assertTrue(engine.diagSnapshot().standstill == true)
+
+        val pullStart = t
+        var released: Long? = null
+        while (t < pullStart + 1_500L) {
+            engine.onGps(GpsSample(tMs = t, lat = 0.0, lon = 0.0, available = false), road)
+            engine.onSensorTick(
+                SensorFrame(tMs = t, headingDeg = 0.0, yawRateDegPerS = 0.0, forwardAccelMps2 = 0.3),
+                road,
+            )
+            if (released == null && engine.diagSnapshot().standstill != true) {
+                released = t - pullStart
+            }
+            t += 100L
+        }
+        println("standstill release from first 0.3 m/s^2 sample: $released ms")
+        assertTrue("release latency $released", released != null && released!! in 0..1_000L)
+    }
+
+    @Test
     fun gentlePull_stillReleasesWithinOneSecond() {
         for (pull in listOf(0.3, 0.5, 0.8)) {
             val release = releaseAfterPull(pull)
