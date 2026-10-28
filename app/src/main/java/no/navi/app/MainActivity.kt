@@ -233,10 +233,14 @@ class MainActivity : ComponentActivity() {
                 android.os.Process.setThreadPriority(
                     android.os.Process.THREAD_PRIORITY_BACKGROUND,
                 )
+                val dataDir = NaviAppData.resolve(this@MainActivity)
                 runCatching {
-                    PlaceIndexIntact.recoverBeforeOpen(NaviAppData.resolve(this@MainActivity))
+                    PlaceIndexIntact.recoverBeforeOpen(dataDir)
                 }.onFailure { t ->
                     android.util.Log.w("PlaceIndexIntact", "startup wal recover: ${t.message}")
+                }
+                runCatching {
+                    PlaceIndexRebuildNotice.drainAfterWalEvent(this@MainActivity, dataDir)
                 }
             },
             "PlaceIndexWalRecover",
@@ -1617,6 +1621,17 @@ private fun NaviMapScreen() {
 
     /** Why the last Plan route press did not plan, shown under the button. */
     var planNotice by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        val dataDir = NaviAppData.resolve(context)
+        while (isActive) {
+            PlaceIndexRebuildNotice.drainAfterWalEvent(context, dataDir)
+            PlaceIndexRebuildNotice.takeLine()?.let { line ->
+                if (!planningRoute) showJobProgress(line)
+            }
+            delay(800)
+        }
+    }
 
     // Standalone long-trip seed via adb extras (see applyNaviLaunchExtras).
     // Poll so onNewIntent / warm starts still consume a fresh seed.

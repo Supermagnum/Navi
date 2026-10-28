@@ -939,9 +939,13 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_place_index_has_entries(
     ): Int
+    external fun uniffi_navi_checksum_func_place_index_mark_incomplete_after_wal_quarantine(
+    ): Int
     external fun uniffi_navi_checksum_func_place_index_recover_wal(
     ): Int
     external fun uniffi_navi_checksum_func_place_index_source_sha256(
+    ): Int
+    external fun uniffi_navi_checksum_func_place_index_take_wal_quarantine_rebuild_regions(
     ): Int
     external fun uniffi_navi_checksum_func_plan_car_route(
     ): Int
@@ -1522,9 +1526,13 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_place_index_has_entries(`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    external fun uniffi_navi_fn_func_place_index_mark_incomplete_after_wal_quarantine(`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_place_index_recover_wal(`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_place_index_source_sha256(`indexDbPath`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_place_index_take_wal_quarantine_rebuild_regions(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_plan_car_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`avoidTunnels`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`dataDir`: RustBuffer.ByValue,`packDir`: RustBuffer.ByValue,`longTripEnabled`: Byte,`allowedCountries`: RustBuffer.ByValue,`viaPoints`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -2260,10 +2268,16 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_place_index_has_entries() and 0xFFFF) != 5969) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_place_index_mark_incomplete_after_wal_quarantine() and 0xFFFF) != 43083) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_place_index_recover_wal() and 0xFFFF) != 33112) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_place_index_source_sha256() and 0xFFFF) != 14354) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_place_index_take_wal_quarantine_rebuild_regions() and 0xFFFF) != 17218) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_plan_car_route() and 0xFFFF) != 25656) {
@@ -8391,6 +8405,22 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * After Kotlin quarantines `-wal`/`-shm` (non-BUSY path): mark non-intact
+         * regions incomplete and return their ids (comma-separated). Intact regions
+         * are never marked. Empty string when nothing needs rebuild.
+         */ fun `placeIndexMarkIncompleteAfterWalQuarantine`(`indexDbPath`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_place_index_mark_incomplete_after_wal_quarantine(
+    
+        
+        FfiConverterString.lower(`indexDbPath`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Drop stale `-shm` and `wal_checkpoint(TRUNCATE)` before Android opens the DB.
          *
          * Prevents SIGBUS in `walIndexReadHdr` when a prior index build was killed and
@@ -8417,6 +8447,19 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         
         FfiConverterString.lower(`indexDbPath`),
         FfiConverterString.lower(`regionId`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Drain region ids queued when Rust quarantined WAL during `open_readonly`.
+         */ fun `placeIndexTakeWalQuarantineRebuildRegions`(): List<kotlin.String> {
+            return FfiConverterSequenceString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_place_index_take_wal_quarantine_rebuild_regions(
+    
+        _status)
 }
     )
     }

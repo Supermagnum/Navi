@@ -118,6 +118,30 @@ const PLACE_INDEX_PROGRESS_HEARTBEAT: usize = 25_000;
 /// `-shm` (SIGBUS on deleted shm).
 static PLACE_INDEX_BUILD_LOCK: Mutex<()> = Mutex::new(());
 
+/// Region ids marked incomplete after a non-BUSY WAL quarantine (for UI notice).
+static WAL_QUARANTINE_REBUILD_NOTICE: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// Drain region ids that need re-index after WAL sidecar quarantine (may be empty).
+pub fn take_wal_quarantine_rebuild_regions() -> Vec<String> {
+    WAL_QUARANTINE_REBUILD_NOTICE
+        .lock()
+        .map(|mut g| std::mem::take(&mut *g))
+        .unwrap_or_default()
+}
+
+fn push_wal_quarantine_rebuild_regions(regions: &[String]) {
+    if regions.is_empty() {
+        return;
+    }
+    if let Ok(mut g) = WAL_QUARANTINE_REBUILD_NOTICE.lock() {
+        for r in regions {
+            if !g.iter().any(|x| x == r) {
+                g.push(r.clone());
+            }
+        }
+    }
+}
+
 thread_local! {
     /// FFI acquire/release holds the same mutex on this thread until release.
     static PLACE_INDEX_BUILD_LOCK_TLS: std::cell::RefCell<Option<MutexGuard<'static, ()>>> =
@@ -1024,7 +1048,7 @@ impl NameIndex {
                             "place_index_readonly_prep checkpoint failed ({e}); quarantining sidecars"
                         );
                         drop(conn);
-                        Self::quarantine_wal_sidecars(path);
+                        let _ = Self::quarantine_wal_sidecars(path);
                         Ok(())
                     }
                 }
@@ -1035,13 +1059,17 @@ impl NameIndex {
                     target: "PlaceIndex",
                     "place_index_readonly_prep open failed ({e}); quarantining sidecars"
                 );
-                Self::quarantine_wal_sidecars(path);
+                let _ = Self::quarantine_wal_sidecars(path);
                 Ok(())
             }
         }
     }
 
-    fn quarantine_wal_sidecars(path: &Path) {
+    /// Quarantine torn `-wal`/`-shm`, then mark non-intact regions incomplete so
+    /// AutoBuild re-indexes them. Intact (`complete=1` + plausible rows) regions
+    /// are left alone. Returns region ids that were marked incomplete.
+    pub fn quarantine_wal_sidecars(path: impl AsRef<Path>) -> Vec<String> {
+        let path = path.as_ref();
         let wal = Self::wal_path(path);
         let shm = Self::shm_path(path);
         if shm.is_file() {
@@ -1059,6 +1087,83 @@ impl NameIndex {
                 wal.display()
             );
         }
+        let marked = Self::mark_non_intact_regions_incomplete(path);
+        if !marked.is_empty() {
+            push_wal_quarantine_rebuild_regions(&marked);
+            log::warn!(
+                target: "PlaceIndex",
+                "place_index_wal_quarantine_marked_incomplete regions={}",
+                marked.join(",")
+            );
+        }
+        marked
+    }
+
+    /// After WAL loss: set `name_index_build.complete=0` only for regions that
+    /// fail [`Self::region_index_intact`] (partial / empty vs written). Healthy
+    /// intact regions are never touched.
+    pub fn mark_non_intact_regions_incomplete(path: impl AsRef<Path>) -> Vec<String> {
+        let path = path.as_ref();
+        if !path.is_file() {
+            return Vec::new();
+        }
+        let Ok(conn) = Connection::open(path) else {
+            return Vec::new();
+        };
+        let _ = conn.busy_timeout(Duration::from_millis(500));
+        let _ = conn.execute_batch("PRAGMA mmap_size=0;");
+        let mut region_ids: Vec<String> = Vec::new();
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT DISTINCT region_id FROM name_index_build WHERE region_id != ''
+             UNION
+             SELECT DISTINCT region_id FROM name_entries WHERE region_id != ''",
+        ) {
+            if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
+                for r in rows.flatten() {
+                    let id = r.trim().trim_matches('/').to_string();
+                    if !id.is_empty() && !region_ids.iter().any(|x| x == &id) {
+                        region_ids.push(id);
+                    }
+                }
+            }
+        }
+        drop(conn);
+        let mut marked = Vec::new();
+        for rid in region_ids {
+            if Self::region_index_intact(path, &rid) {
+                continue;
+            }
+            if Self::set_region_build_incomplete(path, &rid) {
+                marked.push(rid);
+            }
+        }
+        if !marked.is_empty() {
+            push_wal_quarantine_rebuild_regions(&marked);
+        }
+        marked
+    }
+
+    fn set_region_build_incomplete(path: &Path, region_id: &str) -> bool {
+        let Ok(conn) = Connection::open(path) else {
+            return false;
+        };
+        let _ = conn.busy_timeout(Duration::from_millis(500));
+        let _ = conn.execute_batch("PRAGMA mmap_size=0;");
+        let ok = conn
+            .execute(
+                "INSERT INTO name_index_build(region_id, expected, written, complete)
+                 VALUES (?1, 0, 0, 0)
+                 ON CONFLICT(region_id) DO UPDATE SET complete = 0",
+                params![region_id],
+            )
+            .is_ok();
+        if ok {
+            log::warn!(
+                target: "PlaceIndex",
+                "place_index_region_marked_incomplete region={region_id} reason=wal_quarantine"
+            );
+        }
+        ok
     }
 
     fn sqlite_error_is_busy(err: &rusqlite::Error) -> bool {
@@ -4525,6 +4630,120 @@ mod tests {
             NameIndex::has_entries_for_region(&db, "africa/tunisia"),
             "tunisia region rows intact"
         );
+    }
+
+    /// Quarantining a torn WAL marks only non-intact regions incomplete so
+    /// AutoBuild re-indexes them; healthy intact regions stay complete=1.
+    #[test]
+    fn wal_quarantine_marks_damaged_regions_incomplete_not_healthy() {
+        let _ = take_wal_quarantine_rebuild_regions(); // clear notice
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("place_index.db");
+        {
+            let mut idx = NameIndex::open(&db).expect("open");
+            for i in 1..=20 {
+                idx.upsert_entry_with_region(
+                    i,
+                    format!("Healthy{i}"),
+                    "place:village".into(),
+                    59.0,
+                    10.0,
+                    String::new(),
+                    String::new(),
+                    "europe/norway/ostlandet".into(),
+                )
+                .unwrap();
+            }
+            idx.conn
+                .execute(
+                    "INSERT INTO name_index_build(region_id, expected, written, complete)
+                     VALUES ('europe/norway/ostlandet', 20, 20, 1)
+                     ON CONFLICT(region_id) DO UPDATE SET
+                       expected=20, written=20, complete=1",
+                    [],
+                )
+                .unwrap();
+            // Damaged: complete=1 but almost no rows vs written (lost WAL frames).
+            idx.upsert_entry_with_region(
+                1001,
+                "PartialOnly".into(),
+                "place:village".into(),
+                36.8,
+                10.1,
+                String::new(),
+                String::new(),
+                "africa/tunisia".into(),
+            )
+            .unwrap();
+            idx.conn
+                .execute(
+                    "INSERT INTO name_index_build(region_id, expected, written, complete)
+                     VALUES ('africa/tunisia', 5000, 5000, 1)
+                     ON CONFLICT(region_id) DO UPDATE SET
+                       expected=5000, written=5000, complete=1",
+                    [],
+                )
+                .unwrap();
+        }
+        assert!(NameIndex::region_index_intact(
+            &db,
+            "europe/norway/ostlandet"
+        ));
+        assert!(!NameIndex::region_index_intact(&db, "africa/tunisia"));
+
+        let marked = NameIndex::quarantine_wal_sidecars(&db);
+        assert!(
+            marked.iter().any(|r| r == "africa/tunisia"),
+            "damaged tunisia must be marked, got {marked:?}"
+        );
+        assert!(
+            !marked.iter().any(|r| r == "europe/norway/ostlandet"),
+            "healthy ostlandet must not be rebuilt, got {marked:?}"
+        );
+        assert!(NameIndex::region_index_intact(
+            &db,
+            "europe/norway/ostlandet"
+        ));
+        assert!(!NameIndex::region_index_complete(&db, "africa/tunisia"));
+        let notice = take_wal_quarantine_rebuild_regions();
+        assert!(
+            notice.iter().any(|r| r == "africa/tunisia"),
+            "UI notice must list tunisia, got {notice:?}"
+        );
+        // Re-index path: writer can finish the damaged region again.
+        {
+            let mut idx = NameIndex::open(&db).expect("reopen");
+            for i in 0..50 {
+                idx.upsert_entry_with_region(
+                    2000 + i,
+                    format!("Tunis{i}"),
+                    "place:suburb".into(),
+                    36.8,
+                    10.1,
+                    String::new(),
+                    String::new(),
+                    "africa/tunisia".into(),
+                )
+                .unwrap();
+            }
+            idx.conn
+                .execute(
+                    "INSERT INTO name_index_build(region_id, expected, written, complete)
+                     VALUES ('africa/tunisia', 51, 51, 1)
+                     ON CONFLICT(region_id) DO UPDATE SET
+                       expected=51, written=51, complete=1",
+                    [],
+                )
+                .unwrap();
+        }
+        assert!(
+            NameIndex::region_index_intact(&db, "africa/tunisia"),
+            "tunisia usable after re-index"
+        );
+        assert!(NameIndex::region_index_intact(
+            &db,
+            "europe/norway/ostlandet"
+        ));
     }
 
     /// Regression for af587a647: search (`open_readonly`) must not SIGBUS / crash

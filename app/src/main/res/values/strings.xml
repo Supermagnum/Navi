@@ -417,6 +417,7 @@
     <string name="status_simulation_finished">Simulation finished</string>
     <string name="status_no_simulation_samples">No simulation samples on route</string>
     <string name="status_place_index_ready">Place index ready</string>
+    <string name="status_place_index_rebuilding_search">Search for %1$s is being rebuilt…</string>
     <string name="status_paused_waiting_wifi">Paused — waiting for Wi-Fi/Ethernet</string>
     <string name="status_paused_waiting_plan">Paused — waiting for route plan to finish</string>
     <string name="status_fetching_pack_server">Fetching from pack server…</string>
