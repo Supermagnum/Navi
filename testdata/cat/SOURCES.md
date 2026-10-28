@@ -90,6 +90,8 @@ RepeaterBook data reaches the app only as files the user downloads from repeater
 
 `testdata/cat/repeaterbook/` holds the parser fixtures. The placemark text uses RepeaterBook's KML layout. The callsigns, frequencies, tones, and coordinates are the OSM LA5MR sites already in this directory (ODbL, changeset 189693189, user Visaman): LA5MR node 1705107664, LA6GR node 1640276661, LA2RRR node 471110617, LA5ARR node 3115922468. The KMZ is the same KML. The border pair repeats the LA5MR placemark with `state_id` NO and SE. The CSV files are the same sites, with and without coordinates, plus a file of rejected coordinates.
 
+`toneburst-1750.kml` is the same RepeaterBook-shaped KML layout filled with OSM **LA5YR** node [5574482764](https://www.openstreetmap.org/node/5574482764) (434.900 MHz, 1750 Hz toneburst, not CTCSS) from the navi-server OSM Norway bundle generation `20261013T091219Z` (ODbL). It is not a RepeaterBook export; the `repeaterbook.com` detail link in the placemark is structural only (same as `la5mr-osm.kml`). Added 2026-10-27 for importer coverage of access tone `toneburst_1750`.
+
 ---
 
 ## repeatermap.de

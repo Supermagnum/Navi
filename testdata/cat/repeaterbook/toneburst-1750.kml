@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+<!-- Fixture: OSM node 5574482764 LA5YR (ODbL, OSM Norway bundle 20261013T091219Z). Toneburst 1750 Hz; not CTCSS. Not a RepeaterBook export. -->
+<Style id="IDLE"><IconStyle><color>ff00ff00</color></IconStyle></Style>
+<Placemark>
+<name>LA5YR</name>
+<styleUrl>#IDLE</styleUrl>
+<description><![CDATA[
+Andersrudasen<br>
+434.900000 1750<br>
+On-air: Yes<br>
+<a href='https://www.repeaterbook.com/row_repeaters/details.php?state_id=NO&ID=1750'>Click for Details</a>
+]]></description>
+<Point><coordinates>11.0038215,59.7802919,0</coordinates></Point>
+</Placemark>
+</Document></kml>
