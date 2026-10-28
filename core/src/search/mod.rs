@@ -954,15 +954,20 @@ impl NameIndex {
 
     /// Query-only open: no schema-version migrate / FTS rebuild, no long busy wait.
     ///
+    /// Does **not** call [`Self::recover_wal_sidecars`]: checkpoint needs a write
+    /// lock and would block for the writer busy-timeout while a build holds a
+    /// transaction (breaks WAL concurrent snapshot reads / freezes search).
+    /// Torn-WAL recovery belongs on exclusive [`Self::open`] / cold start.
+    ///
     /// Still applies additive `names_json` once via a short read-write open when
     /// missing — search SELECTs that column, and pre-i18n intact indexes otherwise
-    /// fail with `no such column: names_json` on every query.
+    /// fail with `no such column: names_json` on every query. Uses a short busy
+    /// timeout so an active writer is not waited out.
     pub fn open_readonly(path: impl AsRef<Path>) -> SqlResult<Self> {
         let path = path.as_ref();
-        let _ = Self::recover_wal_sidecars(path);
-        if path.is_file() {
+        if path.is_file() && !Self::names_json_column_present_readonly(path) {
             if let Ok(w) = Connection::open(path) {
-                let _ = w.busy_timeout(Duration::from_millis(500));
+                let _ = w.busy_timeout(Duration::from_millis(50));
                 let _ = w.execute_batch("PRAGMA mmap_size=0;");
                 let _ = localized_store::ensure_names_json_column(&w);
             }
@@ -971,6 +976,26 @@ impl NameIndex {
         conn.busy_timeout(Duration::from_millis(250))?;
         let _ = conn.execute_batch("PRAGMA mmap_size=0;");
         Ok(Self { conn })
+    }
+
+    fn names_json_column_present_readonly(path: &Path) -> bool {
+        let Ok(conn) =
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        else {
+            return false;
+        };
+        let Ok(mut stmt) = conn.prepare("PRAGMA table_info(name_entries)") else {
+            return false;
+        };
+        let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(1)) else {
+            return false;
+        };
+        for r in rows.flatten() {
+            if r == "names_json" {
+                return true;
+            }
+        }
+        false
     }
 
     fn apply_file_pragmas(conn: &Connection) -> SqlResult<()> {
