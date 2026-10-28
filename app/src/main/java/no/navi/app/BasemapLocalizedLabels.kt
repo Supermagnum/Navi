@@ -53,6 +53,55 @@ object BasemapLocalizedLabels {
         )
 
     /**
+     * Extra Latin-script `name:xx` keys after `int_name` / `name:en` / `name:latin`.
+     * `fr` first. Keep in sync with Rust `LATIN_NAME_FALLBACK_LANGS`
+     * (`docs/i18n/names.md`).
+     */
+    val LATIN_NAME_FALLBACK_LANGS: List<String> =
+        listOf(
+            "fr",
+            "de",
+            "es",
+            "it",
+            "pt",
+            "nl",
+            "ca",
+            "pl",
+            "cs",
+            "sk",
+            "hu",
+            "ro",
+            "hr",
+            "sl",
+            "bs",
+            "sq",
+            "sv",
+            "da",
+            "nb",
+            "nn",
+            "no",
+            "fi",
+            "et",
+            "lv",
+            "lt",
+            "tr",
+            "id",
+            "ms",
+            "sw",
+            "vi",
+            "af",
+            "eu",
+            "gl",
+            "cy",
+            "ga",
+            "is",
+            "mt",
+            "lb",
+            "br",
+            "fy",
+        )
+
+    /**
      * Ordered attribute keys for [Expression.coalesce], excluding the final
      * bare [name]/[ref] handled by [nameCoalesce].
      */
@@ -77,6 +126,9 @@ object BasemapLocalizedLabels {
         }
         if (lang !in NON_LATIN_LANGS) {
             keys += listOf("int_name", "name:en", "name:latin")
+            for (fallback in LATIN_NAME_FALLBACK_LANGS) {
+                keys += "name:$fallback"
+            }
         }
         return keys.distinct()
     }

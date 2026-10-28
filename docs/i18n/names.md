@@ -11,16 +11,28 @@ Given device locale BCP 47 (e.g. `nb-NO`, `en-US`, `ar`):
 1. `name:<full locale>` (normalized, e.g. `name:nb-no` / `name:nb-NO` if present)
 2. `name:<language>` — for Norwegian also try `name:no` after `name:nb` / `name:nn`
 3. If the device **language** uses a Latin script and the local `name` is mostly
-   non-Latin (or missing): `int_name`, then `name:en`, then `name:latin`
+   non-Latin (or missing):
+   - `int_name`, then `name:en`, then `name:latin`
+   - then any other Latin-script `name:xx` in this **fixed** order (`name:fr`
+     first): `fr`, `de`, `es`, `it`, `pt`, `nl`, `ca`, `pl`, `cs`, `sk`, `hu`,
+     `ro`, `hr`, `sl`, `bs`, `sq`, `sv`, `da`, `nb`, `nn`, `no`, `fi`, `et`,
+     `lv`, `lt`, `tr`, `id`, `ms`, `sw`, `vi`, `af`, `eu`, `gl`, `cy`, `ga`,
+     `is`, `mt`, `lb`, `br`, `fy`
+   - Rust only accepts a candidate when its value is mostly Latin script
 4. `name`
+
+Non-Latin device languages (e.g. `ar`) skip step 3 entirely — they keep
+`name:<lang>` or local `name`.
 
 Implementation:
 
 - Rust: `driver_break_core::i18n::localized_name` / `localized_name_with_secondary`
+  (`LATIN_NAME_FALLBACK_LANGS`)
 - MapLibre: `BasemapLocalizedLabels` coalesce chain rebuilt on style load and
-  locale change (approximation of step 3 without per-feature script tests)
+  locale change (lists the same Latin `name:xx` keys; no per-feature script test)
 - Place index: `names_json` column + `set_place_search_locale`
-- Guidance / route summary / "Currently on": offline PMTiles lookup (option D)
+- Guidance / route summary / "Currently on": offline PMTiles lookup (option D);
+  pack labels that append `(ref)` are stripped before matching tile `name`/`ref`
 
 ## Secondary line
 

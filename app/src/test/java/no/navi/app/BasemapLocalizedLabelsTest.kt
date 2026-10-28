@@ -31,4 +31,21 @@ class BasemapLocalizedLabelsTest {
         assertTrue(keys.contains("int_name"))
         assertTrue(keys.contains("name:latin"))
     }
+
+    @Test
+    fun englishIncludesLatinNameXxAfterEnWithFrFirst() {
+        val keys = BasemapLocalizedLabels.preferredNameKeys(Locale.US)
+        assertTrue(keys.contains("name:fr"))
+        assertTrue(keys.contains("name:de"))
+        val latinIdx = keys.indexOf("name:latin")
+        val frIdx = keys.indexOf("name:fr")
+        assertTrue(latinIdx >= 0 && frIdx > latinIdx)
+        assertEquals(
+            BasemapLocalizedLabels.LATIN_NAME_FALLBACK_LANGS.first(),
+            "fr",
+        )
+        // Arabic still omits the Latin xx chain.
+        val ar = BasemapLocalizedLabels.preferredNameKeys(Locale("ar"))
+        assertFalse(ar.contains("name:fr"))
+    }
 }

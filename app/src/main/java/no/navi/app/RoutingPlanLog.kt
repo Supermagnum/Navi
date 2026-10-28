@@ -152,7 +152,7 @@ object RoutingPlanLog {
             val app = at.getMethod("currentApplication").invoke(null) as? android.content.Context
             val dir = app?.filesDir?.absolutePath
             if (dir != null) {
-                NaviDebugIntent.restoreAfterPlan(dir)
+                DebugTripHooks.restoreAfterPlan(dir)
                 NaviMapTestHooks.requestReloadCabinSettings = true
             }
         }

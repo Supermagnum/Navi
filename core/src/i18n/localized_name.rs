@@ -4,7 +4,8 @@
 //! 1. `name:<full device locale>` (e.g. `nb-NO`)
 //! 2. `name:<device language>` (`nb`, then `no` for Norwegian)
 //! 3. If device language is Latin script and local `name` is not:
-//!    `int_name`, then `name:en`, then `name:latin`
+//!    `int_name`, then `name:en`, then `name:latin`, then other Latin-script
+//!    `name:xx` in [`LATIN_NAME_FALLBACK_LANGS`] order (`name:fr` first)
 //! 4. `name`
 //!
 //! Refs are never selected here.
@@ -137,6 +138,29 @@ fn pick_from_tags<'a>(tags: &NameTags<'a>, keys: &[&str]) -> Option<&'a str> {
     None
 }
 
+/// Fixed preference among Latin-script `name:xx` when the device UI is Latin
+/// and `int_name` / `name:en` / `name:latin` are absent. `fr` first (common in
+/// Maghreb / bilingual OSM); then a stable Western/Central/Nordic/… list.
+/// Keep in sync with `BasemapLocalizedLabels.LATIN_NAME_FALLBACK_LANGS`.
+pub const LATIN_NAME_FALLBACK_LANGS: &[&str] = &[
+    "fr", "de", "es", "it", "pt", "nl", "ca", "pl", "cs", "sk", "hu", "ro", "hr", "sl", "bs", "sq",
+    "sv", "da", "nb", "nn", "no", "fi", "et", "lv", "lt", "tr", "id", "ms", "sw", "vi", "af", "eu",
+    "gl", "cy", "ga", "is", "mt", "lb", "br", "fy",
+];
+
+/// Pick the first Latin-script `name:xx` for langs in [`LATIN_NAME_FALLBACK_LANGS`].
+fn pick_latin_name_xx<'a>(tags: &NameTags<'a>) -> Option<&'a str> {
+    for lang in LATIN_NAME_FALLBACK_LANGS {
+        let key = format!("name:{lang}");
+        if let Some(v) = get_tag(tags, &key) {
+            if is_mostly_latin_script(v) {
+                return Some(v);
+            }
+        }
+    }
+    None
+}
+
 /// Select primary display name for `locale` (BCP 47, e.g. `nb-NO`, `en`, `ar`).
 pub fn localized_name(tags: &NameTags<'_>, locale: &str) -> Option<String> {
     localized_name_with_secondary(tags, locale).map(|s| s.primary)
@@ -174,14 +198,16 @@ pub fn localized_name_with_secondary(tags: &NameTags<'_>, locale: &str) -> Optio
     )
     .map(|s| s.to_string());
 
-    // 3. Latin-script device language + non-Latin local name → int_name / name:en / name:latin
+    // 3. Latin-script device language + non-Latin local name →
+    //    int_name / name:en / name:latin / other Latin name:xx (fr first)
     if primary.is_none() && language_is_latin_script(&lang) {
         let local_non_latin = local_name
             .as_deref()
             .is_some_and(|n| !is_mostly_latin_script(n));
         if local_non_latin || local_name.is_none() {
-            primary =
-                pick_from_tags(tags, &["int_name", "name:en", "name:latin"]).map(|s| s.to_string());
+            primary = pick_from_tags(tags, &["int_name", "name:en", "name:latin"])
+                .or_else(|| pick_latin_name_xx(tags))
+                .map(|s| s.to_string());
         }
     }
 
@@ -255,6 +281,42 @@ mod tests {
     fn latin_ui_uses_name_en_after_int_name() {
         let t = tags(&[("name", "القاهرة"), ("name:en", "Cairo")]);
         assert_eq!(localized_name(&t, "de").as_deref(), Some("Cairo"));
+    }
+
+    #[test]
+    fn latin_ui_uses_name_fr_when_no_en_or_int_name() {
+        let t = tags(&[
+            ("name", "الطريق السريعة تونس - سوسة - صفاقس"),
+            ("name:fr", "Autoroute Tunis - Sousse - Sfax"),
+            ("name:ar", "الطريق السريعة تونس - سوسة - صفاقس"),
+        ]);
+        assert_eq!(
+            localized_name(&t, "en").as_deref(),
+            Some("Autoroute Tunis - Sousse - Sfax")
+        );
+        // Prefer fr over later Latin langs in the fixed list.
+        let t2 = tags(&[
+            ("name", "شارع الحبيب بورقيبة"),
+            ("name:de", "Habib-Bourguiba-Straße"),
+            ("name:fr", "Avenue Habib Bourguiba"),
+        ]);
+        assert_eq!(
+            localized_name(&t2, "en").as_deref(),
+            Some("Avenue Habib Bourguiba")
+        );
+    }
+
+    #[test]
+    fn arabic_ui_ignores_latin_name_xx_fallback() {
+        let t = tags(&[
+            ("name", "شارع الحبيب بورقيبة"),
+            ("name:fr", "Avenue Habib Bourguiba"),
+            ("name:en", "Habib Bourguiba Avenue"),
+        ]);
+        assert_eq!(
+            localized_name(&t, "ar").as_deref(),
+            Some("شارع الحبيب بورقيبة")
+        );
     }
 
     #[test]

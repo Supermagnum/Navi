@@ -160,27 +160,77 @@ fn names_match(a: &str, b: &str) -> bool {
     norm_key(a) == norm_key(b)
 }
 
+/// Pack / guidance labels often append the OSM ref in parentheses, e.g.
+/// `الطريق … (A1/TAH 1)`. Tiles store `name` and `ref` separately — strip so
+/// matching and localization can succeed.
+pub fn split_embedded_ref(label: &str) -> (String, String) {
+    let t = label.trim();
+    if let Some(open) = t.rfind(" (") {
+        if t.ends_with(')') {
+            let name = t[..open].trim();
+            let reff = t[open + 2..t.len() - 1].trim();
+            if !name.is_empty() && !reff.is_empty() {
+                return (name.to_string(), reff.to_string());
+            }
+        }
+    }
+    (t.to_string(), String::new())
+}
+
+fn refs_compatible(want_ref: &str, feat_ref: &str) -> bool {
+    if want_ref.is_empty() || feat_ref.is_empty() {
+        return true;
+    }
+    if names_match(want_ref, feat_ref) {
+        return true;
+    }
+    // Pack may store "A1/TAH 1" while the tile has "A1" (or the reverse).
+    let want_parts: Vec<&str> = want_ref
+        .split(['/', ';', ','])
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .collect();
+    let feat_parts: Vec<&str> = feat_ref
+        .split(['/', ';', ','])
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .collect();
+    want_parts
+        .iter()
+        .any(|w| feat_parts.iter().any(|f| names_match(w, f)))
+}
+
 fn feature_matches(tags: &HashMap<String, String>, local_name: &str, road_ref: &str) -> bool {
     let feat_name = tags.get("name").map(String::as_str).unwrap_or("");
     let feat_ref = tags.get("ref").map(String::as_str).unwrap_or("");
-    let want_name = local_name.trim();
-    let want_ref = road_ref.trim();
+    let (stripped, embedded_ref) = split_embedded_ref(local_name);
+    let want_name = if stripped.is_empty() {
+        local_name.trim()
+    } else {
+        stripped.as_str()
+    };
+    let want_ref = if !road_ref.trim().is_empty() {
+        road_ref.trim()
+    } else {
+        embedded_ref.as_str()
+    };
     if !want_name.is_empty() && !feat_name.is_empty() && names_match(want_name, feat_name) {
-        if want_ref.is_empty() || feat_ref.is_empty() || names_match(want_ref, feat_ref) {
-            return true;
-        }
-        // Name matched; ref optional when pack has no ref or tile has none.
-        if want_ref.is_empty() || feat_ref.is_empty() {
-            return true;
-        }
+        return refs_compatible(want_ref, feat_ref);
     }
     // Ref-only labels (motorways): match ref when local name empty.
     if want_name.is_empty()
         && !want_ref.is_empty()
         && !feat_ref.is_empty()
-        && names_match(want_ref, feat_ref)
+        && refs_compatible(want_ref, feat_ref)
     {
         return true;
+    }
+    // Name empty in the pack but ref present — match tile by ref alone.
+    if !want_ref.is_empty() && !feat_ref.is_empty() && refs_compatible(want_ref, feat_ref) {
+        // Prefer when names are both empty or the pack name was only a ref wrapper.
+        if want_name.is_empty() || local_name.trim() == want_ref {
+            return true;
+        }
     }
     false
 }
@@ -243,14 +293,40 @@ pub fn build_route_road_name_cache(
     cache
 }
 
+fn display_with_optional_ref(localized: &str, road_ref: &str) -> String {
+    let reff = road_ref.trim();
+    if reff.is_empty() || localized.contains(reff) {
+        localized.to_string()
+    } else {
+        format!("{localized} ({reff})")
+    }
+}
+
 /// Apply cache to a street string: if `street` equals local name (and we have a
 /// localized form), return localized; else return `street` unchanged.
+///
+/// Accepts pack labels that embed a ref in parentheses; looks up by the stripped
+/// OSM name (+ ref) used when the cache was built.
 pub fn apply_cached_street(street: &str, road_ref: &str, cache: &RouteRoadNameCache) -> String {
     if let Some(loc) = cache.get(street, road_ref) {
         return loc.to_string();
     }
     if let Some(loc) = cache.get(street, "") {
         return loc.to_string();
+    }
+    let (base, embedded) = split_embedded_ref(street);
+    let reff = if !road_ref.trim().is_empty() {
+        road_ref.trim()
+    } else {
+        embedded.as_str()
+    };
+    if !base.is_empty() {
+        if let Some(loc) = cache.get(&base, reff) {
+            return display_with_optional_ref(loc, reff);
+        }
+        if let Some(loc) = cache.get(&base, "") {
+            return display_with_optional_ref(loc, reff);
+        }
     }
     street.to_string()
 }
@@ -278,11 +354,16 @@ pub fn localize_maneuvers_json(pmtiles: &Path, locale: &str, maneuvers_json: &st
         if !lat.is_finite() || !lon.is_finite() {
             continue;
         }
+        let (base_name, embedded_ref) = split_embedded_ref(&street);
         queries.push(StreetLabelQuery {
             lat,
             lon,
-            local_name: street,
-            road_ref: String::new(),
+            local_name: if base_name.is_empty() {
+                street
+            } else {
+                base_name
+            },
+            road_ref: embedded_ref,
         });
     }
     let cache = build_route_road_name_cache(pmtiles, locale, &queries);
@@ -332,11 +413,16 @@ pub fn localize_sim_samples_json(pmtiles: &Path, locale: &str, samples_json: &st
             if !lat.is_finite() || !lon.is_finite() {
                 continue;
             }
+            let (base_name, embedded_ref) = split_embedded_ref(&street);
             queries.push(StreetLabelQuery {
                 lat,
                 lon,
-                local_name: street,
-                road_ref: String::new(),
+                local_name: if base_name.is_empty() {
+                    street
+                } else {
+                    base_name
+                },
+                road_ref: embedded_ref,
             });
         }
         // Cap sample queries — densified routes are huge; take unique names near
@@ -398,5 +484,30 @@ mod tests {
         assert!(!feature_matches(&tags, "Storgata", ""));
         let loc = localized_from_tags(&tags, "en").expect("en");
         assert_eq!(loc, "Church Street");
+    }
+
+    #[test]
+    fn split_embedded_ref_strips_pack_parens() {
+        let (n, r) = split_embedded_ref("الطريق السريعة تونس - سوسة - صفاقس (A1/TAH 1)");
+        assert_eq!(n, "الطريق السريعة تونس - سوسة - صفاقس");
+        assert_eq!(r, "A1/TAH 1");
+        let (n2, r2) = split_embedded_ref("Kirkegata");
+        assert_eq!(n2, "Kirkegata");
+        assert!(r2.is_empty());
+    }
+
+    #[test]
+    fn feature_match_with_embedded_ref_and_fr() {
+        let mut tags = HashMap::new();
+        tags.insert("name".into(), "الطريق السريعة تونس - سوسة - صفاقس".into());
+        tags.insert("ref".into(), "A1".into());
+        tags.insert("name:fr".into(), "Autoroute Tunis - Sousse - Sfax".into());
+        assert!(feature_matches(
+            &tags,
+            "الطريق السريعة تونس - سوسة - صفاقس (A1/TAH 1)",
+            "",
+        ));
+        let loc = localized_from_tags(&tags, "en").expect("en via name:fr");
+        assert_eq!(loc, "Autoroute Tunis - Sousse - Sfax");
     }
 }

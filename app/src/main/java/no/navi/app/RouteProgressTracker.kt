@@ -47,8 +47,8 @@ data class RouteProgressSnapshot(
  * (avoids confidently-wrong approach distances on winding corridors).
  */
 class RouteProgressTracker(
-    private val samples: List<RouteSimSample>,
-    private val maneuvers: List<RouteManeuver>,
+    private var samples: List<RouteSimSample>,
+    private var maneuvers: List<RouteManeuver>,
     private val viaPoints: List<Waypoint>,
     private val endPoint: Waypoint,
     private val viaRadiusM: Double = 80.0,
@@ -65,7 +65,25 @@ class RouteProgressTracker(
 
     fun maneuverCount(): Int = maneuvers.size
 
+    /** Cursor into [maneuvers] for the next approach instruction. */
+    fun currentManeuverIndex(): Int = maneuverCursor
+
     fun offRouteThresholdMetres(): Double = offRouteThresholdM
+
+    /**
+     * Swap street labels after a locale change without resetting progress.
+     * Sample/maneuver counts and geometry must match the active plan.
+     */
+    fun relabel(
+        newSamples: List<RouteSimSample>,
+        newManeuvers: List<RouteManeuver>,
+    ) {
+        samples = newSamples
+        maneuvers = newManeuvers
+        if (maneuverCursor > maneuvers.size) {
+            maneuverCursor = maneuvers.size
+        }
+    }
 
     fun reset() {
         maneuverCursor = 0

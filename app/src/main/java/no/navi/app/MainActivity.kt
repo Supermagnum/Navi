@@ -3,6 +3,7 @@ package no.navi.app
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.location.Location
@@ -84,6 +85,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -91,6 +93,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontSynthesis
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -189,6 +192,33 @@ import android.graphics.Paint as AndroidPaint
 private const val SPLASH_MAX_HOLD_MS = 2_000L
 
 class MainActivity : ComponentActivity() {
+    /**
+     * With `configChanges` including locale/layoutDirection, the Activity is not
+     * recreated on language change. Compose observes [configurationRevision] so
+     * every screen re-reads string resources and layout direction.
+     */
+    private val configurationRevision =
+        java.util.concurrent.atomic
+            .AtomicInteger(0)
+
+    @Volatile
+    private var configurationRevisionListener: (() -> Unit)? = null
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        val rev = configurationRevision.incrementAndGet()
+        runCatching {
+            val tag =
+                newConfig.locales[0]?.toLanguageTag()
+                    ?: java.util.Locale
+                        .getDefault()
+                        .toLanguageTag()
+            uniffi.navi.setPlaceSearchLocale(tag)
+            android.util.Log.i("NaviLocale", "onConfigurationChanged locale=$tag rev=$rev")
+        }
+        configurationRevisionListener?.invoke()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // Splash Screen API (androidx.core:core-splashscreen) for API 26–30 compat
         // and native API 31+. Activity theme is Theme.Navi.Splash; post-splash
@@ -264,8 +294,27 @@ class MainActivity : ComponentActivity() {
         WorldOverviewDownload.ensure(this)
         setContent {
             var showMap by remember { mutableStateOf(false) }
+            var configRev by remember { mutableIntStateOf(configurationRevision.get()) }
+            DisposableEffect(Unit) {
+                configurationRevisionListener = {
+                    configRev = configurationRevision.get()
+                }
+                onDispose { configurationRevisionListener = null }
+            }
+            // Read configRev so locale/layoutDirection changes recompose stringResource
+            // / RTL without remounting NaviMapScreen (preserve active route state).
+            @Suppress("UNUSED_EXPRESSION")
+            configRev
+            val conf = LocalConfiguration.current
+            val composeLayoutDir =
+                if (conf.layoutDirection == android.util.LayoutDirection.RTL) {
+                    LayoutDirection.Rtl
+                } else {
+                    LayoutDirection.Ltr
+                }
             MaterialTheme(typography = naviTypography()) {
                 CompositionLocalProvider(
+                    LocalLayoutDirection provides composeLayoutDir,
                     LocalTextStyle provides
                         LocalTextStyle.current.copy(
                             letterSpacing = 0.sp,
@@ -277,7 +326,7 @@ class MainActivity : ComponentActivity() {
                         // Cheap first frame so the splash can exit within SPLASH_MAX_HOLD_MS
                         // even while MapLibre / NaviMapScreen still warm up.
                         if (showMap) {
-                            NaviMapScreen()
+                            NaviMapScreen(configurationRevision = configRev)
                         }
                     }
                 }
@@ -310,7 +359,7 @@ class MainActivity : ComponentActivity() {
      *     --ed navi_camera_lat 62.1592913 --ed navi_camera_lon 11.3584086 --ed navi_camera_zoom 16
      * Also accepts --ef / --es for the same keys.
      *
-     * Debug trip seed (debuggable builds only — see [NaviDebugIntent]):
+     * Debug trip seed (debuggable builds only — see [DebugTripHooks] / [NaviDebugIntent]):
      *   --ed navi_from_lat … --ed navi_from_lon … --ed navi_to_lat … --ed navi_to_lon …
      *   [--es navi_profile car|bicycle|hiking|…] [--es navi_bike_capability road|trekking|mountain]
      *   [--ed navi_via1_lat … --ed navi_via1_lon …] (up to via4)
@@ -577,7 +626,7 @@ class MainActivity : ComponentActivity() {
             }.start()
         }
         intent.getStringExtra("navi_search_ui_q")?.let { q ->
-            if (NaviDebugIntent.debugBuild(this)) {
+            if (DebugTripHooks.debugBuild(this)) {
                 NaviMapTestHooks.pendingSearchUiQuery =
                     q to intent.getBooleanExtra("navi_search_ui_submit", false)
             }
@@ -585,8 +634,8 @@ class MainActivity : ComponentActivity() {
         // Trip / profile / settings / graph: debug builds only.
         val dataDirPath = filesDir.absolutePath
         val debugTrip =
-            NaviDebugIntent.consumeTripExtras(this, intent, dataDirPath)
-                ?: NaviDebugIntent.consumePendingTripFile(this, dataDirPath)
+            DebugTripHooks.consumeTripExtras(this, intent, dataDirPath)
+                ?: DebugTripHooks.consumePendingTripFile(this, dataDirPath)
         if (debugTrip != null) {
             NaviMapTestHooks.pendingTripPlan = debugTrip
             debugTrip.profile?.let { NaviMapTestHooks.requestTravelProfile = it }
@@ -1000,7 +1049,11 @@ private fun localizeRouteStreetsForLocale(
 }
 
 @Composable
-private fun NaviMapScreen() {
+private fun NaviMapScreen(configurationRevision: Int = 0) {
+    // Observed so locale/layoutDirection changes refresh stringResource / RTL
+    // without remounting remembered route state.
+    @Suppress("UNUSED_VARIABLE")
+    val observedConfigurationRevision = configurationRevision
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var status by remember {
@@ -1080,13 +1133,23 @@ private fun NaviMapScreen() {
     var packCatalogEpoch by remember { mutableIntStateOf(0) }
     var mapsEpoch by remember { mutableIntStateOf(0) }
     var styleEpoch by remember { mutableIntStateOf(0) }
+
+    /** Bumped on locale change so corridor street labels can re-localize in place. */
+    var localeRelabelEpoch by remember { mutableIntStateOf(0) }
     val configuration = LocalConfiguration.current
     val deviceLocaleTag =
-        remember(configuration) {
+        remember(configuration, configurationRevision) {
             configuration.locales[0]?.toLanguageTag().orEmpty()
         }
+    val layoutDirection =
+        remember(configuration, configurationRevision) {
+            configuration.layoutDirection
+        }
     var previousLocaleTag by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(deviceLocaleTag) {
+    var previousLayoutDirection by remember { mutableStateOf<Int?>(null) }
+    // configChanges=locale|layoutDirection: refresh chrome, search locale, basemap
+    // labels, and cached status lines without remounting the map / route.
+    LaunchedEffect(configurationRevision, deviceLocaleTag, layoutDirection) {
         val tag =
             deviceLocaleTag.ifBlank {
                 java.util.Locale
@@ -1095,18 +1158,35 @@ private fun NaviMapScreen() {
             }
         runCatching {
             uniffi.navi.setPlaceSearchLocale(tag)
-            android.util.Log.i("NaviLocale", "place_search_locale=$tag")
+            android.util.Log.i(
+                "NaviLocale",
+                "place_search_locale=$tag layoutDir=$layoutDirection rev=$configurationRevision",
+            )
         }
-        val prev = previousLocaleTag
+        val prevLocale = previousLocaleTag
+        val prevDir = previousLayoutDirection
         previousLocaleTag = deviceLocaleTag
-        if (prev != null && prev != deviceLocaleTag) {
+        previousLayoutDirection = layoutDirection
+        val localeChanged = prevLocale != null && prevLocale != deviceLocaleTag
+        val dirChanged = prevDir != null && prevDir != layoutDirection
+        if (localeChanged || dirChanged) {
             styleEpoch += 1
+            localeRelabelEpoch += 1
+            // Re-resolve idle status from resources (remembered getString stays stale).
+            if (jobProgressStatus.isEmpty() || status == jobProgressStatus) {
+                if (jobProgressStatus.isEmpty()) {
+                    status = context.getString(R.string.status_ready)
+                }
+            }
+            InstalledMaps.region(selectedGeofabrikPath)?.noOfflineMapMessage()?.let { msg ->
+                status = msg
+            }
         }
     }
     LaunchedEffect(selectedGeofabrikPath) {
         NaviMapTestHooks.lastSelectedGeofabrikPath = selectedGeofabrikPath
     }
-    LaunchedEffect(selectedGeofabrikPath, mapsEpoch) {
+    LaunchedEffect(selectedGeofabrikPath, mapsEpoch, configurationRevision) {
         InstalledMaps.region(selectedGeofabrikPath)?.noOfflineMapMessage()?.let { msg ->
             status = msg
         }
@@ -1751,6 +1831,10 @@ private fun NaviMapScreen() {
     var updateReminderDue by remember { mutableStateOf(false) }
     var routeSamples by remember { mutableStateOf<List<RouteSimSample>>(emptyList()) }
     var routeManeuvers by remember { mutableStateOf<List<RouteManeuver>>(emptyList()) }
+    // Pack-local street JSON (pre option-D) so locale changes can re-localize
+    // without replan. Cleared when the corridor is cleared.
+    var packManeuversJson by remember { mutableStateOf("[]") }
+    var packSimSamplesJson by remember { mutableStateOf("[]") }
     var simulating by remember { mutableStateOf(false) }
     var routeSimulator by remember { mutableStateOf<RouteSimulator?>(null) }
     val routeSamplesRef =
@@ -1843,6 +1927,8 @@ private fun NaviMapScreen() {
         progressTrackerRef.set(null)
         routeSamples = emptyList()
         routeManeuvers = emptyList()
+        packManeuversJson = "[]"
+        packSimSamplesJson = "[]"
         lastViaToastIndex = -1
         mapState =
             mapState.copy(
@@ -2035,6 +2121,49 @@ private fun NaviMapScreen() {
         remember {
             NaviAppData.resolve(context)
         }
+
+    LaunchedEffect(localeRelabelEpoch) {
+        if (localeRelabelEpoch == 0) return@LaunchedEffect
+        if (packManeuversJson == "[]" && packSimSamplesJson == "[]") return@LaunchedEffect
+        val tag =
+            deviceLocaleTag.ifBlank {
+                java.util.Locale
+                    .getDefault()
+                    .toLanguageTag()
+            }
+        val localized =
+            withContext(Dispatchers.Default) {
+                localizeRouteStreetsForLocale(
+                    dataDir = dataDir,
+                    regionPath = selectedGeofabrikPath,
+                    localeTag = tag,
+                    maneuversJson = packManeuversJson,
+                    simSamplesJson = packSimSamplesJson,
+                )
+            }
+        NaviMapTestHooks.lastManeuversJson = localized.first
+        NaviMapTestHooks.lastSimSamplesJson = localized.second
+        val newManeuvers = parseRouteManeuvers(localized.first)
+        val newSamples = parseRouteSimSamples(localized.second)
+        routeManeuvers = newManeuvers
+        routeSamples = newSamples
+        val tracker = progressTrackerRef.get()
+        tracker?.relabel(newSamples, newManeuvers)
+        val manIdx = tracker?.currentManeuverIndex() ?: -1
+        val manStreet = newManeuvers.getOrNull(manIdx)?.street
+        if (approachUiPhase(approachGuidance) != ApproachUiPhase.Hidden &&
+            !manStreet.isNullOrBlank() &&
+            approachGuidance.nextStreet != manStreet
+        ) {
+            approachGuidance = approachGuidance.copy(nextStreet = manStreet)
+        }
+        android.util.Log.i(
+            "NaviLocale",
+            "relocalized_route_streets locale=$tag " +
+                "maneuvers=${newManeuvers.size} samples=${newSamples.size} " +
+                "maneuverIndex=$manIdx",
+        )
+    }
 
     LaunchedEffect(
         poiLookaheadEnabled,
@@ -2396,13 +2525,17 @@ private fun NaviMapScreen() {
             runCatching { pending.breakPoisJson }.getOrDefault("[]")
         NaviMapTestHooks.lastDaysJson =
             runCatching { pending.daysJson }.getOrDefault("[]")
+        val packMans = runCatching { pending.maneuversJson }.getOrDefault("[]")
+        val packSims = runCatching { pending.simSamplesJson }.getOrDefault("[]")
+        packManeuversJson = packMans
+        packSimSamplesJson = packSims
         val localizedStreets =
             localizeRouteStreetsForLocale(
                 dataDir = dataDir,
                 regionPath = selectedGeofabrikPath,
                 localeTag = deviceLocaleTag,
-                maneuversJson = runCatching { pending.maneuversJson }.getOrDefault("[]"),
-                simSamplesJson = runCatching { pending.simSamplesJson }.getOrDefault("[]"),
+                maneuversJson = packMans,
+                simSamplesJson = packSims,
             )
         NaviMapTestHooks.lastManeuversJson = localizedStreets.first
         NaviMapTestHooks.lastSimSamplesJson = localizedStreets.second
@@ -3776,7 +3909,7 @@ private fun NaviMapScreen() {
             RegionCoverage.resolvePlanPbf(dataDir, coverageWaypoints, longTripPackDir)
         val planPackDirPath =
             when {
-                NaviMapTestHooks.forceLocalPbf -> NaviDebugIntent.FORCE_PBF_PACK_DIR
+                NaviMapTestHooks.forceLocalPbf -> DebugTripHooks.FORCE_PBF_PACK_DIR
                 longTripPackDir != null -> longTripPackDir.absolutePath
                 else -> ""
             }

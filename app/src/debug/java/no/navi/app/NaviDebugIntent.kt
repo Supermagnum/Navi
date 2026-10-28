@@ -287,7 +287,17 @@ object NaviDebugIntent {
                 snapshot = snapshot,
             )
         lastApplied.set(ctx)
-        NaviManeuverDump.noteDebugContext(ctx)
+        NaviManeuverDump.noteDebugContext(
+            DebugTripDumpContext(
+                profile = ctx.profile,
+                bikeCapability = ctx.bikeCapability,
+                vias = ctx.vias,
+                graph = ctx.graph,
+                avoidFerries = ctx.avoidFerries,
+                appliedSettings = ctx.appliedSettings,
+                ignoredSettings = ctx.ignoredSettings,
+            ),
+        )
 
         Log.i(
             TAG,
@@ -300,30 +310,85 @@ object NaviDebugIntent {
                 "avoid_tolls=$avoidTolls restore=$restoreAfter inject_gps=$injectGps",
         )
 
-        return NaviMapTestHooks.PendingTripPlan(
-            fromName = fromName,
-            fromLat = fromLat,
-            fromLon = fromLon,
-            toName = toName,
-            toLat = toLat,
-            toLon = toLon,
-            enableLongTrip = enableLong,
-            autoPlan = autoPlan,
-            profile = profile,
-            bikeCapability = bikeCap,
-            vias = vias,
-            forceLocalPbf = forcePbf,
-            avoidFerries = avoidFerries,
-            stayInCountry = stayInCountry,
-            ecoModeEnabled = ecoMode,
-            campingPluginEnabled = campingPlugin,
-            poiLookaheadEnabled = poiLookahead,
-            avoidMotorways = avoidMotorways,
-            avoidTunnels = avoidTunnels,
-            avoidTolls = avoidTolls,
-            restoreSettingsAfter = restoreAfter,
-            injectGpsAtFrom = injectGps,
+        val plan =
+            NaviMapTestHooks.PendingTripPlan(
+                fromName = fromName,
+                fromLat = fromLat,
+                fromLon = fromLon,
+                toName = toName,
+                toLat = toLat,
+                toLon = toLon,
+                enableLongTrip = enableLong,
+                autoPlan = autoPlan,
+                profile = profile,
+                bikeCapability = bikeCap,
+                vias = vias,
+                forceLocalPbf = forcePbf,
+                avoidFerries = avoidFerries,
+                stayInCountry = stayInCountry,
+                ecoModeEnabled = ecoMode,
+                campingPluginEnabled = campingPlugin,
+                poiLookaheadEnabled = poiLookahead,
+                avoidMotorways = avoidMotorways,
+                avoidTunnels = avoidTunnels,
+                avoidTolls = avoidTolls,
+                restoreSettingsAfter = restoreAfter,
+                injectGpsAtFrom = injectGps,
+            )
+        // Drop one-shot OD extras so Activity recreate (locale / density) cannot
+        // re-seed and replan over an active guidance session.
+        stripTripExtras(intent)
+        return plan
+    }
+
+    /** Keys that seed [consumeTripExtras] / auto-plan; cleared after first consume. */
+    private val tripExtraKeys =
+        listOf(
+            "navi_from_lat",
+            "navi_from_lon",
+            "navi_to_lat",
+            "navi_to_lon",
+            "navi_from_name",
+            "navi_to_name",
+            "navi_long_trip",
+            "navi_auto_plan",
+            "navi_debug_trip_enabled",
+            "navi_debug_trip_auto_plan",
+            "navi_debug_trip_auto_start",
+            "navi_profile",
+            "navi_graph",
+            "navi_via1_lat",
+            "navi_via1_lon",
+            "navi_via2_lat",
+            "navi_via2_lon",
+            "navi_via3_lat",
+            "navi_via3_lon",
+            "navi_use_networked_cabins",
+            "navi_network_hut_member",
+            "navi_use_unlocked_cabins",
+            "navi_avoid_ferries",
+            "navi_stay_in_country",
+            "navi_bike_capability",
+            "navi_bike_mode",
+            "navi_eco",
+            "navi_eco_mode",
+            "navi_camping",
+            "navi_wild_camping",
+            "navi_attractions",
+            "navi_poi_lookahead",
+            "navi_avoid_motorways",
+            "navi_avoid_tunnels",
+            "navi_avoid_tolls",
+            "navi_toll_policy",
+            "navi_datex",
+            "navi_inject_gps",
+            "navi_restore_settings_after",
         )
+
+    private fun stripTripExtras(intent: Intent) {
+        for (key in tripExtraKeys) {
+            intent.removeExtra(key)
+        }
     }
 
     /**
