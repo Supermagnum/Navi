@@ -69,8 +69,8 @@ object CatBootstrap {
     }
 
     const val REPEATER_DROP_README: String =
-        "Put RepeaterBook exports here, one file per country.\n" +
-            "KML and KMZ are the primary source. CSV is accepted too; coordinates are used only when the file has valid latitude and longitude columns.\n" +
+        "Put RepeaterBook exports here (KML/KMZ preferred; CSV accepted when it has valid latitude and longitude columns).\n" +
+            "Exports may be split across multiple files when repeaters are networked; do not assume one file per country.\n" +
             "This folder is visible from a computer over USB (MTP) under Android/data/no.navi.app/files/repeaters.\n" +
             "Android deletes this folder when the app is uninstalled.\n" +
             "The app does not contact repeaterbook.com. You are responsible for complying with RepeaterBook's terms.\n"

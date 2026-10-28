@@ -204,7 +204,7 @@ fun CatStatusSheet(
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                "Download one RepeaterBook KML per country and copy it into this folder.",
+                "Copy RepeaterBook KML/KMZ exports into this folder. Networked repeaters may need several files, not one file per country.",
                 style = MaterialTheme.typography.bodySmall,
             )
             SelectionContainer {
