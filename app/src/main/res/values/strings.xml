@@ -352,6 +352,15 @@
     <string name="status_off_trail_prompt">Off trail — recalculate route?</string>
     <string name="download_region_progress">Downloading region… %1$d%%</string>
     <string name="download_region">Downloading region…</string>
+    <string name="progress_build_indexed_bounds">Building indexed maps: scanning bounds…</string>
+    <string name="progress_build_indexed_graphs">Building indexed maps: graphs (shared PBF, tiled)…</string>
+    <string name="progress_build_indexed_poi">Building indexed maps: POI + barriers…</string>
+    <string name="progress_build_indexed_wetlands">Building indexed maps: wetlands…</string>
+    <string name="progress_build_graph">Building graph %1$s…</string>
+    <string name="progress_rebuild_local">Rebuilding locally (%1$s)…</string>
+    <string name="progress_download_place_source">Downloading place-source for %1$s…</string>
+    <string name="progress_download_pack_update">Downloading updated pack from server…</string>
+    <string name="progress_download_elevation">Downloading elevation…</string>
     <string name="download_extract_place_index">Downloading extract for place index…</string>
     <string name="download_resuming">Resuming download…</string>
     <string name="download_basemap_pmtiles">Downloading basemap (PMTiles)…</string>

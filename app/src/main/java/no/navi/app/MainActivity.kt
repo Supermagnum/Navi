@@ -3139,6 +3139,7 @@ private fun NaviMapScreen() {
         total: ULong?,
         label: String,
     ): String {
+        val resolved = UiMessageCodes.resolve(label, context.resources)
         val pct =
             if (total != null && total > 0uL) {
                 ((done.toDouble() * 100.0) / total.toDouble()).roundToInt().coerceIn(0, 100)
@@ -3146,10 +3147,10 @@ private fun NaviMapScreen() {
                 null
             }
         return when {
-            pct != null && total != null -> "$label $pct% ($done / $total)"
-            pct != null -> "$label $pct%"
-            total == null -> label
-            else -> "$label $done / ?"
+            pct != null && total != null -> "$resolved $pct% ($done / $total)"
+            pct != null -> "$resolved $pct%"
+            total == null -> resolved
+            else -> "$resolved $done / ?"
         }
     }
 
@@ -3287,6 +3288,7 @@ private fun NaviMapScreen() {
                         regionDownloadProgress.contains("100%") ||
                             regionDownloadProgress.contains("Fetching packs") ||
                             regionDownloadProgress.contains("Downloading region") ||
+                            regionDownloadProgress.contains("navi.msg.download_region") ||
                             regionDownloadProgress.contains("Downloading extract") ||
                             regionDownloadProgress.contains("Place index")
                     )

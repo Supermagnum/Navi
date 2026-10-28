@@ -840,10 +840,10 @@ pub fn progress_label_for_resume(label: &str, resume_from: u64) -> String {
     if resume_from == 0 {
         return label.to_string();
     }
-    if label.to_ascii_lowercase().contains("resum") {
+    if label.to_ascii_lowercase().contains("resum") || label.contains("resuming_download") {
         return label.to_string();
     }
-    "Resuming download…".to_string()
+    crate::i18n::messages::encode(crate::i18n::messages::codes::RESUMING_DOWNLOAD)
 }
 
 fn short_url(url: &str) -> String {
@@ -1060,12 +1060,12 @@ mod tests {
     #[test]
     fn resume_progress_label_switches_when_offset_nonzero() {
         assert_eq!(
-            progress_label_for_resume("Downloading region…", 0),
-            "Downloading region…"
+            progress_label_for_resume("navi.msg.download_region", 0),
+            "navi.msg.download_region"
         );
         assert_eq!(
-            progress_label_for_resume("Downloading region…", 1_048_576),
-            "Resuming download…"
+            progress_label_for_resume("navi.msg.download_region", 1_048_576),
+            "navi.msg.resuming_download"
         );
         assert_eq!(
             progress_label_for_resume("Resuming download of ostlandet…", 99),

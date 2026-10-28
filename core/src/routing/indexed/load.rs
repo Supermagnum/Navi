@@ -1067,7 +1067,7 @@ pub fn load_graph_pack_clips(
     // v8 and v9 have different rkyv layouts (`edge_is_tunnel` only on v9); pick the
     // archived type from the preamble. v8 materializes `is_tunnel = false`.
     let file = path.file_name().and_then(|s| s.to_str()).unwrap_or("?");
-    crate::download::progress::set(0, Some(1), &format!("Building graph {file}…"));
+    crate::download::progress::set(0, Some(1), &crate::i18n::messages::encode1(crate::i18n::messages::codes::BUILD_GRAPH, &file));
 
     let g = match format_version {
         super::graph_pack::GRAPH_FORMAT_VERSION_V8 => {

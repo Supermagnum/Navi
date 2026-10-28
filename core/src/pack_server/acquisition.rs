@@ -672,7 +672,7 @@ pub fn ensure_indexed_packs_prefer_server(
     let region_id = resolve_region_id_for_leaf(data_dir, &stem, region_id_hint);
     let mut rebuild_reason = "no_region_id".to_string();
     if let Some(ref rid) = region_id {
-        crate::download::progress::set(0, None, "Downloading updated pack from server…");
+        crate::download::progress::set(0, None, "navi.msg.download_pack_update");
         log::info!(
             target: "NaviPack",
             "ensure_indexed_packs: trying pack server first region={rid} stem={stem}"
@@ -718,7 +718,7 @@ pub fn ensure_indexed_packs_prefer_server(
         );
     }
 
-    let progress_label = format!("Rebuilding locally ({rebuild_reason})…");
+    let progress_label = crate::i18n::messages::encode1(crate::i18n::messages::codes::REBUILD_LOCAL, &rebuild_reason);
     crate::download::progress::set(0, None, &progress_label);
     let mut opts = ConvertOptions::new(data_dir, pbf);
     opts.elev_dir = elev_dir.map(PathBuf::from);

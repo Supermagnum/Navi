@@ -1,0 +1,223 @@
+# Missing translations
+
+English (`values/strings.xml`) is the source of truth. Incomplete locale files
+do not fail the build (`MissingTranslation` / `ExtraTranslation` disabled in
+`app/build.gradle.kts`).
+
+## values-nb (Bokmål)
+
+Filled for common chrome, dialogs, approach, continents, highway classes, and
+download progress. Still missing 274 keys (English fallback):
+
+- `action_delete_planned_route`
+- `action_delete_route`
+- `action_export_planned_gpx`
+- `camping_reenable_session`
+- `camping_sources`
+- `cat_backend`
+- `cat_backend_benshi`
+- `cat_backend_hamlib`
+- `cat_consensus_relocation`
+- `cat_demo_mode`
+- `cat_hamlib_model_number`
+- `cat_hamlib_model_title`
+- `cat_nearest_network_auto`
+- `cat_off_manual`
+- `cat_port`
+- `cat_repeater_network`
+- `cat_rigctld_host`
+- `cat_scratch_channel`
+- `cat_scratch_channel_hint`
+- `cat_serial_baud`
+- `cat_standalone_nearest`
+- `clear_all_vias`
+- `download_all_then_place_index`
+- `download_basemap_pmtiles`
+- `download_extract_place_index`
+- `download_region_progress`
+- `download_region_title`
+- `error_turn_off_long_trip`
+- `follow_off`
+- `follow_on`
+- `fuel_added`
+- `fuel_tank_capacity`
+- `geo_label_path`
+- `highway_class_bridleway`
+- `highway_class_steps`
+- `highway_class_unclassified`
+- `hint_online_place_search`
+- `imu_panel_title`
+- `imu_waiting_sensor`
+- `map_layers_count`
+- `network_follow`
+- `placeholder_unknown`
+- `profile_bike_type`
+- `profile_follow_networks`
+- `profile_networked_cabins`
+- `profile_pilgrim`
+- `profile_unlocked_cabins`
+- `progress_build_graph`
+- `progress_build_indexed_bounds`
+- `progress_build_indexed_graphs`
+- `progress_build_indexed_poi`
+- `progress_build_indexed_wetlands`
+- `progress_download_elevation`
+- `progress_download_pack_update`
+- `progress_download_place_source`
+- `progress_named`
+- `progress_rebuild_local`
+- `progress_region_n_of_m_named`
+- `progress_region_tag`
+- `reject_reason`
+- `rotation_compass`
+- `rotation_n_up`
+- `rotation_travel`
+- `settings_3d_experimental`
+- `settings_arm_extension`
+- `settings_battery_kwh`
+- `settings_battery_wh`
+- `settings_datex_roadworks`
+- `settings_eco_mode`
+- `settings_electric_car`
+- `settings_electric_cycle`
+- `settings_hide_when_hours_unknown`
+- `settings_motor_torque`
+- `settings_nearby_attractions`
+- `settings_next_break_shown_as`
+- `settings_override_host`
+- `settings_override_port`
+- `settings_place_search_url`
+- `settings_poi_radius`
+- `settings_professional_driver`
+- `settings_require_path_link`
+- `settings_residency_country`
+- `settings_snap_rotation`
+- `settings_split_break`
+- `settings_trip_eta`
+- `settings_weather_map_symbols`
+- `settings_wheel_diameter`
+- `settings_wifi_only`
+- `status_estimated_position`
+- `status_estimated_position_imu`
+- `status_kept_original_route`
+- `status_off_trail_prompt`
+- `status_planning_cancelled`
+- `status_planning_starting`
+- `status_planning_traffic`
+- `status_position_lost`
+- `status_recalculating_route_detail`
+- `status_region_ready`
+- `status_waiting_background_job`
+- `tools_apply_osm_update`
+- `tools_check_osm_updates`
+- `tools_delete_downloaded_region`
+- `tools_diagnostic_logging`
+- `tools_diagnostics`
+- `tools_download_dem`
+- `tools_export_diagnostic_log`
+- `tools_location_diag_overlay`
+- `tools_location_diagnostics`
+- `tools_weekly_update_reminder`
+- `ui_a_1750_hz_burst_repeater_is_tuned_with_ctcss_and_dcs_off_nav`
+- `ui_algeria`
+- `ui_amateur_radio_cat_repeater_query_vfo_program_with_read_back_`
+- `ui_applies_to_hiking_overnight_planning_only`
+- `ui_argentina`
+- `ui_australia`
+- `ui_austria`
+- `ui_basemap_pmtiles_included_in_download_region_dem_is_optional`
+- `ui_belgium`
+- `ui_belize`
+- `ui_bolivia`
+- `ui_brazil`
+- `ui_bulgaria`
+- `ui_cached_npra_situations_via_navi_server_chain`
+- `ui_camping_plugin_disabled_for_this_session`
+- `ui_canada`
+- `ui_chile`
+- `ui_china`
+- `ui_colombia`
+- `ui_copy_repeaterbook_kml_kmz_exports_into_this_folder_networked`
+- `ui_costa_rica`
+- `ui_countries_and_bboxes_come_from_geofabrik_s_published_index`
+- `ui_country_scale_extracts_may_be_slow_or_fail_on_low_ram_device`
+- `ui_croatia`
+- `ui_cuba`
+- `ui_czech_republic`
+- `ui_denmark`
+- `ui_developer_test_only`
+- `ui_download_scope_geofabrik`
+- `ui_downloads_map_packs_along_the_route_on_wi_fi_ethernet_only`
+- `ui_drive_vehicle_settings`
+- `ui_ecuador`
+- `ui_egypt`
+- `ui_empty_means_no_online_calls_default_is_the_public_nominatim_`
+- `ui_estonia`
+- `ui_ethiopia`
+- `ui_example_default_60_kwh_mid_size_ev_pack_used_for_route_range`
+- `ui_fiji`
+- `ui_finland`
+- `ui_for_drivers_under_driving_rest_time_rules`
+- `ui_france`
+- `ui_germany`
+- `ui_ghana`
+- `ui_great_britain`
+- `ui_greece`
+- `ui_greenland`
+- `ui_guatemala`
+- `ui_guyana`
+- `ui_honduras`
+- `ui_hungary`
+- `ui_iceland`
+- `ui_in_progress`
+- `ui_india`
+- `ui_indonesia`
+- `ui_informational_overnight_camping_guidance_along_the_active_ro`
+- `ui_iran`
+- `ui_ireland_and_northern_ireland`
+- `ui_italy`
+- `ui_jamaica`
+- `ui_japan`
+- `ui_kazakhstan`
+- `ui_kenya`
+- `ui_landcover_farmland_pasture_and_cultivated_land_may_be_off_li`
+- `ui_latvia`
+- `ui_legal_assist_caps_eu_pedelec_250_w_25_km_h_us_class_1_3_up_t`
+- `ui_lithuania`
+- `ui_luxembourg`
+- `ui_madagascar`
+- `ui_malaysia_singapore_brunei`
+- `ui_map_display_settings`
+- `ui_mexico`
+- `ui_morocco`
+- `ui_named_points_for_from_via_to_not_full_routes`
+- `ui_nearby_repeaters_150_km`
+- `ui_nepal`
+- `ui_netherlands`
+- `ui_network_id_e_g_la5mr`
+- `ui_new_caledonia`
+- `ui_new_zealand`
+- `ui_nicaragua`
+- `ui_nigeria`
+- `ui_no_saved_places`
+- `ui_no_tent_spots_found_along_this_corridor`
+- `ui_no_vehicle_overnight_spots_along_this_corridor`
+- `ui_no_walk_in_tent_spots_from_the_corridor`
+- `ui_none_in_the_onboard_db_yet_import_osm_csv_fixtures_or_wait_f`
+- `ui_norway`
+- `ui_not_checked`
+- `ui_off_by_default_steps_network_follow_along_a_planned_corridor`
+- `ui_off_by_default_uses_agreeing_radioid_and_file_positions_only`
+- `ui_on_foot_from_here`
+- …
+
+## values-nn (Nynorsk)
+
+Smaller confident set; missing 364 keys (English fallback).
+
+No new UI languages were added. Arabic UI was not created (ask before adding).
+
+## Geofabrik country labels
+
+Most country proper names remain English in `GeofabrikDownloadCatalog` data
+(endonyms often match). Continent chips use resources.
