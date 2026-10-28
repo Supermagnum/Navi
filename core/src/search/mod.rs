@@ -842,7 +842,13 @@ impl NameIndex {
         if shm.is_file() {
             let _ = std::fs::remove_file(&shm);
         }
-        if !wal.is_file() {
+        let wal_len = wal.metadata().map(|m| m.len()).unwrap_or(0);
+        // Empty `-wal` is a normal post-checkpoint leftover. Opening a multi-GB
+        // main file just to TRUNCATE zero bytes caused cold-start ANRs on tablet.
+        if !wal.is_file() || wal_len == 0 {
+            if wal.is_file() {
+                let _ = std::fs::remove_file(&wal);
+            }
             return Ok(());
         }
         let conn = Connection::open(path).map_err(|e| format!("recover open: {e}"))?;
@@ -4351,11 +4357,26 @@ mod tests {
         }
         // Restore WAL + torn shm as after a crash (close may have truncated).
         std::fs::copy(&wal_bak, &wal).expect("restore wal");
+        // Inflate the WAL sidecar to mimic a large post-kill leftover; SQLite
+        // ignores trailing junk after valid frames during checkpoint.
+        {
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&wal)
+                .expect("append wal");
+            f.write_all(&vec![0u8; 256 * 1024]).expect("pad wal");
+        }
         std::fs::write(&shm, [0u8; 64]).expect("torn shm");
         NameIndex::recover_wal_sidecars(&db).expect("recover");
         assert!(
             !shm.is_file() || std::fs::metadata(&shm).map(|m| m.len()).unwrap_or(0) != 64,
             "torn shm must be removed or replaced"
+        );
+        let wal_after = wal.metadata().map(|m| m.len()).unwrap_or(0);
+        assert!(
+            !wal.is_file() || wal_after == 0,
+            "large WAL must be checkpointed/truncated, len={wal_after}"
         );
         let reader = NameIndex::open_readonly(&db).expect("readonly after recover");
         let hits = reader.search("Tunis", 8).expect("search");
@@ -4367,6 +4388,40 @@ mod tests {
             NameIndex::has_entries_for_region(&db, "africa/tunisia"),
             "tunisia region rows intact"
         );
+    }
+
+    #[test]
+    fn recover_wal_sidecars_skips_empty_wal_without_failing_open() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("place_index.db");
+        let wal = PathBuf::from(format!("{}-wal", db.display()));
+        let shm = PathBuf::from(format!("{}-shm", db.display()));
+        {
+            let mut idx = NameIndex::open(&db).expect("open");
+            idx.upsert_entry_with_region(
+                2,
+                "Sidi Bou Said".into(),
+                "place:village".into(),
+                36.87,
+                10.34,
+                String::new(),
+                String::new(),
+                "africa/tunisia".into(),
+            )
+            .unwrap();
+            idx.checkpoint_wal_truncate().unwrap();
+        }
+        // Post-checkpoint leftover empty WAL + stale shm (tablet ANR trigger).
+        std::fs::write(&wal, []).expect("empty wal");
+        std::fs::write(&shm, [0u8; 32]).expect("shm");
+        NameIndex::recover_wal_sidecars(&db).expect("recover empty");
+        assert!(
+            !wal.is_file(),
+            "empty wal must be removed without opening for checkpoint"
+        );
+        let reader = NameIndex::open_readonly(&db).expect("probe open");
+        let hits = reader.search("Sidi", 8).expect("search");
+        assert!(hits.iter().any(|h| h.name.contains("Sidi")));
     }
 
     #[test]

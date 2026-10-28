@@ -201,8 +201,12 @@ object PlaceIndexIntact {
         val path = dbFile.absolutePath
         val wal = File("$path-wal")
         val shm = File("$path-shm")
-        if (!wal.isFile) {
-            // No WAL: nothing toxic. Do not touch live -shm.
+        // No frames in `-wal`: nothing to checkpoint. Empty leftover files must
+        // not trigger a RW open of a multi-GB place_index (cold-start ANR).
+        if (!wal.isFile || wal.length() == 0L) {
+            if (wal.isFile) {
+                runCatching { wal.delete() }
+            }
             return
         }
         // Probe paths: only one heavy recover per process unless forced at start.

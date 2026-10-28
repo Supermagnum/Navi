@@ -219,6 +219,9 @@ class MainActivity : ComponentActivity() {
         // (SIGBUS in walIndexReadHdr is uncatchable). Off main thread.
         Thread(
             {
+                android.os.Process.setThreadPriority(
+                    android.os.Process.THREAD_PRIORITY_BACKGROUND,
+                )
                 runCatching {
                     PlaceIndexIntact.recoverBeforeOpen(NaviAppData.resolve(this@MainActivity))
                 }.onFailure { t ->

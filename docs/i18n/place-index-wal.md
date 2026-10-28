@@ -43,9 +43,12 @@ itself:
 4. **Fallbacks if UniFFI is unavailable:** framework RW `wal_checkpoint`; then
    quarantine `-wal` to `-wal.bad` so the main file can open (may drop
    uncheckpointed frames; incomplete regions can re-index later).
-5. **ANR guard:** probes skip the heavy path when no `-wal` exists (a normal
-   live `-shm` must not trigger a multi-second RW open on the UI thread). Heavy
-   recover runs at most once per process unless forced at startup.
+5. **ANR guard:** probes skip the heavy path when no `-wal` exists, and also
+   when `-wal` is **0 bytes** (post-checkpoint leftover). Opening a multi-GB
+   main file only to truncate an empty WAL ANR'd cold start on SM-P613. Live
+   idle `-shm` must not trigger a multi-second RW open on the UI thread. Heavy
+   recover runs at most once per process unless forced at startup (background
+   thread priority).
 
 ## Option D (guidance road names) — status
 
