@@ -7440,6 +7440,18 @@ pub fn clear_place_index_region_rows(index_db_path: String, region_id: String) -
     }
 }
 
+/// Drop stale `-shm` and `wal_checkpoint(TRUNCATE)` before Android opens the DB.
+///
+/// Prevents SIGBUS in `walIndexReadHdr` when a prior index build was killed and
+/// left a large WAL. No-op when sidecars are absent. Does not bump schema.
+#[uniffi::export]
+pub fn place_index_recover_wal(index_db_path: String) -> String {
+    match driver_break_core::search::recover_place_index_wal(Path::new(&index_db_path)) {
+        Ok(()) => "PASS".into(),
+        Err(e) => format!("FAIL: {e}"),
+    }
+}
+
 /// Build this pack-server region's place index from the place-source file when
 /// the region's manifest lists it; otherwise the existing extract path.
 #[uniffi::export]

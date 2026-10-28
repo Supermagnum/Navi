@@ -93,6 +93,9 @@ object PlaceIndexIntact {
         if (bytes < MIN_DB_BYTES) {
             return empty.copy(dbBytes = bytes, reason = "db_tiny")
         }
+        // Torn -wal/-shm after a killed index build SIGBUS's Android SQLite in
+        // walIndexReadHdr (uncatchable). Recover before any framework open.
+        recoverWalSidecars(dbFile)
         return runCatching {
             SQLiteDatabase
                 .openDatabase(
@@ -124,6 +127,7 @@ object PlaceIndexIntact {
         }
         val dbFile = File(dataDir, "place_index.db")
         if (!dbFile.isFile || dbFile.length() < MIN_DB_BYTES) return emptySet()
+        recoverWalSidecars(dbFile)
         return runCatching {
             SQLiteDatabase
                 .openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
@@ -157,6 +161,7 @@ object PlaceIndexIntact {
         if (!dbFile.isFile) return "file missing"
         val bytes = dbFile.length()
         if (bytes < MIN_DB_BYTES) return "file empty ($bytes bytes)"
+        recoverWalSidecars(dbFile)
         val opens =
             runCatching {
                 SQLiteDatabase
@@ -165,6 +170,30 @@ object PlaceIndexIntact {
             }.getOrDefault(false)
         if (!opens) return "file unreadable"
         return corruptionStampProblem(dataDir)
+    }
+
+    /**
+     * Checkpoint torn WAL / drop stale shm before Android framework opens.
+     * Prefers UniFFI rust path; falls back to deleting `-shm` only.
+     */
+    private fun recoverWalSidecars(dbFile: File) {
+        val path = dbFile.absolutePath
+        val native =
+            runCatching { uniffi.navi.placeIndexRecoverWal(path) }
+                .onFailure { t -> Log.w(TAG, "placeIndexRecoverWal threw: ${t.message}") }
+                .getOrNull()
+        if (native != null && !native.startsWith("FAIL")) {
+            return
+        }
+        if (native != null) {
+            Log.w(TAG, "placeIndexRecoverWal: $native")
+        }
+        // Last resort: stale shm alone often triggers walIndexReadHdr SIGBUS.
+        val shm = File("$path-shm")
+        if (shm.isFile()) {
+            runCatching { shm.delete() }
+                .onFailure { t -> Log.w(TAG, "delete shm failed: ${t.message}") }
+        }
     }
 
     /** Idle-only stamp from [runIdleQuickCheck]; never opens SQLite here. */
@@ -197,6 +226,7 @@ object PlaceIndexIntact {
             writeQuickCheckStamp(dataDir, "file missing")
             return "file missing"
         }
+        recoverWalSidecars(dbFile)
         val result =
             runCatching {
                 SQLiteDatabase

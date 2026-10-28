@@ -183,6 +183,12 @@ pub fn place_index_build_lock_held_on_thread() -> bool {
     PLACE_INDEX_BUILD_LOCK_TLS.with(|slot| slot.borrow().is_some())
 }
 
+/// Checkpoint / clear torn WAL sidecars before Android or Rust opens the DB.
+/// Safe no-op when the file is missing or has no `-wal`.
+pub fn recover_place_index_wal(index_db_path: impl AsRef<Path>) -> Result<(), String> {
+    NameIndex::recover_wal_sidecars(index_db_path)
+}
+
 /// Delete one region's rows under [`PLACE_INDEX_BUILD_LOCK`] using rusqlite
 /// (same stack as `ensure_place_index`). Prefer this over Android framework
 /// SQLite for clears that may overlap a background index build.
@@ -809,8 +815,70 @@ impl NameIndex {
         Ok(Self { conn })
     }
 
+    fn wal_path(db: &Path) -> PathBuf {
+        PathBuf::from(format!("{}-wal", db.display()))
+    }
+
+    fn shm_path(db: &Path) -> PathBuf {
+        PathBuf::from(format!("{}-shm", db.display()))
+    }
+
+    /// Drop a stale `-shm` and checkpoint `-wal` into the main file.
+    ///
+    /// A crash mid-index can leave a large WAL + torn shared-memory index;
+    /// Android's SQLite then SIGBUS in `walIndexReadHdr` on the next readonly
+    /// open (Java cannot catch that). Call before any open, including probes.
+    /// Does not bump schema version or rebuild FTS.
+    pub fn recover_wal_sidecars(path: impl AsRef<Path>) -> Result<(), String> {
+        let path = path.as_ref();
+        if !path.is_file() {
+            return Ok(());
+        }
+        let shm = Self::shm_path(path);
+        let wal = Self::wal_path(path);
+        // Stale shm after process death is the usual SIGBUS trigger; safe to
+        // remove when no live connection holds the DB (caller must force-stop
+        // writers first, or hold the build lock).
+        if shm.is_file() {
+            let _ = std::fs::remove_file(&shm);
+        }
+        if !wal.is_file() {
+            return Ok(());
+        }
+        let conn = Connection::open(path).map_err(|e| format!("recover open: {e}"))?;
+        conn.busy_timeout(Duration::from_secs(120))
+            .map_err(|e| format!("recover busy_timeout: {e}"))?;
+        // Avoid mmap of torn pages during checkpoint.
+        let _ = conn.execute_batch("PRAGMA mmap_size=0;");
+        match conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
+        }) {
+            Ok((busy, log, ckpt)) => {
+                log::info!(
+                    target: "PlaceIndex",
+                    "place_index_wal_recover path={} busy={busy} log={log} checkpointed={ckpt}",
+                    path.display()
+                );
+                Ok(())
+            }
+            Err(e) => Err(format!("wal_checkpoint: {e}")),
+        }
+    }
+
+    /// Checkpoint WAL into the main DB (best-effort). Call after a successful
+    /// region build so a force-stop cannot leave a 100MB+ sidecar.
+    pub fn checkpoint_wal_truncate(&self) -> SqlResult<()> {
+        let _ = self.conn.execute_batch("PRAGMA mmap_size=0;");
+        self.conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
+        Ok(())
+    }
+
     pub fn open(path: impl AsRef<Path>) -> SqlResult<Self> {
         let path = path.as_ref();
+        // Must run before the readonly user_version peek — that peek SIGBUS'd
+        // on tablet after a torn Tunisia WAL.
+        let _ = Self::recover_wal_sidecars(path);
         let user_peek: i32 =
             Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
                 .ok()
@@ -831,6 +899,7 @@ impl NameIndex {
         // PK migrate copies millions of rows — allow a long busy wait so a stray
         // readonly probe cannot abort the writer with SQLITE_BUSY / locking protocol.
         conn.busy_timeout(Duration::from_secs(120))?;
+        let _ = conn.execute_batch("PRAGMA mmap_size=0;");
         let pragmas_t0 = phase_timing::start("place_index.open_db.pragmas");
         Self::apply_file_pragmas(&conn)?;
         phase_timing::end("place_index.open_db.pragmas", pragmas_t0);
@@ -880,14 +949,17 @@ impl NameIndex {
     /// fail with `no such column: names_json` on every query.
     pub fn open_readonly(path: impl AsRef<Path>) -> SqlResult<Self> {
         let path = path.as_ref();
+        let _ = Self::recover_wal_sidecars(path);
         if path.is_file() {
             if let Ok(w) = Connection::open(path) {
                 let _ = w.busy_timeout(Duration::from_millis(500));
+                let _ = w.execute_batch("PRAGMA mmap_size=0;");
                 let _ = localized_store::ensure_names_json_column(&w);
             }
         }
         let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
         conn.busy_timeout(Duration::from_millis(250))?;
+        let _ = conn.execute_batch("PRAGMA mmap_size=0;");
         Ok(Self { conn })
     }
 
@@ -2012,6 +2084,14 @@ impl NameIndex {
         );
         crate::download::progress::set(PHASES, Some(PHASES), "Place index ready");
         bump_peak(&mut peak_rss_mb);
+        // Fold WAL into the main file so a force-stop right after PASS cannot
+        // leave a multi-hundred-MB sidecar that SIGBUS's the next probe.
+        if let Err(e) = self.checkpoint_wal_truncate() {
+            log::warn!(
+                target: "PlaceIndex",
+                "place_index_build wal_checkpoint after built region={region_id}: {e}"
+            );
+        }
         log::info!(
             target: "PlaceIndex",
             "place_index_build action=built region={region_id} indexed={} peak_rss_mb={peak_rss_mb}",
@@ -4236,6 +4316,54 @@ mod tests {
         );
         assert!(db.is_file());
         assert!(!NameIndex::discard_if_schema_stale(&db));
+    }
+
+    #[test]
+    fn recover_wal_sidecars_checkpoints_and_drops_shm() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("place_index.db");
+        let wal = PathBuf::from(format!("{}-wal", db.display()));
+        let shm = PathBuf::from(format!("{}-shm", db.display()));
+        let wal_bak = dir.path().join("wal.bak");
+        {
+            let mut idx = NameIndex::open(&db).expect("open");
+            // Keep frames in the WAL until we snapshot sidecars (close would
+            // often auto-checkpoint a tiny DB).
+            idx.conn
+                .execute_batch("PRAGMA wal_autocheckpoint=0;")
+                .unwrap();
+            idx.upsert_entry_with_region(
+                1,
+                "Tunis Medina".into(),
+                "place:suburb".into(),
+                36.8,
+                10.1,
+                String::new(),
+                String::new(),
+                "africa/tunisia".into(),
+            )
+            .unwrap();
+            assert!(wal.is_file(), "WAL should exist while writer is open");
+            std::fs::copy(&wal, &wal_bak).expect("snapshot wal");
+        }
+        // Restore WAL + torn shm as after a crash (close may have truncated).
+        std::fs::copy(&wal_bak, &wal).expect("restore wal");
+        std::fs::write(&shm, [0u8; 64]).expect("torn shm");
+        NameIndex::recover_wal_sidecars(&db).expect("recover");
+        assert!(
+            !shm.is_file() || std::fs::metadata(&shm).map(|m| m.len()).unwrap_or(0) != 64,
+            "torn shm must be removed or replaced"
+        );
+        let reader = NameIndex::open_readonly(&db).expect("readonly after recover");
+        let hits = reader.search("Tunis", 8).expect("search");
+        assert!(
+            hits.iter().any(|h| h.name.contains("Tunis")),
+            "rows must survive recover, got {hits:?}"
+        );
+        assert!(
+            NameIndex::has_entries_for_region(&db, "africa/tunisia"),
+            "tunisia region rows intact"
+        );
     }
 
     #[test]
