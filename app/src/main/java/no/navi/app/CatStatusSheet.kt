@@ -11,6 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -21,14 +22,38 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import no.navi.app.cat.CatRigModelPreset
 import no.navi.app.cat.CatSerialLoopbackBridge
 import no.navi.app.cat.catRigModelLabel
 import no.navi.app.cat.catRigModelPresets
 import org.json.JSONArray
 import org.json.JSONObject
+
+/** Same green as pack-ready chips in Tools — connected success, not mere selection. */
+private val CatConnectedChipGreen = Color(0xFF2E7D32)
+private val CatConnectedChipGreenMuted = CatConnectedChipGreen.copy(alpha = 0.30f)
+
+/**
+ * True when [preset] is the Hamlib model reported connected in status JSON.
+ * Matches Hamlib model_name (e.g. "Dummy") against curated preset labels.
+ */
+internal fun catPresetMatchesConnectedModel(
+    preset: CatRigModelPreset,
+    connectedModelName: String,
+): Boolean {
+    val n = connectedModelName.trim()
+    if (n.isEmpty()) return false
+    if (preset.model == 1 && n.equals("Dummy", ignoreCase = true)) return true
+    if (preset.name.contains(n, ignoreCase = true)) return true
+    return n
+        .split(Regex("[\\s/]+"))
+        .filter { it.length >= 3 }
+        .any { token -> preset.name.contains(token, ignoreCase = true) }
+}
 
 data class CatUiState(
     val statusJson: String = """{"connected":false}""",
@@ -301,10 +326,39 @@ fun CatStatusSheet(
                 modifier = Modifier.testTag("cat_rig_model_presets"),
             ) {
                 for (preset in presets) {
+                    val selected = state.rigModel == preset.model
+                    val connectedSuccess =
+                        connected &&
+                            (
+                                catPresetMatchesConnectedModel(preset, model) ||
+                                    (model.isBlank() && selected)
+                            )
                     FilterChip(
-                        selected = state.rigModel == preset.model,
+                        selected = selected || connectedSuccess,
                         onClick = { onRigModelChange(preset.model) },
-                        label = { Text("${preset.model}") },
+                        label = { Text(preset.name) },
+                        colors =
+                            FilterChipDefaults.filterChipColors(
+                                containerColor =
+                                    if (connectedSuccess) {
+                                        CatConnectedChipGreenMuted
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceContainerHighest
+                                    },
+                                selectedContainerColor =
+                                    if (connectedSuccess) {
+                                        CatConnectedChipGreen
+                                    } else {
+                                        MaterialTheme.colorScheme.secondaryContainer
+                                    },
+                                labelColor = MaterialTheme.colorScheme.onSurface,
+                                selectedLabelColor =
+                                    if (connectedSuccess) {
+                                        Color.White
+                                    } else {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    },
+                            ),
                         modifier = Modifier.testTag("cat_rig_model_${preset.model}"),
                     )
                 }
