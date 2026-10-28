@@ -873,8 +873,19 @@ impl NameIndex {
             .unwrap_or_else(|e| e.to_string())
     }
 
-    /// Query-only open: no migrate/DDL, no 30s busy wait on the UI path.
+    /// Query-only open: no schema-version migrate / FTS rebuild, no long busy wait.
+    ///
+    /// Still applies additive `names_json` once via a short read-write open when
+    /// missing — search SELECTs that column, and pre-i18n intact indexes otherwise
+    /// fail with `no such column: names_json` on every query.
     pub fn open_readonly(path: impl AsRef<Path>) -> SqlResult<Self> {
+        let path = path.as_ref();
+        if path.is_file() {
+            if let Ok(w) = Connection::open(path) {
+                let _ = w.busy_timeout(Duration::from_millis(500));
+                let _ = localized_store::ensure_names_json_column(&w);
+            }
+        }
         let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
         conn.busy_timeout(Duration::from_millis(250))?;
         Ok(Self { conn })
