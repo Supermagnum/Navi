@@ -347,7 +347,7 @@ fun TopDriveHud(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Map", style = MaterialTheme.typography.labelLarge)
+            Text(stringResource(R.string.hud_map), style = MaterialTheme.typography.labelLarge)
             Text(
                 altTxt,
                 style = MaterialTheme.typography.titleMedium,
@@ -410,7 +410,7 @@ fun PluginSettingsSection(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            "Plugins",
+            stringResource(R.string.ui_plugins),
             style = MaterialTheme.typography.titleSmall,
             modifier = Modifier.testTag("plugin_settings_title"),
         )
@@ -419,7 +419,7 @@ fun PluginSettingsSection(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text("Weather overlay")
+            Text(stringResource(R.string.settings_weather_overlay))
             Switch(
                 checked = weatherPluginEnabled,
                 onCheckedChange = onWeatherPluginChange,
@@ -437,7 +437,7 @@ fun PluginSettingsSection(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text("Show weather symbols on map")
+                Text(stringResource(R.string.settings_weather_map_symbols))
                 Switch(
                     checked = weatherMapSymbolsEnabled,
                     onCheckedChange = onWeatherMapSymbolsChange,
@@ -454,7 +454,7 @@ fun PluginSettingsSection(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text("DATEX roadworks")
+            Text(stringResource(R.string.settings_datex_roadworks))
             Switch(
                 checked = datexPluginEnabled,
                 onCheckedChange = onDatexPluginChange,
@@ -470,14 +470,14 @@ fun PluginSettingsSection(
             OutlinedTextField(
                 value = datexHost,
                 onValueChange = onDatexHostChange,
-                label = { Text("Override host (optional)") },
+                label = { Text(stringResource(R.string.settings_override_host)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("datex_host_field"),
             )
             OutlinedTextField(
                 value = datexPort,
                 onValueChange = onDatexPortChange,
-                label = { Text("Override port") },
+                label = { Text(stringResource(R.string.settings_override_port)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("datex_port_field"),
             )
@@ -486,7 +486,7 @@ fun PluginSettingsSection(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text("Wi-Fi only")
+                Text(stringResource(R.string.settings_wifi_only))
                 Switch(
                     checked = datexWifiOnly,
                     onCheckedChange = onDatexWifiOnlyChange,
@@ -506,7 +506,7 @@ fun PluginSettingsSection(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text("Long trip")
+            Text(stringResource(R.string.settings_long_trip))
             Switch(
                 checked = longTripEnabled,
                 onCheckedChange = onLongTripChange,
@@ -535,7 +535,7 @@ fun PluginSettingsSection(
                 )
             }
             Text(
-                "Store long-trip packs on",
+                stringResource(R.string.ui_store_long_trip_packs_on),
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag("long_trip_pack_volume_label"),
             )
@@ -586,7 +586,7 @@ fun PluginSettingsSection(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text("Nearby attractions")
+            Text(stringResource(R.string.settings_nearby_attractions))
             Switch(
                 checked = poiLookaheadEnabled,
                 onCheckedChange = onPoiLookaheadChange,
@@ -595,7 +595,7 @@ fun PluginSettingsSection(
         }
         if (poiLookaheadEnabled) {
             Text(
-                "Quiet look-ahead for attractions, fishing, and craft alcohol within 850 m ahead. Not a hazard warning.",
+                stringResource(R.string.ui_quiet_look_ahead_for_attractions_fishing_and_craft_alcohol_w),
                 style = MaterialTheme.typography.bodySmall,
             )
             Row(
@@ -603,7 +603,7 @@ fun PluginSettingsSection(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text("Hide when hours unknown")
+                Text(stringResource(R.string.settings_hide_when_hours_unknown))
                 Switch(
                     checked = poiLookaheadStrictHoursUnknown,
                     onCheckedChange = onPoiLookaheadStrictHoursUnknownChange,
@@ -616,7 +616,7 @@ fun PluginSettingsSection(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text("Right-to-roam camping")
+            Text(stringResource(R.string.settings_camping))
             Switch(
                 checked = campingPluginEnabled,
                 onCheckedChange = onCampingPluginChange,
@@ -625,14 +625,14 @@ fun PluginSettingsSection(
         }
         if (campingPluginEnabled) {
             Text(
-                "Informational overnight camping guidance along the active route. Not legal advice.",
+                stringResource(R.string.ui_informational_overnight_camping_guidance_along_the_active_ro),
                 style = MaterialTheme.typography.bodySmall,
             )
             OutlinedTextField(
                 value = campingResidencyCountry,
                 onValueChange = onCampingResidencyChange,
-                label = { Text("Residency country (ISO)") },
-                placeholder = { Text("unknown") },
+                label = { Text(stringResource(R.string.settings_residency_country)) },
+                placeholder = { Text(stringResource(R.string.placeholder_unknown)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("camping_residency"),
             )
@@ -642,9 +642,9 @@ fun PluginSettingsSection(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Professional driver")
+                    Text(stringResource(R.string.settings_professional_driver))
                     Text(
-                        "For drivers under driving/rest-time rules",
+                        stringResource(R.string.ui_for_drivers_under_driving_rest_time_rules),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -664,7 +664,7 @@ fun PluginSettingsSection(
                     onClick = onCampingReEnableSession,
                     modifier = Modifier.testTag("camping_reenable_settings"),
                 ) {
-                    Text("Re-enable camping for this session")
+                    Text(stringResource(R.string.camping_reenable_session))
                 }
             }
             Text(
@@ -692,7 +692,7 @@ fun PluginSettingsSection(
         )
         if (catPluginEnabled) {
             Text(
-                "Amateur radio CAT: repeater query, VFO program with read-back, network follow. Never transmits.",
+                stringResource(R.string.ui_amateur_radio_cat_repeater_query_vfo_program_with_read_back_),
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -735,7 +735,7 @@ fun OnlinePlaceSearchSwitch(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
     ) {
-        Text("Online place search", style = MaterialTheme.typography.bodySmall)
+        Text(stringResource(R.string.settings_online_place_search), style = MaterialTheme.typography.bodySmall)
         Switch(
             checked = enabled,
             onCheckedChange = onChange,
@@ -826,7 +826,7 @@ fun MapSettingsSheet(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                "Map / display settings",
+                stringResource(R.string.ui_map_display_settings),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.testTag("map_settings_title"),
             )
@@ -838,19 +838,19 @@ fun MapSettingsSheet(
                 FilterChip(
                     selected = state.rotationMode == MapRotationMode.Compass,
                     onClick = { onRotation(MapRotationMode.Compass) },
-                    label = { Text("Compass") },
+                    label = { Text(stringResource(R.string.rotation_compass)) },
                     modifier = Modifier.testTag("rot_compass"),
                 )
                 FilterChip(
                     selected = state.rotationMode == MapRotationMode.DirectionOfTravel,
                     onClick = { onRotation(MapRotationMode.DirectionOfTravel) },
-                    label = { Text("Travel") },
+                    label = { Text(stringResource(R.string.rotation_travel)) },
                     modifier = Modifier.testTag("rot_travel"),
                 )
                 FilterChip(
                     selected = state.rotationMode == MapRotationMode.NorthUp,
                     onClick = { onRotation(MapRotationMode.NorthUp) },
-                    label = { Text("N-up") },
+                    label = { Text(stringResource(R.string.rotation_n_up)) },
                     modifier = Modifier.testTag("rot_north_up"),
                 )
             }
@@ -859,7 +859,7 @@ fun MapSettingsSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Snap rotation back to mode", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.settings_snap_rotation), style = MaterialTheme.typography.bodySmall)
                 Switch(
                     checked = state.snapRotationBackToMode,
                     onCheckedChange = onToggleSnapRotationBack,
@@ -872,7 +872,7 @@ fun MapSettingsSheet(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Trip ETA", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.settings_trip_eta), style = MaterialTheme.typography.bodySmall)
                     Switch(
                         checked = state.showTripEta,
                         onCheckedChange = onToggleTripEta,
@@ -880,7 +880,7 @@ fun MapSettingsSheet(
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Breaks", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.settings_breaks), style = MaterialTheme.typography.bodySmall)
                     Switch(
                         checked = state.breakRemindersEnabled,
                         onCheckedChange = onToggleBreakReminders,
@@ -893,7 +893,7 @@ fun MapSettingsSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Auto-zoom", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.settings_auto_zoom), style = MaterialTheme.typography.bodySmall)
                 Switch(
                     checked = state.autoZoomWhileMoving,
                     onCheckedChange = onToggleAutoZoom,
@@ -934,7 +934,7 @@ fun MapSettingsSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("3D (experimental)", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.settings_3d_experimental), style = MaterialTheme.typography.bodySmall)
                 Switch(
                     checked = state.optIn3d && state.vulkanAvailable,
                     enabled = state.vulkanAvailable,
@@ -943,7 +943,7 @@ fun MapSettingsSheet(
                 )
                 if (!state.vulkanAvailable) {
                     Text(
-                        "Unavailable on this GPU path",
+                        stringResource(R.string.ui_unavailable_on_this_gpu_path),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -953,7 +953,7 @@ fun MapSettingsSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Contours", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.settings_contours), style = MaterialTheme.typography.bodySmall)
                 Switch(
                     checked = state.contoursEnabled,
                     onCheckedChange = onToggleContours,
@@ -1001,7 +1001,7 @@ fun MapSettingsSheet(
                 }
                 if (!state.vulkanAvailable) {
                     Text(
-                        "Tilt locked at 0 without Vulkan",
+                        stringResource(R.string.ui_tilt_locked_at_0_without_vulkan),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -1014,7 +1014,7 @@ fun MapSettingsSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text("Online place search", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.settings_online_place_search), style = MaterialTheme.typography.bodySmall)
                 Switch(
                     checked = onlinePlaceSearchEnabled,
                     onCheckedChange = onOnlinePlaceSearchChange,
@@ -1030,7 +1030,7 @@ fun MapSettingsSheet(
                 OutlinedTextField(
                     value = nominatimBaseUrl,
                     onValueChange = onNominatimBaseUrlChange,
-                    label = { Text("Place search service URL") },
+                    label = { Text(stringResource(R.string.settings_place_search_url)) },
                     placeholder = { Text(MapHudPrefs.NOMINATIM_DEFAULT_BASE_URL) },
                     singleLine = true,
                     modifier =
@@ -1039,7 +1039,7 @@ fun MapSettingsSheet(
                             .testTag("nominatim_base_url_field"),
                 )
                 Text(
-                    "Empty means no online calls. Default is the public Nominatim instance.",
+                    stringResource(R.string.ui_empty_means_no_online_calls_default_is_the_public_nominatim_),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -1084,11 +1084,11 @@ fun MapSettingsSheet(
                 Button(
                     onClick = onSave,
                     modifier = Modifier.testTag("btn_save_map_settings"),
-                ) { Text("Save") }
+                ) { Text(stringResource(R.string.action_save)) }
                 TextButton(
                     onClick = onClose,
                     modifier = Modifier.testTag("btn_close_map_settings"),
-                ) { Text("Close") }
+                ) { Text(stringResource(R.string.action_close)) }
             }
         }
     }
@@ -1172,7 +1172,7 @@ fun BottomDriveHud(
                 TextButton(
                     onClick = onRecenter,
                     modifier = Modifier.testTag("btn_recenter_gps"),
-                ) { Text("Recenter") }
+                ) { Text(stringResource(R.string.action_recenter)) }
             }
             Column(
                 modifier =
@@ -1185,7 +1185,7 @@ fun BottomDriveHud(
                 val street = state.currentStreet?.trim().orEmpty()
                 if (street.isNotEmpty()) {
                     Text(
-                        "Currently on $street",
+                        stringResource(R.string.hud_currently_on, street),
                         style = MaterialTheme.typography.labelSmall,
                         maxLines = 1,
                         softWrap = false,
@@ -1240,7 +1240,7 @@ fun BottomDriveHud(
             if (state.ecoActive && leafBmp != null) {
                 Image(
                     bitmap = leafBmp!!.asImageBitmap(),
-                    contentDescription = "Eco mode",
+                    contentDescription = stringResource(R.string.settings_eco_mode),
                     modifier =
                         Modifier
                             .size(36.dp)
@@ -1370,11 +1370,11 @@ fun DriveSettingsSheet(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                "Drive / vehicle settings",
+                stringResource(R.string.ui_drive_vehicle_settings),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.testTag("drive_settings_title"),
             )
-            Text("Travel mode", style = MaterialTheme.typography.labelLarge)
+            Text(stringResource(R.string.settings_travel_mode), style = MaterialTheme.typography.labelLarge)
             Row(
                 modifier =
                     Modifier
@@ -1453,7 +1453,7 @@ fun DriveSettingsSheet(
             )
             if (truckRest) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Split break 15+30 min")
+                    Text(stringResource(R.string.settings_split_break))
                     Switch(
                         checked = preferSplitBreak,
                         onCheckedChange = { preferSplitBreak = it },
@@ -1461,7 +1461,7 @@ fun DriveSettingsSheet(
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Arm +1 h exceptional extension")
+                    Text(stringResource(R.string.settings_arm_extension))
                     Switch(
                         checked = exceptionalArmed,
                         onCheckedChange = { exceptionalArmed = it },
@@ -1469,22 +1469,22 @@ fun DriveSettingsSheet(
                     )
                 }
             }
-            Text("Next break shown as", style = MaterialTheme.typography.labelLarge)
+            Text(stringResource(R.string.settings_next_break_shown_as), style = MaterialTheme.typography.labelLarge)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
                     selected = !asDistance,
                     onClick = { asDistance = false },
-                    label = { Text("Time") },
+                    label = { Text(stringResource(R.string.label_time)) },
                     modifier = Modifier.testTag("chip_break_as_time"),
                 )
                 FilterChip(
                     selected = asDistance,
                     onClick = { asDistance = true },
-                    label = { Text("Distance") },
+                    label = { Text(stringResource(R.string.label_distance)) },
                     modifier = Modifier.testTag("chip_break_as_distance"),
                 )
             }
-            Text("Units", style = MaterialTheme.typography.labelLarge)
+            Text(stringResource(R.string.settings_units), style = MaterialTheme.typography.labelLarge)
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1495,7 +1495,7 @@ fun DriveSettingsSheet(
                         units = UnitSystem.METRIC
                         onUnitSystemChange(UnitSystem.METRIC)
                     },
-                    label = { Text("Metric") },
+                    label = { Text(stringResource(R.string.units_metric)) },
                     modifier = Modifier.testTag("toggle_break_metric"),
                 )
                 FilterChip(
@@ -1504,7 +1504,7 @@ fun DriveSettingsSheet(
                         units = UnitSystem.IMPERIAL_US
                         onUnitSystemChange(UnitSystem.IMPERIAL_US)
                     },
-                    label = { Text("US · ft / mph") },
+                    label = { Text(stringResource(R.string.units_us)) },
                     modifier = Modifier.testTag("chip_units_us"),
                 )
                 FilterChip(
@@ -1513,12 +1513,12 @@ fun DriveSettingsSheet(
                         units = UnitSystem.IMPERIAL_UK
                         onUnitSystemChange(UnitSystem.IMPERIAL_UK)
                     },
-                    label = { Text("UK · mi / mph") },
+                    label = { Text(stringResource(R.string.units_uk)) },
                     modifier = Modifier.testTag("chip_units_uk"),
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Eco mode")
+                Text(stringResource(R.string.settings_eco_mode))
                 Switch(
                     checked = ecoActive,
                     onCheckedChange = onEcoChange,
@@ -1526,16 +1526,16 @@ fun DriveSettingsSheet(
                 )
             }
             if (ebikeSpecs) {
-                Text("Electric cycle specs", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.settings_electric_cycle), style = MaterialTheme.typography.labelLarge)
                 Text(
-                    "Legal assist caps (EU pedelec ~250 W / 25 km/h; US Class 1–3 up to 750 W / 20–28 mph) are not enforced — enter your bike's real specs for planning only.",
+                    stringResource(R.string.ui_legal_assist_caps_eu_pedelec_250_w_25_km_h_us_class_1_3_up_t),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.testTag("ebike_legal_note"),
                 )
                 OutlinedTextField(
                     value = batteryWh,
                     onValueChange = { batteryWh = it },
-                    label = { Text("Battery capacity (Wh)") },
+                    label = { Text(stringResource(R.string.settings_battery_wh)) },
                     singleLine = true,
                     modifier =
                         Modifier
@@ -1545,14 +1545,14 @@ fun DriveSettingsSheet(
                 OutlinedTextField(
                     value = motorTorqueNm,
                     onValueChange = { motorTorqueNm = it },
-                    label = { Text("Motor torque (Nm)") },
+                    label = { Text(stringResource(R.string.settings_motor_torque)) },
                     singleLine = true,
                     modifier =
                         Modifier
                             .fillMaxWidth()
                             .testTag("field_ebike_torque_nm"),
                 )
-                Text("Wheel diameter (inches)", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.settings_wheel_diameter), style = MaterialTheme.typography.bodySmall)
                 Row(
                     modifier =
                         Modifier
@@ -1583,7 +1583,7 @@ fun DriveSettingsSheet(
                     FilterChip(
                         selected = wheelCustom,
                         onClick = { wheelCustom = true },
-                        label = { Text("Custom") },
+                        label = { Text(stringResource(R.string.label_custom)) },
                         modifier = Modifier.testTag("chip_ebike_wheel_custom"),
                     )
                 }
@@ -1599,7 +1599,7 @@ fun DriveSettingsSheet(
                                 kotlin.math.abs(p - parsed) < 1e-6
                             }
                     },
-                    label = { Text("Wheel diameter (inches)") },
+                    label = { Text(stringResource(R.string.settings_wheel_diameter)) },
                     singleLine = true,
                     modifier =
                         Modifier
@@ -1607,16 +1607,16 @@ fun DriveSettingsSheet(
                             .testTag("field_ebike_wheel_in"),
                 )
             } else if (evCarSpecs) {
-                Text("Electric car battery", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.settings_electric_car), style = MaterialTheme.typography.labelLarge)
                 Text(
-                    "Example default 60 kWh (mid-size EV pack). Used for route range estimate only — not a measured SoC.",
+                    stringResource(R.string.ui_example_default_60_kwh_mid_size_ev_pack_used_for_route_range),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.testTag("ev_car_battery_note"),
                 )
                 OutlinedTextField(
                     value = evBatteryKwh,
                     onValueChange = { evBatteryKwh = it },
-                    label = { Text("Battery capacity (kWh)") },
+                    label = { Text(stringResource(R.string.settings_battery_kwh)) },
                     singleLine = true,
                     modifier =
                         Modifier
@@ -1636,7 +1636,7 @@ fun DriveSettingsSheet(
                 OutlinedTextField(
                     value = tank,
                     onValueChange = { tank = it },
-                    label = { Text("Fuel tank capacity ($unit)") },
+                    label = { Text(stringResource(R.string.fuel_tank_capacity, unit)) },
                     singleLine = true,
                     modifier =
                         Modifier
@@ -1646,7 +1646,7 @@ fun DriveSettingsSheet(
                 OutlinedTextField(
                     value = fuelAdded,
                     onValueChange = { fuelAdded = it },
-                    label = { Text("Fuel added ($unit)") },
+                    label = { Text(stringResource(R.string.fuel_added, unit)) },
                     singleLine = true,
                     modifier =
                         Modifier
@@ -1654,7 +1654,7 @@ fun DriveSettingsSheet(
                             .testTag("field_fuel_added"),
                 )
             }
-            Text("POI search radius (active profile)", style = MaterialTheme.typography.labelLarge)
+            Text(stringResource(R.string.settings_poi_radius), style = MaterialTheme.typography.labelLarge)
             Text(
                 if (poiSpec.hours) {
                     "Look ahead ${"%.1f".format(poiSlider)} h (~${"%.0f".format(poiSlider * POI_MOTOR_CRUISE_KMH)} km at $POI_MOTOR_CRUISE_KMH km/h). Pause and overnight stops must be on a road."
@@ -1688,7 +1688,7 @@ fun DriveSettingsSheet(
             )
             if (hutRadii) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Require path / trail link")
+                    Text(stringResource(R.string.settings_require_path_link))
                     Switch(
                         checked = poiRequireRoadLink,
                         onCheckedChange = { poiRequireRoadLink = it },
@@ -1697,7 +1697,7 @@ fun DriveSettingsSheet(
                 }
             } else {
                 Text(
-                    "Road link required: on",
+                    stringResource(R.string.ui_road_link_required_on),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.testTag("poi_road_link_locked"),
                 )
@@ -1880,11 +1880,11 @@ fun DriveSettingsSheet(
                         iconDir
                     },
                     modifier = Modifier.testTag("btn_save_drive_settings"),
-                ) { Text("Save") }
+                ) { Text(stringResource(R.string.action_save)) }
                 TextButton(
                     onClick = onDismiss,
                     modifier = Modifier.testTag("btn_close_drive_settings"),
-                ) { Text("Close") }
+                ) { Text(stringResource(R.string.action_close)) }
             }
         }
     }

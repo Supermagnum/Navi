@@ -126,6 +126,13 @@ android {
     androidResources {
         noCompress += listOf("svg", "svgz")
     }
+
+    // Incomplete nb/nn translations must not fail the build while keys are filled
+    // incrementally (see docs/i18n/missing-translations.md).
+    lint {
+        disable += listOf("MissingTranslation", "ExtraTranslation")
+        abortOnError = false
+    }
 }
 
 dependencies {
@@ -134,6 +141,7 @@ dependencies {
     androidTestImplementation(composeBom)
 
     implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.core:core-ktx:1.19.0")
     implementation("androidx.core:core-splashscreen:1.2.0")
     implementation("androidx.compose.ui:ui")

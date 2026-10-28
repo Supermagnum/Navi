@@ -172,14 +172,14 @@ fun CatStatusSheet(
                     .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("CAT / CATS radio", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.cat_plugin_toggle_label), style = MaterialTheme.typography.titleMedium)
             Text(
                 stringResource(R.string.cat_licence_listen_only),
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag("cat_licence_listen_only"),
             )
             Text(
-                "A 1750 Hz burst repeater is tuned with CTCSS and DCS off. Navi never sends the burst; you do that on the radio.",
+                stringResource(R.string.ui_a_1750_hz_burst_repeater_is_tuned_with_ctcss_and_dcs_off_nav),
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag("cat_toneburst_note"),
             )
@@ -188,9 +188,9 @@ fun CatStatusSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Move non-OSM repeaters to the most likely site")
+                    Text(stringResource(R.string.cat_consensus_relocation))
                     Text(
-                        "Off by default. Uses agreeing RadioID and file positions only. OSM sites stay put.",
+                        stringResource(R.string.ui_off_by_default_uses_agreeing_radioid_and_file_positions_only),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -201,11 +201,11 @@ fun CatStatusSheet(
                 )
             }
             Text(
-                "Receive-only programming. Navi never transmits (no PTT).",
+                stringResource(R.string.ui_receive_only_programming_navi_never_transmits_no_ptt),
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                "Copy RepeaterBook KML/KMZ exports into this folder. Networked repeaters may need several files, not one file per country.",
+                stringResource(R.string.ui_copy_repeaterbook_kml_kmz_exports_into_this_folder_networked),
                 style = MaterialTheme.typography.bodySmall,
             )
             SelectionContainer {
@@ -226,7 +226,7 @@ fun CatStatusSheet(
                 stringResource(R.string.cat_update_repeaters_hint),
                 style = MaterialTheme.typography.bodySmall,
             )
-            Text("Repeater network", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.cat_repeater_network), style = MaterialTheme.typography.titleSmall)
             if (state.networkNotice.isNotBlank()) {
                 Text(
                     state.networkNotice,
@@ -242,7 +242,7 @@ fun CatStatusSheet(
                 FilterChip(
                     selected = state.networkChoice == MapHudPrefs.CAT_NETWORK_AUTO,
                     onClick = { onFollowNetworkChange(MapHudPrefs.CAT_NETWORK_AUTO) },
-                    label = { Text("Nearest network (auto)") },
+                    label = { Text(stringResource(R.string.cat_nearest_network_auto)) },
                     modifier = Modifier.testTag("cat_network_auto"),
                 )
                 for (chip in state.networkNames) {
@@ -256,13 +256,13 @@ fun CatStatusSheet(
                 FilterChip(
                     selected = state.networkChoice == MapHudPrefs.CAT_NETWORK_STANDALONE,
                     onClick = { onFollowNetworkChange(MapHudPrefs.CAT_NETWORK_STANDALONE) },
-                    label = { Text("Standalone repeaters (nearest)") },
+                    label = { Text(stringResource(R.string.cat_standalone_nearest)) },
                     modifier = Modifier.testTag("cat_network_standalone"),
                 )
                 FilterChip(
                     selected = state.networkChoice == MapHudPrefs.CAT_NETWORK_OFF,
                     onClick = { onFollowNetworkChange(MapHudPrefs.CAT_NETWORK_OFF) },
-                    label = { Text("Off / manual") },
+                    label = { Text(stringResource(R.string.cat_off_manual)) },
                     modifier = Modifier.testTag("cat_network_off"),
                 )
             }
@@ -281,11 +281,14 @@ fun CatStatusSheet(
                 modifier = Modifier.testTag("cat_radio_baud_summary"),
             )
             if (follow.isNotBlank()) {
-                Text("Network follow: $follow", style = MaterialTheme.typography.bodySmall)
+                Text(
+                    stringResource(R.string.network_follow, follow),
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
-            Text("Backend", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.cat_backend), style = MaterialTheme.typography.titleSmall)
             Text(
-                "Plugin controls VFO 1 only; VFO 2 is left to the user.",
+                stringResource(R.string.ui_plugin_controls_vfo_1_only_vfo_2_is_left_to_the_user),
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag("cat_vfo1_only_note"),
             )
@@ -297,13 +300,13 @@ fun CatStatusSheet(
                 FilterChip(
                     selected = state.backend == MapHudPrefs.CAT_BACKEND_HAMLIB,
                     onClick = { onBackendChange(MapHudPrefs.CAT_BACKEND_HAMLIB) },
-                    label = { Text("Hamlib") },
+                    label = { Text(stringResource(R.string.cat_backend_hamlib)) },
                     modifier = Modifier.testTag("cat_backend_hamlib"),
                 )
                 FilterChip(
                     selected = state.backend == MapHudPrefs.CAT_BACKEND_BENSHI,
                     onClick = { onBackendChange(MapHudPrefs.CAT_BACKEND_BENSHI) },
-                    label = { Text("Benshi") },
+                    label = { Text(stringResource(R.string.cat_backend_benshi)) },
                     modifier = Modifier.testTag("cat_backend_benshi"),
                 )
             }
@@ -317,33 +320,33 @@ fun CatStatusSheet(
                                 ?: MapHudPrefs.CAT_SCRATCH_CHANNEL_DEFAULT,
                         )
                     },
-                    label = { Text("Scratch channel (A)") },
+                    label = { Text(stringResource(R.string.cat_scratch_channel)) },
                     singleLine = true,
                     supportingText = {
-                        Text("Used when frequency mode is unavailable (e.g. on VFO 2)")
+                        Text(stringResource(R.string.cat_scratch_channel_hint))
                     },
                     modifier = Modifier.fillMaxWidth().testTag("cat_scratch_channel_field"),
                 )
             }
             Text(
-                "Developer / test only",
+                stringResource(R.string.ui_developer_test_only),
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.testTag("cat_demo_mode_section"),
             )
             FilterChip(
                 selected = state.demoModeDeveloper,
                 onClick = { onDemoModeDeveloperChange(!state.demoModeDeveloper) },
-                label = { Text("Demo mode (5 s/site) — not for driving") },
+                label = { Text(stringResource(R.string.cat_demo_mode)) },
                 modifier = Modifier.testTag("cat_demo_mode_developer"),
             )
             Text(
-                "Off by default. Steps network follow along a planned corridor for FakeBenshiPeer / lab checks.",
+                stringResource(R.string.ui_off_by_default_steps_network_follow_along_a_planned_corridor),
                 style = MaterialTheme.typography.bodySmall,
             )
             OutlinedTextField(
                 value = state.host,
                 onValueChange = onHostChange,
-                label = { Text("rigctld host") },
+                label = { Text(stringResource(R.string.cat_rigctld_host)) },
                 singleLine = true,
                 enabled = state.backend == MapHudPrefs.CAT_BACKEND_HAMLIB,
                 modifier = Modifier.fillMaxWidth().testTag("cat_host_field"),
@@ -351,13 +354,13 @@ fun CatStatusSheet(
             OutlinedTextField(
                 value = state.port,
                 onValueChange = onPortChange,
-                label = { Text("port") },
+                label = { Text(stringResource(R.string.cat_port)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("cat_port_field"),
             )
-            Text("Hamlib radio model", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.cat_hamlib_model_title), style = MaterialTheme.typography.titleSmall)
             Text(
-                "TCP path: remote daemon model (informational). Onboard FFI / USB-BT: model used when opening the rig.",
+                stringResource(R.string.ui_tcp_path_remote_daemon_model_informational_onboard_ffi_usb_b),
                 style = MaterialTheme.typography.bodySmall,
             )
             FlowRow(
@@ -413,12 +416,12 @@ fun CatStatusSheet(
                         onRigModelChange(digits.toIntOrNull()?.coerceAtLeast(1) ?: state.rigModel)
                     }
                 },
-                label = { Text("Hamlib model number") },
+                label = { Text(stringResource(R.string.cat_hamlib_model_number)) },
                 singleLine = true,
                 supportingText = { Text(catRigModelLabel(state.rigModel)) },
                 modifier = Modifier.fillMaxWidth().testTag("cat_rig_model_field"),
             )
-            Text("Serial baud (USB/BT loopback)", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.cat_serial_baud), style = MaterialTheme.typography.titleSmall)
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -438,22 +441,22 @@ fun CatStatusSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 OutlinedButton(onClick = onConnect, modifier = Modifier.testTag("cat_btn_connect")) {
-                    Text("Connect")
+                    Text(stringResource(R.string.action_connect))
                 }
                 OutlinedButton(
                     onClick = onDisconnect,
                     modifier = Modifier.testTag("cat_btn_disconnect"),
                 ) {
-                    Text("Disconnect")
+                    Text(stringResource(R.string.action_disconnect))
                 }
                 OutlinedButton(onClick = onRefresh, modifier = Modifier.testTag("cat_btn_refresh")) {
-                    Text("Refresh")
+                    Text(stringResource(R.string.action_refresh))
                 }
             }
             OutlinedTextField(
                 value = state.followNetworkId,
                 onValueChange = onFollowNetworkChange,
-                label = { Text("Network id (e.g. LA5MR)") },
+                label = { Text(stringResource(R.string.ui_network_id_e_g_la5mr)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("cat_follow_network_field"),
             )
@@ -462,19 +465,19 @@ fun CatStatusSheet(
                     onClick = onFollowEnable,
                     modifier = Modifier.testTag("cat_btn_follow_on"),
                 ) {
-                    Text("Follow on")
+                    Text(stringResource(R.string.follow_on))
                 }
                 OutlinedButton(
                     onClick = onFollowDisable,
                     modifier = Modifier.testTag("cat_btn_follow_off"),
                 ) {
-                    Text("Follow off")
+                    Text(stringResource(R.string.follow_off))
                 }
             }
-            Text("Nearby repeaters (≤150 km)", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.ui_nearby_repeaters_150_km), style = MaterialTheme.typography.titleSmall)
             if (nearby.isEmpty()) {
                 Text(
-                    "None in the onboard DB yet (import OSM / CSV fixtures, or wait for host seed).",
+                    stringResource(R.string.ui_none_in_the_onboard_db_yet_import_osm_csv_fixtures_or_wait_f),
                     style = MaterialTheme.typography.bodySmall,
                 )
             } else {
@@ -486,7 +489,7 @@ fun CatStatusSheet(
                 Text(state.lastMessage, style = MaterialTheme.typography.bodySmall)
             }
             TextButton(onClick = onClose, modifier = Modifier.testTag("cat_btn_close")) {
-                Text("Close")
+                Text(stringResource(R.string.action_close))
             }
         }
     }

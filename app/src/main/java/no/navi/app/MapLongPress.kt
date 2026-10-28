@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -116,7 +117,7 @@ fun MapMarkActionSheet(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text("Marked location", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.map_marked_location), style = MaterialTheme.typography.titleMedium)
                 Text(
                     pending.suggestedName,
                     style = MaterialTheme.typography.bodyMedium,
@@ -130,7 +131,7 @@ fun MapMarkActionSheet(
                 Button(
                     onClick = onSetFrom,
                     modifier = Modifier.fillMaxWidth().testTag("map_mark_set_from"),
-                ) { Text("Set as From / Start") }
+                ) { Text(stringResource(R.string.map_set_as_from)) }
                 Button(
                     onClick = onSetVia,
                     enabled = !viaFull,
@@ -147,15 +148,15 @@ fun MapMarkActionSheet(
                 Button(
                     onClick = onSetTo,
                     modifier = Modifier.fillMaxWidth().testTag("map_mark_set_to"),
-                ) { Text("Set as To / Destination") }
+                ) { Text(stringResource(R.string.map_set_as_to)) }
                 Button(
                     onClick = onSavePlace,
                     modifier = Modifier.fillMaxWidth().testTag("map_mark_save_place"),
-                ) { Text("Save this place") }
+                ) { Text(stringResource(R.string.map_save_this_place)) }
                 TextButton(
                     onClick = onCancel,
                     modifier = Modifier.fillMaxWidth().testTag("map_mark_cancel"),
-                ) { Text("Cancel") }
+                ) { Text(stringResource(R.string.action_cancel)) }
             }
         }
     }
@@ -193,11 +194,11 @@ fun SavePlaceNameDialog(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text("Save place", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.map_save_place_title), style = MaterialTheme.typography.titleMedium)
                 OutlinedTextField(
                     value = name,
                     onValueChange = onNameChange,
-                    label = { Text("Name") },
+                    label = { Text(stringResource(R.string.label_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().testTag("field_save_place_name"),
                 )
@@ -206,10 +207,10 @@ fun SavePlaceNameDialog(
                     horizontalArrangement = Arrangement.End,
                 ) {
                     TextButton(onClick = onCancel, modifier = Modifier.testTag("btn_save_place_cancel")) {
-                        Text("Cancel")
+                        Text(stringResource(R.string.action_cancel))
                     }
                     Button(onClick = onConfirm, modifier = Modifier.testTag("btn_save_place_confirm")) {
-                        Text("Save")
+                        Text(stringResource(R.string.action_save))
                     }
                 }
             }

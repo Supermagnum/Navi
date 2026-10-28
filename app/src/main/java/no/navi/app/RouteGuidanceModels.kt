@@ -299,14 +299,37 @@ fun highwayFallbackKmh(highway: String?): Double {
     }
 }
 
-/**
- * Human highway-class label when name/ref are missing.
- * Mirrors `driver_break_core::routing::eta::highway_class_display_label` — keep in sync.
- */
-fun highwayClassDisplayLabel(highway: String?): String {
-    val h = highway?.trim()?.lowercase() ?: return "Road"
-    val base = h.removeSuffix("_link")
+private fun highwayClassResId(highway: String?): Int {
+    val h = highway?.trim()?.lowercase()
+    val base = h?.removeSuffix("_link")
     return when (base) {
+        "motorway" -> R.string.highway_class_motorway
+        "trunk" -> R.string.highway_class_trunk
+        "primary" -> R.string.highway_class_primary
+        "secondary" -> R.string.highway_class_secondary
+        "tertiary" -> R.string.highway_class_tertiary
+        "unclassified" -> R.string.highway_class_unclassified
+        "residential" -> R.string.highway_class_residential
+        "living_street" -> R.string.highway_class_living_street
+        "service" -> R.string.highway_class_service
+        "track" -> R.string.highway_class_track
+        "road" -> R.string.highway_class_road
+        "path" -> R.string.highway_class_path
+        "footway" -> R.string.highway_class_footway
+        "cycleway" -> R.string.highway_class_cycleway
+        "bridleway" -> R.string.highway_class_bridleway
+        "steps" -> R.string.highway_class_steps
+        "pedestrian" -> R.string.highway_class_pedestrian
+        else -> R.string.highway_class_road
+    }
+}
+
+/**
+ * Human highway-class label when name/ref are missing (English default resources).
+ * Prefer [highwayClassDisplayLabel] with [android.content.res.Resources] in UI.
+ */
+fun highwayClassDisplayLabel(highway: String?): String =
+    when (highway?.trim()?.lowercase()?.removeSuffix("_link")) {
         "motorway" -> "Motorway"
         "trunk" -> "Trunk road"
         "primary" -> "Primary road"
@@ -326,11 +349,14 @@ fun highwayClassDisplayLabel(highway: String?): String {
         "pedestrian" -> "Pedestrian street"
         else -> "Road"
     }
-}
+
+fun highwayClassDisplayLabel(
+    highway: String?,
+    resources: android.content.res.Resources,
+): String = resources.getString(highwayClassResId(highway))
 
 /**
  * Bottom-HUD current-road label: sample street (name/ref), else highway-class words.
- * Mirrors `driver_break_core::current_road_label`.
  */
 fun formatCurrentRoadLabel(
     street: String?,
@@ -339,6 +365,16 @@ fun formatCurrentRoadLabel(
     val s = street?.trim().orEmpty()
     if (s.isNotEmpty()) return s
     return highwayClassDisplayLabel(highway)
+}
+
+fun formatCurrentRoadLabel(
+    street: String?,
+    highway: String?,
+    resources: android.content.res.Resources,
+): String {
+    val s = street?.trim().orEmpty()
+    if (s.isNotEmpty()) return s
+    return highwayClassDisplayLabel(highway, resources)
 }
 
 /**

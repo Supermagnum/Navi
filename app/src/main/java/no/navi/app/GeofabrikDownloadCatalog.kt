@@ -20,16 +20,30 @@ package no.navi.app
  * (most entries are maps-only).
  */
 enum class GeofabrikContinent(
+    /** English fallback / debug; UI should prefer [labelRes]. */
     val label: String,
     val testTag: String,
+    val labelRes: Int,
 ) {
-    Asia("Asia", "chip_continent_asia"),
-    Africa("Africa", "chip_continent_africa"),
-    NorthAmerica("North America", "chip_continent_north_america"),
-    SouthAmerica("South America", "chip_continent_south_america"),
-    Antarctica("Antarctica", "chip_continent_antarctica"),
-    Europe("Europe", "chip_continent_europe"),
-    AustraliaOceania("Australia (Oceania)", "chip_continent_australia_oceania"),
+    Asia("Asia", "chip_continent_asia", R.string.geo_continent_asia),
+    Africa("Africa", "chip_continent_africa", R.string.geo_continent_africa),
+    NorthAmerica(
+        "North America",
+        "chip_continent_north_america",
+        R.string.geo_continent_north_america,
+    ),
+    SouthAmerica(
+        "South America",
+        "chip_continent_south_america",
+        R.string.geo_continent_south_america,
+    ),
+    Antarctica("Antarctica", "chip_continent_antarctica", R.string.geo_continent_antarctica),
+    Europe("Europe", "chip_continent_europe", R.string.geo_continent_europe),
+    AustraliaOceania(
+        "Australia (Oceania)",
+        "chip_continent_australia_oceania",
+        R.string.geo_continent_australia_oceania,
+    ),
 }
 
 data class GeofabrikCountry(

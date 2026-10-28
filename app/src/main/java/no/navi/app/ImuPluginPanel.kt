@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -42,7 +43,7 @@ fun ImuPluginPanel(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text("IMU pitch / tilt / compass")
+            Text(stringResource(R.string.imu_panel_title))
             Switch(
                 checked = ui.enabled,
                 onCheckedChange = { on -> scope.launch(Dispatchers.IO) { onEnabledChange(on) } },
@@ -69,12 +70,12 @@ fun ImuPluginPanel(
                 enabled = ui.readout != null,
                 onClick = { scope.launch(Dispatchers.IO) { controller.calibrate() } },
                 modifier = Modifier.testTag("btn_imu_calibrate"),
-            ) { Text("Calibrate") }
+            ) { Text(stringResource(R.string.action_calibrate)) }
             OutlinedButton(
                 enabled = ui.readout != null,
                 onClick = { scope.launch(Dispatchers.IO) { controller.reset() } },
                 modifier = Modifier.testTag("btn_imu_reset"),
-            ) { Text("Reset") }
+            ) { Text(stringResource(R.string.action_reset)) }
         }
     }
 }
@@ -83,7 +84,7 @@ fun ImuPluginPanel(
 private fun ImuReadoutBlock(readout: ImuReadout?) {
     if (readout == null) {
         Text(
-            "Waiting for sensor data...",
+            stringResource(R.string.ui_waiting_for_sensor_data),
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.testTag("imu_status"),
         )

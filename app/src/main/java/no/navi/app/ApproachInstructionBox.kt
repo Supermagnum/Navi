@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -127,6 +128,7 @@ fun ApproachInstructionBox(
     if (!routePlanned || phase == ApproachUiPhase.Hidden) return
 
     if (state.offRoute) {
+        val offRouteLabel = stringResource(R.string.approach_off_route)
         Box(
             modifier =
                 modifier
@@ -137,18 +139,18 @@ fun ApproachInstructionBox(
                     .padding(horizontal = 12.dp, vertical = 10.dp)
                     .testTag("approach_instruction_box")
                     .semantics {
-                        contentDescription = "Off route"
+                        contentDescription = offRouteLabel
                     },
         ) {
             Column {
                 Text(
-                    text = "Off route",
+                    text = offRouteLabel,
                     style = MaterialTheme.typography.titleMedium,
                     color = Color(0xFFE65100),
                     modifier = Modifier.testTag("approach_off_route"),
                 )
                 Text(
-                    text = "Recalculating may take several seconds",
+                    text = stringResource(R.string.approach_recalculating_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFF5D4037),
                     modifier = Modifier.testTag("approach_off_route_hint"),
@@ -160,13 +162,17 @@ fun ApproachInstructionBox(
 
     val urgency = phase == ApproachUiPhase.Urgency
     val dist = DisplayUnits.formatDistanceM(state.distanceM, state.unitSystem)
+    val exitFirst = stringResource(R.string.approach_exit_first)
+    val exitSecond = stringResource(R.string.approach_exit_second)
+    val exitThird = stringResource(R.string.approach_exit_third)
     val exitLabel =
         when (state.roundaboutExit) {
-            1 -> "first exit"
-            2 -> "second exit"
-            3 -> "third exit"
+            1 -> exitFirst
+            2 -> exitSecond
+            3 -> exitThird
             else -> null
         }
+    val nextManeuverA11y = stringResource(R.string.approach_next_maneuver_a11y)
     val png =
         remember(state.iconKey, iconsDir) {
             runCatching {
@@ -205,7 +211,7 @@ fun ApproachInstructionBox(
                 .semantics {
                     contentDescription =
                         buildString {
-                            append("Next maneuver. ")
+                            append(nextManeuverA11y)
                             append(dist)
                             streetLine?.let {
                                 append(". Onto ")

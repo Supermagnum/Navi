@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -266,7 +267,7 @@ fun RoutePlanStatsCard(
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
-                "Route enumerations",
+                stringResource(R.string.ui_route_enumerations),
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.testTag("route_plan_stats_title"),
             )
