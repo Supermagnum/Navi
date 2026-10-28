@@ -3,6 +3,7 @@ package no.navi.app
 import android.database.sqlite.SQLiteDatabase
 import android.util.Log
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Read-only place-index integrity for one `region_id`.
@@ -48,6 +49,9 @@ object PlaceIndexIntact {
 
     @Volatile
     internal var rowSourceForTests: RowSource? = null
+
+    /** Heavy UniFFI/framework checkpoint runs at most once per process. */
+    private val heavyWalRecoverDone = AtomicBoolean(false)
 
     fun isIntact(
         dataDir: File,
@@ -174,25 +178,40 @@ object PlaceIndexIntact {
 
     /**
      * Automatic recovery before any Android framework open. Call on cold start
-     * and from every probe path — end users must not need adb.
+     * (background thread) and from probes when a `-wal` sidecar is present.
      *
      * Order: UniFFI checkpoint → framework RW checkpoint → drop `-shm` →
      * quarantine unreadable `-wal` so the main file can still open.
      */
     fun recoverBeforeOpen(dataDir: File) {
         val dbFile = File(dataDir, "place_index.db")
-        if (dbFile.isFile) recoverWalSidecars(dbFile)
+        if (dbFile.isFile) recoverWalSidecars(dbFile, forceHeavy = true)
     }
 
     /**
-     * Checkpoint torn WAL / drop stale shm before Android framework opens.
-     * Prefers UniFFI rust path; falls back to framework SQLite then quarantine.
+     * Checkpoint torn WAL before Android framework opens.
+     *
+     * Skip the heavy path when there is no `-wal` (normal idle `-shm` must not
+     * trigger a multi-second RW open on the UI / probe path — that ANR'd).
      */
-    private fun recoverWalSidecars(dbFile: File) {
+    private fun recoverWalSidecars(
+        dbFile: File,
+        forceHeavy: Boolean = false,
+    ) {
         val path = dbFile.absolutePath
         val wal = File("$path-wal")
         val shm = File("$path-shm")
-        if (!wal.isFile && !shm.isFile) return
+        if (!wal.isFile) {
+            // No WAL: nothing toxic. Do not touch live -shm.
+            return
+        }
+        // Probe paths: only one heavy recover per process unless forced at start.
+        if (!forceHeavy && !heavyWalRecoverDone.compareAndSet(false, true)) {
+            return
+        }
+        if (forceHeavy) {
+            heavyWalRecoverDone.set(true)
+        }
         val native =
             runCatching { uniffi.navi.placeIndexRecoverWal(path) }
                 .onFailure { t -> Log.w(TAG, "placeIndexRecoverWal threw: ${t.message}") }
@@ -204,7 +223,6 @@ object PlaceIndexIntact {
         if (native != null) {
             Log.w(TAG, "placeIndexRecoverWal: $native")
         }
-        // Framework fallback (UniFFI not loaded yet, or rust checkpoint failed).
         if (shm.isFile()) {
             runCatching { shm.delete() }
                 .onFailure { t -> Log.w(TAG, "delete shm failed: ${t.message}") }
@@ -225,8 +243,6 @@ object PlaceIndexIntact {
             Log.i(TAG, "wal recover framework checkpoint ok")
             return
         }
-        // Last resort: quarantine WAL so OPEN_READONLY can use the main file.
-        // Uncheckpointed frames may be lost; incomplete regions rebuild later.
         if (wal.isFile()) {
             val bad = File("$path-wal.bad")
             runCatching {
