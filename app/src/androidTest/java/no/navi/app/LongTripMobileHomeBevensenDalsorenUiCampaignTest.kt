@@ -257,13 +257,15 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                 if (line.isNotBlank()) return@repeat
                 settle(250)
             }
+            // Prefs are source of truth. Status can still say "off (...)" while
+            // prefs are ON; clicking then would turn long trip OFF and refuse plan.
             val prefsOn = MapHudPrefs.loadLongTripEnabled(composeRule.activity)
-            if (line.contains("off", ignoreCase = true) || (!prefsOn && line.isBlank())) {
+            if (!prefsOn) {
                 composeRule.onNodeWithTag("toggle_long_trip", useUnmergedTree = true).performClick()
                 settle(400)
                 noteUi("toggle_long_trip", "forced ON before plan (was: '$line' prefsOn=$prefsOn)")
             } else {
-                noteUi("toggle_long_trip", "confirmed ON (line='$line' prefsOn=$prefsOn)")
+                noteUi("toggle_long_trip", "confirmed ON via prefs (line='$line')")
             }
             NaviMapTestHooks.requestCloseTools = true
             settle(300)
@@ -330,15 +332,17 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                 settle(200)
             }
             val prefsOn = MapHudPrefs.loadLongTripEnabled(composeRule.activity)
-            if (line.contains("off", ignoreCase = true) || !prefsOn) {
-                if (!prefsOn || line.contains("off", ignoreCase = true)) {
-                    composeRule.onNodeWithTag("toggle_long_trip", useUnmergedTree = true).performClick()
-                    settle(400)
-                }
+            if (!prefsOn) {
+                composeRule.onNodeWithTag("toggle_long_trip", useUnmergedTree = true).performClick()
+                settle(400)
                 noteUi("toggle_long_trip", "re-ON immediately before plan (line='$line' prefsOn=$prefsOn)")
             } else {
-                noteUi("toggle_long_trip", "still ON before plan (line='$line')")
+                noteUi("toggle_long_trip", "still ON via prefs before plan (line='$line')")
             }
+            assertTrue(
+                "long_trip_enabled must be true immediately before Plan",
+                MapHudPrefs.loadLongTripEnabled(composeRule.activity),
+            )
             NaviMapTestHooks.requestCloseTools = true
             settle(300)
             clickTagSoft("btn_close_tools")
@@ -665,9 +669,12 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                         .joinToString(" ") { it.text }
                 }.getOrDefault("")
             noteUi("long_trip_status", line)
-            if (line.contains("off", ignoreCase = true)) {
+            val prefsOn = MapHudPrefs.loadLongTripEnabled(composeRule.activity)
+            if (!prefsOn) {
                 composeRule.onNodeWithTag("toggle_long_trip", useUnmergedTree = true).performClick()
-                noteUi("toggle_long_trip", "turned ON")
+                noteUi("toggle_long_trip", "turned ON (prefs were off; line='$line')")
+            } else {
+                noteUi("toggle_long_trip", "already ON via prefs (line='$line')")
             }
             composeRule.onNodeWithTag("toggle_datex_plugin", useUnmergedTree = true).performScrollTo()
             // Ensure DATEX on — click if needed is ambiguous; prefs already ON
@@ -792,9 +799,10 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                         .config[androidx.compose.ui.semantics.SemanticsProperties.Text]
                         .joinToString(" ") { it.text }
                 }.getOrDefault("")
-            if (!line.contains("off", ignoreCase = true)) {
+            val prefsOn = MapHudPrefs.loadLongTripEnabled(composeRule.activity)
+            if (prefsOn) {
                 composeRule.onNodeWithTag("toggle_long_trip", useUnmergedTree = true).performClick()
-                noteUi("toggle_long_trip", "OFF for region delete")
+                noteUi("toggle_long_trip", "OFF for region delete (line='$line')")
                 settle(400)
             }
         }
