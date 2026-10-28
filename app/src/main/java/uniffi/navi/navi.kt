@@ -1071,6 +1071,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_set_osm_weekly_reminder(
     ): Int
+    external fun uniffi_navi_checksum_func_set_place_search_locale(
+    ): Int
     external fun uniffi_navi_checksum_func_set_route_plan_timing_enabled(
     ): Int
     external fun uniffi_navi_checksum_func_set_test_index_phase_sleep_ms(
@@ -1646,6 +1648,8 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_navi_fn_func_set_osm_weekly_reminder(`dataDir`: RustBuffer.ByValue,`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    external fun uniffi_navi_fn_func_set_place_search_locale(`locale`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_navi_fn_func_set_route_plan_timing_enabled(`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_navi_fn_func_set_test_index_phase_sleep_ms(`ms`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -2085,7 +2089,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_haversine_km() and 0xFFFF) != 8906) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_highway_class_display_label() and 0xFFFF) != 41322) {
+    if ((lib.uniffi_navi_checksum_func_highway_class_display_label() and 0xFFFF) != 62787) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_indexed_maps_status() and 0xFFFF) != 12344) {
@@ -2440,6 +2444,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_set_osm_weekly_reminder() and 0xFFFF) != 15431) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_set_place_search_locale() and 0xFFFF) != 53611) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_set_route_plan_timing_enabled() and 0xFFFF) != 33373) {
@@ -7557,7 +7564,7 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
-         * Human highway-class label when OSM name/ref are missing (never a raw tag).
+         * Highway-class message code when OSM name/ref are missing (`navi.msg.highway_class|…`).
          */ fun `highwayClassDisplayLabel`(`highway`: kotlin.String?): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
@@ -9349,6 +9356,19 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
 }
     )
     }
+    
+
+        /**
+         * Set BCP 47 locale used when formatting place-index hit display names.
+         */ fun `setPlaceSearchLocale`(`locale`: kotlin.String)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_set_place_search_locale(
+    
+        
+        FfiConverterString.lower(`locale`),_status)
+}
+    
     
 
         /**

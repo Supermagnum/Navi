@@ -7712,6 +7712,12 @@ fn place_index_error_hits(msg: impl std::fmt::Display) -> Vec<PlaceHit> {
     }]
 }
 
+/// Set BCP 47 locale used when formatting place-index hit display names.
+#[uniffi::export]
+pub fn set_place_search_locale(locale: String) {
+    driver_break_core::search::set_place_search_locale(locale);
+}
+
 /// Offline place / address-style name search (FTS5 prefix).
 #[uniffi::export]
 pub fn search_places(index_db_path: String, query: String, limit: u32) -> Vec<PlaceHit> {
@@ -9872,10 +9878,10 @@ pub fn nearest_school_proximity_warning_json(schools_json: String, lat: f64, lon
     .to_string()
 }
 
-/// Human highway-class label when OSM name/ref are missing (never a raw tag).
+/// Highway-class message code when OSM name/ref are missing (`navi.msg.highway_class|…`).
 #[uniffi::export]
 pub fn highway_class_display_label(highway: Option<String>) -> String {
-    driver_break_core::routing::eta::highway_class_display_label(highway.as_deref()).to_string()
+    driver_break_core::routing::eta::highway_class_display_label(highway.as_deref())
 }
 
 /// Current-road HUD label: `name`, else `ref`, else highway-class display label.

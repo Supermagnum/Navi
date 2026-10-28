@@ -12,8 +12,10 @@ use crate::download::phase_timing;
 use crate::storage::Storage;
 
 mod place_context;
+mod localized_store;
 
 pub use place_context::{format_place_display, PLACE_INDEX_SCHEMA_VERSION};
+pub use localized_store::{display_name_for_locale, set_place_search_locale};
 
 /// Place-index `kind` for OSM `building=*` + `name=*` (no amenity/shop/place).
 pub const NAMED_BUILDING_KIND: &str = "building";
@@ -214,6 +216,29 @@ pub struct NameHit {
     pub municipality: String,
     /// Geofabrik path this row was indexed under (empty for legacy rows).
     pub region_id: String,
+}
+
+fn name_hit_from_parts(
+    osm_id: i64,
+    local_name: String,
+    kind: String,
+    lat: f64,
+    lon: f64,
+    sub_area: String,
+    municipality: String,
+    region_id: String,
+    names_json: String,
+) -> NameHit {
+    NameHit {
+        osm_id,
+        name: localized_store::display_name_for_locale(&local_name, &names_json),
+        kind,
+        lat,
+        lon,
+        sub_area,
+        municipality,
+        region_id,
+    }
 }
 
 /// True for Unicode combining marks (Mn/Me ranges used in NFD names).
@@ -779,6 +804,7 @@ impl NameIndex {
         Self::migrate_region_osm_pk(&conn).map_err(|e| {
             rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e.to_string())))
         })?;
+        localized_store::ensure_names_json_column(&conn)?;
         Self::backfill_legacy_complete(&conn)?;
         Ok(Self { conn })
     }
@@ -811,6 +837,9 @@ impl NameIndex {
         let user_version: i32 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap_or(0);
+        // Additive columns (names_json) even when schema version is current —
+        // must not bump PLACE_INDEX_SCHEMA_VERSION (that would fail intact checks).
+        localized_store::ensure_names_json_column(&conn)?;
         // Already at current schema: no DDL, no FTS drop/rebuild.
         if user_version >= PLACE_INDEX_SCHEMA_VERSION {
             return Ok(Self { conn });
@@ -826,6 +855,8 @@ impl NameIndex {
         Self::migrate_region_osm_pk(&conn).map_err(|e| {
             rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e.to_string())))
         })?;
+        // PK migrate recreates name_entries — re-apply additive columns.
+        localized_store::ensure_names_json_column(&conn)?;
         phase_timing::end("place_index.open_db.migrate", migrate_t0);
         let backfill_t0 = phase_timing::start("place_index.open_db.backfill_legacy_complete");
         if !had_build_table {
@@ -894,6 +925,7 @@ impl NameIndex {
         // (the 13-minute Oslo block). Batched fill lives in migrate_region_osm_pk.
         Self::ensure_source_sha256_column(conn)?;
         Self::ensure_index_source_column(conn)?;
+        localized_store::ensure_names_json_column(conn)?;
         Ok(())
     }
 
@@ -1580,8 +1612,8 @@ impl NameIndex {
         // that waits on foreground_plan_active (that parks the indexer).
         index_phase_tick(IndexBuildPhase::ReadSource);
         pause_index_if_plan_active(Self::build_written(&self.conn, &region_id), 0, peak_rss_mb)?;
-        // (osm_id, display_name, search_doc, kind, lat, lon)
-        let mut batch: Vec<(i64, String, String, String, f64, f64)> = Vec::new();
+        // (osm_id, display_name, search_doc, kind, names_json, lat, lon)
+        let mut batch: Vec<(i64, String, String, String, String, f64, f64)> = Vec::new();
         const PHASES: u64 = 6;
         let interrupted = Self::build_is_interrupted(&self.conn, &region_id);
         let phase_prefix = if interrupted {
@@ -1615,7 +1647,7 @@ impl NameIndex {
         // (tourism=zoo, amenity areas, etc. are often ways, not nodes).
         crate::download::progress::set(1, Some(PHASES), &format!("{phase_prefix}scanning ways…"));
         let ways_t0 = phase_timing::start("place_index.ways");
-        let mut way_jobs: Vec<(i64, String, String, String, Vec<i64>)> = Vec::new();
+        let mut way_jobs: Vec<(i64, String, String, String, String, Vec<i64>)> = Vec::new();
         let mut needed_nodes: std::collections::HashSet<i64> = std::collections::HashSet::new();
         let mut ways_visited = 0usize;
         let mut ways_last_hb = 0usize;
@@ -1646,7 +1678,7 @@ impl NameIndex {
                     .tags()
                     .map(|(k, v)| (k.to_string(), v.to_string()))
                     .collect();
-                let Some((_, name, search_doc, kind, _, _)) = classify_named(
+                let Some((_, name, search_doc, kind, names_json, _, _)) = classify_named(
                     way.id(),
                     0.0,
                     0.0,
@@ -1666,7 +1698,7 @@ impl NameIndex {
                 for id in &refs {
                     needed_nodes.insert(*id);
                 }
-                way_jobs.push((way.id(), name, search_doc, kind, refs));
+                way_jobs.push((way.id(), name, search_doc, kind, names_json, refs));
             })?;
         }
         if ways_pause.load(std::sync::atomic::Ordering::Relaxed) {
@@ -1760,7 +1792,7 @@ impl NameIndex {
         let centroids_t0 = phase_timing::start("place_index.way_centroids");
         let mut way_hits = 0usize;
         let centroid_total = way_jobs.len();
-        for (i, (way_id, name, search_doc, kind, refs)) in way_jobs.into_iter().enumerate() {
+        for (i, (way_id, name, search_doc, kind, names_json, refs)) in way_jobs.into_iter().enumerate() {
             let mut sum_lat = 0.0;
             let mut sum_lon = 0.0;
             let mut n = 0usize;
@@ -1779,6 +1811,7 @@ impl NameIndex {
                 name,
                 search_doc,
                 kind,
+                names_json,
                 sum_lat / n as f64,
                 sum_lon / n as f64,
             ));
@@ -1813,7 +1846,7 @@ impl NameIndex {
                 route_hits = routes.len();
                 for r in routes {
                     let search_doc = search_doc_with_fold_aliases(&r.name);
-                    batch.push((r.osm_id, r.name, search_doc, r.kind, r.lat, r.lon));
+                    batch.push((r.osm_id, r.name, search_doc, r.kind, String::new(), r.lat, r.lon));
                 }
             }
             Err(e) if e.to_string().contains(PLACE_INDEX_PAUSED_PREFIX) => {
@@ -1839,7 +1872,7 @@ impl NameIndex {
         let ctx_t0 = phase_timing::start("place_index.resolve_context");
         let sub_areas = batch
             .iter()
-            .filter_map(|(osm_id, name, _search_doc, kind, lat, lon)| {
+            .filter_map(|(osm_id, name, _search_doc, kind, _names_json, lat, lon)| {
                 place_context::sub_area_pt(*osm_id, name.clone(), kind, *lat, *lon)
             })
             .collect();
@@ -1895,14 +1928,14 @@ impl NameIndex {
         index_phase_tick(IndexBuildPhase::Insert);
         pause_index_if_plan_active(inserted as i64, total as i64, peak_rss_mb)?;
         let mut tx = self.conn.unchecked_transaction()?;
-        for (osm_id, name, search_doc, kind, lat, lon) in &batch {
+        for (osm_id, name, search_doc, kind, names_json, lat, lon) in &batch {
             if skip.contains(osm_id) {
                 continue;
             }
             let ctx = resolver.resolve(*osm_id, name, kind, *lat, *lon);
             tx.execute(
-                "INSERT OR REPLACE INTO name_entries(osm_id, name, kind, lat, lon, sub_area, municipality, region_id, search_doc)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+                "INSERT OR REPLACE INTO name_entries(osm_id, name, kind, lat, lon, sub_area, municipality, region_id, search_doc, names_json)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
                 params![
                     osm_id,
                     name,
@@ -1912,7 +1945,8 @@ impl NameIndex {
                     ctx.sub_area,
                     ctx.municipality,
                     region_id,
-                    search_doc
+                    search_doc,
+                    names_json
                 ],
             )?;
             let rowid: i64 = tx.query_row(
@@ -2254,7 +2288,7 @@ impl NameIndex {
         let anchored = format!("search_doc : ^\"{}\"", query.replace('"', "\"\""));
         let mut stmt = self.conn.prepare(
             "
-            SELECT e.osm_id, e.name, e.kind, e.lat, e.lon, e.sub_area, e.municipality, e.region_id
+            SELECT e.osm_id, e.name, e.kind, e.lat, e.lon, e.sub_area, e.municipality, e.region_id, COALESCE(e.names_json, '')
             FROM name_fts f
             JOIN name_entries e ON e.rowid = f.rowid
             WHERE name_fts MATCH ?1 AND e.name = ?2 COLLATE NOCASE
@@ -2262,16 +2296,17 @@ impl NameIndex {
             ",
         )?;
         let rows = stmt.query_map(params![anchored, query, limit as i64], |row| {
-            Ok(NameHit {
-                osm_id: row.get(0)?,
-                name: row.get(1)?,
-                kind: row.get(2)?,
-                lat: row.get(3)?,
-                lon: row.get(4)?,
-                sub_area: row.get(5)?,
-                municipality: row.get(6)?,
-                region_id: row.get(7)?,
-            })
+            Ok(name_hit_from_parts(
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+                row.get(7)?,
+                row.get::<_, String>(8).unwrap_or_default(),
+            ))
         })?;
         rows.collect()
     }
@@ -2303,7 +2338,7 @@ impl NameIndex {
         }
         let mut stmt = self.conn.prepare(
             "
-            SELECT e.osm_id, e.name, e.kind, e.lat, e.lon, e.sub_area, e.municipality, e.region_id
+            SELECT e.osm_id, e.name, e.kind, e.lat, e.lon, e.sub_area, e.municipality, e.region_id, COALESCE(e.names_json, '')
             FROM name_fts f
             JOIN name_entries e ON e.rowid = f.rowid
             WHERE name_fts MATCH ?1
@@ -2311,16 +2346,17 @@ impl NameIndex {
             ",
         )?;
         let rows = stmt.query_map(params![match_q, CANDIDATES], |row| {
-            Ok(NameHit {
-                osm_id: row.get(0)?,
-                name: row.get(1)?,
-                kind: row.get(2)?,
-                lat: row.get(3)?,
-                lon: row.get(4)?,
-                sub_area: row.get(5)?,
-                municipality: row.get(6)?,
-                region_id: row.get(7)?,
-            })
+            Ok(name_hit_from_parts(
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+                row.get(7)?,
+                row.get::<_, String>(8).unwrap_or_default(),
+            ))
         })?;
         let mut out = Vec::new();
         for r in rows {
@@ -2363,7 +2399,7 @@ impl NameIndex {
         }
         let mut stmt = self.conn.prepare(
             "
-            SELECT e.osm_id, e.name, e.kind, e.lat, e.lon, e.sub_area, e.municipality, e.region_id
+            SELECT e.osm_id, e.name, e.kind, e.lat, e.lon, e.sub_area, e.municipality, e.region_id, COALESCE(e.names_json, '')
             FROM name_fts f
             JOIN name_entries e ON e.rowid = f.rowid
             WHERE name_fts MATCH ?1
@@ -2371,16 +2407,17 @@ impl NameIndex {
             ",
         )?;
         let rows = stmt.query_map(params![match_q, fetch as i64], |row| {
-            Ok(NameHit {
-                osm_id: row.get(0)?,
-                name: row.get(1)?,
-                kind: row.get(2)?,
-                lat: row.get(3)?,
-                lon: row.get(4)?,
-                sub_area: row.get(5)?,
-                municipality: row.get(6)?,
-                region_id: row.get(7)?,
-            })
+            Ok(name_hit_from_parts(
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+                row.get(7)?,
+                row.get::<_, String>(8).unwrap_or_default(),
+            ))
         })?;
         let mut out = Vec::new();
         let mut seen = HashSet::new();
@@ -2572,7 +2609,7 @@ impl NameIndex {
         let lon_pad = radius_m / (111_320.0 * lat.to_radians().cos().max(0.2));
         let mut stmt = self.conn.prepare(
             "
-            SELECT osm_id, name, kind, lat, lon, sub_area, municipality, region_id
+            SELECT osm_id, name, kind, lat, lon, sub_area, municipality, region_id, COALESCE(names_json, '')
             FROM name_entries
             WHERE lat BETWEEN ?1 AND ?2 AND lon BETWEEN ?3 AND ?4
             ",
@@ -2580,16 +2617,17 @@ impl NameIndex {
         let rows = stmt.query_map(
             params![lat - lat_pad, lat + lat_pad, lon - lon_pad, lon + lon_pad],
             |row| {
-                Ok(NameHit {
-                    osm_id: row.get(0)?,
-                    name: row.get(1)?,
-                    kind: row.get(2)?,
-                    lat: row.get(3)?,
-                    lon: row.get(4)?,
-                    sub_area: row.get(5)?,
-                    municipality: row.get(6)?,
-                    region_id: row.get(7)?,
-                })
+                Ok(name_hit_from_parts(
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                    row.get(7)?,
+                    row.get::<_, String>(8).unwrap_or_default(),
+                ))
             },
         )?;
         let mut scored: Vec<(f64, NameHit)> = Vec::new();
@@ -2617,7 +2655,7 @@ impl NameIndex {
         let limit = limit.max(1);
         let mut stmt = self.conn.prepare(
             "
-            SELECT osm_id, name, kind, lat, lon, sub_area, municipality, region_id
+            SELECT osm_id, name, kind, lat, lon, sub_area, municipality, region_id, COALESCE(names_json, '')
             FROM name_entries
             WHERE kind = ?1
               AND lat BETWEEN ?2 AND ?3
@@ -2629,16 +2667,17 @@ impl NameIndex {
         let rows = stmt.query_map(
             params![kind, min_lat, max_lat, min_lon, max_lon, limit as i64],
             |row| {
-                Ok(NameHit {
-                    osm_id: row.get(0)?,
-                    name: row.get(1)?,
-                    kind: row.get(2)?,
-                    lat: row.get(3)?,
-                    lon: row.get(4)?,
-                    sub_area: row.get(5)?,
-                    municipality: row.get(6)?,
-                    region_id: row.get(7)?,
-                })
+                Ok(name_hit_from_parts(
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                    row.get(7)?,
+                    row.get::<_, String>(8).unwrap_or_default(),
+                ))
             },
         )?;
         let mut out = Vec::new();
@@ -2650,8 +2689,13 @@ impl NameIndex {
 }
 
 /// Build the FTS search document from the primary display name plus OSM
-/// `alt_name` / `loc_name` (semicolon-separated values expanded).
-fn place_search_doc(primary: &str, alt_name: Option<&str>, loc_name: Option<&str>) -> String {
+/// `alt_name` / `loc_name` / localized `name:*` / `int_name`.
+fn place_search_doc(
+    primary: &str,
+    alt_name: Option<&str>,
+    loc_name: Option<&str>,
+    localized_extras: &[String],
+) -> String {
     let mut parts: Vec<String> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
     let mut push_tag = |raw: &str| {
@@ -2673,6 +2717,9 @@ fn place_search_doc(primary: &str, alt_name: Option<&str>, loc_name: Option<&str
     if let Some(l) = loc_name {
         push_tag(l);
     }
+    for extra in localized_extras {
+        push_tag(extra);
+    }
     for alias in fold_name_aliases(primary) {
         push_tag(&alias);
     }
@@ -2681,15 +2728,16 @@ fn place_search_doc(primary: &str, alt_name: Option<&str>, loc_name: Option<&str
 
 /// Classify a tagged OSM element for the place index.
 ///
-/// Returns `(osm_id, display_name, search_doc, kind, lat, lon)`.
+/// Returns `(osm_id, display_name, search_doc, kind, names_json, lat, lon)`.
 /// Display prefers `name`, then `loc_name`, then the first `alt_name` part,
-/// then address tags. FTS matches against `search_doc` (primary + alts).
+/// then address tags. FTS matches against `search_doc` (primary + alts +
+/// localized names). `names_json` holds `name:*` / `int_name` for locale pick.
 fn classify_named<'a>(
     osm_id: i64,
     lat: f64,
     lon: f64,
     tags: impl Iterator<Item = (&'a str, &'a str)>,
-) -> Option<(i64, String, String, String, f64, f64)> {
+) -> Option<(i64, String, String, String, String, f64, f64)> {
     let mut name = None;
     let mut alt_name = None;
     let mut loc_name = None;
@@ -2697,6 +2745,7 @@ fn classify_named<'a>(
     let mut addr_housenumber = None;
     let mut kind = "named".to_string();
     let mut is_building = false;
+    let mut loc_tags: Vec<(&str, &str)> = Vec::new();
     for (k, v) in tags {
         match k {
             "name" => name = Some(v.to_string()),
@@ -2714,9 +2763,15 @@ fn classify_named<'a>(
             // Plain named footprints (building=* + name=*) — not amenity/shop.
             // Amenity/shop/place above win when present so POIs stay classified.
             "building" if !v.eq_ignore_ascii_case("no") => is_building = true,
+            "int_name" => loc_tags.push((k, v)),
+            k if k.starts_with("name:") && !k.starts_with("name:etymology") => {
+                loc_tags.push((k, v));
+            }
             _ => {}
         }
     }
+    let names_json = localized_store::names_json_from_tags(loc_tags.into_iter());
+    let localized_extras = localized_store::localized_search_tokens(&names_json);
     let mut display = name.or_else(|| loc_name.clone()).or_else(|| {
         alt_name.as_ref().and_then(|a| {
             a.split(';')
@@ -2742,8 +2797,13 @@ fn classify_named<'a>(
         kind = NAMED_BUILDING_KIND.to_string();
     }
     let display = display?;
-    let search_doc = place_search_doc(&display, alt_name.as_deref(), loc_name.as_deref());
-    Some((osm_id, display, search_doc, kind, lat, lon))
+    let search_doc = place_search_doc(
+        &display,
+        alt_name.as_deref(),
+        loc_name.as_deref(),
+        &localized_extras,
+    );
+    Some((osm_id, display, search_doc, kind, names_json, lat, lon))
 }
 
 impl NameIndex {
@@ -4356,7 +4416,7 @@ mod tests {
     fn named_buildings_in_bbox_round_trip_espedal() {
         let mut idx = NameIndex::open_in_memory().expect("mem");
         // Simulate classify_named + upsert for the reported building.
-        let (id, name, _search_doc, kind, lat, lon) = classify_named(
+        let (id, name, _search_doc, kind, _names_json, lat, lon) = classify_named(
             435718754,
             61.885_475,
             10.737_108,
