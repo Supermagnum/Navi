@@ -253,9 +253,49 @@ object PlaceIndexIntact {
                 if (bad.exists()) bad.delete()
                 if (!wal.renameTo(bad)) wal.delete()
             }.onFailure { t -> Log.w(TAG, "quarantine wal failed: ${t.message}") }
-            Log.w(TAG, "quarantined place_index.db-wal; may need region re-index")
+            Log.w(TAG, "quarantined place_index.db-wal; marking non-intact regions incomplete")
+            applyWalQuarantineIncomplete(dbFile)
         }
     }
+
+    /**
+     * After a non-BUSY WAL quarantine: mark damaged regions incomplete in SQLite,
+     * clear [PlaceIndexReady] stamps so AutoBuild re-indexes, and queue a UI notice.
+     * Intact regions are never marked.
+     */
+    fun applyWalQuarantineIncomplete(dbFile: File) {
+        val markedCsv =
+            runCatching {
+                uniffi.navi.placeIndexMarkIncompleteAfterWalQuarantine(dbFile.absolutePath)
+            }.onFailure { t -> Log.w(TAG, "mark incomplete after quarantine: ${t.message}") }
+                .getOrNull()
+                .orEmpty()
+        val fromFfi =
+            markedCsv
+                .split(',')
+                .map { PackRegionAvailability.normalize(it) }
+                .filter { it.isNotEmpty() }
+        val fromRustNotice =
+            runCatching { uniffi.navi.placeIndexTakeWalQuarantineRebuildRegions() }
+                .getOrDefault(emptyList())
+                .map { PackRegionAvailability.normalize(it) }
+                .filter { it.isNotEmpty() }
+        val regions = (fromFfi + fromRustNotice).distinct()
+        if (regions.isEmpty()) return
+        val dataDir = dbFile.parentFile ?: return
+        for (rid in regions) {
+            PlaceIndexReady.clearReadyStampOnly(dataDir, rid)
+            Log.w(TAG, "wal quarantine → rebuild region=$rid")
+        }
+        pendingRebuildNoticeRegions.set(regions)
+    }
+
+    private val pendingRebuildNoticeRegions =
+        java.util.concurrent.atomic
+            .AtomicReference<List<String>>(emptyList())
+
+    /** Drain region ids for a short "search is being rebuilt" status line. */
+    fun takeRebuildNoticeRegions(): List<String> = pendingRebuildNoticeRegions.getAndSet(emptyList())
 
     /** Idle-only stamp from [runIdleQuickCheck]; never opens SQLite here. */
     fun corruptionStampProblem(dataDir: File): String? {

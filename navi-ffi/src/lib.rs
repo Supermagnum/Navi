@@ -7452,6 +7452,27 @@ pub fn place_index_recover_wal(index_db_path: String) -> String {
     }
 }
 
+/// After Kotlin quarantines `-wal`/`-shm` (non-BUSY path): mark non-intact
+/// regions incomplete and return their ids (comma-separated). Intact regions
+/// are never marked. Empty string when nothing needs rebuild.
+#[uniffi::export]
+pub fn place_index_mark_incomplete_after_wal_quarantine(index_db_path: String) -> String {
+    let marked = driver_break_core::search::NameIndex::mark_non_intact_regions_incomplete(
+        Path::new(&index_db_path),
+    );
+    if marked.is_empty() {
+        String::new()
+    } else {
+        marked.join(",")
+    }
+}
+
+/// Drain region ids queued when Rust quarantined WAL during `open_readonly`.
+#[uniffi::export]
+pub fn place_index_take_wal_quarantine_rebuild_regions() -> Vec<String> {
+    driver_break_core::search::take_wal_quarantine_rebuild_regions()
+}
+
 /// Build this pack-server region's place index from the place-source file when
 /// the region's manifest lists it; otherwise the existing extract path.
 #[uniffi::export]
