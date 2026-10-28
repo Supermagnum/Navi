@@ -2628,6 +2628,24 @@ struct StageBPlan {
     snap_ms: u128,
 }
 
+/// True when every densify hop end for this coarse alt is covered by a Ready
+/// pack tile. Empty `tiles` skips the gate (unit tests without pack dirs).
+///
+/// Fehmarn / Puttgarden sits ~0.06° east of the published SH eastern tile edge
+/// (`t1_2` max lon ≈ 11.166); ferry densify that pins a hop on that terminal
+/// then fails as `hop_end_tile_missing`. Demote such alts so the land excl
+/// corridor can win.
+fn densify_hops_covered_by_ready_tiles(
+    hops: &[(f64, f64)],
+    tiles: &[(String, [f64; 4], usize)],
+) -> bool {
+    if tiles.is_empty() || hops.is_empty() {
+        return true;
+    }
+    hops.iter()
+        .all(|&(lat, lon)| !tiles_covering_point(tiles, lat, lon).is_empty())
+}
+
 fn stage_b_plan_on_graph(
     graph: &mut RouteGraph,
     names: &CoarseEdgeNames,
@@ -2635,14 +2653,19 @@ fn stage_b_plan_on_graph(
     snaps: Vec<NodeId>,
     snap_ms: u128,
     route_options: &RouteOptions,
+    pack_dirs: &[&Path],
+    profile: RoutingProfile,
 ) -> Option<StageBPlan> {
     if snaps.len() < 2 {
         return None;
     }
+    let ready_tiles = load_profile_tile_bboxes(pack_dirs, profile);
     let mut legs = Vec::with_capacity(snaps.len() - 1);
     let mut picks = Vec::with_capacity(snaps.len() - 1);
     for (li, w) in snaps.windows(2).enumerate() {
         let mut alts = leg_alternatives(graph, names, border_osm, w[0], w[1], route_options);
+        let from_ll = graph.node_lat_lon(w[0])?;
+        let to_ll = graph.node_lat_lon(w[1])?;
         let summary: Vec<(f64, usize, f64)> = alts
             .iter()
             .map(|a| {
@@ -2653,10 +2676,91 @@ fn stage_b_plan_on_graph(
                 )
             })
             .collect();
-        let Some((eligible, pick)) = near_equal_pick(&summary) else {
+        let Some((mut eligible, mut pick)) = near_equal_pick(&summary) else {
             log::warn!(target: "NaviPlan", "stage_b leg={} no alternative", li + 1);
             return None;
         };
+        // Demote alts whose densify hop ends sit outside Ready tiles (Puttgarden
+        // east of SH pack coverage). Prefer a land excl over hop_end_tile_missing.
+        for (i, a) in alts.iter().enumerate() {
+            if !eligible[i] {
+                continue;
+            }
+            let hops = hops_from_report(&a.report, from_ll, to_ll);
+            if densify_hops_covered_by_ready_tiles(&hops, &ready_tiles) {
+                continue;
+            }
+            eligible[i] = false;
+            log::info!(
+                target: "NaviPlan",
+                "stage_b leg={} demote {} — densify hop end outside Ready tiles",
+                li + 1,
+                a.name
+            );
+        }
+        if !eligible.iter().any(|&e| e) {
+            // No near-equal survivor has Ready hop ends: pick the fewest-km alt
+            // that *is* tile-covered (ignore the 2% window).
+            let mut fallback: Option<usize> = None;
+            for (i, a) in alts.iter().enumerate() {
+                let hops = hops_from_report(&a.report, from_ll, to_ll);
+                if !densify_hops_covered_by_ready_tiles(&hops, &ready_tiles) {
+                    continue;
+                }
+                fallback = Some(match fallback {
+                    Some(j) => {
+                        let cmp = alts[i]
+                            .report
+                            .total_km
+                            .total_cmp(&alts[j].report.total_km)
+                            .then_with(|| {
+                                alts[i]
+                                    .report
+                                    .total_min
+                                    .total_cmp(&alts[j].report.total_min)
+                            });
+                        if cmp.is_lt() {
+                            i
+                        } else {
+                            j
+                        }
+                    }
+                    None => i,
+                });
+            }
+            let Some(i) = fallback else {
+                log::warn!(
+                    target: "NaviPlan",
+                    "stage_b leg={} no Ready-tile-covered alternative",
+                    li + 1
+                );
+                return None;
+            };
+            eligible = vec![false; alts.len()];
+            eligible[i] = true;
+            pick = i;
+            log::info!(
+                target: "NaviPlan",
+                "stage_b leg={} fallback pick {} after Ready-tile demotion",
+                li + 1,
+                alts[i].name
+            );
+        } else if !eligible[pick] {
+            pick = (0..alts.len())
+                .filter(|&i| eligible[i])
+                .min_by(|&i, &j| {
+                    alts[i]
+                        .report
+                        .total_km
+                        .total_cmp(&alts[j].report.total_km)
+                        .then_with(|| {
+                            alts[i]
+                                .report
+                                .total_min
+                                .total_cmp(&alts[j].report.total_min)
+                        })
+                })?;
+        }
         let table: Vec<StageBLegCandidate> = alts
             .iter()
             .enumerate()
@@ -3217,13 +3321,32 @@ pub fn split_hops_by_path_tile_budget(
             }
             last_emit = p;
         }
+        // Never emit a hop end outside Ready tiles (ferry terminals past the
+        // SH eastern tile edge used to become hop_end_tile_missing). Snap to
+        // the last covered coarse node when the requested end is uncovered.
+        let end_covered = !tiles_covering_point(&tiles, end.0, end.1).is_empty();
+        let emit = if end_covered {
+            end
+        } else if !tiles_covering_point(&tiles, last_emit.0, last_emit.1).is_empty() {
+            log::info!(
+                target: "NaviPlan",
+                "split_hops snap uncovered end {:.5},{:.5} -> {:.5},{:.5}",
+                end.0,
+                end.1,
+                last_emit.0,
+                last_emit.1
+            );
+            last_emit
+        } else {
+            end
+        };
         if out
             .last()
-            .is_none_or(|&q| haversine_m(q.0, q.1, end.0, end.1) > 200.0)
+            .is_none_or(|&q| haversine_m(q.0, q.1, emit.0, emit.1) > 200.0)
         {
-            out.push(end);
+            out.push(emit);
         } else if let Some(last) = out.last_mut() {
-            *last = end;
+            *last = emit;
         }
     }
     out
@@ -3468,6 +3591,8 @@ pub fn try_stage_b_densify_from_skeletons(
         snaps,
         snap_ms,
         route_options,
+        pack_dirs,
+        profile,
     );
     plan_ms += t_plan.elapsed().as_millis();
     let corridor_peak_rss_mb = corridor_rss_before.max(vm_rss_mb());
@@ -3497,6 +3622,8 @@ pub fn try_stage_b_densify_from_skeletons(
             snaps,
             snap_ms,
             route_options,
+            pack_dirs,
+            profile,
         );
         plan_ms += t_plan.elapsed().as_millis();
     }
@@ -4439,6 +4566,30 @@ mod tests {
     }
 
     #[test]
+    fn puttgarden_outside_sh_tile_fails_ready_cover_gate() {
+        // Published SH eastern tile edge (~11.166); Puttgarden ferry terminal
+        // densify node is ~11.228 — same gap that caused hop_end_tile_missing.
+        let tiles = vec![(
+            "schleswig-holstein-latest.navi-graph-car.t1_2.rkyv".into(),
+            [
+                54.168_150_05,
+                10.208_100_266_666_667,
+                54.928_232_6,
+                11.165_834_8,
+            ],
+            1usize,
+        )];
+        let covered = [(54.21_f64, 11.025)];
+        let uncovered = [(54.502_82_f64, 11.228_22)];
+        assert!(densify_hops_covered_by_ready_tiles(&covered, &tiles));
+        assert!(!densify_hops_covered_by_ready_tiles(&uncovered, &tiles));
+        assert!(
+            densify_hops_covered_by_ready_tiles(&uncovered, &[]),
+            "empty tile index must not demote (tests without pack dirs)"
+        );
+    }
+
+    #[test]
     fn stage_b_every_leg_alternative_runs_between_its_waypoints() {
         let mut g = via_trip_graph();
         let opts = RouteOptions::default();
@@ -4522,6 +4673,8 @@ mod tests {
             snaps,
             0,
             &RouteOptions::default(),
+            &[],
+            RoutingProfile::Car,
         )
         .expect("plan");
         let sb = assemble_stage_b(plan, &g, &VIA_TRIP, &[], RoutingProfile::Car, 1);
