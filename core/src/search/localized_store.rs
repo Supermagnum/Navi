@@ -28,16 +28,17 @@ pub fn place_search_locale() -> String {
 }
 
 pub fn ensure_names_json_column(conn: &Connection) -> SqlResult<()> {
-    let mut has = false;
+    let mut cols: Vec<String> = Vec::new();
     let mut stmt = conn.prepare("PRAGMA table_info(name_entries)")?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
     for r in rows {
-        if r?.as_str() == "names_json" {
-            has = true;
-            break;
-        }
+        cols.push(r?);
     }
-    if !has {
+    // Brand-new DB: migrate creates name_entries first; skip ALTER until then.
+    if cols.is_empty() {
+        return Ok(());
+    }
+    if !cols.iter().any(|c| c == "names_json") {
         conn.execute(
             "ALTER TABLE name_entries ADD COLUMN names_json TEXT NOT NULL DEFAULT ''",
             [],

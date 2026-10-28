@@ -837,11 +837,12 @@ impl NameIndex {
         let user_version: i32 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap_or(0);
-        // Additive columns (names_json) even when schema version is current —
-        // must not bump PLACE_INDEX_SCHEMA_VERSION (that would fail intact checks).
-        localized_store::ensure_names_json_column(&conn)?;
         // Already at current schema: no DDL, no FTS drop/rebuild.
+        // Additive columns (names_json) still apply when version is current —
+        // must not bump PLACE_INDEX_SCHEMA_VERSION (that would fail intact checks).
+        // Do not run ALTER before migrate on a brand-new DB (no name_entries yet).
         if user_version >= PLACE_INDEX_SCHEMA_VERSION {
+            localized_store::ensure_names_json_column(&conn)?;
             return Ok(Self { conn });
         }
         // GROUP BY over name_entries on every open dominated reopen (~383 ms of
