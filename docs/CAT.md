@@ -722,6 +722,42 @@ Radio control lives in the host (rigctld client), not WASM.
 
 ## Testing
 
+### Test setup (emulator AVD)
+
+AVD name: **`Navi_8c_4G_128G`**. Location (config-only fresh AVD; images are
+sparse on the data drive):
+
+`/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/android-avd/Navi_8c_4G_128G.avd`
+
+Pointer file: `~/.android/avd/Navi_8c_4G_128G.ini` → that path.
+
+Launch command:
+
+```bash
+/home/haaken/Android/Sdk/emulator/emulator \
+  -avd Navi_8c_4G_128G \
+  -no-snapshot-load \
+  -no-boot-anim \
+  -gpu swiftshader_indirect
+```
+
+| Setting | Config / guest |
+|---|---|
+| CPU | `hw.cpu.ncore=8` in `config.ini`; guest **`nproc=6`** (emulator maximum: "Emulator does not support more than 6 cores") |
+| RAM | `hw.ramSize=4096`; guest MemTotal about 3.8 GiB |
+| Internal storage | `disk.dataPartition.size=128G`; guest `/data` about 126–128 GB |
+| SD card | `sdcard.size=512G` (sparse FAT32, label `NAVISD`); guest `/storage/BF1B-9F0E` about 512 GB |
+
+Cold `-wipe-data` needs about 157 GiB free on the AVD filesystem (emulator
+checks 1.2 × 128G as if dense). With less free space, create a sparse
+`userdata-qemu.img` (128G ext4) and a sparse `sdcard.img` (512G FAT32) first,
+then launch without `-wipe-data`. `mksdcard 512G` writes a dense image and
+must not be used on a drive with less than 512 GiB free.
+
+Debug APK for this emulator: `./gradlew :app:assembleDebug -PnaviAbis=x86_64`
+after `NAVI_ALLOW_DUMMY_RIG=1 ./scripts/build-android-native.sh` (stages
+`libc++_shared.so` and allows Hamlib dummy model 1).
+
 **Results, fixture-fetch checklist, Espa→Dombås switch logs (Run A / Run B),
 CSV path/format, and importer coverage** live in
 [`cat-test.md`](cat-test.md). Do not duplicate full tables here.
@@ -790,43 +826,64 @@ Navi never keys PTT and never opens the Benshi audio RFCOMM link.
 Honest split — simulator results are never described as hardware results.
 Evidence log: [`CAT-test-report.md`](CAT-test-report.md).
 
-### CI / simulator
+### Hamlib backend
 
-- Hamlib dummy `rigctld` (model 1) gating + program/read-back
-- `FakeBenshiPeer` GAIA peer: codec, allowlist (never-transmit), interlocks,
-  VFO 2 fingerprint, productId gating (`0x0002` / `0x0103`)
-- Corridor replays H (Espa→Dombås) / I (Østerdalen leave-network decision C)
-- Coverage J: Espa→Dombås **100.0 %** talk / 2 switches; Østerdalen **93.3 %** /
-  3 switches (reduced SPLAT fixture in CI)
-- Demo mode 5 s/site against FakeBenshiPeer
-- navi-server repeater mirror: checksum reject keeps last good; RepeaterBook
-  absent; synthetic RepeaterBook present; attribution / exclusions
+Automated tests with the **Hamlib dummy rig (model 1)** on desktop and the
+Android emulator (`Navi_8c_4G_128G`, guest **6 cores** — emulator maximum;
+`hw.cpu.ncore=8` kept in config).
 
-### Android emulator / device (injected socket)
+| Build | Hamlib version |
+|---|---|
+| Desktop (host `rigctl` / `navi-cat` dummy_rigctld tests) | **4.7.0** |
+| Android emulator APK (`libhamlib.so`, FFI connect model 1) | **4.7.2** (stable release the Android build tracks) |
 
-- `BenshiRfcommTransport` with injectable streams (no real Bluetooth in CI)
-- Emulator K on SM-P613: corridor H/I + demo via injected peer (3/3)
+Verified with the dummy:
 
-### Real hardware
+- Switch order along Espa→Dombås (E6) and Espa→Litjfossen (Rv 3) GPS corridors
+  for **LA5MR / Standalone / Nearest-network (auto)**, both **unplanned** and
+  **with a real in-app planned route** (packs + place index ready; CAT sheet
+  closed during GPS replay so Standalone does not flip to LA5MR)
+- Hamlib model FilterChips use curated **names** (not bare model numbers); the
+  successfully **connected** model pill turns **green** (selection alone stays
+  the normal selected style; green clears on Disconnect)
+- Read-back after program: dummy supports `get_freq`, mode, repeater shift /
+  offset, CTCSS tone, and DCS code via Hamlib FFI (`read_vfo_state`)
+- Hysteresis: minimum **60 s** between switches (no flapping)
+- VFO 2 left untouched (plugin programs VFO 1 / VFOA only; sheet copy:
+  "Plugin controls VFO 1 only; VFO 2 is left to the user.")
+- 1750 Hz burst repeaters: tuned with CTCSS/DCS off; **no** tone-burst /
+  PTT function is called (operator sends the burst on the radio)
+- Failed read-back / disconnect mid-replay: Disconnect leaves the app running;
+  UI shows `OK: disconnected`; no crash
+- Local repeater drop-folder cleanup: fixtures removed, Update reports
+  `imported: 0` / empty `local_files.files`, Dummy disconnected
 
-**VR-N76 host BlueZ (2026-10-12)** — see [`CAT-test-report.md`](CAT-test-report.md):
+### Real Hamlib radios
 
-- MAC `38:D2:00:01:4B:E7`; productId **`0x0103`**; GET_DEV_INFO payload `[3]`
-- One control RFCOMM session; never audio UUID / never PTT
-- Step 5 read-only PASS; Step 6 both 5 s routes PASS (scratch; VFO B fingerprint
-  unchanged)
-- With VFO B selected, only channel name **NAV** visible; after operator select
-  VFO A, RX steps ~every 5 s confirmed
-- Left VFO A on 145.625000 (LA5MR) per operator
-- Artifacts: `testdata/cat/hardware/vr-n76/`
+**Not tested.**
 
-### Not tested
+### VGC VR-N76 and similar Benshi-protocol radios (Bluetooth backend)
 
-- Hamlib against real radios (non-dummy)
-- Android tablet RFCOMM to a physical radio
-- BTECH UV-Pro / Radioddity GA-5WB
-- Live RepeaterBook data (navi-server has not published it yet)
-- Transmit / PTT / audio RFCOMM (intentionally never)
+- There is **no** automated test (and no fake/simulated VR-N76/Benshi radio
+  for CI).
+- The **VR-N76** has been tested manually over Bluetooth by the maintainer:
+  the 5 s VFO A repeater-stepping test on Espa→Dombås (E6) and
+  Espa→Litjfossen (Rv 3). Details: [`CAT-test-report.md`](CAT-test-report.md).
+- Other Benshi-protocol radios have **not** been tested.
+
+### 1750 Hz burst repeaters
+
+The app tunes them but **never** sends the burst; the user does that manually.
+
+### Consensus relocation
+
+The published OSM bundle has no structure tags (`man_made`, `tower:type`,
+`ele`, `height`), so in production consensus relocation moves to the highest
+DEM point only.
+
+### Licence
+
+You may listen, but do not transmit without an amateur radio licence.
 
 ## Status
 

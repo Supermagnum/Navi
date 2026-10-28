@@ -1063,14 +1063,24 @@ Licence sentence on the toggle (exact copy):
 
 **What is tested**
 
-- CI / simulator (dummy-`rigctld`, corridor replays, gating).
-- Android emulator.
-- Real hardware: **VR-N76** over host Bluetooth on **2026-10-12** — read-only
-  check, both 5 s VFO A route runs, VFO B unchanged.
-
-**Not tested:** Android tablet → physical radio, Hamlib on real radios,
-UV-Pro / GA-5WB, RepeaterBook data, transmit (never). Simulator results must
-not be described as hardware results.
+- **Hamlib backend:** automated tests with the Hamlib dummy rig (model 1) on
+  desktop (**Hamlib 4.7.0**) and the Android emulator (**Hamlib 4.7.2**, guest
+  6 cores — emulator maximum). Verified: Espa→Dombås / Espa→Litjfossen switch
+  order for LA5MR, Standalone, and auto (unplanned and planned-route), named
+  model pills with green connected state, read-back fields (`get_freq`,
+  shift/offset, CTCSS/DCS), 60 s hysteresis, VFO 2 untouched, 1750 Hz handling
+  (CTCSS off, no burst call), mid-replay Disconnect (`OK: disconnected`, no
+  crash), empty drop-folder Update after fixture cleanup.
+- **Real Hamlib radios:** not tested.
+- **VGC VR-N76 and similar Benshi-protocol radios (Bluetooth):** no automated
+  test; VR-N76 tested manually over Bluetooth by the maintainer (5 s VFO A
+  stepping on Espa→Dombås and Espa→Litjfossen); other Benshi radios not tested.
+- 1750 Hz burst repeaters: the app tunes them but never sends the burst; the
+  user does that manually.
+- Consensus relocation: the published OSM bundle has no structure tags, so in
+  production it moves to the highest DEM point only.
+- Licence: you may listen, but do not transmit without an amateur radio
+  licence.
 
 Evidence and how to re-run: [`docs/CAT-test-report.md`](docs/CAT-test-report.md).
 Guest overview: [`plugins/CATS-plugin/README.md`](plugins/CATS-plugin/README.md).
