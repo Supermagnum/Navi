@@ -954,17 +954,19 @@ impl NameIndex {
 
     /// Query-only open: no schema-version migrate / FTS rebuild, no long busy wait.
     ///
-    /// Does **not** call [`Self::recover_wal_sidecars`]: checkpoint needs a write
-    /// lock and would block for the writer busy-timeout while a build holds a
-    /// transaction (breaks WAL concurrent snapshot reads / freezes search).
-    /// Torn-WAL recovery belongs on exclusive [`Self::open`] / cold start.
+    /// Before any readonly SQLite open, [`Self::prepare_readonly_sidecars`] runs a
+    /// **short** writable recover when a non-empty `-wal` is present. That heals
+    /// a torn post-crash WAL (the SIGBUS path) without waiting out a live writer
+    /// (50 ms busy — concurrent builds keep WAL snapshot reads). If recover
+    /// cannot open/checkpoint for a non-busy reason, sidecars are quarantined so
+    /// the main file opens with `mmap_size=0` and no crash.
     ///
     /// Still applies additive `names_json` once via a short read-write open when
     /// missing — search SELECTs that column, and pre-i18n intact indexes otherwise
-    /// fail with `no such column: names_json` on every query. Uses a short busy
-    /// timeout so an active writer is not waited out.
+    /// fail with `no such column: names_json` on every query.
     pub fn open_readonly(path: impl AsRef<Path>) -> SqlResult<Self> {
         let path = path.as_ref();
+        Self::prepare_readonly_sidecars(path)?;
         if path.is_file() && !Self::names_json_column_present_readonly(path) {
             if let Ok(w) = Connection::open(path) {
                 let _ = w.busy_timeout(Duration::from_millis(50));
@@ -976,6 +978,100 @@ impl NameIndex {
         conn.busy_timeout(Duration::from_millis(250))?;
         let _ = conn.execute_batch("PRAGMA mmap_size=0;");
         Ok(Self { conn })
+    }
+
+    /// Heal or quarantine `-wal`/`-shm` before a readonly open.
+    ///
+    /// - Empty/missing `-wal`: drop empty leftover; no RW open (cold-start ANR).
+    /// - Non-empty `-wal`: short RW open + `wal_checkpoint(TRUNCATE)` (`mmap=0`).
+    ///   `SQLITE_BUSY` → live writer; leave sidecars alone (concurrent snapshot).
+    ///   Other failure → quarantine `-wal`/`-shm` so the main DB can open safely.
+    fn prepare_readonly_sidecars(path: &Path) -> SqlResult<()> {
+        if !path.is_file() {
+            return Ok(());
+        }
+        let wal = Self::wal_path(path);
+        let wal_len = wal.metadata().map(|m| m.len()).unwrap_or(0);
+        if !wal.is_file() || wal_len == 0 {
+            if wal.is_file() {
+                let _ = std::fs::remove_file(&wal);
+            }
+            return Ok(());
+        }
+        match Connection::open(path) {
+            Ok(conn) => {
+                let _ = conn.busy_timeout(Duration::from_millis(50));
+                let _ = conn.execute_batch("PRAGMA mmap_size=0;");
+                match conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                }) {
+                    Ok((busy, log, ckpt)) => {
+                        log::info!(
+                            target: "PlaceIndex",
+                            "place_index_readonly_prep path={} busy={busy} log={log} checkpointed={ckpt}",
+                            path.display()
+                        );
+                        Ok(())
+                    }
+                    Err(e) if Self::sqlite_error_is_busy(&e) => Ok(()),
+                    Err(e) => {
+                        log::warn!(
+                            target: "PlaceIndex",
+                            "place_index_readonly_prep checkpoint failed ({e}); quarantining sidecars"
+                        );
+                        drop(conn);
+                        Self::quarantine_wal_sidecars(path);
+                        Ok(())
+                    }
+                }
+            }
+            Err(e) if Self::sqlite_error_is_busy(&e) => Ok(()),
+            Err(e) => {
+                log::warn!(
+                    target: "PlaceIndex",
+                    "place_index_readonly_prep open failed ({e}); quarantining sidecars"
+                );
+                Self::quarantine_wal_sidecars(path);
+                Ok(())
+            }
+        }
+    }
+
+    fn quarantine_wal_sidecars(path: &Path) {
+        let wal = Self::wal_path(path);
+        let shm = Self::shm_path(path);
+        if shm.is_file() {
+            let _ = std::fs::remove_file(&shm);
+        }
+        if wal.is_file() {
+            let bad = PathBuf::from(format!("{}.bad", wal.display()));
+            let _ = std::fs::remove_file(&bad);
+            if std::fs::rename(&wal, &bad).is_err() {
+                let _ = std::fs::remove_file(&wal);
+            }
+            log::warn!(
+                target: "PlaceIndex",
+                "place_index_wal_quarantined path={}",
+                wal.display()
+            );
+        }
+    }
+
+    fn sqlite_error_is_busy(err: &rusqlite::Error) -> bool {
+        match err {
+            rusqlite::Error::SqliteFailure(code, _) => {
+                code.code == rusqlite::ErrorCode::DatabaseBusy
+                    || code.code == rusqlite::ErrorCode::DatabaseLocked
+            }
+            _ => {
+                let s = err.to_string().to_ascii_lowercase();
+                s.contains("busy") || s.contains("locked")
+            }
+        }
     }
 
     fn names_json_column_present_readonly(path: &Path) -> bool {
@@ -1396,11 +1492,13 @@ impl NameIndex {
         if !path.is_file() {
             return false;
         }
+        let _ = Self::prepare_readonly_sidecars(path);
         let Ok(conn) =
             Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
         else {
             return false;
         };
+        let _ = conn.execute_batch("PRAGMA mmap_size=0;");
         conn.query_row("SELECT 1 FROM name_entries LIMIT 1", [], |_| Ok(()))
             .is_ok()
     }
@@ -4427,6 +4525,62 @@ mod tests {
             NameIndex::has_entries_for_region(&db, "africa/tunisia"),
             "tunisia region rows intact"
         );
+    }
+
+    /// Regression for af587a647: search (`open_readonly`) must not SIGBUS / crash
+    /// when it races cold-start recover — torn WAL + no live writer + readonly
+    /// first must heal (or quarantine sidecars) and leave the index searchable.
+    #[test]
+    fn open_readonly_first_heals_torn_wal_without_prior_recover() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("place_index.db");
+        let wal = PathBuf::from(format!("{}-wal", db.display()));
+        let shm = PathBuf::from(format!("{}-shm", db.display()));
+        let wal_bak = dir.path().join("wal.bak");
+        {
+            let mut idx = NameIndex::open(&db).expect("open");
+            idx.conn
+                .execute_batch("PRAGMA wal_autocheckpoint=0;")
+                .unwrap();
+            idx.upsert_entry_with_region(
+                9,
+                "Ksar Ghilane".into(),
+                "place:village".into(),
+                32.98,
+                9.63,
+                String::new(),
+                String::new(),
+                "africa/tunisia".into(),
+            )
+            .unwrap();
+            assert!(wal.is_file(), "WAL should exist while writer is open");
+            std::fs::copy(&wal, &wal_bak).expect("snapshot wal");
+        }
+        std::fs::copy(&wal_bak, &wal).expect("restore wal");
+        {
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&wal)
+                .expect("append wal");
+            f.write_all(&vec![0u8; 128 * 1024]).expect("pad wal");
+        }
+        std::fs::write(&shm, [0u8; 64]).expect("torn shm");
+        // No recover_wal_sidecars — simulate force-close then immediate search.
+        let reader = NameIndex::open_readonly(&db).expect("readonly must not crash");
+        let hits = reader
+            .search("Ksar", 8)
+            .expect("search after readonly prep");
+        assert!(
+            hits.iter().any(|h| h.name.contains("Ksar")),
+            "index usable after readonly-first heal, got {hits:?}"
+        );
+        drop(hits);
+        drop(reader);
+        // Full writer open still works after the readonly prep path.
+        let writer = NameIndex::open(&db).expect("writable open after heal");
+        let hits2 = writer.search("Ghilane", 8).expect("search via writer");
+        assert!(hits2.iter().any(|h| h.name.contains("Ksar")));
     }
 
     #[test]

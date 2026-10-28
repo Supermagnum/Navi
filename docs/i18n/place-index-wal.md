@@ -35,11 +35,18 @@ itself:
 
 1. **After every successful region build:** `PRAGMA wal_checkpoint(TRUNCATE)` so
    a force-stop cannot leave a multi-hundred-MB sidecar.
-2. **Before every open/probe** (Rust `NameIndex::open` / `open_readonly` /
-   schema helpers; Kotlin `PlaceIndexIntact` probes): `recover_wal_sidecars` /
+2. **Before every open/probe** (Rust `NameIndex::open` / schema helpers;
+   Kotlin `PlaceIndexIntact` probes): full `recover_wal_sidecars` /
    `placeIndexRecoverWal` — drop stale `-shm`, checkpoint WAL, `mmap_size=0`.
+   Rust **`open_readonly`** (search) does **not** use the 120 s exclusive
+   recover (that blocked concurrent writers). It runs
+   `prepare_readonly_sidecars`: short busy (50 ms) checkpoint when `-wal` is
+   non-empty; on non-busy failure quarantine `-wal`/`-shm`; always
+   `mmap_size=0`. Live writers (`SQLITE_BUSY`) leave sidecars alone so WAL
+   snapshot reads still work.
 3. **Cold start:** `MainActivity` starts a background `PlaceIndexWalRecover`
-   thread that calls `PlaceIndexIntact.recoverBeforeOpen` before probes race.
+   thread that calls `PlaceIndexIntact.recoverBeforeOpen`. Search may race
+   that thread; `open_readonly` self-preps so a torn WAL cannot SIGBUS.
 4. **Fallbacks if UniFFI is unavailable:** framework RW `wal_checkpoint`; then
    quarantine `-wal` to `-wal.bad` so the main file can open (may drop
    uncheckpointed frames; incomplete regions can re-index later).
