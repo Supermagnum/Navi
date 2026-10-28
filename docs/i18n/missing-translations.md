@@ -4,6 +4,9 @@
 
 - Road-name sidecar (option C): **STOPPED** — place-source lacks highway `name:*`
   (see `docs/i18n/names.md`).
+- Road names in guidance: **option D shipped** (offline PMTiles `name:*` lookup +
+  option B local-name fallback). FFI:
+  `localizeRouteStreetsFromPmtiles` / `clearLocalizedRouteStreetsCache`.
 - place_index: additive `names_json` column (no schema-version bump / no rebuild).
 - Remaining English: many Tools/status strings, Geofabrik country names, plugin
   camping/IMU copy, OsmUpdateUserCopy constants, PackRegionAvailability status

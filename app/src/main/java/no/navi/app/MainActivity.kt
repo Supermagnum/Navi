@@ -936,6 +936,36 @@ private fun datexStatusLineForHud(
         else -> "DATEX idle (source=${hud.dataSource})"
     }
 
+/**
+ * Option D: rewrite street names in maneuvers / sim-samples from local Protomaps
+ * `roads` layer name:* tags for [localeTag]. Falls back to the original JSON when
+ * no covering .pmtiles is present or FFI localization fails.
+ */
+private fun localizeRouteStreetsForLocale(
+    dataDir: File,
+    regionPath: String?,
+    localeTag: String,
+    maneuversJson: String,
+    simSamplesJson: String,
+): Pair<String, String> {
+    val path =
+        regionPath?.takeIf { it.isNotBlank() }
+            ?: return maneuversJson to simSamplesJson
+    val key = PackRegionAvailability.geofabrikPathToRegionKey(path)
+    val pmtiles = File(dataDir, "pmtiles/$key.pmtiles")
+    if (!pmtiles.isFile) return maneuversJson to simSamplesJson
+    return runCatching {
+        val out =
+            uniffi.navi.localizeRouteStreetsFromPmtiles(
+                pmtiles.absolutePath,
+                localeTag,
+                maneuversJson,
+                simSamplesJson,
+            )
+        out.maneuversJson to out.simSamplesJson
+    }.getOrDefault(maneuversJson to simSamplesJson)
+}
+
 @Composable
 private fun NaviMapScreen() {
     val context = LocalContext.current
@@ -1747,6 +1777,7 @@ private fun NaviMapScreen() {
     }
 
     fun clearActiveRoute(message: String = "Route deleted") {
+        runCatching { uniffi.navi.clearLocalizedRouteStreetsCache() }
         routeSimulator?.stop()
         routeSimulator = null
         simulating = false
@@ -2308,10 +2339,16 @@ private fun NaviMapScreen() {
             runCatching { pending.breakPoisJson }.getOrDefault("[]")
         NaviMapTestHooks.lastDaysJson =
             runCatching { pending.daysJson }.getOrDefault("[]")
-        NaviMapTestHooks.lastManeuversJson =
-            runCatching { pending.maneuversJson }.getOrDefault("[]")
-        NaviMapTestHooks.lastSimSamplesJson =
-            runCatching { pending.simSamplesJson }.getOrDefault("[]")
+        val localizedStreets =
+            localizeRouteStreetsForLocale(
+                dataDir = dataDir,
+                regionPath = selectedGeofabrikPath,
+                localeTag = deviceLocaleTag,
+                maneuversJson = runCatching { pending.maneuversJson }.getOrDefault("[]"),
+                simSamplesJson = runCatching { pending.simSamplesJson }.getOrDefault("[]"),
+            )
+        NaviMapTestHooks.lastManeuversJson = localizedStreets.first
+        NaviMapTestHooks.lastSimSamplesJson = localizedStreets.second
         routePlanStats =
             routePlanStatsFromPlan(
                 pending.report,
@@ -2355,26 +2392,20 @@ private fun NaviMapScreen() {
                 )
             }
         }
-        routeSamples =
-            parseRouteSimSamples(
-                runCatching { pending.simSamplesJson }.getOrDefault("[]"),
-            )
+        routeSamples = parseRouteSimSamples(localizedStreets.second)
         routeSchoolPoisJson =
             if (schoolPoisJson != "[]" && routeSamples.size >= 2) {
                 runCatching {
                     uniffi.navi.schoolsNearRouteCorridorJson(
                         schoolPoisJson,
-                        runCatching { pending.simSamplesJson }.getOrDefault("[]"),
+                        localizedStreets.second,
                         200.0,
                     )
                 }.getOrDefault("[]")
             } else {
                 "[]"
             }
-        routeManeuvers =
-            parseRouteManeuvers(
-                runCatching { pending.maneuversJson }.getOrDefault("[]"),
-            )
+        routeManeuvers = parseRouteManeuvers(localizedStreets.first)
         progressTrackerRef.set(
             RouteProgressTracker(
                 samples = routeSamples,

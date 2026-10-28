@@ -9894,6 +9894,44 @@ pub fn format_current_road_label(
     driver_break_core::current_road_label(name.as_deref(), road_ref.as_deref(), highway.as_deref())
 }
 
+/// Localized street labels for one planned route from offline Protomaps PMTiles.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct LocalizedRouteStreets {
+    pub maneuvers_json: String,
+    pub sim_samples_json: String,
+}
+
+/// Option D: rewrite maneuver / sim-sample `street` fields using `name:*` from
+/// the region's downloaded PMTiles (presentation only; routing unchanged).
+#[uniffi::export]
+pub fn localize_route_streets_from_pmtiles(
+    pmtiles_path: String,
+    locale: String,
+    maneuvers_json: String,
+    sim_samples_json: String,
+) -> LocalizedRouteStreets {
+    let path = Path::new(&pmtiles_path);
+    if !path.is_file() || locale.trim().is_empty() {
+        return LocalizedRouteStreets {
+            maneuvers_json,
+            sim_samples_json,
+        };
+    }
+    let mans = driver_break_core::i18n::localize_maneuvers_json(path, &locale, &maneuvers_json);
+    let samples =
+        driver_break_core::i18n::localize_sim_samples_json(path, &locale, &sim_samples_json);
+    LocalizedRouteStreets {
+        maneuvers_json: mans,
+        sim_samples_json: samples,
+    }
+}
+
+/// Clear the in-memory route street-name cache (e.g. when the route is deleted).
+#[uniffi::export]
+pub fn clear_localized_route_streets_cache() {
+    driver_break_core::i18n::clear_active_route_road_name_cache();
+}
+
 /// Grid cell size (degrees) for idle-GPS road-label graph caches (~5.5 km at mid-latitudes).
 const ROAD_LABEL_CELL_DEG: f64 = 0.05;
 /// Extra cells of pad around the GPS cell so edges near the border stay in-graph.

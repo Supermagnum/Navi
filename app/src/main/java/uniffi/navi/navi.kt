@@ -729,6 +729,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_check_osm_updates(
     ): Int
+    external fun uniffi_navi_checksum_func_clear_localized_route_streets_cache(
+    ): Int
     external fun uniffi_navi_checksum_func_clear_place_index_region_rows(
     ): Int
     external fun uniffi_navi_checksum_func_convert_progress_clear(
@@ -900,6 +902,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_load_use_unlocked_cabins(
     ): Int
     external fun uniffi_navi_checksum_func_load_vehicle_limits(
+    ): Int
+    external fun uniffi_navi_checksum_func_localize_route_streets_from_pmtiles(
     ): Int
     external fun uniffi_navi_checksum_func_long_trip_ordered_regions_json(
     ): Int
@@ -1306,6 +1310,8 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_navi_fn_func_check_osm_updates(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_clear_localized_route_streets_cache(uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_navi_fn_func_clear_place_index_region_rows(`indexDbPath`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_convert_progress_clear(uniffi_out_err: UniffiRustCallStatus, 
@@ -1477,6 +1483,8 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_load_use_unlocked_cabins(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_navi_fn_func_load_vehicle_limits(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_localize_route_streets_from_pmtiles(`pmtilesPath`: RustBuffer.ByValue,`locale`: RustBuffer.ByValue,`maneuversJson`: RustBuffer.ByValue,`simSamplesJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_long_trip_ordered_regions_json(`waypointsLatLonJson`: RustBuffer.ByValue,`installedRegionIdsJson`: RustBuffer.ByValue,`countryIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1933,6 +1941,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_check_osm_updates() and 0xFFFF) != 22664) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_clear_localized_route_streets_cache() and 0xFFFF) != 2982) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_clear_place_index_region_rows() and 0xFFFF) != 8312) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2189,6 +2200,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_load_vehicle_limits() and 0xFFFF) != 18436) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_localize_route_streets_from_pmtiles() and 0xFFFF) != 30830) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_long_trip_ordered_regions_json() and 0xFFFF) != 26158) {
@@ -5661,6 +5675,47 @@ public object FfiConverterTypeImuTickResult: FfiConverterRustBuffer<ImuTickResul
 
 
 
+/**
+ * Localized street labels for one planned route from offline Protomaps PMTiles.
+ */
+data class LocalizedRouteStreets (
+    var `maneuversJson`: kotlin.String
+    , 
+    var `simSamplesJson`: kotlin.String
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeLocalizedRouteStreets: FfiConverterRustBuffer<LocalizedRouteStreets> {
+    override fun read(buf: ByteBuffer): LocalizedRouteStreets {
+        return LocalizedRouteStreets(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: LocalizedRouteStreets) = (
+            FfiConverterString.allocationSize(value.`maneuversJson`) +
+            FfiConverterString.allocationSize(value.`simSamplesJson`)
+    )
+
+    override fun write(value: LocalizedRouteStreets, buf: ByteBuffer) {
+            FfiConverterString.write(value.`maneuversJson`, buf)
+            FfiConverterString.write(value.`simSamplesJson`, buf)
+    }
+}
+
+
+
 data class PlaceHit (
     var `osmId`: kotlin.Long
     , 
@@ -6761,6 +6816,18 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
 }
     )
     }
+    
+
+        /**
+         * Clear the in-memory route street-name cache (e.g. when the route is deleted).
+         */ fun `clearLocalizedRouteStreetsCache`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_clear_localized_route_streets_cache(
+    
+        _status)
+}
+    
     
 
         /**
@@ -8032,6 +8099,24 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
         
         FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Option D: rewrite maneuver / sim-sample `street` fields using `name:*` from
+         * the region's downloaded PMTiles (presentation only; routing unchanged).
+         */ fun `localizeRouteStreetsFromPmtiles`(`pmtilesPath`: kotlin.String, `locale`: kotlin.String, `maneuversJson`: kotlin.String, `simSamplesJson`: kotlin.String): LocalizedRouteStreets {
+            return FfiConverterTypeLocalizedRouteStreets.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_localize_route_streets_from_pmtiles(
+    
+        
+        FfiConverterString.lower(`pmtilesPath`),
+        FfiConverterString.lower(`locale`),
+        FfiConverterString.lower(`maneuversJson`),
+        FfiConverterString.lower(`simSamplesJson`),_status)
 }
     )
     }

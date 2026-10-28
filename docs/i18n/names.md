@@ -19,7 +19,8 @@ Implementation:
 - Rust: `driver_break_core::i18n::localized_name` / `localized_name_with_secondary`
 - MapLibre: `BasemapLocalizedLabels` coalesce chain rebuilt on style load and
   locale change (approximation of step 3 without per-feature script tests)
-- Place index: `names_json` column + `set_place_search_locale` (see below)
+- Place index: `names_json` column + `set_place_search_locale`
+- Guidance / route summary / "Currently on": offline PMTiles lookup (option D)
 
 ## Secondary line
 
@@ -43,32 +44,36 @@ Findable by local, alt/loc, and localized names when those strings are present i
 - New downloads / region updates populate `names_json` and expand `search_doc`.
 - Existing regions keep empty `names_json` until the next region update.
 
-## Road-name sidecar (option C) — STOPPED
+## Road names in guidance — option D (offline PMTiles)
 
-Checked live place-source for `europe/norway/ostlandet`
-(`europe_norway_ostlandet-latest.navi-place-source.osm.pbf`, ~22 MB):
+**Option C (place-source sidecar) dropped.** Place-source for Østlandet had only
+27 `highway=*` ways and essentially no useful `name:*` (1 plaza `name:ko`). It
+is a place/POI extract, not the routable network.
 
-| Metric | Count |
-| --- | --- |
-| `highway=*` ways | 27 |
-| Named highways | 27 |
-| Highways with real `name:*` (excl. etymology) | 1 (`name:ko` on a plaza) |
+**Option D (shipped):** after each plan / recalculation, read the region's
+downloaded Protomaps `.pmtiles` directly (Rust `pmtiles` + MVT decode — not
+MapLibre's rendered tiles). For each maneuver / street label, load the tile at
+the archive max zoom near that point, match a `roads` feature by local `name`
+(+ `ref` when present), then apply the selection order above. Results are cached
+in memory for the active route only. No new files, no extra downloads, no pack
+format bump, no navi-server change.
 
-Place-source is a place/POI extract: ~208k named nodes with rich `name:*`, but
-**not** the routable highway network. Guidance edge labels key on pack
-`edge_name` / `ref` (OSM `name` only in v9). Building a name+ref sidecar from
-place-source would not cover roads.
+No tile match or no `name:*` for the device language → keep the pack local name
+(option B fallback).
 
-**Missing for option C:** highway ways with localization tags in the
-place-source (or other client-already-downloaded) PBF. Do not fetch extra data
-or change navi-server. Pack format bump (option A) remains rejected.
+### Verification counts (z14 samples, Protomaps `20261028`)
 
-Fallback: local pack `edge_name` / `ref` (option B) until a future approved
-data path exists.
+| Region | Road features | Named | With `name:*` / `int_name` | Notes |
+| --- | ---: | ---: | ---: | --- |
+| Østlandet / Oslo | 3672 | 3039 | 2 | Almost no localized road tags (Latin local `name`) |
+| Tunisia / Tunis | 4157 | 3574 | 3019 | Rich `name:fr` / `name:ar` (and some `name:en`) |
+
+Tablet Ostlandet archive (`europe_norway_ostlandet.pmtiles`, maxzoom 15) matches
+the sparse `name:*` pattern on sampled Oslo tiles.
 
 ## Data limits (do not bypass without approval)
 
 - Graph packs (v9): single `edge_name` from OSM `name` only — no pack format bump
   in this work.
-- Map tiles (Protomaps / Liberty): often expose `name:*`; style coalesce can use
-  them immediately.
+- Map tiles (Protomaps / Liberty): expose `name` / `name:*` on the `roads` layer
+  where OSM has them; used for map labels and option D guidance lookup.
