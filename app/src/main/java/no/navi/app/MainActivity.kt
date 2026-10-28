@@ -43,7 +43,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -86,6 +85,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontSynthesis
@@ -215,6 +215,17 @@ class MainActivity : ComponentActivity() {
         NaviMapTestHooks.clearDebugGpsInject()
         applyNaviLaunchExtras(intent)
         runCatching { uniffi.navi.initNativeLogging() }
+        // Bind place-search display locale before any native search (Compose
+        // LaunchedEffect can race debug intents / early typeahead).
+        runCatching {
+            val tag =
+                resources.configuration.locales[0]?.toLanguageTag()
+                    ?: java.util.Locale
+                        .getDefault()
+                        .toLanguageTag()
+            uniffi.navi.setPlaceSearchLocale(tag)
+            android.util.Log.i("NaviLocale", "place_search_locale=$tag")
+        }
         // Recover torn place_index WAL/SHM before any PlaceIndexIntact probe
         // (SIGBUS in walIndexReadHdr is uncatchable). Off main thread.
         Thread(
@@ -230,16 +241,19 @@ class MainActivity : ComponentActivity() {
             },
             "PlaceIndexWalRecover",
         ).start()
-        CampingBootstrap.ensureInitialized(this)
-        CatBootstrap.ensureInitialized(this)
         // Natural Earth country grid: never build on the main looper (ANR / seed stall).
-        // CampingBootstrap.configure also touches country_polys; keep it off-main.
+        // camping_plugin_configure / cat_plugin_configure are heavy native work and must
+        // not run on main (SM-P613 ANR: main blocked in camping_plugin_configure).
         CountryPolysWarm.startBackground()
         Thread(
             {
+                android.os.Process.setThreadPriority(
+                    android.os.Process.THREAD_PRIORITY_BACKGROUND,
+                )
                 runCatching { CampingBootstrap.ensureInitialized(this@MainActivity) }
+                runCatching { CatBootstrap.ensureInitialized(this@MainActivity) }
             },
-            "CampingBootstrap",
+            "PluginBootstrap",
         ).start()
         // IMU plugin: native setup runs off-main; sensors tick only while started and enabled.
         ImuPluginRuntime.attach(this, this)
@@ -1069,8 +1083,16 @@ private fun NaviMapScreen() {
         }
     var previousLocaleTag by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(deviceLocaleTag) {
-        val tag = deviceLocaleTag.ifBlank { java.util.Locale.getDefault().toLanguageTag() }
-        runCatching { uniffi.navi.setPlaceSearchLocale(tag) }
+        val tag =
+            deviceLocaleTag.ifBlank {
+                java.util.Locale
+                    .getDefault()
+                    .toLanguageTag()
+            }
+        runCatching {
+            uniffi.navi.setPlaceSearchLocale(tag)
+            android.util.Log.i("NaviLocale", "place_search_locale=$tag")
+        }
         val prev = previousLocaleTag
         previousLocaleTag = deviceLocaleTag
         if (prev != null && prev != deviceLocaleTag) {
@@ -1332,15 +1354,20 @@ private fun NaviMapScreen() {
     }
 
     LaunchedEffect(Unit) {
-        CampingBootstrap.ensureInitialized(context)
-        CatBootstrap.ensureInitialized(context)
-        val want = MapHudPrefs.loadCampingPluginEnabled(context)
-        uniffi.navi.campingPluginSetEnabled(want)
-        campingSessionDisableMessage = uniffi.navi.campingPluginSessionDisabledReason()
-        uniffi.navi.catPluginSetEnabled(MapHudPrefs.loadCatPluginEnabled(context))
-        if (MapHudPrefs.loadCatPluginEnabled(context)) {
-            applyCatNetworkFollow()
-        }
+        val disableReason =
+            withContext(Dispatchers.IO) {
+                CampingBootstrap.ensureInitialized(context)
+                CatBootstrap.ensureInitialized(context)
+                val want = MapHudPrefs.loadCampingPluginEnabled(context)
+                uniffi.navi.campingPluginSetEnabled(want)
+                val reason = uniffi.navi.campingPluginSessionDisabledReason()
+                uniffi.navi.catPluginSetEnabled(MapHudPrefs.loadCatPluginEnabled(context))
+                if (MapHudPrefs.loadCatPluginEnabled(context)) {
+                    applyCatNetworkFollow()
+                }
+                reason
+            }
+        campingSessionDisableMessage = disableReason
     }
 
     fun refreshCatUi() {
