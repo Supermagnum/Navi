@@ -1230,6 +1230,7 @@ private fun NaviMapScreen() {
         mutableStateOf(MapHudPrefs.loadCatPluginEnabled(context))
     }
     var showCatSheet by remember { mutableStateOf(false) }
+    var catRepeaterUpdateBusy by remember { mutableStateOf(false) }
     var catUi by remember {
         mutableStateOf(
             CatUiState(
@@ -6641,7 +6642,9 @@ private fun NaviMapScreen() {
                         applyCatNetworkFollow()
                     }
                 },
-                onUpdateRepeaters = {
+                onUpdateRepeaters = repeaterUpdate@{
+                    if (catRepeaterUpdateBusy) return@repeaterUpdate
+                    catRepeaterUpdateBusy = true
                     val payload =
                         org.json
                             .JSONObject()
@@ -6650,10 +6653,19 @@ private fun NaviMapScreen() {
                             .put("consensus", catUi.consensusRelocation)
                             .put("elev", java.io.File(dataDir, "elevation").absolutePath)
                             .toString()
-                    val msg = uniffi.navi.catPluginUpdateRepeatersFromServer(payload)
-                    catUi = catUi.copy(lastMessage = msg)
-                    refreshCatUi()
-                    status = "CAT repeater update: $msg"
+                    scope.launch {
+                        try {
+                            val msg =
+                                withContext(Dispatchers.IO) {
+                                    uniffi.navi.catPluginUpdateRepeatersFromServer(payload)
+                                }
+                            catUi = catUi.copy(lastMessage = msg)
+                            refreshCatUi()
+                            status = "CAT repeater update: $msg"
+                        } finally {
+                            catRepeaterUpdateBusy = false
+                        }
+                    }
                 },
                 onConsensusRelocationChange = { enabled ->
                     MapHudPrefs.saveCatConsensusRelocation(context, enabled)
@@ -6725,6 +6737,7 @@ private fun NaviMapScreen() {
                         .align(Alignment.BottomCenter)
                         .zIndex(5f)
                         .padding(start = 10.dp, end = 10.dp, bottom = 96.dp),
+                updateRepeatersBusy = catRepeaterUpdateBusy,
             )
         }
         if (showSpeedCameraPrompt) {

@@ -146,6 +146,7 @@ fun CatStatusSheet(
     onConsensusRelocationChange: (Boolean) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    updateRepeatersBusy: Boolean = false,
 ) {
     val connected =
         runCatching { JSONObject(state.statusJson).optBoolean("connected") }.getOrDefault(false)
@@ -216,6 +217,7 @@ fun CatStatusSheet(
             }
             OutlinedButton(
                 onClick = onUpdateRepeaters,
+                enabled = !updateRepeatersBusy,
                 modifier = Modifier.fillMaxWidth().testTag("cat_update_repeaters"),
             ) {
                 Text(stringResource(R.string.cat_update_repeaters))
