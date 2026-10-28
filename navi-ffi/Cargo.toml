@@ -15,6 +15,8 @@ name = "navi"
 default = []
 ## Link onboard Hamlib via navi-cat/ffi (Android native builds).
 hamlib-ffi = ["navi-cat/ffi", "dep:navi-hamlib-sys", "navi-hamlib-sys/link-hamlib"]
+## Allow Hamlib dummy (model 1) through Stable gating — debug / emulator CAT tests only.
+allow-dummy-rig = ["navi-cat/allow-dummy-rig"]
 ## Host diagnostic / corridor helper binaries.
 diag-bins = []
 ## Host regression gate (needs device long-trip packs). Off by default so a

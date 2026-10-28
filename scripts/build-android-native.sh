@@ -180,16 +180,46 @@ build_one_abi() {
     echo "  Continuing without hamlib-ffi (TCP-only CAT path)." >&2
   fi
 
+  # libhamlib.so is linked against the NDK C++ shared runtime; package it next
+  # to the ABI so the APK loads on emulator (x86_64) and device (arm64-v8a).
+  local CXX_SHARED_DST="$LIB_DST_DIR/libc++_shared.so"
+  local NDK_TRIPLE
+  case "$ABI_DIR" in
+    arm64-v8a) NDK_TRIPLE="aarch64-linux-android" ;;
+    x86_64) NDK_TRIPLE="x86_64-linux-android" ;;
+    armeabi-v7a) NDK_TRIPLE="arm-linux-androideabi" ;;
+    *) NDK_TRIPLE="" ;;
+  esac
+  if [[ -n "$NDK_TRIPLE" ]]; then
+    local CXX_SHARED_SRC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/$NDK_HOST_TAG/sysroot/usr/lib/$NDK_TRIPLE/libc++_shared.so"
+    if [[ -f "$CXX_SHARED_SRC" ]]; then
+      cp -f "$CXX_SHARED_SRC" "$CXX_SHARED_DST"
+      echo "Staged $CXX_SHARED_DST from NDK"
+    else
+      echo "warning: $CXX_SHARED_SRC missing; Hamlib may fail to dlopen" >&2
+    fi
+  fi
+
   local CARGO_FEATURES=()
   if [[ -f "$HAMLIB_DST" ]]; then
-    CARGO_FEATURES=(--features hamlib-ffi)
+    CARGO_FEATURES+=(hamlib-ffi)
     export RUSTFLAGS="${RUSTFLAGS:-} -L native=${LIB_DST_DIR}"
     echo "Enabling navi-ffi feature hamlib-ffi (link libhamlib)"
+  fi
+  # Debug/emulator CAT dummy-rig tests: NAVI_ALLOW_DUMMY_RIG=1
+  if [[ "${NAVI_ALLOW_DUMMY_RIG:-}" == "1" ]]; then
+    CARGO_FEATURES+=(allow-dummy-rig)
+    echo "Enabling navi-ffi feature allow-dummy-rig (Hamlib model 1)"
+  fi
+  local FEATURE_ARGS=()
+  if [[ ${#CARGO_FEATURES[@]} -gt 0 ]]; then
+    local IFS=,
+    FEATURE_ARGS=(--features "${CARGO_FEATURES[*]}")
   fi
 
   echo "Building navi-ffi for $TARGET ($PROFILE) with NDK $ANDROID_NDK_HOME ($NDK_HOST_TAG)..."
 
-  cargo build -p navi-ffi --target "$TARGET" "${CARGO_PROFILE_ARGS[@]}" "${CARGO_FEATURES[@]}" --lib
+  cargo build -p navi-ffi --target "$TARGET" "${CARGO_PROFILE_ARGS[@]}" "${FEATURE_ARGS[@]}" --lib
 
   local LIB_SRC="$ROOT/target/$TARGET/$PROFILE/libnavi.so"
   local LIB_DST_DIR="$ROOT/app/src/main/jniLibs/$ABI_DIR"

@@ -87,6 +87,44 @@ data class CatNetworkChip(
     val nearestKm: Double,
 )
 
+/**
+ * Build network chips from the CAT nearby-repeaters JSON.
+ *
+ * JSON `null` / missing `network_id` must not become a chip named `"null"`
+ * ([org.json.JSONObject.optString] stringifies JSON null that way). Those
+ * sites are covered by "Standalone repeaters (nearest)".
+ */
+fun networkNamesFromNearby(json: String): List<CatNetworkChip> {
+    val arr = runCatching { JSONArray(json) }.getOrNull() ?: return emptyList()
+    val counts = linkedMapOf<String, Int>()
+    val nearest = linkedMapOf<String, Double>()
+    for (i in 0 until arr.length()) {
+        val o = arr.optJSONObject(i) ?: continue
+        if (!o.optBoolean("position_accurate", true)) continue
+        if (o.optBoolean("exclude_recommended", false)) continue
+        val name = o.optString("network_id").trim()
+        if (name.isEmpty() || name.equals("null", ignoreCase = true)) continue
+        val dist = o.optDouble("distance_km", Double.NaN)
+        if (!dist.isFinite() || dist > 150.0) continue
+        val modulation = o.optString("modulation")
+        if (modulation.contains("DMR", ignoreCase = true) ||
+            modulation.contains("DSTAR", ignoreCase = true) ||
+            modulation.contains("D-STAR", ignoreCase = true) ||
+            modulation.contains("C4FM", ignoreCase = true) ||
+            modulation.contains("APRS", ignoreCase = true)
+        ) {
+            continue
+        }
+        counts[name] = (counts[name] ?: 0) + 1
+        val prev = nearest[name]
+        if (prev == null || dist < prev) nearest[name] = dist
+    }
+    return counts.keys
+        .map { name ->
+            CatNetworkChip(name, counts[name] ?: 0, nearest[name] ?: 0.0)
+        }.sortedBy { it.nearestKm }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CatStatusSheet(

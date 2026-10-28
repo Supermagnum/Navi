@@ -12,7 +12,7 @@ use std::sync::{Mutex, OnceLock};
 use navi_cat::gating::{GateDecision, GateStatus};
 use navi_cat::program::{program_vfo1_verified, ProgramRequest};
 use navi_cat::types::{RigBackend, RigError, VfoState};
-use navi_cat::{CatService, RepeaterDb, TcpRigBackend};
+use navi_cat::{CatService, FfiRigBackend, RepeaterDb, TcpRigBackend};
 use navi_plugin_host::{
     cranelift_abi_supported, plugin_set_enabled, Capability, FilePluginKv, HostApi, PluginHost,
     PluginKvStatus, PluginLimits, PoiWrite, Position, DEFAULT_MEMORY_BYTES,
@@ -64,6 +64,7 @@ impl RigBackend for OfflineRig {
 enum LiveBackend {
     Offline(OfflineRig),
     Tcp(TcpRigBackend),
+    Ffi(FfiRigBackend),
 }
 
 impl RigBackend for LiveBackend {
@@ -71,54 +72,63 @@ impl RigBackend for LiveBackend {
         match self {
             Self::Offline(b) => b.is_connected(),
             Self::Tcp(b) => b.is_connected(),
+            Self::Ffi(b) => b.is_connected(),
         }
     }
     fn model_name(&self) -> String {
         match self {
             Self::Offline(b) => b.model_name(),
             Self::Tcp(b) => b.model_name(),
+            Self::Ffi(b) => b.model_name(),
         }
     }
     fn model_number(&self) -> i32 {
         match self {
             Self::Offline(b) => b.model_number(),
             Self::Tcp(b) => b.model_number(),
+            Self::Ffi(b) => b.model_number(),
         }
     }
     fn gate(&self) -> GateDecision {
         match self {
             Self::Offline(b) => b.gate(),
             Self::Tcp(b) => b.gate(),
+            Self::Ffi(b) => b.gate(),
         }
     }
     fn get_ptt(&mut self) -> Result<bool, RigError> {
         match self {
             Self::Offline(b) => b.get_ptt(),
             Self::Tcp(b) => b.get_ptt(),
+            Self::Ffi(b) => b.get_ptt(),
         }
     }
     fn get_dcd(&mut self) -> Result<bool, RigError> {
         match self {
             Self::Offline(b) => b.get_dcd(),
             Self::Tcp(b) => b.get_dcd(),
+            Self::Ffi(b) => b.get_dcd(),
         }
     }
     fn set_vfo_state(&mut self, want: &VfoState) -> Result<(), RigError> {
         match self {
             Self::Offline(b) => b.set_vfo_state(want),
             Self::Tcp(b) => b.set_vfo_state(want),
+            Self::Ffi(b) => b.set_vfo_state(want),
         }
     }
     fn read_vfo_state(&mut self) -> Result<VfoState, RigError> {
         match self {
             Self::Offline(b) => b.read_vfo_state(),
             Self::Tcp(b) => b.read_vfo_state(),
+            Self::Ffi(b) => b.read_vfo_state(),
         }
     }
     fn freq_step_hz(&self) -> u64 {
         match self {
             Self::Offline(b) => b.freq_step_hz(),
             Self::Tcp(b) => b.freq_step_hz(),
+            Self::Ffi(b) => b.freq_step_hz(),
         }
     }
 }
@@ -342,6 +352,31 @@ pub fn cat_plugin_connect_tcp(host: String, port: u16, allow_beta: bool) -> Stri
             cat.follow_stopped_reason = follow_stop;
             session.cat = cat;
             "OK: connected".into()
+        }
+        Err(e) => format!("FAIL: {e}"),
+    }
+}
+
+/// Open the onboard Hamlib library (Android `libhamlib.so`) for `model`.
+/// Used for the Hamlib dummy (model 1) on the emulator and for direct FFI radios.
+#[uniffi::export]
+pub fn cat_plugin_connect_ffi(model: i32, allow_beta: bool) -> String {
+    let mut guard = session_lock().lock().expect("cat session");
+    let Some(session) = guard.as_mut() else {
+        return "FAIL: not configured".into();
+    };
+    match FfiRigBackend::open(model, allow_beta) {
+        Ok(ffi) => {
+            let follow_net = session.cat.follow_network_id.clone();
+            let follow_pin = session.cat.follow_pinned.clone();
+            let follow_stop = session.cat.follow_stopped_reason.clone();
+            let db = open_db(&session.files_dir);
+            let mut cat = CatService::new(LiveBackend::Ffi(ffi), db);
+            cat.follow_network_id = follow_net;
+            cat.follow_pinned = follow_pin;
+            cat.follow_stopped_reason = follow_stop;
+            session.cat = cat;
+            format!("OK: connected ffi model={model}")
         }
         Err(e) => format!("FAIL: {e}"),
     }

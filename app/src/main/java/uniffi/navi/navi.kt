@@ -1157,6 +1157,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_configure(
     ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_connect_ffi(
+    ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_connect_tcp(
     ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_disconnect(
@@ -1730,6 +1732,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_configure(`filesDir`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`timezone`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    external fun uniffi_navi_fn_func_cat_plugin_connect_ffi(`model`: Int,`allowBeta`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_connect_tcp(`host`: RustBuffer.ByValue,`port`: Short,`allowBeta`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_disconnect(uniffi_out_err: UniffiRustCallStatus, 
@@ -2565,6 +2569,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_cat_plugin_configure() and 0xFFFF) != 24407) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_connect_ffi() and 0xFFFF) != 34348) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_cat_plugin_connect_tcp() and 0xFFFF) != 56713) {
@@ -9967,6 +9974,22 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         FfiConverterString.lower(`timezone`),_status)
 }
     
+    
+
+        /**
+         * Open the onboard Hamlib library (Android `libhamlib.so`) for `model`.
+         * Used for the Hamlib dummy (model 1) on the emulator and for direct FFI radios.
+         */ fun `catPluginConnectFfi`(`model`: kotlin.Int, `allowBeta`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_connect_ffi(
+    
+        
+        FfiConverterInt.lower(`model`),
+        FfiConverterBoolean.lower(`allowBeta`),_status)
+}
+    )
+    }
     
  fun `catPluginConnectTcp`(`host`: kotlin.String, `port`: kotlin.UShort, `allowBeta`: kotlin.Boolean): kotlin.String {
             return FfiConverterString.lift(

@@ -8,6 +8,7 @@ import android.graphics.BitmapFactory
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -203,6 +204,10 @@ class MainActivity : ComponentActivity() {
             SystemClock.uptimeMillis() - splashStartedAtMs < SPLASH_MAX_HOLD_MS
         }
         super.onCreate(savedInstanceState)
+        // Volume rocker / emulator media mute must control STREAM_MUSIC.
+        // Do not use STREAM_ALARM (or other always-audible streams) for app
+        // cues — that path was removed with ImuAlarmAudio and must not return.
+        volumeControlStream = AudioManager.STREAM_MUSIC
         // Inject pins are in-memory only. Drop leftovers from a previous
         // activity in this process; this launch may set a new one via extras.
         NaviMapTestHooks.clearDebugGpsInject()
@@ -1271,37 +1276,6 @@ private fun NaviMapScreen() {
         if (MapHudPrefs.loadCatPluginEnabled(context)) {
             applyCatNetworkFollow()
         }
-    }
-
-    fun networkNamesFromNearby(json: String): List<CatNetworkChip> {
-        val arr = runCatching { org.json.JSONArray(json) }.getOrNull() ?: return emptyList()
-        val counts = linkedMapOf<String, Int>()
-        val nearest = linkedMapOf<String, Double>()
-        for (i in 0 until arr.length()) {
-            val o = arr.optJSONObject(i) ?: continue
-            if (!o.optBoolean("position_accurate", true)) continue
-            if (o.optBoolean("exclude_recommended", false)) continue
-            val name = o.optString("network_id")
-            if (name.isBlank()) continue
-            val dist = o.optDouble("distance_km", Double.NaN)
-            if (!dist.isFinite() || dist > 150.0) continue
-            val modulation = o.optString("modulation")
-            if (modulation.contains("DMR", ignoreCase = true) ||
-                modulation.contains("DSTAR", ignoreCase = true) ||
-                modulation.contains("D-STAR", ignoreCase = true) ||
-                modulation.contains("C4FM", ignoreCase = true) ||
-                modulation.contains("APRS", ignoreCase = true)
-            ) {
-                continue
-            }
-            counts[name] = (counts[name] ?: 0) + 1
-            val prev = nearest[name]
-            if (prev == null || dist < prev) nearest[name] = dist
-        }
-        return counts.keys
-            .map { name ->
-                CatNetworkChip(name, counts[name] ?: 0, nearest[name] ?: 0.0)
-            }.sortedBy { it.nearestKm }
     }
 
     fun refreshCatUi() {
@@ -6697,10 +6671,16 @@ private fun NaviMapScreen() {
                             baudRate = catUi.baudRate,
                             rigModel = catUi.rigModel,
                         )
-                    val port = (catUi.port.toIntOrNull() ?: 4532).coerceIn(1, 65535).toUShort()
                     val msg =
-                        uniffi.navi.catPluginConnectTcp(catUi.host, port, false) +
-                            " (model=${openParams.rigModel}, baud=${openParams.baudRate})"
+                        if (openParams.rigModel == 1) {
+                            // Hamlib dummy (model 1): onboard libhamlib.so via FFI.
+                            uniffi.navi.catPluginConnectFfi(openParams.rigModel, false)
+                        } else {
+                            val port =
+                                (catUi.port.toIntOrNull() ?: 4532).coerceIn(1, 65535).toUShort()
+                            uniffi.navi.catPluginConnectTcp(catUi.host, port, false) +
+                                " (model=${openParams.rigModel}, baud=${openParams.baudRate})"
+                        }
                     catUi = catUi.copy(lastMessage = msg)
                     refreshCatUi()
                     status = msg
