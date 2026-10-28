@@ -88,10 +88,7 @@ pub fn lonlat_to_tile(lon: f64, lat: f64, z: u8) -> (u32, u32) {
     let lat_rad = lat.to_radians();
     let y = ((1.0 - lat_rad.tan().asinh() / std::f64::consts::PI) / 2.0 * n).floor() as i64;
     let max = (n as i64) - 1;
-    (
-        x.clamp(0, max) as u32,
-        y.clamp(0, max) as u32,
-    )
+    (x.clamp(0, max) as u32, y.clamp(0, max) as u32)
 }
 
 fn maybe_gunzip(bytes: &[u8]) -> Vec<u8> {
@@ -178,7 +175,10 @@ fn feature_matches(tags: &HashMap<String, String>, local_name: &str, road_ref: &
         }
     }
     // Ref-only labels (motorways): match ref when local name empty.
-    if want_name.is_empty() && !want_ref.is_empty() && !feat_ref.is_empty() && names_match(want_ref, feat_ref)
+    if want_name.is_empty()
+        && !want_ref.is_empty()
+        && !feat_ref.is_empty()
+        && names_match(want_ref, feat_ref)
     {
         return true;
     }
@@ -186,10 +186,7 @@ fn feature_matches(tags: &HashMap<String, String>, local_name: &str, road_ref: &
 }
 
 fn localized_from_tags(tags: &HashMap<String, String>, locale: &str) -> Option<String> {
-    let borrowed: NameTags<'_> = tags
-        .iter()
-        .map(|(k, v)| (k.as_str(), v.as_str()))
-        .collect();
+    let borrowed: NameTags<'_> = tags.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     localized_name(&borrowed, locale)
 }
 
@@ -248,11 +245,7 @@ pub fn build_route_road_name_cache(
 
 /// Apply cache to a street string: if `street` equals local name (and we have a
 /// localized form), return localized; else return `street` unchanged.
-pub fn apply_cached_street(
-    street: &str,
-    road_ref: &str,
-    cache: &RouteRoadNameCache,
-) -> String {
+pub fn apply_cached_street(street: &str, road_ref: &str, cache: &RouteRoadNameCache) -> String {
     if let Some(loc) = cache.get(street, road_ref) {
         return loc.to_string();
     }
@@ -266,11 +259,7 @@ pub fn apply_cached_street(
 ///
 /// Each object may have `street`, `lat`, `lon`. Optional top-level `ref` is
 /// unused; matching uses street as local name.
-pub fn localize_maneuvers_json(
-    pmtiles: &Path,
-    locale: &str,
-    maneuvers_json: &str,
-) -> String {
+pub fn localize_maneuvers_json(pmtiles: &Path, locale: &str, maneuvers_json: &str) -> String {
     let Ok(mut arr) = serde_json::from_str::<Vec<serde_json::Value>>(maneuvers_json) else {
         return maneuvers_json.to_string();
     };
@@ -317,11 +306,7 @@ pub fn localize_maneuvers_json(
 }
 
 /// Localize sim-sample `street` fields the same way (route summary / current road).
-pub fn localize_sim_samples_json(
-    pmtiles: &Path,
-    locale: &str,
-    samples_json: &str,
-) -> String {
+pub fn localize_sim_samples_json(pmtiles: &Path, locale: &str, samples_json: &str) -> String {
     let Ok(mut arr) = serde_json::from_str::<Vec<serde_json::Value>>(samples_json) else {
         return samples_json.to_string();
     };

@@ -620,11 +620,7 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
                 if opts.control.is_cancelled() {
                     anyhow::bail!("cancelled");
                 }
-                download_progress::set(
-                    1,
-                    Some(total_steps),
-                    "navi.msg.build_indexed_graphs",
-                );
+                download_progress::set(1, Some(total_steps), "navi.msg.build_indexed_graphs");
                 let t_graphs = Instant::now();
                 let entries_by_profile: Arc<Mutex<BTreeMap<String, Vec<GraphTileEntry>>>> =
                     Arc::new(Mutex::new(ck.graph_tiles.clone()));
@@ -794,7 +790,10 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
                 download_progress::set(
                     (i + 1) as u64,
                     Some(total_steps),
-                    &crate::i18n::messages::encode1(crate::i18n::messages::codes::BUILD_GRAPH, &key),
+                    &crate::i18n::messages::encode1(
+                        crate::i18n::messages::codes::BUILD_GRAPH,
+                        &key,
+                    ),
                 );
                 let t_graph = Instant::now();
                 let graph = RouteGraph::build_from_pbf_bbox(&opts.pbf, *profile, region_bbox)?;

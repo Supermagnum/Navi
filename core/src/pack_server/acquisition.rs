@@ -718,7 +718,10 @@ pub fn ensure_indexed_packs_prefer_server(
         );
     }
 
-    let progress_label = crate::i18n::messages::encode1(crate::i18n::messages::codes::REBUILD_LOCAL, &rebuild_reason);
+    let progress_label = crate::i18n::messages::encode1(
+        crate::i18n::messages::codes::REBUILD_LOCAL,
+        &rebuild_reason,
+    );
     crate::download::progress::set(0, None, &progress_label);
     let mut opts = ConvertOptions::new(data_dir, pbf);
     opts.elev_dir = elev_dir.map(PathBuf::from);

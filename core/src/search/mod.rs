@@ -11,11 +11,11 @@ use rusqlite::{params, Connection, OptionalExtension, Result as SqlResult};
 use crate::download::phase_timing;
 use crate::storage::Storage;
 
-mod place_context;
 mod localized_store;
+mod place_context;
 
-pub use place_context::{format_place_display, PLACE_INDEX_SCHEMA_VERSION};
 pub use localized_store::{display_name_for_locale, set_place_search_locale};
+pub use place_context::{format_place_display, PLACE_INDEX_SCHEMA_VERSION};
 
 /// Place-index `kind` for OSM `building=*` + `name=*` (no amenity/shop/place).
 pub const NAMED_BUILDING_KIND: &str = "building";
@@ -857,7 +857,11 @@ impl NameIndex {
         // Avoid mmap of torn pages during checkpoint.
         let _ = conn.execute_batch("PRAGMA mmap_size=0;");
         match conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
         }) {
             Ok((busy, log, ckpt)) => {
                 log::info!(
@@ -1885,7 +1889,9 @@ impl NameIndex {
         let centroids_t0 = phase_timing::start("place_index.way_centroids");
         let mut way_hits = 0usize;
         let centroid_total = way_jobs.len();
-        for (i, (way_id, name, search_doc, kind, names_json, refs)) in way_jobs.into_iter().enumerate() {
+        for (i, (way_id, name, search_doc, kind, names_json, refs)) in
+            way_jobs.into_iter().enumerate()
+        {
             let mut sum_lat = 0.0;
             let mut sum_lon = 0.0;
             let mut n = 0usize;
@@ -1939,7 +1945,15 @@ impl NameIndex {
                 route_hits = routes.len();
                 for r in routes {
                     let search_doc = search_doc_with_fold_aliases(&r.name);
-                    batch.push((r.osm_id, r.name, search_doc, r.kind, String::new(), r.lat, r.lon));
+                    batch.push((
+                        r.osm_id,
+                        r.name,
+                        search_doc,
+                        r.kind,
+                        String::new(),
+                        r.lat,
+                        r.lon,
+                    ));
                 }
             }
             Err(e) if e.to_string().contains(PLACE_INDEX_PAUSED_PREFIX) => {

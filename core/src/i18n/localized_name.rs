@@ -73,9 +73,38 @@ fn language_is_latin_script(lang: &str) -> bool {
     // Non-Latin UI languages we care about for the Latin-fallback branch.
     !matches!(
         l.as_str(),
-        "ar" | "fa" | "ur" | "he" | "yi" | "hi" | "mr" | "ne" | "bn" | "pa" | "gu" | "ta"
-            | "te" | "kn" | "ml" | "si" | "th" | "lo" | "my" | "ka" | "hy" | "am" | "ti"
-            | "zh" | "ja" | "ko" | "ru" | "uk" | "be" | "bg" | "sr" | "mk" | "el"
+        "ar" | "fa"
+            | "ur"
+            | "he"
+            | "yi"
+            | "hi"
+            | "mr"
+            | "ne"
+            | "bn"
+            | "pa"
+            | "gu"
+            | "ta"
+            | "te"
+            | "kn"
+            | "ml"
+            | "si"
+            | "th"
+            | "lo"
+            | "my"
+            | "ka"
+            | "hy"
+            | "am"
+            | "ti"
+            | "zh"
+            | "ja"
+            | "ko"
+            | "ru"
+            | "uk"
+            | "be"
+            | "bg"
+            | "sr"
+            | "mk"
+            | "el"
     )
 }
 
@@ -85,11 +114,7 @@ fn locale_parts(locale: &str) -> (String, String) {
         return ("en".into(), "en".into());
     }
     let lower = raw.to_ascii_lowercase();
-    let lang = lower
-        .split('-')
-        .next()
-        .unwrap_or("en")
-        .to_string();
+    let lang = lower.split('-').next().unwrap_or("en").to_string();
     // Preserve region case for tag keys: OSM uses name:nb, name:en; full tags rare.
     let full = lower;
     (full, lang)
@@ -130,7 +155,11 @@ pub fn localized_name_with_secondary(tags: &NameTags<'_>, locale: &str) -> Optio
     if full.contains('-') {
         let parts: Vec<_> = full.split('-').collect();
         if parts.len() >= 2 {
-            candidates.push(format!("name:{}-{}", parts[0], parts[1].to_ascii_uppercase()));
+            candidates.push(format!(
+                "name:{}-{}",
+                parts[0],
+                parts[1].to_ascii_uppercase()
+            ));
         }
     }
 
@@ -141,10 +170,7 @@ pub fn localized_name_with_secondary(tags: &NameTags<'_>, locale: &str) -> Optio
 
     let mut primary = pick_from_tags(
         tags,
-        &candidates
-            .iter()
-            .map(|s| s.as_str())
-            .collect::<Vec<_>>(),
+        &candidates.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
     )
     .map(|s| s.to_string());
 
@@ -154,8 +180,8 @@ pub fn localized_name_with_secondary(tags: &NameTags<'_>, locale: &str) -> Optio
             .as_deref()
             .is_some_and(|n| !is_mostly_latin_script(n));
         if local_non_latin || local_name.is_none() {
-            primary = pick_from_tags(tags, &["int_name", "name:en", "name:latin"])
-                .map(|s| s.to_string());
+            primary =
+                pick_from_tags(tags, &["int_name", "name:en", "name:latin"]).map(|s| s.to_string());
         }
     }
 
@@ -191,10 +217,7 @@ mod tests {
             ("name:nb-NO", "Oslo NB-NO"),
             ("name:nb", "Oslo NB"),
         ]);
-        assert_eq!(
-            localized_name(&t, "nb-NO").as_deref(),
-            Some("Oslo NB-NO")
-        );
+        assert_eq!(localized_name(&t, "nb-NO").as_deref(), Some("Oslo NB-NO"));
         let t2 = tags(&[("name", "Oslo"), ("name:nb", "Oslo NB")]);
         assert_eq!(localized_name(&t2, "nb-NO").as_deref(), Some("Oslo NB"));
     }
@@ -236,17 +259,17 @@ mod tests {
 
     #[test]
     fn arabic_ui_keeps_local_name() {
-        let t = tags(&[("name", "تونس"), ("name:en", "Tunis"), ("int_name", "Tunis")]);
+        let t = tags(&[
+            ("name", "تونس"),
+            ("name:en", "Tunis"),
+            ("int_name", "Tunis"),
+        ]);
         assert_eq!(localized_name(&t, "ar").as_deref(), Some("تونس"));
     }
 
     #[test]
     fn arabic_ui_prefers_name_ar() {
-        let t = tags(&[
-            ("name", "Tunis"),
-            ("name:ar", "تونس"),
-            ("name:en", "Tunis"),
-        ]);
+        let t = tags(&[("name", "Tunis"), ("name:ar", "تونس"), ("name:en", "Tunis")]);
         assert_eq!(localized_name(&t, "ar-TN").as_deref(), Some("تونس"));
     }
 

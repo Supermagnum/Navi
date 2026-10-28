@@ -248,7 +248,10 @@ fn download_place_source(
     download_progress::set(
         0,
         Some(listed.bytes.max(1)),
-        &crate::i18n::messages::encode1(crate::i18n::messages::codes::DOWNLOAD_PLACE_SOURCE, &region_id),
+        &crate::i18n::messages::encode1(
+            crate::i18n::messages::codes::DOWNLOAD_PLACE_SOURCE,
+            &region_id,
+        ),
     );
     let n = crate::routing::region::download_file(&url, &partial)
         .map_err(|e| format!("place-source download: {e:#}"))?;
