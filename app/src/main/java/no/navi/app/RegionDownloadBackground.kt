@@ -329,8 +329,11 @@ object RegionDownloadBackground {
      * Set [lastStatus] so the line always names the active region (and N-of-M
      * when a long-trip corridor plan is present).
      */
-    private fun appStr(context: Context, id: Int, vararg args: Any): String =
-        if (args.isEmpty()) context.getString(id) else context.getString(id, *args)
+    private fun appStr(
+        context: Context,
+        id: Int,
+        vararg args: Any,
+    ): String = if (args.isEmpty()) context.getString(id) else context.getString(id, *args)
 
     private fun setStatus(
         message: String,

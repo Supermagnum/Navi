@@ -1643,12 +1643,12 @@ fun DriveSettingsSheet(
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-            if (preferLiters) {
-                stringResource(R.string.units_liters)
-            } else {
-                stringResource(R.string.units_gallons)
-            },
-        )
+                        if (preferLiters) {
+                            stringResource(R.string.units_liters)
+                        } else {
+                            stringResource(R.string.units_gallons)
+                        },
+                    )
                     Switch(
                         checked = preferLiters,
                         onCheckedChange = { preferLiters = it },

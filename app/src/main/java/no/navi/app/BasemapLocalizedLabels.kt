@@ -1,10 +1,10 @@
 package no.navi.app
 
 import android.util.Log
+import org.maplibre.android.maps.Style
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.layers.SymbolLayer
-import org.maplibre.android.maps.Style
 import java.util.Locale
 
 /**
@@ -17,9 +17,39 @@ object BasemapLocalizedLabels {
     /** Languages whose UI orthography is treated as Latin for fallback inserts. */
     private val NON_LATIN_LANGS =
         setOf(
-            "ar", "fa", "ur", "he", "yi", "hi", "mr", "ne", "bn", "pa", "gu", "ta",
-            "te", "kn", "ml", "si", "th", "lo", "my", "ka", "hy", "am", "ti", "zh",
-            "ja", "ko", "ru", "uk", "be", "bg", "sr", "mk", "el",
+            "ar",
+            "fa",
+            "ur",
+            "he",
+            "yi",
+            "hi",
+            "mr",
+            "ne",
+            "bn",
+            "pa",
+            "gu",
+            "ta",
+            "te",
+            "kn",
+            "ml",
+            "si",
+            "th",
+            "lo",
+            "my",
+            "ka",
+            "hy",
+            "am",
+            "ti",
+            "zh",
+            "ja",
+            "ko",
+            "ru",
+            "uk",
+            "be",
+            "bg",
+            "sr",
+            "mk",
+            "el",
         )
 
     /**
