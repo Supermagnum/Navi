@@ -67,4 +67,14 @@ Option C (place-source highway sidecar) was dropped — see `names.md`.
 Host Geofabrik trial (same PBF ~80 MB): peak process VmHWM ≈ **207 MiB**,
 indexed 51 448 rows. On-device PlaceIndexReady earlier logged peak_rss around
 **~460 MB** during the tablet build (see session logs); after PASS the toxic
-WAL was ~372 MB until checkpointed.
+WAL was ~372 MB until checkpointed. After checkpoint the main
+`place_index.db` on SM-P613 grew to ~2.2 GB (multi-region FTS); cold start under
+low free RAM can still ANR for unrelated main-thread work — empty-WAL skip
+removes the recover open from that path.
+
+## Matrix notes (SM-P613, tip `3039a3bbf`)
+
+See conversation PART B/C. Tunisia UI delete (#156) cleared `africa/tunisia`
+from `place-index-ready.json` and removed Tunisia packs; Norway rows/search
+remained. Live locale change: `PlaceIndexBg action=unchanged` / `cache_hit`
+only — no rebuild.
