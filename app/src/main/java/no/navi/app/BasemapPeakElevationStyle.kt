@@ -148,16 +148,16 @@ object BasemapPeakElevationStyle {
                 Expression.has("elevation"),
             ),
             Expression.concat(
-                Expression.coalesce(Expression.get("name"), Expression.literal("")),
+                BasemapLocalizedLabels.nameCoalesce(),
                 Expression.literal("\n"),
                 height,
             ),
-            Expression.get("name"),
+            BasemapLocalizedLabels.nameCoalesce(),
         )
     }
 
     private fun libertyTextField(unitSystem: UnitSystem): Expression {
-        val name = Expression.coalesce(Expression.get("name"), Expression.literal(""))
+        val name = BasemapLocalizedLabels.nameCoalesce()
         return if (unitSystem == UnitSystem.IMPERIAL_US) {
             Expression.switchCase(
                 Expression.has("ele_ft"),

@@ -13,6 +13,7 @@ pub mod datex;
 pub mod download;
 pub mod ecu;
 pub mod export;
+pub mod i18n;
 pub mod icons;
 pub mod long_trip;
 pub mod nav;
