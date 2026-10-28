@@ -1,106 +1,87 @@
 # Bad Bevensen to Dalsoren MobileHome campaign
 
-Emulator **Navi_8c_4G_128G** (`emulator-5554` only) ran with **6 cores** (guest `nproc` 6, CPUs online `0-5`). That is the emulator maximum, instead of the AVD's configured 8. Tablet R52TB0JQEDE was not used. AVD `Navi_8c_4G_128G_old` was not touched.
+## Latest — 2026-10-28 06:34 (stopped; no route)
 
-APK for this attempt: commit **`44057d4ee6e2475b8314ef677e426f11a7c957d2`**, SHA-256 **`7ad3297d20f5472d0230aef32120e06411c885c5769f829bd55674a4770b73ca`** (`app-debug.apk`, 43878485 bytes, x86_64). Device `pm path` hash matched that value at plan click. `lastUpdateTime=2026-10-28 06:17:42`. Catalog generation **`20261028T040556Z-2275792-d248bf27`** (unchanged; `europe/germany/schleswig-holstein` still published). Puttgarden coverage was not re-probed because the catalog id did not change.
+Emulator **Navi_8c_4G_128G** ran with **6 cores** (guest `nproc` 6, CPUs online `0-5`, emulator maximum) instead of 8. It was not relaunched and was not wiped. Tablet R52TB0JQEDE was not used. `adb -s emulator-5554` only.
 
-This was started as a clean run from deleted regions. **No app or plugin code was changed after that APK was installed.** The run did not finish a route.
+App binary frozen for the run:
 
-## Stop point
+- Commit `44057d4ee6e2475b8314ef677e426f11a7c957d2` (CAT). Repeater Update runs `catPluginUpdateRepeatersFromServer` on `Dispatchers.IO` and disables the Update control while that job runs. That commit is before the run.
+- APK SHA-256 `7ad3297d20f5472d0230aef32120e06411c885c5769f829bd55674a4770b73ca` (debug, `x86_64`, versionName 0.3.26-beta). Installed 2026-10-28 06:15. The same hash was still on the device after the test APK install. The app was not rebuilt or reinstalled after that.
+- Catalog generation `20261028T040556Z-2275792-d248bf27` (unchanged). Puttgarden remains inside published `europe/germany/schleswig-holstein` on that catalog. The catalog id was re-checked and matched, so tile coverage was not re-probed.
 
-`2026-10-28 06:21:01` logcat `NaviRouting: planning_refused reason=region_missing message=53.07969, 10.58720 is not in a downloaded region`.
+No app or plugin code changed during the run. The instrumented test was later adjusted so a stale status line containing "off" cannot click the long-trip switch when the saved pref is already on. That test change is not in the frozen app APK.
 
-The campaign test then sat in its progress loop with `Long trip off (installed packs kept)`, `corridor_ready=false`, `polyline_chars=0`, `distance_km=0`. The instrumentation wait was stopped after that refusal so it would not sit until the 20 hour deadline. The app was force-stopped. No data wipe.
+This was not a finished clean plan. Regions were partly deleted, long trip was on, one Plan click started corridor downloads, and the app process was killed before any route existed.
 
-The UI showed a dialog: "Map data needed. Germany is not downloaded." Buttons: **Not now** and **Download Germany**. Download Germany was not pressed. Manual region download is not part of this run. That dialog is not a long-trip re-plan.
+### Stop point
 
-## Why long trip was off
+2026-10-28 06:34:39.855. ActivityManager:
 
-The harness turned long trip off for the Tools delete, then clicked it on (`prefsOn` became true). Immediately before Plan the status line was still `Long trip off (installed packs kept)` while `long_trip_enabled` was already true. The harness treats any status line containing "off" as a reason to click the toggle. That click turned the pref **off**. After the run, `long_trip_enabled=false`. Plan was clicked in that state, so the app refused the origin instead of auto-downloading the corridor.
+`Killing 18880:no.navi.app/u0a209 (adj 0): stop no.navi.app due to start instr`
 
-## CAT (not changed by this run)
+A second `am instrument` of `LongTripMobileHomeBevensenDalsorenUiCampaignTest` started at 06:34 and force-stopped the app. Last campaign progress, 06:34:17, pid 18880:
 
-Update was not pressed. The previous Update ANR is why the UI-thread hang was fixed in `44057d4ee` before this install; this run did not need Update. Drop folder `Android/data/no.navi.app/files/repeaters/` still has the seven source KML files plus `README.txt`: `Sachsenlink.kml`, `denmark.kml`, `funknetz.kml`, `germany.kml`, `kaxi.kml`, `repeaters_2610270617.kml`, `repeaters_sweden.kml`. The source `klm/` directory has those same seven KML files. `cat_drop_imported=true`. Prefs left as found: `cat_plugin_enabled=true`, `cat_network_choice=auto`, `cat_rig_model=1`, `cat_backend=hamlib`. No CAT sheet, Connect, Disconnect, Refresh, or `cat_*` writes.
+`Niedersachsen (1 of 9)=Indexed · Schleswig-Holstein (2 of 9)=Downloading · Denmark (3 of 9)=Downloading · Skåne (4 of 9)=Downloading · Halland (5 of 9)=Downloading · Västra Götaland (6 of 9)=Downloading · Ostlandet (7 of 9)=Downloading · Sorlandet (8 of 9)=Indexed · Vestlandet (9 of 9)=Downloading`
 
-## Regions before and after
+`corridor_ready=false`, `polyline_chars=0`, `distance_km=0`, `report_has_pass=false`.
 
-Before any wipe, SD `/storage/BF1B-9F0E/Android/data/no.navi.app/files/long-trip-packs` was **16G** (`du -sh`). File-byte sums from `ls`:
+That second instrument then opened the CAT sheet and clicked Update at 06:35:10. This run stopped that process. It was not a route re-plan and it produced no route. This agent did not press Update, did not open the CAT sheet, and did not connect a radio.
+
+### Regions
+
+Before any wipe this morning, SD `/storage/BF1B-9F0E/Android/data/no.navi.app/files/long-trip-packs` was **16G** (`du -sh`). File-byte sums from `ls -l` at that time:
 
 | Stem | Bytes |
 |---|---|
-| niedersachsen | 3523203885 |
-| denmark | 3464017696 |
-| ostlandet | 3136425019 |
-| vestlandet | 1501566363 |
-| place_index.db | 1437216768 |
-| schleswig-holstein | 1038217774 |
-| vastra_gotaland | 1011594923 |
-| sweden | 942926646 |
-| skane | 489086264 |
-| sorlandet | 405542552 |
-| halland | 192215922 |
-| elevation directory | about 122M (`du -sh`, not in the flat file sum) |
+| niedersachsen | 3,523,203,885 |
+| denmark | 3,464,017,696 |
+| ostlandet | 3,136,425,019 |
+| vestlandet | 1,501,566,363 |
+| place_index.db | 1,437,216,768 |
+| schleswig-holstein | 1,038,217,774 |
+| vastra_gotaland | 1,011,594,923 |
+| sweden | 942,926,646 |
+| skane | 489,086,264 |
+| sorlandet | 405,542,552 |
+| halland | 192,215,922 |
 
-Internal `files/long-trip-packs` was empty (8.0K directory).
+Elevation directory about 122M. Internal `files/long-trip-packs` was empty (8.0K). Host free space stayed above 10 GB (`/` about 40G, data drive 31G down to 25G). GPS feeding was not paused.
 
-A UI delete pass that started on the previous binary had already removed Denmark and Niedersachsen before this APK's test began (directory about 10G, PBFs left: ostlandet, schleswig-holstein, sorlandet, sweden, vestlandet). The test on this APK then deleted through Tools. Sorlandet and Hedmark failed because `field_geofabrik_path` was gone (`Failed to perform text input`).
+The Tools UI wipe did not finish. Text input on the Geofabrik field failed after Schleswig-Holstein, so Sorlandet was not deleted and stayed Indexed (pbf still the 04:07 file, 74M). At the kill, Niedersachsen had been re-downloaded (pbf 485M, 06:32) and other corridor regions were still Downloading. Directory size then was about 6.9G to 7.5G, with those two `*.osm.pbf` files visible. Internal pack dir still empty.
 
-After the test, SD still had `sorlandet-latest.osm.pbf` and Sorlandet graph, ferry, wetland, and manifest files, plus `ostlandet-latest.navi-corridor-skeleton.bin` and `.meta`, plus `elevation`, `graph-cache`, `navi.db`, `place_index.db`, `place-index-ready.json`, `place_index_quick_check.txt`, `region_meta.json`. Internal `files/long-trip-packs` was empty. The UI did not show an empty installed-region list; it showed the Germany download dialog. The wipe was not complete.
+### CAT
 
-Host disk at start and at stop: `/` 40G free, data drive 31G free. Neither dropped below 10G. No files were deleted to make room.
+Update was not pressed as setup. Drop folder `Android/data/no.navi.app/files/repeaters` had 7 KML files plus README: Sachsenlink, denmark, funknetz, germany, kaxi, repeaters_2610270617, repeaters_sweden. `cat_drop_imported=true`. Prefs after the killed run: `cat_plugin_enabled=true`, `cat_network_choice=auto`, `cat_backend=hamlib`, `cat_rig_model=1`, `long_trip_enabled=true`, `long_trip_pack_volume_id=uuid:BF1B-9F0E`. No consensus key (still off). Nothing was connected.
 
-GPS: `adb -s emulator-5554 emu geo fix 10.587198 53.079686` (longitude, latitude). Map camera at refusal was about 53.07969 N, 10.58720 E. No map swipe, drag, pinch, or fling.
+### DATEX
 
-DATEX: six synthetic MaintenanceWorks penalties (DE, DK, SE, SE, NO, NO) were written to `files/datex_cache/datex-GetSituation.xml` (15747 bytes) after the harness marker `BEVENSEN_AWAIT_DATEX`. The first copy was 0 bytes because `run-as` cannot read `/sdcard`. A second copy via `/data/local/tmp` landed before the refusal was final, but the planner had already refused for `region_missing` and did not apply those penalties. The harness had also seen a pre-existing 28116457-byte XML and continued; that file was then replaced.
+Host inject of 6 synthetic MaintenanceWorks penalties (DE, DK, SE, NO) landed before Plan: `datex-GetSituation.xml` 15747 bytes, `datex-cache.json` 237 bytes, `apply_to_routing` 1 byte, under `/data/user/0/no.navi.app/files/datex_cache`. The plan never reached a route, so route impact counts are not available.
 
-## Report fields
+### Campaign fields
 
-1. Regions downloaded, in order, with download, processing, and indexing times, size, and SD confirmation: **not available**. No corridor download started. Plan refused because the origin was not in a downloaded region and long trip was off. Expected order was not executed. Leftover Sorlandet files are not a download from this run.
-
-2. Total length, and kilometres per day: **not available**. No route. Distance band 1461.3-1648.6 km was not measured. **Out of band is not claimed; there is no distance.**
-
-3. Total duration: **not available**. No route. The 17-22 h band was not measured. Below 17 h was not observed and is not reclassified.
-
-4. Navigation instructions and breakdown: **not available**. No maneuver list. The 55-100 band was not measured.
-
-5. Ferries, including whether Rodby-Puttgarden was used: **not available**. No route.
-
-6. Tunnels: **not available**. No route.
-
-7. Nearby attractions: **not available**. No route. `poi_lookahead covering load failed ... Missing` at the origin.
-
-8. Wild camping overnights: **not available**. No route. Count of sites used is not greater than 0 because none were selected. Candidates accepted or rejected were not produced.
-
-9. Rest places: **not available**. No route.
-
-10. Estimated fuel stops: **not available**. No route distance to apply the 70 L full tank, 100 km margin, or the consumption table (calm 8.5-9.5, mixed 9.5-11, motorway/mountains 11-14 L/100 km).
-
-11. DATEX reroutes and resulting route changes: **not available** as route changes. Six synthetic situations were in the cache file (DE A7 chord, DK Great Belt approach, SE Halland E6, SE Bohuslan coast, NO E6 Ostlandet, NO toward Ottadal) with a 900 s delay penalty in the XML. The planner did not apply them.
-
-12. RAM: campaign-window peak TOTAL PSS **327434 KB** at `2026-10-28T06:18:47+01:00` (monitor every 60 s). The monitor file also has an earlier peak of 480490 KB at 06:03:46 from the pre-run Update ANR, not this plan. Planner `vm_hwm_mb`: **not available**. No corridor plan ran.
-
-13. Host disk: start and end both `/` 40G free and data drive 31G free (of 801G and 855G).
-
-14. Repeaters along the route: **not available**. No route, and Update was not pressed. Drop-folder file count is 7 KML files. `cat_drop_imported=true`. No OSM or RadioID callsign is listed because none were selected along a route.
-
-15. Comparison with `bad-luster.kml` and overlay map image: **not available**. No polyline, so no divergence, distance delta, time delta, ferry or tunnel difference, or overlay image.
-
-16. Cover-gate Stage-B (`3ba01455c`): **did not trigger**. Planning stopped at `planning_refused reason=region_missing` before a hop end was tested. No hop end was outside Ready coverage on this attempt.
-
-17. Re-plans and retries:
-    - `06:17:52` instrumentation of `LongTripMobileHomeBevensenDalsorenUiCampaignTest` crashed before Plan: `UiAutomationService already registered` (a previous `uiautomator` session still held the connection). No route. Same APK was not rebuilt.
-    - `06:18:24` the same test was started again on the same APK and reached Plan.
-    - `06:21:01` Plan refused (`region_missing`). The Germany download dialog was not used. No same-APK UI re-plan.
-
-## Bands
-
-| Band | Result |
+| Field | Result |
 |---|---|
-| Distance 1461.3-1648.6 km | not measured |
-| Duration 17-22 h | not measured |
-| Instructions 55-100 | not measured |
-| Wild camping overnights > 0 | not met (no route) |
+| Distance 1461.3–1648.6 km | not available: no route (`distance_km=0`) |
+| Duration 17–22 h | not available: no route. Not reclassified. |
+| Instructions 55–100 | not available: no maneuver list |
+| Nearby attractions | not available: no route |
+| Wild camping overnights | not available: no route. Requirement was > 0. |
+| Cover-gate Stage-B (`3ba01455c`) | not triggered: planning never started a route search |
+| Fuel stops | not available: no route distance to apply the 70 L / 100 km margin table |
+| DATEX penalties on the route | not available: cache was injected, route was not computed |
+| Ferries on the route | not available: no route |
+| Eco | on in the UI before Plan (`eco_routing_switch` clicked ON) |
+| Avoid tolls | off (row visible, default off) |
+| Avoid ferries | off (harness ferries=use) |
+| Departure | 2026-06-01T08:00:00 local, as in the harness |
+| Vehicle | VW Transporter T6 2.0 BiTDi 4Motion camper, harness constants (H 2.477 m, W 2.297 m, L 5.304 m, total 3020.4 kg, axle 1661.2 kg, tank 70 L) |
+| Soft daily budget / break | 6.0 h / 1.5 h / 15 min, harness seed |
+| Re-plans | none. One Plan click at 06:27:15. No same-APK UI re-plan. |
+| Overlay vs bad-luster.kml | not available: no route polyline, so no overlay map image |
 
-## Monitors
+OSM and RadioID callsigns along a route are not available: there is no route and Update was not used to refresh the repeater list for this run.
 
-`/tmp/clean-bevensen-run/logcat.txt`, `meminfo.txt` (60 s), and `df.txt` (10 min) were already running and were left running. They are read-only.
+`git log --oneline CAT..origin/dev` was empty after fetch. No merge was required.
+
+Prior in-band figures from earlier the same morning are in git history of this file (commit `2036d4cc4` and parents). They are not this run.
