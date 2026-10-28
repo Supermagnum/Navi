@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import org.json.JSONArray
 import org.json.JSONObject
@@ -266,7 +267,7 @@ fun RoutePlanStatsCard(
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
-                "Route enumerations",
+                stringResource(R.string.ui_route_enumerations),
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.testTag("route_plan_stats_title"),
             )

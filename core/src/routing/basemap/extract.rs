@@ -209,9 +209,9 @@ pub async fn extract_bbox_to_file(
         .and_then(|n| n.to_str())
         .is_some_and(|n| n.contains("_dem"))
     {
-        "Downloading terrain DEM…"
+        "navi.msg.download_dem"
     } else {
-        "Downloading map tiles for region…"
+        "navi.msg.download_tiles"
     };
     log::info!(
         target: "NaviDownload",

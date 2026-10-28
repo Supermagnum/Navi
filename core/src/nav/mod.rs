@@ -268,7 +268,7 @@ pub fn current_road_label(
     if let Some(s) = prefer_street_label(name, systematic_ref) {
         return s;
     }
-    crate::routing::eta::highway_class_display_label(highway).to_string()
+    crate::routing::eta::highway_class_display_label(highway)
 }
 
 #[cfg(test)]
@@ -383,9 +383,12 @@ mod tests {
         assert_eq!(current_road_label(None, Some("E6"), Some("trunk")), "E6");
         assert_eq!(
             current_road_label(None, None, Some("service")),
-            "Service road"
+            "navi.msg.highway_class|service"
         );
-        assert_eq!(current_road_label(Some("  "), None, Some("path")), "Path");
+        assert_eq!(
+            current_road_label(Some("  "), None, Some("path")),
+            "navi.msg.highway_class|path"
+        );
     }
 
     #[test]

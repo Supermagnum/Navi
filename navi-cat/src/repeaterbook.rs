@@ -1126,10 +1126,7 @@ On-air: Yes<br>
         assert!((burst[0].freq_out_mhz - 434.9).abs() < 1e-4);
         assert!((burst[0].lat.unwrap() - 59.7802919).abs() < 1e-6);
         assert!((burst[0].lon.unwrap() - 11.0038215).abs() < 1e-6);
-        assert_eq!(
-            burst[0].access,
-            crate::repeater::AccessTone::ToneBurst1750
-        );
+        assert_eq!(burst[0].access, crate::repeater::AccessTone::ToneBurst1750);
         assert!(burst[0].ctcss_hz.is_none());
     }
 

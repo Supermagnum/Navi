@@ -11,8 +11,10 @@ use rusqlite::{params, Connection, OptionalExtension, Result as SqlResult};
 use crate::download::phase_timing;
 use crate::storage::Storage;
 
+mod localized_store;
 mod place_context;
 
+pub use localized_store::{display_name_for_locale, set_place_search_locale};
 pub use place_context::{format_place_display, PLACE_INDEX_SCHEMA_VERSION};
 
 /// Place-index `kind` for OSM `building=*` + `name=*` (no amenity/shop/place).
@@ -181,6 +183,12 @@ pub fn place_index_build_lock_held_on_thread() -> bool {
     PLACE_INDEX_BUILD_LOCK_TLS.with(|slot| slot.borrow().is_some())
 }
 
+/// Checkpoint / clear torn WAL sidecars before Android or Rust opens the DB.
+/// Safe no-op when the file is missing or has no `-wal`.
+pub fn recover_place_index_wal(index_db_path: impl AsRef<Path>) -> Result<(), String> {
+    NameIndex::recover_wal_sidecars(index_db_path)
+}
+
 /// Delete one region's rows under [`PLACE_INDEX_BUILD_LOCK`] using rusqlite
 /// (same stack as `ensure_place_index`). Prefer this over Android framework
 /// SQLite for clears that may overlap a background index build.
@@ -214,6 +222,29 @@ pub struct NameHit {
     pub municipality: String,
     /// Geofabrik path this row was indexed under (empty for legacy rows).
     pub region_id: String,
+}
+
+fn name_hit_from_parts(
+    osm_id: i64,
+    local_name: String,
+    kind: String,
+    lat: f64,
+    lon: f64,
+    sub_area: String,
+    municipality: String,
+    region_id: String,
+    names_json: String,
+) -> NameHit {
+    NameHit {
+        osm_id,
+        name: localized_store::display_name_for_locale(&local_name, &names_json),
+        kind,
+        lat,
+        lon,
+        sub_area,
+        municipality,
+        region_id,
+    }
 }
 
 /// True for Unicode combining marks (Mn/Me ranges used in NFD names).
@@ -779,12 +810,85 @@ impl NameIndex {
         Self::migrate_region_osm_pk(&conn).map_err(|e| {
             rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e.to_string())))
         })?;
+        localized_store::ensure_names_json_column(&conn)?;
         Self::backfill_legacy_complete(&conn)?;
         Ok(Self { conn })
     }
 
+    fn wal_path(db: &Path) -> PathBuf {
+        PathBuf::from(format!("{}-wal", db.display()))
+    }
+
+    fn shm_path(db: &Path) -> PathBuf {
+        PathBuf::from(format!("{}-shm", db.display()))
+    }
+
+    /// Drop a stale `-shm` and checkpoint `-wal` into the main file.
+    ///
+    /// A crash mid-index can leave a large WAL + torn shared-memory index;
+    /// Android's SQLite then SIGBUS in `walIndexReadHdr` on the next readonly
+    /// open (Java cannot catch that). Call before any open, including probes.
+    /// Does not bump schema version or rebuild FTS.
+    pub fn recover_wal_sidecars(path: impl AsRef<Path>) -> Result<(), String> {
+        let path = path.as_ref();
+        if !path.is_file() {
+            return Ok(());
+        }
+        let shm = Self::shm_path(path);
+        let wal = Self::wal_path(path);
+        // Stale shm after process death is the usual SIGBUS trigger; safe to
+        // remove when no live connection holds the DB (caller must force-stop
+        // writers first, or hold the build lock).
+        if shm.is_file() {
+            let _ = std::fs::remove_file(&shm);
+        }
+        let wal_len = wal.metadata().map(|m| m.len()).unwrap_or(0);
+        // Empty `-wal` is a normal post-checkpoint leftover. Opening a multi-GB
+        // main file just to TRUNCATE zero bytes caused cold-start ANRs on tablet.
+        if !wal.is_file() || wal_len == 0 {
+            if wal.is_file() {
+                let _ = std::fs::remove_file(&wal);
+            }
+            return Ok(());
+        }
+        let conn = Connection::open(path).map_err(|e| format!("recover open: {e}"))?;
+        conn.busy_timeout(Duration::from_secs(120))
+            .map_err(|e| format!("recover busy_timeout: {e}"))?;
+        // Avoid mmap of torn pages during checkpoint.
+        let _ = conn.execute_batch("PRAGMA mmap_size=0;");
+        match conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        }) {
+            Ok((busy, log, ckpt)) => {
+                log::info!(
+                    target: "PlaceIndex",
+                    "place_index_wal_recover path={} busy={busy} log={log} checkpointed={ckpt}",
+                    path.display()
+                );
+                Ok(())
+            }
+            Err(e) => Err(format!("wal_checkpoint: {e}")),
+        }
+    }
+
+    /// Checkpoint WAL into the main DB (best-effort). Call after a successful
+    /// region build so a force-stop cannot leave a 100MB+ sidecar.
+    pub fn checkpoint_wal_truncate(&self) -> SqlResult<()> {
+        let _ = self.conn.execute_batch("PRAGMA mmap_size=0;");
+        self.conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
+        Ok(())
+    }
+
     pub fn open(path: impl AsRef<Path>) -> SqlResult<Self> {
         let path = path.as_ref();
+        // Must run before the readonly user_version peek — that peek SIGBUS'd
+        // on tablet after a torn Tunisia WAL.
+        let _ = Self::recover_wal_sidecars(path);
         let user_peek: i32 =
             Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
                 .ok()
@@ -805,6 +909,7 @@ impl NameIndex {
         // PK migrate copies millions of rows — allow a long busy wait so a stray
         // readonly probe cannot abort the writer with SQLITE_BUSY / locking protocol.
         conn.busy_timeout(Duration::from_secs(120))?;
+        let _ = conn.execute_batch("PRAGMA mmap_size=0;");
         let pragmas_t0 = phase_timing::start("place_index.open_db.pragmas");
         Self::apply_file_pragmas(&conn)?;
         phase_timing::end("place_index.open_db.pragmas", pragmas_t0);
@@ -812,7 +917,11 @@ impl NameIndex {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap_or(0);
         // Already at current schema: no DDL, no FTS drop/rebuild.
+        // Additive columns (names_json) still apply when version is current —
+        // must not bump PLACE_INDEX_SCHEMA_VERSION (that would fail intact checks).
+        // Do not run ALTER before migrate on a brand-new DB (no name_entries yet).
         if user_version >= PLACE_INDEX_SCHEMA_VERSION {
+            localized_store::ensure_names_json_column(&conn)?;
             return Ok(Self { conn });
         }
         // GROUP BY over name_entries on every open dominated reopen (~383 ms of
@@ -826,6 +935,8 @@ impl NameIndex {
         Self::migrate_region_osm_pk(&conn).map_err(|e| {
             rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e.to_string())))
         })?;
+        // PK migrate recreates name_entries — re-apply additive columns.
+        localized_store::ensure_names_json_column(&conn)?;
         phase_timing::end("place_index.open_db.migrate", migrate_t0);
         let backfill_t0 = phase_timing::start("place_index.open_db.backfill_legacy_complete");
         if !had_build_table {
@@ -841,11 +952,50 @@ impl NameIndex {
             .unwrap_or_else(|e| e.to_string())
     }
 
-    /// Query-only open: no migrate/DDL, no 30s busy wait on the UI path.
+    /// Query-only open: no schema-version migrate / FTS rebuild, no long busy wait.
+    ///
+    /// Does **not** call [`Self::recover_wal_sidecars`]: checkpoint needs a write
+    /// lock and would block for the writer busy-timeout while a build holds a
+    /// transaction (breaks WAL concurrent snapshot reads / freezes search).
+    /// Torn-WAL recovery belongs on exclusive [`Self::open`] / cold start.
+    ///
+    /// Still applies additive `names_json` once via a short read-write open when
+    /// missing — search SELECTs that column, and pre-i18n intact indexes otherwise
+    /// fail with `no such column: names_json` on every query. Uses a short busy
+    /// timeout so an active writer is not waited out.
     pub fn open_readonly(path: impl AsRef<Path>) -> SqlResult<Self> {
+        let path = path.as_ref();
+        if path.is_file() && !Self::names_json_column_present_readonly(path) {
+            if let Ok(w) = Connection::open(path) {
+                let _ = w.busy_timeout(Duration::from_millis(50));
+                let _ = w.execute_batch("PRAGMA mmap_size=0;");
+                let _ = localized_store::ensure_names_json_column(&w);
+            }
+        }
         let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
         conn.busy_timeout(Duration::from_millis(250))?;
+        let _ = conn.execute_batch("PRAGMA mmap_size=0;");
         Ok(Self { conn })
+    }
+
+    fn names_json_column_present_readonly(path: &Path) -> bool {
+        let Ok(conn) =
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        else {
+            return false;
+        };
+        let Ok(mut stmt) = conn.prepare("PRAGMA table_info(name_entries)") else {
+            return false;
+        };
+        let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(1)) else {
+            return false;
+        };
+        for r in rows.flatten() {
+            if r == "names_json" {
+                return true;
+            }
+        }
+        false
     }
 
     fn apply_file_pragmas(conn: &Connection) -> SqlResult<()> {
@@ -894,6 +1044,7 @@ impl NameIndex {
         // (the 13-minute Oslo block). Batched fill lives in migrate_region_osm_pk.
         Self::ensure_source_sha256_column(conn)?;
         Self::ensure_index_source_column(conn)?;
+        localized_store::ensure_names_json_column(conn)?;
         Ok(())
     }
 
@@ -1261,6 +1412,7 @@ impl NameIndex {
         if !path.is_file() || region_id.is_empty() {
             return false;
         }
+        let _ = Self::recover_wal_sidecars(path);
         let Ok(conn) =
             Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
         else {
@@ -1277,8 +1429,10 @@ impl NameIndex {
     /// True when this DB was built by a context-aware `load_from_pbf`.
     /// Read-only: never creates or migrates the file.
     pub fn is_current_schema(path: impl AsRef<Path>) -> bool {
+        let path = path.as_ref();
+        let _ = Self::recover_wal_sidecars(path);
         let Ok(conn) =
-            Connection::open_with_flags(path.as_ref(), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
         else {
             return false;
         };
@@ -1580,8 +1734,8 @@ impl NameIndex {
         // that waits on foreground_plan_active (that parks the indexer).
         index_phase_tick(IndexBuildPhase::ReadSource);
         pause_index_if_plan_active(Self::build_written(&self.conn, &region_id), 0, peak_rss_mb)?;
-        // (osm_id, display_name, search_doc, kind, lat, lon)
-        let mut batch: Vec<(i64, String, String, String, f64, f64)> = Vec::new();
+        // (osm_id, display_name, search_doc, kind, names_json, lat, lon)
+        let mut batch: Vec<(i64, String, String, String, String, f64, f64)> = Vec::new();
         const PHASES: u64 = 6;
         let interrupted = Self::build_is_interrupted(&self.conn, &region_id);
         let phase_prefix = if interrupted {
@@ -1615,7 +1769,7 @@ impl NameIndex {
         // (tourism=zoo, amenity areas, etc. are often ways, not nodes).
         crate::download::progress::set(1, Some(PHASES), &format!("{phase_prefix}scanning ways…"));
         let ways_t0 = phase_timing::start("place_index.ways");
-        let mut way_jobs: Vec<(i64, String, String, String, Vec<i64>)> = Vec::new();
+        let mut way_jobs: Vec<(i64, String, String, String, String, Vec<i64>)> = Vec::new();
         let mut needed_nodes: std::collections::HashSet<i64> = std::collections::HashSet::new();
         let mut ways_visited = 0usize;
         let mut ways_last_hb = 0usize;
@@ -1646,7 +1800,7 @@ impl NameIndex {
                     .tags()
                     .map(|(k, v)| (k.to_string(), v.to_string()))
                     .collect();
-                let Some((_, name, search_doc, kind, _, _)) = classify_named(
+                let Some((_, name, search_doc, kind, names_json, _, _)) = classify_named(
                     way.id(),
                     0.0,
                     0.0,
@@ -1666,7 +1820,7 @@ impl NameIndex {
                 for id in &refs {
                     needed_nodes.insert(*id);
                 }
-                way_jobs.push((way.id(), name, search_doc, kind, refs));
+                way_jobs.push((way.id(), name, search_doc, kind, names_json, refs));
             })?;
         }
         if ways_pause.load(std::sync::atomic::Ordering::Relaxed) {
@@ -1760,7 +1914,9 @@ impl NameIndex {
         let centroids_t0 = phase_timing::start("place_index.way_centroids");
         let mut way_hits = 0usize;
         let centroid_total = way_jobs.len();
-        for (i, (way_id, name, search_doc, kind, refs)) in way_jobs.into_iter().enumerate() {
+        for (i, (way_id, name, search_doc, kind, names_json, refs)) in
+            way_jobs.into_iter().enumerate()
+        {
             let mut sum_lat = 0.0;
             let mut sum_lon = 0.0;
             let mut n = 0usize;
@@ -1779,6 +1935,7 @@ impl NameIndex {
                 name,
                 search_doc,
                 kind,
+                names_json,
                 sum_lat / n as f64,
                 sum_lon / n as f64,
             ));
@@ -1813,7 +1970,15 @@ impl NameIndex {
                 route_hits = routes.len();
                 for r in routes {
                     let search_doc = search_doc_with_fold_aliases(&r.name);
-                    batch.push((r.osm_id, r.name, search_doc, r.kind, r.lat, r.lon));
+                    batch.push((
+                        r.osm_id,
+                        r.name,
+                        search_doc,
+                        r.kind,
+                        String::new(),
+                        r.lat,
+                        r.lon,
+                    ));
                 }
             }
             Err(e) if e.to_string().contains(PLACE_INDEX_PAUSED_PREFIX) => {
@@ -1839,7 +2004,7 @@ impl NameIndex {
         let ctx_t0 = phase_timing::start("place_index.resolve_context");
         let sub_areas = batch
             .iter()
-            .filter_map(|(osm_id, name, _search_doc, kind, lat, lon)| {
+            .filter_map(|(osm_id, name, _search_doc, kind, _names_json, lat, lon)| {
                 place_context::sub_area_pt(*osm_id, name.clone(), kind, *lat, *lon)
             })
             .collect();
@@ -1895,14 +2060,14 @@ impl NameIndex {
         index_phase_tick(IndexBuildPhase::Insert);
         pause_index_if_plan_active(inserted as i64, total as i64, peak_rss_mb)?;
         let mut tx = self.conn.unchecked_transaction()?;
-        for (osm_id, name, search_doc, kind, lat, lon) in &batch {
+        for (osm_id, name, search_doc, kind, names_json, lat, lon) in &batch {
             if skip.contains(osm_id) {
                 continue;
             }
             let ctx = resolver.resolve(*osm_id, name, kind, *lat, *lon);
             tx.execute(
-                "INSERT OR REPLACE INTO name_entries(osm_id, name, kind, lat, lon, sub_area, municipality, region_id, search_doc)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+                "INSERT OR REPLACE INTO name_entries(osm_id, name, kind, lat, lon, sub_area, municipality, region_id, search_doc, names_json)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
                 params![
                     osm_id,
                     name,
@@ -1912,7 +2077,8 @@ impl NameIndex {
                     ctx.sub_area,
                     ctx.municipality,
                     region_id,
-                    search_doc
+                    search_doc,
+                    names_json
                 ],
             )?;
             let rowid: i64 = tx.query_row(
@@ -1966,6 +2132,14 @@ impl NameIndex {
         );
         crate::download::progress::set(PHASES, Some(PHASES), "Place index ready");
         bump_peak(&mut peak_rss_mb);
+        // Fold WAL into the main file so a force-stop right after PASS cannot
+        // leave a multi-hundred-MB sidecar that SIGBUS's the next probe.
+        if let Err(e) = self.checkpoint_wal_truncate() {
+            log::warn!(
+                target: "PlaceIndex",
+                "place_index_build wal_checkpoint after built region={region_id}: {e}"
+            );
+        }
         log::info!(
             target: "PlaceIndex",
             "place_index_build action=built region={region_id} indexed={} peak_rss_mb={peak_rss_mb}",
@@ -2254,7 +2428,7 @@ impl NameIndex {
         let anchored = format!("search_doc : ^\"{}\"", query.replace('"', "\"\""));
         let mut stmt = self.conn.prepare(
             "
-            SELECT e.osm_id, e.name, e.kind, e.lat, e.lon, e.sub_area, e.municipality, e.region_id
+            SELECT e.osm_id, e.name, e.kind, e.lat, e.lon, e.sub_area, e.municipality, e.region_id, COALESCE(e.names_json, '')
             FROM name_fts f
             JOIN name_entries e ON e.rowid = f.rowid
             WHERE name_fts MATCH ?1 AND e.name = ?2 COLLATE NOCASE
@@ -2262,16 +2436,17 @@ impl NameIndex {
             ",
         )?;
         let rows = stmt.query_map(params![anchored, query, limit as i64], |row| {
-            Ok(NameHit {
-                osm_id: row.get(0)?,
-                name: row.get(1)?,
-                kind: row.get(2)?,
-                lat: row.get(3)?,
-                lon: row.get(4)?,
-                sub_area: row.get(5)?,
-                municipality: row.get(6)?,
-                region_id: row.get(7)?,
-            })
+            Ok(name_hit_from_parts(
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+                row.get(7)?,
+                row.get::<_, String>(8).unwrap_or_default(),
+            ))
         })?;
         rows.collect()
     }
@@ -2303,7 +2478,7 @@ impl NameIndex {
         }
         let mut stmt = self.conn.prepare(
             "
-            SELECT e.osm_id, e.name, e.kind, e.lat, e.lon, e.sub_area, e.municipality, e.region_id
+            SELECT e.osm_id, e.name, e.kind, e.lat, e.lon, e.sub_area, e.municipality, e.region_id, COALESCE(e.names_json, '')
             FROM name_fts f
             JOIN name_entries e ON e.rowid = f.rowid
             WHERE name_fts MATCH ?1
@@ -2311,16 +2486,17 @@ impl NameIndex {
             ",
         )?;
         let rows = stmt.query_map(params![match_q, CANDIDATES], |row| {
-            Ok(NameHit {
-                osm_id: row.get(0)?,
-                name: row.get(1)?,
-                kind: row.get(2)?,
-                lat: row.get(3)?,
-                lon: row.get(4)?,
-                sub_area: row.get(5)?,
-                municipality: row.get(6)?,
-                region_id: row.get(7)?,
-            })
+            Ok(name_hit_from_parts(
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+                row.get(7)?,
+                row.get::<_, String>(8).unwrap_or_default(),
+            ))
         })?;
         let mut out = Vec::new();
         for r in rows {
@@ -2363,7 +2539,7 @@ impl NameIndex {
         }
         let mut stmt = self.conn.prepare(
             "
-            SELECT e.osm_id, e.name, e.kind, e.lat, e.lon, e.sub_area, e.municipality, e.region_id
+            SELECT e.osm_id, e.name, e.kind, e.lat, e.lon, e.sub_area, e.municipality, e.region_id, COALESCE(e.names_json, '')
             FROM name_fts f
             JOIN name_entries e ON e.rowid = f.rowid
             WHERE name_fts MATCH ?1
@@ -2371,16 +2547,17 @@ impl NameIndex {
             ",
         )?;
         let rows = stmt.query_map(params![match_q, fetch as i64], |row| {
-            Ok(NameHit {
-                osm_id: row.get(0)?,
-                name: row.get(1)?,
-                kind: row.get(2)?,
-                lat: row.get(3)?,
-                lon: row.get(4)?,
-                sub_area: row.get(5)?,
-                municipality: row.get(6)?,
-                region_id: row.get(7)?,
-            })
+            Ok(name_hit_from_parts(
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+                row.get(7)?,
+                row.get::<_, String>(8).unwrap_or_default(),
+            ))
         })?;
         let mut out = Vec::new();
         let mut seen = HashSet::new();
@@ -2572,7 +2749,7 @@ impl NameIndex {
         let lon_pad = radius_m / (111_320.0 * lat.to_radians().cos().max(0.2));
         let mut stmt = self.conn.prepare(
             "
-            SELECT osm_id, name, kind, lat, lon, sub_area, municipality, region_id
+            SELECT osm_id, name, kind, lat, lon, sub_area, municipality, region_id, COALESCE(names_json, '')
             FROM name_entries
             WHERE lat BETWEEN ?1 AND ?2 AND lon BETWEEN ?3 AND ?4
             ",
@@ -2580,16 +2757,17 @@ impl NameIndex {
         let rows = stmt.query_map(
             params![lat - lat_pad, lat + lat_pad, lon - lon_pad, lon + lon_pad],
             |row| {
-                Ok(NameHit {
-                    osm_id: row.get(0)?,
-                    name: row.get(1)?,
-                    kind: row.get(2)?,
-                    lat: row.get(3)?,
-                    lon: row.get(4)?,
-                    sub_area: row.get(5)?,
-                    municipality: row.get(6)?,
-                    region_id: row.get(7)?,
-                })
+                Ok(name_hit_from_parts(
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                    row.get(7)?,
+                    row.get::<_, String>(8).unwrap_or_default(),
+                ))
             },
         )?;
         let mut scored: Vec<(f64, NameHit)> = Vec::new();
@@ -2617,7 +2795,7 @@ impl NameIndex {
         let limit = limit.max(1);
         let mut stmt = self.conn.prepare(
             "
-            SELECT osm_id, name, kind, lat, lon, sub_area, municipality, region_id
+            SELECT osm_id, name, kind, lat, lon, sub_area, municipality, region_id, COALESCE(names_json, '')
             FROM name_entries
             WHERE kind = ?1
               AND lat BETWEEN ?2 AND ?3
@@ -2629,16 +2807,17 @@ impl NameIndex {
         let rows = stmt.query_map(
             params![kind, min_lat, max_lat, min_lon, max_lon, limit as i64],
             |row| {
-                Ok(NameHit {
-                    osm_id: row.get(0)?,
-                    name: row.get(1)?,
-                    kind: row.get(2)?,
-                    lat: row.get(3)?,
-                    lon: row.get(4)?,
-                    sub_area: row.get(5)?,
-                    municipality: row.get(6)?,
-                    region_id: row.get(7)?,
-                })
+                Ok(name_hit_from_parts(
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                    row.get(7)?,
+                    row.get::<_, String>(8).unwrap_or_default(),
+                ))
             },
         )?;
         let mut out = Vec::new();
@@ -2650,8 +2829,13 @@ impl NameIndex {
 }
 
 /// Build the FTS search document from the primary display name plus OSM
-/// `alt_name` / `loc_name` (semicolon-separated values expanded).
-fn place_search_doc(primary: &str, alt_name: Option<&str>, loc_name: Option<&str>) -> String {
+/// `alt_name` / `loc_name` / localized `name:*` / `int_name`.
+fn place_search_doc(
+    primary: &str,
+    alt_name: Option<&str>,
+    loc_name: Option<&str>,
+    localized_extras: &[String],
+) -> String {
     let mut parts: Vec<String> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
     let mut push_tag = |raw: &str| {
@@ -2673,6 +2857,9 @@ fn place_search_doc(primary: &str, alt_name: Option<&str>, loc_name: Option<&str
     if let Some(l) = loc_name {
         push_tag(l);
     }
+    for extra in localized_extras {
+        push_tag(extra);
+    }
     for alias in fold_name_aliases(primary) {
         push_tag(&alias);
     }
@@ -2681,15 +2868,16 @@ fn place_search_doc(primary: &str, alt_name: Option<&str>, loc_name: Option<&str
 
 /// Classify a tagged OSM element for the place index.
 ///
-/// Returns `(osm_id, display_name, search_doc, kind, lat, lon)`.
+/// Returns `(osm_id, display_name, search_doc, kind, names_json, lat, lon)`.
 /// Display prefers `name`, then `loc_name`, then the first `alt_name` part,
-/// then address tags. FTS matches against `search_doc` (primary + alts).
+/// then address tags. FTS matches against `search_doc` (primary + alts +
+/// localized names). `names_json` holds `name:*` / `int_name` for locale pick.
 fn classify_named<'a>(
     osm_id: i64,
     lat: f64,
     lon: f64,
     tags: impl Iterator<Item = (&'a str, &'a str)>,
-) -> Option<(i64, String, String, String, f64, f64)> {
+) -> Option<(i64, String, String, String, String, f64, f64)> {
     let mut name = None;
     let mut alt_name = None;
     let mut loc_name = None;
@@ -2697,6 +2885,7 @@ fn classify_named<'a>(
     let mut addr_housenumber = None;
     let mut kind = "named".to_string();
     let mut is_building = false;
+    let mut loc_tags: Vec<(&str, &str)> = Vec::new();
     for (k, v) in tags {
         match k {
             "name" => name = Some(v.to_string()),
@@ -2714,9 +2903,15 @@ fn classify_named<'a>(
             // Plain named footprints (building=* + name=*) — not amenity/shop.
             // Amenity/shop/place above win when present so POIs stay classified.
             "building" if !v.eq_ignore_ascii_case("no") => is_building = true,
+            "int_name" => loc_tags.push((k, v)),
+            k if k.starts_with("name:") && !k.starts_with("name:etymology") => {
+                loc_tags.push((k, v));
+            }
             _ => {}
         }
     }
+    let names_json = localized_store::names_json_from_tags(loc_tags.into_iter());
+    let localized_extras = localized_store::localized_search_tokens(&names_json);
     let mut display = name.or_else(|| loc_name.clone()).or_else(|| {
         alt_name.as_ref().and_then(|a| {
             a.split(';')
@@ -2742,8 +2937,13 @@ fn classify_named<'a>(
         kind = NAMED_BUILDING_KIND.to_string();
     }
     let display = display?;
-    let search_doc = place_search_doc(&display, alt_name.as_deref(), loc_name.as_deref());
-    Some((osm_id, display, search_doc, kind, lat, lon))
+    let search_doc = place_search_doc(
+        &display,
+        alt_name.as_deref(),
+        loc_name.as_deref(),
+        &localized_extras,
+    );
+    Some((osm_id, display, search_doc, kind, names_json, lat, lon))
 }
 
 impl NameIndex {
@@ -4167,6 +4367,103 @@ mod tests {
     }
 
     #[test]
+    fn recover_wal_sidecars_checkpoints_and_drops_shm() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("place_index.db");
+        let wal = PathBuf::from(format!("{}-wal", db.display()));
+        let shm = PathBuf::from(format!("{}-shm", db.display()));
+        let wal_bak = dir.path().join("wal.bak");
+        {
+            let mut idx = NameIndex::open(&db).expect("open");
+            // Keep frames in the WAL until we snapshot sidecars (close would
+            // often auto-checkpoint a tiny DB).
+            idx.conn
+                .execute_batch("PRAGMA wal_autocheckpoint=0;")
+                .unwrap();
+            idx.upsert_entry_with_region(
+                1,
+                "Tunis Medina".into(),
+                "place:suburb".into(),
+                36.8,
+                10.1,
+                String::new(),
+                String::new(),
+                "africa/tunisia".into(),
+            )
+            .unwrap();
+            assert!(wal.is_file(), "WAL should exist while writer is open");
+            std::fs::copy(&wal, &wal_bak).expect("snapshot wal");
+        }
+        // Restore WAL + torn shm as after a crash (close may have truncated).
+        std::fs::copy(&wal_bak, &wal).expect("restore wal");
+        // Inflate the WAL sidecar to mimic a large post-kill leftover; SQLite
+        // ignores trailing junk after valid frames during checkpoint.
+        {
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&wal)
+                .expect("append wal");
+            f.write_all(&vec![0u8; 256 * 1024]).expect("pad wal");
+        }
+        std::fs::write(&shm, [0u8; 64]).expect("torn shm");
+        NameIndex::recover_wal_sidecars(&db).expect("recover");
+        assert!(
+            !shm.is_file() || std::fs::metadata(&shm).map(|m| m.len()).unwrap_or(0) != 64,
+            "torn shm must be removed or replaced"
+        );
+        let wal_after = wal.metadata().map(|m| m.len()).unwrap_or(0);
+        assert!(
+            !wal.is_file() || wal_after == 0,
+            "large WAL must be checkpointed/truncated, len={wal_after}"
+        );
+        let reader = NameIndex::open_readonly(&db).expect("readonly after recover");
+        let hits = reader.search("Tunis", 8).expect("search");
+        assert!(
+            hits.iter().any(|h| h.name.contains("Tunis")),
+            "rows must survive recover, got {hits:?}"
+        );
+        assert!(
+            NameIndex::has_entries_for_region(&db, "africa/tunisia"),
+            "tunisia region rows intact"
+        );
+    }
+
+    #[test]
+    fn recover_wal_sidecars_skips_empty_wal_without_failing_open() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("place_index.db");
+        let wal = PathBuf::from(format!("{}-wal", db.display()));
+        let shm = PathBuf::from(format!("{}-shm", db.display()));
+        {
+            let mut idx = NameIndex::open(&db).expect("open");
+            idx.upsert_entry_with_region(
+                2,
+                "Sidi Bou Said".into(),
+                "place:village".into(),
+                36.87,
+                10.34,
+                String::new(),
+                String::new(),
+                "africa/tunisia".into(),
+            )
+            .unwrap();
+            idx.checkpoint_wal_truncate().unwrap();
+        }
+        // Post-checkpoint leftover empty WAL + stale shm (tablet ANR trigger).
+        std::fs::write(&wal, []).expect("empty wal");
+        std::fs::write(&shm, [0u8; 32]).expect("shm");
+        NameIndex::recover_wal_sidecars(&db).expect("recover empty");
+        assert!(
+            !wal.is_file(),
+            "empty wal must be removed without opening for checkpoint"
+        );
+        let reader = NameIndex::open_readonly(&db).expect("probe open");
+        let hits = reader.search("Sidi", 8).expect("search");
+        assert!(hits.iter().any(|h| h.name.contains("Sidi")));
+    }
+
+    #[test]
     fn multi_region_index_is_additive_and_reindex_preserves_other() {
         let dir = tempfile::tempdir().expect("tmpdir");
         let db = dir.path().join("place_index.db");
@@ -4356,7 +4653,7 @@ mod tests {
     fn named_buildings_in_bbox_round_trip_espedal() {
         let mut idx = NameIndex::open_in_memory().expect("mem");
         // Simulate classify_named + upsert for the reported building.
-        let (id, name, _search_doc, kind, lat, lon) = classify_named(
+        let (id, name, _search_doc, kind, _names_json, lat, lon) = classify_named(
             435718754,
             61.885_475,
             10.737_108,

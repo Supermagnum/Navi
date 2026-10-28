@@ -729,6 +729,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_check_osm_updates(
     ): Int
+    external fun uniffi_navi_checksum_func_clear_localized_route_streets_cache(
+    ): Int
     external fun uniffi_navi_checksum_func_clear_place_index_region_rows(
     ): Int
     external fun uniffi_navi_checksum_func_convert_progress_clear(
@@ -901,6 +903,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_load_vehicle_limits(
     ): Int
+    external fun uniffi_navi_checksum_func_localize_route_streets_from_pmtiles(
+    ): Int
     external fun uniffi_navi_checksum_func_long_trip_ordered_regions_json(
     ): Int
     external fun uniffi_navi_checksum_func_long_trip_ors_default_base_url(
@@ -934,6 +938,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_place_index_build_lock_release(
     ): Int
     external fun uniffi_navi_checksum_func_place_index_has_entries(
+    ): Int
+    external fun uniffi_navi_checksum_func_place_index_recover_wal(
     ): Int
     external fun uniffi_navi_checksum_func_place_index_source_sha256(
     ): Int
@@ -1070,6 +1076,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_set_accept_absurd_detour(
     ): Int
     external fun uniffi_navi_checksum_func_set_osm_weekly_reminder(
+    ): Int
+    external fun uniffi_navi_checksum_func_set_place_search_locale(
     ): Int
     external fun uniffi_navi_checksum_func_set_route_plan_timing_enabled(
     ): Int
@@ -1304,6 +1312,8 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_navi_fn_func_check_osm_updates(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_clear_localized_route_streets_cache(uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_navi_fn_func_clear_place_index_region_rows(`indexDbPath`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_convert_progress_clear(uniffi_out_err: UniffiRustCallStatus, 
@@ -1476,6 +1486,8 @@ internal object UniffiLib {
     ): Byte
     external fun uniffi_navi_fn_func_load_vehicle_limits(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_localize_route_streets_from_pmtiles(`pmtilesPath`: RustBuffer.ByValue,`locale`: RustBuffer.ByValue,`maneuversJson`: RustBuffer.ByValue,`simSamplesJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_long_trip_ordered_regions_json(`waypointsLatLonJson`: RustBuffer.ByValue,`installedRegionIdsJson`: RustBuffer.ByValue,`countryIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_long_trip_ors_default_base_url(uniffi_out_err: UniffiRustCallStatus, 
@@ -1510,6 +1522,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_place_index_has_entries(`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    external fun uniffi_navi_fn_func_place_index_recover_wal(`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_place_index_source_sha256(`indexDbPath`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_plan_car_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`avoidTunnels`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`dataDir`: RustBuffer.ByValue,`packDir`: RustBuffer.ByValue,`longTripEnabled`: Byte,`allowedCountries`: RustBuffer.ByValue,`viaPoints`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1646,6 +1660,8 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_navi_fn_func_set_osm_weekly_reminder(`dataDir`: RustBuffer.ByValue,`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    external fun uniffi_navi_fn_func_set_place_search_locale(`locale`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_navi_fn_func_set_route_plan_timing_enabled(`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_navi_fn_func_set_test_index_phase_sleep_ms(`ms`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1929,6 +1945,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_check_osm_updates() and 0xFFFF) != 22664) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_clear_localized_route_streets_cache() and 0xFFFF) != 2982) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_clear_place_index_region_rows() and 0xFFFF) != 8312) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2085,7 +2104,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_haversine_km() and 0xFFFF) != 8906) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_highway_class_display_label() and 0xFFFF) != 41322) {
+    if ((lib.uniffi_navi_checksum_func_highway_class_display_label() and 0xFFFF) != 62787) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_indexed_maps_status() and 0xFFFF) != 12344) {
@@ -2187,6 +2206,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_load_vehicle_limits() and 0xFFFF) != 18436) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_localize_route_streets_from_pmtiles() and 0xFFFF) != 30830) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_long_trip_ordered_regions_json() and 0xFFFF) != 26158) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2236,6 +2258,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_place_index_has_entries() and 0xFFFF) != 5969) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_place_index_recover_wal() and 0xFFFF) != 33112) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_place_index_source_sha256() and 0xFFFF) != 14354) {
@@ -2440,6 +2465,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_set_osm_weekly_reminder() and 0xFFFF) != 15431) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_set_place_search_locale() and 0xFFFF) != 53611) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_set_route_plan_timing_enabled() and 0xFFFF) != 33373) {
@@ -5654,6 +5682,47 @@ public object FfiConverterTypeImuTickResult: FfiConverterRustBuffer<ImuTickResul
 
 
 
+/**
+ * Localized street labels for one planned route from offline Protomaps PMTiles.
+ */
+data class LocalizedRouteStreets (
+    var `maneuversJson`: kotlin.String
+    , 
+    var `simSamplesJson`: kotlin.String
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeLocalizedRouteStreets: FfiConverterRustBuffer<LocalizedRouteStreets> {
+    override fun read(buf: ByteBuffer): LocalizedRouteStreets {
+        return LocalizedRouteStreets(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: LocalizedRouteStreets) = (
+            FfiConverterString.allocationSize(value.`maneuversJson`) +
+            FfiConverterString.allocationSize(value.`simSamplesJson`)
+    )
+
+    override fun write(value: LocalizedRouteStreets, buf: ByteBuffer) {
+            FfiConverterString.write(value.`maneuversJson`, buf)
+            FfiConverterString.write(value.`simSamplesJson`, buf)
+    }
+}
+
+
+
 data class PlaceHit (
     var `osmId`: kotlin.Long
     , 
@@ -6757,6 +6826,18 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Clear the in-memory route street-name cache (e.g. when the route is deleted).
+         */ fun `clearLocalizedRouteStreetsCache`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_clear_localized_route_streets_cache(
+    
+        _status)
+}
+    
+    
+
+        /**
          * Clear one region's place-index rows under the shared build lock (rusqlite).
          *
          * Prefer this over Android framework SQLite when native is available — same
@@ -7557,7 +7638,7 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
-         * Human highway-class label when OSM name/ref are missing (never a raw tag).
+         * Highway-class message code when OSM name/ref are missing (`navi.msg.highway_class|…`).
          */ fun `highwayClassDisplayLabel`(`highway`: kotlin.String?): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
@@ -8031,6 +8112,24 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Option D: rewrite maneuver / sim-sample `street` fields using `name:*` from
+         * the region's downloaded PMTiles (presentation only; routing unchanged).
+         */ fun `localizeRouteStreetsFromPmtiles`(`pmtilesPath`: kotlin.String, `locale`: kotlin.String, `maneuversJson`: kotlin.String, `simSamplesJson`: kotlin.String): LocalizedRouteStreets {
+            return FfiConverterTypeLocalizedRouteStreets.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_localize_route_streets_from_pmtiles(
+    
+        
+        FfiConverterString.lower(`pmtilesPath`),
+        FfiConverterString.lower(`locale`),
+        FfiConverterString.lower(`maneuversJson`),
+        FfiConverterString.lower(`simSamplesJson`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Default adjacency-graph corridor: ordered catalog regions for waypoints.
          *
          * `waypoints_lat_lon_json` is `[[lat,lon],…]`. `installed_region_ids_json` is a
@@ -8283,6 +8382,23 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
             return FfiConverterBoolean.lift(
     uniffiRustCall() { _status ->
     UniffiLib.uniffi_navi_fn_func_place_index_has_entries(
+    
+        
+        FfiConverterString.lower(`indexDbPath`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Drop stale `-shm` and `wal_checkpoint(TRUNCATE)` before Android opens the DB.
+         *
+         * Prevents SIGBUS in `walIndexReadHdr` when a prior index build was killed and
+         * left a large WAL. No-op when sidecars are absent. Does not bump schema.
+         */ fun `placeIndexRecoverWal`(`indexDbPath`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_place_index_recover_wal(
     
         
         FfiConverterString.lower(`indexDbPath`),_status)
@@ -9349,6 +9465,19 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
 }
     )
     }
+    
+
+        /**
+         * Set BCP 47 locale used when formatting place-index hit display names.
+         */ fun `setPlaceSearchLocale`(`locale`: kotlin.String)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_set_place_search_locale(
+    
+        
+        FfiConverterString.lower(`locale`),_status)
+}
+    
     
 
         /**
