@@ -1024,6 +1024,8 @@ private fun NaviMapScreen() {
         }
     var previousLocaleTag by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(deviceLocaleTag) {
+        val tag = deviceLocaleTag.ifBlank { java.util.Locale.getDefault().toLanguageTag() }
+        runCatching { uniffi.navi.setPlaceSearchLocale(tag) }
         val prev = previousLocaleTag
         previousLocaleTag = deviceLocaleTag
         if (prev != null && prev != deviceLocaleTag) {
@@ -5207,12 +5209,17 @@ private fun NaviMapScreen() {
                                             nearInfo.speedLimitKmh,
                                             speedAccKmh,
                                         )
-                                    NaviMapTestHooks.lastCurrentStreet = nearInfo.label
+                                    val roadLabel =
+                                        UiMessageCodes.resolve(
+                                            nearInfo.label,
+                                            context.resources,
+                                        )
+                                    NaviMapTestHooks.lastCurrentStreet = roadLabel
                                     NaviMapTestHooks.lastCurrentSpeedLimitKmh =
                                         nearInfo.speedLimitKmh
                                     driveHud =
                                         driveHud.copy(
-                                            currentStreet = nearInfo.label,
+                                            currentStreet = roadLabel,
                                             currentSpeedKmh =
                                                 driveHud.currentSpeedKmh ?: speedKmh,
                                             currentSpeedLimitKmh = nearInfo.speedLimitKmh,
@@ -7134,7 +7141,7 @@ private fun NaviMapScreen() {
                                         onClick = { showTools = !showTools },
                                         modifier = Modifier.testTag("btn_tools"),
                                     ) {
-                                        NaviText(if (showTools) "Hide tools" else "Tools")
+                                        NaviText(if (showTools) stringResource(R.string.action_hide_tools) else stringResource(R.string.action_tools))
                                     }
                                     TextButton(
                                         onClick = {
@@ -7364,7 +7371,7 @@ private fun NaviMapScreen() {
                                         .fillMaxWidth()
                                         .testTag("btn_plan_route"),
                             ) {
-                                NaviText(if (planningRoute) "Planning…" else "Plan route")
+                                NaviText(if (planningRoute) stringResource(R.string.action_planning) else stringResource(R.string.action_plan_route))
                             }
                             if (planNotice.isNotBlank() && !planningRoute) {
                                 Text(
@@ -7618,7 +7625,12 @@ private fun NaviMapScreen() {
                                                 status = "Profile: ${p.name.lowercase()}"
                                             },
                                             label = {
-                                                Text(travelProfileChipLabel(p))
+                                                Text(
+                                                    travelProfileChipLabel(
+                                                        p,
+                                                        context.resources,
+                                                    ),
+                                                )
                                             },
                                             modifier =
                                                 Modifier.testTag(
@@ -8658,7 +8670,7 @@ private fun NaviMapScreen() {
                             onClick = { showTools = !showTools },
                             modifier = Modifier.testTag("btn_tools_collapsed"),
                         ) {
-                            Text(if (showTools) "Hide tools" else "Tools")
+                            Text(if (showTools) stringResource(R.string.action_hide_tools) else stringResource(R.string.action_tools))
                         }
                     }
                 }
@@ -9282,7 +9294,10 @@ private fun NaviMapScreen() {
                                     .testTag("btn_download_region"),
                         ) {
                             Text(
-                                PackRegionAvailability.downloadRegionButtonLabel(selectedServerReady),
+                                PackRegionAvailability.downloadRegionButtonLabel(
+                                    selectedServerReady,
+                                    context.resources,
+                                ),
                             )
                         }
                         Button(

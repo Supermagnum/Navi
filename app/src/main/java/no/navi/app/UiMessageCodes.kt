@@ -39,7 +39,29 @@ object UiMessageCodes {
             "rebuild_local" ->
                 resources.getString(R.string.progress_rebuild_local, arg.orEmpty())
             "resuming_download" -> resources.getString(R.string.download_resuming)
+            "highway_class" -> resources.getString(highwayClassResId(arg))
             else -> raw
         }
     }
+
+    private fun highwayClassResId(tag: String?): Int =
+        when (tag?.trim()?.lowercase()?.removeSuffix("_link")) {
+            "motorway" -> R.string.highway_class_motorway
+            "trunk" -> R.string.highway_class_trunk
+            "primary" -> R.string.highway_class_primary
+            "secondary" -> R.string.highway_class_secondary
+            "tertiary" -> R.string.highway_class_tertiary
+            "unclassified" -> R.string.highway_class_unclassified
+            "residential" -> R.string.highway_class_residential
+            "living_street" -> R.string.highway_class_living_street
+            "service" -> R.string.highway_class_service
+            "track" -> R.string.highway_class_track
+            "path" -> R.string.highway_class_path
+            "footway" -> R.string.highway_class_footway
+            "cycleway" -> R.string.highway_class_cycleway
+            "bridleway" -> R.string.highway_class_bridleway
+            "steps" -> R.string.highway_class_steps
+            "pedestrian" -> R.string.highway_class_pedestrian
+            else -> R.string.highway_class_road
+        }
 }

@@ -20,6 +20,8 @@ pub mod codes {
     pub const BUILD_GRAPH: &str = "build_graph";
     pub const REBUILD_LOCAL: &str = "rebuild_local";
     pub const RESUMING_DOWNLOAD: &str = "resuming_download";
+    /// Param is OSM highway base class (`motorway`, `path`, …).
+    pub const HIGHWAY_CLASS: &str = "highway_class";
 }
 
 /// Encode a stable message code for the UI host.

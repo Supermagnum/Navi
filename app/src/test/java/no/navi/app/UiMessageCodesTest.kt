@@ -17,4 +17,12 @@ class UiMessageCodesTest {
         // Use a null-safe path: non-coded labels return early.
         assertTrue(!raw.startsWith(UiMessageCodes.PREFIX))
     }
+
+    @Test
+    fun highwayClassCodeUsesPrefixAndArg() {
+        val coded = "${UiMessageCodes.PREFIX}highway_class|service"
+        assertTrue(coded.startsWith(UiMessageCodes.PREFIX))
+        val body = coded.removePrefix(UiMessageCodes.PREFIX)
+        assertEquals("highway_class|service", body)
+    }
 }

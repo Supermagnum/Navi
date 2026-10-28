@@ -104,31 +104,38 @@ pub fn highway_fallback_kmh(highway: Option<&str>) -> f64 {
     }
 }
 
-/// Human-readable highway-class label when OSM `name` / `ref` are missing.
+/// Stable highway-class **code** when OSM `name` / `ref` are missing.
 ///
+/// Returns `navi.msg.highway_class|<base>` so the UI host maps to resources.
 /// Uses the **same** class keys as [`highway_fallback_kmh`] (plus common
-/// foot/cycle classes). Never returns a raw OSM tag; unknown → `"Road"`.
-pub fn highway_class_display_label(highway: Option<&str>) -> &'static str {
-    match highway_class_base(highway).as_deref() {
-        Some("motorway") => "Motorway",
-        Some("trunk") => "Trunk road",
-        Some("primary") => "Primary road",
-        Some("secondary") => "Secondary road",
-        Some("tertiary") => "Tertiary road",
-        Some("unclassified") => "Unclassified road",
-        Some("residential") => "Residential road",
-        Some("living_street") => "Living street",
-        Some("service") => "Service road",
-        Some("track") => "Track",
-        Some("road") => "Road",
-        Some("path") => "Path",
-        Some("footway") => "Footway",
-        Some("cycleway") => "Cycleway",
-        Some("bridleway") => "Bridleway",
-        Some("steps") => "Steps",
-        Some("pedestrian") => "Pedestrian street",
-        _ => "Road",
-    }
+/// foot/cycle classes). Unknown → `navi.msg.highway_class|road`.
+pub fn highway_class_display_label(highway: Option<&str>) -> String {
+    let base_owned = highway_class_base(highway);
+    let base = base_owned.as_deref().unwrap_or("road");
+    let known = matches!(
+        base,
+        "motorway"
+            | "trunk"
+            | "primary"
+            | "secondary"
+            | "tertiary"
+            | "unclassified"
+            | "residential"
+            | "living_street"
+            | "service"
+            | "track"
+            | "road"
+            | "path"
+            | "footway"
+            | "cycleway"
+            | "bridleway"
+            | "steps"
+            | "pedestrian"
+    );
+    crate::i18n::messages::encode1(
+        crate::i18n::messages::codes::HIGHWAY_CLASS,
+        if known { base } else { "road" },
+    )
 }
 
 /// Effective motor speed (km/h) for pre-departure ETA.
@@ -279,32 +286,54 @@ mod tests {
     fn highway_display_labels_align_with_fallback_classes() {
         assert_eq!(
             highway_class_display_label(Some("motorway_link")),
-            "Motorway"
+            "navi.msg.highway_class|motorway"
         );
-        assert_eq!(highway_class_display_label(Some("trunk")), "Trunk road");
-        assert_eq!(highway_class_display_label(Some("primary")), "Primary road");
+        assert_eq!(
+            highway_class_display_label(Some("trunk")),
+            "navi.msg.highway_class|trunk"
+        );
+        assert_eq!(
+            highway_class_display_label(Some("primary")),
+            "navi.msg.highway_class|primary"
+        );
         assert_eq!(
             highway_class_display_label(Some("secondary")),
-            "Secondary road"
+            "navi.msg.highway_class|secondary"
         );
         assert_eq!(
             highway_class_display_label(Some("tertiary")),
-            "Tertiary road"
+            "navi.msg.highway_class|tertiary"
         );
         assert_eq!(
             highway_class_display_label(Some("unclassified")),
-            "Unclassified road"
+            "navi.msg.highway_class|unclassified"
         );
         assert_eq!(
             highway_class_display_label(Some("residential")),
-            "Residential road"
+            "navi.msg.highway_class|residential"
         );
-        assert_eq!(highway_class_display_label(Some("service")), "Service road");
-        assert_eq!(highway_class_display_label(Some("track")), "Track");
-        assert_eq!(highway_class_display_label(Some("path")), "Path");
-        assert_eq!(highway_class_display_label(None), "Road");
+        assert_eq!(
+            highway_class_display_label(Some("service")),
+            "navi.msg.highway_class|service"
+        );
+        assert_eq!(
+            highway_class_display_label(Some("track")),
+            "navi.msg.highway_class|track"
+        );
+        assert_eq!(
+            highway_class_display_label(Some("path")),
+            "navi.msg.highway_class|path"
+        );
+        assert_eq!(
+            highway_class_display_label(None),
+            "navi.msg.highway_class|road"
+        );
         // Never echo raw OSM tags.
         assert_ne!(highway_class_display_label(Some("foo_bar")), "foo_bar");
+        assert_eq!(
+            highway_class_display_label(Some("foo_bar")),
+            "navi.msg.highway_class|road"
+        );
     }
 
     #[test]
