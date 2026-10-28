@@ -37,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -179,6 +180,22 @@ fun travelProfileChipLabel(profile: TravelProfile): String =
         TravelProfile.MOTORCYCLE -> "Motorcycle"
         TravelProfile.TRUCK -> "Truck"
         TravelProfile.MOBILE_HOME -> "Mobile home"
+        else -> profile.name
+    }
+
+fun travelProfileChipLabel(
+    profile: TravelProfile,
+    resources: android.content.res.Resources,
+): String =
+    when (profile) {
+        TravelProfile.CAR -> resources.getString(R.string.profile_car)
+        TravelProfile.CAR_ELECTRIC -> resources.getString(R.string.profile_car_electric)
+        TravelProfile.BICYCLE -> resources.getString(R.string.profile_bicycle)
+        TravelProfile.BICYCLE_ELECTRIC -> resources.getString(R.string.profile_bicycle_electric)
+        TravelProfile.HIKING -> resources.getString(R.string.profile_hiking)
+        TravelProfile.MOTORCYCLE -> resources.getString(R.string.profile_motorcycle)
+        TravelProfile.TRUCK -> resources.getString(R.string.profile_truck)
+        TravelProfile.MOBILE_HOME -> resources.getString(R.string.profile_mobile_home)
         else -> profile.name
     }
 
@@ -515,8 +532,7 @@ fun PluginSettingsSection(
         }
         if (longTripEnabled) {
             Text(
-                "Downloads map packs along the route on Wi-Fi/Ethernet only. " +
-                    "Place index and Tools downloads stay on internal storage.",
+                stringResource(R.string.long_trip_wifi_packs_hint),
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
@@ -1383,6 +1399,7 @@ fun DriveSettingsSheet(
                         .testTag("drive_settings_profiles"),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                val profileResources = LocalContext.current.resources
                 TravelProfile.entries.filter { travelProfileMenuFocus(it) }.forEach { p ->
                     FilterChip(
                         selected = travelProfile == p,
@@ -1392,7 +1409,7 @@ fun DriveSettingsSheet(
                                 onEcoChange(ecoModeDefault(p))
                             }
                         },
-                        label = { Text(travelProfileChipLabel(p)) },
+                        label = { Text(travelProfileChipLabel(p, profileResources)) },
                         modifier =
                             Modifier.testTag(
                                 when (p) {
@@ -1625,7 +1642,13 @@ fun DriveSettingsSheet(
                 )
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (preferLiters) "Units: liters" else "Units: gallons")
+                    Text(
+            if (preferLiters) {
+                stringResource(R.string.units_liters)
+            } else {
+                stringResource(R.string.units_gallons)
+            },
+        )
                     Switch(
                         checked = preferLiters,
                         onCheckedChange = { preferLiters = it },

@@ -329,6 +329,9 @@ object RegionDownloadBackground {
      * Set [lastStatus] so the line always names the active region (and N-of-M
      * when a long-trip corridor plan is present).
      */
+    private fun appStr(context: Context, id: Int, vararg args: Any): String =
+        if (args.isEmpty()) context.getString(id) else context.getString(id, *args)
+
     private fun setStatus(
         message: String,
         regionId: String = activeRegionPath.get(),
@@ -1060,7 +1063,10 @@ object RegionDownloadBackground {
             Log.i(TAG, "long-trip gate: not on Wi-Fi/Ethernet; pause enqueue of $geofabrikPath")
             val path = GeofabrikDownloadCatalog.canonicalizePath(geofabrikPath)
             activeRegionPath.set(path)
-            setStatus("Paused — waiting for Wi-Fi/Ethernet", path)
+            val pausedMsg =
+                context?.let { appStr(it, R.string.status_paused_waiting_wifi) }
+                    ?: "Paused — waiting for Wi-Fi/Ethernet"
+            setStatus(pausedMsg, path)
             emitPhase(path, "paused_unmetered")
             // Still record the job on the queue so remount/unmetered resume can drain.
             val job =
@@ -1321,12 +1327,12 @@ object RegionDownloadBackground {
     ) {
         while (true) {
             if (PlaceIndexReady.deferWritesDuringPlan()) {
-                setStatus("Paused — waiting for route plan to finish")
+                setStatus(appStr(context, R.string.status_paused_waiting_plan))
                 Log.i(TAG, "drainQueue deferred: route plan in flight")
                 break
             }
             if (requireUnmeteredGate.get() && !NetworkUnmetered.isWifiOrEthernet(context)) {
-                setStatus("Paused — waiting for Wi-Fi/Ethernet")
+                setStatus(appStr(context, R.string.status_paused_waiting_wifi))
                 Log.i(TAG, "drainQueue paused: unmetered gate")
                 break
             }
@@ -1473,7 +1479,7 @@ object RegionDownloadBackground {
         if (phase == Phase.PACKS) {
             val checkStarted = System.nanoTime()
             val decideT0 = phaseStart("pipeline.decide_acquisition")
-            setStatus("Fetching from pack server…")
+            setStatus(appStr(context, R.string.status_fetching_pack_server))
             persistPhase(dataDir, url, filename, pathForDecision, Phase.PACKS)
             val decision =
                 runCatching {
@@ -1507,7 +1513,7 @@ object RegionDownloadBackground {
                 )
                 if (!decision.executeLocalConvert) {
                     val packPathT0 = phaseStart("pipeline.pack_server_path")
-                    setStatus("Installing packs from ${decision.dataSource}…")
+                    setStatus(appStr(context, R.string.status_installing_packs, decision.dataSource))
                     runCatching {
                         bindGeofabrikRegion(
                             dataDir = packDir.absolutePath,
@@ -1520,7 +1526,7 @@ object RegionDownloadBackground {
                         MapHudPrefs.saveGeofabrikPath(context, geofabrikPath)
                     }
                     // Download Geofabrik extract BEFORE place index / basemap.
-                    setStatus("Downloading extract for place index…")
+                    setStatus(appStr(context, R.string.download_extract_place_index))
                     val pbfT0 = phaseStart("pipeline.provision_pbf_dem")
                     val pbfReport =
                         provisionRegionData(
@@ -1599,7 +1605,7 @@ object RegionDownloadBackground {
                         pathForDecision.isNotBlank()
                     ) {
                         // Packs present but extract missing — fetch then index.
-                        setStatus("Downloading extract for place index…")
+                        setStatus(appStr(context, R.string.download_extract_place_index))
                         val pbfReport =
                             provisionRegionData(
                                 dataDir = packDir.absolutePath,
@@ -1955,7 +1961,7 @@ object RegionDownloadBackground {
             Log.i(TAG, "basemap already present for $path ($key)")
             return true
         }
-        setStatus("Downloading basemap (PMTiles)…")
+        setStatus(appStr(context, R.string.download_basemap_pmtiles))
         Log.i(TAG, "starting PMTiles extract for $path")
         val job =
             runCatching {
