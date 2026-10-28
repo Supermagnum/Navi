@@ -25,6 +25,8 @@ The app tried Plan four times at guest 07:06. Each failed with `terminate=skelet
 
 ### Route
 
+On 2026-10-28 the user accepted these out-of-band results for this run. Distance, duration, instructions, wild-camping, and cover-gate Stage-B stay labeled out of band with the measured values below unchanged.
+
 | # | Field | Result |
 |---|---|---|
 | 1 | Cores | 6, not 8 |
