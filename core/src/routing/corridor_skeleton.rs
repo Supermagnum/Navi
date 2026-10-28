@@ -2746,20 +2746,18 @@ fn stage_b_plan_on_graph(
                 alts[i].name
             );
         } else if !eligible[pick] {
-            pick = (0..alts.len())
-                .filter(|&i| eligible[i])
-                .min_by(|&i, &j| {
-                    alts[i]
-                        .report
-                        .total_km
-                        .total_cmp(&alts[j].report.total_km)
-                        .then_with(|| {
-                            alts[i]
-                                .report
-                                .total_min
-                                .total_cmp(&alts[j].report.total_min)
-                        })
-                })?;
+            pick = (0..alts.len()).filter(|&i| eligible[i]).min_by(|&i, &j| {
+                alts[i]
+                    .report
+                    .total_km
+                    .total_cmp(&alts[j].report.total_km)
+                    .then_with(|| {
+                        alts[i]
+                            .report
+                            .total_min
+                            .total_cmp(&alts[j].report.total_min)
+                    })
+            })?;
         }
         let table: Vec<StageBLegCandidate> = alts
             .iter()
