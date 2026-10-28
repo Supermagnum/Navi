@@ -25,7 +25,7 @@ Repo: https://github.com/Supermagnum/Navi.git
 Builds:
   - versionName: 0.3.26-beta
     versionCode: 31
-    commit: f5e923580e72408b4f72edde26c8ee0e15351fde
+    commit: e147fa5dfed2f7b20506b51366fee27bb87ca249
     timeout: 14400
     subdir: app
     sudo:
