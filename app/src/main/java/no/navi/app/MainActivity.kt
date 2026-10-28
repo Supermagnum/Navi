@@ -215,6 +215,18 @@ class MainActivity : ComponentActivity() {
         NaviMapTestHooks.clearDebugGpsInject()
         applyNaviLaunchExtras(intent)
         runCatching { uniffi.navi.initNativeLogging() }
+        // Recover torn place_index WAL/SHM before any PlaceIndexIntact probe
+        // (SIGBUS in walIndexReadHdr is uncatchable). Off main thread.
+        Thread(
+            {
+                runCatching {
+                    PlaceIndexIntact.recoverBeforeOpen(NaviAppData.resolve(this@MainActivity))
+                }.onFailure { t ->
+                    android.util.Log.w("PlaceIndexIntact", "startup wal recover: ${t.message}")
+                }
+            },
+            "PlaceIndexWalRecover",
+        ).start()
         CampingBootstrap.ensureInitialized(this)
         CatBootstrap.ensureInitialized(this)
         // Natural Earth country grid: never build on the main looper (ANR / seed stall).

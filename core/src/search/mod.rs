@@ -1377,6 +1377,7 @@ impl NameIndex {
         if !path.is_file() || region_id.is_empty() {
             return false;
         }
+        let _ = Self::recover_wal_sidecars(path);
         let Ok(conn) =
             Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
         else {
@@ -1393,8 +1394,10 @@ impl NameIndex {
     /// True when this DB was built by a context-aware `load_from_pbf`.
     /// Read-only: never creates or migrates the file.
     pub fn is_current_schema(path: impl AsRef<Path>) -> bool {
+        let path = path.as_ref();
+        let _ = Self::recover_wal_sidecars(path);
         let Ok(conn) =
-            Connection::open_with_flags(path.as_ref(), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
         else {
             return false;
         };

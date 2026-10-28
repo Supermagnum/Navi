@@ -43,6 +43,7 @@ Findable by local, alt/loc, and localized names when those strings are present i
   reset of `name_index_build.complete`).
 - New downloads / region updates populate `names_json` and expand `search_doc`.
 - Existing regions keep empty `names_json` until the next region update.
+- WAL crash / upgrade notes: [`place-index-wal.md`](place-index-wal.md).
 
 ## Road names in guidance — option D (offline PMTiles)
 

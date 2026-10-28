@@ -173,26 +173,67 @@ object PlaceIndexIntact {
     }
 
     /**
+     * Automatic recovery before any Android framework open. Call on cold start
+     * and from every probe path — end users must not need adb.
+     *
+     * Order: UniFFI checkpoint → framework RW checkpoint → drop `-shm` →
+     * quarantine unreadable `-wal` so the main file can still open.
+     */
+    fun recoverBeforeOpen(dataDir: File) {
+        val dbFile = File(dataDir, "place_index.db")
+        if (dbFile.isFile) recoverWalSidecars(dbFile)
+    }
+
+    /**
      * Checkpoint torn WAL / drop stale shm before Android framework opens.
-     * Prefers UniFFI rust path; falls back to deleting `-shm` only.
+     * Prefers UniFFI rust path; falls back to framework SQLite then quarantine.
      */
     private fun recoverWalSidecars(dbFile: File) {
         val path = dbFile.absolutePath
+        val wal = File("$path-wal")
+        val shm = File("$path-shm")
+        if (!wal.isFile && !shm.isFile) return
         val native =
             runCatching { uniffi.navi.placeIndexRecoverWal(path) }
                 .onFailure { t -> Log.w(TAG, "placeIndexRecoverWal threw: ${t.message}") }
                 .getOrNull()
         if (native != null && !native.startsWith("FAIL")) {
+            Log.i(TAG, "wal recover native ok")
             return
         }
         if (native != null) {
             Log.w(TAG, "placeIndexRecoverWal: $native")
         }
-        // Last resort: stale shm alone often triggers walIndexReadHdr SIGBUS.
-        val shm = File("$path-shm")
+        // Framework fallback (UniFFI not loaded yet, or rust checkpoint failed).
         if (shm.isFile()) {
             runCatching { shm.delete() }
                 .onFailure { t -> Log.w(TAG, "delete shm failed: ${t.message}") }
+        }
+        val checkpointed =
+            runCatching {
+                SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
+                    db.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { c ->
+                        c.moveToFirst()
+                    }
+                }
+                true
+            }.getOrElse { t ->
+                Log.w(TAG, "framework wal_checkpoint failed: ${t.message}")
+                false
+            }
+        if (checkpointed) {
+            Log.i(TAG, "wal recover framework checkpoint ok")
+            return
+        }
+        // Last resort: quarantine WAL so OPEN_READONLY can use the main file.
+        // Uncheckpointed frames may be lost; incomplete regions rebuild later.
+        if (wal.isFile()) {
+            val bad = File("$path-wal.bad")
+            runCatching {
+                if (bad.exists()) bad.delete()
+                if (!wal.renameTo(bad)) wal.delete()
+            }.onFailure { t -> Log.w(TAG, "quarantine wal failed: ${t.message}") }
+            Log.w(TAG, "quarantined place_index.db-wal; may need region re-index")
         }
     }
 
