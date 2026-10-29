@@ -899,13 +899,7 @@ impl ArchivedFlatGraphPack {
             ) else {
                 continue;
             };
-            let is_ferry = self
-                .edge_is_ferry
-                .get(i)
-                .copied()
-                .map(arch_u8)
-                .unwrap_or(0)
-                != 0;
+            let is_ferry = self.edge_is_ferry.get(i).copied().map(arch_u8).unwrap_or(0) != 0;
             edges.push(GraphEdge {
                 id: format!("{}-{}-{}", src.0, tgt.0, i),
                 source: src,
@@ -981,13 +975,7 @@ impl ArchivedFlatGraphPack {
                 maxheight_m: archived_opt_metric_at(&self.edge_maxheight_m, i),
                 maxwidth_m: archived_opt_metric_at(&self.edge_maxwidth_m, i),
                 maxlength_m: archived_opt_metric_at(&self.edge_maxlength_m, i),
-                is_toll: self
-                    .edge_is_toll
-                    .get(i)
-                    .copied()
-                    .map(arch_u8)
-                    .unwrap_or(0)
-                    != 0,
+                is_toll: self.edge_is_toll.get(i).copied().map(arch_u8).unwrap_or(0) != 0,
                 is_ferry,
                 ferry_interval_min: ferry_intervals
                     .and_then(|v| unpack_opt_metric(v, i))

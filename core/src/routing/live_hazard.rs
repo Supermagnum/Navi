@@ -79,7 +79,10 @@ impl LiveHazardIndex {
         }
         let len = std::fs::metadata(path)?.len();
         if len < 64 {
-            anyhow::bail!("live hazard PBF too small ({len} bytes): {}", path.display());
+            anyhow::bail!(
+                "live hazard PBF too small ({len} bytes): {}",
+                path.display()
+            );
         }
         // Order matters for peak RAM on Ostlandet-class PBFs: children/bumps first
         // (needed for the live cone), then catalogue signs, then cameras.

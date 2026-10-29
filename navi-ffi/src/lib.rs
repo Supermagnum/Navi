@@ -3898,9 +3898,7 @@ fn plan_car_route_inner(
             && (-180.0..=180.0).contains(&lon)
     };
     if !coord_ok(start_lat, start_lon) || !coord_ok(end_lat, end_lon) {
-        return empty(
-            "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: invalid start/end coordinates\n".into(),
-        );
+        return empty("TEST_KIND=PLAN_CAR_ROUTE\nFAIL: invalid start/end coordinates\n".into());
     }
     for (i, v) in via_points.iter().enumerate() {
         if !coord_ok(v.lat, v.lon) {

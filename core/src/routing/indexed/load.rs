@@ -983,9 +983,12 @@ fn validate_archived_graph_v9(a: &ArchivedFlatGraphPack) -> Result<(), PackLoadE
     lens_eq("edge_is_toll", a.edge_is_toll.len(), ne)?;
     lens_eq("edge_is_ferry", a.edge_is_ferry.len(), ne)?;
     lens_eq("edge_is_tunnel", a.edge_is_tunnel.len(), ne)?;
-    validate_edge_endpoints(nn, ne, |i| u32::from(a.edge_src[i]), |i| {
-        u32::from(a.edge_tgt[i])
-    })
+    validate_edge_endpoints(
+        nn,
+        ne,
+        |i| u32::from(a.edge_src[i]),
+        |i| u32::from(a.edge_tgt[i]),
+    )
 }
 
 fn validate_archived_graph_v8(a: &ArchivedFlatGraphPackV8) -> Result<(), PackLoadError> {
@@ -1006,9 +1009,12 @@ fn validate_archived_graph_v8(a: &ArchivedFlatGraphPackV8) -> Result<(), PackLoa
     lens_eq("edge_road_ref", a.edge_road_ref.len(), ne)?;
     lens_eq("edge_is_toll", a.edge_is_toll.len(), ne)?;
     lens_eq("edge_is_ferry", a.edge_is_ferry.len(), ne)?;
-    validate_edge_endpoints(nn, ne, |i| u32::from(a.edge_src[i]), |i| {
-        u32::from(a.edge_tgt[i])
-    })
+    validate_edge_endpoints(
+        nn,
+        ne,
+        |i| u32::from(a.edge_src[i]),
+        |i| u32::from(a.edge_tgt[i]),
+    )
 }
 
 #[derive(Debug, Error)]
