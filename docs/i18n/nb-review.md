@@ -1,6 +1,6 @@
 # Bokmål translation review
 
-Generated for the 331 previously missing keys. Existing approved `values-nb` strings are not listed.
+Generated for the previously missing keys (331 strings + clear_all_vias plurals). Existing approved `values-nb` strings are not listed.
 
 Mark in the note column: `?` = translator unsure.
 
@@ -387,3 +387,9 @@ Mark in the note column: `?` = translator unsure.
 - `settings_arm_extension`
 - `ui_none_in_the_onboard_db_yet_import_osm_csv_fixtures_or_wait_f`
 - `ui_route_enumerations`
+
+## 10 Plurals (outside original 331 list)
+
+| key | English | Bokmål | note |
+|---|---|---|---|
+| `clear_all_vias` | Clear all vias (%1$d) (one/other) | Fjern alle via (%1$d) (one/other) | |

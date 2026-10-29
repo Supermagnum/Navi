@@ -36,7 +36,8 @@ Geofabrik country labels in the download catalog. Existing strings remain
 **approved as-is**. Previously missing keys were translated in `i18n/nb-complete`
 (see `docs/i18n/nb-review.md`).
 
-No keys currently missing for `values-nb`.
+No keys currently missing for `values-nb` (including the
+`clear_all_vias` plurals that were outside the original 331-key list).
 
 
 ## Geofabrik country labels

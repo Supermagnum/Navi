@@ -449,4 +449,9 @@
     <string name="vehicle_height_m">Høyde (m)</string>
     <string name="vehicle_length_m">Lengde (m)</string>
     <string name="vehicle_width_m">Bredde (m)</string>
+
+    <plurals name="clear_all_vias">
+        <item quantity="one">Fjern alle via (%1$d)</item>
+        <item quantity="other">Fjern alle via (%1$d)</item>
+    </plurals>
 </resources>
