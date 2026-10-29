@@ -10873,11 +10873,19 @@ private fun CorridorMapView(
             java.util.concurrent.atomic
                 .AtomicReference(unitSystem)
         }
+    // Same for Breaks: refreshTrackOverlay is captured by camera listeners once, so a
+    // Compose-parameter read would keep the first composition's on/off value forever.
+    val breakRemindersEnabledRef =
+        remember {
+            java.util.concurrent.atomic
+                .AtomicReference(breakRemindersEnabled)
+        }
     prefer3dRef.set(prefer3d)
     contoursEnabledRef.set(contoursEnabled)
     vulkanRef.set(vulkanAvailable)
     tiltRef.set(cameraTiltDeg)
     unitSystemRef.set(unitSystem)
+    breakRemindersEnabledRef.set(breakRemindersEnabled)
 
     fun effectiveTiltDeg(): Double {
         val liveVulkan = vulkanRef.get()
@@ -11537,7 +11545,7 @@ private fun CorridorMapView(
             addWp(v.name, v.lat, v.lon)
         }
         addWp(latest.endName, latest.endLat, latest.endLon)
-        if (breakRemindersEnabled) {
+        if (breakRemindersEnabledRef.get()) {
             for (b in latest.breakPois) {
                 // Peaks/mountains are never pause labels (e.g. Store Ramshøgda).
                 if (b.name.contains("Ramsh", ignoreCase = true)) continue
