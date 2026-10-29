@@ -138,7 +138,7 @@ fun catRigModelPresets(): List<CatRigModelPreset> =
     )
 
 fun catRigModelLabel(model: Int): String =
-    catRigModelPresets().firstOrNull { it.model == model }?.let { "${it.model} ${it.name}" }
+    catRigModelPresets().firstOrNull { it.model == model }?.name
         ?: "$model (custom)"
 
 /** Remote NET rigctl endpoint (emulator uses 10.0.2.2:4532 for host rigctld). */

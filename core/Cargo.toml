@@ -51,6 +51,7 @@ opening-hours = { workspace = true }
 roxmltree = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
+geozero = { version = "0.14", default-features = false, features = ["with-mvt"] }
 
 [dev-dependencies]
 tempfile = "3"

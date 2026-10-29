@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="via_point_reached">Via-punkt nådd</string>
-    <string name="via_point_n_of_m_reached">Via-punkt %1$d av %2$d nådd</string>
-    <string name="cat_licence_listen_only">Du kan lytte, men ikkje send utan amatørradiosertifikat.</string>
-    <string name="cat_plugin_toggle_label">CAT / CATS-radio</string>
-    <string name="cat_update_repeaters">Oppdater repetarar</string>
-    <string name="cat_update_repeaters_hint">Hentar berre frå navi-server (vanleg HTTPS). Ingen bakgrunnshenting. RepeaterBook kjem når serveren publiserer han.</string>
-</resources>

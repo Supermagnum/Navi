@@ -150,17 +150,22 @@ impl RigBackend for FfiRigBackend {
                     navi_hamlib_sys::RIG_MODE_FM,
                     want.passband_hz as i32,
                 ))?;
-                let shift = match want.shift {
-                    ShiftDir::None => navi_hamlib_sys::RIG_RPT_SHIFT_NONE,
-                    ShiftDir::Minus => navi_hamlib_sys::RIG_RPT_SHIFT_MINUS,
-                    ShiftDir::Plus => navi_hamlib_sys::RIG_RPT_SHIFT_PLUS,
-                };
-                check(navi_hamlib_sys::rig_set_rptr_shift(self.rig, vfo, shift))?;
-                check(navi_hamlib_sys::rig_set_rptr_offs(
-                    self.rig,
-                    vfo,
-                    want.offset_hz as i32,
-                ))?;
+                if want.shift != ShiftDir::Leave {
+                    let shift = match want.shift {
+                        ShiftDir::None | ShiftDir::Leave => navi_hamlib_sys::RIG_RPT_SHIFT_NONE,
+                        ShiftDir::Minus => navi_hamlib_sys::RIG_RPT_SHIFT_MINUS,
+                        ShiftDir::Plus => navi_hamlib_sys::RIG_RPT_SHIFT_PLUS,
+                    };
+                    check(navi_hamlib_sys::rig_set_rptr_shift(self.rig, vfo, shift))?;
+                    check(navi_hamlib_sys::rig_set_rptr_offs(
+                        self.rig,
+                        vfo,
+                        want.offset_hz as i32,
+                    ))?;
+                }
+                // CTCSS and DCS encode are set explicitly. A 1750 Hz burst is
+                // represented as both tones off. This path never calls
+                // rig_set_func(..., RIG_FUNC_TBURST): the operator sends the burst.
                 check(navi_hamlib_sys::rig_set_ctcss_tone(
                     self.rig,
                     vfo,

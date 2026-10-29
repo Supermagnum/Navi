@@ -333,6 +333,16 @@ object PackRegionAvailability {
             "Download region + build place index"
         }
 
+    fun downloadRegionButtonLabel(
+        serverReady: Boolean,
+        resources: android.content.res.Resources,
+    ): String =
+        if (serverReady) {
+            resources.getString(R.string.download_region_action)
+        } else {
+            resources.getString(R.string.download_region_and_place_index)
+        }
+
     /** Green Download styling when the selected path is on the pack catalog. */
     fun downloadRegionUsesReadyStyle(serverReady: Boolean): Boolean = serverReady
 

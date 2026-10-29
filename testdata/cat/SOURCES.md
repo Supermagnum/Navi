@@ -28,6 +28,7 @@ RF parameters.
 | `osm/changeset_189704408.xml` + `_download.xml` | Changeset metadata + osmChange |
 | `osm/elements/` | Current versions of every touched repeater node/way (`nodes_current.xml`, per-id XML, `touched_ids.txt`) |
 | `osm/la5mr/relation_18780801_full.xml` | LA5MR / Innlandsnettet `type=network` relation with members |
+| `osm/la5mr/bundle_members.json` | The 11 LA5MR members from the navi-server OSM bundle `20261013T091219Z` (ODbL). Corridor tests import this through `import_mirror_payload`, the same function Update uses. |
 | `ham_shack_way_395284738.json` | Tags only for future ham-shacks doc (way 395284738) |
 
 ### Counts (changeset-touched current elements)
@@ -85,11 +86,11 @@ Innlandet bbox extract: **not fetched**.
 
 ## RepeaterBook
 
-| | |
-|---|---|
-| **Access** | Disabled in Navi until written API permission (see `docs/CAT.md`) |
-| **May bundle / app import** | **No** |
-| **Data committed** | **None.** Sync stays off; fixture fetch does not contact repeaterbook.com. |
+RepeaterBook data reaches the app only as files the user downloads from repeaterbook.com and copies into the app drop folder (`Android/data/no.navi.app/files/repeaters` on Android, `repeaters/` under the app data directory on desktop). The app never contacts repeaterbook.com. The user is responsible for complying with RepeaterBook's terms. No RepeaterBook export is committed here.
+
+`testdata/cat/repeaterbook/` holds the parser fixtures. The placemark text uses RepeaterBook's KML layout. The callsigns, frequencies, tones, and coordinates are the OSM LA5MR sites already in this directory (ODbL, changeset 189693189, user Visaman): LA5MR node 1705107664, LA6GR node 1640276661, LA2RRR node 471110617, LA5ARR node 3115922468. The KMZ is the same KML. The border pair repeats the LA5MR placemark with `state_id` NO and SE. The CSV files are the same sites, with and without coordinates, plus a file of rejected coordinates.
+
+`toneburst-1750.kml` is the same RepeaterBook-shaped KML layout filled with OSM **LA5YR** node [5574482764](https://www.openstreetmap.org/node/5574482764) (434.900 MHz, 1750 Hz toneburst, not CTCSS) from the navi-server OSM Norway bundle generation `20261013T091219Z` (ODbL). It is not a RepeaterBook export; the `repeaterbook.com` detail link in the placemark is structural only (same as `la5mr-osm.kml`). Added 2026-10-27 for importer coverage of access tone `toneburst_1750`.
 
 ---
 
@@ -160,7 +161,18 @@ Read-only check on **2026-10-01** (this machine). **navi-server was not modified
 | OSM | Bundle + app import (ODbL) |
 | OpenRepeater | CC0 claimed; Norway export empty → nothing to bundle; watch commercial-redistrib terms |
 | RadioID | Document only; no data |
-| RepeaterBook | Disabled; no data |
+| RepeaterBook | User-downloaded KML/CSV only; app never contacts repeaterbook.com; no export committed |
 | repeatermap.de | Cross-check only; no data |
 | AnyTone samples | Bundle as fixtures; RF from OSM |
 | dump_caps | Synthetic; bundle |
+
+## Published rows inlined in unit tests
+
+These are not files in this tree. The tests copy individual published values.
+
+| Source | Generation | Licence | Rows |
+|---|---|---|---|
+| navi-server OSM Norway bundle | 20261013T091219Z | ODbL, OpenStreetMap contributors | LA5MR nodes 1705107664 and 12635462528 (145.625 MHz); LA5MR node 1011896359 (shift absent); LA5YR node 5574482764 (1750 Hz); LD1FR node 14266941716 (DCS 125); LD1OA node 14266844182 |
+| navi-server RadioID bundle | 20261021T033207Z | RadioID.net terms, attribution "Data courtesy of RadioID.net" | LD1OA 434.8875 MHz; SG0SZK 434.5875 MHz |
+
+A RepeaterBook-shaped KML in the tests uses the OSM LA5ARR / Tretten point already in the committed KML fixtures. It is not a RepeaterBook export.

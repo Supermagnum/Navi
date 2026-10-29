@@ -86,7 +86,7 @@ pub async fn download_tile(
             resume_from,
             expected_bytes: None,
             retries: DEFAULT_RETRIES,
-            progress_label: "Downloading elevation…",
+            progress_label: "navi.msg.download_elevation",
             allow_not_found: true,
         },
     )

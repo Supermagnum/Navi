@@ -89,8 +89,15 @@ impl ProgramError {
 
 fn want_from_request(req: &ProgramRequest) -> VfoState {
     let freq_hz = (req.freq_out_mhz * 1_000_000.0).round() as u64;
-    let offset_hz = (req.shift_mhz.abs() * 1_000_000.0).round() as u64;
-    let shift = if req.shift_mhz < 0.0 {
+    let finite = req.shift_mhz.is_finite();
+    let offset_hz = if finite {
+        (req.shift_mhz.abs() * 1_000_000.0).round() as u64
+    } else {
+        0
+    };
+    let shift = if !finite {
+        ShiftDir::Leave
+    } else if req.shift_mhz < 0.0 {
         ShiftDir::Minus
     } else if req.shift_mhz > 0.0 {
         ShiftDir::Plus
@@ -149,14 +156,14 @@ fn compare(want: &VfoState, got: &VfoState, step: u64) -> Result<(), ProgramErro
             reported: got.passband_hz.to_string(),
         });
     }
-    if want.shift != got.shift {
+    if want.shift != ShiftDir::Leave && want.shift != got.shift {
         return Err(ProgramError::ReadbackMismatch {
             field: "shift".into(),
             requested: format!("{:?}", want.shift),
             reported: format!("{:?}", got.shift),
         });
     }
-    if want.offset_hz != got.offset_hz {
+    if want.shift != ShiftDir::Leave && want.offset_hz != got.offset_hz {
         return Err(ProgramError::ReadbackMismatch {
             field: "offset".into(),
             requested: want.offset_hz.to_string(),
@@ -221,6 +228,7 @@ mod tests {
         ptt: bool,
         fail_ctcss_once: bool,
         calls: u32,
+        log: Vec<&'static str>,
     }
 
     impl RigBackend for MockRig {
@@ -251,6 +259,7 @@ mod tests {
             Ok(false)
         }
         fn set_vfo_state(&mut self, want: &VfoState) -> Result<(), RigError> {
+            self.log.push("set_vfo_state");
             self.state = want.clone();
             self.calls += 1;
             if self.fail_ctcss_once && self.calls == 1 {
@@ -283,6 +292,7 @@ mod tests {
             ptt: false,
             fail_ctcss_once: false,
             calls: 0,
+            log: Vec::new(),
         };
         let r = program_vfo1_verified(&mut rig, &base_req()).unwrap();
         assert_eq!(r.freq_hz, 145_725_000);
@@ -297,6 +307,7 @@ mod tests {
             ptt: true,
             fail_ctcss_once: false,
             calls: 0,
+            log: Vec::new(),
         };
         assert!(matches!(
             program_vfo1_verified(&mut rig, &base_req()),
@@ -311,9 +322,40 @@ mod tests {
             ptt: false,
             fail_ctcss_once: true,
             calls: 0,
+            log: Vec::new(),
         };
         let r = program_vfo1_verified(&mut rig, &base_req()).unwrap();
         assert_eq!(r.ctcss_tenths_hz, Some(885));
         assert_eq!(rig.calls, 2);
+    }
+
+    #[test]
+    fn burst_sets_encode_off_and_the_call_log_has_no_toneburst() {
+        let mut req = base_req();
+        req.ctcss_hz = None;
+        req.dcs_code = None;
+        let mut rig = MockRig {
+            state: want_from_request(&req),
+            ptt: false,
+            fail_ctcss_once: false,
+            calls: 0,
+            log: Vec::new(),
+        };
+        let reported = program_vfo1_verified(&mut rig, &req).unwrap();
+        assert!(reported.ctcss_tenths_hz.is_none());
+        assert!(reported.dcs_code.is_none());
+        assert_eq!(reported.shift, ShiftDir::Minus);
+        assert!(rig.log.iter().any(|c| *c == "set_vfo_state"));
+        assert!(rig
+            .log
+            .iter()
+            .all(|c| !c.to_ascii_lowercase().contains("tburst")));
+    }
+
+    #[test]
+    fn unknown_shift_is_left_unset() {
+        let mut req = base_req();
+        req.shift_mhz = f64::NAN;
+        assert_eq!(want_from_request(&req).shift, ShiftDir::Leave);
     }
 }

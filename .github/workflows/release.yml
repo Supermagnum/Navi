@@ -50,21 +50,24 @@ jobs:
           toolchain: "1.98.0"
           targets: aarch64-linux-android,x86_64-linux-android,wasm32-unknown-unknown
 
-      - name: Install Android SDK + NDK r27c
-        uses: android-actions/setup-android@v3
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v4
         with:
-          packages: |
-            platforms;android-36
-            build-tools;35.0.0
-            ndk;27.2.12479018
+          # Space-separated; multiline broke sdkmanager package names.
+          # compileSdk=37 maps to package id platforms;android-37.0 (not android-37).
+          packages: platform-tools platforms;android-37.0 build-tools;35.0.0
+
+      - name: Setup Android NDK r27c
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27c
 
       - name: Env for NDK / SDK
         run: |
           echo "ANDROID_HOME=${ANDROID_HOME}" >> "$GITHUB_ENV"
-          # setup-android puts NDK under $ANDROID_HOME/ndk/<ver>
-          NDK_DIR="$(find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
-          echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_HOME=$NDK_DIR"
+          echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}"
 
       - name: Cargo Android linkers (.cargo/config.toml)
         run: |
@@ -86,6 +89,12 @@ jobs:
         run: |
           printf 'sdk.dir=%s\nndk.dir=%s\n' "$ANDROID_HOME" "$ANDROID_NDK_HOME" > local.properties
 
+      - name: Install Hamlib build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf automake libtool pkg-config make
+
       - name: Remove any prebuilt libnavi.so (match F-Droid)
         run: |
           rm -f app/src/main/jniLibs/arm64-v8a/libnavi.so
@@ -93,11 +102,18 @@ jobs:
           test ! -e app/src/main/jniLibs/arm64-v8a/libnavi.so
           test ! -e app/src/main/jniLibs/x86_64/libnavi.so
 
-      - name: Build native libnavi.so + plugin wasm
+      - name: Build native libnavi.so + Hamlib + plugin wasm
         run: |
+          # build-android-native release auto-builds Hamlib when missing and
+          # fails if libhamlib.so is still absent (CAT FFI hard gate).
           ./scripts/build-android-native.sh all release
           test -f app/src/main/jniLibs/arm64-v8a/libnavi.so
           test -f app/src/main/jniLibs/x86_64/libnavi.so
+          test -f app/src/main/jniLibs/arm64-v8a/libhamlib.so
+          test -f app/src/main/jniLibs/x86_64/libhamlib.so
+          # Hard gate: VR-N76 / Benshi native paths must survive release LTO.
+          strings app/src/main/jniLibs/arm64-v8a/libnavi.so | grep -F 'VR-N76'
+          strings app/src/main/jniLibs/arm64-v8a/libnavi.so | grep -F 'native Benshi'
 
       - name: Assemble unsigned release APK
         run: |
@@ -109,6 +125,15 @@ jobs:
           echo "UNSIGNED_APK=$UNSIGNED" >> "$GITHUB_ENV"
           cp -f "$UNSIGNED" /tmp/navi-unsigned.apk
           sha256sum /tmp/navi-unsigned.apk
+          # Hard gate: unsigned release APK must package Hamlib for both ABIs.
+          unzip -l /tmp/navi-unsigned.apk | grep -F 'lib/arm64-v8a/libhamlib.so'
+          unzip -l /tmp/navi-unsigned.apk | grep -F 'lib/x86_64/libhamlib.so'
+          # Hard gate: Kotlin Benshi RFCOMM + backend string packaged in DEX.
+          TMPDEX=$(mktemp -d)
+          unzip -qo /tmp/navi-unsigned.apk 'classes*.dex' -d "$TMPDEX"
+          strings "$TMPDEX"/classes*.dex | grep -F 'BenshiRfcommTransport'
+          strings "$TMPDEX"/classes*.dex | grep -F 'cat_backend_benshi'
+          rm -rf "$TMPDEX"
 
       - name: Read versionName
         id: ver

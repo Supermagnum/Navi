@@ -445,45 +445,80 @@ Populate by importing and cross-referencing the sources in
    shift / modulation tags), grouped by `type=network` relations.
    **Norway:** as of 2026-10, all amateur repeaters in Norway are mapped in
    OpenStreetMap, so OSM is the **primary** source for Norway (LA5MR and other
-   networks). navi-server RadioID/RepeaterBook mirrors supplement elsewhere.
+   networks). RadioID still comes from navi-server. RepeaterBook does not.
 2. **User AnyTone CPS CSV** — channel / zone / gps-roaming / offset exports.
 3. **OpenRepeater** / **RadioID** — community / DMR directories (downloadable; DMR is
    information-only for the Benshi backend).
 4. **Bundled extract** — regional SQLite table (callsign, lat, lon, freq_out_mhz,
    shift_mhz, ctcss_hz, modulation, network_id) shipped or built from the above.
-5. **RepeaterBook** — via navi-server mirror when published (client never holds
-   keys); never required for the 150 km search.
+5. **RepeaterBook** — only from KML, KMZ, or CSV the user downloads and copies
+   into the drop folder. The app never contacts repeaterbook.com. There is no
+   API client and no server mirror.
 
-### RepeaterBook (optional online)
+### RepeaterBook files
 
-RepeaterBook remains an optional source as sketched here, but its API requires
-**written permission from RepeaterBook** for use inside an app. Until that
-permission is obtained, RepeaterBook sync stays **disabled**, and no other
-import path, auto-tune path, or onboard DB build may depend on it.
+Android path (applicationId `no.navi.app`, no suffix):
+`Android/data/no.navi.app/files/repeaters`. Desktop default:
+`repeaters/` under the app data directory. The folder and a `README.txt` are
+created on first run. Android deletes the folder when the app is uninstalled.
+The old `Documents/repeater-csv` location is not used.
 
-When permission exists and the user enables network: query by position/bbox,
-filter to modes the radio profile supports, upsert into onboard DB with expiry.
-API keys and ToS stay host-side. Offline search must still work from OSM,
-CSV, OpenRepeater, RadioID, and the last successful local imports.
+KML/KMZ is the primary source. Real exports put the callsign in `<name>`, the
+place, output frequency, optional tone, and on-air flag in the description,
+the country in the details link `state_id`, and the position in
+`<coordinates>` as longitude, latitude. They do not include offset, mode, or
+a network name. A second number above 260 Hz (1750) is a tone burst, not CTCSS.
 
-### RepeaterBook server-side copy (proposal only)
+CSV latitude/longitude columns (`latitude`/`lat`, `longitude`/`lon`/`lng`/`long`,
+and the same names prefixed `best_`, `local_`, `repeaterbook_`, `radioid_`,
+`osm_`, `locator_`) are read per row. `tx` is the output frequency and `rx`
+is the input. A missing coordinate does not attach the row to another source:
+a match needs the callsign, an output frequency within 12.5 kHz, and a
+position within 1 km. Mode is reported when one side is analog and the other
+is digital. It does not split the row. Unmatched rows without a position are
+kept and listed, and are not placed on the map or used for switching.
 
-Issue #149 notes that a client-held RepeaterBook API key is undesirable.
-"App #114" in that comment is RepeaterBook's registered **RepeaterBook Python
-Client** application, not a Navi PR.
+Norway: OSM is the source of truth, including position. RadioID and a
+RepeaterBook file may override output frequency, CTCSS, DCS, a 1750 Hz burst,
+or shift when that value is known and different. The import report names the
+field. They may add a repeater OSM does not have, and that row keeps the
+file or RadioID position. The same callsign and frequency more than 1 km from
+every OSM site of that callsign stays a separate row, flagged "position
+differs from OSM" with the distance. It is not moved onto the OSM site.
 
-**Proposal (navi-server work later — not implemented here):**
+Outside Norway: when RadioID and a RepeaterBook file match, RadioID's
+position, frequency, tone, and shift are kept. A field RadioID does not have
+is filled from the file, and the report names any field that differs. A row
+present in only one source keeps that source's position. OSM data outside
+Norway is stored as its own source. No precedence is applied to it.
 
-1. Obtain **written permission** from RepeaterBook for a server-side mirror.
-2. A server job pulls the export API with server-held credentials and stores a
-   normalized regional extract (callsign, lat, lon, freq, shift, tone, mode,
-   network_id, as-of time).
-3. The app loads that extract with plain **read-only HTTPS GET** (same trust
-   model as pack downloads). **No RepeaterBook API key in the client.**
-4. Upsert into the onboard repeater DB with expiry; OSM / CSV / OpenRepeater
-   remain the offline defaults.
-5. Until permission and the server path exist, RepeaterBook stays **disabled**
-   in the app (current behaviour).
+The CAT sheet lists programmable FM networks within 150 km of the current
+position, sorted by distance to the nearest member. 150 km is also the follow
+radius. Installed packs have no polygon, so one circle is the region for both
+the dropdown and the scorer. "Nearest network (auto)" is the default: the
+nearest network that has a programmable member, or standalone repeaters when
+no network member is in range. "Standalone repeaters (nearest)" follows
+standalones only. "Off / manual" stops follow. A saved network is not
+replaced by a closer standalone. It falls back, with the existing notice,
+only when that network has no members in range. Switching uses the live
+position, including dead reckoning when GNSS is lost, and does not require a
+planned route. With a route, the same position scorer runs along the
+travelled track. Removing the route does not stop it.
+
+A 1750 Hz burst repeater is tuned with CTCSS and DCS encode off. The app
+never enables a tone-burst function. The operator sends the burst. You may
+listen, but do not transmit without an amateur radio licence.
+
+Consensus relocation is off by default ("Move non-OSM repeaters to the most
+likely site"). It moves a repeater only when that repeater has no OSM row and
+at least two independent sources agree within 1 km. The target is a tall
+structure (`man_made=mast`, `man_made=tower`, `man_made=communications_tower`,
+`tower:type=communication`) when its top is at least 15 m above the highest
+Mapterhorn sample in the circle, otherwise that sample. Elevation is
+`elevation_at` (`ElevationService` over `ElevationCache`). A missing DEM tile
+means no move. Turning the setting off restores each original position.
+
+RadioID still comes from navi-server. VFO A only, with read-back, is unchanged.
 
 Full investigation notes: [`CAT-benshi-investigation.md`](CAT-benshi-investigation.md).
 
@@ -492,7 +527,7 @@ Full investigation notes: [`CAT-benshi-investigation.md`](CAT-benshi-investigati
 ## Repeater data import and cross-referencing
 
 **Status:** host importers in `navi-cat` (OSM JSON, AnyTone channel CSV,
-OpenRepeater JSON, RadioID CSV scaffold; RepeaterBook always disabled).
+OpenRepeater JSON, RadioID from navi-server, RepeaterBook from user files only).
 On-device CSV drop directory and full format notes:
 [`cat-test.md`](cat-test.md#csv-import-path) /
 [`cat-test.md`](cat-test.md#anytone-cps-csv-format). Fixture outcomes:
@@ -687,6 +722,42 @@ Radio control lives in the host (rigctld client), not WASM.
 
 ## Testing
 
+### Test setup (emulator AVD)
+
+AVD name: **`Navi_8c_4G_128G`**. Location (config-only fresh AVD; images are
+sparse on the data drive):
+
+`/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/android-avd/Navi_8c_4G_128G.avd`
+
+Pointer file: `~/.android/avd/Navi_8c_4G_128G.ini` → that path.
+
+Launch command:
+
+```bash
+/home/haaken/Android/Sdk/emulator/emulator \
+  -avd Navi_8c_4G_128G \
+  -no-snapshot-load \
+  -no-boot-anim \
+  -gpu swiftshader_indirect
+```
+
+| Setting | Config / guest |
+|---|---|
+| CPU | `hw.cpu.ncore=8` in `config.ini`; guest **`nproc=6`** (emulator maximum: "Emulator does not support more than 6 cores") |
+| RAM | `hw.ramSize=4096`; guest MemTotal about 3.8 GiB |
+| Internal storage | `disk.dataPartition.size=128G`; guest `/data` about 126–128 GB |
+| SD card | `sdcard.size=512G` (sparse FAT32, label `NAVISD`); guest `/storage/BF1B-9F0E` about 512 GB |
+
+Cold `-wipe-data` needs about 157 GiB free on the AVD filesystem (emulator
+checks 1.2 × 128G as if dense). With less free space, create a sparse
+`userdata-qemu.img` (128G ext4) and a sparse `sdcard.img` (512G FAT32) first,
+then launch without `-wipe-data`. `mksdcard 512G` writes a dense image and
+must not be used on a drive with less than 512 GiB free.
+
+Debug APK for this emulator: `./gradlew :app:assembleDebug -PnaviAbis=x86_64`
+after `NAVI_ALLOW_DUMMY_RIG=1 ./scripts/build-android-native.sh` (stages
+`libc++_shared.so` and allows Hamlib dummy model 1).
+
 **Results, fixture-fetch checklist, Espa→Dombås switch logs (Run A / Run B),
 CSV path/format, and importer coverage** live in
 [`cat-test.md`](cat-test.md). Do not duplicate full tables here.
@@ -713,7 +784,7 @@ timelines: [`cat-test.md`](cat-test.md).
 |---|---|
 | JVM/Robolectric bridge unit tests | Fake USB/BT sockets through loopback bridge (reconnect, partial writes, disconnect) |
 | Emulator instrumentation | Real `libhamlib.so` + CATS-plugin in wasmtime; remote `rigctld` via `10.0.2.2:4532`; USB/BT via injected boundaries (SPP data path to a real radio is **not** reproducible on emulator) |
-| Real device (manual) | USB OTG + Bluetooth SPP with a physical radio; confirm read-back for every field after checking Hamlib backend status for that model |
+| Real device (manual) | USB OTG + Bluetooth SPP with a physical radio; confirm read-back for every field after checking Hamlib backend status for that model. Also: connect to a computer, find `Android/data/no.navi.app/files/repeaters` over MTP, copy in a RepeaterBook KML, press Update, and check the import report. Select a network, drive without a route, and confirm VFO A follows that network. |
 
 ### Fixture sources
 
@@ -755,43 +826,64 @@ Navi never keys PTT and never opens the Benshi audio RFCOMM link.
 Honest split — simulator results are never described as hardware results.
 Evidence log: [`CAT-test-report.md`](CAT-test-report.md).
 
-### CI / simulator
+### Hamlib backend
 
-- Hamlib dummy `rigctld` (model 1) gating + program/read-back
-- `FakeBenshiPeer` GAIA peer: codec, allowlist (never-transmit), interlocks,
-  VFO 2 fingerprint, productId gating (`0x0002` / `0x0103`)
-- Corridor replays H (Espa→Dombås) / I (Østerdalen leave-network decision C)
-- Coverage J: Espa→Dombås **100.0 %** talk / 2 switches; Østerdalen **93.3 %** /
-  3 switches (reduced SPLAT fixture in CI)
-- Demo mode 5 s/site against FakeBenshiPeer
-- navi-server repeater mirror: checksum reject keeps last good; RepeaterBook
-  absent; synthetic RepeaterBook present; attribution / exclusions
+Automated tests with the **Hamlib dummy rig (model 1)** on desktop and the
+Android emulator (`Navi_8c_4G_128G`, guest **6 cores** — emulator maximum;
+`hw.cpu.ncore=8` kept in config).
 
-### Android emulator / device (injected socket)
+| Build | Hamlib version |
+|---|---|
+| Desktop (host `rigctl` / `navi-cat` dummy_rigctld tests) | **4.7.0** |
+| Android emulator APK (`libhamlib.so`, FFI connect model 1) | **4.7.2** (stable release the Android build tracks) |
 
-- `BenshiRfcommTransport` with injectable streams (no real Bluetooth in CI)
-- Emulator K on SM-P613: corridor H/I + demo via injected peer (3/3)
+Verified with the dummy:
 
-### Real hardware
+- Switch order along Espa→Dombås (E6) and Espa→Litjfossen (Rv 3) GPS corridors
+  for **LA5MR / Standalone / Nearest-network (auto)**, both **unplanned** and
+  **with a real in-app planned route** (packs + place index ready; CAT sheet
+  closed during GPS replay so Standalone does not flip to LA5MR)
+- Hamlib model FilterChips use curated **names** (not bare model numbers); the
+  successfully **connected** model pill turns **green** (selection alone stays
+  the normal selected style; green clears on Disconnect)
+- Read-back after program: dummy supports `get_freq`, mode, repeater shift /
+  offset, CTCSS tone, and DCS code via Hamlib FFI (`read_vfo_state`)
+- Hysteresis: minimum **60 s** between switches (no flapping)
+- VFO 2 left untouched (plugin programs VFO 1 / VFOA only; sheet copy:
+  "Plugin controls VFO 1 only; VFO 2 is left to the user.")
+- 1750 Hz burst repeaters: tuned with CTCSS/DCS off; **no** tone-burst /
+  PTT function is called (operator sends the burst on the radio)
+- Failed read-back / disconnect mid-replay: Disconnect leaves the app running;
+  UI shows `OK: disconnected`; no crash
+- Local repeater drop-folder cleanup: fixtures removed, Update reports
+  `imported: 0` / empty `local_files.files`, Dummy disconnected
 
-**VR-N76 host BlueZ (2026-10-12)** — see [`CAT-test-report.md`](CAT-test-report.md):
+### Real Hamlib radios
 
-- MAC `38:D2:00:01:4B:E7`; productId **`0x0103`**; GET_DEV_INFO payload `[3]`
-- One control RFCOMM session; never audio UUID / never PTT
-- Step 5 read-only PASS; Step 6 both 5 s routes PASS (scratch; VFO B fingerprint
-  unchanged)
-- With VFO B selected, only channel name **NAV** visible; after operator select
-  VFO A, RX steps ~every 5 s confirmed
-- Left VFO A on 145.625000 (LA5MR) per operator
-- Artifacts: `testdata/cat/hardware/vr-n76/`
+**Not tested.**
 
-### Not tested
+### VGC VR-N76 and similar Benshi-protocol radios (Bluetooth backend)
 
-- Hamlib against real radios (non-dummy)
-- Android tablet RFCOMM to a physical radio
-- BTECH UV-Pro / Radioddity GA-5WB
-- Live RepeaterBook data (navi-server has not published it yet)
-- Transmit / PTT / audio RFCOMM (intentionally never)
+- There is **no** automated test (and no fake/simulated VR-N76/Benshi radio
+  for CI).
+- The **VR-N76** has been tested manually over Bluetooth by the maintainer:
+  the 5 s VFO A repeater-stepping test on Espa→Dombås (E6) and
+  Espa→Litjfossen (Rv 3). Details: [`CAT-test-report.md`](CAT-test-report.md).
+- Other Benshi-protocol radios have **not** been tested.
+
+### 1750 Hz burst repeaters
+
+The app tunes them but **never** sends the burst; the user does that manually.
+
+### Consensus relocation
+
+The published OSM bundle has no structure tags (`man_made`, `tower:type`,
+`ele`, `height`), so in production consensus relocation moves to the highest
+DEM point only.
+
+### Licence
+
+You may listen, but do not transmit without an amateur radio licence.
 
 ## Status
 

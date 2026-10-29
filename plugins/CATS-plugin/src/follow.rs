@@ -12,6 +12,33 @@ pub const DWELL_S: u64 = 30;
 /// Minimum gap between switches (seconds).
 pub const MIN_GAP_S: u64 = 60;
 pub const MAX_RANGE_KM: f64 = 150.0;
+pub const NETWORK_AUTO: &str = "auto";
+pub const NETWORK_OFF: &str = "off";
+pub const NETWORK_STANDALONE: &str = "standalone";
+
+/// Named network missing from the current region falls back to auto, with a notice.
+pub fn resolve_network_choice(selected: &str, present: &[String]) -> (String, Option<String>) {
+    let selected = selected.trim();
+    if selected.is_empty() || selected.eq_ignore_ascii_case(NETWORK_AUTO) {
+        return (NETWORK_AUTO.to_string(), None);
+    }
+    if selected.eq_ignore_ascii_case(NETWORK_OFF) {
+        return (NETWORK_OFF.to_string(), None);
+    }
+    if selected.eq_ignore_ascii_case(NETWORK_STANDALONE) {
+        return (NETWORK_STANDALONE.to_string(), None);
+    }
+    if present.iter().any(|n| n.eq_ignore_ascii_case(selected)) {
+        (selected.to_string(), None)
+    } else {
+        (
+            NETWORK_AUTO.to_string(),
+            Some(format!(
+                "{selected} has no programmable repeaters in this region; using nearest network"
+            )),
+        )
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FollowState {
@@ -195,11 +222,65 @@ pub fn tick_at(
     FollowTick::Hold
 }
 
-/// Legacy stub used by `plugin_main` until host wires full member JSON.
-pub fn tick_follow(lat: f64, lon: f64) -> FollowState {
-    let _ = (lat, lon);
-    FollowState::default()
+/// One programmable site the host has already parsed. The guest never sees a path.
+#[derive(Debug, Clone)]
+pub struct LiveMember {
+    pub site: FollowSite,
+    pub network: String,
+    pub distance_km: f64,
 }
+
+/// `auto` follows the nearest network that has a programmable member.
+/// If none is in range, it follows standalone repeaters (no network).
+/// A named network never includes standalones. `standalone` is only those.
+/// `off` keeps nothing.
+pub fn select_members(choice: &str, sites: &[LiveMember]) -> Vec<FollowSite> {
+    let choice = choice.trim();
+    if choice.is_empty() || choice.eq_ignore_ascii_case(NETWORK_OFF) {
+        return Vec::new();
+    }
+    let is_standalone =
+        |s: &LiveMember| s.network.is_empty() || s.network.eq_ignore_ascii_case(NETWORK_STANDALONE);
+    if choice.eq_ignore_ascii_case(NETWORK_STANDALONE) {
+        return sites
+            .iter()
+            .filter(|s| is_standalone(s))
+            .map(|s| s.site.clone())
+            .collect();
+    }
+    if choice.eq_ignore_ascii_case(NETWORK_AUTO) {
+        let networked: Vec<&LiveMember> = sites.iter().filter(|s| !is_standalone(s)).collect();
+        let best_network = networked
+            .iter()
+            .min_by(|a, b| {
+                a.distance_km
+                    .partial_cmp(&b.distance_km)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|s| s.network.clone());
+        let Some(best_network) = best_network else {
+            return sites
+                .iter()
+                .filter(|s| is_standalone(s))
+                .map(|s| s.site.clone())
+                .collect();
+        };
+        return networked
+            .into_iter()
+            .filter(|s| s.network.eq_ignore_ascii_case(&best_network))
+            .map(|s| s.site.clone())
+            .collect();
+    }
+    sites
+        .iter()
+        .filter(|s| s.network.eq_ignore_ascii_case(choice))
+        .map(|s| s.site.clone())
+        .collect()
+}
+
+/// KV keys. Values are site ids and follow state, never file paths.
+pub const FOLLOW_STATE_KEY: &str = "cat_follow_state";
+pub const FOLLOW_SWITCH_KEY: &str = "cat_follow_switch";
 
 #[cfg(test)]
 mod tests {
@@ -259,5 +340,93 @@ mod tests {
         assert!(matches!(tick, FollowTick::LeaveNetwork { .. }));
         assert!(st.leave_notified);
         assert!(st.network_id.is_none());
+    }
+
+    #[test]
+    fn missing_network_falls_back_to_auto_with_notice() {
+        let (choice, notice) = resolve_network_choice("LA5MR", &["LA5MR".into()]);
+        assert_eq!(choice, "LA5MR");
+        assert!(notice.is_none());
+        let (choice, notice) = resolve_network_choice("NO-SUCH", &["LA5MR".into()]);
+        assert_eq!(choice, NETWORK_AUTO);
+        assert!(notice.unwrap().contains("NO-SUCH"));
+        assert_eq!(resolve_network_choice("off", &[]).0, NETWORK_OFF);
+    }
+
+    #[test]
+    fn auto_selects_nearest_network_not_the_word_auto() {
+        let sites = vec![
+            LiveMember {
+                site: FollowSite {
+                    id: "far".into(),
+                    callsign: "FAR".into(),
+                    lat: 62.0,
+                    lon: 10.0,
+                    freq_out_mhz: 145.0,
+                    shift_mhz: -0.6,
+                    ctcss_hz: None,
+                },
+                network: "OTHER".into(),
+                distance_km: 40.0,
+            },
+            LiveMember {
+                site: FollowSite {
+                    id: "near".into(),
+                    callsign: "NEAR".into(),
+                    lat: 61.1,
+                    lon: 10.4,
+                    freq_out_mhz: 145.6,
+                    shift_mhz: -0.6,
+                    ctcss_hz: None,
+                },
+                network: "LA5MR".into(),
+                distance_km: 3.0,
+            },
+        ];
+        let picked = select_members("auto", &sites);
+        assert!(picked.iter().all(|s| s.id == "near"));
+        assert!(select_members("off", &sites).is_empty());
+        assert_eq!(select_members("LA5MR", &sites).len(), 1);
+    }
+
+    #[test]
+    fn auto_falls_back_to_standalone_and_a_named_network_does_not() {
+        let standalone = LiveMember {
+            site: FollowSite {
+                id: "solo".into(),
+                callsign: "SOLO".into(),
+                lat: 61.0,
+                lon: 10.0,
+                freq_out_mhz: 145.5,
+                shift_mhz: -0.6,
+                ctcss_hz: None,
+            },
+            network: String::new(),
+            distance_km: 1.0,
+        };
+        let net = LiveMember {
+            site: FollowSite {
+                id: "net".into(),
+                callsign: "NET".into(),
+                lat: 61.2,
+                lon: 10.2,
+                freq_out_mhz: 145.6,
+                shift_mhz: -0.6,
+                ctcss_hz: None,
+            },
+            network: "LA5MR".into(),
+            distance_km: 30.0,
+        };
+        let both = vec![standalone.clone(), net.clone()];
+        assert_eq!(select_members("auto", &both)[0].id, "net");
+        assert_eq!(select_members("standalone", &both)[0].id, "solo");
+        assert_eq!(select_members("LA5MR", &both)[0].id, "net");
+        assert!(select_members("auto", &[standalone.clone()])
+            .iter()
+            .any(|s| s.id == "solo"));
+        assert!(select_members("LA5MR", &[standalone]).is_empty());
+        let (choice, notice) = resolve_network_choice("standalone", &[]);
+        assert_eq!(choice, NETWORK_STANDALONE);
+        assert!(notice.is_none());
     }
 }

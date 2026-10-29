@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -199,7 +200,7 @@ fun WeatherHudChip(
                 onClick = onRefresh,
                 modifier = Modifier.testTag("btn_weather_refresh"),
             ) {
-                Text("Refresh")
+                Text(stringResource(R.string.action_refresh))
             }
         }
     }

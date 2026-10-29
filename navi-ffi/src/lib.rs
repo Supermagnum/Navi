@@ -7440,6 +7440,39 @@ pub fn clear_place_index_region_rows(index_db_path: String, region_id: String) -
     }
 }
 
+/// Drop stale `-shm` and `wal_checkpoint(TRUNCATE)` before Android opens the DB.
+///
+/// Prevents SIGBUS in `walIndexReadHdr` when a prior index build was killed and
+/// left a large WAL. No-op when sidecars are absent. Does not bump schema.
+#[uniffi::export]
+pub fn place_index_recover_wal(index_db_path: String) -> String {
+    match driver_break_core::search::recover_place_index_wal(Path::new(&index_db_path)) {
+        Ok(()) => "PASS".into(),
+        Err(e) => format!("FAIL: {e}"),
+    }
+}
+
+/// After Kotlin quarantines `-wal`/`-shm` (non-BUSY path): mark non-intact
+/// regions incomplete and return their ids (comma-separated). Intact regions
+/// are never marked. Empty string when nothing needs rebuild.
+#[uniffi::export]
+pub fn place_index_mark_incomplete_after_wal_quarantine(index_db_path: String) -> String {
+    let marked = driver_break_core::search::NameIndex::mark_non_intact_regions_incomplete(
+        Path::new(&index_db_path),
+    );
+    if marked.is_empty() {
+        String::new()
+    } else {
+        marked.join(",")
+    }
+}
+
+/// Drain region ids queued when Rust quarantined WAL during `open_readonly`.
+#[uniffi::export]
+pub fn place_index_take_wal_quarantine_rebuild_regions() -> Vec<String> {
+    driver_break_core::search::take_wal_quarantine_rebuild_regions()
+}
+
 /// Build this pack-server region's place index from the place-source file when
 /// the region's manifest lists it; otherwise the existing extract path.
 #[uniffi::export]
@@ -7710,6 +7743,12 @@ fn place_index_error_hits(msg: impl std::fmt::Display) -> Vec<PlaceHit> {
         municipality: String::new(),
         region_id: String::new(),
     }]
+}
+
+/// Set BCP 47 locale used when formatting place-index hit display names.
+#[uniffi::export]
+pub fn set_place_search_locale(locale: String) {
+    driver_break_core::search::set_place_search_locale(locale);
 }
 
 /// Offline place / address-style name search (FTS5 prefix).
@@ -9872,10 +9911,10 @@ pub fn nearest_school_proximity_warning_json(schools_json: String, lat: f64, lon
     .to_string()
 }
 
-/// Human highway-class label when OSM name/ref are missing (never a raw tag).
+/// Highway-class message code when OSM name/ref are missing (`navi.msg.highway_class|…`).
 #[uniffi::export]
 pub fn highway_class_display_label(highway: Option<String>) -> String {
-    driver_break_core::routing::eta::highway_class_display_label(highway.as_deref()).to_string()
+    driver_break_core::routing::eta::highway_class_display_label(highway.as_deref())
 }
 
 /// Current-road HUD label: `name`, else `ref`, else highway-class display label.
@@ -9886,6 +9925,44 @@ pub fn format_current_road_label(
     highway: Option<String>,
 ) -> String {
     driver_break_core::current_road_label(name.as_deref(), road_ref.as_deref(), highway.as_deref())
+}
+
+/// Localized street labels for one planned route from offline Protomaps PMTiles.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct LocalizedRouteStreets {
+    pub maneuvers_json: String,
+    pub sim_samples_json: String,
+}
+
+/// Option D: rewrite maneuver / sim-sample `street` fields using `name:*` from
+/// the region's downloaded PMTiles (presentation only; routing unchanged).
+#[uniffi::export]
+pub fn localize_route_streets_from_pmtiles(
+    pmtiles_path: String,
+    locale: String,
+    maneuvers_json: String,
+    sim_samples_json: String,
+) -> LocalizedRouteStreets {
+    let path = Path::new(&pmtiles_path);
+    if !path.is_file() || locale.trim().is_empty() {
+        return LocalizedRouteStreets {
+            maneuvers_json,
+            sim_samples_json,
+        };
+    }
+    let mans = driver_break_core::i18n::localize_maneuvers_json(path, &locale, &maneuvers_json);
+    let samples =
+        driver_break_core::i18n::localize_sim_samples_json(path, &locale, &sim_samples_json);
+    LocalizedRouteStreets {
+        maneuvers_json: mans,
+        sim_samples_json: samples,
+    }
+}
+
+/// Clear the in-memory route street-name cache (e.g. when the route is deleted).
+#[uniffi::export]
+pub fn clear_localized_route_streets_cache() {
+    driver_break_core::i18n::clear_active_route_road_name_cache();
 }
 
 /// Grid cell size (degrees) for idle-GPS road-label graph caches (~5.5 km at mid-latitudes).

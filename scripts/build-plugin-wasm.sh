@@ -14,6 +14,22 @@ rustup target add wasm32-unknown-unknown >/dev/null
 ASSETS="$ROOT/app/src/main/assets/plugins"
 mkdir -p "$ASSETS"
 
+# Remap absolute paths out of panic/debug strings so host vs CI/F-Droid wasm
+# guests match (observed drift: /home/haaken/.cargo vs /home/runner/.cargo).
+CARGO_HOME_DIR="${CARGO_HOME:-$HOME/.cargo}"
+RUSTUP_HOME_DIR="${RUSTUP_HOME:-$HOME/.rustup}"
+RUSTC_SYSROOT="$(rustc --print sysroot 2>/dev/null || true)"
+WASM_RUSTFLAGS="${RUSTFLAGS:-}"
+WASM_RUSTFLAGS+=" --remap-path-prefix=${CARGO_HOME_DIR}=/cargo"
+WASM_RUSTFLAGS+=" --remap-path-prefix=${RUSTUP_HOME_DIR}=/rustup"
+WASM_RUSTFLAGS+=" --remap-path-prefix=${ROOT}=/src"
+if [[ -n "$RUSTC_SYSROOT" ]]; then
+  WASM_RUSTFLAGS+=" --remap-path-prefix=${RUSTC_SYSROOT}=/rustc"
+fi
+export RUSTFLAGS="$WASM_RUSTFLAGS"
+export CARGO_INCREMENTAL=0
+echo "Reproducible wasm RUSTFLAGS enabled (remap-path-prefix)"
+
 stage_one() {
   local crate_dir="$1"
   local asset_name="$2"

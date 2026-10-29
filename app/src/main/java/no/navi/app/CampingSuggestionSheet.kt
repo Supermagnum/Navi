@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import uniffi.navi.TravelProfile
@@ -38,13 +39,13 @@ fun CampingSessionDisableBanner(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                "Camping plugin disabled for this session",
+                stringResource(R.string.ui_camping_plugin_disabled_for_this_session),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(message, style = MaterialTheme.typography.bodySmall)
             Button(onClick = onReEnable, modifier = Modifier.testTag("camping_session_reenable")) {
-                Text("Re-enable camping")
+                Text(stringResource(R.string.camping_reenable))
             }
         }
     }
@@ -81,9 +82,9 @@ fun CampingSuggestionSheet(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text("Overnight camping suggestions", style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.camping_suggestions_title), style = MaterialTheme.typography.titleSmall)
                     TextButton(onClick = onClose, modifier = Modifier.testTag("camping_sheet_close")) {
-                        Text("Close")
+                        Text(stringResource(R.string.action_close))
                     }
                 }
             }
@@ -101,7 +102,7 @@ fun CampingSuggestionSheet(
             if (motorised) {
                 item(key = "hdr_vehicle") {
                     Text(
-                        "Vehicle overnight",
+                        stringResource(R.string.ui_vehicle_overnight),
                         style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.testTag("camping_section_vehicle"),
                     )
@@ -109,7 +110,7 @@ fun CampingSuggestionSheet(
                 if (result.vehicle.cards.isEmpty()) {
                     item(key = "vehicle_empty") {
                         Text(
-                            "No vehicle overnight spots along this corridor.",
+                            stringResource(R.string.ui_no_vehicle_overnight_spots_along_this_corridor),
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -126,7 +127,7 @@ fun CampingSuggestionSheet(
                 }
                 item(key = "hdr_on_foot") {
                     Text(
-                        "On foot from here",
+                        stringResource(R.string.ui_on_foot_from_here),
                         style = MaterialTheme.typography.titleSmall,
                         modifier =
                             Modifier
@@ -137,7 +138,7 @@ fun CampingSuggestionSheet(
                 if (result.onFootFromHere.cards.isEmpty()) {
                     item(key = "on_foot_empty") {
                         Text(
-                            "No walk-in tent spots from the corridor.",
+                            stringResource(R.string.ui_no_walk_in_tent_spots_from_the_corridor),
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -159,7 +160,7 @@ fun CampingSuggestionSheet(
                 if (result.list.cards.isEmpty()) {
                     item(key = "list_empty") {
                         Text(
-                            "No tent spots found along this corridor.",
+                            stringResource(R.string.ui_no_tent_spots_found_along_this_corridor),
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -251,21 +252,21 @@ private fun CampingCardBlock(
             }
             if (card.notChecked.protectedArea || card.notChecked.landcover) {
                 Text(
-                    "Not checked",
+                    stringResource(R.string.ui_not_checked),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.error,
                 )
                 if (card.notChecked.protectedArea) {
                     Text(
-                        "protected_area — national parks and reserves may have separate rules",
+                        stringResource(R.string.ui_protected_area_national_parks_and_reserves_may_have_separate),
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Medium,
                     )
                 }
                 if (card.notChecked.landcover) {
                     Text(
-                        "landcover — farmland, pasture, and cultivated land may be off limits",
+                        stringResource(R.string.ui_landcover_farmland_pasture_and_cultivated_land_may_be_off_li),
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Medium,
                     )
@@ -280,10 +281,13 @@ private fun CampingCardBlock(
                 )
             }
             card.rejectReason?.let {
-                Text("Reject: $it", style = MaterialTheme.typography.bodySmall)
+                Text(
+                    stringResource(R.string.reject_reason, it),
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
             if (card.sources.isNotEmpty()) {
-                Text("Sources", style = MaterialTheme.typography.labelSmall)
+                Text(stringResource(R.string.camping_sources), style = MaterialTheme.typography.labelSmall)
                 for (url in card.sources) {
                     Text(
                         url,
@@ -308,13 +312,13 @@ private fun CampingCardBlock(
                         onClick = { onCampHereTonight(card) },
                         modifier = Modifier.testTag("camping_camp_here_${sectionTag}_$index"),
                     ) {
-                        Text("Camp here tonight")
+                        Text(stringResource(R.string.camping_camp_here))
                     }
                     TextButton(
                         onClick = { onUndoCampHereTonight(card) },
                         modifier = Modifier.testTag("camping_undo_camp_${sectionTag}_$index"),
                     ) {
-                        Text("Not camping here")
+                        Text(stringResource(R.string.camping_not_here))
                     }
                 }
             }

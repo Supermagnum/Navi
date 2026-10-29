@@ -39,11 +39,25 @@ real Bluetooth in CI.
 
 ## What is tested
 
-| Layer | Covered here / related |
-|---|---|
-| CI / simulator | Guest select / follow / decision C / demo plans; host FakeBenshiPeer + Hamlib dummy via `navi-cat` |
-| Android emulator | Injected RFCOMM only (`BenshiCorridorEmulatorKTest`); no real BT |
-| Real hardware | VR-N76 host BlueZ 2026-10-12: reachability + 5 s demos PASS (see `docs/CAT-test-report.md`) |
-| Not tested | Hamlib on real radios; tablet↔physical radio; UV-Pro / GA-5WB; RepeaterBook live data |
+- **Hamlib backend:** automated tests with the Hamlib dummy rig (model 1) on
+  desktop (**Hamlib 4.7.0**) and the Android emulator (**Hamlib 4.7.2**, guest
+  6 cores — emulator maximum). Verified: Espa→Dombås / Espa→Litjfossen for
+  LA5MR, Standalone, and auto (unplanned and planned-route), named model pills
+  with green connected state, read-back (`get_freq`, shift/offset, CTCSS/DCS),
+  60 s hysteresis, VFO 2 untouched, 1750 Hz (CTCSS off, no burst call),
+  mid-replay Disconnect without crash.
+- **Real Hamlib radios:** not tested.
+- **VGC VR-N76 and similar Benshi-protocol radios (Bluetooth):** no automated
+  test; VR-N76 tested manually over Bluetooth by the maintainer (5 s VFO A
+  stepping on Espa→Dombås and Espa→Litjfossen); other Benshi radios not
+  tested.
+- 1750 Hz burst repeaters: the app tunes them but never sends the burst; the
+  user does that manually.
+- Consensus relocation: the published OSM bundle has no structure tags, so in
+  production it moves to the highest DEM point only.
+- Licence: you may listen, but do not transmit without an amateur radio
+  licence.
 
-**Status:** simulator-verified; VR-N76 host BlueZ hardware Steps 5–6 PASS (2026-10-12).
+RepeaterBook is not fetched. The host reads KML/KMZ/CSV from the drop folder and passes parsed records to this guest. The guest never receives a path. Network choice `auto` follows the nearest programmable network; a named network with no members in the current area falls back to `auto` and the host shows a notice. Switching uses the live position (and dead reckoning when GNSS is lost). A planned route is not required. A drive with a physical radio and a user-copied KML is still a manual check: find `Android/data/no.navi.app/files/repeaters` over MTP, press Update, select the network, and confirm VFO A follows it with no route set.
+
+**Status:** Hamlib dummy verified on desktop + emulator; VR-N76 host BlueZ hardware Steps 5–6 PASS (2026-10-12).

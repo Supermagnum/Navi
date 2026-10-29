@@ -145,10 +145,17 @@ fi
 # Stage wasm guests from source into assets/ once (F-Droid / no committed binaries).
 "$ROOT/scripts/build-plugin-wasm.sh"
 
+# Cargo profile name and target/<triple>/<dir> folder. Android release uses
+# release-android (panic=abort) so LSDA/.gcc_except_table path nondeterminism
+# cannot leak into libnavi.so; CLI still accepts `release`.
+CARGO_PROFILE="$PROFILE"
+OUT_PROFILE="$PROFILE"
 CARGO_PROFILE_ARGS=()
 case "$PROFILE" in
   release)
-    CARGO_PROFILE_ARGS=(--release)
+    CARGO_PROFILE="release-android"
+    OUT_PROFILE="release-android"
+    CARGO_PROFILE_ARGS=(--profile "$CARGO_PROFILE")
     ;;
   debug)
     # cargo has no --debug flag; debug is the default profile
@@ -159,10 +166,41 @@ case "$PROFILE" in
     ;;
 esac
 
+# Release APKs must ship libhamlib.so (CAT FFI). Build it from the locked tag
+# when missing so CI/F-Droid match local sideload packaging.
+ensure_hamlib_for_release() {
+  if [[ "$PROFILE" != "release" && "$CARGO_PROFILE" != "release-android" ]]; then
+    return 0
+  fi
+  local missing=0
+  local abi
+  for abi in "${ABI_LIST[@]}"; do
+    if [[ -f "$ROOT/out/hamlib-android/jniLibs/$abi/libhamlib.so" ]]; then
+      continue
+    fi
+    if [[ -f "$ROOT/app/src/main/jniLibs/$abi/libhamlib.so" ]]; then
+      continue
+    fi
+    missing=1
+    break
+  done
+  if [[ "$missing" -eq 0 ]]; then
+    echo "Hamlib already staged for release ABIs"
+    return 0
+  fi
+  echo "Release build: building Hamlib (scripts/build-hamlib-android.sh)..."
+  "$ROOT/scripts/build-hamlib-android.sh"
+}
+ensure_hamlib_for_release
+
 build_one_abi() {
   local ABI_DIR="$1"
   local TARGET
   TARGET="$(abi_to_triple "$ABI_DIR")"
+
+  # Isolate per-ABI RUSTFLAGS (do not accumulate -L native=… across ABIs).
+  local BASE_RUSTFLAGS="${RUSTFLAGS:-}"
+  local BASE_CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-}"
 
   local LIB_DST_DIR="$ROOT/app/src/main/jniLibs/$ABI_DIR"
   mkdir -p "$LIB_DST_DIR"
@@ -177,21 +215,97 @@ build_one_abi() {
   else
     echo "warning: libhamlib.so missing for $ABI_DIR." >&2
     echo "  Run: ANDROID_NDK_HOME=\"\$ANDROID_NDK_HOME\" ./scripts/build-hamlib-android.sh" >&2
+    if [[ "$PROFILE" == "release" || "$CARGO_PROFILE" == "release-android" ]]; then
+      echo "error: release builds require libhamlib.so (CAT FFI hard gate)." >&2
+      exit 1
+    fi
     echo "  Continuing without hamlib-ffi (TCP-only CAT path)." >&2
   fi
 
+  # libhamlib.so is linked against the NDK C++ shared runtime; package it next
+  # to the ABI so the APK loads on emulator (x86_64) and device (arm64-v8a).
+  local CXX_SHARED_DST="$LIB_DST_DIR/libc++_shared.so"
+  local NDK_TRIPLE
+  case "$ABI_DIR" in
+    arm64-v8a) NDK_TRIPLE="aarch64-linux-android" ;;
+    x86_64) NDK_TRIPLE="x86_64-linux-android" ;;
+    armeabi-v7a) NDK_TRIPLE="arm-linux-androideabi" ;;
+    *) NDK_TRIPLE="" ;;
+  esac
+  if [[ -n "$NDK_TRIPLE" ]]; then
+    local CXX_SHARED_SRC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/$NDK_HOST_TAG/sysroot/usr/lib/$NDK_TRIPLE/libc++_shared.so"
+    if [[ -f "$CXX_SHARED_SRC" ]]; then
+      cp -f "$CXX_SHARED_SRC" "$CXX_SHARED_DST"
+      echo "Staged $CXX_SHARED_DST from NDK"
+    else
+      echo "warning: $CXX_SHARED_SRC missing; Hamlib may fail to dlopen" >&2
+    fi
+  fi
+
   local CARGO_FEATURES=()
+  local ABI_RUSTFLAGS="$BASE_RUSTFLAGS"
   if [[ -f "$HAMLIB_DST" ]]; then
-    CARGO_FEATURES=(--features hamlib-ffi)
-    export RUSTFLAGS="${RUSTFLAGS:-} -L native=${LIB_DST_DIR}"
+    CARGO_FEATURES+=(hamlib-ffi)
+    ABI_RUSTFLAGS="${ABI_RUSTFLAGS} -L native=${LIB_DST_DIR}"
     echo "Enabling navi-ffi feature hamlib-ffi (link libhamlib)"
+  fi
+  # Debug/emulator CAT dummy-rig tests: NAVI_ALLOW_DUMMY_RIG=1
+  if [[ "${NAVI_ALLOW_DUMMY_RIG:-}" == "1" ]]; then
+    CARGO_FEATURES+=(allow-dummy-rig)
+    echo "Enabling navi-ffi feature allow-dummy-rig (Hamlib model 1)"
+  fi
+  local FEATURE_ARGS=()
+  if [[ ${#CARGO_FEATURES[@]} -gt 0 ]]; then
+    local IFS=,
+    FEATURE_ARGS=(--features "${CARGO_FEATURES[*]}")
   fi
 
   echo "Building navi-ffi for $TARGET ($PROFILE) with NDK $ANDROID_NDK_HOME ($NDK_HOST_TAG)..."
 
-  cargo build -p navi-ffi --target "$TARGET" "${CARGO_PROFILE_ARGS[@]}" "${CARGO_FEATURES[@]}" --lib
+  # Reproducible release: remap absolute paths out of DWARF/strings, drop GNU
+  # build-id (machine-local), and force a non-incremental build. F-Droid's
+  # recipe calls this script as-is; keep flags here so the recipe need not
+  # duplicate them. Toolchain pin remains rust-toolchain.toml (1.98.0).
+  if [[ "$PROFILE" == "release" ]]; then
+    local CARGO_HOME_DIR="${CARGO_HOME:-$HOME/.cargo}"
+    local RUSTUP_HOME_DIR="${RUSTUP_HOME:-$HOME/.rustup}"
+    local RUSTC_SYSROOT
+    RUSTC_SYSROOT="$(rustc --print sysroot 2>/dev/null || true)"
+    export CARGO_INCREMENTAL=0
+    ABI_RUSTFLAGS+=" --remap-path-prefix=${CARGO_HOME_DIR}=/cargo"
+    ABI_RUSTFLAGS+=" --remap-path-prefix=${RUSTUP_HOME_DIR}=/rustup"
+    ABI_RUSTFLAGS+=" --remap-path-prefix=${ROOT}=/src"
+    if [[ -n "$RUSTC_SYSROOT" ]]; then
+      ABI_RUSTFLAGS+=" --remap-path-prefix=${RUSTC_SYSROOT}=/rustc"
+    fi
+    # Also remap the NDK path (clang debug info / link paths can embed it).
+    ABI_RUSTFLAGS+=" --remap-path-prefix=${ANDROID_NDK_HOME}=/ndk"
+    ABI_RUSTFLAGS+=" -C link-arg=-Wl,--build-id=none"
+    # Single-threaded LLVM / LTO: parallel LTO has been observed to flip a few
+    # instruction bytes across identical trees in different directories.
+    ABI_RUSTFLAGS+=" -C llvm-args=-threads=1"
+    export CARGO_BUILD_JOBS=1
+    export RAYON_NUM_THREADS=1
+    export LLVM_PARALLEL_LINK_THREADS=1
+    echo "Reproducible RUSTFLAGS enabled (remap-path-prefix, build-id=none, llvm-threads=1)"
+  fi
+  export RUSTFLAGS="$ABI_RUSTFLAGS"
 
-  local LIB_SRC="$ROOT/target/$TARGET/$PROFILE/libnavi.so"
+  cargo build -p navi-ffi --target "$TARGET" "${CARGO_PROFILE_ARGS[@]}" "${FEATURE_ARGS[@]}" --lib
+
+  # Always restore caller env so the next ABI does not inherit -L native=….
+  if [[ -n "$BASE_RUSTFLAGS" ]]; then
+    export RUSTFLAGS="$BASE_RUSTFLAGS"
+  else
+    unset RUSTFLAGS
+  fi
+  if [[ -n "$BASE_CARGO_INCREMENTAL" ]]; then
+    export CARGO_INCREMENTAL="$BASE_CARGO_INCREMENTAL"
+  else
+    unset CARGO_INCREMENTAL
+  fi
+
+  local LIB_SRC="$ROOT/target/$TARGET/$OUT_PROFILE/libnavi.so"
   local LIB_DST_DIR="$ROOT/app/src/main/jniLibs/$ABI_DIR"
   mkdir -p "$LIB_DST_DIR"
 
@@ -205,7 +319,7 @@ build_one_abi() {
     --out-dir "$KOTLIN_OUT"
 
   # Strip after bindgen (workspace release leaves symbols so UniFFI metadata survives).
-  if [[ "$PROFILE" == "release" ]]; then
+  if [[ "$PROFILE" == "release" || "$CARGO_PROFILE" == "release-android" ]]; then
     local STRIP_BIN=""
     if [[ -x "$NDK_BIN/llvm-strip" ]]; then
       STRIP_BIN="$NDK_BIN/llvm-strip"

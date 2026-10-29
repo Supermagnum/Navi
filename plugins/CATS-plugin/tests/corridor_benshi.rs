@@ -4,7 +4,7 @@
 //! Program + read-back + VFO 2: `navi-cat` host.
 
 use navi_cat::benshi::{BenshiBackend, FakeBenshiPeer, InProcessTransport};
-use navi_cat::importers::import_osm_relation_xml;
+use navi_cat::mirror::import_mirror_payload;
 use navi_cat::program::{program_vfo1_verified, ProgramRequest};
 use navi_cat::repeater::{RepeaterDb, RepeaterSite};
 use navi_cat::types::RigBackend;
@@ -32,14 +32,14 @@ fn load_polyline(name: &str) -> Vec<(f64, f64)> {
 }
 
 fn load_la5mr_members() -> Vec<RepeaterSite> {
-    let xml = std::fs::read_to_string(concat!(
+    let json = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../testdata/cat/osm/la5mr/relation_18780801_full.xml"
+        "/../../testdata/cat/osm/la5mr/bundle_members.json"
     ))
-    .expect("LA5MR fixture");
+    .expect("LA5MR bundle fixture");
     let db = RepeaterDb::open_memory().unwrap();
-    let n = import_osm_relation_xml(&db, &xml).unwrap();
-    assert!(n >= 8, "expected refreshed LA5MR members, got {n}");
+    let n = import_mirror_payload(&db, &json, "osm", None).unwrap();
+    assert!(n >= 8, "expected LA5MR members, got {n}");
     db.query_near(61.3, 10.5, 500.0, Some("LA5MR"))
 }
 
@@ -54,7 +54,7 @@ fn to_follow(sites: &[RepeaterSite]) -> Vec<FollowSite> {
                 lat,
                 lon,
                 freq_out_mhz: s.freq_out_mhz,
-                shift_mhz: s.shift_mhz,
+                shift_mhz: s.shift_mhz.unwrap_or(0.0),
                 ctcss_hz: s.ctcss_hz,
             })
         })
@@ -64,8 +64,12 @@ fn to_follow(sites: &[RepeaterSite]) -> Vec<FollowSite> {
 fn program_site(backend: &mut BenshiBackend<InProcessTransport>, s: &RepeaterSite) {
     let req = ProgramRequest {
         freq_out_mhz: s.freq_out_mhz,
-        shift_mhz: s.shift_mhz,
-        ctcss_hz: s.ctcss_hz,
+        shift_mhz: s.shift_mhz.unwrap_or(f64::NAN),
+        ctcss_hz: if s.access == navi_cat::AccessTone::ToneBurst1750 {
+            None
+        } else {
+            s.ctcss_hz
+        },
         dcs_code: s.dcs_code,
         mode: "FM".into(),
         passband_hz: 12_500,
@@ -141,6 +145,90 @@ fn h_espa_dombas_navi_polyline_follow_and_program() {
     );
     let got = backend.read_vfo_state().unwrap();
     assert!(got.freq_hz > 144_000_000);
+}
+
+fn switch_events(poly: &[(f64, f64)], members: &[FollowSite]) -> Vec<(u64, String)> {
+    let mut state = FollowState {
+        network_id: Some("LA5MR".into()),
+        ..Default::default()
+    };
+    let total_km = poly_length_km(poly);
+    let n_samples = (total_km / 0.5).ceil() as usize;
+    let mut ids = Vec::new();
+    for i in 0..=n_samples {
+        let frac = i as f64 / n_samples as f64;
+        let (lat, lon) = interpolate_polyline(poly, frac).unwrap();
+        let now = ((frac * total_km / 80.0) * 3600.0) as u64;
+        if let FollowTick::Switch { site_id } = tick_at(&mut state, lat, lon, members, now) {
+            ids.push((now, site_id));
+        }
+    }
+    ids
+}
+
+fn assert_no_flap(events: &[(u64, String)]) {
+    assert!(!events.is_empty(), "expected at least one switch");
+    for w in events.windows(2) {
+        assert_ne!(w[0].1, w[1].1);
+        let gap = w[1].0.saturating_sub(w[0].0);
+        assert!(
+            gap >= navi_plugin_cats::follow::MIN_GAP_S,
+            "switch gap {gap}s is under the minimum dwell"
+        );
+    }
+}
+
+#[test]
+fn position_only_espa_dombas_matches_route_replay() {
+    let poly = load_polyline("espa_dombas_e6");
+    let members = to_follow(&load_la5mr_members());
+    // There is no separate route look-ahead. Planned and unplanned both score
+    // the same live position, so the sequences match.
+    let route = switch_events(&poly, &members);
+    let position_only = switch_events(&poly, &members);
+    assert_eq!(route, position_only);
+    assert_no_flap(&position_only);
+}
+
+#[test]
+fn position_only_espa_litjfossen_respects_dwell() {
+    let poly = load_polyline("espa_litjfossen_rv3_skansen");
+    let members = to_follow(&load_la5mr_members());
+    let route = switch_events(&poly, &members);
+    let position_only = switch_events(&poly, &members);
+    assert_eq!(route, position_only);
+    assert_no_flap(&position_only);
+}
+
+#[test]
+fn clearing_route_mid_replay_keeps_position_follow() {
+    let poly = load_polyline("espa_dombas_e6");
+    let members = to_follow(&load_la5mr_members());
+    let mut state = FollowState {
+        network_id: Some("LA5MR".into()),
+        ..Default::default()
+    };
+    let total_km = poly_length_km(&poly);
+    let n_samples = (total_km / 0.5).ceil() as usize;
+    let mut after_clear = 0usize;
+    let mut route_held = true;
+    for i in 0..=n_samples {
+        if i == n_samples / 2 {
+            route_held = false;
+        }
+        let frac = i as f64 / n_samples as f64;
+        let (lat, lon) = interpolate_polyline(&poly, frac).unwrap();
+        let now = ((frac * total_km / 80.0) * 3600.0) as u64;
+        if let FollowTick::Switch { .. } = tick_at(&mut state, lat, lon, &members, now) {
+            if !route_held {
+                after_clear += 1;
+            }
+        }
+    }
+    assert!(
+        after_clear > 0,
+        "switching must continue after the route is cleared"
+    );
 }
 
 #[test]
@@ -238,7 +326,7 @@ fn run_demo_on_route(route_file: &str, route_name: &str) -> DemoPlan {
                 .map(|p| (p - s.freq_out_mhz).abs() < 1e-6)
                 .unwrap_or(false);
             eprintln!(
-                "  t={}s  {}  RX={:.4} MHz  shift={:+.4}  CTCSS={:?} Hz  id={}{}",
+                "  t={}s  {}  RX={:.4} MHz  shift={:?}  CTCSS={:?} Hz  id={}{}",
                 i * DEMO_STEP_SECS as usize,
                 s.callsign,
                 s.freq_out_mhz,
@@ -295,7 +383,7 @@ fn run_demo_on_route(route_file: &str, route_name: &str) -> DemoPlan {
             peer.set_squelch_open(true);
             let req = ProgramRequest {
                 freq_out_mhz: site.freq_out_mhz,
-                shift_mhz: site.shift_mhz,
+                shift_mhz: site.shift_mhz.unwrap_or(f64::NAN),
                 ctcss_hz: site.ctcss_hz,
                 dcs_code: site.dcs_code,
                 mode: "FM".into(),

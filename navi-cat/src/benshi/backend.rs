@@ -414,7 +414,7 @@ impl<T: BenshiTransport> BenshiBackend<T> {
     fn want_to_rx_tx(want: &VfoState) -> Result<(u32, u32, u16), RigError> {
         let rx = want.freq_hz as u32;
         let tx = match want.shift {
-            ShiftDir::None => rx,
+            ShiftDir::None | ShiftDir::Leave => rx,
             ShiftDir::Minus => rx.saturating_sub(want.offset_hz as u32),
             ShiftDir::Plus => rx.saturating_add(want.offset_hz as u32),
         };

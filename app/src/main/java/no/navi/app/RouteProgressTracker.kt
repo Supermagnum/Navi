@@ -29,6 +29,8 @@ data class RouteProgressSnapshot(
      * not treat the nearest-sample snap as trustworthy corridor progress.
      */
     val offRoute: Boolean = false,
+    /** Index into the planned sample chain from the global nearest-sample search. */
+    val snapIndex: Int = -1,
 )
 
 /**
@@ -45,8 +47,8 @@ data class RouteProgressSnapshot(
  * (avoids confidently-wrong approach distances on winding corridors).
  */
 class RouteProgressTracker(
-    private val samples: List<RouteSimSample>,
-    private val maneuvers: List<RouteManeuver>,
+    private var samples: List<RouteSimSample>,
+    private var maneuvers: List<RouteManeuver>,
     private val viaPoints: List<Waypoint>,
     private val endPoint: Waypoint,
     private val viaRadiusM: Double = 80.0,
@@ -62,6 +64,26 @@ class RouteProgressTracker(
     private var lastOnRouteSampleIdx = 0
 
     fun maneuverCount(): Int = maneuvers.size
+
+    /** Cursor into [maneuvers] for the next approach instruction. */
+    fun currentManeuverIndex(): Int = maneuverCursor
+
+    fun offRouteThresholdMetres(): Double = offRouteThresholdM
+
+    /**
+     * Swap street labels after a locale change without resetting progress.
+     * Sample/maneuver counts and geometry must match the active plan.
+     */
+    fun relabel(
+        newSamples: List<RouteSimSample>,
+        newManeuvers: List<RouteManeuver>,
+    ) {
+        samples = newSamples
+        maneuvers = newManeuvers
+        if (maneuverCursor > maneuvers.size) {
+            maneuverCursor = maneuvers.size
+        }
+    }
 
     fun reset() {
         maneuverCursor = 0
@@ -88,6 +110,7 @@ class RouteProgressTracker(
                 bearingDeg = 0.0,
                 crossTrackM = Double.POSITIVE_INFINITY,
                 offRoute = true,
+                snapIndex = -1,
             )
         }
         val nearest = nearestSampleIndex(lat, lon)
@@ -120,6 +143,7 @@ class RouteProgressTracker(
                 bearingDeg = 0.0,
                 crossTrackM = crossTrack,
                 offRoute = true,
+                snapIndex = nearest,
             )
         }
 
@@ -163,6 +187,7 @@ class RouteProgressTracker(
             bearingDeg = bearing,
             crossTrackM = crossTrack,
             offRoute = false,
+            snapIndex = nearest,
         )
     }
 

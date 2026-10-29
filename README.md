@@ -100,12 +100,18 @@ and radio/baud UI notes (branch `CAT`): [`docs/CAT.md`](docs/CAT.md),
 [`docs/CAT-test-report.md`](docs/CAT-test-report.md),
 [`docs/cat-test.md`](docs/cat-test.md).
 
-**Install the signed release APK.** Testers should download and sideload
+**Install from F-Droid (recommended for most users).** Navi is published at
+[f-droid.org/en/packages/no.navi.app](https://f-droid.org/en/packages/no.navi.app/)
+(`no.navi.app`). Prefer that when you want updates through F-Droid.
+
+**Install the signed release APK (sideload / testers).** Download and sideload
 [`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
 installable release APK** (upload keystore; not the debug build). Current build:
-**0.3.25-beta** (`versionName` 0.3.25-beta, `versionCode` 30). Download from the
-[`dev` branch](https://github.com/Supermagnum/Navi/tree/dev/compiled)
-(latest tester build). Android
+**0.3.29-beta** (`versionName` 0.3.29-beta, `versionCode` 2) is the F-Droid /
+GitHub release track (see [docs/RELEASING.md](docs/RELEASING.md)). Sideload
+APKs under `compiled/` may lag until the next sideload ship. Download a tester
+build from the [`dev` branch](https://github.com/Supermagnum/Navi/tree/dev/compiled)
+when present. Android
 validates the APK signature on install; the separate GPG files
 ([`compiled/SHA256SUMS`](compiled/SHA256SUMS),
 [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc)) are optional provenance
@@ -284,7 +290,7 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Look forward** | Without a planned route, GPS position + heading look ahead **300 m** (±60°) for catalogue road signs, speed humps (`NO:109`), children facilities (generic **142**), opted-in speed cameras, and an upcoming posted speed-limit plate from the existing road-label cell graph — same approach box (750 / 150 / 25 m) and jurisdiction gates as the route-corridor path. Dedicated 362 plates cover every-5 km/h values including 12 generated plates; odd OSM speeds still snap to the nearest shipped plate. Compact points load once per region. Detail: [`docs/road-signs.md`](docs/road-signs.md). | Done |
 | **Nearby attractions** | Opt-in under **Map / Tools → Plugins → Nearby attractions** (off by default). Quiet top-right HUD chip for attractions, fishing, and craft alcohol (incl. cider) in an **850 m / ±30°** heading cone — open-now filtered, not a hazard warning. Distinct from Look forward. Spec: [`docs/plugins/poi-lookahead-cone-spec.md`](docs/plugins/poi-lookahead-cone-spec.md). | Done |
 | **IMU pitch / tilt / compass** | Opt-in under **Map / Tools → Plugins → IMU pitch / tilt / compass** (off by default). Made for a phone or tablet **mounted in a vehicle**: live pitch, tilt and compass heading from the device sensors. A mounted unit is never perfectly aligned with the vehicle, so calibrate once: Find a level concrete surface, like the floor of your garage, then tap Calibrate. The unit will then use the current values as level. **Reset** removes the calibration; the status line shows whether the unit is calibrated and on which date. Calibration is rejected while the vehicle is moving. Wasm guest plus Android `SensorManager` bridge; detail: [`docs/plugins/imu-plugin.md`](docs/plugins/imu-plugin.md). | Done |
-| **Tunnel / GNSS-gap positioning** | When GPS is lost or badly degraded (tunnels, deep cuts), the host keeps the map mark moving along the active route (or the current road edge) using IMU heading/accel and the last good speed — same mount calibration as the IMU plugin. The mark turns amber while estimated, grey with **Position lost** after a time/distance give-up, then blends back when a good fix returns. No Google Play services (`LocationManager` + `SensorManager`). Detail: [`docs/tunnel-dead-reckoning.md`](docs/tunnel-dead-reckoning.md). | Done |
+| **Tunnel / GNSS-gap positioning** | When GPS is lost or badly degraded (tunnels, deep cuts), the host keeps the map mark moving along the active route (or the current road edge) using the last GNSS speed, changed only by longitudinal acceleration outside a deadband, and a braking-aware standstill gate — same mount calibration as the IMU plugin. The mark turns amber while estimated, grey with **Position lost** after a time/distance give-up, then blends back when a good fix returns. No Google Play services (`LocationManager` + `SensorManager`). Detail: [`docs/tunnel-dead-reckoning.md`](docs/tunnel-dead-reckoning.md). **Validation:** stationary on a real tablet; moving and tunnel behaviour in simulation and by on-device injection only, no real drive. On-device crawl exit 48.7 m against the 50 m limit. Speed changes gentler than 0.20 m/s² are not tracked in a tunnel. With no route, or on v8 packs, give-up is 6 min / 15 km. | Done |
 | **CAT radio** | Opt-in under **Map / Tools → Plugins** (off by default). Look up amateur repeaters within **150 km**, auto-tune **VFO A/1**, follow LA5MR-style networks with hysteresis (leave after the last site — decision C), leave **VFO B/2** to the user, and **never transmit**. Radios: Hamlib (Stable only) and native Benshi Bluetooth (VR-N76). Licence on the toggle: *You may listen, but do not transmit without an amateur radio licence.* Detail: [CAT radio plugin](#cat-radio-plugin), [`docs/CAT.md`](docs/CAT.md). | Done (this branch) |
 | **Children facilities nearby** | When no tagged children / school sign is active, schools, kindergartens, and playgrounds still trigger a generic **142 Children** approach warning (nearest facility wins; tagged `NO:142` outranks this fallback). **With a planned route:** facilities within **200 m** of the corridor. **Without a route:** covered by **Look forward** (300 m cone). Detail: [`docs/road-signs.md`](docs/road-signs.md). | Done |
 | **Speed camera warnings** | Point cameras use the existing approach distance-phase UX; average-speed / section-control zones use a distinct enter/exit box. `maxspeed:conditional` is evaluated against live local time. Jurisdiction-gated like EC561 / allemannsretten: Norway/UK opt-in (OSM-sourced, may be incomplete); Germany/France/Switzerland and unknown jurisdictions decline — see [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). First-run opt-in dialog required (not silently enabled). Works on both planned-route corridor and **Look forward**. | Done (display/warning only — no route-avoidance toggle, by deliberate product decision) |
@@ -1052,10 +1058,10 @@ repeater select / network follow is the **CATS** wasmtime plugin
 - **OSM** (currently all repeaters in Norway are mapped there).
 - **OpenRepeater**.
 - **RadioID** via navi-server.
-- **RepeaterBook** via navi-server (not yet published).
-- **AnyTone CSV** from `Documents/repeater-csv/`.
+- **RepeaterBook** only from KML/KMZ/CSV the user copies into `Android/data/no.navi.app/files/repeaters`. The app never contacts repeaterbook.com. Android deletes that folder on uninstall.
+- **AnyTone CSV** from `filesDir/cat/import/`.
 - The **Update** button in the plugin UI.
-- Consensus relocation (default **off**).
+- Consensus relocation (default **off**): "Move non-OSM repeaters to the most likely site". When on, a repeater with no OSM row is moved only if at least two independent sources (RadioID, RepeaterBook KML, CSV) agree within 1 km. The target is a tall structure (`man_made=mast|tower|communications_tower`, `tower:type=communication`) when its top is at least 15 m above the highest Mapterhorn sample in that circle, otherwise that sample. Elevation is `elevation_at` (`ElevationService` / `ElevationCache`). A missing DEM tile means no move. Turning the setting off restores each original position. An OSM repeater is never moved. The published Norway bundle does not include structure tags, so a structure is used only when a caller supplies one.
 
 Licence sentence on the toggle (exact copy):
 
@@ -1063,14 +1069,24 @@ Licence sentence on the toggle (exact copy):
 
 **What is tested**
 
-- CI / simulator (dummy-`rigctld`, corridor replays, gating).
-- Android emulator.
-- Real hardware: **VR-N76** over host Bluetooth on **2026-10-12** — read-only
-  check, both 5 s VFO A route runs, VFO B unchanged.
-
-**Not tested:** Android tablet → physical radio, Hamlib on real radios,
-UV-Pro / GA-5WB, RepeaterBook data, transmit (never). Simulator results must
-not be described as hardware results.
+- **Hamlib backend:** automated tests with the Hamlib dummy rig (model 1) on
+  desktop (**Hamlib 4.7.0**) and the Android emulator (**Hamlib 4.7.2**, guest
+  6 cores — emulator maximum). Verified: Espa→Dombås / Espa→Litjfossen switch
+  order for LA5MR, Standalone, and auto (unplanned and planned-route), named
+  model pills with green connected state, read-back fields (`get_freq`,
+  shift/offset, CTCSS/DCS), 60 s hysteresis, VFO 2 untouched, 1750 Hz handling
+  (CTCSS off, no burst call), mid-replay Disconnect (`OK: disconnected`, no
+  crash), empty drop-folder Update after fixture cleanup.
+- **Real Hamlib radios:** not tested.
+- **VGC VR-N76 and similar Benshi-protocol radios (Bluetooth):** no automated
+  test; VR-N76 tested manually over Bluetooth by the maintainer (5 s VFO A
+  stepping on Espa→Dombås and Espa→Litjfossen); other Benshi radios not tested.
+- 1750 Hz burst repeaters: the app tunes them but never sends the burst; the
+  user does that manually.
+- Consensus relocation: the published OSM bundle has no structure tags, so in
+  production it moves to the highest DEM point only.
+- Licence: you may listen, but do not transmit without an amateur radio
+  licence.
 
 Evidence and how to re-run: [`docs/CAT-test-report.md`](docs/CAT-test-report.md).
 Guest overview: [`plugins/CATS-plugin/README.md`](plugins/CATS-plugin/README.md).
@@ -1157,15 +1173,26 @@ clone **your** fork, and work on **`dev`** — step-by-step in
 
 ## Install a prebuilt APK
 
+### F-Droid
+
+Navi is on F-Droid as **`no.navi.app`**:
+
+[https://f-droid.org/en/packages/no.navi.app/](https://f-droid.org/en/packages/no.navi.app/)
+
+Install or update from the F-Droid client when you can. The sideload APKs below
+are for testers and developers who need a specific `dev` build (or cannot use
+F-Droid).
+
 ### Release APK (for testers)
 
 Use the **signed release** build — this is what hardware testers should
-install. The APK is signed with the project upload keystore so Android accepts
-it as a normal install (not an unsigned or debug-only package).
+install when they are not using F-Droid. The APK is signed with the project
+upload keystore so Android accepts it as a normal install (not an unsigned or
+debug-only package).
 
 | Artifact | Role |
 |---|---|
-| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64-v8a, `versionName` 0.3.25-beta, `versionCode` 30) |
+| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64-v8a, `versionName` 0.3.28-beta, `versionCode` 33) |
 | [`compiled/SHA256SUMS`](compiled/SHA256SUMS) | SHA-256 checksum for integrity checks |
 | [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc) | Detached GPG provenance signature (not Android APK signing) |
 
@@ -1278,8 +1305,8 @@ Debug installs use the Android **debug** keystore. A **release** package is what
 you sideload as release, hand to F-Droid-style checks, or smoke-test as an AAB.
 
 A prebuilt upload-key-signed release APK for testers is committed at
-[`compiled/navi-release.apk`](compiled/navi-release.apk) (`versionName` 0.3.25-beta,
-`versionCode` 30; see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
+[`compiled/navi-release.apk`](compiled/navi-release.apk) (`versionName` 0.3.28-beta,
+`versionCode` 33; see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
 
 1. **Native library** for every ABI you ship (store AABs usually need both):
 

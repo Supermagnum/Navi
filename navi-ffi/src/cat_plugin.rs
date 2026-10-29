@@ -9,9 +9,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
+use navi_cat::benshi::{
+    gate_native_identity, BenshiBackend, FakeBenshiPeer, ALLOWED_PRODUCT_VR_N76,
+    ALLOWED_PRODUCT_VR_N76_FW,
+};
 use navi_cat::gating::{GateDecision, GateStatus};
+use navi_cat::program::{program_vfo1_verified, ProgramRequest};
 use navi_cat::types::{RigBackend, RigError, VfoState};
-use navi_cat::{CatService, RepeaterDb, TcpRigBackend};
+use navi_cat::{CatService, FfiRigBackend, RepeaterDb, TcpRigBackend};
 use navi_plugin_host::{
     cranelift_abi_supported, plugin_set_enabled, Capability, FilePluginKv, HostApi, PluginHost,
     PluginKvStatus, PluginLimits, PoiWrite, Position, DEFAULT_MEMORY_BYTES,
@@ -63,6 +68,9 @@ impl RigBackend for OfflineRig {
 enum LiveBackend {
     Offline(OfflineRig),
     Tcp(TcpRigBackend),
+    Ffi(FfiRigBackend),
+    /// Native Benshi / VR-N76 family (lab FakeBenshiPeer or future RFCOMM pipe).
+    Benshi(BenshiBackend<navi_cat::benshi::InProcessTransport>),
 }
 
 impl RigBackend for LiveBackend {
@@ -70,54 +78,72 @@ impl RigBackend for LiveBackend {
         match self {
             Self::Offline(b) => b.is_connected(),
             Self::Tcp(b) => b.is_connected(),
+            Self::Ffi(b) => b.is_connected(),
+            Self::Benshi(b) => b.is_connected(),
         }
     }
     fn model_name(&self) -> String {
         match self {
             Self::Offline(b) => b.model_name(),
             Self::Tcp(b) => b.model_name(),
+            Self::Ffi(b) => b.model_name(),
+            Self::Benshi(b) => b.model_name(),
         }
     }
     fn model_number(&self) -> i32 {
         match self {
             Self::Offline(b) => b.model_number(),
             Self::Tcp(b) => b.model_number(),
+            Self::Ffi(b) => b.model_number(),
+            Self::Benshi(b) => b.model_number(),
         }
     }
     fn gate(&self) -> GateDecision {
         match self {
             Self::Offline(b) => b.gate(),
             Self::Tcp(b) => b.gate(),
+            Self::Ffi(b) => b.gate(),
+            Self::Benshi(b) => b.gate(),
         }
     }
     fn get_ptt(&mut self) -> Result<bool, RigError> {
         match self {
             Self::Offline(b) => b.get_ptt(),
             Self::Tcp(b) => b.get_ptt(),
+            Self::Ffi(b) => b.get_ptt(),
+            Self::Benshi(b) => b.get_ptt(),
         }
     }
     fn get_dcd(&mut self) -> Result<bool, RigError> {
         match self {
             Self::Offline(b) => b.get_dcd(),
             Self::Tcp(b) => b.get_dcd(),
+            Self::Ffi(b) => b.get_dcd(),
+            Self::Benshi(b) => b.get_dcd(),
         }
     }
     fn set_vfo_state(&mut self, want: &VfoState) -> Result<(), RigError> {
         match self {
             Self::Offline(b) => b.set_vfo_state(want),
             Self::Tcp(b) => b.set_vfo_state(want),
+            Self::Ffi(b) => b.set_vfo_state(want),
+            Self::Benshi(b) => b.set_vfo_state(want),
         }
     }
     fn read_vfo_state(&mut self) -> Result<VfoState, RigError> {
         match self {
             Self::Offline(b) => b.read_vfo_state(),
             Self::Tcp(b) => b.read_vfo_state(),
+            Self::Ffi(b) => b.read_vfo_state(),
+            Self::Benshi(b) => b.read_vfo_state(),
         }
     }
     fn freq_step_hz(&self) -> u64 {
         match self {
             Self::Offline(b) => b.freq_step_hz(),
             Self::Tcp(b) => b.freq_step_hz(),
+            Self::Ffi(b) => b.freq_step_hz(),
+            Self::Benshi(b) => b.freq_step_hz(),
         }
     }
 }
@@ -346,6 +372,82 @@ pub fn cat_plugin_connect_tcp(host: String, port: u16, allow_beta: bool) -> Stri
     }
 }
 
+/// Open the onboard Hamlib library (Android `libhamlib.so`) for `model`.
+/// Used for the Hamlib dummy (model 1) on the emulator and for direct FFI radios.
+#[uniffi::export]
+pub fn cat_plugin_connect_ffi(model: i32, allow_beta: bool) -> String {
+    let mut guard = session_lock().lock().expect("cat session");
+    let Some(session) = guard.as_mut() else {
+        return "FAIL: not configured".into();
+    };
+    match FfiRigBackend::open(model, allow_beta) {
+        Ok(ffi) => {
+            let follow_net = session.cat.follow_network_id.clone();
+            let follow_pin = session.cat.follow_pinned.clone();
+            let follow_stop = session.cat.follow_stopped_reason.clone();
+            let db = open_db(&session.files_dir);
+            let mut cat = CatService::new(LiveBackend::Ffi(ffi), db);
+            cat.follow_network_id = follow_net;
+            cat.follow_pinned = follow_pin;
+            cat.follow_stopped_reason = follow_stop;
+            session.cat = cat;
+            format!("OK: connected ffi model={model}")
+        }
+        Err(e) => format!("FAIL: {e}"),
+    }
+}
+
+/// Lab / developer connect: in-process FakeBenshiPeer configured as VR-N76.
+///
+/// Keeps VR-N76 gating + GAIA program paths linked into release `libnavi.so`
+/// (LTO would otherwise strip unused `navi-cat::benshi`). Not a physical radio;
+/// Kotlin `BenshiRfcommTransport` is the real RFCOMM byte path for hardware.
+#[uniffi::export]
+pub fn cat_plugin_connect_benshi_lab(scratch_channel: u8) -> String {
+    let mut guard = session_lock().lock().expect("cat session");
+    let Some(session) = guard.as_mut() else {
+        return "FAIL: not configured".into();
+    };
+    match BenshiBackend::connect_fake(FakeBenshiPeer::default_vr_n76(), scratch_channel) {
+        Ok(backend) => {
+            let follow_net = session.cat.follow_network_id.clone();
+            let follow_pin = session.cat.follow_pinned.clone();
+            let follow_stop = session.cat.follow_stopped_reason.clone();
+            let db = open_db(&session.files_dir);
+            let model = backend.model_name();
+            let mut cat = CatService::new(LiveBackend::Benshi(backend), db);
+            cat.follow_network_id = follow_net;
+            cat.follow_pinned = follow_pin;
+            cat.follow_stopped_reason = follow_stop;
+            session.cat = cat;
+            format!("OK: connected benshi lab ({model})")
+        }
+        Err(e) => format!("FAIL: {e}"),
+    }
+}
+
+/// VR-N76 productIds accepted by the native Benshi allowlist (`0x0002`, `0x0103`).
+#[uniffi::export]
+pub fn cat_plugin_benshi_vr_n76_product_ids() -> Vec<u32> {
+    vec![
+        u32::from(ALLOWED_PRODUCT_VR_N76),
+        u32::from(ALLOWED_PRODUCT_VR_N76_FW),
+    ]
+}
+
+/// Probe the native VR-N76 identity gate (fail-closed on unknown productId).
+#[uniffi::export]
+pub fn cat_plugin_benshi_gate_product(vendor_id: u8, product_id: u32) -> String {
+    let pid = u16::try_from(product_id).unwrap_or(u16::MAX);
+    let g = gate_native_identity(Some(vendor_id), Some(pid));
+    serde_json::json!({
+        "allowed": g.allowed,
+        "reason": g.reason,
+        "status": format!("{:?}", g.status),
+    })
+    .to_string()
+}
+
 #[uniffi::export]
 pub fn cat_plugin_disconnect() -> String {
     let mut guard = session_lock().lock().expect("cat session");
@@ -462,7 +564,34 @@ pub fn cat_plugin_tick_guest() -> String {
         Ok(h) => h,
         Err(e) => return format!("FAIL: load: {e}"),
     };
-    match host.call(Box::new(api)) {
+    let call = host.call(Box::new(api));
+    if let Ok(kv) = FilePluginKv::open(session.kv_path()) {
+        if let Some(site_id) = kv.get("cat_follow_switch") {
+            let mut kv = kv;
+            let _ = kv.set("cat_follow_switch", "");
+            if let Some(site) = session
+                .cat
+                .db
+                .list_sites()
+                .into_iter()
+                .find(|s| s.id == site_id)
+            {
+                let burst = site.access == navi_cat::AccessTone::ToneBurst1750;
+                let req = ProgramRequest {
+                    freq_out_mhz: site.freq_out_mhz,
+                    shift_mhz: site.shift_mhz.unwrap_or(f64::NAN),
+                    ctcss_hz: if burst { None } else { site.ctcss_hz },
+                    dcs_code: if burst { None } else { site.dcs_code },
+                    mode: "FM".into(),
+                    passband_hz: 12_500,
+                    vfo: "VFOA".into(),
+                    leaves_follow: false,
+                };
+                let _ = program_vfo1_verified(&mut session.cat.backend, &req);
+            }
+        }
+    }
+    match call {
         Ok(outcome) => format!("OK: {outcome:?}"),
         Err(e) => format!("FAIL: {e}"),
     }
@@ -477,14 +606,60 @@ pub fn cat_plugin_update_repeaters_from_server(base_url: String) -> String {
     let Some(session) = guard.as_mut() else {
         return r#"{"ok":false,"error":"not configured","kept_last_good":true}"#.into();
     };
-    let base = if base_url.trim().is_empty() {
-        navi_cat::mirror::DEFAULT_REPEATERS_BASE.to_string()
+    let (drop_dir, base, consensus, elev_dir) = if base_url.trim_start().starts_with('{') {
+        let v: serde_json::Value = serde_json::from_str(&base_url).unwrap_or_default();
+        let dir = v.get("dir").and_then(|d| d.as_str()).map(|s| s.to_string());
+        let consensus = v
+            .get("consensus")
+            .and_then(|d| d.as_bool())
+            .unwrap_or(false);
+        let elev = v
+            .get("elev")
+            .and_then(|d| d.as_str())
+            .map(|s| s.to_string());
+        let base = v
+            .get("base")
+            .and_then(|d| d.as_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or(navi_cat::mirror::DEFAULT_REPEATERS_BASE)
+            .to_string();
+        (dir, base, consensus, elev)
+    } else if base_url.trim().is_empty() {
+        (
+            None,
+            navi_cat::mirror::DEFAULT_REPEATERS_BASE.to_string(),
+            false,
+            None,
+        )
     } else {
-        base_url
+        (None, base_url, false, None)
     };
     let db_path = session.files_dir.join("cat_repeaters.sqlite");
-    let report = navi_cat::mirror::fetch_and_update(&base, &db_path);
+    let local = drop_dir.as_ref().map(|dir| {
+        navi_cat::repeaterbook::import_directory(std::path::Path::new(dir), &db_path, None)
+    });
+    let report = navi_cat::mirror::fetch_and_update_with_files(
+        &base,
+        &db_path,
+        drop_dir.as_deref().map(std::path::Path::new),
+    );
+    let local_ok = local.as_ref().map(|l| l.ok).unwrap_or(false);
     if report.ok {
+        if let Ok(db) = navi_cat::RepeaterDb::open_path(&db_path) {
+            if consensus {
+                let elev_owned = elev_dir.clone();
+                let sample = move |lat: f64, lon: f64| {
+                    elev_owned
+                        .as_ref()
+                        .and_then(|dir| crate::elevation_at(dir.clone(), lat, lon))
+                };
+                let _ = navi_cat::consensus::apply(&db, true, &sample, &[]);
+            } else {
+                let _ = navi_cat::consensus::revert_all(&db);
+            }
+        }
+    }
+    if report.ok || local_ok {
         // Reload DB handle so subsequent queries see the new rows.
         let db = open_db(&session.files_dir);
         let follow_net = session.cat.follow_network_id.clone();
@@ -502,7 +677,12 @@ pub fn cat_plugin_update_repeaters_from_server(base_url: String) -> String {
         cat.follow_stopped_reason = follow_stop;
         session.cat = cat;
     }
-    serde_json::to_string(&report).unwrap_or_else(|_| {
-        r#"{"ok":false,"error":"serialize report","kept_last_good":true}"#.into()
-    })
+    let mut combined = serde_json::to_value(&report).unwrap_or_else(|_| serde_json::json!({}));
+    if let Some(local) = local {
+        combined["local_files"] = serde_json::to_value(&local).unwrap_or(serde_json::json!(null));
+        if local.ok {
+            combined["ok"] = serde_json::json!(true);
+        }
+    }
+    combined.to_string()
 }

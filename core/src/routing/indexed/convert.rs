@@ -477,7 +477,7 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
         download_progress::set(0, Some(5), "Resuming indexed maps: using saved bounds…");
         (c.region_bbox, 0.0)
     } else {
-        download_progress::set(0, Some(5), "Building indexed maps: scanning bounds…");
+        download_progress::set(0, Some(5), "navi.msg.build_indexed_bounds");
         let bbox = pbf_node_bbox(&opts.pbf)?;
         (bbox, note_phase(&mut peak_rss_mb, "bounds", t_bbox))
     };
@@ -620,11 +620,7 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
                 if opts.control.is_cancelled() {
                     anyhow::bail!("cancelled");
                 }
-                download_progress::set(
-                    1,
-                    Some(total_steps),
-                    "Building indexed maps: graphs (shared PBF, tiled)…",
-                );
+                download_progress::set(1, Some(total_steps), "navi.msg.build_indexed_graphs");
                 let t_graphs = Instant::now();
                 let entries_by_profile: Arc<Mutex<BTreeMap<String, Vec<GraphTileEntry>>>> =
                     Arc::new(Mutex::new(ck.graph_tiles.clone()));
@@ -794,7 +790,10 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
                 download_progress::set(
                     (i + 1) as u64,
                     Some(total_steps),
-                    &format!("Building indexed maps: graph ({key})…"),
+                    &crate::i18n::messages::encode1(
+                        crate::i18n::messages::codes::BUILD_GRAPH,
+                        &key,
+                    ),
                 );
                 let t_graph = Instant::now();
                 let graph = RouteGraph::build_from_pbf_bbox(&opts.pbf, *profile, region_bbox)?;
@@ -861,7 +860,7 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
             &ck_path,
             RegionLockPhase::PoiBarrier,
         )?;
-        download_progress::set(90, Some(100), "Building indexed maps: POI + barriers…");
+        download_progress::set(90, Some(100), "navi.msg.build_indexed_poi");
         crate::download::pbf_priority::yield_if_foreground_plan();
         note_rss(&mut peak_rss_mb, "poi_start");
         let t_poi = Instant::now();
@@ -922,7 +921,7 @@ pub fn convert_region_packs(opts: &ConvertOptions) -> anyhow::Result<ConvertRepo
             &ck_path,
             RegionLockPhase::Wetland,
         )?;
-        download_progress::set(95, Some(100), "Building indexed maps: wetlands…");
+        download_progress::set(95, Some(100), "navi.msg.build_indexed_wetlands");
         crate::download::pbf_priority::yield_if_foreground_plan();
         if let Ok(rd) = std::fs::read_dir(&opts.data_dir) {
             for ent in rd.flatten() {

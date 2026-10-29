@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+<Placemark>
+<name>LA5MR</name>
+<description><![CDATA[
+Hoykorset<br>
+145.625000 88.5<br>
+On-air: Yes<br>
+<a href='https://www.repeaterbook.com/row_repeaters/details.php?state_id=NO&ID=1'>Click for Details</a>
+]]></description>
+<Point><coordinates>10.6018219,60.4781659,0</coordinates></Point>
+</Placemark>
+</Document></kml>

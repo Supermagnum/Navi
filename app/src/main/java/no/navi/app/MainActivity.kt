@@ -3,11 +3,13 @@ package no.navi.app
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -80,14 +82,18 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontSynthesis
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -186,6 +192,33 @@ import android.graphics.Paint as AndroidPaint
 private const val SPLASH_MAX_HOLD_MS = 2_000L
 
 class MainActivity : ComponentActivity() {
+    /**
+     * With `configChanges` including locale/layoutDirection, the Activity is not
+     * recreated on language change. Compose observes [configurationRevision] so
+     * every screen re-reads string resources and layout direction.
+     */
+    private val configurationRevision =
+        java.util.concurrent.atomic
+            .AtomicInteger(0)
+
+    @Volatile
+    private var configurationRevisionListener: (() -> Unit)? = null
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        val rev = configurationRevision.incrementAndGet()
+        runCatching {
+            val tag =
+                newConfig.locales[0]?.toLanguageTag()
+                    ?: java.util.Locale
+                        .getDefault()
+                        .toLanguageTag()
+            uniffi.navi.setPlaceSearchLocale(tag)
+            android.util.Log.i("NaviLocale", "onConfigurationChanged locale=$tag rev=$rev")
+        }
+        configurationRevisionListener?.invoke()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // Splash Screen API (androidx.core:core-splashscreen) for API 26–30 compat
         // and native API 31+. Activity theme is Theme.Navi.Splash; post-splash
@@ -203,29 +236,85 @@ class MainActivity : ComponentActivity() {
             SystemClock.uptimeMillis() - splashStartedAtMs < SPLASH_MAX_HOLD_MS
         }
         super.onCreate(savedInstanceState)
+        // Volume rocker / emulator media mute must control STREAM_MUSIC.
+        // Do not use STREAM_ALARM (or other always-audible streams) for app
+        // cues — that path was removed with ImuAlarmAudio and must not return.
+        volumeControlStream = AudioManager.STREAM_MUSIC
         // Inject pins are in-memory only. Drop leftovers from a previous
         // activity in this process; this launch may set a new one via extras.
         NaviMapTestHooks.clearDebugGpsInject()
         applyNaviLaunchExtras(intent)
         runCatching { uniffi.navi.initNativeLogging() }
-        CampingBootstrap.ensureInitialized(this)
-        CatBootstrap.ensureInitialized(this)
+        // Bind place-search display locale before any native search (Compose
+        // LaunchedEffect can race debug intents / early typeahead).
+        runCatching {
+            val tag =
+                resources.configuration.locales[0]?.toLanguageTag()
+                    ?: java.util.Locale
+                        .getDefault()
+                        .toLanguageTag()
+            uniffi.navi.setPlaceSearchLocale(tag)
+            android.util.Log.i("NaviLocale", "place_search_locale=$tag")
+        }
+        // Recover torn place_index WAL/SHM before any PlaceIndexIntact probe
+        // (SIGBUS in walIndexReadHdr is uncatchable). Off main thread.
+        Thread(
+            {
+                android.os.Process.setThreadPriority(
+                    android.os.Process.THREAD_PRIORITY_BACKGROUND,
+                )
+                val dataDir = NaviAppData.resolve(this@MainActivity)
+                runCatching {
+                    PlaceIndexIntact.recoverBeforeOpen(dataDir)
+                }.onFailure { t ->
+                    android.util.Log.w("PlaceIndexIntact", "startup wal recover: ${t.message}")
+                }
+                runCatching {
+                    PlaceIndexRebuildNotice.drainAfterWalEvent(this@MainActivity, dataDir)
+                }
+            },
+            "PlaceIndexWalRecover",
+        ).start()
         // Natural Earth country grid: never build on the main looper (ANR / seed stall).
-        // CampingBootstrap.configure also touches country_polys; keep it off-main.
+        // camping_plugin_configure / cat_plugin_configure are heavy native work and must
+        // not run on main (SM-P613 ANR: main blocked in camping_plugin_configure).
         CountryPolysWarm.startBackground()
         Thread(
             {
+                android.os.Process.setThreadPriority(
+                    android.os.Process.THREAD_PRIORITY_BACKGROUND,
+                )
                 runCatching { CampingBootstrap.ensureInitialized(this@MainActivity) }
+                runCatching { CatBootstrap.ensureInitialized(this@MainActivity) }
             },
-            "CampingBootstrap",
+            "PluginBootstrap",
         ).start()
         // IMU plugin: native setup runs off-main; sensors tick only while started and enabled.
         ImuPluginRuntime.attach(this, this)
         WorldOverviewDownload.ensure(this)
         setContent {
             var showMap by remember { mutableStateOf(false) }
+            var configRev by remember { mutableIntStateOf(configurationRevision.get()) }
+            DisposableEffect(Unit) {
+                configurationRevisionListener = {
+                    configRev = configurationRevision.get()
+                }
+                onDispose { configurationRevisionListener = null }
+            }
+            // Read configRev so locale/layoutDirection changes recompose stringResource
+            // / RTL without remounting NaviMapScreen (preserve active route state).
+            @Suppress("UNUSED_EXPRESSION")
+            configRev
+            val conf = LocalConfiguration.current
+            val composeLayoutDir =
+                if (conf.layoutDirection == android.util.LayoutDirection.RTL) {
+                    LayoutDirection.Rtl
+                } else {
+                    LayoutDirection.Ltr
+                }
             MaterialTheme(typography = naviTypography()) {
                 CompositionLocalProvider(
+                    LocalLayoutDirection provides composeLayoutDir,
                     LocalTextStyle provides
                         LocalTextStyle.current.copy(
                             letterSpacing = 0.sp,
@@ -237,7 +326,7 @@ class MainActivity : ComponentActivity() {
                         // Cheap first frame so the splash can exit within SPLASH_MAX_HOLD_MS
                         // even while MapLibre / NaviMapScreen still warm up.
                         if (showMap) {
-                            NaviMapScreen()
+                            NaviMapScreen(configurationRevision = configRev)
                         }
                     }
                 }
@@ -270,7 +359,7 @@ class MainActivity : ComponentActivity() {
      *     --ed navi_camera_lat 62.1592913 --ed navi_camera_lon 11.3584086 --ed navi_camera_zoom 16
      * Also accepts --ef / --es for the same keys.
      *
-     * Debug trip seed (debuggable builds only — see [NaviDebugIntent]):
+     * Debug trip seed (debuggable builds only — see [DebugTripHooks] / [NaviDebugIntent]):
      *   --ed navi_from_lat … --ed navi_from_lon … --ed navi_to_lat … --ed navi_to_lon …
      *   [--es navi_profile car|bicycle|hiking|…] [--es navi_bike_capability road|trekking|mountain]
      *   [--ed navi_via1_lat … --ed navi_via1_lon …] (up to via4)
@@ -537,7 +626,7 @@ class MainActivity : ComponentActivity() {
             }.start()
         }
         intent.getStringExtra("navi_search_ui_q")?.let { q ->
-            if (NaviDebugIntent.debugBuild(this)) {
+            if (DebugTripHooks.debugBuild(this)) {
                 NaviMapTestHooks.pendingSearchUiQuery =
                     q to intent.getBooleanExtra("navi_search_ui_submit", false)
             }
@@ -545,8 +634,8 @@ class MainActivity : ComponentActivity() {
         // Trip / profile / settings / graph: debug builds only.
         val dataDirPath = filesDir.absolutePath
         val debugTrip =
-            NaviDebugIntent.consumeTripExtras(this, intent, dataDirPath)
-                ?: NaviDebugIntent.consumePendingTripFile(this, dataDirPath)
+            DebugTripHooks.consumeTripExtras(this, intent, dataDirPath)
+                ?: DebugTripHooks.consumePendingTripFile(this, dataDirPath)
         if (debugTrip != null) {
             NaviMapTestHooks.pendingTripPlan = debugTrip
             debugTrip.profile?.let { NaviMapTestHooks.requestTravelProfile = it }
@@ -929,11 +1018,47 @@ private fun datexStatusLineForHud(
         else -> "DATEX idle (source=${hud.dataSource})"
     }
 
+/**
+ * Option D: rewrite street names in maneuvers / sim-samples from local Protomaps
+ * `roads` layer name:* tags for [localeTag]. Falls back to the original JSON when
+ * no covering .pmtiles is present or FFI localization fails.
+ */
+private fun localizeRouteStreetsForLocale(
+    dataDir: File,
+    regionPath: String?,
+    localeTag: String,
+    maneuversJson: String,
+    simSamplesJson: String,
+): Pair<String, String> {
+    val path =
+        regionPath?.takeIf { it.isNotBlank() }
+            ?: return maneuversJson to simSamplesJson
+    val key = PackRegionAvailability.geofabrikPathToRegionKey(path)
+    val pmtiles = File(dataDir, "pmtiles/$key.pmtiles")
+    if (!pmtiles.isFile) return maneuversJson to simSamplesJson
+    return runCatching {
+        val out =
+            uniffi.navi.localizeRouteStreetsFromPmtiles(
+                pmtiles.absolutePath,
+                localeTag,
+                maneuversJson,
+                simSamplesJson,
+            )
+        out.maneuversJson to out.simSamplesJson
+    }.getOrDefault(maneuversJson to simSamplesJson)
+}
+
 @Composable
-private fun NaviMapScreen() {
+private fun NaviMapScreen(configurationRevision: Int = 0) {
+    // Observed so locale/layoutDirection changes refresh stringResource / RTL
+    // without remounting remembered route state.
+    @Suppress("UNUSED_VARIABLE")
+    val observedConfigurationRevision = configurationRevision
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var status by remember { mutableStateOf("Ready") }
+    var status by remember {
+        mutableStateOf(context.getString(R.string.status_ready))
+    }
 
     // Last progress line a background job (download, place index, indexed maps)
     // wrote into [status]; cleared from [status] once no job is reporting.
@@ -988,6 +1113,12 @@ private fun NaviMapScreen() {
     var diagnosticLogging by remember {
         mutableStateOf(MapHudPrefs.loadDiagnosticLogging(context))
     }
+    var locationDiagnostics by remember {
+        mutableStateOf(MapHudPrefs.loadLocationDiagnostics(context))
+    }
+    var locationDiagOverlay by remember {
+        mutableStateOf(MapHudPrefs.loadLocationDiagOverlay(context))
+    }
     var downloadScopeCountry by remember { mutableStateOf(false) }
     var selectedGeofabrikPath by remember {
         mutableStateOf(MapHudPrefs.loadGeofabrikPath(context))
@@ -1002,10 +1133,60 @@ private fun NaviMapScreen() {
     var packCatalogEpoch by remember { mutableIntStateOf(0) }
     var mapsEpoch by remember { mutableIntStateOf(0) }
     var styleEpoch by remember { mutableIntStateOf(0) }
+
+    /** Bumped on locale change so corridor street labels can re-localize in place. */
+    var localeRelabelEpoch by remember { mutableIntStateOf(0) }
+    val configuration = LocalConfiguration.current
+    val deviceLocaleTag =
+        remember(configuration, configurationRevision) {
+            configuration.locales[0]?.toLanguageTag().orEmpty()
+        }
+    val layoutDirection =
+        remember(configuration, configurationRevision) {
+            configuration.layoutDirection
+        }
+    var previousLocaleTag by remember { mutableStateOf<String?>(null) }
+    var previousLayoutDirection by remember { mutableStateOf<Int?>(null) }
+    // configChanges=locale|layoutDirection: refresh chrome, search locale, basemap
+    // labels, and cached status lines without remounting the map / route.
+    LaunchedEffect(configurationRevision, deviceLocaleTag, layoutDirection) {
+        val tag =
+            deviceLocaleTag.ifBlank {
+                java.util.Locale
+                    .getDefault()
+                    .toLanguageTag()
+            }
+        runCatching {
+            uniffi.navi.setPlaceSearchLocale(tag)
+            android.util.Log.i(
+                "NaviLocale",
+                "place_search_locale=$tag layoutDir=$layoutDirection rev=$configurationRevision",
+            )
+        }
+        val prevLocale = previousLocaleTag
+        val prevDir = previousLayoutDirection
+        previousLocaleTag = deviceLocaleTag
+        previousLayoutDirection = layoutDirection
+        val localeChanged = prevLocale != null && prevLocale != deviceLocaleTag
+        val dirChanged = prevDir != null && prevDir != layoutDirection
+        if (localeChanged || dirChanged) {
+            styleEpoch += 1
+            localeRelabelEpoch += 1
+            // Re-resolve idle status from resources (remembered getString stays stale).
+            if (jobProgressStatus.isEmpty() || status == jobProgressStatus) {
+                if (jobProgressStatus.isEmpty()) {
+                    status = context.getString(R.string.status_ready)
+                }
+            }
+            InstalledMaps.region(selectedGeofabrikPath)?.noOfflineMapMessage()?.let { msg ->
+                status = msg
+            }
+        }
+    }
     LaunchedEffect(selectedGeofabrikPath) {
         NaviMapTestHooks.lastSelectedGeofabrikPath = selectedGeofabrikPath
     }
-    LaunchedEffect(selectedGeofabrikPath, mapsEpoch) {
+    LaunchedEffect(selectedGeofabrikPath, mapsEpoch, configurationRevision) {
         InstalledMaps.region(selectedGeofabrikPath)?.noOfflineMapMessage()?.let { msg ->
             status = msg
         }
@@ -1055,6 +1236,8 @@ private fun NaviMapScreen() {
     LaunchedEffect(Unit) {
         DiagnosticLog.restoreFromPrefs(context)
         diagnosticLogging = DiagnosticLog.isEnabled()
+        LocationDiagnostics.restoreFromPrefs(context)
+        locationDiagnostics = LocationDiagnostics.isEnabled()
         while (true) {
             val pendingPath = NaviMapTestHooks.pendingGeofabrikPath
             if (pendingPath != null) {
@@ -1217,6 +1400,7 @@ private fun NaviMapScreen() {
         mutableStateOf(MapHudPrefs.loadCatPluginEnabled(context))
     }
     var showCatSheet by remember { mutableStateOf(false) }
+    var catRepeaterUpdateBusy by remember { mutableStateOf(false) }
     var catUi by remember {
         mutableStateOf(
             CatUiState(
@@ -1225,6 +1409,10 @@ private fun NaviMapScreen() {
                 backend = MapHudPrefs.loadCatBackend(context),
                 scratchChannel = MapHudPrefs.loadCatScratchChannel(context),
                 demoModeDeveloper = MapHudPrefs.loadCatDemoModeDeveloper(context),
+                networkChoice = MapHudPrefs.loadCatNetworkChoice(context),
+                followNetworkId = MapHudPrefs.loadCatNetworkChoice(context),
+                repeaterDropPath = CatBootstrap.repeaterDropDir(context).absolutePath,
+                consensusRelocation = MapHudPrefs.loadCatConsensusRelocation(context),
             ),
         )
     }
@@ -1233,14 +1421,37 @@ private fun NaviMapScreen() {
     var showCampingSheet by remember { mutableStateOf(false) }
     var campingSessionDisableMessage by remember { mutableStateOf<String?>(null) }
     var hideChrome by remember { mutableStateOf(false) }
+    var lastCatFollowTickMs by remember { mutableStateOf(0L) }
+
+    fun applyCatNetworkFollow() {
+        val choice = MapHudPrefs.loadCatNetworkChoice(context)
+        val req =
+            if (choice == MapHudPrefs.CAT_NETWORK_OFF) {
+                org.json.JSONObject().put("enabled", false)
+            } else {
+                org.json
+                    .JSONObject()
+                    .put("enabled", true)
+                    .put("network_id", choice)
+            }
+        uniffi.navi.catPluginNetworkFollowJson(req.toString())
+    }
 
     LaunchedEffect(Unit) {
-        CampingBootstrap.ensureInitialized(context)
-        CatBootstrap.ensureInitialized(context)
-        val want = MapHudPrefs.loadCampingPluginEnabled(context)
-        uniffi.navi.campingPluginSetEnabled(want)
-        campingSessionDisableMessage = uniffi.navi.campingPluginSessionDisabledReason()
-        uniffi.navi.catPluginSetEnabled(MapHudPrefs.loadCatPluginEnabled(context))
+        val disableReason =
+            withContext(Dispatchers.IO) {
+                CampingBootstrap.ensureInitialized(context)
+                CatBootstrap.ensureInitialized(context)
+                val want = MapHudPrefs.loadCampingPluginEnabled(context)
+                uniffi.navi.campingPluginSetEnabled(want)
+                val reason = uniffi.navi.campingPluginSessionDisabledReason()
+                uniffi.navi.catPluginSetEnabled(MapHudPrefs.loadCatPluginEnabled(context))
+                if (MapHudPrefs.loadCatPluginEnabled(context)) {
+                    applyCatNetworkFollow()
+                }
+                reason
+            }
+        campingSessionDisableMessage = disableReason
     }
 
     fun refreshCatUi() {
@@ -1256,7 +1467,30 @@ private fun NaviMapScreen() {
                 lon,
                 150.0,
             )
-        catUi = catUi.copy(statusJson = status, nearbyJson = nearby)
+        val names = networkNamesFromNearby(nearby)
+        val saved = MapHudPrefs.loadCatNetworkChoice(context)
+        val (choice, notice) =
+            if (saved == MapHudPrefs.CAT_NETWORK_OFF ||
+                saved == MapHudPrefs.CAT_NETWORK_AUTO ||
+                saved == MapHudPrefs.CAT_NETWORK_STANDALONE
+            ) {
+                saved to ""
+            } else if (names.any { it.name.equals(saved, ignoreCase = true) }) {
+                saved to ""
+            } else {
+                MapHudPrefs.saveCatNetworkChoice(context, MapHudPrefs.CAT_NETWORK_AUTO)
+                MapHudPrefs.CAT_NETWORK_AUTO to
+                    "$saved has no programmable repeaters in this region; using nearest network"
+            }
+        catUi =
+            catUi.copy(
+                statusJson = status,
+                nearbyJson = nearby,
+                networkNames = names,
+                networkChoice = choice,
+                networkNotice = notice,
+                repeaterDropPath = CatBootstrap.repeaterDropDir(context).absolutePath,
+            )
     }
 
     val campingReEnableSession: () -> Unit = {
@@ -1468,6 +1702,17 @@ private fun NaviMapScreen() {
     /** Why the last Plan route press did not plan, shown under the button. */
     var planNotice by remember { mutableStateOf("") }
 
+    LaunchedEffect(Unit) {
+        val dataDir = NaviAppData.resolve(context)
+        while (isActive) {
+            PlaceIndexRebuildNotice.drainAfterWalEvent(context, dataDir)
+            PlaceIndexRebuildNotice.takeLine()?.let { line ->
+                if (!planningRoute) showJobProgress(line)
+            }
+            delay(800)
+        }
+    }
+
     // Standalone long-trip seed via adb extras (see applyNaviLaunchExtras).
     // Poll so onNewIntent / warm starts still consume a fresh seed.
     LaunchedEffect(Unit) {
@@ -1586,6 +1831,10 @@ private fun NaviMapScreen() {
     var updateReminderDue by remember { mutableStateOf(false) }
     var routeSamples by remember { mutableStateOf<List<RouteSimSample>>(emptyList()) }
     var routeManeuvers by remember { mutableStateOf<List<RouteManeuver>>(emptyList()) }
+    // Pack-local street JSON (pre option-D) so locale changes can re-localize
+    // without replan. Cleared when the corridor is cleared.
+    var packManeuversJson by remember { mutableStateOf("[]") }
+    var packSimSamplesJson by remember { mutableStateOf("[]") }
     var simulating by remember { mutableStateOf(false) }
     var routeSimulator by remember { mutableStateOf<RouteSimulator?>(null) }
     val routeSamplesRef =
@@ -1669,6 +1918,7 @@ private fun NaviMapScreen() {
     }
 
     fun clearActiveRoute(message: String = "Route deleted") {
+        runCatching { uniffi.navi.clearLocalizedRouteStreetsCache() }
         routeSimulator?.stop()
         routeSimulator = null
         simulating = false
@@ -1677,6 +1927,8 @@ private fun NaviMapScreen() {
         progressTrackerRef.set(null)
         routeSamples = emptyList()
         routeManeuvers = emptyList()
+        packManeuversJson = "[]"
+        packSimSamplesJson = "[]"
         lastViaToastIndex = -1
         mapState =
             mapState.copy(
@@ -1869,6 +2121,49 @@ private fun NaviMapScreen() {
         remember {
             NaviAppData.resolve(context)
         }
+
+    LaunchedEffect(localeRelabelEpoch) {
+        if (localeRelabelEpoch == 0) return@LaunchedEffect
+        if (packManeuversJson == "[]" && packSimSamplesJson == "[]") return@LaunchedEffect
+        val tag =
+            deviceLocaleTag.ifBlank {
+                java.util.Locale
+                    .getDefault()
+                    .toLanguageTag()
+            }
+        val localized =
+            withContext(Dispatchers.Default) {
+                localizeRouteStreetsForLocale(
+                    dataDir = dataDir,
+                    regionPath = selectedGeofabrikPath,
+                    localeTag = tag,
+                    maneuversJson = packManeuversJson,
+                    simSamplesJson = packSimSamplesJson,
+                )
+            }
+        NaviMapTestHooks.lastManeuversJson = localized.first
+        NaviMapTestHooks.lastSimSamplesJson = localized.second
+        val newManeuvers = parseRouteManeuvers(localized.first)
+        val newSamples = parseRouteSimSamples(localized.second)
+        routeManeuvers = newManeuvers
+        routeSamples = newSamples
+        val tracker = progressTrackerRef.get()
+        tracker?.relabel(newSamples, newManeuvers)
+        val manIdx = tracker?.currentManeuverIndex() ?: -1
+        val manStreet = newManeuvers.getOrNull(manIdx)?.street
+        if (approachUiPhase(approachGuidance) != ApproachUiPhase.Hidden &&
+            !manStreet.isNullOrBlank() &&
+            approachGuidance.nextStreet != manStreet
+        ) {
+            approachGuidance = approachGuidance.copy(nextStreet = manStreet)
+        }
+        android.util.Log.i(
+            "NaviLocale",
+            "relocalized_route_streets locale=$tag " +
+                "maneuvers=${newManeuvers.size} samples=${newSamples.size} " +
+                "maneuverIndex=$manIdx",
+        )
+    }
 
     LaunchedEffect(
         poiLookaheadEnabled,
@@ -2230,10 +2525,20 @@ private fun NaviMapScreen() {
             runCatching { pending.breakPoisJson }.getOrDefault("[]")
         NaviMapTestHooks.lastDaysJson =
             runCatching { pending.daysJson }.getOrDefault("[]")
-        NaviMapTestHooks.lastManeuversJson =
-            runCatching { pending.maneuversJson }.getOrDefault("[]")
-        NaviMapTestHooks.lastSimSamplesJson =
-            runCatching { pending.simSamplesJson }.getOrDefault("[]")
+        val packMans = runCatching { pending.maneuversJson }.getOrDefault("[]")
+        val packSims = runCatching { pending.simSamplesJson }.getOrDefault("[]")
+        packManeuversJson = packMans
+        packSimSamplesJson = packSims
+        val localizedStreets =
+            localizeRouteStreetsForLocale(
+                dataDir = dataDir,
+                regionPath = selectedGeofabrikPath,
+                localeTag = deviceLocaleTag,
+                maneuversJson = packMans,
+                simSamplesJson = packSims,
+            )
+        NaviMapTestHooks.lastManeuversJson = localizedStreets.first
+        NaviMapTestHooks.lastSimSamplesJson = localizedStreets.second
         routePlanStats =
             routePlanStatsFromPlan(
                 pending.report,
@@ -2277,26 +2582,20 @@ private fun NaviMapScreen() {
                 )
             }
         }
-        routeSamples =
-            parseRouteSimSamples(
-                runCatching { pending.simSamplesJson }.getOrDefault("[]"),
-            )
+        routeSamples = parseRouteSimSamples(localizedStreets.second)
         routeSchoolPoisJson =
             if (schoolPoisJson != "[]" && routeSamples.size >= 2) {
                 runCatching {
                     uniffi.navi.schoolsNearRouteCorridorJson(
                         schoolPoisJson,
-                        runCatching { pending.simSamplesJson }.getOrDefault("[]"),
+                        localizedStreets.second,
                         200.0,
                     )
                 }.getOrDefault("[]")
             } else {
                 "[]"
             }
-        routeManeuvers =
-            parseRouteManeuvers(
-                runCatching { pending.maneuversJson }.getOrDefault("[]"),
-            )
+        routeManeuvers = parseRouteManeuvers(localizedStreets.first)
         progressTrackerRef.set(
             RouteProgressTracker(
                 samples = routeSamples,
@@ -2327,6 +2626,14 @@ private fun NaviMapScreen() {
                 awayThresholdM = ROUTE_START_AWAY_FROM_GPS_M,
             ),
         )
+        if (LocationDiagnostics.isEnabled()) {
+            LocationDiagnostics.logRoute(
+                wallMs = System.currentTimeMillis(),
+                samples = routeSamples,
+                fromFollowsGps = fromFollowsGps || fromPoint == null,
+                routeNotJoined = routeNotJoinedRef.get(),
+            )
+        }
         showHikingReroutePrompt = false
         recalculatingRoute = false
         NaviMapTestHooks.reroutingActive = false
@@ -2617,6 +2924,18 @@ private fun NaviMapScreen() {
         val lat = mapState.gpsLat
         val lon = mapState.gpsLon
         if (lat == 0.0 && lon == 0.0) return@LaunchedEffect
+        if (catPluginEnabled &&
+            MapHudPrefs.loadCatNetworkChoice(context) != MapHudPrefs.CAT_NETWORK_OFF
+        ) {
+            val nowMs = SystemClock.elapsedRealtime()
+            if (nowMs - lastCatFollowTickMs >= 5_000L) {
+                lastCatFollowTickMs = nowMs
+                withContext(Dispatchers.Default) {
+                    uniffi.navi.catPluginSetPosition(lat, lon)
+                    uniffi.navi.catPluginTickGuest()
+                }
+            }
+        }
         roadSignJurisdictionAllowedRef.set(RegionCoverage.roadSignHudAllowed(lat, lon))
         if (RegionCoverage.speedCameraHudOptInAllowed(lat, lon) &&
             !MapHudPrefs.loadSpeedCameraPromptShown(context)
@@ -3043,6 +3362,7 @@ private fun NaviMapScreen() {
         total: ULong?,
         label: String,
     ): String {
+        val resolved = UiMessageCodes.resolve(label, context.resources)
         val pct =
             if (total != null && total > 0uL) {
                 ((done.toDouble() * 100.0) / total.toDouble()).roundToInt().coerceIn(0, 100)
@@ -3050,10 +3370,10 @@ private fun NaviMapScreen() {
                 null
             }
         return when {
-            pct != null && total != null -> "$label $pct% ($done / $total)"
-            pct != null -> "$label $pct%"
-            total == null -> label
-            else -> "$label $done / ?"
+            pct != null && total != null -> "$resolved $pct% ($done / $total)"
+            pct != null -> "$resolved $pct%"
+            total == null -> resolved
+            else -> "$resolved $done / ?"
         }
     }
 
@@ -3191,6 +3511,7 @@ private fun NaviMapScreen() {
                         regionDownloadProgress.contains("100%") ||
                             regionDownloadProgress.contains("Fetching packs") ||
                             regionDownloadProgress.contains("Downloading region") ||
+                            regionDownloadProgress.contains("navi.msg.download_region") ||
                             regionDownloadProgress.contains("Downloading extract") ||
                             regionDownloadProgress.contains("Place index")
                     )
@@ -3588,7 +3909,7 @@ private fun NaviMapScreen() {
             RegionCoverage.resolvePlanPbf(dataDir, coverageWaypoints, longTripPackDir)
         val planPackDirPath =
             when {
-                NaviMapTestHooks.forceLocalPbf -> NaviDebugIntent.FORCE_PBF_PACK_DIR
+                NaviMapTestHooks.forceLocalPbf -> DebugTripHooks.FORCE_PBF_PACK_DIR
                 longTripPackDir != null -> longTripPackDir.absolutePath
                 else -> ""
             }
@@ -4421,9 +4742,14 @@ private fun NaviMapScreen() {
     DisposableEffect(locationPermGranted) {
         val lm = context.getSystemService(LocationManager::class.java)
 
-        fun applyFix(loc: Location?) {
-            if (loc == null) return
-            val providerIn = loc.provider.orEmpty()
+        fun applyFix(locIn: Location?) {
+            if (locIn == null) return
+            val rawLoc = locIn
+            var diagSnap: RouteProgressSnapshot? = null
+            var diagOffAction = "none"
+            var diagReroute = false
+            var diagRerouteTrigger: String? = null
+            val providerIn = locIn.provider.orEmpty()
             val fromDr =
                 providerIn == DeadReckoningController.PROVIDER_ESTIMATED ||
                     providerIn == DeadReckoningController.PROVIDER_LOST
@@ -4432,13 +4758,13 @@ private fun NaviMapScreen() {
             // While simulating, ignore real LocationManager fixes.
             if (simulatingRef.get() && !testOrSim) return
             // Instrumented off-route injects: keep live GPS from clobbering.
-            if (NaviMapTestHooks.ignoreLiveGpsFixes && !testOrSim && !fromDr) return
+            if (NaviMapTestHooks.shouldIgnoreLiveGpsFixes() && !testOrSim && !fromDr) return
 
             // Host dead reckoning (tunnels / GNSS gaps). Route-sim already
             // supplies continuous positions; DR owns live LocationManager gaps.
             // Test injects still seed the engine so instrumented tunnel tests can
             // enter Estimating after [NaviMapTestHooks.deadReckoningNotifyLost].
-            var loc = loc
+            var loc = locIn
             var gpsEstimated = false
             var positionLost = false
             if (!fromDr && !simulatingRef.get()) {
@@ -4460,7 +4786,7 @@ private fun NaviMapScreen() {
                             latitude = out.lat
                             longitude = out.lon
                             time = System.currentTimeMillis()
-                            if (out.speedMps.isFinite() && out.speedMps > 0.0) {
+                            if (out.speedMps.isFinite() && out.speedMps >= 0.0) {
                                 speed = out.speedMps.toFloat()
                             }
                             bearing = out.bearingDeg.toFloat()
@@ -4601,7 +4927,7 @@ private fun NaviMapScreen() {
                             NaviMapTestHooks.lastSimHighway = s.highway
                             NaviMapTestHooks.lastSimMaxspeedPosted = s.maxspeedPosted
                         }
-                        val road = formatCurrentRoadLabel(s.street, s.highway)
+                        val road = formatCurrentRoadLabel(s.street, s.highway, context.resources)
                         streetFromRoute = true
                         val limit =
                             resolveSpeedLimitKmh(
@@ -4637,6 +4963,7 @@ private fun NaviMapScreen() {
                     val man = snap.maneuver
                     NaviMapTestHooks.lastOffRoute = snap.offRoute
                     NaviMapTestHooks.lastCrossTrackM = snap.crossTrackM
+                    diagSnap = snap
                     if (snap.offRoute) {
                         approachGuidance =
                             ApproachGuidanceState(
@@ -4781,13 +5108,18 @@ private fun NaviMapScreen() {
                                 NaviMapTestHooks.offRouteConfirmMsOverride
                                     ?: RouteProgressTracker.OFF_ROUTE_CONFIRM_MS,
                         )
+                    diagOffAction = offAction.name
                     when (offAction) {
                         OffRouteCoordinator.Action.AutoReroute -> {
                             if (RouteStartGpsPolicy.shouldAutoReplanFromGps(
                                     fromFollowsGps || fromPoint == null,
                                 )
                             ) {
+                                diagReroute = true
+                                diagRerouteTrigger = "off_route_confirmed"
                                 startRerouteFromCurrent(loc.latitude, loc.longitude)
+                            } else {
+                                diagRerouteTrigger = "blocked_from_not_gps_follow"
                             }
                         }
                         OffRouteCoordinator.Action.PromptHikingReroute -> {
@@ -5098,12 +5430,17 @@ private fun NaviMapScreen() {
                                             nearInfo.speedLimitKmh,
                                             speedAccKmh,
                                         )
-                                    NaviMapTestHooks.lastCurrentStreet = nearInfo.label
+                                    val roadLabel =
+                                        UiMessageCodes.resolve(
+                                            nearInfo.label,
+                                            context.resources,
+                                        )
+                                    NaviMapTestHooks.lastCurrentStreet = roadLabel
                                     NaviMapTestHooks.lastCurrentSpeedLimitKmh =
                                         nearInfo.speedLimitKmh
                                     driveHud =
                                         driveHud.copy(
-                                            currentStreet = nearInfo.label,
+                                            currentStreet = roadLabel,
                                             currentSpeedKmh =
                                                 driveHud.currentSpeedKmh ?: speedKmh,
                                             currentSpeedLimitKmh = nearInfo.speedLimitKmh,
@@ -5126,6 +5463,24 @@ private fun NaviMapScreen() {
                         }
                     }
                 }
+            }
+            // Location diagnostics (off by default). The branch is a single
+            // volatile read while disabled; JSON and disk I/O run only when on.
+            if (LocationDiagnostics.isEnabled() && (loc.latitude != 0.0 || loc.longitude != 0.0)) {
+                LocationDiagnostics.logDisplayed(
+                    raw = rawLoc,
+                    shown = loc,
+                    estimated = gpsEstimated,
+                    positionLost = positionLost,
+                    dr = deadReckoning.engine().diagSnapshot(),
+                    snap = diagSnap,
+                    offRouteAction = diagOffAction,
+                    reroute = diagReroute,
+                    rerouteTrigger = diagRerouteTrigger,
+                    fromFollowsGps = fromFollowsGps || fromPoint == null,
+                    routeNotJoined = routeNotJoinedRef.get(),
+                    simulating = simulatingRef.get(),
+                )
             }
             // Diagnostic GPS (rate-limited in DiagnosticLog). Log before altitude
             // early-returns so a DEM/GPS alt skip does not skip the GPS line.
@@ -5205,7 +5560,7 @@ private fun NaviMapScreen() {
                         latitude = out.lat
                         longitude = out.lon
                         time = System.currentTimeMillis()
-                        if (out.speedMps.isFinite() && out.speedMps > 0.0) {
+                        if (out.speedMps.isFinite() && out.speedMps >= 0.0) {
                             speed = out.speedMps.toFloat()
                         }
                         bearing = out.bearingDeg.toFloat()
@@ -5218,14 +5573,20 @@ private fun NaviMapScreen() {
             NaviMapTestHooks.gpsEstimated = out.estimated
             NaviMapTestHooks.positionLost = out.positionLost
         }
-        NaviMapTestHooks.deadReckoningInject = { frame ->
-            deadReckoning.injectSensorFrame(frame)
-        }
-        NaviMapTestHooks.deadReckoningNotifyLost = {
-            deadReckoning.notifyGpsLost()
-        }
-        NaviMapTestHooks.deadReckoningInjectGps = { sample ->
-            deadReckoning.injectGpsSample(sample)
+        if (NaviMapTestHooks.replayHooksEnabled()) {
+            NaviMapTestHooks.deadReckoningInject = { frame ->
+                deadReckoning.injectSensorFrame(frame)
+            }
+            NaviMapTestHooks.deadReckoningNotifyLost = {
+                deadReckoning.notifyGpsLost()
+            }
+            NaviMapTestHooks.deadReckoningInjectGps = { sample ->
+                deadReckoning.injectGpsSample(sample)
+            }
+            NaviMapTestHooks.deadReckoningReset = { deadReckoning.reset() }
+            NaviMapTestHooks.deadReckoningSuspendHardware = { suspend ->
+                deadReckoning.suspendHardwareTicks = suspend
+            }
         }
         deadReckoning.start(context)
         if (!locationPermGranted) {
@@ -5235,6 +5596,8 @@ private fun NaviMapScreen() {
                 NaviMapTestHooks.deadReckoningInject = null
                 NaviMapTestHooks.deadReckoningNotifyLost = null
                 NaviMapTestHooks.deadReckoningInjectGps = null
+                NaviMapTestHooks.deadReckoningReset = null
+                NaviMapTestHooks.deadReckoningSuspendHardware = null
             }
         }
         val listener = LocationListener { loc -> applyFix(loc) }
@@ -5265,6 +5628,8 @@ private fun NaviMapScreen() {
             NaviMapTestHooks.deadReckoningInject = null
             NaviMapTestHooks.deadReckoningNotifyLost = null
             NaviMapTestHooks.deadReckoningInjectGps = null
+            NaviMapTestHooks.deadReckoningReset = null
+            NaviMapTestHooks.deadReckoningSuspendHardware = null
         }
     }
     // Refresh DEM altitude when tiles arrive later or the GPS point moves.
@@ -5289,8 +5654,10 @@ private fun NaviMapScreen() {
             java.util.concurrent.atomic.AtomicBoolean(
                 NaviMapTestHooks.hideSearchChrome,
             )
-        hideChrome = NaviMapTestHooks.hideUiChrome
-        hideSearch = NaviMapTestHooks.hideSearchChrome
+        if (NaviMapTestHooks.replayHooksEnabled()) {
+            hideChrome = NaviMapTestHooks.hideUiChrome
+            hideSearch = NaviMapTestHooks.hideSearchChrome
+        }
         val routeApplier: (uniffi.navi.CorridorRouteResult) -> Unit = { pending ->
             applyPlannedRoute(pending)
         }
@@ -5303,7 +5670,8 @@ private fun NaviMapScreen() {
                         // Only the resumed activity may consume test-hook routes. A stopped
                         // duplicate MainActivity (pre-singleTask launches) would otherwise
                         // steal pendingRoute and leave the visible map without a polyline.
-                        if (pending != null) {
+                        // Release builds never apply a hook route.
+                        if (pending != null && NaviMapTestHooks.replayHooksEnabled()) {
                             val resumed =
                                 (context as? androidx.lifecycle.LifecycleOwner)
                                     ?.lifecycle
@@ -5518,12 +5886,14 @@ private fun NaviMapScreen() {
                             NaviMapTestHooks.simulatingActive = true
                             routeSimulator?.seekToCumM(seekCum)
                         }
-                        val wantHideChrome = NaviMapTestHooks.hideUiChrome
+                        val wantHideChrome =
+                            NaviMapTestHooks.replayHooksEnabled() && NaviMapTestHooks.hideUiChrome
                         if (wantHideChrome != lastHookHideChrome.get()) {
                             hideChrome = wantHideChrome
                             lastHookHideChrome.set(wantHideChrome)
                         }
-                        val wantHideSearch = NaviMapTestHooks.hideSearchChrome
+                        val wantHideSearch =
+                            NaviMapTestHooks.replayHooksEnabled() && NaviMapTestHooks.hideSearchChrome
                         if (wantHideSearch != lastHookHideSearch.get()) {
                             hideSearch = wantHideSearch
                             lastHookHideSearch.set(wantHideSearch)
@@ -6292,7 +6662,7 @@ private fun NaviMapScreen() {
                 }
             },
             onStyleNote = { note ->
-                if (!note.isNullOrBlank()) status = note
+                if (!note.isNullOrBlank()) status = localizeBasemapStyleNote(context, note)
             },
             on3dFailed = {
                 driveHud = driveHud.copy(optIn3d = false)
@@ -6301,6 +6671,17 @@ private fun NaviMapScreen() {
                 styleEpoch += 1
             },
         )
+
+        if (locationDiagOverlay) {
+            Box(
+                modifier =
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 72.dp),
+            ) {
+                LocationDiagnosticsOverlay()
+            }
+        }
 
         mapMarkPending?.let { pending ->
             if (!showSavePlaceDialog) {
@@ -6501,16 +6882,41 @@ private fun NaviMapScreen() {
                     catUi = catUi.copy(demoModeDeveloper = it)
                     MapHudPrefs.saveCatDemoModeDeveloper(context, it)
                 },
-                onFollowNetworkChange = { catUi = catUi.copy(followNetworkId = it) },
-                onUpdateRepeaters = {
-                    // User-pressed only — no background fetch; navi-server HTTPS GET only.
-                    val msg =
-                        uniffi.navi.catPluginUpdateRepeatersFromServer(
-                            "https://navigate-me.duckdns.org",
-                        )
-                    catUi = catUi.copy(lastMessage = msg)
-                    refreshCatUi()
-                    status = "CAT repeater update: $msg"
+                onFollowNetworkChange = {
+                    MapHudPrefs.saveCatNetworkChoice(context, it)
+                    catUi = catUi.copy(followNetworkId = it, networkChoice = it, networkNotice = "")
+                    if (catPluginEnabled) {
+                        applyCatNetworkFollow()
+                    }
+                },
+                onUpdateRepeaters = repeaterUpdate@{
+                    if (catRepeaterUpdateBusy) return@repeaterUpdate
+                    catRepeaterUpdateBusy = true
+                    val payload =
+                        org.json
+                            .JSONObject()
+                            .put("dir", CatBootstrap.repeaterDropDir(context).absolutePath)
+                            .put("base", "https://navigate-me.duckdns.org")
+                            .put("consensus", catUi.consensusRelocation)
+                            .put("elev", java.io.File(dataDir, "elevation").absolutePath)
+                            .toString()
+                    scope.launch {
+                        try {
+                            val msg =
+                                withContext(Dispatchers.IO) {
+                                    uniffi.navi.catPluginUpdateRepeatersFromServer(payload)
+                                }
+                            catUi = catUi.copy(lastMessage = msg)
+                            refreshCatUi()
+                            status = "CAT repeater update: $msg"
+                        } finally {
+                            catRepeaterUpdateBusy = false
+                        }
+                    }
+                },
+                onConsensusRelocationChange = { enabled ->
+                    MapHudPrefs.saveCatConsensusRelocation(context, enabled)
+                    catUi = catUi.copy(consensusRelocation = enabled)
                 },
                 onConnect = {
                     MapHudPrefs.saveCatRigModel(context, catUi.rigModel)
@@ -6524,10 +6930,22 @@ private fun NaviMapScreen() {
                             baudRate = catUi.baudRate,
                             rigModel = catUi.rigModel,
                         )
-                    val port = (catUi.port.toIntOrNull() ?: 4532).coerceIn(1, 65535).toUShort()
                     val msg =
-                        uniffi.navi.catPluginConnectTcp(catUi.host, port, false) +
-                            " (model=${openParams.rigModel}, baud=${openParams.baudRate})"
+                        if (catUi.backend == MapHudPrefs.CAT_BACKEND_BENSHI) {
+                            // Native Benshi / VR-N76 (navi-cat::benshi). Lab peer until
+                            // bonded-device RFCOMM is wired through BenshiRfcommTransport.
+                            val scratch =
+                                catUi.scratchChannel.coerceIn(0, 255).toUByte()
+                            uniffi.navi.catPluginConnectBenshiLab(scratch)
+                        } else if (openParams.rigModel == 1) {
+                            // Hamlib dummy (model 1): onboard libhamlib.so via FFI.
+                            uniffi.navi.catPluginConnectFfi(openParams.rigModel, false)
+                        } else {
+                            val port =
+                                (catUi.port.toIntOrNull() ?: 4532).coerceIn(1, 65535).toUShort()
+                            uniffi.navi.catPluginConnectTcp(catUi.host, port, false) +
+                                " (model=${openParams.rigModel}, baud=${openParams.baudRate})"
+                        }
                     catUi = catUi.copy(lastMessage = msg)
                     refreshCatUi()
                     status = msg
@@ -6543,10 +6961,13 @@ private fun NaviMapScreen() {
                     refreshCatUi()
                 },
                 onFollowEnable = {
+                    val choice =
+                        catUi.networkChoice.ifBlank { MapHudPrefs.CAT_NETWORK_AUTO }
+                    MapHudPrefs.saveCatNetworkChoice(context, choice)
                     val req =
                         org.json
                             .JSONObject()
-                            .put("network_id", catUi.followNetworkId)
+                            .put("network_id", choice)
                             .put("enabled", true)
                             .toString()
                     val msg = uniffi.navi.catPluginNetworkFollowJson(req)
@@ -6569,6 +6990,7 @@ private fun NaviMapScreen() {
                         .align(Alignment.BottomCenter)
                         .zIndex(5f)
                         .padding(start = 10.dp, end = 10.dp, bottom = 96.dp),
+                updateRepeatersBusy = catRepeaterUpdateBusy,
             )
         }
         if (showSpeedCameraPrompt) {
@@ -6579,7 +7001,7 @@ private fun NaviMapScreen() {
                     MapHudPrefs.saveSpeedCameraOptIn(context, false)
                     speedCameraOptIn = false
                 },
-                title = { Text("Speed camera warnings") },
+                title = { Text(stringResource(R.string.dialog_speed_camera_title)) },
                 text = {
                     Text(
                         "Show nearby speed-camera warnings while driving? " +
@@ -6597,7 +7019,7 @@ private fun NaviMapScreen() {
                             speedCameraOptIn = true
                         },
                         modifier = Modifier.testTag("btn_speed_camera_opt_in_yes"),
-                    ) { Text("Enable") }
+                    ) { Text(stringResource(R.string.action_enable)) }
                 },
                 dismissButton = {
                     TextButton(
@@ -6608,7 +7030,7 @@ private fun NaviMapScreen() {
                             speedCameraOptIn = false
                         },
                         modifier = Modifier.testTag("btn_speed_camera_opt_in_no"),
-                    ) { Text("Not now") }
+                    ) { Text(stringResource(R.string.action_not_now)) }
                 },
             )
         }
@@ -6620,7 +7042,7 @@ private fun NaviMapScreen() {
                     offRouteCoordinator.suppressUntilOnRoute()
                     status = "Kept original route"
                 },
-                title = { Text("Off trail") },
+                title = { Text(stringResource(R.string.dialog_off_trail_title)) },
                 text = {
                     Text(
                         "You left the planned path. Recalculate from here? " +
@@ -6635,7 +7057,7 @@ private fun NaviMapScreen() {
                             startRerouteFromCurrent(mapState.gpsLat, mapState.gpsLon)
                         },
                         modifier = Modifier.testTag("btn_hiking_reroute_yes"),
-                    ) { Text("Recalculate") }
+                    ) { Text(stringResource(R.string.action_recalculate)) }
                 },
                 dismissButton = {
                     TextButton(
@@ -6646,7 +7068,7 @@ private fun NaviMapScreen() {
                             status = "Kept original route"
                         },
                         modifier = Modifier.testTag("btn_hiking_reroute_no"),
-                    ) { Text("Keep route") }
+                    ) { Text(stringResource(R.string.action_keep_route)) }
                 },
             )
         }
@@ -6657,7 +7079,7 @@ private fun NaviMapScreen() {
                     NaviMapTestHooks.missingCoveragePromptVisible = false
                     status = "Download cancelled — set another destination or download a region in Tools"
                 },
-                title = { Text("Map data needed") },
+                title = { Text(stringResource(R.string.dialog_map_data_needed_title)) },
                 text = { Text(missing.message) },
                 confirmButton = {
                     TextButton(
@@ -6675,7 +7097,14 @@ private fun NaviMapScreen() {
                             startRegionDownload(path)
                         },
                         modifier = Modifier.testTag("btn_missing_coverage_download"),
-                    ) { Text("Download ${RegionCoverage.displayName(missing.suggestedGeofabrikPath)}") }
+                    ) {
+                        Text(
+                            stringResource(
+                                R.string.action_download_named,
+                                RegionCoverage.displayName(missing.suggestedGeofabrikPath),
+                            ),
+                        )
+                    }
                 },
                 dismissButton = {
                     TextButton(
@@ -6685,7 +7114,7 @@ private fun NaviMapScreen() {
                             status = "Download cancelled — no route planned"
                         },
                         modifier = Modifier.testTag("btn_missing_coverage_dismiss"),
-                    ) { Text("Not now") }
+                    ) { Text(stringResource(R.string.action_not_now)) }
                 },
             )
         }
@@ -6696,7 +7125,7 @@ private fun NaviMapScreen() {
                     NaviMapTestHooks.absurdDetourPromptVisible = false
                     status = "Longer route declined — install the missing regions or cancel"
                 },
-                title = { Text("Longer route available") },
+                title = { Text(stringResource(R.string.dialog_longer_route_title)) },
                 text = { Text(msg) },
                 confirmButton = {
                     TextButton(
@@ -6736,15 +7165,15 @@ private fun NaviMapScreen() {
                             status = "Accepting longer installed-only route…"
                         },
                         modifier = Modifier.testTag("btn_absurd_detour_accept"),
-                    ) { Text("Accept longer route") }
+                    ) { Text(stringResource(R.string.dialog_longer_route_accept)) }
                 },
             )
         }
         if (confirmDeletePlannedRoute) {
             AlertDialog(
                 onDismissRequest = { confirmDeletePlannedRoute = false },
-                title = { Text("Delete route?") },
-                text = { Text("The planned route is removed from the map.") },
+                title = { Text(stringResource(R.string.dialog_delete_route_title)) },
+                text = { Text(stringResource(R.string.dialog_delete_planned_route_body)) },
                 confirmButton = {
                     TextButton(
                         onClick = {
@@ -6752,21 +7181,21 @@ private fun NaviMapScreen() {
                             clearActiveRoute("Planned route deleted")
                         },
                         modifier = Modifier.testTag("btn_confirm_delete_planned_route"),
-                    ) { Text("Delete") }
+                    ) { Text(stringResource(R.string.action_delete)) }
                 },
                 dismissButton = {
                     TextButton(
                         onClick = { confirmDeletePlannedRoute = false },
                         modifier = Modifier.testTag("btn_cancel_delete_planned_route"),
-                    ) { Text("Cancel") }
+                    ) { Text(stringResource(R.string.action_cancel)) }
                 },
             )
         }
         confirmDeleteSavedRouteId?.let { routeId ->
             AlertDialog(
                 onDismissRequest = { confirmDeleteSavedRouteId = null },
-                title = { Text("Delete route?") },
-                text = { Text("The saved route is deleted from this device.") },
+                title = { Text(stringResource(R.string.dialog_delete_route_title)) },
+                text = { Text(stringResource(R.string.dialog_delete_saved_route_body)) },
                 confirmButton = {
                     TextButton(
                         onClick = {
@@ -6779,13 +7208,13 @@ private fun NaviMapScreen() {
                             }
                         },
                         modifier = Modifier.testTag("btn_confirm_delete_saved_route"),
-                    ) { Text("Delete") }
+                    ) { Text(stringResource(R.string.action_delete)) }
                 },
                 dismissButton = {
                     TextButton(
                         onClick = { confirmDeleteSavedRouteId = null },
                         modifier = Modifier.testTag("btn_cancel_delete_saved_route"),
-                    ) { Text("Cancel") }
+                    ) { Text(stringResource(R.string.action_cancel)) }
                 },
             )
         }
@@ -6794,7 +7223,7 @@ private fun NaviMapScreen() {
             val deleteLabel = RegionCoverage.displayName(deletePath)
             AlertDialog(
                 onDismissRequest = { confirmDeleteRegion = false },
-                title = { Text("Delete downloaded region?") },
+                title = { Text(stringResource(R.string.dialog_delete_region_title)) },
                 text = {
                     Text(
                         "Remove packs, basemap, place-index rows, and graph cache for " +
@@ -6825,13 +7254,13 @@ private fun NaviMapScreen() {
                             }
                         },
                         modifier = Modifier.testTag("btn_confirm_delete_region"),
-                    ) { Text("Delete") }
+                    ) { Text(stringResource(R.string.action_delete)) }
                 },
                 dismissButton = {
                     TextButton(
                         onClick = { confirmDeleteRegion = false },
                         modifier = Modifier.testTag("btn_cancel_delete_region"),
-                    ) { Text("Cancel") }
+                    ) { Text(stringResource(R.string.action_cancel)) }
                 },
             )
         }
@@ -6910,13 +7339,13 @@ private fun NaviMapScreen() {
                                     FilterChip(
                                         selected = searchTarget == SearchTarget.From,
                                         onClick = { selectSearchTarget(SearchTarget.From) },
-                                        label = { NaviText("From") },
+                                        label = { NaviText(stringResource(R.string.waypoint_from)) },
                                         modifier = Modifier.testTag("chip_from"),
                                     )
                                     FilterChip(
                                         selected = searchTarget == SearchTarget.To,
                                         onClick = { selectSearchTarget(SearchTarget.To) },
-                                        label = { NaviText("To") },
+                                        label = { NaviText(stringResource(R.string.waypoint_to)) },
                                         modifier = Modifier.testTag("chip_to"),
                                     )
                                     FilterChip(
@@ -6939,28 +7368,34 @@ private fun NaviMapScreen() {
                                         onClick = { showTools = !showTools },
                                         modifier = Modifier.testTag("btn_tools"),
                                     ) {
-                                        NaviText(if (showTools) "Hide tools" else "Tools")
+                                        NaviText(if (showTools) stringResource(R.string.action_hide_tools) else stringResource(R.string.action_tools))
                                     }
                                     TextButton(
                                         onClick = {
                                             hideSearch = true
                                             showTools = false
-                                            status = "Route planning closed"
+                                            status = context.getString(R.string.status_route_planning_closed)
                                         },
                                         modifier = Modifier.testTag("btn_close_search"),
                                     ) {
-                                        NaviText("Close")
+                                        NaviText(stringResource(R.string.action_close))
                                     }
                                 }
                             }
                             Text(
-                                "From: ${fromPoint?.name ?: "(unset)"}  |  To: ${toPoint.name.ifBlank { "(unset)" }}  |  Via: ${
+                                stringResource(
+                                    R.string.waypoints_summary,
+                                    fromPoint?.name
+                                        ?: stringResource(R.string.waypoint_unset),
+                                    toPoint.name.ifBlank {
+                                        stringResource(R.string.waypoint_unset)
+                                    },
                                     if (viaPoints.isEmpty()) {
-                                        "(none)"
+                                        stringResource(R.string.waypoint_none)
                                     } else {
                                         viaPoints.joinToString(" → ") { it.name }
-                                    }
-                                }",
+                                    },
+                                ),
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.testTag("search_waypoints_summary"),
                             )
@@ -6994,7 +7429,7 @@ private fun NaviMapScreen() {
                                                 },
                                                 modifier = Modifier.testTag("btn_remove_via_$idx"),
                                             ) {
-                                                Text("Remove")
+                                                Text(stringResource(R.string.action_remove))
                                             }
                                         }
                                     }
@@ -7002,7 +7437,12 @@ private fun NaviMapScreen() {
                                         onClick = { viaPoints = emptyList() },
                                         modifier = Modifier.testTag("btn_clear_vias"),
                                     ) {
-                                        Text("Clear all vias (${viaPoints.size})")
+                                        Text(
+                                            stringResource(
+                                                R.string.action_clear_all_vias,
+                                                viaPoints.size,
+                                            ),
+                                        )
                                     }
                                 }
                             }
@@ -7030,13 +7470,23 @@ private fun NaviMapScreen() {
                                             SearchTarget.Via ->
                                                 when {
                                                     viaPoints.size >= MAX_ROUTE_VIAS ->
-                                                        "Via full ($MAX_ROUTE_VIAS/$MAX_ROUTE_VIAS)"
+                                                        stringResource(
+                                                            R.string.search_placeholder_via_full,
+                                                            MAX_ROUTE_VIAS,
+                                                            MAX_ROUTE_VIAS,
+                                                        )
                                                     viaPoints.isEmpty() ->
-                                                        "Add via: place, road, or lat, lon"
+                                                        stringResource(
+                                                            R.string.search_placeholder_via_empty,
+                                                        )
                                                     else ->
-                                                        "Add via ${viaPoints.size + 1}/$MAX_ROUTE_VIAS"
+                                                        stringResource(
+                                                            R.string.search_placeholder_via_n,
+                                                            viaPoints.size + 1,
+                                                            MAX_ROUTE_VIAS,
+                                                        )
                                                 }
-                                            else -> "Place, road, or lat, lon"
+                                            else -> stringResource(R.string.search_placeholder)
                                         },
                                     )
                                 },
@@ -7050,7 +7500,7 @@ private fun NaviMapScreen() {
                                     onClick = { runSearch(query, allowOnline = true) },
                                     modifier = Modifier.testTag("btn_submit_search"),
                                 ) {
-                                    Text("Search")
+                                    Text(stringResource(R.string.action_search))
                                 }
                                 TextButton(
                                     onClick = {
@@ -7073,9 +7523,12 @@ private fun NaviMapScreen() {
                                 ) {
                                     Text(
                                         when (searchTarget) {
-                                            SearchTarget.From -> "Clear from"
-                                            SearchTarget.To -> "Clear to"
-                                            SearchTarget.Via -> "Clear"
+                                            SearchTarget.From ->
+                                                stringResource(R.string.action_clear_from)
+                                            SearchTarget.To ->
+                                                stringResource(R.string.action_clear_to)
+                                            SearchTarget.Via ->
+                                                stringResource(R.string.action_clear)
                                         },
                                     )
                                 }
@@ -7087,7 +7540,7 @@ private fun NaviMapScreen() {
                                 )
                             }
                             if (searchBusy) {
-                                Text("Searching...", style = MaterialTheme.typography.bodySmall)
+                                Text(stringResource(R.string.search_in_progress), style = MaterialTheme.typography.bodySmall)
                             }
                             if (searchIndexHint.isNotBlank() && !searchBusy) {
                                 val openOnlineSettings =
@@ -7148,7 +7601,7 @@ private fun NaviMapScreen() {
                                 }
                             }
                             Text(
-                                ONLINE_PLACE_SEARCH_EXPLANATION,
+                                stringResource(R.string.online_place_search_explanation),
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.testTag("online_place_search_explain_search"),
                             )
@@ -7164,7 +7617,7 @@ private fun NaviMapScreen() {
                                         .fillMaxWidth()
                                         .testTag("btn_plan_route"),
                             ) {
-                                NaviText(if (planningRoute) "Planning…" else "Plan route")
+                                NaviText(if (planningRoute) stringResource(R.string.action_planning) else stringResource(R.string.action_plan_route))
                             }
                             if (planNotice.isNotBlank() && !planningRoute) {
                                 Text(
@@ -7186,7 +7639,7 @@ private fun NaviMapScreen() {
                                             .fillMaxWidth()
                                             .testTag("btn_delete_planned_route"),
                                 ) {
-                                    NaviText("Delete route")
+                                    NaviText(stringResource(R.string.action_delete_route))
                                 }
                             }
                             if (routePlanProgress.isNotBlank() || planningRoute) {
@@ -7335,9 +7788,12 @@ private fun NaviMapScreen() {
                                 ) {
                                     Text(
                                         when (searchTarget) {
-                                            SearchTarget.From -> "Use GPS as from"
-                                            SearchTarget.To -> "Use GPS as to"
-                                            SearchTarget.Via -> "Use GPS as via"
+                                            SearchTarget.From ->
+                                                stringResource(R.string.action_use_gps_as_from)
+                                            SearchTarget.To ->
+                                                stringResource(R.string.action_use_gps_as_to)
+                                            SearchTarget.Via ->
+                                                stringResource(R.string.action_use_gps_as_via)
                                         },
                                     )
                                 }
@@ -7350,7 +7806,7 @@ private fun NaviMapScreen() {
                                         if (last?.lastBreakLat != null && last.lastBreakLon != null) {
                                             fromPoint =
                                                 Waypoint(
-                                                    "Last stop",
+                                                    context.getString(R.string.label_last_stop),
                                                     last.lastBreakLat!!,
                                                     last.lastBreakLon!!,
                                                 )
@@ -7364,7 +7820,7 @@ private fun NaviMapScreen() {
                                             status = "No last stop saved yet"
                                         }
                                     },
-                                ) { Text("Continue from last stop") }
+                                ) { Text(stringResource(R.string.action_continue_last_stop)) }
                             }
                             if (isDebuggable && mapState.polyline.isNotBlank() && routeSamples.size >= 2) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -7396,9 +7852,9 @@ private fun NaviMapScreen() {
                                 TextButton(
                                     onClick = { showProfilePanel = true },
                                     modifier = Modifier.testTag("btn_open_profile"),
-                                ) { Text("Profile") }
+                                ) { Text(stringResource(R.string.label_profile)) }
                             } else {
-                                Text("Profile", style = MaterialTheme.typography.labelLarge)
+                                Text(stringResource(R.string.label_profile), style = MaterialTheme.typography.labelLarge)
                                 Row(
                                     modifier =
                                         Modifier
@@ -7418,7 +7874,12 @@ private fun NaviMapScreen() {
                                                 status = "Profile: ${p.name.lowercase()}"
                                             },
                                             label = {
-                                                Text(travelProfileChipLabel(p))
+                                                Text(
+                                                    travelProfileChipLabel(
+                                                        p,
+                                                        context.resources,
+                                                    ),
+                                                )
                                             },
                                             modifier =
                                                 Modifier.testTag(
@@ -7440,9 +7901,9 @@ private fun NaviMapScreen() {
                                 ) {
                                     Text(
                                         if (ecoModeToggleable(profile)) {
-                                            "Eco routing"
+                                            stringResource(R.string.label_eco_routing)
                                         } else {
-                                            "Eco routing (locked on for this profile)"
+                                            stringResource(R.string.label_eco_routing_locked)
                                         },
                                     )
                                     Switch(
@@ -7469,7 +7930,7 @@ private fun NaviMapScreen() {
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                     ) {
-                                        Text("Follow official hiking/cycling networks")
+                                        Text(stringResource(R.string.profile_follow_networks))
                                         Switch(
                                             checked = preferOfficialNetworks,
                                             onCheckedChange = { on ->
@@ -7498,10 +7959,10 @@ private fun NaviMapScreen() {
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                         ) {
                                             Column(modifier = Modifier.weight(1f)) {
-                                                Text("Use unlocked cabins")
+                                                Text(stringResource(R.string.profile_unlocked_cabins))
                                                 if (cabinTogglesLive && useUnlockedCabins) {
                                                     Text(
-                                                        "Uses cabins/huts that are unlocked.",
+                                                        stringResource(R.string.ui_uses_cabins_huts_that_are_unlocked),
                                                         style = MaterialTheme.typography.bodySmall,
                                                     )
                                                 }
@@ -7535,10 +7996,10 @@ private fun NaviMapScreen() {
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                         ) {
                                             Column(modifier = Modifier.weight(1f)) {
-                                                Text("Use networked cabins")
+                                                Text(stringResource(R.string.profile_networked_cabins))
                                                 if (cabinTogglesLive && useNetworkedCabins) {
                                                     Text(
-                                                        "Uses cabins/huts that are networked.",
+                                                        stringResource(R.string.ui_uses_cabins_huts_that_are_networked),
                                                         style = MaterialTheme.typography.bodySmall,
                                                     )
                                                 }
@@ -7569,7 +8030,7 @@ private fun NaviMapScreen() {
                                         }
                                         if (!cabinTogglesLive) {
                                             Text(
-                                                "Applies to hiking overnight planning only.",
+                                                stringResource(R.string.ui_applies_to_hiking_overnight_planning_only),
                                                 style = MaterialTheme.typography.bodySmall,
                                                 modifier = Modifier.testTag("cabin_toggles_hiking_only_note"),
                                             )
@@ -7580,7 +8041,7 @@ private fun NaviMapScreen() {
                                     profile == TravelProfile.BICYCLE_ELECTRIC
                                 ) {
                                     Column(modifier = Modifier.fillMaxWidth()) {
-                                        Text("Bike type (surface suitability)")
+                                        Text(stringResource(R.string.profile_bike_type))
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -7623,7 +8084,7 @@ private fun NaviMapScreen() {
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                     ) {
-                                        Text("Follow pilgrim routes")
+                                        Text(stringResource(R.string.profile_pilgrim))
                                         Switch(
                                             checked = preferPilgrimRoutes,
                                             onCheckedChange = { on ->
@@ -7690,7 +8151,7 @@ private fun NaviMapScreen() {
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
-                                    Text("Avoid toll roads")
+                                    Text(stringResource(R.string.avoid_tolls))
                                     Switch(
                                         // UI is Allow/Penalize only; NeverUse is FFI-only (docs/API.md).
                                         checked = avoidTolls,
@@ -7749,7 +8210,7 @@ private fun NaviMapScreen() {
                                     val avoidFerriesNote =
                                         AvoidFerriesUi.unavailableNote(graphFerryEdges)
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text("Avoid ferries")
+                                        Text(stringResource(R.string.avoid_ferries))
                                         // Same bodySmall note pattern as cabin toggles
                                         // ("Applies to hiking overnight planning only.").
                                         if (avoidFerriesNote != null) {
@@ -7794,7 +8255,7 @@ private fun NaviMapScreen() {
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
-                                    Text("Avoid tunnels")
+                                    Text(stringResource(R.string.avoid_tunnels))
                                     Switch(
                                         checked = avoidTunnels,
                                         onCheckedChange = { on ->
@@ -7924,7 +8385,7 @@ private fun NaviMapScreen() {
                                             status = "Profile settings saved"
                                         },
                                         modifier = Modifier.testTag("btn_save_profile"),
-                                    ) { Text("Save") }
+                                    ) { Text(stringResource(R.string.action_save)) }
                                     TextButton(
                                         onClick = {
                                             showProfilePanel = false
@@ -7933,7 +8394,7 @@ private fun NaviMapScreen() {
                                             status = "Route planning closed"
                                         },
                                         modifier = Modifier.testTag("btn_close_profile"),
-                                    ) { Text("Close") }
+                                    ) { Text(stringResource(R.string.action_close)) }
                                 }
                             } // end showProfilePanel
                         }
@@ -7952,21 +8413,21 @@ private fun NaviMapScreen() {
                                     TextButton(
                                         onClick = { showVehiclePanel = true },
                                         modifier = Modifier.testTag("btn_open_vehicle"),
-                                    ) { Text("Vehicle") }
+                                    ) { Text(stringResource(R.string.label_vehicle)) }
                                 } else if (showVehicleLimitsPanel) {
-                                    Text("Vehicle limits", style = MaterialTheme.typography.labelLarge)
+                                    Text(stringResource(R.string.vehicle_limits_title), style = MaterialTheme.typography.labelLarge)
                                     if (showVehicleClearance) {
                                         OutlinedTextField(
                                             value = axleKg,
                                             onValueChange = { axleKg = it },
-                                            label = { Text("Axle weight (kg)") },
+                                            label = { Text(stringResource(R.string.vehicle_axle_weight_kg)) },
                                             singleLine = true,
                                             modifier = Modifier.fillMaxWidth(),
                                         )
                                         OutlinedTextField(
                                             value = bogieKg,
                                             onValueChange = { bogieKg = it },
-                                            label = { Text("Max bogie weight (kg)") },
+                                            label = { Text(stringResource(R.string.vehicle_bogie_weight_kg)) },
                                             singleLine = true,
                                             modifier = Modifier.fillMaxWidth(),
                                         )
@@ -7975,7 +8436,7 @@ private fun NaviMapScreen() {
                                         OutlinedTextField(
                                             value = heightM,
                                             onValueChange = { heightM = it },
-                                            label = { Text("Height (m)") },
+                                            label = { Text(stringResource(R.string.vehicle_height_m)) },
                                             singleLine = true,
                                             modifier =
                                                 Modifier
@@ -7987,20 +8448,20 @@ private fun NaviMapScreen() {
                                         OutlinedTextField(
                                             value = widthM,
                                             onValueChange = { widthM = it },
-                                            label = { Text("Width (m)") },
+                                            label = { Text(stringResource(R.string.vehicle_width_m)) },
                                             singleLine = true,
                                             modifier = Modifier.fillMaxWidth(),
                                         )
                                         OutlinedTextField(
                                             value = lengthM,
                                             onValueChange = { lengthM = it },
-                                            label = { Text("Length (m)") },
+                                            label = { Text(stringResource(R.string.vehicle_length_m)) },
                                             singleLine = true,
                                             modifier = Modifier.fillMaxWidth(),
                                         )
                                     }
                                     Button(onClick = { persistVehicle() }, modifier = Modifier.fillMaxWidth().testTag("btn_save_vehicle")) {
-                                        Text("Save")
+                                        Text(stringResource(R.string.action_save))
                                     }
                                     TextButton(
                                         onClick = {
@@ -8010,7 +8471,7 @@ private fun NaviMapScreen() {
                                             status = "Route planning closed"
                                         },
                                         modifier = Modifier.testTag("btn_close_vehicle"),
-                                    ) { Text("Close") }
+                                    ) { Text(stringResource(R.string.action_close)) }
                                 }
                             }
                         }
@@ -8028,15 +8489,15 @@ private fun NaviMapScreen() {
                                 TextButton(
                                     onClick = { showRoutesPanel = true },
                                     modifier = Modifier.testTag("btn_open_routes"),
-                                ) { Text("Saved routes") }
+                                ) { Text(stringResource(R.string.saved_routes_title)) }
                             } else {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Text("Saved routes", style = MaterialTheme.typography.labelLarge)
-                                    TextButton(onClick = { refreshRoutes() }) { Text("Refresh") }
+                                    Text(stringResource(R.string.saved_routes_title), style = MaterialTheme.typography.labelLarge)
+                                    TextButton(onClick = { refreshRoutes() }) { Text(stringResource(R.string.action_refresh)) }
                                 }
                                 if (mapState.polyline.isNotBlank()) {
                                     TextButton(
@@ -8046,7 +8507,7 @@ private fun NaviMapScreen() {
                                                 .fillMaxWidth()
                                                 .testTag("btn_delete_planned_route_saved"),
                                     ) {
-                                        Text("Delete planned route")
+                                        Text(stringResource(R.string.action_delete_planned_route))
                                     }
                                     TextButton(
                                         onClick = {
@@ -8093,11 +8554,11 @@ private fun NaviMapScreen() {
                                                 .fillMaxWidth()
                                                 .testTag("btn_export_planned_gpx"),
                                     ) {
-                                        Text("Export planned GPX")
+                                        Text(stringResource(R.string.action_export_planned_gpx))
                                     }
                                 }
                                 if (savedRoutes.isEmpty()) {
-                                    Text("No saved routes", style = MaterialTheme.typography.bodySmall)
+                                    Text(stringResource(R.string.saved_routes_empty), style = MaterialTheme.typography.bodySmall)
                                 } else {
                                     savedRoutes.forEach { route ->
                                         Row(
@@ -8171,7 +8632,7 @@ private fun NaviMapScreen() {
                                                 },
                                                 enabled = !planningRoute,
                                                 modifier = Modifier.testTag("btn_load_saved_route"),
-                                            ) { Text("Load") }
+                                            ) { Text(stringResource(R.string.action_load)) }
                                             TextButton(
                                                 onClick = {
                                                     val loadedProfile =
@@ -8225,11 +8686,11 @@ private fun NaviMapScreen() {
                                                 },
                                                 enabled = !planningRoute,
                                                 modifier = Modifier.testTag("btn_export_saved_route_gpx"),
-                                            ) { Text("Export") }
+                                            ) { Text(stringResource(R.string.action_export)) }
                                             TextButton(
                                                 onClick = { confirmDeleteSavedRouteId = route.id },
                                                 modifier = Modifier.testTag("btn_delete_saved_route"),
-                                            ) { Text("Delete route") }
+                                            ) { Text(stringResource(R.string.action_delete_route)) }
                                         }
                                     }
                                 }
@@ -8269,7 +8730,7 @@ private fun NaviMapScreen() {
                                             .fillMaxWidth()
                                             .testTag("btn_save_routes"),
                                 ) {
-                                    Text("Save")
+                                    Text(stringResource(R.string.action_save))
                                 }
                                 TextButton(
                                     onClick = {
@@ -8279,7 +8740,7 @@ private fun NaviMapScreen() {
                                         status = "Route planning closed"
                                     },
                                     modifier = Modifier.testTag("btn_close_routes"),
-                                ) { Text("Close") }
+                                ) { Text(stringResource(R.string.action_close)) }
                             }
                         }
                     }
@@ -8299,26 +8760,26 @@ private fun NaviMapScreen() {
                                         refreshPlaces()
                                     },
                                     modifier = Modifier.testTag("btn_open_places"),
-                                ) { Text("Saved places") }
+                                ) { Text(stringResource(R.string.saved_places_title)) }
                             } else {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Text("Saved places", style = MaterialTheme.typography.labelLarge)
+                                    Text(stringResource(R.string.saved_places_title), style = MaterialTheme.typography.labelLarge)
                                     TextButton(
                                         onClick = { refreshPlaces() },
                                         modifier = Modifier.testTag("btn_refresh_places"),
-                                    ) { Text("Refresh") }
+                                    ) { Text(stringResource(R.string.action_refresh)) }
                                 }
                                 Text(
-                                    "Named points for From / Via / To (not full routes).",
+                                    stringResource(R.string.ui_named_points_for_from_via_to_not_full_routes),
                                     style = MaterialTheme.typography.bodySmall,
                                 )
                                 if (savedPlaces.isEmpty()) {
                                     Text(
-                                        "No saved places",
+                                        stringResource(R.string.ui_no_saved_places),
                                         style = MaterialTheme.typography.bodySmall,
                                         modifier = Modifier.testTag("saved_places_empty"),
                                     )
@@ -8359,7 +8820,7 @@ private fun NaviMapScreen() {
                                                         )
                                                     },
                                                     modifier = Modifier.testTag("btn_place_as_from"),
-                                                ) { Text("From") }
+                                                ) { Text(stringResource(R.string.waypoint_from)) }
                                                 TextButton(
                                                     onClick = {
                                                         searchTarget = SearchTarget.Via
@@ -8377,7 +8838,7 @@ private fun NaviMapScreen() {
                                                         )
                                                     },
                                                     modifier = Modifier.testTag("btn_place_as_via"),
-                                                ) { Text("Via") }
+                                                ) { Text(stringResource(R.string.waypoint_via)) }
                                                 TextButton(
                                                     onClick = {
                                                         searchTarget = SearchTarget.To
@@ -8395,14 +8856,14 @@ private fun NaviMapScreen() {
                                                         )
                                                     },
                                                     modifier = Modifier.testTag("btn_place_as_to"),
-                                                ) { Text("To") }
+                                                ) { Text(stringResource(R.string.waypoint_to)) }
                                                 TextButton(
                                                     onClick = {
                                                         renamePlaceId = place.id
                                                         renamePlaceDraft = place.name
                                                     },
                                                     modifier = Modifier.testTag("btn_rename_saved_place"),
-                                                ) { Text("Rename") }
+                                                ) { Text(stringResource(R.string.action_rename)) }
                                                 TextButton(
                                                     onClick = {
                                                         if (deleteSavedPlace(dataDir.absolutePath, place.id)) {
@@ -8413,7 +8874,7 @@ private fun NaviMapScreen() {
                                                         }
                                                     },
                                                     modifier = Modifier.testTag("btn_delete_saved_place"),
-                                                ) { Text("Delete") }
+                                                ) { Text(stringResource(R.string.action_delete)) }
                                             }
                                         }
                                     }
@@ -8426,7 +8887,7 @@ private fun NaviMapScreen() {
                                         status = "Route planning closed"
                                     },
                                     modifier = Modifier.testTag("btn_close_places"),
-                                ) { Text("Close") }
+                                ) { Text(stringResource(R.string.action_close)) }
                             }
                         }
                     }
@@ -8450,7 +8911,7 @@ private fun NaviMapScreen() {
                             },
                             modifier = Modifier.testTag("btn_open_search"),
                         ) {
-                            Text("Route")
+                            Text(stringResource(R.string.label_route))
                         }
                         // Same Material3 Button as Route (filled pill), not TextButton —
                         // bare text had no container for shape/clip to show.
@@ -8458,7 +8919,7 @@ private fun NaviMapScreen() {
                             onClick = { showTools = !showTools },
                             modifier = Modifier.testTag("btn_tools_collapsed"),
                         ) {
-                            Text(if (showTools) "Hide tools" else "Tools")
+                            Text(if (showTools) stringResource(R.string.action_hide_tools) else stringResource(R.string.action_tools))
                         }
                     }
                 }
@@ -8790,6 +9251,7 @@ private fun NaviMapScreen() {
                                 DiagnosticLog.logToggle("cat_plugin", on)
                                 uniffi.navi.catPluginSetEnabled(on)
                                 if (on) {
+                                    applyCatNetworkFollow()
                                     showCatSheet = true
                                     refreshCatUi()
                                     status = "CAT plugin on"
@@ -8804,16 +9266,19 @@ private fun NaviMapScreen() {
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.testTag("tools_camping_legal_note"),
                         )
-                        Text("Region", style = MaterialTheme.typography.titleSmall)
-                        Text("Map layers: $mapLayerCount", style = MaterialTheme.typography.bodySmall)
+                        Text(stringResource(R.string.ui_region), style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            stringResource(R.string.map_layers_count, mapLayerCount),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                         if (updateReminderDue) {
                             Text(
-                                "Weekly OSM update check is due (opt-in reminder — nothing was downloaded).",
+                                stringResource(R.string.ui_weekly_osm_update_check_is_due_opt_in_reminder_nothing_was_d),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
                         Text(
-                            "Download scope (Geofabrik)",
+                            stringResource(R.string.ui_download_scope_geofabrik),
                             style = MaterialTheme.typography.labelLarge,
                         )
                         Text(
@@ -8867,7 +9332,7 @@ private fun NaviMapScreen() {
                                     downloadContinent = pick.continent
                                     selectedGeofabrikPath = pick.path
                                 },
-                                label = { Text("Country") },
+                                label = { Text(stringResource(R.string.geo_label_country)) },
                                 modifier = Modifier.testTag("chip_download_country"),
                             )
                             FilterChip(
@@ -8902,7 +9367,7 @@ private fun NaviMapScreen() {
                                         }
                                     }
                                 },
-                                label = { Text("Region in country") },
+                                label = { Text(stringResource(R.string.ui_region_in_country)) },
                                 modifier = Modifier.testTag("chip_download_region"),
                             )
                         }
@@ -8913,7 +9378,7 @@ private fun NaviMapScreen() {
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.testTag("country_download_low_ram_warning"),
                             )
-                            Text("Continent", style = MaterialTheme.typography.labelMedium)
+                            Text(stringResource(R.string.geo_label_continent), style = MaterialTheme.typography.labelMedium)
                             Row(
                                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -8929,13 +9394,13 @@ private fun NaviMapScreen() {
                                                 .firstOrNull()
                                                 ?.let { selectedGeofabrikPath = it.path }
                                         },
-                                        label = { Text(continent.label) },
+                                        label = { Text(stringResource(continent.labelRes)) },
                                         colors = readyChipColors(ready),
                                         modifier = Modifier.testTag(continent.testTag),
                                     )
                                 }
                             }
-                            Text("Country", style = MaterialTheme.typography.labelMedium)
+                            Text(stringResource(R.string.geo_label_country), style = MaterialTheme.typography.labelMedium)
                             val continentCountries =
                                 GeofabrikDownloadCatalog.countriesIn(downloadContinent)
                             if (continentCountries.isEmpty()) {
@@ -9042,7 +9507,7 @@ private fun NaviMapScreen() {
                         OutlinedTextField(
                             value = selectedGeofabrikPath,
                             onValueChange = { selectedGeofabrikPath = it.trim() },
-                            label = { Text("Geofabrik path") },
+                            label = { Text(stringResource(R.string.geo_label_path)) },
                             singleLine = true,
                             modifier =
                                 Modifier
@@ -9078,7 +9543,10 @@ private fun NaviMapScreen() {
                                     .testTag("btn_download_region"),
                         ) {
                             Text(
-                                PackRegionAvailability.downloadRegionButtonLabel(selectedServerReady),
+                                PackRegionAvailability.downloadRegionButtonLabel(
+                                    selectedServerReady,
+                                    context.resources,
+                                ),
                             )
                         }
                         Button(
@@ -9114,7 +9582,7 @@ private fun NaviMapScreen() {
                                     .fillMaxWidth()
                                     .testTag("btn_delete_downloaded_region"),
                         ) {
-                            Text("Delete downloaded region")
+                            Text(stringResource(R.string.tools_delete_downloaded_region))
                         }
                         Button(
                             onClick = {
@@ -9183,10 +9651,10 @@ private fun NaviMapScreen() {
                                     .fillMaxWidth()
                                     .testTag("btn_rebuild_indexed_maps"),
                         ) {
-                            Text("Refresh indexed maps (server first, then local)")
+                            Text(stringResource(R.string.ui_refresh_indexed_maps_server_first_then_local))
                         }
                         Text(
-                            "Basemap (PMTiles) — included in Download region; DEM is optional",
+                            stringResource(R.string.ui_basemap_pmtiles_included_in_download_region_dem_is_optional),
                             style = MaterialTheme.typography.labelLarge,
                         )
                         OutlinedTextField(
@@ -9195,7 +9663,7 @@ private fun NaviMapScreen() {
                                 pmtilesBaseUrl = it.trim()
                                 MapHudPrefs.savePmtilesBaseUrl(context, pmtilesBaseUrl)
                             },
-                            label = { Text("Planet PMTiles URL (blank = latest Protomaps)") },
+                            label = { Text(stringResource(R.string.ui_planet_pmtiles_url_blank_latest_protomaps)) },
                             singleLine = true,
                             modifier =
                                 Modifier
@@ -9234,7 +9702,7 @@ private fun NaviMapScreen() {
                                         .fillMaxWidth()
                                         .testTag("btn_restore_staged_pmtiles"),
                             ) {
-                                Text("Restore staged offline maps")
+                                Text(stringResource(R.string.ui_restore_staged_offline_maps))
                             }
                         }
                         Button(
@@ -9294,7 +9762,7 @@ private fun NaviMapScreen() {
                                     .fillMaxWidth()
                                     .testTag("btn_download_dem"),
                         ) {
-                            Text("Download terrain DEM (Mapterhorn)")
+                            Text(stringResource(R.string.tools_download_dem))
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             TextButton(
@@ -9306,7 +9774,7 @@ private fun NaviMapScreen() {
                                 },
                                 enabled = pmtilesJobId != null,
                                 modifier = Modifier.testTag("btn_pmtiles_pause"),
-                            ) { Text("Pause") }
+                            ) { Text(stringResource(R.string.ui_pause)) }
                             TextButton(
                                 onClick = {
                                     val id = pmtilesJobId ?: return@TextButton
@@ -9318,7 +9786,7 @@ private fun NaviMapScreen() {
                                 },
                                 enabled = pmtilesJobId != null,
                                 modifier = Modifier.testTag("btn_pmtiles_resume"),
-                            ) { Text("Resume") }
+                            ) { Text(stringResource(R.string.ui_resume)) }
                             TextButton(
                                 onClick = {
                                     pmtilesJobId?.let { id ->
@@ -9328,10 +9796,10 @@ private fun NaviMapScreen() {
                                 },
                                 enabled = pmtilesJobId != null,
                                 modifier = Modifier.testTag("btn_pmtiles_cancel"),
-                            ) { Text("Cancel") }
+                            ) { Text(stringResource(R.string.action_cancel)) }
                         }
                         Text(
-                            "OSM updates — pack server first, Geofabrik if unreachable (opt-in)",
+                            stringResource(R.string.ui_osm_updates_pack_server_first_geofabrik_if_unreachable_opt_i),
                             style = MaterialTheme.typography.labelLarge,
                         )
                         val osmCheckReady = pathPillReady(selectedGeofabrikPath)
@@ -9361,7 +9829,7 @@ private fun NaviMapScreen() {
                                     .fillMaxWidth()
                                     .testTag("btn_check_osm_updates"),
                         ) {
-                            Text("Check for OSM updates")
+                            Text(stringResource(R.string.tools_check_osm_updates))
                         }
                         Button(
                             onClick = {
@@ -9432,14 +9900,14 @@ private fun NaviMapScreen() {
                                     .testTag("btn_apply_osm_update"),
                             enabled = !pendingUpdatePlan.isNullOrBlank(),
                         ) {
-                            Text("Apply pending OSM update")
+                            Text(stringResource(R.string.tools_apply_osm_update))
                         }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
-                            Text("Weekly update reminder (no auto-download)")
+                            Text(stringResource(R.string.tools_weekly_update_reminder))
                             Switch(
                                 checked = weeklyReminder,
                                 onCheckedChange = { on ->
@@ -9455,13 +9923,13 @@ private fun NaviMapScreen() {
                                 },
                             )
                         }
-                        Text("Diagnostics", style = MaterialTheme.typography.titleSmall)
+                        Text(stringResource(R.string.tools_diagnostics), style = MaterialTheme.typography.titleSmall)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
-                            Text("Diagnostic logging")
+                            Text(stringResource(R.string.tools_diagnostic_logging))
                             Switch(
                                 checked = diagnosticLogging,
                                 onCheckedChange = { on ->
@@ -9486,6 +9954,48 @@ private fun NaviMapScreen() {
                                 "fuel, system. Off by default; not uploaded.",
                             style = MaterialTheme.typography.bodySmall,
                         )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(stringResource(R.string.tools_location_diagnostics))
+                            Switch(
+                                checked = locationDiagnostics,
+                                onCheckedChange = { on ->
+                                    LocationDiagnostics.setEnabled(context, on)
+                                    locationDiagnostics = on
+                                    status =
+                                        if (on) {
+                                            "Location diagnostics on — " +
+                                                LocationDiagnostics.publicLocationDescription()
+                                        } else {
+                                            "Location diagnostics off"
+                                        }
+                                },
+                                modifier = Modifier.testTag("toggle_location_diagnostics"),
+                            )
+                        }
+                        Text(
+                            "Per-fix and navigation log under Android/data/no.navi.app/files/location-diag " +
+                                "(adb pull, no root). Off by default. Does not change positioning.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(stringResource(R.string.tools_location_diag_overlay))
+                            Switch(
+                                checked = locationDiagOverlay,
+                                onCheckedChange = { on ->
+                                    MapHudPrefs.saveLocationDiagOverlay(context, on)
+                                    locationDiagOverlay = on
+                                },
+                                modifier = Modifier.testTag("toggle_location_diag_overlay"),
+                            )
+                        }
                         Button(
                             onClick = {
                                 val ok = DiagnosticLog.shareLatest(context)
@@ -9504,7 +10014,7 @@ private fun NaviMapScreen() {
                                 diagnosticLogging ||
                                     DiagnosticLog.listSessionFiles(context).isNotEmpty(),
                         ) {
-                            Text("Export diagnostic log")
+                            Text(stringResource(R.string.tools_export_diagnostic_log))
                         }
                     } // end scrollable Tools body
 
@@ -9522,7 +10032,7 @@ private fun NaviMapScreen() {
                     val toolsStatusEntry = processLines.firstOrNull { it.first == "tools_status" }
                     if (footerProcess.isNotEmpty()) {
                         Text(
-                            "In progress",
+                            stringResource(R.string.ui_in_progress),
                             style = MaterialTheme.typography.labelMedium,
                             modifier = Modifier.testTag("tools_process_footer_label"),
                         )
@@ -9535,7 +10045,7 @@ private fun NaviMapScreen() {
                         }
                     } else if (toolsProcessReady) {
                         Text(
-                            "Ready!",
+                            stringResource(R.string.ui_ready),
                             style = MaterialTheme.typography.titleSmall,
                             modifier = Modifier.testTag("tools_process_ready"),
                         )
@@ -9557,11 +10067,11 @@ private fun NaviMapScreen() {
                                 status = "Tools settings saved"
                             },
                             modifier = Modifier.testTag("btn_save_tools"),
-                        ) { Text("Save") }
+                        ) { Text(stringResource(R.string.action_save)) }
                         TextButton(
                             onClick = { showTools = false },
                             modifier = Modifier.testTag("btn_close_tools"),
-                        ) { Text("Close") }
+                        ) { Text(stringResource(R.string.action_close)) }
                     }
                 }
             }
@@ -10012,6 +10522,7 @@ private fun NaviMapScreen() {
                         DiagnosticLog.logToggle("cat_plugin", on)
                         uniffi.navi.catPluginSetEnabled(on)
                         if (on) {
+                            applyCatNetworkFollow()
                             showCatSheet = true
                             refreshCatUi()
                             status = "CAT plugin on"
@@ -10154,6 +10665,7 @@ private fun SimulatingBannerOverlay(
         }
     }
     if (!active && !hookActive) return
+    val simulatingLabel = stringResource(R.string.status_simulating)
     Surface(
         color = Color(0xFFB71C1C),
         shape = RoundedCornerShape(6.dp),
@@ -10161,10 +10673,10 @@ private fun SimulatingBannerOverlay(
         modifier =
             modifier
                 .testTag("simulating_banner")
-                .semantics { contentDescription = "SIMULATING" },
+                .semantics { contentDescription = simulatingLabel },
     ) {
         Text(
-            "SIMULATING",
+            simulatingLabel,
             color = Color.White,
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -10218,7 +10730,7 @@ private fun RecalculatingRouteBanner(
                 }
             }
             TextButton(onClick = onCancel, modifier = Modifier.testTag("btn_cancel_reroute")) {
-                Text("Cancel", color = Color.White)
+                Text(stringResource(R.string.action_cancel), color = Color.White)
             }
         }
     }
@@ -10367,11 +10879,19 @@ private fun CorridorMapView(
             java.util.concurrent.atomic
                 .AtomicReference(unitSystem)
         }
+    // Same for Breaks: refreshTrackOverlay is captured by camera listeners once, so a
+    // Compose-parameter read would keep the first composition's on/off value forever.
+    val breakRemindersEnabledRef =
+        remember {
+            java.util.concurrent.atomic
+                .AtomicReference(breakRemindersEnabled)
+        }
     prefer3dRef.set(prefer3d)
     contoursEnabledRef.set(contoursEnabled)
     vulkanRef.set(vulkanAvailable)
     tiltRef.set(cameraTiltDeg)
     unitSystemRef.set(unitSystem)
+    breakRemindersEnabledRef.set(breakRemindersEnabled)
 
     fun effectiveTiltDeg(): Double {
         val liveVulkan = vulkanRef.get()
@@ -10953,6 +11473,7 @@ private fun CorridorMapView(
                     currentStyleKind.value = resolved.kind
                     currentMountedKey.value = resolved.mountedKey
                     applyTerrainAndPitch(map, style, resolved, applyGen)
+                    BasemapLocalizedLabels.applyToStyle(style)
                     restoreHeldCamera(map, liveCam)
                     Fu49MapDiag.dumpLiveStyle(
                         style,
@@ -11030,7 +11551,7 @@ private fun CorridorMapView(
             addWp(v.name, v.lat, v.lon)
         }
         addWp(latest.endName, latest.endLat, latest.endLon)
-        if (breakRemindersEnabled) {
+        if (breakRemindersEnabledRef.get()) {
             for (b in latest.breakPois) {
                 // Peaks/mountains are never pause labels (e.g. Store Ramshøgda).
                 if (b.name.contains("Ramsh", ignoreCase = true)) continue
@@ -12412,6 +12933,19 @@ private fun ensureIconsCopied(
         copyAssetDir(context.assets, "icons/weather", File(dest, "weather"))
     }
 }
+
+/** Map known English basemap style notes to localized strings when present. */
+private fun localizeBasemapStyleNote(
+    context: android.content.Context,
+    note: String,
+): String =
+    when (note) {
+        "3D hillshade needs the terrain download; showing offline map in 2D" ->
+            context.getString(R.string.style_note_3d_needs_dem)
+        "Offline Protomaps + Mapterhorn DEM hillshade" ->
+            context.getString(R.string.style_note_offline_hillshade)
+        else -> note
+    }
 
 private fun copyAssetDir(
     am: android.content.res.AssetManager,

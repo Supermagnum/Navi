@@ -96,11 +96,17 @@ NDK_VER="$(basename "$NDK")"
 HAMLIB_TAG="$(resolve_tag)"
 
 mkdir -p "$OUT_ROOT"
+# Do not rewrite the tracked lock during CI/F-Droid builds (dirty tree). Stamp
+# the actual pin under out/; update scripts/hamlib-android.lock only when asked.
 {
   echo "HAMLIB_TAG=${HAMLIB_TAG}"
   echo "NDK_VERSION=${NDK_VER}"
-} >"$LOCK"
-echo "Pinned Hamlib tag ${HAMLIB_TAG} with NDK ${NDK_VER} -> $LOCK"
+} >"$OUT_ROOT/build-pin.txt"
+echo "Building Hamlib tag ${HAMLIB_TAG} with NDK ${NDK_VER} (stamp: $OUT_ROOT/build-pin.txt)"
+if [[ "${NAVI_UPDATE_HAMLIB_LOCK:-}" == "1" ]]; then
+  cp -f "$OUT_ROOT/build-pin.txt" "$LOCK"
+  echo "Updated tracked lock $LOCK"
+fi
 
 detect_host_tag() {
   local prebuilt="$NDK/toolchains/llvm/prebuilt"
@@ -216,6 +222,16 @@ build_abi() {
 
   echo "=== Building Hamlib ${HAMLIB_TAG} for ${abi} (API ${API_LEVEL}) ==="
   pushd "$build_dir" >/dev/null
+  # Remap absolute paths out of assert/__FILE__ strings so host vs CI/F-Droid
+  # libhamlib.so match. Single-thread make avoids parallel codegen drift.
+  local REPRO_CFLAGS="-O2 -fPIC"
+  REPRO_CFLAGS+=" -ffile-prefix-map=${SRC}=/hamlib-src"
+  REPRO_CFLAGS+=" -ffile-prefix-map=${OUT_ROOT}=/hamlib-out"
+  REPRO_CFLAGS+=" -ffile-prefix-map=${ROOT}=/src"
+  REPRO_CFLAGS+=" -ffile-prefix-map=${NDK}=/ndk"
+  # Same maps for C++ units (e.g. rotators/androidsensor/ndkimu.cpp).
+  local REPRO_CXXFLAGS="$REPRO_CFLAGS"
+  local REPRO_LDFLAGS="-llog -Wl,--build-id=none"
   # Disable Android-unneeded bindings and libusb-dependent backends.
   "$SRC/configure" \
     --host="$triple" \
@@ -230,9 +246,10 @@ build_abi() {
     --without-libusb \
     CC="$cc" \
     CXX="$cxx" \
-    CFLAGS="-O2 -fPIC" \
-    LDFLAGS="-llog"
-  make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
+    CFLAGS="$REPRO_CFLAGS" \
+    CXXFLAGS="$REPRO_CXXFLAGS" \
+    LDFLAGS="$REPRO_LDFLAGS"
+  make -j1
   make install
   popd >/dev/null
 
@@ -245,6 +262,9 @@ build_abi() {
   # Flatten a copy named libhamlib.so for jniLibs packaging.
   mkdir -p "$OUT_ROOT/jniLibs/$abi"
   cp -L "$so" "$OUT_ROOT/jniLibs/$abi/libhamlib.so"
+  if [[ -x "$TOOLCHAIN/bin/llvm-strip" ]]; then
+    "$TOOLCHAIN/bin/llvm-strip" --strip-unneeded "$OUT_ROOT/jniLibs/$abi/libhamlib.so"
+  fi
   echo "Installed $OUT_ROOT/jniLibs/$abi/libhamlib.so"
 }
 

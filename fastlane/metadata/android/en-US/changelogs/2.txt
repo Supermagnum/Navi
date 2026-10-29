@@ -1,0 +1,1 @@
+Norwegian Bokmål UI (with English), localized guidance street names, and sturdier offline place-index opens (torn WAL recovery, fewer freezes on cold start). Region downloads and map updates keep working offline-first. F-Droid package updates from the first release.

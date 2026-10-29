@@ -93,7 +93,7 @@ object NaviMapTestHooks {
     /**
      * Cold-start / adb trip seed for standalone long-trip runs (not under
      * instrumentation). Consumed once by [MainActivity] / NaviMapScreen.
-     * Extended fields are filled only by [NaviDebugIntent] on debuggable builds.
+     * Extended fields are filled only by debug trip hooks on debuggable builds.
      */
     data class PendingTripPlan(
         val fromName: String,
@@ -127,7 +127,7 @@ object NaviMapTestHooks {
         val avoidTolls: Boolean? = null,
         val restoreSettingsAfter: Boolean = true,
         /**
-         * When true (default for [NaviDebugIntent] trips), pin the GPS mark at
+         * When true (default for debug trip hooks), pin the GPS mark at
          * [fromLat]/[fromLon] and ignore live LocationManager fixes so the
          * emulator's real fix cannot trigger off-route recalculation.
          */
@@ -138,7 +138,7 @@ object NaviMapTestHooks {
     var pendingTripPlan: PendingTripPlan? = null
 
     /**
-     * When true, the next plan uses pack_dir [NaviDebugIntent.FORCE_PBF_PACK_DIR]
+     * When true, the next plan uses pack_dir [DebugTripHooks.FORCE_PBF_PACK_DIR]
      * so indexed packs are skipped (local-PBF graph build).
      */
     @Volatile
@@ -158,7 +158,7 @@ object NaviMapTestHooks {
 
     /**
      * After a debug-intent plan, restore in-memory avoid-ferries to this value
-     * (cabins/bike capability are restored via UniFFI in [NaviDebugIntent]).
+     * (cabins/bike capability are restored via UniFFI in debug trip hooks).
      */
     @Volatile
     var restoreAvoidFerriesAfterPlan: Boolean? = null
@@ -888,6 +888,15 @@ object NaviMapTestHooks {
     @Volatile
     var ignoreLiveGpsFixes: Boolean = false
 
+    /**
+     * Replay controls (live-fix ignore, sensor injection, mock routes) run
+     * only in debug. Release keeps the fields, and every effect stays off.
+     */
+    fun replayHooksEnabled(): Boolean = BuildConfig.DEBUG
+
+    /** Live GPS is dropped only while replay hooks are enabled and the flag is set. */
+    fun shouldIgnoreLiveGpsFixes(): Boolean = replayHooksEnabled() && ignoreLiveGpsFixes
+
     /** Last map GPS mark (after applyFix); for off-route assertions. */
     @Volatile
     var lastGpsLat: Double = Double.NaN
@@ -980,6 +989,17 @@ object NaviMapTestHooks {
     /** Feed a GNSS sample into the live dead-reckoning engine (instrumented tests). */
     @Volatile
     var deadReckoningInjectGps: ((GpsSample) -> DrOutput)? = null
+
+    /** Clear engine state between instrumented replays. Null when the activity is down. */
+    @Volatile
+    var deadReckoningReset: (() -> Unit)? = null
+
+    /**
+     * Stop live sensor ticks for the duration of an injected replay.
+     * A wall-clock tick between synthetic samples rewinds the engine clock.
+     */
+    @Volatile
+    var deadReckoningSuspendHardware: ((Boolean) -> Unit)? = null
 
     /** Last resolved applicable speed limit (km/h). */
     @Volatile

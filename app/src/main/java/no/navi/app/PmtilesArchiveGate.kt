@@ -169,8 +169,8 @@ object PmtilesArchiveGate {
         RandomAccessFile(file, "r").use { raf ->
             val buf = ByteArray(127)
             raf.readFully(buf)
-            if (String(buf, 0, 7, Charsets.US_ASCII) != "PMTiles") {
-                throw IllegalArgumentException("not a PMTiles archive")
+            require(String(buf, 0, 7, Charsets.US_ASCII) == "PMTiles") {
+                "not a PMTiles archive"
             }
             val maxZoom = buf[101].toInt() and 0xff
             val tiles =

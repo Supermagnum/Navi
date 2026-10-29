@@ -32,14 +32,14 @@ object NaviManeuverDump {
     private const val CHUNK_CHARS = 3_500
 
     private val lastProfile = AtomicReference("unknown")
-    private val lastDebugContext = AtomicReference<NaviDebugIntent.AppliedContext?>(null)
+    private val lastDebugContext = AtomicReference<DebugTripDumpContext?>(null)
 
     fun noteProfile(profile: String) {
         if (!debugBuild()) return
         lastProfile.set(profile.ifBlank { "unknown" })
     }
 
-    fun noteDebugContext(ctx: NaviDebugIntent.AppliedContext) {
+    fun noteDebugContext(ctx: DebugTripDumpContext) {
         if (!debugBuild()) return
         lastDebugContext.set(ctx)
         if (ctx.profile.isNotBlank() && ctx.profile != "default") {
@@ -228,7 +228,7 @@ object NaviManeuverDump {
      */
     private fun ferryDiagnostics(
         result: CorridorRouteResult,
-        dbg: NaviDebugIntent.AppliedContext?,
+        dbg: DebugTripDumpContext?,
     ): JSONObject {
         val report = result.report
         val uses =

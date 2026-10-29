@@ -5,6 +5,56 @@ use std::path::Path;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
+/// How the repeater is opened. 1750 Hz is a tone burst, never a CTCSS tone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AccessTone {
+    #[default]
+    Unknown,
+    /// Carrier squelch. No tone is programmed.
+    Carrier,
+    /// Value lives in [`RepeaterSite::ctcss_hz`].
+    Ctcss,
+    /// Value lives in [`RepeaterSite::dcs_code`].
+    Dcs,
+    /// 1750 Hz tone burst. The rig CTCSS/DCS encode is set off. The app does not
+    /// send the burst; the operator does that manually.
+    #[serde(rename = "toneburst_1750")]
+    ToneBurst1750,
+}
+
+impl AccessTone {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::Carrier => "carrier",
+            Self::Ctcss => "ctcss",
+            Self::Dcs => "dcs",
+            Self::ToneBurst1750 => "tone_burst_1750",
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "carrier" => Self::Carrier,
+            "ctcss" => Self::Ctcss,
+            "dcs" => Self::Dcs,
+            "tone_burst_1750" => Self::ToneBurst1750,
+            _ => Self::Unknown,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::ToneBurst1750 => "1750 Hz burst",
+            Self::Carrier => "carrier",
+            Self::Ctcss => "CTCSS",
+            Self::Dcs => "DCS",
+            Self::Unknown => "tone unknown",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RepeaterSource {
@@ -24,9 +74,13 @@ pub struct RepeaterSite {
     pub lat: Option<f64>,
     pub lon: Option<f64>,
     pub freq_out_mhz: f64,
-    pub shift_mhz: f64,
+    /// `None` means the shift is unknown. It is never stored or programmed as 0
+    /// just because the source omitted it.
+    pub shift_mhz: Option<f64>,
     pub ctcss_hz: Option<f64>,
     pub dcs_code: Option<u32>,
+    #[serde(default)]
+    pub access: AccessTone,
     pub color_code: Option<u8>,
     pub modulation: String,
     pub network_id: Option<String>,
@@ -42,6 +96,21 @@ pub struct RepeaterSite {
     /// Source attribution text (e.g. from navi-server current.json).
     #[serde(default)]
     pub attribution: Option<String>,
+    /// ISO-like country code (`NO`, `SE`, `DK`, `DE`) when the source names one.
+    #[serde(default)]
+    pub country: Option<String>,
+    /// `kml`, `csv`, `radioid`, or `osm`. Used to tell independent sources apart.
+    #[serde(default)]
+    pub file_kind: Option<String>,
+    /// Position before consensus relocation. `None` when the site was not moved.
+    #[serde(default)]
+    pub original_lat: Option<f64>,
+    #[serde(default)]
+    pub original_lon: Option<f64>,
+    #[serde(default)]
+    pub relocated: bool,
+    #[serde(default)]
+    pub relocation_note: Option<String>,
 }
 
 pub struct RepeaterDb {
@@ -72,7 +141,7 @@ impl RepeaterDb {
               lat REAL,
               lon REAL,
               freq_out_mhz REAL NOT NULL,
-              shift_mhz REAL NOT NULL,
+              shift_mhz REAL,
               ctcss_hz REAL,
               dcs_code INTEGER,
               color_code INTEGER,
@@ -83,7 +152,14 @@ impl RepeaterDb {
               conflict_note TEXT,
               position_accurate INTEGER NOT NULL DEFAULT 1,
               exclude_recommended INTEGER NOT NULL DEFAULT 0,
-              attribution TEXT
+              attribution TEXT,
+              access TEXT NOT NULL DEFAULT 'unknown',
+              country TEXT,
+              file_kind TEXT,
+              original_lat REAL,
+              original_lon REAL,
+              relocated INTEGER NOT NULL DEFAULT 0,
+              relocation_note TEXT
             );
             CREATE TABLE IF NOT EXISTS networks (
               id TEXT PRIMARY KEY,
@@ -99,6 +175,76 @@ impl RepeaterDb {
         let _ = self
             .conn
             .execute_batch("ALTER TABLE sites ADD COLUMN attribution TEXT;");
+        for stmt in [
+            "ALTER TABLE sites ADD COLUMN access TEXT NOT NULL DEFAULT 'unknown';",
+            "ALTER TABLE sites ADD COLUMN country TEXT;",
+            "ALTER TABLE sites ADD COLUMN file_kind TEXT;",
+            "ALTER TABLE sites ADD COLUMN original_lat REAL;",
+            "ALTER TABLE sites ADD COLUMN original_lon REAL;",
+            "ALTER TABLE sites ADD COLUMN relocated INTEGER NOT NULL DEFAULT 0;",
+            "ALTER TABLE sites ADD COLUMN relocation_note TEXT;",
+        ] {
+            let _ = self.conn.execute_batch(stmt);
+        }
+        self.relax_shift_nullability()?;
+        Ok(())
+    }
+
+    /// Older databases declared `shift_mhz` NOT NULL, so an unknown shift could
+    /// only be written as 0. Rebuild the table so NULL means unknown.
+    fn relax_shift_nullability(&self) -> anyhow::Result<()> {
+        let notnull: i32 = self.conn.query_row(
+            "SELECT \"notnull\" FROM pragma_table_info('sites') WHERE name = 'shift_mhz'",
+            [],
+            |row| row.get(0),
+        )?;
+        if notnull == 0 {
+            return Ok(());
+        }
+        self.conn.execute_batch(
+            r#"
+            CREATE TABLE sites_shift_new (
+              id TEXT PRIMARY KEY,
+              callsign TEXT NOT NULL,
+              lat REAL,
+              lon REAL,
+              freq_out_mhz REAL NOT NULL,
+              shift_mhz REAL,
+              ctcss_hz REAL,
+              dcs_code INTEGER,
+              color_code INTEGER,
+              modulation TEXT NOT NULL,
+              network_id TEXT,
+              source TEXT NOT NULL,
+              conflict INTEGER NOT NULL DEFAULT 0,
+              conflict_note TEXT,
+              position_accurate INTEGER NOT NULL DEFAULT 1,
+              exclude_recommended INTEGER NOT NULL DEFAULT 0,
+              attribution TEXT,
+              access TEXT NOT NULL DEFAULT 'unknown',
+              country TEXT,
+              file_kind TEXT,
+              original_lat REAL,
+              original_lon REAL,
+              relocated INTEGER NOT NULL DEFAULT 0,
+              relocation_note TEXT
+            );
+            INSERT INTO sites_shift_new (
+              id, callsign, lat, lon, freq_out_mhz, shift_mhz, ctcss_hz, dcs_code,
+              color_code, modulation, network_id, source, conflict, conflict_note,
+              position_accurate, exclude_recommended, attribution, access, country,
+              file_kind, original_lat, original_lon, relocated, relocation_note
+            )
+            SELECT
+              id, callsign, lat, lon, freq_out_mhz, shift_mhz, ctcss_hz, dcs_code,
+              color_code, modulation, network_id, source, conflict, conflict_note,
+              position_accurate, exclude_recommended, attribution, access, country,
+              file_kind, original_lat, original_lon, relocated, relocation_note
+            FROM sites;
+            DROP TABLE sites;
+            ALTER TABLE sites_shift_new RENAME TO sites;
+            "#,
+        )?;
         Ok(())
     }
 
@@ -106,8 +252,9 @@ impl RepeaterDb {
         self.conn.execute(
             r#"INSERT INTO sites (id, callsign, lat, lon, freq_out_mhz, shift_mhz, ctcss_hz,
                  dcs_code, color_code, modulation, network_id, source, conflict, conflict_note,
-                 position_accurate, exclude_recommended, attribution)
-               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)
+                 position_accurate, exclude_recommended, attribution, access, country, file_kind,
+                 original_lat, original_lon, relocated, relocation_note)
+               VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24)
                ON CONFLICT(id) DO UPDATE SET
                  callsign=excluded.callsign, lat=excluded.lat, lon=excluded.lon,
                  freq_out_mhz=excluded.freq_out_mhz, shift_mhz=excluded.shift_mhz,
@@ -117,7 +264,10 @@ impl RepeaterDb {
                  conflict=excluded.conflict, conflict_note=excluded.conflict_note,
                  position_accurate=excluded.position_accurate,
                  exclude_recommended=excluded.exclude_recommended,
-                 attribution=excluded.attribution"#,
+                 attribution=excluded.attribution, access=excluded.access,
+                 country=excluded.country, file_kind=excluded.file_kind,
+                 original_lat=excluded.original_lat, original_lon=excluded.original_lon,
+                 relocated=excluded.relocated, relocation_note=excluded.relocation_note"#,
             params![
                 site.id,
                 site.callsign,
@@ -136,6 +286,13 @@ impl RepeaterDb {
                 site.position_accurate as i32,
                 site.exclude_recommended as i32,
                 site.attribution,
+                site.access.as_str(),
+                site.country,
+                site.file_kind,
+                site.original_lat,
+                site.original_lon,
+                site.relocated as i32,
+                site.relocation_note,
             ],
         )?;
         Ok(())
@@ -149,6 +306,19 @@ impl RepeaterDb {
             )?;
         }
         Ok(())
+    }
+
+    pub fn delete_site(&self, id: &str) -> anyhow::Result<()> {
+        self.conn
+            .execute("DELETE FROM sites WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Rows in the table, including APRS. [`Self::list_sites`] hides APRS.
+    pub fn count_sites(&self) -> usize {
+        self.conn
+            .query_row("SELECT COUNT(*) FROM sites", [], |row| row.get::<_, i64>(0))
+            .unwrap_or(0) as usize
     }
 
     fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RepeaterSite> {
@@ -171,6 +341,16 @@ impl RepeaterDb {
             position_accurate: row.get::<_, i32>(14)? != 0,
             exclude_recommended: row.get::<_, i32>(15).unwrap_or(0) != 0,
             attribution: row.get(16)?,
+            access: AccessTone::parse(
+                &row.get::<_, String>(17)
+                    .unwrap_or_else(|_| "unknown".into()),
+            ),
+            country: row.get(18).unwrap_or(None),
+            file_kind: row.get(19).unwrap_or(None),
+            original_lat: row.get(20).unwrap_or(None),
+            original_lon: row.get(21).unwrap_or(None),
+            relocated: row.get::<_, i32>(22).unwrap_or(0) != 0,
+            relocation_note: row.get(23).unwrap_or(None),
         })
     }
 
@@ -187,7 +367,9 @@ impl RepeaterDb {
             .prepare(
                 r#"SELECT id, callsign, lat, lon, freq_out_mhz, shift_mhz, ctcss_hz, dcs_code,
                           color_code, modulation, network_id, source, conflict, conflict_note,
-                          position_accurate, exclude_recommended, attribution FROM sites"#,
+                          position_accurate, exclude_recommended, attribution, access, country,
+                          file_kind, original_lat, original_lon, relocated, relocation_note
+                   FROM sites"#,
             )
             .expect("prepare");
         let rows = stmt.query_map([], Self::map_row).expect("query");
@@ -229,7 +411,9 @@ impl RepeaterDb {
             .prepare(
                 r#"SELECT id, callsign, lat, lon, freq_out_mhz, shift_mhz, ctcss_hz, dcs_code,
                           color_code, modulation, network_id, source, conflict, conflict_note,
-                          position_accurate, exclude_recommended, attribution FROM sites"#,
+                          position_accurate, exclude_recommended, attribution, access, country,
+                          file_kind, original_lat, original_lon, relocated, relocation_note
+                   FROM sites"#,
             )
             .expect("prepare");
         let rows = stmt.query_map([], Self::map_row).expect("query");
@@ -280,6 +464,85 @@ impl RepeaterDb {
         });
         out
     }
+
+    /// Programmable FM networks near a position. Sorted by distance to the nearest member.
+    pub fn list_networks(&self, lat: f64, lon: f64, radius_km: f64) -> Vec<NetworkListing> {
+        let mut groups: std::collections::BTreeMap<String, NetworkListing> =
+            std::collections::BTreeMap::new();
+        for s in self.list_sites() {
+            if !is_fm_programmable(&s) {
+                continue;
+            }
+            let Some(name_raw) = s.network_id.as_deref() else {
+                continue;
+            };
+            let name = normalize_network_name(name_raw);
+            if name.is_empty() {
+                continue;
+            }
+            let (Some(slat), Some(slon)) = (s.lat, s.lon) else {
+                continue;
+            };
+            let d = haversine_km(lat, lon, slat, slon);
+            if d > radius_km {
+                continue;
+            }
+            let entry = groups
+                .entry(name.clone())
+                .or_insert_with(|| NetworkListing {
+                    name: name.clone(),
+                    members: 0,
+                    nearest_km: f64::MAX,
+                    sources: Vec::new(),
+                });
+            entry.members += 1;
+            if d < entry.nearest_km {
+                entry.nearest_km = d;
+            }
+            let src = source_key(s.source);
+            if !entry.sources.iter().any(|x| x == &src) {
+                entry.sources.push(src);
+            }
+        }
+        let mut out: Vec<_> = groups.into_values().collect();
+        out.sort_by(|a, b| {
+            a.nearest_km
+                .partial_cmp(&b.nearest_km)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.name.cmp(&b.name))
+        });
+        out
+    }
+}
+
+/// FM sites the tuning backend may program. Off-air rows are excluded via
+/// `exclude_recommended`. Digital modes are kept in the DB but not programmed.
+pub fn is_fm_programmable(s: &RepeaterSite) -> bool {
+    if !s.position_accurate || s.exclude_recommended || s.lat.is_none() || s.lon.is_none() {
+        return false;
+    }
+    let m = s.modulation.to_ascii_uppercase();
+    if m.contains("DMR")
+        || m.contains("D-STAR")
+        || m.contains("DSTAR")
+        || m.contains("C4FM")
+        || m.contains("P25")
+    {
+        return false;
+    }
+    m.is_empty() || m.contains("FM") || m.contains("11K2") || m.contains("F3E")
+}
+
+pub fn normalize_network_name(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct NetworkListing {
+    pub name: String,
+    pub members: usize,
+    pub nearest_km: f64,
+    pub sources: Vec<String>,
 }
 
 fn source_key(s: RepeaterSource) -> String {
@@ -314,7 +577,8 @@ pub fn is_aprs(s: &RepeaterSite) -> bool {
 }
 
 pub fn is_simplex(s: &RepeaterSite) -> bool {
-    s.shift_mhz.abs() < 1e-9 && s.callsign.to_ascii_uppercase().contains("VFO")
+    matches!(s.shift_mhz, Some(shift) if shift.abs() < 1e-9)
+        && s.callsign.to_ascii_uppercase().contains("VFO")
 }
 
 /// DMR dedupe key: RX + TX + color code.
@@ -333,9 +597,27 @@ fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     2.0 * r * a.sqrt().asin()
 }
 
-/// Direct client RepeaterBook sync remains disabled; server mirror is the path.
+/// Direct client RepeaterBook sync stays off. Files are imported locally.
 pub fn repeaterbook_sync_enabled() -> bool {
     false
+}
+
+/// How a follow choice maps onto `query_near`. `auto` is not a network name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FollowQuery {
+    All,
+    None,
+    Named(String),
+}
+
+pub fn follow_query_filter(network_id: Option<&str>) -> FollowQuery {
+    match network_id.map(str::trim).filter(|s| !s.is_empty()) {
+        None => FollowQuery::All,
+        Some(s) if s.eq_ignore_ascii_case("auto") => FollowQuery::All,
+        Some(s) if s.eq_ignore_ascii_case("off") => FollowQuery::None,
+        Some(s) if s.eq_ignore_ascii_case("standalone") => FollowQuery::All,
+        Some(s) => FollowQuery::Named(s.to_string()),
+    }
 }
 
 #[cfg(test)]
@@ -351,7 +633,7 @@ mod tests {
             lat: Some(61.0),
             lon: Some(10.5),
             freq_out_mhz: 145.725,
-            shift_mhz: -0.6,
+            shift_mhz: Some(-0.6),
             ctcss_hz: Some(88.5),
             dcs_code: None,
             color_code: None,
@@ -364,6 +646,13 @@ mod tests {
             position_accurate: true,
             exclude_recommended: false,
             attribution: None,
+            access: AccessTone::Ctcss,
+            country: Some("NO".into()),
+            file_kind: Some("osm".into()),
+            original_lat: None,
+            original_lon: None,
+            relocated: false,
+            relocation_note: None,
         })
         .unwrap();
         db.upsert_site(&RepeaterSite {
@@ -372,7 +661,7 @@ mod tests {
             lat: Some(61.0),
             lon: Some(10.5),
             freq_out_mhz: 144.800,
-            shift_mhz: 0.0,
+            shift_mhz: Some(0.0),
             ctcss_hz: None,
             dcs_code: None,
             color_code: None,
@@ -385,6 +674,13 @@ mod tests {
             position_accurate: true,
             exclude_recommended: false,
             attribution: None,
+            access: AccessTone::Ctcss,
+            country: Some("NO".into()),
+            file_kind: Some("osm".into()),
+            original_lat: None,
+            original_lon: None,
+            relocated: false,
+            relocation_note: None,
         })
         .unwrap();
         let q = db.query_near(61.0, 10.5, 50.0, None);
@@ -401,7 +697,7 @@ mod tests {
             lat: Some(61.0),
             lon: Some(10.5),
             freq_out_mhz: 145.0,
-            shift_mhz: -0.6,
+            shift_mhz: Some(-0.6),
             ctcss_hz: None,
             dcs_code: None,
             color_code: None,
@@ -414,6 +710,13 @@ mod tests {
             position_accurate: true,
             exclude_recommended: true,
             attribution: Some("Data courtesy of RadioID.net".into()),
+            access: AccessTone::Unknown,
+            country: Some("NO".into()),
+            file_kind: Some("radioid".into()),
+            original_lat: None,
+            original_lon: None,
+            relocated: false,
+            relocation_note: None,
         })
         .unwrap();
         assert!(db.query_near(61.0, 10.5, 50.0, None).is_empty());
@@ -423,5 +726,15 @@ mod tests {
     #[test]
     fn repeaterbook_off() {
         assert!(!repeaterbook_sync_enabled());
+    }
+
+    #[test]
+    fn auto_and_off_are_not_network_names() {
+        assert_eq!(follow_query_filter(Some("auto")), FollowQuery::All);
+        assert_eq!(follow_query_filter(Some("off")), FollowQuery::None);
+        assert_eq!(
+            follow_query_filter(Some("LA5MR")),
+            FollowQuery::Named("LA5MR".into())
+        );
     }
 }

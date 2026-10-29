@@ -102,7 +102,7 @@ fn site(
         lat: Some(lat),
         lon: Some(lon),
         freq_out_mhz: freq,
-        shift_mhz: shift,
+        shift_mhz: Some(shift),
         ctcss_hz: ctcss,
         dcs_code: None,
         color_code: None,
@@ -115,6 +115,17 @@ fn site(
         position_accurate: true,
         exclude_recommended: false,
         attribution: None,
+        access: if ctcss.is_some() {
+            navi_cat::AccessTone::Ctcss
+        } else {
+            navi_cat::AccessTone::Unknown
+        },
+        country: Some("NO".into()),
+        file_kind: Some("osm".into()),
+        original_lat: None,
+        original_lon: None,
+        relocated: false,
+        relocation_note: None,
     }
 }
 

@@ -8,25 +8,52 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import no.navi.app.cat.CatRigModelPreset
 import no.navi.app.cat.CatSerialLoopbackBridge
 import no.navi.app.cat.catRigModelLabel
 import no.navi.app.cat.catRigModelPresets
 import org.json.JSONArray
 import org.json.JSONObject
+
+/** Same green as pack-ready chips in Tools — connected success, not mere selection. */
+private val CatConnectedChipGreen = Color(0xFF2E7D32)
+private val CatConnectedChipGreenMuted = CatConnectedChipGreen.copy(alpha = 0.30f)
+
+/**
+ * True when [preset] is the Hamlib model reported connected in status JSON.
+ * Matches Hamlib model_name (e.g. "Dummy") against curated preset labels.
+ */
+internal fun catPresetMatchesConnectedModel(
+    preset: CatRigModelPreset,
+    connectedModelName: String,
+): Boolean {
+    val n = connectedModelName.trim()
+    if (n.isEmpty()) return false
+    if (preset.model == 1 && n.equals("Dummy", ignoreCase = true)) return true
+    if (preset.name.contains(n, ignoreCase = true)) return true
+    return n
+        .split(Regex("[\\s/]+"))
+        .filter { it.length >= 3 }
+        .any { token -> preset.name.contains(token, ignoreCase = true) }
+}
 
 data class CatUiState(
     val statusJson: String = """{"connected":false}""",
@@ -45,8 +72,58 @@ data class CatUiState(
      */
     val demoModeDeveloper: Boolean = MapHudPrefs.CAT_DEMO_MODE_DEFAULT_ENABLED,
     val followNetworkId: String = "LA5MR",
+    val networkChoice: String = MapHudPrefs.CAT_NETWORK_AUTO,
+    val networkNotice: String = "",
+    val repeaterDropPath: String = "",
+    val networkNames: List<CatNetworkChip> = emptyList(),
     val lastMessage: String = "",
+    val consensusRelocation: Boolean = false,
 )
+
+/** One dropdown row: name, programmable members in the region, nearest member. */
+data class CatNetworkChip(
+    val name: String,
+    val members: Int,
+    val nearestKm: Double,
+)
+
+/**
+ * Build network chips from the CAT nearby-repeaters JSON.
+ *
+ * JSON `null` / missing `network_id` must not become a chip named `"null"`
+ * ([org.json.JSONObject.optString] stringifies JSON null that way). Those
+ * sites are covered by "Standalone repeaters (nearest)".
+ */
+fun networkNamesFromNearby(json: String): List<CatNetworkChip> {
+    val arr = runCatching { JSONArray(json) }.getOrNull() ?: return emptyList()
+    val counts = linkedMapOf<String, Int>()
+    val nearest = linkedMapOf<String, Double>()
+    for (i in 0 until arr.length()) {
+        val o = arr.optJSONObject(i) ?: continue
+        if (!o.optBoolean("position_accurate", true)) continue
+        if (o.optBoolean("exclude_recommended", false)) continue
+        val name = o.optString("network_id").trim()
+        if (name.isEmpty() || name.equals("null", ignoreCase = true)) continue
+        val dist = o.optDouble("distance_km", Double.NaN)
+        if (!dist.isFinite() || dist > 150.0) continue
+        val modulation = o.optString("modulation")
+        if (modulation.contains("DMR", ignoreCase = true) ||
+            modulation.contains("DSTAR", ignoreCase = true) ||
+            modulation.contains("D-STAR", ignoreCase = true) ||
+            modulation.contains("C4FM", ignoreCase = true) ||
+            modulation.contains("APRS", ignoreCase = true)
+        ) {
+            continue
+        }
+        counts[name] = (counts[name] ?: 0) + 1
+        val prev = nearest[name]
+        if (prev == null || dist < prev) nearest[name] = dist
+    }
+    return counts.keys
+        .map { name ->
+            CatNetworkChip(name, counts[name] ?: 0, nearest[name] ?: 0.0)
+        }.sortedBy { it.nearestKm }
+}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -66,8 +143,10 @@ fun CatStatusSheet(
     onFollowEnable: () -> Unit,
     onFollowDisable: () -> Unit,
     onUpdateRepeaters: () -> Unit,
+    onConsensusRelocationChange: (Boolean) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    updateRepeatersBusy: Boolean = false,
 ) {
     val connected =
         runCatching { JSONObject(state.statusJson).optBoolean("connected") }.getOrDefault(false)
@@ -93,23 +172,52 @@ fun CatStatusSheet(
                     .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("CAT / CATS radio", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.cat_plugin_toggle_label), style = MaterialTheme.typography.titleMedium)
             Text(
                 stringResource(R.string.cat_licence_listen_only),
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag("cat_licence_listen_only"),
             )
             Text(
-                "Receive-only programming. Navi never transmits (no PTT).",
+                stringResource(R.string.ui_a_1750_hz_burst_repeater_is_tuned_with_ctcss_and_dcs_off_nav),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("cat_toneburst_note"),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.cat_consensus_relocation))
+                    Text(
+                        stringResource(R.string.ui_off_by_default_uses_agreeing_radioid_and_file_positions_only),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(
+                    checked = state.consensusRelocation,
+                    onCheckedChange = onConsensusRelocationChange,
+                    modifier = Modifier.testTag("cat_consensus_relocation"),
+                )
+            }
+            Text(
+                stringResource(R.string.ui_receive_only_programming_navi_never_transmits_no_ptt),
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                "AnyTone CPS CSV: put channel.csv (and zone / gps-roaming / offset) under filesDir/cat/import/. Format: docs/cat-test.md.",
+                stringResource(R.string.ui_copy_repeaterbook_kml_kmz_exports_into_this_folder_networked),
                 style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.testTag("cat_import_path_hint"),
             )
+            SelectionContainer {
+                Text(
+                    state.repeaterDropPath.ifBlank { "Android/data/no.navi.app/files/repeaters" },
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("cat_repeater_drop_path"),
+                )
+            }
             OutlinedButton(
                 onClick = onUpdateRepeaters,
+                enabled = !updateRepeatersBusy,
                 modifier = Modifier.fillMaxWidth().testTag("cat_update_repeaters"),
             ) {
                 Text(stringResource(R.string.cat_update_repeaters))
@@ -118,6 +226,46 @@ fun CatStatusSheet(
                 stringResource(R.string.cat_update_repeaters_hint),
                 style = MaterialTheme.typography.bodySmall,
             )
+            Text(stringResource(R.string.cat_repeater_network), style = MaterialTheme.typography.titleSmall)
+            if (state.networkNotice.isNotBlank()) {
+                Text(
+                    state.networkNotice,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("cat_network_notice"),
+                )
+            }
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.testTag("cat_network_choices"),
+            ) {
+                FilterChip(
+                    selected = state.networkChoice == MapHudPrefs.CAT_NETWORK_AUTO,
+                    onClick = { onFollowNetworkChange(MapHudPrefs.CAT_NETWORK_AUTO) },
+                    label = { Text(stringResource(R.string.cat_nearest_network_auto)) },
+                    modifier = Modifier.testTag("cat_network_auto"),
+                )
+                for (chip in state.networkNames) {
+                    val km = String.format(java.util.Locale.US, "%.0f", chip.nearestKm)
+                    FilterChip(
+                        selected = state.networkChoice == chip.name,
+                        onClick = { onFollowNetworkChange(chip.name) },
+                        label = { Text("${chip.name} (${chip.members}, $km km)") },
+                    )
+                }
+                FilterChip(
+                    selected = state.networkChoice == MapHudPrefs.CAT_NETWORK_STANDALONE,
+                    onClick = { onFollowNetworkChange(MapHudPrefs.CAT_NETWORK_STANDALONE) },
+                    label = { Text(stringResource(R.string.cat_standalone_nearest)) },
+                    modifier = Modifier.testTag("cat_network_standalone"),
+                )
+                FilterChip(
+                    selected = state.networkChoice == MapHudPrefs.CAT_NETWORK_OFF,
+                    onClick = { onFollowNetworkChange(MapHudPrefs.CAT_NETWORK_OFF) },
+                    label = { Text(stringResource(R.string.cat_off_manual)) },
+                    modifier = Modifier.testTag("cat_network_off"),
+                )
+            }
             Text(
                 if (connected) {
                     "Connected${if (model.isNotBlank()) " ($model)" else ""}"
@@ -133,11 +281,14 @@ fun CatStatusSheet(
                 modifier = Modifier.testTag("cat_radio_baud_summary"),
             )
             if (follow.isNotBlank()) {
-                Text("Network follow: $follow", style = MaterialTheme.typography.bodySmall)
+                Text(
+                    stringResource(R.string.network_follow, follow),
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
-            Text("Backend", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.cat_backend), style = MaterialTheme.typography.titleSmall)
             Text(
-                "Plugin controls VFO 1 only; VFO 2 is left to the user.",
+                stringResource(R.string.ui_plugin_controls_vfo_1_only_vfo_2_is_left_to_the_user),
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag("cat_vfo1_only_note"),
             )
@@ -149,13 +300,13 @@ fun CatStatusSheet(
                 FilterChip(
                     selected = state.backend == MapHudPrefs.CAT_BACKEND_HAMLIB,
                     onClick = { onBackendChange(MapHudPrefs.CAT_BACKEND_HAMLIB) },
-                    label = { Text("Hamlib") },
+                    label = { Text(stringResource(R.string.cat_backend_hamlib)) },
                     modifier = Modifier.testTag("cat_backend_hamlib"),
                 )
                 FilterChip(
                     selected = state.backend == MapHudPrefs.CAT_BACKEND_BENSHI,
                     onClick = { onBackendChange(MapHudPrefs.CAT_BACKEND_BENSHI) },
-                    label = { Text("Benshi") },
+                    label = { Text(stringResource(R.string.cat_backend_benshi)) },
                     modifier = Modifier.testTag("cat_backend_benshi"),
                 )
             }
@@ -169,33 +320,33 @@ fun CatStatusSheet(
                                 ?: MapHudPrefs.CAT_SCRATCH_CHANNEL_DEFAULT,
                         )
                     },
-                    label = { Text("Scratch channel (A)") },
+                    label = { Text(stringResource(R.string.cat_scratch_channel)) },
                     singleLine = true,
                     supportingText = {
-                        Text("Used when frequency mode is unavailable (e.g. on VFO 2)")
+                        Text(stringResource(R.string.cat_scratch_channel_hint))
                     },
                     modifier = Modifier.fillMaxWidth().testTag("cat_scratch_channel_field"),
                 )
             }
             Text(
-                "Developer / test only",
+                stringResource(R.string.ui_developer_test_only),
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.testTag("cat_demo_mode_section"),
             )
             FilterChip(
                 selected = state.demoModeDeveloper,
                 onClick = { onDemoModeDeveloperChange(!state.demoModeDeveloper) },
-                label = { Text("Demo mode (5 s/site) — not for driving") },
+                label = { Text(stringResource(R.string.cat_demo_mode)) },
                 modifier = Modifier.testTag("cat_demo_mode_developer"),
             )
             Text(
-                "Off by default. Steps network follow along a planned corridor for FakeBenshiPeer / lab checks.",
+                stringResource(R.string.ui_off_by_default_steps_network_follow_along_a_planned_corridor),
                 style = MaterialTheme.typography.bodySmall,
             )
             OutlinedTextField(
                 value = state.host,
                 onValueChange = onHostChange,
-                label = { Text("rigctld host") },
+                label = { Text(stringResource(R.string.cat_rigctld_host)) },
                 singleLine = true,
                 enabled = state.backend == MapHudPrefs.CAT_BACKEND_HAMLIB,
                 modifier = Modifier.fillMaxWidth().testTag("cat_host_field"),
@@ -203,13 +354,13 @@ fun CatStatusSheet(
             OutlinedTextField(
                 value = state.port,
                 onValueChange = onPortChange,
-                label = { Text("port") },
+                label = { Text(stringResource(R.string.cat_port)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("cat_port_field"),
             )
-            Text("Hamlib radio model", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.cat_hamlib_model_title), style = MaterialTheme.typography.titleSmall)
             Text(
-                "TCP path: remote daemon model (informational). Onboard FFI / USB-BT: model used when opening the rig.",
+                stringResource(R.string.ui_tcp_path_remote_daemon_model_informational_onboard_ffi_usb_b),
                 style = MaterialTheme.typography.bodySmall,
             )
             FlowRow(
@@ -218,10 +369,39 @@ fun CatStatusSheet(
                 modifier = Modifier.testTag("cat_rig_model_presets"),
             ) {
                 for (preset in presets) {
+                    val selected = state.rigModel == preset.model
+                    val connectedSuccess =
+                        connected &&
+                            (
+                                catPresetMatchesConnectedModel(preset, model) ||
+                                    (model.isBlank() && selected)
+                            )
                     FilterChip(
-                        selected = state.rigModel == preset.model,
+                        selected = selected || connectedSuccess,
                         onClick = { onRigModelChange(preset.model) },
-                        label = { Text("${preset.model}") },
+                        label = { Text(preset.name) },
+                        colors =
+                            FilterChipDefaults.filterChipColors(
+                                containerColor =
+                                    if (connectedSuccess) {
+                                        CatConnectedChipGreenMuted
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceContainerHighest
+                                    },
+                                selectedContainerColor =
+                                    if (connectedSuccess) {
+                                        CatConnectedChipGreen
+                                    } else {
+                                        MaterialTheme.colorScheme.secondaryContainer
+                                    },
+                                labelColor = MaterialTheme.colorScheme.onSurface,
+                                selectedLabelColor =
+                                    if (connectedSuccess) {
+                                        Color.White
+                                    } else {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    },
+                            ),
                         modifier = Modifier.testTag("cat_rig_model_${preset.model}"),
                     )
                 }
@@ -236,12 +416,12 @@ fun CatStatusSheet(
                         onRigModelChange(digits.toIntOrNull()?.coerceAtLeast(1) ?: state.rigModel)
                     }
                 },
-                label = { Text("Hamlib model number") },
+                label = { Text(stringResource(R.string.cat_hamlib_model_number)) },
                 singleLine = true,
                 supportingText = { Text(catRigModelLabel(state.rigModel)) },
                 modifier = Modifier.fillMaxWidth().testTag("cat_rig_model_field"),
             )
-            Text("Serial baud (USB/BT loopback)", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.cat_serial_baud), style = MaterialTheme.typography.titleSmall)
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -261,22 +441,22 @@ fun CatStatusSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 OutlinedButton(onClick = onConnect, modifier = Modifier.testTag("cat_btn_connect")) {
-                    Text("Connect")
+                    Text(stringResource(R.string.action_connect))
                 }
                 OutlinedButton(
                     onClick = onDisconnect,
                     modifier = Modifier.testTag("cat_btn_disconnect"),
                 ) {
-                    Text("Disconnect")
+                    Text(stringResource(R.string.action_disconnect))
                 }
                 OutlinedButton(onClick = onRefresh, modifier = Modifier.testTag("cat_btn_refresh")) {
-                    Text("Refresh")
+                    Text(stringResource(R.string.action_refresh))
                 }
             }
             OutlinedTextField(
                 value = state.followNetworkId,
                 onValueChange = onFollowNetworkChange,
-                label = { Text("Network id (e.g. LA5MR)") },
+                label = { Text(stringResource(R.string.ui_network_id_e_g_la5mr)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("cat_follow_network_field"),
             )
@@ -285,19 +465,19 @@ fun CatStatusSheet(
                     onClick = onFollowEnable,
                     modifier = Modifier.testTag("cat_btn_follow_on"),
                 ) {
-                    Text("Follow on")
+                    Text(stringResource(R.string.follow_on))
                 }
                 OutlinedButton(
                     onClick = onFollowDisable,
                     modifier = Modifier.testTag("cat_btn_follow_off"),
                 ) {
-                    Text("Follow off")
+                    Text(stringResource(R.string.follow_off))
                 }
             }
-            Text("Nearby repeaters (≤150 km)", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.ui_nearby_repeaters_150_km), style = MaterialTheme.typography.titleSmall)
             if (nearby.isEmpty()) {
                 Text(
-                    "None in the onboard DB yet (import OSM / CSV fixtures, or wait for host seed).",
+                    stringResource(R.string.ui_none_in_the_onboard_db_yet_import_osm_csv_fixtures_or_wait_f),
                     style = MaterialTheme.typography.bodySmall,
                 )
             } else {
@@ -309,7 +489,7 @@ fun CatStatusSheet(
                 Text(state.lastMessage, style = MaterialTheme.typography.bodySmall)
             }
             TextButton(onClick = onClose, modifier = Modifier.testTag("cat_btn_close")) {
-                Text("Close")
+                Text(stringResource(R.string.action_close))
             }
         }
     }
@@ -333,11 +513,22 @@ private fun parseNearby(json: String): List<String> =
                     if (dist.isFinite()) String.format(java.util.Locale.US, "%.1f km", dist) else "?"
                 val freqLabel =
                     if (freq.isFinite()) String.format(java.util.Locale.US, "%.3f", freq) else "?"
+                val access = o.optString("access")
+                val relocated = o.optBoolean("relocated", false)
+                val relocation = o.optString("relocation_note")
                 val flags =
                     buildList {
                         if (excluded) add("excluded")
                         if (!posOk) add("manual-only (no position)")
                         if (mod.equals("DMR", ignoreCase = true)) add("DMR info-only")
+                        if (access.contains("toneburst", ignoreCase = true) ||
+                            access.contains("1750", ignoreCase = true)
+                        ) {
+                            add("1750 Hz burst")
+                        }
+                        if (relocated && relocation.isNotBlank() && relocation != "null") {
+                            add(relocation)
+                        }
                     }.joinToString(", ")
                 val attrLabel = attr?.let { " — $it" }.orEmpty()
                 val srcLabel = if (src.isNotBlank()) " [$src]" else ""

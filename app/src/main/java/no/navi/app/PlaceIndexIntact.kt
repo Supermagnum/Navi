@@ -3,6 +3,7 @@ package no.navi.app
 import android.database.sqlite.SQLiteDatabase
 import android.util.Log
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Read-only place-index integrity for one `region_id`.
@@ -49,6 +50,9 @@ object PlaceIndexIntact {
     @Volatile
     internal var rowSourceForTests: RowSource? = null
 
+    /** Heavy UniFFI/framework checkpoint runs at most once per process. */
+    private val heavyWalRecoverDone = AtomicBoolean(false)
+
     fun isIntact(
         dataDir: File,
         regionId: String,
@@ -93,6 +97,9 @@ object PlaceIndexIntact {
         if (bytes < MIN_DB_BYTES) {
             return empty.copy(dbBytes = bytes, reason = "db_tiny")
         }
+        // Torn -wal/-shm after a killed index build SIGBUS's Android SQLite in
+        // walIndexReadHdr (uncatchable). Recover before any framework open.
+        recoverWalSidecars(dbFile)
         return runCatching {
             SQLiteDatabase
                 .openDatabase(
@@ -124,6 +131,7 @@ object PlaceIndexIntact {
         }
         val dbFile = File(dataDir, "place_index.db")
         if (!dbFile.isFile || dbFile.length() < MIN_DB_BYTES) return emptySet()
+        recoverWalSidecars(dbFile)
         return runCatching {
             SQLiteDatabase
                 .openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
@@ -157,6 +165,7 @@ object PlaceIndexIntact {
         if (!dbFile.isFile) return "file missing"
         val bytes = dbFile.length()
         if (bytes < MIN_DB_BYTES) return "file empty ($bytes bytes)"
+        recoverWalSidecars(dbFile)
         val opens =
             runCatching {
                 SQLiteDatabase
@@ -166,6 +175,127 @@ object PlaceIndexIntact {
         if (!opens) return "file unreadable"
         return corruptionStampProblem(dataDir)
     }
+
+    /**
+     * Automatic recovery before any Android framework open. Call on cold start
+     * (background thread) and from probes when a `-wal` sidecar is present.
+     *
+     * Order: UniFFI checkpoint → framework RW checkpoint → drop `-shm` →
+     * quarantine unreadable `-wal` so the main file can still open.
+     */
+    fun recoverBeforeOpen(dataDir: File) {
+        val dbFile = File(dataDir, "place_index.db")
+        if (dbFile.isFile) recoverWalSidecars(dbFile, forceHeavy = true)
+    }
+
+    /**
+     * Checkpoint torn WAL before Android framework opens.
+     *
+     * Skip the heavy path when there is no `-wal` (normal idle `-shm` must not
+     * trigger a multi-second RW open on the UI / probe path — that ANR'd).
+     */
+    private fun recoverWalSidecars(
+        dbFile: File,
+        forceHeavy: Boolean = false,
+    ) {
+        val path = dbFile.absolutePath
+        val wal = File("$path-wal")
+        val shm = File("$path-shm")
+        // No frames in `-wal`: nothing to checkpoint. Empty leftover files must
+        // not trigger a RW open of a multi-GB place_index (cold-start ANR).
+        if (!wal.isFile || wal.length() == 0L) {
+            if (wal.isFile) {
+                runCatching { wal.delete() }
+            }
+            return
+        }
+        // Probe paths: only one heavy recover per process unless forced at start.
+        if (!forceHeavy && !heavyWalRecoverDone.compareAndSet(false, true)) {
+            return
+        }
+        if (forceHeavy) {
+            heavyWalRecoverDone.set(true)
+        }
+        val native =
+            runCatching { uniffi.navi.placeIndexRecoverWal(path) }
+                .onFailure { t -> Log.w(TAG, "placeIndexRecoverWal threw: ${t.message}") }
+                .getOrNull()
+        if (native != null && !native.startsWith("FAIL")) {
+            Log.i(TAG, "wal recover native ok")
+            return
+        }
+        if (native != null) {
+            Log.w(TAG, "placeIndexRecoverWal: $native")
+        }
+        if (shm.isFile()) {
+            runCatching { shm.delete() }
+                .onFailure { t -> Log.w(TAG, "delete shm failed: ${t.message}") }
+        }
+        val checkpointed =
+            runCatching {
+                SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
+                    db.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { c ->
+                        c.moveToFirst()
+                    }
+                }
+                true
+            }.getOrElse { t ->
+                Log.w(TAG, "framework wal_checkpoint failed: ${t.message}")
+                false
+            }
+        if (checkpointed) {
+            Log.i(TAG, "wal recover framework checkpoint ok")
+            return
+        }
+        if (wal.isFile()) {
+            val bad = File("$path-wal.bad")
+            runCatching {
+                if (bad.exists()) bad.delete()
+                if (!wal.renameTo(bad)) wal.delete()
+            }.onFailure { t -> Log.w(TAG, "quarantine wal failed: ${t.message}") }
+            Log.w(TAG, "quarantined place_index.db-wal; marking non-intact regions incomplete")
+            applyWalQuarantineIncomplete(dbFile)
+        }
+    }
+
+    /**
+     * After a non-BUSY WAL quarantine: mark damaged regions incomplete in SQLite,
+     * clear [PlaceIndexReady] stamps so AutoBuild re-indexes, and queue a UI notice.
+     * Intact regions are never marked.
+     */
+    fun applyWalQuarantineIncomplete(dbFile: File) {
+        val markedCsv =
+            runCatching {
+                uniffi.navi.placeIndexMarkIncompleteAfterWalQuarantine(dbFile.absolutePath)
+            }.onFailure { t -> Log.w(TAG, "mark incomplete after quarantine: ${t.message}") }
+                .getOrNull()
+                .orEmpty()
+        val fromFfi =
+            markedCsv
+                .split(',')
+                .map { PackRegionAvailability.normalize(it) }
+                .filter { it.isNotEmpty() }
+        val fromRustNotice =
+            runCatching { uniffi.navi.placeIndexTakeWalQuarantineRebuildRegions() }
+                .getOrDefault(emptyList())
+                .map { PackRegionAvailability.normalize(it) }
+                .filter { it.isNotEmpty() }
+        val regions = (fromFfi + fromRustNotice).distinct()
+        if (regions.isEmpty()) return
+        val dataDir = dbFile.parentFile ?: return
+        for (rid in regions) {
+            PlaceIndexReady.clearReadyStampOnly(dataDir, rid)
+            Log.w(TAG, "wal quarantine → rebuild region=$rid")
+        }
+        pendingRebuildNoticeRegions.set(regions)
+    }
+
+    private val pendingRebuildNoticeRegions =
+        java.util.concurrent.atomic
+            .AtomicReference<List<String>>(emptyList())
+
+    /** Drain region ids for a short "search is being rebuilt" status line. */
+    fun takeRebuildNoticeRegions(): List<String> = pendingRebuildNoticeRegions.getAndSet(emptyList())
 
     /** Idle-only stamp from [runIdleQuickCheck]; never opens SQLite here. */
     fun corruptionStampProblem(dataDir: File): String? {
@@ -197,6 +327,7 @@ object PlaceIndexIntact {
             writeQuickCheckStamp(dataDir, "file missing")
             return "file missing"
         }
+        recoverWalSidecars(dbFile)
         val result =
             runCatching {
                 SQLiteDatabase
@@ -310,7 +441,11 @@ object PlaceIndexIntact {
                 reason = if (ok) "legacy_rows" else "no_rows_no_build",
             )
         }
-        val (complete, expected, written, sourceSha, indexSource) = build
+        val complete = build.complete
+        val expected = build.expected
+        val written = build.written
+        val sourceSha = build.sourceSha
+        val indexSource = build.indexSource
         if (complete == 0) {
             return Probe(
                 intact = false,
