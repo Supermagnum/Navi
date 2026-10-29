@@ -100,7 +100,11 @@ and radio/baud UI notes (branch `CAT`): [`docs/CAT.md`](docs/CAT.md),
 [`docs/CAT-test-report.md`](docs/CAT-test-report.md),
 [`docs/cat-test.md`](docs/cat-test.md).
 
-**Install the signed release APK.** Testers should download and sideload
+**Install from F-Droid (recommended for most users).** Navi is published at
+[f-droid.org/en/packages/no.navi.app](https://f-droid.org/en/packages/no.navi.app/)
+(`no.navi.app`). Prefer that when you want updates through F-Droid.
+
+**Install the signed release APK (sideload / testers).** Download and sideload
 [`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
 installable release APK** (upload keystore; not the debug build). Current build:
 **0.3.28-beta** (`versionName` 0.3.28-beta, `versionCode` 33). Download from the
@@ -1167,11 +1171,22 @@ clone **your** fork, and work on **`dev`** — step-by-step in
 
 ## Install a prebuilt APK
 
+### F-Droid
+
+Navi is on F-Droid as **`no.navi.app`**:
+
+[https://f-droid.org/en/packages/no.navi.app/](https://f-droid.org/en/packages/no.navi.app/)
+
+Install or update from the F-Droid client when you can. The sideload APKs below
+are for testers and developers who need a specific `dev` build (or cannot use
+F-Droid).
+
 ### Release APK (for testers)
 
 Use the **signed release** build — this is what hardware testers should
-install. The APK is signed with the project upload keystore so Android accepts
-it as a normal install (not an unsigned or debug-only package).
+install when they are not using F-Droid. The APK is signed with the project
+upload keystore so Android accepts it as a normal install (not an unsigned or
+debug-only package).
 
 | Artifact | Role |
 |---|---|

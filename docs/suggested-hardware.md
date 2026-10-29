@@ -17,7 +17,12 @@ Sweet spot: 16 GB storage and up, 4 GB RAM minimum.
 
 **Important caveat before buying any of these**: most aftermarket head units ship with a locked-down Android build oriented around CarPlay/Android Auto mirroring and a fixed launcher. Since Navi needs to run as the primary app (not mirrored from a phone), verify a specific model supports sideloading APKs and replacing/disabling the default launcher before committing — this varies by firmware, not by spec sheet. Check XDA-Developers or the model's own community first.
 
-**Distribution note**: Navi is currently tested via sideloaded builds during development. Once tested on real hardware (not just emulator), the app is planned for release through the **Google Play Store and/or F-Droid** — at that point, installation on supported devices won't require manual sideloading. Until then, the sideloading-support caveat above remains the practical requirement for anyone testing on a head unit today.
+**Distribution note**: Navi is published on **F-Droid** as
+[`no.navi.app`](https://f-droid.org/en/packages/no.navi.app/). Prefer F-Droid
+for install and updates when the head unit can run the F-Droid client. Sideloaded
+`dev` APKs remain available for testers (see the README). Many aftermarket head
+units still need sideloading support if F-Droid itself is not installable — the
+caveat above remains for those firmwares.
 
 ---
 
