@@ -80,3 +80,13 @@ hex = "0.4"
 opt-level = 3
 lto = true
 codegen-units = 1
+incremental = false
+
+# Android cdylib only (scripts/build-android-native.sh maps `release` here).
+# panic=abort drops Rust landing pads / .gcc_except_table. Dual-path rebuilds
+# were bit-identical in .text/.eh_frame/.rodata but still differed in LSDA
+# call-site encodings (path-dependent LLVM EH table emission under panic=unwind).
+# catch_unwind in navi-ffi becomes a no-op under abort (process terminates).
+[profile.release-android]
+inherits = "release"
+panic = "abort"

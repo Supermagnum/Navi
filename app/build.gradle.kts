@@ -43,8 +43,9 @@ android {
         applicationId = "no.navi.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 33
-        versionName = "0.3.28-beta"
+        // F-Droid track: versionCode 1 was the first published package; this is 2.
+        versionCode = 2
+        versionName = "0.3.29-beta"
         testInstrumentationRunner = "no.navi.app.NaviAndroidTestRunner"
         // Restrict packaging to naviAbis so every lib/<abi>/ folder contains the
         // same .so set (libnavi + MapLibre + JNA + graphics.path). Strips JNA's
@@ -97,8 +98,22 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            // Keep APK content free of embedded VCS stamps (reproducible / F-Droid).
+            vcsInfo {
+                include = false
+            }
+            // F-Droid and .github/workflows/release.yml need an *unsigned* APK so
+            // apksigner / Binaries compare matches. Pass -Pnavi.unsignedRelease=true
+            // (or omit the upload keystore) for that path. Local sideload builds may
+            // still use app/keystore/navi-upload.jks when present.
+            val forceUnsigned =
+                providers
+                    .gradleProperty("navi.unsignedRelease")
+                    .orElse("false")
+                    .get()
+                    .equals("true", ignoreCase = true)
             val upload = signingConfigs.findByName("upload")
-            if (upload?.storeFile?.isFile == true) {
+            if (!forceUnsigned && upload?.storeFile?.isFile == true) {
                 signingConfig = upload
             }
         }

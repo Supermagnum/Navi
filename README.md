@@ -107,9 +107,11 @@ and radio/baud UI notes (branch `CAT`): [`docs/CAT.md`](docs/CAT.md),
 **Install the signed release APK (sideload / testers).** Download and sideload
 [`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
 installable release APK** (upload keystore; not the debug build). Current build:
-**0.3.28-beta** (`versionName` 0.3.28-beta, `versionCode` 33). Download from the
-[`dev` branch](https://github.com/Supermagnum/Navi/tree/dev/compiled)
-(latest tester build). Android
+**0.3.29-beta** (`versionName` 0.3.29-beta, `versionCode` 2) is the F-Droid /
+GitHub release track (see [docs/RELEASING.md](docs/RELEASING.md)). Sideload
+APKs under `compiled/` may lag until the next sideload ship. Download a tester
+build from the [`dev` branch](https://github.com/Supermagnum/Navi/tree/dev/compiled)
+when present. Android
 validates the APK signature on install; the separate GPG files
 ([`compiled/SHA256SUMS`](compiled/SHA256SUMS),
 [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc)) are optional provenance

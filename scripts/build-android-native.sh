@@ -145,10 +145,17 @@ fi
 # Stage wasm guests from source into assets/ once (F-Droid / no committed binaries).
 "$ROOT/scripts/build-plugin-wasm.sh"
 
+# Cargo profile name and target/<triple>/<dir> folder. Android release uses
+# release-android (panic=abort) so LSDA/.gcc_except_table path nondeterminism
+# cannot leak into libnavi.so; CLI still accepts `release`.
+CARGO_PROFILE="$PROFILE"
+OUT_PROFILE="$PROFILE"
 CARGO_PROFILE_ARGS=()
 case "$PROFILE" in
   release)
-    CARGO_PROFILE_ARGS=(--release)
+    CARGO_PROFILE="release-android"
+    OUT_PROFILE="release-android"
+    CARGO_PROFILE_ARGS=(--profile "$CARGO_PROFILE")
     ;;
   debug)
     # cargo has no --debug flag; debug is the default profile
@@ -163,6 +170,10 @@ build_one_abi() {
   local ABI_DIR="$1"
   local TARGET
   TARGET="$(abi_to_triple "$ABI_DIR")"
+
+  # Isolate per-ABI RUSTFLAGS (do not accumulate -L native=… across ABIs).
+  local BASE_RUSTFLAGS="${RUSTFLAGS:-}"
+  local BASE_CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-}"
 
   local LIB_DST_DIR="$ROOT/app/src/main/jniLibs/$ABI_DIR"
   mkdir -p "$LIB_DST_DIR"
@@ -201,9 +212,10 @@ build_one_abi() {
   fi
 
   local CARGO_FEATURES=()
+  local ABI_RUSTFLAGS="$BASE_RUSTFLAGS"
   if [[ -f "$HAMLIB_DST" ]]; then
     CARGO_FEATURES+=(hamlib-ffi)
-    export RUSTFLAGS="${RUSTFLAGS:-} -L native=${LIB_DST_DIR}"
+    ABI_RUSTFLAGS="${ABI_RUSTFLAGS} -L native=${LIB_DST_DIR}"
     echo "Enabling navi-ffi feature hamlib-ffi (link libhamlib)"
   fi
   # Debug/emulator CAT dummy-rig tests: NAVI_ALLOW_DUMMY_RIG=1
@@ -219,9 +231,50 @@ build_one_abi() {
 
   echo "Building navi-ffi for $TARGET ($PROFILE) with NDK $ANDROID_NDK_HOME ($NDK_HOST_TAG)..."
 
+  # Reproducible release: remap absolute paths out of DWARF/strings, drop GNU
+  # build-id (machine-local), and force a non-incremental build. F-Droid's
+  # recipe calls this script as-is; keep flags here so the recipe need not
+  # duplicate them. Toolchain pin remains rust-toolchain.toml (1.98.0).
+  if [[ "$PROFILE" == "release" ]]; then
+    local CARGO_HOME_DIR="${CARGO_HOME:-$HOME/.cargo}"
+    local RUSTUP_HOME_DIR="${RUSTUP_HOME:-$HOME/.rustup}"
+    local RUSTC_SYSROOT
+    RUSTC_SYSROOT="$(rustc --print sysroot 2>/dev/null || true)"
+    export CARGO_INCREMENTAL=0
+    ABI_RUSTFLAGS+=" --remap-path-prefix=${CARGO_HOME_DIR}=/cargo"
+    ABI_RUSTFLAGS+=" --remap-path-prefix=${RUSTUP_HOME_DIR}=/rustup"
+    ABI_RUSTFLAGS+=" --remap-path-prefix=${ROOT}=/src"
+    if [[ -n "$RUSTC_SYSROOT" ]]; then
+      ABI_RUSTFLAGS+=" --remap-path-prefix=${RUSTC_SYSROOT}=/rustc"
+    fi
+    # Also remap the NDK path (clang debug info / link paths can embed it).
+    ABI_RUSTFLAGS+=" --remap-path-prefix=${ANDROID_NDK_HOME}=/ndk"
+    ABI_RUSTFLAGS+=" -C link-arg=-Wl,--build-id=none"
+    # Single-threaded LLVM / LTO: parallel LTO has been observed to flip a few
+    # instruction bytes across identical trees in different directories.
+    ABI_RUSTFLAGS+=" -C llvm-args=-threads=1"
+    export CARGO_BUILD_JOBS=1
+    export RAYON_NUM_THREADS=1
+    export LLVM_PARALLEL_LINK_THREADS=1
+    echo "Reproducible RUSTFLAGS enabled (remap-path-prefix, build-id=none, llvm-threads=1)"
+  fi
+  export RUSTFLAGS="$ABI_RUSTFLAGS"
+
   cargo build -p navi-ffi --target "$TARGET" "${CARGO_PROFILE_ARGS[@]}" "${FEATURE_ARGS[@]}" --lib
 
-  local LIB_SRC="$ROOT/target/$TARGET/$PROFILE/libnavi.so"
+  # Always restore caller env so the next ABI does not inherit -L native=….
+  if [[ -n "$BASE_RUSTFLAGS" ]]; then
+    export RUSTFLAGS="$BASE_RUSTFLAGS"
+  else
+    unset RUSTFLAGS
+  fi
+  if [[ -n "$BASE_CARGO_INCREMENTAL" ]]; then
+    export CARGO_INCREMENTAL="$BASE_CARGO_INCREMENTAL"
+  else
+    unset CARGO_INCREMENTAL
+  fi
+
+  local LIB_SRC="$ROOT/target/$TARGET/$OUT_PROFILE/libnavi.so"
   local LIB_DST_DIR="$ROOT/app/src/main/jniLibs/$ABI_DIR"
   mkdir -p "$LIB_DST_DIR"
 
@@ -235,7 +288,7 @@ build_one_abi() {
     --out-dir "$KOTLIN_OUT"
 
   # Strip after bindgen (workspace release leaves symbols so UniFFI metadata survives).
-  if [[ "$PROFILE" == "release" ]]; then
+  if [[ "$PROFILE" == "release" || "$CARGO_PROFILE" == "release-android" ]]; then
     local STRIP_BIN=""
     if [[ -x "$NDK_BIN/llvm-strip" ]]; then
       STRIP_BIN="$NDK_BIN/llvm-strip"
