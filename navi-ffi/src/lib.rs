@@ -3889,6 +3889,25 @@ fn plan_car_route_inner(
         ));
     }
 
+    // Expected bad inputs must FAIL through the corridor result (UI status), not panic.
+    // catch_unwind remains for unexpected panics on unwind builds; release-android aborts.
+    let coord_ok = |lat: f64, lon: f64| -> bool {
+        lat.is_finite()
+            && lon.is_finite()
+            && (-90.0..=90.0).contains(&lat)
+            && (-180.0..=180.0).contains(&lon)
+    };
+    if !coord_ok(start_lat, start_lon) || !coord_ok(end_lat, end_lon) {
+        return empty("TEST_KIND=PLAN_CAR_ROUTE\nFAIL: invalid start/end coordinates\n".into());
+    }
+    for (i, v) in via_points.iter().enumerate() {
+        if !coord_ok(v.lat, v.lon) {
+            return empty(format!(
+                "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: invalid via{i} coordinates\n"
+            ));
+        }
+    }
+
     let mut timer = PlanStageTimer::start();
 
     let routing_profile = RoutingProfile::from(profile.to_core());
@@ -4651,6 +4670,20 @@ fn plan_car_route_inner(
                     r.off_trail_advisory = status;
                     return r;
                 }
+                Err(e @ driver_break_core::routing::indexed::PackLoadError::Rkyv(_)) => {
+                    // Corrupt archive body / inconsistent topology — surface to UI,
+                    // do not cold-build (can OOM) or panic under panic=abort.
+                    report.push_str(&format!(
+                        "FAIL: map pack unreadable ({e}); reinstall the region\n"
+                    ));
+                    driver_break_core::routing::plan_perf::note("pack_corrupt", &format!("{e}"));
+                    let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
+                    let mut r = empty(report);
+                    r.toll_policy = toll_policy.as_diag_str().into();
+                    r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
+                    r.search_terminate_reason = "corrupt_pack".into();
+                    return r;
+                }
                 Err(e) => {
                     driver_break_core::routing::plan_perf::note(
                         "pack_miss_reason",
@@ -4729,6 +4762,15 @@ fn plan_car_route_inner(
                 built.nodes.len(),
                 built.edges.len()
             );
+            if built.nodes.is_empty() || built.edges.is_empty() {
+                report.push_str("FAIL: degenerate empty graph\n");
+                let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
+                let mut r = empty(report);
+                r.toll_policy = toll_policy.as_diag_str().into();
+                r.pad_attempts_json = format!("{pad_attempts:?}").replace(' ', "");
+                r.search_terminate_reason = "empty_graph".into();
+                return r;
+            }
             let t_datex_bind = Instant::now();
             built.bind_datex_overlay(&mut route_opts);
             let datex_bind_ms = t_datex_bind.elapsed().as_millis() as u64;
@@ -9335,6 +9377,38 @@ pub fn ensure_live_hazards_loaded(pbf_path: String) -> FfiLiveHazardLoadStats {
             }
         }
     }
+    // Expected bad inputs: missing / tiny / non-file PBF → empty stats (same soft
+    // signal the UI already treats as "no hazards"), never panic.
+    let empty_stats = || FfiLiveHazardLoadStats {
+        signs: 0,
+        children: 0,
+        cameras: 0,
+        bumps: 0,
+        compact_json_utf8: 0,
+        cone_m: LIVE_HAZARD_CONE_M,
+    };
+    let pbf = std::path::Path::new(pbf_path.trim());
+    if !pbf.is_file() {
+        log::error!(target: "NaviNative", "live_hazards load: PBF missing \"{pbf_path}\"");
+        return empty_stats();
+    }
+    match std::fs::metadata(pbf) {
+        Ok(m) if m.len() >= 64 => {}
+        Ok(m) => {
+            log::error!(
+                target: "NaviNative",
+                "live_hazards load: PBF too small ({} bytes)",
+                m.len()
+            );
+            return empty_stats();
+        }
+        Err(e) => {
+            log::error!(target: "NaviNative", "live_hazards load: metadata: {e}");
+            return empty_stats();
+        }
+    }
+    // catch_unwind kept for unexpected panics on unwind builds; under
+    // release-android panic=abort it is a no-op (process terminates).
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         LiveHazardIndex::load_from_pbf(&pbf_path)
     })) {

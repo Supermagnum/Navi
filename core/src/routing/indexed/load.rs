@@ -935,6 +935,88 @@ fn ensure_coarse_path_tiles(
     Ok(())
 }
 
+/// Refuse hydrate when parallel arrays disagree or edge endpoints are OOB.
+/// Callers map this to [`PackLoadError::Rkyv`] so plan FFI returns FAIL instead of panic.
+fn validate_edge_endpoints(
+    n_nodes: usize,
+    n_edges: usize,
+    src_at: impl Fn(usize) -> u32,
+    tgt_at: impl Fn(usize) -> u32,
+) -> Result<(), PackLoadError> {
+    for i in 0..n_edges {
+        let s = src_at(i) as usize;
+        let t = tgt_at(i) as usize;
+        if s >= n_nodes || t >= n_nodes {
+            return Err(PackLoadError::Rkyv(format!(
+                "corrupt pack: edge {i} endpoint OOB (src={s}, tgt={t}, nodes={n_nodes})"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn lens_eq(name: &str, got: usize, expect: usize) -> Result<(), PackLoadError> {
+    if got != expect {
+        return Err(PackLoadError::Rkyv(format!(
+            "corrupt pack: {name} len {got} != {expect}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_archived_graph_v9(a: &ArchivedFlatGraphPack) -> Result<(), PackLoadError> {
+    let nn = a.node_ids.len();
+    let ne = a.edge_src.len();
+    lens_eq("node_lats", a.node_lats.len(), nn)?;
+    lens_eq("node_lons", a.node_lons.len(), nn)?;
+    lens_eq("edge_tgt", a.edge_tgt.len(), ne)?;
+    lens_eq("edge_length_m", a.edge_length_m.len(), ne)?;
+    lens_eq("edge_base_weight", a.edge_base_weight.len(), ne)?;
+    lens_eq("edge_start_lat", a.edge_start_lat.len(), ne)?;
+    lens_eq("edge_start_lon", a.edge_start_lon.len(), ne)?;
+    lens_eq("edge_end_lat", a.edge_end_lat.len(), ne)?;
+    lens_eq("edge_end_lon", a.edge_end_lon.len(), ne)?;
+    lens_eq("edge_highway", a.edge_highway.len(), ne)?;
+    lens_eq("edge_maxspeed_kmh", a.edge_maxspeed_kmh.len(), ne)?;
+    lens_eq("edge_name", a.edge_name.len(), ne)?;
+    lens_eq("edge_road_ref", a.edge_road_ref.len(), ne)?;
+    lens_eq("edge_is_toll", a.edge_is_toll.len(), ne)?;
+    lens_eq("edge_is_ferry", a.edge_is_ferry.len(), ne)?;
+    lens_eq("edge_is_tunnel", a.edge_is_tunnel.len(), ne)?;
+    validate_edge_endpoints(
+        nn,
+        ne,
+        |i| u32::from(a.edge_src[i]),
+        |i| u32::from(a.edge_tgt[i]),
+    )
+}
+
+fn validate_archived_graph_v8(a: &ArchivedFlatGraphPackV8) -> Result<(), PackLoadError> {
+    let nn = a.node_ids.len();
+    let ne = a.edge_src.len();
+    lens_eq("node_lats", a.node_lats.len(), nn)?;
+    lens_eq("node_lons", a.node_lons.len(), nn)?;
+    lens_eq("edge_tgt", a.edge_tgt.len(), ne)?;
+    lens_eq("edge_length_m", a.edge_length_m.len(), ne)?;
+    lens_eq("edge_base_weight", a.edge_base_weight.len(), ne)?;
+    lens_eq("edge_start_lat", a.edge_start_lat.len(), ne)?;
+    lens_eq("edge_start_lon", a.edge_start_lon.len(), ne)?;
+    lens_eq("edge_end_lat", a.edge_end_lat.len(), ne)?;
+    lens_eq("edge_end_lon", a.edge_end_lon.len(), ne)?;
+    lens_eq("edge_highway", a.edge_highway.len(), ne)?;
+    lens_eq("edge_maxspeed_kmh", a.edge_maxspeed_kmh.len(), ne)?;
+    lens_eq("edge_name", a.edge_name.len(), ne)?;
+    lens_eq("edge_road_ref", a.edge_road_ref.len(), ne)?;
+    lens_eq("edge_is_toll", a.edge_is_toll.len(), ne)?;
+    lens_eq("edge_is_ferry", a.edge_is_ferry.len(), ne)?;
+    validate_edge_endpoints(
+        nn,
+        ne,
+        |i| u32::from(a.edge_src[i]),
+        |i| u32::from(a.edge_tgt[i]),
+    )
+}
+
 #[derive(Debug, Error)]
 pub enum PackLoadError {
     #[error("indexed pack missing or incomplete")]
@@ -1077,6 +1159,7 @@ pub fn load_graph_pack_clips(
         super::graph_pack::GRAPH_FORMAT_VERSION_V8 => {
             let archived = rkyv::access::<ArchivedFlatGraphPackV8, RkyvError>(body)
                 .map_err(|e| PackLoadError::Rkyv(e.to_string()))?;
+            validate_archived_graph_v8(archived)?;
             let validate_ms = t_val.elapsed().as_millis() as u64;
             let t_copy = std::time::Instant::now();
             let g = archived.to_route_graph_clips(profile, clips);
@@ -1105,6 +1188,7 @@ pub fn load_graph_pack_clips(
         GRAPH_FORMAT_VERSION => {
             let archived = rkyv::access::<ArchivedFlatGraphPack, RkyvError>(body)
                 .map_err(|e| PackLoadError::Rkyv(e.to_string()))?;
+            validate_archived_graph_v9(archived)?;
             let validate_ms = t_val.elapsed().as_millis() as u64;
             let t_copy = std::time::Instant::now();
             let g = archived.to_route_graph_clips(profile, clips);
@@ -2220,6 +2304,9 @@ fn supplement_pack_ferries_from_pbf_inner(
     let Some(clips) = ferry_overlay_clips(clip_bbox, edge_clips, route_points) else {
         return Ok(graph);
     };
+    if clips.is_empty() {
+        return Ok(graph);
+    }
     let bbox = plan_clip_bbox(None, Some(clips.as_slice())).unwrap_or(clips[0]);
     if let Some(pts) = route_points.filter(|p| p.len() >= 2) {
         let t_snap = std::time::Instant::now();
@@ -4291,5 +4378,33 @@ mod hop_primary_tests {
             Some("europe/norway/ostlandet"),
             None,
         ));
+    }
+}
+
+#[cfg(test)]
+mod corrupt_pack_validate_tests {
+    use super::{lens_eq, validate_edge_endpoints, PackLoadError};
+
+    #[test]
+    fn edge_endpoint_oob_is_rkyv_error() {
+        let err = validate_edge_endpoints(2, 1, |_| 0, |_| 99).unwrap_err();
+        match err {
+            PackLoadError::Rkyv(msg) => assert!(msg.contains("OOB"), "{msg}"),
+            other => panic!("expected Rkyv, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parallel_len_mismatch_is_rkyv_error() {
+        let err = lens_eq("edge_tgt", 3, 4).unwrap_err();
+        match err {
+            PackLoadError::Rkyv(msg) => assert!(msg.contains("edge_tgt"), "{msg}"),
+            other => panic!("expected Rkyv, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn consistent_endpoints_ok() {
+        validate_edge_endpoints(3, 2, |i| i as u32, |i| (i + 1) as u32).unwrap();
     }
 }
