@@ -50,21 +50,24 @@ jobs:
           toolchain: "1.98.0"
           targets: aarch64-linux-android,x86_64-linux-android,wasm32-unknown-unknown
 
-      - name: Install Android SDK + NDK r27c
-        uses: android-actions/setup-android@v3
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v4
         with:
-          packages: |
-            platforms;android-36
-            build-tools;35.0.0
-            ndk;27.2.12479018
+          # Space-separated; multiline broke sdkmanager package names.
+          # compileSdk=37 in app/build.gradle.kts.
+          packages: platform-tools platforms;android-37 build-tools;35.0.0
+
+      - name: Setup Android NDK r27c
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27c
 
       - name: Env for NDK / SDK
         run: |
           echo "ANDROID_HOME=${ANDROID_HOME}" >> "$GITHUB_ENV"
-          # setup-android puts NDK under $ANDROID_HOME/ndk/<ver>
-          NDK_DIR="$(find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
-          echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_HOME=$NDK_DIR"
+          echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}"
 
       - name: Cargo Android linkers (.cargo/config.toml)
         run: |
