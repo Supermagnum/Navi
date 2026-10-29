@@ -480,8 +480,7 @@ fun PluginSettingsSection(
         }
         if (datexPluginEnabled) {
             Text(
-                "Cached NPRA situations via navi-server chain " +
-                    "(LAN then duckdns). No NPRA credentials on device.",
+                stringResource(R.string.ui_cached_npra_situations_via_navi_server_chain),
                 style = MaterialTheme.typography.bodySmall,
             )
             OutlinedTextField(

@@ -223,7 +223,7 @@
     <string name="ui_none_in_the_onboard_db_yet_import_osm_csv_fixtures_or_wait_f">None in the onboard DB yet (import OSM / CSV fixtures, or wait for host seed).</string>
     <string name="ui_waiting_for_sensor_data">Waiting for sensor data...</string>
     <string name="ui_plugins">Plugins</string>
-    <string name="ui_cached_npra_situations_via_navi_server_chain">Cached NPRA situations via navi-server chain </string>
+    <string name="ui_cached_npra_situations_via_navi_server_chain">Cached NPRA situations via navi-server chain (LAN then duckdns). No NPRA credentials on device.</string>
     <string name="ui_downloads_map_packs_along_the_route_on_wi_fi_ethernet_only">Downloads map packs along the route on Wi-Fi/Ethernet only. </string>
     <string name="ui_store_long_trip_packs_on">Store long-trip packs on</string>
     <string name="ui_quiet_look_ahead_for_attractions_fishing_and_craft_alcohol_w">Quiet look-ahead for attractions, fishing, and craft alcohol within 850 m ahead. Not a hazard warning.</string>

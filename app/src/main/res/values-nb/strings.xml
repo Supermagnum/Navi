@@ -295,7 +295,7 @@
     <string name="ui_bolivia">Bolivia</string>
     <string name="ui_brazil">Brasil</string>
     <string name="ui_bulgaria">Bulgaria</string>
-    <string name="ui_cached_npra_situations_via_navi_server_chain">Bufrede NPRA-situasjoner via navi-server-kjede </string>
+    <string name="ui_cached_npra_situations_via_navi_server_chain">Bufrede NPRA-situasjoner via navi-server-kjede (LAN deretter duckdns). Ingen NPRA-pålogging på enheten.</string>
     <string name="ui_camping_plugin_disabled_for_this_session">Camping-plugin er deaktivert for denne økten</string>
     <string name="ui_canada">Canada</string>
     <string name="ui_chile">Chile</string>
