@@ -1,0 +1,175 @@
+# Release APK for F-Droid Binaries verification.
+#
+# Triggers:
+#   - tags matching v*: build unsigned APK, then zipalign + apksigner with
+#     repository secrets, upload to the GitHub Release for that tag.
+#   - workflow_dispatch: build the same unsigned APK and upload it as a
+#     workflow artifact only (no signing, no GitHub Release).
+#
+# Does not run on ordinary push/PR. Never prints secrets.
+
+name: Release APK
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  # Fixed epoch so zip/entry timestamps match F-Droid when it sets the same.
+  SOURCE_DATE_EPOCH: "1700000000"
+
+jobs:
+  release-apk:
+    name: release-apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Rust (rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # Keep in sync with rust-toolchain.toml / F-Droid prebuild (1.98.0).
+          toolchain: "1.98.0"
+          targets: aarch64-linux-android,x86_64-linux-android,wasm32-unknown-unknown
+
+      - name: Install Android SDK + NDK r27c
+        uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            platforms;android-36
+            build-tools;35.0.0
+            ndk;27.2.12479018
+
+      - name: Env for NDK / SDK
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME}" >> "$GITHUB_ENV"
+          # setup-android puts NDK under $ANDROID_HOME/ndk/<ver>
+          NDK_DIR="$(find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$NDK_DIR"
+
+      - name: Cargo Android linkers (.cargo/config.toml)
+        run: |
+          set -euo pipefail
+          CLANG_PRE="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          test -d "$CLANG_PRE"
+          mkdir -p .cargo
+          {
+            echo '[target.x86_64-linux-android]'
+            echo "linker = \"$CLANG_PRE/x86_64-linux-android34-clang\""
+            echo 'rustflags = ["-C", "link-arg=-lc++_shared"]'
+            echo
+            echo '[target.aarch64-linux-android]'
+            echo "linker = \"$CLANG_PRE/aarch64-linux-android34-clang\""
+            echo 'rustflags = ["-C", "link-arg=-lc++_shared"]'
+          } > .cargo/config.toml
+
+      - name: local.properties
+        run: |
+          printf 'sdk.dir=%s\nndk.dir=%s\n' "$ANDROID_HOME" "$ANDROID_NDK_HOME" > local.properties
+
+      - name: Remove any prebuilt libnavi.so (match F-Droid)
+        run: |
+          rm -f app/src/main/jniLibs/arm64-v8a/libnavi.so
+          rm -f app/src/main/jniLibs/x86_64/libnavi.so
+          test ! -e app/src/main/jniLibs/arm64-v8a/libnavi.so
+          test ! -e app/src/main/jniLibs/x86_64/libnavi.so
+
+      - name: Build native libnavi.so + plugin wasm
+        run: |
+          ./scripts/build-android-native.sh all release
+          test -f app/src/main/jniLibs/arm64-v8a/libnavi.so
+          test -f app/src/main/jniLibs/x86_64/libnavi.so
+
+      - name: Assemble unsigned release APK
+        run: |
+          # No upload keystore in CI; also force-unsigned for determinism.
+          ./gradlew :app:assembleRelease --no-daemon -Pnavi.unsignedRelease=true
+          UNSIGNED="$(find app/build/outputs/apk/release -name '*.apk' ! -name '*-signed.apk' | head -n 1)"
+          test -n "$UNSIGNED"
+          test -f "$UNSIGNED"
+          echo "UNSIGNED_APK=$UNSIGNED" >> "$GITHUB_ENV"
+          cp -f "$UNSIGNED" /tmp/navi-unsigned.apk
+          sha256sum /tmp/navi-unsigned.apk
+
+      - name: Read versionName
+        id: ver
+        run: |
+          VN="$(sed -n 's/.*versionName = "\(.*\)"/\1/p' app/build.gradle.kts | head -n 1)"
+          test -n "$VN"
+          echo "version_name=$VN" >> "$GITHUB_OUTPUT"
+          echo "asset_name=navi-${VN}.apk" >> "$GITHUB_OUTPUT"
+
+      - name: Upload unsigned APK artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: navi-unsigned-${{ steps.ver.outputs.version_name }}
+          path: /tmp/navi-unsigned.apk
+          if-no-files-found: error
+
+      - name: Decode keystore
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        env:
+          NAVI_KEYSTORE_BASE64: ${{ secrets.NAVI_KEYSTORE_BASE64 }}
+        run: |
+          test -n "${NAVI_KEYSTORE_BASE64:-}"
+          echo "$NAVI_KEYSTORE_BASE64" | base64 -d > /tmp/navi-release.jks
+          test -s /tmp/navi-release.jks
+
+      - name: zipalign + apksigner
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        env:
+          NAVI_KEYSTORE_PASSWORD: ${{ secrets.NAVI_KEYSTORE_PASSWORD }}
+          NAVI_KEY_ALIAS: ${{ secrets.NAVI_KEY_ALIAS }}
+          NAVI_KEY_PASSWORD: ${{ secrets.NAVI_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
+          ZIPALIGN="$BUILD_TOOLS/zipalign"
+          APKSIGNER="$BUILD_TOOLS/apksigner"
+          ALIGNED="/tmp/navi-aligned.apk"
+          SIGNED="/tmp/${{ steps.ver.outputs.asset_name }}"
+          "$ZIPALIGN" -f -p 4 /tmp/navi-unsigned.apk "$ALIGNED"
+          "$APKSIGNER" sign \
+            --ks /tmp/navi-release.jks \
+            --ks-pass "pass:${NAVI_KEYSTORE_PASSWORD}" \
+            --ks-key-alias "${NAVI_KEY_ALIAS}" \
+            --key-pass "pass:${NAVI_KEY_PASSWORD}" \
+            --v1-signing-enabled false \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out "$SIGNED" \
+            "$ALIGNED"
+          "$APKSIGNER" verify --verbose --print-certs "$SIGNED"
+          cp -f "$SIGNED" "${{ steps.ver.outputs.asset_name }}"
+          # Scrub keystore from runner workspace
+          rm -f /tmp/navi-release.jks
+
+      - name: Upload APK to GitHub Release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.ver.outputs.asset_name }}
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
