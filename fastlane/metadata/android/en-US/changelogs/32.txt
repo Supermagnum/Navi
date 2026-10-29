@@ -1,0 +1,1 @@
+Bokmål UI for menus, planning, tools, and downloads. Guidance can show localized street names from offline maps. Place search and downloaded maps open more reliably after interrupted updates. Suggested break places no longer reappear when Breaks is turned off. The app ships English and Bokmål.
