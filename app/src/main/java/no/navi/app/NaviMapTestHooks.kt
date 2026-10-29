@@ -93,7 +93,7 @@ object NaviMapTestHooks {
     /**
      * Cold-start / adb trip seed for standalone long-trip runs (not under
      * instrumentation). Consumed once by [MainActivity] / NaviMapScreen.
-     * Extended fields are filled only by [NaviDebugIntent] on debuggable builds.
+     * Extended fields are filled only by debug trip hooks on debuggable builds.
      */
     data class PendingTripPlan(
         val fromName: String,
@@ -127,7 +127,7 @@ object NaviMapTestHooks {
         val avoidTolls: Boolean? = null,
         val restoreSettingsAfter: Boolean = true,
         /**
-         * When true (default for [NaviDebugIntent] trips), pin the GPS mark at
+         * When true (default for debug trip hooks), pin the GPS mark at
          * [fromLat]/[fromLon] and ignore live LocationManager fixes so the
          * emulator's real fix cannot trigger off-route recalculation.
          */
@@ -138,7 +138,7 @@ object NaviMapTestHooks {
     var pendingTripPlan: PendingTripPlan? = null
 
     /**
-     * When true, the next plan uses pack_dir [NaviDebugIntent.FORCE_PBF_PACK_DIR]
+     * When true, the next plan uses pack_dir [DebugTripHooks.FORCE_PBF_PACK_DIR]
      * so indexed packs are skipped (local-PBF graph build).
      */
     @Volatile
@@ -158,7 +158,7 @@ object NaviMapTestHooks {
 
     /**
      * After a debug-intent plan, restore in-memory avoid-ferries to this value
-     * (cabins/bike capability are restored via UniFFI in [NaviDebugIntent]).
+     * (cabins/bike capability are restored via UniFFI in debug trip hooks).
      */
     @Volatile
     var restoreAvoidFerriesAfterPlan: Boolean? = null

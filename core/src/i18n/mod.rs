@@ -8,10 +8,12 @@ pub mod tile_road_names;
 
 pub use localized_name::{
     is_mostly_latin_script, localized_name, localized_name_with_secondary, NameTags, SelectedName,
+    LATIN_NAME_FALLBACK_LANGS,
 };
 pub use messages::{encode as encode_ui_msg, encode1 as encode_ui_msg1, MSG_PREFIX};
 pub use tile_road_names::{
     apply_cached_street, build_route_road_name_cache, cached_localized_street,
     clear_active_route_road_name_cache, localize_maneuvers_json, localize_sim_samples_json,
-    set_active_route_road_name_cache, StreetLabelQuery,
+    lonlat_to_tile, road_features_from_mvt, set_active_route_road_name_cache, split_embedded_ref,
+    StreetLabelQuery,
 };
