@@ -13,13 +13,13 @@ Legend: **Loc?** = already in `res/values*/strings.xml` (or equivalent). Propose
 | Item | Location | Loc? | Notes / proposal |
 |---|---|---|---|
 | Default English strings | `app/src/main/res/values/strings.xml` | yes | 6 keys only |
-| Norwegian Bokmål | `app/src/main/res/values-nb/strings.xml` | yes | Same 6 keys; **do not recreate** |
-| Norwegian Nynorsk | `app/src/main/res/values-nn/strings.xml` | yes | Same 6 keys |
+| Norwegian Bokmål | `app/src/main/res/values-nb/strings.xml` | yes | Maintained; **do not rewrite** approved strings |
+| Norwegian Nynorsk | — | removed | Not maintained; removed from `values-nn/` and `locales_config.xml` |
 | Other app locales | — | no | Do not add (e.g. Arabic UI) without asking |
 | `android:supportsRtl` | `app/src/main/AndroidManifest.xml:18` | yes | Already `true` |
-| `locales_config.xml` | — | no | Add `app/src/main/res/xml/locales_config.xml`; wire `android:localeConfig` on `<application>` |
+| `locales_config.xml` | `app/src/main/res/xml/locales_config.xml` | yes | `en` + `nb` only |
 | App label | Manifest `android:label="Navi"` | n/a | Brand; keep `translatable="false"` if moved |
-| Lint MissingTranslation | `app/build.gradle.kts` | n/a | No Android lint `MissingTranslation` config today; ktlint only. Configure so incomplete nb/nn keys do not fail the build |
+| Lint MissingTranslation | `app/build.gradle.kts` | n/a | `MissingTranslation` / `ExtraTranslation` disabled so incomplete nb keys do not fail the build |
 | Plugin CSV catalogs | `docs/plugins/translations.csv` | docs only | Not loaded by app |
 
 ### Existing string keys (all three locales)
@@ -267,8 +267,8 @@ Alternatives: Egypt ~170 MB / 3.45 GB; Morocco ~232 MB / 2.84 GB.
 | Locale | Action |
 |---|---|
 | `values` (en) | Add all new keys |
-| `values-nb` | Exists — fill confident keys; else leave missing |
-| `values-nn` | Same |
+| `values-nb` | Exists — fill confident keys; else leave missing (approved as-is) |
+| `values-nn` | Removed — Nynorsk not maintained |
 | New UI languages | **Do not add** without asking |
 | Missing list | `docs/i18n/missing-translations.md` |
 | Build | Disable fail-on MissingTranslation/ExtraTranslation as needed; document |

@@ -16,14 +16,32 @@ English (`values/strings.xml`) is the source of truth. Incomplete locale files
 do not fail the build (`MissingTranslation` / `ExtraTranslation` disabled in
 `app/build.gradle.kts`).
 
+## UI languages (English + Bokmål only)
+
+Navi ships **English** (`values/`) as the default and **Norwegian Bokmål**
+(`values-nb/`). Nynorsk (`values-nn/`) is **not** maintained and was removed;
+`locales_config.xml` lists only `en` and `nb`, so the per-app language picker
+shows English and Norsk bokmål only.
+
+Android does **not** fall back from `nn` (Nynorsk) to `nb` (Bokmål). A device
+whose language is Nynorsk-only will show **English** UI strings unless Bokmål
+(`nb`) is also in the device language list (or the user picks Bokmål in the
+per-app language settings).
+
 ## values-nb (Bokmål)
 
 Filled for common chrome, dialogs, approach, continents, highway classes, and
-download progress. Still missing 274 keys (English fallback):
+download progress. **Approved as-is** — do not rewrite existing Bokmål strings.
+Still missing **331** keys (English fallback; not machine-filled):
 
 - `action_delete_planned_route`
 - `action_delete_route`
 - `action_export_planned_gpx`
+- `action_hide_tools`
+- `action_plan_route`
+- `action_planning`
+- `action_tools`
+- `break_in_minutes`
 - `camping_reenable_session`
 - `camping_sources`
 - `cat_backend`
@@ -42,12 +60,16 @@ download progress. Still missing 274 keys (English fallback):
 - `cat_scratch_channel_hint`
 - `cat_serial_baud`
 - `cat_standalone_nearest`
-- `clear_all_vias`
+- `checking_pack_server`
 - `download_all_then_place_index`
 - `download_basemap_pmtiles`
 - `download_extract_place_index`
+- `download_region_action`
+- `download_region_and_place_index`
 - `download_region_progress`
 - `download_region_title`
+- `error_enter_valid_break`
+- `error_enter_valid_ebike`
 - `error_turn_off_long_trip`
 - `follow_off`
 - `follow_on`
@@ -60,13 +82,32 @@ download progress. Still missing 274 keys (English fallback):
 - `hint_online_place_search`
 - `imu_panel_title`
 - `imu_waiting_sensor`
+- `indexed_maps_background`
+- `indexed_maps_outdated_pack_format`
+- `indexed_maps_outdated_refresh`
+- `label_internal_storage`
+- `label_my_position`
+- `long_trip_wifi_packs_hint`
+- `map_bar_a11y`
 - `map_layers_count`
+- `map_settings_open_a11y`
+- `map_tilt_deg`
 - `network_follow`
+- `osm_update_applying`
 - `placeholder_unknown`
+- `plan_corridor_roadworks`
+- `profile_bicycle`
+- `profile_bicycle_electric`
 - `profile_bike_type`
+- `profile_car`
+- `profile_car_electric`
 - `profile_follow_networks`
+- `profile_hiking`
+- `profile_mobile_home`
+- `profile_motorcycle`
 - `profile_networked_cabins`
 - `profile_pilgrim`
+- `profile_truck`
 - `profile_unlocked_cabins`
 - `progress_build_graph`
 - `progress_build_indexed_bounds`
@@ -109,16 +150,43 @@ download progress. Still missing 274 keys (English fallback):
 - `settings_weather_map_symbols`
 - `settings_wheel_diameter`
 - `settings_wifi_only`
+- `status_already_planning`
+- `status_done`
+- `status_download_cancelled_no_route`
+- `status_download_cancelled_set_destination`
+- `status_downloading_named_pct`
+- `status_downloading_named_zero`
 - `status_estimated_position`
 - `status_estimated_position_imu`
+- `status_fetching_pack_server`
+- `status_installing_packs`
 - `status_kept_original_route`
+- `status_no_simulation_samples`
 - `status_off_trail_prompt`
+- `status_packs_installed_ready`
+- `status_paused_waiting_plan`
+- `status_paused_waiting_wifi`
+- `status_place_index_ready`
+- `status_place_index_rebuilding_search`
+- `status_place_index_starting`
 - `status_planning_cancelled`
 - `status_planning_starting`
 - `status_planning_traffic`
 - `status_position_lost`
+- `status_queued`
+- `status_queued_after`
+- `status_queued_waiting`
 - `status_recalculating_route_detail`
 - `status_region_ready`
+- `status_resuming_basemap_for`
+- `status_resuming_download_of`
+- `status_resuming_place_index_for`
+- `status_route_deleted`
+- `status_route_planned`
+- `status_route_planned_km`
+- `status_simulation_finished`
+- `status_simulation_stopped`
+- `status_tools_settings_saved`
 - `status_waiting_background_job`
 - `tools_apply_osm_update`
 - `tools_check_osm_updates`
@@ -221,13 +289,82 @@ download progress. Still missing 274 keys (English fallback):
 - `ui_off_by_default_steps_network_follow_along_a_planned_corridor`
 - `ui_off_by_default_uses_agreeing_radioid_and_file_positions_only`
 - `ui_on_foot_from_here`
-- …
-
-## values-nn (Nynorsk)
-
-Smaller confident set; missing 364 keys (English fallback).
-
-No new UI languages were added. Arabic UI was not created (ask before adding).
+- `ui_osm_updates_pack_server_first_geofabrik_if_unreachable_opt_i`
+- `ui_pakistan`
+- `ui_panama`
+- `ui_papua_new_guinea`
+- `ui_paraguay`
+- `ui_pause`
+- `ui_per_fix_and_navigation_log_under_android_data_no_navi_app_fi`
+- `ui_peru`
+- `ui_philippines`
+- `ui_planet_pmtiles_url_blank_latest_protomaps`
+- `ui_planning_is_faster_once_background_indexing_finishes`
+- `ui_plugin_controls_vfo_1_only_vfo_2_is_left_to_the_user`
+- `ui_plugins`
+- `ui_poland`
+- `ui_portugal`
+- `ui_protected_area_national_parks_and_reserves_may_have_separate`
+- `ui_quiet_look_ahead_for_attractions_fishing_and_craft_alcohol_w`
+- `ui_ready`
+- `ui_receive_only_programming_navi_never_transmits_no_ptt`
+- `ui_refresh_indexed_maps_server_first_then_local`
+- `ui_region`
+- `ui_region_in_country`
+- `ui_remove_packs_basemap_place_index_rows_and_graph_cache_for`
+- `ui_restore_staged_offline_maps`
+- `ui_resume`
+- `ui_road_link_required_on`
+- `ui_romania`
+- `ui_route_enumerations`
+- `ui_russia`
+- `ui_samoa`
+- `ui_senegal_and_gambia`
+- `ui_serbia`
+- `ui_show_nearby_speed_camera_warnings_while_driving`
+- `ui_slovakia`
+- `ui_slovenia`
+- `ui_solomon_islands`
+- `ui_south_africa`
+- `ui_south_korea`
+- `ui_spain`
+- `ui_store_long_trip_packs_on`
+- `ui_suriname`
+- `ui_sweden`
+- `ui_switzerland`
+- `ui_tanzania`
+- `ui_tcp_path_remote_daemon_model_informational_onboard_ffi_usb_b`
+- `ui_thailand`
+- `ui_tilt_locked_at_0_without_vulkan`
+- `ui_tunisia`
+- `ui_turkey`
+- `ui_uganda`
+- `ui_ukraine`
+- `ui_unavailable_on_this_gpu_path`
+- `ui_united_kingdom`
+- `ui_united_states`
+- `ui_uruguay`
+- `ui_uses_cabins_huts_that_are_networked`
+- `ui_uses_cabins_huts_that_are_unlocked`
+- `ui_uzbekistan`
+- `ui_vanuatu`
+- `ui_vehicle_overnight`
+- `ui_venezuela`
+- `ui_vietnam`
+- `ui_waiting_for_sensor_data`
+- `ui_weekly_osm_update_check_is_due_opt_in_reminder_nothing_was_d`
+- `ui_writes_a_dated_session_log_under_documents_debug`
+- `ui_you_left_the_planned_path_recalculate_from_here`
+- `ui_zimbabwe`
+- `units_gallons`
+- `units_liters`
+- `units_uk`
+- `units_us`
+- `vehicle_axle_weight_kg`
+- `vehicle_bogie_weight_kg`
+- `vehicle_height_m`
+- `vehicle_length_m`
+- `vehicle_width_m`
 
 ## Geofabrik country labels
 
