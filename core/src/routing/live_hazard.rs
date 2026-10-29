@@ -74,6 +74,13 @@ pub struct LiveHazardLoadStats {
 impl LiveHazardIndex {
     pub fn load_from_pbf(path: impl AsRef<Path>) -> anyhow::Result<(Self, LiveHazardLoadStats)> {
         let path = path.as_ref();
+        if !path.is_file() {
+            anyhow::bail!("live hazard PBF missing: {}", path.display());
+        }
+        let len = std::fs::metadata(path)?.len();
+        if len < 64 {
+            anyhow::bail!("live hazard PBF too small ({len} bytes): {}", path.display());
+        }
         // Order matters for peak RAM on Ostlandet-class PBFs: children/bumps first
         // (needed for the live cone), then catalogue signs, then cameras.
         let (children, bumps) = load_children_centroids_and_bumps(path)?;

@@ -502,15 +502,20 @@ impl FlatGraphPack {
         let mut nodes: HashMap<NodeId, Node> = HashMap::with_capacity(used_nodes.len());
         for &idx in used_nodes.keys() {
             let i = idx as usize;
-            let id = NodeId(self.node_ids[i]);
+            // Corrupt packs must not panic here — load validates first; skip as defense.
+            let (Some(&nid), Some(&lon), Some(&lat)) = (
+                self.node_ids.get(i),
+                self.node_lons.get(i),
+                self.node_lats.get(i),
+            ) else {
+                continue;
+            };
+            let id = NodeId(nid);
             nodes.insert(
                 id,
                 Node {
                     id,
-                    coord: Coord {
-                        x: self.node_lons[i],
-                        y: self.node_lats[i],
-                    },
+                    coord: Coord { x: lon, y: lat },
                     uses: 2,
                 },
             );
@@ -520,27 +525,49 @@ impl FlatGraphPack {
             if !edge_ok(i) {
                 continue;
             }
-            let src = NodeId(self.node_ids[self.edge_src[i] as usize]);
-            let tgt = NodeId(self.node_ids[self.edge_tgt[i] as usize]);
-            let hw = self.edge_highway[i].as_str();
-            let name = self.edge_name[i].as_str();
-            let road_ref = self.edge_road_ref[i].as_str();
-            let maxspeed = self.edge_maxspeed_kmh[i];
+            let (Some(&si), Some(&ti)) = (self.edge_src.get(i), self.edge_tgt.get(i)) else {
+                continue;
+            };
+            let (Some(&src_id), Some(&tgt_id)) = (
+                self.node_ids.get(si as usize),
+                self.node_ids.get(ti as usize),
+            ) else {
+                continue;
+            };
+            let src = NodeId(src_id);
+            let tgt = NodeId(tgt_id);
+            let hw = self.edge_highway.get(i).map(String::as_str).unwrap_or("");
+            let name = self.edge_name.get(i).map(String::as_str).unwrap_or("");
+            let road_ref = self.edge_road_ref.get(i).map(String::as_str).unwrap_or("");
+            let maxspeed = self.edge_maxspeed_kmh.get(i).copied().unwrap_or(f64::NAN);
             let shape = self.shape_for_edge(i);
+            let (Some(&length_m), Some(&base_weight)) =
+                (self.edge_length_m.get(i), self.edge_base_weight.get(i))
+            else {
+                continue;
+            };
+            let (Some(&start_lat), Some(&start_lon), Some(&end_lat), Some(&end_lon)) = (
+                self.edge_start_lat.get(i),
+                self.edge_start_lon.get(i),
+                self.edge_end_lat.get(i),
+                self.edge_end_lon.get(i),
+            ) else {
+                continue;
+            };
             edges.push(GraphEdge {
                 // Pack edge index keeps parallel edges distinct (tile merge and
                 // adjacency both need unique ids; way id is not stored in v6 packs).
                 id: format!("{}-{}-{}", src.0, tgt.0, i),
                 source: src,
                 target: tgt,
-                length_m: self.edge_length_m[i],
-                base_weight: self.edge_base_weight[i],
+                length_m,
+                base_weight,
                 cost_mult: 1.0,
-                eco_weight: Some(self.edge_base_weight[i]),
-                start_lat: self.edge_start_lat[i],
-                start_lon: self.edge_start_lon[i],
-                end_lat: self.edge_end_lat[i],
-                end_lon: self.edge_end_lon[i],
+                eco_weight: Some(base_weight),
+                start_lat,
+                start_lon,
+                end_lat,
+                end_lon,
                 shape,
                 highway: if hw.is_empty() {
                     None
@@ -595,14 +622,14 @@ impl FlatGraphPack {
                 maxheight_m: unpack_opt_metric(&self.edge_maxheight_m, i),
                 maxwidth_m: unpack_opt_metric(&self.edge_maxwidth_m, i),
                 maxlength_m: unpack_opt_metric(&self.edge_maxlength_m, i),
-                is_toll: self.edge_is_toll[i] != 0,
-                is_ferry: self.edge_is_ferry[i] != 0,
+                is_toll: self.edge_is_toll.get(i).copied().unwrap_or(0) != 0,
+                is_ferry: self.edge_is_ferry.get(i).copied().unwrap_or(0) != 0,
                 ferry_interval_min: ferry_intervals
                     .and_then(|v| unpack_opt_metric(v, i))
-                    .filter(|_| self.edge_is_ferry[i] != 0),
-                is_tunnel: self.edge_is_tunnel[i] != 0,
-                is_boardwalk_crossing: self.edge_is_boardwalk[i] != 0,
-                is_roundabout: self.edge_is_roundabout[i] != 0,
+                    .filter(|_| self.edge_is_ferry.get(i).copied().unwrap_or(0) != 0),
+                is_tunnel: self.edge_is_tunnel.get(i).copied().unwrap_or(0) != 0,
+                is_boardwalk_crossing: self.edge_is_boardwalk.get(i).copied().unwrap_or(0) != 0,
+                is_roundabout: self.edge_is_roundabout.get(i).copied().unwrap_or(0) != 0,
                 motor_vehicle_conditional: {
                     let s = self
                         .edge_motor_vehicle_conditional
@@ -654,7 +681,9 @@ impl FlatGraphPack {
         let mut blocked = std::collections::HashSet::new();
         for (i, flag) in self.node_access_blocked.iter().enumerate() {
             if *flag != 0 && used_nodes.contains_key(&(i as u32)) {
-                blocked.insert(NodeId(self.node_ids[i]));
+                if let Some(&nid) = self.node_ids.get(i) {
+                    blocked.insert(NodeId(nid));
+                }
             }
         }
         // When packing older in-memory graphs without parallel flags, length may be 0.
@@ -813,9 +842,13 @@ impl ArchivedFlatGraphPack {
             }
         }
 
+        let n_nodes = self.node_ids.len();
         let mut nodes: HashMap<NodeId, Node> = HashMap::with_capacity(used_nodes.len());
         for &idx in used_nodes.keys() {
             let i = idx as usize;
+            if i >= n_nodes || i >= self.node_lons.len() || i >= self.node_lats.len() {
+                continue;
+            }
             let id = NodeId(arch_i64(self.node_ids[i]));
             nodes.insert(
                 id,
@@ -835,25 +868,56 @@ impl ArchivedFlatGraphPack {
             if !edge_ok(i) {
                 continue;
             }
-            let src = NodeId(arch_i64(self.node_ids[arch_u32(self.edge_src[i]) as usize]));
-            let tgt = NodeId(arch_i64(self.node_ids[arch_u32(self.edge_tgt[i]) as usize]));
-            let hw = self.edge_highway[i].as_str();
-            let name = self.edge_name[i].as_str();
-            let road_ref = self.edge_road_ref[i].as_str();
-            let maxspeed = arch_f64(self.edge_maxspeed_kmh[i]);
+            let si = arch_u32(self.edge_src[i]) as usize;
+            let ti = arch_u32(self.edge_tgt[i]) as usize;
+            if si >= n_nodes || ti >= n_nodes {
+                continue;
+            }
+            let src = NodeId(arch_i64(self.node_ids[si]));
+            let tgt = NodeId(arch_i64(self.node_ids[ti]));
+            let hw = self.edge_highway.get(i).map(|s| s.as_str()).unwrap_or("");
+            let name = self.edge_name.get(i).map(|s| s.as_str()).unwrap_or("");
+            let road_ref = self.edge_road_ref.get(i).map(|s| s.as_str()).unwrap_or("");
+            let maxspeed = self
+                .edge_maxspeed_kmh
+                .get(i)
+                .copied()
+                .map(arch_f64)
+                .unwrap_or(f64::NAN);
             let shape = self.shape_for_edge(i);
+            let (Some(length_m), Some(base_weight)) = (
+                self.edge_length_m.get(i).copied().map(arch_f64),
+                self.edge_base_weight.get(i).copied().map(arch_f64),
+            ) else {
+                continue;
+            };
+            let (Some(start_lat), Some(start_lon), Some(end_lat), Some(end_lon)) = (
+                self.edge_start_lat.get(i).copied().map(arch_f64),
+                self.edge_start_lon.get(i).copied().map(arch_f64),
+                self.edge_end_lat.get(i).copied().map(arch_f64),
+                self.edge_end_lon.get(i).copied().map(arch_f64),
+            ) else {
+                continue;
+            };
+            let is_ferry = self
+                .edge_is_ferry
+                .get(i)
+                .copied()
+                .map(arch_u8)
+                .unwrap_or(0)
+                != 0;
             edges.push(GraphEdge {
                 id: format!("{}-{}-{}", src.0, tgt.0, i),
                 source: src,
                 target: tgt,
-                length_m: arch_f64(self.edge_length_m[i]),
-                base_weight: arch_f64(self.edge_base_weight[i]),
+                length_m,
+                base_weight,
                 cost_mult: 1.0,
-                eco_weight: Some(arch_f64(self.edge_base_weight[i])),
-                start_lat: arch_f64(self.edge_start_lat[i]),
-                start_lon: arch_f64(self.edge_start_lon[i]),
-                end_lat: arch_f64(self.edge_end_lat[i]),
-                end_lon: arch_f64(self.edge_end_lon[i]),
+                eco_weight: Some(base_weight),
+                start_lat,
+                start_lon,
+                end_lat,
+                end_lon,
                 shape,
                 highway: archived_str_opt(hw),
                 maxspeed_kmh: if maxspeed.is_finite() {
@@ -917,14 +981,38 @@ impl ArchivedFlatGraphPack {
                 maxheight_m: archived_opt_metric_at(&self.edge_maxheight_m, i),
                 maxwidth_m: archived_opt_metric_at(&self.edge_maxwidth_m, i),
                 maxlength_m: archived_opt_metric_at(&self.edge_maxlength_m, i),
-                is_toll: arch_u8(self.edge_is_toll[i]) != 0,
-                is_ferry: arch_u8(self.edge_is_ferry[i]) != 0,
+                is_toll: self
+                    .edge_is_toll
+                    .get(i)
+                    .copied()
+                    .map(arch_u8)
+                    .unwrap_or(0)
+                    != 0,
+                is_ferry,
                 ferry_interval_min: ferry_intervals
                     .and_then(|v| unpack_opt_metric(v, i))
-                    .filter(|_| arch_u8(self.edge_is_ferry[i]) != 0),
-                is_tunnel: arch_u8(self.edge_is_tunnel[i]) != 0,
-                is_boardwalk_crossing: arch_u8(self.edge_is_boardwalk[i]) != 0,
-                is_roundabout: arch_u8(self.edge_is_roundabout[i]) != 0,
+                    .filter(|_| is_ferry),
+                is_tunnel: self
+                    .edge_is_tunnel
+                    .get(i)
+                    .copied()
+                    .map(arch_u8)
+                    .unwrap_or(0)
+                    != 0,
+                is_boardwalk_crossing: self
+                    .edge_is_boardwalk
+                    .get(i)
+                    .copied()
+                    .map(arch_u8)
+                    .unwrap_or(0)
+                    != 0,
+                is_roundabout: self
+                    .edge_is_roundabout
+                    .get(i)
+                    .copied()
+                    .map(arch_u8)
+                    .unwrap_or(0)
+                    != 0,
                 motor_vehicle_conditional: archived_str_opt(
                     self.edge_motor_vehicle_conditional
                         .get(i)
