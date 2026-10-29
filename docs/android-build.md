@@ -174,7 +174,9 @@ it (override via `navi.upload.*` Gradle properties). Uninstall any debug-signed
 
 Cheat-sheet also in the [README — Release build](../README.md#release-build-apk--aab).
 See [`android-api36-plan.md`](android-api36-plan.md) for API 36 / Play AAB notes
-and bundletool smoke. F-Droid Podman buildability:
+and bundletool smoke. Published F-Droid package:
+[f-droid.org/en/packages/no.navi.app](https://f-droid.org/en/packages/no.navi.app/).
+Local F-Droid Podman buildability check:
 [`tools/fdroid-check/README.md`](../tools/fdroid-check/README.md).
 
 Signing a **production** Play release uses your Play App Signing / upload key —

@@ -19,11 +19,15 @@ oppfører seg fortsatt annerledes for GPS, kart, GPU og layout. Sjekkliste:
 Resultater på enhet og emulator:
 [`android-test-results.md`](android-test-results.md).
 
-**Installer den signerte release-APK-en.** Testere skal laste ned og sideloade
-[`compiled/navi-release.apk`](../compiled/navi-release.apk) — en **riktig
-signert, installerbar release-APK** (upload-nøkkel; ikke debug-bygget). Gjeldende
-bygg: **0.3.23-beta** (`versionName` 0.3.23-beta, `versionCode` 28). Last ned fra
-[`dev`-grenen](https://github.com/Supermagnum/Navi/tree/dev/compiled)
+**Installer fra F-Droid (anbefalt for de fleste).** Navi ligger på
+[f-droid.org/en/packages/no.navi.app](https://f-droid.org/en/packages/no.navi.app/)
+(`no.navi.app`). Bruk den når du vil ha oppdateringer via F-Droid.
+
+**Installer den signerte release-APK-en (sideload / testere).** Last ned og
+sideloade [`compiled/navi-release.apk`](../compiled/navi-release.apk) — en
+**riktig signert, installerbar release-APK** (upload-nøkkel; ikke debug-bygget).
+Gjeldende bygg: **0.3.28-beta** (`versionName` 0.3.28-beta, `versionCode` 33).
+Last ned fra [`dev`-grenen](https://github.com/Supermagnum/Navi/tree/dev/compiled)
 (siste testerbygg).
 Android validerer
 APK-signeringen ved installasjon; de separate GPG-filene
@@ -665,15 +669,26 @@ klone **din** fork, og jobb på **`dev`** — steg for steg i
 
 ## Installer en forhåndsbygd APK
 
+### F-Droid
+
+Navi er på F-Droid som **`no.navi.app`**:
+
+[https://f-droid.org/en/packages/no.navi.app/](https://f-droid.org/en/packages/no.navi.app/)
+
+Installer eller oppdater via F-Droid-klienten når du kan. Sideload-APK-ene under
+er for testere og utviklere som trenger et bestemt `dev`-bygg (eller ikke kan
+bruke F-Droid).
+
 ### Release-APK (for testere)
 
 Bruk den **signerte release**-bygget — det er det maskinvaretestere skal
-installere. APK-en er signert med prosjektets upload-nøkkel, så Android godtar
-den som en vanlig installasjon (ikke usignert eller bare debug).
+installere når de ikke bruker F-Droid. APK-en er signert med prosjektets
+upload-nøkkel, så Android godtar den som en vanlig installasjon (ikke usignert
+eller bare debug).
 
 | Fil | Rolle |
 |---|---|
-| [`compiled/navi-release.apk`](../compiled/navi-release.apk) | **Installer denne** — signert release-APK (arm64-v8a + x86_64, `versionName` 0.3.23-beta, `versionCode` 28) |
+| [`compiled/navi-release.apk`](../compiled/navi-release.apk) | **Installer denne** — signert release-APK (arm64-v8a + x86_64, `versionName` 0.3.28-beta, `versionCode` 33) |
 | [`compiled/SHA256SUMS`](../compiled/SHA256SUMS) | SHA-256-sjekksum for integritet |
 | [`compiled/SHA256SUMS.asc`](../compiled/SHA256SUMS.asc) | Løsrevet GPG-proveniens (ikke Android APK-signering) |
 

@@ -1,8 +1,12 @@
 # F-Droid buildability check (Podman)
 
-Local reproduction of F-Droid's production-like `fdroid build` against this
-working tree. Not a submission to [fdroiddata](https://gitlab.com/fdroid/fdroiddata);
-metadata here is a check harness only.
+Navi is published on F-Droid as **`no.navi.app`**:
+[https://f-droid.org/en/packages/no.navi.app/](https://f-droid.org/en/packages/no.navi.app/).
+
+This directory is a **local** reproduction of F-Droid's production-like
+`fdroid build` against this working tree. It is not a submission to
+[fdroiddata](https://gitlab.com/fdroid/fdroiddata); metadata here is a check
+harness only.
 
 ## Prerequisites
 
