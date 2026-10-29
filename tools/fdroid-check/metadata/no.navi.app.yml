@@ -23,9 +23,9 @@ RepoType: git
 Repo: https://github.com/Supermagnum/Navi.git
 
 Builds:
-  - versionName: 0.3.26-beta
-    versionCode: 31
-    commit: e147fa5dfed2f7b20506b51366fee27bb87ca249
+  - versionName: 0.3.27-beta
+    versionCode: 32
+    commit: b3a506e5e5b8647d144686fa51a7941dbe1a208f
     timeout: 14400
     subdir: app
     sudo:
@@ -101,12 +101,12 @@ MaintainerNotes: |
   build: scripts/build-android-native.sh all, then scripts/build-plugin-wasm.sh;
   fdroidserver then runs Gradle assembleRelease. Liberation Sans Regular
   (app/src/main/res/font/liberation_sans.ttf) is SIL OFL 1.1 source font data.
-  Shipped ABIs: naviAbis (default arm64-v8a,x86_64). commit is the v0.3.26-beta source plus the
+  Shipped ABIs: naviAbis (default arm64-v8a,x86_64). commit is the v0.3.27-beta source plus the
   fastlane HTML fix on main. UpdateCheckMode allows -beta tags. No ArchivePolicy: lint
   rejects 0 with AutoUpdate.
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9]+)?$
 UpdateCheckData: app/build.gradle.kts|versionCode\s=\s(\d+)|.|versionName\s=\s"(.*)"
-CurrentVersion: 0.3.26-beta
-CurrentVersionCode: 31
+CurrentVersion: 0.3.27-beta
+CurrentVersionCode: 32
