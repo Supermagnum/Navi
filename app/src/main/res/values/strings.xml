@@ -454,4 +454,28 @@
         <item quantity="one">Clear all vias (%1$d)</item>
         <item quantity="other">Clear all vias (%1$d)</item>
     </plurals>
+
+    <string name="search_placeholder">Place, road, or lat, lon</string>
+    <string name="search_placeholder_via_empty">Add via: place, road, or lat, lon</string>
+    <string name="search_placeholder_via_n">Add via %1$d/%2$d</string>
+    <string name="search_placeholder_via_full">Via full (%1$d/%2$d)</string>
+    <string name="action_clear_from">Clear from</string>
+    <string name="action_clear_to">Clear to</string>
+    <string name="action_clear">Clear</string>
+    <string name="action_use_gps_as_from">Use GPS as from</string>
+    <string name="action_use_gps_as_to">Use GPS as to</string>
+    <string name="action_use_gps_as_via">Use GPS as via</string>
+    <string name="label_eco_routing">Eco routing</string>
+    <string name="label_eco_routing_locked">Eco routing (locked on for this profile)</string>
+    <string name="waypoint_unset">(unset)</string>
+    <string name="waypoint_none">(none)</string>
+    <string name="waypoints_summary">From: %1$s  |  To: %2$s  |  Via: %3$s</string>
+    <string name="online_place_search_explanation">Searches are sent to an online OpenStreetMap service when this is on. Offline search from installed regions is unaffected and always available.</string>
+    <string name="hud_eta_off">ETA off</string>
+    <string name="hud_eta_minutes">ETA %.0f min</string>
+    <string name="hud_eta_unknown">ETA --</string>
+    <string name="style_note_3d_needs_dem">3D hillshade needs the terrain download; showing offline map in 2D</string>
+    <string name="style_note_offline_hillshade">Offline Protomaps + Mapterhorn DEM hillshade</string>
+    <string name="label_last_stop">Last stop</string>
+    <string name="status_route_planning_closed">Route planning closed</string>
 </resources>

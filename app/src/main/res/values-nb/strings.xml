@@ -454,4 +454,28 @@
         <item quantity="one">Fjern alle via (%1$d)</item>
         <item quantity="other">Fjern alle via (%1$d)</item>
     </plurals>
+
+    <string name="search_placeholder">Sted, vei eller lat, lon</string>
+    <string name="search_placeholder_via_empty">Legg til via: sted, vei eller lat, lon</string>
+    <string name="search_placeholder_via_n">Legg til via %1$d/%2$d</string>
+    <string name="search_placeholder_via_full">Via full (%1$d/%2$d)</string>
+    <string name="action_clear_from">Tøm Fra</string>
+    <string name="action_clear_to">Tøm Til</string>
+    <string name="action_clear">Tøm</string>
+    <string name="action_use_gps_as_from">Bruk GPS som Fra</string>
+    <string name="action_use_gps_as_to">Bruk GPS som Til</string>
+    <string name="action_use_gps_as_via">Bruk GPS som Via</string>
+    <string name="label_eco_routing">Øko-ruting</string>
+    <string name="label_eco_routing_locked">Øko-ruting (låst på for denne profilen)</string>
+    <string name="waypoint_unset">(ikke satt)</string>
+    <string name="waypoint_none">(ingen)</string>
+    <string name="waypoints_summary">Fra: %1$s  |  Til: %2$s  |  Via: %3$s</string>
+    <string name="online_place_search_explanation">Søk sendes til en nettbasert OpenStreetMap-tjeneste når dette er på. Frakoblet søk i installerte regioner påvirkes ikke og er alltid tilgjengelig.</string>
+    <string name="hud_eta_off">ETA av</string>
+    <string name="hud_eta_minutes">ETA %.0f min</string>
+    <string name="hud_eta_unknown">ETA --</string>
+    <string name="style_note_3d_needs_dem">3D-skyggerelieff trenger terrengnedlasting; viser frakoblet kart i 2D</string>
+    <string name="style_note_offline_hillshade">Frakoblet Protomaps + Mapterhorn DEM-skyggerelieff</string>
+    <string name="label_last_stop">Siste stopp</string>
+    <string name="status_route_planning_closed">Ruteplanlegging lukket</string>
 </resources>

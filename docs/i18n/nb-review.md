@@ -393,3 +393,31 @@ Mark in the note column: `?` = translator unsure.
 | key | English | Bokmål | note |
 |---|---|---|---|
 | `clear_all_vias` | Clear all vias (%1$d) (one/other) | Fjern alle via (%1$d) (one/other) | |
+
+## 11 Hardcoded English moved to resources (tablet follow-up)
+
+| key | English | Bokmål | note |
+|---|---|---|---|
+| `search_placeholder` | Place, road, or lat, lon | Sted, vei eller lat, lon | |
+| `search_placeholder_via_empty` | Add via: place, road, or lat, lon | Legg til via: sted, vei eller lat, lon | |
+| `search_placeholder_via_n` | Add via %1$d/%2$d | Legg til via %1$d/%2$d | |
+| `search_placeholder_via_full` | Via full (%1$d/%2$d) | Via full (%1$d/%2$d) | |
+| `action_clear_from` | Clear from | Tøm Fra | |
+| `action_clear_to` | Clear to | Tøm Til | |
+| `action_clear` | Clear | Tøm | |
+| `action_use_gps_as_from` | Use GPS as from | Bruk GPS som Fra | |
+| `action_use_gps_as_to` | Use GPS as to | Bruk GPS som Til | |
+| `action_use_gps_as_via` | Use GPS as via | Bruk GPS som Via | |
+| `label_eco_routing` | Eco routing | Øko-ruting | |
+| `label_eco_routing_locked` | Eco routing (locked on for this profile) | Øko-ruting (låst på for denne profilen) | |
+| `waypoint_unset` | (unset) | (ikke satt) | |
+| `waypoint_none` | (none) | (ingen) | |
+| `waypoints_summary` | From: %1$s \| To: %2$s \| Via: %3$s | Fra: %1$s \| Til: %2$s \| Via: %3$s | |
+| `online_place_search_explanation` | Searches are sent… | Søk sendes… | |
+| `hud_eta_off` | ETA off | ETA av | |
+| `hud_eta_minutes` | ETA %.0f min | ETA %.0f min | |
+| `hud_eta_unknown` | ETA -- | ETA -- | |
+| `style_note_3d_needs_dem` | 3D hillshade needs… | 3D-skyggerelieff trenger… | |
+| `style_note_offline_hillshade` | Offline Protomaps + Mapterhorn… | Frakoblet Protomaps + Mapterhorn… | |
+| `label_last_stop` | Last stop | Siste stopp | |
+| `status_route_planning_closed` | Route planning closed | Ruteplanlegging lukket | |
