@@ -6931,7 +6931,13 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             rigModel = catUi.rigModel,
                         )
                     val msg =
-                        if (openParams.rigModel == 1) {
+                        if (catUi.backend == MapHudPrefs.CAT_BACKEND_BENSHI) {
+                            // Native Benshi / VR-N76 (navi-cat::benshi). Lab peer until
+                            // bonded-device RFCOMM is wired through BenshiRfcommTransport.
+                            val scratch =
+                                catUi.scratchChannel.coerceIn(0, 255).toUByte()
+                            uniffi.navi.catPluginConnectBenshiLab(scratch)
+                        } else if (openParams.rigModel == 1) {
                             // Hamlib dummy (model 1): onboard libhamlib.so via FFI.
                             uniffi.navi.catPluginConnectFfi(openParams.rigModel, false)
                         } else {

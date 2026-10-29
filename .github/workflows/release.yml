@@ -111,6 +111,9 @@ jobs:
           test -f app/src/main/jniLibs/x86_64/libnavi.so
           test -f app/src/main/jniLibs/arm64-v8a/libhamlib.so
           test -f app/src/main/jniLibs/x86_64/libhamlib.so
+          # Hard gate: VR-N76 / Benshi native paths must survive release LTO.
+          strings app/src/main/jniLibs/arm64-v8a/libnavi.so | grep -F 'VR-N76'
+          strings app/src/main/jniLibs/arm64-v8a/libnavi.so | grep -F 'native Benshi'
 
       - name: Assemble unsigned release APK
         run: |
@@ -125,6 +128,12 @@ jobs:
           # Hard gate: unsigned release APK must package Hamlib for both ABIs.
           unzip -l /tmp/navi-unsigned.apk | grep -F 'lib/arm64-v8a/libhamlib.so'
           unzip -l /tmp/navi-unsigned.apk | grep -F 'lib/x86_64/libhamlib.so'
+          # Hard gate: Kotlin Benshi RFCOMM + backend string packaged in DEX.
+          TMPDEX=$(mktemp -d)
+          unzip -qo /tmp/navi-unsigned.apk 'classes*.dex' -d "$TMPDEX"
+          strings "$TMPDEX"/classes*.dex | grep -F 'BenshiRfcommTransport'
+          strings "$TMPDEX"/classes*.dex | grep -F 'cat_backend_benshi'
+          rm -rf "$TMPDEX"
 
       - name: Read versionName
         id: ver

@@ -121,6 +121,11 @@ Manual `workflow_dispatch` path:
   via the `hamlib-ffi` feature. Release builds auto-run
   `scripts/build-hamlib-android.sh` (tag from `scripts/hamlib-android.lock`)
   when `libhamlib.so` is missing, and fail if it is still absent.
+- **VR-N76 / Benshi is required** in release APKs: UniFFI
+  `cat_plugin_connect_benshi_lab` keeps `navi-cat::benshi` (allowlist
+  `0x0002`/`0x0103`) linked through release LTO; Kotlin
+  `BenshiRfcommTransport` ships in DEX. CI greps `libnavi.so` for `VR-N76`
+  and `native Benshi`.
 - `CARGO_INCREMENTAL=0` and `[profile.release] incremental = false`.
 - Gradle: `vcsInfo { include = false }`, `-Pnavi.unsignedRelease=true` for the
   F-Droid/CI unsigned APK, `android.enableResourceOptimizations=false`.

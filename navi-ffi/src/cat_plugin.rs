@@ -9,6 +9,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
+use navi_cat::benshi::{
+    gate_native_identity, BenshiBackend, FakeBenshiPeer, ALLOWED_PRODUCT_VR_N76,
+    ALLOWED_PRODUCT_VR_N76_FW,
+};
 use navi_cat::gating::{GateDecision, GateStatus};
 use navi_cat::program::{program_vfo1_verified, ProgramRequest};
 use navi_cat::types::{RigBackend, RigError, VfoState};
@@ -65,6 +69,8 @@ enum LiveBackend {
     Offline(OfflineRig),
     Tcp(TcpRigBackend),
     Ffi(FfiRigBackend),
+    /// Native Benshi / VR-N76 family (lab FakeBenshiPeer or future RFCOMM pipe).
+    Benshi(BenshiBackend<navi_cat::benshi::InProcessTransport>),
 }
 
 impl RigBackend for LiveBackend {
@@ -73,6 +79,7 @@ impl RigBackend for LiveBackend {
             Self::Offline(b) => b.is_connected(),
             Self::Tcp(b) => b.is_connected(),
             Self::Ffi(b) => b.is_connected(),
+            Self::Benshi(b) => b.is_connected(),
         }
     }
     fn model_name(&self) -> String {
@@ -80,6 +87,7 @@ impl RigBackend for LiveBackend {
             Self::Offline(b) => b.model_name(),
             Self::Tcp(b) => b.model_name(),
             Self::Ffi(b) => b.model_name(),
+            Self::Benshi(b) => b.model_name(),
         }
     }
     fn model_number(&self) -> i32 {
@@ -87,6 +95,7 @@ impl RigBackend for LiveBackend {
             Self::Offline(b) => b.model_number(),
             Self::Tcp(b) => b.model_number(),
             Self::Ffi(b) => b.model_number(),
+            Self::Benshi(b) => b.model_number(),
         }
     }
     fn gate(&self) -> GateDecision {
@@ -94,6 +103,7 @@ impl RigBackend for LiveBackend {
             Self::Offline(b) => b.gate(),
             Self::Tcp(b) => b.gate(),
             Self::Ffi(b) => b.gate(),
+            Self::Benshi(b) => b.gate(),
         }
     }
     fn get_ptt(&mut self) -> Result<bool, RigError> {
@@ -101,6 +111,7 @@ impl RigBackend for LiveBackend {
             Self::Offline(b) => b.get_ptt(),
             Self::Tcp(b) => b.get_ptt(),
             Self::Ffi(b) => b.get_ptt(),
+            Self::Benshi(b) => b.get_ptt(),
         }
     }
     fn get_dcd(&mut self) -> Result<bool, RigError> {
@@ -108,6 +119,7 @@ impl RigBackend for LiveBackend {
             Self::Offline(b) => b.get_dcd(),
             Self::Tcp(b) => b.get_dcd(),
             Self::Ffi(b) => b.get_dcd(),
+            Self::Benshi(b) => b.get_dcd(),
         }
     }
     fn set_vfo_state(&mut self, want: &VfoState) -> Result<(), RigError> {
@@ -115,6 +127,7 @@ impl RigBackend for LiveBackend {
             Self::Offline(b) => b.set_vfo_state(want),
             Self::Tcp(b) => b.set_vfo_state(want),
             Self::Ffi(b) => b.set_vfo_state(want),
+            Self::Benshi(b) => b.set_vfo_state(want),
         }
     }
     fn read_vfo_state(&mut self) -> Result<VfoState, RigError> {
@@ -122,6 +135,7 @@ impl RigBackend for LiveBackend {
             Self::Offline(b) => b.read_vfo_state(),
             Self::Tcp(b) => b.read_vfo_state(),
             Self::Ffi(b) => b.read_vfo_state(),
+            Self::Benshi(b) => b.read_vfo_state(),
         }
     }
     fn freq_step_hz(&self) -> u64 {
@@ -129,6 +143,7 @@ impl RigBackend for LiveBackend {
             Self::Offline(b) => b.freq_step_hz(),
             Self::Tcp(b) => b.freq_step_hz(),
             Self::Ffi(b) => b.freq_step_hz(),
+            Self::Benshi(b) => b.freq_step_hz(),
         }
     }
 }
@@ -380,6 +395,57 @@ pub fn cat_plugin_connect_ffi(model: i32, allow_beta: bool) -> String {
         }
         Err(e) => format!("FAIL: {e}"),
     }
+}
+
+/// Lab / developer connect: in-process FakeBenshiPeer configured as VR-N76.
+///
+/// Keeps VR-N76 gating + GAIA program paths linked into release `libnavi.so`
+/// (LTO would otherwise strip unused `navi-cat::benshi`). Not a physical radio;
+/// Kotlin `BenshiRfcommTransport` is the real RFCOMM byte path for hardware.
+#[uniffi::export]
+pub fn cat_plugin_connect_benshi_lab(scratch_channel: u8) -> String {
+    let mut guard = session_lock().lock().expect("cat session");
+    let Some(session) = guard.as_mut() else {
+        return "FAIL: not configured".into();
+    };
+    match BenshiBackend::connect_fake(FakeBenshiPeer::default_vr_n76(), scratch_channel) {
+        Ok(backend) => {
+            let follow_net = session.cat.follow_network_id.clone();
+            let follow_pin = session.cat.follow_pinned.clone();
+            let follow_stop = session.cat.follow_stopped_reason.clone();
+            let db = open_db(&session.files_dir);
+            let model = backend.model_name();
+            let mut cat = CatService::new(LiveBackend::Benshi(backend), db);
+            cat.follow_network_id = follow_net;
+            cat.follow_pinned = follow_pin;
+            cat.follow_stopped_reason = follow_stop;
+            session.cat = cat;
+            format!("OK: connected benshi lab ({model})")
+        }
+        Err(e) => format!("FAIL: {e}"),
+    }
+}
+
+/// VR-N76 productIds accepted by the native Benshi allowlist (`0x0002`, `0x0103`).
+#[uniffi::export]
+pub fn cat_plugin_benshi_vr_n76_product_ids() -> Vec<u32> {
+    vec![
+        u32::from(ALLOWED_PRODUCT_VR_N76),
+        u32::from(ALLOWED_PRODUCT_VR_N76_FW),
+    ]
+}
+
+/// Probe the native VR-N76 identity gate (fail-closed on unknown productId).
+#[uniffi::export]
+pub fn cat_plugin_benshi_gate_product(vendor_id: u8, product_id: u32) -> String {
+    let pid = u16::try_from(product_id).unwrap_or(u16::MAX);
+    let g = gate_native_identity(Some(vendor_id), Some(pid));
+    serde_json::json!({
+        "allowed": g.allowed,
+        "reason": g.reason,
+        "status": format!("{:?}", g.status),
+    })
+    .to_string()
 }
 
 #[uniffi::export]

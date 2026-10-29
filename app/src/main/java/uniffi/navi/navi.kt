@@ -1167,7 +1167,13 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_camping_plugin_undo_camp_here_tonight(
     ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_benshi_gate_product(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_benshi_vr_n76_product_ids(
+    ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_configure(
+    ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_connect_benshi_lab(
     ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_connect_ffi(
     ): Int
@@ -1754,8 +1760,14 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_camping_plugin_undo_camp_here_tonight(`lat`: Double,`lon`: Double,`countryIso`: RustBuffer.ByValue,`subdivisionIso`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_benshi_gate_product(`vendorId`: Byte,`productId`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cat_plugin_benshi_vr_n76_product_ids(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_configure(`filesDir`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`timezone`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    external fun uniffi_navi_fn_func_cat_plugin_connect_benshi_lab(`scratchChannel`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_connect_ffi(`model`: Int,`allowBeta`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_connect_tcp(`host`: RustBuffer.ByValue,`port`: Short,`allowBeta`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -2610,7 +2622,16 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_camping_plugin_undo_camp_here_tonight() and 0xFFFF) != 24878) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_benshi_gate_product() and 0xFFFF) != 2425) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_benshi_vr_n76_product_ids() and 0xFFFF) != 63833) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_cat_plugin_configure() and 0xFFFF) != 24407) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_connect_benshi_lab() and 0xFFFF) != 58699) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_cat_plugin_connect_ffi() and 0xFFFF) != 34348) {
@@ -10135,6 +10156,34 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     )
     }
     
+
+        /**
+         * Probe the native VR-N76 identity gate (fail-closed on unknown productId).
+         */ fun `catPluginBenshiGateProduct`(`vendorId`: kotlin.UByte, `productId`: kotlin.UInt): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_benshi_gate_product(
+    
+        
+        FfiConverterUByte.lower(`vendorId`),
+        FfiConverterUInt.lower(`productId`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * VR-N76 productIds accepted by the native Benshi allowlist (`0x0002`, `0x0103`).
+         */ fun `catPluginBenshiVrN76ProductIds`(): List<kotlin.UInt> {
+            return FfiConverterSequenceUInt.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_benshi_vr_n76_product_ids(
+    
+        _status)
+}
+    )
+    }
+    
  fun `catPluginConfigure`(`filesDir`: kotlin.String, `dataDir`: kotlin.String, `timezone`: kotlin.String)
         = 
     uniffiRustCall() { _status ->
@@ -10146,6 +10195,24 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         FfiConverterString.lower(`timezone`),_status)
 }
     
+    
+
+        /**
+         * Lab / developer connect: in-process FakeBenshiPeer configured as VR-N76.
+         *
+         * Keeps VR-N76 gating + GAIA program paths linked into release `libnavi.so`
+         * (LTO would otherwise strip unused `navi-cat::benshi`). Not a physical radio;
+         * Kotlin `BenshiRfcommTransport` is the real RFCOMM byte path for hardware.
+         */ fun `catPluginConnectBenshiLab`(`scratchChannel`: kotlin.UByte): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_connect_benshi_lab(
+    
+        
+        FfiConverterUByte.lower(`scratchChannel`),_status)
+}
+    )
+    }
     
 
         /**
