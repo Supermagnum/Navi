@@ -109,6 +109,11 @@ Manual `workflow_dispatch` path:
   LSDA encodings are not emitted; remaps `$CARGO_HOME`, `$RUSTUP_HOME`, the
   source root, the rustc sysroot, and `$ANDROID_NDK_HOME`; passes
   `-C link-arg=-Wl,--build-id=none` and `-C llvm-args=-threads=1`.
+- `scripts/build-plugin-wasm.sh` also remaps those path prefixes so plugin
+  `.wasm` panic strings do not embed `/home/<user>/.cargo`.
+- Pin **NDK r27c** (`27.2.12479018`) to match F-Droid `ndk: r27c` and CI
+  (`nttld/setup-ndk`). A newer host NDK (e.g. 27.3) changes packaged
+  `libc++_shared.so` and breaks Binaries compare.
 - `CARGO_INCREMENTAL=0` and `[profile.release] incremental = false`.
 - Gradle: `vcsInfo { include = false }`, `-Pnavi.unsignedRelease=true` for the
   F-Droid/CI unsigned APK, `android.enableResourceOptimizations=false`.
