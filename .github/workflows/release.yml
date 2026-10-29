@@ -182,6 +182,7 @@ jobs:
             --v1-signing-enabled false \
             --v2-signing-enabled true \
             --v3-signing-enabled true \
+            --alignment-preserved true \
             --out "$SIGNED" \
             "$ALIGNED"
           "$APKSIGNER" verify --verbose --print-certs "$SIGNED"

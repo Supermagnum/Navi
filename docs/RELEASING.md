@@ -87,6 +87,8 @@ Shared build (both triggers):
 Tag path (`v*` only):
 
 5. `zipalign` + `apksigner` with the secrets (not Gradle `signingConfig`).
+   Use `--alignment-preserved true` so the signed APK stays
+   `apksigcopier`-comparable to the F-Droid unsigned build (`Binaries`).
 6. Uploads `navi-<versionName>.apk` to the GitHub Release for that tag.
 
 Manual `workflow_dispatch` path:
