@@ -54,8 +54,8 @@ jobs:
         uses: android-actions/setup-android@v4
         with:
           # Space-separated; multiline broke sdkmanager package names.
-          # compileSdk=37 in app/build.gradle.kts.
-          packages: platform-tools platforms;android-37 build-tools;35.0.0
+          # compileSdk=37 maps to package id platforms;android-37.0 (not android-37).
+          packages: platform-tools platforms;android-37.0 build-tools;35.0.0
 
       - name: Setup Android NDK r27c
         uses: nttld/setup-ndk@v1
