@@ -6662,7 +6662,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 }
             },
             onStyleNote = { note ->
-                if (!note.isNullOrBlank()) status = note
+                if (!note.isNullOrBlank()) status = localizeBasemapStyleNote(context, note)
             },
             on3dFailed = {
                 driveHud = driveHud.copy(optIn3d = false)
@@ -7368,7 +7368,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                         onClick = {
                                             hideSearch = true
                                             showTools = false
-                                            status = "Route planning closed"
+                                            status = context.getString(R.string.status_route_planning_closed)
                                         },
                                         modifier = Modifier.testTag("btn_close_search"),
                                     ) {
@@ -7377,13 +7377,19 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                 }
                             }
                             Text(
-                                "From: ${fromPoint?.name ?: "(unset)"}  |  To: ${toPoint.name.ifBlank { "(unset)" }}  |  Via: ${
+                                stringResource(
+                                    R.string.waypoints_summary,
+                                    fromPoint?.name
+                                        ?: stringResource(R.string.waypoint_unset),
+                                    toPoint.name.ifBlank {
+                                        stringResource(R.string.waypoint_unset)
+                                    },
                                     if (viaPoints.isEmpty()) {
-                                        "(none)"
+                                        stringResource(R.string.waypoint_none)
                                     } else {
                                         viaPoints.joinToString(" → ") { it.name }
-                                    }
-                                }",
+                                    },
+                                ),
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.testTag("search_waypoints_summary"),
                             )
@@ -7458,13 +7464,23 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                             SearchTarget.Via ->
                                                 when {
                                                     viaPoints.size >= MAX_ROUTE_VIAS ->
-                                                        "Via full ($MAX_ROUTE_VIAS/$MAX_ROUTE_VIAS)"
+                                                        stringResource(
+                                                            R.string.search_placeholder_via_full,
+                                                            MAX_ROUTE_VIAS,
+                                                            MAX_ROUTE_VIAS,
+                                                        )
                                                     viaPoints.isEmpty() ->
-                                                        "Add via: place, road, or lat, lon"
+                                                        stringResource(
+                                                            R.string.search_placeholder_via_empty,
+                                                        )
                                                     else ->
-                                                        "Add via ${viaPoints.size + 1}/$MAX_ROUTE_VIAS"
+                                                        stringResource(
+                                                            R.string.search_placeholder_via_n,
+                                                            viaPoints.size + 1,
+                                                            MAX_ROUTE_VIAS,
+                                                        )
                                                 }
-                                            else -> "Place, road, or lat, lon"
+                                            else -> stringResource(R.string.search_placeholder)
                                         },
                                     )
                                 },
@@ -7501,9 +7517,12 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                 ) {
                                     Text(
                                         when (searchTarget) {
-                                            SearchTarget.From -> "Clear from"
-                                            SearchTarget.To -> "Clear to"
-                                            SearchTarget.Via -> "Clear"
+                                            SearchTarget.From ->
+                                                stringResource(R.string.action_clear_from)
+                                            SearchTarget.To ->
+                                                stringResource(R.string.action_clear_to)
+                                            SearchTarget.Via ->
+                                                stringResource(R.string.action_clear)
                                         },
                                     )
                                 }
@@ -7576,7 +7595,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                 }
                             }
                             Text(
-                                ONLINE_PLACE_SEARCH_EXPLANATION,
+                                stringResource(R.string.online_place_search_explanation),
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.testTag("online_place_search_explain_search"),
                             )
@@ -7763,9 +7782,12 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                 ) {
                                     Text(
                                         when (searchTarget) {
-                                            SearchTarget.From -> "Use GPS as from"
-                                            SearchTarget.To -> "Use GPS as to"
-                                            SearchTarget.Via -> "Use GPS as via"
+                                            SearchTarget.From ->
+                                                stringResource(R.string.action_use_gps_as_from)
+                                            SearchTarget.To ->
+                                                stringResource(R.string.action_use_gps_as_to)
+                                            SearchTarget.Via ->
+                                                stringResource(R.string.action_use_gps_as_via)
                                         },
                                     )
                                 }
@@ -7778,7 +7800,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                         if (last?.lastBreakLat != null && last.lastBreakLon != null) {
                                             fromPoint =
                                                 Waypoint(
-                                                    "Last stop",
+                                                    context.getString(R.string.label_last_stop),
                                                     last.lastBreakLat!!,
                                                     last.lastBreakLon!!,
                                                 )
@@ -7873,9 +7895,9 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                 ) {
                                     Text(
                                         if (ecoModeToggleable(profile)) {
-                                            "Eco routing"
+                                            stringResource(R.string.label_eco_routing)
                                         } else {
-                                            "Eco routing (locked on for this profile)"
+                                            stringResource(R.string.label_eco_routing_locked)
                                         },
                                     )
                                     Switch(
@@ -12897,6 +12919,19 @@ private fun ensureIconsCopied(
         copyAssetDir(context.assets, "icons/weather", File(dest, "weather"))
     }
 }
+
+/** Map known English basemap style notes to localized strings when present. */
+private fun localizeBasemapStyleNote(
+    context: android.content.Context,
+    note: String,
+): String =
+    when (note) {
+        "3D hillshade needs the terrain download; showing offline map in 2D" ->
+            context.getString(R.string.style_note_3d_needs_dem)
+        "Offline Protomaps + Mapterhorn DEM hillshade" ->
+            context.getString(R.string.style_note_offline_hillshade)
+        else -> note
+    }
 
 private fun copyAssetDir(
     am: android.content.res.AssetManager,

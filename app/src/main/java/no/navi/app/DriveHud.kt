@@ -480,8 +480,7 @@ fun PluginSettingsSection(
         }
         if (datexPluginEnabled) {
             Text(
-                "Cached NPRA situations via navi-server chain " +
-                    "(LAN then duckdns). No NPRA credentials on device.",
+                stringResource(R.string.ui_cached_npra_situations_via_navi_server_chain),
                 style = MaterialTheme.typography.bodySmall,
             )
             OutlinedTextField(
@@ -1038,7 +1037,7 @@ fun MapSettingsSheet(
                 )
             }
             Text(
-                ONLINE_PLACE_SEARCH_EXPLANATION,
+                stringResource(R.string.online_place_search_explanation),
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.testTag("online_place_search_explain"),
             )
@@ -1241,10 +1240,14 @@ fun BottomDriveHud(
                 }
                 val etaTxt =
                     when {
-                        !state.showTripEta -> "ETA off"
+                        !state.showTripEta -> stringResource(R.string.hud_eta_off)
                         state.tripEtaMinutes != null ->
-                            String.format("ETA %.0f min", state.tripEtaMinutes)
-                        else -> "ETA --"
+                            String.format(
+                                java.util.Locale.getDefault(),
+                                stringResource(R.string.hud_eta_minutes),
+                                state.tripEtaMinutes,
+                            )
+                        else -> stringResource(R.string.hud_eta_unknown)
                     }
                 Text(
                     etaTxt,
