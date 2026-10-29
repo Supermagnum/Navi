@@ -1,3 +1,1 @@
-0.3.25-beta
-
-Since v0.3.22-beta: vehicle-aware origin/destination snap under clearance limits; clearance restriction in plan UX; Truck/MH corridor skeletons and ECO abort note; gate case q (Raufoss to Bergen MobileHome T6); Stage B unit-test serialization; CAT/CATS radio plugin path; 0.3.23-0.3.24 routing and sideload ships folded into this tag.
+Routes respect vehicle height and width limits from start to finish. Planning shows clearer restriction information when a road is blocked. Routing for trucks and motorhomes is improved.

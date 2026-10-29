@@ -8,6 +8,11 @@ verifies the unsigned APK content against the GitHub release asset
 
 - `versionName` / `versionCode` live in `app/build.gradle.kts`.
 - Fastlane changelog: `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt`.
+  That file is **user-facing** store text (plain sentences about what changed for
+  the user). Do not put version headers, test-case names, branch names, unit-test
+  or sideload wording, or held-back features in it.
+- F-Droid already published **versionCode 30** (`0.3.25-beta`). The next release
+  must use **versionCode 31 or higher** (never reuse 30).
 - Git tag on **main**: `v<versionName>` (example: `v0.3.29-beta`).
 - Release asset filename: `navi-<versionName>.apk` (example: `navi-0.3.29-beta.apk`).
 
