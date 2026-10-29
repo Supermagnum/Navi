@@ -985,7 +985,11 @@ fun MapSettingsSheet(
                 val tilt = MapHudPrefs.snapTilt(state.cameraTiltDeg)
                 val tiltIdx = presets.indexOfFirst { it == tilt }.coerceAtLeast(0)
                 Text(
-                    String.format("Map tilt %.0f deg", tilt),
+                    String.format(
+                        java.util.Locale.getDefault(),
+                        stringResource(R.string.map_tilt_deg),
+                        tilt,
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.testTag("map_tilt_label"),
                 )
