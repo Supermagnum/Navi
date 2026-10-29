@@ -89,6 +89,12 @@ jobs:
         run: |
           printf 'sdk.dir=%s\nndk.dir=%s\n' "$ANDROID_HOME" "$ANDROID_NDK_HOME" > local.properties
 
+      - name: Install Hamlib build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf automake libtool pkg-config make
+
       - name: Remove any prebuilt libnavi.so (match F-Droid)
         run: |
           rm -f app/src/main/jniLibs/arm64-v8a/libnavi.so
@@ -96,11 +102,15 @@ jobs:
           test ! -e app/src/main/jniLibs/arm64-v8a/libnavi.so
           test ! -e app/src/main/jniLibs/x86_64/libnavi.so
 
-      - name: Build native libnavi.so + plugin wasm
+      - name: Build native libnavi.so + Hamlib + plugin wasm
         run: |
+          # build-android-native release auto-builds Hamlib when missing and
+          # fails if libhamlib.so is still absent (CAT FFI hard gate).
           ./scripts/build-android-native.sh all release
           test -f app/src/main/jniLibs/arm64-v8a/libnavi.so
           test -f app/src/main/jniLibs/x86_64/libnavi.so
+          test -f app/src/main/jniLibs/arm64-v8a/libhamlib.so
+          test -f app/src/main/jniLibs/x86_64/libhamlib.so
 
       - name: Assemble unsigned release APK
         run: |
@@ -112,6 +122,9 @@ jobs:
           echo "UNSIGNED_APK=$UNSIGNED" >> "$GITHUB_ENV"
           cp -f "$UNSIGNED" /tmp/navi-unsigned.apk
           sha256sum /tmp/navi-unsigned.apk
+          # Hard gate: unsigned release APK must package Hamlib for both ABIs.
+          unzip -l /tmp/navi-unsigned.apk | grep -F 'lib/arm64-v8a/libhamlib.so'
+          unzip -l /tmp/navi-unsigned.apk | grep -F 'lib/x86_64/libhamlib.so'
 
       - name: Read versionName
         id: ver

@@ -67,9 +67,11 @@ Shared build (both triggers):
 
 1. Installs Rust **1.98.0** (matches `rust-toolchain.toml`) and NDK **r27c**.
 2. Deletes any `app/src/main/jniLibs/*/libnavi.so` prebuilts.
-3. Runs `scripts/build-android-native.sh all release` (Cargo profile
+3. Runs `scripts/build-android-native.sh all release` (builds Hamlib from
+   `scripts/hamlib-android.lock` when missing; Cargo profile
    `release-android` with `panic = "abort"`, reproducible `RUSTFLAGS`).
-4. `./gradlew :app:assembleRelease -Pnavi.unsignedRelease=true`
+4. Asserts `libhamlib.so` is present for both ABIs, then
+   `./gradlew :app:assembleRelease -Pnavi.unsignedRelease=true`
    (`SOURCE_DATE_EPOCH=1700000000`).
 
 Tag path (`v*` only):
@@ -114,6 +116,11 @@ Manual `workflow_dispatch` path:
 - Pin **NDK r27c** (`27.2.12479018`) to match F-Droid `ndk: r27c` and CI
   (`nttld/setup-ndk`). A newer host NDK (e.g. 27.3) changes packaged
   `libc++_shared.so` and breaks Binaries compare.
+- **Hamlib is required** in release APKs: `lib/arm64-v8a/libhamlib.so` and
+  `lib/x86_64/libhamlib.so`, with `libnavi.so` linked `DT_NEEDED libhamlib.so`
+  via the `hamlib-ffi` feature. Release builds auto-run
+  `scripts/build-hamlib-android.sh` (tag from `scripts/hamlib-android.lock`)
+  when `libhamlib.so` is missing, and fail if it is still absent.
 - `CARGO_INCREMENTAL=0` and `[profile.release] incremental = false`.
 - Gradle: `vcsInfo { include = false }`, `-Pnavi.unsignedRelease=true` for the
   F-Droid/CI unsigned APK, `android.enableResourceOptimizations=false`.

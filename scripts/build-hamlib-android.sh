@@ -96,11 +96,17 @@ NDK_VER="$(basename "$NDK")"
 HAMLIB_TAG="$(resolve_tag)"
 
 mkdir -p "$OUT_ROOT"
+# Do not rewrite the tracked lock during CI/F-Droid builds (dirty tree). Stamp
+# the actual pin under out/; update scripts/hamlib-android.lock only when asked.
 {
   echo "HAMLIB_TAG=${HAMLIB_TAG}"
   echo "NDK_VERSION=${NDK_VER}"
-} >"$LOCK"
-echo "Pinned Hamlib tag ${HAMLIB_TAG} with NDK ${NDK_VER} -> $LOCK"
+} >"$OUT_ROOT/build-pin.txt"
+echo "Building Hamlib tag ${HAMLIB_TAG} with NDK ${NDK_VER} (stamp: $OUT_ROOT/build-pin.txt)"
+if [[ "${NAVI_UPDATE_HAMLIB_LOCK:-}" == "1" ]]; then
+  cp -f "$OUT_ROOT/build-pin.txt" "$LOCK"
+  echo "Updated tracked lock $LOCK"
+fi
 
 detect_host_tag() {
   local prebuilt="$NDK/toolchains/llvm/prebuilt"

@@ -34,7 +34,7 @@ Builds:
     sudo:
       - apt-get update
       - apt-get install -y --no-install-recommends build-essential curl ca-certificates
-        python3 pkg-config libssl-dev rustup
+        python3 pkg-config libssl-dev rustup autoconf automake libtool
     gradle:
       - yes
     prebuild:
@@ -69,12 +69,15 @@ Builds:
       - ../scripts/build-android-native.sh all release
       - test -f ../app/src/main/jniLibs/arm64-v8a/libnavi.so
       - test -f ../app/src/main/jniLibs/x86_64/libnavi.so
+      - test -f ../app/src/main/jniLibs/arm64-v8a/libhamlib.so
+      - test -f ../app/src/main/jniLibs/x86_64/libhamlib.so
       - ../scripts/build-plugin-wasm.sh
       - test -f ../app/src/main/assets/plugins/right_to_roam_camping/plugin.wasm
       - test -f ../app/src/main/assets/plugins/imu/plugin.wasm
       - test -f ../app/src/main/assets/plugins/cat/plugin.wasm
       - test -f ../app/src/main/res/font/liberation_sans.ttf
       - sha256sum ../app/src/main/jniLibs/arm64-v8a/libnavi.so ../app/src/main/jniLibs/x86_64/libnavi.so
+      - sha256sum ../app/src/main/jniLibs/arm64-v8a/libhamlib.so ../app/src/main/jniLibs/x86_64/libhamlib.so
       - sha256sum ../app/src/main/assets/plugins/right_to_roam_camping/plugin.wasm
         ../app/src/main/assets/plugins/imu/plugin.wasm ../app/src/main/assets/plugins/cat/plugin.wasm
     ndk: r27c
@@ -86,9 +89,10 @@ MaintainerNotes: |
   needs >= 1.95 — not 1.88). SOURCE_DATE_EPOCH is set for zip determinism.
   scripts/build-android-native.sh maps release to Cargo profile
   release-android (panic=abort; drops path-sensitive .gcc_except_table),
-  applies remap-path-prefix, -Wl,--build-id=none, and llvm-threads=1.
-  Binaries + AllowedAPKSigningKeys enable upstream-signed APK verification.
-  UpdateCheckMode allows -beta tags.
+  applies remap-path-prefix, -Wl,--build-id=none, and llvm-threads=1,
+  and builds/stages libhamlib.so (Hamlib 4.7.2 from hamlib-android.lock)
+  for CAT FFI. Binaries + AllowedAPKSigningKeys enable upstream-signed
+  APK verification. UpdateCheckMode allows -beta tags.
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9]+)?$

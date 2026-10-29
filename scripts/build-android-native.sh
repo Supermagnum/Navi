@@ -166,6 +166,33 @@ case "$PROFILE" in
     ;;
 esac
 
+# Release APKs must ship libhamlib.so (CAT FFI). Build it from the locked tag
+# when missing so CI/F-Droid match local sideload packaging.
+ensure_hamlib_for_release() {
+  if [[ "$PROFILE" != "release" && "$CARGO_PROFILE" != "release-android" ]]; then
+    return 0
+  fi
+  local missing=0
+  local abi
+  for abi in "${ABI_LIST[@]}"; do
+    if [[ -f "$ROOT/out/hamlib-android/jniLibs/$abi/libhamlib.so" ]]; then
+      continue
+    fi
+    if [[ -f "$ROOT/app/src/main/jniLibs/$abi/libhamlib.so" ]]; then
+      continue
+    fi
+    missing=1
+    break
+  done
+  if [[ "$missing" -eq 0 ]]; then
+    echo "Hamlib already staged for release ABIs"
+    return 0
+  fi
+  echo "Release build: building Hamlib (scripts/build-hamlib-android.sh)..."
+  "$ROOT/scripts/build-hamlib-android.sh"
+}
+ensure_hamlib_for_release
+
 build_one_abi() {
   local ABI_DIR="$1"
   local TARGET
@@ -188,6 +215,10 @@ build_one_abi() {
   else
     echo "warning: libhamlib.so missing for $ABI_DIR." >&2
     echo "  Run: ANDROID_NDK_HOME=\"\$ANDROID_NDK_HOME\" ./scripts/build-hamlib-android.sh" >&2
+    if [[ "$PROFILE" == "release" || "$CARGO_PROFILE" == "release-android" ]]; then
+      echo "error: release builds require libhamlib.so (CAT FFI hard gate)." >&2
+      exit 1
+    fi
     echo "  Continuing without hamlib-ffi (TCP-only CAT path)." >&2
   fi
 
