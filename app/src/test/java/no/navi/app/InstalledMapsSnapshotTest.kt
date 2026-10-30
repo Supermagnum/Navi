@@ -61,7 +61,7 @@ class InstalledMapsSnapshotTest {
     }
 
     @Test
-    fun installing_region_with_ui_idle_schedules_skeleton_and_sidecar() {
+    fun installing_region_with_ui_idle_schedules_place_index_before_skeleton() {
         IdlePackJobs.resetForTests()
         val internal = tmp.newFolder("idle-files")
         val packs = tmp.newFolder("idle-packs")
@@ -76,17 +76,18 @@ class InstalledMapsSnapshotTest {
         val scheduled = IdlePackJobs.scheduledForTest()
         val kinds = scheduled.map { it.kind }.toSet()
         assertTrue(
-            "UI idle must still schedule the corridor skeleton",
-            kinds.contains(IdlePackJobs.Kind.SKELETON),
-        )
-        assertTrue(
-            "UI idle must still schedule the ferry sidecar",
-            kinds.contains(IdlePackJobs.Kind.FERRY_CAR) ||
-                kinds.contains(IdlePackJobs.Kind.FERRY_TRUCK),
-        )
-        assertTrue(
             "stamp without a real extract must still schedule the place index",
             kinds.contains(IdlePackJobs.Kind.PLACE_INDEX),
+        )
+        assertFalse(
+            "corridor skeleton waits until place index is intact",
+            kinds.contains(IdlePackJobs.Kind.SKELETON) ||
+                kinds.contains(IdlePackJobs.Kind.SKELETON_TRUCK),
+        )
+        assertFalse(
+            "ferry sidecar waits until place index is intact",
+            kinds.contains(IdlePackJobs.Kind.FERRY_CAR) ||
+                kinds.contains(IdlePackJobs.Kind.FERRY_TRUCK),
         )
         assertTrue(scheduled.any { it.stem == "varmland-latest" })
         val r = InstalledMaps.region("europe/sweden/varmland", internal)!!

@@ -26,8 +26,8 @@ use super::wetland_pack::{
 use crate::poi::PoiIndex;
 use crate::routing::basemap::{pbf_stem_to_geofabrik_path, region_bbox};
 use crate::routing::graph::{
-    drop_pack_edges_replaced_by_overlay_ferry, is_construction_or_proposed_highway, GraphEdge,
-    RouteGraph, RoutingProfile,
+    drop_pack_edges_replaced_by_overlay_ferry, is_construction_or_proposed_highway,
+    rewire_overlay_ferry_ends_to_nearest_pack, GraphEdge, RouteGraph, RoutingProfile,
 };
 use crate::routing::pbf_extract::{pbf_is_real_extract, MIN_REAL_PBF_BYTES};
 use crate::routing::safety::DangerBarrierIndex;
@@ -1152,7 +1152,7 @@ pub fn load_graph_pack_clips(
     crate::download::progress::set(
         0,
         Some(1),
-        &crate::i18n::messages::encode1(crate::i18n::messages::codes::BUILD_GRAPH, &file),
+        &crate::i18n::messages::encode1(crate::i18n::messages::codes::BUILD_GRAPH, file),
     );
 
     let g = match format_version {
@@ -2035,10 +2035,12 @@ fn point_in_bbox(lat: f64, lon: f64, bbox: [f64; 4]) -> bool {
 
 /// Outcome of the ferry-overlay O/D connectivity gate (one snap + component).
 enum FerryHopGate {
-    /// Same weak component — skip overlay.
+    /// Same directed component — overlay is optional (merge when sidecars are
+    /// ready for shorter pier/ferry choice; never block the plan on preparing).
     Connected { snap_m: f64 },
     /// Different components after snap — try overlay (packs may omit ferry /
-    /// pier approaches; tile widen alone cannot bridge water gaps).
+    /// pier approaches; tile widen alone cannot bridge water gaps). Missing
+    /// Geofabrik sidecars surface [`PackLoadError::FerryPreparing`].
     Disconnected { snap_m: f64 },
     /// Could not snap even with 35 km — try overlay build.
     SnapFailed,
@@ -2229,14 +2231,14 @@ fn resolve_ferry_overlay_pbf_in_dirs(dirs: &[&Path], home: &Path, stem: &str) ->
 /// particular crossing — A* chooses ferries under the normal cost model when
 /// `avoid_ferries` is off.
 ///
-/// Overlay is skipped when hop ends are already directed-connected on the pack
-/// graph (`route_points`, ferries allowed), or — without hop geometry — when a
-/// long ferry lies fully inside the plan clip. Disconnected / snap-failed hop
-/// ends try overlay, but only for stems whose region bbox intersects the hop
-/// clips (a stem that cannot contain a ferry for this hop is not loaded). Each
-/// stem sidecar is materialized at most once per supplement call. Orphan /
-/// pier-stub ferry edges and unrelated long ferries elsewhere must not suppress
-/// pier-approach overlay.
+/// Connected hops still merge clip-intersecting sidecars when ready (shorter
+/// pier/ferry choice). Without hop geometry, a long ferry fully inside the plan
+/// clip skips overlay. Disconnected / snap-failed hop ends **require** overlay:
+/// missing Geofabrik sidecars return [`PackLoadError::FerryPreparing`]. When
+/// overlay is only optional (Connected, or bbox-only camping loads), a missing
+/// sidecar continues without that stem instead of blocking the plan. Only stems
+/// whose region bbox intersects the hop clips are loaded; each stem sidecar is
+/// materialized at most once per supplement call.
 fn supplement_pack_ferries_from_pbf(
     graph: std::sync::Arc<RouteGraph>,
     dirs: &[&Path],
@@ -2308,6 +2310,11 @@ fn supplement_pack_ferries_from_pbf_inner(
         return Ok(graph);
     }
     let bbox = plan_clip_bbox(None, Some(clips.as_slice())).unwrap_or(clips[0]);
+    // Disconnected / snap-failed hops need overlay for connectivity.
+    // Connected (and bbox-only camping loads) merge sidecars when ready but must
+    // not hard-fail on FerryPreparing — host fixtures often lack Geofabrik
+    // ferry sidecars while the pack foot/car graph already routes inland.
+    let mut overlay_required = false;
     if let Some(pts) = route_points.filter(|p| p.len() >= 2) {
         let t_snap = std::time::Instant::now();
         let gate = ferry_hop_connectivity_gate(&graph, pts[0], pts[pts.len() - 1]);
@@ -2319,17 +2326,21 @@ fn supplement_pack_ferries_from_pbf_inner(
             FerryHopGate::Connected { snap_m } => {
                 crate::routing::plan_perf::note_f64("ferry_snap_m", snap_m);
                 crate::routing::plan_perf::note_u64("ferry_connect_check_ms", 0);
-                crate::routing::plan_perf::note("ferry_overlay", "skip_already_connected");
-                crate::routing::plan_perf::note(
-                    "ferry_per_plan",
-                    "once_on_corridor_miss;warm_skipped=corridor_cache_hit",
+                // Still merge clip-intersecting ferry sidecars. Packs can already
+                // connect O→D via a long ferry while omitting a shorter ferry's
+                // pier approaches (Herland: Gjervik–Fure in pack vs Askvoll–Gjervik
+                // needing overlay stubs). Skipping here locked coastal trips onto
+                // the longer pack ferry (~16 km extra on Vestlandet→Trondheim).
+                // Stem clip filters below keep the old "load every sidecar" cost
+                // down; do not early-return on Connected.
+                crate::routing::plan_perf::note("ferry_overlay", "connected_still_merge");
+                log::info!(
+                    target: "NaviPlan",
+                    "ferry_overlay connected O→D — still merge clip sidecars for pier/ferry choice"
                 );
-                // Pack already has a directed O→D path (incl. pack ferries).
-                // Replacing every hop with every stem's sidecar was ~10× pack_load
-                // and ballooned graphs (~10× snap). Load overlay only when needed.
-                return Ok(graph);
             }
             FerryHopGate::Disconnected { snap_m } => {
+                overlay_required = true;
                 crate::routing::plan_perf::note_f64("ferry_snap_m", snap_m);
                 crate::routing::plan_perf::note_u64("ferry_connect_check_ms", 0);
                 crate::routing::plan_perf::note("ferry_overlay", "disconnected_try_overlay");
@@ -2340,6 +2351,7 @@ fn supplement_pack_ferries_from_pbf_inner(
                 );
             }
             FerryHopGate::SnapFailed => {
+                overlay_required = true;
                 crate::routing::plan_perf::note_f64(
                     "ferry_snap_m",
                     crate::routing::plan_bbox::CHUNK_INTERMEDIATE_SNAP_M,
@@ -2391,10 +2403,12 @@ fn supplement_pack_ferries_from_pbf_inner(
             continue;
         };
         // Geofabrik-sized extracts: never parse PBF on the plan thread. If the
-        // sidecar is not ready, surface FerryPreparing and kick a background
-        // ensure. Corridor fixtures / small real extracts (BlobHeader, below
-        // 1 MiB) are cheap to parse here so pack load completes (innlandet
-        // host tests, local cuts) instead of spinning on preparing.
+        // sidecar is not ready and overlay is **required** (disconnected /
+        // snap-failed hop), surface FerryPreparing. When overlay is optional
+        // (Connected densify, bbox-only camping), continue without that stem.
+        // Corridor fixtures / small real extracts (BlobHeader, below 1 MiB) are
+        // cheap to parse here so pack load completes (innlandet host tests,
+        // local cuts) instead of spinning on preparing.
         if !super::ferry_overlay_cache::sidecar_fresh(home, stem, profile, &pbf) {
             let pbf_len = pbf.metadata().map(|m| m.len()).unwrap_or(0);
             if pbf_is_real_extract(&pbf) && pbf_len < MIN_REAL_PBF_BYTES {
@@ -2412,10 +2426,18 @@ fn supplement_pack_ferries_from_pbf_inner(
                 // Densify skeleton must not enqueue sidecar builds: it walks
                 // every corridor extra (NDS/DK/MV/SH/NO…) and those jobs share
                 // one lock, so the SH→DK hop never sees a finished sidecar.
-                if super::graph_pack::densify_skeleton_only_active() {
+                // Optional overlay (Connected / bbox-only) likewise must not
+                // block inland camping or Connected densify when sidecars are
+                // absent from the fixture / install.
+                if super::graph_pack::densify_skeleton_only_active() || !overlay_required {
+                    crate::routing::plan_perf::note(
+                        "ferry_overlay",
+                        format!("skip_preparing_optional;stem={stem}"),
+                    );
                     log::info!(
                         target: "NaviPlan",
-                        "ferry_overlay skeleton skip preparing stem={stem} — continue without that overlay"
+                        "ferry_overlay skip preparing stem={stem} overlay_required={overlay_required} \
+                         — continue without that overlay"
                     );
                     continue;
                 }
@@ -2474,6 +2496,14 @@ fn supplement_pack_ferries_from_pbf_inner(
     let mut pack = arc_graph_owned(graph);
     for ov in &mut overlays {
         drop_pack_edges_replaced_by_overlay_ferry(&mut pack, ov);
+        let n = rewire_overlay_ferry_ends_to_nearest_pack(&pack, ov);
+        if n > 0 {
+            log::info!(
+                target: "NaviPlan",
+                "ferry_overlay rewired_ends={n} onto nearest pack endpoints"
+            );
+            crate::routing::plan_perf::note_u64("ferry_overlay_rewired_ends", n as u64);
+        }
     }
     let mut parts = Vec::with_capacity(1 + overlays.len());
     parts.push(pack);

@@ -235,6 +235,92 @@ pub fn clear_place_index_region_rows(
     Ok(())
 }
 
+/// Read-only SQL against the place index on this crate's SQLite.
+///
+/// Android framework SQLite and this bundled SQLite are two libraries in one
+/// process. POSIX locks on `-shm` never conflict within a process, so the
+/// second library to open the DB believes it is the only connection and
+/// truncates `-shm` under the other's mmap (SIGBUS in `walIndexReadHdr`).
+/// In-process callers must read through here, never `android.database.sqlite`.
+///
+/// Cells are text (`NULL` and blobs are `None`). Never creates the file.
+pub fn query_place_index_readonly(
+    index_db: impl AsRef<Path>,
+    sql: &str,
+    args: &[String],
+) -> Result<Vec<Vec<Option<String>>>, String> {
+    use rusqlite::types::ValueRef;
+    let index_db = index_db.as_ref();
+    if !index_db.is_file() {
+        return Err("db missing".into());
+    }
+    let conn = Connection::open_with_flags(index_db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|e| format!("open: {e}"))?;
+    conn.busy_timeout(Duration::from_millis(250))
+        .map_err(|e| format!("busy_timeout: {e}"))?;
+    let _ = conn.execute_batch("PRAGMA mmap_size=0;");
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    let cols = stmt.column_count();
+    let mut rows = stmt
+        .query(rusqlite::params_from_iter(args.iter()))
+        .map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        let mut cells = Vec::with_capacity(cols);
+        for i in 0..cols {
+            let cell = match row.get_ref(i).map_err(|e| e.to_string())? {
+                ValueRef::Null | ValueRef::Blob(_) => None,
+                ValueRef::Integer(v) => Some(v.to_string()),
+                ValueRef::Real(v) => Some(v.to_string()),
+                ValueRef::Text(t) => Some(String::from_utf8_lossy(t).into_owned()),
+            };
+            cells.push(cell);
+        }
+        out.push(cells);
+    }
+    Ok(out)
+}
+
+/// `wal_checkpoint(TRUNCATE)` on this crate's SQLite. `Ok(true)` when every
+/// frame was checkpointed, `Ok(false)` when a reader or writer kept it busy.
+pub fn checkpoint_place_index_wal(index_db: impl AsRef<Path>) -> Result<bool, String> {
+    let index_db = index_db.as_ref();
+    if !index_db.is_file() {
+        return Err("db missing".into());
+    }
+    let conn = Connection::open_with_flags(index_db, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)
+        .map_err(|e| format!("open: {e}"))?;
+    conn.busy_timeout(Duration::from_millis(250))
+        .map_err(|e| format!("busy_timeout: {e}"))?;
+    let _ = conn.execute_batch("PRAGMA mmap_size=0;");
+    let busy: i64 = conn
+        .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| row.get(0))
+        .map_err(|e| format!("wal_checkpoint: {e}"))?;
+    Ok(busy == 0)
+}
+
+/// `VACUUM INTO` a fresh copy of the place index on this crate's SQLite.
+pub fn vacuum_place_index_into(
+    index_db: impl AsRef<Path>,
+    out_path: impl AsRef<Path>,
+) -> Result<(), String> {
+    let index_db = index_db.as_ref();
+    if !index_db.is_file() {
+        return Err("db missing".into());
+    }
+    let conn = Connection::open_with_flags(index_db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|e| format!("open: {e}"))?;
+    conn.busy_timeout(Duration::from_millis(250))
+        .map_err(|e| format!("busy_timeout: {e}"))?;
+    let _ = conn.execute_batch("PRAGMA mmap_size=0;");
+    conn.execute(
+        "VACUUM INTO ?1",
+        params![out_path.as_ref().to_string_lossy()],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 pub struct NameHit {
     pub osm_id: i64,
@@ -374,9 +460,9 @@ pub fn fold_name_aliases(name: &str) -> Vec<String> {
             other => {
                 let mapped = fold_letter(other);
                 if mapped.is_empty() {
-                    if other.is_ascii_alphanumeric() || other.is_whitespace() || other == '-' {
-                        expanded.push(other);
-                    } else if other.is_alphanumeric() {
+                    // ascii alnum is a subset of is_alphanumeric; keep letters,
+                    // digits, spaces, and hyphen the same as fold_search_key.
+                    if other.is_alphanumeric() || other.is_whitespace() || other == '-' {
                         expanded.push(other);
                     }
                 } else {
@@ -2930,7 +3016,7 @@ impl NameIndex {
             }
         }
         merged.retain(|h| hit_matches_all_tokens(h, &search_q) && in_place(h));
-        merged.sort_by(|a, b| search_rank_key(a, q, None).cmp(&search_rank_key(b, q, None)));
+        merged.sort_by_key(|a| search_rank_key(a, q, None));
         merged.truncate(limit);
         Ok(merged)
     }
@@ -3585,7 +3671,7 @@ mod tests {
         assert!(fold_name_aliases("Århus")
             .iter()
             .any(|a| a.contains("aa") || a.contains("arhus")));
-        assert_eq!(fold_search_key("Little A'Le'Inn").contains("little"), true);
+        assert!(fold_search_key("Little A'Le'Inn").contains("little"));
     }
 
     #[test]
@@ -4834,6 +4920,56 @@ mod tests {
         let reader = NameIndex::open_readonly(&db).expect("probe open");
         let hits = reader.search("Sidi", 8).expect("search");
         assert!(hits.iter().any(|h| h.name.contains("Sidi")));
+    }
+
+    #[test]
+    fn query_place_index_readonly_reads_while_writer_holds_wal() {
+        let dir = tempfile::tempdir().expect("tmpdir");
+        let db = dir.path().join("place_index.db");
+        let mut writer = NameIndex::open(&db).expect("open");
+        writer
+            .upsert_entry_with_region(
+                7,
+                "Hamar".into(),
+                "place:town".into(),
+                60.79,
+                11.07,
+                String::new(),
+                String::new(),
+                "europe/norway/ostlandet".into(),
+            )
+            .unwrap();
+        let rows = query_place_index_readonly(
+            &db,
+            "SELECT COUNT(*), MAX(name) FROM name_entries WHERE region_id = ?1",
+            &["europe/norway/ostlandet".to_string()],
+        )
+        .expect("query");
+        assert_eq!(
+            rows,
+            vec![vec![Some("1".to_string()), Some("Hamar".to_string())]]
+        );
+        let nulls = query_place_index_readonly(&db, "SELECT NULL", &[]).expect("null");
+        assert_eq!(nulls, vec![vec![None]]);
+        assert!(
+            query_place_index_readonly(&db, "DELETE FROM name_entries", &[]).is_err(),
+            "read-only connection must reject writes"
+        );
+        assert!(
+            query_place_index_readonly(dir.path().join("missing.db"), "SELECT 1", &[]).is_err()
+        );
+        assert!(
+            !dir.path().join("missing.db").exists(),
+            "probe must not create the file"
+        );
+
+        let copy = dir.path().join("copy.db");
+        vacuum_place_index_into(&db, &copy).expect("vacuum into");
+        let n = query_place_index_readonly(&copy, "SELECT COUNT(*) FROM name_entries", &[])
+            .expect("copy rows");
+        assert_eq!(n, vec![vec![Some("1".to_string())]]);
+        drop(writer);
+        assert!(checkpoint_place_index_wal(&db).expect("checkpoint"));
     }
 
     #[test]

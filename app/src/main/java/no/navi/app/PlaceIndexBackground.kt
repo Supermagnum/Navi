@@ -204,6 +204,9 @@ object PlaceIndexBackground {
                 ) {
                     runCatching { uniffi.navi.downloadProgressClear() }
                 }
+                if (!rid.isNullOrBlank()) {
+                    CorridorSkeletonBackground.ensureAfterPlaceIndex(packDir, rid)
+                }
             } else {
                 lastStatus.set(annotate("failed", rid.orEmpty()))
             }

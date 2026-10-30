@@ -650,6 +650,15 @@ internal open class UniffiForeignFutureResultVoid(
 internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
     fun callback(`callbackData`: Long,`result`: UniffiForeignFutureResultVoid.UniffiByValue,)
 }
+internal interface UniffiCallbackInterfaceBenshiBytePipeMethod0 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`bytes`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
+}
+internal interface UniffiCallbackInterfaceBenshiBytePipeMethod1 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`timeoutMs`: Int,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,)
+}
+internal interface UniffiCallbackInterfaceBenshiBytePipeMethod2 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
+}
 internal interface UniffiCallbackInterfaceSensorPlatformMethod0 : com.sun.jna.Callback {
     fun callback(`uniffiHandle`: Long,`kindCode`: Int,`uniffiOutReturn`: ByteByReference,uniffiCallStatus: UniffiRustCallStatus,)
 }
@@ -661,6 +670,31 @@ internal interface UniffiCallbackInterfaceSensorPlatformMethod2 : com.sun.jna.Ca
 }
 internal interface UniffiCallbackInterfaceSensorPlatformMethod3 : com.sun.jna.Callback {
     fun callback(`uniffiHandle`: Long,`kindCode`: Int,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,)
+}
+@Structure.FieldOrder("uniffiFree", "uniffiClone", "writeBytes", "readBytes", "shutdown")
+internal open class UniffiVTableCallbackInterfaceBenshiBytePipe(
+    @JvmField internal var `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+    @JvmField internal var `uniffiClone`: UniffiCallbackInterfaceClone? = null,
+    @JvmField internal var `writeBytes`: UniffiCallbackInterfaceBenshiBytePipeMethod0? = null,
+    @JvmField internal var `readBytes`: UniffiCallbackInterfaceBenshiBytePipeMethod1? = null,
+    @JvmField internal var `shutdown`: UniffiCallbackInterfaceBenshiBytePipeMethod2? = null,
+) : Structure() {
+    class UniffiByValue(
+        `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+        `uniffiClone`: UniffiCallbackInterfaceClone? = null,
+        `writeBytes`: UniffiCallbackInterfaceBenshiBytePipeMethod0? = null,
+        `readBytes`: UniffiCallbackInterfaceBenshiBytePipeMethod1? = null,
+        `shutdown`: UniffiCallbackInterfaceBenshiBytePipeMethod2? = null,
+    ): UniffiVTableCallbackInterfaceBenshiBytePipe(`uniffiFree`,`uniffiClone`,`writeBytes`,`readBytes`,`shutdown`,), Structure.ByValue
+
+   internal fun uniffiSetValue(other: UniffiVTableCallbackInterfaceBenshiBytePipe) {
+        `uniffiFree` = other.`uniffiFree`
+        `uniffiClone` = other.`uniffiClone`
+        `writeBytes` = other.`writeBytes`
+        `readBytes` = other.`readBytes`
+        `shutdown` = other.`shutdown`
+    }
+
 }
 @Structure.FieldOrder("uniffiFree", "uniffiClone", "isSensorAvailable", "registerSensor", "unregisterSensor", "latestSensorSample")
 internal open class UniffiVTableCallbackInterfaceSensorPlatform(
@@ -937,15 +971,21 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_place_index_build_lock_release(
     ): Int
+    external fun uniffi_navi_checksum_func_place_index_checkpoint_truncate(
+    ): Int
     external fun uniffi_navi_checksum_func_place_index_has_entries(
     ): Int
     external fun uniffi_navi_checksum_func_place_index_mark_incomplete_after_wal_quarantine(
+    ): Int
+    external fun uniffi_navi_checksum_func_place_index_query_readonly(
     ): Int
     external fun uniffi_navi_checksum_func_place_index_recover_wal(
     ): Int
     external fun uniffi_navi_checksum_func_place_index_source_sha256(
     ): Int
     external fun uniffi_navi_checksum_func_place_index_take_wal_quarantine_rebuild_regions(
+    ): Int
+    external fun uniffi_navi_checksum_func_place_index_vacuum_into(
     ): Int
     external fun uniffi_navi_checksum_func_plan_car_route(
     ): Int
@@ -1173,6 +1213,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_configure(
     ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_connect_benshi(
+    ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_connect_benshi_lab(
     ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_connect_ffi(
@@ -1243,6 +1285,12 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_method_ffitrackstore_visible(
     ): Int
+    external fun uniffi_navi_checksum_method_benshibytepipe_write_bytes(
+    ): Int
+    external fun uniffi_navi_checksum_method_benshibytepipe_read_bytes(
+    ): Int
+    external fun uniffi_navi_checksum_method_benshibytepipe_shutdown(
+    ): Int
     external fun uniffi_navi_checksum_method_sensorplatform_is_sensor_available(
     ): Int
     external fun uniffi_navi_checksum_method_sensorplatform_register_sensor(
@@ -1269,6 +1317,7 @@ internal object UniffiLib {
 
     init {
         Native.register(UniffiLib::class.java, findLibraryName(componentName = "navi"))
+        uniffiCallbackInterfaceBenshiBytePipe.register(this)
         uniffiCallbackInterfaceSensorPlatform.register(this)
         
     }
@@ -1292,6 +1341,18 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_method_ffitrackstore_visible(`ptr`: Long,`centerLat`: Double,`centerLon`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_clone_benshibytepipe(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Long
+    external fun uniffi_navi_fn_free_benshibytepipe(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_init_callback_vtable_benshibytepipe(`vtable`: UniffiVTableCallbackInterfaceBenshiBytePipe,
+    ): Unit
+    external fun uniffi_navi_fn_method_benshibytepipe_write_bytes(`ptr`: Long,`bytes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_method_benshibytepipe_read_bytes(`ptr`: Long,`timeoutMs`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_method_benshibytepipe_shutdown(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_navi_fn_clone_sensorplatform(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
     external fun uniffi_navi_fn_free_sensorplatform(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1530,15 +1591,21 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_place_index_build_lock_release(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_place_index_checkpoint_truncate(`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_place_index_has_entries(`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_navi_fn_func_place_index_mark_incomplete_after_wal_quarantine(`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_place_index_query_readonly(`indexDbPath`: RustBuffer.ByValue,`sql`: RustBuffer.ByValue,`args`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_place_index_recover_wal(`indexDbPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_place_index_source_sha256(`indexDbPath`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_place_index_take_wal_quarantine_rebuild_regions(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_place_index_vacuum_into(`indexDbPath`: RustBuffer.ByValue,`outPath`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_plan_car_route(`pbfPath`: RustBuffer.ByValue,`elevDir`: RustBuffer.ByValue,`cacheDir`: RustBuffer.ByValue,`startLat`: Double,`startLon`: Double,`endLat`: Double,`endLon`: Double,`useEco`: Byte,`profile`: RustBuffer.ByValue,`avoidMotorways`: Byte,`tollPolicy`: RustBuffer.ByValue,`avoidFerries`: Byte,`avoidTunnels`: Byte,`vehicle`: RustBuffer.ByValue,`preferOfficialNetworks`: Byte,`dataDir`: RustBuffer.ByValue,`packDir`: RustBuffer.ByValue,`longTripEnabled`: Byte,`allowedCountries`: RustBuffer.ByValue,`viaPoints`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1766,6 +1833,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_configure(`filesDir`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,`timezone`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    external fun uniffi_navi_fn_func_cat_plugin_connect_benshi(`scratchChannel`: Byte,`pipe`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_connect_benshi_lab(`scratchChannel`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_connect_ffi(`model`: Int,`allowBeta`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -2277,10 +2346,16 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_place_index_build_lock_release() and 0xFFFF) != 40226) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_place_index_checkpoint_truncate() and 0xFFFF) != 38992) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_place_index_has_entries() and 0xFFFF) != 5969) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_place_index_mark_incomplete_after_wal_quarantine() and 0xFFFF) != 43083) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_place_index_query_readonly() and 0xFFFF) != 46009) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_place_index_recover_wal() and 0xFFFF) != 33112) {
@@ -2290,6 +2365,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_place_index_take_wal_quarantine_rebuild_regions() and 0xFFFF) != 17218) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_place_index_vacuum_into() and 0xFFFF) != 61164) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_plan_car_route() and 0xFFFF) != 25656) {
@@ -2631,7 +2709,10 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_cat_plugin_configure() and 0xFFFF) != 24407) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_cat_plugin_connect_benshi_lab() and 0xFFFF) != 58699) {
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_connect_benshi() and 0xFFFF) != 19865) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_connect_benshi_lab() and 0xFFFF) != 25098) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_cat_plugin_connect_ffi() and 0xFFFF) != 34348) {
@@ -2734,6 +2815,15 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_method_ffitrackstore_visible() and 0xFFFF) != 63653) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_method_benshibytepipe_write_bytes() and 0xFFFF) != 63012) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_method_benshibytepipe_read_bytes() and 0xFFFF) != 4474) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_method_benshibytepipe_shutdown() and 0xFFFF) != 4938) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_method_sensorplatform_is_sensor_available() and 0xFFFF) != 40725) {
@@ -3204,6 +3294,404 @@ public object FfiConverterByteArray: FfiConverterRustBuffer<ByteArray> {
     override fun write(value: ByteArray, buf: ByteBuffer) {
         buf.putInt(value.size)
         buf.put(value)
+    }
+}
+
+
+// This template implements a class for working with a Rust struct via a handle
+// to the live Rust struct on the other side of the FFI.
+//
+// There's some subtlety here, because we have to be careful not to operate on a Rust
+// struct after it has been dropped, and because we must expose a public API for freeing
+// theq Kotlin wrapper object in lieu of reliable finalizers. The core requirements are:
+//
+//   * Each instance holds an opaque handle to the underlying Rust struct.
+//     Method calls need to read this handle from the object's state and pass it in to
+//     the Rust FFI.
+//
+//   * When an instance is no longer needed, its handle should be passed to a
+//     special destructor function provided by the Rust FFI, which will drop the
+//     underlying Rust struct.
+//
+//   * Given an instance, calling code is expected to call the special
+//     `destroy` method in order to free it after use, either by calling it explicitly
+//     or by using a higher-level helper like the `use` method. Failing to do so risks
+//     leaking the underlying Rust struct.
+//
+//   * We can't assume that calling code will do the right thing, and must be prepared
+//     to handle Kotlin method calls executing concurrently with or even after a call to
+//     `destroy`, and to handle multiple (possibly concurrent!) calls to `destroy`.
+//
+//   * We must never allow Rust code to operate on the underlying Rust struct after
+//     the destructor has been called, and must never call the destructor more than once.
+//     Doing so may trigger memory unsafety.
+//
+//   * To mitigate many of the risks of leaking memory and use-after-free unsafety, a `Cleaner`
+//     is implemented to call the destructor when the Kotlin object becomes unreachable.
+//     This is done in a background thread. This is not a panacea, and client code should be aware that
+//      1. the thread may starve if some there are objects that have poorly performing
+//     `drop` methods or do significant work in their `drop` methods.
+//      2. the thread is shared across the whole library. This can be tuned by using `android_cleaner = true`,
+//         or `android = true` in the [`kotlin` section of the `uniffi.toml` file](https://mozilla.github.io/uniffi-rs/kotlin/configuration.html).
+//
+// If we try to implement this with mutual exclusion on access to the handle, there is the
+// possibility of a race between a method call and a concurrent call to `destroy`:
+//
+//    * Thread A starts a method call, reads the value of the handle, but is interrupted
+//      before it can pass the handle over the FFI to Rust.
+//    * Thread B calls `destroy` and frees the underlying Rust struct.
+//    * Thread A resumes, passing the already-read handle value to Rust and triggering
+//      a use-after-free.
+//
+// One possible solution would be to use a `ReadWriteLock`, with each method call taking
+// a read lock (and thus allowed to run concurrently) and the special `destroy` method
+// taking a write lock (and thus blocking on live method calls). However, we aim not to
+// generate methods with any hidden blocking semantics, and a `destroy` method that might
+// block if called incorrectly seems to meet that bar.
+//
+// So, we achieve our goals by giving each instance an associated `AtomicLong` counter to track
+// the number of in-flight method calls, and an `AtomicBoolean` flag to indicate whether `destroy`
+// has been called. These are updated according to the following rules:
+//
+//    * The initial value of the counter is 1, indicating a live object with no in-flight calls.
+//      The initial value for the flag is false.
+//
+//    * At the start of each method call, we atomically check the counter.
+//      If it is 0 then the underlying Rust struct has already been destroyed and the call is aborted.
+//      If it is nonzero them we atomically increment it by 1 and proceed with the method call.
+//
+//    * At the end of each method call, we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+//    * When `destroy` is called, we atomically flip the flag from false to true.
+//      If the flag was already true we silently fail.
+//      Otherwise we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+// Astute readers may observe that this all sounds very similar to the way that Rust's `Arc<T>` works,
+// and indeed it is, with the addition of a flag to guard against multiple calls to `destroy`.
+//
+// The overall effect is that the underlying Rust struct is destroyed only when `destroy` has been
+// called *and* all in-flight method calls have completed, avoiding violating any of the expectations
+// of the underlying Rust code.
+//
+// This makes a cleaner a better alternative to _not_ calling `destroy()` as
+// and when the object is finished with, but the abstraction is not perfect: if the Rust object's `drop`
+// method is slow, and/or there are many objects to cleanup, and it's on a low end Android device, then the cleaner
+// thread may be starved, and the app will leak memory.
+//
+// In this case, `destroy`ing manually may be a better solution.
+//
+// The cleaner can live side by side with the manual calling of `destroy`. In the order of responsiveness, uniffi objects
+// with Rust peers are reclaimed:
+//
+// 1. By calling the `destroy` method of the object, which calls `rustObject.free()`. If that doesn't happen:
+// 2. When the object becomes unreachable, AND the Cleaner thread gets to call `rustObject.free()`. If the thread is starved then:
+// 3. The memory is reclaimed when the process terminates.
+//
+// [1] https://stackoverflow.com/questions/24376768/can-java-finalize-an-object-when-it-is-still-in-scope/24380219
+//
+
+
+/**
+ * Raw RFCOMM byte pipe to a bonded Benshi radio, implemented in Kotlin.
+ *
+ * Must be bound to the SPP control UUID only, never the audio RFCOMM UUID.
+ * GAIA framing and the never-transmit allowlist stay in `navi-cat`.
+ * Implementations must not call back into this library.
+ */
+public interface BenshiBytePipe {
+    
+    fun `writeBytes`(`bytes`: kotlin.ByteArray)
+    
+    /**
+     * Bytes received so far; empty after `timeout_ms` with nothing pending.
+     */
+    fun `readBytes`(`timeoutMs`: kotlin.UInt): kotlin.ByteArray
+    
+    fun `shutdown`()
+    
+    companion object
+}
+
+/**
+ * Raw RFCOMM byte pipe to a bonded Benshi radio, implemented in Kotlin.
+ *
+ * Must be bound to the SPP control UUID only, never the audio RFCOMM UUID.
+ * GAIA framing and the never-transmit allowlist stay in `navi-cat`.
+ * Implementations must not call back into this library.
+ */
+open class BenshiBytePipeImpl: Disposable, AutoCloseable, BenshiBytePipe
+{
+
+    @Suppress("UNUSED_PARAMETER")
+    /**
+     * @suppress
+     */
+    constructor(withHandle: UniffiWithHandle, handle: Long) {
+        this.handle = handle
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(handle))
+    }
+
+    /**
+     * @suppress
+     *
+     * This constructor can be used to instantiate a fake object. Only used for tests. Any
+     * attempt to actually use an object constructed this way will fail as there is no
+     * connected Rust object.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    constructor(noHandle: NoHandle) {
+        this.handle = 0
+        this.cleanable = null
+    }
+
+    protected val handle: Long
+    protected val cleanable: UniffiCleaner.Cleanable?
+
+    private val wasDestroyed = AtomicBoolean(false)
+    private val callCounter = AtomicLong(1)
+
+    /**
+     * Whether the current object has been destroyed and its reference is gone in the Rust side.
+     */
+    val uniffiIsDestroyed: Boolean get() = wasDestroyed.get()
+
+    override fun destroy() {
+        // Only allow a single call to this method.
+        // TODO: maybe we should log a warning if called more than once?
+        if (this.wasDestroyed.compareAndSet(false, true)) {
+            // This decrement always matches the initial count of 1 given at creation time.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable?.clean()
+            }
+        }
+    }
+
+    @Synchronized
+    override fun close() {
+        this.destroy()
+    }
+
+    internal inline fun <R> callWithHandle(block: (handle: Long) -> R): R {
+        // Check and increment the call counter, to keep the object alive.
+        // This needs a compare-and-set retry loop in case of concurrent updates.
+        do {
+            val c = this.callCounter.get()
+            if (c == 0L) {
+                throw IllegalStateException("${this.javaClass.simpleName} object has already been destroyed")
+            }
+            if (c == Long.MAX_VALUE) {
+                throw IllegalStateException("${this.javaClass.simpleName} call counter would overflow")
+            }
+        } while (! this.callCounter.compareAndSet(c, c + 1L))
+        // Now we can safely do the method call without the handle being freed concurrently.
+        try {
+            return block(this.uniffiCloneHandle())
+        } finally {
+            // This decrement always matches the increment we performed above.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable?.clean()
+            }
+        }
+    }
+
+    // Use a static inner class instead of a closure so as not to accidentally
+    // capture `this` as part of the cleanable's action.
+    private class UniffiCleanAction(private val handle: Long) : Runnable {
+        override fun run() {
+            if (handle == 0.toLong()) {
+                // Fake object created with `NoHandle`, don't try to free.
+                return;
+            }
+            uniffiRustCall { status ->
+                UniffiLib.uniffi_navi_fn_free_benshibytepipe(handle, status)
+            }
+        }
+    }
+
+    /**
+     * @suppress
+     */
+    fun uniffiCloneHandle(): Long {
+        if (handle == 0.toLong()) {
+            throw InternalException("uniffiCloneHandle() called on NoHandle object");
+        }
+        return uniffiRustCall() { status ->
+            UniffiLib.uniffi_navi_fn_clone_benshibytepipe(handle, status)
+        }
+    }
+
+    
+    @Throws(BenshiPipeException::class)override fun `writeBytes`(`bytes`: kotlin.ByteArray)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(BenshiPipeException) { _status ->
+    UniffiLib.uniffi_navi_fn_method_benshibytepipe_write_bytes(
+        it,
+        
+        FfiConverterByteArray.lower(`bytes`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Bytes received so far; empty after `timeout_ms` with nothing pending.
+     */
+    @Throws(BenshiPipeException::class)override fun `readBytes`(`timeoutMs`: kotlin.UInt): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    callWithHandle {
+    uniffiRustCallWithError(BenshiPipeException) { _status ->
+    UniffiLib.uniffi_navi_fn_method_benshibytepipe_read_bytes(
+        it,
+        
+        FfiConverterUInt.lower(`timeoutMs`),_status)
+}
+    }
+    )
+    }
+    
+
+    override fun `shutdown`()
+        = 
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_method_benshibytepipe_shutdown(
+        it,
+        _status)
+}
+    }
+    
+    
+
+    
+
+    
+
+
+    
+    
+    /**
+     * @suppress
+     */
+    companion object
+    
+}
+
+
+
+// Put the implementation in an object so we don't pollute the top-level namespace
+internal object uniffiCallbackInterfaceBenshiBytePipe {
+    internal object `writeBytes`: UniffiCallbackInterfaceBenshiBytePipeMethod0 {
+        override fun callback(`uniffiHandle`: Long,`bytes`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeBenshiBytePipe.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`writeBytes`(
+                    FfiConverterByteArray.lift(`bytes`),
+                )
+            }
+            val writeReturn = { _: Unit -> Unit }
+            uniffiTraitInterfaceCallWithError(
+                uniffiCallStatus,
+                makeCall,
+                writeReturn,
+                { e: BenshiPipeException -> FfiConverterTypeBenshiPipeError.lower(e) }
+            )
+        }
+    }
+    internal object `readBytes`: UniffiCallbackInterfaceBenshiBytePipeMethod1 {
+        override fun callback(`uniffiHandle`: Long,`timeoutMs`: Int,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeBenshiBytePipe.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`readBytes`(
+                    FfiConverterUInt.lift(`timeoutMs`),
+                )
+            }
+            val writeReturn = { value: kotlin.ByteArray -> uniffiOutReturn.setValue(FfiConverterByteArray.lower(value)) }
+            uniffiTraitInterfaceCallWithError(
+                uniffiCallStatus,
+                makeCall,
+                writeReturn,
+                { e: BenshiPipeException -> FfiConverterTypeBenshiPipeError.lower(e) }
+            )
+        }
+    }
+    internal object `shutdown`: UniffiCallbackInterfaceBenshiBytePipeMethod2 {
+        override fun callback(`uniffiHandle`: Long,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeBenshiBytePipe.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`shutdown`(
+                )
+            }
+            val writeReturn = { _: Unit -> Unit }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+
+    internal object uniffiFree: UniffiCallbackInterfaceFree {
+        override fun callback(handle: Long) {
+            FfiConverterTypeBenshiBytePipe.handleMap.remove(handle)
+        }
+    }
+
+    internal object uniffiClone: UniffiCallbackInterfaceClone {
+        override fun callback(handle: Long): Long {
+            return FfiConverterTypeBenshiBytePipe.handleMap.clone(handle)
+        }
+    }
+
+    internal var vtable = UniffiVTableCallbackInterfaceBenshiBytePipe.UniffiByValue(
+        uniffiFree,
+        uniffiClone,
+        `writeBytes`,
+        `readBytes`,
+        `shutdown`,
+    )
+
+    // Registers the foreign callback with the Rust side.
+    // This method is generated for each callback interface.
+    internal fun register(lib: UniffiLib) {
+        lib.uniffi_navi_fn_init_callback_vtable_benshibytepipe(vtable)
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBenshiBytePipe: FfiConverter<BenshiBytePipe, Long> {
+    internal val handleMap = UniffiHandleMap<BenshiBytePipe>()
+
+    override fun lower(value: BenshiBytePipe): Long {
+        if (value is BenshiBytePipeImpl) {
+             // Rust-implemented object.  Clone the handle and return it
+            return value.uniffiCloneHandle()
+         } else {
+            // Kotlin object, generate a new vtable handle and return that.
+            return handleMap.insert(value)
+         }
+    }
+
+    override fun lift(value: Long): BenshiBytePipe {
+        if ((value and 1.toLong()) == 0.toLong()) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return BenshiBytePipeImpl(UniffiWithHandle, value)
+        } else {
+            // Kotlin-generated handle, get the object from the handle map
+            return handleMap.remove(value)
+        }
+    }
+
+    override fun read(buf: ByteBuffer): BenshiBytePipe {
+        return lift(buf.getLong())
+    }
+
+    override fun allocationSize(value: BenshiBytePipe) = 8UL
+
+    override fun write(value: BenshiBytePipe, buf: ByteBuffer) {
+        buf.putLong(lower(value))
     }
 }
 
@@ -4892,6 +5380,47 @@ public object FfiConverterTypeFfiPackCatalogSnapshot: FfiConverterRustBuffer<Ffi
 
 
 
+/**
+ * Rows from a read-only place-index query; `error` is empty on success.
+ */
+data class FfiPlaceIndexRows (
+    var `error`: kotlin.String
+    , 
+    var `rows`: List<List<kotlin.String?>>
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiPlaceIndexRows: FfiConverterRustBuffer<FfiPlaceIndexRows> {
+    override fun read(buf: ByteBuffer): FfiPlaceIndexRows {
+        return FfiPlaceIndexRows(
+            FfiConverterString.read(buf),
+            FfiConverterSequenceSequenceOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiPlaceIndexRows) = (
+            FfiConverterString.allocationSize(value.`error`) +
+            FfiConverterSequenceSequenceOptionalString.allocationSize(value.`rows`)
+    )
+
+    override fun write(value: FfiPlaceIndexRows, buf: ByteBuffer) {
+            FfiConverterString.write(value.`error`, buf)
+            FfiConverterSequenceSequenceOptionalString.write(value.`rows`, buf)
+    }
+}
+
+
+
 data class FfiPmtilesJob (
     var `id`: kotlin.String
     , 
@@ -5892,6 +6421,71 @@ public object FfiConverterTypeWaterPoiAlongRoute: FfiConverterRustBuffer<WaterPo
 
 
 
+
+/**
+ * Failure reported by a Kotlin [`BenshiBytePipe`].
+ */
+sealed class BenshiPipeException: kotlin.Exception() {
+    
+    class Io(
+        
+        val `reason`: kotlin.String
+        ) : BenshiPipeException() {
+        override val message
+            get() = "reason=${ `reason` }"
+    }
+    
+
+    
+
+
+    companion object ErrorHandler : UniffiRustCallStatusErrorHandler<BenshiPipeException> {
+        override fun lift(error_buf: RustBuffer.ByValue): BenshiPipeException = FfiConverterTypeBenshiPipeError.lift(error_buf)
+    }
+
+    
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeBenshiPipeError : FfiConverterRustBuffer<BenshiPipeException> {
+    override fun read(buf: ByteBuffer): BenshiPipeException {
+        
+
+        return when(buf.getInt()) {
+            1 -> BenshiPipeException.Io(
+                FfiConverterString.read(buf),
+                )
+            else -> throw RuntimeException("invalid error enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: BenshiPipeException): ULong {
+        return when(value) {
+            is BenshiPipeException.Io -> (
+                // Add the size for the Int that specifies the variant plus the size needed for all fields
+                4UL
+                + FfiConverterString.allocationSize(value.`reason`)
+            )
+        }
+    }
+
+    override fun write(value: BenshiPipeException, buf: ByteBuffer) {
+        when(value) {
+            is BenshiPipeException.Io -> {
+                buf.putInt(1)
+                FfiConverterString.write(value.`reason`, buf)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+
+}
+
+
+
+
 enum class CampingCallKind {
     
     OK,
@@ -6750,6 +7344,62 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeWaterPoiAlongRoute.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceOptionalString: FfiConverterRustBuffer<List<kotlin.String?>> {
+    override fun read(buf: ByteBuffer): List<kotlin.String?> {
+        val len = buf.getInt()
+        return List<kotlin.String?>(len) {
+            FfiConverterOptionalString.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.String?>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterOptionalString.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.String?>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterOptionalString.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer<List<List<kotlin.String?>>> {
+    override fun read(buf: ByteBuffer): List<List<kotlin.String?>> {
+        val len = buf.getInt()
+        return List<List<kotlin.String?>>(len) {
+            FfiConverterSequenceOptionalString.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<List<kotlin.String?>>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterSequenceOptionalString.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<List<kotlin.String?>>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterSequenceOptionalString.write(it, buf)
         }
     }
 }
@@ -8412,6 +9062,20 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * `wal_checkpoint(TRUNCATE)` on the place index: `PASS`, `BUSY`, or `FAIL: ...`.
+         */ fun `placeIndexCheckpointTruncate`(`indexDbPath`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_place_index_checkpoint_truncate(
+    
+        
+        FfiConverterString.lower(`indexDbPath`),_status)
+}
+    )
+    }
+    
+
+        /**
          * True when the place-index SQLite file has at least one searchable row.
          */ fun `placeIndexHasEntries`(`indexDbPath`: kotlin.String): kotlin.Boolean {
             return FfiConverterBoolean.lift(
@@ -8436,6 +9100,24 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
         
         FfiConverterString.lower(`indexDbPath`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Read-only SQL on `place_index.db` through the same SQLite as the index
+         * builder. Kotlin must use this instead of `android.database.sqlite`: two
+         * SQLite libraries on one WAL file in one process SIGBUS on `-shm`.
+         */ fun `placeIndexQueryReadonly`(`indexDbPath`: kotlin.String, `sql`: kotlin.String, `args`: List<kotlin.String>): FfiPlaceIndexRows {
+            return FfiConverterTypeFfiPlaceIndexRows.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_place_index_query_readonly(
+    
+        
+        FfiConverterString.lower(`indexDbPath`),
+        FfiConverterString.lower(`sql`),
+        FfiConverterSequenceString.lower(`args`),_status)
 }
     )
     }
@@ -8481,6 +9163,21 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     UniffiLib.uniffi_navi_fn_func_place_index_take_wal_quarantine_rebuild_regions(
     
         _status)
+}
+    )
+    }
+    
+
+        /**
+         * `VACUUM INTO out_path` from the place index: `PASS` or `FAIL: ...`.
+         */ fun `placeIndexVacuumInto`(`indexDbPath`: kotlin.String, `outPath`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_place_index_vacuum_into(
+    
+        
+        FfiConverterString.lower(`indexDbPath`),
+        FfiConverterString.lower(`outPath`),_status)
 }
     )
     }
@@ -10198,11 +10895,28 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
     
 
         /**
+         * Connect a real Benshi radio (VR-N76 family) over a Kotlin RFCOMM pipe.
+         *
+         * `scratch_channel` is the channel-A slot used when frequency mode is unavailable.
+         */ fun `catPluginConnectBenshi`(`scratchChannel`: kotlin.UByte, `pipe`: BenshiBytePipe): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_connect_benshi(
+    
+        
+        FfiConverterUByte.lower(`scratchChannel`),
+        FfiConverterTypeBenshiBytePipe.lower(`pipe`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Lab / developer connect: in-process FakeBenshiPeer configured as VR-N76.
          *
          * Keeps VR-N76 gating + GAIA program paths linked into release `libnavi.so`
          * (LTO would otherwise strip unused `navi-cat::benshi`). Not a physical radio;
-         * Kotlin `BenshiRfcommTransport` is the real RFCOMM byte path for hardware.
+         * [`cat_plugin_connect_benshi`] is the hardware path.
          */ fun `catPluginConnectBenshiLab`(`scratchChannel`: kotlin.UByte): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->

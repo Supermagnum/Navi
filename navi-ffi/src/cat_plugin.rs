@@ -7,11 +7,13 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
 
+use navi_cat::benshi::backend::BenshiTransport;
 use navi_cat::benshi::{
-    gate_native_identity, BenshiBackend, FakeBenshiPeer, ALLOWED_PRODUCT_VR_N76,
-    ALLOWED_PRODUCT_VR_N76_FW,
+    gate_native_identity, BenshiBackend, FakeBenshiPeer, InProcessTransport,
+    ALLOWED_PRODUCT_VR_N76, ALLOWED_PRODUCT_VR_N76_FW,
 };
 use navi_cat::gating::{GateDecision, GateStatus};
 use navi_cat::program::{program_vfo1_verified, ProgramRequest};
@@ -65,12 +67,102 @@ impl RigBackend for OfflineRig {
     }
 }
 
+/// Failure reported by a Kotlin [`BenshiBytePipe`].
+#[derive(Debug, uniffi::Error)]
+pub enum BenshiPipeError {
+    Io { reason: String },
+}
+
+impl std::fmt::Display for BenshiPipeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io { reason } => f.write_str(reason),
+        }
+    }
+}
+
+impl std::error::Error for BenshiPipeError {}
+
+impl From<uniffi::UnexpectedUniFFICallbackError> for BenshiPipeError {
+    fn from(e: uniffi::UnexpectedUniFFICallbackError) -> Self {
+        Self::Io { reason: e.reason }
+    }
+}
+
+/// Raw RFCOMM byte pipe to a bonded Benshi radio, implemented in Kotlin.
+///
+/// Must be bound to the SPP control UUID only, never the audio RFCOMM UUID.
+/// GAIA framing and the never-transmit allowlist stay in `navi-cat`.
+/// Implementations must not call back into this library.
+#[uniffi::export(with_foreign)]
+pub trait BenshiBytePipe: Send + Sync {
+    fn write_bytes(&self, bytes: Vec<u8>) -> Result<(), BenshiPipeError>;
+    /// Bytes received so far; empty after `timeout_ms` with nothing pending.
+    fn read_bytes(&self, timeout_ms: u32) -> Result<Vec<u8>, BenshiPipeError>;
+    fn shutdown(&self);
+}
+
+struct ForeignBenshiPipe {
+    pipe: Arc<dyn BenshiBytePipe>,
+}
+
+impl Drop for ForeignBenshiPipe {
+    fn drop(&mut self) {
+        self.pipe.shutdown();
+    }
+}
+
+/// Benshi byte path: in-process demo peer or a real radio over RFCOMM.
+enum BenshiLink {
+    Lab(InProcessTransport),
+    Rfcomm(ForeignBenshiPipe),
+}
+
+impl BenshiTransport for BenshiLink {
+    fn write_all(&mut self, bytes: &[u8]) -> Result<(), RigError> {
+        match self {
+            Self::Lab(t) => t.write_all(bytes),
+            Self::Rfcomm(p) => p
+                .pipe
+                .write_bytes(bytes.to_vec())
+                .map_err(|e| RigError::Protocol(format!("RFCOMM write: {e}"))),
+        }
+    }
+
+    fn read_some(&mut self, timeout: Duration) -> Result<Vec<u8>, RigError> {
+        match self {
+            Self::Lab(t) => t.read_some(timeout),
+            Self::Rfcomm(p) => {
+                let ms = u32::try_from(timeout.as_millis()).unwrap_or(u32::MAX);
+                p.pipe
+                    .read_bytes(ms)
+                    .map_err(|e| RigError::Protocol(format!("RFCOMM read: {e}")))
+            }
+        }
+    }
+}
+
 enum LiveBackend {
     Offline(OfflineRig),
     Tcp(TcpRigBackend),
     Ffi(FfiRigBackend),
-    /// Native Benshi / VR-N76 family (lab FakeBenshiPeer or future RFCOMM pipe).
-    Benshi(BenshiBackend<navi_cat::benshi::InProcessTransport>),
+    /// Native Benshi / VR-N76 family.
+    Benshi(BenshiBackend<BenshiLink>),
+}
+
+impl LiveBackend {
+    /// Status `link` field so the UI can tell a real radio from the demo peer.
+    fn link(&self) -> &'static str {
+        match self {
+            Self::Offline(_) => "offline",
+            Self::Tcp(_) => "tcp",
+            Self::Ffi(_) => "ffi",
+            Self::Benshi(b) => match b.transport() {
+                BenshiLink::Lab(_) => "benshi_lab",
+                BenshiLink::Rfcomm(_) => "benshi_rfcomm",
+            },
+        }
+    }
 }
 
 impl RigBackend for LiveBackend {
@@ -157,6 +249,16 @@ struct Session {
     position: Option<(f64, f64)>,
     cat: CatService<LiveBackend>,
     guest_installed: bool,
+    /// Cached CATS guest — `PluginHost::load_dir` compiles Cranelift every call and
+    /// was reloading on every follow tick (RFCOMM timeouts + MemAvailable spikes).
+    guest_host: Option<CachedGuestHost>,
+}
+
+/// Identity of the on-disk guest used to invalidate [`Session::guest_host`].
+struct CachedGuestHost {
+    wasm_len: u64,
+    wasm_mtime_secs: i64,
+    host: PluginHost,
 }
 
 impl Session {
@@ -278,6 +380,7 @@ pub fn cat_plugin_configure(files_dir: String, data_dir: String, timezone: Strin
         position: None,
         cat,
         guest_installed: false,
+        guest_host: None,
     });
 }
 
@@ -305,6 +408,7 @@ pub fn cat_plugin_install_guest(
         return format!("FAIL: write wasm: {e}");
     }
     session.guest_installed = true;
+    session.guest_host = None;
     "OK: installed".into()
 }
 
@@ -397,33 +501,63 @@ pub fn cat_plugin_connect_ffi(model: i32, allow_beta: bool) -> String {
     }
 }
 
+/// Handshake (GET_DEV_INFO, notification registration, settings read; no TX)
+/// and install the Benshi backend as the live CAT session.
+fn connect_benshi_link(session: &mut Session, link: BenshiLink, scratch_channel: u8) -> String {
+    let is_lab = matches!(link, BenshiLink::Lab(_));
+    let mut backend = BenshiBackend::new(link, scratch_channel);
+    if !is_lab {
+        // WRITE_SETTINGS (cmd 11) on VR-N76 often needs >800ms; under tablet load
+        // 3s still timed out — keep headroom for RFCOMM + concurrent guest work.
+        backend.set_reply_timeout(Duration::from_secs(5));
+    }
+    if let Err(e) = backend.handshake() {
+        return format!("FAIL: {e}");
+    }
+    let follow_net = session.cat.follow_network_id.clone();
+    let follow_pin = session.cat.follow_pinned.clone();
+    let follow_stop = session.cat.follow_stopped_reason.clone();
+    let db = open_db(&session.files_dir);
+    let model = backend.model_name();
+    let mut cat = CatService::new(LiveBackend::Benshi(backend), db);
+    cat.follow_network_id = follow_net;
+    cat.follow_pinned = follow_pin;
+    cat.follow_stopped_reason = follow_stop;
+    session.cat = cat;
+    if is_lab {
+        format!("OK: connected benshi lab ({model})")
+    } else {
+        format!("OK: connected benshi radio ({model})")
+    }
+}
+
+/// Connect a real Benshi radio (VR-N76 family) over a Kotlin RFCOMM pipe.
+///
+/// `scratch_channel` is the channel-A slot used when frequency mode is unavailable.
+#[uniffi::export]
+pub fn cat_plugin_connect_benshi(scratch_channel: u8, pipe: Arc<dyn BenshiBytePipe>) -> String {
+    let mut guard = session_lock().lock().expect("cat session");
+    let Some(session) = guard.as_mut() else {
+        pipe.shutdown();
+        return "FAIL: not configured".into();
+    };
+    let link = BenshiLink::Rfcomm(ForeignBenshiPipe { pipe });
+    connect_benshi_link(session, link, scratch_channel)
+}
+
 /// Lab / developer connect: in-process FakeBenshiPeer configured as VR-N76.
 ///
 /// Keeps VR-N76 gating + GAIA program paths linked into release `libnavi.so`
 /// (LTO would otherwise strip unused `navi-cat::benshi`). Not a physical radio;
-/// Kotlin `BenshiRfcommTransport` is the real RFCOMM byte path for hardware.
+/// [`cat_plugin_connect_benshi`] is the hardware path.
 #[uniffi::export]
 pub fn cat_plugin_connect_benshi_lab(scratch_channel: u8) -> String {
     let mut guard = session_lock().lock().expect("cat session");
     let Some(session) = guard.as_mut() else {
         return "FAIL: not configured".into();
     };
-    match BenshiBackend::connect_fake(FakeBenshiPeer::default_vr_n76(), scratch_channel) {
-        Ok(backend) => {
-            let follow_net = session.cat.follow_network_id.clone();
-            let follow_pin = session.cat.follow_pinned.clone();
-            let follow_stop = session.cat.follow_stopped_reason.clone();
-            let db = open_db(&session.files_dir);
-            let model = backend.model_name();
-            let mut cat = CatService::new(LiveBackend::Benshi(backend), db);
-            cat.follow_network_id = follow_net;
-            cat.follow_pinned = follow_pin;
-            cat.follow_stopped_reason = follow_stop;
-            session.cat = cat;
-            format!("OK: connected benshi lab ({model})")
-        }
-        Err(e) => format!("FAIL: {e}"),
-    }
+    let link = BenshiLink::Lab(InProcessTransport::new(FakeBenshiPeer::default_vr_n76()));
+    connect_benshi_link(session, link, scratch_channel)
 }
 
 /// VR-N76 productIds accepted by the native Benshi allowlist (`0x0002`, `0x0103`).
@@ -472,7 +606,15 @@ pub fn cat_plugin_status_json() -> String {
     let Some(session) = guard.as_mut() else {
         return r#"{"connected":false,"reason":"not configured"}"#.into();
     };
-    session.cat.status_json()
+    let json = session.cat.status_json();
+    let link = session.cat.backend.link();
+    match serde_json::from_str::<serde_json::Value>(&json) {
+        Ok(mut v) => {
+            v["link"] = serde_json::json!(link);
+            v.to_string()
+        }
+        Err(_) => json,
+    }
 }
 
 #[uniffi::export]
@@ -541,7 +683,29 @@ pub fn cat_plugin_tick_guest() -> String {
     }
     let status_json = session.cat.status_json();
     let (lat, lon) = session.position.unwrap_or((0.0, 0.0));
-    let sites_json = session.cat.repeater_query_json(lat, lon, 150.0, None);
+    let follow_id = serde_json::from_str::<serde_json::Value>(&status_json)
+        .ok()
+        .and_then(|v| {
+            v.get("follow_network_id")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_default();
+    // Named follow: shrink host JSON so the WASM guest query buffer is not truncated
+    // (Ostlandet full near-set is ~70–80 KiB; guest used to cap at 64 KiB → live=0).
+    let follow_filter = match follow_id.as_str() {
+        "" | "auto" | "standalone" | "off" => None,
+        name => Some(name),
+    };
+    let sites_json = session
+        .cat
+        .repeater_query_json(lat, lon, 150.0, follow_filter);
+    let sites_len = sites_json.len();
+    let la5mr_in_sites = sites_json.matches("\"LA5MR\"").count();
+    log::info!(
+        target: "NaviCat",
+        "tick_prep follow={follow_id:?} filter={follow_filter:?} sites_json_len={sites_len} la5mr_mentions={la5mr_in_sites} pos={lat},{lon}"
+    );
     let kv = match FilePluginKv::open(session.kv_path()) {
         Ok(k) => k,
         Err(e) => return format!("FAIL: kv: {e}"),
@@ -552,42 +716,109 @@ pub fn cat_plugin_tick_guest() -> String {
         sites_json,
         kv,
     };
-    let host = match PluginHost::load_dir(
-        &dir,
-        &cat_policy(),
-        PluginLimits {
-            fuel: 50_000_000,
-            timeout_ms: 5_000,
-            memory_bytes: DEFAULT_MEMORY_BYTES.min(8 * 1024 * 1024),
-        },
-    ) {
-        Ok(h) => h,
-        Err(e) => return format!("FAIL: load: {e}"),
+    let wasm_meta = match fs::metadata(dir.join("plugin.wasm")) {
+        Ok(m) => m,
+        Err(e) => return format!("FAIL: wasm meta: {e}"),
     };
-    let call = host.call(Box::new(api));
-    if let Ok(kv) = FilePluginKv::open(session.kv_path()) {
+    let wasm_len = wasm_meta.len();
+    let wasm_mtime_secs = wasm_meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let cache_hit = session
+        .guest_host
+        .as_ref()
+        .is_some_and(|c| c.wasm_len == wasm_len && c.wasm_mtime_secs == wasm_mtime_secs);
+    if !cache_hit {
+        session.guest_host = None;
+        let host = match PluginHost::load_dir(
+            &dir,
+            &cat_policy(),
+            PluginLimits {
+                fuel: 50_000_000,
+                timeout_ms: 5_000,
+                memory_bytes: DEFAULT_MEMORY_BYTES.min(8 * 1024 * 1024),
+            },
+        ) {
+            Ok(h) => h,
+            Err(e) => return format!("FAIL: load: {e}"),
+        };
+        log::info!(
+            target: "NaviCat",
+            "guest_host loaded wasm_len={wasm_len} mtime={wasm_mtime_secs}"
+        );
+        session.guest_host = Some(CachedGuestHost {
+            wasm_len,
+            wasm_mtime_secs,
+            host,
+        });
+    }
+    let call = {
+        let host = &session
+            .guest_host
+            .as_ref()
+            .expect("guest_host just set")
+            .host;
+        host.call(Box::new(api))
+    };
+    // Re-open KV after the guest returns: plugin_kv_set flushes to disk on each
+    // write, so cat_follow_switch is visible here when the guest requested a tune.
+    if let Ok(mut kv) = FilePluginKv::open(session.kv_path()) {
         if let Some(site_id) = kv.get("cat_follow_switch") {
-            let mut kv = kv;
             let _ = kv.set("cat_follow_switch", "");
-            if let Some(site) = session
+            log::info!(target: "NaviCat", "follow_switch site_id={site_id}");
+            let site = session
                 .cat
                 .db
                 .list_sites()
                 .into_iter()
-                .find(|s| s.id == site_id)
-            {
-                let burst = site.access == navi_cat::AccessTone::ToneBurst1750;
-                let req = ProgramRequest {
-                    freq_out_mhz: site.freq_out_mhz,
-                    shift_mhz: site.shift_mhz.unwrap_or(f64::NAN),
-                    ctcss_hz: if burst { None } else { site.ctcss_hz },
-                    dcs_code: if burst { None } else { site.dcs_code },
-                    mode: "FM".into(),
-                    passband_hz: 12_500,
-                    vfo: "VFOA".into(),
-                    leaves_follow: false,
+                .find(|s| s.id == site_id);
+            let Some(site) = site else {
+                log::warn!(
+                    target: "NaviCat",
+                    "VFO1 skip: site_id={site_id} not in repeater db",
+                );
+                return match call {
+                    Ok(outcome) => format!("OK: {outcome:?}"),
+                    Err(e) => format!("FAIL: {e}"),
                 };
-                let _ = program_vfo1_verified(&mut session.cat.backend, &req);
+            };
+            let burst = site.access == navi_cat::AccessTone::ToneBurst1750;
+            let shift = site.shift_mhz.unwrap_or(f64::NAN);
+            let req = ProgramRequest {
+                freq_out_mhz: site.freq_out_mhz,
+                shift_mhz: shift,
+                ctcss_hz: if burst { None } else { site.ctcss_hz },
+                dcs_code: if burst { None } else { site.dcs_code },
+                mode: "FM".into(),
+                passband_hz: 12_500,
+                vfo: "VFOA".into(),
+                leaves_follow: false,
+            };
+            match program_vfo1_verified(&mut session.cat.backend, &req) {
+                Ok(reported) => {
+                    log::info!(
+                        target: "NaviCat",
+                        "VFO1 program {} {} freq={:.3} shift={:.3} ctcss={:?} dcs={:?} readback={reported:?}",
+                        site.callsign,
+                        site.id,
+                        site.freq_out_mhz,
+                        shift,
+                        if burst { None } else { site.ctcss_hz },
+                        if burst { None } else { site.dcs_code },
+                    );
+                }
+                Err(e) => {
+                    log::warn!(
+                        target: "NaviCat",
+                        "VFO1 program FAIL {} {} freq={:.3}: {e}",
+                        site.callsign,
+                        site.id,
+                        site.freq_out_mhz,
+                    );
+                }
             }
         }
     }
@@ -685,4 +916,86 @@ pub fn cat_plugin_update_repeaters_from_server(base_url: String) -> String {
         }
     }
     combined.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct PeerPipe {
+        peer: Mutex<FakeBenshiPeer>,
+        fail_writes: bool,
+        closed: Arc<AtomicBool>,
+    }
+
+    impl BenshiBytePipe for PeerPipe {
+        fn write_bytes(&self, bytes: Vec<u8>) -> Result<(), BenshiPipeError> {
+            if self.fail_writes {
+                return Err(BenshiPipeError::Io {
+                    reason: "socket closed".into(),
+                });
+            }
+            self.peer
+                .lock()
+                .unwrap()
+                .write_from_host(&bytes)
+                .map_err(|reason| BenshiPipeError::Io { reason })
+        }
+
+        fn read_bytes(&self, _timeout_ms: u32) -> Result<Vec<u8>, BenshiPipeError> {
+            let peer = self.peer.lock().unwrap();
+            let mut out = Vec::new();
+            while let Some(frame) = peer.read_to_host() {
+                out.extend_from_slice(&frame);
+            }
+            Ok(out)
+        }
+
+        fn shutdown(&self) {
+            self.closed.store(true, Ordering::SeqCst);
+        }
+    }
+
+    fn pipe(fail_writes: bool) -> (Arc<dyn BenshiBytePipe>, Arc<AtomicBool>) {
+        let closed = Arc::new(AtomicBool::new(false));
+        let p = PeerPipe {
+            peer: Mutex::new(FakeBenshiPeer::default_vr_n76()),
+            fail_writes,
+            closed: closed.clone(),
+        };
+        (Arc::new(p), closed)
+    }
+
+    fn link_of(status: &str) -> String {
+        let v: serde_json::Value = serde_json::from_str(status).unwrap();
+        v["link"].as_str().unwrap_or_default().to_string()
+    }
+
+    #[test]
+    fn benshi_pipe_connect_reports_radio_link_and_closes_on_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = dir.path().to_string_lossy().to_string();
+        cat_plugin_configure(files.clone(), files, String::new());
+
+        let (good, closed) = pipe(false);
+        let msg = cat_plugin_connect_benshi(5, good);
+        assert_eq!(msg, "OK: connected benshi radio (VR-N76)");
+        assert_eq!(link_of(&cat_plugin_status_json()), "benshi_rfcomm");
+        assert!(!closed.load(Ordering::SeqCst));
+        cat_plugin_disconnect();
+        assert!(closed.load(Ordering::SeqCst));
+        assert_eq!(link_of(&cat_plugin_status_json()), "offline");
+
+        let msg = cat_plugin_connect_benshi_lab(5);
+        assert_eq!(msg, "OK: connected benshi lab (VR-N76)");
+        assert_eq!(link_of(&cat_plugin_status_json()), "benshi_lab");
+
+        let (bad, closed) = pipe(true);
+        let msg = cat_plugin_connect_benshi(5, bad);
+        assert!(msg.starts_with("FAIL: "), "{msg}");
+        assert!(msg.contains("socket closed"), "{msg}");
+        assert!(closed.load(Ordering::SeqCst));
+        assert_eq!(link_of(&cat_plugin_status_json()), "benshi_lab");
+    }
 }

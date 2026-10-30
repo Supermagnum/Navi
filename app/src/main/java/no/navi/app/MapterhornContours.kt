@@ -2,6 +2,7 @@ package no.navi.app
 
 import android.util.Log
 import org.maplibre.android.geometry.LatLngBounds
+import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.LineLayer
@@ -52,16 +53,19 @@ object MapterhornContours {
         )
 
     @Volatile
-    private var activeFetcher: DemTileFetcher? = null
+    private var activeProvider: ContourTileProvider? = null
 
     private class ContourTileProvider(
         private val fetcher: DemTileFetcher,
     ) : GeometryTileProvider {
+        @Volatile
+        var closed = false
+
         override fun getFeaturesForBounds(
             bounds: LatLngBounds,
             zoomLevel: Int,
         ): FeatureCollection {
-            if (zoomLevel < 9) return FeatureCollection.fromFeatures(emptyArray())
+            if (zoomLevel < 9 || closed) return FeatureCollection.fromFeatures(emptyArray())
             val west = bounds.longitudeWest
             val south = bounds.latitudeSouth
             val east = bounds.longitudeEast
@@ -70,6 +74,7 @@ object MapterhornContours {
             val demZ = minOf(zoomLevel, 12)
             val allFeatures = ArrayList<org.maplibre.geojson.Feature>()
             for ((tx, ty) in DemTileCover.tilesIntersecting(tileBounds, demZ)) {
+                if (closed) return FeatureCollection.fromFeatures(emptyArray())
                 val cacheKey = ContourGenerationCache.key(demZ, tx, ty, zoomLevel)
                 val cached = ContourGenerationCache.get(cacheKey)
                 val tileFeatures =
@@ -114,9 +119,9 @@ object MapterhornContours {
     ): Boolean =
         try {
             detach(style, clearCaches = false)
-            activeFetcher = fetcher
-            val source = CustomGeometrySource(SOURCE_ID, ContourTileProvider(fetcher))
-            style.addSource(source)
+            val provider = ContourTileProvider(fetcher)
+            activeProvider = provider
+            style.addSource(CustomGeometrySource(SOURCE_ID, provider))
             val minorFilter = Expression.eq(Expression.get(ContourGenerator.PROP_MAJOR), false)
             val majorFilter = Expression.eq(Expression.get(ContourGenerator.PROP_MAJOR), true)
             val minor =
@@ -156,7 +161,8 @@ object MapterhornContours {
         style: Style,
         clearCaches: Boolean = true,
     ) {
-        activeFetcher = null
+        activeProvider?.closed = true
+        activeProvider = null
         BasemapContourLabelStyle.detach(style)
         runCatching { style.removeLayer(LAYER_MAJOR_ID) }
         runCatching { style.removeLayer(LAYER_MINOR_ID) }
@@ -165,6 +171,20 @@ object MapterhornContours {
             ContourGenerationCache.clear()
             DemTileFetcher.clearDemGridCache()
         }
+    }
+
+    /**
+     * Remove the contour source from [map]'s style before `setStyle` or map destroy.
+     *
+     * Tearing down a style that still holds the source zeroes the Java peer's
+     * native pointer, but a MapLibre tile worker already inside
+     * [ContourTileProvider.getFeaturesForBounds] still calls `setTileData` when
+     * it returns: IllegalStateException "invalid native peer" on that worker.
+     * `removeSource` hands ownership back to the Java peer, which stays valid.
+     */
+    fun detachBeforeTeardown(map: MapLibreMap) {
+        val style = map.style ?: return
+        if (style.getSource(SOURCE_ID) != null) detach(style, clearCaches = false)
     }
 
     fun isAttached(style: Style): Boolean = style.getLayer(LAYER_MINOR_ID) != null && style.getSource(SOURCE_ID) != null

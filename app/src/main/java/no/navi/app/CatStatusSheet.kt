@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import no.navi.app.cat.BenshiBondedDevice
 import no.navi.app.cat.CatRigModelPreset
 import no.navi.app.cat.CatSerialLoopbackBridge
 import no.navi.app.cat.catRigModelLabel
@@ -36,6 +37,10 @@ import org.json.JSONObject
 /** Same green as pack-ready chips in Tools — connected success, not mere selection. */
 private val CatConnectedChipGreen = Color(0xFF2E7D32)
 private val CatConnectedChipGreenMuted = CatConnectedChipGreen.copy(alpha = 0.30f)
+
+/** `link` values from `catPluginStatusJson` for the Benshi backend. */
+const val CAT_LINK_BENSHI_RFCOMM = "benshi_rfcomm"
+const val CAT_LINK_BENSHI_LAB = "benshi_lab"
 
 /**
  * True when [preset] is the Hamlib model reported connected in status JSON.
@@ -55,6 +60,40 @@ internal fun catPresetMatchesConnectedModel(
         .any { token -> preset.name.contains(token, ignoreCase = true) }
 }
 
+/** Real Benshi RFCOMM radio up (not lab/demo, not disconnected). */
+internal fun catBenshiRfcommLive(
+    connected: Boolean,
+    link: String,
+): Boolean = connected && link == CAT_LINK_BENSHI_RFCOMM
+
+/**
+ * Green success colors for CAT connected pills (Hamlib model or Benshi radio).
+ * Disconnected / mere selection keep the theme secondary container.
+ */
+@Composable
+internal fun catConnectedSuccessChipColors(connectedSuccess: Boolean) =
+    FilterChipDefaults.filterChipColors(
+        containerColor =
+            if (connectedSuccess) {
+                CatConnectedChipGreenMuted
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHighest
+            },
+        selectedContainerColor =
+            if (connectedSuccess) {
+                CatConnectedChipGreen
+            } else {
+                MaterialTheme.colorScheme.secondaryContainer
+            },
+        labelColor = MaterialTheme.colorScheme.onSurface,
+        selectedLabelColor =
+            if (connectedSuccess) {
+                Color.White
+            } else {
+                MaterialTheme.colorScheme.onSecondaryContainer
+            },
+    )
+
 data class CatUiState(
     val statusJson: String = """{"connected":false}""",
     val nearbyJson: String = "[]",
@@ -66,6 +105,12 @@ data class CatUiState(
     val backend: String = MapHudPrefs.CAT_BACKEND_DEFAULT,
     /** Scratch channel index for Benshi channel-A programming. */
     val scratchChannel: Int = MapHudPrefs.CAT_SCRATCH_CHANNEL_DEFAULT,
+    /** Bluetooth MAC of the bonded Benshi radio chosen in the picker. */
+    val benshiAddress: String = "",
+    val benshiDevices: List<BenshiBondedDevice> = emptyList(),
+    /** Why [benshiDevices] could not be listed (permission, Bluetooth off), or empty. */
+    val benshiDevicesNotice: String = "",
+    val benshiConnecting: Boolean = false,
     /**
      * Developer/test only: step network follow at 5 s/site. Off by default;
      * must stay labelled as non-product.
@@ -135,8 +180,12 @@ fun CatStatusSheet(
     onBaudRateChange: (Int) -> Unit,
     onBackendChange: (String) -> Unit,
     onScratchChannelChange: (Int) -> Unit,
+    onBenshiDeviceSelect: (String) -> Unit,
+    onBenshiRefreshDevices: () -> Unit,
     onDemoModeDeveloperChange: (Boolean) -> Unit,
     onFollowNetworkChange: (String) -> Unit,
+    /** Draft typing in the free-text network field — must not apply CAT follow mid-keystroke. */
+    onFollowNetworkDraft: (String) -> Unit = {},
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onRefresh: () -> Unit,
@@ -156,6 +205,8 @@ fun CatStatusSheet(
         runCatching {
             JSONObject(state.statusJson).optString("follow_network_id")
         }.getOrDefault("")
+    val link =
+        runCatching { JSONObject(state.statusJson).optString("link") }.getOrDefault("")
     val nearby = parseNearby(state.nearbyJson)
     val presets = catRigModelPresets()
 
@@ -266,20 +317,51 @@ fun CatStatusSheet(
                     modifier = Modifier.testTag("cat_network_off"),
                 )
             }
-            Text(
-                if (connected) {
-                    "Connected${if (model.isNotBlank()) " ($model)" else ""}"
-                } else {
-                    "Disconnected"
-                },
-                style = MaterialTheme.typography.bodyMedium,
+            // Status pill: green only for live Benshi RFCOMM (VR-N76); lab stays error;
+            // disconnected is not green.
+            val benshiLive = catBenshiRfcommLive(connected, link)
+            val statusLabel =
+                when {
+                    benshiLive ->
+                        stringResource(R.string.cat_link_benshi_radio)
+                    connected && link == CAT_LINK_BENSHI_LAB ->
+                        stringResource(R.string.cat_link_benshi_demo, model)
+                    connected -> "Connected${if (model.isNotBlank()) " ($model)" else ""}"
+                    else -> "Disconnected"
+                }
+            FilterChip(
+                // Non-interactive status indicator; keep enabled so Material3
+                // selectedContainerColor (green) is not replaced by disabled grey.
+                selected = connected,
+                onClick = {},
+                label = { Text(statusLabel) },
+                colors =
+                    when {
+                        benshiLive -> catConnectedSuccessChipColors(connectedSuccess = true)
+                        connected && link == CAT_LINK_BENSHI_LAB ->
+                            FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.error,
+                            )
+                        else ->
+                            FilterChipDefaults.filterChipColors(
+                                containerColor =
+                                    MaterialTheme.colorScheme.surfaceContainerHighest,
+                                selectedContainerColor =
+                                    MaterialTheme.colorScheme.surfaceContainerHighest,
+                                labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                selectedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                    },
                 modifier = Modifier.testTag("cat_connection_label"),
             )
-            Text(
-                "Radio: ${catRigModelLabel(state.rigModel)}  |  Baud: ${state.baudRate}",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.testTag("cat_radio_baud_summary"),
-            )
+            if (state.backend == MapHudPrefs.CAT_BACKEND_HAMLIB) {
+                Text(
+                    "Radio: ${catRigModelLabel(state.rigModel)}  |  Baud: ${state.baudRate}",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("cat_radio_baud_summary"),
+                )
+            }
             if (follow.isNotBlank()) {
                 Text(
                     stringResource(R.string.network_follow, follow),
@@ -327,6 +409,52 @@ fun CatStatusSheet(
                     },
                     modifier = Modifier.fillMaxWidth().testTag("cat_scratch_channel_field"),
                 )
+                Text(stringResource(R.string.cat_benshi_radio_title), style = MaterialTheme.typography.titleSmall)
+                if (state.demoModeDeveloper) {
+                    Text(
+                        stringResource(R.string.cat_benshi_demo_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag("cat_benshi_demo_note"),
+                    )
+                }
+                if (state.benshiDevicesNotice.isNotBlank()) {
+                    Text(
+                        state.benshiDevicesNotice,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.testTag("cat_benshi_devices_notice"),
+                    )
+                } else if (state.benshiDevices.isEmpty()) {
+                    Text(
+                        stringResource(R.string.cat_benshi_no_paired),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.testTag("cat_benshi_devices"),
+                ) {
+                    for (device in state.benshiDevices) {
+                        val selected =
+                            device.address.equals(state.benshiAddress, ignoreCase = true)
+                        // Same green success pill as Hamlib model chips when RFCOMM is live.
+                        val connectedSuccess = benshiLive && selected
+                        FilterChip(
+                            selected = selected || connectedSuccess,
+                            onClick = { onBenshiDeviceSelect(device.address) },
+                            label = { Text("${device.name} (${device.address})") },
+                            colors = catConnectedSuccessChipColors(connectedSuccess),
+                            modifier = Modifier.testTag("cat_benshi_device_${device.address}"),
+                        )
+                    }
+                }
+                OutlinedButton(
+                    onClick = onBenshiRefreshDevices,
+                    modifier = Modifier.testTag("cat_benshi_refresh_devices"),
+                ) {
+                    Text(stringResource(R.string.cat_benshi_refresh_paired))
+                }
             }
             Text(
                 stringResource(R.string.ui_developer_test_only),
@@ -343,104 +471,90 @@ fun CatStatusSheet(
                 stringResource(R.string.ui_off_by_default_steps_network_follow_along_a_planned_corridor),
                 style = MaterialTheme.typography.bodySmall,
             )
-            OutlinedTextField(
-                value = state.host,
-                onValueChange = onHostChange,
-                label = { Text(stringResource(R.string.cat_rigctld_host)) },
-                singleLine = true,
-                enabled = state.backend == MapHudPrefs.CAT_BACKEND_HAMLIB,
-                modifier = Modifier.fillMaxWidth().testTag("cat_host_field"),
-            )
-            OutlinedTextField(
-                value = state.port,
-                onValueChange = onPortChange,
-                label = { Text(stringResource(R.string.cat_port)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().testTag("cat_port_field"),
-            )
-            Text(stringResource(R.string.cat_hamlib_model_title), style = MaterialTheme.typography.titleSmall)
-            Text(
-                stringResource(R.string.ui_tcp_path_remote_daemon_model_informational_onboard_ffi_usb_b),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier.testTag("cat_rig_model_presets"),
-            ) {
-                for (preset in presets) {
-                    val selected = state.rigModel == preset.model
-                    val connectedSuccess =
-                        connected &&
-                            (
-                                catPresetMatchesConnectedModel(preset, model) ||
-                                    (model.isBlank() && selected)
-                            )
-                    FilterChip(
-                        selected = selected || connectedSuccess,
-                        onClick = { onRigModelChange(preset.model) },
-                        label = { Text(preset.name) },
-                        colors =
-                            FilterChipDefaults.filterChipColors(
-                                containerColor =
-                                    if (connectedSuccess) {
-                                        CatConnectedChipGreenMuted
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceContainerHighest
-                                    },
-                                selectedContainerColor =
-                                    if (connectedSuccess) {
-                                        CatConnectedChipGreen
-                                    } else {
-                                        MaterialTheme.colorScheme.secondaryContainer
-                                    },
-                                labelColor = MaterialTheme.colorScheme.onSurface,
-                                selectedLabelColor =
-                                    if (connectedSuccess) {
-                                        Color.White
-                                    } else {
-                                        MaterialTheme.colorScheme.onSecondaryContainer
-                                    },
-                            ),
-                        modifier = Modifier.testTag("cat_rig_model_${preset.model}"),
-                    )
-                }
-            }
-            OutlinedTextField(
-                value = state.rigModel.toString(),
-                onValueChange = { raw ->
-                    val digits = raw.filter { it.isDigit() }
-                    if (digits.isEmpty()) {
-                        onRigModelChange(MapHudPrefs.CAT_RIG_MODEL_DEFAULT)
-                    } else {
-                        onRigModelChange(digits.toIntOrNull()?.coerceAtLeast(1) ?: state.rigModel)
+            // Hamlib TCP/FFI controls (including Kenwood TS-2000 model chips) only
+            // when that backend is selected — never alongside Benshi / VR-N76.
+            if (state.backend == MapHudPrefs.CAT_BACKEND_HAMLIB) {
+                OutlinedTextField(
+                    value = state.host,
+                    onValueChange = onHostChange,
+                    label = { Text(stringResource(R.string.cat_rigctld_host)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("cat_host_field"),
+                )
+                OutlinedTextField(
+                    value = state.port,
+                    onValueChange = onPortChange,
+                    label = { Text(stringResource(R.string.cat_port)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("cat_port_field"),
+                )
+                Text(stringResource(R.string.cat_hamlib_model_title), style = MaterialTheme.typography.titleSmall)
+                Text(
+                    stringResource(R.string.ui_tcp_path_remote_daemon_model_informational_onboard_ffi_usb_b),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.testTag("cat_rig_model_presets"),
+                ) {
+                    for (preset in presets) {
+                        val selected = state.rigModel == preset.model
+                        val connectedSuccess =
+                            connected &&
+                                (
+                                    catPresetMatchesConnectedModel(preset, model) ||
+                                        (model.isBlank() && selected)
+                                )
+                        FilterChip(
+                            selected = selected || connectedSuccess,
+                            onClick = { onRigModelChange(preset.model) },
+                            label = { Text(preset.name) },
+                            colors = catConnectedSuccessChipColors(connectedSuccess),
+                            modifier = Modifier.testTag("cat_rig_model_${preset.model}"),
+                        )
                     }
-                },
-                label = { Text(stringResource(R.string.cat_hamlib_model_number)) },
-                singleLine = true,
-                supportingText = { Text(catRigModelLabel(state.rigModel)) },
-                modifier = Modifier.fillMaxWidth().testTag("cat_rig_model_field"),
-            )
-            Text(stringResource(R.string.cat_serial_baud), style = MaterialTheme.typography.titleSmall)
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier.testTag("cat_baud_presets"),
-            ) {
-                for (baud in CatSerialLoopbackBridge.BAUD_RATES) {
-                    FilterChip(
-                        selected = state.baudRate == baud,
-                        onClick = { onBaudRateChange(baud) },
-                        label = { Text("$baud") },
-                        modifier = Modifier.testTag("cat_baud_$baud"),
-                    )
+                }
+                OutlinedTextField(
+                    value = state.rigModel.toString(),
+                    onValueChange = { raw ->
+                        val digits = raw.filter { it.isDigit() }
+                        if (digits.isEmpty()) {
+                            onRigModelChange(MapHudPrefs.CAT_RIG_MODEL_DEFAULT)
+                        } else {
+                            onRigModelChange(digits.toIntOrNull()?.coerceAtLeast(1) ?: state.rigModel)
+                        }
+                    },
+                    label = { Text(stringResource(R.string.cat_hamlib_model_number)) },
+                    singleLine = true,
+                    supportingText = { Text(catRigModelLabel(state.rigModel)) },
+                    modifier = Modifier.fillMaxWidth().testTag("cat_rig_model_field"),
+                )
+                Text(stringResource(R.string.cat_serial_baud), style = MaterialTheme.typography.titleSmall)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.testTag("cat_baud_presets"),
+                ) {
+                    for (baud in CatSerialLoopbackBridge.BAUD_RATES) {
+                        FilterChip(
+                            selected = state.baudRate == baud,
+                            onClick = { onBaudRateChange(baud) },
+                            label = { Text("$baud") },
+                            modifier = Modifier.testTag("cat_baud_$baud"),
+                        )
+                    }
                 }
             }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(onClick = onConnect, modifier = Modifier.testTag("cat_btn_connect")) {
+                OutlinedButton(
+                    onClick = onConnect,
+                    enabled = !state.benshiConnecting,
+                    modifier = Modifier.testTag("cat_btn_connect"),
+                ) {
                     Text(stringResource(R.string.action_connect))
                 }
                 OutlinedButton(
@@ -455,7 +569,9 @@ fun CatStatusSheet(
             }
             OutlinedTextField(
                 value = state.followNetworkId,
-                onValueChange = onFollowNetworkChange,
+                // Draft only: accidental soft-key / focus input must not mutate the live
+                // follow id (e.g. LA5MR → LA5AMR) until Follow on or a chip commits it.
+                onValueChange = onFollowNetworkDraft,
                 label = { Text(stringResource(R.string.ui_network_id_e_g_la5mr)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("cat_follow_network_field"),

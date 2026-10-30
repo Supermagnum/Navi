@@ -109,6 +109,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import no.navi.app.cat.BenshiBluetooth
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
@@ -367,14 +368,82 @@ class MainActivity : ComponentActivity() {
      *   [--ez navi_use_networked_cabins …] [--ez navi_network_hut_member …]
      *   [--ez navi_inject_gps true|false] (default true: pin GPS at from)
      *
+     * Debug fixed GPS only (debuggable builds — no trip required):
+     *   --ed navi_gps_lat 60.5621914 --ed navi_gps_lon 11.2561239
+     * Holds the puck at that point until `--ez navi_clear_gps true` or process death.
+     * Tools → Debug GPS and map-mark "Set as fake GPS" use the same hold.
+     *
      * Debug search field (debuggable builds only): exact text into the search box,
      * submitted like the Search button when navi_search_ui_submit is true:
      *   --es navi_search_ui_q 'Łódź' [--ez navi_search_ui_submit true]
+     *
+     * Debug CAT sheet (debuggable builds): open the CAT status sheet:
+     *   --ez navi_open_cat_sheet true
+     * Force Benshi RFCOMM connect (VR-N76); never Hamlib/TS-2000:
+     *   --ez navi_connect_benshi true [--es navi_benshi_address 38:D2:00:01:4B:E7]
+     *   [--es navi_cat_network LA5MR]
+     *
+     * Debug route simulation (debuggable builds):
+     *   --ef navi_sim_scale 25          wall-clock compress (1 = realtime)
+     *   --ez navi_start_simulate true   start Simulate route if samples exist
+     * Clear the start pin before simulate so hold cannot stop playback:
+     *   --ez navi_clear_gps true
      */
     private fun applyNaviLaunchExtras(intent: Intent?) {
         if (intent == null) return
         if (intent.getBooleanExtra("navi_clear_gps", false)) {
             NaviMapTestHooks.clearDebugGpsInject()
+        }
+        // Fixed fake GPS pin (debug builds). Independent of a trip seed.
+        if (DebugTripHooks.debugBuild(this) &&
+            intent.hasExtra("navi_gps_lat") &&
+            intent.hasExtra("navi_gps_lon")
+        ) {
+            val glat = intentDoubleExtra(intent, "navi_gps_lat")
+            val glon = intentDoubleExtra(intent, "navi_gps_lon")
+            if (glat.isFinite() && glon.isFinite()) {
+                NaviMapTestHooks.holdDebugGps(glat, glon)
+            }
+        }
+        if (DebugTripHooks.debugBuild(this) && intent.hasExtra("navi_sim_scale")) {
+            val scale = intentDoubleExtra(intent, "navi_sim_scale")
+            if (scale.isFinite() && scale > 0.0) {
+                NaviMapTestHooks.simulationTimeScale = scale
+            }
+        }
+        if (DebugTripHooks.debugBuild(this) &&
+            intent.getBooleanExtra("navi_start_simulate", false)
+        ) {
+            // Corridor playback owns the puck; a sustained hold would re-inject
+            // the start pin and stopRouteSimulation every tick.
+            NaviMapTestHooks.clearDebugGpsInject()
+            NaviMapTestHooks.requestStartRouteSimulation = true
+        }
+        if (DebugTripHooks.debugBuild(this) && intent.hasExtra("navi_sim_seek_cum_m")) {
+            val cum = intentDoubleExtra(intent, "navi_sim_seek_cum_m")
+            if (cum.isFinite() && cum >= 0.0) {
+                NaviMapTestHooks.requestSimSeekCumM = cum
+            }
+        }
+        if (DebugTripHooks.debugBuild(this) &&
+            intent.getBooleanExtra("navi_open_cat_sheet", false)
+        ) {
+            NaviMapTestHooks.pendingOpenCatSheet = true
+        }
+        if (DebugTripHooks.debugBuild(this) &&
+            intent.getBooleanExtra("navi_connect_benshi", false)
+        ) {
+            NaviMapTestHooks.pendingOpenCatSheet = true
+            NaviMapTestHooks.pendingConnectBenshi = true
+            intent.getStringExtra("navi_benshi_address")?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                NaviMapTestHooks.pendingBenshiAddress = it
+            }
+        }
+        // Force follow network without opening the CAT sheet (avoids TextField typos).
+        if (DebugTripHooks.debugBuild(this)) {
+            intent.getStringExtra("navi_cat_network")?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                NaviMapTestHooks.pendingCatNetworkChoice = it
+            }
         }
         if (intent.hasExtra("navi_clear_basemap_test_hooks")) {
             NaviMapTestHooks.clearForcedBasemapSettings()
@@ -873,24 +942,6 @@ private fun formatEbikePlanStatus(
     return if (warn != null) "$base\n${warn.take(160)}" else base
 }
 
-/**
- * When indexed packs are missing/stale, every plan rebuilds from the PBF
- * (~tens of seconds). Surface that so "extreme slowness" is actionable.
- */
-private fun indexedPackMissHint(report: String): String? {
-    if (!report.contains("pack_hit=false")) return null
-    return "Slow plan: indexed maps not ready (PBF fallback). " +
-        "Wait for background indexing, or Tools → Rebuild indexed maps."
-}
-
-private fun withIndexedPackMissHint(
-    statusLine: String,
-    report: String,
-): String {
-    val hint = indexedPackMissHint(report) ?: return statusLine
-    return if (statusLine.isBlank()) hint else "$statusLine\n$hint"
-}
-
 private fun planReportIsCancelled(report: String): Boolean =
     report.contains("cancelled=true") ||
         report.lineSequence().any { it.trim() == "FAIL: cancelled" }
@@ -1334,6 +1385,12 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     var schoolPoisJson by remember { mutableStateOf("[]") }
     var routeSchoolPoisJson by remember { mutableStateOf("[]") }
     var roadSignWarning by remember { mutableStateOf(RoadSignWarningState()) }
+
+    /** Upcoming speed-limit plate from the idle cone — kept separate so each GPS tick does not clear it. */
+    var speedLimitConeWarning by remember { mutableStateOf(RoadSignWarningState()) }
+
+    /** Sticky hazard box: require a sustained alternate before swapping plates. */
+    val roadSignWarningHold = remember { RoadSignWarningHold() }
     var weatherPluginEnabled by remember {
         mutableStateOf(MapHudPrefs.loadWeatherPluginEnabled(context))
     }
@@ -1408,6 +1465,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 baudRate = MapHudPrefs.loadCatBaudRate(context),
                 backend = MapHudPrefs.loadCatBackend(context),
                 scratchChannel = MapHudPrefs.loadCatScratchChannel(context),
+                benshiAddress = MapHudPrefs.loadCatBenshiAddress(context),
                 demoModeDeveloper = MapHudPrefs.loadCatDemoModeDeveloper(context),
                 networkChoice = MapHudPrefs.loadCatNetworkChoice(context),
                 followNetworkId = MapHudPrefs.loadCatNetworkChoice(context),
@@ -1454,7 +1512,40 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
         campingSessionDisableMessage = disableReason
     }
 
+    var catBenshiConnectAfterGrant by remember { mutableStateOf(false) }
+
+    fun refreshBenshiDevices() {
+        val devices = BenshiBluetooth.bondedDevices(context)
+        val notice =
+            when {
+                !BenshiBluetooth.hasPermission(context) ->
+                    context.getString(R.string.cat_benshi_permission_needed)
+                devices == null -> context.getString(R.string.cat_benshi_bluetooth_off)
+                else -> ""
+            }
+        val list = devices.orEmpty()
+        val address =
+            catUi.benshiAddress.ifBlank {
+                list.singleOrNull { it.advertisesSpp }?.address.orEmpty()
+            }
+        if (address != catUi.benshiAddress) MapHudPrefs.saveCatBenshiAddress(context, address)
+        catUi = catUi.copy(benshiDevices = list, benshiDevicesNotice = notice, benshiAddress = address)
+    }
+
+    fun catBenshiStatusLine(
+        msg: String,
+        demo: Boolean,
+        label: String,
+    ): String {
+        if (!msg.startsWith("OK:")) return msg
+        if (!demo) return context.getString(R.string.cat_link_benshi_radio)
+        val model = msg.substringAfter('(', "").substringBefore(')')
+        val what = listOf(model, label).filter { it.isNotBlank() }.joinToString(" ")
+        return context.getString(R.string.cat_link_benshi_demo, what)
+    }
+
     fun refreshCatUi() {
+        if (catUi.backend == MapHudPrefs.CAT_BACKEND_BENSHI) refreshBenshiDevices()
         val status = uniffi.navi.catPluginStatusJson()
         val lat = mapState.gpsLat.takeIf { it.isFinite() && it != 0.0 } ?: mapState.startLat
         val lon = mapState.gpsLon.takeIf { it.isFinite() && it != 0.0 } ?: mapState.startLon
@@ -1477,6 +1568,10 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 saved to ""
             } else if (names.any { it.name.equals(saved, ignoreCase = true) }) {
                 saved to ""
+            } else if (names.isEmpty()) {
+                // Nearby list still loading — keep named choice (e.g. LA5MR) so a
+                // Benshi reconnect does not silently demote to auto.
+                saved to ""
             } else {
                 MapHudPrefs.saveCatNetworkChoice(context, MapHudPrefs.CAT_NETWORK_AUTO)
                 MapHudPrefs.CAT_NETWORK_AUTO to
@@ -1492,6 +1587,65 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 repeaterDropPath = CatBootstrap.repeaterDropDir(context).absolutePath,
             )
     }
+
+    fun connectBenshiRadio() {
+        if (catUi.benshiConnecting) return
+        val address = catUi.benshiAddress
+        if (address.isBlank()) {
+            refreshBenshiDevices()
+            val msg = context.getString(R.string.cat_benshi_select_radio)
+            catUi = catUi.copy(lastMessage = msg)
+            status = msg
+            return
+        }
+        val name = catUi.benshiDevices.firstOrNull { it.address == address }?.name ?: address
+        val scratch = catUi.scratchChannel.coerceIn(0, 255).toUByte()
+        catUi =
+            catUi.copy(
+                benshiConnecting = true,
+                lastMessage = context.getString(R.string.cat_benshi_connecting, "$name $address"),
+            )
+        scope.launch {
+            val msg =
+                withContext(Dispatchers.IO) {
+                    // Release any previous RFCOMM socket before opening a new one.
+                    uniffi.navi.catPluginDisconnect()
+                    try {
+                        val device = BenshiBluetooth.bondedDevice(context, address)
+                        val pipe = BenshiBluetooth.openPipe(device)
+                        uniffi.navi.catPluginConnectBenshi(scratch, pipe)
+                    } catch (e: java.io.IOException) {
+                        "FAIL: $name $address: ${e.message}"
+                    } catch (e: SecurityException) {
+                        context.getString(R.string.cat_benshi_permission_denied)
+                    }
+                }
+            catUi = catUi.copy(benshiConnecting = false, lastMessage = msg)
+            // Re-assert network follow after reconnect: disconnect rebuilds the
+            // backend and must not leave follow_network_id unset in the guest.
+            if (msg.startsWith("OK:")) {
+                applyCatNetworkFollow()
+            }
+            refreshCatUi()
+            status = catBenshiStatusLine(msg, demo = false, label = address)
+        }
+    }
+
+    val benshiPermissionLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions(),
+        ) { result ->
+            val connectAfter = catBenshiConnectAfterGrant
+            catBenshiConnectAfterGrant = false
+            refreshBenshiDevices()
+            if (result.values.all { it }) {
+                if (connectAfter) connectBenshiRadio()
+            } else {
+                val msg = context.getString(R.string.cat_benshi_permission_denied)
+                catUi = catUi.copy(lastMessage = msg)
+                status = msg
+            }
+        }
 
     val campingReEnableSession: () -> Unit = {
         uniffi.navi.campingPluginSetEnabled(true)
@@ -1690,6 +1844,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     var downloadPolling by remember { mutableStateOf(false) }
     var indexedMapsUiLine by remember { mutableStateOf("") }
     var placeIndexUiLine by remember { mutableStateOf("") }
+    var regionReadinessPanel by remember { mutableStateOf("") }
 
     /** After a tracked Tools process finishes fully, show pinned "Ready!" until the next job. */
     var toolsProcessReady by remember { mutableStateOf(false) }
@@ -1710,6 +1865,28 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 if (!planningRoute) showJobProgress(line)
             }
             delay(800)
+        }
+    }
+
+    // Sticky region readiness under the search field (download / index / skeletons).
+    LaunchedEffect(downloadPolling, longTripEnabled, placeIndexUiLine, regionDownloadProgress) {
+        while (isActive) {
+            val snap =
+                runCatching { RegionReadiness.refresh(context) }.getOrNull()
+                    ?: RegionReadiness.current()
+            val next = snap.panelText
+            if (next != regionReadinessPanel) {
+                regionReadinessPanel = next
+            }
+            // Kick idle drain once download/index frees the pipeline so skeletons resume.
+            if (!RegionDownloadBackground.isRunning() &&
+                !PlaceIndexBackground.isRunning() &&
+                IdlePackJobs.outstandingCount() > 0 &&
+                !IdlePackJobs.isRunning()
+            ) {
+                IdlePackJobs.onAppIdle()
+            }
+            delay(700)
         }
     }
 
@@ -1898,6 +2075,9 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
 
     /** Cold PBF bbox build for [liveSpeedLimitConeJson] — must not run on main. */
     val speedLimitConeInFlight = remember { AtomicBoolean(false) }
+
+    /** Holds posted limit across brief road-near gaps / adjacent-way toggles. */
+    val speedLimitHold = remember { SpeedLimitHold() }
     var driveHud by remember {
         mutableStateOf(
             DriveHudState(
@@ -1985,6 +2165,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
         simulating = false
         simulatingRef.set(false)
         NaviMapTestHooks.simulatingActive = false
+        IdlePackJobs.onPlanEnded()
         status = message
     }
 
@@ -1993,6 +2174,13 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
             status = "No simulation samples on route"
             return
         }
+        // Sustained debug GPS hold re-queues an inject every tick and would call
+        // stopRouteSimulation — clear it so playback can advance along the route.
+        NaviMapTestHooks.clearDebugGpsInject()
+        // Pause idle pack/index/skeleton work — corridor sim on 3.5 GB tablets
+        // otherwise fights LMK with background jobs.
+        IdlePackJobs.pauseForPlan()
+        runCatching { Runtime.getRuntime().gc() }
         routeSimulator?.stop()
         progressTrackerRef.get()?.reset()
         lastViaToastIndex = -1
@@ -2015,6 +2203,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     simulating = false
                     simulatingRef.set(false)
                     NaviMapTestHooks.simulatingActive = false
+                    IdlePackJobs.onPlanEnded()
                     status = "Simulation finished"
                 },
             )
@@ -2932,7 +3121,16 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 lastCatFollowTickMs = nowMs
                 withContext(Dispatchers.Default) {
                     uniffi.navi.catPluginSetPosition(lat, lon)
-                    uniffi.navi.catPluginTickGuest()
+                    val statusSnap = uniffi.navi.catPluginStatusJson()
+                    val followId =
+                        runCatching {
+                            org.json.JSONObject(statusSnap).optString("follow_network_id")
+                        }.getOrDefault("")
+                    val tickMsg = uniffi.navi.catPluginTickGuest()
+                    android.util.Log.i(
+                        "NaviCat",
+                        "follow_tick lat=$lat lon=$lon follow=$followId $tickMsg",
+                    )
                 }
             }
         }
@@ -3114,12 +3312,25 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
         lat: Double,
         lon: Double,
     ): Pair<String, String> {
-        // Offline nearby only. Online reverse is not used for GPS / map-mark
-        // (online place search is submit-only; never an automatic lookup).
+        // Use GPS / map-mark: online reverse when the user enabled Online place
+        // search (explicit tap = submit); else offline place index; else coords.
+        // Always on IO — never block the Compose scope / UI thread.
         val resolved =
             withContext(Dispatchers.IO) {
                 if (runCatching { foregroundPlanActive() }.getOrDefault(false)) {
                     return@withContext null
+                }
+                if (onlinePlaceSearchEnabled) {
+                    val online =
+                        withTimeoutOrNull(2_500L) {
+                            runCatching {
+                                OnlinePlaceSearch.reverse(context, lat, lon)
+                            }.getOrNull()
+                        }
+                    val onlineName = online?.name?.trim().orEmpty()
+                    if (onlineName.isNotBlank()) {
+                        return@withContext onlineName to "online-reverse"
+                    }
                 }
                 withTimeoutOrNull(1_500L) {
                     try {
@@ -3490,6 +3701,13 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     placeIndexUiLine = line
                     if (!planningRoute) showJobProgress(toastActivityPulse.pulse(rawLine, nowPulse))
                 } else {
+                    // DEM/pack may briefly own the Download slot during indexing —
+                    // keep the sticky place-index % line visible in Tools.
+                    val stickyPlace = RegionDownloadBackground.placeIndexProgressLine()
+                    if (stickyPlace.isNotBlank() && stickyPlace.contains('%')) {
+                        placeIndexUiLine =
+                            placeActivityPulse.pulse(stickyPlace, nowPulse)
+                    }
                     val line = regionActivityPulse.pulse(rawLine, nowPulse)
                     regionDownloadProgress = line
                     if (!planningRoute) {
@@ -3500,9 +3718,23 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 val rawLine = RegionDownloadBackground.uiLine()
                 if (rawLine.isNotBlank()) {
                     val nowPulse = SystemClock.elapsedRealtime()
-                    val line = regionActivityPulse.pulse(rawLine, nowPulse)
-                    regionDownloadProgress = line
-                    if (!planningRoute) showJobProgress(toastActivityPulse.pulse(rawLine, nowPulse))
+                    if (rawLine.contains("Place index", ignoreCase = true)) {
+                        placeIndexUiLine = placeActivityPulse.pulse(rawLine, nowPulse)
+                        if (!planningRoute) {
+                            showJobProgress(toastActivityPulse.pulse(rawLine, nowPulse))
+                        }
+                    } else {
+                        val stickyPlace = RegionDownloadBackground.placeIndexProgressLine()
+                        if (stickyPlace.isNotBlank() && stickyPlace.contains('%')) {
+                            placeIndexUiLine =
+                                placeActivityPulse.pulse(stickyPlace, nowPulse)
+                        }
+                        val line = regionActivityPulse.pulse(rawLine, nowPulse)
+                        regionDownloadProgress = line
+                        if (!planningRoute) {
+                            showJobProgress(toastActivityPulse.pulse(rawLine, nowPulse))
+                        }
+                    }
                 }
             } else if (!regionRunning && !downloadPolling) {
                 // Idle: do not keep a finished percent line on screen.
@@ -4437,10 +4669,12 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     }
                 }
                 if (isActive && idle && ferryPreparingRetries < 3) {
+                    planNotice = ""
                     ferryPreparingRetries += 1
                     planKick += 1
                 } else if (isActive) {
                     status = "$msg (stopped auto-retry)"
+                    planNotice = status
                 }
                 return@LaunchedEffect
             }
@@ -4463,6 +4697,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 val stepMs = 2_000L
                 var waited = 0L
                 var idle = false
+                var sawRunning = false
                 while (isActive && waited < maxWaitMs) {
                     delay(stepMs)
                     waited += stepMs
@@ -4471,25 +4706,37 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             uniffi.navi.corridorSkeletonProgressSnapshot()
                         }.getOrNull()
                     if (prog != null) {
-                        if (prog.message.isNotBlank()) {
-                            status =
+                        if (prog.message.isNotBlank() && prog.running) {
+                            val line =
                                 if (prog.pct.toInt() > 0) {
                                     "${prog.message} ${prog.pct}%"
                                 } else {
                                     prog.message
                                 }
+                            status = line
+                            planNotice = line
                         }
-                        if (!prog.running) {
+                        if (prog.running) {
+                            sawRunning = true
+                        } else if ((sawRunning || waited >= 4_000L) && !IdlePackJobs.skeletonPending()) {
+                            // Idle: either a build finished, or none was running
+                            // (stale fingerprint / already-ready). Retry plan;
+                            // do not keep "preparing…" under Plan once idle.
+                            // A skeleton queued behind ferry sidecars is not idle yet.
                             idle = true
                             break
                         }
                     }
                 }
                 if (isActive && idle && skeletonPreparingRetries < 3) {
+                    // Clear before kick so a finished route / replan never keeps
+                    // the preparing line visible under the Plan button.
+                    planNotice = ""
                     skeletonPreparingRetries += 1
                     planKick += 1
                 } else if (isActive) {
                     status = "$msg (stopped auto-retry)"
+                    planNotice = status
                 }
                 return@LaunchedEffect
             }
@@ -4637,6 +4884,9 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 },
                 result.report,
             )
+        // Replace any prior ferry/skeleton "preparing…" notice so a finished
+        // plan never leaves that line stuck under the Plan button.
+        planNotice = status
     }
 
     LaunchedEffect(Unit) {
@@ -4929,12 +5179,13 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                         }
                         val road = formatCurrentRoadLabel(s.street, s.highway, context.resources)
                         streetFromRoute = true
-                        val limit =
+                        val rawLimit =
                             resolveSpeedLimitKmh(
                                 postedKmh = s.maxspeedKmh,
                                 maxspeedConditional = s.maxspeedConditional,
                                 highway = s.highway,
                             )
+                        val limit = speedLimitHold.update(rawLimit)
                         val over =
                             OverspeedHud.isOverspeed(speedKmh, limit, speedAccKmh)
                         NaviMapTestHooks.lastCurrentStreet = road
@@ -5084,10 +5335,12 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             schoolState.active -> schoolFallbackJson
                             else -> signJson
                         }
-                    roadSignWarning =
+                    val rawRoadSign =
                         roadSignWarningFromJson(finalRoadSignJson).copy(
                             unitSystem = driveHud.unitSystem,
                         )
+                    roadSignWarning = roadSignWarningHold.update(rawRoadSign)
+                    speedLimitConeWarning = RoadSignWarningState()
                     NaviMapTestHooks.lastRoadSignWarningJson =
                         if (roadSignWarning.active) finalRoadSignJson else "{}"
                     NaviMapTestHooks.lastSchoolProximityWarningJson = schoolFallbackJson
@@ -5263,18 +5516,20 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                         }
                     val signState = roadSignWarningFromJson(signJson)
                     val schoolState = roadSignWarningFromJson(schoolFallbackJson)
-                    var finalRoadSignJson =
+                    val finalRoadSignJson =
                         when {
                             signState.active && signState.code == "142" -> signJson
                             schoolState.active -> schoolFallbackJson
                             else -> signJson
                         }
-                    // Apply hazard/school plate immediately. Speed-limit cone may
-                    // cold-build a PBF bbox graph (tens of seconds) — never on main.
-                    roadSignWarning =
+                    // Apply hazard/school plate immediately (with hold). Speed-limit
+                    // cone may cold-build a PBF bbox graph — never on main — and
+                    // lives in [speedLimitConeWarning] so each tick does not clear it.
+                    val rawRoadSign =
                         roadSignWarningFromJson(finalRoadSignJson).copy(
                             unitSystem = driveHud.unitSystem,
                         )
+                    roadSignWarning = roadSignWarningHold.update(rawRoadSign)
                     NaviMapTestHooks.lastRoadSignWarningJson =
                         if (roadSignWarning.active) finalRoadSignJson else "{}"
                     NaviMapTestHooks.lastSchoolProximityWarningJson = schoolFallbackJson
@@ -5321,19 +5576,23 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                         runCatching {
                                             org.json.JSONObject(limitJson).optJSONObject("road_sign")
                                         }.getOrNull()
-                                    if (plate != null && plate.has("icon_key")) {
-                                        val plateJson = plate.toString()
-                                        roadSignWarning =
+                                    speedLimitConeWarning =
+                                        if (plate != null && plate.has("icon_key")) {
+                                            val plateJson = plate.toString()
+                                            NaviMapTestHooks.lastRoadSignWarningJson = plateJson
                                             roadSignWarningFromJson(plateJson).copy(
                                                 unitSystem = unit,
                                             )
-                                        NaviMapTestHooks.lastRoadSignWarningJson = plateJson
-                                    }
+                                        } else {
+                                            RoadSignWarningState()
+                                        }
                                 } finally {
                                     speedLimitConeInFlight.set(false)
                                 }
                             }
                         }
+                    } else {
+                        speedLimitConeWarning = RoadSignWarningState()
                     }
                 }
                 if (!streetFromRoute) {
@@ -5424,10 +5683,15 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             nearbyStreetInFlight.set(false)
                             when {
                                 nearInfo != null -> {
+                                    val rawLimit =
+                                        nearInfo.speedLimitKmh.takeIf {
+                                            it.isFinite() && it > 0.0
+                                        }
+                                    val limit = speedLimitHold.update(rawLimit)
                                     val over =
                                         OverspeedHud.isOverspeed(
                                             driveHud.currentSpeedKmh ?: speedKmh,
-                                            nearInfo.speedLimitKmh,
+                                            limit,
                                             speedAccKmh,
                                         )
                                     val roadLabel =
@@ -5436,27 +5700,27 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                             context.resources,
                                         )
                                     NaviMapTestHooks.lastCurrentStreet = roadLabel
-                                    NaviMapTestHooks.lastCurrentSpeedLimitKmh =
-                                        nearInfo.speedLimitKmh
+                                    NaviMapTestHooks.lastCurrentSpeedLimitKmh = limit
                                     driveHud =
                                         driveHud.copy(
                                             currentStreet = roadLabel,
                                             currentSpeedKmh =
                                                 driveHud.currentSpeedKmh ?: speedKmh,
-                                            currentSpeedLimitKmh = nearInfo.speedLimitKmh,
+                                            currentSpeedLimitKmh = limit,
                                             overspeed = over,
                                         )
                                     NaviMapTestHooks.lastOverspeed = over
                                 }
                                 interim == null && clearIfFar && driveHud.currentStreet != null -> {
+                                    val limit = speedLimitHold.update(null)
                                     driveHud =
                                         driveHud.copy(
                                             currentStreet = null,
-                                            currentSpeedLimitKmh = null,
+                                            currentSpeedLimitKmh = limit,
                                             overspeed = false,
                                         )
                                     NaviMapTestHooks.lastCurrentStreet = null
-                                    NaviMapTestHooks.lastCurrentSpeedLimitKmh = null
+                                    NaviMapTestHooks.lastCurrentSpeedLimitKmh = limit
                                     NaviMapTestHooks.lastOverspeed = false
                                 }
                             }
@@ -5806,14 +6070,24 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             NaviMapTestHooks.requestPrepareRouteSimulation = false
                             prepareRouteSimulation()
                         }
+                        // Re-assert sustained debug fake GPS each tick so live LM
+                        // cannot drift the puck while the hold is active. Never
+                        // while route simulation owns the puck — re-injecting the
+                        // start pin would stopRouteSimulation every tick and leave
+                        // HUD stuck on the first road (e.g. Adkomstvei @ 20 km/h).
+                        val heldGps = NaviMapTestHooks.heldDebugGpsLatLon
+                        if (!simulatingRef.get() &&
+                            NaviMapTestHooks.pendingInjectFixLatLon == null &&
+                            heldGps != null &&
+                            NaviMapTestHooks.shouldIgnoreLiveGpsFixes()
+                        ) {
+                            NaviMapTestHooks.pendingInjectFixLatLon = heldGps
+                        }
                         val inject = NaviMapTestHooks.pendingInjectFixLatLon
-                        if (inject != null) {
+                        if (inject != null && !simulatingRef.get()) {
                             NaviMapTestHooks.pendingInjectFixLatLon = null
-                            // Stop corridor playback so the off-route fix is not
-                            // overwritten by the next on-route sample tick.
-                            if (simulatingRef.get()) {
-                                stopRouteSimulation()
-                            }
+                            // Off-route / one-shot injects only when not simulating.
+                            // (Previously this also stopped an active corridor sim.)
                             val releaseIgnoreAfter =
                                 NaviMapTestHooks.releaseIgnoreLiveGpsAfterNextInject
                             if (!releaseIgnoreAfter) {
@@ -5835,8 +6109,11 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             applyFixRef.get().invoke(loc)
                             if (releaseIgnoreAfter) {
                                 // Debug-trip one-shot pin: allow subsequent geo-fix
-                                // / sim injects to move the puck.
-                                NaviMapTestHooks.ignoreLiveGpsFixes = false
+                                // / sim injects to move the puck — unless a sustained
+                                // debug hold is still active.
+                                if (NaviMapTestHooks.heldDebugGpsLatLon == null) {
+                                    NaviMapTestHooks.ignoreLiveGpsFixes = false
+                                }
                                 NaviMapTestHooks.releaseIgnoreLiveGpsAfterNextInject = false
                             }
                         }
@@ -5860,30 +6137,36 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                         val seekCum = NaviMapTestHooks.requestSimSeekCumM
                         if (seekCum != null) {
                             NaviMapTestHooks.requestSimSeekCumM = null
+                            // Always ensure a simulator exists — prepareRouteSimulation alone
+                            // does not create one, so seek would be a silent no-op.
                             if (routeSimulator == null && routeSamples.size >= 2) {
-                                if (progressTrackerRef.get() != null) {
+                                if (progressTrackerRef.get() == null) {
                                     prepareRouteSimulation()
-                                } else {
-                                    // Route-independent live-cone playback: no progress tracker.
-                                    routeSimulator =
-                                        RouteSimulator(
-                                            scope = scope,
-                                            samples = routeSamples,
-                                            onFix = { loc -> applyFixRef.get().invoke(loc) },
-                                            onSample = { s ->
-                                                NaviMapTestHooks.lastSimSpeedKmh = s.speedKmh
-                                                NaviMapTestHooks.lastSimHighway = s.highway
-                                                NaviMapTestHooks.lastSimMaxspeedPosted =
-                                                    s.maxspeedPosted
-                                            },
-                                            onFinished = {},
-                                        )
                                 }
+                                routeSimulator =
+                                    RouteSimulator(
+                                        scope = scope,
+                                        samples = routeSamples,
+                                        onFix = { loc -> applyFixRef.get().invoke(loc) },
+                                        onSample = { s ->
+                                            NaviMapTestHooks.lastSimSpeedKmh = s.speedKmh
+                                            NaviMapTestHooks.lastSimHighway = s.highway
+                                            NaviMapTestHooks.lastSimMaxspeedPosted =
+                                                s.maxspeedPosted
+                                        },
+                                        onFinished = {
+                                            simulating = false
+                                            simulatingRef.set(false)
+                                            NaviMapTestHooks.simulatingActive = false
+                                            IdlePackJobs.onPlanEnded()
+                                        },
+                                    )
                             }
                             // Mark as simulating so LM fixes stay suppressed during seeks.
                             simulating = true
                             simulatingRef.set(true)
                             NaviMapTestHooks.simulatingActive = true
+                            NaviMapTestHooks.clearDebugGpsInject()
                             routeSimulator?.seekToCumM(seekCum)
                         }
                         val wantHideChrome =
@@ -6549,6 +6832,63 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 query = q
                 runSearch(q, allowOnline = submit)
             }
+            if (NaviMapTestHooks.pendingOpenCatSheet) {
+                NaviMapTestHooks.pendingOpenCatSheet = false
+                if (!catPluginEnabled) {
+                    catPluginEnabled = true
+                    MapHudPrefs.saveCatPluginEnabled(context, true)
+                    uniffi.navi.catPluginSetEnabled(true)
+                    applyCatNetworkFollow()
+                }
+                showCatSheet = true
+                refreshCatUi()
+            }
+            if (NaviMapTestHooks.pendingConnectBenshi) {
+                NaviMapTestHooks.pendingConnectBenshi = false
+                // Hard switch away from Hamlib / TS-2000 before RFCOMM.
+                MapHudPrefs.saveCatBackend(context, MapHudPrefs.CAT_BACKEND_BENSHI)
+                catUi = catUi.copy(backend = MapHudPrefs.CAT_BACKEND_BENSHI)
+                NaviMapTestHooks.pendingBenshiAddress?.let { addr ->
+                    NaviMapTestHooks.pendingBenshiAddress = null
+                    MapHudPrefs.saveCatBenshiAddress(context, addr)
+                    catUi = catUi.copy(benshiAddress = addr)
+                }
+                NaviMapTestHooks.pendingCatNetworkChoice?.let { net ->
+                    NaviMapTestHooks.pendingCatNetworkChoice = null
+                    MapHudPrefs.saveCatNetworkChoice(context, net)
+                    catUi =
+                        catUi.copy(
+                            networkChoice = net,
+                            followNetworkId = net,
+                            networkNotice = "",
+                        )
+                    applyCatNetworkFollow()
+                }
+                if (!catPluginEnabled) {
+                    catPluginEnabled = true
+                    MapHudPrefs.saveCatPluginEnabled(context, true)
+                    uniffi.navi.catPluginSetEnabled(true)
+                }
+                showCatSheet = true
+                refreshBenshiDevices()
+                refreshCatUi()
+                connectBenshiRadio()
+            }
+            // Apply navi_cat_network without opening the sheet (seek/sim gates).
+            NaviMapTestHooks.pendingCatNetworkChoice?.let { net ->
+                NaviMapTestHooks.pendingCatNetworkChoice = null
+                MapHudPrefs.saveCatNetworkChoice(context, net)
+                catUi =
+                    catUi.copy(
+                        networkChoice = net,
+                        followNetworkId = net,
+                        networkNotice = "",
+                    )
+                if (catPluginEnabled) {
+                    applyCatNetworkFollow()
+                }
+                android.util.Log.i("NaviCat", "forced follow network=$net")
+            }
             delay(200)
         }
     }
@@ -6694,6 +7034,17 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                         savePlaceDraftName = pending.suggestedName
                         showSavePlaceDialog = true
                     },
+                    onSetFakeGps =
+                        if (isDebuggable) {
+                            {
+                                NaviMapTestHooks.holdDebugGps(pending.lat, pending.lon)
+                                mapMarkPending = null
+                                status =
+                                    "Fake GPS held at ${formatCoordWaypointName(pending.lat, pending.lon)}"
+                            }
+                        } else {
+                            null
+                        },
                     onCancel = { mapMarkPending = null },
                     viaCount = viaPoints.size,
                     maxVias = MAX_ROUTE_VIAS,
@@ -6873,21 +7224,46 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 onBackendChange = {
                     catUi = catUi.copy(backend = it)
                     MapHudPrefs.saveCatBackend(context, it)
+                    if (it == MapHudPrefs.CAT_BACKEND_BENSHI) refreshBenshiDevices()
                 },
                 onScratchChannelChange = {
                     catUi = catUi.copy(scratchChannel = it)
                     MapHudPrefs.saveCatScratchChannel(context, it)
+                },
+                onBenshiDeviceSelect = {
+                    catUi = catUi.copy(benshiAddress = it)
+                    MapHudPrefs.saveCatBenshiAddress(context, it)
+                },
+                onBenshiRefreshDevices = {
+                    if (BenshiBluetooth.hasPermission(context)) {
+                        refreshBenshiDevices()
+                    } else {
+                        benshiPermissionLauncher.launch(
+                            BenshiBluetooth.runtimePermissions(),
+                        )
+                    }
                 },
                 onDemoModeDeveloperChange = {
                     catUi = catUi.copy(demoModeDeveloper = it)
                     MapHudPrefs.saveCatDemoModeDeveloper(context, it)
                 },
                 onFollowNetworkChange = {
-                    MapHudPrefs.saveCatNetworkChoice(context, it)
-                    catUi = catUi.copy(followNetworkId = it, networkChoice = it, networkNotice = "")
+                    // Chip / committed choice — persist and push to the guest.
+                    val choice = it.trim()
+                    MapHudPrefs.saveCatNetworkChoice(context, choice)
+                    catUi =
+                        catUi.copy(
+                            followNetworkId = choice,
+                            networkChoice = choice,
+                            networkNotice = "",
+                        )
                     if (catPluginEnabled) {
                         applyCatNetworkFollow()
                     }
+                },
+                onFollowNetworkDraft = { draft ->
+                    // Typing only — never apply mid-keystroke (LA5MR + stray "A" → LA5AMR).
+                    catUi = catUi.copy(followNetworkId = draft)
                 },
                 onUpdateRepeaters = repeaterUpdate@{
                     if (catRepeaterUpdateBusy) return@repeaterUpdate
@@ -6918,7 +7294,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     MapHudPrefs.saveCatConsensusRelocation(context, enabled)
                     catUi = catUi.copy(consensusRelocation = enabled)
                 },
-                onConnect = {
+                onConnect = connect@{
                     MapHudPrefs.saveCatRigModel(context, catUi.rigModel)
                     MapHudPrefs.saveCatBaudRate(context, catUi.baudRate)
                     MapHudPrefs.saveCatBackend(context, catUi.backend)
@@ -6930,14 +7306,26 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             baudRate = catUi.baudRate,
                             rigModel = catUi.rigModel,
                         )
-                    val msg =
-                        if (catUi.backend == MapHudPrefs.CAT_BACKEND_BENSHI) {
-                            // Native Benshi / VR-N76 (navi-cat::benshi). Lab peer until
-                            // bonded-device RFCOMM is wired through BenshiRfcommTransport.
+                    if (catUi.backend == MapHudPrefs.CAT_BACKEND_BENSHI) {
+                        if (catUi.demoModeDeveloper) {
                             val scratch =
                                 catUi.scratchChannel.coerceIn(0, 255).toUByte()
-                            uniffi.navi.catPluginConnectBenshiLab(scratch)
-                        } else if (openParams.rigModel == 1) {
+                            val msg = uniffi.navi.catPluginConnectBenshiLab(scratch)
+                            catUi = catUi.copy(lastMessage = msg)
+                            refreshCatUi()
+                            status = catBenshiStatusLine(msg, demo = true, label = "")
+                        } else if (BenshiBluetooth.hasPermission(context)) {
+                            connectBenshiRadio()
+                        } else {
+                            catBenshiConnectAfterGrant = true
+                            benshiPermissionLauncher.launch(
+                                BenshiBluetooth.runtimePermissions(),
+                            )
+                        }
+                        return@connect
+                    }
+                    val msg =
+                        if (openParams.rigModel == 1) {
                             // Hamlib dummy (model 1): onboard libhamlib.so via FFI.
                             uniffi.navi.catPluginConnectFfi(openParams.rigModel, false)
                         } else {
@@ -6961,9 +7349,19 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     refreshCatUi()
                 },
                 onFollowEnable = {
+                    // Prefer the draft field when the user typed a network id, else chip.
                     val choice =
-                        catUi.networkChoice.ifBlank { MapHudPrefs.CAT_NETWORK_AUTO }
+                        catUi.followNetworkId
+                            .trim()
+                            .ifBlank { catUi.networkChoice.trim() }
+                            .ifBlank { MapHudPrefs.CAT_NETWORK_AUTO }
                     MapHudPrefs.saveCatNetworkChoice(context, choice)
+                    catUi =
+                        catUi.copy(
+                            followNetworkId = choice,
+                            networkChoice = choice,
+                            networkNotice = "",
+                        )
                     val req =
                         org.json
                             .JSONObject()
@@ -7080,7 +7478,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     status = "Download cancelled — set another destination or download a region in Tools"
                 },
                 title = { Text(stringResource(R.string.dialog_map_data_needed_title)) },
-                text = { Text(missing.message) },
+                text = { Text(missing.localizedMessage(context.resources)) },
                 confirmButton = {
                     TextButton(
                         onClick = {
@@ -7541,6 +7939,16 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             }
                             if (searchBusy) {
                                 Text(stringResource(R.string.search_in_progress), style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (regionReadinessPanel.isNotBlank()) {
+                                Text(
+                                    regionReadinessPanel,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .testTag("region_readiness_panel"),
+                                )
                             }
                             if (searchIndexHint.isNotBlank() && !searchBusy) {
                                 val openOnlineSettings =
@@ -8965,7 +9373,12 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             modifier = Modifier.align(Alignment.Start).pointerInput(Unit) {},
                         )
                         RoadSignWarningBox(
-                            state = roadSignWarning,
+                            state =
+                                if (roadSignWarning.active) {
+                                    roadSignWarning
+                                } else {
+                                    speedLimitConeWarning
+                                },
                             iconsDir = iconsDir.absolutePath,
                             modifier = Modifier.align(Alignment.Start).pointerInput(Unit) {},
                         )
@@ -9981,6 +10394,68 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                 "(adb pull, no root). Off by default. Does not change positioning.",
                             style = MaterialTheme.typography.bodySmall,
                         )
+                        if (isDebuggable) {
+                            Text(
+                                stringResource(R.string.tools_debug_gps),
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            Text(
+                                stringResource(R.string.tools_debug_gps_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            var debugGpsDraft by remember {
+                                mutableStateOf(
+                                    NaviMapTestHooks.heldDebugGpsLatLon?.let { (la, lo) ->
+                                        String.format(java.util.Locale.US, "%.7f, %.7f", la, lo)
+                                    } ?: "60.5621914, 11.2561239",
+                                )
+                            }
+                            OutlinedTextField(
+                                value = debugGpsDraft,
+                                onValueChange = { debugGpsDraft = it },
+                                label = { Text(stringResource(R.string.tools_debug_gps_hold)) },
+                                singleLine = true,
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .testTag("field_debug_gps_latlon"),
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Button(
+                                    onClick = {
+                                        val parts =
+                                            debugGpsDraft
+                                                .split(',', ' ', ';')
+                                                .map { it.trim() }
+                                                .filter { it.isNotEmpty() }
+                                        val la = parts.getOrNull(0)?.toDoubleOrNull()
+                                        val lo = parts.getOrNull(1)?.toDoubleOrNull()
+                                        if (la == null || lo == null) {
+                                            status = "Debug GPS needs lat, lon"
+                                            return@Button
+                                        }
+                                        NaviMapTestHooks.holdDebugGps(la, lo)
+                                        status =
+                                            "Fake GPS held at ${formatCoordWaypointName(la, lo)}"
+                                    },
+                                    modifier = Modifier.testTag("btn_debug_gps_hold"),
+                                ) {
+                                    Text(stringResource(R.string.tools_debug_gps_hold))
+                                }
+                                TextButton(
+                                    onClick = {
+                                        NaviMapTestHooks.clearDebugGpsInject()
+                                        status = "Fake GPS cleared"
+                                    },
+                                    modifier = Modifier.testTag("btn_debug_gps_clear"),
+                                ) {
+                                    Text(stringResource(R.string.tools_debug_gps_clear))
+                                }
+                            }
+                        }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
@@ -11338,17 +11813,22 @@ private fun CorridorMapView(
                     .sorted()
                     .joinToString("+")
                     .ifBlank { resolved.coveringJob?.localPath ?: "none" }
+            // Always include 3d/contours so toggling them changes the queue key
+            // even when mountedKey is stable (offline multi-archive mounts).
+            val wantContours = contoursEnabledRef.get()
             val sourceKey =
-                resolved.mountedKey.ifBlank {
-                    listOf(
-                        resolved.styleUri,
-                        resolved.kind.name,
-                        "3d=$want3d",
-                        "contours=${contoursEnabledRef.get()}",
-                        "onlineUnderlay=${resolved.onlineUnderlay}",
-                        "archives=$archiveKey",
-                    ).joinToString("|")
-                }
+                listOf(
+                    resolved.mountedKey.ifBlank {
+                        listOf(
+                            resolved.styleUri,
+                            resolved.kind.name,
+                            "onlineUnderlay=${resolved.onlineUnderlay}",
+                            "archives=$archiveKey",
+                        ).joinToString("|")
+                    },
+                    "3d=$want3d",
+                    "contours=$wantContours",
+                ).joinToString("|")
             val enqueueKey =
                 if (Fu49MapDiag.bypassStyleQueue) {
                     "$sourceKey|fu49-bypass-${System.nanoTime()}"
@@ -11439,6 +11919,7 @@ private fun CorridorMapView(
                     }
                     return@withContext
                 }
+                MapterhornContours.detachBeforeTeardown(map)
                 map.setStyle(resolved.styleUri) { style ->
                     restoreHeldCamera(map, liveCam)
                     if (!BasemapStyleApplyQueue.isCurrent(applyGen)) return@setStyle
@@ -11604,6 +12085,7 @@ private fun CorridorMapView(
                 // SIGSEGVs in AndroidVulkanRendererBackend::~ on this AAOS AVD.
                 NaviMapTestHooks.retainedMapViews.add(mapView)
             } else {
+                mapRef?.let { MapterhornContours.detachBeforeTeardown(it) }
                 runCatching { mapView.onPause() }
                 runCatching { mapView.onStop() }
                 runCatching { mapView.onDestroy() }

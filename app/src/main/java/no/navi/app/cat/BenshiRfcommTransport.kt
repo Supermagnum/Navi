@@ -1,10 +1,12 @@
 package no.navi.app.cat
 
+import java.io.ByteArrayOutputStream
 import java.io.Closeable
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.UUID
-import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
@@ -15,6 +17,8 @@ import kotlin.concurrent.thread
  * Production opens a BluetoothSocket; unit tests inject [BenshiSocketFactory]
  * streams. Never opens the audio RFCOMM UUID. One-at-a-time command queue with
  * timeouts, retries, and reconnect that re-registers notifications.
+ * [writeRaw] / [readRaw] expose the unframed byte stream for the native
+ * `navi-cat` Benshi backend (see [BenshiRfcommPipe]).
  *
  * No contact with real Bluetooth devices from tests — inject fakes only.
  */
@@ -24,9 +28,12 @@ class BenshiRfcommTransport(
     private val maxRetries: Int = 2,
 ) : Closeable {
     private val running = AtomicBoolean(false)
-    private var socket: BenshiSocket? = null
+
+    @Volatile private var socket: BenshiSocket? = null
+
+    @Volatile private var rxEnded = false
     private var readerThread: Thread? = null
-    private val rxFrames = ArrayBlockingQueue<ByteArray>(64)
+    private val rxChunks = LinkedBlockingQueue<ByteArray>()
     private val queueLock = Any()
     private val notificationTypes = mutableListOf<Byte>()
 
@@ -34,22 +41,48 @@ class BenshiRfcommTransport(
         if (running.get() && socket != null) return
         val s = socketFactory.openControlSocket()
         socket = s
+        rxChunks.clear()
+        rxEnded = false
         running.set(true)
         readerThread =
             thread(name = "benshi-rfcomm-rx", isDaemon = true) {
                 val buf = ByteArray(4096)
-                val acc = ArrayList<Byte>()
                 try {
                     while (running.get()) {
                         val n = s.input.read(buf)
                         if (n < 0) break
-                        for (i in 0 until n) acc.add(buf[i])
-                        drainGaiaFrames(acc)
+                        if (n > 0) rxChunks.put(buf.copyOf(n))
                     }
                 } catch (_: Exception) {
                     // drop; reconnect path re-opens
+                } finally {
+                    if (socket === s) rxEnded = true
                 }
             }
+    }
+
+    /** Write unframed bytes on the open socket; no reconnect. */
+    fun writeRaw(bytes: ByteArray) {
+        val s = socket ?: throw IOException("benshi RFCOMM not connected")
+        s.output.write(bytes)
+        s.output.flush()
+    }
+
+    /**
+     * Bytes received since the last call, waiting up to [timeoutMs] for the first
+     * chunk. Empty on timeout; throws once the socket has closed and is drained.
+     */
+    fun readRaw(timeoutMs: Long): ByteArray {
+        if (socket == null) throw IOException("benshi RFCOMM not connected")
+        val first = rxChunks.poll(timeoutMs, TimeUnit.MILLISECONDS)
+        if (first == null) {
+            if (rxEnded) throw IOException("benshi RFCOMM closed by radio")
+            return ByteArray(0)
+        }
+        val out = ByteArrayOutputStream(first.size)
+        out.write(first)
+        while (true) out.write(rxChunks.poll() ?: break)
+        return out.toByteArray()
     }
 
     /**
@@ -63,10 +96,9 @@ class BenshiRfcommTransport(
                 try {
                     ensureConnected()
                     val frame = gaiaEncode(body)
-                    rxFrames.clear()
-                    socket!!.output.write(frame)
-                    socket!!.output.flush()
-                    val reply = rxFrames.poll(commandTimeoutMs, TimeUnit.MILLISECONDS)
+                    rxChunks.clear()
+                    writeRaw(frame)
+                    val reply = awaitGaiaFrame(commandTimeoutMs)
                     if (reply != null) return reply
                     lastErr =
                         java.io.IOException("benshi RFCOMM timeout after ${commandTimeoutMs}ms")
@@ -99,10 +131,15 @@ class BenshiRfcommTransport(
         if (!running.get() || socket == null) connect()
     }
 
-    private fun drainGaiaFrames(acc: ArrayList<Byte>) {
+    private fun awaitGaiaFrame(timeoutMs: Long): ByteArray? {
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+        val acc = ArrayList<Byte>()
         while (true) {
-            val frame = tryExtractGaia(acc) ?: return
-            rxFrames.offer(frame)
+            val left = deadline - System.nanoTime()
+            if (left <= 0) return null
+            val chunk = rxChunks.poll(left, TimeUnit.NANOSECONDS) ?: return null
+            for (b in chunk) acc.add(b)
+            tryExtractGaia(acc)?.let { return it }
         }
     }
 

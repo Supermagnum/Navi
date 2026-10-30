@@ -6,6 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import uniffi.navi.TravelProfile
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -56,6 +57,38 @@ class IdlePackJobsPauseTest {
         assertEquals("waited", pause.action)
         assertEquals(IdlePackJobs.Kind.SKELETON, pause.kind)
         RoutePlanGate.end()
+    }
+
+    @Test
+    fun skeleton_queued_behind_ferry_is_pending_until_it_runs() {
+        IdlePackJobs.resetForTests()
+        IdlePackJobs.executeJobs = true
+        val ferryStarted = CountDownLatch(1)
+        val releaseFerry = CountDownLatch(1)
+        val skeletonDone = CountDownLatch(1)
+        IdlePackJobs.testRunJob = { job ->
+            when (job.kind) {
+                IdlePackJobs.Kind.FERRY_CAR -> {
+                    ferryStarted.countDown()
+                    releaseFerry.await(2, TimeUnit.SECONDS)
+                }
+                IdlePackJobs.Kind.SKELETON -> skeletonDone.countDown()
+                else -> Unit
+            }
+            false
+        }
+        val packDir = tmp.newFolder("packs")
+        IdlePackJobs.offerFerry(packDir, "test-latest", TravelProfile.CAR)
+        assertTrue("ferry job must start", ferryStarted.await(2, TimeUnit.SECONDS))
+        IdlePackJobs.offerSkeleton(packDir, "test-latest")
+        assertTrue("queued skeleton must count as pending", IdlePackJobs.skeletonPending())
+        releaseFerry.countDown()
+        assertTrue("skeleton job must run", skeletonDone.await(2, TimeUnit.SECONDS))
+        val deadline = System.currentTimeMillis() + 2_000
+        while (IdlePackJobs.skeletonPending() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20)
+        }
+        assertTrue("finished skeleton must not stay pending", !IdlePackJobs.skeletonPending())
     }
 
     @Test

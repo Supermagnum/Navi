@@ -34,6 +34,13 @@ object LongTripCoordinator {
         Downloading,
         Installed,
         Indexing,
+
+        /** Place index done; corridor skeleton building (or queued). */
+        BuildingRoutes,
+
+        /**
+         * Fully ready for Stage B planning: place index + car corridor skeleton.
+         */
         Indexed,
         Failed,
         Paused,
@@ -267,6 +274,7 @@ object LongTripCoordinator {
             if (st == State.Needed ||
                 st == State.Downloading ||
                 st == State.Indexing ||
+                st == State.BuildingRoutes ||
                 st == State.Paused
             ) {
                 planRef.get()?.states?.put(id, State.Paused)
@@ -285,6 +293,7 @@ object LongTripCoordinator {
             if (st == State.Needed ||
                 st == State.Downloading ||
                 st == State.Indexing ||
+                st == State.BuildingRoutes ||
                 st == State.Paused
             ) {
                 planRef.get()?.states?.put(id, State.Paused)
@@ -389,7 +398,10 @@ object LongTripCoordinator {
         states: MutableMap<String, State>,
     ) {
         if (PlaceIndexReady.isReady(internal, regionId)) {
-            states[regionId] = State.Indexed
+            states[regionId] = readinessAfterIndex(packDir, regionId)
+            if (states[regionId] == State.BuildingRoutes) {
+                CorridorSkeletonBackground.ensureAfterPlaceIndex(packDir, regionId)
+            }
             refreshStatusLine()
             return
         }
@@ -397,6 +409,58 @@ object LongTripCoordinator {
             TAG,
             "place-index missing for $regionId; not auto-building (list via InstalledMaps)",
         )
+    }
+
+    private fun readinessAfterIndex(
+        packDir: File,
+        regionId: String,
+    ): State {
+        val stem =
+            InstalledMaps.region(regionId)?.stem
+                ?: PackRegionAvailability.localStem(regionId)
+        return if (RegionReadiness.carSkeletonReady(packDir, stem)) {
+            State.Indexed
+        } else {
+            State.BuildingRoutes
+        }
+    }
+
+    /** Place index finished — move to BuildingRoutes until the car skeleton is ready. */
+    fun onBuildingRoutes(regionId: String) {
+        val plan = planRef.get() ?: return
+        val key =
+            plan.regionsInOrder.firstOrNull {
+                PackRegionAvailability.regionIdsMatchForCatalog(it, regionId)
+            } ?: return
+        val cur = plan.states[key]
+        if (cur == State.Indexed) return
+        plan.states[key] = State.BuildingRoutes
+        refreshStatusLine()
+    }
+
+    /** Corridor skeleton finished for [regionId] — mark Indexed when ready. */
+    fun onRoutesReady(regionId: String) {
+        val plan = planRef.get() ?: return
+        val key =
+            plan.regionsInOrder.firstOrNull {
+                PackRegionAvailability.regionIdsMatchForCatalog(it, regionId)
+            } ?: return
+        val r = InstalledMaps.region(key)
+        val ready =
+            if (r != null) {
+                RegionReadiness.regionFullyReady(r)
+            } else {
+                val stem = PackRegionAvailability.localStem(key)
+                val packDir =
+                    plan.regionsInOrder
+                        .firstOrNull()
+                        ?.let { InstalledMaps.region(it)?.packDir }
+                packDir != null && RegionReadiness.carSkeletonReady(packDir, stem)
+            }
+        if (ready) {
+            plan.states[key] = State.Indexed
+            refreshStatusLine()
+        }
     }
 
     /**
@@ -421,7 +485,7 @@ object LongTripCoordinator {
         }
         states[regionId] =
             if (PlaceIndexReady.isReady(placeIndexDataDir, regionId)) {
-                State.Indexed
+                readinessAfterIndex(packDir, regionId)
             } else {
                 State.Installed
             }
@@ -459,11 +523,20 @@ object LongTripCoordinator {
                 // Show Indexing in the status line while place-index runs.
                 // Planning waits for Indexed, so Installed may move to Indexing.
                 val cur = plan.states[key]
-                if (cur != State.Indexed) {
+                if (cur != State.Indexed && cur != State.BuildingRoutes) {
                     plan.states[key] = State.Indexing
                 }
             }
-            phase == "indexed" -> plan.states[key] = State.Indexed
+            phase == "indexed" -> {
+                // Place index done — BuildingRoutes until corridor skeleton ready.
+                val packDir = InstalledMaps.region(key)?.packDir
+                plan.states[key] =
+                    if (packDir != null) {
+                        readinessAfterIndex(packDir, key)
+                    } else {
+                        State.BuildingRoutes
+                    }
+            }
             phase == "paused_unmetered" -> plan.states[key] = State.Paused
             phase.startsWith("unavailable") -> plan.states[key] = State.Unavailable
             phase == "failed" -> plan.states[key] = State.Failed
@@ -481,7 +554,7 @@ object LongTripCoordinator {
                 return
             }
         for ((id, st) in plan.states.entries.toList()) {
-            if (st == State.Downloading || st == State.Indexing) {
+            if (st == State.Downloading || st == State.Indexing || st == State.BuildingRoutes) {
                 plan.states[id] = State.Unavailable
             }
         }
@@ -523,8 +596,10 @@ object LongTripCoordinator {
     }
 
     /**
-     * True when [regionId] has routing packs Ready (Installed, Indexing, or
-     * Indexed). Indexing means packs landed and place-index is in progress.
+     * True when [regionId] has routing packs Ready (Installed, Indexing,
+     * BuildingRoutes, or Indexed). BuildingRoutes means packs + place-index are
+     * done and only the car corridor skeleton is still building — graph packs
+     * are loadable, so the MainActivity pack-wait must not block forever.
      */
     fun regionPacksReady(regionId: String): Boolean {
         val st =
@@ -535,12 +610,15 @@ object LongTripCoordinator {
                 ?.firstOrNull {
                     PackRegionAvailability.regionIdsMatchForCatalog(it.key, regionId)
                 }?.value ?: return false
-        return st == State.Indexed || st == State.Installed || st == State.Indexing
+        return st == State.Indexed ||
+            st == State.Installed ||
+            st == State.Indexing ||
+            st == State.BuildingRoutes
     }
 
     /**
-     * True when [regionId] is Indexed (packs Ready + place-index ready) so the
-     * planner may use it without contending with that region's place-index scan.
+     * True when [regionId] is Indexed (packs + place-index + car corridor
+     * skeleton) so Stage B planning is not blocked on that region.
      */
     fun regionReadyForPlanning(regionId: String): Boolean {
         val st =

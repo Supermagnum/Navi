@@ -138,6 +138,28 @@ object NaviMapTestHooks {
     var pendingTripPlan: PendingTripPlan? = null
 
     /**
+     * Debug/adb: when true, MainActivity enables the CAT plugin (if needed) and
+     * opens [CatStatusSheet] once, then clears the flag.
+     */
+    @Volatile
+    var pendingOpenCatSheet: Boolean = false
+
+    /**
+     * Debug/adb: force backend=Benshi, select VR-N76 address if set, connect
+     * RFCOMM once (never Hamlib/TS-2000). Cleared after the connect attempt.
+     */
+    @Volatile
+    var pendingConnectBenshi: Boolean = false
+
+    /** Optional MAC for [pendingConnectBenshi] (e.g. `38:D2:00:01:4B:E7`). */
+    @Volatile
+    var pendingBenshiAddress: String? = null
+
+    /** Optional follow network id applied after a successful Benshi connect. */
+    @Volatile
+    var pendingCatNetworkChoice: String? = null
+
+    /**
      * When true, the next plan uses pack_dir [DebugTripHooks.FORCE_PBF_PACK_DIR]
      * so indexed packs are skipped (local-PBF graph build).
      */
@@ -1017,12 +1039,38 @@ object NaviMapTestHooks {
     var pendingInjectFixSpeedKmh: Double? = null
 
     /**
+     * Sustained debug fake GPS (debuggable builds only). While set, live
+     * LocationManager fixes are ignored and the puck stays at these coords
+     * until [clearDebugGpsInject] / `navi_clear_gps`. Not a movement track.
+     */
+    @Volatile
+    var heldDebugGpsLatLon: Pair<Double, Double>? = null
+
+    /**
+     * Pin a fixed debug GPS position. No-op on release ([replayHooksEnabled]
+     * is false). Prefer this over FakeTraveler for tablet gate starts.
+     */
+    fun holdDebugGps(
+        lat: Double,
+        lon: Double,
+    ) {
+        if (!replayHooksEnabled()) return
+        if (!lat.isFinite() || !lon.isFinite()) return
+        heldDebugGpsLatLon = lat to lon
+        ignoreLiveGpsFixes = true
+        releaseIgnoreLiveGpsAfterNextInject = false
+        pendingInjectFixLatLon = lat to lon
+        pendingInjectFixSpeedKmh = null
+    }
+
+    /**
      * Drop every in-memory GPS inject pin. Injected positions must not outlive
      * the test or an activity restart. Never persisted to prefs.
      */
     fun clearDebugGpsInject() {
         pendingInjectFixLatLon = null
         pinGpsAfterPlanLatLon = null
+        heldDebugGpsLatLon = null
         ignoreLiveGpsFixes = false
         releaseIgnoreLiveGpsAfterNextInject = false
         pendingInjectFixSpeedKmh = null

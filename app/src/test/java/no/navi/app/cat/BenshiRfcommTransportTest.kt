@@ -3,9 +3,11 @@ package no.navi.app.cat
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.io.PipedInputStream
 import java.io.PipedOutputStream
 import java.util.concurrent.atomic.AtomicInteger
@@ -83,6 +85,39 @@ class BenshiRfcommTransportTest {
             val reply = transport.transact(body)
             assertEquals(5, reply.size)
             assertTrue(opens.get() >= 1)
+        }
+    }
+
+    @Test
+    fun raw_pipe_passes_bytes_through_and_reports_peer_close() {
+        val peerToHost = PipedOutputStream()
+        val hostFromPeer = PipedInputStream(peerToHost)
+        val hostToPeer = ByteArrayOutputStream()
+        val factory =
+            object : BenshiSocketFactory {
+                override fun openControlSocket(): BenshiSocket =
+                    object : BenshiSocket {
+                        override val input = hostFromPeer
+                        override val output = hostToPeer
+
+                        override fun close() {}
+                    }
+            }
+
+        BenshiRfcommTransport(factory).use { transport ->
+            transport.connect()
+            transport.writeRaw(byteArrayOf(1, 2, 3))
+            assertArrayEquals(byteArrayOf(1, 2, 3), hostToPeer.toByteArray())
+
+            assertEquals(0, transport.readRaw(20).size)
+            peerToHost.write(byteArrayOf(9, 8, 7))
+            peerToHost.flush()
+            assertArrayEquals(byteArrayOf(9, 8, 7), transport.readRaw(2000))
+
+            peerToHost.close()
+            assertThrows(IOException::class.java) {
+                while (true) transport.readRaw(2000)
+            }
         }
     }
 }

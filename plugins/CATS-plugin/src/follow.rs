@@ -421,7 +421,7 @@ mod tests {
         assert_eq!(select_members("auto", &both)[0].id, "net");
         assert_eq!(select_members("standalone", &both)[0].id, "solo");
         assert_eq!(select_members("LA5MR", &both)[0].id, "net");
-        assert!(select_members("auto", &[standalone.clone()])
+        assert!(select_members("auto", std::slice::from_ref(&standalone))
             .iter()
             .any(|s| s.id == "solo"));
         assert!(select_members("LA5MR", &[standalone]).is_empty());

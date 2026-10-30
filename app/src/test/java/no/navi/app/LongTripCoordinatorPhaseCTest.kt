@@ -50,6 +50,8 @@ class LongTripCoordinatorPhaseCTest {
         val pbf = java.io.File(dir, "$stem.osm.pbf")
         java.io.RandomAccessFile(pbf, "rw").use { it.setLength(RegionDownloadBackground.MIN_PBF_BYTES) }
         FakePlaceIndexRows.putRows(dir, regionId, 1_000L)
+        // Indexed = place index + car corridor skeleton (Stage B readiness).
+        java.io.File(dir, "$stem.navi-corridor-skeleton.bin").writeBytes(ByteArray(8))
     }
 
     @After

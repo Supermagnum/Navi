@@ -43,6 +43,15 @@ object IndexedMapsBackground {
         java.util.concurrent.ConcurrentHashMap
             .newKeySet<String>()
 
+    /**
+     * Packs already known ready/outdated for a resolve key — MainActivity's
+     * BgTick calls [ensureStarted] every few seconds; skip status probes and
+     * INFO spam once we have a positive answer (cleared on [forceRefresh]).
+     */
+    private val idleSkipKeys =
+        java.util.concurrent.ConcurrentHashMap
+            .newKeySet<String>()
+
     fun isRunning(): Boolean = running.get()
 
     fun statusLine(): String = lastStatus.get()
@@ -143,6 +152,9 @@ object IndexedMapsBackground {
             return
         }
         val rid = regionId?.trim()?.trim('/').orEmpty()
+        if (forceRefresh) {
+            idleSkipKeys.clear()
+        }
         val resolvedPbf =
             if (rid.isNotEmpty()) {
                 val mismatchKey = "$rid|${pbf.name}"
@@ -168,19 +180,28 @@ object IndexedMapsBackground {
                     lastStatus.set(annotate("failed (pbf/region mismatch)", rid))
                     return
                 }
-                android.util.Log.i(
-                    TAG,
-                    "local-bake pbf resolved region_id=$rid pbf=${matched.absolutePath} " +
-                        "expected_prefix=$rid",
-                )
                 matched
             } else {
                 pbf
             }
+        val idleKey = "$rid|${resolvedPbf.name}|${dataDir.absolutePath}"
+        if (!forceRefresh && idleSkipKeys.contains(idleKey)) {
+            return
+        }
+        if (rid.isNotEmpty() && !idleSkipKeys.contains(idleKey)) {
+            android.util.Log.i(
+                TAG,
+                "local-bake pbf resolved region_id=$rid pbf=${resolvedPbf.absolutePath} " +
+                    "expected_prefix=$rid",
+            )
+        }
         this.scope.launch {
             val shouldRun =
                 mutex.withLock {
                     if (running.get()) {
+                        return@withLock false
+                    }
+                    if (!forceRefresh && idleSkipKeys.contains(idleKey)) {
                         return@withLock false
                     }
                     val st =
@@ -203,7 +224,9 @@ object IndexedMapsBackground {
                                 rid,
                             ),
                         )
-                        Log.i(TAG, "packs $st; skip auto refresh pbf=${resolvedPbf.name}")
+                        if (idleSkipKeys.add(idleKey)) {
+                            Log.i(TAG, "packs $st; skip auto refresh pbf=${resolvedPbf.name}")
+                        }
                         return@withLock false
                     }
                     running.set(true)

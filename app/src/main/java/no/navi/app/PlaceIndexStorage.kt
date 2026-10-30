@@ -22,6 +22,9 @@ object PlaceIndexStorage {
     private const val TAG = "PlaceIndexStorage"
     const val DB_NAME = "place_index.db"
     private const val LOC_MARKER = "place_index_volume.txt"
+    private val loggedNoMove =
+        java.util.concurrent.atomic
+            .AtomicBoolean(false)
 
     sealed class Status {
         data class Ready(
@@ -144,7 +147,10 @@ object PlaceIndexStorage {
             candidates.firstOrNull { it.absolutePath != target.dbFile.absolutePath }
         if (source == null) {
             runCatching { marker.writeText(target.volumeId + "\n") }
-            Log.i(TAG, "no existing DB to move; ${locationSummary(context)}")
+            // Pollers call this often while the DB is still empty / tiny.
+            if (loggedNoMove.compareAndSet(false, true)) {
+                Log.i(TAG, "no existing DB to move; ${locationSummary(context)}")
+            }
             return target
         }
         Log.i(

@@ -1,6 +1,5 @@
 package no.navi.app
 
-import android.database.sqlite.SQLiteDatabase
 import android.util.Log
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
@@ -97,22 +96,32 @@ object PlaceIndexIntact {
         if (bytes < MIN_DB_BYTES) {
             return empty.copy(dbBytes = bytes, reason = "db_tiny")
         }
-        // Torn -wal/-shm after a killed index build SIGBUS's Android SQLite in
-        // walIndexReadHdr (uncatchable). Recover before any framework open.
         recoverWalSidecars(dbFile)
         return runCatching {
-            SQLiteDatabase
-                .openDatabase(
-                    dbFile.absolutePath,
-                    null,
-                    SQLiteDatabase.OPEN_READONLY,
-                ).use { db ->
-                    probeOpen(db, bytes, rid)
-                }
+            probeOpen(dbFile, bytes, rid)
         }.getOrElse { t ->
             Log.w(TAG, "readonly probe failed region=$rid: ${t.message}")
             empty.copy(dbBytes = bytes, reason = "open_failed")
         }
+    }
+
+    /**
+     * Read-only rows from `place_index.db` on the native index builder's SQLite.
+     * Throws when the query fails.
+     *
+     * Never open this file with `android.database.sqlite`: a second SQLite
+     * library in the process does not see the native connection's `-shm`
+     * locks, truncates `-shm` under its mmap, and the next WAL read SIGBUSes
+     * in `walIndexReadHdr` (uncatchable).
+     */
+    fun readRows(
+        dbFile: File,
+        sql: String,
+        vararg args: String,
+    ): List<List<String?>> {
+        val result = uniffi.navi.placeIndexQueryReadonly(dbFile.absolutePath, sql, args.toList())
+        if (result.error.isNotEmpty()) throw IllegalStateException(result.error)
+        return result.rows
     }
 
     /**
@@ -133,23 +142,13 @@ object PlaceIndexIntact {
         if (!dbFile.isFile || dbFile.length() < MIN_DB_BYTES) return emptySet()
         recoverWalSidecars(dbFile)
         return runCatching {
-            SQLiteDatabase
-                .openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
-                .use { db ->
-                    val cursor =
-                        runCatching { db.rawQuery("SELECT region_id FROM name_index_build", null) }
-                            .getOrElse {
-                                db.rawQuery("SELECT DISTINCT region_id FROM name_entries", null)
-                            }
-                    cursor.use { c ->
-                        buildSet {
-                            while (c.moveToNext()) {
-                                val id = PackRegionAvailability.normalize(c.getString(0) ?: "")
-                                if (id.isNotEmpty()) add(id)
-                            }
-                        }
-                    }
-                }
+            val rows =
+                runCatching { readRows(dbFile, "SELECT region_id FROM name_index_build") }
+                    .getOrElse { readRows(dbFile, "SELECT DISTINCT region_id FROM name_entries") }
+            rows
+                .map { PackRegionAvailability.normalize(it.firstOrNull() ?: "") }
+                .filter { it.isNotEmpty() }
+                .toSet()
         }.getOrDefault(emptySet())
     }
 
@@ -167,21 +166,17 @@ object PlaceIndexIntact {
         if (bytes < MIN_DB_BYTES) return "file empty ($bytes bytes)"
         recoverWalSidecars(dbFile)
         val opens =
-            runCatching {
-                SQLiteDatabase
-                    .openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
-                    .use { db -> db.rawQuery("PRAGMA user_version", null).use { it.moveToFirst() } }
-            }.getOrDefault(false)
+            runCatching { readRows(dbFile, "PRAGMA user_version").isNotEmpty() }.getOrDefault(false)
         if (!opens) return "file unreadable"
         return corruptionStampProblem(dataDir)
     }
 
     /**
-     * Automatic recovery before any Android framework open. Call on cold start
-     * (background thread) and from probes when a `-wal` sidecar is present.
+     * Automatic WAL recovery. Call on cold start (background thread) and from
+     * probes when a `-wal` sidecar is present.
      *
-     * Order: UniFFI checkpoint → framework RW checkpoint → drop `-shm` →
-     * quarantine unreadable `-wal` so the main file can still open.
+     * Order: UniFFI checkpoint, then quarantine an unreadable `-wal` so the
+     * main file can still open.
      */
     fun recoverBeforeOpen(dataDir: File) {
         val dbFile = File(dataDir, "place_index.db")
@@ -189,7 +184,7 @@ object PlaceIndexIntact {
     }
 
     /**
-     * Checkpoint torn WAL before Android framework opens.
+     * Checkpoint torn WAL before reading.
      *
      * Skip the heavy path when there is no `-wal` (normal idle `-shm` must not
      * trigger a multi-second RW open on the UI / probe path — that ANR'd).
@@ -200,7 +195,6 @@ object PlaceIndexIntact {
     ) {
         val path = dbFile.absolutePath
         val wal = File("$path-wal")
-        val shm = File("$path-shm")
         // No frames in `-wal`: nothing to checkpoint. Empty leftover files must
         // not trigger a RW open of a multi-GB place_index (cold-start ANR).
         if (!wal.isFile || wal.length() == 0L) {
@@ -220,33 +214,13 @@ object PlaceIndexIntact {
             runCatching { uniffi.navi.placeIndexRecoverWal(path) }
                 .onFailure { t -> Log.w(TAG, "placeIndexRecoverWal threw: ${t.message}") }
                 .getOrNull()
-        if (native != null && !native.startsWith("FAIL")) {
+        // Without libnavi nothing can read the index; leave the WAL for the next start.
+        if (native == null) return
+        if (!native.startsWith("FAIL")) {
             Log.i(TAG, "wal recover native ok")
             return
         }
-        if (native != null) {
-            Log.w(TAG, "placeIndexRecoverWal: $native")
-        }
-        if (shm.isFile()) {
-            runCatching { shm.delete() }
-                .onFailure { t -> Log.w(TAG, "delete shm failed: ${t.message}") }
-        }
-        val checkpointed =
-            runCatching {
-                SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
-                    db.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { c ->
-                        c.moveToFirst()
-                    }
-                }
-                true
-            }.getOrElse { t ->
-                Log.w(TAG, "framework wal_checkpoint failed: ${t.message}")
-                false
-            }
-        if (checkpointed) {
-            Log.i(TAG, "wal recover framework checkpoint ok")
-            return
-        }
+        Log.w(TAG, "placeIndexRecoverWal: $native")
         if (wal.isFile()) {
             val bad = File("$path-wal.bad")
             runCatching {
@@ -330,13 +304,9 @@ object PlaceIndexIntact {
         recoverWalSidecars(dbFile)
         val result =
             runCatching {
-                SQLiteDatabase
-                    .openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
-                    .use { db ->
-                        db.rawQuery("PRAGMA quick_check", null).use { c ->
-                            if (c.moveToFirst()) c.getString(0).orEmpty() else "empty"
-                        }
-                    }
+                readRows(dbFile, "PRAGMA quick_check")
+                    .firstOrNull()
+                    ?.let { it.firstOrNull().orEmpty() } ?: "empty"
             }.getOrElse { t -> "unreadable: ${t.message}" }
         val line = if (result.equals("ok", ignoreCase = true)) "ok" else result
         writeQuickCheckStamp(dataDir, line)
@@ -352,14 +322,15 @@ object PlaceIndexIntact {
     }
 
     private fun probeOpen(
-        db: SQLiteDatabase,
+        dbFile: File,
         bytes: Long,
         rid: String,
     ): Probe {
         val userVersion =
-            db.rawQuery("PRAGMA user_version", null).use { c ->
-                if (c.moveToFirst()) c.getInt(0) else 0
-            }
+            readRows(dbFile, "PRAGMA user_version")
+                .firstOrNull()
+                ?.firstOrNull()
+                ?.toIntOrNull() ?: 0
         if (userVersion < SCHEMA_VERSION) {
             return Probe(
                 intact = false,
@@ -374,59 +345,30 @@ object PlaceIndexIntact {
             )
         }
         val rowCount =
-            db
-                .rawQuery(
-                    "SELECT COUNT(*) FROM name_entries WHERE region_id = ?",
-                    arrayOf(rid),
-                ).use { c ->
-                    if (c.moveToFirst()) c.getLong(0) else 0L
-                }
+            readRows(dbFile, "SELECT COUNT(*) FROM name_entries WHERE region_id = ?", rid)
+                .firstOrNull()
+                ?.firstOrNull()
+                ?.toLongOrNull() ?: 0L
+        // Older schemas lack the trailing columns; try the widest select first.
         val build =
-            runCatching {
-                db
-                    .rawQuery(
-                        "SELECT complete, expected, written, source_sha256, index_source FROM name_index_build WHERE region_id = ? LIMIT 1",
-                        arrayOf(rid),
-                    ).use { c ->
-                        if (!c.moveToFirst()) {
-                            null
-                        } else {
-                            Quad(
-                                c.getInt(0),
-                                c.getLong(1),
-                                c.getLong(2),
-                                c.getString(3).orEmpty(),
-                                c.getString(4).orEmpty(),
-                            )
-                        }
-                    }
-            }.getOrNull()
-                ?: runCatching {
-                    db
-                        .rawQuery(
-                            "SELECT complete, expected, written, source_sha256 FROM name_index_build WHERE region_id = ? LIMIT 1",
-                            arrayOf(rid),
-                        ).use { c ->
-                            if (!c.moveToFirst()) {
-                                null
-                            } else {
-                                Quad(c.getInt(0), c.getLong(1), c.getLong(2), c.getString(3).orEmpty(), "")
-                            }
-                        }
+            listOf(
+                "complete, expected, written, source_sha256, index_source",
+                "complete, expected, written, source_sha256",
+                "complete, expected, written",
+            ).firstNotNullOfOrNull { cols ->
+                runCatching {
+                    readRows(dbFile, "SELECT $cols FROM name_index_build WHERE region_id = ? LIMIT 1", rid)
+                        .firstOrNull()
                 }.getOrNull()
-                ?: runCatching {
-                    db
-                        .rawQuery(
-                            "SELECT complete, expected, written FROM name_index_build WHERE region_id = ? LIMIT 1",
-                            arrayOf(rid),
-                        ).use { c ->
-                            if (!c.moveToFirst()) {
-                                null
-                            } else {
-                                Quad(c.getInt(0), c.getLong(1), c.getLong(2), "", "")
-                            }
-                        }
-                }.getOrNull()
+            }?.let { r ->
+                Quad(
+                    r[0]?.toIntOrNull() ?: 0,
+                    r[1]?.toLongOrNull() ?: 0L,
+                    r[2]?.toLongOrNull() ?: 0L,
+                    r.getOrNull(3).orEmpty(),
+                    r.getOrNull(4).orEmpty(),
+                )
+            }
         if (build == null) {
             val ok = rowCount > 0L
             return Probe(

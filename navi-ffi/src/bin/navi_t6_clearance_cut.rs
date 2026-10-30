@@ -147,8 +147,10 @@ fn main() {
         println!("nodes={} edges={}", g.nodes.len(), g.edges.len());
 
         let opts0 = RouteOptions::default();
-        let mut opts_t6 = RouteOptions::default();
-        opts_t6.vehicle = Some(lim.clone());
+        let opts_t6 = RouteOptions {
+            vehicle: Some(lim.clone()),
+            ..Default::default()
+        };
 
         let (Ok((s, sm)), Ok((d, dm))) = (
             g.nearest_routable_with_options(start.0, start.1, &opts0, false),
@@ -234,8 +236,10 @@ fn main() {
                 },
             ),
         ] {
-            let mut o = RouteOptions::default();
-            o.vehicle = Some(partial);
+            let o = RouteOptions {
+                vehicle: Some(partial),
+                ..Default::default()
+            };
             let ok = g.same_weak_component(s, d) && g.directed_reachable_with_options(s, d, &o);
             println!("  ablate_{name}_only directed_ok={ok}");
         }

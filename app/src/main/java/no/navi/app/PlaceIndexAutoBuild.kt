@@ -99,33 +99,24 @@ object PlaceIndexAutoBuild {
         val dbFile = File(dataDir, "place_index.db")
         if (!dbFile.isFile || dbFile.length() < PlaceIndexIntact.MIN_DB_BYTES) return false
         return runCatching {
-            android.database.sqlite.SQLiteDatabase
-                .openDatabase(
-                    dbFile.absolutePath,
-                    null,
-                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
-                ).use { db ->
-                    val userVersion =
-                        db.rawQuery("PRAGMA user_version", null).use { c ->
-                            if (c.moveToFirst()) c.getInt(0) else 0
-                        }
-                    if (userVersion < PlaceIndexIntact.SCHEMA_VERSION) return@use false
-                    // After migrate, name_entries_pk is renamed away; require the
-                    // live table DDL to carry the composite PK instead.
-                    val ddl =
-                        db
-                            .rawQuery(
-                                "SELECT sql FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
-                                arrayOf("name_entries"),
-                            ).use { c ->
-                                if (c.moveToFirst()) c.getString(0).orEmpty() else ""
-                            }
-                    val hasPk =
-                        ddl.contains("PRIMARY KEY (region_id, osm_id)") ||
-                            ddl.contains("PRIMARY KEY(region_id, osm_id)")
-                    if (!hasPk) return@use false
-                    db.rawQuery("SELECT 1 FROM name_entries LIMIT 1", null).use { it.moveToFirst() }
-                }
+            val userVersion = readUserVersion(dataDir) ?: 0
+            if (userVersion < PlaceIndexIntact.SCHEMA_VERSION) return@runCatching false
+            // After migrate, name_entries_pk is renamed away; require the
+            // live table DDL to carry the composite PK instead.
+            val ddl =
+                PlaceIndexIntact
+                    .readRows(
+                        dbFile,
+                        "SELECT sql FROM sqlite_master WHERE type='table' AND name=? LIMIT 1",
+                        "name_entries",
+                    ).firstOrNull()
+                    ?.firstOrNull()
+                    .orEmpty()
+            val hasPk =
+                ddl.contains("PRIMARY KEY (region_id, osm_id)") ||
+                    ddl.contains("PRIMARY KEY(region_id, osm_id)")
+            if (!hasPk) return@runCatching false
+            PlaceIndexIntact.readRows(dbFile, "SELECT 1 FROM name_entries LIMIT 1").isNotEmpty()
         }.getOrDefault(false)
     }
 
@@ -136,16 +127,11 @@ object PlaceIndexAutoBuild {
         val dbFile = File(dataDir, "place_index.db")
         if (!dbFile.isFile) return null
         return runCatching {
-            android.database.sqlite.SQLiteDatabase
-                .openDatabase(
-                    dbFile.absolutePath,
-                    null,
-                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
-                ).use { db ->
-                    db.rawQuery("PRAGMA user_version", null).use { c ->
-                        if (c.moveToFirst()) c.getInt(0) else 0
-                    }
-                }
+            PlaceIndexIntact
+                .readRows(dbFile, "PRAGMA user_version")
+                .firstOrNull()
+                ?.firstOrNull()
+                ?.toIntOrNull() ?: 0
         }.getOrNull()
     }
 
@@ -153,21 +139,13 @@ object PlaceIndexAutoBuild {
         val dbFile = File(dataDir, "place_index.db")
         if (!dbFile.isFile) return null
         return runCatching {
-            android.database.sqlite.SQLiteDatabase
-                .openDatabase(
-                    dbFile.absolutePath,
-                    null,
-                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
-                ).use { db ->
-                    db
-                        .rawQuery(
-                            "SELECT region_id FROM name_entries WHERE region_id IS NOT NULL " +
-                                "AND length(region_id) > 0 LIMIT 1",
-                            null,
-                        ).use { c ->
-                            if (c.moveToFirst()) c.getString(0) else null
-                        }
-                }
+            PlaceIndexIntact
+                .readRows(
+                    dbFile,
+                    "SELECT region_id FROM name_entries WHERE region_id IS NOT NULL " +
+                        "AND length(region_id) > 0 LIMIT 1",
+                ).firstOrNull()
+                ?.firstOrNull()
         }.getOrNull()
     }
 
@@ -178,18 +156,9 @@ object PlaceIndexAutoBuild {
         val dbFile = File(dataDir, "place_index.db")
         if (!dbFile.isFile) return false
         return runCatching {
-            android.database.sqlite.SQLiteDatabase
-                .openDatabase(
-                    dbFile.absolutePath,
-                    null,
-                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
-                ).use { db ->
-                    db
-                        .rawQuery(
-                            "SELECT 1 FROM name_entries WHERE region_id = ? LIMIT 1",
-                            arrayOf(regionId),
-                        ).use { c -> c.moveToFirst() }
-                }
+            PlaceIndexIntact
+                .readRows(dbFile, "SELECT 1 FROM name_entries WHERE region_id = ? LIMIT 1", regionId)
+                .isNotEmpty()
         }.getOrDefault(false)
     }
 }

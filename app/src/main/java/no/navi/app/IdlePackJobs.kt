@@ -17,8 +17,12 @@ import java.util.concurrent.atomic.AtomicReference
 /**
  * One idle-job queue for ferry sidecars, corridor skeletons, and place-index
  * builds. [InstalledMaps] changes enqueue work; an idle process with
- * outstanding work drains it. One job at a time; never during a plan. A
- * region's skeleton and sidecar do not wait on its map tiles.
+ * outstanding work drains it. One job at a time; never during a plan.
+ *
+ * Order: place index before corridor skeletons (download → index → skeletons).
+ * Skeletons / ferry sidecars never run while [RegionDownloadBackground] or a
+ * standalone [PlaceIndexBackground] worker is active (OOM risk on large
+ * regions). A region's skeleton does not wait on its map tiles.
  */
 object IdlePackJobs {
     const val TAG = "IdlePackJobs"
@@ -98,6 +102,12 @@ object IdlePackJobs {
     fun isRunning(): Boolean = running.get()
 
     fun outstandingCount(): Int = queue.size + if (running.get()) 1 else 0
+
+    /** A corridor-skeleton job is queued, running or paused behind other idle jobs. */
+    fun skeletonPending(): Boolean {
+        fun isSkeleton(job: Job?) = job != null && (job.kind == Kind.SKELETON || job.kind == Kind.SKELETON_TRUCK)
+        return isSkeleton(active.get()) || isSkeleton(pausedJob.get()) || queue.any { isSkeleton(it) }
+    }
 
     fun remainingSummary(): String {
         val jobs = mutableListOf<Job>()
@@ -353,20 +363,26 @@ object IdlePackJobs {
         for (r in snap.regions.values) {
             val man = File(r.packDir, "${r.stem}.navi-manifest.json")
             if (!man.isFile) continue
-            // Skeleton and sidecar do not wait on map tiles.
-            if (!r.ferrySidecarCar) {
-                offer(Job(Kind.FERRY_CAR, r.stem, r.packDir, r.regionId))
+            val indexReady =
+                r.placeIndex == InstalledMaps.PlaceIndexState.INTACT ||
+                    r.placeIndex == InstalledMaps.PlaceIndexState.LEGACY_INTACT
+            // Sidecar / skeleton only after place index for this region (OOM +
+            // readiness: region is not routing-ready until skeletons exist).
+            if (indexReady) {
+                if (!r.ferrySidecarCar) {
+                    offer(Job(Kind.FERRY_CAR, r.stem, r.packDir, r.regionId))
+                }
+                if (!r.ferrySidecarTruck) {
+                    offer(Job(Kind.FERRY_TRUCK, r.stem, r.packDir, r.regionId))
+                }
+                if (!r.corridorSkeleton) {
+                    offer(Job(Kind.SKELETON, r.stem, r.packDir, r.regionId))
+                }
+                // Motor profiles that use Stage B: always enqueue a Truck ensure.
+                // When the pack's truck graph aliases car, Rust no-ops immediately;
+                // when distinct truck tiles exist, this builds the truck skeleton.
+                offer(Job(Kind.SKELETON_TRUCK, r.stem, r.packDir, r.regionId))
             }
-            if (!r.ferrySidecarTruck) {
-                offer(Job(Kind.FERRY_TRUCK, r.stem, r.packDir, r.regionId))
-            }
-            if (!r.corridorSkeleton) {
-                offer(Job(Kind.SKELETON, r.stem, r.packDir, r.regionId))
-            }
-            // Motor profiles that use Stage B: always enqueue a Truck ensure.
-            // When the pack's truck graph aliases car, Rust no-ops immediately;
-            // when distinct truck tiles exist, this builds the truck skeleton.
-            offer(Job(Kind.SKELETON_TRUCK, r.stem, r.packDir, r.regionId))
         }
         val indexRoot =
             indexDir
@@ -452,6 +468,9 @@ object IdlePackJobs {
         return runCatching { uniffi.navi.foregroundPlanActive() }.getOrDefault(false)
     }
 
+    /** True when download / place-index owns the heavy pipeline (no skeleton yet). */
+    private fun downloadOrIndexBusy(): Boolean = RegionDownloadBackground.isRunning() || PlaceIndexBackground.isRunning()
+
     private fun drainIfAllowed() {
         if (!executeJobs) return
         if (planBlocksIdle()) return
@@ -462,6 +481,7 @@ object IdlePackJobs {
                 android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
             }
             mutex.withLock {
+                var deferPipeline = false
                 try {
                     while (true) {
                         if (planBlocksIdle()) {
@@ -472,6 +492,28 @@ object IdlePackJobs {
                         if (job.kind == Kind.PLACE_INDEX && !placeIndexDownloadAllowed(job)) {
                             lastStatus.set("Waiting for unmetered connection to download place-source…")
                             synchronized(seen) { seen.remove(job.key()) }
+                            break
+                        }
+                        // Skeletons / ferry must not overlap download or place-index.
+                        if (
+                            (
+                                job.kind == Kind.SKELETON ||
+                                    job.kind == Kind.SKELETON_TRUCK ||
+                                    job.kind == Kind.FERRY_CAR ||
+                                    job.kind == Kind.FERRY_TRUCK
+                            ) &&
+                            downloadOrIndexBusy()
+                        ) {
+                            // Keep [seen] so a parallel enqueue pass does not duplicate.
+                            queue.offer(job)
+                            lastStatus.set("Waiting for download/index before corridor jobs…")
+                            deferPipeline = true
+                            break
+                        }
+                        if (job.kind == Kind.PLACE_INDEX && RegionDownloadBackground.isRunning()) {
+                            queue.offer(job)
+                            lastStatus.set("Waiting for region download before place index…")
+                            deferPipeline = true
                             break
                         }
                         active.set(job)
@@ -491,10 +533,18 @@ object IdlePackJobs {
                         active.set(null)
                     }
                 } finally {
-                    if (queue.isEmpty() && pausedJob.get() == null) lastStatus.set("idle")
+                    if (queue.isEmpty() && pausedJob.get() == null && !deferPipeline) {
+                        lastStatus.set("idle")
+                    }
                     running.set(false)
                     active.set(null)
-                    if (queue.isNotEmpty() && pausedJob.get() == null && !planBlocksIdle()) {
+                    // Do not tight-loop while download/index still owns the pipeline;
+                    // MainActivity / onAppIdle / onPlanEnded will drain later.
+                    if (!deferPipeline &&
+                        queue.isNotEmpty() &&
+                        pausedJob.get() == null &&
+                        !planBlocksIdle()
+                    ) {
                         drainIfAllowed()
                     }
                 }
@@ -503,14 +553,16 @@ object IdlePackJobs {
     }
 
     private fun pollNext(): Job? {
+        // Place index before skeletons so a fresh region reaches searchable
+        // state before the Stage B corridor build (OOM: one heavy stage at a time).
         val preferred =
             listOf(
                 Kind.INDEX_QUICK_CHECK,
+                Kind.PLACE_INDEX,
                 Kind.FERRY_CAR,
                 Kind.FERRY_TRUCK,
                 Kind.SKELETON,
                 Kind.SKELETON_TRUCK,
-                Kind.PLACE_INDEX,
                 Kind.PLACE_INDEX_COMPACT,
             )
         for (kind in preferred) {
@@ -569,14 +621,17 @@ object IdlePackJobs {
             }
             Kind.SKELETON -> {
                 CorridorSkeletonBackground.runJob(job.packDir, job.stem, TravelProfile.CAR)
+                CorridorSkeletonBackground.onSkeletonFinished(job.regionId, job.packDir, job.stem)
                 false
             }
             Kind.SKELETON_TRUCK -> {
                 CorridorSkeletonBackground.runJob(job.packDir, job.stem, TravelProfile.TRUCK)
+                CorridorSkeletonBackground.onSkeletonFinished(job.regionId, job.packDir, job.stem)
                 false
             }
             Kind.PLACE_INDEX -> {
                 val db = job.indexDb ?: return false
+                // PlaceIndexBackground kicks corridor skeletons after PASS.
                 PlaceIndexBackground.runPackJob(job.packDir, db, job.regionId, job.pbf)
             }
             Kind.INDEX_QUICK_CHECK -> {

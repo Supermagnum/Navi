@@ -431,7 +431,8 @@ pub fn commit_partial_pmtiles(
     Ok(())
 }
 
-static VALIDATE_CACHE: Mutex<Vec<(PathBuf, u64, u64, Result<(), String>)>> = Mutex::new(Vec::new());
+type ValidateCacheEntry = (PathBuf, u64, u64, Result<(), String>);
+static VALIDATE_CACHE: Mutex<Vec<ValidateCacheEntry>> = Mutex::new(Vec::new());
 
 fn cache_key_mtime(meta: &fs::Metadata) -> u64 {
     meta.modified()

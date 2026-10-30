@@ -676,10 +676,39 @@ pub fn stitch_orphaned_ferry_terminals(skel: &mut CorridorSkeletonFile, max_m: f
         }
         let tlat = skel.node_lats[term];
         let tlon = skel.node_lons[term];
+        // Far ends of ferry edges from this terminal. A major nearer those
+        // partners than this pier sits on the opposite shore — stitching there
+        // invents a land bridge across water (Askvoll–Gjervik ~3 km with
+        // FERRY_STITCH_MAX_M 2.5 km) so Stage B reports ferries=0 and densify
+        // locks onto the wrong inland corridor.
+        let mut ferry_partners: Vec<(f64, f64)> = Vec::new();
+        for i in 0..skel.edge_src.len() {
+            if skel.edge_is_ferry.get(i).copied().unwrap_or(0) == 0 {
+                continue;
+            }
+            let s = skel.edge_src[i] as usize;
+            let t = skel.edge_tgt[i] as usize;
+            if s == term {
+                ferry_partners.push((skel.node_lats[t], skel.node_lons[t]));
+            } else if t == term {
+                ferry_partners.push((skel.node_lats[s], skel.node_lons[s]));
+            }
+        }
         let mut best: Option<(f64, usize)> = None;
         for &mj in &major_nodes {
-            let d = haversine_m(tlat, tlon, skel.node_lats[mj], skel.node_lons[mj]);
-            if d <= max_m && best.map(|(bd, _)| d < bd).unwrap_or(true) {
+            let mlat = skel.node_lats[mj];
+            let mlon = skel.node_lons[mj];
+            let d = haversine_m(tlat, tlon, mlat, mlon);
+            if d > max_m {
+                continue;
+            }
+            let far_shore = ferry_partners
+                .iter()
+                .any(|&(plat, plon)| haversine_m(mlat, mlon, plat, plon) < d);
+            if far_shore {
+                continue;
+            }
+            if best.map(|(bd, _)| d < bd).unwrap_or(true) {
                 best = Some((d, mj));
             }
         }
@@ -2469,7 +2498,10 @@ pub struct StageBDensify {
     pub coarse_path: Vec<(f64, f64)>,
     pub total_min: f64,
     pub total_km: f64,
+    /// Display labels (`Askvoll→Gjervik`) for logs / UI.
     pub ferries: Vec<String>,
+    /// Terminal coordinates of the Stage B ferry pick (densify allowlist).
+    pub ferry_legs: Vec<CoarseFerryLeg>,
     pub note: String,
     /// Per-leg alternatives with eligibility and pick (one entry per leg).
     pub legs: Vec<Vec<StageBLegCandidate>>,
@@ -2518,12 +2550,16 @@ pub struct StageBLegCandidate {
     pub search_ms: u128,
 }
 
-/// Approved near-equal rule. Input per alternative: `(total_min, ferries, km)`.
+/// Near-equal Stage B pick. Input per alternative: `(total_min, ferries, km)`.
 ///
-/// Eligible iff total time is within 2 % of the fastest and it has no more
+/// Eligible iff total time is within 3 % of the fastest and it has no more
 /// ferries than the fastest (several equally fastest: the fewest of theirs).
 /// Among eligible, fewer km wins; equal km falls back to time.
-/// Returns the eligibility flags and the picked index.
+///
+/// The window is 3 % (was 2 %) so a shorter mountain corridor that is only a
+/// little slower can beat a longer lowland path (Askvoll→Lom: Sognefjell ~2.5 %
+/// slower than Stryn/Rv15 on coarse time, ~3 km shorter). Combined with the
+/// `short_km` leg alternative, densify then follows the OSRM-class corridor.
 pub fn near_equal_pick(alts: &[(f64, usize, f64)]) -> Option<(Vec<bool>, usize)> {
     let best_min = alts.iter().map(|a| a.0).fold(f64::INFINITY, f64::min);
     if !best_min.is_finite() {
@@ -2536,7 +2572,7 @@ pub fn near_equal_pick(alts: &[(f64, usize, f64)]) -> Option<(Vec<bool>, usize)>
         .min()?;
     let eligible: Vec<bool> = alts
         .iter()
-        .map(|a| a.0 <= best_min * 1.02 && a.1 <= fastest_ferries)
+        .map(|a| a.0 <= best_min * 1.03 && a.1 <= fastest_ferries)
         .collect();
     let pick = (0..alts.len()).filter(|&i| eligible[i]).min_by(|&i, &j| {
         alts[i]
@@ -2594,6 +2630,91 @@ fn leg_alternatives(
         });
     };
     push(graph, "free".into(), "stage_b free", &mut out);
+    // Distance-optimal corridor: time-A* often prefers a longer lowland path
+    // (Stryn/Rv15) over a slightly slower shorter mountain path (Rv55
+    // Sognefjell). Search with length as weight, then score the path with the
+    // restored time weights so near_equal_pick can prefer fewer km within 3 %.
+    if let Some(free_alt) = out.first() {
+        // After the first ferry on the free path, re-route to `to` with length
+        // as A* weight. Time-A* prefers Stryn/Rv15; length-A* prefers Rv55
+        // Sognefjell (~3 km shorter Askvoll→Lom at ~2.5 % more coarse time).
+        // Splice free prefix (through the ferry) + short land suffix.
+        let path = &free_alt.path;
+        let mut ferry_at: Option<(usize, NodeId)> = None;
+        'ferry: for (pi, w) in path.windows(2).enumerate() {
+            for &i in graph.outgoing_edge_indices(w[0]) {
+                let e = &graph.edges[i];
+                if e.target == w[1] && e.is_ferry {
+                    ferry_at = Some((pi + 1, w[1]));
+                    break 'ferry;
+                }
+            }
+        }
+        if let Some((ferry_end_pi, land_from)) = ferry_at {
+            let t = std::time::Instant::now();
+            // Motor A* ignores GraphEdge::base_weight (uses time_base_weight_for_edge).
+            // distance_cost makes Car cost ∝ length_m so Rv55 can beat Stryn/Rv15.
+            // Keep the free path's ferry count: no extra coastal hops after landing.
+            let land_opts = RouteOptions {
+                avoid_ferries: true,
+                distance_cost: true,
+                ..opts.clone()
+            };
+            let short_land = graph.shortest_path_with_options(land_from, to, false, &land_opts);
+            if let Some((land_path, land_edges, _)) = short_land {
+                let search_ms = t.elapsed().as_millis();
+                if land_path.first() == Some(&land_from) && land_path.last() == Some(&to) {
+                    let mut full_path: Vec<NodeId> = path[..=ferry_end_pi].to_vec();
+                    full_path.extend(land_path.iter().skip(1).copied());
+                    // Rebuild edge list along full_path for the report.
+                    let mut full_edges: Vec<usize> = Vec::new();
+                    for w in full_path.windows(2) {
+                        let mut found = false;
+                        for &i in graph.outgoing_edge_indices(w[0]) {
+                            if graph.edges[i].target == w[1] {
+                                full_edges.push(i);
+                                found = true;
+                                break;
+                            }
+                        }
+                        if !found {
+                            full_edges.clear();
+                            break;
+                        }
+                    }
+                    if !full_edges.is_empty() {
+                        let free_km = free_alt.report.total_km;
+                        let short_km: f64 = full_edges
+                            .iter()
+                            .map(|&i| graph.edges[i].length_m)
+                            .sum::<f64>()
+                            / 1000.0;
+                        if short_km + 0.5 < free_km {
+                            names.apply(graph, &full_edges);
+                            let report = build_coarse_route_report(
+                                "short_km",
+                                graph,
+                                &full_path,
+                                &full_edges,
+                                border_osm,
+                                &[],
+                                0,
+                                0,
+                                "stage_b short_km",
+                            );
+                            out.push(LegAlternative {
+                                name: "short_km".into(),
+                                report,
+                                path: full_path,
+                                search_ms,
+                            });
+                        }
+                    }
+                    let _ = land_edges;
+                }
+            }
+        }
+    }
     if route_options.avoid_ferries || out.is_empty() || out[0].report.ferries.is_empty() {
         return out;
     }
@@ -3269,6 +3390,65 @@ pub fn last_reachable_coarse_path_node(
 
 /// Split long hops so estimated packed nodes for path-covering tiles stay
 /// ≤ [`crate::routing::plan_bbox::MAX_PATH_NODES_PER_HOP`]. Path tiles are never
+/// Split hop windows whose Chebyshev span exceeds `max_hop_deg` by sampling
+/// the coarse path (same helper non-Stage-B chunking uses). Keeps ferry/border
+/// obligated ends; inserts on-path midpoints so densify cannot wander inside a
+/// single 500+ km corridor band (e.g. Otta local-road detours off Rv15).
+pub fn split_long_hops_along_coarse(
+    hops: Vec<(f64, f64)>,
+    coarse_path: &[(f64, f64)],
+    max_hop_deg: f64,
+) -> Vec<(f64, f64)> {
+    if hops.len() < 2 || coarse_path.len() < 2 || max_hop_deg <= 0.0 {
+        return hops;
+    }
+    let cheb = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs().max((a.1 - b.1).abs());
+    let mut out: Vec<(f64, f64)> = Vec::new();
+    out.push(hops[0]);
+    for w in hops.windows(2) {
+        let start = w[0];
+        let end = w[1];
+        if cheb(start, end) <= max_hop_deg + 1e-9 {
+            if out
+                .last()
+                .is_none_or(|&q| haversine_m(q.0, q.1, end.0, end.1) > 200.0)
+            {
+                out.push(end);
+            } else if let Some(last) = out.last_mut() {
+                *last = end;
+            }
+            continue;
+        }
+        let mut i0 = nearest_coarse_index(coarse_path, start);
+        let mut i1 = nearest_coarse_index(coarse_path, end);
+        if i0 > i1 {
+            std::mem::swap(&mut i0, &mut i1);
+        }
+        let sub = &coarse_path[i0..=i1];
+        let sampled = crate::routing::plan_bbox::sample_densify_joints_along_path(sub, max_hop_deg);
+        for &p in sampled.iter().skip(1) {
+            if out
+                .last()
+                .is_none_or(|&q| haversine_m(q.0, q.1, p.0, p.1) > 200.0)
+            {
+                out.push(p);
+            } else if let Some(last) = out.last_mut() {
+                *last = p;
+            }
+        }
+        // Ensure the obligated window end survives sampling snap.
+        if out
+            .last()
+            .is_none_or(|&q| haversine_m(q.0, q.1, end.0, end.1) > 500.0)
+        {
+            out.push(end);
+        } else if let Some(last) = out.last_mut() {
+            *last = end;
+        }
+    }
+    out
+}
+
 /// dropped; joints are nodes on the coarse path.
 pub fn split_hops_by_path_tile_budget(
     hops: Vec<(f64, f64)>,
@@ -3512,6 +3692,38 @@ pub fn try_stage_b_densify_from_skeletons(
     // Trip-local first: corridor + neighbours. Widen to every installed skeleton
     // only when the coarse search finds no route on that subset.
     let local_stems = trip_local_skeleton_stems(waypoints);
+    // Fail closed when a trip-local stem has on-disk skeleton artifacts that are
+    // stale in every pack dir (fingerprint mismatch after a neighbour reinstall).
+    // Completely absent optional adjacency stems (e.g. nord-norge / Jämtland for
+    // Vestlandet→Trondheim when those packs were never installed) must not block
+    // Stage B — treating missing-as-stale refused densify and left the UI on
+    // "preparing corridor skeleton for nord norge (stopped auto-retry)".
+    if let Some(stems) = &local_stems {
+        let mut stale: Vec<&str> = Vec::new();
+        for stem in stems {
+            let present = pack_dirs
+                .iter()
+                .any(|d| crate::routing::indexed::skeleton_artifacts_present(d, stem, profile));
+            if !present {
+                continue;
+            }
+            let fresh = pack_dirs
+                .iter()
+                .any(|d| crate::routing::indexed::skeleton_fresh(d, stem, profile));
+            if !fresh {
+                stale.push(stem.as_str());
+            }
+        }
+        if let Some(first) = stale.first() {
+            let label = first.trim_end_matches("-latest").replace('-', " ");
+            log::warn!(
+                target: "NaviPlan",
+                "stage_b trip_local stale stems={} — refuse partial densify",
+                stale.join(",")
+            );
+            return Err(format!("preparing corridor skeleton for {label}"));
+        }
+    }
     let t = std::time::Instant::now();
     let load_before = load_ms;
     let coarse = match &local_stems {
@@ -3823,6 +4035,7 @@ fn assemble_stage_b(
     let mut total_min = 0.0;
     let mut total_km = 0.0;
     let mut ferries: Vec<String> = Vec::new();
+    let mut ferry_legs: Vec<CoarseFerryLeg> = Vec::new();
     let mut picks_note: Vec<String> = Vec::new();
     for (li, pick) in plan.picks.iter().enumerate() {
         let leg_start = waypoints[li];
@@ -3866,18 +4079,16 @@ fn assemble_stage_b(
         coarse_path.extend(leg_coarse.into_iter().skip(skip));
         total_min += pick.report.total_min;
         total_km += pick.report.total_km;
-        ferries.extend(
-            pick.report
-                .ferries
-                .iter()
-                .map(|f| format!("{}→{}", f.from_terminal, f.to_terminal)),
-        );
+        for f in &pick.report.ferries {
+            ferries.push(format!("{}→{}", f.from_terminal, f.to_terminal));
+            ferry_legs.push(f.clone());
+        }
         picks_note.push(format!("leg{}={}", li + 1, pick.name));
         debug_assert_eq!(pick.path.first(), Some(&plan.snaps[li]));
         debug_assert_eq!(pick.path.last(), Some(&plan.snaps[li + 1]));
     }
     let note = format!(
-        "stage_b pick={} km={:.1} min={:.1} hops={} skels={} legs={} near_equal_2pct \
+        "stage_b pick={} km={:.1} min={:.1} hops={} skels={} legs={} near_equal_3pct \
          max_path_nodes={} ferries={}",
         picks_note.join(","),
         total_km,
@@ -3897,6 +4108,7 @@ fn assemble_stage_b(
         total_min,
         total_km,
         ferries,
+        ferry_legs,
         note,
         legs: plan.legs,
         timing: String::new(),
@@ -4547,7 +4759,7 @@ mod tests {
 
     #[test]
     fn near_equal_pick_follows_the_approved_rule() {
-        // (total_min, ferries, km): fastest has 1 ferry; within 2 % and no more
+        // (total_min, ferries, km): fastest has 1 ferry; within 3 % and no more
         // ferries are eligible; fewer km wins among them.
         let alts = [
             (100.0, 1, 1500.0),
@@ -4556,11 +4768,281 @@ mod tests {
             (103.0, 0, 1200.0),
         ];
         let (eligible, pick) = near_equal_pick(&alts).expect("pick");
-        assert_eq!(eligible, vec![true, true, false, false]);
-        assert_eq!(pick, 1);
+        // 103 min is within 3 % of 100 and has fewer ferries → eligible; shortest km.
+        assert_eq!(eligible, vec![true, true, false, true]);
+        assert_eq!(pick, 3);
         let (_, pick) = near_equal_pick(&[(100.0, 0, 900.0), (102.5, 0, 800.0)]).expect("pick");
-        assert_eq!(pick, 0, "nothing within 2 %: the fastest stays");
+        assert_eq!(pick, 1, "within 3 %: shorter km wins");
+        let (_, pick) = near_equal_pick(&[(100.0, 0, 900.0), (104.0, 0, 800.0)]).expect("pick");
+        assert_eq!(pick, 0, "outside 3 %: the fastest stays");
         assert!(near_equal_pick(&[]).is_none());
+    }
+
+    /// Time-A* prefers a longer fast land corridor; `distance_cost` after the
+    /// first ferry yields a shorter `short_km` alternative (Stryn vs Rv55 shape).
+    #[test]
+    fn leg_alternatives_short_km_uses_distance_cost_after_ferry() {
+        use geo_types::Coord;
+        use osm4routing::Node;
+
+        let mut nodes = HashMap::new();
+        for (id, lat, lon) in [
+            (1i64, 61.0, 5.0), // origin island
+            (2, 61.0, 5.1),    // ferry land
+            (3, 61.2, 6.0),    // long/fast mid
+            (4, 61.4, 7.0),    // dest
+            (5, 61.05, 6.0),   // short/slow mid
+        ] {
+            nodes.insert(
+                NodeId(id),
+                Node {
+                    id: NodeId(id),
+                    coord: Coord { x: lon, y: lat },
+                    uses: 0,
+                },
+            );
+        }
+        let mk = |id: &str, s: i64, t: i64, len: f64, ferry: bool, speed: f64| -> GraphEdge {
+            let sn = nodes[&NodeId(s)].coord;
+            let tn = nodes[&NodeId(t)].coord;
+            GraphEdge {
+                id: id.into(),
+                source: NodeId(s),
+                target: NodeId(t),
+                length_m: len,
+                base_weight: len,
+                cost_mult: 1.0,
+                eco_weight: None,
+                start_lat: sn.y,
+                start_lon: sn.x,
+                end_lat: tn.y,
+                end_lon: tn.x,
+                shape: Vec::new(),
+                highway: Some(if ferry {
+                    "ferry".into()
+                } else {
+                    "primary".into()
+                }),
+                maxspeed_kmh: Some(speed),
+                maxspeed_practical_kmh: None,
+                maxspeed_advisory_kmh: None,
+                maxspeed_type: None,
+                maxspeed_variable: false,
+                minspeed_kmh: None,
+                name: None,
+                road_ref: None,
+                is_motorroad: false,
+                is_expressway: false,
+                is_oneway: false,
+                lanes: None,
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: false,
+                is_ferry: ferry,
+                ferry_interval_min: None,
+                is_tunnel: false,
+                is_boardwalk_crossing: false,
+                is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
+                access_forbidden: false,
+                surface_quality: crate::routing::graph::SurfaceQuality::Good,
+            }
+        };
+        let mut edges = Vec::new();
+        for (id, s, t, len, ferry, speed) in [
+            // ferry then long/fast (time winner) vs short/slow (length winner)
+            ("ferry", 1i64, 2, 3_000.0, true, 20.0),
+            ("long_a", 2, 3, 100_000.0, false, 100.0),
+            ("long_b", 3, 4, 100_000.0, false, 100.0),
+            ("short_a", 2, 5, 80_000.0, false, 70.0),
+            ("short_b", 5, 4, 80_000.0, false, 70.0),
+            // Land escape so excl/no-ferry A* finishes (worse than ferry+long).
+            ("land_escape", 1, 4, 500_000.0, false, 50.0),
+        ] {
+            edges.push(mk(id, s, t, len, ferry, speed));
+            edges.push(mk(&format!("{id}_rev"), t, s, len, ferry, speed));
+        }
+        let mut g = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        g.ensure_directed_snap_labels();
+        // Core: Car ignores base_weight mutation; distance_cost selects short/slow.
+        let time = g
+            .shortest_path_with_options(NodeId(2), NodeId(4), false, &RouteOptions::default())
+            .expect("time path");
+        let dist = g
+            .shortest_path_with_options(
+                NodeId(2),
+                NodeId(4),
+                false,
+                &RouteOptions {
+                    distance_cost: true,
+                    avoid_ferries: true,
+                    ..RouteOptions::default()
+                },
+            )
+            .expect("distance path");
+        assert!(time.0.contains(&NodeId(3)), "time-A* takes long/fast");
+        assert!(
+            dist.0.contains(&NodeId(5)),
+            "distance_cost takes short/slow"
+        );
+        let time_km: f64 = time.1.iter().map(|&i| g.edges[i].length_m).sum::<f64>() / 1000.0;
+        let dist_km: f64 = dist.1.iter().map(|&i| g.edges[i].length_m).sum::<f64>() / 1000.0;
+        assert!(
+            dist_km + 0.5 < time_km,
+            "distance_cost land {dist_km:.1} must beat time land {time_km:.1}"
+        );
+        // Mutating base_weight must not change Car A* (regression for the
+        // broken short_km attempt that rewrote weights and was a no-op).
+        for e in g.edges.iter_mut() {
+            e.base_weight = e.length_m.max(1.0);
+        }
+        let after = g
+            .shortest_path_with_options(NodeId(2), NodeId(4), false, &RouteOptions::default())
+            .expect("time path after base_weight rewrite");
+        assert!(
+            after.0.contains(&NodeId(3)),
+            "Car A* still ignores base_weight; use RouteOptions::distance_cost"
+        );
+        let _ = NodeId(1); // ferry origin retained for fixture clarity
+    }
+
+    /// Stage B densify under `distance_cost` must not open Connected ferries
+    /// outside the Stage B pick (Askvoll→Gjervik kept; Dragsvik/Solvorn closed).
+    #[test]
+    fn densify_distance_cost_does_not_add_ferries_beyond_stage_b_pick() {
+        use geo_types::Coord;
+        use osm4routing::Node;
+
+        let mut nodes = HashMap::new();
+        // Land O→D via longer primary; short unpicked ferry cuts the fjord.
+        for (id, lat, lon) in [
+            (1i64, 61.20, 6.50), // origin (mainland after Askvoll land)
+            (2, 61.20, 6.56),    // unpicked ferry near shore
+            (3, 61.20, 6.60),    // unpicked ferry far shore
+            (4, 61.50, 7.70),    // dest (toward Sognefjell)
+            (5, 61.35, 7.10),    // land mid (longer)
+        ] {
+            nodes.insert(
+                NodeId(id),
+                Node {
+                    id: NodeId(id),
+                    coord: Coord { x: lon, y: lat },
+                    uses: 0,
+                },
+            );
+        }
+        let mk = |id: &str, s: i64, t: i64, len: f64, ferry: bool| -> GraphEdge {
+            let sn = nodes[&NodeId(s)].coord;
+            let tn = nodes[&NodeId(t)].coord;
+            GraphEdge {
+                id: id.into(),
+                source: NodeId(s),
+                target: NodeId(t),
+                length_m: len,
+                base_weight: len,
+                cost_mult: 1.0,
+                eco_weight: None,
+                start_lat: sn.y,
+                start_lon: sn.x,
+                end_lat: tn.y,
+                end_lon: tn.x,
+                shape: Vec::new(),
+                highway: Some(if ferry {
+                    "ferry".into()
+                } else {
+                    "primary".into()
+                }),
+                maxspeed_kmh: Some(if ferry { 20.0 } else { 80.0 }),
+                maxspeed_practical_kmh: None,
+                maxspeed_advisory_kmh: None,
+                maxspeed_type: None,
+                maxspeed_variable: false,
+                minspeed_kmh: None,
+                name: if ferry {
+                    Some("Dragsvik - Hella".into())
+                } else {
+                    None
+                },
+                road_ref: None,
+                is_motorroad: false,
+                is_expressway: false,
+                is_oneway: false,
+                lanes: None,
+                maxweight_t: None,
+                maxaxleload_t: None,
+                maxbogieweight_t: None,
+                maxheight_m: None,
+                maxwidth_m: None,
+                maxlength_m: None,
+                is_toll: false,
+                is_ferry: ferry,
+                ferry_interval_min: None,
+                is_tunnel: false,
+                is_boardwalk_crossing: false,
+                is_roundabout: false,
+                motor_vehicle_conditional: None,
+                access_conditional: None,
+                maxspeed_conditional: None,
+                access_forbidden: false,
+                surface_quality: crate::routing::graph::SurfaceQuality::Good,
+            }
+        };
+        let mut edges = Vec::new();
+        for (id, s, t, len, ferry) in [
+            ("approach", 1i64, 2, 5_000.0, false),
+            ("fjord_ferry", 2, 3, 3_000.0, true),
+            ("far_to_dest", 3, 4, 40_000.0, false),
+            ("land_a", 1, 5, 55_000.0, false),
+            ("land_b", 5, 4, 55_000.0, false),
+        ] {
+            edges.push(mk(id, s, t, len, ferry));
+            edges.push(mk(&format!("{id}_rev"), t, s, len, ferry));
+        }
+        let g = RouteGraph::from_parts(nodes, edges, RoutingProfile::Car);
+        let dist_opts = RouteOptions {
+            distance_cost: true,
+            ..RouteOptions::default()
+        };
+        // Without Stage B gate, length-A* takes the short fjord ferry.
+        let open = g
+            .shortest_path_with_options(NodeId(1), NodeId(4), false, &dist_opts)
+            .expect("open distance path");
+        assert!(
+            open.0.contains(&NodeId(2)) && open.0.contains(&NodeId(3)),
+            "distance_cost alone prefers the short Connected ferry"
+        );
+        let _guard = crate::routing::plan_bbox::StageBTestGuard::activate();
+        // Stage B picked Askvoll→Gjervik only — empty relative to this hop.
+        crate::routing::plan_bbox::set_stage_b_ferry_allowlist(Some(vec![
+            crate::routing::plan_bbox::StageBFerryGate {
+                from_lat: 61.345,
+                from_lon: 5.064,
+                to_lat: 61.348,
+                to_lon: 5.118,
+            },
+        ]));
+        let gated = g
+            .shortest_path_with_options(NodeId(1), NodeId(4), false, &dist_opts)
+            .expect("gated distance path");
+        assert!(
+            gated.0.contains(&NodeId(5)),
+            "densify must stay on land when Stage B did not pick the fjord ferry"
+        );
+        assert!(
+            !gated.0.contains(&NodeId(2)) && !gated.0.contains(&NodeId(3)),
+            "unpicked ferry must stay closed under Stage B densify allowlist"
+        );
+        assert_eq!(
+            g.path_ferry_legs(&gated.1).len(),
+            0,
+            "densify must not add ferries beyond Stage B pick"
+        );
     }
 
     #[test]
@@ -4860,6 +5342,30 @@ mod tests {
                 .any(|j| j.joint_type == "border_crossing" && j.osm_id == 2),
             "a crossing the path stays on must remain a joint: {joints:?}"
         );
+    }
+
+    #[test]
+    fn split_long_hops_along_coarse_inserts_on_path_mids() {
+        // Ferry-only hops span 5°; sampling at 1.15° must insert coarse mids.
+        let mut coarse = Vec::new();
+        for i in 0..=50 {
+            let t = i as f64 / 50.0;
+            coarse.push((61.0 + t * 2.0, 5.0 + t * 5.0));
+        }
+        let hops = vec![coarse[0], coarse[coarse.len() - 1]];
+        let split = split_long_hops_along_coarse(hops, &coarse, 1.15);
+        assert!(
+            split.len() >= 5,
+            "long OD must gain intermediate hops, got {} {:?}",
+            split.len(),
+            split
+        );
+        assert_eq!(split.first(), coarse.first());
+        assert_eq!(split.last(), coarse.last());
+        for w in split.windows(2) {
+            let cheb = (w[0].0 - w[1].0).abs().max((w[0].1 - w[1].1).abs());
+            assert!(cheb <= 1.15 + 0.05, "hop span {cheb:.3} exceeds chunk deg");
+        }
     }
 
     #[test]
@@ -5563,7 +6069,9 @@ mod tests {
         );
     }
 
-    fn reversal_pair() -> (Vec<(f64, f64)>, Vec<(f64, f64)>, (f64, f64)) {
+    type ReversalPair = (Vec<(f64, f64)>, Vec<(f64, f64)>, (f64, f64));
+
+    fn reversal_pair() -> ReversalPair {
         // South along a valley, then north to a spur and back (Bromma shape).
         let joint = (60.57311, 9.11153);
         let left = vec![(60.40, 9.20), (60.48, 9.16), (60.55, 9.13), joint];
@@ -5637,6 +6145,38 @@ mod tests {
                 true,
             ),
             StretchRepair::Keep
+        );
+    }
+
+    #[test]
+    fn ferry_terminal_stitch_skips_far_shore_major() {
+        // Atløy pier (term) —ferry 3 km→ Askvoll pier; mainland primary sits
+        // 2.2 km from Atløy (inside FERRY_STITCH_MAX_M) but next to Askvoll.
+        // Pre-fix stitch invented a land bridge and Stage B reported ferries=0.
+        let mut skel = merge_fixture(
+            "askvoll",
+            vec![1, 2, 3],
+            vec![5.016, 5.064, 5.055],
+            &[
+                // ferry Atløy(0) → Askvoll(1)
+                (0, 1, "", "Askvoll - Gjervik", "", 1),
+                (1, 0, "", "Askvoll - Gjervik", "", 1),
+                // mainland primary nearer Askvoll pier than Atløy, but still
+                // within FERRY_STITCH_MAX_M of Atløy (~2.1 km).
+                (1, 2, "primary", "Askvollvegen", "608", 0),
+                (2, 1, "primary", "Askvollvegen", "608", 0),
+            ],
+        );
+        skel.node_lats = vec![61.34831, 61.34526, 61.34600];
+        skel.node_is_ferry_terminal = vec![1, 1, 0];
+        // Orphan Atløy: no land path to a major on the island.
+        let before = skel.edge_src.len();
+        let n = stitch_orphaned_ferry_terminals(&mut skel, FERRY_STITCH_MAX_M);
+        assert_eq!(n, 0, "must not stitch Atløy pier onto Askvoll-side primary");
+        assert_eq!(skel.edge_src.len(), before);
+        assert!(
+            !skel.edge_name.iter().any(|n| n == "ferry_terminal_stitch"),
+            "no cross-water ferry_terminal_stitch"
         );
     }
 

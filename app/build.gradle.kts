@@ -43,9 +43,9 @@ android {
         applicationId = "no.navi.app"
         minSdk = 26
         targetSdk = 36
-        // F-Droid upstream CurrentVersionCode is 31 (0.3.26-beta); next is 32.
-        versionCode = 32
-        versionName = "0.3.29-beta"
+        // F-Droid upstream CurrentVersionCode is 32 (0.3.29-beta); next is 33.
+        versionCode = 33
+        versionName = "0.3.30-beta"
         testInstrumentationRunner = "no.navi.app.NaviAndroidTestRunner"
         // Restrict packaging to naviAbis so every lib/<abi>/ folder contains the
         // same .so set (libnavi + MapLibre + JNA + graphics.path). Strips JNA's

@@ -1,6 +1,5 @@
 package no.navi.app
 
-import android.database.sqlite.SQLiteDatabase
 import android.util.Log
 import java.io.File
 import java.nio.file.AtomicMoveNotSupportedException
@@ -31,8 +30,8 @@ import java.util.concurrent.atomic.AtomicReference
  *   pass resumes. A temp file left by a killed process is discarded on the
  *   next run (VACUUM INTO has no partial state worth resuming).
  *
- * Needs `VACUUM INTO` (SQLite 3.27, Android 11+). On older devices the live DB
- * is left as is and only the backup policy runs.
+ * Needs `VACUUM INTO` (SQLite 3.27). When an [Engine] reports it unsupported,
+ * the live DB is left as is and only the backup policy runs.
  */
 object PlaceIndexCompact {
     const val TAG = "PlaceIndexCompact"
@@ -524,66 +523,47 @@ object PlaceIndexCompact {
             }
         }
 
+    /** Native SQLite only; see [PlaceIndexIntact.readRows] for why not the framework. */
     internal object AndroidEngine : Engine {
-        private fun <T> readOnly(
+        private fun readOnly(
             file: File,
-            block: (SQLiteDatabase) -> T,
-        ): T? =
-            runCatching {
-                SQLiteDatabase.openDatabase(file.absolutePath, null, SQLiteDatabase.OPEN_READONLY).use(block)
-            }.onFailure { Log.w(TAG, "open ${file.name} failed: ${it.message}") }
+            sql: String,
+        ): List<List<String?>>? =
+            runCatching { PlaceIndexIntact.readRows(file, sql) }
+                .onFailure { Log.w(TAG, "read ${file.name} failed: ${it.message}") }
                 .getOrNull()
 
         override fun quickCheck(file: File): String =
-            readOnly(file) { db ->
-                db.rawQuery("PRAGMA quick_check", null).use { c ->
-                    if (c.moveToFirst()) c.getString(0).orEmpty() else "empty"
-                }
+            readOnly(file, "PRAGMA quick_check")?.let { rows ->
+                rows
+                    .firstOrNull()
+                    ?.firstOrNull()
+                    .orEmpty()
+                    .ifEmpty { "empty" }
             } ?: "unreadable"
 
         override fun regionCounts(file: File): Map<String, Long>? =
-            readOnly(file) { db ->
-                db.rawQuery("SELECT region_id, COUNT(*) FROM name_entries GROUP BY region_id", null).use { c ->
-                    buildMap {
-                        while (c.moveToNext()) put(c.getString(0).orEmpty(), c.getLong(1))
-                    }
-                }
+            readOnly(file, "SELECT region_id, COUNT(*) FROM name_entries GROUP BY region_id")?.associate { r ->
+                r.getOrNull(0).orEmpty() to (r.getOrNull(1)?.toLongOrNull() ?: 0L)
             }
 
-        override fun freelistRatio(file: File): Double? =
-            readOnly(file) { db ->
-                fun pragma(name: String): Long = db.rawQuery("PRAGMA $name", null).use { c -> if (c.moveToFirst()) c.getLong(0) else 0L }
-                val pages = pragma("page_count")
-                if (pages <= 0L) 0.0 else pragma("freelist_count").toDouble() / pages.toDouble()
-            }
+        override fun freelistRatio(file: File): Double? {
+            fun pragma(name: String): Long? = readOnly(file, "PRAGMA $name")?.let { it.firstOrNull()?.firstOrNull()?.toLongOrNull() ?: 0L }
+            val pages = pragma("page_count") ?: return null
+            val free = pragma("freelist_count") ?: return null
+            return if (pages <= 0L) 0.0 else free.toDouble() / pages.toDouble()
+        }
 
         override fun vacuumInto(
             live: File,
             tmp: File,
         ): VacuumResult {
-            val quoted = tmp.absolutePath.replace("'", "''")
-            return try {
-                SQLiteDatabase.openDatabase(live.absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { db ->
-                    db.execSQL("VACUUM INTO '$quoted'")
-                }
-                VacuumResult.Ok
-            } catch (t: Throwable) {
-                val msg = t.message.orEmpty()
-                if (msg.contains("near \"INTO\"", ignoreCase = true) || msg.contains("syntax error", ignoreCase = true)) {
-                    VacuumResult.Unsupported
-                } else {
-                    VacuumResult.Failed(msg)
-                }
-            }
+            val report =
+                runCatching { uniffi.navi.placeIndexVacuumInto(live.absolutePath, tmp.absolutePath) }
+                    .getOrElse { t -> "FAIL: ${t.message}" }
+            return if (report.startsWith("PASS")) VacuumResult.Ok else VacuumResult.Failed(report)
         }
 
-        override fun checkpoint(live: File): Boolean =
-            runCatching {
-                SQLiteDatabase.openDatabase(live.absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
-                    db.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { c ->
-                        c.moveToFirst() && c.getInt(0) == 0
-                    }
-                }
-            }.getOrDefault(false)
+        override fun checkpoint(live: File): Boolean = runCatching { uniffi.navi.placeIndexCheckpointTruncate(live.absolutePath) }.getOrNull() == "PASS"
     }
 }

@@ -341,7 +341,9 @@ impl RoadLabelSticky {
         max_m: f64,
     ) -> Option<NearestRoadHit> {
         let Some(best) = nearest_road_candidate(graph, lat, lon, max_m) else {
-            self.reset();
+            // Keep the locked road across brief empty snaps (graph rebuild /
+            // bbox gap). Resetting here made the next hit lock a new edge
+            // immediately and flipped the speed-limit HUD every few seconds.
             return None;
         };
 
@@ -833,6 +835,25 @@ mod tests {
                 "speed limit must not flip to E6 100 under midpoint noise"
             );
         }
+    }
+
+    #[test]
+    fn sticky_survives_brief_empty_snap() {
+        let graph = parallel_furnes_e6_graph();
+        let mid_lon = 11.0080;
+        let mut sticky = RoadLabelSticky::new();
+        assert_eq!(
+            sticky.update(&graph, 60.85250, mid_lon, 80.0).as_deref(),
+            Some("Furnesvegen")
+        );
+        // Far away: no candidate — must not reset the lock.
+        assert!(sticky.update(&graph, 0.0, 0.0, 80.0).is_none());
+        assert_eq!(sticky.last_label(), Some("Furnesvegen"));
+        // Back on Furnes — still locked (not an instant E6 flip).
+        assert_eq!(
+            sticky.update(&graph, 60.85250, mid_lon, 80.0).as_deref(),
+            Some("Furnesvegen")
+        );
     }
 
     #[test]

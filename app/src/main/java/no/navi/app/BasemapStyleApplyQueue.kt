@@ -60,9 +60,15 @@ object BasemapStyleApplyQueue {
     /**
      * True when this request should load a new base style. False when only the
      * route / overlay layers should change.
+     *
+     * [Request.forceBaseReload] must win even when [Request.sourceKey] matches
+     * the last applied source — otherwise opt-in 3D / contours toggles never
+     * call [no.navi.app.MapterhornTerrain.attach] / contours attach on an
+     * already-mounted offline style (mountedKey-only source keys).
      */
     fun shouldReloadBase(request: Request): Boolean {
         if (!isCurrent(request.generation)) return false
+        if (request.forceBaseReload) return true
         val current = appliedSource.get()
         if (current == null) return true
         if (current != request.sourceKey) return true

@@ -3,7 +3,7 @@
     <string name="via_point_reached">Via-punkt nådd</string>
     <string name="via_point_n_of_m_reached">Via-punkt %1$d av %2$d nådd</string>
     <string name="cat_licence_listen_only">Du kan lytte, men ikke send uten amatørradiosertifikat.</string>
-    <string name="cat_plugin_toggle_label">CAT / CATS-radio</string>
+    <string name="cat_plugin_toggle_label">CAT</string>
     <string name="cat_update_repeaters">Oppdater repetere</string>
     <string name="cat_update_repeaters_hint">Henter kun fra navi-server (vanlig HTTPS). Ingen bakgrunnshenting. RepeaterBook kommer når serveren publiserer den.</string>
     <string name="approach_off_route">Utenfor ruten</string>
@@ -56,6 +56,9 @@
     <string name="dialog_speed_camera_title">Fartskameravarsler</string>
     <string name="dialog_off_trail_title">Utenfor stien</string>
     <string name="dialog_map_data_needed_title">Kartdata trengs</string>
+    <string name="dialog_map_data_needed_body">%1$s er ikke lastet ned. Last ned %1$s for å planlegge denne turen.</string>
+    <string name="dialog_map_data_needed_body_place">%1$s er ikke lastet ned. Last ned %1$s for å planlegge denne turen (%2$s).</string>
+    <string name="dialog_map_data_needed_sweden">%1$s ligger i Sverige, som ikke er lastet ned. Last ned Sverige for å planlegge denne turen.</string>
     <string name="dialog_longer_route_title">Lengre rute tilgjengelig</string>
     <string name="dialog_longer_route_accept">Godta lengre rute</string>
     <string name="dialog_delete_route_title">Slette rute?</string>
@@ -73,7 +76,12 @@
     <string name="map_marked_location">Markert sted</string>
     <string name="map_set_as_from">Sett som Fra / Start</string>
     <string name="map_set_as_to">Sett som Til / Destinasjon</string>
+    <string name="map_set_as_fake_gps">Sett som falsk GPS (debug)</string>
     <string name="map_save_this_place">Lagre dette stedet</string>
+    <string name="tools_debug_gps">Debug falsk GPS</string>
+    <string name="tools_debug_gps_hold">Hold falsk GPS på lat, lon</string>
+    <string name="tools_debug_gps_clear">Fjern falsk GPS</string>
+    <string name="tools_debug_gps_hint">Bare i debuggbare bygg. Fast punkt — ikke spor. Samme som adb navi_gps_lat / navi_gps_lon.</string>
     <string name="map_save_place_title">Lagre sted</string>
     <string name="camping_suggestions_title">Forslag til overnatting</string>
     <string name="camping_camp_here">Campér her i natt</string>
@@ -131,10 +139,21 @@
     <string name="cat_backend">Backend</string>
     <string name="cat_backend_benshi" translatable="false">Benshi</string>
     <string name="cat_backend_hamlib" translatable="false">Hamlib</string>
+    <string name="cat_benshi_bluetooth_off">Bluetooth er av eller utilgjengelig.</string>
+    <string name="cat_benshi_connecting">Kobler til %1$s over Bluetooth…</string>
+    <string name="cat_benshi_demo_note">Demomodus er på: Koble til bruker den simulerte lab-radioen, ikke Bluetooth.</string>
+    <string name="cat_benshi_no_paired">Ingen parede Bluetooth-enheter. Par radioen i Bluetooth-innstillingene i Android først.</string>
+    <string name="cat_benshi_permission_denied">Bluetooth-tillatelse avslått. Tillat «Enheter i nærheten» for Navi i Android-innstillingene for å koble til radioen.</string>
+    <string name="cat_benshi_permission_needed">Bluetooth-tillatelse trengs for å vise og koble til parede radioer.</string>
+    <string name="cat_benshi_radio_title">Bluetooth-radio (paret)</string>
+    <string name="cat_benshi_refresh_paired">Oppdater parede enheter</string>
+    <string name="cat_benshi_select_radio">Velg en paret radio først.</string>
     <string name="cat_consensus_relocation">Flytt ikke-OSM-repetere til mest sannsynlige sted</string>
     <string name="cat_demo_mode">Demomodus (5 s/sted) — ikke for kjøring</string>
     <string name="cat_hamlib_model_number">Hamlib-modellnummer</string>
     <string name="cat_hamlib_model_title">Hamlib-radiomodell</string>
+    <string name="cat_link_benshi_radio">Tilkoblet til radio via Bluetooth.</string>
+    <string name="cat_link_benshi_demo">DEMO: simulert radio (%1$s), ikke en fysisk radio</string>
     <string name="cat_nearest_network_auto">Nærmeste nettverk (auto)</string>
     <string name="cat_off_manual">Av / manuell</string>
     <string name="cat_port">port</string>
@@ -262,6 +281,15 @@
     <string name="status_queued_waiting">I kø %1$s (%2$d venter)…</string>
     <string name="status_recalculating_route_detail">Beregner rute på nytt… %1$s</string>
     <string name="status_region_ready">Region klar for ruteberegning</string>
+    <string name="region_readiness_downloading">%1$s: laster ned…</string>
+    <string name="region_readiness_downloading_pct">%1$s: laster ned %2$d%%</string>
+    <string name="region_readiness_indexing">%1$s: indekserer…</string>
+    <string name="region_readiness_indexing_pct">%1$s: indekserer %2$d%%</string>
+    <string name="region_readiness_building_routes">%1$s: bygger ruter…</string>
+    <string name="region_readiness_building_routes_pct">%1$s: bygger ruter %2$d%%</string>
+    <string name="region_readiness_ready">%1$s: klar</string>
+    <string name="region_readiness_missing">%1$s: ikke lastet ned</string>
+    <string name="region_readiness_routing_blocked">Ruteberegning virker ikke før indeksering og rutebygging er ferdig.</string>
     <string name="status_resuming_basemap_for">Gjenopptar grunnlagskart for %1$s…</string>
     <string name="status_resuming_download_of">Gjenopptar nedlasting av %1$s…</string>
     <string name="status_resuming_place_index_for">Gjenopptar stedsindeks for %1$s…</string>

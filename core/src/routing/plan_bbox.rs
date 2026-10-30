@@ -19,17 +19,35 @@ static ACCEPT_ABSURD_DETOUR: AtomicBool = AtomicBool::new(false);
 thread_local! {
     /// Full coarse path (lat, lon) for Stage B hop corridor tile selection.
     static STAGE_B_COARSE_PATH: RefCell<Option<Vec<(f64, f64)>>> = const { RefCell::new(None) };
+    /// Ferries Stage B already picked. When `Some`, densify may only use those
+    /// water edges (endpoint match); `None` means unrestricted (non-Stage-B).
+    /// `Some([])` = Stage B land-only → densify must not open Connected ferries.
+    static STAGE_B_FERRY_ALLOW: RefCell<Option<Vec<StageBFerryGate>>> =
+        const { RefCell::new(None) };
     /// One hop: clip around the straight line between the hop ends, not the
     /// coarse corridor. Stretch-repair Direct and the post-corridor retry set
     /// this so a fitting stretch is searched as one detailed hop.
     static FORCE_STRAIGHT_CLIP: Cell<bool> = const { Cell::new(false) };
 }
 
+/// One Stage B ferry service densify may reuse (either travel direction).
+#[derive(Debug, Clone, Copy)]
+pub struct StageBFerryGate {
+    pub from_lat: f64,
+    pub from_lon: f64,
+    pub to_lat: f64,
+    pub to_lon: f64,
+}
+
+/// Pier match for Stage B densify ferry gates (same order as overlay ferry match).
+pub const STAGE_B_FERRY_GATE_MATCH_M: f64 = 2_500.0;
+
 /// Enable/disable Stage B densify mode for the current plan.
 pub fn set_stage_b_active(on: bool) {
     STAGE_B_ACTIVE.store(on, Ordering::Relaxed);
     if !on {
         clear_stage_b_coarse_path();
+        clear_stage_b_ferry_allowlist();
         set_plan_tile_budget_at_least(0);
     } else {
         // No tile-budget truncation: raise floor to the widen cap so every
@@ -73,6 +91,45 @@ pub fn set_stage_b_coarse_path(path: Vec<(f64, f64)>) {
 
 pub fn clear_stage_b_coarse_path() {
     STAGE_B_COARSE_PATH.with(|c| *c.borrow_mut() = None);
+}
+
+/// Restrict densify ferries to Stage B's pick. Pass `Some(gates)` after Stage B
+/// succeeds (`Some([])` when the pick is land-only). Pass `None` to clear.
+pub fn set_stage_b_ferry_allowlist(gates: Option<Vec<StageBFerryGate>>) {
+    STAGE_B_FERRY_ALLOW.with(|c| *c.borrow_mut() = gates);
+}
+
+pub fn clear_stage_b_ferry_allowlist() {
+    STAGE_B_FERRY_ALLOW.with(|c| *c.borrow_mut() = None);
+}
+
+/// True when a ferry edge may be used under the current Stage B densify gate.
+///
+/// Unrestricted when the allowlist is unset (`None`). When set, both ends must
+/// lie within [`STAGE_B_FERRY_GATE_MATCH_M`] of one allowed service (either
+/// orientation) — stops distance-cost densify from opening Connected Sognefjord
+/// ferries that Stage B did not pick.
+pub fn stage_b_ferry_edge_allowed(
+    start_lat: f64,
+    start_lon: f64,
+    end_lat: f64,
+    end_lon: f64,
+) -> bool {
+    STAGE_B_FERRY_ALLOW.with(|c| {
+        let borrow = c.borrow();
+        let Some(gates) = borrow.as_ref() else {
+            return true;
+        };
+        let near = |alat: f64, alon: f64, blat: f64, blon: f64| {
+            haversine_km(alat, alon, blat, blon) * 1000.0 <= STAGE_B_FERRY_GATE_MATCH_M
+        };
+        gates.iter().any(|g| {
+            (near(start_lat, start_lon, g.from_lat, g.from_lon)
+                && near(end_lat, end_lon, g.to_lat, g.to_lon))
+                || (near(start_lat, start_lon, g.to_lat, g.to_lon)
+                    && near(end_lat, end_lon, g.from_lat, g.from_lon))
+        })
+    })
 }
 
 pub fn set_force_straight_clip(on: bool) {
@@ -657,6 +714,8 @@ const DIRECT_SEARCH_STRIP_DEG: f64 = 0.04;
 /// latitudes the strip was sampled at.
 const DIRECT_SEARCH_STRIP_LON_MARGIN_DEG: f64 = 0.01;
 
+type DirectSearchLeg = ((f64, f64), (f64, f64), f64);
+
 /// Direct-search area: per consecutive pair of route points, every point whose
 /// sum of straight-line distances to the pair is at most
 /// `factor * pair distance + allowance_km`. Widen step `w` doubles the factor's
@@ -665,7 +724,7 @@ const DIRECT_SEARCH_STRIP_LON_MARGIN_DEG: f64 = 0.01;
 pub struct DirectSearchArea {
     pub factor: f64,
     pub allowance_km: f64,
-    legs: Vec<((f64, f64), (f64, f64), f64)>,
+    legs: Vec<DirectSearchLeg>,
 }
 
 impl DirectSearchArea {
@@ -1089,6 +1148,41 @@ mod tests {
         assert!((pads[0] - PLAN_BBOX_PAD_MIN_DEG).abs() < 1e-9);
         assert!(*pads.last().unwrap() <= PLAN_BBOX_PAD_CAP_DEG + 1e-9);
         assert!(pads.windows(2).all(|w| w[1] >= w[0]));
+    }
+
+    #[test]
+    fn stage_b_ferry_allowlist_matches_pick_only() {
+        let _guard = StageBTestGuard::activate();
+        // Askvoll–Gjervik stand-in.
+        set_stage_b_ferry_allowlist(Some(vec![StageBFerryGate {
+            from_lat: 61.345,
+            from_lon: 5.064,
+            to_lat: 61.348,
+            to_lon: 5.118,
+        }]));
+        assert!(
+            stage_b_ferry_edge_allowed(61.345, 5.064, 61.348, 5.118),
+            "picked ferry forward"
+        );
+        assert!(
+            stage_b_ferry_edge_allowed(61.348, 5.118, 61.345, 5.064),
+            "picked ferry reverse"
+        );
+        // Dragsvik–Hella stand-in (~61.21,6.56 / 61.21,6.60) must stay closed.
+        assert!(
+            !stage_b_ferry_edge_allowed(61.210, 6.560, 61.205, 6.600),
+            "unpicked Sognefjord ferry must not match Askvoll gate"
+        );
+        set_stage_b_ferry_allowlist(Some(Vec::new()));
+        assert!(
+            !stage_b_ferry_edge_allowed(61.345, 5.064, 61.348, 5.118),
+            "empty Stage B pick forbids every ferry"
+        );
+        clear_stage_b_ferry_allowlist();
+        assert!(
+            stage_b_ferry_edge_allowed(61.210, 6.560, 61.205, 6.600),
+            "unset allowlist is unrestricted"
+        );
     }
 
     #[test]

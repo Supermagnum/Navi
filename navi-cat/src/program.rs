@@ -345,7 +345,7 @@ mod tests {
         assert!(reported.ctcss_tenths_hz.is_none());
         assert!(reported.dcs_code.is_none());
         assert_eq!(reported.shift, ShiftDir::Minus);
-        assert!(rig.log.iter().any(|c| *c == "set_vfo_state"));
+        assert!(rig.log.contains(&"set_vfo_state"));
         assert!(rig
             .log
             .iter()

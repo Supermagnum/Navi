@@ -26,16 +26,24 @@ class RouteSimulator(
 
     val running: Boolean get() = job?.isActive == true
 
+    private var timeScale: Double = 1.0
+
     fun start(timeScale: Double = 1.0) {
+        this.timeScale = max(timeScale, 0.01)
+        startFromIndex(0)
+    }
+
+    private fun startFromIndex(startIdx: Int) {
         stop()
         if (samples.size < 2) {
             onFinished()
             return
         }
         val scale = max(timeScale, 0.01)
+        val begin = startIdx.coerceIn(0, samples.lastIndex)
         job =
             scope.launch {
-                var i = 0
+                var i = begin
                 while (isActive && i < samples.lastIndex) {
                     val a = samples[i]
                     val b = samples[i + 1]
@@ -57,14 +65,24 @@ class RouteSimulator(
             }
     }
 
-    /** Jump to the sample nearest [targetCumM] (test checkpoints). */
+    /**
+     * Jump to the sample nearest [targetCumM] (test checkpoints).
+     * Restarts playback from that index so a running job cannot snap back to 0.
+     */
     fun seekToCumM(targetCumM: Double) {
         if (samples.isEmpty()) return
         val idx = samples.indices.minByOrNull { kotlin.math.abs(samples[it].cumM - targetCumM) } ?: 0
         val a = samples[idx]
         val b = samples.getOrElse(idx + 1) { a }
+        val wasRunning = running
+        // Stop first so a live job cannot overwrite this fix from index 0.
+        stop()
         onSample(a)
         onFix(locationAt(a, b))
+        // Resume from checkpoint only when playback was already active.
+        if (wasRunning) {
+            startFromIndex(idx)
+        }
     }
 
     fun stop() {

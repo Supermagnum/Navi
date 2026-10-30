@@ -12,7 +12,8 @@ pub const AUTO_TUNE_RADIUS_KM: f64 = 150.0;
 pub extern "C" fn plugin_main() {
     navi_plugin_sdk::host_log("cat: guest loaded");
     if let Some(pos) = navi_plugin_sdk::host_position() {
-        let mut buf = [0u8; 65536];
+        // Heap buffer: Ostlandet near-set can exceed 64 KiB; avoid stack overflow.
+        let mut buf = vec![0u8; 524_288];
         let n = navi_plugin_sdk::host_repeater_query(
             pos.lat,
             pos.lon,
@@ -48,13 +49,26 @@ fn run_position_follow(lat: f64, lon: f64) {
         .get("now_unix_s")
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
-    let mut buf = [0u8; 65536];
+    // Must fit full host sites_json; 64 KiB truncates and yields live=0 (no VFO programs).
+    let mut buf = vec![0u8; 524_288];
     let n = navi_plugin_sdk::host_repeater_query(lat, lon, AUTO_TUNE_RADIUS_KM, None, &mut buf);
     if n == 0 {
         return;
     }
+    if n >= buf.len() {
+        navi_plugin_sdk::host_log(&format!(
+            "cat: repeater_query truncated at {} bytes",
+            buf.len()
+        ));
+    }
     let json = std::str::from_utf8(&buf[..n]).unwrap_or("[]");
     let rows: Vec<serde_json::Value> = serde_json::from_str(json).unwrap_or_default();
+    if rows.is_empty() && n > 2 {
+        navi_plugin_sdk::host_log(&format!(
+            "cat: repeater_query parse empty n={n} head={:?}",
+            json.chars().take(80).collect::<String>()
+        ));
+    }
     let mut live = Vec::new();
     for row in rows {
         let Some(id) = row.get("id").and_then(|v| v.as_str()) else {
@@ -98,6 +112,10 @@ fn run_position_follow(lat: f64, lon: f64) {
     }
     let members = follow::select_members(choice, &live);
     if members.is_empty() {
+        navi_plugin_sdk::host_log(&format!(
+            "cat: follow members empty choice={choice} live={} n={n}",
+            live.len()
+        ));
         return;
     }
     let mut state_buf = [0u8; 4096];
@@ -109,7 +127,17 @@ fn run_position_follow(lat: f64, lon: f64) {
     if let follow::FollowTick::Switch { site_id } =
         follow::tick_at(&mut state, lat, lon, &members, now)
     {
+        navi_plugin_sdk::host_log(&format!(
+            "cat: follow switch -> {site_id} members={}",
+            members.len()
+        ));
         let _ = navi_plugin_sdk::host_plugin_kv_set(follow::FOLLOW_SWITCH_KEY, &site_id);
+    } else {
+        navi_plugin_sdk::host_log(&format!(
+            "cat: follow hold site={:?} members={}",
+            state.current_site,
+            members.len()
+        ));
     }
     if let Ok(encoded) = serde_json::to_string(&state) {
         let _ = navi_plugin_sdk::host_plugin_kv_set(follow::FOLLOW_STATE_KEY, &encoded);
