@@ -102,7 +102,7 @@ class BasemapDisplayFixTest {
                 reloadedBase = true,
             ),
         )
-        val route = BasemapStyleApplyQueue.enqueue("offline:ostlandet", forceBaseReload = true)
+        val route = BasemapStyleApplyQueue.enqueue("offline:ostlandet")
         assertFalse(
             "layerEpoch / styleEpoch / route must not reload the same source",
             BasemapStyleApplyQueue.shouldReloadBase(route),

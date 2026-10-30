@@ -21,11 +21,17 @@ import java.io.File
  */
 object NaviAppData {
     private const val TAG = "NaviAppData"
+    private val loggedDir =
+        java.util.concurrent.atomic
+            .AtomicBoolean(false)
 
     fun resolve(context: Context): File {
         val internal = context.filesDir.also { it.mkdirs() }
         migrateLegacyExternal(context, internal)
-        Log.i(TAG, "app data dir=${internal.absolutePath}")
+        // Compose / readiness polls call this often — log the path once per process.
+        if (loggedDir.compareAndSet(false, true)) {
+            Log.i(TAG, "app data dir=${internal.absolutePath}")
+        }
         return internal
     }
 

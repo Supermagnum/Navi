@@ -89,6 +89,8 @@ fun MapMarkActionSheet(
     onSetTo: () -> Unit,
     onSavePlace: () -> Unit,
     onCancel: () -> Unit,
+    /** Debuggable builds only: pin fake GPS at the mark (fixed, no track). */
+    onSetFakeGps: (() -> Unit)? = null,
     viaCount: Int = 0,
     maxVias: Int = 4,
     modifier: Modifier = Modifier,
@@ -153,6 +155,12 @@ fun MapMarkActionSheet(
                     onClick = onSavePlace,
                     modifier = Modifier.fillMaxWidth().testTag("map_mark_save_place"),
                 ) { Text(stringResource(R.string.map_save_this_place)) }
+                if (onSetFakeGps != null) {
+                    Button(
+                        onClick = onSetFakeGps,
+                        modifier = Modifier.fillMaxWidth().testTag("map_mark_set_fake_gps"),
+                    ) { Text(stringResource(R.string.map_set_as_fake_gps)) }
+                }
                 TextButton(
                     onClick = onCancel,
                     modifier = Modifier.fillMaxWidth().testTag("map_mark_cancel"),

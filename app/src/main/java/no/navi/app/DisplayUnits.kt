@@ -111,25 +111,25 @@ object DisplayUnits {
         return when (unitSystem) {
             UnitSystem.METRIC -> {
                 if (distanceM < 1000.0) {
-                    String.format(Locale.getDefault(), "%.0f m", distanceM)
+                    String.format(Locale.US, "%.0f m", distanceM)
                 } else {
-                    String.format(Locale.getDefault(), "%.1f km", distanceM / 1000.0)
+                    String.format(Locale.US, "%.1f km", distanceM / 1000.0)
                 }
             }
             UnitSystem.IMPERIAL_US -> {
                 val feet = distanceM * FEET_PER_METER
                 if (feet < 1000.0) {
-                    String.format(Locale.getDefault(), "%.0f ft", feet)
+                    String.format(Locale.US, "%.0f ft", feet)
                 } else {
-                    String.format(Locale.getDefault(), "%.1f mi", distanceM / METERS_PER_MILE)
+                    String.format(Locale.US, "%.1f mi", distanceM / METERS_PER_MILE)
                 }
             }
             UnitSystem.IMPERIAL_UK -> {
                 val miles = distanceM / METERS_PER_MILE
                 if (miles < UK_YARD_BELOW_MI) {
-                    String.format(Locale.getDefault(), "%.0f yd", distanceM / METERS_PER_YARD)
+                    String.format(Locale.US, "%.0f yd", distanceM / METERS_PER_YARD)
                 } else {
-                    String.format(Locale.getDefault(), "%.1f mi", miles)
+                    String.format(Locale.US, "%.1f mi", miles)
                 }
             }
         }
@@ -146,9 +146,9 @@ object DisplayUnits {
     ): String {
         if (!speedKmh.isFinite() || speedKmh < 0.0) return ""
         return if (unitSystem.isMetric) {
-            String.format(Locale.getDefault(), "%.0f km/h", speedKmh)
+            String.format(Locale.US, "%.0f km/h", speedKmh)
         } else {
-            String.format(Locale.getDefault(), "%.0f mph", speedKmh / KM_PER_MILE)
+            String.format(Locale.US, "%.0f mph", speedKmh / KM_PER_MILE)
         }
     }
 
@@ -163,7 +163,7 @@ object DisplayUnits {
     ): String {
         if (!speedKmh.isFinite() || speedKmh < 0.0) return ""
         val value = if (unitSystem.isMetric) speedKmh else speedKmh / KM_PER_MILE
-        return String.format(Locale.getDefault(), "%.0f", value)
+        return String.format(Locale.US, "%.0f", value)
     }
 
     fun speedUnit(preferMetric: Boolean): String = speedUnit(UnitSystem.fromPreferMetric(preferMetric))
@@ -185,9 +185,9 @@ object DisplayUnits {
     ): String {
         if (!altitudeM.isFinite()) return ""
         return if (unitSystem == UnitSystem.IMPERIAL_US) {
-            String.format(Locale.getDefault(), "%.0f ft", altitudeM * FEET_PER_METER)
+            String.format(Locale.US, "%.0f ft", altitudeM * FEET_PER_METER)
         } else {
-            String.format(Locale.getDefault(), "%.0f m", altitudeM)
+            String.format(Locale.US, "%.0f m", altitudeM)
         }
     }
 
@@ -202,9 +202,9 @@ object DisplayUnits {
     ): String {
         if (!distanceKm.isFinite() || distanceKm < 0.0) return ""
         return if (unitSystem.isMetric) {
-            String.format(Locale.getDefault(), "%.1f km", distanceKm)
+            String.format(Locale.US, "%.1f km", distanceKm)
         } else {
-            String.format(Locale.getDefault(), "%.1f mi", distanceKm / KM_PER_MILE)
+            String.format(Locale.US, "%.1f mi", distanceKm / KM_PER_MILE)
         }
     }
 
@@ -219,9 +219,9 @@ object DisplayUnits {
     ): String {
         if (!distanceKm.isFinite() || distanceKm < 0.0) return ""
         return if (unitSystem.isMetric) {
-            String.format(Locale.getDefault(), "%.0f km", distanceKm)
+            String.format(Locale.US, "%.0f km", distanceKm)
         } else {
-            String.format(Locale.getDefault(), "%.0f mi", distanceKm / KM_PER_MILE)
+            String.format(Locale.US, "%.0f mi", distanceKm / KM_PER_MILE)
         }
     }
 
@@ -237,10 +237,10 @@ object DisplayUnits {
         unitSystem: UnitSystem,
     ): String {
         if (unitSystem.isMetric) {
-            return String.format(Locale.getDefault(), "%.0f–%.0f km", startKm, endKm)
+            return String.format(Locale.US, "%.0f–%.0f km", startKm, endKm)
         }
         return String.format(
-            Locale.getDefault(),
+            Locale.US,
             "%.0f–%.0f mi",
             startKm / KM_PER_MILE,
             endKm / KM_PER_MILE,

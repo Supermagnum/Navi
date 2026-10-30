@@ -120,6 +120,26 @@ object NaviDebugIntent {
             return null
         }
 
+        // ActivityRecord keeps the original Intent across process death; stripTripExtras
+        // alone cannot stop LMK→recreate from re-seeding the same OD and replanning
+        // (OOM death spiral on 3.5 GB tablets). Skip unless forced or OD changed.
+        val odKey =
+            "%.5f,%.5f->%.5f,%.5f".format(
+                java.util.Locale.US,
+                fromLat,
+                fromLon,
+                toLat,
+                toLon,
+            )
+        val forceSeed = intent.getBooleanExtra("navi_force_trip_seed", false)
+        val consumedFile = File(dataDirPath, "debug_trip_consumed_od.txt")
+        val prior = runCatching { consumedFile.readText().trim() }.getOrNull().orEmpty()
+        if (!forceSeed && prior == odKey) {
+            Log.i(TAG, "skip re-seed OD already consumed: $odKey")
+            stripTripExtras(intent)
+            return null
+        }
+
         val fromName =
             intent.getStringExtra("navi_from_name").orEmpty().ifBlank {
                 formatCoordWaypointName(fromLat, fromLon)
@@ -338,6 +358,9 @@ object NaviDebugIntent {
         // Drop one-shot OD extras so Activity recreate (locale / density) cannot
         // re-seed and replan over an active guidance session.
         stripTripExtras(intent)
+        runCatching {
+            File(dataDirPath, "debug_trip_consumed_od.txt").writeText(odKey)
+        }.onFailure { Log.w(TAG, "debug_trip_consumed_od write failed: ${it.message}") }
         return plan
     }
 

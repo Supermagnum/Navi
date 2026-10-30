@@ -1,0 +1,1 @@
+Speed limit display no longer flickers on brief map gaps. Restored 3D terrain shading and elevation contour lines. Indexing progress percent is visible again during long downloads. Starting from GPS shows a readable address when online search is on.
