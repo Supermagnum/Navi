@@ -3,7 +3,7 @@
     <string name="via_point_reached">Via point reached</string>
     <string name="via_point_n_of_m_reached">Via point %1$d of %2$d reached</string>
     <string name="cat_licence_listen_only">You may listen, but do not transmit without an amateur radio licence.</string>
-    <string name="cat_plugin_toggle_label">CAT / CATS radio</string>
+    <string name="cat_plugin_toggle_label">CAT</string>
     <string name="cat_update_repeaters">Update repeaters</string>
     <string name="cat_update_repeaters_hint">Downloads from navi-server only (plain HTTPS). No background fetch. RepeaterBook appears when the server publishes it.</string>
     <string name="approach_off_route">Off route</string>
@@ -69,6 +69,9 @@
     <string name="dialog_speed_camera_title">Speed camera warnings</string>
     <string name="dialog_off_trail_title">Off trail</string>
     <string name="dialog_map_data_needed_title">Map data needed</string>
+    <string name="dialog_map_data_needed_body">%1$s is not downloaded. Download %1$s to plan this trip.</string>
+    <string name="dialog_map_data_needed_body_place">%1$s is not downloaded. Download %1$s to plan this trip (%2$s).</string>
+    <string name="dialog_map_data_needed_sweden">%1$s is in Sweden, which is not downloaded. Download Sweden to plan this trip.</string>
     <string name="dialog_longer_route_title">Longer route available</string>
     <string name="dialog_longer_route_accept">Accept longer route</string>
     <string name="dialog_delete_route_title">Delete route?</string>
@@ -99,7 +102,12 @@
     <string name="map_marked_location">Marked location</string>
     <string name="map_set_as_from">Set as From / Start</string>
     <string name="map_set_as_to">Set as To / Destination</string>
+    <string name="map_set_as_fake_gps">Set as fake GPS (debug)</string>
     <string name="map_save_this_place">Save this place</string>
+    <string name="tools_debug_gps">Debug fake GPS</string>
+    <string name="tools_debug_gps_hold">Hold fake GPS at lat, lon</string>
+    <string name="tools_debug_gps_clear">Clear fake GPS</string>
+    <string name="tools_debug_gps_hint">Debuggable builds only. Fixed point — not a track. Same as adb navi_gps_lat / navi_gps_lon.</string>
     <string name="map_save_place_title">Save place</string>
     <string name="label_name">Name</string>
     <string name="camping_suggestions_title">Overnight camping suggestions</string>
@@ -140,6 +148,17 @@
     <string name="cat_scratch_channel">Scratch channel (A)</string>
     <string name="cat_scratch_channel_hint">Used when frequency mode is unavailable (e.g. on VFO 2)</string>
     <string name="cat_demo_mode">Demo mode (5 s/site) — not for driving</string>
+    <string name="cat_benshi_radio_title">Bluetooth radio (paired)</string>
+    <string name="cat_benshi_refresh_paired">Refresh paired devices</string>
+    <string name="cat_benshi_no_paired">No paired Bluetooth devices. Pair the radio in Android Bluetooth settings first.</string>
+    <string name="cat_benshi_permission_needed">Bluetooth permission is needed to list and connect to paired radios.</string>
+    <string name="cat_benshi_permission_denied">Bluetooth permission denied. Allow Nearby devices for Navi in Android settings to connect the radio.</string>
+    <string name="cat_benshi_bluetooth_off">Bluetooth is off or unavailable.</string>
+    <string name="cat_benshi_select_radio">Select a paired radio first.</string>
+    <string name="cat_benshi_connecting">Connecting to %1$s over Bluetooth…</string>
+    <string name="cat_benshi_demo_note">Demo mode is on: Connect uses the simulated lab radio, not Bluetooth.</string>
+    <string name="cat_link_benshi_radio">Connected to radio by Bluetooth.</string>
+    <string name="cat_link_benshi_demo">DEMO: simulated radio (%1$s), not a physical radio</string>
     <string name="cat_rigctld_host" translatable="false">rigctld host</string>
     <string name="cat_port">port</string>
     <string name="cat_hamlib_model_title">Hamlib radio model</string>
@@ -346,6 +365,15 @@
     <string name="status_planning_cancelled">Planning cancelled</string>
     <string name="status_kept_original_route">Kept original route</string>
     <string name="status_region_ready">Region ready for routing</string>
+    <string name="region_readiness_downloading">%1$s: downloading…</string>
+    <string name="region_readiness_downloading_pct">%1$s: downloading %2$d%%</string>
+    <string name="region_readiness_indexing">%1$s: indexing…</string>
+    <string name="region_readiness_indexing_pct">%1$s: indexing %2$d%%</string>
+    <string name="region_readiness_building_routes">%1$s: building routes…</string>
+    <string name="region_readiness_building_routes_pct">%1$s: building routes %2$d%%</string>
+    <string name="region_readiness_ready">%1$s: ready</string>
+    <string name="region_readiness_missing">%1$s: not downloaded</string>
+    <string name="region_readiness_routing_blocked">Routing does not work until indexing and route building are finished.</string>
     <string name="status_position_lost">Position lost</string>
     <string name="status_estimated_position">Estimated position</string>
     <string name="status_estimated_position_imu">Estimated position (IMU)</string>

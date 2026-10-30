@@ -29,7 +29,7 @@ Legend: **Loc?** = already in `res/values*/strings.xml` (or equivalent). Propose
 | `via_point_reached` | Via point reached | Via-punkt nådd | yes |
 | `via_point_n_of_m_reached` | Via point %1$d of %2$d reached | Via-punkt %1$d av %2$d nådd | yes |
 | `cat_licence_listen_only` | You may listen, but do not transmit… | translated | yes — reuse |
-| `cat_plugin_toggle_label` | CAT / CATS radio | CAT / CATS-radio | yes — reuse |
+| `cat_plugin_toggle_label` | CAT | CAT | yes — reuse |
 | `cat_update_repeaters` | Update repeaters | Oppdater… | yes |
 | `cat_update_repeaters_hint` | Downloads from navi-server… | translated | yes |
 
@@ -87,7 +87,7 @@ Rough scan: **~260** `Text`/`NaviText`/`label`/`contentDescription` literals; **
 | `MapLongPress.kt` | 119–212 | Marked location; Set as From/To; Save place | no | `map_long_press_*` |
 | `CampingSuggestionSheet.kt` | 84–317 | Overnight camping…; Camp here tonight | no | `camping_*` |
 | `ImuPluginPanel.kt` | 45–86 | IMU pitch…; Calibrate; Reset; Waiting… | no | `imu_*` |
-| `CatStatusSheet.kt` | 175 | CAT / CATS radio (title Text) | duplicate of resource | use `cat_plugin_toggle_label` |
+| `CatStatusSheet.kt` | 175 | CAT (title Text) | duplicate of resource | use `cat_plugin_toggle_label` |
 | `CatStatusSheet.kt` | 191+ | Move non-OSM repeaters…; Backend; Hamlib; Benshi | no | `cat_*` (Hamlib/Benshi/rigctld: `translatable="false"`) |
 | `GeofabrikDownloadCatalog.kt` | 26–32 | Asia, Africa, Europe… continents | no | `geo_continent_*` |
 | `GeofabrikDownloadCatalog.kt` | ~95 labels | Egypt, Tunisia, Norway, … | no | `geo_region_<path_slug>` or leave proper names EN with note in missing-translations |

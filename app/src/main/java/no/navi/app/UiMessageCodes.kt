@@ -14,11 +14,33 @@ object UiMessageCodes {
         resources: Resources,
     ): String {
         if (!raw.startsWith(PREFIX)) return raw
-        val body = raw.removePrefix(PREFIX)
+        val parts = split(raw.removePrefix(PREFIX))
+        return resolveCode(parts.code, parts.arg, resources)?.let { it + parts.suffix } ?: raw
+    }
+
+    data class Parts(
+        val code: String,
+        val arg: String?,
+        val suffix: String,
+    )
+
+    /** `code`, `code|arg`, or `code <plain suffix>` (callers append e.g. " (region 2 of 2: X)"). */
+    fun split(body: String): Parts {
         val pipe = body.indexOf('|')
-        val code = if (pipe >= 0) body.substring(0, pipe) else body
-        val arg = if (pipe >= 0) body.substring(pipe + 1) else null
-        return when (code) {
+        val space = body.indexOf(' ')
+        if (space >= 0 && (pipe < 0 || space < pipe)) {
+            return Parts(body.substring(0, space), null, body.substring(space))
+        }
+        if (pipe >= 0) return Parts(body.substring(0, pipe), body.substring(pipe + 1), "")
+        return Parts(body, null, "")
+    }
+
+    private fun resolveCode(
+        code: String,
+        arg: String?,
+        resources: Resources,
+    ): String? =
+        when (code) {
             "download_region" -> resources.getString(R.string.download_region)
             "download_dem" -> resources.getString(R.string.download_terrain_dem)
             "download_tiles" -> resources.getString(R.string.download_map_tiles)
@@ -40,9 +62,8 @@ object UiMessageCodes {
                 resources.getString(R.string.progress_rebuild_local, arg.orEmpty())
             "resuming_download" -> resources.getString(R.string.download_resuming)
             "highway_class" -> resources.getString(highwayClassResId(arg))
-            else -> raw
+            else -> null
         }
-    }
 
     private fun highwayClassResId(tag: String?): Int =
         when (tag?.trim()?.lowercase()?.removeSuffix("_link")) {

@@ -1,5 +1,6 @@
 package no.navi.app
 
+import android.content.res.Resources
 import uniffi.navi.pmtilesRegionBbox
 import java.io.File
 
@@ -19,8 +20,28 @@ data class MissingRegionCoverage(
     val suggestedGeofabrikPath: String,
     /** True when the trip needs more than one landsdel and country extract is safer. */
     val crossRegion: Boolean,
+    /**
+     * English fallback for JVM tests / logs. UI dialogs must use
+     * [localizedMessage] so the body follows the device language.
+     */
     val message: String,
-)
+) {
+    /** Dialog body in the active Android locale (Bokmål / English / …). */
+    fun localizedMessage(resources: Resources): String {
+        val path = suggestedGeofabrikPath.trim().trim('/')
+        val label = RegionCoverage.displayName(path)
+        val place = placeName.ifBlank { label }
+        val norm = path.lowercase()
+        return when {
+            norm == "europe/sweden" || norm.endsWith("/sweden") ->
+                resources.getString(R.string.dialog_map_data_needed_sweden, place)
+            place.isNotBlank() && place != label ->
+                resources.getString(R.string.dialog_map_data_needed_body_place, label, place)
+            else ->
+                resources.getString(R.string.dialog_map_data_needed_body, label)
+        }
+    }
+}
 
 object RegionCoverage {
     data class Waypoint(

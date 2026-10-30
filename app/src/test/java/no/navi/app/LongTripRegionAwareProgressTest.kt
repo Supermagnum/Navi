@@ -110,7 +110,8 @@ class LongTripRegionAwareProgressTest {
         assertLineNamesRegion(LongTripCoordinator.statusLine(), 0, "Indexing")
 
         RegionDownloadBackground.emitPhaseForTests(regions[0], "indexed")
-        assertLineNamesRegion(LongTripCoordinator.statusLine(), 0, "Indexed")
+        // Place index done without a corridor skeleton → BuildingRoutes.
+        assertLineNamesRegion(LongTripCoordinator.statusLine(), 0, "BuildingRoutes")
 
         RegionDownloadBackground.emitPhaseForTests(regions[1], "downloading")
         assertLineNamesRegion(LongTripCoordinator.statusLine(), 1, "Downloading")

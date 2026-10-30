@@ -88,6 +88,22 @@ class LongTripInstalledGateTest {
         assertTrue(
             LongTripCoordinator.statusLine().contains("Indexing", ignoreCase = true),
         )
+
+        // BuildingRoutes = packs + place-index done, skeleton still running.
+        // Pack wait must not block; Stage-B Indexed gate stays closed.
+        RegionDownloadBackground.emitPhaseForTests(regions[1], "indexed")
+        // Without a real packDir/skeleton, readinessAfterIndex → BuildingRoutes.
+        val afterIndexed = LongTripCoordinator.currentPlan()!!.states[regions[1]]
+        if (afterIndexed == LongTripCoordinator.State.BuildingRoutes) {
+            assertTrue(
+                "BuildingRoutes must count as packs-ready so plan wait unblocks",
+                LongTripCoordinator.regionPacksReady(regions[1]),
+            )
+            assertTrue(LongTripCoordinator.corridorPacksReady())
+            assertFalse(
+                LongTripCoordinator.regionReadyForPlanning(regions[1]),
+            )
+        }
     }
 
     @Test

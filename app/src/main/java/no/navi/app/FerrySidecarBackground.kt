@@ -97,6 +97,16 @@ object FerrySidecarBackground {
      */
     fun ensureFromInstalledMaps() {
         IdlePackJobs.onInstalledMapsChanged()
+        val snap = InstalledMaps.current()
+        if (snap != null && !RoutePlanGate.isRunning() && NaviMapTestHooks.pendingTripPlan == null) {
+            // Snapshot ferry flags only check that the sidecar file exists; one
+            // stale vs its PBF fingerprint still blocks planning until rebuilt.
+            for (r in snap.regions.values) {
+                if (!File(r.packDir, "${r.stem}.navi-manifest.json").isFile) continue
+                ensureStarted(r.packDir, r.stem, TravelProfile.CAR)
+                ensureStarted(r.packDir, r.stem, TravelProfile.TRUCK)
+            }
+        }
         IdlePackJobs.onAppIdle()
     }
 

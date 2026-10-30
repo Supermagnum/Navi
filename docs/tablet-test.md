@@ -95,6 +95,8 @@ None are on unless you set them. Release APKs ignore the trip extras.
 | `navi_graph=pbf` | pack | Force a cold PBF graph |
 | `navi_avoid_ferries` / `navi_eco` / `navi_datex` | unset / live | Plan flags |
 | `navi_inject_gps` | true if a trip is sent | Pin GPS at from |
+| `navi_gps_lat` / `navi_gps_lon` | unset | Hold fixed fake GPS (no trip; until `navi_clear_gps`) |
+| `navi_clear_gps` | false | Clear inject / held fake GPS |
 | `navi_use_networked_cabins` / `navi_use_unlocked_cabins` | defaults | Cabin filters |
 | `navi_restore_settings` | true | Restore after the debug plan |
 | `navi_force_online_basemap` | false | Skip local PMTiles |

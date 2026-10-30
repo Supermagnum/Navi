@@ -322,8 +322,18 @@ object RegionDownloadBackground {
     /** Geofabrik path of the region currently in the pipeline (for progress labels). */
     private val activeRegionPath = AtomicReference("")
 
+    /**
+     * Last formatted place-index progress line. The shared native Download slot
+     * is also used by DEM / pack fetches; keep a sticky copy so Tools still
+     * shows indexing % while another writer briefly owns the slot.
+     */
+    private val lastPlaceIndexLine = AtomicReference("")
+
     /** Region id currently driving download/index progress (empty when idle). */
     fun activeRegionPath(): String = activeRegionPath.get()
+
+    /** Sticky place-index progress for the Tools footer (may be blank when idle). */
+    fun placeIndexProgressLine(): String = lastPlaceIndexLine.get()
 
     /**
      * Set [lastStatus] so the line always names the active region (and N-of-M
@@ -340,15 +350,32 @@ object RegionDownloadBackground {
         regionId: String = activeRegionPath.get(),
     ) {
         val id = regionId.trim().trim('/')
-        if (id.isEmpty()) {
-            lastStatus.set(message)
-            return
-        }
-        val seq = RegionProgressMessages.sequenceFor(id)
         val line =
-            RegionProgressMessages.annotate(message, id, seq?.first, seq?.second)
+            if (id.isEmpty()) {
+                message
+            } else {
+                val seq = RegionProgressMessages.sequenceFor(id)
+                RegionProgressMessages.annotate(message, id, seq?.first, seq?.second)
+            }
         lastStatus.set(line)
+        if (line.contains("Place index", ignoreCase = true)) {
+            lastPlaceIndexLine.set(line)
+        }
+        if (line == "done" ||
+            line.startsWith("done ") ||
+            line.startsWith("failed") ||
+            line == "cancelled"
+        ) {
+            lastPlaceIndexLine.set("")
+        }
         Log.i(TAG, "status: $line")
+    }
+
+    private fun rememberPlaceIndexSnapshot() {
+        val snap = formattedNativeSnapshot() ?: return
+        if (snap.first.contains("Place index", ignoreCase = true)) {
+            lastPlaceIndexLine.set(snap.second)
+        }
     }
 
     /** Last successful region path (for UI style refresh after full `done`). */
@@ -484,11 +511,33 @@ object RegionDownloadBackground {
 
     fun statusLine(): String {
         if (running.get()) {
+            rememberPlaceIndexSnapshot()
             formattedNativeSnapshot()
-                ?.takeIf { it.first.startsWith("Place index") }
+                ?.takeIf { it.first.contains("Place index", ignoreCase = true) }
                 ?.let { return it.second }
+            lastPlaceIndexLine.get().takeIf { it.isNotBlank() }?.let { return it }
         }
         return lastStatus.get()
+    }
+
+    fun uiLine(): String {
+        if (!running.get()) return lastStatus.get()
+        rememberPlaceIndexSnapshot()
+        val native = formattedNativeSnapshot()
+        if (native != null && native.first.contains("Place index", ignoreCase = true)) {
+            return native.second
+        }
+        // Prefer sticky place-index % over a clobbering DEM/pack label while indexing.
+        val sticky = lastPlaceIndexLine.get()
+        if (sticky.isNotBlank() &&
+            (
+                lastStatus.get().contains("Place index", ignoreCase = true) ||
+                    sticky.contains('%')
+            )
+        ) {
+            return sticky
+        }
+        return native?.second ?: lastStatus.get()
     }
 
     fun takeLastCompletedPath(): String = lastCompletedPath.getAndSet("")
@@ -803,17 +852,13 @@ object RegionDownloadBackground {
     internal fun placeIndexSchemaCurrent(dbFile: File): Boolean {
         if (!dbFile.isFile) return false
         return runCatching {
-            android.database.sqlite.SQLiteDatabase
-                .openDatabase(
-                    dbFile.absolutePath,
-                    null,
-                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
-                ).use { db ->
-                    db.rawQuery("PRAGMA user_version", null).use { c ->
-                        if (!c.moveToFirst()) return@use false
-                        c.getInt(0) >= PLACE_INDEX_SCHEMA_VERSION
-                    }
-                }
+            val v =
+                PlaceIndexIntact
+                    .readRows(dbFile, "PRAGMA user_version")
+                    .firstOrNull()
+                    ?.firstOrNull()
+                    ?.toIntOrNull() ?: return@runCatching false
+            v >= PLACE_INDEX_SCHEMA_VERSION
         }.getOrDefault(false)
     }
 
@@ -822,28 +867,16 @@ object RegionDownloadBackground {
         rid: String,
     ): Boolean =
         runCatching {
-            android.database.sqlite.SQLiteDatabase
-                .openDatabase(
-                    dbFile.absolutePath,
-                    null,
-                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
-                ).use { db ->
-                    val byRegion =
-                        runCatching {
-                            db
-                                .rawQuery(
-                                    "SELECT 1 FROM name_entries WHERE region_id = ? LIMIT 1",
-                                    arrayOf(rid),
-                                ).use { it.moveToFirst() }
-                        }
-                    when {
-                        byRegion.isSuccess -> byRegion.getOrThrow()
-                        else ->
-                            db.rawQuery("SELECT 1 FROM name_entries LIMIT 1", null).use {
-                                it.moveToFirst()
-                            }
-                    }
+            val byRegion =
+                runCatching {
+                    PlaceIndexIntact
+                        .readRows(dbFile, "SELECT 1 FROM name_entries WHERE region_id = ? LIMIT 1", rid)
+                        .isNotEmpty()
                 }
+            when {
+                byRegion.isSuccess -> byRegion.getOrThrow()
+                else -> PlaceIndexIntact.readRows(dbFile, "SELECT 1 FROM name_entries LIMIT 1").isNotEmpty()
+            }
         }.getOrDefault(false)
 
     /**
@@ -855,21 +888,11 @@ object RegionDownloadBackground {
         rid: String,
     ): Boolean =
         runCatching {
-            android.database.sqlite.SQLiteDatabase
-                .openDatabase(
-                    dbFile.absolutePath,
-                    null,
-                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
-                ).use { db ->
-                    db
-                        .rawQuery(
-                            "SELECT complete FROM name_index_build WHERE region_id = ? LIMIT 1",
-                            arrayOf(rid),
-                        ).use { c ->
-                            if (!c.moveToFirst()) return@use true
-                            c.getInt(0) != 0
-                        }
-                }
+            val row =
+                PlaceIndexIntact
+                    .readRows(dbFile, "SELECT complete FROM name_index_build WHERE region_id = ? LIMIT 1", rid)
+                    .firstOrNull() ?: return@runCatching true
+            (row.firstOrNull()?.toIntOrNull() ?: 0) != 0
         }.getOrDefault(true)
 
     /**
@@ -885,21 +908,11 @@ object RegionDownloadBackground {
         val dbFile = File(dataDir, "place_index.db")
         if (!dbFile.isFile || dbFile.length() < 100L) return false
         return runCatching {
-            android.database.sqlite.SQLiteDatabase
-                .openDatabase(
-                    dbFile.absolutePath,
-                    null,
-                    android.database.sqlite.SQLiteDatabase.OPEN_READONLY,
-                ).use { db ->
-                    db
-                        .rawQuery(
-                            "SELECT complete FROM name_index_build WHERE region_id = ? LIMIT 1",
-                            arrayOf(rid),
-                        ).use { c ->
-                            if (!c.moveToFirst()) return@use false
-                            c.getInt(0) == 0
-                        }
-                }
+            val row =
+                PlaceIndexIntact
+                    .readRows(dbFile, "SELECT complete FROM name_index_build WHERE region_id = ? LIMIT 1", rid)
+                    .firstOrNull() ?: return@runCatching false
+            (row.firstOrNull()?.toIntOrNull() ?: 0) == 0
         }.getOrDefault(false)
     }
 
@@ -950,11 +963,6 @@ object RegionDownloadBackground {
                 else -> label
             }
         return label to formatted
-    }
-
-    fun uiLine(): String {
-        if (!running.get()) return lastStatus.get()
-        return formattedNativeSnapshot()?.second ?: lastStatus.get()
     }
 
     fun ensureStartedFromPending(
@@ -1756,13 +1764,9 @@ object RegionDownloadBackground {
         setStatus("Packs installed — region ready for routing")
         Log.i(TAG, "region installed for routing path=$trimmed")
         runCatching {
-            val r = InstalledMaps.region(trimmed)
-            if (r != null) {
-                FerrySidecarBackground.ensureForRegionPath(r.packDir, trimmed)
-                CorridorSkeletonBackground.ensureForRegionPath(r.packDir, trimmed)
-            } else {
-                IdlePackJobs.onInstalledMapsChanged()
-            }
+            // Skeletons wait until place index finishes (download → index →
+            // skeletons). Ferry sidecars also wait on that gate inside IdlePackJobs.
+            IdlePackJobs.onInstalledMapsChanged()
             IdlePackJobs.onAppIdle()
         }
     }
@@ -1915,6 +1919,7 @@ object RegionDownloadBackground {
                 placeIndexLocationLine =
                     "place_index vol=pack-dir path=${File(placeDir, "place_index.db").absolutePath}",
             )
+            CorridorSkeletonBackground.ensureAfterPlaceIndex(pbfDir, rid)
             return true
         }
         // Native `ensure_place_index` single-flights discard/open/load so a
@@ -1943,6 +1948,7 @@ object RegionDownloadBackground {
                 placeIndexLocationLine =
                     "place_index vol=pack-dir path=${File(placeDir, "place_index.db").absolutePath}",
             )
+            CorridorSkeletonBackground.ensureAfterPlaceIndex(pbfDir, rid)
         }
         return placeReport.contains("PASS")
     }
