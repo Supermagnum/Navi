@@ -4,7 +4,7 @@
 
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use navi::{
     ensure_corridor_skeleton, plan_car_route, FfiLatLon, FfiTollPolicy, FfiVehicleLimits,
@@ -126,7 +126,7 @@ fn main() {
     );
 }
 
-fn write_route(out: &PathBuf, stem: &str, title: &str, r: &navi::CorridorRouteResult) {
+fn write_route(out: &Path, stem: &str, title: &str, r: &navi::CorridorRouteResult) {
     let poly_path = out.join(format!("{stem}.polyline"));
     let meta_path = out.join(format!("{stem}.meta.json"));
     fs::write(&poly_path, &r.route_polyline).expect("write polyline");

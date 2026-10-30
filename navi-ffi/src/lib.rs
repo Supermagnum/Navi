@@ -1580,9 +1580,9 @@ fn is_named_hiking_hut_pause(kind: &str, name: &str) -> bool {
     true
 }
 
-/// Long hiking crow gaps are filled by [`driver_break_core::routing::least_cost_path_chained`]
-/// inside hybrid gap-fill — not by inserting geodesic pads as waypoints (that caused
-/// out-and-back spikes when pads snapped off-corridor).
+// Long hiking crow gaps are filled by driver_break_core::routing::least_cost_path_chained
+// inside hybrid gap-fill — not by inserting geodesic pads as waypoints (that caused
+// out-and-back spikes when pads snapped off-corridor).
 
 /// Extra path metres allowed when promoting a rast hut to a via.
 /// Floor comes from the Drive POI cabin-radius slider; also allow 15% of the leg.
@@ -2765,10 +2765,16 @@ fn plan_car_route_chunked_legs(
         };
         let arrival = datex_now + chrono::Duration::minutes(eta_minutes.round() as i64);
         let trip_uncertain = eta_minutes > 12.0 * 60.0;
+        // Bind along the Stage B coarse path the hop graph is clipped to; a long
+        // hop's roads can run tens of km off the straight endpoint chord.
+        let hop_corridor = driver_break_core::routing::plan_bbox::stage_b_hop_corridor_points(
+            (slat, slon),
+            (elat, elon),
+        );
         let hop_datex = match &datex_all {
             Some(all) => driver_break_core::datex::impacts_near_bound_ctx(
                 all,
-                &[(slat, slon), (elat, elon)],
+                &hop_corridor,
                 driver_break_core::datex::DATEX_HOP_MARGIN_M,
                 driver_break_core::datex::DatexHopContext {
                     arrival,
@@ -4125,6 +4131,19 @@ fn plan_car_route_inner(
             }
             driver_break_core::routing::plan_bbox::set_stage_b_active(true);
             driver_break_core::routing::plan_bbox::set_stage_b_coarse_path(sb.coarse_path.clone());
+            // Densify distance_cost must not reopen Connected ferries Stage B
+            // rejected (Askvoll→Gjervik pick → keep land Rv55, not Dragsvik/Solvorn).
+            let ferry_gates: Vec<_> = sb
+                .ferry_legs
+                .iter()
+                .map(|f| driver_break_core::routing::plan_bbox::StageBFerryGate {
+                    from_lat: f.from_lat,
+                    from_lon: f.from_lon,
+                    to_lat: f.to_lat,
+                    to_lon: f.to_lon,
+                })
+                .collect();
+            driver_break_core::routing::plan_bbox::set_stage_b_ferry_allowlist(Some(ferry_gates));
             stage_b_advisory = sb.missing_advisory.clone();
             log::info!(target: "NaviPlan", "stage_b densify {}", sb.note);
             let hops = sb.hops.clone();
@@ -4178,6 +4197,20 @@ fn plan_car_route_inner(
                     target: "NaviPlan",
                     "stage_b densify failed (path node budget); continue single graph: {err}"
                 );
+            } else if err.contains("preparing corridor skeleton") {
+                // Trip-local stem stale after a neighbour pack reinstall — same
+                // host UX as stems_missing_corridor_skeleton (idle rebuild).
+                let status = err.clone();
+                log::info!(target: "NaviPlan", "skeleton_preparing from stage_b: {status}");
+                let mut r = empty(format!(
+                    "TEST_KIND=PLAN_CAR_ROUTE\n\
+                     skeleton_preparing=true\nskeleton_preparing_pct=0\n\
+                     status={status}\nFAIL: {status}\n"
+                ));
+                driver_break_core::routing::plan_perf::note("skeleton_preparing", &status);
+                r.search_terminate_reason = "skeleton_preparing".into();
+                r.off_trail_advisory = status;
+                return r;
             } else if err.contains("no fresh persistent skeletons") && !missing_direct.is_empty() {
                 let named = missing_direct.join(",");
                 log::warn!(target: "NaviPlan", "missing_regions_before_densify {named}");
@@ -4265,6 +4298,10 @@ fn plan_car_route_inner(
         departure_local,
         datex_impacts,
         allowed_countries: allowed_countries_norm.clone(),
+        // Stage B already picked a length-aware coarse corridor (short_km).
+        // Densify with distance cost so pack A* does not re-introduce longer
+        // time-optimal wanders (Otta local roads off Rv15) inside the band.
+        distance_cost: driver_break_core::routing::plan_bbox::stage_b_active(),
         ..RouteOptions::default()
     };
 
@@ -4676,7 +4713,7 @@ fn plan_car_route_inner(
                     report.push_str(&format!(
                         "FAIL: map pack unreadable ({e}); reinstall the region\n"
                     ));
-                    driver_break_core::routing::plan_perf::note("pack_corrupt", &format!("{e}"));
+                    driver_break_core::routing::plan_perf::note("pack_corrupt", format!("{e}"));
                     let _ = driver_break_core::routing::plan_perf::drain_into(&mut report);
                     let mut r = empty(report);
                     r.toll_policy = toll_policy.as_diag_str().into();
@@ -7541,6 +7578,57 @@ pub fn place_index_source_sha256(index_db_path: String, region_id: String) -> St
         .unwrap_or_default()
 }
 
+/// Rows from a read-only place-index query; `error` is empty on success.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiPlaceIndexRows {
+    pub error: String,
+    pub rows: Vec<Vec<Option<String>>>,
+}
+
+/// Read-only SQL on `place_index.db` through the same SQLite as the index
+/// builder. Kotlin must use this instead of `android.database.sqlite`: two
+/// SQLite libraries on one WAL file in one process SIGBUS on `-shm`.
+#[uniffi::export]
+pub fn place_index_query_readonly(
+    index_db_path: String,
+    sql: String,
+    args: Vec<String>,
+) -> FfiPlaceIndexRows {
+    match driver_break_core::search::query_place_index_readonly(&index_db_path, &sql, &args) {
+        Ok(rows) => FfiPlaceIndexRows {
+            error: String::new(),
+            rows,
+        },
+        Err(e) => FfiPlaceIndexRows {
+            error: if e.is_empty() {
+                "query failed".into()
+            } else {
+                e
+            },
+            rows: Vec::new(),
+        },
+    }
+}
+
+/// `wal_checkpoint(TRUNCATE)` on the place index: `PASS`, `BUSY`, or `FAIL: ...`.
+#[uniffi::export]
+pub fn place_index_checkpoint_truncate(index_db_path: String) -> String {
+    match driver_break_core::search::checkpoint_place_index_wal(&index_db_path) {
+        Ok(true) => "PASS".into(),
+        Ok(false) => "BUSY".into(),
+        Err(e) => format!("FAIL: {e}"),
+    }
+}
+
+/// `VACUUM INTO out_path` from the place index: `PASS` or `FAIL: ...`.
+#[uniffi::export]
+pub fn place_index_vacuum_into(index_db_path: String, out_path: String) -> String {
+    match driver_break_core::search::vacuum_place_index_into(&index_db_path, &out_path) {
+        Ok(()) => "PASS".into(),
+        Err(e) => format!("FAIL: {e}"),
+    }
+}
+
 /// Build preprocess-once indexed map packs next to a region PBF (graph + POI/barrier).
 ///
 /// Preference order when packs are missing / stale / format-mismatched:
@@ -10206,7 +10294,12 @@ pub fn road_near_info(
             Err(_) => return empty_road_near_info(),
         },
     };
-    let mut sticky = RoadLabelSticky::new();
+    // Carry hysteresis across cell rebuilds so a bbox/key change does not
+    // instantly flip the HUD to a parallel road's limit.
+    let mut sticky = {
+        let mut guard = ROAD_LABEL_GRAPH.lock().unwrap_or_else(|e| e.into_inner());
+        guard.take().map(|c| c.sticky).unwrap_or_default()
+    };
     let info = road_near_info_from_sticky(&mut sticky, &graph, lat, lon, max_m);
     if let Ok(mut guard) = ROAD_LABEL_GRAPH.lock() {
         *guard = Some(RoadLabelGraphCache { key, graph, sticky });
