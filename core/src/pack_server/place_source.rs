@@ -250,7 +250,7 @@ fn download_place_source(
         Some(listed.bytes.max(1)),
         &crate::i18n::messages::encode1(
             crate::i18n::messages::codes::DOWNLOAD_PLACE_SOURCE,
-            &region_id,
+            region_id,
         ),
     );
     let n = crate::routing::region::download_file(&url, &partial)

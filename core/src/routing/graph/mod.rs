@@ -34,11 +34,11 @@ pub use builder::{
     ferry_drive_equiv_m_per_s, ferry_wait_minutes, format_route_avoidance_report,
     highway_is_motorway, is_construction_or_proposed_highway, max_waypoint_snap_m,
     nearest_clearance_block_message, options_need_filtered_components_pub,
-    pack_edge_matches_overlay_ferry, profile_locks_avoid_motorways, road_base_weight_m,
-    time_base_weight_for_edge, GraphEdge, PathSearchStats, RouteGraph, RouteOptions,
-    RoutingProfile, SnapRole, SnapTooFar, TravelHit, WetlandApplyStats,
-    FERRY_CAR_BOARDING_PENALTY_MIN, FERRY_DRIVE_EQUIV_KMH, FERRY_FALLBACK_SPEED_KMH,
-    FERRY_WAIT_CROSSING_FRACTION, FERRY_WAIT_FLOOR_MIN,
+    pack_edge_matches_overlay_ferry, profile_locks_avoid_motorways,
+    rewire_overlay_ferry_ends_to_nearest_pack, road_base_weight_m, time_base_weight_for_edge,
+    GraphEdge, PathSearchStats, RouteGraph, RouteOptions, RoutingProfile, SnapRole, SnapTooFar,
+    TravelHit, WetlandApplyStats, FERRY_CAR_BOARDING_PENALTY_MIN, FERRY_DRIVE_EQUIV_KMH,
+    FERRY_FALLBACK_SPEED_KMH, FERRY_WAIT_CROSSING_FRACTION, FERRY_WAIT_FLOOR_MIN,
 };
 pub use cache::{
     graph_cache_path, load_or_build_reweighted, load_or_build_reweighted_bbox,

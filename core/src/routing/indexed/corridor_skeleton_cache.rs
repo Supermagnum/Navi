@@ -231,6 +231,22 @@ fn want_fingerprint(home: &Path, stem: &str, profile: RoutingProfile) -> String 
     )
 }
 
+/// True when a skeleton binary (or legacy path) and matching meta exist under `home`.
+/// Does not check fingerprint freshness — use [`skeleton_fresh`] for that.
+pub fn skeleton_artifacts_present(home: &Path, stem: &str, profile: RoutingProfile) -> bool {
+    let profile = skeleton_profile(home, stem, profile);
+    let skel = skeleton_bin_path(home, stem, profile);
+    let skel_ok = if skel.is_file() {
+        true
+    } else if profile == RoutingProfile::Car {
+        crate::routing::corridor_skeleton::resolve_skeleton_path(home, stem)
+            .is_some_and(|p| p.is_file())
+    } else {
+        false
+    };
+    skel_ok && skeleton_meta_path_for(home, stem, profile).is_file()
+}
+
 /// True when skeleton binary/JSON + meta match the current pack / neighbor fingerprint.
 pub fn skeleton_fresh(home: &Path, stem: &str, profile: RoutingProfile) -> bool {
     let profile = skeleton_profile(home, stem, profile);
@@ -803,6 +819,32 @@ mod tests {
         write_skeleton(home, "a-latest");
         assert!(skeleton_fresh(home, "a-latest", RoutingProfile::Car));
         fs::remove_file(home.join("c-latest.navi-manifest.json")).unwrap();
+        assert!(!skeleton_fresh(home, "a-latest", RoutingProfile::Car));
+    }
+
+    #[test]
+    fn artifacts_present_without_fresh_when_fingerprint_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        install(home, "a-latest", b"pack a");
+        install(home, "b-latest", b"pack b");
+        write_skeleton(home, "a-latest");
+        assert!(skeleton_artifacts_present(
+            home,
+            "a-latest",
+            RoutingProfile::Car
+        ));
+        assert!(!skeleton_artifacts_present(
+            home,
+            "missing-latest",
+            RoutingProfile::Car
+        ));
+        install(home, "b-latest", b"pack b, new extract");
+        assert!(skeleton_artifacts_present(
+            home,
+            "a-latest",
+            RoutingProfile::Car
+        ));
         assert!(!skeleton_fresh(home, "a-latest", RoutingProfile::Car));
     }
 

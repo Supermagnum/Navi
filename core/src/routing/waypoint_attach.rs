@@ -149,6 +149,10 @@ pub struct ResolvedSpur {
     pub target_ll: (f64, f64),
     pub length_m: f64,
     pub cost_m: f64,
+    /// True when the detailed search had to traverse a ferry to reach the
+    /// skeleton (no same-landmass hit). Stage B must treat the spur as a ferry
+    /// so densify corridors keep coastal ferry terminals.
+    pub crosses_ferry: bool,
 }
 
 /// Result of one waypoint search, reusable for every leg and alternative.
@@ -216,6 +220,7 @@ impl WaypointAttachment {
                 spur.target_ll,
                 spur.length_m,
                 spur.cost_m,
+                spur.crosses_ferry,
             ));
             coarse.push_directed_edge(spur_edge(
                 spur.target,
@@ -224,6 +229,7 @@ impl WaypointAttachment {
                 self.snap_ll,
                 spur.length_m,
                 spur.cost_m,
+                spur.crosses_ferry,
             ));
         }
     }
@@ -389,17 +395,8 @@ fn resolve_one_on_graph(
         });
     }
     let t_d = std::time::Instant::now();
-    let (hits, expansions, _) = detailed.reach_nodes_by_travel(
-        snap_id,
-        &targets,
-        &opts,
-        WAYPOINT_ATTACH_MAX_EXPANSIONS,
-        WAYPOINT_ATTACH_MAX_RADIUS_M,
-        waypoint,
-        WAYPOINT_ATTACH_COST_SLACK_M,
-        WAYPOINT_ATTACH_MAX_HITS,
-        None,
-    );
+    let (hits, expansions, _, crosses_ferry) =
+        reach_skeleton_preferring_land(detailed, snap_id, &targets, &opts, waypoint, None);
     let dijkstra_ms = t_d.elapsed().as_millis();
     let t_s = std::time::Instant::now();
     let picked = pick_spurs_by_bearing(detailed, snap_id, &hits);
@@ -412,8 +409,8 @@ fn resolve_one_on_graph(
             radius_m: WAYPOINT_ATTACH_MAX_RADIUS_M,
         });
     }
-    let all_hits = travel_hits_to_spurs(detailed, &hits);
-    let spurs = travel_hits_to_spurs(detailed, &picked);
+    let all_hits = travel_hits_to_spurs(detailed, &hits, crosses_ferry);
+    let spurs = travel_hits_to_spurs(detailed, &picked, crosses_ferry);
     Ok(WaypointAttachment {
         snap_id,
         snap_ll,
@@ -493,6 +490,7 @@ fn resolve_one_lazy(
     let mut expansions = 0u64;
     let mut dijkstra_ms = 0u128;
     let mut hits: Vec<TravelHit> = Vec::new();
+    let mut crosses_ferry = false;
     // Hint only: apply still checks the coarse graph. A directed stub can share
     // an OSM id with the skeleton (Bevensen / Dalsøren). Search unless the snap
     // is already a usable skeleton node.
@@ -509,24 +507,22 @@ fn resolve_one_lazy(
                 .collect();
             let clip = loaded_coverage_bbox(&tiles, &loaded);
             let t_d = std::time::Instant::now();
-            let (h, exp, hit_edge) = if targets.is_empty() {
-                (Vec::new(), 0u64, true)
+            let (h, exp, hit_edge, via_ferry) = if targets.is_empty() {
+                (Vec::new(), 0u64, true, false)
             } else {
-                detailed.reach_nodes_by_travel(
+                reach_skeleton_preferring_land(
+                    &detailed,
                     snap_id,
                     &targets,
                     &opts,
-                    WAYPOINT_ATTACH_MAX_EXPANSIONS,
-                    WAYPOINT_ATTACH_MAX_RADIUS_M,
                     waypoint,
-                    WAYPOINT_ATTACH_COST_SLACK_M,
-                    WAYPOINT_ATTACH_MAX_HITS,
                     Some(clip),
                 )
             };
             dijkstra_ms += t_d.elapsed().as_millis();
             expansions = expansions.saturating_add(exp);
             hits = h;
+            crosses_ferry = via_ferry;
             let picked_preview = pick_spurs_by_bearing(&detailed, snap_id, &hits);
             let enough = !picked_preview.is_empty() && !hit_edge;
             if enough || loaded.len() >= WAYPOINT_ATTACH_MAX_TILES {
@@ -566,15 +562,16 @@ fn resolve_one_lazy(
             radius_m: WAYPOINT_ATTACH_MAX_RADIUS_M,
         });
     }
-    let all_hits = travel_hits_to_spurs(&detailed, &hits);
-    let spurs = travel_hits_to_spurs(&detailed, &picked);
+    let all_hits = travel_hits_to_spurs(&detailed, &hits, crosses_ferry);
+    let spurs = travel_hits_to_spurs(&detailed, &picked, crosses_ferry);
     let hit_n = all_hits.len();
     drop(detailed);
     let line = format!(
         "waypoint_attach lat={lat:.5} lon={lon:.5} role={snap_role:?} \
          tiles={} tiles_n={} mb={:.1} load_ms={load_ms} snap_ms={snap_ms} \
          dijkstra_ms={dijkstra_ms} expansions={expansions} hits={} spurs={} \
-         spur_ms={spur_ms} already_on_skel={already_on_skeleton} snap_m={dist_m:.0}",
+         spur_ms={spur_ms} already_on_skel={already_on_skeleton} snap_m={dist_m:.0} \
+         crosses_ferry={crosses_ferry}",
         tile_names.join(","),
         tile_names.len(),
         tiles_mb,
@@ -802,7 +799,11 @@ fn pick_spurs_by_bearing(
     picked
 }
 
-fn travel_hits_to_spurs(detailed: &RouteGraph, hits: &[TravelHit]) -> Vec<ResolvedSpur> {
+fn travel_hits_to_spurs(
+    detailed: &RouteGraph,
+    hits: &[TravelHit],
+    crosses_ferry: bool,
+) -> Vec<ResolvedSpur> {
     hits.iter()
         .filter_map(|hit| {
             let n = detailed.nodes.get(&hit.node)?;
@@ -811,9 +812,57 @@ fn travel_hits_to_spurs(detailed: &RouteGraph, hits: &[TravelHit]) -> Vec<Resolv
                 target_ll: (n.coord.y, n.coord.x),
                 length_m: hit.length_m,
                 cost_m: hit.cost_m,
+                crosses_ferry,
             })
         })
         .collect()
+}
+
+/// Prefer skeleton hits reachable without crossing a ferry so Stage B densify
+/// keeps real ferry legs on the coarse path (Herland Atløyna: a ferry-blind
+/// spur onto mainland skeleton made Stage B `ferries=0` and locked densify onto
+/// Gjervik–Fure instead of Askvoll–Gjervik).
+fn reach_skeleton_preferring_land(
+    detailed: &RouteGraph,
+    snap_id: NodeId,
+    targets: &HashSet<NodeId>,
+    opts: &RouteOptions,
+    waypoint: (f64, f64),
+    clip_bbox: Option<[f64; 4]>,
+) -> (Vec<TravelHit>, u64, bool, bool) {
+    if targets.is_empty() {
+        return (Vec::new(), 0, clip_bbox.is_some(), false);
+    }
+    let land_opts = RouteOptions {
+        avoid_ferries: true,
+        ..opts.clone()
+    };
+    let (land_hits, land_exp, land_edge) = detailed.reach_nodes_by_travel(
+        snap_id,
+        targets,
+        &land_opts,
+        WAYPOINT_ATTACH_MAX_EXPANSIONS,
+        WAYPOINT_ATTACH_MAX_RADIUS_M,
+        waypoint,
+        WAYPOINT_ATTACH_COST_SLACK_M,
+        WAYPOINT_ATTACH_MAX_HITS,
+        clip_bbox,
+    );
+    if !land_hits.is_empty() {
+        return (land_hits, land_exp, land_edge, false);
+    }
+    let (hits, exp, edge) = detailed.reach_nodes_by_travel(
+        snap_id,
+        targets,
+        opts,
+        WAYPOINT_ATTACH_MAX_EXPANSIONS,
+        WAYPOINT_ATTACH_MAX_RADIUS_M,
+        waypoint,
+        WAYPOINT_ATTACH_COST_SLACK_M,
+        WAYPOINT_ATTACH_MAX_HITS,
+        clip_bbox,
+    );
+    (hits, land_exp.saturating_add(exp), edge, true)
 }
 
 fn pick_resolved_by_bearing(origin: (f64, f64), hits: &[&ResolvedSpur]) -> Vec<ResolvedSpur> {
@@ -859,6 +908,7 @@ fn spur_edge(
     end: (f64, f64),
     length_m: f64,
     cost_m: f64,
+    crosses_ferry: bool,
 ) -> GraphEdge {
     let length_m = length_m.max(1.0);
     let cost_m = cost_m.max(1.0);
@@ -901,7 +951,7 @@ fn spur_edge(
         maxwidth_m: None,
         maxlength_m: None,
         is_toll: false,
-        is_ferry: false,
+        is_ferry: crosses_ferry,
         ferry_interval_min: None,
         is_tunnel: false,
         is_boardwalk_crossing: false,
@@ -951,6 +1001,7 @@ mod tests {
             (tn.y, tn.x),
             len,
             crate::routing::graph::road_base_weight_m(len, kmh),
+            false,
         );
         e.id = id.into();
         e.highway = Some("primary".into());
@@ -1073,9 +1124,10 @@ mod tests {
     fn attach_errors_when_skeleton_is_unreachable() {
         let mut dnodes = HashMap::new();
         dnodes.extend([node(10, 60.00, 10.00), node(11, 60.00, 10.01)]);
-        let mut dedges = Vec::new();
-        dedges.push(edge("iso", 10, 11, &dnodes, 800.0, 40.0));
-        dedges.push(edge("iso_r", 11, 10, &dnodes, 800.0, 40.0));
+        let dedges = vec![
+            edge("iso", 10, 11, &dnodes, 800.0, 40.0),
+            edge("iso_r", 11, 10, &dnodes, 800.0, 40.0),
+        ];
         let detailed = graph(dnodes, dedges);
 
         let mut cnodes = HashMap::new();
@@ -1148,7 +1200,7 @@ mod tests {
                 .nodes
                 .iter()
                 .filter(|(id, _)| id.0 == 1 || id.0 == 2)
-                .map(|(id, n)| (*id, n.clone()))
+                .map(|(id, n)| (*id, *n))
                 .collect(),
             vec![edge(
                 "s",

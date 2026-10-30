@@ -333,13 +333,12 @@ impl PmtilesDownloader {
             }
             let key = name.trim_end_matches(".pmtiles.rejected");
             let job = jobs.iter().find(|j| j.region_key == key);
-            let bbox = match job.and_then(|j| match (j.min_lat, j.min_lon, j.max_lat, j.max_lon) {
-                (Some(a), Some(b), Some(c), Some(d)) => Some([a, b, c, d]),
-                _ => None,
-            }) {
-                Some(b) => b,
-                None => [0.0, -180.0, 0.0, 180.0],
-            };
+            let bbox = job
+                .and_then(|j| match (j.min_lat, j.min_lon, j.max_lat, j.max_lon) {
+                    (Some(a), Some(b), Some(c), Some(d)) => Some([a, b, c, d]),
+                    _ => None,
+                })
+                .unwrap_or([0.0, -180.0, 0.0, 180.0]);
             match validate_completed_pmtiles(&path, key, bbox) {
                 Ok(()) => {
                     let dest = self.local_path_for_key(key);

@@ -46,6 +46,8 @@ pub const MAJOR_END_PATH_NEAR_KM: f64 = 40.0;
 /// Probe past a pack-end along the road, looking for the next outline.
 pub const MAJOR_CONTINUE_PROBE_M: f64 = 400.0;
 
+type MajorEnd<'a> = (f64, f64, &'a str, &'a str, Option<(f64, f64)>);
+
 fn is_major(hw: &str) -> bool {
     matches!(
         hw,
@@ -101,7 +103,7 @@ fn point_seg_km(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
 /// an uninstalled outline. `containing` and `installed` are injected so tests
 /// can use a synthetic three-region sliver without catalog names.
 pub fn major_ends_into_uninstalled(
-    ends: &[(f64, f64, &str, &str, Option<(f64, f64)>)],
+    ends: &[MajorEnd<'_>],
     coarse_path: &[(f64, f64)],
     path_near_km: f64,
     containing: impl Fn(f64, f64) -> Option<String>,
@@ -117,7 +119,7 @@ pub fn major_ends_into_uninstalled(
             continue;
         }
         let mut cand = containing(lat, lon);
-        if cand.as_deref().map(|id| installed(id)).unwrap_or(true) {
+        if cand.as_deref().map(&installed).unwrap_or(true) {
             if let Some(from) = probe_from {
                 let brg = bearing_rad(from, (lat, lon));
                 let (plat, plon) =
@@ -211,7 +213,7 @@ pub fn missing_major_continuations(
             ends.push((p.0, p.1, rf, hw, probe_from));
         }
     }
-    let end_refs: Vec<(f64, f64, &str, &str, Option<(f64, f64)>)> = ends
+    let end_refs: Vec<MajorEnd<'_>> = ends
         .iter()
         .map(|(la, lo, rf, hw, pr)| (*la, *lo, rf.as_str(), hw.as_str(), *pr))
         .collect();

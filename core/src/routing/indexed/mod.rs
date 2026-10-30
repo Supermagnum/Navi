@@ -33,9 +33,9 @@ pub use corridor_cache::{
 };
 pub use corridor_skeleton_cache::{
     corridor_skeleton_preparing_status, corridor_skeleton_progress, corridor_skeleton_ready,
-    ensure_corridor_skeleton, resolve_corridor_skeleton_path, skeleton_fresh,
-    stems_missing_corridor_skeleton, CorridorSkeletonProgress, CORRIDOR_SKELETON_BUILD,
-    SKELETON_BUILD_SOFT_RSS_MB,
+    ensure_corridor_skeleton, resolve_corridor_skeleton_path, skeleton_artifacts_present,
+    skeleton_fresh, stems_missing_corridor_skeleton, CorridorSkeletonProgress,
+    CORRIDOR_SKELETON_BUILD, SKELETON_BUILD_SOFT_RSS_MB,
 };
 pub use ferry_overlay_cache::{
     ensure_ferry_sidecar, ferry_overlay_for_plan, ferry_preparing_status, ferry_sidecar_path,

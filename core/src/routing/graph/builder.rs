@@ -177,24 +177,56 @@ pub fn is_construction_or_proposed_highway(highway: Option<&str>) -> bool {
 /// near one terminal do not match the other terminal.
 const OVERLAY_FERRY_MATCH_M: f64 = 2_500.0;
 
+/// Minimum pack-edge length vs overlay ferry length when dropping a pack chord.
+/// Short coastal ferries (~3 km Askvoll–Gjervik) have both piers inside
+/// [`OVERLAY_FERRY_MATCH_M`] of a local Askvoll road; requiring a substantial
+/// fraction of the ferry length rejects those stubs so the overlay keeps its
+/// water geometry instead of collapsing onto ~30 m of mainland curb.
+const OVERLAY_FERRY_PACK_LEN_FRACTION: f64 = 0.35;
+
+/// Floor on pack chord length for overlay ferry replacement (metres).
+const OVERLAY_FERRY_PACK_LEN_FLOOR_M: f64 = 500.0;
+
 /// Pack edge whose endpoints match an overlay `route=ferry` (either direction).
 /// The pack edge itself must not already be a tagged ferry.
+///
+/// Match rules (all required):
+/// 1. Each pack end lies within [`OVERLAY_FERRY_MATCH_M`] of its assigned ferry
+///    terminal (same orientation or reversed).
+/// 2. Each pack end is **closer** to its assigned terminal than to the other
+///    (stops a short road beside one pier from matching both ends of a short
+///    ferry when the pier-to-pier gap is only slightly above the tolerance).
+/// 3. Pack edge length is at least
+///    `max(OVERLAY_FERRY_PACK_LEN_FLOOR_M, fraction * ferry.length_m)` so a
+///    water chord / Fehmarn-class replacement stays eligible while pier stubs
+///    do not.
 pub fn pack_edge_matches_overlay_ferry(pack: &GraphEdge, ferry: &GraphEdge) -> bool {
     if pack.is_ferry || !ferry.is_ferry {
         return false;
     }
-    let same = endpoint_haversine_m(
+    let ferry_len = ferry.length_m.max(0.0);
+    let min_pack_len =
+        (ferry_len * OVERLAY_FERRY_PACK_LEN_FRACTION).max(OVERLAY_FERRY_PACK_LEN_FLOOR_M);
+    if pack.length_m < min_pack_len {
+        return false;
+    }
+    let ds_fs = endpoint_haversine_m(
         pack.start_lat,
         pack.start_lon,
         ferry.start_lat,
         ferry.start_lon,
-    ) < OVERLAY_FERRY_MATCH_M
-        && endpoint_haversine_m(pack.end_lat, pack.end_lon, ferry.end_lat, ferry.end_lon)
-            < OVERLAY_FERRY_MATCH_M;
-    let rev = endpoint_haversine_m(pack.start_lat, pack.start_lon, ferry.end_lat, ferry.end_lon)
-        < OVERLAY_FERRY_MATCH_M
-        && endpoint_haversine_m(pack.end_lat, pack.end_lon, ferry.start_lat, ferry.start_lon)
-            < OVERLAY_FERRY_MATCH_M;
+    );
+    let de_fe = endpoint_haversine_m(pack.end_lat, pack.end_lon, ferry.end_lat, ferry.end_lon);
+    let ds_fe = endpoint_haversine_m(pack.start_lat, pack.start_lon, ferry.end_lat, ferry.end_lon);
+    let de_fs = endpoint_haversine_m(pack.end_lat, pack.end_lon, ferry.start_lat, ferry.start_lon);
+    let same = ds_fs < OVERLAY_FERRY_MATCH_M
+        && de_fe < OVERLAY_FERRY_MATCH_M
+        && ds_fs < ds_fe
+        && de_fe < de_fs;
+    let rev = ds_fe < OVERLAY_FERRY_MATCH_M
+        && de_fs < OVERLAY_FERRY_MATCH_M
+        && ds_fe < ds_fs
+        && de_fs < de_fe;
     same || rev
 }
 
@@ -221,22 +253,28 @@ pub fn drop_pack_edges_replaced_by_overlay_ferry(graph: &mut RouteGraph, overlay
             continue;
         };
         drop_ids.insert(pack.id.clone());
-        let same = endpoint_haversine_m(
+        // Prefer closer-terminal orientation (same rule as match) so a borderline
+        // chord does not reverse ferry geometry incorrectly.
+        let ds_fs = endpoint_haversine_m(
             pack.start_lat,
             pack.start_lon,
             ferry.start_lat,
             ferry.start_lon,
-        ) < OVERLAY_FERRY_MATCH_M
-            && endpoint_haversine_m(pack.end_lat, pack.end_lon, ferry.end_lat, ferry.end_lon)
-                < OVERLAY_FERRY_MATCH_M;
+        );
+        let de_fe = endpoint_haversine_m(pack.end_lat, pack.end_lon, ferry.end_lat, ferry.end_lon);
+        let ds_fe =
+            endpoint_haversine_m(pack.start_lat, pack.start_lon, ferry.end_lat, ferry.end_lon);
+        let de_fs =
+            endpoint_haversine_m(pack.end_lat, pack.end_lon, ferry.start_lat, ferry.start_lon);
+        let same = ds_fs + de_fe <= ds_fe + de_fs;
         ferry.source = pack.source;
         ferry.target = pack.target;
-        ferry.start_lat = pack.start_lat;
-        ferry.start_lon = pack.start_lon;
-        ferry.end_lat = pack.end_lat;
-        ferry.end_lon = pack.end_lon;
+        // Keep overlay ferry terminal coordinates / length; only join pack node
+        // ids. Copying pack lat/lon collapsed short coastal ferries onto the
+        // matched chord's stub geometry (Askvoll–Gjervik → ~30 m Askvoll curb).
         if !same {
             ferry.shape.reverse();
+            std::mem::swap(&mut ferry.source, &mut ferry.target);
         }
         if let Some(n) = graph.nodes.get(&pack.source) {
             overlay.nodes.insert(
@@ -268,6 +306,128 @@ pub fn drop_pack_edges_replaced_by_overlay_ferry(graph: &mut RouteGraph, overlay
         .filter(|e| !drop_ids.contains(&e.id))
         .collect();
     *graph = RouteGraph::from_parts(nodes, edges, profile);
+}
+
+/// Nearest pack edge endpoint within `max_m` of `(lat, lon)`.
+///
+/// Scans pack edge endpoints (not the full node map) so ferry overlay rewiring
+/// stays cheap on tiled densify graphs.
+fn nearest_pack_endpoint(
+    pack: &RouteGraph,
+    lat: f64,
+    lon: f64,
+    max_m: f64,
+) -> Option<(NodeId, f64, f64, f64)> {
+    let pad_deg = (max_m / 111_000.0) + 0.005;
+    let mut best: Option<(f64, NodeId, f64, f64)> = None;
+    for e in &pack.edges {
+        for (nlat, nlon, nid) in [
+            (e.start_lat, e.start_lon, e.source),
+            (e.end_lat, e.end_lon, e.target),
+        ] {
+            if (nlat - lat).abs() > pad_deg || (nlon - lon).abs() > pad_deg {
+                continue;
+            }
+            let d = endpoint_haversine_m(lat, lon, nlat, nlon);
+            if d <= max_m && best.map(|(bd, _, _, _)| d < bd).unwrap_or(true) {
+                best = Some((d, nid, nlat, nlon));
+            }
+        }
+    }
+    best.map(|(d, id, nlat, nlon)| (id, d, nlat, nlon))
+}
+
+fn insert_pack_node_into_overlay(pack: &RouteGraph, overlay: &mut RouteGraph, id: NodeId) {
+    if let Some(n) = pack.nodes.get(&id) {
+        overlay.nodes.insert(
+            id,
+            Node {
+                id: n.id,
+                coord: n.coord,
+                uses: n.uses,
+            },
+        );
+    }
+}
+
+/// Rewire overlay ferry ends that still use overlay-only node ids onto the
+/// nearest pack edge endpoint within [`OVERLAY_FERRY_MATCH_M`].
+///
+/// [`drop_pack_edges_replaced_by_overlay_ferry`] only rewires when a non-ferry
+/// pack chord already spans the same terminals (Fehmarnbelt). Coastal ferries
+/// such as Askvoll–Gjervik often exist only in the overlay while the pack
+/// already connects via a longer ferry (Gjervik–Fure); without this pass the
+/// short ferry stays on overlay OSM ids, merge never joins it to pack roads,
+/// and densify keeps the long pack ferry (~16 km extra on Vestlandet→Trondheim).
+pub fn rewire_overlay_ferry_ends_to_nearest_pack(
+    pack: &RouteGraph,
+    overlay: &mut RouteGraph,
+) -> u32 {
+    if !overlay.edges.iter().any(|e| e.is_ferry) || pack.edges.is_empty() {
+        return 0;
+    }
+    let ferry_idxs: Vec<usize> = overlay
+        .edges
+        .iter()
+        .enumerate()
+        .filter_map(|(i, e)| e.is_ferry.then_some(i))
+        .collect();
+    let mut rewired = 0u32;
+    let mut ensure_nodes: Vec<NodeId> = Vec::new();
+    for idx in ferry_idxs {
+        let ferry = &mut overlay.edges[idx];
+        let src_in_pack = pack.nodes.contains_key(&ferry.source);
+        let tgt_in_pack = pack.nodes.contains_key(&ferry.target);
+        if src_in_pack && tgt_in_pack {
+            ensure_nodes.push(ferry.source);
+            ensure_nodes.push(ferry.target);
+            continue;
+        }
+        let mut new_src = ferry.source;
+        let mut new_tgt = ferry.target;
+        let mut slat = ferry.start_lat;
+        let mut slon = ferry.start_lon;
+        let mut elat = ferry.end_lat;
+        let mut elon = ferry.end_lon;
+        if !src_in_pack {
+            if let Some((id, _, nlat, nlon)) = nearest_pack_endpoint(
+                pack,
+                ferry.start_lat,
+                ferry.start_lon,
+                OVERLAY_FERRY_MATCH_M,
+            ) {
+                new_src = id;
+                slat = nlat;
+                slon = nlon;
+                rewired += 1;
+            }
+        }
+        if !tgt_in_pack {
+            if let Some((id, _, nlat, nlon)) =
+                nearest_pack_endpoint(pack, ferry.end_lat, ferry.end_lon, OVERLAY_FERRY_MATCH_M)
+            {
+                new_tgt = id;
+                elat = nlat;
+                elon = nlon;
+                rewired += 1;
+            }
+        }
+        if new_src == new_tgt || (new_src == ferry.source && new_tgt == ferry.target) {
+            continue;
+        }
+        ferry.source = new_src;
+        ferry.target = new_tgt;
+        ferry.start_lat = slat;
+        ferry.start_lon = slon;
+        ferry.end_lat = elat;
+        ferry.end_lon = elon;
+        ensure_nodes.push(new_src);
+        ensure_nodes.push(new_tgt);
+    }
+    for id in ensure_nodes {
+        insert_pack_node_into_overlay(pack, overlay, id);
+    }
+    rewired
 }
 
 /// Crossing duration in minutes from OSM `duration` or the 10 km/h fallback.
@@ -483,6 +643,11 @@ pub struct RouteOptions {
     pub surface_routing_mode: Option<crate::routing::graph::SurfaceRoutingMode>,
     /// Directed usability filter for waypoint snaps. Ignored by A*.
     pub snap_role: SnapRole,
+    /// When true, motor A* costs edges by geometric length (metres) instead of
+    /// travel-time drive-equivalent metres. Used by Stage B `short_km` so a
+    /// slightly slower shorter corridor can compete with a longer fast one.
+    /// Default off. Bike/foot already cost by length.
+    pub distance_cost: bool,
 }
 
 /// Outcome of one A* attempt (path may be absent).
@@ -2443,6 +2608,7 @@ impl RouteGraph {
                     datex_impacts: Vec::new(),
                     eco_weights: options.eco_weights.clone(),
                     motor_soft: options.motor_soft,
+                    distance_cost: options.distance_cost,
                     ..RouteOptions::default()
                 },
                 self.profile,
@@ -3437,6 +3603,20 @@ fn edge_allowed_core(
     if options.avoid_ferries && edge.is_ferry {
         return false;
     }
+    // Stage B densify: keep the coarse ferry pick. distance_cost otherwise
+    // prefers short Connected fjord ferries over the Stage B land corridor
+    // (Herland→Trondheim: Dragsvik–Hella / Solvorn–Ornes after Askvoll→Gjervik).
+    if edge.is_ferry
+        && crate::routing::plan_bbox::stage_b_active()
+        && !crate::routing::plan_bbox::stage_b_ferry_edge_allowed(
+            edge.start_lat,
+            edge.start_lon,
+            edge.end_lat,
+            edge.end_lon,
+        )
+    {
+        return false;
+    }
     if let Some(ref allowed) = options.allowed_countries {
         if !edge_in_allowed_countries(edge, allowed) {
             return false;
@@ -3538,6 +3718,10 @@ fn edge_travel_cost(
             .and_then(|w| w.get(edge_idx).copied())
             .or(edge.eco_weight)
             .unwrap_or_else(|| time_base_weight_for_edge(edge))
+    } else if options.distance_cost {
+        // Length metres for every profile (Stage B short_km / diagnostics).
+        // Ferries keep geometric length so land+sea distance stays additive.
+        edge.length_m.max(0.0)
     } else {
         match profile {
             // Motor: travel time so ferries compete fairly with roads.
@@ -4802,7 +4986,7 @@ mod tests {
                     lon1: f64,
                     max_h: Option<f64>,
                     oneway: bool| {
-            let mut e = GraphEdge {
+            GraphEdge {
                 id: id.into(),
                 source: NodeId(s),
                 target: NodeId(t),
@@ -4856,8 +5040,7 @@ mod tests {
                 maxspeed_conditional: None,
                 access_forbidden: false,
                 surface_quality: SurfaceQuality::Good,
-            };
-            e
+            }
         };
         let edges = vec![
             edge("12", 1, 2, 60.0, 10.0, 60.0, 10.01, None, false),
@@ -6367,6 +6550,172 @@ mod tests {
         chord.highway = Some("unclassified".into());
         chord.length_m = 4_500.0;
         assert!(pack_edge_matches_overlay_ferry(&chord, &ferry));
+    }
+
+    #[test]
+    fn short_coastal_ferry_not_collapsed_onto_pier_stub() {
+        // Askvoll–Gjervik (~3 km). A short Askvoll-side pack road sits inside
+        // OVERLAY_FERRY_MATCH_M of both piers; matching it would rewire the
+        // ferry onto ~30 m of curb and delete the water crossing.
+        let atloy = (61.34831, 5.01604);
+        let askvoll = (61.34526, 5.06440);
+        let mut stub = test_edge(50, 51, 61.34698, 5.05967, 61.34667, 5.05990);
+        stub.highway = Some("residential".into());
+        stub.length_m = 30.0;
+        let mut ferry = named_ferry(
+            100,
+            101,
+            atloy.0,
+            atloy.1,
+            askvoll.0,
+            askvoll.1,
+            "Askvoll - Gjervik",
+        );
+        ferry.length_m = 3_013.0;
+        assert!(
+            !pack_edge_matches_overlay_ferry(&stub, &ferry),
+            "Askvoll curb stub must not match Askvoll–Gjervik"
+        );
+        let mut nodes = HashMap::new();
+        for (nid, n) in [
+            test_node(10, atloy.0 - 0.01, atloy.1),
+            test_node(100, atloy.0, atloy.1),
+            test_node(101, askvoll.0, askvoll.1),
+            test_node(21, askvoll.0 + 0.01, askvoll.1),
+            test_node(50, 61.34698, 5.05967),
+            test_node(51, 61.34667, 5.05990),
+        ] {
+            nodes.insert(nid, n);
+        }
+        let mut land_a = test_edge(10, 100, atloy.0 - 0.01, atloy.1, atloy.0, atloy.1);
+        land_a.length_m = 1_100.0;
+        let mut land_b = test_edge(101, 21, askvoll.0, askvoll.1, askvoll.0 + 0.01, askvoll.1);
+        land_b.length_m = 1_100.0;
+        let mut pack =
+            RouteGraph::from_parts(nodes, vec![land_a, land_b, stub], RoutingProfile::Car);
+        let mut onodes = HashMap::new();
+        for (nid, n) in [
+            test_node(100, atloy.0, atloy.1),
+            test_node(101, askvoll.0, askvoll.1),
+        ] {
+            onodes.insert(nid, n);
+        }
+        let mut overlay = RouteGraph::from_parts(onodes, vec![ferry], RoutingProfile::Car);
+        drop_pack_edges_replaced_by_overlay_ferry(&mut pack, &mut overlay);
+        assert!(
+            pack.edges.iter().any(|e| e.id == "50-51"),
+            "stub must remain in pack (not treated as water chord)"
+        );
+        let f = overlay
+            .edges
+            .iter()
+            .find(|e| e.is_ferry)
+            .expect("overlay ferry");
+        let span = endpoint_haversine_m(f.start_lat, f.start_lon, f.end_lat, f.end_lon);
+        assert!(
+            span > 1_000.0,
+            "Askvoll–Gjervik must keep water span, got {span:.0} m at {:.5},{:.5}->{:.5},{:.5}",
+            f.start_lat,
+            f.start_lon,
+            f.end_lat,
+            f.end_lon
+        );
+        assert!((f.length_m - 3_013.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn unmatched_overlay_ferry_rewires_onto_nearest_pack_ends() {
+        // Askvoll–Gjervik shape: pack has land at both piers but no spanning
+        // chord (the pack already uses a different ferry). Overlay ferry uses
+        // distinct OSM ids at the same coordinates.
+        let ask_lat = 61.3483;
+        let ask_lon = 5.0160;
+        let gje_lat = 61.2800;
+        let gje_lon = 5.1550;
+        let mut nodes = HashMap::new();
+        for (nid, n) in [
+            test_node(10, ask_lat - 0.01, ask_lon),
+            test_node(11, ask_lat, ask_lon),
+            test_node(20, gje_lat, gje_lon),
+            test_node(21, gje_lat + 0.01, gje_lon),
+        ] {
+            nodes.insert(nid, n);
+        }
+        let mut land_ask = test_edge(10, 11, ask_lat - 0.01, ask_lon, ask_lat, ask_lon);
+        land_ask.length_m = 1_100.0;
+        let mut land_gje = test_edge(20, 21, gje_lat, gje_lon, gje_lat + 0.01, gje_lon);
+        land_gje.length_m = 1_100.0;
+        // Longer pack ferry elsewhere (Gjervik–Fure stand-in) so O/D can connect
+        // without the short overlay ferry — mirrors the Herland failure mode.
+        let mut long_ferry = named_ferry(
+            11,
+            20,
+            ask_lat,
+            ask_lon + 0.05,
+            gje_lat,
+            gje_lon - 0.05,
+            "Gjervik - Fure",
+        );
+        long_ferry.length_m = 7_290.0;
+        long_ferry.source = NodeId(11);
+        long_ferry.target = NodeId(20);
+        // Keep long ferry endpoints on pack land nodes so the pack connects.
+        let mut pack = RouteGraph::from_parts(
+            nodes,
+            vec![land_ask, land_gje, long_ferry],
+            RoutingProfile::Car,
+        );
+
+        let mut onodes = HashMap::new();
+        for (nid, n) in [
+            test_node(1100, ask_lat, ask_lon),
+            test_node(1200, gje_lat, gje_lon),
+        ] {
+            onodes.insert(nid, n);
+        }
+        let mut short = named_ferry(
+            1100,
+            1200,
+            ask_lat,
+            ask_lon,
+            gje_lat,
+            gje_lon,
+            "Askvoll - Gjervik",
+        );
+        short.length_m = 3_021.0;
+        let mut overlay = RouteGraph::from_parts(onodes, vec![short], RoutingProfile::Car);
+
+        drop_pack_edges_replaced_by_overlay_ferry(&mut pack, &mut overlay);
+        assert!(
+            pack.edges.iter().any(|e| e.is_ferry),
+            "no spanning non-ferry chord — pack ferry must remain"
+        );
+        let n = rewire_overlay_ferry_ends_to_nearest_pack(&pack, &mut overlay);
+        assert!(n >= 2, "both overlay ends should rewire, got {n}");
+        let merged =
+            crate::routing::indexed::merge_tile_graphs(vec![pack, overlay], RoutingProfile::Car);
+        let short_e = merged
+            .edges
+            .iter()
+            .find(|e| e.name.as_deref() == Some("Askvoll - Gjervik"))
+            .expect("short overlay ferry after merge");
+        assert!(
+            pack_nodes_connected(&merged, short_e.source, NodeId(10)),
+            "Askvoll end must join pack land"
+        );
+        assert!(
+            pack_nodes_connected(&merged, short_e.target, NodeId(21)),
+            "Gjervik end must join pack land"
+        );
+        assert_eq!(
+            merged.weak_component_id(NodeId(10)),
+            merged.weak_component_id(NodeId(21)),
+            "short ferry must join both land sides"
+        );
+    }
+
+    fn pack_nodes_connected(g: &RouteGraph, a: NodeId, b: NodeId) -> bool {
+        g.weak_component_id(a) == g.weak_component_id(b)
     }
 
     #[test]
