@@ -2,6 +2,7 @@ package no.navi.app
 
 import android.content.Context
 import android.media.MediaScannerConnection
+import android.util.Log
 import uniffi.navi.catPluginConfigure
 import uniffi.navi.catPluginInstallGuest
 import uniffi.navi.catPluginSetEnabled
@@ -9,7 +10,7 @@ import java.io.File
 import java.util.TimeZone
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** One-time CATS plugin session setup (configure + wasm guest from assets). */
+/** CATS plugin session setup (configure + wasm guest from assets). */
 object CatBootstrap {
     private val configured = AtomicBoolean(false)
 
@@ -42,20 +43,39 @@ object CatBootstrap {
         }
     }
 
+    /**
+     * Copy the guest staged under `assets/plugins/$name` into the session.
+     * Reinstalls when [BuildConfig.VERSION_CODE] changes or the on-disk wasm
+     * size no longer matches the asset (stale guests never set follow switches).
+     */
     private fun installGuestFromAssets(
         context: Context,
         name: String,
     ) {
-        val marker = File(context.filesDir, "plugins/$name/.installed")
-        if (marker.isFile) return
+        val dir = File(context.filesDir, "plugins/$name")
+        val marker = File(dir, ".installed")
+        val wasmFile = File(dir, "plugin.wasm")
+        val version = BuildConfig.VERSION_CODE.toString()
         val am = context.assets
+        val assetWasm =
+            am.open("plugins/$name/plugin.wasm").use { it.readBytes() }
+        val markerOk = marker.isFile && marker.readText().trim() == version
+        val sizeOk = wasmFile.isFile && wasmFile.length() == assetWasm.size.toLong()
+        if (markerOk && sizeOk) return
+        Log.i(
+            "NaviCat",
+            "reinstall guest name=$name version=$version " +
+                "was_marker=${marker.isFile} was_bytes=${wasmFile.length()} " +
+                "asset_bytes=${assetWasm.size}",
+        )
         val manifest =
             am.open("plugins/$name/plugin.json").use { it.readBytes().decodeToString() }
-        val wasm = am.open("plugins/$name/plugin.wasm").use { it.readBytes() }
-        val status = catPluginInstallGuest(name, manifest, wasm)
+        val status = catPluginInstallGuest(name, manifest, assetWasm)
         if (status.startsWith("OK")) {
-            marker.parentFile?.mkdirs()
-            marker.writeText(status)
+            dir.mkdirs()
+            marker.writeText(version)
+        } else {
+            Log.w("NaviCat", "guest install failed name=$name status=$status")
         }
     }
 

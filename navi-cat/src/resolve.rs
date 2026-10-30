@@ -274,13 +274,11 @@ fn apply_radioid_wins(radio: &RepeaterSite, file: &RepeaterSite) -> (RepeaterSit
 }
 
 fn fill_unknowns(existing: &RepeaterSite, incoming: &RepeaterSite) -> (RepeaterSite, Vec<String>) {
-    // Prefer the RadioID row as the stored id when one of the two is RadioID.
+    // Prefer the RadioID row as the stored id. If incoming is RadioID, swap
+    // so it is `base`; otherwise `existing` is already the stored row (including
+    // when existing is RadioID).
     let (base, extra) = if incoming.source == RepeaterSource::RadioId {
         (incoming, existing)
-    } else if existing.source == RepeaterSource::RadioId {
-        (existing, incoming)
-    } else if incoming.source == RepeaterSource::RepeaterBook {
-        (existing, incoming)
     } else {
         (existing, incoming)
     };

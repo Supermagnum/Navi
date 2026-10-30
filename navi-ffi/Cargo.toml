@@ -133,6 +133,12 @@ name = "navi-ferry-probe"
 path = "src/bin/navi_ferry_probe.rs"
 required-features = ["diag-bins"]
 
+
+
+
+
+
+
 [[bin]]
 name = "navi-corridor-skeleton"
 path = "src/bin/navi_corridor_skeleton.rs"

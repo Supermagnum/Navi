@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 
-use crate::repeater::{AccessTone, RepeaterSite};
+use crate::repeater::RepeaterSite;
 
 /// Haversine distance in km (scorer-local; follow logic lives in CATS-plugin).
 pub fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
@@ -301,6 +301,7 @@ pub fn sample_great_circle(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::repeater::AccessTone;
 
     #[test]
     fn point_in_simple_square() {

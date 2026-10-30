@@ -27,4 +27,14 @@ class CatConnectedModelPillTest {
         assertFalse(catPresetMatchesConnectedModel(dummy, ""))
         assertFalse(catPresetMatchesConnectedModel(dummy, "   "))
     }
+
+    @Test
+    fun benshiRfcommLiveOnlyWhenConnectedRfcomm() {
+        assertTrue(catBenshiRfcommLive(connected = true, link = CAT_LINK_BENSHI_RFCOMM))
+        assertFalse(catBenshiRfcommLive(connected = false, link = CAT_LINK_BENSHI_RFCOMM))
+        assertFalse(catBenshiRfcommLive(connected = true, link = CAT_LINK_BENSHI_LAB))
+        assertFalse(catBenshiRfcommLive(connected = true, link = "tcp"))
+        assertFalse(catBenshiRfcommLive(connected = true, link = "offline"))
+        assertFalse(catBenshiRfcommLive(connected = false, link = ""))
+    }
 }

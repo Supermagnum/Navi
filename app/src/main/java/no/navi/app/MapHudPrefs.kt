@@ -54,6 +54,7 @@ object MapHudPrefs {
     private const val KEY_CAT_BAUD_RATE = "cat_baud_rate"
     private const val KEY_CAT_BACKEND = "cat_backend"
     private const val KEY_CAT_SCRATCH_CHANNEL = "cat_scratch_channel"
+    private const val KEY_CAT_BENSHI_ADDRESS = "cat_benshi_address"
     private const val KEY_CAT_DEMO_MODE = "cat_demo_mode_developer"
     private const val KEY_CAT_NETWORK_CHOICE = "cat_network_choice"
     private const val KEY_CAT_CONSENSUS = "cat_consensus_relocation"
@@ -66,7 +67,9 @@ object MapHudPrefs {
     /** Hamlib TCP / FFI vs native Benshi Bluetooth. */
     const val CAT_BACKEND_HAMLIB = "hamlib"
     const val CAT_BACKEND_BENSHI = "benshi"
-    const val CAT_BACKEND_DEFAULT = CAT_BACKEND_HAMLIB
+
+    /** Product path for VGC VR-N76: native Benshi RFCOMM (not Hamlib/TS-2000). */
+    const val CAT_BACKEND_DEFAULT = CAT_BACKEND_BENSHI
     const val CAT_SCRATCH_CHANNEL_DEFAULT = 0
 
     /**
@@ -1057,6 +1060,24 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putInt(KEY_CAT_SCRATCH_CHANNEL, channel.coerceIn(0, 255))
+            .apply()
+    }
+
+    /** Bluetooth MAC of the bonded Benshi radio, or empty when none chosen. */
+    fun loadCatBenshiAddress(context: Context): String =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_CAT_BENSHI_ADDRESS, "")
+            .orEmpty()
+
+    fun saveCatBenshiAddress(
+        context: Context,
+        address: String,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_CAT_BENSHI_ADDRESS, address)
             .apply()
     }
 

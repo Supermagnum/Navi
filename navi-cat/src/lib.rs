@@ -89,7 +89,10 @@ impl<B: RigBackend> CatService<B> {
             crate::repeater::FollowQuery::Named(name) => Some(name.as_str()),
         };
         let sites = self.db.query_near(lat, lon, radius, network_id);
-        serde_json::to_string(&sites).unwrap_or_else(|_| "[]".into())
+        // Compact follow payload: guest only needs id/lat/lon/network/freqs.
+        // Full RepeaterSite JSON for Ostlandet near-set is ~70–80 KiB and used to
+        // truncate the WASM query buffer (live=0 → no VFO1 programs).
+        follow_sites_compact_json(&sites)
     }
 
     /// Nearby list for CAT UI: includes excluded / position_null / DMR (info-only).
@@ -171,4 +174,27 @@ impl<B: RigBackend> CatService<B> {
         })
         .to_string()
     }
+}
+
+/// Guest follow tick fields only (keeps Ostlandet near-set well under the WASM buffer).
+fn follow_sites_compact_json(sites: &[RepeaterSite]) -> String {
+    let rows: Vec<serde_json::Value> = sites
+        .iter()
+        .filter_map(|s| {
+            let lat = s.lat?;
+            let lon = s.lon?;
+            Some(serde_json::json!({
+                "id": s.id,
+                "callsign": s.callsign,
+                "lat": lat,
+                "lon": lon,
+                "freq_out_mhz": s.freq_out_mhz,
+                "shift_mhz": s.shift_mhz,
+                "ctcss_hz": s.ctcss_hz,
+                "network_id": s.network_id,
+                "distance_km": s.distance_km,
+            }))
+        })
+        .collect();
+    serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into())
 }
