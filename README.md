@@ -100,19 +100,19 @@ and radio/baud UI notes (branch `CAT`): [`docs/CAT.md`](docs/CAT.md),
 [`docs/CAT-test-report.md`](docs/CAT-test-report.md),
 [`docs/cat-test.md`](docs/cat-test.md).
 
-**Install from F-Droid (recommended for most users).** Navi is published at
-[f-droid.org/en/packages/no.navi.app](https://f-droid.org/en/packages/no.navi.app/)
-(`no.navi.app`). Prefer that when you want updates through F-Droid.
+**Install from F-Droid (recommended for most users).** Navi is listed on F-Droid
+as **`no.navi.app`** — see [F-Droid](#f-droid). Prefer that when you want updates
+through the F-Droid client.
 
 **Install the signed release APK (sideload / testers).** Download and sideload
 [`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
-installable release APK** (upload keystore; not the debug build). Current build:
-**0.3.29-beta** (`versionName` 0.3.29-beta, `versionCode` 2) is the F-Droid /
-GitHub release track (see [docs/RELEASING.md](docs/RELEASING.md)). Sideload
-APKs under `compiled/` may lag until the next sideload ship. Download a tester
-build from the [`dev` branch](https://github.com/Supermagnum/Navi/tree/dev/compiled)
-when present. Android
-validates the APK signature on install; the separate GPG files
+installable release APK** (upload keystore; not the debug build). Current
+`dev` sideload build: **0.3.30-beta** (`versionName` 0.3.30-beta,
+`versionCode` 33; matches `app/build.gradle.kts`). The F-Droid client index can
+lag behind that tag — see [F-Droid](#f-droid). Release process:
+[docs/RELEASING.md](docs/RELEASING.md). Download a tester build from the
+[`dev` branch](https://github.com/Supermagnum/Navi/tree/dev/compiled) when
+present. Android validates the APK signature on install; the separate GPG files
 ([`compiled/SHA256SUMS`](compiled/SHA256SUMS),
 [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc)) are optional provenance
 only — not a substitute for APK signing. Install steps:
@@ -160,7 +160,8 @@ checklist above and file an issue; you do not need to write code.
 
 1. [What this is](#what-this-is)
 2. [Support Navi](#support-navi)
-3. [Features](#features)
+3. [F-Droid](#f-droid)
+4. [Features](#features)
    - [What you need to download](#what-you-need-to-download)
    - [Pack coverage (countries and subregions)](docs/coverage.md)
    - [Indexing (background after download)](#indexing-background-after-download)
@@ -168,14 +169,14 @@ checklist above and file an issue; you do not need to write code.
    - [Why route planning can take a while](#why-route-planning-can-take-a-while)
    - [How to use](#how-to-use)
    - [How features work](#how-features-work)
-4. [Settings](#settings)
-5. [Break timer vs trip ETA](#break-timer-vs-trip-eta)
-6. [Routing safety](#routing-safety)
-7. [Minimum hardware and storage](#minimum-hardware-and-storage)
-8. [Screenshots](#screenshots)
-9. [Documents](#documents)
-10. [Code inspection / CI tests](#code-inspection--ci-tests)
-11. [Plugins](#plugins)
+5. [Settings](#settings)
+6. [Break timer vs trip ETA](#break-timer-vs-trip-eta)
+7. [Routing safety](#routing-safety)
+8. [Minimum hardware and storage](#minimum-hardware-and-storage)
+9. [Screenshots](#screenshots)
+10. [Documents](#documents)
+11. [Code inspection / CI tests](#code-inspection--ci-tests)
+12. [Plugins](#plugins)
     - [i18n / UI languages](docs/plugins/i18n-translation-spec.md) — not implemented
     - [Right-to-roam camping](docs/plugins/right-to-roam-camping-spec.md) — not implemented
     - [Safety resupply](docs/plugins/safety-resupply.md) — not implemented
@@ -190,23 +191,24 @@ checklist above and file an issue; you do not need to write code.
     - [CAT radio control](docs/CAT.md) — full spec
     - [CATS WASM guest](plugins/CATS-plugin/) — implemented (opt-in; wasmtime auto-tune / network follow)
     - [CAT test report](docs/CAT-test-report.md) — CI / emulator / hardware evidence
+    - [APRS](docs/APRS.md) — not implemented (station display + range exist; RF decode / ignored callsign planned)
     - [Custom alert sounds](docs/plugins/custom-alert-sounds-spec.md) — not implemented
     - [Horse trekking](docs/plugins/horse-trekking-spec.md) — not implemented
     - [Adaptive speed warning](docs/plugins/adaptive-speed-warning-spec.md) — not implemented
     - [Nearby attractions (POI look-ahead)](docs/plugins/poi-lookahead-cone-spec.md) — implemented (opt-in)
     - [IMU (pitch / tilt / compass, mount calibration)](docs/plugins/imu-plugin.md) — implemented (opt-in; Map / Tools → Plugins)
-    - [CAT radio](https://github.com/Supermagnum/Navi/blob/CAT/README.md#cat-radio-plugin) — developed on the [`CAT`](https://github.com/Supermagnum/Navi/tree/CAT) branch; not part of `dev` releases yet
     - [LoRa convoy](docs/plugins/lora-convoy-spec.md) — not implemented
     - [Voice guidance (turn-by-turn)](docs/voice-guidance.md) — not implemented
     - [Voice command](docs/plugins/voice-command.md) — not implemented
     - [Icons (where they live)](#icons-where-they-live) — documentation (assets in-repo)
-12. [Coding standards and contributing](#coding-standards-and-contributing)
-13. [Building and installing](#building-and-installing)
+13. [Coding standards and contributing](#coding-standards-and-contributing)
+14. [Building and installing](#building-and-installing)
+    - [F-Droid](#f-droid)
     - [Install a prebuilt APK](#install-a-prebuilt-apk)
     - [Release build (APK / AAB)](#release-build-apk--aab)
-14. [Where the map data comes from](#where-the-map-data-comes-from)
-15. [Known issues](#known-issues)
-16. [TODO](#todo)
+15. [Where the map data comes from](#where-the-map-data-comes-from)
+16. [Known issues](#known-issues)
+17. [TODO](#todo)
 
 More detail lives in linked docs (architecture, truck rest rules, map styles,
 debugging, and so on). To contribute, start with
@@ -252,6 +254,25 @@ identifiable on your statement.
 
 This is entirely optional support, not a paywall — Navi is and will remain free.
 
+# F-Droid
+
+Navi is on the main F-Droid index as package **`no.navi.app`**.
+
+- Package page: [https://f-droid.org/packages/no.navi.app/](https://f-droid.org/packages/no.navi.app/)
+  (same app: [en locale](https://f-droid.org/en/packages/no.navi.app/))
+- Build metadata:
+  [fdroiddata `no.navi.app.yml`](https://gitlab.com/fdroid/fdroiddata/-/blob/master/metadata/no.navi.app.yml)
+- Rebuild checks:
+  [verification.f-droid.org](https://verification.f-droid.org/packages/no.navi.app/)
+
+Prefer the F-Droid client for install and updates. The **suggested** version on
+the package page can lag GitHub / `dev` sideloads: when last checked, the index
+suggested **0.3.26-beta** (`versionCode` **31**) while `app/build.gradle.kts`
+and [`compiled/navi-release.apk`](compiled/navi-release.apk) were
+**0.3.30-beta** (`versionCode` **33**). fdroiddata `master` already listed
+`CurrentVersion` **0.3.30-beta** / **33**. Sideload steps:
+[Install a prebuilt APK](#install-a-prebuilt-apk).
+
 # Features
 
 | Feature | In plain words | Status |
@@ -291,7 +312,7 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Nearby attractions** | Opt-in under **Map / Tools → Plugins → Nearby attractions** (off by default). Quiet top-right HUD chip for attractions, fishing, and craft alcohol (incl. cider) in an **850 m / ±30°** heading cone — open-now filtered, not a hazard warning. Distinct from Look forward. Spec: [`docs/plugins/poi-lookahead-cone-spec.md`](docs/plugins/poi-lookahead-cone-spec.md). | Done |
 | **IMU pitch / tilt / compass** | Opt-in under **Map / Tools → Plugins → IMU pitch / tilt / compass** (off by default). Made for a phone or tablet **mounted in a vehicle**: live pitch, tilt and compass heading from the device sensors. A mounted unit is never perfectly aligned with the vehicle, so calibrate once: Find a level concrete surface, like the floor of your garage, then tap Calibrate. The unit will then use the current values as level. **Reset** removes the calibration; the status line shows whether the unit is calibrated and on which date. Calibration is rejected while the vehicle is moving. Wasm guest plus Android `SensorManager` bridge; detail: [`docs/plugins/imu-plugin.md`](docs/plugins/imu-plugin.md). | Done |
 | **Tunnel / GNSS-gap positioning** | When GPS is lost or badly degraded (tunnels, deep cuts), the host keeps the map mark moving along the active route (or the current road edge) using the last GNSS speed, changed only by longitudinal acceleration outside a deadband, and a braking-aware standstill gate — same mount calibration as the IMU plugin. The mark turns amber while estimated, grey with **Position lost** after a time/distance give-up, then blends back when a good fix returns. No Google Play services (`LocationManager` + `SensorManager`). Detail: [`docs/tunnel-dead-reckoning.md`](docs/tunnel-dead-reckoning.md). **Validation:** stationary on a real tablet; moving and tunnel behaviour in simulation and by on-device injection only, no real drive. On-device crawl exit 48.7 m against the 50 m limit. Speed changes gentler than 0.20 m/s² are not tracked in a tunnel. With no route, or on v8 packs, give-up is 6 min / 15 km. | Done |
-| **CAT radio** | Opt-in under **Map / Tools → Plugins** (off by default). Look up amateur repeaters within **150 km**, auto-tune **VFO A/1**, follow LA5MR-style networks with hysteresis (leave after the last site — decision C), leave **VFO B/2** to the user, and **never transmit**. Radios: Hamlib (Stable only) and native Benshi Bluetooth (VR-N76). Licence on the toggle: *You may listen, but do not transmit without an amateur radio licence.* Detail: [CAT radio plugin](#cat-radio-plugin), [`docs/CAT.md`](docs/CAT.md). | Done (this branch) |
+| **CAT radio** | Opt-in under **Map / Tools → Plugins** (off by default). Look up amateur repeaters within **150 km**, auto-tune **VFO A/1**, follow LA5MR-style networks with hysteresis (leave after the last site — decision C), leave **VFO B/2** to the user, and **never transmit**. Radios: Hamlib (Stable only) and native Benshi Bluetooth (VR-N76). Licence on the toggle: *You may listen, but do not transmit without an amateur radio licence.* Detail: [CAT radio plugin](#cat-radio-plugin), [`docs/CAT.md`](docs/CAT.md). | Done |
 | **Children facilities nearby** | When no tagged children / school sign is active, schools, kindergartens, and playgrounds still trigger a generic **142 Children** approach warning (nearest facility wins; tagged `NO:142` outranks this fallback). **With a planned route:** facilities within **200 m** of the corridor. **Without a route:** covered by **Look forward** (300 m cone). Detail: [`docs/road-signs.md`](docs/road-signs.md). | Done |
 | **Speed camera warnings** | Point cameras use the existing approach distance-phase UX; average-speed / section-control zones use a distinct enter/exit box. `maxspeed:conditional` is evaluated against live local time. Jurisdiction-gated like EC561 / allemannsretten: Norway/UK opt-in (OSM-sourced, may be incomplete); Germany/France/Switzerland and unknown jurisdictions decline — see [`docs/jurisdiction-rules.md`](docs/jurisdiction-rules.md). First-run opt-in dialog required (not silently enabled). Works on both planned-route corridor and **Look forward**. | Done (display/warning only — no route-avoidance toggle, by deliberate product decision) |
 | **Map updates** | Only when you ask — check for OpenStreetMap updates or download a fresh region. Never silent. On-screen copy is plain language (no internal planner dumps). | Done |
@@ -299,7 +320,7 @@ This is entirely optional support, not a paywall — Navi is and will remain fre
 | **Diagnostic logging** | **Tools → Diagnostic logging** (off by default). When on, writes a dated session log under **Internal storage → Documents → debug** (`navi_session_*.log`) for copy over USB/MTP — no adb required. Covers GPS, camera, toggles, route plan/stages, eco, POIs, pauses, instructions, fuel, system. Not uploaded. **Export diagnostic log** shares the latest file. Detail: [Settings → Tools](#tools-downloads-and-diagnostic-logging) and [`docs/debugging.md`](docs/debugging.md#3b-diagnostic-session-log-on-device-file). | Done |
 | **Weather overlay (HUD)** | **Map → Plugins → Weather overlay** (also under **Tools → Plugins**; off by default). Opt-in MET Norway → Open-Meteo fetch with SQLite cache, fill-style Meteocons icons, stale labeling when offline/throttled. Host UniFFI path; product does not yet link the WASM plugin-host. | Done |
 | **Weather symbols on map** | Nested **Show weather symbols on map** under Plugins (off by default; inert unless Weather overlay is on). `place:city` only at MapLibre zoom ≤ 8; max 10 symbols; 56 px min spacing; nearest-to-viewport-center priority. Town/village tiers and corridor overlay not shipped. | Done |
-| **Plugins** | A safe sandbox for future add-ons exists; most product plugins are not shipped yet. Weather and **Nearby attractions** use the host UniFFI path today (see rows above). **IMU** and **CAT radio** are opt-in on this branch (see rows above). **DATEX** road situations (opt-in, default OFF) use the navi-server feed — **Norway / NPRA only** today. | Host ready |
+| **Plugins** | A safe sandbox for future add-ons exists; most product plugins are not shipped yet. Weather and **Nearby attractions** use the host UniFFI path today (see rows above). **IMU** and **CAT radio** are opt-in (see rows above). **DATEX** road situations (opt-in, default OFF) use the navi-server feed — **Norway / NPRA only** today. | Host ready |
 
 **Hardware note:** Real-device checks include Samsung Galaxy Tab S6 Lite
 (**SM-P613**) and Google Pixel 9a. Car head units still need more real-world
@@ -1022,7 +1043,7 @@ like the camping guest, and Android `SensorManager` feeds it through UniFFI.
 Calibration: Find a level concrete surface, like the floor of your garage, then
 tap Calibrate. The unit will then use the current values as level. Detail:
 [`docs/plugins/imu-plugin.md`](docs/plugins/imu-plugin.md).
-**CAT radio** (this branch) is also opt-in — see [CAT radio plugin](#cat-radio-plugin)
+**CAT radio** is also opt-in — see [CAT radio plugin](#cat-radio-plugin)
 below. **DATEX** road situations (Map/Tools → Plugins; default **OFF**) pull from
 navi-server; the live feed currently covers **Norway only** (NPRA). Overview:
 [`docs/plugins.md`](docs/plugins.md). The system requires a per-plugin
@@ -1105,6 +1126,7 @@ Guest overview: [`plugins/CATS-plugin/README.md`](plugins/CATS-plugin/README.md)
 | [`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md) | Animated icons | **Not implemented** |
 | [`docs/CAT.md`](docs/CAT.md) | CAT radio control — Hamlib `RigBackend` (TCP `rigctld` + FFI), native Benshi, `CatStatusSheet` model/baud, never auto-TX; licence: *You may listen, but do not transmit without an amateur radio licence.* See **What is tested** in that doc. | **Implemented** (opt-in) |
 | [`plugins/CATS-plugin/`](plugins/CATS-plugin/) | CATS WASM guest — repeater select / auto-tune / network follow under wasmtime (`plugin.json` name `cat`) | **Implemented** (opt-in) |
+| [`docs/APRS.md`](docs/APRS.md) | APRS protocol / moving stations — display + range filtering exist; RF decode, ignored callsign (hide own station), and IQ test links documented there; DSP notes in [`docs/APRS-SDR.md`](docs/APRS-SDR.md) | **Not implemented** (partial core display) |
 | [`docs/plugins/custom-alert-sounds-spec.md`](docs/plugins/custom-alert-sounds-spec.md) | Short alert tones (road signs, cameras, overspeed earcon) | **Not implemented** |
 | [`docs/plugins/horse-trekking-spec.md`](docs/plugins/horse-trekking-spec.md) | Equestrian lookahead and access guidance (Hiking is the interim stopgap) | **Not implemented** |
 | [`docs/plugins/adaptive-speed-warning-spec.md`](docs/plugins/adaptive-speed-warning-spec.md) | Spoken escalating overspeed (percentage tiers) | **Not implemented** |
@@ -1175,13 +1197,10 @@ clone **your** fork, and work on **`dev`** — step-by-step in
 
 ### F-Droid
 
-Navi is on F-Droid as **`no.navi.app`**:
-
-[https://f-droid.org/en/packages/no.navi.app/](https://f-droid.org/en/packages/no.navi.app/)
-
-Install or update from the F-Droid client when you can. The sideload APKs below
-are for testers and developers who need a specific `dev` build (or cannot use
-F-Droid).
+See the top-level [F-Droid](#f-droid) section for the package URL
+(`no.navi.app`), fdroiddata recipe, and how the index version can lag
+`dev` sideloads. The APKs below are for testers and developers who need a
+specific `dev` build (or cannot use F-Droid).
 
 ### Release APK (for testers)
 
@@ -1356,8 +1375,8 @@ adb shell am start -n no.navi.app/.MainActivity
    [`docs/android-api36-plan.md`](docs/android-api36-plan.md#aab-smoke-host).
 
 Current `versionName` / `versionCode` live in `app/build.gradle.kts`
-(`0.3.12-beta` / `17` at time of writing). Bump those before a real store or tagged
-release. F-Droid-style Podman reproducibility:
+(**0.3.30-beta** / **33** at time of writing). Bump those before a tagged or
+F-Droid release. F-Droid-style Podman reproducibility:
 [`tools/fdroid-check/README.md`](tools/fdroid-check/README.md). Full shared
 recipe: [`docs/android-build.md`](docs/android-build.md).
 

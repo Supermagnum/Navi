@@ -10,7 +10,7 @@ Navi does **not** implement RF APRS decode in this codebase yet. Information-fie
 conventions below map cleanly onto T0 sensors, [`TrackStore`](../core/src/tracks/mod.rs)
 overlays, and messaging UI. Station **display + range filtering** are
 implemented; SDR receive is documented for a future
-[`rtl-sdr-rs`](https://crates.io/crates/rtl-sdr-rs) path — see
+[`rtl-sdr-rs`](https://docs.rs/rtl-sdr-rs) path — see
 [`APRS-SDR.md`](APRS-SDR.md).
 
 ## Packet shape (AX.25 UI frame)
@@ -230,6 +230,25 @@ Mic-E / compressed ─ dense encoding of lat/lon (+ course/speed ± altitude)
 - Symbols for tests: hessu/aprs-symbols crops under `core/src/icons/aprs/` (see
   that directory’s `COPYRIGHT.md` — licensing is **per symbol**).
 
+### Ignored callsign (required; not implemented)
+
+The app **must not display its own station**. Digipeaters and i-gates often
+re-hear or re-beacon the operator’s packets, so the map would otherwise show
+the vehicle as a peer APRS icon on top of the nav position.
+
+**Requirement:** the operator must be able to set an **ignored callsign**
+(callsign and optional SSID, matching the AX.25 source address form used as
+the station id). Stations whose id matches that value are excluded from
+display (`visible` / overlay), even when they remain in the store until
+timeout. Matching should be case-insensitive for the callsign letters; treat
+an omitted SSID as the base callsign only when the heard station also has no
+SSID (or document the product rule clearly if `-0` is normalized).
+
+This filter is distinct from range clamping: ignored callsign removes **self**,
+range limits **how far** other stations appear. Implementation belongs with
+`TrackStore` display filtering (and any future APRS ingest path), not only in
+UI chrome.
+
 ### Range filtering (implemented)
 
 Limits which stations the UI should show, by Haversine distance from a centre
@@ -290,13 +309,31 @@ Planned receive stack:
 
 | Piece | Role |
 |---|---|
-| [`rtl-sdr-rs`](https://crates.io/crates/rtl-sdr-rs) | Rust RTL-SDR USB IQ capture |
+| [`rtl-sdr-rs`](https://docs.rs/rtl-sdr-rs) | Rust RTL-SDR USB IQ capture |
 | APRS SDR DSP | FM discriminator + bit-timing PLL → AX.25 (see [`APRS-SDR.md`](APRS-SDR.md)) |
 | Information-field parse | Map CSE/SPD, symbols, comments onto `TrackStation` |
 
 Use a **non-zero IF offset** (typically 50–100 kHz) on real RTL-SDR hardware;
 DC-centered tune is synthetic-test only. Full bit-stream expectations,
 footguns, and hardware notes: [`APRS-SDR.md`](APRS-SDR.md).
+
+### Public IQ / AFSK test material
+
+Use these when exercising a future FM-discriminator + Bell 202 / AX.25 path
+without live RF. Prefer RF-domain IQ for the full RTL-SDR stack; use AFSK WAV
+files to isolate the audio modem stage.
+
+| Resource | Domain | Notes |
+|---|---|---|
+| [Signal Identification Wiki — APRS](https://www.sigidwiki.com/wiki/APRS) | RF IQ (zip) | Page documents frequencies and links an **I/Q Raw Recording**. Direct file: [`APRS_IQ_145070kHz_IQ.zip`](https://www.sigidwiki.com/images/6/64/APRS_IQ_145070kHz_IQ.zip) (contains an SDR# style `*_IQ.wav`). Verified reachable at doc update time. |
+| [handiko/gr-APRS `WAV/`](https://github.com/handiko/gr-APRS/tree/master/WAV) | AFSK audio | GNU Radio test WAVs (`aprs.wav`, `aprs_random.wav`) for Bell 202 / HDLC after FM demod — not raw RTL IQ. |
+| [handiko/APRS-Audio-WAV](https://github.com/handiko/APRS-Audio-WAV) | AFSK audio | Same style of playable APRS AFSK WAVs for modem checks. |
+
+SDRangel’s [IQ files](https://www.sdrangel.org/iq-files/) catalogue is often
+cited for replayable RF captures (including APRS in their set); the site
+returned HTTP 520 when this doc was last checked, so prefer the SigID zip
+above until that mirror is healthy again. In-tree tests today still inject
+stations via `FfiTrackStore.upsert` rather than shipping IQ fixtures.
 
 Related: sensor tier (T0) in [`architecture.md`](architecture.md). Protocol
 index: [`PROTOCOLS.md`](PROTOCOLS.md). Vehicle energy buses (separate from
@@ -308,6 +345,8 @@ APRS): [`ECU.md`](ECU.md).
 - [PROTOCOL.TXT (historical overview)](https://www.aprs.org/APRS-docs/PROTOCOL.TXT)
 - [APRSpedia — weather field](https://aprspedia.com/doku.php?id=aprs_protocols%3Ainformation_field%3Aweather_field)
 - [APRSpedia — position field](https://aprspedia.com/doku.php?id=aprs_protocols%3Ainformation_field%3Aposition_field)
-- [`rtl-sdr-rs` on crates.io](https://crates.io/crates/rtl-sdr-rs) — planned IQ front-end
-- [`rtl-sdr-rs` docs.rs](https://docs.rs/rtl-sdr-rs)
+- [SigIDWiki APRS I/Q recording (zip)](https://www.sigidwiki.com/images/6/64/APRS_IQ_145070kHz_IQ.zip)
+- [handiko/gr-APRS WAV test files](https://github.com/handiko/gr-APRS/tree/master/WAV)
+- [`rtl-sdr-rs` docs.rs](https://docs.rs/rtl-sdr-rs) — planned IQ front-end
+- [`rtl-sdr-rs` upstream](https://github.com/ccostes/rtl-sdr-rs)
 - [`APRS-SDR.md`](APRS-SDR.md) — DSP pipeline stages, RTL-SDR IF offset, fault table

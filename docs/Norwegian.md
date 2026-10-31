@@ -19,15 +19,17 @@ oppfører seg fortsatt annerledes for GPS, kart, GPU og layout. Sjekkliste:
 Resultater på enhet og emulator:
 [`android-test-results.md`](android-test-results.md).
 
-**Installer fra F-Droid (anbefalt for de fleste).** Navi ligger på
-[f-droid.org/en/packages/no.navi.app](https://f-droid.org/en/packages/no.navi.app/)
-(`no.navi.app`). Bruk den når du vil ha oppdateringer via F-Droid.
+**Installer fra F-Droid (anbefalt for de fleste).** Navi ligger på F-Droid som
+**`no.navi.app`** — se [F-Droid](#f-droid). Bruk den når du vil ha
+oppdateringer via F-Droid-klienten.
 
 **Installer den signerte release-APK-en (sideload / testere).** Last ned og
 sideloade [`compiled/navi-release.apk`](../compiled/navi-release.apk) — en
 **riktig signert, installerbar release-APK** (upload-nøkkel; ikke debug-bygget).
-Gjeldende bygg: **0.3.28-beta** (`versionName` 0.3.28-beta, `versionCode` 33).
-Last ned fra [`dev`-grenen](https://github.com/Supermagnum/Navi/tree/dev/compiled)
+Gjeldende `dev`-sideload: **0.3.30-beta** (`versionName` 0.3.30-beta,
+`versionCode` 33; matcher `app/build.gradle.kts`). F-Droid-klientens foreslåtte
+versjon kan ligge bak — se [F-Droid](#f-droid). Last ned fra
+[`dev`-grenen](https://github.com/Supermagnum/Navi/tree/dev/compiled)
 (siste testerbygg).
 Android validerer
 APK-signeringen ved installasjon; de separate GPG-filene
@@ -58,27 +60,29 @@ trenger ikke skrive kode.
 
 1. [Hva dette er](#hva-dette-er)
 2. [Støtt Navi](#støtt-navi)
-3. [Funksjoner](#funksjoner)
+3. [F-Droid](#f-droid)
+4. [Funksjoner](#funksjoner)
    - [Hva du må laste ned](#hva-du-må-laste-ned)
    - [Indeksering (bakgrunn etter nedlasting)](#indeksering-bakgrunn-etter-nedlasting)
    - [Når du forlater en nedlastet region](#når-du-forlater-en-nedlastet-region)
    - [Slik bruker du](#slik-bruker-du)
    - [Slik fungerer funksjonene](#slik-fungerer-funksjonene)
-4. [Innstillinger](#innstillinger)
-5. [Pauseteller vs tur-ETA](#pauseteller-vs-tur-eta)
-6. [Ruting og sikkerhet](#ruting-og-sikkerhet)
-7. [Minimum maskinvare og lagring](#minimum-maskinvare-og-lagring)
-8. [Skjermbilder](#skjermbilder)
-9. [Dokumenter](#dokumenter)
-10. [Plugins](#plugins)
+5. [Innstillinger](#innstillinger)
+6. [Pauseteller vs tur-ETA](#pauseteller-vs-tur-eta)
+7. [Ruting og sikkerhet](#ruting-og-sikkerhet)
+8. [Minimum maskinvare og lagring](#minimum-maskinvare-og-lagring)
+9. [Skjermbilder](#skjermbilder)
+10. [Dokumenter](#dokumenter)
+11. [Plugins](#plugins)
     - [Ikoner (hvor de ligger)](#ikoner-hvor-de-ligger)
-11. [Kodestandarder og bidrag](#kodestandarder-og-bidrag)
-12. [Bygge og installere](#bygge-og-installere)
+12. [Kodestandarder og bidrag](#kodestandarder-og-bidrag)
+13. [Bygge og installere](#bygge-og-installere)
+    - [F-Droid](#f-droid)
     - [Installer en forhåndsbygd APK](#installer-en-forhåndsbygd-apk)
     - [Utgivelsesbygg (APK / AAB)](#utgivelsesbygg-apk--aab)
-13. [Hvor kartdataene kommer fra](#hvor-kartdataene-kommer-fra)
-14. [Kjente problemer](#kjente-problemer)
-15. [TODO](#todo)
+14. [Hvor kartdataene kommer fra](#hvor-kartdataene-kommer-fra)
+15. [Kjente problemer](#kjente-problemer)
+16. [TODO](#todo)
 
 Mer detalj ligger i lenkede dokumenter (arkitektur, lastebilhvile, kartstiler,
 feilsøking osv.). For å bidra, start med
@@ -121,6 +125,25 @@ Skriv «Navi donation» som betalingsreferanse/melding, så det er tydelig på
 kontoutskriften.
 
 Dette er helt valgfri støtte, ikke en betalingsmur — Navi er og forblir gratis.
+
+# F-Droid
+
+Navi ligger på hovedindeksen til F-Droid som pakke **`no.navi.app`**.
+
+- Pakkeside: [https://f-droid.org/packages/no.navi.app/](https://f-droid.org/packages/no.navi.app/)
+  (samme app: [en-locale](https://f-droid.org/en/packages/no.navi.app/))
+- Byggemetadata:
+  [fdroiddata `no.navi.app.yml`](https://gitlab.com/fdroid/fdroiddata/-/blob/master/metadata/no.navi.app.yml)
+- Reproduserbarhet:
+  [verification.f-droid.org](https://verification.f-droid.org/packages/no.navi.app/)
+
+Bruk F-Droid-klienten når du kan. **Foreslått** versjon på pakkesiden kan
+ligge bak GitHub / `dev`-sideload: ved siste sjekk foreslo indeksen
+**0.3.26-beta** (`versionCode` **31**), mens `app/build.gradle.kts` og
+[`compiled/navi-release.apk`](../compiled/navi-release.apk) var
+**0.3.30-beta** (`versionCode` **33**). fdroiddata `master` hadde allerede
+`CurrentVersion` **0.3.30-beta** / **33**. Sideload-steg:
+[Installer en forhåndsbygd APK](#installer-en-forhåndsbygd-apk).
 
 # Funksjoner
 
@@ -671,13 +694,10 @@ klone **din** fork, og jobb på **`dev`** — steg for steg i
 
 ### F-Droid
 
-Navi er på F-Droid som **`no.navi.app`**:
-
-[https://f-droid.org/en/packages/no.navi.app/](https://f-droid.org/en/packages/no.navi.app/)
-
-Installer eller oppdater via F-Droid-klienten når du kan. Sideload-APK-ene under
-er for testere og utviklere som trenger et bestemt `dev`-bygg (eller ikke kan
-bruke F-Droid).
+Se toppnivå-seksjonen [F-Droid](#f-droid) for pakke-URL (`no.navi.app`),
+fdroiddata-oppskrift og at indeksversjonen kan ligge bak `dev`-sideload.
+APK-ene under er for testere og utviklere som trenger et bestemt `dev`-bygg
+(eller ikke kan bruke F-Droid).
 
 ### Release-APK (for testere)
 
@@ -688,7 +708,7 @@ eller bare debug).
 
 | Fil | Rolle |
 |---|---|
-| [`compiled/navi-release.apk`](../compiled/navi-release.apk) | **Installer denne** — signert release-APK (arm64-v8a + x86_64, `versionName` 0.3.28-beta, `versionCode` 33) |
+| [`compiled/navi-release.apk`](../compiled/navi-release.apk) | **Installer denne** — signert release-APK (arm64-v8a, `versionName` 0.3.30-beta, `versionCode` 33) |
 | [`compiled/SHA256SUMS`](../compiled/SHA256SUMS) | SHA-256-sjekksum for integritet |
 | [`compiled/SHA256SUMS.asc`](../compiled/SHA256SUMS.asc) | Løsrevet GPG-proveniens (ikke Android APK-signering) |
 

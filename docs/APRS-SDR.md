@@ -19,7 +19,7 @@ consume).
 
 | Item | Value |
 |---|---|
-| Crate | [`rtl-sdr-rs`](https://crates.io/crates/rtl-sdr-rs) |
+| Crate | [`rtl-sdr-rs`](https://docs.rs/rtl-sdr-rs) (crate name on crates.io; HTML page may bot-block) |
 | Docs | <https://docs.rs/rtl-sdr-rs> |
 | Upstream | <https://github.com/ccostes/rtl-sdr-rs> |
 | Role | Open RTL-SDR USB devices, set centre frequency / sample rate / gain, read IQ |

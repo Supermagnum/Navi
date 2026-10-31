@@ -12,14 +12,17 @@ verifies the unsigned APK content against the GitHub release asset
   the user). Do not put version headers, test-case names, branch names, unit-test
   or sideload wording, or held-back features in it.
 - Choose `versionCode` as **upstream fdroiddata `CurrentVersionCode` + 1**.
-  Upstream currently has **31** (`0.3.26-beta`), so the next release must use
-  **versionCode 32 or higher** (never reuse 30 or 31).
+  Upstream `master` currently has **`CurrentVersionCode` 33**
+  (`0.3.30-beta`), so the next release must use **versionCode 34 or higher**
+  (never reuse a published code). The public F-Droid **client index** can still
+  suggest an older build while fdroiddata already lists a newer
+  `CurrentVersion` — check both before bumping.
 - `tools/fdroid-check/metadata/no.navi.app.yml` must stay **byte-identical** to
   `metadata/no.navi.app.yml` on [fdroid/fdroiddata](https://gitlab.com/fdroid/fdroiddata)
   `master`. Paste the next MR recipe from the YAML block below, not from the
   mirror file.
-- Git tag on **main**: `v<versionName>` (example: `v0.3.29-beta`).
-- Release asset filename: `navi-<versionName>.apk` (example: `navi-0.3.29-beta.apk`).
+- Git tag on **main**: `v<versionName>` (example: `v0.3.30-beta`).
+- Release asset filename: `navi-<versionName>.apk` (example: `navi-0.3.30-beta.apk`).
 
 Do **not** push the tag until the order below says so.
 
@@ -282,8 +285,8 @@ MaintainerNotes: |
 AutoUpdateMode: Version
 UpdateCheckMode: Tags ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9]+)?$
 UpdateCheckData: app/build.gradle.kts|versionCode\s=\s(\d+)|.|versionName\s=\s"(.*)"
-CurrentVersion: 0.3.29-beta
-CurrentVersionCode: 32
+CurrentVersion: 0.3.30-beta
+CurrentVersionCode: 33
 ```
 
 ## Release order
