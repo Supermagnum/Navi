@@ -3,7 +3,7 @@
 # Usage: scripts/vendor-road-signs.sh [commit]
 set -euo pipefail
 
-COMMIT="${1:-be4dda9c6debe210a2a0d2fbbde5ed252714a7f4}"
+COMMIT="${1:-d315d2431f9a5439d38100e3256f56fcea87fd61}"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC_DIR="${TMPDIR:-/tmp}/road-signs-vendor-$$"
 CORE_RS="${REPO_ROOT}/core/src/icons/road-signs"
@@ -17,6 +17,15 @@ cd "$SRC_DIR"
 git fetch --depth 1 origin "$COMMIT"
 git checkout "$COMMIT"
 
+# Preserve Navi-only stand-in for upstream-null 362.20 (if present).
+STANDIN_NAME="no_sign_362_20.svg"
+STANDIN_BACKUP="${TMPDIR:-/tmp}/navi-road-signs-standin-$$-${STANDIN_NAME}"
+if [[ -f "$CORE_RS/$STANDIN_NAME" ]]; then
+  cp "$CORE_RS/$STANDIN_NAME" "$STANDIN_BACKUP"
+elif [[ -f "$ASSET_RS/$STANDIN_NAME" ]]; then
+  cp "$ASSET_RS/$STANDIN_NAME" "$STANDIN_BACKUP"
+fi
+
 rm -rf "$CORE_RS" "$ASSET_RS"
 mkdir -p "$CORE_RS/database" "$ASSET_RS"
 
@@ -28,6 +37,9 @@ commit: $(git rev-parse HEAD)
 date: $(git log -1 --format=%ci)
 license: NLOD 2.0 / Statens vegvesen / Kartverket (sign graphics)
 upstream: https://github.com/Supermagnum/road-signs
+
+Local additions (not from that upstream commit snapshot):
+- no_sign_362_20.svg — Navi stand-in (official upstream svg is null)
 EOF
 
 python3 <<PY
@@ -62,5 +74,14 @@ for entry in data["signs"]:
 
 print(f"copied {copied} svgs; skipped null svg codes: {skipped_null}")
 PY
+
+if [[ -f "$STANDIN_BACKUP" ]]; then
+  cp "$STANDIN_BACKUP" "$CORE_RS/$STANDIN_NAME"
+  cp "$STANDIN_BACKUP" "$ASSET_RS/$STANDIN_NAME"
+  rm -f "$STANDIN_BACKUP"
+  echo "Restored local stand-in $STANDIN_NAME"
+else
+  echo "WARNING: no local $STANDIN_NAME stand-in found to restore" >&2
+fi
 
 echo "Vendored road-signs @ $(git rev-parse --short HEAD) -> $CORE_RS"

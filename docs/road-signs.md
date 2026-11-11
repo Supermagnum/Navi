@@ -8,7 +8,7 @@ Graphics and metadata are from Statens vegvesen / Kartverket via the upstream
 
 | Item | Value |
 |---|---|
-| Upstream commit | `be4dda9c6debe210a2a0d2fbbde5ed252714a7f4` |
+| Upstream commit | `d315d2431f9a5439d38100e3256f56fcea87fd61` |
 | Refresh script | `scripts/vendor-road-signs.sh [commit]` |
 | Core tree | `core/src/icons/road-signs/` |
 | Android lean pack | `app/src/main/assets/icons/road-signs/` |
