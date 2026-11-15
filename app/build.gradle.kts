@@ -47,6 +47,16 @@ android {
         versionCode = 33
         versionName = "0.3.30-beta"
         testInstrumentationRunner = "no.navi.app.NaviAndroidTestRunner"
+        // MWM client default ON for every build type / F-Droid recipe. Override
+        // with -Pnavi.mwmClient=false (also sets NAVI_MWM_CLIENT_ENABLED=0 via
+        // MwmClientBootstrap). Routing/rendering on MWM are not ship-ready yet.
+        val mwmClientDefault =
+            providers
+                .gradleProperty("navi.mwmClient")
+                .orElse("true")
+                .get()
+                .equals("true", ignoreCase = true)
+        buildConfigField("boolean", "MWM_CLIENT_ENABLED", mwmClientDefault.toString())
         // Restrict packaging to naviAbis so every lib/<abi>/ folder contains the
         // same .so set (libnavi + MapLibre + JNA + graphics.path). Strips JNA's
         // armeabi/mips* and incomplete 32-bit MapLibre folders that lack libnavi.

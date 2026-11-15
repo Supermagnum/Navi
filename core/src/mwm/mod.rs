@@ -1,8 +1,9 @@
 //! CoMaps MWM + Navi sidecar catalog / download layer.
 //!
 //! Gated by [`flag::mwm_client_enabled`] (`NAVI_MWM_CLIENT_ENABLED`, default
-//! **off**). When disabled, callers must keep using [`crate::pack_server`]
-//! (`.rkyv`). This module does not alter the `.rkyv` path.
+//! **on**). Set the env to `0`/`false`/`off` to force the classic
+//! [`crate::pack_server`] (`.rkyv`) path for debugging. This module does not
+//! remove or change the `.rkyv` implementation.
 //!
 //! Contract: navi-server `docs/client-fetch-mwm.md` (DocumentRoot-relative
 //! `/mwm/…` URLs on the live host).
@@ -34,8 +35,8 @@ pub use comaps::{
     COMAPS_COUNTRIES_TXT_PUBKEY_HEX, DEFAULT_METASERVER,
 };
 pub use download::{
-    download_leaf_set, DownloadPlan, DownloadProgress, LeafDownloadResult, MwmDownloadError,
-    DEFAULT_MWM_CONCURRENCY, NAVI_MWM_USER_AGENT,
+    download_leaf_set, fetch_current_catalog, DownloadPlan, DownloadProgress, LeafDownloadResult,
+    MwmDownloadError, DEFAULT_MWM_CONCURRENCY, NAVI_MWM_USER_AGENT,
 };
 pub use fingerprint::{
     check_local_mwm_fingerprint, fingerprint_from_catalog_leaf, FingerprintMismatch,

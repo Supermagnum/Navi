@@ -16,9 +16,17 @@ Live host: `https://navigate-me.duckdns.org` (Apache DocumentRoot =
 `data/published/`). HTTP paths are `/mwm/…` and `/current.json`, not
 `/published/mwm/…`. Filesystem layout on the server still uses `published/mwm/`.
 
-**Feature flag (this repo):** `NAVI_MWM_CLIENT_ENABLED` (default **off**). With
+**Feature flag (this repo):** `NAVI_MWM_CLIENT_ENABLED` (default **on** in every
+build type and flavour, including F-Droid — unset env and
+`BuildConfig.MWM_CLIENT_ENABLED=true`). Set `0` / `false` / `off` (or Gradle
+`-Pnavi.mwmClient=false`) to force the classic `.rkyv` path for debugging. With
 the flag off, behaviour is identical to today (`.rkyv` downloads, routing, local
 PBF fallback). Do not remove the `.rkyv` path until Phase 8.
+
+**Ship gate:** do **not** merge this client as the default store build / tag a
+release until Phases **3–6** (CoMaps NDK core, wetland routing hook, search,
+rendering/drape) accept. A draft PR may land the gated layer early; production
+APKs that default the flag ON are not ready until those phases pass.
 
 ---
 
@@ -52,8 +60,9 @@ Phase 8 retirement.
   Ed25519 (fail closed); country groups (224 / 1159 routable leaves); shared
   leaves; `region-migration.json`; polite MWM + sidecar download; fingerprint;
   atomic release switch; offline attribution store.
-- **Acceptance:** unit tests green; flag off → existing tests green; staging
-  never activates a mixed release; World / WorldCoasts are `no_sidecar`.
+- **Acceptance:** unit tests green with flag **on** (CI default); dedicated CI
+  job with flag **off** keeps `.rkyv` / `pack_server` green; staging never
+  activates a mixed release; World / WorldCoasts are `no_sidecar`.
 
 ### Phase 2 — Sidecar reader (EL02)
 
@@ -149,3 +158,57 @@ same doc §10 and `client-fetch.md` DocumentRoot contract use `GET …/mwm/…`.
 Live `navigate-me.duckdns.org` serves `/mwm/current.json` (200) and 404s
 `/published/mwm/…`. Navi resolves MWM URLs as DocumentRoot-relative `/mwm/`,
 matching the existing `.rkyv` `/current.json` client.
+
+---
+
+## 6. navi-server doc mismatches to fix upstream
+
+Report these against Supermagnum/navi-server docs (do not guess around them in
+the client beyond DocumentRoot-relative URLs already used for `.rkyv`):
+
+| Topic | Docs say | Live / observed |
+|-------|----------|-----------------|
+| Catalog / sidecar HTTP path | §2 tables often `…/published/mwm/…` | DocumentRoot serves **`/mwm/…`** (200); `/published/mwm/…` 404. §10 already documents `/mwm/`. |
+| Hedmark sidecar example | Example bytes `261797`, sha `593e2e…` | Live release `261105`: **`267737`** bytes, sha **`4feb60…`** (MWM fingerprint still matches the example MWM). |
+| `countries.txt` body | Described as text | Live body is **JSON** (sha matches catalog). |
+| Metaserver `/servers` | Ordered list wording | Live returns a **JSON array** of mirror URLs. |
+
+---
+
+## 7. F-Droid — CoMaps native core from source + download disclosure
+
+F-Droid builds of Navi already compile Rust (`navi-ffi`) and MapLibre-related
+native bits from source with NDK **r27c** (see
+`tools/fdroid-check/metadata/no.navi.app.yml`). When Phase 3 lands CoMaps core,
+the recipe must stay **fully from source**:
+
+### 7.1 Recipe expectations (Phase 3+)
+
+| Item | Requirement |
+|------|-------------|
+| CoMaps / Organic Maps tree | `srclibs` (or git submodule) pinned to an **exact tag/commit**; no floating `main` |
+| Native build | **NDK + CMake/Ninja** (or the upstream Android.mk/CMake entry the pin documents) inside `prebuild`/`build`, producing `lib*` for each ABI Navi ships |
+| Prebuilt `.so` | **Forbidden** in the APK and in the recipe — no downloading binary CoMaps libraries |
+| ABI set | Same `naviAbis` filter as today (`arm64-v8a` / `x86_64` as packaged) |
+| Rust flag | Leave `NAVI_MWM_CLIENT_ENABLED` **unset** (default ON) or set `1`; do not bake a silent OFF |
+| Gradle | No product flavour required; `BuildConfig.MWM_CLIENT_ENABLED` defaults true. Optional debug-only `-Pnavi.mwmClient=false` must not be used in the F-Droid `Builds:` entry |
+
+Until Phase 3 merges, the F-Droid metadata does **not** need a CoMaps `srclib`;
+this section is the contract for that future recipe change.
+
+### 7.2 Store / AntiFeatures text (downloads)
+
+Optional map downloads talk to hosts that are not trivial to replace without
+changing the app. Draft wording for `AntiFeatures` / full description (extend
+the existing TetheredNet note):
+
+> After install, Navi may download offline map leaves (`.mwm`) from **CoMaps
+> mirror servers** discovered via the CoMaps metaserver, and Navi sidecar /
+> catalog / attribution files from **https://navigate-me.duckdns.org** (`/mwm/…`,
+> release series such as `261105`). Routing and map display are intended to run
+> offline once those files are on the device. The classic Geofabrik-derived
+> `.rkyv` pack host remains available when `NAVI_MWM_CLIENT_ENABLED=0`.
+
+Also list OSM (ODbL), CoMaps/mirrors, Mapterhorn (hillshade/DEM), and Statens
+vegvesen (DATEX) in the About / Licences screen once offline attribution files
+from `/mwm/{version}/attribution.json` are shown in the UI.

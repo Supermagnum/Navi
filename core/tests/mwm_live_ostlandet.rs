@@ -1,14 +1,18 @@
 //! Manual / optional live integration: download Østlandet leaf set + sidecars.
 //!
 //! Ignored in CI (large: ~1.2 GiB MWMs). Run with:
-//! `NAVI_MWM_CLIENT_ENABLED=1 cargo test -p driver-break-core --test mwm_live_ostlandet -- --ignored --nocapture`
+//! `cargo test -p driver-break-core --test mwm_live_ostlandet -- --ignored --nocapture`
+//!
+//! Flag defaults ON; force classic path with `NAVI_MWM_CLIENT_ENABLED=0`.
 
 use std::path::PathBuf;
+use std::time::Instant;
 
 use driver_break_core::mwm::{
-    activate_release, discover_mirrors, download_leaf_set, fetch_and_verify_countries_txt,
-    fetch_current_catalog, leaf_set_for_bake_id, parse_region_migration_json,
-    region_ui_from_catalog, set_mwm_client_enabled_override, DownloadProgress,
+    activate_release, check_local_mwm_fingerprint, discover_mirrors, download_leaf_set,
+    fetch_and_verify_countries_txt, fetch_current_catalog, fingerprint_from_catalog_leaf,
+    leaf_set_for_bake_id, parse_region_migration_json, region_ui_from_catalog,
+    set_mwm_client_enabled_override, sha256_hex_of_path, DownloadProgress, FingerprintStatus,
     COMAPS_COUNTRIES_TXT_PUBKEY_HEX,
 };
 use driver_break_core::pack_server::{http_get_text, DEFAULT_PACK_SERVER_BASE_URL};
@@ -17,6 +21,7 @@ use driver_break_core::pack_server::{http_get_text, DEFAULT_PACK_SERVER_BASE_URL
 #[ignore = "live network; downloads ~1.2GiB Ostlandet MWMs + sidecars"]
 fn download_ostlandet_leaf_set_live() {
     set_mwm_client_enabled_override(Some(true));
+    let started = Instant::now();
     let origin = DEFAULT_PACK_SERVER_BASE_URL;
     let catalog = fetch_current_catalog(origin).expect("fetch catalog");
     assert_eq!(catalog.schema, "navi-mwm-catalog/v2");
@@ -81,12 +86,67 @@ fn download_ostlandet_leaf_set_live() {
     )
     .expect("download leaf set");
     assert_eq!(results.len(), leaves.len());
+
+    let mut total_mwm: u64 = 0;
+    let mut total_sidecar: u64 = 0;
+    println!(
+        "=== Ostlandet live download report (release {}) ===",
+        catalog.version
+    );
     for r in &results {
         assert!(r.mwm_path.is_file(), "{}", r.leaf_id);
+        let mwm_len = std::fs::metadata(&r.mwm_path).unwrap().len();
+        let mwm_sha = sha256_hex_of_path(&r.mwm_path).expect("mwm sha");
+        total_mwm += mwm_len;
+
+        let leaf = catalog.leaf(&r.leaf_id).expect("leaf in catalog");
+        let expected = fingerprint_from_catalog_leaf(leaf).expect("fingerprint fields");
+        let fp = check_local_mwm_fingerprint(&r.leaf_id, &r.mwm_path, &expected).unwrap();
+        assert!(
+            matches!(fp, FingerprintStatus::Match),
+            "fingerprint mismatch for {}: {:?}",
+            r.leaf_id,
+            fp
+        );
+
+        let (sc_len, sc_sha) = if let Some(ref sc) = r.sidecar_path {
+            assert!(sc.is_file(), "sidecar {}", r.leaf_id);
+            let n = std::fs::metadata(sc).unwrap().len();
+            let sha = sha256_hex_of_path(sc).expect("sidecar sha");
+            total_sidecar += n;
+            (Some(n), Some(sha))
+        } else {
+            (None, None)
+        };
+
         if r.warning.is_none() {
             assert!(r.navi_layers_available, "{}", r.leaf_id);
         }
+
+        println!(
+            "leaf={}\tmwm_bytes={}\tmwm_sha256={}\tsidecar_bytes={:?}\tsidecar_sha256={:?}\tfp={:?}\tnavi_layers={}\twarning={:?}",
+            r.leaf_id,
+            mwm_len,
+            mwm_sha,
+            sc_len,
+            sc_sha,
+            fp,
+            r.navi_layers_available,
+            r.warning
+        );
     }
     activate_release(&data_dir, &catalog.version).expect("activate");
+    let elapsed = started.elapsed();
+    println!(
+        "TOTAL mwm_bytes={} sidecar_bytes={} sum={} elapsed_secs={:.1} data_dir={}",
+        total_mwm,
+        total_sidecar,
+        total_mwm + total_sidecar,
+        elapsed.as_secs_f64(),
+        data_dir.display()
+    );
+    // Catalog metadata expectation for Østlandet on 261105.
+    assert_eq!(total_mwm, 1_228_846_805);
+    assert_eq!(total_sidecar, 6_038_192);
     set_mwm_client_enabled_override(None);
 }

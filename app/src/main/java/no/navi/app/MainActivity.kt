@@ -237,6 +237,7 @@ class MainActivity : ComponentActivity() {
             SystemClock.uptimeMillis() - splashStartedAtMs < SPLASH_MAX_HOLD_MS
         }
         super.onCreate(savedInstanceState)
+        MwmClientBootstrap.ensureInitialized()
         // Volume rocker / emulator media mute must control STREAM_MUSIC.
         // Do not use STREAM_ALARM (or other always-audible streams) for app
         // cues — that path was removed with ImuAlarmAudio and must not return.
