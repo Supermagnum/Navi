@@ -64,16 +64,25 @@ Phase 8 retirement.
   job with flag **off** keeps `.rkyv` / `pack_server` green; staging never
   activates a mixed release; World / WorldCoasts are `no_sidecar`.
 
-### Phase 2 — Sidecar reader (EL02)
+### Phase 2 — Sidecar reader (EL02) — **done on this branch**
 
-- Sectioned NVSC load; wetland / boardwalk / elevation_overrides / attribution.
-- **Acceptance:** Hedmark inspect counts match server; unknown sections skipped;
-  unsupported `format_version` rejected.
+- Implementation: `core/src/mwm/sidecar.rs` (`SidecarReader`).
+- Sectioned NVSC v1 + **EL02-only** elevation (legacy i16 rejected); lazy
+  section decompress; wetland/boardwalk = sorted `Vec` + binary search
+  (~8 B/record); elevation = `HashMap<feature_id, …>`; attribution JSON for
+  Licences.
+- Golden fixture vendored at
+  `core/tests/fixtures/mwm/Norway_Hedmark.navi-sidecar.v1.zst` (same bytes as
+  navi-server docs fixture) so CI stays offline and pinned.
+- **Acceptance:** Hedmark inspect counts match server meta; unknown optional
+  sections skipped; missing required / bad checksum / bad magic / unsupported
+  `format_version` / fingerprint mismatch rejected.
 
 ### Phase 3 — CoMaps core via NDK + JNI/Rust FFI shim
 
 - Ship / link CoMaps routing (+ map) core; Rust/Kotlin orchestrate downloads and
-  call FFI.
+  call FFI. See **§8 Phase 3 build plan** below (plan only until that work
+  starts).
 - **Acceptance:** load Østlandet leaf set; route without Navi layers.
 
 ### Phase 4 — Routing wetland hook
@@ -212,3 +221,76 @@ the existing TetheredNet note):
 Also list OSM (ODbL), CoMaps/mirrors, Mapterhorn (hillshade/DEM), and Statens
 vegvesen (DATEX) in the About / Licences screen once offline attribution files
 from `/mwm/{version}/attribution.json` are shown in the UI.
+
+---
+
+## 8. Phase 3 plan — CoMaps native core (no build yet)
+
+Pin matches navi-server’s generator pin (`config/mwm` / catalog `generator`):
+
+| Item | Value |
+|------|-------|
+| CoMaps tag | `v2026.11.07-16` |
+| Commit | `fd11cc6f2256443d4d69112a3c22299d4e0664ce` |
+| NDK | r27c (same as F-Droid / `build-android-native.sh`) |
+| Device ABIs | **`arm64-v8a` required**; `x86_64` only if needed for **host** unit tests — **never** for emulators/AVDs |
+
+### 8.1 Build from source (NDK / CMake)
+
+1. `srclibs` / git submodule: CoMaps tree at the pin above (no floating `main`).
+2. CMake (or upstream Android entry) produces shared libs for each packaged ABI.
+3. **No prebuilt `.so`** in the repo or recipe (F-Droid §7.1).
+4. Link into the app via Gradle `jniLibs` / CMake `EXTERNAL_NATIVE_BUILD` the same
+   way MapLibre/native pieces are already wired.
+
+### 8.2 Targets needed
+
+| Area | CoMaps / omim pieces (indicative) | Why |
+|------|-----------------------------------|-----|
+| Routing | `routing`, cross-MWM graph, vehicle models | Pathfinding |
+| Storage / MWM I/O | `indexer` / `storage` / MWM reader | Load leaves |
+| Altitudes | altitude section readers | Base heights before EL02 overrides |
+| Search | search index | Phase 5 |
+| Drape / rendering | drape + optional DEM | Phase 6 map display |
+
+### 8.3 Wetland hook as a patch
+
+Carry navi-server’s validation hook
+(`scripts/mwm/hook/navi_wetland_cost.{hpp,cpp}` + `apply-wetland-hook.sh`,
+~212+ lines of cost logic) as a **quilt/patch** on the pinned CoMaps tree so
+Soft×5 / Hard≈forbid + boardwalk exemption run inside the same edge-cost path
+the server used for the 13867 → 16245 m foot detour. Phase 4 lands the behaviour;
+Phase 3 lands the ability to call routing without Navi layers first.
+
+### 8.4 JNI / Rust FFI shim (design)
+
+```
+Kotlin UI / download orchestration
+        │
+        ▼
+navi-ffi (UniFFI)  ── owns pack/MWM paths, SidecarReader, fingerprint gate
+        │
+        ▼
+thin JNI/C++ shim  ── open MWM set, set sidecar dir env / callbacks, route()
+        │
+        ▼
+CoMaps native core (+ wetland patch)
+```
+
+- Rust keeps catalog/download/sidecar (Phases 1–2); does **not** reimplement the
+  CoMaps graph.
+- Kotlin never talks to CoMaps C++ except through UniFFI / a tiny JNI bridge.
+- On fingerprint mismatch: call router **without** loading Navi layers (Phase 1
+  warning string already defined).
+
+### 8.5 First Samsung verification (physical device only)
+
+Standing rule: **ADB to the connected Samsung only** — no emulator/AVD. Use
+`adb devices -l`, then `-s <serial>` on every command.
+
+1. Install a debug build with MWM flag on; download Østlandet leaf MWMs +
+   sidecars (release `261105`).
+2. Route **Hamar → Elverum** (six-route suite entry) — expect `NoError`.
+3. Foot detour `61.0500,11.4700` → `61.0800,11.5200`: **13867 m** without Soft/Hard,
+   **16245 m** with the hook (Phase 4 sign-off; Phase 3 may only prove “route
+   without Navi layers” first).

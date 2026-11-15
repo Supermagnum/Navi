@@ -18,6 +18,9 @@ pub mod flag;
 pub mod migration;
 pub mod region_ui;
 pub mod release;
+pub mod sidecar;
+#[cfg(test)]
+mod sidecar_tests;
 pub mod storage;
 
 pub use attribution::{store_attribution_files, AttributionStore};
@@ -54,6 +57,13 @@ pub use release::{
     abandon_staging, activate_release, begin_staging, cleanup_old_releases, mark_staging_complete,
     read_active_version, staging_is_complete, write_active_version, ActiveRelease,
     ReleaseSwitchError,
+};
+pub use sidecar::{
+    encode_elevation_el02, encode_test_sidecar_zstd, parse_elevation_el02, zigzag_decode_i32,
+    zigzag_encode_i32, BoardwalkRecord, ElevationFeature, ElevationPoint, InspectCounts,
+    SidecarError, SidecarHeader, SidecarReader, WetlandRecord, CLASS_HARD, CLASS_SOFT,
+    ELEVATION_BODY_MAGIC_EL02, FORMAT_VERSION, MAGIC, REQUIRED_SECTIONS, SECTION_ATTRIBUTION,
+    SECTION_BOARDWALK, SECTION_ELEVATION, SECTION_WETLAND,
 };
 pub use storage::{
     active_path, attribution_json_path, attribution_md_path, catalog_snapshot_path, leaf_mwm_path,

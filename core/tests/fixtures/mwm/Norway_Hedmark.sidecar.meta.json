@@ -1,0 +1,81 @@
+{
+  "leaf_id": "Norway_Hedmark",
+  "release": "261105",
+  "public_url": "https://navigate-me.duckdns.org/mwm/261105/Norway_Hedmark.navi-sidecar.v1.zst",
+  "sidecar_bytes": 267737,
+  "sidecar_sha256": "4feb60e8441eee228bb77d5d028e49c3a47e7cae5105e4d0a12e0485ee98363f",
+  "logical_bytes_after_outer_zst": 329757,
+  "payload_start_offset": 377,
+  "inspect": {
+    "format_version": 1,
+    "generator_tag": "comaps-release/2026.10.27",
+    "generator_sha": "261105",
+    "mwm_sha256": "2852a363342183bf4df6b1b78f9790685dd7e6a1bc34eaefbf177fc6432799af",
+    "mwm_size": 102194292,
+    "wetland_records": 98082,
+    "soft_records": 97976,
+    "hard_records": 106,
+    "boardwalk_records": 220,
+    "elevation_features": 10097,
+    "elevation_points": 25276,
+    "sections": [
+      "wetland_edges",
+      "boardwalk_flags",
+      "elevation_overrides",
+      "attribution"
+    ],
+    "fingerprint_ok": true
+  },
+  "section_sizes": [
+    {
+      "name": "wetland_edges",
+      "uncompressed": 784660,
+      "compressed": 202498,
+      "payload_offset": 0
+    },
+    {
+      "name": "boardwalk_flags",
+      "uncompressed": 1764,
+      "compressed": 491,
+      "payload_offset": 202498
+    },
+    {
+      "name": "elevation_overrides",
+      "uncompressed": 232440,
+      "compressed": 112359,
+      "payload_offset": 202989
+    },
+    {
+      "name": "attribution",
+      "uncompressed": 104301,
+      "compressed": 14032,
+      "payload_offset": 315348
+    }
+  ],
+  "first_wetland_records": [
+    {
+      "n": 0,
+      "feature_id": 495,
+      "segment": 45,
+      "dir": 0,
+      "class": "Soft(1)",
+      "hex": "ef010000 2d00 00 01"
+    },
+    {
+      "n": 1,
+      "feature_id": 495,
+      "segment": 45,
+      "dir": 1,
+      "class": "Soft(1)",
+      "hex": "ef010000 2d00 01 01"
+    },
+    {
+      "n": 2,
+      "feature_id": 495,
+      "segment": 46,
+      "dir": 0,
+      "class": "Soft(1)",
+      "hex": "ef010000 2e00 00 01"
+    }
+  ]
+}
