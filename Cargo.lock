@@ -1338,6 +1338,7 @@ dependencies = [
  "usvg",
  "uuid",
  "zip",
+ "zstd",
 ]
 
 [[package]]
