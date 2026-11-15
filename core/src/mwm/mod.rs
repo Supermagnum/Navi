@@ -42,9 +42,9 @@ pub use comaps_router::{
     ComapsLatLon, ComapsProfile, ComapsRoute, ComapsRouter, ComapsRouterCode, ComapsRouterError,
 };
 pub use download::{
-    download_leaf_set, download_world_overlays, fetch_current_catalog, leaf_ids_with_world_overlays,
-    DownloadPlan, DownloadProgress, LeafDownloadResult, MwmDownloadError, DEFAULT_MWM_CONCURRENCY,
-    NAVI_MWM_USER_AGENT, WORLD_OVERLAY_LEAF_IDS,
+    download_leaf_set, download_world_overlays, fetch_current_catalog,
+    leaf_ids_with_world_overlays, DownloadPlan, DownloadProgress, LeafDownloadResult,
+    MwmDownloadError, DEFAULT_MWM_CONCURRENCY, NAVI_MWM_USER_AGENT, WORLD_OVERLAY_LEAF_IDS,
 };
 pub use fingerprint::{
     check_local_mwm_fingerprint, fingerprint_from_catalog_leaf, FingerprintMismatch,
@@ -59,9 +59,9 @@ pub use region_ui::{
     flatten_country_group_leaves, region_ui_from_catalog, RegionUiGroup, RegionUiLeaf,
 };
 pub use release::{
-    abandon_staging, activate_release, begin_staging, cleanup_old_releases, mark_staging_complete,
-    read_active_version, staging_is_complete, write_active_version, ActiveRelease,
-    ReleaseSwitchError,
+    abandon_staging, activate_release, assert_world_matches_active, begin_staging,
+    cleanup_old_releases, mark_staging_complete, read_active_version, read_world_release,
+    staging_is_complete, write_active_version, ActiveRelease, ReleaseSwitchError, WorldRelease,
 };
 pub use sidecar::{
     encode_elevation_el02, encode_test_sidecar_zstd, parse_elevation_el02, zigzag_decode_i32,
@@ -72,5 +72,7 @@ pub use sidecar::{
 };
 pub use storage::{
     active_path, attribution_json_path, attribution_md_path, catalog_snapshot_path, leaf_mwm_path,
-    leaf_sidecar_path, release_dir, staging_dir, MwmPaths, ACTIVE_FILE, MWM_ROOT,
+    leaf_sidecar_path, release_dir, staging_dir, world_coasts_mwm_path, world_mwm_path,
+    world_release_path, MwmPaths, ACTIVE_FILE, MWM_ROOT, WORLD_COASTS_MWM_FILE, WORLD_MWM_FILE,
+    WORLD_RELEASE_FILE,
 };

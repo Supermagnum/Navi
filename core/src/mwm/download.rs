@@ -272,8 +272,11 @@ fn download_one_leaf(
 
 /// Download a leaf set into staging, verify digests + fingerprints, mark complete.
 ///
-/// Shared leaves are stored once under `leaves/` / `sidecars/`. Does **not**
-/// activate the release (call [`super::release::activate_release`] after).
+/// Always includes `World` + `WorldCoasts` (prepended) so
+/// [`super::release::activate_release`] can promote root overlays with the
+/// release. Shared leaves are stored once under `leaves/` / `sidecars/`. Does
+/// **not** activate the release (call [`super::release::activate_release`]
+/// after).
 ///
 /// Concurrency is capped at [`DEFAULT_MWM_CONCURRENCY`] conceptually; this
 /// implementation downloads leaves sequentially (safe / polite). Callers may
@@ -314,7 +317,7 @@ pub fn download_leaf_set(
         let _ = fs::write(attribution_md_path(&staging), bytes);
     }
 
-    let leaves = unique_leaf_ids(leaf_ids);
+    let leaves = unique_leaf_ids(&leaf_ids_with_world_overlays(leaf_ids));
     progress.total_leaves = leaves.len();
     progress.completed_leaves = 0;
 

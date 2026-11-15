@@ -3,12 +3,14 @@
 
 #include "routing/routes_builder/routes_builder.hpp"
 #include "routing/navi_wetland_cost.hpp"
+#include "routing/routing_options.hpp"
 
 #include "indexer/classificator_loader.hpp"
 #include "indexer/map_style.hpp"
 #include "indexer/map_style_reader.hpp"
 
 #include "platform/platform.hpp"
+#include "platform/settings.hpp"
 
 #include "app/organicmaps/sdk/core/jni_helper.hpp"
 
@@ -33,6 +35,12 @@ std::mutex g_mu;
 bool g_inited = false;
 std::unique_ptr<routing::routes_builder::RoutesBuilder> g_builder;
 std::atomic<bool> g_cancel{false};
+std::atomic<int> g_avoidToll{0};
+std::atomic<int> g_avoidMotorway{0};
+std::atomic<int> g_avoidFerry{0};
+std::atomic<int> g_avoidDirty{0};
+std::atomic<int> g_optimize{NAVI_COMAPS_OPTIMIZE_TIME};
+std::string g_turnsLocale = "nb";
 
 NaviComapsCode MapCode(routing::RouterResultCode code)
 {
@@ -56,6 +64,21 @@ routing::VehicleType MapProfile(NaviComapsProfile profile)
   case NAVI_COMAPS_PROFILE_CAR:
   default: return routing::VehicleType::Car;
   }
+}
+
+void ApplyAvoidSettings(routing::VehicleType vt)
+{
+  using Opt = routing::RoutingOptions::Option;
+  routing::RoutingOptions opts(0, vt);
+  if (g_avoidToll.load())
+    opts.Add(Opt::Toll);
+  if (g_avoidMotorway.load() || g_optimize.load() == NAVI_COMAPS_OPTIMIZE_PREFER_NON_MOTORWAY)
+    opts.Add(Opt::Motorway);
+  if (g_avoidFerry.load())
+    opts.Add(Opt::Ferry);
+  if (g_avoidDirty.load())
+    opts.Add(Opt::Dirty);
+  routing::RoutingOptions::SaveOptionsToSettings(opts);
 }
 }  // namespace
 
@@ -134,9 +157,41 @@ extern "C" void navi_comaps_set_wetland_lookup(NaviComapsWetlandLookupFn fn)
 extern "C" void navi_comaps_set_wetland_hook(int enabled)
 {
   if (!enabled)
+  {
     navi_spike::WetlandSidecar::SetLookup(nullptr);
+    navi_spike::WetlandSidecar::SetBikeEnabled(false);
+  }
   // When enabling, the Rust shim must call navi_comaps_set_wetland_lookup
   // with a SidecarReader-backed callback.
+}
+
+extern "C" void navi_comaps_set_bike_wetland(int enabled)
+{
+  navi_spike::WetlandSidecar::SetBikeEnabled(enabled != 0);
+}
+
+extern "C" void navi_comaps_set_avoid_options(int avoid_toll, int avoid_motorway, int avoid_ferry,
+                                              int avoid_dirty)
+{
+  g_avoidToll.store(avoid_toll != 0);
+  g_avoidMotorway.store(avoid_motorway != 0);
+  g_avoidFerry.store(avoid_ferry != 0);
+  g_avoidDirty.store(avoid_dirty != 0);
+}
+
+extern "C" void navi_comaps_set_optimize(NaviComapsOptimize optimize)
+{
+  g_optimize.store(static_cast<int>(optimize));
+}
+
+extern "C" void navi_comaps_set_turns_locale(char const * locale)
+{
+  std::lock_guard lock(g_mu);
+  if (locale && locale[0] != '\0')
+    g_turnsLocale = locale;
+  else
+    g_turnsLocale = "en";
+  settings::Set("locale", g_turnsLocale);
 }
 
 extern "C" NaviComapsCode navi_comaps_route(NaviComapsProfile profile, double from_lat, double from_lon,
@@ -151,6 +206,13 @@ extern "C" NaviComapsCode navi_comaps_route(NaviComapsProfile profile, double fr
     out->code = NAVI_COMAPS_NOT_INIT;
     return out->code;
   }
+  if (g_optimize.load() == NAVI_COMAPS_OPTIMIZE_DISTANCE)
+  {
+    out->code = NAVI_COMAPS_UNSUPPORTED;
+    out->error_message = strdup(
+        "CoMaps RoutesBuilder has no distance-weight mode; use TIME or PREFER_NON_MOTORWAY");
+    return out->code;
+  }
   if (g_cancel.exchange(false))
   {
     out->code = NAVI_COMAPS_CANCELLED;
@@ -158,8 +220,11 @@ extern "C" NaviComapsCode navi_comaps_route(NaviComapsProfile profile, double fr
   }
   try
   {
+    auto const vt = MapProfile(profile);
+    ApplyAvoidSettings(vt);
+    settings::Set("locale", g_turnsLocale);
     routing::routes_builder::RoutesBuilder::Params params(
-        MapProfile(profile), ms::LatLon(from_lat, from_lon), ms::LatLon(to_lat, to_lon));
+        vt, ms::LatLon(from_lat, from_lon), ms::LatLon(to_lat, to_lon));
     auto result = g_builder->ProcessTask(params);
     out->code = MapCode(result.m_code);
     out->build_time_s = result.m_buildTimeSeconds;
@@ -179,6 +244,10 @@ extern "C" NaviComapsCode navi_comaps_route(NaviComapsProfile profile, double fr
         out->points[i].lon = wps[i].m_lon;
       }
     }
+    if (!route.m_turnsJson.empty())
+      out->turns_json = strdup(route.m_turnsJson.c_str());
+    else
+      out->turns_json = strdup("[]");
     return out->code;
   }
   catch (std::exception const & e)
@@ -197,8 +266,10 @@ extern "C" void navi_comaps_free_route(NaviComapsRouteResult * result)
     return;
   std::free(result->points);
   std::free(result->error_message);
+  std::free(result->turns_json);
   result->points = nullptr;
   result->error_message = nullptr;
+  result->turns_json = nullptr;
   result->point_count = 0;
 }
 

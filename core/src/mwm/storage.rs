@@ -5,6 +5,10 @@ use std::path::{Path, PathBuf};
 /// Root directory name under the app `data_dir`.
 pub const MWM_ROOT: &str = "mwm";
 pub const ACTIVE_FILE: &str = "active.json";
+/// Records which CoMaps release the root `World*.mwm` overlays belong to.
+pub const WORLD_RELEASE_FILE: &str = "world-release.json";
+pub const WORLD_MWM_FILE: &str = "World.mwm";
+pub const WORLD_COASTS_MWM_FILE: &str = "WorldCoasts.mwm";
 
 #[derive(Debug, Clone)]
 pub struct MwmPaths {
@@ -20,6 +24,18 @@ impl MwmPaths {
 
     pub fn active_file(&self) -> PathBuf {
         self.root.join(ACTIVE_FILE)
+    }
+
+    pub fn world_release_file(&self) -> PathBuf {
+        self.root.join(WORLD_RELEASE_FILE)
+    }
+
+    pub fn world_mwm(&self) -> PathBuf {
+        self.root.join(WORLD_MWM_FILE)
+    }
+
+    pub fn world_coasts_mwm(&self) -> PathBuf {
+        self.root.join(WORLD_COASTS_MWM_FILE)
     }
 
     pub fn releases(&self) -> PathBuf {
@@ -79,6 +95,18 @@ pub fn attribution_md_path(release_or_staging: &Path) -> PathBuf {
     release_or_staging.join("ATTRIBUTION.md")
 }
 
+pub fn world_release_path(data_dir: &Path) -> PathBuf {
+    MwmPaths::new(data_dir).world_release_file()
+}
+
+pub fn world_mwm_path(data_dir: &Path) -> PathBuf {
+    MwmPaths::new(data_dir).world_mwm()
+}
+
+pub fn world_coasts_mwm_path(data_dir: &Path) -> PathBuf {
+    MwmPaths::new(data_dir).world_coasts_mwm()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -95,6 +123,15 @@ mod tests {
         assert_eq!(
             leaf_sidecar_path(&p.staging_release("261105"), "Norway_Hedmark"),
             PathBuf::from("/data/mwm/staging/261105/sidecars/Norway_Hedmark.navi-sidecar.v1.zst")
+        );
+        assert_eq!(p.world_mwm(), PathBuf::from("/data/mwm/World.mwm"));
+        assert_eq!(
+            p.world_coasts_mwm(),
+            PathBuf::from("/data/mwm/WorldCoasts.mwm")
+        );
+        assert_eq!(
+            p.world_release_file(),
+            PathBuf::from("/data/mwm/world-release.json")
         );
     }
 }

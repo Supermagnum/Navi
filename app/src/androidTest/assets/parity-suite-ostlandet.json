@@ -1,0 +1,745 @@
+{
+  "schema": "navi-mwm-parity-suite/v1",
+  "release": "261105",
+  "region": "ostlandet",
+  "profiles": [
+    "car",
+    "foot",
+    "bike"
+  ],
+  "notes": "Coords inside \u00d8stlandet leaf set (+ Sweden border). Tags drive coverage claims; expect=ok means both routers should return a route (length parity checked separately). Wetland lengths pinned where noted.",
+  "routes": [
+    {
+      "id": "hamar_elverum",
+      "profile": "car",
+      "from": {
+        "lat": 60.7945,
+        "lon": 11.068
+      },
+      "to": {
+        "lat": 60.8825,
+        "lon": 11.5623
+      },
+      "tags": [
+        "baseline",
+        "cross_city"
+      ],
+      "notes": "Hamar\u2192Elverum",
+      "expect": "ok"
+    },
+    {
+      "id": "elverum_lillehammer",
+      "profile": "car",
+      "from": {
+        "lat": 60.8825,
+        "lon": 11.5623
+      },
+      "to": {
+        "lat": 61.1153,
+        "lon": 10.4662
+      },
+      "tags": [
+        "baseline",
+        "cross_mwm"
+      ],
+      "notes": "Hedmark\u2192Oppland",
+      "expect": "ok"
+    },
+    {
+      "id": "lillehammer_drammen",
+      "profile": "car",
+      "from": {
+        "lat": 61.1153,
+        "lon": 10.4662
+      },
+      "to": {
+        "lat": 59.744,
+        "lon": 10.2045
+      },
+      "tags": [
+        "baseline",
+        "multi_mwm",
+        "motorway"
+      ],
+      "notes": "E6 corridor",
+      "expect": "ok"
+    },
+    {
+      "id": "hamar_oslo",
+      "profile": "car",
+      "from": {
+        "lat": 60.7945,
+        "lon": 11.068
+      },
+      "to": {
+        "lat": 59.9139,
+        "lon": 10.7522
+      },
+      "tags": [
+        "baseline",
+        "motorway",
+        "multi_mwm"
+      ],
+      "notes": "",
+      "expect": "ok"
+    },
+    {
+      "id": "norway_sweden",
+      "profile": "car",
+      "from": {
+        "lat": 60.8825,
+        "lon": 11.5623
+      },
+      "to": {
+        "lat": 60.6847,
+        "lon": 13.7072
+      },
+      "tags": [
+        "baseline",
+        "border",
+        "sweden"
+      ],
+      "notes": "",
+      "expect": "ok"
+    },
+    {
+      "id": "foot_wetland_detour",
+      "profile": "foot",
+      "from": {
+        "lat": 61.05,
+        "lon": 11.47
+      },
+      "to": {
+        "lat": 61.08,
+        "lon": 11.52
+      },
+      "tags": [
+        "wetland",
+        "soft_hard",
+        "boardwalk_candidate"
+      ],
+      "notes": "expect 13867m plain / 16245m wetland",
+      "expect": "ok"
+    },
+    {
+      "id": "oslo_oneway_grid",
+      "profile": "car",
+      "from": {
+        "lat": 59.913,
+        "lon": 10.738
+      },
+      "to": {
+        "lat": 59.9165,
+        "lon": 10.752
+      },
+      "tags": [
+        "one_way",
+        "urban"
+      ],
+      "notes": "Oslo centre one-ways",
+      "expect": "ok"
+    },
+    {
+      "id": "oslo_roundabout_ring",
+      "profile": "car",
+      "from": {
+        "lat": 59.9275,
+        "lon": 10.71
+      },
+      "to": {
+        "lat": 59.933,
+        "lon": 10.72
+      },
+      "tags": [
+        "roundabout",
+        "urban"
+      ],
+      "notes": "Majorstuen area",
+      "expect": "ok"
+    },
+    {
+      "id": "drammen_ramps",
+      "profile": "car",
+      "from": {
+        "lat": 59.744,
+        "lon": 10.2045
+      },
+      "to": {
+        "lat": 59.76,
+        "lon": 10.18
+      },
+      "tags": [
+        "motorway_ramp",
+        "toll_candidate"
+      ],
+      "notes": "E18/E134 ramps",
+      "expect": "ok"
+    },
+    {
+      "id": "lillestrom_access",
+      "profile": "car",
+      "from": {
+        "lat": 59.955,
+        "lon": 11.05
+      },
+      "to": {
+        "lat": 59.97,
+        "lon": 11.08
+      },
+      "tags": [
+        "access_restriction",
+        "destination"
+      ],
+      "notes": "residential access mix",
+      "expect": "ok"
+    },
+    {
+      "id": "moss_horten_ferry",
+      "profile": "car",
+      "from": {
+        "lat": 59.4358,
+        "lon": 10.66
+      },
+      "to": {
+        "lat": 59.414,
+        "lon": 10.485
+      },
+      "tags": [
+        "ferry",
+        "route_ferry"
+      ],
+      "notes": "Moss\u2013Horten corridor (issue #5)",
+      "expect": "ok"
+    },
+    {
+      "id": "sandefjord_stromstad_approach",
+      "profile": "car",
+      "from": {
+        "lat": 59.131,
+        "lon": 10.222
+      },
+      "to": {
+        "lat": 59.05,
+        "lon": 10.1
+      },
+      "tags": [
+        "ferry",
+        "border"
+      ],
+      "notes": "Sandefjord ferry approach",
+      "expect": "ok"
+    },
+    {
+      "id": "oslo_operatunnel",
+      "profile": "car",
+      "from": {
+        "lat": 59.907,
+        "lon": 10.753
+      },
+      "to": {
+        "lat": 59.895,
+        "lon": 10.72
+      },
+      "tags": [
+        "tunnel",
+        "urban"
+      ],
+      "notes": "Operatunnelen corridor",
+      "expect": "ok"
+    },
+    {
+      "id": "rv4_toll_gj\u00f8vik",
+      "profile": "car",
+      "from": {
+        "lat": 60.795,
+        "lon": 10.69
+      },
+      "to": {
+        "lat": 60.89,
+        "lon": 10.7
+      },
+      "tags": [
+        "toll",
+        "unpaved_mix"
+      ],
+      "notes": "Rv4 Gj\u00f8vik approach",
+      "expect": "ok"
+    },
+    {
+      "id": "gravel_hedmark_forest",
+      "profile": "car",
+      "from": {
+        "lat": 61.1,
+        "lon": 11.6
+      },
+      "to": {
+        "lat": 61.15,
+        "lon": 11.7
+      },
+      "tags": [
+        "unpaved",
+        "gravel",
+        "forest"
+      ],
+      "notes": "Hedmark forest tracks",
+      "expect": "ok"
+    },
+    {
+      "id": "gravel_foot_path",
+      "profile": "foot",
+      "from": {
+        "lat": 61.1,
+        "lon": 11.6
+      },
+      "to": {
+        "lat": 61.13,
+        "lon": 11.65
+      },
+      "tags": [
+        "unpaved",
+        "footway",
+        "path"
+      ],
+      "notes": "",
+      "expect": "ok"
+    },
+    {
+      "id": "winter_mountain_rv27",
+      "profile": "car",
+      "from": {
+        "lat": 61.7,
+        "lon": 8.9
+      },
+      "to": {
+        "lat": 61.85,
+        "lon": 9.2
+      },
+      "tags": [
+        "conditional",
+        "seasonal",
+        "mountain"
+      ],
+      "notes": "Rv27 corridor seasonal",
+      "expect": "ok"
+    },
+    {
+      "id": "valdresflye_car",
+      "profile": "car",
+      "from": {
+        "lat": 61.386,
+        "lon": 8.81
+      },
+      "to": {
+        "lat": 61.45,
+        "lon": 8.95
+      },
+      "tags": [
+        "mountain",
+        "elevation",
+        "unpaved_mix"
+      ],
+      "notes": "Valdresflye",
+      "expect": "ok"
+    },
+    {
+      "id": "valdresflye_foot",
+      "profile": "foot",
+      "from": {
+        "lat": 61.386,
+        "lon": 8.81
+      },
+      "to": {
+        "lat": 61.42,
+        "lon": 8.88
+      },
+      "tags": [
+        "mountain",
+        "elevation",
+        "footway"
+      ],
+      "notes": "",
+      "expect": "ok"
+    },
+    {
+      "id": "rv7_hallingdal",
+      "profile": "car",
+      "from": {
+        "lat": 60.63,
+        "lon": 8.56
+      },
+      "to": {
+        "lat": 60.7,
+        "lon": 9.0
+      },
+      "tags": [
+        "mountain",
+        "elevation",
+        "motorway_alt"
+      ],
+      "notes": "Rv7 corridor",
+      "expect": "ok"
+    },
+    {
+      "id": "nordmarka_foot",
+      "profile": "foot",
+      "from": {
+        "lat": 60.0,
+        "lon": 10.7
+      },
+      "to": {
+        "lat": 60.05,
+        "lon": 10.75
+      },
+      "tags": [
+        "footway",
+        "path",
+        "forest"
+      ],
+      "notes": "",
+      "expect": "ok"
+    },
+    {
+      "id": "nordmarka_bike",
+      "profile": "bike",
+      "from": {
+        "lat": 60.0,
+        "lon": 10.7
+      },
+      "to": {
+        "lat": 60.05,
+        "lon": 10.75
+      },
+      "tags": [
+        "bike_route",
+        "path"
+      ],
+      "notes": "",
+      "expect": "ok"
+    },
+    {
+      "id": "hedmark_wetland_2",
+      "profile": "foot",
+      "from": {
+        "lat": 61.02,
+        "lon": 11.4
+      },
+      "to": {
+        "lat": 61.06,
+        "lon": 11.45
+      },
+      "tags": [
+        "wetland",
+        "soft_hard"
+      ],
+      "notes": "",
+      "expect": "ok"
+    },
+    {
+      "id": "hedmark_wetland_3",
+      "profile": "foot",
+      "from": {
+        "lat": 60.95,
+        "lon": 11.35
+      },
+      "to": {
+        "lat": 61.0,
+        "lon": 11.42
+      },
+      "tags": [
+        "wetland",
+        "boardwalk_candidate"
+      ],
+      "notes": "",
+      "expect": "ok"
+    },
+    {
+      "id": "boardwalk_proxy_hedmark",
+      "profile": "foot",
+      "from": {
+        "lat": 61.04,
+        "lon": 11.46
+      },
+      "to": {
+        "lat": 61.055,
+        "lon": 11.49
+      },
+      "tags": [
+        "boardwalk",
+        "wetland"
+      ],
+      "notes": "boardwalk exemption candidate near Phase3 detour",
+      "expect": "ok"
+    },
+    {
+      "id": "oslo_waterfront_foot",
+      "profile": "foot",
+      "from": {
+        "lat": 59.9075,
+        "lon": 10.722
+      },
+      "to": {
+        "lat": 59.91,
+        "lon": 10.75
+      },
+      "tags": [
+        "footway",
+        "urban"
+      ],
+      "notes": "",
+      "expect": "ok"
+    },
+    {
+      "id": "oslo_bike_ring",
+      "profile": "bike",
+      "from": {
+        "lat": 59.913,
+        "lon": 10.738
+      },
+      "to": {
+        "lat": 59.94,
+        "lon": 10.76
+      },
+      "tags": [
+        "bike_route",
+        "urban"
+      ],
+      "notes": "",
+      "expect": "ok"
+    },
+    {
+      "id": "hamar_elverum_bike",
+      "profile": "bike",
+      "from": {
+        "lat": 60.7945,
+        "lon": 11.068
+      },
+      "to": {
+        "lat": 60.8825,
+        "lon": 11.5623
+      },
+      "tags": [
+        "bike_route",
+        "cross_city"
+      ],
+      "notes": "",
+      "expect": "ok"
+    },
+    {
+      "id": "bike_wetland_option",
+      "profile": "bike",
+      "from": {
+        "lat": 61.05,
+        "lon": 11.47
+      },
+      "to": {
+        "lat": 61.08,
+        "lon": 11.52
+      },
+      "tags": [
+        "wetland",
+        "bike_wetland_option"
+      ],
+      "notes": "bike wetland option off by default",
+      "expect": "ok"
+    },
+    {
+      "id": "oslo_turn_restrict",
+      "profile": "car",
+      "from": {
+        "lat": 59.92,
+        "lon": 10.74
+      },
+      "to": {
+        "lat": 59.925,
+        "lon": 10.755
+      },
+      "tags": [
+        "turn_restriction",
+        "urban"
+      ],
+      "notes": "",
+      "expect": "ok"
+    },
+    {
+      "id": "private_road_bypass",
+      "profile": "car",
+      "from": {
+        "lat": 60.8,
+        "lon": 11.1
+      },
+      "to": {
+        "lat": 60.82,
+        "lon": 11.15
+      },
+      "tags": [
+        "access_restriction",
+        "private"
+      ],
+      "notes": "should avoid private",
+      "expect": "ok"
+    },
+    {
+      "id": "lillehammer_drammen_fastest",
+      "profile": "car",
+      "from": {
+        "lat": 61.1153,
+        "lon": 10.4662
+      },
+      "to": {
+        "lat": 59.744,
+        "lon": 10.2045
+      },
+      "tags": [
+        "product",
+        "fastest",
+        "motorway"
+      ],
+      "notes": "E6/E18 expected when fastest",
+      "expect": "ok"
+    },
+    {
+      "id": "lillehammer_drammen_shortest",
+      "profile": "car",
+      "from": {
+        "lat": 61.1153,
+        "lon": 10.4662
+      },
+      "to": {
+        "lat": 59.744,
+        "lon": 10.2045
+      },
+      "tags": [
+        "product",
+        "shortest"
+      ],
+      "notes": "Rv4/E16 candidate when shortest",
+      "expect": "ok"
+    },
+    {
+      "id": "elverum_oslo",
+      "profile": "car",
+      "from": {
+        "lat": 60.8825,
+        "lon": 11.5623
+      },
+      "to": {
+        "lat": 59.9139,
+        "lon": 10.7522
+      },
+      "tags": [
+        "cross_mwm",
+        "multi_mwm"
+      ],
+      "notes": "",
+      "expect": "ok"
+    },
+    {
+      "id": "lillehammer_hamar",
+      "profile": "car",
+      "from": {
+        "lat": 61.1153,
+        "lon": 10.4662
+      },
+      "to": {
+        "lat": 60.7945,
+        "lon": 11.068
+      },
+      "tags": [
+        "cross_mwm"
+      ],
+      "notes": "",
+      "expect": "ok"
+    },
+    {
+      "id": "gj\u00f8vik_oslo",
+      "profile": "car",
+      "from": {
+        "lat": 60.7955,
+        "lon": 10.6916
+      },
+      "to": {
+        "lat": 59.9139,
+        "lon": 10.7522
+      },
+      "tags": [
+        "multi_mwm",
+        "motorway"
+      ],
+      "notes": "",
+      "expect": "ok"
+    },
+    {
+      "id": "kongsvinger_elverum",
+      "profile": "car",
+      "from": {
+        "lat": 60.19,
+        "lon": 12.0
+      },
+      "to": {
+        "lat": 60.8825,
+        "lon": 11.5623
+      },
+      "tags": [
+        "cross_mwm",
+        "border_near"
+      ],
+      "notes": "",
+      "expect": "ok"
+    },
+    {
+      "id": "moss_horten_foot_term",
+      "profile": "foot",
+      "from": {
+        "lat": 59.4358,
+        "lon": 10.66
+      },
+      "to": {
+        "lat": 59.432,
+        "lon": 10.65
+      },
+      "tags": [
+        "ferry",
+        "footway"
+      ],
+      "notes": "ferry terminal approach foot",
+      "expect": "ok"
+    },
+    {
+      "id": "drammen_tunnel_foot_alt",
+      "profile": "foot",
+      "from": {
+        "lat": 59.744,
+        "lon": 10.2045
+      },
+      "to": {
+        "lat": 59.75,
+        "lon": 10.22
+      },
+      "tags": [
+        "tunnel",
+        "footway",
+        "urban"
+      ],
+      "notes": "",
+      "expect": "ok"
+    },
+    {
+      "id": "oslo_ring_car_vs_truck_gap",
+      "profile": "car",
+      "from": {
+        "lat": 59.95,
+        "lon": 10.75
+      },
+      "to": {
+        "lat": 59.9,
+        "lon": 10.7
+      },
+      "tags": [
+        "truck_gap",
+        "urban"
+      ],
+      "notes": "truck limits not on MWM yet",
+      "expect": "ok"
+    }
+  ]
+}

@@ -85,13 +85,17 @@ Phase 8 retirement.
   starts).
 - **Acceptance:** load Østlandet leaf set; route without Navi layers.
 
-### Phase 4 — Routing wetland hook
+### Phase 4 — Routing wetland hook + parity (this branch)
 
 - Soft×5 / Hard≈forbid; boardwalk exempt; elevation overrides on routable
-  altitudes.
-- **Acceptance:** foot detour `61.0500,11.4700` → `61.0800,11.5200`: **13867 m**
-  without Soft/Hard, **16245 m** with; six-route suite NoError on release
-  `261105` (see `client-routing-hooks.md`).
+  altitudes; World atomic release switch; optimize / bike-wetland switches;
+  turns JSON; ~40-route parity suite vs `.rkyv`.
+- Details: `docs/mwm-phase4-parity.md`. Fixture:
+  `core/tests/fixtures/mwm/parity-suite-ostlandet.json`.
+- **Acceptance (device Samsung `R52TB0JQEDE`):** foot detour **13867 → 16245 m**;
+  World switch unit tests; release-build remasure; parity suite MWM 39/40 OK;
+  turn-by-turn street names on 3 routes; PreferNonMotorway demo on
+  Lillehammer→Drammen. Product defaults left open (see §3 + PR).
 
 ### Phase 5 — Search
 
@@ -126,8 +130,8 @@ Do **not** encode these in code yet.
 
 | Topic | Options | Recommendation |
 |-------|---------|----------------|
-| Fastest vs shortest wording | (A) Keep “fastest” label with Soft×5 changing foot “best”; (B) Rename to “recommended” / “best”; (C) Explicit fastest vs shortest toggle | **(B)** for foot/hike when wetland hook is on; keep a shortest toggle later if needed |
-| Wetland penalties for bike | (A) Foot/hike only (server default); (B) Soft only on bike; (C) Same Soft/Hard on bike | **(A)** until field feedback |
+| Fastest vs shortest wording | (A) Keep “fastest” label with Soft×5 changing foot “best”; (B) Rename to “recommended” / “best”; (C) Explicit fastest vs shortest toggle | **(B)** for foot/hike when wetland hook is on. Phase 4 exposes CoMaps **Time** vs **PreferNonMotorway** (Distance unsupported); owner picks default |
+| Wetland penalties for bike | (A) Foot/hike only (server default); (B) Soft only on bike; (C) Same Soft/Hard on bike | **(A)** until field feedback. Phase 4: `comaps_session_set_bike_wetland` (switchable; recommend off) |
 | Boardwalk recall ~25% | (A) Ship proxy as-is; (B) Block Soft/Hard until better recall; (C) Optional PBF enrichment later | **(A)** now; track **(C)** as follow-up |
 | Android KVM CI / device testing | (A) Host-only Rust unit tests; (B) KVM emulator + NDK; (C) Device farm for six-route | **(A)** for Phase 1; spike **(B)** before Phase 3 merge; **(C)** before Phase 4 sign-off |
 | Drape DEM source | (A) Mapterhorn (already in 3D opt-in); (B) CoMaps/other; (C) None | **(A)**; independent of sidecar elevation overrides |
@@ -142,12 +146,15 @@ See also the `mwm` module docs. Under the app `data_dir`:
 ```text
 {data_dir}/mwm/
   active.json                 # {"version":"261105"} — atomic switch target
+  world-release.json          # {"version":"261105"} — must match active for routing
+  World.mwm                   # non-routable overlay at storage root (not under version/)
+  WorldCoasts.mwm
   releases/{version}/
     catalog.json              # snapshot of catalog used for this install
     attribution.json
     ATTRIBUTION.md
     countries.txt             # verified copy (optional cache)
-    leaves/{Leaf}.mwm         # shared across region picks; one file per leaf
+    leaves/{Leaf}.mwm         # country leaves only (World promoted out on activate)
     sidecars/{Leaf}.navi-sidecar.v1.zst
     leaf-state.json           # per-leaf verify + fingerprint status
   staging/{version}/          # incomplete download; never active
@@ -157,7 +164,13 @@ See also the `mwm` module docs. Under the app `data_dir`:
 
 Rules: never mix `version` values under `active`; shared leaves are paths under
 `releases/{version}/leaves/` (downloaded once); on failed switch, delete
-`staging/{version}` and keep previous `active.json`.
+`staging/{version}` and keep previous `active.json` **and** root World files.
+`World.mwm` / `WorldCoasts.mwm` are downloaded into staging `leaves/`, verified
+with the release, then promoted to the MWM root on `activate_release` together
+with `world-release.json`. Refuse CoMaps routing when
+`assert_world_matches_active` fails (version mismatch or missing World files).
+Do **not** leave World overlays under `releases/{version}/leaves/` — that
+registers them as versioned countries and breaks Joints cross-MWM routing.
 
 ---
 

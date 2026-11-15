@@ -1281,6 +1281,14 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_comaps_session_route(
     ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_set_avoid_options(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_set_bike_wetland(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_set_optimize(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_set_turns_locale(
+    ): Int
     external fun uniffi_navi_checksum_method_ffitrackstore_all(
     ): Int
     external fun uniffi_navi_checksum_method_ffitrackstore_expire(
@@ -1911,6 +1919,14 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_comaps_session_route(`profile`: RustBuffer.ByValue,`fromLat`: Double,`fromLon`: Double,`toLat`: Double,`toLon`: Double,`wetlandHook`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_session_set_avoid_options(`avoidToll`: Byte,`avoidMotorway`: Byte,`avoidFerry`: Byte,`avoidDirty`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_session_set_bike_wetland(`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_session_set_optimize(`mode`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_session_set_turns_locale(`locale`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun ffi_navi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun ffi_navi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -2829,6 +2845,18 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_comaps_session_route() and 0xFFFF) != 10498) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_set_avoid_options() and 0xFFFF) != 7866) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_set_bike_wetland() and 0xFFFF) != 26956) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_set_optimize() and 0xFFFF) != 28709) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_set_turns_locale() and 0xFFFF) != 9442) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_method_ffitrackstore_all() and 0xFFFF) != 684) {
@@ -4973,6 +5001,8 @@ data class FfiComapsRoute (
     var `points`: List<FfiComapsLatLon>
     , 
     var `errorMessage`: kotlin.String?
+    , 
+    var `turnsJson`: kotlin.String
     
 ){
     
@@ -4995,6 +5025,7 @@ public object FfiConverterTypeFfiComapsRoute: FfiConverterRustBuffer<FfiComapsRo
             FfiConverterDouble.read(buf),
             FfiConverterSequenceTypeFfiComapsLatLon.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
         )
     }
 
@@ -5004,7 +5035,8 @@ public object FfiConverterTypeFfiComapsRoute: FfiConverterRustBuffer<FfiComapsRo
             FfiConverterDouble.allocationSize(value.`timeS`) +
             FfiConverterDouble.allocationSize(value.`buildTimeS`) +
             FfiConverterSequenceTypeFfiComapsLatLon.allocationSize(value.`points`) +
-            FfiConverterOptionalString.allocationSize(value.`errorMessage`)
+            FfiConverterOptionalString.allocationSize(value.`errorMessage`) +
+            FfiConverterString.allocationSize(value.`turnsJson`)
     )
 
     override fun write(value: FfiComapsRoute, buf: ByteBuffer) {
@@ -5014,6 +5046,7 @@ public object FfiConverterTypeFfiComapsRoute: FfiConverterRustBuffer<FfiComapsRo
             FfiConverterDouble.write(value.`buildTimeS`, buf)
             FfiConverterSequenceTypeFfiComapsLatLon.write(value.`points`, buf)
             FfiConverterOptionalString.write(value.`errorMessage`, buf)
+            FfiConverterString.write(value.`turnsJson`, buf)
     }
 }
 
@@ -6701,6 +6734,50 @@ public object FfiConverterTypeCampingCallKind: FfiConverterRustBuffer<CampingCal
     override fun allocationSize(value: CampingCallKind) = 4UL
 
     override fun write(value: CampingCallKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
+enum class FfiComapsOptimize {
+    
+    /**
+     * CoMaps default time/ETA weight.
+     */
+    TIME,
+    /**
+     * Not supported by CoMaps RoutesBuilder (returns Unsupported).
+     */
+    DISTANCE,
+    /**
+     * Avoid motorways via RoutingOptions (E6 vs Rv4-style switch).
+     */
+    PREFER_NON_MOTORWAY;
+
+    
+
+
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiComapsOptimize: FfiConverterRustBuffer<FfiComapsOptimize> {
+    override fun read(buf: ByteBuffer) = try {
+        FfiComapsOptimize.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FfiComapsOptimize) = 4UL
+
+    override fun write(value: FfiComapsOptimize, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
     }
 }
@@ -11643,6 +11720,49 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
 }
     )
     }
+    
+ fun `comapsSessionSetAvoidOptions`(`avoidToll`: kotlin.Boolean, `avoidMotorway`: kotlin.Boolean, `avoidFerry`: kotlin.Boolean, `avoidDirty`: kotlin.Boolean)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_set_avoid_options(
+    
+        
+        FfiConverterBoolean.lower(`avoidToll`),
+        FfiConverterBoolean.lower(`avoidMotorway`),
+        FfiConverterBoolean.lower(`avoidFerry`),
+        FfiConverterBoolean.lower(`avoidDirty`),_status)
+}
+    
+    
+ fun `comapsSessionSetBikeWetland`(`enabled`: kotlin.Boolean)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_set_bike_wetland(
+    
+        
+        FfiConverterBoolean.lower(`enabled`),_status)
+}
+    
+    
+ fun `comapsSessionSetOptimize`(`mode`: FfiComapsOptimize)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_set_optimize(
+    
+        
+        FfiConverterTypeFfiComapsOptimize.lower(`mode`),_status)
+}
+    
+    
+ fun `comapsSessionSetTurnsLocale`(`locale`: kotlin.String)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_set_turns_locale(
+    
+        
+        FfiConverterString.lower(`locale`),_status)
+}
+    
     
 
 

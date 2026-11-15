@@ -7,9 +7,9 @@
 use thiserror::Error;
 
 #[cfg(feature = "comaps-native")]
-use std::sync::Mutex;
-#[cfg(feature = "comaps-native")]
 use super::sidecar::{SidecarReader, CLASS_HARD, CLASS_SOFT};
+#[cfg(feature = "comaps-native")]
+use std::sync::Mutex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComapsProfile {
@@ -32,6 +32,8 @@ pub struct ComapsRoute {
     pub build_time_s: f64,
     pub points: Vec<ComapsLatLon>,
     pub error_message: Option<String>,
+    /// JSON array from CoMaps `GetTurnsForDisplay` (may be `"[]"`).
+    pub turns_json: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,6 +101,58 @@ impl ComapsRouter {
         #[cfg(not(feature = "comaps-native"))]
         {
             let _ = enabled;
+        }
+    }
+
+    /// Bike Soft/Hard wetland (default off). Foot always applies when hook on.
+    pub fn set_bike_wetland(&self, enabled: bool) {
+        #[cfg(feature = "comaps-native")]
+        {
+            ffi::set_bike_wetland(enabled);
+        }
+        #[cfg(not(feature = "comaps-native"))]
+        {
+            let _ = enabled;
+        }
+    }
+
+    pub fn set_avoid_options(
+        &self,
+        avoid_toll: bool,
+        avoid_motorway: bool,
+        avoid_ferry: bool,
+        avoid_dirty: bool,
+    ) {
+        #[cfg(feature = "comaps-native")]
+        {
+            ffi::set_avoid_options(avoid_toll, avoid_motorway, avoid_ferry, avoid_dirty);
+        }
+        #[cfg(not(feature = "comaps-native"))]
+        {
+            let _ = (avoid_toll, avoid_motorway, avoid_ferry, avoid_dirty);
+        }
+    }
+
+    /// 0 = time, 1 = distance (unsupported), 2 = prefer non-motorway.
+    pub fn set_optimize(&self, mode: i32) {
+        #[cfg(feature = "comaps-native")]
+        {
+            ffi::set_optimize(mode);
+        }
+        #[cfg(not(feature = "comaps-native"))]
+        {
+            let _ = mode;
+        }
+    }
+
+    pub fn set_turns_locale(&self, locale: &str) {
+        #[cfg(feature = "comaps-native")]
+        {
+            ffi::set_turns_locale(locale);
+        }
+        #[cfg(not(feature = "comaps-native"))]
+        {
+            let _ = locale;
         }
     }
 
@@ -170,10 +224,17 @@ mod ffi {
         fn navi_comaps_register_mwms() -> c_int;
         fn navi_comaps_set_wetland_hook(enabled: c_int);
         fn navi_comaps_set_wetland_lookup(
-            fn_ptr: Option<
-                unsafe extern "C" fn(u32, u32, c_int) -> u8,
-            >,
+            fn_ptr: Option<unsafe extern "C" fn(u32, u32, c_int) -> u8>,
         );
+        fn navi_comaps_set_bike_wetland(enabled: c_int);
+        fn navi_comaps_set_avoid_options(
+            avoid_toll: c_int,
+            avoid_motorway: c_int,
+            avoid_ferry: c_int,
+            avoid_dirty: c_int,
+        );
+        fn navi_comaps_set_optimize(optimize: c_int);
+        fn navi_comaps_set_turns_locale(locale: *const c_char);
         fn navi_comaps_route(
             profile: c_int,
             from_lat: f64,
@@ -202,6 +263,37 @@ mod ffi {
         points: *mut NaviComapsLatLon,
         point_count: usize,
         error_message: *mut c_char,
+        turns_json: *mut c_char,
+    }
+
+    pub fn set_bike_wetland(enabled: bool) {
+        unsafe { navi_comaps_set_bike_wetland(if enabled { 1 } else { 0 }) };
+    }
+
+    pub fn set_avoid_options(
+        avoid_toll: bool,
+        avoid_motorway: bool,
+        avoid_ferry: bool,
+        avoid_dirty: bool,
+    ) {
+        unsafe {
+            navi_comaps_set_avoid_options(
+                avoid_toll as c_int,
+                avoid_motorway as c_int,
+                avoid_ferry as c_int,
+                avoid_dirty as c_int,
+            )
+        };
+    }
+
+    pub fn set_optimize(mode: i32) {
+        unsafe { navi_comaps_set_optimize(mode) };
+    }
+
+    pub fn set_turns_locale(locale: &str) {
+        if let Ok(c) = CString::new(locale) {
+            unsafe { navi_comaps_set_turns_locale(c.as_ptr()) };
+        }
     }
 
     static SIDECARS: OnceLock<Mutex<Vec<SidecarReader>>> = OnceLock::new();
@@ -315,7 +407,9 @@ mod ffi {
             }
         }
         let n = loaded.len();
-        *sidecars().lock().map_err(|_| ComapsRouterError::NullPointer)? = loaded;
+        *sidecars()
+            .lock()
+            .map_err(|_| ComapsRouterError::NullPointer)? = loaded;
         Ok(n)
     }
 
@@ -337,11 +431,15 @@ mod ffi {
             points: ptr::null_mut(),
             point_count: 0,
             error_message: ptr::null_mut(),
+            turns_json: ptr::null_mut(),
         };
         unsafe {
             navi_comaps_route(profile_i, from.lat, from.lon, to.lat, to.lon, &mut out);
         }
         let code = map_code(out.code);
+        let length_m = out.length_m;
+        let time_s = out.time_s;
+        let build_time_s = out.build_time_s;
         let mut points = Vec::new();
         if !out.points.is_null() && out.point_count > 0 {
             let slice = unsafe { std::slice::from_raw_parts(out.points, out.point_count) };
@@ -359,14 +457,22 @@ mod ffi {
                     .into_owned(),
             )
         };
+        let turns_json = if out.turns_json.is_null() {
+            "[]".to_string()
+        } else {
+            unsafe { CStr::from_ptr(out.turns_json) }
+                .to_string_lossy()
+                .into_owned()
+        };
         unsafe { navi_comaps_free_route(&mut out) };
         Ok(ComapsRoute {
             code,
-            length_m: out.length_m,
-            time_s: out.time_s,
-            build_time_s: out.build_time_s,
+            length_m,
+            time_s,
+            build_time_s,
             points,
             error_message,
+            turns_json,
         })
     }
 

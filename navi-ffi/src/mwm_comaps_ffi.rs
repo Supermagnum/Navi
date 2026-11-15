@@ -37,6 +37,16 @@ pub struct FfiComapsLatLon {
     pub lon: f64,
 }
 
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FfiComapsOptimize {
+    /// CoMaps default time/ETA weight.
+    Time,
+    /// Not supported by CoMaps RoutesBuilder (returns Unsupported).
+    Distance,
+    /// Avoid motorways via RoutingOptions (E6 vs Rv4-style switch).
+    PreferNonMotorway,
+}
+
 #[derive(uniffi::Record, Debug, Clone)]
 pub struct FfiComapsRoute {
     pub code: FfiComapsRouteCode,
@@ -45,6 +55,19 @@ pub struct FfiComapsRoute {
     pub build_time_s: f64,
     pub points: Vec<FfiComapsLatLon>,
     pub error_message: Option<String>,
+    pub turns_json: String,
+}
+
+fn empty_route(code: FfiComapsRouteCode, msg: impl Into<String>) -> FfiComapsRoute {
+    FfiComapsRoute {
+        code,
+        length_m: 0.0,
+        time_s: 0.0,
+        build_time_s: 0.0,
+        points: vec![],
+        error_message: Some(msg.into()),
+        turns_json: "[]".into(),
+    }
 }
 
 fn map_profile(p: FfiComapsProfile) -> ComapsProfile {
@@ -90,24 +113,13 @@ pub fn comaps_route_once(
     let router = match ComapsRouter::init(&storage_path, &writable_path, sidecar_dir.as_deref()) {
         Ok(r) => r,
         Err(ComapsRouterError::Unavailable) => {
-            return FfiComapsRoute {
-                code: FfiComapsRouteCode::Unavailable,
-                length_m: 0.0,
-                time_s: 0.0,
-                build_time_s: 0.0,
-                points: vec![],
-                error_message: Some("comaps-native feature not linked".into()),
-            };
+            return empty_route(
+                FfiComapsRouteCode::Unavailable,
+                "comaps-native feature not linked",
+            );
         }
         Err(e) => {
-            return FfiComapsRoute {
-                code: FfiComapsRouteCode::Internal,
-                length_m: 0.0,
-                time_s: 0.0,
-                build_time_s: 0.0,
-                points: vec![],
-                error_message: Some(e.to_string()),
-            };
+            return empty_route(FfiComapsRouteCode::Internal, e.to_string());
         }
     };
     let _ = router.register_mwms();
@@ -142,15 +154,9 @@ pub fn comaps_route_once(
                 })
                 .collect(),
             error_message: r.error_message,
+            turns_json: r.turns_json,
         },
-        Err(e) => FfiComapsRoute {
-            code: FfiComapsRouteCode::Internal,
-            length_m: 0.0,
-            time_s: 0.0,
-            build_time_s: 0.0,
-            points: vec![],
-            error_message: Some(e.to_string()),
-        },
+        Err(e) => empty_route(FfiComapsRouteCode::Internal, e.to_string()),
     }
 }
 
@@ -245,24 +251,13 @@ pub fn comaps_session_route(
     wetland_hook: bool,
 ) -> FfiComapsRoute {
     let Ok(guard) = SESSION.lock() else {
-        return FfiComapsRoute {
-            code: FfiComapsRouteCode::Internal,
-            length_m: 0.0,
-            time_s: 0.0,
-            build_time_s: 0.0,
-            points: vec![],
-            error_message: Some("session mutex poisoned".into()),
-        };
+        return empty_route(FfiComapsRouteCode::Internal, "session mutex poisoned");
     };
     let Some(router) = guard.as_ref() else {
-        return FfiComapsRoute {
-            code: FfiComapsRouteCode::NotInit,
-            length_m: 0.0,
-            time_s: 0.0,
-            build_time_s: 0.0,
-            points: vec![],
-            error_message: Some("call comaps_session_open first".into()),
-        };
+        return empty_route(
+            FfiComapsRouteCode::NotInit,
+            "call comaps_session_open first",
+        );
     };
     router.set_wetland_hook(wetland_hook);
     match router.route(
@@ -290,15 +285,9 @@ pub fn comaps_session_route(
                 })
                 .collect(),
             error_message: r.error_message,
+            turns_json: r.turns_json,
         },
-        Err(e) => FfiComapsRoute {
-            code: FfiComapsRouteCode::Internal,
-            length_m: 0.0,
-            time_s: 0.0,
-            build_time_s: 0.0,
-            points: vec![],
-            error_message: Some(e.to_string()),
-        },
+        Err(e) => empty_route(FfiComapsRouteCode::Internal, e.to_string()),
     }
 }
 
@@ -306,5 +295,51 @@ pub fn comaps_session_route(
 pub fn comaps_session_close() {
     if let Ok(mut g) = SESSION.lock() {
         *g = None;
+    }
+}
+
+#[uniffi::export]
+pub fn comaps_session_set_bike_wetland(enabled: bool) {
+    if let Ok(guard) = SESSION.lock() {
+        if let Some(r) = guard.as_ref() {
+            r.set_bike_wetland(enabled);
+        }
+    }
+}
+
+#[uniffi::export]
+pub fn comaps_session_set_avoid_options(
+    avoid_toll: bool,
+    avoid_motorway: bool,
+    avoid_ferry: bool,
+    avoid_dirty: bool,
+) {
+    if let Ok(guard) = SESSION.lock() {
+        if let Some(r) = guard.as_ref() {
+            r.set_avoid_options(avoid_toll, avoid_motorway, avoid_ferry, avoid_dirty);
+        }
+    }
+}
+
+#[uniffi::export]
+pub fn comaps_session_set_optimize(mode: FfiComapsOptimize) {
+    let m = match mode {
+        FfiComapsOptimize::Time => 0,
+        FfiComapsOptimize::Distance => 1,
+        FfiComapsOptimize::PreferNonMotorway => 2,
+    };
+    if let Ok(guard) = SESSION.lock() {
+        if let Some(r) = guard.as_ref() {
+            r.set_optimize(m);
+        }
+    }
+}
+
+#[uniffi::export]
+pub fn comaps_session_set_turns_locale(locale: String) {
+    if let Ok(guard) = SESSION.lock() {
+        if let Some(r) = guard.as_ref() {
+            r.set_turns_locale(&locale);
+        }
     }
 }

@@ -23,7 +23,7 @@ index 3300fa877..ab80c8297 100644
  omim_add_test_subdirectory(routing_benchmarks)
  omim_add_test_subdirectory(routing_consistency_tests)
 diff --git a/libs/routing/edge_estimator.cpp b/libs/routing/edge_estimator.cpp
-index 259f70165..a408cacd5 100644
+index 259f70165..f506f250f 100644
 --- a/libs/routing/edge_estimator.cpp
 +++ b/libs/routing/edge_estimator.cpp
 @@ -1,4 +1,5 @@
@@ -44,12 +44,29 @@ index 259f70165..a408cacd5 100644
    }
  };
  
+@@ -660,7 +662,7 @@ public:
+ 
+   double CalcSegmentWeight(Segment const & segment, RoadGeometry const & road, Purpose purpose) const override
+   {
+-    return CalcClimbSegment(purpose, segment, road,
++    double const weight = CalcClimbSegment(purpose, segment, road,
+                             [purpose, this](double speedMpS, double tangent, geometry::Altitude altitude)
+     {
+       auto const factor = GetBicycleClimbPenalty(purpose, tangent, altitude);
+@@ -690,6 +692,7 @@ public:
+ 
+       return std::min(speedMpS, GetMaxWeightSpeedMpS());
+     });
++    return navi_spike::ApplyWetlandCostForBike(segment, weight);
+   }
+ };
+ 
 diff --git a/libs/routing/navi_wetland_cost.cpp b/libs/routing/navi_wetland_cost.cpp
 new file mode 100644
-index 000000000..0cb20d6c4
+index 000000000..799a100c2
 --- /dev/null
 +++ b/libs/routing/navi_wetland_cost.cpp
-@@ -0,0 +1,34 @@
+@@ -0,0 +1,38 @@
 +#include "routing/navi_wetland_cost.hpp"
 +
 +namespace navi_spike
@@ -57,6 +74,7 @@ index 000000000..0cb20d6c4
 +namespace
 +{
 +WetlandLookupFn g_lookup = nullptr;
++bool g_bikeEnabled = false;
 +constexpr double kSoftMult = 5.0;
 +constexpr double kHardMult = 1.0e6;
 +}  // namespace
@@ -64,6 +82,10 @@ index 000000000..0cb20d6c4
 +void WetlandSidecar::SetLookup(WetlandLookupFn fn) { g_lookup = fn; }
 +
 +bool WetlandSidecar::Enabled() { return g_lookup != nullptr; }
++
++void WetlandSidecar::SetBikeEnabled(bool enabled) { g_bikeEnabled = enabled; }
++
++bool WetlandSidecar::BikeEnabled() { return g_bikeEnabled && Enabled(); }
 +
 +WetlandClass WetlandSidecar::Lookup(uint32_t featureId, uint32_t segmentIdx, bool forward)
 +{
@@ -82,14 +104,13 @@ index 000000000..0cb20d6c4
 +  }
 +  return 1.0;
 +}
-+
 +}  // namespace navi_spike
 diff --git a/libs/routing/navi_wetland_cost.hpp b/libs/routing/navi_wetland_cost.hpp
 new file mode 100644
-index 000000000..fbf2015db
+index 000000000..88e3e95e6
 --- /dev/null
 +++ b/libs/routing/navi_wetland_cost.hpp
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,52 @@
 +#pragma once
 +// Navi wetland cost hook for CoMaps EdgeEstimator.
 +// Lookups are supplied by the Navi FFI shim (Rust SidecarReader), not by
@@ -118,6 +139,9 @@ index 000000000..fbf2015db
 +  // Install / clear the lookup provided by navi_comaps (Rust).
 +  static void SetLookup(WetlandLookupFn fn);
 +  static bool Enabled();
++  /** When false (default), bicycle estimator skips Soft/Hard. Foot always applies. */
++  static void SetBikeEnabled(bool enabled);
++  static bool BikeEnabled();
 +  static WetlandClass Lookup(uint32_t featureId, uint32_t segmentIdx, bool forward);
 +  static double CostMultiplier(WetlandClass c);
 +};
@@ -131,4 +155,92 @@ index 000000000..fbf2015db
 +  return weightSeconds * WetlandSidecar::CostMultiplier(cls);
 +}
 +
++inline double ApplyWetlandCostForBike(routing::Segment const & segment, double weightSeconds)
++{
++  if (!WetlandSidecar::BikeEnabled())
++    return weightSeconds;
++  return ApplyWetlandCost(segment, weightSeconds);
++}
++
 +}  // namespace navi_spike
+diff --git a/libs/routing/routes_builder/routes_builder.hpp b/libs/routing/routes_builder/routes_builder.hpp
+index 7ba01aa28..8f2f2e2d7 100644
+--- a/libs/routing/routes_builder/routes_builder.hpp
++++ b/libs/routing/routes_builder/routes_builder.hpp
+@@ -74,6 +74,7 @@ public:
+     double m_eta = 0.0;
+     double m_distance = 0.0;
+     FollowedPolyline m_followedPolyline;
++    std::string m_turnsJson;
+   };
+ 
+   struct Result
+diff --git a/libs/routing/routes_builder/routes_builder.cpp b/libs/routing/routes_builder/routes_builder.cpp
+index 78f6d77bc..88eb0bf3f 100644
+--- a/libs/routing/routes_builder/routes_builder.cpp
++++ b/libs/routing/routes_builder/routes_builder.cpp
+@@ -14,6 +14,7 @@
+ #include "platform/country_file.hpp"
+ #include "platform/local_country_file.hpp"
+ #include "platform/local_country_file_utils.hpp"
++#include "platform/settings.hpp"
+ 
+ #include "coding/file_reader.hpp"
+ #include "coding/file_writer.hpp"
+@@ -28,6 +29,7 @@
+ #include "base/timer.hpp"
+ 
+ #include <limits>
++#include <sstream>
+ 
+ namespace
+ {
+@@ -327,6 +329,48 @@ RoutesBuilder::Result RoutesBuilder::Processor::operator()(Params const & params
+ 
+   routeResult.m_followedPolyline = route.GetFollowedPolyline();
+ 
++  // Navi: export display turns for guidance / voice (locale from settings or en).
++  {
++    std::string locale = "en";
++    settings::Get("locale", locale);
++    auto const steps = route.GetTurnsForDisplay(locale);
++    std::ostringstream json;
++    json << '[';
++    for (size_t i = 0; i < steps.size(); ++i)
++    {
++      auto const & s = steps[i];
++      if (i)
++        json << ',';
++      json << '{'
++          << "\"index\":" << s.m_index << ','
++          << "\"sequence\":" << s.m_sequence << ','
++          << "\"exit_num\":" << s.m_exitNum << ','
++          << "\"dist_m\":" << s.m_distMeters << ','
++          << "\"street\":\"";
++      for (char c : s.m_toRoad.m_name)
++      {
++        if (c == '\\' || c == '"')
++          json << '\\';
++        json << c;
++      }
++      json << "\",\"instruction\":\"";
++      for (char c : s.m_textualInstruction)
++      {
++        if (c == '\\' || c == '"')
++          json << '\\';
++        else if (c == '\n')
++        {
++          json << "\\n";
++          continue;
++        }
++        json << c;
++      }
++      json << "\"}";
++    }
++    json << ']';
++    routeResult.m_turnsJson = json.str();
++  }
++
+   result.m_routes.emplace_back(std::move(routeResult));
+ 
+   return result;
