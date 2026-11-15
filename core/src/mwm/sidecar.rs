@@ -11,12 +11,13 @@
 //! |---------|-----------|---------------------------|
 //! | `wetland_edges` | Sorted `Vec<WetlandRecord>` + binary search | ~784 KiB (8 B × 98 082) |
 //! | `boardwalk_flags` | Sorted `Vec<BoardwalkRecord>` + binary search | ~1.7 KiB |
-//! | `elevation_overrides` | `HashMap<feature_id, ElevationFeature>` with sorted points | ~hundreds of KiB |
+//! | `elevation_overrides` | Sorted feature index + flat delta-encoded point buffer | ~6 B/point + 12 B/feature |
 //! | `attribution` | Owned `String` (UTF-8 JSON) | ~100 KiB |
 //!
 //! Sorted vectors match the bake sort order and avoid HashMap overhead for the
-//! dense wetland table the router hits per edge. Sections decompress lazily on
-//! first access (header + directory are always parsed).
+//! dense wetland table the router hits per edge. Elevation keeps EL02 deltas
+//! packed and decodes only the requested feature on lookup. Sections decompress
+//! lazily on first access (header + directory are always parsed).
 
 use std::collections::HashMap;
 use std::fs;
@@ -47,6 +48,8 @@ pub const CLASS_HARD: u8 = 2;
 /// Elevation body magic `EL02` (little-endian).
 pub const ELEVATION_BODY_MAGIC_EL02: u32 = 0x3230_4C45;
 const RECORD_LEN: usize = 8;
+/// Packed EL02 point: `u16` index delta + `u32` zigzag altitude delta.
+const ELEV_POINT_PACKED_LEN: usize = 6;
 
 /// Sections that must appear in the directory for a usable Navi sidecar.
 pub const REQUIRED_SECTIONS: &[&str] = &[SECTION_WETLAND, SECTION_ATTRIBUTION];
@@ -117,6 +120,96 @@ pub struct ElevationFeature {
     pub points: Vec<ElevationPoint>,
 }
 
+/// Compact in-memory EL02 store: sorted feature directory + one owned EL02 body.
+#[derive(Debug, Clone, Default)]
+struct ElevationIndex {
+    /// Sorted by `feature_id`.
+    features: Vec<ElevFeatureEntry>,
+    /// Full EL02 section bytes; points stay delta-encoded until lookup.
+    body: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ElevFeatureEntry {
+    feature_id: u32,
+    point_count: u16,
+    /// Absolute byte offset of packed points inside [`ElevationIndex::body`].
+    buf_offset: u32,
+    /// Encoded point count (`n` in EL02).
+    n: u16,
+}
+
+impl ElevationIndex {
+    fn feature_count(&self) -> usize {
+        self.features.len()
+    }
+
+    fn point_count_total(&self) -> usize {
+        self.features.iter().map(|f| f.n as usize).sum()
+    }
+
+    fn find(&self, feature_id: u32) -> Option<&ElevFeatureEntry> {
+        self.features
+            .binary_search_by_key(&feature_id, |e| e.feature_id)
+            .ok()
+            .map(|i| &self.features[i])
+    }
+
+    fn decode_feature(
+        &self,
+        entry: &ElevFeatureEntry,
+    ) -> Result<Vec<ElevationPoint>, SidecarError> {
+        let start = entry.buf_offset as usize;
+        let end = start
+            .checked_add(entry.n as usize * ELEV_POINT_PACKED_LEN)
+            .ok_or_else(|| SidecarError::ElevationCorrupt("point span overflow".into()))?;
+        if end > self.body.len() {
+            return Err(SidecarError::ElevationCorrupt("point span OOB".into()));
+        }
+        let mut points = Vec::with_capacity(entry.n as usize);
+        let mut prev_idx = 0u16;
+        let mut prev_alt = 0i32;
+        let mut off = start;
+        for i in 0..entry.n as usize {
+            let idx_delta = read_u16(&self.body, off)?;
+            off += 2;
+            let zz = read_u32(&self.body, off)?;
+            off += 4;
+            let point_index = if i == 0 {
+                idx_delta
+            } else {
+                prev_idx
+                    .checked_add(idx_delta)
+                    .ok_or_else(|| SidecarError::ElevationCorrupt("idx overflow".into()))?
+            };
+            let altitude_dm = prev_alt.wrapping_add(zigzag_decode_i32(zz));
+            points.push(ElevationPoint {
+                point_index,
+                altitude_dm,
+            });
+            prev_idx = point_index;
+            prev_alt = altitude_dm;
+        }
+        Ok(points)
+    }
+
+    fn to_feature_map(&self) -> Result<HashMap<u32, ElevationFeature>, SidecarError> {
+        let mut map = HashMap::with_capacity(self.features.len());
+        for entry in &self.features {
+            let points = self.decode_feature(entry)?;
+            map.insert(
+                entry.feature_id,
+                ElevationFeature {
+                    feature_id: entry.feature_id,
+                    point_count: entry.point_count,
+                    points,
+                },
+            );
+        }
+        Ok(map)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SectionInfo {
     pub name: String,
@@ -152,13 +245,13 @@ impl SidecarHeader {
 /// Opened sidecar with lazy section decode.
 pub struct SidecarReader {
     header: SidecarHeader,
-    /// Logical NVSC blob (outer zstd already removed). Payload starts after the
-    /// directory; section offsets are relative to that payload.
-    logical: Vec<u8>,
+    /// Logical NVSC blob (outer zstd already removed). Cleared once every
+    /// section cache is warm so RSS does not keep compressed + decoded copies.
+    logical: Mutex<Vec<u8>>,
     payload_start: usize,
     wetland: Mutex<Option<Vec<WetlandRecord>>>,
     boardwalk: Mutex<Option<Vec<BoardwalkRecord>>>,
-    elevation: Mutex<Option<HashMap<u32, ElevationFeature>>>,
+    elevation: Mutex<Option<ElevationIndex>>,
     attribution: Mutex<Option<String>>,
 }
 
@@ -231,7 +324,7 @@ impl SidecarReader {
         ensure_required_sections(&header.sections)?;
         Ok(Self {
             header,
-            logical,
+            logical: Mutex::new(logical),
             payload_start,
             wetland: Mutex::new(None),
             boardwalk: Mutex::new(None),
@@ -306,20 +399,23 @@ impl SidecarReader {
     ) -> Result<Option<i32>, SidecarError> {
         self.ensure_elevation()?;
         let guard = self.elevation.lock().unwrap();
-        let map = guard.as_ref().unwrap();
-        let Some(feat) = map.get(&feature_id) else {
+        let index = guard.as_ref().unwrap();
+        let Some(entry) = index.find(feature_id) else {
             return Ok(None);
         };
-        Ok(feat
-            .points
+        let points = index.decode_feature(entry)?;
+        Ok(points
             .binary_search_by_key(&point_index, |p| p.point_index)
             .ok()
-            .map(|i| feat.points[i].altitude_dm))
+            .map(|i| points[i].altitude_dm))
     }
 
+    /// Materializes decoded features (test / inspect helpers). Hot path should
+    /// use [`Self::elevation_dm`] so only one feature's deltas are expanded.
     pub fn elevation_features(&self) -> Result<HashMap<u32, ElevationFeature>, SidecarError> {
         self.ensure_elevation()?;
-        Ok(self.elevation.lock().unwrap().clone().unwrap_or_default())
+        let guard = self.elevation.lock().unwrap();
+        guard.as_ref().unwrap().to_feature_map()
     }
 
     /// Attribution JSON text for the Licences / About screen.
@@ -337,17 +433,18 @@ impl SidecarReader {
     pub fn inspect_counts(&self) -> Result<InspectCounts, SidecarError> {
         let wetland = self.wetland_records()?;
         let boardwalk = self.boardwalk_records()?;
-        let elevation = self.elevation_features()?;
+        self.ensure_elevation()?;
+        let elev_guard = self.elevation.lock().unwrap();
+        let elevation = elev_guard.as_ref().unwrap();
         let soft = wetland.iter().filter(|r| r.class == CLASS_SOFT).count();
         let hard = wetland.iter().filter(|r| r.class == CLASS_HARD).count();
-        let elev_points: usize = elevation.values().map(|f| f.points.len()).sum();
         Ok(InspectCounts {
             wetland_records: wetland.len(),
             soft_records: soft,
             hard_records: hard,
             boardwalk_records: boardwalk.len(),
-            elevation_features: elevation.len(),
-            elevation_points: elev_points,
+            elevation_features: elevation.feature_count(),
+            elevation_points: elevation.point_count_total(),
             sections: self
                 .header
                 .sections
@@ -364,6 +461,8 @@ impl SidecarReader {
         }
         let raw = self.load_section_body(SECTION_WETLAND)?;
         *g = Some(parse_wetland_body(&raw)?);
+        drop(g);
+        self.maybe_release_logical();
         Ok(())
     }
 
@@ -379,6 +478,8 @@ impl SidecarReader {
                 *g = Some(parse_boardwalk_body(&raw)?);
             }
         }
+        drop(g);
+        self.maybe_release_logical();
         Ok(())
     }
 
@@ -388,17 +489,14 @@ impl SidecarReader {
             return Ok(());
         }
         match self.find_section(SECTION_ELEVATION) {
-            None => *g = Some(HashMap::new()),
+            None => *g = Some(ElevationIndex::default()),
             Some(_) => {
                 let raw = self.load_section_body(SECTION_ELEVATION)?;
-                let feats = parse_elevation_el02(&raw)?;
-                let mut map = HashMap::with_capacity(feats.len());
-                for f in feats {
-                    map.insert(f.feature_id, f);
-                }
-                *g = Some(map);
+                *g = Some(build_elevation_index(raw)?);
             }
         }
+        drop(g);
+        self.maybe_release_logical();
         Ok(())
     }
 
@@ -412,6 +510,8 @@ impl SidecarReader {
         serde_json::from_str::<serde_json::Value>(&text)
             .map_err(|e| SidecarError::AttributionJson(e.to_string()))?;
         *g = Some(text);
+        drop(g);
+        self.maybe_release_logical();
         Ok(())
     }
 
@@ -429,10 +529,15 @@ impl SidecarReader {
         let end = start
             .checked_add(n)
             .ok_or_else(|| SidecarError::SectionOutOfRange(name.to_string()))?;
-        if end > self.logical.len() {
+        let logical = self.logical.lock().unwrap();
+        if logical.is_empty() {
             return Err(SidecarError::SectionOutOfRange(name.to_string()));
         }
-        let raw = zstd_decompress(&self.logical[start..end])?;
+        if end > logical.len() {
+            return Err(SidecarError::SectionOutOfRange(name.to_string()));
+        }
+        let raw = zstd_decompress(&logical[start..end])?;
+        drop(logical);
         if u64::try_from(raw.len()).unwrap_or(u64::MAX) != info.uncompressed_size {
             return Err(SidecarError::SectionSizeMismatch(name.to_string()));
         }
@@ -441,6 +546,21 @@ impl SidecarReader {
             return Err(SidecarError::SectionChecksumMismatch(name.to_string()));
         }
         Ok(raw)
+    }
+
+    fn maybe_release_logical(&self) {
+        let warm = self.wetland.lock().unwrap().is_some()
+            && self.boardwalk.lock().unwrap().is_some()
+            && self.elevation.lock().unwrap().is_some()
+            && self.attribution.lock().unwrap().is_some();
+        if !warm {
+            return;
+        }
+        let mut logical = self.logical.lock().unwrap();
+        if !logical.is_empty() {
+            logical.clear();
+            logical.shrink_to_fit();
+        }
     }
 }
 
@@ -554,72 +674,76 @@ fn parse_boardwalk_body(data: &[u8]) -> Result<Vec<BoardwalkRecord>, SidecarErro
     Ok(out)
 }
 
-/// Parse elevation overrides — **EL02 only**.
+/// Parse elevation overrides — **EL02 only** (fully decoded; prefer compact index on reader).
 pub fn parse_elevation_el02(data: &[u8]) -> Result<Vec<ElevationFeature>, SidecarError> {
+    let index = build_elevation_index(data.to_vec())?;
+    let mut out = Vec::with_capacity(index.features.len());
+    for entry in &index.features {
+        out.push(ElevationFeature {
+            feature_id: entry.feature_id,
+            point_count: entry.point_count,
+            points: index.decode_feature(entry)?,
+        });
+    }
+    Ok(out)
+}
+
+/// Build sorted feature directory over one owned EL02 body (no point expansion).
+fn build_elevation_index(data: Vec<u8>) -> Result<ElevationIndex, SidecarError> {
     if data.len() < 4 {
         return Err(SidecarError::ElevationCorrupt("too short".into()));
     }
-    let magic = read_u32(data, 0)?;
+    let magic = read_u32(&data, 0)?;
     if magic != ELEVATION_BODY_MAGIC_EL02 {
         return Err(SidecarError::ElevationNotEl02);
     }
-    parse_elevation_el02_body(&data[4..])
-}
-
-fn parse_elevation_el02_body(data: &[u8]) -> Result<Vec<ElevationFeature>, SidecarError> {
-    if data.len() < 4 {
+    if data.len() < 8 {
         return Err(SidecarError::ElevationCorrupt("v2 too short".into()));
     }
-    let count = read_u32(data, 0)? as usize;
-    let mut off = 4usize;
-    let mut out = Vec::with_capacity(count);
+    let count = read_u32(&data, 4)? as usize;
+    let mut off = 8usize;
+    let mut features = Vec::with_capacity(count);
     for _ in 0..count {
         if off + 8 > data.len() {
             return Err(SidecarError::ElevationCorrupt("truncated feature".into()));
         }
-        let feature_id = read_u32(data, off)?;
+        let feature_id = read_u32(&data, off)?;
         off += 4;
-        let point_count = read_u16(data, off)?;
+        let point_count = read_u16(&data, off)?;
         off += 2;
-        let n = read_u16(data, off)? as usize;
+        let n = read_u16(&data, off)? as usize;
         off += 2;
-        let mut points = Vec::with_capacity(n);
-        let mut prev_idx = 0u16;
-        let mut prev_alt = 0i32;
-        for i in 0..n {
-            if off + 6 > data.len() {
-                return Err(SidecarError::ElevationCorrupt("truncated point".into()));
-            }
-            let idx_delta = read_u16(data, off)?;
-            off += 2;
-            let zz = read_u32(data, off)?;
-            off += 4;
-            let point_index = if i == 0 {
-                idx_delta
-            } else {
-                prev_idx
-                    .checked_add(idx_delta)
-                    .ok_or_else(|| SidecarError::ElevationCorrupt("idx overflow".into()))?
-            };
-            let alt_delta = zigzag_decode_i32(zz);
-            let altitude_dm = prev_alt.wrapping_add(alt_delta);
-            points.push(ElevationPoint {
-                point_index,
-                altitude_dm,
-            });
-            prev_idx = point_index;
-            prev_alt = altitude_dm;
+        let need = n
+            .checked_mul(ELEV_POINT_PACKED_LEN)
+            .ok_or_else(|| SidecarError::ElevationCorrupt("point bytes overflow".into()))?;
+        if off + need > data.len() {
+            return Err(SidecarError::ElevationCorrupt("truncated point".into()));
         }
-        out.push(ElevationFeature {
+        let buf_offset = u32::try_from(off)
+            .map_err(|_| SidecarError::ElevationCorrupt("buf too large".into()))?;
+        off += need;
+        features.push(ElevFeatureEntry {
             feature_id,
             point_count,
-            points,
+            buf_offset,
+            n: n as u16,
         });
     }
     if off != data.len() {
         return Err(SidecarError::ElevationCorrupt("trailing bytes".into()));
     }
-    Ok(out)
+    features.sort_by_key(|e| e.feature_id);
+    for w in features.windows(2) {
+        if w[0].feature_id == w[1].feature_id {
+            return Err(SidecarError::ElevationCorrupt(
+                "duplicate feature_id".into(),
+            ));
+        }
+    }
+    Ok(ElevationIndex {
+        features,
+        body: data,
+    })
 }
 
 /// Encode EL02 elevation body (for unit tests).

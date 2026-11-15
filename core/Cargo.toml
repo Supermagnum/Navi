@@ -12,6 +12,8 @@ default = []
 gpsd = ["dep:gpsd_proto"]
 ## Linux SBC IMU publish helpers (software fusion stub; board drivers optional).
 linux-imu = []
+## Link CoMaps `liborganicmaps.so` + `navi_comaps` C ABI (Android device builds).
+comaps-native = []
 
 [dependencies]
 anyhow.workspace = true

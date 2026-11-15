@@ -12,6 +12,7 @@ pub mod attribution;
 pub mod catalog;
 pub mod checksum;
 pub mod comaps;
+pub mod comaps_router;
 pub mod download;
 pub mod fingerprint;
 pub mod flag;
@@ -36,6 +37,9 @@ pub use comaps::{
     discover_mirrors, fetch_and_verify_countries_txt, parse_countries_txt, percent_encode_leaf_id,
     verify_countries_txt_signature, ComapsDiscovery, CountriesTxt, CountriesTxtLeaf,
     COMAPS_COUNTRIES_TXT_PUBKEY_HEX, DEFAULT_METASERVER,
+};
+pub use comaps_router::{
+    ComapsLatLon, ComapsProfile, ComapsRoute, ComapsRouter, ComapsRouterCode, ComapsRouterError,
 };
 pub use download::{
     download_leaf_set, fetch_current_catalog, DownloadPlan, DownloadProgress, LeafDownloadResult,

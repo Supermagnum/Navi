@@ -69,8 +69,8 @@ Phase 8 retirement.
 - Implementation: `core/src/mwm/sidecar.rs` (`SidecarReader`).
 - Sectioned NVSC v1 + **EL02-only** elevation (legacy i16 rejected); lazy
   section decompress; wetland/boardwalk = sorted `Vec` + binary search
-  (~8 B/record); elevation = `HashMap<feature_id, …>`; attribution JSON for
-  Licences.
+  (~8 B/record); elevation = sorted feature index + flat delta-encoded point
+  buffer (decode one feature on lookup); attribution JSON for Licences.
 - Golden fixture vendored at
   `core/tests/fixtures/mwm/Norway_Hedmark.navi-sidecar.v1.zst` (same bytes as
   navi-server docs fixture) so CI stays offline and pinned.
@@ -191,19 +191,40 @@ native bits from source with NDK **r27c** (see
 `tools/fdroid-check/metadata/no.navi.app.yml`). When Phase 3 lands CoMaps core,
 the recipe must stay **fully from source**:
 
-### 7.1 Recipe expectations (Phase 3+)
+### 7.1 Exact from-source recipe (Phase 3)
+
+Pin file: `third_party/comaps.pin.json` (tag `v2026.11.07-16` /
+`fd11cc6f…`, Codeberg `comaps/comaps`).
+
+```bash
+# 1) Fetch (network only here). Submodule SHAs are fixed by the pin checkout.
+./scripts/fetch-comaps.sh
+# records: git rev-parse HEAD + git submodule status
+
+# 2) Apply quilt series (wetland callback hook + Android RoutesBuilder)
+#    then NDK r27c CMake build of target `organicmaps` → liborganicmaps.so
+./scripts/build-comaps-android.sh   # ABI=arm64-v8a; stages into jniLibs (gitignored)
+
+# CMake flags (same as script):
+#   -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24 -DANDROID_STL=c++_static
+#   -DSKIP_TESTS=ON -DSKIP_TOOLS=ON
+#   NDK: 27.2.12479018 (r27c) — overrides CoMaps' baked 28.2
+```
 
 | Item | Requirement |
 |------|-------------|
-| CoMaps / Organic Maps tree | `srclibs` (or git submodule) pinned to an **exact tag/commit**; no floating `main` |
-| Native build | **NDK + CMake/Ninja** (or the upstream Android.mk/CMake entry the pin documents) inside `prebuild`/`build`, producing `lib*` for each ABI Navi ships |
-| Prebuilt `.so` | **Forbidden** in the APK and in the recipe — no downloading binary CoMaps libraries |
-| ABI set | Same `naviAbis` filter as today (`arm64-v8a` / `x86_64` as packaged) |
-| Rust flag | Leave `NAVI_MWM_CLIENT_ENABLED` **unset** (default ON) or set `1`; do not bake a silent OFF |
-| Gradle | No product flavour required; `BuildConfig.MWM_CLIENT_ENABLED` defaults true. Optional debug-only `-Pnavi.mwmClient=false` must not be used in the F-Droid `Builds:` entry |
+| CoMaps tree | `srclibs` / `third_party/comaps` at pin SHA; `configure.sh` with `SKIP_MAP_DOWNLOAD=1` |
+| Native build | NDK **r27c** + CMake/Ninja target **`organicmaps`** (+ Navi `navi_comaps_*` C ABI) |
+| Prebuilt `.so` | **Forbidden** in git and in the F-Droid recipe — `app/src/main/jniLibs/**/*.so` already gitignored |
+| ABI | **arm64-v8a** for devices; `x86_64` only if needed for host unit tests — never AVD |
+| Patches | `patches/comaps/series` (~134 lines wetland + RoutesBuilder-on-Android) |
+| Cannot exclude | **drape** / GLES — stock `organicmaps` → `map` PUBLIC-links drape (Phase 6 uses or replaces rendering) |
+| Rust flag | Leave `NAVI_MWM_CLIENT_ENABLED` unset (default ON) |
+| CI | Prefer **nightly** arm64 CoMaps native job (full tree ~minutes–tens of minutes); PR CI keeps flag ON/OFF Rust jobs green without rebuilding CoMaps every push |
 
-Until Phase 3 merges, the F-Droid metadata does **not** need a CoMaps `srclib`;
-this section is the contract for that future recipe change.
+F-Droid `Builds:` should call `fetch-comaps.sh` + `build-comaps-android.sh` (or
+inline the same steps) after the existing `build-android-native.sh` Rust/Hamlib
+pass, then package the freshly built `liborganicmaps.so`.
 
 ### 7.2 Store / AntiFeatures text (downloads)
 
@@ -224,7 +245,13 @@ from `/mwm/{version}/attribution.json` are shown in the UI.
 
 ---
 
-## 8. Phase 3 plan — CoMaps native core (no build yet)
+## 8. Phase 3 — CoMaps native core + FFI shim
+
+**Status on `feat/mwm-client`:** source pin + arm64 `liborganicmaps.so` build
+scripted; wetland hook is a **callback** into Rust `SidecarReader` (no zstd
+inside CoMaps); thin C ABI in `native/comaps_shim/`; Rust facade
+`mwm::comaps_router` (feature `comaps-native`). Device route table filled when
+Samsung verification runs.
 
 Pin matches navi-server’s generator pin (`config/mwm` / catalog `generator`):
 

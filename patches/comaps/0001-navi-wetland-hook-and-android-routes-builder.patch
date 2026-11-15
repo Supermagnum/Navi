@@ -1,0 +1,134 @@
+diff --git a/libs/routing/CMakeLists.txt b/libs/routing/CMakeLists.txt
+index 3300fa877..ab80c8297 100644
+--- a/libs/routing/CMakeLists.txt
++++ b/libs/routing/CMakeLists.txt
+@@ -50,6 +50,8 @@ set(SRC
+   directions_engine_helpers.hpp
+   dummy_world_graph.hpp
+   edge_estimator.cpp
++  navi_wetland_cost.cpp
++  navi_wetland_cost.hpp
+   edge_estimator.hpp
+   fake_edges_container.hpp
+   fake_ending.cpp
+@@ -221,6 +223,10 @@ if (PLATFORM_DESKTOP)
+   add_subdirectory(routing_quality)
+   add_subdirectory(routes_builder)
+ endif()
++# Navi: headless RoutesBuilder on Android for FFI routing (no GLES).
++if (PLATFORM_ANDROID)
++  add_subdirectory(routes_builder)
++endif()
+ 
+ omim_add_test_subdirectory(routing_benchmarks)
+ omim_add_test_subdirectory(routing_consistency_tests)
+diff --git a/libs/routing/edge_estimator.cpp b/libs/routing/edge_estimator.cpp
+index 259f70165..a408cacd5 100644
+--- a/libs/routing/edge_estimator.cpp
++++ b/libs/routing/edge_estimator.cpp
+@@ -1,4 +1,5 @@
+ #include "routing/edge_estimator.hpp"
++#include "routing/navi_wetland_cost.hpp"
+ 
+ #include "routing/geometry.hpp"
+ #include "routing/latlon_with_altitude.hpp"
+@@ -628,9 +629,10 @@ public:
+ 
+   double CalcSegmentWeight(Segment const & segment, RoadGeometry const & road, Purpose purpose) const override
+   {
+-    return CalcClimbSegment(purpose, segment, road,
++    double const weight = CalcClimbSegment(purpose, segment, road,
+                             [purpose](double speedMpS, double tangent, geometry::Altitude altitude)
+     { return speedMpS / GetPedestrianClimbPenalty(purpose, tangent, altitude); });
++    return navi_spike::ApplyWetlandCost(segment, weight);
+   }
+ };
+ 
+diff --git a/libs/routing/navi_wetland_cost.cpp b/libs/routing/navi_wetland_cost.cpp
+new file mode 100644
+index 000000000..0cb20d6c4
+--- /dev/null
++++ b/libs/routing/navi_wetland_cost.cpp
+@@ -0,0 +1,34 @@
++#include "routing/navi_wetland_cost.hpp"
++
++namespace navi_spike
++{
++namespace
++{
++WetlandLookupFn g_lookup = nullptr;
++constexpr double kSoftMult = 5.0;
++constexpr double kHardMult = 1.0e6;
++}  // namespace
++
++void WetlandSidecar::SetLookup(WetlandLookupFn fn) { g_lookup = fn; }
++
++bool WetlandSidecar::Enabled() { return g_lookup != nullptr; }
++
++WetlandClass WetlandSidecar::Lookup(uint32_t featureId, uint32_t segmentIdx, bool forward)
++{
++  if (!g_lookup)
++    return WetlandClass::None;
++  return g_lookup(featureId, segmentIdx, forward);
++}
++
++double WetlandSidecar::CostMultiplier(WetlandClass c)
++{
++  switch (c)
++  {
++  case WetlandClass::SoftAvoid: return kSoftMult;
++  case WetlandClass::HardAvoid: return kHardMult;
++  case WetlandClass::None: return 1.0;
++  }
++  return 1.0;
++}
++
++}  // namespace navi_spike
+diff --git a/libs/routing/navi_wetland_cost.hpp b/libs/routing/navi_wetland_cost.hpp
+new file mode 100644
+index 000000000..fbf2015db
+--- /dev/null
++++ b/libs/routing/navi_wetland_cost.hpp
+@@ -0,0 +1,42 @@
++#pragma once
++// Navi wetland cost hook for CoMaps EdgeEstimator.
++// Lookups are supplied by the Navi FFI shim (Rust SidecarReader), not by
++// embedding a zstd/NVSC parser inside CoMaps.
++// SoftAvoid ×5 (weight/ETA); HardAvoid → enormous penalty (avoid).
++
++#include "routing/segment.hpp"
++
++#include <cstdint>
++
++namespace navi_spike
++{
++
++enum class WetlandClass : uint8_t
++{
++  None = 0,
++  SoftAvoid = 1,
++  HardAvoid = 2,
++};
++
++using WetlandLookupFn = WetlandClass (*)(uint32_t featureId, uint32_t segmentIdx, bool forward);
++
++class WetlandSidecar
++{
++public:
++  // Install / clear the lookup provided by navi_comaps (Rust).
++  static void SetLookup(WetlandLookupFn fn);
++  static bool Enabled();
++  static WetlandClass Lookup(uint32_t featureId, uint32_t segmentIdx, bool forward);
++  static double CostMultiplier(WetlandClass c);
++};
++
++inline double ApplyWetlandCost(routing::Segment const & segment, double weightSeconds)
++{
++  if (!WetlandSidecar::Enabled())
++    return weightSeconds;
++  auto const cls = WetlandSidecar::Lookup(
++      segment.GetFeatureId(), segment.GetSegmentIdx(), segment.IsForward());
++  return weightSeconds * WetlandSidecar::CostMultiplier(cls);
++}
++
++}  // namespace navi_spike
