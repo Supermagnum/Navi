@@ -24,7 +24,8 @@ fi
 SHA="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sha"])' "$PIN_JSON")"
 cd "$SRC"
 git checkout --force "$SHA"
-git clean -fd -- libs/routing/navi_wetland_cost.cpp libs/routing/navi_wetland_cost.hpp 2>/dev/null || true
+git clean -fd -- libs/routing/navi_wetland_cost.cpp libs/routing/navi_wetland_cost.hpp \
+  android/sdk/src/main/cpp/navi 2>/dev/null || true
 while IFS= read -r patch || [[ -n "$patch" ]]; do
   [[ -z "$patch" || "$patch" =~ ^# ]] && continue
   echo "Applying $patch"

@@ -134,8 +134,7 @@ class ComapsPhase3RouteInstrumentedTest {
                 .put(
                     "geometry",
                     JSONObject().put("type", "LineString").put("coordinates", coords),
-                )
-                .put(
+                ).put(
                     "properties",
                     JSONObject().put("id", id).put("wetland_hook", wetland),
                 )

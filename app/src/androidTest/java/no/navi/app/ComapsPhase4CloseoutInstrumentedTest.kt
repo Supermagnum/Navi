@@ -1,16 +1,22 @@
 package no.navi.app
 
+import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONArray
 import org.json.JSONObject
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import uniffi.navi.FfiComapsOptimize
 import uniffi.navi.FfiComapsProfile
+import uniffi.navi.FfiComapsRoute
 import uniffi.navi.FfiComapsRouteCode
 import uniffi.navi.comapsNativeAvailable
 import uniffi.navi.comapsSessionClose
@@ -40,21 +46,80 @@ class ComapsPhase4CloseoutInstrumentedTest {
         outDir = File(root, "out-phase4-closeout")
         outDir.mkdirs()
         File(root, "261105").mkdirs()
-        for (name in ctx.assets.list("comaps-data").orEmpty()) {
-            if (name == "MANIFEST.txt") continue
-            val dest = File(root, name)
-            if (dest.isFile && dest.length() > 0L) continue
-            ctx.assets.open("comaps-data/$name").use { input ->
-                FileOutputStream(dest).use { output -> input.copyTo(output) }
+
+        fun copyAssetDir(
+            assetPath: String,
+            destDir: File,
+        ) {
+            val children = ctx.assets.list(assetPath).orEmpty()
+            if (children.isEmpty()) {
+                destDir.parentFile?.mkdirs()
+                if (destDir.isFile && destDir.length() > 0L) return
+                ctx.assets.open(assetPath).use { input ->
+                    FileOutputStream(destDir).use { output -> input.copyTo(output) }
+                }
+                return
+            }
+            destDir.mkdirs()
+            for (child in children) {
+                if (child == "MANIFEST.txt") continue
+                copyAssetDir("$assetPath/$child", File(destDir, child))
             }
         }
+        copyAssetDir("comaps-data", root)
     }
 
-    private fun assertNoInternal(code: FfiComapsRouteCode, msg: String?) {
+    private fun assertNoInternal(
+        code: FfiComapsRouteCode,
+        msg: String?,
+    ) {
         assertFalse(
             "INTERNAL must not reach user: $msg",
             code == FfiComapsRouteCode.INTERNAL,
         )
+    }
+
+    /**
+     * Counters the shim writes at the top level of `elevation_json`; JSON null
+     * when the key is absent so a missing value is never read as zero.
+     */
+    private fun bandCounters(json: String): JSONObject {
+        val o = runCatching { JSONObject(json.trim()) }.getOrNull()
+
+        fun counter(key: String): Any =
+            if (o != null && o.has(key) && !o.isNull(key)) {
+                o.getInt(key)
+            } else {
+                JSONObject.NULL
+            }
+        return JSONObject()
+            .put("sidecar_hits", counter("sidecar_hits"))
+            .put("band_would_reject_75m", counter("band_would_reject_75m"))
+    }
+
+    /** Log the A3 band diagnostics and check the A4 climb publisher for one route. */
+    private fun reportBandAndClimb(
+        id: String,
+        variant: String,
+        route: FfiComapsRoute,
+    ): JSONObject {
+        val band = bandCounters(route.elevationJson)
+        val climb = RouteClimbSource.publishIfOk(route)
+        val taken = RouteClimbSource.takeComaps()
+        if (route.code == FfiComapsRouteCode.OK) {
+            assertNotNull("$id/$variant: climb not published for OK route", climb)
+            assertEquals(RouteClimb.Source.COMAPS_MWM, taken?.source)
+        } else {
+            assertNull("$id/$variant: climb published for ${route.code}", taken)
+        }
+        Log.i(
+            "NaviPhase5Band",
+            "route=$id variant=$variant code=${route.code} " +
+                "band_would_reject_75m=${band.get("band_would_reject_75m")} " +
+                "sidecar_hits=${band.get("sidecar_hits")} " +
+                "ascent_m=${route.ascentM} climb_source=${taken?.source?.label}",
+        )
+        return band.put("climb_source", taken?.source?.label ?: JSONObject.NULL)
     }
 
     /** New elev JSON is `{comaps_ascent_m, points:[...]}`; legacy was a bare array. */
@@ -67,6 +132,7 @@ class ComapsPhase4CloseoutInstrumentedTest {
                 .put("comaps_descent_m", o.optDouble("comaps_descent_m"))
                 .put("ascent_m", o.optDouble("ascent_m"))
                 .put("descent_m", o.optDouble("descent_m"))
+                .put("band", bandCounters(trimmed))
                 .put("points", o.optJSONArray("points")?.length() ?: 0)
                 .put(
                     "sidecar_points",
@@ -137,7 +203,8 @@ class ComapsPhase4CloseoutInstrumentedTest {
                 .put("length_m", vf2.lengthM)
                 .put("ascent_m", vf2.ascentM)
                 .put("descent_m", vf2.descentM)
-                .put("ele_meta", elevMeta(vf2.elevationJson)),
+                .put("ele_meta", elevMeta(vf2.elevationJson))
+                .put("a4", reportBandAndClimb("valdresflye_rv51_beitostolen", "hook", vf2)),
         )
 
         // 2) Turn-by-turn + ferry: instructions_json must have text_nb/text_en/voice
@@ -198,7 +265,8 @@ class ComapsPhase4CloseoutInstrumentedTest {
                     .put("steps", instr.length())
                     .put("ascent_m", r.ascentM)
                     .put("descent_m", r.descentM)
-                    .put("router_mode", r.routerMode),
+                    .put("router_mode", r.routerMode)
+                    .put("a4", reportBandAndClimb(t.id, "plain", r)),
             )
         }
         summary.put("turn_by_turn", tbtReport)
@@ -223,7 +291,8 @@ class ComapsPhase4CloseoutInstrumentedTest {
                 .put("router_mode", ld.routerMode)
                 .put("ascent_m", ld.ascentM)
                 .put("descent_m", ld.descentM)
-                .put("under_3s", ld.buildTimeS < 3.0),
+                .put("under_3s", ld.buildTimeS < 3.0)
+                .put("a4", reportBandAndClimb("lillehammer_drammen", "plain", ld)),
         )
 
         // 4) Mountain elevation with/without wetland hook (sidecar elev)
@@ -262,7 +331,9 @@ class ComapsPhase4CloseoutInstrumentedTest {
                     .put("hook_code", hooked.code.name)
                     .put("hook_ascent", hooked.ascentM)
                     .put("hook_descent", hooked.descentM)
-                    .put("hook_elev", elevMeta(hooked.elevationJson)),
+                    .put("hook_elev", elevMeta(hooked.elevationJson))
+                    .put("plain_band", reportBandAndClimb(id, "plain", plain))
+                    .put("hook_band", reportBandAndClimb(id, "hook", hooked)),
             )
             File(outDir, "$id.elevation.plain.json").writeText(plain.elevationJson)
             File(outDir, "$id.elevation.hook.json").writeText(hooked.elevationJson)
@@ -282,5 +353,82 @@ class ComapsPhase4CloseoutInstrumentedTest {
             },
         )
         comapsSessionClose()
+    }
+
+    /**
+     * Band-reject measurement on leaves outside Østlandet (decision A3 follow-up).
+     * Bolivia_South and China_Tibet are not bundled: download them once with
+     * `cargo test -p driver-break-core --test mwm_live_band_leaves -- --ignored --nocapture` and push the files (it prints the adb
+     * commands). Leaves that are not on the device are skipped with a message;
+     * nothing is measured or invented for them. Endpoints are presumed inside
+     * each leaf; a route that is not OK is logged with its code and not counted.
+     */
+    @Test
+    fun phase5BandRejectRemoteLeaves() {
+        data class Remote(
+            val leaf: String,
+            val from: Pair<Double, Double>,
+            val to: Pair<Double, Double>,
+        )
+        val cases =
+            listOf(
+                Remote("Bolivia_South", -19.5836 to -65.7531, -20.4600 to -66.8250),
+                // CoMaps leaf id is "China_Tibet Autonomous Region".
+                Remote(
+                    "China_Tibet Autonomous Region",
+                    29.6500 to 91.1000,
+                    29.2670 to 88.8800,
+                ),
+            )
+        val release = File(root, "261105")
+        val present = cases.filter { File(release, "${it.leaf}.mwm").isFile }
+        for (c in cases - present.toSet()) {
+            Log.w(
+                "NaviPhase5Band",
+                "SKIP leaf=${c.leaf}: ${c.leaf}.mwm not under ${release.absolutePath}; " +
+                    "run the mwm_live_band_leaves ignored test once and push the leaf + sidecar",
+            )
+        }
+        assumeTrue(
+            "no remote leaves on device (Bolivia_South, China_Tibet); see core/tests/mwm_live_band_leaves.rs",
+            present.isNotEmpty(),
+        )
+
+        val open =
+            comapsSessionOpen(
+                storagePath = root.absolutePath,
+                writablePath = root.absolutePath,
+                sidecarDir = File(root, "sidecars").absolutePath,
+                loadWetlandSidecars = true,
+            )
+        assertTrue("session: ${open.errorMessage}", open.ok)
+        try {
+            val report = JSONArray()
+            for (c in present) {
+                val sidecar = File(root, "sidecars/${c.leaf}.navi-sidecar.v1.zst")
+                val route =
+                    comapsSessionRoute(
+                        FfiComapsProfile.CAR,
+                        c.from.first,
+                        c.from.second,
+                        c.to.first,
+                        c.to.second,
+                        wetlandHook = true,
+                    )
+                val row =
+                    JSONObject()
+                        .put("leaf", c.leaf)
+                        .put("code", route.code.name)
+                        .put("error", route.errorMessage)
+                        .put("sidecar_file_present", sidecar.isFile)
+                        .put("ascent_m", route.ascentM)
+                        .put("descent_m", route.descentM)
+                        .put("band", reportBandAndClimb(c.leaf, "hook", route))
+                report.put(row)
+            }
+            File(outDir, "phase5-band-remote-leaves.json").writeText(report.toString(2))
+        } finally {
+            comapsSessionClose()
+        }
     }
 }

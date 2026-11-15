@@ -107,6 +107,114 @@ NaviComapsCode navi_comaps_route(NaviComapsProfile profile, double from_lat, dou
 
 void navi_comaps_cancel(void);
 void navi_comaps_free_route(NaviComapsRouteResult * result);
+
+/* ---- Nearest drivable road (END/START_NOT_ON_ROAD choice) ------------------
+ * Never called from navi_comaps_route(): the client shows the snap point and its
+ * distance and only routes to it after an explicit user confirmation. */
+typedef struct NaviComapsSnapResult {
+  /** NAVI_COMAPS_OK when a road was found; NAVI_COMAPS_ROUTE_NOT_FOUND when no
+   *  routable edge lies within radius_m; NOT_INIT / NEED_MORE_MAPS otherwise. */
+  NaviComapsCode code;
+  double proj_lat;
+  double proj_lon;
+  /** Great-circle distance from the query point to the projection. */
+  double distance_m;
+  /** CoMaps feature index inside the leaf MWM, and the segment on that feature. */
+  uint32_t feature_id;
+  uint32_t segment_idx;
+  /** MWM leaf name (e.g. "Norway_Oppland"); may be NULL. */
+  char * mwm_name;
+  char * error_message; /* UTF-8; may be NULL */
+} NaviComapsSnapResult;
+
+/* Nearest edge of `profile` within radius_m of (lat, lon). Caller frees with
+ * navi_comaps_free_snap. */
+NaviComapsCode navi_comaps_snap_to_road(NaviComapsProfile profile, double lat, double lon,
+                                        double radius_m, NaviComapsSnapResult * out);
+void navi_comaps_free_snap(NaviComapsSnapResult * result);
+
+/* ---- Offline search (search::Engine over the registered MWMs) -------------
+ * The shim opens its own FrozenDataSource on the same writable MWM directory
+ * as RoutesBuilder (mmap-backed; RoutesBuilder's single pooled data source is
+ * borrowed per route and cannot be shared with a long-lived search engine). */
+
+typedef enum NaviComapsSearchKind {
+  NAVI_COMAPS_SEARCH_FEATURE = 0,
+  NAVI_COMAPS_SEARCH_LATLON = 1,
+  NAVI_COMAPS_SEARCH_POSTCODE = 2,
+} NaviComapsSearchKind;
+
+typedef struct NaviComapsSearchResult {
+  NaviComapsSearchKind kind;
+  double lat;
+  double lon;
+  /** Metres from the search position, or -1 when no position was set. */
+  double distance_m;
+  uint32_t feature_id;
+  char * name;          /* UTF-8; never NULL */
+  char * address;       /* UTF-8; may be empty */
+  char * feature_type;  /* localized type label; may be empty */
+  char * mwm_name;      /* MWM leaf name; may be empty */
+} NaviComapsSearchResult;
+
+typedef struct NaviComapsSearchBatch {
+  uint64_t request_id;
+  /** Only the results appended since the previous batch of this request. */
+  NaviComapsSearchResult * results;
+  size_t count;
+  /** 1 on the last batch of a request (results may be empty). */
+  int is_final;
+  /** 1 when the request ended because of navi_comaps_search_cancel / timeout. */
+  int cancelled;
+} NaviComapsSearchBatch;
+
+/* Ownership of `batch` passes to the callback, which must release it with
+ * navi_comaps_free_search_result. Called from a search worker thread. */
+typedef void (*NaviComapsSearchCallback)(NaviComapsSearchBatch * batch, void * user_data);
+
+/* Locale for ranking/categories (e.g. "nb", "en"). Empty/NULL -> "en". */
+void navi_comaps_set_search_locale(char const * locale);
+/* Viewport rect used as the search pivot area. Without one, a box around the
+ * search position (or the whole world) is used. When a viewport is set the
+ * engine runs in Viewport mode; clear it for Everywhere (To-field) search. */
+void navi_comaps_set_search_viewport(double min_lat, double min_lon, double max_lat, double max_lon);
+void navi_comaps_clear_search_viewport(void);
+/* has_position = 0 clears the position. */
+void navi_comaps_set_search_position(double lat, double lon, int has_position);
+
+/* Starts an async search; returns a request id (> 0) or 0 on failure. Batches are
+ * delivered to `callback`. is_category != 0 runs a pure category query (use the
+ * string from navi_comaps_category_query). */
+uint64_t navi_comaps_search(char const * query, int is_category, size_t max_results,
+                            NaviComapsSearchCallback callback, void * user_data);
+/* Cancels one request, or all in-flight requests when request_id == 0. */
+void navi_comaps_search_cancel(uint64_t request_id);
+/* Frees a batch delivered to the callback (results array and all strings). */
+void navi_comaps_free_search_result(NaviComapsSearchBatch * batch);
+
+/* JSON array of CoMaps DisplayedCategories keys (e.g. "category_fuel"). Caller frees
+ * with navi_comaps_free_string. */
+char * navi_comaps_category_keys(void);
+/* Localized search string for a category key in `locale` (falls back to English).
+ * Returns NULL when the key is unknown. Caller frees with navi_comaps_free_string. */
+char * navi_comaps_category_query(char const * key, char const * locale);
+void navi_comaps_free_string(char * s);
+
+typedef struct NaviComapsAddress {
+  /** NAVI_COMAPS_OK when anything was resolved; ROUTE_NOT_FOUND when nothing nearby. */
+  NaviComapsCode code;
+  char * house_number;  /* may be empty */
+  char * street;        /* may be empty */
+  char * formatted;     /* "street house" or best-effort label; may be empty */
+  /** MWM leaf (country) containing the point; may be empty. */
+  char * country_id;
+  /** Metres from the query point to the matched building or street. */
+  double distance_m;
+} NaviComapsAddress;
+
+NaviComapsCode navi_comaps_reverse_geocode(double lat, double lon, NaviComapsAddress * out);
+void navi_comaps_free_address(NaviComapsAddress * address);
+
 void navi_comaps_shutdown(void);
 
 #ifdef __cplusplus

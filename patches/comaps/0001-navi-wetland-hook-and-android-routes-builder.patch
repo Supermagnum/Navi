@@ -198,7 +198,7 @@ index 000000000..2c20f1c4c
 +
 +}  // namespace navi_spike
 diff --git a/libs/routing/routes_builder/routes_builder.cpp b/libs/routing/routes_builder/routes_builder.cpp
-index 78f6d77bc..d2ef9d237 100644
+index 78f6d77bc..339b86dfc 100644
 --- a/libs/routing/routes_builder/routes_builder.cpp
 +++ b/libs/routing/routes_builder/routes_builder.cpp
 @@ -1,7 +1,10 @@
@@ -241,7 +241,20 @@ index 78f6d77bc..d2ef9d237 100644
  
  namespace
  {
-@@ -281,7 +292,8 @@ void RoutesBuilder::Processor::InitRouter(VehicleType type)
+@@ -147,6 +158,12 @@ RoutesBuilder::Result RoutesBuilder::ProcessTask(Params const & params)
+   return processor(params);
+ }
+ 
++RoutesBuilder::SnapResult RoutesBuilder::FindClosestRoad(VehicleType type, m2::PointD const & point, double radiusM)
++{
++  Processor processor(m_numMwmIds, m_dataSourcesStorage, m_cpg, m_cig);
++  return processor.FindClosestRoad(type, point, radiusM);
++}
++
+ std::future<RoutesBuilder::Result> RoutesBuilder::ProcessTaskAsync(Params const & params)
+ {
+   // Should be copyable to workaround MSVC bug (https://developercommunity.visualstudio.com/t/108672)
+@@ -281,7 +298,8 @@ void RoutesBuilder::Processor::InitRouter(VehicleType type)
      return cigSharedPtr->GetLimitRectForLeaf(countryId);
    };
  
@@ -251,7 +264,39 @@ index 78f6d77bc..d2ef9d237 100644
    if (!m_dataSource)
      m_dataSource = m_dataSourceStorage.GetDataSource();
  
-@@ -327,6 +339,184 @@ RoutesBuilder::Result RoutesBuilder::Processor::operator()(Params const & params
+@@ -290,6 +308,31 @@ void RoutesBuilder::Processor::InitRouter(VehicleType type)
+                                            *m_dataSource);
+ }
+ 
++RoutesBuilder::SnapResult RoutesBuilder::Processor::FindClosestRoad(VehicleType type, m2::PointD const & point,
++                                                                    double radiusM)
++{
++  InitRouter(type);
++  SCOPE_GUARD(returnDataSource, [&]() { m_dataSourceStorage.PushDataSource(std::move(m_dataSource)); });
++  CHECK(m_dataSource, ());
++
++  SnapResult out;
++  EdgeProj proj;
++  // Zero direction: closest edge regardless of heading.
++  if (!m_router->FindClosestProjectionToRoad(point, m2::PointD::Zero(), radiusM, proj))
++    return out;
++
++  out.m_found = true;
++  out.m_point = proj.m_point;
++  out.m_distanceM = mercator::DistanceOnEarth(point, proj.m_point);
++  auto const & fid = proj.m_edge.GetFeatureId();
++  out.m_featureId = fid.m_index;
++  out.m_segId = proj.m_edge.GetSegId();
++  if (fid.m_mwmId.IsAlive())
++    out.m_mwmName = fid.m_mwmId.GetInfo()->GetCountryName();
++  m_router->ClearState();
++  return out;
++}
++
+ RoutesBuilder::Result RoutesBuilder::Processor::operator()(Params const & params)
+ {
+   InitRouter(params.m_type);
+@@ -327,6 +370,187 @@ RoutesBuilder::Result RoutesBuilder::Processor::operator()(Params const & params
  
    routeResult.m_followedPolyline = route.GetFollowedPolyline();
  
@@ -334,8 +379,9 @@ index 78f6d77bc..d2ef9d237 100644
 +    double descentComaps = 0.0;
 +    double ascent = 0.0;
 +    double descent = 0.0;
++    size_t sidecarHits = 0;
++    size_t bandWouldReject = 0;  // |sidecar−comaps| > 75 m (diagnostic; band removed)
 +    std::ostringstream ej;
-+    ej << "{\"comaps_ascent_m\":";
 +    // points first into a buffer so we can prefix totals
 +    std::ostringstream pts;
 +    pts << '[';
@@ -359,15 +405,15 @@ index 78f6d77bc..d2ef9d237 100644
 +        if (navi_spike::WetlandSidecar::ElevationOverride(cfile.GetName().c_str(),
 +                                                          seg.GetFeatureId(), pointIdx, dm))
 +        {
-+          // Only accept overrides that stay within a sane band of CoMaps altitude
-+          // when both exist (guards residual index mismatches).
++          // Sidecars are fingerprint- and checksum-verified — trust EL02 values.
++          // Report how many would have failed the old 75 m client band.
 +          double const cand = static_cast<double>(dm) / 10.0;
-+          if (!comapsOk || std::fabs(cand - comapsM) <= 75.0)
-+          {
-+            eleM = cand;
-+            source = "sidecar";
-+            overrideOk = true;
-+          }
++          if (comapsOk && std::fabs(cand - comapsM) > 75.0)
++            ++bandWouldReject;
++          eleM = cand;
++          source = "sidecar";
++          overrideOk = true;
++          ++sidecarHits;
 +        }
 +      };
 +      // altitudes[0] = subroute start; altitudes[i+1] = end of elevSegs[i]
@@ -417,8 +463,10 @@ index 78f6d77bc..d2ef9d237 100644
 +      }
 +    }
 +    pts << ']';
-+    ej << ascentComaps << ",\"comaps_descent_m\":" << descentComaps
++    ej << "{\"comaps_ascent_m\":" << ascentComaps << ",\"comaps_descent_m\":" << descentComaps
 +       << ",\"ascent_m\":" << ascent << ",\"descent_m\":" << descent
++       << ",\"sidecar_hits\":" << sidecarHits
++       << ",\"band_would_reject_75m\":" << bandWouldReject
 +       << ",\"points\":" << pts.str() << '}';
 +    routeResult.m_ascentM = ascent;
 +    routeResult.m_descentM = descent;
@@ -437,7 +485,7 @@ index 78f6d77bc..d2ef9d237 100644
  
    return result;
 diff --git a/libs/routing/routes_builder/routes_builder.hpp b/libs/routing/routes_builder/routes_builder.hpp
-index 7ba01aa28..3bf69449a 100644
+index 7ba01aa28..eb4779f81 100644
 --- a/libs/routing/routes_builder/routes_builder.hpp
 +++ b/libs/routing/routes_builder/routes_builder.hpp
 @@ -74,6 +74,13 @@ public:
@@ -454,3 +502,32 @@ index 7ba01aa28..3bf69449a 100644
    };
  
    struct Result
+@@ -94,6 +101,20 @@ public:
+     double m_buildTimeSeconds = 0.0;
+   };
+ 
++  /// Navi: nearest routable edge projection for a point (A2 off-road UX). Never called from route
++  /// building; the client shows the snap point and only routes after user confirmation.
++  struct SnapResult
++  {
++    bool m_found = false;
++    m2::PointD m_point;
++    double m_distanceM = 0.0;
++    uint32_t m_featureId = 0;
++    uint32_t m_segId = 0;
++    std::string m_mwmName;
++  };
++
++  SnapResult FindClosestRoad(VehicleType type, m2::PointD const & point, double radiusM);
++
+   Result ProcessTask(Params const & params);
+   std::future<Result> ProcessTaskAsync(Params const & params);
+ 
+@@ -108,6 +129,7 @@ private:
+     Processor(Processor && rhs) noexcept;
+ 
+     Result operator()(Params const & params);
++    SnapResult FindClosestRoad(VehicleType type, m2::PointD const & point, double radiusM);
+ 
+   private:
+     void InitRouter(VehicleType type);

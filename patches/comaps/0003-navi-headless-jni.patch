@@ -121,3 +121,50 @@ index bd0597721..86c4cfe52 100644
    JNIEnv * env = jni::GetEnv();
    static jmethodID const getLanguageCodeId =
        jni::GetStaticMethodID(env, g_utilsClazz, "getLanguageCode", "()Ljava/lang/String;");
+diff --git a/android/sdk/src/main/cpp/app/organicmaps/sdk/platform/Localization.cpp b/android/sdk/src/main/cpp/app/organicmaps/sdk/platform/Localization.cpp
+index 2441c73ed..bc2f1a39a 100644
+--- a/android/sdk/src/main/cpp/app/organicmaps/sdk/platform/Localization.cpp
++++ b/android/sdk/src/main/cpp/app/organicmaps/sdk/platform/Localization.cpp
+@@ -32,24 +32,33 @@ namespace platform
+ {
+ std::string GetLocalizedTypeName(std::string const & type)
+ {
++  // Navi headless: JNI_OnLoad skips Utils class cache.
++  if (!g_utilsClazz)
++    return type;
+   static auto const methodId = GetMethodId("getLocalizedFeatureType");
+   return GetLocalizedStringByUtil(methodId, type);
+ }
+ 
+ std::string GetLocalizedBrandName(std::string const & brand)
+ {
++  if (!g_utilsClazz)
++    return brand;
+   static auto const methodId = GetMethodId("getLocalizedBrand");
+   return GetLocalizedStringByUtil(methodId, brand);
+ }
+ 
+ std::string GetLocalizedString(std::string const & key)
+ {
++  if (!g_utilsClazz)
++    return key;
+   static auto const methodId = GetMethodId("getStringValueByKey");
+   return GetLocalizedStringByUtil(methodId, key);
+ }
+ 
+ std::string GetCurrencySymbol(std::string const & currencyCode)
+ {
++  if (!g_utilsClazz)
++    return currencyCode;
+   JNIEnv * env = jni::GetEnv();
+   static auto const methodId =
+       jni::GetStaticMethodID(env, g_utilsClazz, "getCurrencySymbol", "(Ljava/lang/String;)Ljava/lang/String;");
+@@ -61,6 +70,8 @@ std::string GetCurrencySymbol(std::string const & currencyCode)
+ 
+ std::string GetLocalizedMyPositionBookmarkName()
+ {
++  if (!g_utilsClazz)
++    return "My Position";
+   JNIEnv * env = jni::GetEnv();
+   static auto const methodId = jni::GetStaticMethodID(env, g_utilsClazz, "getMyPositionBookmarkName",
+                                                       "(Landroid/content/Context;)Ljava/lang/String;");

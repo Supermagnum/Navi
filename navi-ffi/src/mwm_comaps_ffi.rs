@@ -6,9 +6,14 @@
 use std::sync::Mutex;
 use std::time::Instant;
 
+use std::sync::Arc;
+
+use driver_break_core::mwm::comaps_search::{self, ComapsSearch};
 use driver_break_core::mwm::{
-    ComapsLatLon, ComapsProfile, ComapsRouter, ComapsRouterCode, ComapsRouterError,
+    mwm_client_enabled, suggest_snap, ComapsLatLon, ComapsProfile, ComapsRouter, ComapsRouterCode,
+    ComapsRouterError, MergeMode, SearchBatch, SearchHit, SearchHitKind, DEFAULT_SNAP_RADIUS_M,
 };
+use driver_break_core::poi::PoiCategory;
 
 static SESSION: Mutex<Option<ComapsRouter>> = Mutex::new(None);
 
@@ -351,5 +356,412 @@ pub fn comaps_session_set_turns_locale(locale: String) {
         if let Some(r) = guard.as_ref() {
             r.set_turns_locale(&locale);
         }
+    }
+}
+
+// --- Nearest-road suggestion (A2) ---------------------------------------------
+
+/// Proposed replacement endpoint after `StartNotOnRoad` / `EndNotOnRoad`.
+/// Informational: the app shows it and only routes after the user confirms.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiSnapSuggestion {
+    /// False when there is nothing to offer (other route code, flag off, no
+    /// road inside the radius, or the engine is not available).
+    pub found: bool,
+    /// `true` = the start failed to match a road, `false` = the destination.
+    pub is_start: bool,
+    pub original_lat: f64,
+    pub original_lon: f64,
+    pub snap_lat: f64,
+    pub snap_lon: f64,
+    pub distance_m: f64,
+    pub feature_id: u32,
+    pub segment_idx: u32,
+    pub mwm_name: Option<String>,
+    pub message: String,
+    pub error_message: Option<String>,
+}
+
+fn no_snap(lat: f64, lon: f64, error: Option<String>) -> FfiSnapSuggestion {
+    FfiSnapSuggestion {
+        found: false,
+        is_start: false,
+        original_lat: lat,
+        original_lon: lon,
+        snap_lat: 0.0,
+        snap_lon: 0.0,
+        distance_m: 0.0,
+        feature_id: 0,
+        segment_idx: 0,
+        mwm_name: None,
+        message: String::new(),
+        error_message: error,
+    }
+}
+
+fn to_router_code(c: FfiComapsRouteCode) -> ComapsRouterCode {
+    match c {
+        FfiComapsRouteCode::Ok => ComapsRouterCode::Ok,
+        FfiComapsRouteCode::NotInit => ComapsRouterCode::NotInit,
+        FfiComapsRouteCode::RouteNotFound => ComapsRouterCode::RouteNotFound,
+        FfiComapsRouteCode::NeedMoreMaps => ComapsRouterCode::NeedMoreMaps,
+        FfiComapsRouteCode::Cancelled => ComapsRouterCode::Cancelled,
+        FfiComapsRouteCode::Internal => ComapsRouterCode::Internal,
+        FfiComapsRouteCode::Unsupported => ComapsRouterCode::Unsupported,
+        FfiComapsRouteCode::Unavailable => ComapsRouterCode::Unavailable,
+        FfiComapsRouteCode::StartNotOnRoad => ComapsRouterCode::StartNotOnRoad,
+        FfiComapsRouteCode::EndNotOnRoad => ComapsRouterCode::EndNotOnRoad,
+        FfiComapsRouteCode::RoadClosed => ComapsRouterCode::RoadClosed,
+    }
+}
+
+/// Nearest drivable road for the endpoint that failed with `code`. Returns
+/// `found = false` for every code except `StartNotOnRoad` / `EndNotOnRoad`.
+/// Never called by [`comaps_session_route`]; the app calls it after a failure
+/// and shows the result before routing anywhere.
+#[uniffi::export]
+pub fn comaps_session_snap_suggestion(
+    profile: FfiComapsProfile,
+    code: FfiComapsRouteCode,
+    lat: f64,
+    lon: f64,
+    radius_m: f64,
+) -> FfiSnapSuggestion {
+    if !mwm_client_enabled() {
+        return no_snap(lat, lon, Some("MWM client disabled".into()));
+    }
+    let Ok(guard) = SESSION.lock() else {
+        return no_snap(lat, lon, Some("session mutex poisoned".into()));
+    };
+    let Some(router) = guard.as_ref() else {
+        return no_snap(lat, lon, Some("call comaps_session_open first".into()));
+    };
+    let radius = if radius_m > 0.0 {
+        radius_m
+    } else {
+        DEFAULT_SNAP_RADIUS_M
+    };
+    let point = ComapsLatLon { lat, lon };
+    match suggest_snap(
+        router,
+        map_profile(profile),
+        to_router_code(code),
+        point,
+        radius,
+    ) {
+        Ok(Some(s)) => FfiSnapSuggestion {
+            found: true,
+            is_start: s.role == driver_break_core::mwm::SnapRole::Start,
+            original_lat: s.original.lat,
+            original_lon: s.original.lon,
+            snap_lat: s.snap.lat,
+            snap_lon: s.snap.lon,
+            distance_m: s.snap.distance_m,
+            feature_id: s.snap.feature_id,
+            segment_idx: s.snap.segment_idx,
+            mwm_name: s.snap.mwm_name,
+            message: s.message,
+            error_message: None,
+        },
+        Ok(None) => no_snap(lat, lon, None),
+        Err(e) => no_snap(lat, lon, Some(e.to_string())),
+    }
+}
+
+// --- Offline search (Phase 5) -------------------------------------------------
+
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FfiSearchHitKind {
+    Feature,
+    LatLon,
+    Postcode,
+}
+
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiSearchHit {
+    pub name: String,
+    pub address: String,
+    pub feature_type: String,
+    pub lat: f64,
+    pub lon: f64,
+    /// Negative when no search position was set.
+    pub distance_m: f64,
+    pub kind: FfiSearchHitKind,
+    /// `comaps` or a `navi:*` label.
+    pub source: String,
+    pub merged_sources: Vec<String>,
+    pub category_key: Option<String>,
+    pub feature_id: Option<u32>,
+    pub mwm_name: Option<String>,
+}
+
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiSearchBatch {
+    pub request_id: u64,
+    /// Hits appended since the previous batch of this request.
+    pub hits: Vec<FfiSearchHit>,
+    pub is_final: bool,
+    pub cancelled: bool,
+}
+
+/// Receives streamed search batches. Called from a search worker thread;
+/// implementations must not call back into the search functions synchronously.
+#[uniffi::export(with_foreign)]
+pub trait FfiSearchListener: Send + Sync {
+    fn on_batch(&self, batch: FfiSearchBatch);
+}
+
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiReverseAddress {
+    pub found: bool,
+    pub house_number: String,
+    pub street: String,
+    pub formatted: String,
+    pub country_id: String,
+    pub distance_m: f64,
+    pub error_message: Option<String>,
+}
+
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FfiCategoryCoverage {
+    Full,
+    Partial,
+    Gap,
+}
+
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiCategoryMapping {
+    /// `PoiCategory` variant name (`Water`, `Cabin`, ...).
+    pub navi_category: String,
+    pub comaps_key: Option<String>,
+    pub coverage: FfiCategoryCoverage,
+    pub note: String,
+}
+
+fn kind_to_ffi(k: SearchHitKind) -> FfiSearchHitKind {
+    match k {
+        SearchHitKind::Feature => FfiSearchHitKind::Feature,
+        SearchHitKind::LatLon => FfiSearchHitKind::LatLon,
+        SearchHitKind::Postcode => FfiSearchHitKind::Postcode,
+    }
+}
+
+fn kind_from_ffi(k: FfiSearchHitKind) -> SearchHitKind {
+    match k {
+        FfiSearchHitKind::Feature => SearchHitKind::Feature,
+        FfiSearchHitKind::LatLon => SearchHitKind::LatLon,
+        FfiSearchHitKind::Postcode => SearchHitKind::Postcode,
+    }
+}
+
+fn hit_to_ffi(h: SearchHit) -> FfiSearchHit {
+    FfiSearchHit {
+        name: h.name,
+        address: h.address,
+        feature_type: h.feature_type,
+        lat: h.lat,
+        lon: h.lon,
+        distance_m: h.distance_m.unwrap_or(-1.0),
+        kind: kind_to_ffi(h.kind),
+        source: h.source,
+        merged_sources: h.merged_sources,
+        category_key: h.category_key,
+        feature_id: h.feature_id,
+        mwm_name: h.mwm_name,
+    }
+}
+
+fn hit_from_ffi(h: FfiSearchHit) -> SearchHit {
+    SearchHit {
+        name: h.name,
+        address: h.address,
+        feature_type: h.feature_type,
+        lat: h.lat,
+        lon: h.lon,
+        distance_m: (h.distance_m >= 0.0).then_some(h.distance_m),
+        kind: kind_from_ffi(h.kind),
+        source: h.source,
+        merged_sources: h.merged_sources,
+        category_key: h.category_key,
+        feature_id: h.feature_id,
+        mwm_name: h.mwm_name,
+    }
+}
+
+fn batch_to_ffi(b: SearchBatch) -> FfiSearchBatch {
+    FfiSearchBatch {
+        request_id: b.request_id,
+        hits: b.hits.into_iter().map(hit_to_ffi).collect(),
+        is_final: b.is_final,
+        cancelled: b.cancelled,
+    }
+}
+
+/// True when the app should use CoMaps search: the MWM client flag is on and
+/// the native core is linked. Otherwise keep the `place_index` FTS search.
+#[uniffi::export]
+pub fn comaps_search_enabled() -> bool {
+    cfg!(feature = "comaps-native") && mwm_client_enabled()
+}
+
+#[uniffi::export]
+pub fn comaps_search_set_locale(locale: String) {
+    if comaps_search_enabled() {
+        ComapsSearch::set_locale(&locale);
+    }
+}
+
+#[uniffi::export]
+pub fn comaps_search_set_viewport(min_lat: f64, min_lon: f64, max_lat: f64, max_lon: f64) {
+    if comaps_search_enabled() {
+        ComapsSearch::set_viewport(min_lat, min_lon, max_lat, max_lon);
+    }
+}
+
+#[uniffi::export]
+pub fn comaps_search_clear_viewport() {
+    if comaps_search_enabled() {
+        ComapsSearch::clear_viewport();
+    }
+}
+
+#[uniffi::export]
+pub fn comaps_search_set_position(lat: f64, lon: f64, has_position: bool) {
+    if comaps_search_enabled() {
+        ComapsSearch::set_position(has_position.then_some((lat, lon)));
+    }
+}
+
+/// Start an async, cancellable search; batches stream to `listener`. Returns a
+/// request id, or 0 when search is unavailable (flag off, native core missing
+/// or no session). `is_category` takes the string from [`comaps_category_query`].
+#[uniffi::export]
+pub fn comaps_search_start(
+    query: String,
+    is_category: bool,
+    max_results: u32,
+    listener: Arc<dyn FfiSearchListener>,
+) -> u64 {
+    if !comaps_search_enabled() {
+        return 0;
+    }
+    ComapsSearch::start(
+        &query,
+        is_category,
+        max_results as usize,
+        Box::new(move |batch| listener.on_batch(batch_to_ffi(batch))),
+    )
+    .unwrap_or(0)
+}
+
+/// Cancel one request, or every in-flight request when `request_id` is 0.
+#[uniffi::export]
+pub fn comaps_search_cancel(request_id: u64) {
+    if comaps_search_enabled() {
+        ComapsSearch::cancel(request_id);
+    }
+}
+
+/// CoMaps `DisplayedCategories` keys from the native engine (empty if unavailable).
+#[uniffi::export]
+pub fn comaps_category_keys() -> Vec<String> {
+    if !comaps_search_enabled() {
+        return Vec::new();
+    }
+    ComapsSearch::category_keys().unwrap_or_default()
+}
+
+/// Localized query string for a category key, falling back to English.
+#[uniffi::export]
+pub fn comaps_category_query(key: String, locale: String) -> Option<String> {
+    if !comaps_search_enabled() {
+        return None;
+    }
+    ComapsSearch::category_query(&key, &locale).ok().flatten()
+}
+
+/// Quick-chip name (`fuel`, `ev`, ...) to a CoMaps category key; pure logic.
+#[uniffi::export]
+pub fn comaps_quick_category_key(name: String) -> Option<String> {
+    comaps_search::navi_quick_category_key(&name).map(str::to_string)
+}
+
+fn poi_category_name(c: PoiCategory) -> String {
+    format!("{c:?}")
+}
+
+/// Navi `PoiCategory` to CoMaps category mapping with coverage; pure logic.
+#[uniffi::export]
+pub fn comaps_poi_category_mappings() -> Vec<FfiCategoryMapping> {
+    comaps_search::all_category_mappings()
+        .into_iter()
+        .map(|m| FfiCategoryMapping {
+            navi_category: poi_category_name(m.category),
+            comaps_key: m.comaps_key.map(str::to_string),
+            coverage: match m.coverage {
+                comaps_search::CategoryCoverage::Full => FfiCategoryCoverage::Full,
+                comaps_search::CategoryCoverage::Partial => FfiCategoryCoverage::Partial,
+                comaps_search::CategoryCoverage::Gap => FfiCategoryCoverage::Gap,
+            },
+            note: m.note.to_string(),
+        })
+        .collect()
+}
+
+/// Merge CoMaps hits with Navi catalog hits (labelled `navi:*`) without
+/// changing either storage. `category_mode` orders by distance instead of
+/// CoMaps rank.
+#[uniffi::export]
+pub fn comaps_search_merge(
+    query: String,
+    category_mode: bool,
+    comaps_hits: Vec<FfiSearchHit>,
+    navi_hits: Vec<FfiSearchHit>,
+    limit: u32,
+) -> Vec<FfiSearchHit> {
+    let mode = if category_mode {
+        MergeMode::Category
+    } else {
+        MergeMode::Text
+    };
+    comaps_search::merge_hits(
+        &query,
+        mode,
+        comaps_hits.into_iter().map(hit_from_ffi).collect(),
+        navi_hits.into_iter().map(hit_from_ffi).collect(),
+        limit as usize,
+    )
+    .into_iter()
+    .map(hit_to_ffi)
+    .collect()
+}
+
+/// Nearest address for a point from the registered MWMs.
+#[uniffi::export]
+pub fn comaps_reverse_geocode(lat: f64, lon: f64) -> FfiReverseAddress {
+    let empty = |error: Option<String>| FfiReverseAddress {
+        found: false,
+        house_number: String::new(),
+        street: String::new(),
+        formatted: String::new(),
+        country_id: String::new(),
+        distance_m: -1.0,
+        error_message: error,
+    };
+    if !comaps_search_enabled() {
+        return empty(Some("MWM client disabled or native core missing".into()));
+    }
+    match ComapsSearch::reverse_geocode(lat, lon) {
+        Ok(Some(a)) => FfiReverseAddress {
+            found: true,
+            house_number: a.house_number,
+            street: a.street,
+            formatted: a.formatted,
+            country_id: a.country_id,
+            distance_m: a.distance_m,
+            error_message: None,
+        },
+        Ok(None) => empty(None),
+        Err(e) => empty(Some(e.to_string())),
     }
 }

@@ -97,11 +97,23 @@ Phase 8 retirement.
   turn-by-turn street names on 3 routes; PreferNonMotorway demo on
   Lillehammer→Drammen. Product defaults left open (see §3 + PR).
 
-### Phase 5 — Search
+### Phase 5 — Search (this branch)
 
-- CoMaps search index or interim hybrid; place UX parity for pilot region.
+- CoMaps `search::Engine` (free text, category, reverse geocode) behind the
+  `navi_comaps_*` C ABI, `core/src/mwm/comaps_search.rs` and UniFFI
+  `comaps_search_*`; results merged with Navi's own POI catalogs under
+  `comaps` / `navi:*` source labels (no storage change). Flag off keeps the
+  `place_index` FTS search.
+- Also in this phase: user-confirmed nearest-road snap for
+  `START/END_NOT_ON_ROAD` (never automatic), 75 m EL02 band removed, climb for
+  eco/diagnostics from CoMaps `ascent_m`/`descent_m` when the flag is ON.
+- Details, category gaps and acceptance: `docs/mwm-phase5-search.md`; routing
+  decisions A1-A3: `docs/mwm-phase4-parity.md`. Fixture:
+  `core/tests/fixtures/mwm/search-suite-ostlandet.json` (43 queries).
 - **Acceptance:** offline find for Østlandet places without requiring full
-  Geofabrik PBF for MWM-flag users.
+  Geofabrik PBF for MWM-flag users. Host fixture checks and Kotlin unit tests
+  pass; the on-device suite (`ComapsPhase5SearchInstrumentedTest`) has not been
+  run yet.
 
 ### Phase 6 — Rendering / drape
 

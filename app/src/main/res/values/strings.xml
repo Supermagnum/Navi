@@ -74,6 +74,16 @@
     <string name="dialog_map_data_needed_sweden">%1$s is in Sweden, which is not downloaded. Download Sweden to plan this trip.</string>
     <string name="dialog_longer_route_title">Longer route available</string>
     <string name="dialog_longer_route_accept">Accept longer route</string>
+    <string name="dialog_not_on_road_title_start">Start is not on a drivable road</string>
+    <string name="dialog_not_on_road_title_end">Destination is not on a drivable road</string>
+    <string name="dialog_not_on_road_body">No route was planned. Your point was not moved. You can look up the nearest drivable road and decide whether to route to it.</string>
+    <string name="action_route_to_nearest_road">Route to nearest drivable road</string>
+    <string name="dialog_nearest_road_finding">Finding the nearest drivable road…</string>
+    <string name="dialog_nearest_road_title">Nearest drivable road</string>
+    <string name="dialog_nearest_road_body">The nearest drivable road is %1$s away, at %2$s. Nothing is routed until you confirm.</string>
+    <string name="dialog_nearest_road_none">No drivable road was found near this point.</string>
+    <string name="action_route_to_this_point">Route to this point</string>
+    <string name="dialog_nearest_road_suffix">%1$s (nearest road)</string>
     <string name="dialog_delete_route_title">Delete route?</string>
     <string name="dialog_delete_planned_route_body">The planned route is removed from the map.</string>
     <string name="dialog_delete_saved_route_body">The saved route is deleted from this device.</string>

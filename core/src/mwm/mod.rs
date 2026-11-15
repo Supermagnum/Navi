@@ -14,6 +14,8 @@ pub mod checksum;
 pub mod comaps;
 pub mod comaps_instructions;
 pub mod comaps_router;
+pub mod comaps_search;
+pub mod comaps_snap;
 pub mod download;
 pub mod fingerprint;
 pub mod flag;
@@ -45,6 +47,16 @@ pub use comaps_instructions::{
 };
 pub use comaps_router::{
     ComapsLatLon, ComapsProfile, ComapsRoute, ComapsRouter, ComapsRouterCode, ComapsRouterError,
+    ComapsSnap,
+};
+pub use comaps_search::{
+    map_poi_category, merge_hits, navi_quick_category_key, CategoryCoverage, CategoryMapping,
+    ComapsSearch, MergeMode, NaviPoiSource, ReverseAddress, SearchBatch, SearchHit, SearchHitKind,
+    SOURCE_COMAPS,
+};
+pub use comaps_snap::{
+    build_suggestion, format_snap_distance, suggest_snap, SnapRole, SnapSuggestion,
+    DEFAULT_SNAP_RADIUS_M,
 };
 pub use download::{
     download_leaf_set, download_world_overlays, fetch_current_catalog,

@@ -100,8 +100,7 @@ class ComapsPhase4ParityInstrumentedTest {
                 .put(
                     "geometry",
                     JSONObject().put("type", "LineString").put("coordinates", coords),
-                )
-                .put("properties", JSONObject().put("id", name))
+                ).put("properties", JSONObject().put("id", name))
         val path = File(outDir, "$name.geojson")
         path.writeText(feat.toString())
         return path.absolutePath
@@ -311,7 +310,13 @@ class ComapsPhase4ParityInstrumentedTest {
         )
 
         // Mountain elevation sample corridors (ascent/time with hook; sidecar vs CoMaps)
-        data class ElevCase(val id: String, val lat0: Double, val lon0: Double, val lat1: Double, val lon1: Double)
+        data class ElevCase(
+            val id: String,
+            val lat0: Double,
+            val lon0: Double,
+            val lat1: Double,
+            val lon1: Double,
+        )
         val elevCases =
             listOf(
                 ElevCase("valdresflye_car", 61.39, 8.80, 61.45, 8.95),

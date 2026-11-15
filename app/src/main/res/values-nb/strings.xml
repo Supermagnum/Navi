@@ -61,6 +61,16 @@
     <string name="dialog_map_data_needed_sweden">%1$s ligger i Sverige, som ikke er lastet ned. Last ned Sverige for å planlegge denne turen.</string>
     <string name="dialog_longer_route_title">Lengre rute tilgjengelig</string>
     <string name="dialog_longer_route_accept">Godta lengre rute</string>
+    <string name="dialog_not_on_road_title_start">Start ligger ikke på en kjørbar vei</string>
+    <string name="dialog_not_on_road_title_end">Målet ligger ikke på en kjørbar vei</string>
+    <string name="dialog_not_on_road_body">Ingen rute ble planlagt. Punktet ditt ble ikke flyttet. Du kan slå opp nærmeste kjørbare vei og velge om du vil kjøre dit.</string>
+    <string name="action_route_to_nearest_road">Kjør til nærmeste kjørbare vei</string>
+    <string name="dialog_nearest_road_finding">Finner nærmeste kjørbare vei…</string>
+    <string name="dialog_nearest_road_title">Nærmeste kjørbare vei</string>
+    <string name="dialog_nearest_road_body">Nærmeste kjørbare vei er %1$s unna, ved %2$s. Ingenting ruteplanlegges før du bekrefter.</string>
+    <string name="dialog_nearest_road_none">Fant ingen kjørbar vei i nærheten av dette punktet.</string>
+    <string name="action_route_to_this_point">Kjør til dette punktet</string>
+    <string name="dialog_nearest_road_suffix">%1$s (nærmeste vei)</string>
     <string name="dialog_delete_route_title">Slette rute?</string>
     <string name="dialog_delete_planned_route_body">Den planlagte ruten fjernes fra kartet.</string>
     <string name="dialog_delete_saved_route_body">Den lagrede ruten slettes fra denne enheten.</string>

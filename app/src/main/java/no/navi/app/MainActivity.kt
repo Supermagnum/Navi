@@ -238,6 +238,8 @@ class MainActivity : ComponentActivity() {
         }
         super.onCreate(savedInstanceState)
         MwmClientBootstrap.ensureInitialized()
+        // Open the CoMaps session on the installed mwm/ root (background, never throws).
+        ComapsSessionBootstrap.openAsync(applicationContext)
         // Volume rocker / emulator media mute must control STREAM_MUSIC.
         // Do not use STREAM_ALARM (or other always-audible streams) for app
         // cues — that path was removed with ImuAlarmAudio and must not return.
@@ -637,11 +639,29 @@ class MainActivity : ComponentActivity() {
                 }
             Thread {
                 val t0 = android.os.SystemClock.elapsedRealtime()
-                if (dbFile == null || !dbFile.isFile) {
-                    android.util.Log.i(
-                        "NaviSearch",
-                        "app_search q=$q n=0 top= region= results=[] reason=place_index_unavailable",
+                // CoMaps search first when the MWM flag is ON and a session is open.
+                val comapsHits =
+                    ComapsSearchBridge.search(
+                        q,
+                        biasLat.takeUnless { it.isNaN() },
+                        biasLon.takeUnless { it.isNaN() },
+                        80,
                     )
+                if (dbFile == null || !dbFile.isFile) {
+                    if (comapsHits.isNotEmpty()) {
+                        val merged = comapsHits.map { ComapsSearchBridge.ffiToPlace(it) }
+                        android.util.Log.i(
+                            "NaviSearch",
+                            "app_search q=$q n=${merged.size} top=${merged.first().name} region= " +
+                                "duration_ms=${android.os.SystemClock.elapsedRealtime() - t0} " +
+                                "source=comaps results=${merged.joinToString("|") { it.name }}",
+                        )
+                    } else {
+                        android.util.Log.i(
+                            "NaviSearch",
+                            "app_search q=$q n=0 top= region= results=[] reason=place_index_unavailable",
+                        )
+                    }
                 } else {
                     val raw =
                         runCatching {
@@ -662,7 +682,7 @@ class MainActivity : ComponentActivity() {
                             emptyList()
                         }
                     val indexErr = raw.firstOrNull { it.kind == "index:error" }
-                    if (indexErr != null) {
+                    if (indexErr != null && comapsHits.isEmpty()) {
                         android.util.Log.i(
                             "NaviSearch",
                             "app_search q=$q q_hex=${q.toByteArray(Charsets.UTF_8).joinToString("") { b ->
@@ -672,14 +692,15 @@ class MainActivity : ComponentActivity() {
                         )
                         return@Thread
                     }
-                    val hits =
+                    val ranked =
                         rankPlaceHits(
                             q,
-                            raw,
+                            raw.filterNot { it.kind == "index:error" },
                             biasLat.takeUnless { it.isNaN() },
                             biasLon.takeUnless { it.isNaN() },
                             vis,
                         )
+                    val hits = ComapsSearchBridge.merge(q, comapsHits, ranked, 80)
                     val top = hits.firstOrNull()
                     val qHex =
                         q.toByteArray(Charsets.UTF_8).joinToString("") { b ->
@@ -690,6 +711,7 @@ class MainActivity : ComponentActivity() {
                         "app_search q=$q q_hex=$qHex n=${hits.size} top=${top?.name.orEmpty()} " +
                             "region=${top?.regionId.orEmpty()} " +
                             "duration_ms=${android.os.SystemClock.elapsedRealtime() - t0} " +
+                            "comaps=${comapsHits.size} " +
                             "results=${hits.joinToString("|") { "${it.name}@${it.regionId}" }}",
                     )
                 }
@@ -1989,6 +2011,10 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     var absurdDetourPrompt by remember {
         mutableStateOf<Pair<String, List<String>>?>(null)
     }
+    val snapChoice = remember { SnapChoiceFlow() }
+
+    /** START/END_NOT_ON_ROAD choice state; the nearest road is looked up only on user request. */
+    var snapChoiceState by remember { mutableStateOf<SnapChoiceFlow.State>(SnapChoiceFlow.State.Idle) }
     var rerouteJob by remember { mutableStateOf<Job?>(null) }
     val planAbort =
         remember {
@@ -4814,6 +4840,19 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 )
                 return@LaunchedEffect
             }
+            // CoMaps START/END_NOT_ON_ROAD: never auto-snap; offer the nearest road.
+            if (MwmClientBootstrap.isEnabled()) {
+                val notOnRoad = SnapChoiceFlow.roleFromReport(result.report)
+                if (notOnRoad != null) {
+                    val failedPoint = if (notOnRoad == NotOnRoadRole.START) start else toPoint
+                    snapChoice.onRouteFailed(notOnRoad, failedPoint.lat, failedPoint.lon)
+                    snapChoiceState = snapChoice.state
+                    status = userFacingStatus(result.report).ifBlank { "Point is not on a drivable road" }
+                    planNotice = status
+                    RoutingPlanLog.failed(ecoForPlan, durationMs, status, result)
+                    return@LaunchedEffect
+                }
+            }
             if (pendingGpxExportRouteId != null) {
                 pendingGpxExportRouteId = null
                 status =
@@ -4832,6 +4871,9 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
             )
             return@LaunchedEffect
         }
+        // Production still plans through the .rkyv planner. When a CoMaps (MWM)
+        // route feeds this path, call RouteClimbSource.publishIfOk(comapsRoute)
+        // right before this line so ECO_CALC uses climb_source=mwm.
         RoutingPlanLog.complete(result, ecoForPlan, durationMs)
         NaviMapTestHooks.routeStartLabel = start.name
         NaviMapTestHooks.routeEndLabel = toPoint.name
@@ -6630,6 +6672,17 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             val hasEntries =
                                 runCatching { placeIndexHasEntries(dbPath) }.getOrDefault(false)
                             ensureActive()
+                            // MWM flag ON and a CoMaps session: prefer CoMaps hits and merge the
+                            // place_index FTS hits into them. Empty (flag off, no session, no
+                            // match) leaves the FTS path below unchanged.
+                            val comapsHits =
+                                ComapsSearchBridge.search(
+                                    placeQ,
+                                    mapState.cameraLat,
+                                    mapState.cameraLon,
+                                    80,
+                                ) { isActive }
+                            ensureActive()
                             val rawHits =
                                 runCatching {
                                     val lat = mapState.cameraLat
@@ -6666,7 +6719,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                     )
                                 }
                             val indexErr = rawHits.firstOrNull { it.kind == "index:error" }
-                            if (indexErr != null) {
+                            if (indexErr != null && comapsHits.isEmpty()) {
                                 return@withContext PlaceSearchOutcome(
                                     hits = emptyList(),
                                     hasEntries = hasEntries,
@@ -6680,12 +6733,16 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                     placeQ,
                                     PlaceIndexReady.filterHitsToReadyRegions(
                                         dataDir,
-                                        rawHits,
+                                        rawHits.filterNot { it.kind == "index:error" },
                                     ),
                                     mapState.cameraLat,
                                     mapState.cameraLon,
                                     visibleSearchRegion(),
                                 )
+                            val comapsUsed = comapsHits.isNotEmpty()
+                            if (comapsUsed) {
+                                list = ComapsSearchBridge.merge(placeQ, comapsHits, list, 80)
+                            }
                             var usedOnline = false
                             // Online Nominatim only on explicit submit, when the
                             // setting is on and the base URL is non-empty. Typing
@@ -6728,7 +6785,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             list = filterHitsByCountryIso(list, countryIso)
                             // Keep places, POIs, and address-like hits in one list.
                             val filtered =
-                                if (usedOnline) {
+                                if (usedOnline || comapsUsed) {
                                     list
                                 } else {
                                     list
@@ -7517,6 +7574,66 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 },
             )
         }
+        RouteSnapChoiceDialog(
+            state = snapChoiceState,
+            onRequestSnap = {
+                val lookup = snapChoice.requestSnap()
+                snapChoiceState = snapChoice.state
+                if (lookup != null) {
+                    val code =
+                        if (lookup.role == NotOnRoadRole.START) {
+                            uniffi.navi.FfiComapsRouteCode.START_NOT_ON_ROAD
+                        } else {
+                            uniffi.navi.FfiComapsRouteCode.END_NOT_ON_ROAD
+                        }
+                    scope.launch {
+                        val suggestion =
+                            withContext(Dispatchers.IO) {
+                                runCatching {
+                                    uniffi.navi.comapsSessionSnapSuggestion(
+                                        SnapChoiceFlow.comapsProfileFor(profile),
+                                        code,
+                                        lookup.lat,
+                                        lookup.lon,
+                                        0.0,
+                                    )
+                                }.getOrNull()
+                            }
+                        snapChoice.onSnapResult(suggestion?.let { SnapChoiceFlow.offerFrom(it) })
+                        snapChoiceState = snapChoice.state
+                    }
+                }
+            },
+            onConfirm = {
+                val offer = snapChoice.confirm()
+                snapChoiceState = snapChoice.state
+                if (offer != null) {
+                    val labelled = { name: String ->
+                        context.getString(R.string.dialog_nearest_road_suffix, name.ifBlank { "Point" })
+                    }
+                    if (offer.role == NotOnRoadRole.START) {
+                        fromPoint =
+                            fromPoint?.copy(
+                                name = labelled(fromPoint?.name.orEmpty()),
+                                lat = offer.snapLat,
+                                lon = offer.snapLon,
+                            )
+                    } else {
+                        toPoint =
+                            toPoint.copy(
+                                name = labelled(toPoint.name),
+                                lat = offer.snapLat,
+                                lon = offer.snapLon,
+                            )
+                    }
+                    planKick += 1
+                }
+            },
+            onDismiss = {
+                snapChoice.dismiss()
+                snapChoiceState = snapChoice.state
+            },
+        )
         absurdDetourPrompt?.let { (msg, missingNames) ->
             AlertDialog(
                 onDismissRequest = {

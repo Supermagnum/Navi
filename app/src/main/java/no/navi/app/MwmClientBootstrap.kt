@@ -17,6 +17,27 @@ object MwmClientBootstrap {
     @Volatile
     private var applied = false
 
+    /** True once `liborganicmaps` loaded in this process (set by [ensureInitialized]). */
+    @Volatile
+    var nativeLoaded = false
+        private set
+
+    /** Effective flag: explicit process env wins, otherwise the build default. */
+    fun isEnabled(): Boolean {
+        ensureInitialized()
+        val raw =
+            runCatching { Os.getenv(ENV) }
+                .getOrNull()
+                ?.trim()
+                ?.lowercase()
+                .orEmpty()
+        return when (raw) {
+            "0", "false", "no", "off" -> false
+            "1", "true", "yes", "on" -> true
+            else -> BuildConfig.MWM_CLIENT_ENABLED
+        }
+    }
+
     fun ensureInitialized() {
         if (applied) return
         synchronized(this) {
@@ -31,8 +52,10 @@ object MwmClientBootstrap {
             }
             // Headless CoMaps: JNI_OnLoad caches JavaVM only (no MapObject classes).
             runCatching { Os.setenv("NAVI_COMAPS_HEADLESS", "1", true) }
-            runCatching { System.loadLibrary("organicmaps") }
-                .onFailure { Log.w(TAG, "liborganicmaps not loaded", it) }
+            nativeLoaded =
+                runCatching { System.loadLibrary("organicmaps") }
+                    .onFailure { Log.w(TAG, "liborganicmaps not loaded", it) }
+                    .isSuccess
             applied = true
         }
     }

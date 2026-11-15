@@ -4,6 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONArray
 import org.json.JSONObject
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -40,15 +41,27 @@ class ComapsPhase4SuiteInstrumentedTest {
         outDir = File(root, "out-parity-mwm")
         outDir.mkdirs()
         File(root, "261105").mkdirs()
-        val am = ctx.assets
-        for (name in am.list("comaps-data").orEmpty()) {
-            if (name == "MANIFEST.txt") continue
-            val dest = File(root, name)
-            if (dest.isFile && dest.length() > 0L) continue
-            am.open("comaps-data/$name").use { input ->
-                FileOutputStream(dest).use { output -> input.copyTo(output) }
+
+        fun copyAssetDir(
+            assetPath: String,
+            destDir: File,
+        ) {
+            val children = ctx.assets.list(assetPath).orEmpty()
+            if (children.isEmpty()) {
+                destDir.parentFile?.mkdirs()
+                if (destDir.isFile && destDir.length() > 0L) return
+                ctx.assets.open(assetPath).use { input ->
+                    FileOutputStream(destDir).use { output -> input.copyTo(output) }
+                }
+                return
+            }
+            destDir.mkdirs()
+            for (child in children) {
+                if (child == "MANIFEST.txt") continue
+                copyAssetDir("$assetPath/$child", File(destDir, child))
             }
         }
+        copyAssetDir("comaps-data", root)
     }
 
     private fun profileOf(s: String): FfiComapsProfile =
@@ -63,7 +76,10 @@ class ComapsPhase4SuiteInstrumentedTest {
     fun runParitySuiteMwm() {
         val instr = InstrumentationRegistry.getInstrumentation()
         val suiteText =
-            instr.context.assets.open("parity-suite-ostlandet.json").bufferedReader().readText()
+            instr.context.assets
+                .open("parity-suite-ostlandet.json")
+                .bufferedReader()
+                .readText()
         val suite = JSONObject(suiteText)
         val routes = suite.getJSONArray("routes")
 
@@ -82,6 +98,7 @@ class ComapsPhase4SuiteInstrumentedTest {
 
         val results = JSONArray()
         var okCount = 0
+        var expectedFailures = 0
         for (i in 0 until routes.length()) {
             val r = routes.getJSONObject(i)
             val id = r.getString("id")
@@ -111,7 +128,21 @@ class ComapsPhase4SuiteInstrumentedTest {
                     wetlandHook = wetland || r.getString("profile") in setOf("foot", "hike"),
                 )
             // Always enable wetland hook for foot in parity (Navi policy); car only when tagged.
-            if (route.code == FfiComapsRouteCode.OK) okCount++
+            val expect = r.optString("expect", "ok")
+            if (expect == "ok") {
+                if (route.code == FfiComapsRouteCode.OK) okCount++
+            } else {
+                // Off-road endpoints must come back as the business code, never auto-snapped.
+                val want =
+                    when (expect) {
+                        "end_not_on_road" -> FfiComapsRouteCode.END_NOT_ON_ROAD
+                        "start_not_on_road" -> FfiComapsRouteCode.START_NOT_ON_ROAD
+                        else -> error("$id: unknown expect '$expect'")
+                    }
+                assertEquals("$id: expected $expect", want, route.code)
+                assertTrue("$id: no polyline for a failed route", route.points.isEmpty())
+                expectedFailures++
+            }
 
             // GeoJSON for every route
             val coords = JSONArray()
@@ -124,8 +155,7 @@ class ComapsPhase4SuiteInstrumentedTest {
                     .put(
                         "geometry",
                         JSONObject().put("type", "LineString").put("coordinates", coords),
-                    )
-                    .put(
+                    ).put(
                         "properties",
                         JSONObject()
                             .put("id", id)
@@ -159,6 +189,7 @@ class ComapsPhase4SuiteInstrumentedTest {
                 .put("device", "R52TB0JQEDE")
                 .put("route_count", routes.length())
                 .put("ok_count", okCount)
+                .put("expected_failure_count", expectedFailures)
                 .put("results", results)
         File(outDir, "parity-mwm-summary.json").writeText(summary.toString(2))
         // Soft gate: at least half the suite must OK (mountain leaves may be missing).

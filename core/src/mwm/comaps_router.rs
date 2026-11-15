@@ -44,6 +44,21 @@ pub struct ComapsRoute {
     pub router_mode: String,
 }
 
+/// Nearest routable-road projection for a point that is not on the profile's
+/// road graph (`StartNotOnRoad` / `EndNotOnRoad`). Informational only: callers
+/// must show it to the user and only route after an explicit confirmation.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ComapsSnap {
+    pub lat: f64,
+    pub lon: f64,
+    /// Great-circle metres from the query point to the projection.
+    pub distance_m: f64,
+    pub feature_id: u32,
+    pub segment_idx: u32,
+    /// MWM leaf holding the road (e.g. `Norway_Oppland`).
+    pub mwm_name: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComapsRouterCode {
     Ok,
@@ -215,6 +230,25 @@ impl ComapsRouter {
         }
     }
 
+    /// Nearest routable edge for `profile` within `radius_m`. `Ok(None)` when no
+    /// road lies inside the radius. Never called from [`Self::route`].
+    pub fn snap_to_road(
+        &self,
+        profile: ComapsProfile,
+        point: ComapsLatLon,
+        radius_m: f64,
+    ) -> Result<Option<ComapsSnap>, ComapsRouterError> {
+        #[cfg(feature = "comaps-native")]
+        {
+            ffi::snap_to_road(profile, point, radius_m)
+        }
+        #[cfg(not(feature = "comaps-native"))]
+        {
+            let _ = (profile, point, radius_m);
+            Err(ComapsRouterError::Unavailable)
+        }
+    }
+
     pub fn cancel(&self) {
         #[cfg(feature = "comaps-native")]
         {
@@ -256,9 +290,7 @@ mod ffi {
             fn_ptr: Option<unsafe extern "C" fn(u32, u32, c_int) -> u8>,
         );
         fn navi_comaps_set_elevation_lookup(
-            fn_ptr: Option<
-                unsafe extern "C" fn(*const c_char, u32, u32, *mut i32) -> c_int,
-            >,
+            fn_ptr: Option<unsafe extern "C" fn(*const c_char, u32, u32, *mut i32) -> c_int>,
         );
         fn navi_comaps_set_bike_wetland(enabled: c_int);
         fn navi_comaps_set_avoid_options(
@@ -279,7 +311,27 @@ mod ffi {
         ) -> c_int;
         fn navi_comaps_cancel();
         fn navi_comaps_free_route(result: *mut NaviComapsRouteResult);
+        fn navi_comaps_snap_to_road(
+            profile: c_int,
+            lat: f64,
+            lon: f64,
+            radius_m: f64,
+            out: *mut NaviComapsSnapResult,
+        ) -> c_int;
+        fn navi_comaps_free_snap(result: *mut NaviComapsSnapResult);
         fn navi_comaps_shutdown();
+    }
+
+    #[repr(C)]
+    struct NaviComapsSnapResult {
+        code: c_int,
+        proj_lat: f64,
+        proj_lon: f64,
+        distance_m: f64,
+        feature_id: u32,
+        segment_idx: u32,
+        mwm_name: *mut c_char,
+        error_message: *mut c_char,
     }
 
     #[repr(C)]
@@ -572,6 +624,55 @@ mod ffi {
             elevation_json,
             router_mode,
         })
+    }
+
+    pub fn snap_to_road(
+        profile: ComapsProfile,
+        point: ComapsLatLon,
+        radius_m: f64,
+    ) -> Result<Option<ComapsSnap>, ComapsRouterError> {
+        let profile_i = match profile {
+            ComapsProfile::Car => 0,
+            ComapsProfile::Pedestrian => 1,
+            ComapsProfile::Bicycle => 2,
+        };
+        let mut out = NaviComapsSnapResult {
+            code: 5,
+            proj_lat: 0.0,
+            proj_lon: 0.0,
+            distance_m: 0.0,
+            feature_id: 0,
+            segment_idx: 0,
+            mwm_name: ptr::null_mut(),
+            error_message: ptr::null_mut(),
+        };
+        unsafe {
+            navi_comaps_snap_to_road(profile_i, point.lat, point.lon, radius_m, &mut out);
+        }
+        let code = map_code(out.code);
+        let result = match code {
+            ComapsRouterCode::Ok => Ok(Some(ComapsSnap {
+                lat: out.proj_lat,
+                lon: out.proj_lon,
+                distance_m: out.distance_m,
+                feature_id: out.feature_id,
+                segment_idx: out.segment_idx,
+                mwm_name: if out.mwm_name.is_null() {
+                    None
+                } else {
+                    Some(
+                        unsafe { CStr::from_ptr(out.mwm_name) }
+                            .to_string_lossy()
+                            .into_owned(),
+                    )
+                },
+            })),
+            // No edge inside the radius is a normal outcome, not an error.
+            ComapsRouterCode::RouteNotFound => Ok(None),
+            other => Err(ComapsRouterError::Router(other)),
+        };
+        unsafe { navi_comaps_free_snap(&mut out) };
+        result
     }
 
     pub fn cancel() {

@@ -74,8 +74,12 @@ Spoken-prompt log on device: `out-phase4-closeout/spoken-prompts.log`.
  "points":[{"ele_m":..., "ele_comaps_m":..., "source":"comaps"|"sidecar"}]}
 ```
 
-EL02 overrides are leaf-scoped (feature ids are per-MWM) and accepted only when
-within 75 m of the CoMaps altitude (guards residual index mismatches).
+EL02 overrides are leaf-scoped (feature ids are per-MWM). The earlier 75 m
+agreement band against the CoMaps altitude has been **removed** (decision A3,
+below): sidecars are fingerprint- and checksum-verified, so EL02 values are
+trusted as shipped. `elevation_json` keeps two diagnostics, `sidecar_hits` and
+`band_would_reject_75m` (how many overrides the old band would have discarded),
+so a residual index mismatch stays visible without changing the route.
 
 | Route | CoMaps ascent/descent | With overrides | sidecar pts |
 |-------|----------------------:|---------------:|------------:|
@@ -83,9 +87,10 @@ within 75 m of the CoMaps altitude (guards residual index mismatches).
 | Rv27 | 1605 / 1491 | **1642 / 1528** | 50 |
 | Lillehammer→Drammen | — | **2748 / 2941** | (profile on) |
 
-Climb UI today reads `eco_climb_m` from the `.rkyv` plan report
-(`DiagnosticLog` / e-bike status). MWM totals are on `FfiComapsRoute` for
-Phase 5 plan integration.
+Climb consumers: with the MWM flag ON, `DiagnosticLog` eco lines
+(`ECO_CALC`, `climb_source=mwm`) take climb/descent and the elevation profile
+from the CoMaps route (`RouteClimbSource`, decision A4); with the flag OFF they
+still read `eco_climb_m` / `eco_descent_m` from the `.rkyv` plan report.
 
 ### 5) Flaky `flag_off_blocks_fetch`
 
@@ -110,7 +115,8 @@ Artifacts: `test-artifacts/mwm-phase4/release-baseline/out/` (gitignored).
 
 ## Parity suite
 
-Fixture: `core/tests/fixtures/mwm/parity-suite-ostlandet.json` (40 routes).
+Fixture: `core/tests/fixtures/mwm/parity-suite-ostlandet.json` (41 routes after the
+Valdresflye split; the table below is the earlier 40-route device run).
 
 | Side | Where | Result |
 |------|-------|--------|
@@ -160,11 +166,65 @@ Fixture: `core/tests/fixtures/mwm/parity-suite-ostlandet.json` (40 routes).
 | Bike wetland | `comaps_session_set_bike_wetland` | Default **off**. |
 | Avoid flags | `comaps_session_set_avoid_options` | All off until UI exposes them. |
 
-## Decisions needed
+## Decisions (Phase 5 follow-up)
 
-1. **Long-route Joints (~11 s):** accept upstream behaviour, or change mode
-   selection (threshold / force LeapsOnly) for multi-MWM car routes under 300 km?
-2. **Valdresflye product UX:** keep `END_NOT_ON_ROAD`, or snap to nearest
-   car road / suggest Rv51 corridor?
-3. **EL02 hit rate on car corridors:** investigate feature/point index mapping
-   if mountain routes should show sidecar deltas in Phase 5.
+### A1 — Long-route Joints latency: accept
+
+Lillehammer to Drammen on Navi (release, Samsung `R52TB0JQEDE`, CoMaps pin
+fd11cc6f / Joints) is **~11–12 s** (`ComapsPhase4CloseoutInstrumentedTest`).
+Official CoMaps F-Droid `2026.10.05-19` is installed on the same device with
+Oppland downloaded; it uses the same `IndexRouter` Joints selection
+(`AreMwmsNear`, 300 km — corridor ≈ 152 km GC). Timing is therefore accepted
+as upstream Joints cost, not a Navi regression. No forced `LeapsOnly`,
+`kCloseMwmPointsDistanceM` unchanged, `RoutesBuilder` threads unchanged (1).
+The earlier "< 3 s" target is dropped. Background plan UX in Navi already
+shows progress + cancel (`RecalculatingRouteBanner`); map stays responsive.
+
+### A2 — Off-road endpoints: user-confirmed nearest road
+
+CoMaps `END_NOT_ON_ROAD` / `START_NOT_ON_ROAD` stay business errors: the router
+**never snaps start or destination by itself**. The app shows a message and an
+optional "Route to nearest drivable road" action. Only after the user taps it
+does the app call `navi_comaps_snap_to_road`
+(`IndexRouter::FindClosestProjectionToRoad`, default radius 3 km). It shows the
+snap point and the distance; the route is built only after a second, explicit
+confirm. Cancel leaves the original point untouched.
+
+- `route()` never calls the snap function (unit-tested flow:
+  `RouteSnapChoiceTest`, `mwm::comaps_snap` tests).
+- Fixture rows: `valdresflye_car` is now the Rv51 corridor
+  (`61.244,8.92 -> 61.386,8.812`, `expect: ok`);
+  `valdresflye_car_offroad` (`61.39,8.80 -> 61.45,8.95`) has
+  `expect: end_not_on_road`. `ComapsPhase4SuiteInstrumentedTest` now honours
+  the `expect` field (expected failures are asserted, not counted as OK), and
+  `ComapsPhase5SearchInstrumentedTest.offroadEndpointIsNotAutoSnapped` covers
+  the snap and confirm path on device.
+- The fixture now has 41 rows. Expected on the next device run: every row `ok`
+  except the off-road row (not yet re-run on device).
+
+### A3 — 75 m elevation band: removed (trust sidecar)
+
+The 75 m client band is gone from `routes_builder.cpp` and from
+`patches/comaps/0001`. EL02 overrides are applied whenever the sidecar has the
+point. The `band_would_reject_75m` counter is kept as a diagnostic only.
+
+**Device counts (Navi closeout + remote leaves, flag ON, Samsung):**
+
+| Route / leaf | sidecar_hits | band_would_reject_75m |
+|--------------|-------------:|----------------------:|
+| Rv7 Hallingdal | 21 | **0** |
+| Rv27 | 50 | **0** |
+| Lillehammer→Drammen | 157 | **0** |
+| Valdresflye Rv51 | 11 | **0** |
+| Bolivia_South | 3394 | **0** |
+| China_Tibet Autonomous Region | 781 | **0** |
+
+No override on these corridors would have been rejected by the old 75 m band.
+A4: `climb_source=mwm` on every OK route above.
+
+### Still open
+
+- Snap projection quality in sparse mountain areas (confirm still required).
+- Production UI still plans via `planCarRoute` (`.rkyv`); MWM climb HUD is
+  proven on the CoMaps session path (`RouteClimbSource` + closeout). Wire
+  `publishIfOk` when production switches the planner.

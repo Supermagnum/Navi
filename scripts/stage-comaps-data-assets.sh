@@ -30,6 +30,9 @@ FILES=(
   countries.txt
   packed_polygons.bin
   categories.txt
+  categories_brands.txt
+  subtypes.csv
+  countries_meta.txt
   colors.txt
   patterns.txt
 )
@@ -54,6 +57,18 @@ stage_one() {
 
 for f in "${FILES[@]}"; do
   stage_one "$f"
+done
+
+# Search / CountryInfoGetter locale names (nb + en only — keep APK lean).
+for loc in en nb; do
+  src_loc="$SRC/data/countries-strings/${loc}.json/localize.json"
+  if [[ -f "$src_loc" ]]; then
+    mkdir -p "$OUT/countries-strings/${loc}.json"
+    cp -f "$src_loc" "$OUT/countries-strings/${loc}.json/localize.json"
+    sz=$(stat -c%s "$OUT/countries-strings/${loc}.json/localize.json")
+    total=$((total + sz))
+    printf 'countries-strings/%s.json/localize.json\t%s\n' "$loc" "$sz" | tee -a "$MANIFEST"
+  fi
 done
 
 # RoutesBuilder / map style reader pulls vehicle-specific drules at init

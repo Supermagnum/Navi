@@ -671,6 +671,9 @@ internal interface UniffiCallbackInterfaceSensorPlatformMethod2 : com.sun.jna.Ca
 internal interface UniffiCallbackInterfaceSensorPlatformMethod3 : com.sun.jna.Callback {
     fun callback(`uniffiHandle`: Long,`kindCode`: Int,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,)
 }
+internal interface UniffiCallbackInterfaceFfiSearchListenerMethod0 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`batch`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
+}
 @Structure.FieldOrder("uniffiFree", "uniffiClone", "writeBytes", "readBytes", "shutdown")
 internal open class UniffiVTableCallbackInterfaceBenshiBytePipe(
     @JvmField internal var `uniffiFree`: UniffiCallbackInterfaceFree? = null,
@@ -721,6 +724,25 @@ internal open class UniffiVTableCallbackInterfaceSensorPlatform(
         `registerSensor` = other.`registerSensor`
         `unregisterSensor` = other.`unregisterSensor`
         `latestSensorSample` = other.`latestSensorSample`
+    }
+
+}
+@Structure.FieldOrder("uniffiFree", "uniffiClone", "onBatch")
+internal open class UniffiVTableCallbackInterfaceFfiSearchListener(
+    @JvmField internal var `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+    @JvmField internal var `uniffiClone`: UniffiCallbackInterfaceClone? = null,
+    @JvmField internal var `onBatch`: UniffiCallbackInterfaceFfiSearchListenerMethod0? = null,
+) : Structure() {
+    class UniffiByValue(
+        `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+        `uniffiClone`: UniffiCallbackInterfaceClone? = null,
+        `onBatch`: UniffiCallbackInterfaceFfiSearchListenerMethod0? = null,
+    ): UniffiVTableCallbackInterfaceFfiSearchListener(`uniffiFree`,`uniffiClone`,`onBatch`,), Structure.ByValue
+
+   internal fun uniffiSetValue(other: UniffiVTableCallbackInterfaceFfiSearchListener) {
+        `uniffiFree` = other.`uniffiFree`
+        `uniffiClone` = other.`uniffiClone`
+        `onBatch` = other.`onBatch`
     }
 
 }
@@ -1271,9 +1293,35 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_imu_plugin_tick(
     ): Int
+    external fun uniffi_navi_checksum_func_comaps_category_keys(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_category_query(
+    ): Int
     external fun uniffi_navi_checksum_func_comaps_native_available(
     ): Int
+    external fun uniffi_navi_checksum_func_comaps_poi_category_mappings(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_quick_category_key(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_reverse_geocode(
+    ): Int
     external fun uniffi_navi_checksum_func_comaps_route_once(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_search_cancel(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_search_clear_viewport(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_search_enabled(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_search_merge(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_search_set_locale(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_search_set_position(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_search_set_viewport(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_search_start(
     ): Int
     external fun uniffi_navi_checksum_func_comaps_session_close(
     ): Int
@@ -1288,6 +1336,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_comaps_session_set_optimize(
     ): Int
     external fun uniffi_navi_checksum_func_comaps_session_set_turns_locale(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_snap_suggestion(
     ): Int
     external fun uniffi_navi_checksum_method_ffitrackstore_all(
     ): Int
@@ -1317,6 +1367,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_method_sensorplatform_latest_sensor_sample(
     ): Int
+    external fun uniffi_navi_checksum_method_ffisearchlistener_on_batch(
+    ): Int
     external fun uniffi_navi_checksum_constructor_ffitrackstore_new(
     ): Int
     external fun ffi_navi_uniffi_contract_version(
@@ -1336,6 +1388,7 @@ internal object UniffiLib {
     init {
         Native.register(UniffiLib::class.java, findLibraryName(componentName = "navi"))
         uniffiCallbackInterfaceBenshiBytePipe.register(this)
+        uniffiCallbackInterfaceFfiSearchListener.register(this)
         uniffiCallbackInterfaceSensorPlatform.register(this)
         
     }
@@ -1385,6 +1438,14 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_navi_fn_method_sensorplatform_latest_sensor_sample(`ptr`: Long,`kindCode`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_clone_ffisearchlistener(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Long
+    external fun uniffi_navi_fn_free_ffisearchlistener(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_init_callback_vtable_ffisearchlistener(`vtable`: UniffiVTableCallbackInterfaceFfiSearchListener,
+    ): Unit
+    external fun uniffi_navi_fn_method_ffisearchlistener_on_batch(`ptr`: Long,`batch`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_navi_fn_func_apply_osm_update(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_approach_appear_m(uniffi_out_err: UniffiRustCallStatus, 
@@ -1909,10 +1970,36 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_imu_plugin_tick(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_category_keys(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_category_query(`key`: RustBuffer.ByValue,`locale`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_comaps_native_available(uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    external fun uniffi_navi_fn_func_comaps_poi_category_mappings(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_quick_category_key(`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_reverse_geocode(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_comaps_route_once(`storagePath`: RustBuffer.ByValue,`writablePath`: RustBuffer.ByValue,`sidecarDir`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,`fromLat`: Double,`fromLon`: Double,`toLat`: Double,`toLon`: Double,`wetlandHook`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_search_cancel(`requestId`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_search_clear_viewport(uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_search_enabled(uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_comaps_search_merge(`query`: RustBuffer.ByValue,`categoryMode`: Byte,`comapsHits`: RustBuffer.ByValue,`naviHits`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_search_set_locale(`locale`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_search_set_position(`lat`: Double,`lon`: Double,`hasPosition`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_search_set_viewport(`minLat`: Double,`minLon`: Double,`maxLat`: Double,`maxLon`: Double,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_search_start(`query`: RustBuffer.ByValue,`isCategory`: Byte,`maxResults`: Int,`listener`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Long
     external fun uniffi_navi_fn_func_comaps_session_close(uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_navi_fn_func_comaps_session_open(`storagePath`: RustBuffer.ByValue,`writablePath`: RustBuffer.ByValue,`sidecarDir`: RustBuffer.ByValue,`loadWetlandSidecars`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -1927,6 +2014,8 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_navi_fn_func_comaps_session_set_turns_locale(`locale`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    external fun uniffi_navi_fn_func_comaps_session_snap_suggestion(`profile`: RustBuffer.ByValue,`code`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`radiusM`: Double,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun ffi_navi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun ffi_navi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -2832,10 +2921,49 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_imu_plugin_tick() and 0xFFFF) != 13373) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_comaps_category_keys() and 0xFFFF) != 58683) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_category_query() and 0xFFFF) != 57595) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_comaps_native_available() and 0xFFFF) != 20822) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_comaps_poi_category_mappings() and 0xFFFF) != 44692) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_quick_category_key() and 0xFFFF) != 45753) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_reverse_geocode() and 0xFFFF) != 53272) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_comaps_route_once() and 0xFFFF) != 44798) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_search_cancel() and 0xFFFF) != 12561) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_search_clear_viewport() and 0xFFFF) != 46780) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_search_enabled() and 0xFFFF) != 60411) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_search_merge() and 0xFFFF) != 51378) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_search_set_locale() and 0xFFFF) != 64780) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_search_set_position() and 0xFFFF) != 15387) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_search_set_viewport() and 0xFFFF) != 42707) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_search_start() and 0xFFFF) != 49058) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_comaps_session_close() and 0xFFFF) != 44861) {
@@ -2857,6 +2985,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_comaps_session_set_turns_locale() and 0xFFFF) != 9442) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_snap_suggestion() and 0xFFFF) != 44768) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_method_ffitrackstore_all() and 0xFFFF) != 684) {
@@ -2899,6 +3030,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_method_sensorplatform_latest_sensor_sample() and 0xFFFF) != 28221) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_method_ffisearchlistener_on_batch() and 0xFFFF) != 17623) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_constructor_ffitrackstore_new() and 0xFFFF) != 16107) {
@@ -3754,6 +3888,325 @@ public object FfiConverterTypeBenshiBytePipe: FfiConverter<BenshiBytePipe, Long>
     override fun allocationSize(value: BenshiBytePipe) = 8UL
 
     override fun write(value: BenshiBytePipe, buf: ByteBuffer) {
+        buf.putLong(lower(value))
+    }
+}
+
+
+// This template implements a class for working with a Rust struct via a handle
+// to the live Rust struct on the other side of the FFI.
+//
+// There's some subtlety here, because we have to be careful not to operate on a Rust
+// struct after it has been dropped, and because we must expose a public API for freeing
+// theq Kotlin wrapper object in lieu of reliable finalizers. The core requirements are:
+//
+//   * Each instance holds an opaque handle to the underlying Rust struct.
+//     Method calls need to read this handle from the object's state and pass it in to
+//     the Rust FFI.
+//
+//   * When an instance is no longer needed, its handle should be passed to a
+//     special destructor function provided by the Rust FFI, which will drop the
+//     underlying Rust struct.
+//
+//   * Given an instance, calling code is expected to call the special
+//     `destroy` method in order to free it after use, either by calling it explicitly
+//     or by using a higher-level helper like the `use` method. Failing to do so risks
+//     leaking the underlying Rust struct.
+//
+//   * We can't assume that calling code will do the right thing, and must be prepared
+//     to handle Kotlin method calls executing concurrently with or even after a call to
+//     `destroy`, and to handle multiple (possibly concurrent!) calls to `destroy`.
+//
+//   * We must never allow Rust code to operate on the underlying Rust struct after
+//     the destructor has been called, and must never call the destructor more than once.
+//     Doing so may trigger memory unsafety.
+//
+//   * To mitigate many of the risks of leaking memory and use-after-free unsafety, a `Cleaner`
+//     is implemented to call the destructor when the Kotlin object becomes unreachable.
+//     This is done in a background thread. This is not a panacea, and client code should be aware that
+//      1. the thread may starve if some there are objects that have poorly performing
+//     `drop` methods or do significant work in their `drop` methods.
+//      2. the thread is shared across the whole library. This can be tuned by using `android_cleaner = true`,
+//         or `android = true` in the [`kotlin` section of the `uniffi.toml` file](https://mozilla.github.io/uniffi-rs/kotlin/configuration.html).
+//
+// If we try to implement this with mutual exclusion on access to the handle, there is the
+// possibility of a race between a method call and a concurrent call to `destroy`:
+//
+//    * Thread A starts a method call, reads the value of the handle, but is interrupted
+//      before it can pass the handle over the FFI to Rust.
+//    * Thread B calls `destroy` and frees the underlying Rust struct.
+//    * Thread A resumes, passing the already-read handle value to Rust and triggering
+//      a use-after-free.
+//
+// One possible solution would be to use a `ReadWriteLock`, with each method call taking
+// a read lock (and thus allowed to run concurrently) and the special `destroy` method
+// taking a write lock (and thus blocking on live method calls). However, we aim not to
+// generate methods with any hidden blocking semantics, and a `destroy` method that might
+// block if called incorrectly seems to meet that bar.
+//
+// So, we achieve our goals by giving each instance an associated `AtomicLong` counter to track
+// the number of in-flight method calls, and an `AtomicBoolean` flag to indicate whether `destroy`
+// has been called. These are updated according to the following rules:
+//
+//    * The initial value of the counter is 1, indicating a live object with no in-flight calls.
+//      The initial value for the flag is false.
+//
+//    * At the start of each method call, we atomically check the counter.
+//      If it is 0 then the underlying Rust struct has already been destroyed and the call is aborted.
+//      If it is nonzero them we atomically increment it by 1 and proceed with the method call.
+//
+//    * At the end of each method call, we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+//    * When `destroy` is called, we atomically flip the flag from false to true.
+//      If the flag was already true we silently fail.
+//      Otherwise we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+// Astute readers may observe that this all sounds very similar to the way that Rust's `Arc<T>` works,
+// and indeed it is, with the addition of a flag to guard against multiple calls to `destroy`.
+//
+// The overall effect is that the underlying Rust struct is destroyed only when `destroy` has been
+// called *and* all in-flight method calls have completed, avoiding violating any of the expectations
+// of the underlying Rust code.
+//
+// This makes a cleaner a better alternative to _not_ calling `destroy()` as
+// and when the object is finished with, but the abstraction is not perfect: if the Rust object's `drop`
+// method is slow, and/or there are many objects to cleanup, and it's on a low end Android device, then the cleaner
+// thread may be starved, and the app will leak memory.
+//
+// In this case, `destroy`ing manually may be a better solution.
+//
+// The cleaner can live side by side with the manual calling of `destroy`. In the order of responsiveness, uniffi objects
+// with Rust peers are reclaimed:
+//
+// 1. By calling the `destroy` method of the object, which calls `rustObject.free()`. If that doesn't happen:
+// 2. When the object becomes unreachable, AND the Cleaner thread gets to call `rustObject.free()`. If the thread is starved then:
+// 3. The memory is reclaimed when the process terminates.
+//
+// [1] https://stackoverflow.com/questions/24376768/can-java-finalize-an-object-when-it-is-still-in-scope/24380219
+//
+
+
+/**
+ * Receives streamed search batches. Called from a search worker thread;
+ * implementations must not call back into the search functions synchronously.
+ */
+public interface FfiSearchListener {
+    
+    fun `onBatch`(`batch`: FfiSearchBatch)
+    
+    companion object
+}
+
+/**
+ * Receives streamed search batches. Called from a search worker thread;
+ * implementations must not call back into the search functions synchronously.
+ */
+open class FfiSearchListenerImpl: Disposable, AutoCloseable, FfiSearchListener
+{
+
+    @Suppress("UNUSED_PARAMETER")
+    /**
+     * @suppress
+     */
+    constructor(withHandle: UniffiWithHandle, handle: Long) {
+        this.handle = handle
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(handle))
+    }
+
+    /**
+     * @suppress
+     *
+     * This constructor can be used to instantiate a fake object. Only used for tests. Any
+     * attempt to actually use an object constructed this way will fail as there is no
+     * connected Rust object.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    constructor(noHandle: NoHandle) {
+        this.handle = 0
+        this.cleanable = null
+    }
+
+    protected val handle: Long
+    protected val cleanable: UniffiCleaner.Cleanable?
+
+    private val wasDestroyed = AtomicBoolean(false)
+    private val callCounter = AtomicLong(1)
+
+    /**
+     * Whether the current object has been destroyed and its reference is gone in the Rust side.
+     */
+    val uniffiIsDestroyed: Boolean get() = wasDestroyed.get()
+
+    override fun destroy() {
+        // Only allow a single call to this method.
+        // TODO: maybe we should log a warning if called more than once?
+        if (this.wasDestroyed.compareAndSet(false, true)) {
+            // This decrement always matches the initial count of 1 given at creation time.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable?.clean()
+            }
+        }
+    }
+
+    @Synchronized
+    override fun close() {
+        this.destroy()
+    }
+
+    internal inline fun <R> callWithHandle(block: (handle: Long) -> R): R {
+        // Check and increment the call counter, to keep the object alive.
+        // This needs a compare-and-set retry loop in case of concurrent updates.
+        do {
+            val c = this.callCounter.get()
+            if (c == 0L) {
+                throw IllegalStateException("${this.javaClass.simpleName} object has already been destroyed")
+            }
+            if (c == Long.MAX_VALUE) {
+                throw IllegalStateException("${this.javaClass.simpleName} call counter would overflow")
+            }
+        } while (! this.callCounter.compareAndSet(c, c + 1L))
+        // Now we can safely do the method call without the handle being freed concurrently.
+        try {
+            return block(this.uniffiCloneHandle())
+        } finally {
+            // This decrement always matches the increment we performed above.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable?.clean()
+            }
+        }
+    }
+
+    // Use a static inner class instead of a closure so as not to accidentally
+    // capture `this` as part of the cleanable's action.
+    private class UniffiCleanAction(private val handle: Long) : Runnable {
+        override fun run() {
+            if (handle == 0.toLong()) {
+                // Fake object created with `NoHandle`, don't try to free.
+                return;
+            }
+            uniffiRustCall { status ->
+                UniffiLib.uniffi_navi_fn_free_ffisearchlistener(handle, status)
+            }
+        }
+    }
+
+    /**
+     * @suppress
+     */
+    fun uniffiCloneHandle(): Long {
+        if (handle == 0.toLong()) {
+            throw InternalException("uniffiCloneHandle() called on NoHandle object");
+        }
+        return uniffiRustCall() { status ->
+            UniffiLib.uniffi_navi_fn_clone_ffisearchlistener(handle, status)
+        }
+    }
+
+    override fun `onBatch`(`batch`: FfiSearchBatch)
+        = 
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_method_ffisearchlistener_on_batch(
+        it,
+        
+        FfiConverterTypeFfiSearchBatch.lower(`batch`),_status)
+}
+    }
+    
+    
+
+    
+
+    
+
+
+    
+    
+    /**
+     * @suppress
+     */
+    companion object
+    
+}
+
+
+
+// Put the implementation in an object so we don't pollute the top-level namespace
+internal object uniffiCallbackInterfaceFfiSearchListener {
+    internal object `onBatch`: UniffiCallbackInterfaceFfiSearchListenerMethod0 {
+        override fun callback(`uniffiHandle`: Long,`batch`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeFfiSearchListener.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`onBatch`(
+                    FfiConverterTypeFfiSearchBatch.lift(`batch`),
+                )
+            }
+            val writeReturn = { _: Unit -> Unit }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+
+    internal object uniffiFree: UniffiCallbackInterfaceFree {
+        override fun callback(handle: Long) {
+            FfiConverterTypeFfiSearchListener.handleMap.remove(handle)
+        }
+    }
+
+    internal object uniffiClone: UniffiCallbackInterfaceClone {
+        override fun callback(handle: Long): Long {
+            return FfiConverterTypeFfiSearchListener.handleMap.clone(handle)
+        }
+    }
+
+    internal var vtable = UniffiVTableCallbackInterfaceFfiSearchListener.UniffiByValue(
+        uniffiFree,
+        uniffiClone,
+        `onBatch`,
+    )
+
+    // Registers the foreign callback with the Rust side.
+    // This method is generated for each callback interface.
+    internal fun register(lib: UniffiLib) {
+        lib.uniffi_navi_fn_init_callback_vtable_ffisearchlistener(vtable)
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiSearchListener: FfiConverter<FfiSearchListener, Long> {
+    internal val handleMap = UniffiHandleMap<FfiSearchListener>()
+
+    override fun lower(value: FfiSearchListener): Long {
+        if (value is FfiSearchListenerImpl) {
+             // Rust-implemented object.  Clone the handle and return it
+            return value.uniffiCloneHandle()
+         } else {
+            // Kotlin object, generate a new vtable handle and return that.
+            return handleMap.insert(value)
+         }
+    }
+
+    override fun lift(value: Long): FfiSearchListener {
+        if ((value and 1.toLong()) == 0.toLong()) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return FfiSearchListenerImpl(UniffiWithHandle, value)
+        } else {
+            // Kotlin-generated handle, get the object from the handle map
+            return handleMap.remove(value)
+        }
+    }
+
+    override fun read(buf: ByteBuffer): FfiSearchListener {
+        return lift(buf.getLong())
+    }
+
+    override fun allocationSize(value: FfiSearchListener) = 8UL
+
+    override fun write(value: FfiSearchListener, buf: ByteBuffer) {
         buf.putLong(lower(value))
     }
 }
@@ -4951,6 +5404,57 @@ public object FfiConverterTypeFfiCarRestSettings: FfiConverterRustBuffer<FfiCarR
 
 
 
+data class FfiCategoryMapping (
+    /**
+     * `PoiCategory` variant name (`Water`, `Cabin`, ...).
+     */
+    var `naviCategory`: kotlin.String
+    , 
+    var `comapsKey`: kotlin.String?
+    , 
+    var `coverage`: FfiCategoryCoverage
+    , 
+    var `note`: kotlin.String
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiCategoryMapping: FfiConverterRustBuffer<FfiCategoryMapping> {
+    override fun read(buf: ByteBuffer): FfiCategoryMapping {
+        return FfiCategoryMapping(
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterTypeFfiCategoryCoverage.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiCategoryMapping) = (
+            FfiConverterString.allocationSize(value.`naviCategory`) +
+            FfiConverterOptionalString.allocationSize(value.`comapsKey`) +
+            FfiConverterTypeFfiCategoryCoverage.allocationSize(value.`coverage`) +
+            FfiConverterString.allocationSize(value.`note`)
+    )
+
+    override fun write(value: FfiCategoryMapping, buf: ByteBuffer) {
+            FfiConverterString.write(value.`naviCategory`, buf)
+            FfiConverterOptionalString.write(value.`comapsKey`, buf)
+            FfiConverterTypeFfiCategoryCoverage.write(value.`coverage`, buf)
+            FfiConverterString.write(value.`note`, buf)
+    }
+}
+
+
+
 data class FfiComapsLatLon (
     var `lat`: kotlin.Double
     , 
@@ -5940,6 +6444,69 @@ public object FfiConverterTypeFfiRegionAcquisitionDecision: FfiConverterRustBuff
 
 
 
+data class FfiReverseAddress (
+    var `found`: kotlin.Boolean
+    , 
+    var `houseNumber`: kotlin.String
+    , 
+    var `street`: kotlin.String
+    , 
+    var `formatted`: kotlin.String
+    , 
+    var `countryId`: kotlin.String
+    , 
+    var `distanceM`: kotlin.Double
+    , 
+    var `errorMessage`: kotlin.String?
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiReverseAddress: FfiConverterRustBuffer<FfiReverseAddress> {
+    override fun read(buf: ByteBuffer): FfiReverseAddress {
+        return FfiReverseAddress(
+            FfiConverterBoolean.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiReverseAddress) = (
+            FfiConverterBoolean.allocationSize(value.`found`) +
+            FfiConverterString.allocationSize(value.`houseNumber`) +
+            FfiConverterString.allocationSize(value.`street`) +
+            FfiConverterString.allocationSize(value.`formatted`) +
+            FfiConverterString.allocationSize(value.`countryId`) +
+            FfiConverterDouble.allocationSize(value.`distanceM`) +
+            FfiConverterOptionalString.allocationSize(value.`errorMessage`)
+    )
+
+    override fun write(value: FfiReverseAddress, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`found`, buf)
+            FfiConverterString.write(value.`houseNumber`, buf)
+            FfiConverterString.write(value.`street`, buf)
+            FfiConverterString.write(value.`formatted`, buf)
+            FfiConverterString.write(value.`countryId`, buf)
+            FfiConverterDouble.write(value.`distanceM`, buf)
+            FfiConverterOptionalString.write(value.`errorMessage`, buf)
+    }
+}
+
+
+
 data class FfiRoadNearInfo (
     /**
      * Street label (name → ref → highway class), empty when no edge in range.
@@ -6170,6 +6737,250 @@ public object FfiConverterTypeFfiSavedRoute: FfiConverterRustBuffer<FfiSavedRout
             FfiConverterOptionalDouble.write(value.`lastBreakLon`, buf)
             FfiConverterString.write(value.`summaryJson`, buf)
             FfiConverterString.write(value.`viaJson`, buf)
+    }
+}
+
+
+
+data class FfiSearchBatch (
+    var `requestId`: kotlin.ULong
+    , 
+    /**
+     * Hits appended since the previous batch of this request.
+     */
+    var `hits`: List<FfiSearchHit>
+    , 
+    var `isFinal`: kotlin.Boolean
+    , 
+    var `cancelled`: kotlin.Boolean
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiSearchBatch: FfiConverterRustBuffer<FfiSearchBatch> {
+    override fun read(buf: ByteBuffer): FfiSearchBatch {
+        return FfiSearchBatch(
+            FfiConverterULong.read(buf),
+            FfiConverterSequenceTypeFfiSearchHit.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiSearchBatch) = (
+            FfiConverterULong.allocationSize(value.`requestId`) +
+            FfiConverterSequenceTypeFfiSearchHit.allocationSize(value.`hits`) +
+            FfiConverterBoolean.allocationSize(value.`isFinal`) +
+            FfiConverterBoolean.allocationSize(value.`cancelled`)
+    )
+
+    override fun write(value: FfiSearchBatch, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`requestId`, buf)
+            FfiConverterSequenceTypeFfiSearchHit.write(value.`hits`, buf)
+            FfiConverterBoolean.write(value.`isFinal`, buf)
+            FfiConverterBoolean.write(value.`cancelled`, buf)
+    }
+}
+
+
+
+data class FfiSearchHit (
+    var `name`: kotlin.String
+    , 
+    var `address`: kotlin.String
+    , 
+    var `featureType`: kotlin.String
+    , 
+    var `lat`: kotlin.Double
+    , 
+    var `lon`: kotlin.Double
+    , 
+    /**
+     * Negative when no search position was set.
+     */
+    var `distanceM`: kotlin.Double
+    , 
+    var `kind`: FfiSearchHitKind
+    , 
+    /**
+     * `comaps` or a `navi:*` label.
+     */
+    var `source`: kotlin.String
+    , 
+    var `mergedSources`: List<kotlin.String>
+    , 
+    var `categoryKey`: kotlin.String?
+    , 
+    var `featureId`: kotlin.UInt?
+    , 
+    var `mwmName`: kotlin.String?
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiSearchHit: FfiConverterRustBuffer<FfiSearchHit> {
+    override fun read(buf: ByteBuffer): FfiSearchHit {
+        return FfiSearchHit(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterTypeFfiSearchHitKind.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalUInt.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiSearchHit) = (
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`address`) +
+            FfiConverterString.allocationSize(value.`featureType`) +
+            FfiConverterDouble.allocationSize(value.`lat`) +
+            FfiConverterDouble.allocationSize(value.`lon`) +
+            FfiConverterDouble.allocationSize(value.`distanceM`) +
+            FfiConverterTypeFfiSearchHitKind.allocationSize(value.`kind`) +
+            FfiConverterString.allocationSize(value.`source`) +
+            FfiConverterSequenceString.allocationSize(value.`mergedSources`) +
+            FfiConverterOptionalString.allocationSize(value.`categoryKey`) +
+            FfiConverterOptionalUInt.allocationSize(value.`featureId`) +
+            FfiConverterOptionalString.allocationSize(value.`mwmName`)
+    )
+
+    override fun write(value: FfiSearchHit, buf: ByteBuffer) {
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterString.write(value.`address`, buf)
+            FfiConverterString.write(value.`featureType`, buf)
+            FfiConverterDouble.write(value.`lat`, buf)
+            FfiConverterDouble.write(value.`lon`, buf)
+            FfiConverterDouble.write(value.`distanceM`, buf)
+            FfiConverterTypeFfiSearchHitKind.write(value.`kind`, buf)
+            FfiConverterString.write(value.`source`, buf)
+            FfiConverterSequenceString.write(value.`mergedSources`, buf)
+            FfiConverterOptionalString.write(value.`categoryKey`, buf)
+            FfiConverterOptionalUInt.write(value.`featureId`, buf)
+            FfiConverterOptionalString.write(value.`mwmName`, buf)
+    }
+}
+
+
+
+/**
+ * Proposed replacement endpoint after `StartNotOnRoad` / `EndNotOnRoad`.
+ * Informational: the app shows it and only routes after the user confirms.
+ */
+data class FfiSnapSuggestion (
+    /**
+     * False when there is nothing to offer (other route code, flag off, no
+     * road inside the radius, or the engine is not available).
+     */
+    var `found`: kotlin.Boolean
+    , 
+    /**
+     * `true` = the start failed to match a road, `false` = the destination.
+     */
+    var `isStart`: kotlin.Boolean
+    , 
+    var `originalLat`: kotlin.Double
+    , 
+    var `originalLon`: kotlin.Double
+    , 
+    var `snapLat`: kotlin.Double
+    , 
+    var `snapLon`: kotlin.Double
+    , 
+    var `distanceM`: kotlin.Double
+    , 
+    var `featureId`: kotlin.UInt
+    , 
+    var `segmentIdx`: kotlin.UInt
+    , 
+    var `mwmName`: kotlin.String?
+    , 
+    var `message`: kotlin.String
+    , 
+    var `errorMessage`: kotlin.String?
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiSnapSuggestion: FfiConverterRustBuffer<FfiSnapSuggestion> {
+    override fun read(buf: ByteBuffer): FfiSnapSuggestion {
+        return FfiSnapSuggestion(
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiSnapSuggestion) = (
+            FfiConverterBoolean.allocationSize(value.`found`) +
+            FfiConverterBoolean.allocationSize(value.`isStart`) +
+            FfiConverterDouble.allocationSize(value.`originalLat`) +
+            FfiConverterDouble.allocationSize(value.`originalLon`) +
+            FfiConverterDouble.allocationSize(value.`snapLat`) +
+            FfiConverterDouble.allocationSize(value.`snapLon`) +
+            FfiConverterDouble.allocationSize(value.`distanceM`) +
+            FfiConverterUInt.allocationSize(value.`featureId`) +
+            FfiConverterUInt.allocationSize(value.`segmentIdx`) +
+            FfiConverterOptionalString.allocationSize(value.`mwmName`) +
+            FfiConverterString.allocationSize(value.`message`) +
+            FfiConverterOptionalString.allocationSize(value.`errorMessage`)
+    )
+
+    override fun write(value: FfiSnapSuggestion, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`found`, buf)
+            FfiConverterBoolean.write(value.`isStart`, buf)
+            FfiConverterDouble.write(value.`originalLat`, buf)
+            FfiConverterDouble.write(value.`originalLon`, buf)
+            FfiConverterDouble.write(value.`snapLat`, buf)
+            FfiConverterDouble.write(value.`snapLon`, buf)
+            FfiConverterDouble.write(value.`distanceM`, buf)
+            FfiConverterUInt.write(value.`featureId`, buf)
+            FfiConverterUInt.write(value.`segmentIdx`, buf)
+            FfiConverterOptionalString.write(value.`mwmName`, buf)
+            FfiConverterString.write(value.`message`, buf)
+            FfiConverterOptionalString.write(value.`errorMessage`, buf)
     }
 }
 
@@ -6768,6 +7579,41 @@ public object FfiConverterTypeCampingCallKind: FfiConverterRustBuffer<CampingCal
 
 
 
+enum class FfiCategoryCoverage {
+    
+    FULL,
+    PARTIAL,
+    GAP;
+
+    
+
+
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiCategoryCoverage: FfiConverterRustBuffer<FfiCategoryCoverage> {
+    override fun read(buf: ByteBuffer) = try {
+        FfiCategoryCoverage.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FfiCategoryCoverage) = 4UL
+
+    override fun write(value: FfiCategoryCoverage, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
 enum class FfiComapsOptimize {
     
     /**
@@ -6961,6 +7807,41 @@ public object FfiConverterTypeFfiRegionSourceKind: FfiConverterRustBuffer<FfiReg
     override fun allocationSize(value: FfiRegionSourceKind) = 4UL
 
     override fun write(value: FfiRegionSourceKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
+enum class FfiSearchHitKind {
+    
+    FEATURE,
+    LAT_LON,
+    POSTCODE;
+
+    
+
+
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiSearchHitKind: FfiConverterRustBuffer<FfiSearchHitKind> {
+    override fun read(buf: ByteBuffer) = try {
+        FfiSearchHitKind.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FfiSearchHitKind) = 4UL
+
+    override fun write(value: FfiSearchHitKind, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
     }
 }
@@ -7525,6 +8406,34 @@ public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.Str
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeFfiCategoryMapping: FfiConverterRustBuffer<List<FfiCategoryMapping>> {
+    override fun read(buf: ByteBuffer): List<FfiCategoryMapping> {
+        val len = buf.getInt()
+        return List<FfiCategoryMapping>(len) {
+            FfiConverterTypeFfiCategoryMapping.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiCategoryMapping>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiCategoryMapping.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiCategoryMapping>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiCategoryMapping.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeFfiComapsLatLon: FfiConverterRustBuffer<List<FfiComapsLatLon>> {
     override fun read(buf: ByteBuffer): List<FfiComapsLatLon> {
         val len = buf.getInt()
@@ -7655,6 +8564,34 @@ public object FfiConverterSequenceTypeFfiSavedRoute: FfiConverterRustBuffer<List
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeFfiSavedRoute.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFfiSearchHit: FfiConverterRustBuffer<List<FfiSearchHit>> {
+    override fun read(buf: ByteBuffer): List<FfiSearchHit> {
+        val len = buf.getInt()
+        return List<FfiSearchHit>(len) {
+            FfiConverterTypeFfiSearchHit.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiSearchHit>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiSearchHit.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiSearchHit>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiSearchHit.write(it, buf)
         }
     }
 }
@@ -11676,6 +12613,34 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     
 
         /**
+         * CoMaps `DisplayedCategories` keys from the native engine (empty if unavailable).
+         */ fun `comapsCategoryKeys`(): List<kotlin.String> {
+            return FfiConverterSequenceString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_category_keys(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Localized query string for a category key, falling back to English.
+         */ fun `comapsCategoryQuery`(`key`: kotlin.String, `locale`: kotlin.String): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_category_query(
+    
+        
+        FfiConverterString.lower(`key`),
+        FfiConverterString.lower(`locale`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Probe whether the CoMaps native core is linked into this build.
          */ fun `comapsNativeAvailable`(): kotlin.Boolean {
             return FfiConverterBoolean.lift(
@@ -11683,6 +12648,48 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     UniffiLib.uniffi_navi_fn_func_comaps_native_available(
     
         _status)
+}
+    )
+    }
+    
+
+        /**
+         * Navi `PoiCategory` to CoMaps category mapping with coverage; pure logic.
+         */ fun `comapsPoiCategoryMappings`(): List<FfiCategoryMapping> {
+            return FfiConverterSequenceTypeFfiCategoryMapping.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_poi_category_mappings(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Quick-chip name (`fuel`, `ev`, ...) to a CoMaps category key; pure logic.
+         */ fun `comapsQuickCategoryKey`(`name`: kotlin.String): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_quick_category_key(
+    
+        
+        FfiConverterString.lower(`name`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Nearest address for a point from the registered MWMs.
+         */ fun `comapsReverseGeocode`(`lat`: kotlin.Double, `lon`: kotlin.Double): FfiReverseAddress {
+            return FfiConverterTypeFfiReverseAddress.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_reverse_geocode(
+    
+        
+        FfiConverterDouble.lower(`lat`),
+        FfiConverterDouble.lower(`lon`),_status)
 }
     )
     }
@@ -11705,6 +12712,116 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
         FfiConverterDouble.lower(`toLat`),
         FfiConverterDouble.lower(`toLon`),
         FfiConverterBoolean.lower(`wetlandHook`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Cancel one request, or every in-flight request when `request_id` is 0.
+         */ fun `comapsSearchCancel`(`requestId`: kotlin.ULong)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_search_cancel(
+    
+        
+        FfiConverterULong.lower(`requestId`),_status)
+}
+    
+    
+ fun `comapsSearchClearViewport`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_search_clear_viewport(
+    
+        _status)
+}
+    
+    
+
+        /**
+         * True when the app should use CoMaps search: the MWM client flag is on and
+         * the native core is linked. Otherwise keep the `place_index` FTS search.
+         */ fun `comapsSearchEnabled`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_search_enabled(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Merge CoMaps hits with Navi catalog hits (labelled `navi:*`) without
+         * changing either storage. `category_mode` orders by distance instead of
+         * CoMaps rank.
+         */ fun `comapsSearchMerge`(`query`: kotlin.String, `categoryMode`: kotlin.Boolean, `comapsHits`: List<FfiSearchHit>, `naviHits`: List<FfiSearchHit>, `limit`: kotlin.UInt): List<FfiSearchHit> {
+            return FfiConverterSequenceTypeFfiSearchHit.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_search_merge(
+    
+        
+        FfiConverterString.lower(`query`),
+        FfiConverterBoolean.lower(`categoryMode`),
+        FfiConverterSequenceTypeFfiSearchHit.lower(`comapsHits`),
+        FfiConverterSequenceTypeFfiSearchHit.lower(`naviHits`),
+        FfiConverterUInt.lower(`limit`),_status)
+}
+    )
+    }
+    
+ fun `comapsSearchSetLocale`(`locale`: kotlin.String)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_search_set_locale(
+    
+        
+        FfiConverterString.lower(`locale`),_status)
+}
+    
+    
+ fun `comapsSearchSetPosition`(`lat`: kotlin.Double, `lon`: kotlin.Double, `hasPosition`: kotlin.Boolean)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_search_set_position(
+    
+        
+        FfiConverterDouble.lower(`lat`),
+        FfiConverterDouble.lower(`lon`),
+        FfiConverterBoolean.lower(`hasPosition`),_status)
+}
+    
+    
+ fun `comapsSearchSetViewport`(`minLat`: kotlin.Double, `minLon`: kotlin.Double, `maxLat`: kotlin.Double, `maxLon`: kotlin.Double)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_search_set_viewport(
+    
+        
+        FfiConverterDouble.lower(`minLat`),
+        FfiConverterDouble.lower(`minLon`),
+        FfiConverterDouble.lower(`maxLat`),
+        FfiConverterDouble.lower(`maxLon`),_status)
+}
+    
+    
+
+        /**
+         * Start an async, cancellable search; batches stream to `listener`. Returns a
+         * request id, or 0 when search is unavailable (flag off, native core missing
+         * or no session). `is_category` takes the string from [`comaps_category_query`].
+         */ fun `comapsSearchStart`(`query`: kotlin.String, `isCategory`: kotlin.Boolean, `maxResults`: kotlin.UInt, `listener`: FfiSearchListener): kotlin.ULong {
+            return FfiConverterULong.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_search_start(
+    
+        
+        FfiConverterString.lower(`query`),
+        FfiConverterBoolean.lower(`isCategory`),
+        FfiConverterUInt.lower(`maxResults`),
+        FfiConverterTypeFfiSearchListener.lower(`listener`),_status)
 }
     )
     }
@@ -11794,6 +12911,27 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
         FfiConverterString.lower(`locale`),_status)
 }
     
+    
+
+        /**
+         * Nearest drivable road for the endpoint that failed with `code`. Returns
+         * `found = false` for every code except `StartNotOnRoad` / `EndNotOnRoad`.
+         * Never called by [`comaps_session_route`]; the app calls it after a failure
+         * and shows the result before routing anywhere.
+         */ fun `comapsSessionSnapSuggestion`(`profile`: FfiComapsProfile, `code`: FfiComapsRouteCode, `lat`: kotlin.Double, `lon`: kotlin.Double, `radiusM`: kotlin.Double): FfiSnapSuggestion {
+            return FfiConverterTypeFfiSnapSuggestion.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_snap_suggestion(
+    
+        
+        FfiConverterTypeFfiComapsProfile.lower(`profile`),
+        FfiConverterTypeFfiComapsRouteCode.lower(`code`),
+        FfiConverterDouble.lower(`lat`),
+        FfiConverterDouble.lower(`lon`),
+        FfiConverterDouble.lower(`radiusM`),_status)
+}
+    )
+    }
     
 
 

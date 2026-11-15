@@ -326,8 +326,28 @@
       "id": "valdresflye_car",
       "profile": "car",
       "from": {
-        "lat": 61.386,
-        "lon": 8.81
+        "lat": 61.2440,
+        "lon": 8.9200
+      },
+      "to": {
+        "lat": 61.3860,
+        "lon": 8.8120
+      },
+      "tags": [
+        "mountain",
+        "elevation",
+        "unpaved_mix",
+        "rv51"
+      ],
+      "notes": "Valdresflye Beitostølen / Rv51 corridor (on car-routable road)",
+      "expect": "ok"
+    },
+    {
+      "id": "valdresflye_car_offroad",
+      "profile": "car",
+      "from": {
+        "lat": 61.39,
+        "lon": 8.80
       },
       "to": {
         "lat": 61.45,
@@ -335,11 +355,11 @@
       },
       "tags": [
         "mountain",
-        "elevation",
-        "unpaved_mix"
+        "off_road",
+        "end_not_on_road"
       ],
-      "notes": "Valdresflye",
-      "expect": "ok"
+      "notes": "Off-road destination near Valdresflye; expect END_NOT_ON_ROAD (no auto-snap)",
+      "expect": "end_not_on_road"
     },
     {
       "id": "valdresflye_foot",
