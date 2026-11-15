@@ -25,14 +25,23 @@ typedef enum NaviComapsOptimize {
   NAVI_COMAPS_OPTIMIZE_PREFER_NON_MOTORWAY = 2,
 } NaviComapsOptimize;
 
+/**
+ * Navi-facing route codes. CoMaps RouterResultCode values must never reach the
+ * UI as a bare INTERNAL — map every business outcome here.
+ */
 typedef enum NaviComapsCode {
   NAVI_COMAPS_OK = 0,
   NAVI_COMAPS_NOT_INIT = 1,
   NAVI_COMAPS_ROUTE_NOT_FOUND = 2,
   NAVI_COMAPS_NEED_MORE_MAPS = 3,
   NAVI_COMAPS_CANCELLED = 4,
+  /** Shim/exception only — never a mapped CoMaps business code. */
   NAVI_COMAPS_INTERNAL = 5,
   NAVI_COMAPS_UNSUPPORTED = 6,
+  NAVI_COMAPS_START_NOT_ON_ROAD = 7,
+  NAVI_COMAPS_END_NOT_ON_ROAD = 8,
+  /** Seasonal / conditional / access closed (when distinguishable). */
+  NAVI_COMAPS_ROAD_CLOSED = 9,
 } NaviComapsCode;
 
 typedef struct NaviComapsLatLon {
@@ -49,8 +58,15 @@ typedef struct NaviComapsRouteResult {
   NaviComapsLatLon * points;
   size_t point_count;
   char * error_message; /* UTF-8; may be NULL */
-  /* JSON array of turn steps from Route::GetTurnsForDisplay; may be NULL/"[]". */
+  /* JSON array of turn steps (enriched); may be NULL/"[]". */
   char * turns_json;
+  /* Total ascent/descent metres (CoMaps altitudes; sidecar applied in Rust). */
+  double ascent_m;
+  double descent_m;
+  /* JSON array of {lat,lon,ele_m,ele_source} along the polyline; may be NULL/"[]". */
+  char * elevation_json;
+  /* "Joints" | "Leaps" | "NoLeaps" | "Unknown" — diagnostic. */
+  char * router_mode;
 } NaviComapsRouteResult;
 
 /* storage_path: directory containing CoMaps data/ + writable maps dir with .mwm.
@@ -67,6 +83,11 @@ void navi_comaps_set_wetland_hook(int enabled);
 /* Install Rust SidecarReader-backed lookup; pass NULL to clear. */
 typedef uint8_t (*NaviComapsWetlandLookupFn)(uint32_t feature_id, uint32_t segment_idx, int forward);
 void navi_comaps_set_wetland_lookup(NaviComapsWetlandLookupFn fn);
+/** EL02 elevation override for one MWM leaf (`mwm_name` e.g. "Norway_Oppland").
+ *  Return 1 and write absolute altitude (dm) when present. */
+typedef int (*NaviComapsElevLookupFn)(char const * mwm_name, uint32_t feature_id, uint32_t point_idx,
+                                      int32_t * out_altitude_dm);
+void navi_comaps_set_elevation_lookup(NaviComapsElevLookupFn fn);
 
 /** Bike wetland Soft/Hard (default off). Foot/hike always apply when hook on. */
 void navi_comaps_set_bike_wetland(int enabled);

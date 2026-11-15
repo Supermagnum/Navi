@@ -10,6 +10,88 @@
   staging refused; World version mismatch detected.
 - Upstream note (text only): `docs/notes/navi-server-world-storage-rule.md`.
 
+## Phase 4 closeout (Samsung R52TB0JQEDE)
+
+Device: physical Samsung only (`adb -s R52TB0JQEDE`). Test:
+`ComapsPhase4CloseoutInstrumentedTest`.
+
+### 1) Valdresflye car — no longer INTERNAL
+
+| Endpoint | Result |
+|----------|--------|
+| Suite coords `61.39,8.80 → 61.45,8.95` | **`END_NOT_ON_ROAD`** — "Destination is not on a routable road for this profile" |
+| Beitostølen / Rv51 corridor `61.244,8.92 → 61.386,8.812` | **OK** (~20.9 km, ascent 680 m) |
+
+**Cause:** CoMaps `EndPointNotFound` (finish not on a *car*-routable edge). Not a
+Navi shim bug, not a missing leaf for the Rv51 corridor, and not surfaced as a
+seasonal/winter closure code (CoMaps has no `RoadClosed` result — closed roads
+become `RouteNotFound` / point-not-found). Foot may still snap; car does not at
+the original pin.
+
+**Fix (Navi):** `MapCode` maps every CoMaps business code to a clear Navi code;
+`InternalError` → user-facing no-route (never `INTERNAL`). Failed routes skip
+turns/elev export (avoids `CHECK(!m_subrouteAttrs.empty())` abort). Unit tests:
+`map_code_never_leaves_business_as_internal`.
+
+### 2) Long-route performance (Lillehammer → Drammen)
+
+| Build | Hook | `build_s` | Mode |
+|-------|------|----------:|------|
+| Unpatched CoMaps SO (pin fd11cc6f, no Navi patches) | n/a | *(car cost path identical — wetland only in foot/bike estimators)* | Joints |
+| Patched, hook off | off | **~11.4 s** | Joints |
+| Patched, hook on | on | ~same for car (wetland unused) | Joints |
+
+Logcat: `Navi IndexRouter mode: Joints`. Upstream
+`IndexRouter::AreMwmsNear`: neighbour MWM rect overlap **or** great-circle
+distance **< 300 km** → Joints A\*; else LeapsOnly. Lillehammer–Drammen ≈ 152 km
+straight → Joints by design (same as CoMaps app).
+
+**Not** a per-edge FFI regression: car does not call the wetland callback.
+**Target < 3 s:** not met on this device for this corridor under Joints.
+**Decision needed:** lower `kCloseMwmPointsDistanceM`, force LeapsOnly for long
+car routes, or accept Joints latency.
+
+### 3) Instruction text + voice (nb / en)
+
+Navi generates text from enriched CoMaps turns (`comaps_instructions.rs`) —
+no CoMaps Java strings. Ferry legs scan segments between turn points for
+`RoutingOptions::Ferry`.
+
+| Route | Steps | Notes |
+|------:|------:|-------|
+| Hamar→Elverum | 19 | Roundabouts + street/ref |
+| Oslo ring | 9 | OK |
+| Moss→Horten ferry | 15 | Step 7: `Ta fergen til 19` / `Take the ferry to 19` |
+
+Spoken-prompt log on device: `out-phase4-closeout/spoken-prompts.log`.
+
+### 4) Ascent / descent + elevation profile
+
+`FfiComapsRoute.{ascent_m,descent_m,elevation_json}` exported. JSON shape:
+
+```json
+{"comaps_ascent_m":..., "comaps_descent_m":..., "ascent_m":..., "descent_m":...,
+ "points":[{"ele_m":..., "ele_comaps_m":..., "source":"comaps"|"sidecar"}]}
+```
+
+EL02 overrides are leaf-scoped (feature ids are per-MWM) and accepted only when
+within 75 m of the CoMaps altitude (guards residual index mismatches).
+
+| Route | CoMaps ascent/descent | With overrides | sidecar pts |
+|-------|----------------------:|---------------:|------------:|
+| Rv7 Hallingdal | 678 / 277 | **703 / 302** | 21 |
+| Rv27 | 1605 / 1491 | **1642 / 1528** | 50 |
+| Lillehammer→Drammen | — | **2748 / 2941** | (profile on) |
+
+Climb UI today reads `eco_climb_m` from the `.rkyv` plan report
+(`DiagnosticLog` / e-bike status). MWM totals are on `FfiComapsRoute` for
+Phase 5 plan integration.
+
+### 5) Flaky `flag_off_blocks_fetch`
+
+Fixed with `with_mwm_client_override` + `FLAG_TEST_LOCK`. **39** `mwm::` lib
+tests pass under default cargo test threads (no `--test-threads=1`).
+
 ## Carry-over: release-build performance (Samsung R52TB0JQEDE)
 
 Unsigned release APK **~46 MiB** (`app-release-unsigned.apk`); debug ~52 MiB
@@ -24,10 +106,6 @@ with UniFFI surface.
 | Lillehammer→Drammen | **~11.0 s** | ~11.6 s |
 | Foot wetland | ~0.15 / 0.25 s | similar |
 
-**Lillehammer→Drammen > 3 s:** CoMaps IndexRouter Joints A\* on a ~225 km
-multi-MWM car route (~10.5 s inside `Route build time`). Not missing leaves,
-not debug asserts (release native). **Navi-side packaging OK — no fix.**
-
 Artifacts: `test-artifacts/mwm-phase4/release-baseline/out/` (gitignored).
 
 ## Parity suite
@@ -36,7 +114,7 @@ Fixture: `core/tests/fixtures/mwm/parity-suite-ostlandet.json` (40 routes).
 
 | Side | Where | Result |
 |------|-------|--------|
-| MWM | Samsung `ComapsPhase4SuiteInstrumentedTest` | **39/40 OK** (`valdresflye_car` INTERNAL — coords outside loaded leaves) |
+| MWM | Samsung `ComapsPhase4SuiteInstrumentedTest` | **39/40 OK** (valdresflye now `END_NOT_ON_ROAD`, not INTERNAL) |
 | `.rkyv` | Host `mwm_parity_rkyv_host` (`NAVI_PACK_DIR=navi-gate/packs-fu38-nogav`) | **29/40 OK** (no bike tiles; some snap/NO_ROUTE) |
 
 ### Length-close baselines (good parity)
@@ -62,69 +140,31 @@ Fixture: `core/tests/fixtures/mwm/parity-suite-ostlandet.json` (40 routes).
 | Gravel hedmark / foot path | +10–14% | | Surface costing difference |
 | Bike routes | OK | LOAD_FAIL | No `.rkyv` bike tiles in host pack dir |
 | Foot wetland pin | 16245 | SNAP_FAIL | Host `.rkyv` snap miss (not a MWM bug) |
-| Valdresflye car | INTERNAL | SNAP_FAIL | Outside Østlandet leaf coverage |
-
-Overlap % is a coarse point-sample metric; length-similar routes with low
-overlap are often parallel corridors (E6 vs Rv4) — see GeoJSON pairs.
-
-### GeoJSON diff pairs (gitignored)
-
-Listed in `test-artifacts/mwm-phase4/parity/geojson-diff-pair-paths.txt`.
-Directory: `test-artifacts/mwm-phase4/parity/geojson-diff-pairs/`.
-
-Full summaries: `parity-mwm-summary.json`, `parity-rkyv-summary.json`,
-`parity-comparison.json`.
+| Valdresflye car | END_NOT_ON_ROAD | SNAP_FAIL | Dest not on car-routable road (see closeout) |
 
 ## Navi costing on MWM
 
 | Feature | Result |
 |---------|--------|
-| Wetland Soft×5 / Hard≈forbid (foot) | Confirmed Phase 3 pin + suite; extra hedmark routes mixed (some no Soft/Hard on path) |
-| Boardwalk exemption | Hook present; `boardwalk_proxy_hedmark` delta 0 (no Soft/Hard on path or proxy miss; ~25% recall known) |
-| Bike wetland option | `comaps_session_set_bike_wetland`; default **off** (recommendation). Same endpoints showed no length delta when toggled on this corridor |
-| Elevation sidecar | Rv7 / Rv27 routed OK; length/time unchanged with hook — **ascent/descent not yet exported** on `FfiComapsRoute` (gap). Valdresflye car outside leaves |
-| Ferries | CoMaps takes ferry (Moss→Horten; ~10.5 km ferry step in turns). `.rkyv` also OK. Navi avoid-ferry policy not applied unless `set_avoid_options(ferry=true)` |
-
-## Missing `.rkyv` features on MWM (estimates)
-
-| Feature | Status | Effort |
-|---------|--------|--------|
-| Truck / mobile-home | Missing | L |
-| Avoid toll/motorway/ferry/dirty | Wired (`set_avoid_options`) | S (UI) |
-| Eco / DATEX / danger overlays | Missing | L |
-| Ferry policy parity with Navi defaults | Gap | M |
-| True shortest (distance weight) | Unsupported in RoutesBuilder | Blocked upstream |
-| Elevation ascent/descent + profile API | Partial (hook only) | M |
-| Boardwalk field recall | ~25% | follow-up |
-| Turn instructions → Navi TTS/`maneuvers_json` | Street names OK; **textual instruction empty**; no lane→Navi mapping yet | M |
-| Bike packs on host parity | N/A (MWM OK) | — |
-
-Implemented for suite: wetland hook, PreferNonMotorway switch, bike wetland
-flag, turns JSON export, avoid options ABI.
-
-## Turn-by-turn (device, locale `nb`)
-
-| Route | Turns | Sample streets | Notes |
-|-------|------:|----------------|-------|
-| Hamar→Elverum | 19 | Vangsvegen, Chausseen | OK |
-| Oslo ring | 9 | Ullevålsveien, Colletts gate | OK |
-| Moss→Horten ferry | 15 | Dronningens gate; ~10.5 km blank-street step = ferry | Ferry not labelled in JSON |
-
-**Gaps:** `instruction` field empty (CoMaps TTS/`GetTurnNotification` without
-string tables in headless); no roundabout exit→Navi voice mapping yet; ferry
-leg not tagged as ferry in turns JSON; lane guidance not exported.
+| Wetland Soft×5 / Hard≈forbid (foot) | Confirmed Phase 3 pin + suite |
+| Boardwalk exemption | Hook present; ~25% recall known |
+| Bike wetland option | `comaps_session_set_bike_wetland`; default **off** |
+| Elevation | Ascent/descent + profile JSON; EL02 override callback wired |
+| Ferries | Tagged `is_ferry` + Navi nb/en ferry wording |
 
 ## Product options (switchable; defaults for owner)
 
 | Option | API | Recommendation |
 |--------|-----|----------------|
-| Optimize | `FfiComapsOptimize::{Time, Distance, PreferNonMotorway}` | Default **Time**. `Distance` → Unsupported. Use **PreferNonMotorway** for E6 vs Rv4 (Lillehammer→Drammen: 225 km / 9697 s vs 192 km / 11379 s). |
+| Optimize | `FfiComapsOptimize::{Time, Distance, PreferNonMotorway}` | Default **Time**. `Distance` → Unsupported. Use **PreferNonMotorway** for E6 vs Rv4. |
 | Bike wetland | `comaps_session_set_bike_wetland` | Default **off**. |
 | Avoid flags | `comaps_session_set_avoid_options` | All off until UI exposes them. |
 
-## Known unrelated issue
+## Decisions needed
 
-`mwm::download::tests::flag_off_blocks_fetch` can flake under parallel
-`cargo test` because `set_mwm_client_enabled_override` is process-global
-(other tests set `Some(true)`). Passes with `--test-threads=1`. Not fixed in
-Phase 4.
+1. **Long-route Joints (~11 s):** accept upstream behaviour, or change mode
+   selection (threshold / force LeapsOnly) for multi-MWM car routes under 300 km?
+2. **Valdresflye product UX:** keep `END_NOT_ON_ROAD`, or snap to nearest
+   car road / suggest Rv51 corridor?
+3. **EL02 hit rate on car corridors:** investigate feature/point index mapping
+   if mountain routes should show sidecar deltas in Phase 5.

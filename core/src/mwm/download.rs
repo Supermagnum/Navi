@@ -470,77 +470,77 @@ mod tests {
     use super::*;
     use crate::mwm::catalog::parse_catalog_json;
     use crate::mwm::checksum::{sha1_base64_of_bytes, sha256_hex_of_bytes};
-    use crate::mwm::flag::set_mwm_client_enabled_override;
+    use crate::mwm::flag::with_mwm_client_override;
     use crate::mwm::release::begin_staging;
     use tempfile::tempdir;
 
     #[test]
     fn shared_leaf_downloaded_once() {
-        set_mwm_client_enabled_override(Some(true));
-        let dir = tempdir().unwrap();
-        let staging = begin_staging(dir.path(), "261105").unwrap();
-        let mwm = b"shared-mwm-bytes-xxxx";
-        let leaf = CatalogLeaf {
-            id: "Norway_Southern".into(),
-            sidecar_url: Some("261105/Norway_Southern.navi-sidecar.v1.zst".into()),
-            sidecar_bytes: Some(4),
-            sidecar_sha256: Some(sha256_hex_of_bytes(b"side")),
-            comaps_file: Some("Norway_Southern.mwm".into()),
-            comaps_bytes: Some(mwm.len() as u64),
-            comaps_sha1_base64: Some(sha1_base64_of_bytes(mwm)),
-            mwm_bytes: Some(mwm.len() as u64),
-            mwm_sha256: Some(sha256_hex_of_bytes(mwm)),
-            mwm_fingerprint: Some(crate::mwm::catalog::MwmFingerprint {
-                size: mwm.len() as u64,
-                sha256: sha256_hex_of_bytes(mwm),
-            }),
-            shared: true,
-            shared_with_regions: vec![
-                "europe_norway_ostlandet".into(),
-                "europe_norway_sorlandet".into(),
-            ],
-            no_sidecar: false,
-            elevation_policy_version: Some(1),
-        };
-        let r1 = install_leaf_bytes_for_test(&staging, &leaf, mwm, Some(b"side")).unwrap();
-        assert!(r1.navi_layers_available);
-        let mtime1 = fs::metadata(&r1.mwm_path).unwrap().modified().unwrap();
-        let r2 = install_leaf_bytes_for_test(&staging, &leaf, mwm, Some(b"side")).unwrap();
-        let mtime2 = fs::metadata(&r2.mwm_path).unwrap().modified().unwrap();
-        assert_eq!(r1.mwm_path, r2.mwm_path);
-        assert_eq!(mtime1, mtime2);
-        set_mwm_client_enabled_override(None);
+        with_mwm_client_override(Some(true), || {
+            let dir = tempdir().unwrap();
+            let staging = begin_staging(dir.path(), "261105").unwrap();
+            let mwm = b"shared-mwm-bytes-xxxx";
+            let leaf = CatalogLeaf {
+                id: "Norway_Southern".into(),
+                sidecar_url: Some("261105/Norway_Southern.navi-sidecar.v1.zst".into()),
+                sidecar_bytes: Some(4),
+                sidecar_sha256: Some(sha256_hex_of_bytes(b"side")),
+                comaps_file: Some("Norway_Southern.mwm".into()),
+                comaps_bytes: Some(mwm.len() as u64),
+                comaps_sha1_base64: Some(sha1_base64_of_bytes(mwm)),
+                mwm_bytes: Some(mwm.len() as u64),
+                mwm_sha256: Some(sha256_hex_of_bytes(mwm)),
+                mwm_fingerprint: Some(crate::mwm::catalog::MwmFingerprint {
+                    size: mwm.len() as u64,
+                    sha256: sha256_hex_of_bytes(mwm),
+                }),
+                shared: true,
+                shared_with_regions: vec![
+                    "europe_norway_ostlandet".into(),
+                    "europe_norway_sorlandet".into(),
+                ],
+                no_sidecar: false,
+                elevation_policy_version: Some(1),
+            };
+            let r1 = install_leaf_bytes_for_test(&staging, &leaf, mwm, Some(b"side")).unwrap();
+            assert!(r1.navi_layers_available);
+            let mtime1 = fs::metadata(&r1.mwm_path).unwrap().modified().unwrap();
+            let r2 = install_leaf_bytes_for_test(&staging, &leaf, mwm, Some(b"side")).unwrap();
+            let mtime2 = fs::metadata(&r2.mwm_path).unwrap().modified().unwrap();
+            assert_eq!(r1.mwm_path, r2.mwm_path);
+            assert_eq!(mtime1, mtime2);
+        });
     }
 
     #[test]
     fn fingerprint_mismatch_disables_navi_layers() {
-        set_mwm_client_enabled_override(Some(true));
-        let dir = tempdir().unwrap();
-        let staging = begin_staging(dir.path(), "261105").unwrap();
-        let mwm = b"local-mwm";
-        let leaf = CatalogLeaf {
-            id: "Norway_Hedmark".into(),
-            sidecar_url: Some("x".into()),
-            sidecar_bytes: Some(4),
-            sidecar_sha256: Some(sha256_hex_of_bytes(b"side")),
-            comaps_file: None,
-            comaps_bytes: Some(mwm.len() as u64),
-            comaps_sha1_base64: Some(sha1_base64_of_bytes(mwm)),
-            mwm_bytes: Some(mwm.len() as u64),
-            mwm_sha256: Some(sha256_hex_of_bytes(mwm)),
-            mwm_fingerprint: Some(crate::mwm::catalog::MwmFingerprint {
-                size: mwm.len() as u64,
-                sha256: "ab".repeat(32),
-            }),
-            shared: false,
-            shared_with_regions: vec![],
-            no_sidecar: false,
-            elevation_policy_version: Some(1),
-        };
-        let r = install_leaf_bytes_for_test(&staging, &leaf, mwm, Some(b"side")).unwrap();
-        assert!(!r.navi_layers_available);
-        assert_eq!(r.warning.as_deref(), Some(FINGERPRINT_USER_WARNING));
-        set_mwm_client_enabled_override(None);
+        with_mwm_client_override(Some(true), || {
+            let dir = tempdir().unwrap();
+            let staging = begin_staging(dir.path(), "261105").unwrap();
+            let mwm = b"local-mwm";
+            let leaf = CatalogLeaf {
+                id: "Norway_Hedmark".into(),
+                sidecar_url: Some("x".into()),
+                sidecar_bytes: Some(4),
+                sidecar_sha256: Some(sha256_hex_of_bytes(b"side")),
+                comaps_file: None,
+                comaps_bytes: Some(mwm.len() as u64),
+                comaps_sha1_base64: Some(sha1_base64_of_bytes(mwm)),
+                mwm_bytes: Some(mwm.len() as u64),
+                mwm_sha256: Some(sha256_hex_of_bytes(mwm)),
+                mwm_fingerprint: Some(crate::mwm::catalog::MwmFingerprint {
+                    size: mwm.len() as u64,
+                    sha256: "ab".repeat(32),
+                }),
+                shared: false,
+                shared_with_regions: vec![],
+                no_sidecar: false,
+                elevation_policy_version: Some(1),
+            };
+            let r = install_leaf_bytes_for_test(&staging, &leaf, mwm, Some(b"side")).unwrap();
+            assert!(!r.navi_layers_available);
+            assert_eq!(r.warning.as_deref(), Some(FINGERPRINT_USER_WARNING));
+        });
     }
 
     #[test]
@@ -556,10 +556,10 @@ mod tests {
 
     #[test]
     fn flag_off_blocks_fetch() {
-        set_mwm_client_enabled_override(Some(false));
-        let err = fetch_current_catalog("https://example.invalid").unwrap_err();
-        assert!(matches!(err, MwmDownloadError::Disabled));
-        set_mwm_client_enabled_override(None);
+        with_mwm_client_override(Some(false), || {
+            let err = fetch_current_catalog("https://example.invalid").unwrap_err();
+            assert!(matches!(err, MwmDownloadError::Disabled));
+        });
     }
 
     #[test]

@@ -26,9 +26,13 @@ pub enum FfiComapsRouteCode {
     RouteNotFound,
     NeedMoreMaps,
     Cancelled,
+    /// Shim/exception only — never a mapped CoMaps business code.
     Internal,
     Unsupported,
     Unavailable,
+    StartNotOnRoad,
+    EndNotOnRoad,
+    RoadClosed,
 }
 
 #[derive(uniffi::Record, Debug, Clone)]
@@ -56,6 +60,11 @@ pub struct FfiComapsRoute {
     pub points: Vec<FfiComapsLatLon>,
     pub error_message: Option<String>,
     pub turns_json: String,
+    pub instructions_json: String,
+    pub ascent_m: f64,
+    pub descent_m: f64,
+    pub elevation_json: String,
+    pub router_mode: String,
 }
 
 fn empty_route(code: FfiComapsRouteCode, msg: impl Into<String>) -> FfiComapsRoute {
@@ -67,6 +76,35 @@ fn empty_route(code: FfiComapsRouteCode, msg: impl Into<String>) -> FfiComapsRou
         points: vec![],
         error_message: Some(msg.into()),
         turns_json: "[]".into(),
+        instructions_json: "[]".into(),
+        ascent_m: 0.0,
+        descent_m: 0.0,
+        elevation_json: "[]".into(),
+        router_mode: "Unknown".into(),
+    }
+}
+
+fn from_comaps_route(r: driver_break_core::mwm::ComapsRoute) -> FfiComapsRoute {
+    FfiComapsRoute {
+        code: map_code(r.code),
+        length_m: r.length_m,
+        time_s: r.time_s,
+        build_time_s: r.build_time_s,
+        points: r
+            .points
+            .into_iter()
+            .map(|p| FfiComapsLatLon {
+                lat: p.lat,
+                lon: p.lon,
+            })
+            .collect(),
+        error_message: r.error_message,
+        turns_json: r.turns_json,
+        instructions_json: r.instructions_json,
+        ascent_m: r.ascent_m,
+        descent_m: r.descent_m,
+        elevation_json: r.elevation_json,
+        router_mode: r.router_mode,
     }
 }
 
@@ -88,6 +126,9 @@ fn map_code(c: ComapsRouterCode) -> FfiComapsRouteCode {
         ComapsRouterCode::Internal => FfiComapsRouteCode::Internal,
         ComapsRouterCode::Unsupported => FfiComapsRouteCode::Unsupported,
         ComapsRouterCode::Unavailable => FfiComapsRouteCode::Unavailable,
+        ComapsRouterCode::StartNotOnRoad => FfiComapsRouteCode::StartNotOnRoad,
+        ComapsRouterCode::EndNotOnRoad => FfiComapsRouteCode::EndNotOnRoad,
+        ComapsRouterCode::RoadClosed => FfiComapsRouteCode::RoadClosed,
     }
 }
 
@@ -123,10 +164,9 @@ pub fn comaps_route_once(
         }
     };
     let _ = router.register_mwms();
-    if wetland_hook {
-        if let Some(dir) = sidecar_dir.as_deref() {
-            let _ = router.load_sidecars_from_dir(dir);
-        }
+    // Sidecars feed wetland costing and EL02 elevation overrides.
+    if let Some(dir) = sidecar_dir.as_deref() {
+        let _ = router.load_sidecars_from_dir(dir);
     }
     router.set_wetland_hook(wetland_hook);
     match router.route(
@@ -140,22 +180,7 @@ pub fn comaps_route_once(
             lon: to_lon,
         },
     ) {
-        Ok(r) => FfiComapsRoute {
-            code: map_code(r.code),
-            length_m: r.length_m,
-            time_s: r.time_s,
-            build_time_s: r.build_time_s,
-            points: r
-                .points
-                .into_iter()
-                .map(|p| FfiComapsLatLon {
-                    lat: p.lat,
-                    lon: p.lon,
-                })
-                .collect(),
-            error_message: r.error_message,
-            turns_json: r.turns_json,
-        },
+        Ok(r) => from_comaps_route(r),
         Err(e) => empty_route(FfiComapsRouteCode::Internal, e.to_string()),
     }
 }
@@ -271,22 +296,7 @@ pub fn comaps_session_route(
             lon: to_lon,
         },
     ) {
-        Ok(r) => FfiComapsRoute {
-            code: map_code(r.code),
-            length_m: r.length_m,
-            time_s: r.time_s,
-            build_time_s: r.build_time_s,
-            points: r
-                .points
-                .into_iter()
-                .map(|p| FfiComapsLatLon {
-                    lat: p.lat,
-                    lon: p.lon,
-                })
-                .collect(),
-            error_message: r.error_message,
-            turns_json: r.turns_json,
-        },
+        Ok(r) => from_comaps_route(r),
         Err(e) => empty_route(FfiComapsRouteCode::Internal, e.to_string()),
     }
 }

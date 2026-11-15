@@ -1,6 +1,7 @@
 //! Runtime feature flag for the MWM client path (default **on**).
 
 use std::sync::atomic::{AtomicI8, Ordering};
+use std::sync::{Mutex, MutexGuard};
 
 /// Environment variable. Unset → enabled. Explicit disable:
 /// `0` / `false` / `no` / `off`. Explicit enable: `1` / `true` / `yes` / `on`.
@@ -9,14 +10,44 @@ pub const MWM_CLIENT_ENABLED_ENV: &str = "NAVI_MWM_CLIENT_ENABLED";
 /// `-1` = consult env; `0` = force off; `1` = force on (tests).
 static OVERRIDE: AtomicI8 = AtomicI8::new(-1);
 
+/// Serialises test overrides so parallel `cargo test` cannot interleave
+/// `set`/`assert`/`clear` across tests (see `flag_off_blocks_fetch`).
+static FLAG_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+fn lock_flag() -> MutexGuard<'static, ()> {
+    FLAG_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// Force the flag for tests. Pass `None` to restore env-based behaviour.
+///
+/// Prefer [`with_mwm_client_override`] so the lock is held for the whole
+/// set → assert → clear critical section under parallel tests.
 pub fn set_mwm_client_enabled_override(enabled: Option<bool>) {
+    let _g = lock_flag();
+    set_override_unlocked(enabled);
+}
+
+fn set_override_unlocked(enabled: Option<bool>) {
     let v = match enabled {
         None => -1,
         Some(false) => 0,
         Some(true) => 1,
     };
     OVERRIDE.store(v, Ordering::SeqCst);
+}
+
+/// Run `f` with a forced override while holding the test lock, then clear.
+pub fn with_mwm_client_override<R>(enabled: Option<bool>, f: impl FnOnce() -> R) -> R {
+    let _g = lock_flag();
+    set_override_unlocked(enabled);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+    set_override_unlocked(None);
+    match result {
+        Ok(r) => r,
+        Err(payload) => std::panic::resume_unwind(payload),
+    }
 }
 
 fn parse_env_flag(raw: &str) -> Option<bool> {
@@ -54,6 +85,8 @@ fn env_enabled() -> bool {
 /// env var is unset (all build types / F-Droid). Set
 /// `NAVI_MWM_CLIENT_ENABLED=0` to force the classic `.rkyv` path for debugging.
 pub fn mwm_client_enabled() -> bool {
+    // Do not take FLAG_TEST_LOCK here: production reads must not block on a
+    // test that holds the override lock for a long download. OVERRIDE is atomic.
     match OVERRIDE.load(Ordering::SeqCst) {
         0 => false,
         1 => true,
@@ -67,11 +100,12 @@ mod tests {
 
     #[test]
     fn override_forces_on_and_off() {
-        set_mwm_client_enabled_override(Some(false));
-        assert!(!mwm_client_enabled());
-        set_mwm_client_enabled_override(Some(true));
-        assert!(mwm_client_enabled());
-        set_mwm_client_enabled_override(None);
+        with_mwm_client_override(Some(false), || {
+            assert!(!mwm_client_enabled());
+        });
+        with_mwm_client_override(Some(true), || {
+            assert!(mwm_client_enabled());
+        });
     }
 
     #[test]
@@ -90,10 +124,24 @@ mod tests {
 
     #[test]
     fn default_when_override_cleared_is_enabled_if_env_unset() {
-        set_mwm_client_enabled_override(None);
-        // When the developer has not exported the env, default is ON.
-        if std::env::var(MWM_CLIENT_ENABLED_ENV).is_err() {
-            assert!(mwm_client_enabled());
+        with_mwm_client_override(None, || {
+            if std::env::var(MWM_CLIENT_ENABLED_ENV).is_err() {
+                assert!(mwm_client_enabled());
+            }
+        });
+    }
+
+    #[test]
+    fn flag_off_blocks_under_parallel_stress() {
+        // Re-entrant style: nested with_mwm_client_override would deadlock on
+        // the same mutex — so stress via sequential holds only.
+        for _ in 0..50 {
+            with_mwm_client_override(Some(false), || {
+                assert!(!mwm_client_enabled());
+            });
+            with_mwm_client_override(Some(true), || {
+                assert!(mwm_client_enabled());
+            });
         }
     }
 }

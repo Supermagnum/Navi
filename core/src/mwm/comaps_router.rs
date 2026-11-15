@@ -32,8 +32,16 @@ pub struct ComapsRoute {
     pub build_time_s: f64,
     pub points: Vec<ComapsLatLon>,
     pub error_message: Option<String>,
-    /// JSON array from CoMaps `GetTurnsForDisplay` (may be `"[]"`).
+    /// Raw CoMaps turns JSON (enriched with turn/ferry fields).
     pub turns_json: String,
+    /// Navi nb/en instruction JSON from [`super::comaps_instructions`].
+    pub instructions_json: String,
+    pub ascent_m: f64,
+    pub descent_m: f64,
+    /// CoMaps altitude samples JSON (`null` = invalid).
+    pub elevation_json: String,
+    /// Router mode diagnostic (`Joints` / `LeapsOnly` / …).
+    pub router_mode: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,9 +51,13 @@ pub enum ComapsRouterCode {
     RouteNotFound,
     NeedMoreMaps,
     Cancelled,
+    /// Shim/exception only — never a mapped CoMaps business code.
     Internal,
     Unsupported,
     Unavailable,
+    StartNotOnRoad,
+    EndNotOnRoad,
+    RoadClosed,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -56,6 +68,23 @@ pub enum ComapsRouterError {
     Router(ComapsRouterCode),
     #[error("null pointer from CoMaps shim")]
     NullPointer,
+}
+
+/// Map Navi C ABI codes (`navi_comaps.h`). Unknown → RouteNotFound (never Internal).
+pub fn map_navi_comaps_code(code: i32) -> ComapsRouterCode {
+    match code {
+        0 => ComapsRouterCode::Ok,
+        1 => ComapsRouterCode::NotInit,
+        2 => ComapsRouterCode::RouteNotFound,
+        3 => ComapsRouterCode::NeedMoreMaps,
+        4 => ComapsRouterCode::Cancelled,
+        5 => ComapsRouterCode::Internal,
+        6 => ComapsRouterCode::Unsupported,
+        7 => ComapsRouterCode::StartNotOnRoad,
+        8 => ComapsRouterCode::EndNotOnRoad,
+        9 => ComapsRouterCode::RoadClosed,
+        _ => ComapsRouterCode::RouteNotFound,
+    }
 }
 
 /// Handle to an initialized CoMaps routing session.
@@ -226,6 +255,11 @@ mod ffi {
         fn navi_comaps_set_wetland_lookup(
             fn_ptr: Option<unsafe extern "C" fn(u32, u32, c_int) -> u8>,
         );
+        fn navi_comaps_set_elevation_lookup(
+            fn_ptr: Option<
+                unsafe extern "C" fn(*const c_char, u32, u32, *mut i32) -> c_int,
+            >,
+        );
         fn navi_comaps_set_bike_wetland(enabled: c_int);
         fn navi_comaps_set_avoid_options(
             avoid_toll: c_int,
@@ -264,6 +298,10 @@ mod ffi {
         point_count: usize,
         error_message: *mut c_char,
         turns_json: *mut c_char,
+        ascent_m: f64,
+        descent_m: f64,
+        elevation_json: *mut c_char,
+        router_mode: *mut c_char,
     }
 
     pub fn set_bike_wetland(enabled: bool) {
@@ -296,9 +334,10 @@ mod ffi {
         }
     }
 
-    static SIDECARS: OnceLock<Mutex<Vec<SidecarReader>>> = OnceLock::new();
+    /// `(leaf_id, reader)` — leaf_id matches CoMaps country file name.
+    static SIDECARS: OnceLock<Mutex<Vec<(String, SidecarReader)>>> = OnceLock::new();
 
-    fn sidecars() -> &'static Mutex<Vec<SidecarReader>> {
+    fn sidecars() -> &'static Mutex<Vec<(String, SidecarReader)>> {
         SIDECARS.get_or_init(|| Mutex::new(Vec::new()))
     }
 
@@ -313,7 +352,9 @@ mod ffi {
         let Ok(guard) = sidecars().lock() else {
             return 0;
         };
-        for reader in guard.iter() {
+        // Wetland records are also per-leaf; without an MWM name on this ABI we
+        // still scan all readers (boardwalk exemption first). Elev uses leaf id.
+        for (_leaf, reader) in guard.iter() {
             if reader
                 .is_boardwalk(feature_id, seg, direction)
                 .unwrap_or(false)
@@ -331,16 +372,41 @@ mod ffi {
         0
     }
 
-    fn map_code(code: c_int) -> ComapsRouterCode {
-        match code {
-            0 => ComapsRouterCode::Ok,
-            1 => ComapsRouterCode::NotInit,
-            2 => ComapsRouterCode::RouteNotFound,
-            3 => ComapsRouterCode::NeedMoreMaps,
-            4 => ComapsRouterCode::Cancelled,
-            6 => ComapsRouterCode::Unsupported,
-            _ => ComapsRouterCode::Internal,
+    unsafe extern "C" fn elevation_lookup_cb(
+        mwm_name: *const c_char,
+        feature_id: u32,
+        point_idx: u32,
+        out_altitude_dm: *mut i32,
+    ) -> c_int {
+        if out_altitude_dm.is_null() || mwm_name.is_null() {
+            return 0;
         }
+        let Ok(name) = CStr::from_ptr(mwm_name).to_str() else {
+            return 0;
+        };
+        let Ok(guard) = sidecars().lock() else {
+            return 0;
+        };
+        let pt = point_idx.min(u16::MAX as u32) as u16;
+        for (leaf, reader) in guard.iter() {
+            if leaf != name {
+                continue;
+            }
+            if let Ok(Some(dm)) = reader.elevation_dm(feature_id, pt) {
+                *out_altitude_dm = dm;
+                return 1;
+            }
+            return 0;
+        }
+        0
+    }
+
+    fn install_elevation_lookup() {
+        unsafe { navi_comaps_set_elevation_lookup(Some(elevation_lookup_cb)) };
+    }
+
+    fn map_code(code: c_int) -> ComapsRouterCode {
+        super::map_navi_comaps_code(code)
     }
 
     pub fn init(
@@ -401,8 +467,9 @@ mod ffi {
             if !name.ends_with(".navi-sidecar.v1.zst") {
                 continue;
             }
+            let leaf = name.trim_end_matches(".navi-sidecar.v1.zst").to_string();
             match SidecarReader::open_path(&p) {
-                Ok(r) => loaded.push(r),
+                Ok(r) => loaded.push((leaf, r)),
                 Err(_) => continue,
             }
         }
@@ -410,6 +477,10 @@ mod ffi {
         *sidecars()
             .lock()
             .map_err(|_| ComapsRouterError::NullPointer)? = loaded;
+        // Elevation overrides are independent of the wetland cost hook.
+        if n > 0 {
+            install_elevation_lookup();
+        }
         Ok(n)
     }
 
@@ -432,6 +503,10 @@ mod ffi {
             point_count: 0,
             error_message: ptr::null_mut(),
             turns_json: ptr::null_mut(),
+            ascent_m: 0.0,
+            descent_m: 0.0,
+            elevation_json: ptr::null_mut(),
+            router_mode: ptr::null_mut(),
         };
         unsafe {
             navi_comaps_route(profile_i, from.lat, from.lon, to.lat, to.lon, &mut out);
@@ -440,6 +515,8 @@ mod ffi {
         let length_m = out.length_m;
         let time_s = out.time_s;
         let build_time_s = out.build_time_s;
+        let ascent_m = out.ascent_m;
+        let descent_m = out.descent_m;
         let mut points = Vec::new();
         if !out.points.is_null() && out.point_count > 0 {
             let slice = unsafe { std::slice::from_raw_parts(out.points, out.point_count) };
@@ -464,7 +541,23 @@ mod ffi {
                 .to_string_lossy()
                 .into_owned()
         };
+        let elevation_json = if out.elevation_json.is_null() {
+            "[]".to_string()
+        } else {
+            unsafe { CStr::from_ptr(out.elevation_json) }
+                .to_string_lossy()
+                .into_owned()
+        };
+        let router_mode = if out.router_mode.is_null() {
+            "Unknown".to_string()
+        } else {
+            unsafe { CStr::from_ptr(out.router_mode) }
+                .to_string_lossy()
+                .into_owned()
+        };
         unsafe { navi_comaps_free_route(&mut out) };
+        let instructions_json = crate::mwm::comaps_instructions::enrich_turns_json(&turns_json)
+            .unwrap_or_else(|_| "[]".to_string());
         Ok(ComapsRoute {
             code,
             length_m,
@@ -473,6 +566,11 @@ mod ffi {
             points,
             error_message,
             turns_json,
+            instructions_json,
+            ascent_m,
+            descent_m,
+            elevation_json,
+            router_mode,
         })
     }
 
@@ -495,6 +593,26 @@ mod tests {
         {
             let err = ComapsRouter::init("/tmp", "/tmp", None).unwrap_err();
             assert!(matches!(err, ComapsRouterError::Unavailable));
+        }
+    }
+
+    #[test]
+    fn map_code_never_leaves_business_as_internal() {
+        let cases = [
+            (0, ComapsRouterCode::Ok),
+            (1, ComapsRouterCode::NotInit),
+            (2, ComapsRouterCode::RouteNotFound),
+            (3, ComapsRouterCode::NeedMoreMaps),
+            (4, ComapsRouterCode::Cancelled),
+            (5, ComapsRouterCode::Internal),
+            (6, ComapsRouterCode::Unsupported),
+            (7, ComapsRouterCode::StartNotOnRoad),
+            (8, ComapsRouterCode::EndNotOnRoad),
+            (9, ComapsRouterCode::RoadClosed),
+            (99, ComapsRouterCode::RouteNotFound),
+        ];
+        for (raw, expect) in cases {
+            assert_eq!(map_navi_comaps_code(raw), expect);
         }
     }
 }

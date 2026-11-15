@@ -3,6 +3,7 @@
 
 #include "routing/routes_builder/routes_builder.hpp"
 #include "routing/navi_wetland_cost.hpp"
+#include "routing/routing_callbacks.hpp"
 #include "routing/routing_options.hpp"
 
 #include "indexer/classificator_loader.hpp"
@@ -42,16 +43,53 @@ std::atomic<int> g_avoidDirty{0};
 std::atomic<int> g_optimize{NAVI_COMAPS_OPTIMIZE_TIME};
 std::string g_turnsLocale = "nb";
 
-NaviComapsCode MapCode(routing::RouterResultCode code)
+void SetErrorMessage(NaviComapsRouteResult * out, char const * msg)
+{
+  if (!out)
+    return;
+  std::free(out->error_message);
+  out->error_message = msg ? strdup(msg) : nullptr;
+}
+
+NaviComapsCode MapCode(routing::RouterResultCode code, std::string & message)
 {
   using routing::RouterResultCode;
+  message = routing::ToString(code);
   switch (code)
   {
-  case RouterResultCode::NoError: return NAVI_COMAPS_OK;
-  case RouterResultCode::RouteNotFound: return NAVI_COMAPS_ROUTE_NOT_FOUND;
-  case RouterResultCode::NeedMoreMaps: return NAVI_COMAPS_NEED_MORE_MAPS;
-  case RouterResultCode::Cancelled: return NAVI_COMAPS_CANCELLED;
-  default: return NAVI_COMAPS_INTERNAL;
+  case RouterResultCode::NoError:
+  case RouterResultCode::HasWarnings:
+    return NAVI_COMAPS_OK;
+  case RouterResultCode::Cancelled:
+    return NAVI_COMAPS_CANCELLED;
+  case RouterResultCode::RouteNotFound:
+  case RouterResultCode::RouteNotFoundRedressRouteError:
+  case RouterResultCode::TransitRouteNotFoundNoNetwork:
+  case RouterResultCode::TransitRouteNotFoundTooLongPedestrian:
+  case RouterResultCode::IntermediatePointNotFound:
+    message = "No route found";
+    return NAVI_COMAPS_ROUTE_NOT_FOUND;
+  case RouterResultCode::NeedMoreMaps:
+  case RouterResultCode::RouteFileNotExist:
+  case RouterResultCode::InconsistentMWMandRoute:
+  case RouterResultCode::FileTooOld:
+  case RouterResultCode::PointsInDifferentMWM:
+    message = "Missing or outdated maps — download the regions covering this route";
+    return NAVI_COMAPS_NEED_MORE_MAPS;
+  case RouterResultCode::StartPointNotFound:
+  case RouterResultCode::NoCurrentPosition:
+    message = "Start is not on a routable road for this profile";
+    return NAVI_COMAPS_START_NOT_ON_ROAD;
+  case RouterResultCode::EndPointNotFound:
+    message = "Destination is not on a routable road for this profile";
+    return NAVI_COMAPS_END_NOT_ON_ROAD;
+  case RouterResultCode::InternalError:
+    // True CoMaps internal — still map to a user-facing no-route rather than INTERNAL.
+    message = "Routing failed (engine error)";
+    return NAVI_COMAPS_ROUTE_NOT_FOUND;
+  default:
+    message = std::string("Routing failed (") + routing::ToString(code) + ")";
+    return NAVI_COMAPS_ROUTE_NOT_FOUND;
   }
 }
 
@@ -90,15 +128,10 @@ extern "C" NaviComapsCode navi_comaps_init(char const * storage_path, char const
     return NAVI_COMAPS_INTERNAL;
   try
   {
-    // Avoid LCRITICAL→abort when CountryInfoGetter cannot load polygons yet;
-    // surface the failure as NAVI_COMAPS_INTERNAL instead.
     base::ScopedLogAbortLevelChanger abortGuard(base::NUM_LOG_LEVELS);
     setenv("NAVI_COMAPS_HEADLESS", "1", 0);
     jni::EnsureJvmFromProcess();
     auto & platform = GetPlatform();
-    // On Android, GetReader scope `r` expects an APK/zip. Point both dirs at the
-    // writable tree that holds classificator/types/packed_polygons + 261105/*.mwm
-    // so scope `w` resolves resources; `r` simply fails open and falls through.
     platform.SetResourceDir(storage_path);
     platform.SetWritableDirForTests(writable_path);
     platform.SetSettingsDir(writable_path);
@@ -108,10 +141,6 @@ extern "C" NaviComapsCode navi_comaps_init(char const * storage_path, char const
       unsetenv("NAVI_WETLAND_SIDECAR_DIR");
 
     LOG(LINFO, ("navi_comaps_init resource=", storage_path, " writable=", writable_path));
-    // Android kDefaultMapStyle is MapStyleDefaultLight (19). A bare
-    // classificator::Load() fills GetLoadingStyle() which defaults to 0
-    // (WalkingLight), leaving the current-style slot empty — feature type
-    // indices then resolve to zero and types_mapping CHECKs abort.
     GetStyleReader().SetCurrentStyle(kDefaultMapStyle);
     g_builder = std::make_unique<routing::routes_builder::RoutesBuilder>(1 /* threads */);
     if (!g_builder)
@@ -144,7 +173,6 @@ extern "C" NaviComapsCode navi_comaps_init(char const * storage_path, char const
 
 extern "C" NaviComapsCode navi_comaps_register_mwms(void)
 {
-  // RoutesBuilder reloads local country files from WritableDir on each task.
   return g_inited ? NAVI_COMAPS_OK : NAVI_COMAPS_NOT_INIT;
 }
 
@@ -154,6 +182,21 @@ extern "C" void navi_comaps_set_wetland_lookup(NaviComapsWetlandLookupFn fn)
       reinterpret_cast<navi_spike::WetlandLookupFn>(fn));
 }
 
+namespace
+{
+NaviComapsElevLookupFn g_elevC = nullptr;
+bool ElevLookupWrap(char const * mwmName, uint32_t featureId, uint32_t pointIdx, int32_t * outDm)
+{
+  return g_elevC != nullptr && g_elevC(mwmName, featureId, pointIdx, outDm) != 0;
+}
+}  // namespace
+
+extern "C" void navi_comaps_set_elevation_lookup(NaviComapsElevLookupFn fn)
+{
+  g_elevC = fn;
+  navi_spike::WetlandSidecar::SetElevationLookup(fn ? &ElevLookupWrap : nullptr);
+}
+
 extern "C" void navi_comaps_set_wetland_hook(int enabled)
 {
   if (!enabled)
@@ -161,8 +204,6 @@ extern "C" void navi_comaps_set_wetland_hook(int enabled)
     navi_spike::WetlandSidecar::SetLookup(nullptr);
     navi_spike::WetlandSidecar::SetBikeEnabled(false);
   }
-  // When enabling, the Rust shim must call navi_comaps_set_wetland_lookup
-  // with a SidecarReader-backed callback.
 }
 
 extern "C" void navi_comaps_set_bike_wetland(int enabled)
@@ -204,18 +245,20 @@ extern "C" NaviComapsCode navi_comaps_route(NaviComapsProfile profile, double fr
   if (!g_inited || !g_builder)
   {
     out->code = NAVI_COMAPS_NOT_INIT;
+    SetErrorMessage(out, "CoMaps session not initialised");
     return out->code;
   }
   if (g_optimize.load() == NAVI_COMAPS_OPTIMIZE_DISTANCE)
   {
     out->code = NAVI_COMAPS_UNSUPPORTED;
-    out->error_message = strdup(
-        "CoMaps RoutesBuilder has no distance-weight mode; use TIME or PREFER_NON_MOTORWAY");
+    SetErrorMessage(out,
+                    "CoMaps RoutesBuilder has no distance-weight mode; use TIME or PREFER_NON_MOTORWAY");
     return out->code;
   }
   if (g_cancel.exchange(false))
   {
     out->code = NAVI_COMAPS_CANCELLED;
+    SetErrorMessage(out, "Cancelled");
     return out->code;
   }
   try
@@ -226,13 +269,26 @@ extern "C" NaviComapsCode navi_comaps_route(NaviComapsProfile profile, double fr
     routing::routes_builder::RoutesBuilder::Params params(
         vt, ms::LatLon(from_lat, from_lon), ms::LatLon(to_lat, to_lon));
     auto result = g_builder->ProcessTask(params);
-    out->code = MapCode(result.m_code);
+    std::string msg;
+    out->code = MapCode(result.m_code, msg);
     out->build_time_s = result.m_buildTimeSeconds;
+    LOG(LINFO, ("navi_comaps_route code=", msg, " navi=", static_cast<int>(out->code),
+                " build_s=", out->build_time_s, " from=", from_lat, from_lon, " to=", to_lat, to_lon));
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_INFO, "navi_comaps",
+                        "route code=%s navi=%d build_s=%.3f", msg.c_str(),
+                        static_cast<int>(out->code), out->build_time_s);
+#endif
     if (!result.IsCodeOK() || result.m_routes.empty())
+    {
+      SetErrorMessage(out, msg.c_str());
       return out->code;
+    }
     auto const & route = result.m_routes.front();
     out->length_m = route.m_distance;
     out->time_s = route.m_eta;
+    out->ascent_m = route.m_ascentM;
+    out->descent_m = route.m_descentM;
     auto const wps = route.GetWaypoints();
     out->point_count = wps.size();
     if (!wps.empty())
@@ -244,16 +300,20 @@ extern "C" NaviComapsCode navi_comaps_route(NaviComapsProfile profile, double fr
         out->points[i].lon = wps[i].m_lon;
       }
     }
-    if (!route.m_turnsJson.empty())
-      out->turns_json = strdup(route.m_turnsJson.c_str());
-    else
-      out->turns_json = strdup("[]");
+    out->turns_json = strdup(route.m_turnsJson.empty() ? "[]" : route.m_turnsJson.c_str());
+    out->elevation_json =
+        strdup(route.m_elevationJson.empty() ? "[]" : route.m_elevationJson.c_str());
+    out->router_mode =
+        strdup(route.m_routerMode.empty() ? "Unknown" : route.m_routerMode.c_str());
     return out->code;
   }
   catch (std::exception const & e)
   {
     out->code = NAVI_COMAPS_INTERNAL;
-    out->error_message = strdup(e.what());
+    SetErrorMessage(out, e.what());
+#ifdef __ANDROID__
+    __android_log_print(ANDROID_LOG_ERROR, "navi_comaps", "route exception: %s", e.what());
+#endif
     return out->code;
   }
 }
@@ -267,9 +327,13 @@ extern "C" void navi_comaps_free_route(NaviComapsRouteResult * result)
   std::free(result->points);
   std::free(result->error_message);
   std::free(result->turns_json);
+  std::free(result->elevation_json);
+  std::free(result->router_mode);
   result->points = nullptr;
   result->error_message = nullptr;
   result->turns_json = nullptr;
+  result->elevation_json = nullptr;
+  result->router_mode = nullptr;
   result->point_count = 0;
 }
 
@@ -278,5 +342,4 @@ extern "C" void navi_comaps_shutdown(void)
   std::lock_guard lock(g_mu);
   g_builder.reset();
   g_inited = false;
-  unsetenv("NAVI_WETLAND_SIDECAR_DIR");
 }

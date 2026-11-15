@@ -5003,6 +5003,16 @@ data class FfiComapsRoute (
     var `errorMessage`: kotlin.String?
     , 
     var `turnsJson`: kotlin.String
+    , 
+    var `instructionsJson`: kotlin.String
+    , 
+    var `ascentM`: kotlin.Double
+    , 
+    var `descentM`: kotlin.Double
+    , 
+    var `elevationJson`: kotlin.String
+    , 
+    var `routerMode`: kotlin.String
     
 ){
     
@@ -5026,6 +5036,11 @@ public object FfiConverterTypeFfiComapsRoute: FfiConverterRustBuffer<FfiComapsRo
             FfiConverterSequenceTypeFfiComapsLatLon.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
         )
     }
 
@@ -5036,7 +5051,12 @@ public object FfiConverterTypeFfiComapsRoute: FfiConverterRustBuffer<FfiComapsRo
             FfiConverterDouble.allocationSize(value.`buildTimeS`) +
             FfiConverterSequenceTypeFfiComapsLatLon.allocationSize(value.`points`) +
             FfiConverterOptionalString.allocationSize(value.`errorMessage`) +
-            FfiConverterString.allocationSize(value.`turnsJson`)
+            FfiConverterString.allocationSize(value.`turnsJson`) +
+            FfiConverterString.allocationSize(value.`instructionsJson`) +
+            FfiConverterDouble.allocationSize(value.`ascentM`) +
+            FfiConverterDouble.allocationSize(value.`descentM`) +
+            FfiConverterString.allocationSize(value.`elevationJson`) +
+            FfiConverterString.allocationSize(value.`routerMode`)
     )
 
     override fun write(value: FfiComapsRoute, buf: ByteBuffer) {
@@ -5047,6 +5067,11 @@ public object FfiConverterTypeFfiComapsRoute: FfiConverterRustBuffer<FfiComapsRo
             FfiConverterSequenceTypeFfiComapsLatLon.write(value.`points`, buf)
             FfiConverterOptionalString.write(value.`errorMessage`, buf)
             FfiConverterString.write(value.`turnsJson`, buf)
+            FfiConverterString.write(value.`instructionsJson`, buf)
+            FfiConverterDouble.write(value.`ascentM`, buf)
+            FfiConverterDouble.write(value.`descentM`, buf)
+            FfiConverterString.write(value.`elevationJson`, buf)
+            FfiConverterString.write(value.`routerMode`, buf)
     }
 }
 
@@ -6829,9 +6854,15 @@ enum class FfiComapsRouteCode {
     ROUTE_NOT_FOUND,
     NEED_MORE_MAPS,
     CANCELLED,
+    /**
+     * Shim/exception only — never a mapped CoMaps business code.
+     */
     INTERNAL,
     UNSUPPORTED,
-    UNAVAILABLE;
+    UNAVAILABLE,
+    START_NOT_ON_ROAD,
+    END_NOT_ON_ROAD,
+    ROAD_CLOSED;
 
     
 

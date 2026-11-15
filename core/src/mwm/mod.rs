@@ -12,6 +12,7 @@ pub mod attribution;
 pub mod catalog;
 pub mod checksum;
 pub mod comaps;
+pub mod comaps_instructions;
 pub mod comaps_router;
 pub mod download;
 pub mod fingerprint;
@@ -38,6 +39,10 @@ pub use comaps::{
     verify_countries_txt_signature, ComapsDiscovery, CountriesTxt, CountriesTxtLeaf,
     COMAPS_COUNTRIES_TXT_PUBKEY_HEX, DEFAULT_METASERVER,
 };
+pub use comaps_instructions::{
+    build_voice_prompts, enrich_turns_json, instructions_from_turns_json, ComapsTurnStep,
+    NaviInstruction,
+};
 pub use comaps_router::{
     ComapsLatLon, ComapsProfile, ComapsRoute, ComapsRouter, ComapsRouterCode, ComapsRouterError,
 };
@@ -50,7 +55,10 @@ pub use fingerprint::{
     check_local_mwm_fingerprint, fingerprint_from_catalog_leaf, FingerprintMismatch,
     FingerprintStatus, FINGERPRINT_USER_WARNING,
 };
-pub use flag::{mwm_client_enabled, set_mwm_client_enabled_override, MWM_CLIENT_ENABLED_ENV};
+pub use flag::{
+    mwm_client_enabled, set_mwm_client_enabled_override, with_mwm_client_override,
+    MWM_CLIENT_ENABLED_ENV,
+};
 pub use migration::{
     leaf_set_for_bake_id, leaf_set_for_region_id, parse_region_migration_json, RegionMigration,
     RegionMigrationEntry, SCHEMA_REGION_MIGRATION_V1,
