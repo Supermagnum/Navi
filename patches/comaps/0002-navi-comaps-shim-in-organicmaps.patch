@@ -25,10 +25,10 @@ index 5658de0bb..b490c0f45 100644
    # routing
 diff --git a/android/sdk/src/main/cpp/navi/navi_comaps.cpp b/android/sdk/src/main/cpp/navi/navi_comaps.cpp
 new file mode 100644
-index 000000000..00a7e5cab
+index 000000000..111111111
 --- /dev/null
 +++ b/android/sdk/src/main/cpp/navi/navi_comaps.cpp
-@@ -0,0 +1,173 @@
+@@ -0,0 +1,211 @@
 +// Navi thin routing shim over CoMaps RoutesBuilder (headless; no GLES).
 +#include "navi_comaps.h"
 +
@@ -36,8 +36,12 @@ index 000000000..00a7e5cab
 +#include "routing/navi_wetland_cost.hpp"
 +
 +#include "indexer/classificator_loader.hpp"
++#include "indexer/map_style.hpp"
++#include "indexer/map_style_reader.hpp"
 +
 +#include "platform/platform.hpp"
++
++#include "app/organicmaps/sdk/core/jni_helper.hpp"
 +
 +#include "geometry/latlon.hpp"
 +
@@ -49,6 +53,10 @@ index 000000000..00a7e5cab
 +#include <memory>
 +#include <mutex>
 +#include <string>
++
++#ifdef __ANDROID__
++#include <android/log.h>
++#endif
 +
 +namespace
 +{
@@ -90,7 +98,15 @@ index 000000000..00a7e5cab
 +    return NAVI_COMAPS_INTERNAL;
 +  try
 +  {
++    // Avoid LCRITICAL→abort when CountryInfoGetter cannot load polygons yet;
++    // surface the failure as NAVI_COMAPS_INTERNAL instead.
++    base::ScopedLogAbortLevelChanger abortGuard(base::NUM_LOG_LEVELS);
++    setenv("NAVI_COMAPS_HEADLESS", "1", 0);
++    jni::EnsureJvmFromProcess();
 +    auto & platform = GetPlatform();
++    // On Android, GetReader scope `r` expects an APK/zip. Point both dirs at the
++    // writable tree that holds classificator/types/packed_polygons + 261105/*.mwm
++    // so scope `w` resolves resources; `r` simply fails open and falls through.
 +    platform.SetResourceDir(storage_path);
 +    platform.SetWritableDirForTests(writable_path);
 +    platform.SetSettingsDir(writable_path);
@@ -99,15 +115,37 @@ index 000000000..00a7e5cab
 +    else
 +      unsetenv("NAVI_WETLAND_SIDECAR_DIR");
 +
-+    classificator::Load();
++    LOG(LINFO, ("navi_comaps_init resource=", storage_path, " writable=", writable_path));
++    // Android kDefaultMapStyle is MapStyleDefaultLight (19). A bare
++    // classificator::Load() fills GetLoadingStyle() which defaults to 0
++    // (WalkingLight), leaving the current-style slot empty — feature type
++    // indices then resolve to zero and types_mapping CHECKs abort.
++    GetStyleReader().SetCurrentStyle(kDefaultMapStyle);
 +    g_builder = std::make_unique<routing::routes_builder::RoutesBuilder>(1 /* threads */);
++    if (!g_builder)
++    {
++      LOG(LERROR, ("navi_comaps_init: RoutesBuilder null"));
++      return NAVI_COMAPS_INTERNAL;
++    }
 +    g_inited = true;
 +    g_cancel.store(false);
++    LOG(LINFO, ("navi_comaps_init OK"));
 +    return NAVI_COMAPS_OK;
 +  }
 +  catch (std::exception const & e)
 +  {
-+    LOG(LERROR, ("navi_comaps_init:", e.what()));
++    LOG(LERROR, ("navi_comaps_init exception:", e.what()));
++#ifdef __ANDROID__
++    __android_log_print(ANDROID_LOG_ERROR, "navi_comaps", "init: %s", e.what());
++#endif
++    return NAVI_COMAPS_INTERNAL;
++  }
++  catch (...)
++  {
++    LOG(LERROR, ("navi_comaps_init: unknown exception"));
++#ifdef __ANDROID__
++    __android_log_print(ANDROID_LOG_ERROR, "navi_comaps", "init: unknown exception");
++#endif
 +    return NAVI_COMAPS_INTERNAL;
 +  }
 +}
@@ -204,7 +242,7 @@ index 000000000..00a7e5cab
 +}
 diff --git a/android/sdk/src/main/cpp/navi/navi_comaps.h b/android/sdk/src/main/cpp/navi/navi_comaps.h
 new file mode 100644
-index 000000000..21a8db924
+index 000000000..111111111
 --- /dev/null
 +++ b/android/sdk/src/main/cpp/navi/navi_comaps.h
 @@ -0,0 +1,70 @@

@@ -240,6 +240,18 @@ tasks.register<Exec>("buildPluginWasm") {
     commandLine("bash", "scripts/build-plugin-wasm.sh")
 }
 
+// Stage CoMaps classificator / countries / packed_polygons from the pinned
+// source tree into APK assets (gitignored; no prebuilt World.mwm here).
+tasks.register<Exec>("stageComapsDataAssets") {
+    workingDir = rootProject.projectDir
+    commandLine("bash", "scripts/stage-comaps-data-assets.sh")
+    onlyIf {
+        // Skip when the pin clone / local-artifacts cache is unavailable (CI
+        // host unit tests); device / F-Droid builds must have the tree.
+        file("${rootProject.projectDir}/scripts/stage-comaps-data-assets.sh").exists()
+    }
+}
+
 val packageTasks =
     setOf(
         "assemble",
@@ -251,4 +263,5 @@ val packageTasks =
     )
 tasks.matching { it.name in packageTasks }.configureEach {
     dependsOn("buildPluginWasm")
+    dependsOn("stageComapsDataAssets")
 }

@@ -1271,6 +1271,16 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_imu_plugin_tick(
     ): Int
+    external fun uniffi_navi_checksum_func_comaps_native_available(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_route_once(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_close(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_open(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_route(
+    ): Int
     external fun uniffi_navi_checksum_method_ffitrackstore_all(
     ): Int
     external fun uniffi_navi_checksum_method_ffitrackstore_expire(
@@ -1890,6 +1900,16 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_imu_plugin_set_enabled(`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_imu_plugin_tick(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_native_available(uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_comaps_route_once(`storagePath`: RustBuffer.ByValue,`writablePath`: RustBuffer.ByValue,`sidecarDir`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,`fromLat`: Double,`fromLon`: Double,`toLat`: Double,`toLon`: Double,`wetlandHook`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_session_close(uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_session_open(`storagePath`: RustBuffer.ByValue,`writablePath`: RustBuffer.ByValue,`sidecarDir`: RustBuffer.ByValue,`loadWetlandSidecars`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_session_route(`profile`: RustBuffer.ByValue,`fromLat`: Double,`fromLon`: Double,`toLat`: Double,`toLon`: Double,`wetlandHook`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun ffi_navi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -2794,6 +2814,21 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_imu_plugin_tick() and 0xFFFF) != 13373) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_native_available() and 0xFFFF) != 20822) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_route_once() and 0xFFFF) != 44798) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_close() and 0xFFFF) != 44861) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_open() and 0xFFFF) != 54056) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_route() and 0xFFFF) != 10498) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_method_ffitrackstore_all() and 0xFFFF) != 684) {
@@ -4888,6 +4923,155 @@ public object FfiConverterTypeFfiCarRestSettings: FfiConverterRustBuffer<FfiCarR
 
 
 
+data class FfiComapsLatLon (
+    var `lat`: kotlin.Double
+    , 
+    var `lon`: kotlin.Double
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiComapsLatLon: FfiConverterRustBuffer<FfiComapsLatLon> {
+    override fun read(buf: ByteBuffer): FfiComapsLatLon {
+        return FfiComapsLatLon(
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiComapsLatLon) = (
+            FfiConverterDouble.allocationSize(value.`lat`) +
+            FfiConverterDouble.allocationSize(value.`lon`)
+    )
+
+    override fun write(value: FfiComapsLatLon, buf: ByteBuffer) {
+            FfiConverterDouble.write(value.`lat`, buf)
+            FfiConverterDouble.write(value.`lon`, buf)
+    }
+}
+
+
+
+data class FfiComapsRoute (
+    var `code`: FfiComapsRouteCode
+    , 
+    var `lengthM`: kotlin.Double
+    , 
+    var `timeS`: kotlin.Double
+    , 
+    var `buildTimeS`: kotlin.Double
+    , 
+    var `points`: List<FfiComapsLatLon>
+    , 
+    var `errorMessage`: kotlin.String?
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiComapsRoute: FfiConverterRustBuffer<FfiComapsRoute> {
+    override fun read(buf: ByteBuffer): FfiComapsRoute {
+        return FfiComapsRoute(
+            FfiConverterTypeFfiComapsRouteCode.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterSequenceTypeFfiComapsLatLon.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiComapsRoute) = (
+            FfiConverterTypeFfiComapsRouteCode.allocationSize(value.`code`) +
+            FfiConverterDouble.allocationSize(value.`lengthM`) +
+            FfiConverterDouble.allocationSize(value.`timeS`) +
+            FfiConverterDouble.allocationSize(value.`buildTimeS`) +
+            FfiConverterSequenceTypeFfiComapsLatLon.allocationSize(value.`points`) +
+            FfiConverterOptionalString.allocationSize(value.`errorMessage`)
+    )
+
+    override fun write(value: FfiComapsRoute, buf: ByteBuffer) {
+            FfiConverterTypeFfiComapsRouteCode.write(value.`code`, buf)
+            FfiConverterDouble.write(value.`lengthM`, buf)
+            FfiConverterDouble.write(value.`timeS`, buf)
+            FfiConverterDouble.write(value.`buildTimeS`, buf)
+            FfiConverterSequenceTypeFfiComapsLatLon.write(value.`points`, buf)
+            FfiConverterOptionalString.write(value.`errorMessage`, buf)
+    }
+}
+
+
+
+data class FfiComapsSessionOpen (
+    var `ok`: kotlin.Boolean
+    , 
+    var `initMs`: kotlin.Double
+    , 
+    var `registerMs`: kotlin.Double
+    , 
+    var `sidecarsLoaded`: kotlin.UInt
+    , 
+    var `errorMessage`: kotlin.String?
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiComapsSessionOpen: FfiConverterRustBuffer<FfiComapsSessionOpen> {
+    override fun read(buf: ByteBuffer): FfiComapsSessionOpen {
+        return FfiComapsSessionOpen(
+            FfiConverterBoolean.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiComapsSessionOpen) = (
+            FfiConverterBoolean.allocationSize(value.`ok`) +
+            FfiConverterDouble.allocationSize(value.`initMs`) +
+            FfiConverterDouble.allocationSize(value.`registerMs`) +
+            FfiConverterUInt.allocationSize(value.`sidecarsLoaded`) +
+            FfiConverterOptionalString.allocationSize(value.`errorMessage`)
+    )
+
+    override fun write(value: FfiComapsSessionOpen, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`ok`, buf)
+            FfiConverterDouble.write(value.`initMs`, buf)
+            FfiConverterDouble.write(value.`registerMs`, buf)
+            FfiConverterUInt.write(value.`sidecarsLoaded`, buf)
+            FfiConverterOptionalString.write(value.`errorMessage`, buf)
+    }
+}
+
+
+
 data class FfiCorridorSkeletonProgress (
     var `stem`: kotlin.String
     , 
@@ -6526,6 +6710,81 @@ public object FfiConverterTypeCampingCallKind: FfiConverterRustBuffer<CampingCal
 
 
 
+enum class FfiComapsProfile {
+    
+    CAR,
+    PEDESTRIAN,
+    BICYCLE;
+
+    
+
+
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiComapsProfile: FfiConverterRustBuffer<FfiComapsProfile> {
+    override fun read(buf: ByteBuffer) = try {
+        FfiComapsProfile.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FfiComapsProfile) = 4UL
+
+    override fun write(value: FfiComapsProfile, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
+enum class FfiComapsRouteCode {
+    
+    OK,
+    NOT_INIT,
+    ROUTE_NOT_FOUND,
+    NEED_MORE_MAPS,
+    CANCELLED,
+    INTERNAL,
+    UNSUPPORTED,
+    UNAVAILABLE;
+
+    
+
+
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiComapsRouteCode: FfiConverterRustBuffer<FfiComapsRouteCode> {
+    override fun read(buf: ByteBuffer) = try {
+        FfiComapsRouteCode.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FfiComapsRouteCode) = 4UL
+
+    override fun write(value: FfiComapsRouteCode, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
 enum class FfiIconTheme {
     
     DAY,
@@ -7148,6 +7407,34 @@ public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.Str
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterString.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFfiComapsLatLon: FfiConverterRustBuffer<List<FfiComapsLatLon>> {
+    override fun read(buf: ByteBuffer): List<FfiComapsLatLon> {
+        val len = buf.getInt()
+        return List<FfiComapsLatLon>(len) {
+            FfiConverterTypeFfiComapsLatLon.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiComapsLatLon>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiComapsLatLon.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiComapsLatLon>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiComapsLatLon.write(it, buf)
         }
     }
 }
@@ -11275,6 +11562,84 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     UniffiLib.uniffi_navi_fn_func_imu_plugin_tick(
     
         _status)
+}
+    )
+    }
+    
+
+        /**
+         * Probe whether the CoMaps native core is linked into this build.
+         */ fun `comapsNativeAvailable`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_native_available(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * One-shot CoMaps route for device smoke tests (runs on a background caller).
+         */ fun `comapsRouteOnce`(`storagePath`: kotlin.String, `writablePath`: kotlin.String, `sidecarDir`: kotlin.String?, `profile`: FfiComapsProfile, `fromLat`: kotlin.Double, `fromLon`: kotlin.Double, `toLat`: kotlin.Double, `toLon`: kotlin.Double, `wetlandHook`: kotlin.Boolean): FfiComapsRoute {
+            return FfiConverterTypeFfiComapsRoute.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_route_once(
+    
+        
+        FfiConverterString.lower(`storagePath`),
+        FfiConverterString.lower(`writablePath`),
+        FfiConverterOptionalString.lower(`sidecarDir`),
+        FfiConverterTypeFfiComapsProfile.lower(`profile`),
+        FfiConverterDouble.lower(`fromLat`),
+        FfiConverterDouble.lower(`fromLon`),
+        FfiConverterDouble.lower(`toLat`),
+        FfiConverterDouble.lower(`toLon`),
+        FfiConverterBoolean.lower(`wetlandHook`),_status)
+}
+    )
+    }
+    
+ fun `comapsSessionClose`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_close(
+    
+        _status)
+}
+    
+    
+
+        /**
+         * Open a persistent CoMaps session (cold init + MWM register). Call
+         * [`comaps_session_route`] then [`comaps_session_close`].
+         */ fun `comapsSessionOpen`(`storagePath`: kotlin.String, `writablePath`: kotlin.String, `sidecarDir`: kotlin.String?, `loadWetlandSidecars`: kotlin.Boolean): FfiComapsSessionOpen {
+            return FfiConverterTypeFfiComapsSessionOpen.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_open(
+    
+        
+        FfiConverterString.lower(`storagePath`),
+        FfiConverterString.lower(`writablePath`),
+        FfiConverterOptionalString.lower(`sidecarDir`),
+        FfiConverterBoolean.lower(`loadWetlandSidecars`),_status)
+}
+    )
+    }
+    
+ fun `comapsSessionRoute`(`profile`: FfiComapsProfile, `fromLat`: kotlin.Double, `fromLon`: kotlin.Double, `toLat`: kotlin.Double, `toLon`: kotlin.Double, `wetlandHook`: kotlin.Boolean): FfiComapsRoute {
+            return FfiConverterTypeFfiComapsRoute.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_route(
+    
+        
+        FfiConverterTypeFfiComapsProfile.lower(`profile`),
+        FfiConverterDouble.lower(`fromLat`),
+        FfiConverterDouble.lower(`fromLon`),
+        FfiConverterDouble.lower(`toLat`),
+        FfiConverterDouble.lower(`toLon`),
+        FfiConverterBoolean.lower(`wetlandHook`),_status)
 }
     )
     }

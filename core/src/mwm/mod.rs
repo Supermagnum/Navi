@@ -42,8 +42,9 @@ pub use comaps_router::{
     ComapsLatLon, ComapsProfile, ComapsRoute, ComapsRouter, ComapsRouterCode, ComapsRouterError,
 };
 pub use download::{
-    download_leaf_set, fetch_current_catalog, DownloadPlan, DownloadProgress, LeafDownloadResult,
-    MwmDownloadError, DEFAULT_MWM_CONCURRENCY, NAVI_MWM_USER_AGENT,
+    download_leaf_set, download_world_overlays, fetch_current_catalog, leaf_ids_with_world_overlays,
+    DownloadPlan, DownloadProgress, LeafDownloadResult, MwmDownloadError, DEFAULT_MWM_CONCURRENCY,
+    NAVI_MWM_USER_AGENT, WORLD_OVERLAY_LEAF_IDS,
 };
 pub use fingerprint::{
     check_local_mwm_fingerprint, fingerprint_from_catalog_leaf, FingerprintMismatch,

@@ -29,10 +29,10 @@ object MwmClientBootstrap {
                 runCatching { Os.setenv(ENV, want, true) }
                     .onFailure { Log.w(TAG, "setenv $ENV=$want failed", it) }
             }
-            // Optional: CoMaps native core (from-source liborganicmaps.so).
-            // Missing .so is fine for flag-OFF / host unit tests.
+            // Headless CoMaps: JNI_OnLoad caches JavaVM only (no MapObject classes).
+            runCatching { Os.setenv("NAVI_COMAPS_HEADLESS", "1", true) }
             runCatching { System.loadLibrary("organicmaps") }
-                .onFailure { Log.i(TAG, "liborganicmaps not loaded (expected until Phase 3 package)") }
+                .onFailure { Log.w(TAG, "liborganicmaps not loaded", it) }
             applied = true
         }
     }

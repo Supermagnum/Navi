@@ -1,0 +1,123 @@
+diff --git a/android/sdk/src/main/cpp/app/organicmaps/sdk/core/jni_helper.cpp b/android/sdk/src/main/cpp/app/organicmaps/sdk/core/jni_helper.cpp
+index 093090e72..86a5d88df 100644
+--- a/android/sdk/src/main/cpp/app/organicmaps/sdk/core/jni_helper.cpp
++++ b/android/sdk/src/main/cpp/app/organicmaps/sdk/core/jni_helper.cpp
+@@ -9,6 +9,7 @@
+ #include "app/organicmaps/sdk/bookmarks/data/Icon.hpp"
+ #include "app/organicmaps/sdk/bookmarks/data/PredefinedColors.hpp"
+ 
++#include <cstdlib>
+ #include <vector>
+ 
+ static JavaVM * g_jvm = 0;
+@@ -53,6 +54,13 @@ static bool const g_isAndroidLowerThan7 = g_isAndroidLowerThan12 && IsAndroidApi
+ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM * jvm, void *)
+ {
+   g_jvm = jvm;
++  // Navi headless: load without CoMaps Java SDK classes.
++  if (getenv("NAVI_COMAPS_HEADLESS") != nullptr)
++  {
++    jni::InitSystemLog();
++    jni::InitAssertLog();
++    return JNI_VERSION_1_6;
++  }
+   jni::InitSystemLog();
+   jni::InitAssertLog();
+ 
+@@ -104,8 +112,20 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *, void *)
+ 
+ namespace jni
+ {
++void EnsureJvmFromProcess()
++{
++  // Populated by JNI_OnLoad when System.loadLibrary("organicmaps") runs with
++  // NAVI_COMAPS_HEADLESS=1 (Navi does not ship CoMaps Java SDK classes).
++}
++
+ JNIEnv * GetEnvSafe()
+ {
++  EnsureJvmFromProcess();
++  if (!g_jvm)
++  {
++    LOG(LERROR, ("Can't get JNIEnv: no JavaVM (headless / before JNI_OnLoad)"));
++    return nullptr;
++  }
+   JNIEnv * env;
+   auto const res = g_jvm->GetEnv((void **)&env, JNI_VERSION_1_6);
+   if (res != JNI_OK)
+diff --git a/android/sdk/src/main/cpp/app/organicmaps/sdk/core/jni_helper.hpp b/android/sdk/src/main/cpp/app/organicmaps/sdk/core/jni_helper.hpp
+index cfe6249a7..1c5f7174e 100644
+--- a/android/sdk/src/main/cpp/app/organicmaps/sdk/core/jni_helper.hpp
++++ b/android/sdk/src/main/cpp/app/organicmaps/sdk/core/jni_helper.hpp
+@@ -31,6 +31,7 @@ extern jclass g_elevationInfoClazz;
+ 
+ namespace jni
+ {
++void EnsureJvmFromProcess();
+ JNIEnv * GetEnv();
+ JavaVM * GetJVM();
+ 
+diff --git a/android/sdk/src/main/cpp/app/organicmaps/sdk/core/logging.cpp b/android/sdk/src/main/cpp/app/organicmaps/sdk/core/logging.cpp
+index 0e01cb7b4..d5df704c6 100644
+--- a/android/sdk/src/main/cpp/app/organicmaps/sdk/core/logging.cpp
++++ b/android/sdk/src/main/cpp/app/organicmaps/sdk/core/logging.cpp
+@@ -30,11 +30,24 @@ void AndroidMessage(LogLevel level, SrcPoint const & src, std::string const & s)
+   case NUM_LOG_LEVELS: break;
+   }
+ 
++  std::string const out = DebugPrint(src) + s;
++
++  // Navi headless: JNI_OnLoad skips Logger Java class cache.
++  if (!g_loggerClazz || !jni::GetJVM())
++  {
++    __android_log_print(pr, "OMcore", "%s", out.c_str());
++    return;
++  }
++
+   ScopedEnv env(jni::GetJVM());
++  if (!env.get())
++  {
++    __android_log_print(pr, "OMcore", "%s", out.c_str());
++    return;
++  }
+   static jmethodID const logMethod = jni::GetStaticMethodID(
+       env.get(), g_loggerClazz, "log", "(ILjava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)V");
+ 
+-  std::string const out = DebugPrint(src) + s;
+   jni::TScopedLocalRef msg(env.get(), jni::ToJavaString(env.get(), out));
+   env->CallStaticVoidMethod(g_loggerClazz, logMethod, pr, NULL, msg.get(), NULL);
+ }
+diff --git a/android/sdk/src/main/cpp/app/organicmaps/sdk/platform/Language.cpp b/android/sdk/src/main/cpp/app/organicmaps/sdk/platform/Language.cpp
+index bd0597721..86c4cfe52 100644
+--- a/android/sdk/src/main/cpp/app/organicmaps/sdk/platform/Language.cpp
++++ b/android/sdk/src/main/cpp/app/organicmaps/sdk/platform/Language.cpp
+@@ -7,11 +7,18 @@
+ #include "base/logging.hpp"
+ #include "base/string_utils.hpp"
+ 
++#include <cstdlib>
+ #include <string>
+ 
+ std::vector<std::string> GetAndroidSystemLanguages()
+ {
+   static char const * DEFAULT_LANG = "en";
++  // Headless Navi: JNI_OnLoad skipped MapObject/Utils class cache.
++  if (!g_mapObjectClazz)
++  {
++    LOG(LINFO, ("Navi headless: default system language", DEFAULT_LANG));
++    return {DEFAULT_LANG};
++  }
+ 
+   JNIEnv * env = jni::GetEnv();
+   if (!env)
+@@ -48,6 +55,10 @@ namespace platform
+ {
+ Locale GetCurrentLocale()
+ {
++  if (!g_utilsClazz)
++  {
++    return {"en", "", "", ".", ","};
++  }
+   JNIEnv * env = jni::GetEnv();
+   static jmethodID const getLanguageCodeId =
+       jni::GetStaticMethodID(env, g_utilsClazz, "getLanguageCode", "()Ljava/lang/String;");

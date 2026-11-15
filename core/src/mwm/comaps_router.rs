@@ -6,6 +6,11 @@
 
 use thiserror::Error;
 
+#[cfg(feature = "comaps-native")]
+use std::sync::Mutex;
+#[cfg(feature = "comaps-native")]
+use super::sidecar::{SidecarReader, CLASS_HARD, CLASS_SOFT};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComapsProfile {
     Car,
@@ -97,6 +102,19 @@ impl ComapsRouter {
         }
     }
 
+    /// Load every `*.navi-sidecar.v1.zst` under `dir` for wetland lookups.
+    pub fn load_sidecars_from_dir(&self, dir: &str) -> Result<usize, ComapsRouterError> {
+        #[cfg(feature = "comaps-native")]
+        {
+            ffi::load_sidecars_from_dir(dir)
+        }
+        #[cfg(not(feature = "comaps-native"))]
+        {
+            let _ = dir;
+            Err(ComapsRouterError::Unavailable)
+        }
+    }
+
     pub fn route(
         &self,
         profile: ComapsProfile,
@@ -136,7 +154,38 @@ mod ffi {
     use super::*;
     use std::ffi::{CStr, CString};
     use std::os::raw::{c_char, c_int};
+    use std::path::Path;
     use std::ptr;
+    use std::sync::OnceLock;
+
+    // Keep a live reference so `libnavi.so` emits `DT_NEEDED` for
+    // `liborganicmaps.so` (same pattern as hamlib).
+    #[link(name = "organicmaps")]
+    extern "C" {
+        fn navi_comaps_init(
+            storage_path: *const c_char,
+            writable_path: *const c_char,
+            sidecar_dir: *const c_char,
+        ) -> c_int;
+        fn navi_comaps_register_mwms() -> c_int;
+        fn navi_comaps_set_wetland_hook(enabled: c_int);
+        fn navi_comaps_set_wetland_lookup(
+            fn_ptr: Option<
+                unsafe extern "C" fn(u32, u32, c_int) -> u8,
+            >,
+        );
+        fn navi_comaps_route(
+            profile: c_int,
+            from_lat: f64,
+            from_lon: f64,
+            to_lat: f64,
+            to_lon: f64,
+            out: *mut NaviComapsRouteResult,
+        ) -> c_int;
+        fn navi_comaps_cancel();
+        fn navi_comaps_free_route(result: *mut NaviComapsRouteResult);
+        fn navi_comaps_shutdown();
+    }
 
     #[repr(C)]
     struct NaviComapsLatLon {
@@ -155,25 +204,39 @@ mod ffi {
         error_message: *mut c_char,
     }
 
-    extern "C" {
-        fn navi_comaps_init(
-            storage_path: *const c_char,
-            writable_path: *const c_char,
-            sidecar_dir: *const c_char,
-        ) -> c_int;
-        fn navi_comaps_register_mwms() -> c_int;
-        fn navi_comaps_set_wetland_hook(enabled: c_int);
-        fn navi_comaps_route(
-            profile: c_int,
-            from_lat: f64,
-            from_lon: f64,
-            to_lat: f64,
-            to_lon: f64,
-            out: *mut NaviComapsRouteResult,
-        ) -> c_int;
-        fn navi_comaps_cancel();
-        fn navi_comaps_free_route(result: *mut NaviComapsRouteResult);
-        fn navi_comaps_shutdown();
+    static SIDECARS: OnceLock<Mutex<Vec<SidecarReader>>> = OnceLock::new();
+
+    fn sidecars() -> &'static Mutex<Vec<SidecarReader>> {
+        SIDECARS.get_or_init(|| Mutex::new(Vec::new()))
+    }
+
+    unsafe extern "C" fn wetland_lookup_cb(
+        feature_id: u32,
+        segment_idx: u32,
+        forward: c_int,
+    ) -> u8 {
+        // Sidecar direction bit: 0 = forward, 1 = reverse (matches NVSC encoder).
+        let direction: u8 = if forward != 0 { 0 } else { 1 };
+        let seg = segment_idx.min(u16::MAX as u32) as u16;
+        let Ok(guard) = sidecars().lock() else {
+            return 0;
+        };
+        for reader in guard.iter() {
+            if reader
+                .is_boardwalk(feature_id, seg, direction)
+                .unwrap_or(false)
+            {
+                return 0;
+            }
+            if let Ok(Some(class)) = reader.wetland_class(feature_id, seg, direction) {
+                match class {
+                    CLASS_SOFT => return 1,
+                    CLASS_HARD => return 2,
+                    _ => {}
+                }
+            }
+        }
+        0
     }
 
     fn map_code(code: c_int) -> ComapsRouterCode {
@@ -220,7 +283,40 @@ mod ffi {
     }
 
     pub fn set_wetland_hook(enabled: bool) {
-        unsafe { navi_comaps_set_wetland_hook(if enabled { 1 } else { 0 }) }
+        if enabled {
+            unsafe {
+                navi_comaps_set_wetland_hook(1);
+                navi_comaps_set_wetland_lookup(Some(wetland_lookup_cb));
+            }
+        } else {
+            unsafe {
+                navi_comaps_set_wetland_hook(0);
+                navi_comaps_set_wetland_lookup(None);
+            }
+        }
+    }
+
+    pub fn load_sidecars_from_dir(dir: &str) -> Result<usize, ComapsRouterError> {
+        let path = Path::new(dir);
+        if !path.is_dir() {
+            return Err(ComapsRouterError::Router(ComapsRouterCode::Internal));
+        }
+        let mut loaded = Vec::new();
+        let entries = std::fs::read_dir(path).map_err(|_| ComapsRouterError::NullPointer)?;
+        for ent in entries.flatten() {
+            let p = ent.path();
+            let name = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            if !name.ends_with(".navi-sidecar.v1.zst") {
+                continue;
+            }
+            match SidecarReader::open_path(&p) {
+                Ok(r) => loaded.push(r),
+                Err(_) => continue,
+            }
+        }
+        let n = loaded.len();
+        *sidecars().lock().map_err(|_| ComapsRouterError::NullPointer)? = loaded;
+        Ok(n)
     }
 
     pub fn route(

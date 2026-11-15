@@ -420,6 +420,48 @@ pub fn fetch_current_catalog(navi_origin: &str) -> Result<MwmCatalog, MwmDownloa
     super::catalog::parse_catalog_json(&text).map_err(|e| MwmDownloadError::Other(e.to_string()))
 }
 
+/// World + WorldCoasts overlay leaf ids (catalog `non_routable_leaves`, no sidecar).
+pub const WORLD_OVERLAY_LEAF_IDS: &[&str] = &["World", "WorldCoasts"];
+
+/// Prepend World / WorldCoasts to a leaf set so every release also fetches the
+/// non-routable overlays (checksum-verified like other leaves; `no_sidecar`).
+pub fn leaf_ids_with_world_overlays(leaf_ids: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = WORLD_OVERLAY_LEAF_IDS
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+    for id in leaf_ids {
+        if !out.iter().any(|x| x == id) {
+            out.push(id.clone());
+        }
+    }
+    out
+}
+
+/// Download `World` + `WorldCoasts` into staging (Phase 1 no_sidecar path).
+pub fn download_world_overlays(
+    data_dir: &Path,
+    catalog: &MwmCatalog,
+    countries: &CountriesTxt,
+    discovery: &ComapsDiscovery,
+    navi_origin: &str,
+    progress: &mut DownloadProgress,
+) -> Result<Vec<LeafDownloadResult>, MwmDownloadError> {
+    let ids: Vec<String> = WORLD_OVERLAY_LEAF_IDS
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+    download_leaf_set(
+        data_dir,
+        catalog,
+        countries,
+        discovery,
+        navi_origin,
+        &ids,
+        progress,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -515,5 +557,22 @@ mod tests {
         let err = fetch_current_catalog("https://example.invalid").unwrap_err();
         assert!(matches!(err, MwmDownloadError::Disabled));
         set_mwm_client_enabled_override(None);
+    }
+
+    #[test]
+    fn world_overlays_prepended_once() {
+        let ids = leaf_ids_with_world_overlays(&[
+            "World".into(),
+            "Norway_Hedmark".into(),
+            "WorldCoasts".into(),
+        ]);
+        assert_eq!(
+            ids,
+            vec![
+                "World".to_string(),
+                "WorldCoasts".to_string(),
+                "Norway_Hedmark".to_string(),
+            ]
+        );
     }
 }

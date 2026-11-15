@@ -103,6 +103,7 @@ Phase 8 retirement.
 
 - Decide MapLibre vs CoMaps drape; DEM source independent of sidecar.
 - **Acceptance:** map + hillshade usable offline for downloaded leaves.
+- **Decision record (docs only — do not implement yet):** see **§9**.
 
 ### Phase 7 — Migrating users' existing `.rkyv` downloads
 
@@ -321,3 +322,64 @@ Standing rule: **ADB to the connected Samsung only** — no emulator/AVD. Use
 3. Foot detour `61.0500,11.4700` → `61.0800,11.5200`: **13867 m** without Soft/Hard,
    **16245 m** with the hook (Phase 4 sign-off; Phase 3 may only prove “route
    without Navi layers” first).
+
+### 8.6 Packaging (Gradle + assets)
+
+- `scripts/build-comaps-android.sh` builds `liborganicmaps.so` (arm64-v8a) into
+  `app/src/main/jniLibs/` (gitignored).
+- `scripts/build-android-native.sh` enables `navi-ffi` feature `comaps-native`
+  and links `-lorganicmaps` when that `.so` is present.
+- `scripts/stage-comaps-data-assets.sh` copies classificator / types /
+  visibility / `countries.txt` / `packed_polygons.bin` / categories / colors /
+  patterns and **all** `drules_proto*.bin` from the pinned CoMaps `data/` into
+  `app/src/main/assets/comaps-data/` at assemble time (gitignored; ~17.8 MiB
+  raw). Init copies them into the writable root (Android `GetReader` scope `w`).
+- Headless init must call `GetStyleReader().SetCurrentStyle(kDefaultMapStyle)`
+  before routing — a bare `classificator::Load()` fills style slot 0 while
+  Android `kDefaultMapStyle` is `MapStyleDefaultLight` (19).
+- Phase 1 download: every release also fetches **World** + **WorldCoasts**
+  (`leaf_ids_with_world_overlays` / `download_world_overlays`; `no_sidecar`,
+  SHA-1 from `countries.txt`). Keep World overlays at the writable root (or APK
+  assets scope `r`); do **not** place them under `261105/` as versioned country
+  files — without cross-mwm sections they break Joints cross-MWM routing.
+- Phase 3 device gate (Samsung `R52TB0JQEDE`): four Østlandet routes with/without
+  wetland hook returned `OK`; foot detour matched 13867 m / 16245 m.
+
+---
+
+## 9. Phase 6 decision record — CoMaps drape over MapLibre
+
+**Recommendation (product owner decides; not implemented on this branch):** prefer
+**CoMaps drape** for the MWM basemap once Phases 3–5 are solid.
+
+### Why drape
+
+- `liborganicmaps.so` already **PUBLIC-links drape / GLES** for the Android
+  `organicmaps` target — the binary cost is paid even for headless routing.
+- Drape renders the same `.mwm` leaves Phase 1 already downloads — fully
+  offline, no second tile pipeline.
+- MapLibre would need a **separate** vector-tile (or PMTiles) source that does
+  not reuse CoMaps leaf geometry; that doubles download size and keeps two map
+  stacks warm.
+
+DEM / hillshade stays independent of the sidecar (Mapterhorn opt-in today is
+fine either way).
+
+### Navi UI that currently depends on MapLibre (must be replaced or bridged)
+
+Inventory from `app/` (not exhaustive line list — areas of coupling):
+
+| Area | What uses MapLibre today |
+|------|---------------------------|
+| Main map surface | `MainActivity` / `CorridorMapView` — `MapView`, `MapLibreMap`, `Style`, camera |
+| Init | `MapLibre.getInstance` |
+| Geometry overlays | `GeoJsonSource`, `LineLayer`, `CircleLayer`, `SymbolLayer`, `Feature` / `LineString` / `Point` |
+| Camera / gestures | `CameraUpdateFactory`, `LatLng` / `LatLngBounds`, pitch/bearing sync with Compose |
+| Basemap styles | MapLibre style JSON + PMTiles / online style wiring |
+| Screenshots / UI tests | Instrumented tests that drive MapLibre camera / style load |
+| Dependency | `org.maplibre.gl:android-sdk` in `app/build.gradle.kts` |
+
+Replacing rendering means a drape (or hybrid) surface that can still show route
+polylines, POI markers, corridor highlights, and 3D pitch — either by drawing
+those in drape, or keeping a thin overlay layer above drape. **Do not start that
+work until the owner confirms this decision.**
