@@ -16,6 +16,7 @@ pub mod export;
 pub mod i18n;
 pub mod icons;
 pub mod long_trip;
+pub mod mwm;
 pub mod nav;
 pub mod pack_server;
 pub mod poi;
