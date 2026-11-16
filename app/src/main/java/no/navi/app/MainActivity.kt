@@ -6871,15 +6871,31 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                 runCatching { placeIndexHasEntries(dbPath) }.getOrDefault(false)
                             ensureActive()
                             // MWM flag ON and a CoMaps session: prefer CoMaps hits and merge the
-                            // place_index FTS hits into them. Empty (flag off, no session, no
-                            // match) leaves the FTS path below unchanged.
-                            val comapsHits =
-                                ComapsSearchBridge.search(
-                                    placeQ,
-                                    mapState.cameraLat,
-                                    mapState.cameraLon,
-                                    80,
-                                ) { isActive }
+                            // place_index FTS hits into them. Empty (flag off, no session after
+                            // readiness wait, no match) leaves the FTS path below unchanged.
+                            // Stream partial CoMaps batches to the UI so the first hit is not
+                            // blocked on every leaf finishing.
+                            val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+                            val comapsOutcome =
+                                ComapsSearchBridge.searchDetailed(
+                                    query = placeQ,
+                                    biasLat = mapState.cameraLat,
+                                    biasLon = mapState.cameraLon,
+                                    limit = 80,
+                                    stillActive = { isActive },
+                                    onPartial = { partial ->
+                                        if (partial.isNotEmpty()) {
+                                            val preview = partial.map { ComapsSearchBridge.ffiToPlace(it) }
+                                            mainHandler.post {
+                                                if (isActive) {
+                                                    hits = preview
+                                                    searchBusy = true
+                                                }
+                                            }
+                                        }
+                                    },
+                                )
+                            val comapsHits = if (comapsOutcome.notReady) emptyList() else comapsOutcome.hits
                             ensureActive()
                             val rawHits =
                                 runCatching {
@@ -6924,6 +6940,10 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                     usedOnline = false,
                                     onlineOk = false,
                                     errorLine = indexErr.name,
+                                    comapsReadyMs = comapsOutcome.timing.readyWaitMs,
+                                    comapsFirstMs = comapsOutcome.timing.firstResultMs,
+                                    comapsTotalMs = comapsOutcome.timing.totalMs,
+                                    comapsNotReady = comapsOutcome.notReady,
                                 )
                             }
                             var list =
@@ -7008,35 +7028,47 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                 hasEntries = hasEntries,
                                 usedOnline = usedOnline,
                                 onlineOk = onlineOk,
+                                comapsReadyMs = comapsOutcome.timing.readyWaitMs,
+                                comapsFirstMs = comapsOutcome.timing.firstResultMs,
+                                comapsTotalMs = comapsOutcome.timing.totalMs,
+                                comapsNotReady = comapsOutcome.notReady,
                             )
                         }
                     hits = outcome.hits
                     searchUsedOnline = outcome.usedOnline
                     searchIndexHint =
-                        outcome.errorLine?.takeIf { it.isNotBlank() }
-                            ?: placeSearchBuildingMessage(
-                                outcome.hits.isEmpty(),
-                                outcome.hasEntries,
-                                PlaceIndexBackground.isRunning(),
-                                onlineAvailable =
-                                    outcome.usedOnline ||
-                                        (outcome.hits.isEmpty() && outcome.onlineOk),
-                                indexProblem = InstalledMaps.current()?.placeIndexProblem,
-                            ).orEmpty()
-                                .ifBlank {
-                                    placeSearchNoWholeMatchHint(
-                                        query = splitCountryQualifiedQuery(trimmed).placeQuery.ifBlank { trimmed },
-                                        hits = outcome.hits,
-                                        onlineEnabled = onlinePlaceSearchEnabled,
-                                        usedOnline = outcome.usedOnline,
-                                        submitted = allowOnline,
-                                    ).orEmpty()
-                                }.ifBlank {
-                                    placeSearchOfflineMoreHint(
-                                        onlineEnabled = onlinePlaceSearchEnabled,
-                                        topKind = outcome.hits.firstOrNull()?.kind,
-                                    ).orEmpty()
-                                }
+                        if (outcome.comapsNotReady) {
+                            // Readiness timeout: clear message; clearing the box cancels sooner.
+                            context.getString(R.string.search_maps_not_ready)
+                        } else {
+                            outcome.errorLine?.takeIf { it.isNotBlank() }
+                                ?: placeSearchBuildingMessage(
+                                    outcome.hits.isEmpty(),
+                                    outcome.hasEntries,
+                                    PlaceIndexBackground.isRunning(),
+                                    onlineAvailable =
+                                        outcome.usedOnline ||
+                                            (outcome.hits.isEmpty() && outcome.onlineOk),
+                                    indexProblem = InstalledMaps.current()?.placeIndexProblem,
+                                ).orEmpty()
+                                    .ifBlank {
+                                        placeSearchNoWholeMatchHint(
+                                            query =
+                                                splitCountryQualifiedQuery(trimmed).placeQuery.ifBlank {
+                                                    trimmed
+                                                },
+                                            hits = outcome.hits,
+                                            onlineEnabled = onlinePlaceSearchEnabled,
+                                            usedOnline = outcome.usedOnline,
+                                            submitted = allowOnline,
+                                        ).orEmpty()
+                                    }.ifBlank {
+                                        placeSearchOfflineMoreHint(
+                                            onlineEnabled = onlinePlaceSearchEnabled,
+                                            topKind = outcome.hits.firstOrNull()?.kind,
+                                        ).orEmpty()
+                                    }
+                        }
                     NaviMapTestHooks.lastSearchHitCount = hits.size
                     NaviMapTestHooks.lastSearchQuery = trimmed
                     val disambiguate = hits.size > 1
@@ -7048,6 +7080,9 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             "%02x".format(b)
                         }} n=${hits.size} " +
                             "duration_ms=${android.os.SystemClock.elapsedRealtime() - tSearch} " +
+                            "comaps_ready_ms=${outcome.comapsReadyMs} " +
+                            "comaps_first_ms=${outcome.comapsFirstMs} " +
+                            "comaps_total_ms=${outcome.comapsTotalMs} " +
                             "top=${hits.firstOrNull()?.name.orEmpty()} " +
                             "online=${outcome.usedOnline} " +
                             "hint=${searchIndexHint.take(40)} " +

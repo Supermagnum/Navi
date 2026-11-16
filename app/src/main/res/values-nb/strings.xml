@@ -53,6 +53,7 @@
     <string name="status_recalculating_route_slow">Beregner rute på nytt… (kan ta flere sekunder)</string>
     <string name="status_simulating">SIMULERER</string>
     <string name="search_in_progress">Søker…</string>
+    <string name="search_maps_not_ready">Kartsøk startet ikke. Tøm feltet for å avbryte, eller prøv igjen.</string>
     <string name="dialog_speed_camera_title">Fartskameravarsler</string>
     <string name="dialog_off_trail_title">Utenfor stien</string>
     <string name="dialog_map_data_needed_title">Kartdata trengs</string>

@@ -3,7 +3,7 @@
   "release": "261105",
   "region": "ostlandet",
   "locale": "nb",
-  "notes": "Phase 5 offline search suite. expect_top_any: any of the top top_n result names contains one of the strings (letter/digit-normalized, case-insensitive). expect_address_any: any top-N result address contains the string. confidence=high rows gate the instrumented run; medium rows are reported. Expectations are authored from OSM knowledge of Ostlandet and must be confirmed on the first device run with the 261105 maps.",
+  "notes": "Phase 5 offline search suite. App reference (ComapsSearchBridge): locale=device language, position bias when known, viewport=none (Everywhere), free-text isCategory=false, maxResults as caller limit (UI=80). Each query sets user_context (locale + position) for harness parity. expect_top_any: any of the top top_n result names/addresses contains one of the strings (letter/digit-normalized, case-insensitive). confidence=high rows gate individually (21/21); medium rows are report-only with non_gating_reason.",
   "queries": [
     {
       "id": "town_lillehammer",
@@ -17,7 +17,12 @@
       "expect_top_any": [
         "Lillehammer"
       ],
-      "top_n": 1
+      "top_n": 1,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
     },
     {
       "id": "town_hamar",
@@ -31,7 +36,12 @@
       "expect_top_any": [
         "Hamar"
       ],
-      "top_n": 1
+      "top_n": 1,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
     },
     {
       "id": "town_gjovik",
@@ -46,7 +56,12 @@
       "expect_top_any": [
         "Gjøvik"
       ],
-      "top_n": 1
+      "top_n": 1,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
     },
     {
       "id": "town_elverum",
@@ -60,7 +75,12 @@
       "expect_top_any": [
         "Elverum"
       ],
-      "top_n": 1
+      "top_n": 1,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
     },
     {
       "id": "town_kongsvinger",
@@ -74,7 +94,12 @@
       "expect_top_any": [
         "Kongsvinger"
       ],
-      "top_n": 1
+      "top_n": 1,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
     },
     {
       "id": "town_fagernes",
@@ -88,7 +113,12 @@
       "expect_top_any": [
         "Fagernes"
       ],
-      "top_n": 2
+      "top_n": 2,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
     },
     {
       "id": "street_storgata_lillehammer",
@@ -102,7 +132,12 @@
       "expect_top_any": [
         "Storgata"
       ],
-      "top_n": 3
+      "top_n": 3,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
     },
     {
       "id": "street_strandgata_hamar",
@@ -116,7 +151,12 @@
       "expect_top_any": [
         "Strandgata"
       ],
-      "top_n": 3
+      "top_n": 3,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
     },
     {
       "id": "street_karl_johan_oslo",
@@ -130,7 +170,12 @@
       "expect_top_any": [
         "Karl Johans gate"
       ],
-      "top_n": 3
+      "top_n": 3,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
     },
     {
       "id": "street_jernbanegata_gjovik",
@@ -144,7 +189,13 @@
       "expect_top_any": [
         "Jernbanegata"
       ],
-      "top_n": 5
+      "top_n": 5,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "Street ranking soft vs city POIs; report-only until top_n=3 stable across builds."
     },
     {
       "id": "address_karl_johan_31",
@@ -158,7 +209,13 @@
       "expect_top_any": [
         "Karl Johans gate 31"
       ],
-      "top_n": 3
+      "top_n": 3,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "House-number rank can place brand/hotel above exact address; known medium."
     },
     {
       "id": "address_storgata_lillehammer_1",
@@ -172,7 +229,13 @@
       "expect_top_any": [
         "Storgata 1"
       ],
-      "top_n": 3
+      "top_n": 3,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "House-number rank soft; known medium."
     },
     {
       "id": "address_strandgata_hamar_13",
@@ -187,7 +250,13 @@
         "Strandgata 13"
       ],
       "top_n": 3,
-      "notes": "Suite originally asked for Strandgata 10; that house number does not exist in Hamar OSM/place_index."
+      "notes": "Suite originally asked for Strandgata 10; that house number does not exist in Hamar OSM/place_index.",
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "House-number rank soft; suite retargeted from non-existent Strandgata 10."
     },
     {
       "id": "postcode_2609",
@@ -200,7 +269,13 @@
       "min_results": 1,
       "expect_address_any": [
         "Lillehammer"
-      ]
+      ],
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "Bare postcode queries often return street Feature hits (not Postcode kind) with empty GetAddress(); locality may be missing in CoMaps data for those rows. Non-gating until address/locality is present on the hit."
     },
     {
       "id": "postcode_2317",
@@ -213,7 +288,13 @@
       "min_results": 1,
       "expect_address_any": [
         "Hamar"
-      ]
+      ],
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "Postcode result shape varies; address substring check only."
     },
     {
       "id": "postcode_2815",
@@ -226,7 +307,13 @@
       "min_results": 1,
       "expect_address_any": [
         "Gjøvik"
-      ]
+      ],
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "Bare postcode queries often return street Feature hits (not Postcode kind) with empty GetAddress(); locality may be missing in CoMaps data for those rows. Non-gating until address/locality is present on the hit."
     },
     {
       "id": "cabin_rondvassbu",
@@ -240,7 +327,12 @@
       "expect_top_any": [
         "Rondvassbu"
       ],
-      "top_n": 2
+      "top_n": 2,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
     },
     {
       "id": "cabin_spiterstulen",
@@ -254,7 +346,12 @@
       "expect_top_any": [
         "Spiterstulen"
       ],
-      "top_n": 2
+      "top_n": 2,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
     },
     {
       "id": "cabin_gjendebu",
@@ -268,7 +365,12 @@
       "expect_top_any": [
         "Gjendebu"
       ],
-      "top_n": 2
+      "top_n": 2,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
     },
     {
       "id": "cabin_glitterheim",
@@ -282,7 +384,12 @@
       "expect_top_any": [
         "Glitterheim"
       ],
-      "top_n": 2
+      "top_n": 2,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
     },
     {
       "id": "shelter_gapahuk",
@@ -296,7 +403,13 @@
       "near": {
         "lat": 61.1153,
         "lon": 10.4662
-      }
+      },
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.1153,
+        "lon": 10.4662
+      },
+      "non_gating_reason": "CoMaps has no shelter category group; free-text recall soft."
     },
     {
       "id": "shelter_ly",
@@ -310,7 +423,13 @@
       "near": {
         "lat": 60.7945,
         "lon": 11.068
-      }
+      },
+      "user_context": {
+        "locale": "nb",
+        "lat": 60.7945,
+        "lon": 11.068
+      },
+      "non_gating_reason": "CoMaps has no shelter category group; free-text recall soft (min_results=0)."
     },
     {
       "id": "water_category_lillehammer",
@@ -323,6 +442,11 @@
       "confidence": "high",
       "min_results": 1,
       "near": {
+        "lat": 61.1153,
+        "lon": 10.4662
+      },
+      "user_context": {
+        "locale": "nb",
         "lat": 61.1153,
         "lon": 10.4662
       }
@@ -339,7 +463,13 @@
       "near": {
         "lat": 61.1153,
         "lon": 10.4662
-      }
+      },
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.1153,
+        "lon": 10.4662
+      },
+      "non_gating_reason": "Locale synonym coverage for drinking water varies; min_results=0."
     },
     {
       "id": "water_kilde",
@@ -353,7 +483,13 @@
       "near": {
         "lat": 60.7957,
         "lon": 10.6915
-      }
+      },
+      "user_context": {
+        "locale": "nb",
+        "lat": 60.7957,
+        "lon": 10.6915
+      },
+      "non_gating_reason": "Locale synonym coverage for spring/source varies; min_results=0."
     },
     {
       "id": "fuel_category_hamar",
@@ -366,6 +502,11 @@
       "confidence": "high",
       "min_results": 1,
       "near": {
+        "lat": 60.7945,
+        "lon": 11.068
+      },
+      "user_context": {
+        "locale": "nb",
         "lat": 60.7945,
         "lon": 11.068
       }
@@ -383,6 +524,11 @@
       "near": {
         "lat": 59.9139,
         "lon": 10.7522
+      },
+      "user_context": {
+        "locale": "nb",
+        "lat": 59.9139,
+        "lon": 10.7522
       }
     },
     {
@@ -398,7 +544,13 @@
       "expect_top_any": [
         "Circle K"
       ],
-      "top_n": 5
+      "top_n": 5,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "Brand free-text ranking soft vs category fuel."
     },
     {
       "id": "ev_category_lillehammer",
@@ -411,6 +563,11 @@
       "confidence": "high",
       "min_results": 1,
       "near": {
+        "lat": 61.1153,
+        "lon": 10.4662
+      },
+      "user_context": {
+        "locale": "nb",
         "lat": 61.1153,
         "lon": 10.4662
       }
@@ -428,6 +585,11 @@
       "near": {
         "lat": 60.7957,
         "lon": 10.6915
+      },
+      "user_context": {
+        "locale": "nb",
+        "lat": 60.7957,
+        "lon": 10.6915
       }
     },
     {
@@ -442,7 +604,13 @@
       "near": {
         "lat": 60.8819,
         "lon": 11.5623
-      }
+      },
+      "user_context": {
+        "locale": "nb",
+        "lat": 60.8819,
+        "lon": 11.5623
+      },
+      "non_gating_reason": "Norwegian EV synonym free-text soft; min_results=0."
     },
     {
       "id": "misspell_lilehammer",
@@ -456,7 +624,13 @@
       "expect_top_any": [
         "Lillehammer"
       ],
-      "top_n": 3
+      "top_n": 3,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "Fuzzy/misspelling recall is best-effort."
     },
     {
       "id": "misspell_gjovik_ascii",
@@ -471,7 +645,13 @@
       "expect_top_any": [
         "Gjøvik"
       ],
-      "top_n": 3
+      "top_n": 3,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "ASCII fold of æøå is best-effort."
     },
     {
       "id": "misspell_kongsvinge",
@@ -485,7 +665,13 @@
       "expect_top_any": [
         "Kongsvinger"
       ],
-      "top_n": 3
+      "top_n": 3,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "Fuzzy/misspelling recall is best-effort."
     },
     {
       "id": "misspell_rondvasbu",
@@ -500,7 +686,13 @@
       "expect_top_any": [
         "Rondvassbu"
       ],
-      "top_n": 3
+      "top_n": 3,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "Fuzzy/misspelling recall is best-effort."
     },
     {
       "id": "aeoa_honefoss",
@@ -515,7 +707,12 @@
       "expect_top_any": [
         "Hønefoss"
       ],
-      "top_n": 2
+      "top_n": 2,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
     },
     {
       "id": "aeoa_amot",
@@ -530,7 +727,13 @@
       "expect_top_any": [
         "Åmot"
       ],
-      "top_n": 3
+      "top_n": 3,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "Ambiguous short place name; ranking soft."
     },
     {
       "id": "aeoa_tonsberg",
@@ -545,7 +748,13 @@
       "expect_top_any": [
         "Tønsberg"
       ],
-      "top_n": 2
+      "top_n": 2,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "Outside primary Ostlandet leaf focus; ranking soft."
     },
     {
       "id": "reverse_lillehammer_storgata",
@@ -559,7 +768,12 @@
       "expect_street_any": [
         "Storgata"
       ],
-      "max_distance_m": 150
+      "max_distance_m": 150,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.11535,
+        "lon": 10.46635
+      }
     },
     {
       "id": "reverse_hamar_strandgata",
@@ -574,7 +788,13 @@
         "Strandgata"
       ],
       "max_distance_m": 150,
-      "notes": "Pin on Strandgata 53; previous pin was at Stortorget/Storhamargata."
+      "notes": "Pin on Strandgata 53; previous pin was at Stortorget/Storhamargata.",
+      "user_context": {
+        "locale": "nb",
+        "lat": 60.794125,
+        "lon": 11.07143
+      },
+      "non_gating_reason": "Reverse geocode pin-sensitive; report-only after pin fix."
     },
     {
       "id": "reverse_oslo_karl_johan",
@@ -588,7 +808,12 @@
       "expect_street_any": [
         "Karl Johans gate"
       ],
-      "max_distance_m": 150
+      "max_distance_m": 150,
+      "user_context": {
+        "locale": "nb",
+        "lat": 59.9133,
+        "lon": 10.7407
+      }
     },
     {
       "id": "reverse_gjovik_storgata",
@@ -603,7 +828,13 @@
         "Storgata"
       ],
       "max_distance_m": 150,
-      "notes": "Pin on Storgata 3; previous pin was between Hunnsvegen and Storgata."
+      "notes": "Pin on Storgata 3; previous pin was between Hunnsvegen and Storgata.",
+      "user_context": {
+        "locale": "nb",
+        "lat": 60.79568,
+        "lon": 10.69102
+      },
+      "non_gating_reason": "Reverse geocode pin-sensitive; report-only after pin fix."
     },
     {
       "id": "reverse_elverum_storgata",
@@ -617,7 +848,28 @@
       "expect_street_any": [
         "Storgata"
       ],
-      "max_distance_m": 150
+      "max_distance_m": 150,
+      "user_context": {
+        "locale": "nb",
+        "lat": 60.8819,
+        "lon": 11.5623
+      },
+      "non_gating_reason": "Reverse geocode pin-sensitive on Storgata corridor."
     }
-  ]
+  ],
+  "default_user_context": {
+    "locale": "nb",
+    "lat": 61.0,
+    "lon": 10.5,
+    "notes": "Norwegian device language; user in central Ostlandet (camera-style bias)."
+  },
+  "app_search_context": {
+    "locale": "Locale.getDefault().language (fallback en)",
+    "position": "camera / bias lat,lon when finite and non-(0,0); else hasPosition=false",
+    "viewport": "none — comapsSearchClearViewport / Everywhere (no comapsSearchSetViewport)",
+    "mode": "Everywhere free-text (isCategory=false)",
+    "max_results": 80,
+    "category_hints": "none in ComapsSearchBridge; category chips resolve synonyms then free-text or suite uses isCategory=true with same locale/position/viewport",
+    "country_hints": "none in ComapsSearchBridge (FTS path may use visible region separately)"
+  }
 }

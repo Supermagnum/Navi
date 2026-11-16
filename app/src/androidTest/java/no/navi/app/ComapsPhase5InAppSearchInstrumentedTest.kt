@@ -5,31 +5,32 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONArray
 import org.json.JSONObject
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import uniffi.navi.FfiSearchBatch
 import uniffi.navi.FfiSearchHit
-import uniffi.navi.FfiSearchListener
+import uniffi.navi.FfiSearchHitKind
 import uniffi.navi.comapsCategoryQuery
 import uniffi.navi.comapsNativeAvailable
 import uniffi.navi.comapsReverseGeocode
 import uniffi.navi.comapsSearchEnabled
-import uniffi.navi.comapsSearchSetPosition
-import uniffi.navi.comapsSearchSetViewport
-import uniffi.navi.comapsSearchStart
+import uniffi.navi.comapsSessionIsOpen
 import java.io.File
-import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 /**
  * Phase 5 search suite through the **production** path: starts [MainActivity] so
  * drape / Platform Context init runs, then uses [ComapsSearchBridge] (same bridge
- * the search panel ViewModel path calls) — not the headless FFI harness alone.
+ * the search panel ViewModel path calls).
+ *
+ * Per-query `user_context` (locale + position) matches the headless harness;
+ * viewport is cleared (Everywhere); limit 80. Gate: every high-confidence row
+ * must pass individually (no percentage gate). No warm-up query — the bridge
+ * waits for engine readiness itself.
  *
  * Output: `{externalFiles}/phase5-inapp/search-suite-summary.json`.
  */
@@ -39,6 +40,11 @@ class ComapsPhase5InAppSearchInstrumentedTest {
     val composeRule = createAndroidComposeRule<MainActivity>()
 
     private lateinit var outDir: File
+    private lateinit var dataMwm: File
+
+    companion object {
+        private const val APP_LIMIT = 80
+    }
 
     @Before
     fun setUp() {
@@ -48,12 +54,7 @@ class ComapsPhase5InAppSearchInstrumentedTest {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         outDir = File(ctx.getExternalFilesDir(null), "phase5-inapp")
         outDir.mkdirs()
-        // Production path only: MainActivity (compose rule) already opened the
-        // CoMaps session. A second comapsSessionOpen from the test aborts inside
-        // ~HttpMapFilesDownloader (CalledOnOriginalThread). Prefer installed
-        // production leaves; fall back to navi-mwm-test only if production is empty
-        // (stage assets, then let ComapsSessionBootstrap reopen once).
-        val dataMwm = File(NaviAppData.resolve(ctx), "mwm")
+        dataMwm = File(NaviAppData.resolve(ctx), "mwm")
         val testRoot = File(ctx.getExternalFilesDir(null), "navi-mwm-test")
         val productionReady =
             File(dataMwm, "World.mwm").isFile ||
@@ -63,30 +64,132 @@ class ComapsPhase5InAppSearchInstrumentedTest {
         if (!productionReady) {
             assumeTrue("no test MWMs under ${testRoot.absolutePath}", File(testRoot, "World.mwm").isFile)
             ComapsPhase6Harness.stageHeadlessAssets(ctx, testRoot)
-            // Single reopen through the same bootstrap production uses.
             ComapsSessionBootstrap.ensureOpen(ctx, force = true)
         }
-        // Wait until the activity-owned session can serve search.
+        // Same Platform Context the headless suite sets, so address formatting
+        // matches (drape may not have called nativeSetContext yet).
+        ComapsHeadlessPlatform.requireContext(ctx)
+        // Wait only for the activity-owned session — do not warm with a real query.
         val ready =
             ComapsPhase6Harness.waitFor(120_000L, 500L) {
-                ComapsSearchBridge.enabled()
+                ComapsSearchBridge.enabled() && comapsSessionIsOpen()
             }
-        assumeTrue("ComapsSearchBridge not enabled after MainActivity start", ready)
+        assumeTrue("ComapsSearchBridge/session not ready after MainActivity start", ready)
     }
 
     private fun norm(s: String): String = s.filter { it.isLetterOrDigit() }.lowercase()
 
+    private fun userContext(q: JSONObject): Triple<String, Double, Double> {
+        val ctx = q.optJSONObject("user_context")
+        requireNotNull(ctx) { "query ${q.optString("id")} missing user_context" }
+        return Triple(
+            ctx.getString("locale"),
+            ctx.getDouble("lat"),
+            ctx.getDouble("lon"),
+        )
+    }
+
     private fun rankOf(
-        hits: List<Pair<String, String>>,
+        hits: List<FfiSearchHit>,
         wanted: JSONArray,
     ): Int {
         for ((idx, hit) in hits.withIndex()) {
-            val hay = norm(hit.first + " " + hit.second)
+            val hay = norm(hit.name + " " + hit.address + " " + hit.featureType)
             for (i in 0 until wanted.length()) {
                 if (hay.contains(norm(wanted.getString(i)))) return idx + 1
             }
         }
         return -1
+    }
+
+    private fun evaluateFreeText(
+        q: JSONObject,
+        hits: List<FfiSearchHit>,
+    ): Triple<Boolean, Int, String> {
+        if (hits.size < q.optInt("min_results", 0)) {
+            return Triple(false, -1, "got ${hits.size} < min_results ${q.optInt("min_results")}")
+        }
+        val topN = q.optInt("top_n", 3)
+        q.optJSONArray("expect_top_any")?.let { wanted ->
+            val rank = rankOf(hits, wanted)
+            val ok = rank in 1..topN
+            return Triple(
+                ok,
+                rank,
+                if (ok) "" else "top=${hits.take(topN).map { it.name to it.address }}",
+            )
+        }
+        q.optJSONArray("expect_address_any")?.let { wanted ->
+            val top = hits.take(topN)
+            val ok =
+                (0 until wanted.length()).any { i ->
+                    val needle = norm(wanted.getString(i))
+                    top.any { hit ->
+                        norm(hit.address + hit.name + hit.featureType).contains(needle) ||
+                            (hit.kind == FfiSearchHitKind.POSTCODE && norm(hit.name + hit.address).contains(needle))
+                    }
+                }
+            val rank = if (ok) rankOf(hits, wanted) else -1
+            return Triple(
+                ok,
+                rank,
+                if (ok) {
+                    ""
+                } else {
+                    "addresses=${top.map { Triple(it.name, it.address, it.kind) }} " +
+                        "mwm=${top.map { it.mwmName }} leaves=${listProductionLeaves()}"
+                },
+            )
+        }
+        return Triple(hits.size >= q.optInt("min_results", 0), if (hits.isNotEmpty()) 1 else -1, "n=${hits.size}")
+    }
+
+    private fun listProductionLeaves(): List<String> {
+        val releases = File(dataMwm, "releases")
+        return releases
+            .listFiles()
+            .orEmpty()
+            .flatMap { rel ->
+                File(rel, "leaves").listFiles { f -> f.name.endsWith(".mwm") }.orEmpty().map { it.name }
+            }.sorted()
+    }
+
+    /**
+     * Cold start: first Everywhere query after activity/session ready must not
+     * return empty solely because the lazy Engine was still building.
+     */
+    @Test
+    fun coldStartImmediateLillehammer() {
+        // Force a fresh engine by relying on bridge readiness wait — no Oslo warm-up.
+        val outcome =
+            ComapsSearchBridge.searchDetailed(
+                query = "Lillehammer",
+                biasLat = 61.115,
+                biasLon = 10.466,
+                limit = APP_LIMIT,
+                locale = "nb",
+            )
+        assertFalse("engine must become ready for cold-start search", outcome.notReady)
+        assertTrue(
+            "cold-start Lillehammer must return hits (got ${outcome.hits.size}; " +
+                "ready_ms=${outcome.timing.readyWaitMs} first_ms=${outcome.timing.firstResultMs})",
+            outcome.hits.isNotEmpty(),
+        )
+        val rank =
+            rankOf(
+                outcome.hits,
+                JSONArray().put("Lillehammer"),
+            )
+        assertTrue("Lillehammer should be in top 3 (rank=$rank)", rank in 1..3)
+        File(outDir, "cold-start-lillehammer.json").writeText(
+            JSONObject()
+                .put("ready_ms", outcome.timing.readyWaitMs)
+                .put("first_ms", outcome.timing.firstResultMs)
+                .put("total_ms", outcome.timing.totalMs)
+                .put("n", outcome.hits.size)
+                .put("top", JSONArray(outcome.hits.take(5).map { it.name }))
+                .toString(2),
+        )
     }
 
     @Test
@@ -103,72 +206,75 @@ class ComapsPhase5InAppSearchInstrumentedTest {
         val results = JSONArray()
         var highTotal = 0
         var highPass = 0
+        val highFailures = mutableListOf<String>()
 
         for (i in 0 until queries.length()) {
             val q = queries.getJSONObject(i)
             val id = q.getString("id")
             val high = q.getString("confidence") == "high"
-            val started = System.currentTimeMillis()
             var hit = false
             var rank = -1
             var detail = ""
             var topNames = emptyList<String>()
+            var readyMs = -1L
+            var firstMs = -1L
+            var totalMs = -1L
             when (q.getString("kind")) {
                 "free_text" -> {
-                    val near = q.optJSONObject("near")
-                    val biasLat = near?.optDouble("lat")
-                    val biasLon = near?.optDouble("lon")
-                    val hits =
-                        ComapsSearchBridge.search(
-                            q.getString("query"),
-                            biasLat,
-                            biasLon,
-                            30,
+                    val (locale, lat, lon) = userContext(q)
+                    val outcome =
+                        ComapsSearchBridge.searchDetailed(
+                            query = q.getString("query"),
+                            biasLat = lat,
+                            biasLon = lon,
+                            limit = APP_LIMIT,
+                            locale = locale,
                         )
-                    topNames = hits.take(5).map { it.name }
-                    val pairs = hits.map { it.name to it.address }
-                    q.optJSONArray("expect_top_any")?.let { wanted ->
-                        rank = rankOf(pairs, wanted)
-                        hit = rank in 1..q.optInt("top_n", 3)
-                        if (!hit) detail = "top=${pairs.take(q.optInt("top_n", 3))}"
-                    } ?: run {
-                        hit = hits.size >= q.optInt("min_results", 0)
-                        detail = "n=${hits.size}"
-                    }
+                    readyMs = outcome.timing.readyWaitMs
+                    firstMs = outcome.timing.firstResultMs
+                    totalMs = outcome.timing.totalMs
+                    assertFalse("$id: engine not ready", outcome.notReady)
+                    topNames = outcome.hits.take(5).map { it.name }
+                    val ev = evaluateFreeText(q, outcome.hits)
+                    hit = ev.first
+                    rank = ev.second
+                    detail = ev.third
+                    Thread.sleep(250)
                 }
                 "category" -> {
+                    val (locale, lat, lon) = userContext(q)
                     val key = q.getString("query")
-                    val text = comapsCategoryQuery(key, "nb")
+                    val text = comapsCategoryQuery(key, locale)
                     if (text == null) {
                         hit = false
                         detail = "no category string for $key"
                     } else {
-                        val near = q.optJSONObject("near")
-                        val lat = near?.optDouble("lat") ?: 61.0
-                        val lon = near?.optDouble("lon") ?: 10.5
-                        comapsSearchSetPosition(lat, lon, true)
-                        comapsSearchSetViewport(lat - 0.5, lon - 0.8, lat + 0.5, lon + 0.8)
-                        val collector =
-                            object : FfiSearchListener {
-                                val hits = CopyOnWriteArrayList<FfiSearchHit>()
-                                val done = CountDownLatch(1)
-
-                                override fun onBatch(batch: FfiSearchBatch) {
-                                    hits.addAll(batch.hits)
-                                    if (batch.isFinal) done.countDown()
-                                }
-                            }
-                        val sid = comapsSearchStart(text, true, 30u, collector)
-                        assertTrue("category search '$text' did not start", sid != 0uL)
-                        assertTrue("category search '$text' timed out", collector.done.await(60, TimeUnit.SECONDS))
-                        topNames = collector.hits.take(5).map { it.name }
-                        hit = collector.hits.size >= q.optInt("min_results", 1)
-                        detail = "n=${collector.hits.size} q=$text"
-                        if (hit) rank = 1
+                        val outcome =
+                            ComapsSearchBridge.searchDetailed(
+                                query = text,
+                                biasLat = lat,
+                                biasLon = lon,
+                                limit = APP_LIMIT,
+                                locale = locale,
+                                isCategory = true,
+                            )
+                        readyMs = outcome.timing.readyWaitMs
+                        firstMs = outcome.timing.firstResultMs
+                        totalMs = outcome.timing.totalMs
+                        topNames = outcome.hits.take(5).map { it.name }
+                        val ev = evaluateFreeText(q, outcome.hits)
+                        hit = ev.first
+                        rank = ev.second
+                        detail = listOf(ev.third, "q=$text").filter { it.isNotEmpty() }.joinToString(" ")
+                        Thread.sleep(250)
                     }
                 }
                 "reverse" -> {
+                    val t0 = System.currentTimeMillis()
                     val addr = comapsReverseGeocode(q.getDouble("lat"), q.getDouble("lon"))
+                    totalMs = System.currentTimeMillis() - t0
+                    firstMs = totalMs
+                    readyMs = 0
                     val wanted = q.getJSONArray("expect_street_any")
                     val streetOk =
                         addr.found &&
@@ -187,7 +293,7 @@ class ComapsPhase5InAppSearchInstrumentedTest {
             }
             if (high) {
                 highTotal++
-                if (hit) highPass++
+                if (hit) highPass++ else highFailures.add("$id: $detail")
             }
             results.put(
                 JSONObject()
@@ -195,25 +301,35 @@ class ComapsPhase5InAppSearchInstrumentedTest {
                     .put("kind", q.getString("kind"))
                     .put("confidence", q.getString("confidence"))
                     .put("hit", hit)
+                    .put("pass", hit)
                     .put("rank", rank)
-                    .put("ms", System.currentTimeMillis() - started)
+                    .put("ready_ms", readyMs)
+                    .put("first_ms", firstMs)
+                    .put("total_ms", totalMs)
+                    .put("ms", totalMs)
                     .put("detail", detail)
-                    .put("top", JSONArray(topNames)),
+                    .put("top", JSONArray(topNames))
+                    .put("non_gating_reason", q.optString("non_gating_reason", "")),
             )
         }
 
         val summary =
             JSONObject()
                 .put("path", "in-app-ComapsSearchBridge+MainActivity")
+                .put("mwm_root", dataMwm.absolutePath)
+                .put("leaves", JSONArray(listProductionLeaves()))
                 .put("query_count", queries.length())
                 .put("high_total", highTotal)
                 .put("high_pass", highPass)
+                .put("high_failures", JSONArray(highFailures))
                 .put("results", results)
         File(outDir, "search-suite-summary.json").writeText(summary.toString(2))
 
+        assertTrue("no high-confidence rows in fixture", highTotal > 0)
         assertTrue(
-            "high-confidence in-app pass rate too low: $highPass / $highTotal (see phase5-inapp)",
-            highTotal > 0 && highPass * 5 >= highTotal * 4,
+            "high-confidence per-query failures ($highPass/$highTotal): $highFailures",
+            highFailures.isEmpty(),
         )
+        assertEquals("high pass must equal high total", highTotal, highPass)
     }
 }

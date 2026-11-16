@@ -4,6 +4,7 @@ import android.content.Context
 import android.system.Os
 import android.system.OsConstants
 import android.util.Log
+import app.organicmaps.sdk.OrganicMaps
 import org.json.JSONObject
 import uniffi.navi.comapsNativeAvailable
 import uniffi.navi.comapsSessionOpen
@@ -162,6 +163,14 @@ object ComapsSessionBootstrap {
             if (!force && key == openKey) return true
             linkActiveRelease(root, version)
             if (!stageResources(ctx, root)) return false
+            // Search address/type strings need Platform Context (Utils JNI). The
+            // drape Framework also sets this, but search can run before the map
+            // surface is ready — set it here so cold Everywhere queries get
+            // addresses instead of empty fields / readiness races.
+            if (ComapsDrape.sdkPackaged()) {
+                runCatching { OrganicMaps.nativeSetContext(ctx.applicationContext) }
+                    .onFailure { Log.w(TAG, "nativeSetContext before session open failed", it) }
+            }
             Log.i(
                 TAG,
                 "mwm root=" +
