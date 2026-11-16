@@ -92,7 +92,7 @@ pub fn parse_kmz_bytes(file_name: &str, bytes: &[u8]) -> Result<Vec<RbRecord>, S
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|e| e.to_string())?;
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
-        let name = entry.name().to_string();
+        let name = entry.name().map_err(|e| e.to_string())?.to_string();
         if !name.to_ascii_lowercase().ends_with(".kml") {
             continue;
         }
