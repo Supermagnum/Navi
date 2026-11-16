@@ -1191,8 +1191,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
         mutableStateOf(MapHudPrefs.loadNominatimBaseUrl(context))
     }
     var showTools by remember { mutableStateOf(false) }
-    // MWM path: the CoMaps drape is the only map renderer (flag OFF keeps MapLibre / PMTiles).
-    val mwmDrapeMap = remember { ComapsDrape.isMwmMapPath() }
+    // Phase 8 prep: product path is always CoMaps drape (MapLibre branch retained but unused).
+    val mwmDrapeMap = remember { true }
     var mapDayNight by remember { mutableStateOf(MapHudPrefs.loadDrapeDayNight(context)) }
     var mwmMissingMaps by remember { mutableStateOf<List<String>?>(null) }
     var confirmDeleteRegion by remember { mutableStateOf(false) }
