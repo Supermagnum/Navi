@@ -43,13 +43,14 @@ android {
         applicationId = "no.navi.app"
         minSdk = 26
         targetSdk = 36
-        // F-Droid upstream CurrentVersionCode is 32 (0.3.29-beta); next is 33.
-        versionCode = 33
-        versionName = "0.3.30-beta"
+        // F-Droid upstream CurrentVersionCode is 33 (0.3.30-beta); next is 34.
+        versionCode = 34
+        versionName = "0.4.0-beta"
         testInstrumentationRunner = "no.navi.app.NaviAndroidTestRunner"
         // MWM client default ON for every build type / F-Droid recipe. Override
         // with -Pnavi.mwmClient=false (also sets NAVI_MWM_CLIENT_ENABLED=0 via
-        // MwmClientBootstrap). Routing/rendering on MWM are not ship-ready yet.
+        // MwmClientBootstrap) for emergency / operator builds only — not a
+        // user-facing classic-maps setting.
         val mwmClientDefault =
             providers
                 .gradleProperty("navi.mwmClient")
