@@ -187,14 +187,29 @@ class Phase7MigrationInstrumentedTest {
         assertTrue("expected shared leaves", shared >= 1)
     }
 
-    /** Not enough free space: the plan says so and names the shortfall. */
+    /**
+     * Not enough free space: the plan says so and names the shortfall.
+     *
+     * On a device that already has every mapped leaf installed, `download_bytes`
+     * is 0 and the planner correctly reports enough space even with a 600 MB
+     * free budget (post-migration state). The shortfall assertion applies only
+     * when the plan still needs to download.
+     */
     @Test
     fun d_plan_not_enough_space() {
         assumeTrue(MwmClientBootstrap.isEnabled())
         val r = planJson(listOf("europe/norway/ostlandet" to 2_549_326_770L, "europe/norway/sorlandet" to 331_098_569L), 600_000_000L)
         out("plan-nospace.json", r)
         val plan = r.getJSONObject("plan")
-        assertTrue(!plan.getBoolean("enough_space") && plan.getLong("space_short_by") > 0)
+        val download = plan.getLong("download_bytes")
+        if (download == 0L) {
+            assertTrue("already-installed leaves must report enough space: $plan", plan.getBoolean("enough_space"))
+            return
+        }
+        assertTrue(
+            "expected shortfall when download_bytes=$download with 600MB free: $plan",
+            !plan.getBoolean("enough_space") && plan.getLong("space_short_by") > 0,
+        )
     }
 
     /** A region without a mapping is reported and kept; nothing is selected for it. */

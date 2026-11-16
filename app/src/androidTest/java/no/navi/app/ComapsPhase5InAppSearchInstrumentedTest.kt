@@ -48,22 +48,30 @@ class ComapsPhase5InAppSearchInstrumentedTest {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         outDir = File(ctx.getExternalFilesDir(null), "phase5-inapp")
         outDir.mkdirs()
-        // MainActivity is already launched by the compose rule (production UI path /
-        // drape attempt). Ensure Platform Context even when production files/mwm is
-        // empty on this device — search data still comes from navi-mwm-test leaves.
-        ComapsHeadlessPlatform.requireContext(ctx)
-        val root = File(ctx.getExternalFilesDir(null), "navi-mwm-test")
-        assumeTrue("no test MWMs under ${root.absolutePath}", File(root, "World.mwm").isFile)
-        ComapsPhase6Harness.stageHeadlessAssets(ctx, root)
-        val open =
-            uniffi.navi.comapsSessionOpen(
-                storagePath = root.absolutePath,
-                writablePath = root.absolutePath,
-                sidecarDir = File(root, "sidecars").absolutePath,
-                loadWetlandSidecars = false,
-            )
-        assumeTrue("session: ${open.errorMessage}", open.ok)
-        assumeTrue("ComapsSearchBridge not enabled", ComapsSearchBridge.enabled())
+        // Production path only: MainActivity (compose rule) already opened the
+        // CoMaps session. A second comapsSessionOpen from the test aborts inside
+        // ~HttpMapFilesDownloader (CalledOnOriginalThread). Prefer installed
+        // production leaves; fall back to navi-mwm-test only if production is empty
+        // (stage assets, then let ComapsSessionBootstrap reopen once).
+        val dataMwm = File(NaviAppData.resolve(ctx), "mwm")
+        val testRoot = File(ctx.getExternalFilesDir(null), "navi-mwm-test")
+        val productionReady =
+            File(dataMwm, "World.mwm").isFile ||
+                File(dataMwm, "releases").listFiles()?.any { rel ->
+                    File(rel, "leaves").listFiles()?.any { it.name.endsWith(".mwm") } == true
+                } == true
+        if (!productionReady) {
+            assumeTrue("no test MWMs under ${testRoot.absolutePath}", File(testRoot, "World.mwm").isFile)
+            ComapsPhase6Harness.stageHeadlessAssets(ctx, testRoot)
+            // Single reopen through the same bootstrap production uses.
+            ComapsSessionBootstrap.ensureOpen(ctx, force = true)
+        }
+        // Wait until the activity-owned session can serve search.
+        val ready =
+            ComapsPhase6Harness.waitFor(120_000L, 500L) {
+                ComapsSearchBridge.enabled()
+            }
+        assumeTrue("ComapsSearchBridge not enabled after MainActivity start", ready)
     }
 
     private fun norm(s: String): String = s.filter { it.isLetterOrDigit() }.lowercase()
