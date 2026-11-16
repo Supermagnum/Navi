@@ -1,34 +1,41 @@
-# MWM client — later release plan (no action yet)
+# MWM client — release plan (G3+)
 
-This document is the **future** release / cutover checklist for shipping the MWM
-client that lands on `feat/mwm-client` (PR toward `dev`). It does **not** authorize
-a version bump, tag, F-Droid metadata change, or server cutover today.
+This document tracks the MWM default cutover. Rollback for emergency builds
+only: `-Pnavi.mwmClient=false` / `NAVI_MWM_CLIENT_ENABLED=0` (developer /
+operator path — **not** a user-facing setting). There is **no** classic-maps
+fallback toggle for end users; `.rkyv` is being retired.
 
-Rollback for one release after MWM ships: build or run with
-`-Pnavi.mwmClient=false` / `NAVI_MWM_CLIENT_ENABLED=0` so the `.rkyv` path stays
-intact.
+## Gates
 
-## 1. Client release steps (when intentionally releasing)
+| Gate | Meaning | Status |
+|------|---------|--------|
+| G2 | Search parity (Everywhere context, per-query 21/21) + migration pause/resume | Met (PR #222) |
+| G3 | First release with MWM as default (`0.4.0-beta` / versionCode 34) | **Prepared** 2026-11-16 — pending tag / publish go-ahead |
+| G4 | Client `.rkyv` removal (draft PR #221), keeping Phase 7 migration that reads the old on-disk `.rkyv` region list | **Not a fallback release cycle.** Merge #221 (or its follow-up deletion commits) after G3 ships, when the owner chooses this-release vs next-release (see agent report). Keep migration + thin `.rkyv` detection only. |
+| G5 | Server `.rkyv` retirement after adoption near zero | Still required — users on `0.3.30-beta` keep hitting frozen packs until they update. Measure with `measure-rkyv-adoption.py` / weekly timer. |
 
-1. **Version** — Bump `versionName` / `versionCode` in the Android app Gradle
-   config (and any mirrored Crate / package metadata the release process uses).
-2. **Changelog** — User-facing notes: MWM maps + offline search; one-tap
-   migration from existing `.rkyv` downloads; flag-OFF rollback for one cycle.
-3. **F-Droid metadata** — Update `fdroiddata` recipe / version / versionCode only
-   when publishing that release (see existing F-Droid from-source docs). Do not
-   change metadata on draft / merge-to-dev work.
-4. **User migration notes** — Point at in-app Migrate flow (Wi-Fi default for
-   large plans, pause/resume, confirm before deleting `.rkyv`). Map storage
-   cleanup if the user declined delete.
-5. **Known limitations to mention** — Vehicle dimensional limits not applied
-   (design note only); boardwalk recall ~25%; long-route Joints latency ~12 s
-   accepted on device.
+## 1. Client release steps (G3)
 
-## 2. Server `.rkyv` retirement criteria (Phase 8)
+1. **Version** — `versionName` `0.4.0-beta`, `versionCode` 34 in
+   `app/build.gradle.kts` (and mirrored docs / Fastlane changelog).
+2. **Changelog** — User-facing notes: CoMaps-based maps + Navi layers; smaller
+   downloads; contours + 3D; new search; explicit migration from existing
+   `.rkyv` (Wi-Fi default; old maps removed only after confirmation); GPX
+   import. **No** classic-maps fallback line.
+3. **F-Droid metadata** — Update `fdroiddata` recipe / version / versionCode
+   only when publishing (see `docs/RELEASING.md`). Network-use text must
+   mention CoMaps mirrors + `navigate-me.duckdns.org`.
+4. **User migration notes** — In-app Migrate flow (Wi-Fi default for large
+   plans, pause/resume, confirm before deleting `.rkyv`).
+5. **Known limitations** — Vehicle dimensional limits not applied on the new
+   maps; boardwalk detection partial; long regional routes can take ~10 s;
+   **no** user-facing classic fallback.
 
-**Freeze ≠ retirement.** Keep serving `published/packs/` + `current.json` (and
-related `.rkyv` trees) until request volume is near zero for several weeks after
-the MWM client is what users actually run.
+## 2. Server `.rkyv` retirement criteria (G5 / Phase 8 server)
+
+**Freeze ≠ retirement.** Keep serving `published/packs/` + classic
+`current.json` (and related `.rkyv` trees) until request volume is near zero
+for several weeks after users actually run the MWM client.
 
 ### Measure
 
@@ -36,12 +43,15 @@ On the Apache host whose DocumentRoot serves the packs (live:
 `https://navigate-me.duckdns.org`):
 
 ```bash
-# Rough daily count of .rkyv / classic pack hits (adjust log path / vhost).
-# Prefer Combined or custom logs that include the request URI.
+# Prefer the Phase 8 script (navi-server):
+./scripts/phase8/measure-rkyv-adoption.py \
+  --log-glob '/var/log/apache2/access.log*' \
+  --out "$HOME/navi-rkyv-adoption"
+
+# Or a rough daily count:
 awk '
-  $7 ~ /\.rkyv($|\?)/ || $7 ~ /\/packs\// || $7 ~ /current\.json/ {
-    # optional: skip health probes / known scrapers
-    d = substr($4, 2, 11)  # [17/Oct/2026:…
+  $7 ~ /\.rkyv($|\?)/ || $7 ~ /\/packs\// || ($7 ~ /current\.json/ && $7 !~ /\/mwm\//) {
+    d = substr($4, 2, 11)
     gsub(/\//, "-", d)
     c[d]++
   }
@@ -49,10 +59,9 @@ awk '
 ' /var/log/apache2/access.log* | sort
 ```
 
-Or a small script that tails / rotates daily into a CSV of
-`date,rkyv_reqs,packs_reqs,current_json_reqs`. Track for **several consecutive
-weeks** with totals near zero (owner threshold; suggest < a handful/day and no
-upward trend).
+Install the weekly timer on **media** with
+`/tmp/navi-rkyv-adoption-install.sh` (sudo; prepared by the G3 agent). Read the
+weekly Markdown under the configured `NAVI_ADOPTION_OUT` directory.
 
 ### Then remove (only after the criterion holds)
 
@@ -61,21 +70,13 @@ upward trend).
    short grace if needed.
 3. Delete DocumentRoot trees for classic packs / region manifests when logs stay
    near zero.
-4. Client: remove `.rkyv` UI / download path in a later release (not the first
-   MWM ship).
+4. Client: Phase 7 migration detection can shrink further once G5 is met and
+   old installs are gone.
 
-## 3. G2 search parity (pre-release)
-
-Gate G2 search half: headless and in-app Phase 5 suites must use the same
-Everywhere context as production `ComapsSearchBridge` (device locale / per-query
-`user_context`, position bias, **no** viewport, limit 80) and assert per-query
-21/21 high-confidence — not an 80% pass-rate gate. Details:
-`docs/mwm-phase5-search.md`. Migration pause/resume evidence remains in
-`docs/mwm-phase7-migration.md`.
-
-## 4. References
+## 3. References
 
 - `docs/mwm-client-migration.md` — phases 1–8 overview
 - `docs/mwm-phase7-migration.md` — migration E2E
 - `docs/mwm-phase5-search.md` / `docs/mwm-phase6b-drape.md` — search + drape
 - `docs/mwm-vehicle-limits-design.md` — limits not built
+- Draft PR #221 — client `.rkyv` retirement prep

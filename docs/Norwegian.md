@@ -26,8 +26,8 @@ oppdateringer via F-Droid-klienten.
 **Installer den signerte release-APK-en (sideload / testere).** Last ned og
 sideloade [`compiled/navi-release.apk`](../compiled/navi-release.apk) — en
 **riktig signert, installerbar release-APK** (upload-nøkkel; ikke debug-bygget).
-Gjeldende `dev`-sideload: **0.3.30-beta** (`versionName` 0.3.30-beta,
-`versionCode` 33; matcher `app/build.gradle.kts`). F-Droid-klientens foreslåtte
+Gjeldende `dev`-sideload: **0.4.0-beta** (`versionName` 0.4.0-beta,
+`versionCode` 34; matcher `app/build.gradle.kts`). F-Droid-klientens foreslåtte
 versjon kan ligge bak — se [F-Droid](#f-droid). Last ned fra
 [`dev`-grenen](https://github.com/Supermagnum/Navi/tree/dev/compiled)
 (siste testerbygg).
@@ -141,8 +141,8 @@ Bruk F-Droid-klienten når du kan. **Foreslått** versjon på pakkesiden kan
 ligge bak GitHub / `dev`-sideload: ved siste sjekk foreslo indeksen
 **0.3.26-beta** (`versionCode` **31**), mens `app/build.gradle.kts` og
 [`compiled/navi-release.apk`](../compiled/navi-release.apk) var
-**0.3.30-beta** (`versionCode` **33**). fdroiddata `master` hadde allerede
-`CurrentVersion` **0.3.30-beta** / **33**. Sideload-steg:
+**0.4.0-beta** (`versionCode` **34**). fdroiddata `master` hadde allerede
+`CurrentVersion` **0.4.0-beta** / **34**. Sideload-steg:
 [Installer en forhåndsbygd APK](#installer-en-forhåndsbygd-apk).
 
 # Funksjoner
@@ -708,7 +708,7 @@ eller bare debug).
 
 | Fil | Rolle |
 |---|---|
-| [`compiled/navi-release.apk`](../compiled/navi-release.apk) | **Installer denne** — signert release-APK (arm64-v8a, `versionName` 0.3.30-beta, `versionCode` 33) |
+| [`compiled/navi-release.apk`](../compiled/navi-release.apk) | **Installer denne** — signert release-APK (arm64-v8a, `versionName` 0.4.0-beta, `versionCode` 34) |
 | [`compiled/SHA256SUMS`](../compiled/SHA256SUMS) | SHA-256-sjekksum for integritet |
 | [`compiled/SHA256SUMS.asc`](../compiled/SHA256SUMS.asc) | Løsrevet GPG-proveniens (ikke Android APK-signering) |
 
