@@ -48,17 +48,21 @@ class ComapsPhase5InAppSearchInstrumentedTest {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         outDir = File(ctx.getExternalFilesDir(null), "phase5-inapp")
         outDir.mkdirs()
-        // Wait for production session + drape Platform Context (MainActivity onCreate).
-        val deadline = System.currentTimeMillis() + 90_000L
-        while (System.currentTimeMillis() < deadline) {
-            if (ComapsSessionBootstrap.isOpen() && ComapsSearchBridge.enabled()) break
-            ComapsSessionBootstrap.ensureOpen(ctx, force = false)
-            Thread.sleep(500)
-        }
-        assumeTrue(
-            "production CoMaps session not open (install MWMs / World under files/mwm)",
-            ComapsSessionBootstrap.isOpen(),
-        )
+        // MainActivity is already launched by the compose rule (production UI path /
+        // drape attempt). Ensure Platform Context even when production files/mwm is
+        // empty on this device — search data still comes from navi-mwm-test leaves.
+        ComapsHeadlessPlatform.requireContext(ctx)
+        val root = File(ctx.getExternalFilesDir(null), "navi-mwm-test")
+        assumeTrue("no test MWMs under ${root.absolutePath}", File(root, "World.mwm").isFile)
+        ComapsPhase6Harness.stageHeadlessAssets(ctx, root)
+        val open =
+            uniffi.navi.comapsSessionOpen(
+                storagePath = root.absolutePath,
+                writablePath = root.absolutePath,
+                sidecarDir = File(root, "sidecars").absolutePath,
+                loadWetlandSidecars = false,
+            )
+        assumeTrue("session: ${open.errorMessage}", open.ok)
         assumeTrue("ComapsSearchBridge not enabled", ComapsSearchBridge.enabled())
     }
 
