@@ -1,0 +1,74 @@
+{
+  "schema": "navi-mwm-region-migration/v1",
+  "comaps_release": "261105",
+  "regions": {
+    "europe_norway_ostlandet": {
+      "region_id": "europe/norway/ostlandet",
+      "display_name": "Ostlandet",
+      "union_coverage_pct": 99.96,
+      "uncovered_pct": 0.04,
+      "comaps_leaves": [
+        {
+          "leaf": "Norway_Hedmark",
+          "coverage_of_region_pct": 27.4,
+          "overspill_pct": 0.0,
+          "include_reason": "threshold",
+          "shared_with_navi_regions": []
+        },
+        {
+          "leaf": "Norway_Southern",
+          "coverage_of_region_pct": 25.5,
+          "overspill_pct": 47.0,
+          "include_reason": "threshold",
+          "shared_with_navi_regions": [
+            "europe_norway_sorlandet"
+          ]
+        },
+        {
+          "leaf": "Norway_Oppland",
+          "coverage_of_region_pct": 20.0,
+          "overspill_pct": 0.0,
+          "include_reason": "threshold",
+          "shared_with_navi_regions": []
+        }
+      ]
+    },
+    "europe_norway_sorlandet": {
+      "region_id": "europe/norway/sorlandet",
+      "display_name": "Sorlandet",
+      "union_coverage_pct": 98.4,
+      "uncovered_pct": 1.6,
+      "comaps_leaves": [
+        {
+          "leaf": "Norway_Southern",
+          "coverage_of_region_pct": 79.3,
+          "overspill_pct": 52.0,
+          "include_reason": "threshold",
+          "shared_with_navi_regions": [
+            "europe_norway_ostlandet"
+          ]
+        },
+        {
+          "leaf": "Denmark_North Denmark Region",
+          "coverage_of_region_pct": 18.5,
+          "overspill_pct": 87.0,
+          "include_reason": "threshold",
+          "shared_with_navi_regions": []
+        },
+        {
+          "leaf": "Norway_Rogaland",
+          "coverage_of_region_pct": 5.0,
+          "overspill_pct": 90.0,
+          "include_reason": "threshold",
+          "shared_with_navi_regions": []
+        }
+      ]
+    }
+  },
+  "shared_leaves": {
+    "Norway_Southern": [
+      "europe_norway_ostlandet",
+      "europe_norway_sorlandet"
+    ]
+  }
+}

@@ -1,0 +1,875 @@
+{
+  "schema": "navi-search-suite/v1",
+  "release": "261105",
+  "region": "ostlandet",
+  "locale": "nb",
+  "notes": "Phase 5 offline search suite. App reference (ComapsSearchBridge): locale=device language, position bias when known, viewport=none (Everywhere), free-text isCategory=false, maxResults as caller limit (UI=80). Each query sets user_context (locale + position) for harness parity. expect_top_any: any of the top top_n result names/addresses contains one of the strings (letter/digit-normalized, case-insensitive). confidence=high rows gate individually (21/21); medium rows are report-only with non_gating_reason.",
+  "queries": [
+    {
+      "id": "town_lillehammer",
+      "kind": "free_text",
+      "query": "Lillehammer",
+      "tags": [
+        "town"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Lillehammer"
+      ],
+      "top_n": 1,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
+    },
+    {
+      "id": "town_hamar",
+      "kind": "free_text",
+      "query": "Hamar",
+      "tags": [
+        "town"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Hamar"
+      ],
+      "top_n": 1,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
+    },
+    {
+      "id": "town_gjovik",
+      "kind": "free_text",
+      "query": "Gjøvik",
+      "tags": [
+        "town",
+        "aeoa"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Gjøvik"
+      ],
+      "top_n": 1,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
+    },
+    {
+      "id": "town_elverum",
+      "kind": "free_text",
+      "query": "Elverum",
+      "tags": [
+        "town"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Elverum"
+      ],
+      "top_n": 1,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
+    },
+    {
+      "id": "town_kongsvinger",
+      "kind": "free_text",
+      "query": "Kongsvinger",
+      "tags": [
+        "town"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Kongsvinger"
+      ],
+      "top_n": 1,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
+    },
+    {
+      "id": "town_fagernes",
+      "kind": "free_text",
+      "query": "Fagernes",
+      "tags": [
+        "town"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Fagernes"
+      ],
+      "top_n": 2,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
+    },
+    {
+      "id": "street_storgata_lillehammer",
+      "kind": "free_text",
+      "query": "Storgata Lillehammer",
+      "tags": [
+        "street"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Storgata"
+      ],
+      "top_n": 3,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
+    },
+    {
+      "id": "street_strandgata_hamar",
+      "kind": "free_text",
+      "query": "Strandgata Hamar",
+      "tags": [
+        "street"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Strandgata"
+      ],
+      "top_n": 3,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
+    },
+    {
+      "id": "street_karl_johan_oslo",
+      "kind": "free_text",
+      "query": "Karl Johans gate Oslo",
+      "tags": [
+        "street"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Karl Johans gate"
+      ],
+      "top_n": 3,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
+    },
+    {
+      "id": "street_jernbanegata_gjovik",
+      "kind": "free_text",
+      "query": "Jernbanegata Gjøvik",
+      "tags": [
+        "street"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Jernbanegata"
+      ],
+      "top_n": 5,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "Street ranking soft vs city POIs; report-only until top_n=3 stable across builds."
+    },
+    {
+      "id": "address_karl_johan_31",
+      "kind": "free_text",
+      "query": "Karl Johans gate 31 Oslo",
+      "tags": [
+        "address"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Karl Johans gate 31"
+      ],
+      "top_n": 3,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "House-number rank can place brand/hotel above exact address; known medium."
+    },
+    {
+      "id": "address_storgata_lillehammer_1",
+      "kind": "free_text",
+      "query": "Storgata 1 Lillehammer",
+      "tags": [
+        "address"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Storgata 1"
+      ],
+      "top_n": 3,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "House-number rank soft; known medium."
+    },
+    {
+      "id": "address_strandgata_hamar_13",
+      "kind": "free_text",
+      "query": "Strandgata 13 Hamar",
+      "tags": [
+        "address"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Strandgata 13"
+      ],
+      "top_n": 3,
+      "notes": "Suite originally asked for Strandgata 10; that house number does not exist in Hamar OSM/place_index.",
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "House-number rank soft; suite retargeted from non-existent Strandgata 10."
+    },
+    {
+      "id": "postcode_2609",
+      "kind": "free_text",
+      "query": "2609",
+      "tags": [
+        "postcode"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_address_any": [
+        "Lillehammer"
+      ],
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "Bare postcode queries often return street Feature hits (not Postcode kind) with empty GetAddress(); locality may be missing in CoMaps data for those rows. Non-gating until address/locality is present on the hit."
+    },
+    {
+      "id": "postcode_2317",
+      "kind": "free_text",
+      "query": "2317 Hamar",
+      "tags": [
+        "postcode"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_address_any": [
+        "Hamar"
+      ],
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "Postcode result shape varies; address substring check only."
+    },
+    {
+      "id": "postcode_2815",
+      "kind": "free_text",
+      "query": "2815",
+      "tags": [
+        "postcode"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_address_any": [
+        "Gjøvik"
+      ],
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "Bare postcode queries often return street Feature hits (not Postcode kind) with empty GetAddress(); locality may be missing in CoMaps data for those rows. Non-gating until address/locality is present on the hit."
+    },
+    {
+      "id": "cabin_rondvassbu",
+      "kind": "free_text",
+      "query": "Rondvassbu",
+      "tags": [
+        "cabin"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Rondvassbu"
+      ],
+      "top_n": 2,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
+    },
+    {
+      "id": "cabin_spiterstulen",
+      "kind": "free_text",
+      "query": "Spiterstulen",
+      "tags": [
+        "cabin"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Spiterstulen"
+      ],
+      "top_n": 2,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
+    },
+    {
+      "id": "cabin_gjendebu",
+      "kind": "free_text",
+      "query": "Gjendebu",
+      "tags": [
+        "cabin"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Gjendebu"
+      ],
+      "top_n": 2,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
+    },
+    {
+      "id": "cabin_glitterheim",
+      "kind": "free_text",
+      "query": "Glitterheim",
+      "tags": [
+        "cabin"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Glitterheim"
+      ],
+      "top_n": 2,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
+    },
+    {
+      "id": "shelter_gapahuk",
+      "kind": "free_text",
+      "query": "gapahuk",
+      "tags": [
+        "shelter"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "near": {
+        "lat": 61.1153,
+        "lon": 10.4662
+      },
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.1153,
+        "lon": 10.4662
+      },
+      "non_gating_reason": "CoMaps has no shelter category group; free-text recall soft."
+    },
+    {
+      "id": "shelter_ly",
+      "kind": "free_text",
+      "query": "ly",
+      "tags": [
+        "shelter"
+      ],
+      "confidence": "medium",
+      "min_results": 0,
+      "near": {
+        "lat": 60.7945,
+        "lon": 11.068
+      },
+      "user_context": {
+        "locale": "nb",
+        "lat": 60.7945,
+        "lon": 11.068
+      },
+      "non_gating_reason": "CoMaps has no shelter category group; free-text recall soft (min_results=0)."
+    },
+    {
+      "id": "water_category_lillehammer",
+      "kind": "category",
+      "query": "category_water",
+      "tags": [
+        "water",
+        "category"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "near": {
+        "lat": 61.1153,
+        "lon": 10.4662
+      },
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.1153,
+        "lon": 10.4662
+      }
+    },
+    {
+      "id": "water_drikkevann",
+      "kind": "free_text",
+      "query": "drikkevann",
+      "tags": [
+        "water"
+      ],
+      "confidence": "medium",
+      "min_results": 0,
+      "near": {
+        "lat": 61.1153,
+        "lon": 10.4662
+      },
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.1153,
+        "lon": 10.4662
+      },
+      "non_gating_reason": "Locale synonym coverage for drinking water varies; min_results=0."
+    },
+    {
+      "id": "water_kilde",
+      "kind": "free_text",
+      "query": "kilde",
+      "tags": [
+        "water"
+      ],
+      "confidence": "medium",
+      "min_results": 0,
+      "near": {
+        "lat": 60.7957,
+        "lon": 10.6915
+      },
+      "user_context": {
+        "locale": "nb",
+        "lat": 60.7957,
+        "lon": 10.6915
+      },
+      "non_gating_reason": "Locale synonym coverage for spring/source varies; min_results=0."
+    },
+    {
+      "id": "fuel_category_hamar",
+      "kind": "category",
+      "query": "category_fuel",
+      "tags": [
+        "fuel",
+        "category"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "near": {
+        "lat": 60.7945,
+        "lon": 11.068
+      },
+      "user_context": {
+        "locale": "nb",
+        "lat": 60.7945,
+        "lon": 11.068
+      }
+    },
+    {
+      "id": "fuel_category_oslo",
+      "kind": "category",
+      "query": "category_fuel",
+      "tags": [
+        "fuel",
+        "category"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "near": {
+        "lat": 59.9139,
+        "lon": 10.7522
+      },
+      "user_context": {
+        "locale": "nb",
+        "lat": 59.9139,
+        "lon": 10.7522
+      }
+    },
+    {
+      "id": "fuel_circle_k_hamar",
+      "kind": "free_text",
+      "query": "Circle K Hamar",
+      "tags": [
+        "fuel",
+        "brand"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Circle K"
+      ],
+      "top_n": 5,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "Brand free-text ranking soft vs category fuel."
+    },
+    {
+      "id": "ev_category_lillehammer",
+      "kind": "category",
+      "query": "charging_station",
+      "tags": [
+        "ev",
+        "category"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "near": {
+        "lat": 61.1153,
+        "lon": 10.4662
+      },
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.1153,
+        "lon": 10.4662
+      }
+    },
+    {
+      "id": "ev_category_gjovik",
+      "kind": "category",
+      "query": "charging_station",
+      "tags": [
+        "ev",
+        "category"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "near": {
+        "lat": 60.7957,
+        "lon": 10.6915
+      },
+      "user_context": {
+        "locale": "nb",
+        "lat": 60.7957,
+        "lon": 10.6915
+      }
+    },
+    {
+      "id": "ev_lading_elverum",
+      "kind": "free_text",
+      "query": "lading Elverum",
+      "tags": [
+        "ev"
+      ],
+      "confidence": "medium",
+      "min_results": 0,
+      "near": {
+        "lat": 60.8819,
+        "lon": 11.5623
+      },
+      "user_context": {
+        "locale": "nb",
+        "lat": 60.8819,
+        "lon": 11.5623
+      },
+      "non_gating_reason": "Norwegian EV synonym free-text soft; min_results=0."
+    },
+    {
+      "id": "misspell_lilehammer",
+      "kind": "free_text",
+      "query": "Lilehammer",
+      "tags": [
+        "misspelling"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Lillehammer"
+      ],
+      "top_n": 3,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "Fuzzy/misspelling recall is best-effort."
+    },
+    {
+      "id": "misspell_gjovik_ascii",
+      "kind": "free_text",
+      "query": "Gjovik",
+      "tags": [
+        "misspelling",
+        "aeoa"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Gjøvik"
+      ],
+      "top_n": 3,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "ASCII fold of æøå is best-effort."
+    },
+    {
+      "id": "misspell_kongsvinge",
+      "kind": "free_text",
+      "query": "Kongsvinge",
+      "tags": [
+        "misspelling"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Kongsvinger"
+      ],
+      "top_n": 3,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "Fuzzy/misspelling recall is best-effort."
+    },
+    {
+      "id": "misspell_rondvasbu",
+      "kind": "free_text",
+      "query": "Rondvasbu",
+      "tags": [
+        "misspelling",
+        "cabin"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Rondvassbu"
+      ],
+      "top_n": 3,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "Fuzzy/misspelling recall is best-effort."
+    },
+    {
+      "id": "aeoa_honefoss",
+      "kind": "free_text",
+      "query": "Hønefoss",
+      "tags": [
+        "aeoa",
+        "town"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Hønefoss"
+      ],
+      "top_n": 2,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      }
+    },
+    {
+      "id": "aeoa_amot",
+      "kind": "free_text",
+      "query": "Åmot",
+      "tags": [
+        "aeoa",
+        "town"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Åmot"
+      ],
+      "top_n": 3,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "Ambiguous short place name; ranking soft."
+    },
+    {
+      "id": "aeoa_tonsberg",
+      "kind": "free_text",
+      "query": "Tønsberg",
+      "tags": [
+        "aeoa",
+        "town"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Tønsberg"
+      ],
+      "top_n": 2,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.0,
+        "lon": 10.5
+      },
+      "non_gating_reason": "Outside primary Ostlandet leaf focus; ranking soft."
+    },
+    {
+      "id": "reverse_lillehammer_storgata",
+      "kind": "reverse",
+      "lat": 61.11535,
+      "lon": 10.46635,
+      "tags": [
+        "reverse"
+      ],
+      "confidence": "high",
+      "expect_street_any": [
+        "Storgata"
+      ],
+      "max_distance_m": 150,
+      "user_context": {
+        "locale": "nb",
+        "lat": 61.11535,
+        "lon": 10.46635
+      }
+    },
+    {
+      "id": "reverse_hamar_strandgata",
+      "kind": "reverse",
+      "lat": 60.794125,
+      "lon": 11.07143,
+      "tags": [
+        "reverse"
+      ],
+      "confidence": "medium",
+      "expect_street_any": [
+        "Strandgata"
+      ],
+      "max_distance_m": 150,
+      "notes": "Pin on Strandgata 53; previous pin was at Stortorget/Storhamargata.",
+      "user_context": {
+        "locale": "nb",
+        "lat": 60.794125,
+        "lon": 11.07143
+      },
+      "non_gating_reason": "Reverse geocode pin-sensitive; report-only after pin fix."
+    },
+    {
+      "id": "reverse_oslo_karl_johan",
+      "kind": "reverse",
+      "lat": 59.9133,
+      "lon": 10.7407,
+      "tags": [
+        "reverse"
+      ],
+      "confidence": "high",
+      "expect_street_any": [
+        "Karl Johans gate"
+      ],
+      "max_distance_m": 150,
+      "user_context": {
+        "locale": "nb",
+        "lat": 59.9133,
+        "lon": 10.7407
+      }
+    },
+    {
+      "id": "reverse_gjovik_storgata",
+      "kind": "reverse",
+      "lat": 60.79568,
+      "lon": 10.69102,
+      "tags": [
+        "reverse"
+      ],
+      "confidence": "medium",
+      "expect_street_any": [
+        "Storgata"
+      ],
+      "max_distance_m": 150,
+      "notes": "Pin on Storgata 3; previous pin was between Hunnsvegen and Storgata.",
+      "user_context": {
+        "locale": "nb",
+        "lat": 60.79568,
+        "lon": 10.69102
+      },
+      "non_gating_reason": "Reverse geocode pin-sensitive; report-only after pin fix."
+    },
+    {
+      "id": "reverse_elverum_storgata",
+      "kind": "reverse",
+      "lat": 60.8819,
+      "lon": 11.5623,
+      "tags": [
+        "reverse"
+      ],
+      "confidence": "medium",
+      "expect_street_any": [
+        "Storgata"
+      ],
+      "max_distance_m": 150,
+      "user_context": {
+        "locale": "nb",
+        "lat": 60.8819,
+        "lon": 11.5623
+      },
+      "non_gating_reason": "Reverse geocode pin-sensitive on Storgata corridor."
+    }
+  ],
+  "default_user_context": {
+    "locale": "nb",
+    "lat": 61.0,
+    "lon": 10.5,
+    "notes": "Norwegian device language; user in central Ostlandet (camera-style bias)."
+  },
+  "app_search_context": {
+    "locale": "Locale.getDefault().language (fallback en)",
+    "position": "camera / bias lat,lon when finite and non-(0,0); else hasPosition=false",
+    "viewport": "none — comapsSearchClearViewport / Everywhere (no comapsSearchSetViewport)",
+    "mode": "Everywhere free-text (isCategory=false)",
+    "max_results": 80,
+    "category_hints": "none in ComapsSearchBridge; category chips resolve synonyms then free-text or suite uses isCategory=true with same locale/position/viewport",
+    "country_hints": "none in ComapsSearchBridge (FTS path may use visible region separately)"
+  }
+}

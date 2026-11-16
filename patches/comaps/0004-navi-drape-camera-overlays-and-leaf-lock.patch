@@ -1,0 +1,905 @@
+diff --git a/android/sdk/src/main/cpp/CMakeLists.txt b/android/sdk/src/main/cpp/CMakeLists.txt
+index ff3a230c3..6a8f1cd48 100644
+--- a/android/sdk/src/main/cpp/CMakeLists.txt
++++ b/android/sdk/src/main/cpp/CMakeLists.txt
+@@ -97,11 +97,12 @@ set(SRC
+   app/organicmaps/sdk/vulkan/android_vulkan_context_factory.cpp
+   navi/navi_comaps.cpp
+   navi/navi_comaps.h
++  navi/navi_drape.cpp
+ )
+ 
+ omim_add_library(${PROJECT_NAME} SHARED ${SRC})
+ target_compile_options(${PROJECT_NAME} PRIVATE -fvisibility=default)
+-set_source_files_properties(navi/navi_comaps.cpp PROPERTIES COMPILE_FLAGS "-fvisibility=default")
++set_source_files_properties(navi/navi_comaps.cpp navi/navi_drape.cpp PROPERTIES COMPILE_FLAGS "-fvisibility=default")
+ 
+ target_include_directories(${PROJECT_NAME} PRIVATE .)
+ 
+diff --git a/android/sdk/src/main/cpp/navi/navi_comaps.cpp b/android/sdk/src/main/cpp/navi/navi_comaps.cpp
+index 159740385..4198f5607 100644
+--- a/android/sdk/src/main/cpp/navi/navi_comaps.cpp
++++ b/android/sdk/src/main/cpp/navi/navi_comaps.cpp
+@@ -148,6 +148,13 @@ void ApplyAvoidSettings(routing::VehicleType vt)
+ }
+ }  // namespace
+ 
++namespace
++{
++std::atomic<bool> g_platformLocked{false};
++}  // namespace
++
++extern "C" void navi_comaps_set_platform_locked(int locked) { g_platformLocked.store(locked != 0); }
++
+ extern "C" NaviComapsCode navi_comaps_init(char const * storage_path, char const * writable_path,
+                                            char const * sidecar_dir)
+ {
+@@ -160,16 +167,24 @@ extern "C" NaviComapsCode navi_comaps_init(char const * storage_path, char const
+     setenv("NAVI_COMAPS_HEADLESS", "1", 0);
+     jni::EnsureJvmFromProcess();
+     auto & platform = GetPlatform();
+-    platform.SetResourceDir(storage_path);
+-    platform.SetWritableDirForTests(writable_path);
+-    platform.SetSettingsDir(writable_path);
++    // Drape (Framework) live: it already owns these directories and the style; moving the
++    // resource dir back to the MWM root would break its lazy APK reads (fonts, symbols).
++    bool const locked = g_platformLocked.load();
++    if (!locked)
++    {
++      platform.SetResourceDir(storage_path);
++      platform.SetWritableDirForTests(writable_path);
++      platform.SetSettingsDir(writable_path);
++    }
+     if (sidecar_dir && sidecar_dir[0] != '\0')
+       setenv("NAVI_WETLAND_SIDECAR_DIR", sidecar_dir, 1);
+     else
+       unsetenv("NAVI_WETLAND_SIDECAR_DIR");
+ 
+-    LOG(LINFO, ("navi_comaps_init resource=", storage_path, " writable=", writable_path));
+-    GetStyleReader().SetCurrentStyle(kDefaultMapStyle);
++    LOG(LINFO, ("navi_comaps_init resource=", storage_path, " writable=", writable_path,
++                " platform_locked=", locked));
++    if (!locked)
++      GetStyleReader().SetCurrentStyle(kDefaultMapStyle);
+     g_builder = std::make_unique<routing::routes_builder::RoutesBuilder>(1 /* threads */);
+     if (!g_builder)
+     {
+@@ -333,6 +348,8 @@ extern "C" NaviComapsCode navi_comaps_route(NaviComapsProfile profile, double fr
+       }
+     }
+     out->turns_json = strdup(route.m_turnsJson.empty() ? "[]" : route.m_turnsJson.c_str());
++    out->speed_limits_json =
++        strdup(route.m_speedLimitsJson.empty() ? "[]" : route.m_speedLimitsJson.c_str());
+     out->elevation_json =
+         strdup(route.m_elevationJson.empty() ? "[]" : route.m_elevationJson.c_str());
+     out->router_mode =
+@@ -361,6 +378,8 @@ extern "C" void navi_comaps_free_route(NaviComapsRouteResult * result)
+   std::free(result->turns_json);
+   std::free(result->elevation_json);
+   std::free(result->router_mode);
++  std::free(result->speed_limits_json);
++  result->speed_limits_json = nullptr;
+   result->points = nullptr;
+   result->error_message = nullptr;
+   result->turns_json = nullptr;
+@@ -800,6 +819,36 @@ extern "C" char * navi_comaps_category_query(char const * key, char const * loca
+ 
+ extern "C" void navi_comaps_free_string(char * s) { std::free(s); }
+ 
++namespace
++{
++std::mutex g_leafMu;
++std::shared_ptr<storage::CountryInfoGetter> g_leafInfo;
++}  // namespace
++
++extern "C" char * navi_comaps_leaf_for_point(double lat, double lon)
++{
++  if (!g_inited.load())
++    return nullptr;
++  try
++  {
++    std::shared_ptr<storage::CountryInfoGetter> info;
++    {
++      std::lock_guard lock(g_leafMu);
++      if (!g_leafInfo)
++        g_leafInfo = storage::CountryInfoReader::CreateCountryInfoGetter(GetPlatform());
++      info = g_leafInfo;
++    }
++    if (!info)
++      return nullptr;
++    return strdup(info->GetRegionCountryId(mercator::FromLatLon(lat, lon)).c_str());
++  }
++  catch (std::exception const & e)
++  {
++    LOG(LERROR, ("navi_comaps_leaf_for_point exception:", e.what()));
++    return nullptr;
++  }
++}
++
+ extern "C" NaviComapsCode navi_comaps_reverse_geocode(double lat, double lon, NaviComapsAddress * out)
+ {
+   if (!out)
+diff --git a/android/sdk/src/main/cpp/navi/navi_comaps.h b/android/sdk/src/main/cpp/navi/navi_comaps.h
+index 9d4b4ef46..69196e53f 100644
+--- a/android/sdk/src/main/cpp/navi/navi_comaps.h
++++ b/android/sdk/src/main/cpp/navi/navi_comaps.h
+@@ -67,6 +67,9 @@ typedef struct NaviComapsRouteResult {
+   char * elevation_json;
+   /* "Joints" | "Leaps" | "NoLeaps" | "Unknown" — diagnostic. */
+   char * router_mode;
++  /* JSON int array, one entry per polyline segment (i = segment between point i and i+1):
++   * posted maxspeed km/h, -1 untagged / not applicable, -2 explicitly unlimited. May be NULL. */
++  char * speed_limits_json;
+ } NaviComapsRouteResult;
+ 
+ /* storage_path: directory containing CoMaps data/ + writable maps dir with .mwm.
+@@ -75,13 +78,26 @@ typedef struct NaviComapsRouteResult {
+ NaviComapsCode navi_comaps_init(char const * storage_path, char const * writable_path,
+                                 char const * sidecar_dir);
+ 
++/* While the drape Framework is alive it owns the Platform resource / writable / settings
++ * directories and the map style. With the lock set, navi_comaps_init() only rebuilds the
++ * RoutesBuilder (re-registers MWMs) and leaves Platform and style untouched, so a leaf
++ * download can re-init the router without moving the resource dir under a live drape. */
++void navi_comaps_set_platform_locked(int locked);
++
++/* CoMaps country (leaf) id containing the point according to packed_polygons / countries.txt
++ * (e.g. "Norway_Oppland"), or "" when the point is outside every country (sea). Caller frees
++ * with navi_comaps_free_string. NULL on error / not initialised. */
++char * navi_comaps_leaf_for_point(double lat, double lon);
++
+ /* Register/refresh MWMs under writable_path (Phase 1 layout). */
+ NaviComapsCode navi_comaps_register_mwms(void);
+ 
+ /* Enable/disable wetland Soft×5 / Hard≈forbid (env gate + loader). */
+ void navi_comaps_set_wetland_hook(int enabled);
+ /* Install Rust SidecarReader-backed lookup; pass NULL to clear. */
+-typedef uint8_t (*NaviComapsWetlandLookupFn)(uint32_t feature_id, uint32_t segment_idx, int forward);
++/** mwm_name: CoMaps leaf id of the segment (feature ids are per MWM). */
++typedef uint8_t (*NaviComapsWetlandLookupFn)(char const * mwm_name, uint32_t feature_id, uint32_t segment_idx,
++                                             int forward);
+ void navi_comaps_set_wetland_lookup(NaviComapsWetlandLookupFn fn);
+ /** EL02 elevation override for one MWM leaf (`mwm_name` e.g. "Norway_Oppland").
+  *  Return 1 and write absolute altitude (dm) when present. */
+diff --git a/android/sdk/src/main/cpp/navi/navi_drape.cpp b/android/sdk/src/main/cpp/navi/navi_drape.cpp
+new file mode 100644
+index 000000000..00fbad1bd
+--- /dev/null
++++ b/android/sdk/src/main/cpp/navi/navi_drape.cpp
+@@ -0,0 +1,407 @@
++// Navi: JNI entry points that let an external app (Navi) drive the CoMaps drape the way the
++// CoMaps app does: camera (centre, fractional scale, azimuth), my-position follow modes,
++// navigation camera, route lines and user marks/tracks used as overlays.
++//
++// Java side: app.organicmaps.sdk.NaviDrape (compiled into the Navi app, not the CoMaps SDK).
++#include "app/organicmaps/sdk/Framework.hpp"
++#include "app/organicmaps/sdk/core/jni_helper.hpp"
++
++#include "map/bookmark_manager.hpp"
++#include "map/framework.hpp"
++#include "map/routing_mark.hpp"
++
++#include "drape_frontend/route_renderer.hpp"
++#include "drape_frontend/drape_engine.hpp"
++#include "drape_frontend/route_shape.hpp"
++#include "drape_frontend/visual_params.hpp"
++
++#include "indexer/scales.hpp"
++
++#include "geometry/angles.hpp"
++#include "geometry/any_rect2d.hpp"
++#include "geometry/mercator.hpp"
++#include "geometry/polyline2d.hpp"
++
++#include "kml/types.hpp"
++
++#include "platform/settings.hpp"
++
++#include <algorithm>
++#include <cmath>
++#include <mutex>
++#include <string>
++#include <vector>
++
++namespace
++{
++std::mutex g_routeMu;
++std::vector<dp::DrapeID> g_subroutes;
++
++double ToRad(double deg) { return deg * math::pi / 180.0; }
++double ToDeg(double rad) { return rad * 180.0 / math::pi; }
++}  // namespace
++
++extern "C"
++{
++// Camera ---------------------------------------------------------------------------------------
++
++// level < 0 keeps the current scale; a bearing outside +-720 keeps the current rotation. bearingDeg is the map
++// bearing (clockwise from north that points to the top of the screen).
++JNIEXPORT void JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeSetCamera(JNIEnv *, jclass, jdouble lat, jdouble lon,
++                                                                         jdouble level, jdouble bearingDeg,
++                                                                         jboolean anim)
++{
++  auto * f = frm();
++  auto engine = f->GetDrapeEngine();
++  if (!engine)
++    return;
++  ScreenBase const & screen = f->GetCurrentModelView();
++  m2::RectD const px = screen.PixelRectIn3d();
++  if (px.SizeX() <= 0.0 || px.SizeY() <= 0.0)
++    return;
++  double const scale = level > 0.0 ? df::GetScreenScale(level) : screen.GetScale();
++  // CoMaps builds with -ffast-math, so NaN is not a usable "keep" sentinel: |bearing| > 720 keeps it.
++  bool const keepBearing = bearingDeg > 720.0 || bearingDeg < -720.0;
++  double const angle = keepBearing ? screen.GetAngle() : -ToRad(bearingDeg);
++  double const hw = px.SizeX() * 0.5 * scale;
++  double const hh = px.SizeY() * 0.5 * scale;
++  m2::AnyRectD const rect(mercator::FromLatLon(lat, lon), ang::AngleD(angle), m2::RectD(-hw, -hh, hw, hh));
++  engine->SetModelViewAnyRect(rect, anim, false /* useVisibleViewport */);
++}
++
++// [lat, lon, level, bearingDeg, pitchDeg, widthPx, heightPx, followMode]
++JNIEXPORT jdoubleArray JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeGetCamera(JNIEnv * env, jclass)
++{
++  auto * f = frm();
++  ScreenBase const & s = f->GetCurrentModelView();
++  auto const ll = mercator::ToLatLon(s.GetOrg());
++  m2::RectD const px = s.PixelRectIn3d();
++  double const v[8] = {ll.m_lat,
++                       ll.m_lon,
++                       df::GetZoomLevel(s.GetScale()),
++                       -ToDeg(s.GetAngle()),
++                       s.isPerspective() ? ToDeg(s.GetRotationAngle()) : 0.0,
++                       px.SizeX(),
++                       px.SizeY(),
++                       g_framework && g_framework->IsDrapeEngineCreated()
++                           ? static_cast<double>(g_framework->GetMyPositionMode())
++                           : -1.0};
++  jdoubleArray arr = env->NewDoubleArray(8);
++  env->SetDoubleArrayRegion(arr, 0, 8, v);
++  return arr;
++}
++
++// Rotate to a map bearing (clockwise from north) about the visible centre; keeps a follow mode.
++JNIEXPORT void JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeRotateTo(JNIEnv *, jclass, jdouble bearingDeg,
++                                                                        jboolean anim)
++{
++  frm()->Rotate(-ToRad(bearingDeg), anim);
++}
++
++// Fit a lat/lon box into the viewport (route overview).
++JNIEXPORT void JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeFitRect(JNIEnv *, jclass, jdouble minLat,
++                                                                       jdouble minLon, jdouble maxLat,
++                                                                       jdouble maxLon, jboolean anim)
++{
++  m2::RectD rect;
++  rect.Add(mercator::FromLatLon(minLat, minLon));
++  rect.Add(mercator::FromLatLon(maxLat, maxLon));
++  rect.Scale(1.15);
++  frm()->ShowRect(rect, -1 /* maxScale */, anim);
++}
++
++// Relative zoom around the visible centre (keeps a follow mode, unlike nativeSetCamera).
++JNIEXPORT void JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeScaleBy(JNIEnv *, jclass, jdouble factor,
++                                                                       jboolean anim)
++{
++  if (factor > 0.0)
++    frm()->Scale(factor, anim);
++}
++
++// mode: 0 = free (stop following), 1 = follow, 2 = follow and rotate (heading up).
++JNIEXPORT void JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeSetFollowMode(JNIEnv *, jclass, jint mode)
++{
++  auto engine = frm()->GetDrapeEngine();
++  if (!engine)
++    return;
++  if (mode <= 0)
++    engine->StopLocationFollow();
++  else
++    engine->SetMyPositionFollowMode(mode >= 2);
++}
++
++// Navigation camera as the CoMaps app uses while following a route: puck lower on the screen,
++// perspective when 3D is allowed (Framework.nativeSet3dMode), heading-up from the GPS bearing.
++JNIEXPORT void JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeSetNavigation(JNIEnv *, jclass, jboolean on,
++                                                                             jboolean pedestrian)
++{
++  auto engine = frm()->GetDrapeEngine();
++  if (!engine)
++    return;
++  if (on)
++  {
++    int const scale = pedestrian ? scales::GetPedestrianNavigationScale() : scales::GetNavigationScale();
++    int const scale3d = pedestrian ? scales::GetPedestrianNavigation3dScale() : scales::GetNavigation3dScale();
++    // allowRouteRotation=false: the arrow direction (GPS bearing) rotates the map; the route direction
++    // is only known to the CoMaps RoutingManager, which Navi does not drive.
++    engine->FollowRoute(scale, scale3d, false /* enableAutoZoom */, true /* isArrowGlued */,
++                        false /* allowRouteRotation */);
++  }
++  else
++  {
++    engine->DeactivateRouteFollowing();
++  }
++}
++
++JNIEXPORT void JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeBlockTapEvents(JNIEnv *, jclass, jboolean block)
++{
++  frm()->BlockTapEvents(block);
++}
++
++// [lat, lon] under the pixel (x, y) of the current model view.
++JNIEXPORT jdoubleArray JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeScreenToLatLon(JNIEnv * env, jclass, jfloat x,
++                                                                                      jfloat y)
++{
++  auto * f = frm();
++  auto const merc = f->P3dtoG(m2::PointD(x, y));
++  auto const ll = mercator::ToLatLon(merc);
++  double const v[2] = {ll.m_lat, ll.m_lon};
++  jdoubleArray arr = env->NewDoubleArray(2);
++  env->SetDoubleArrayRegion(arr, 0, 2, v);
++  return arr;
++}
++
++// Register leaf MWMs that appeared in the writable dir after the Framework was created.
++JNIEXPORT void JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeRegisterMaps(JNIEnv *, jclass)
++{
++  if (g_framework)
++    g_framework->AddLocalMaps();
++}
++
++// CoMaps settings.ini string (e.g. PreferredGraphicsAPI = Vulkan | OpenGLES3).
++JNIEXPORT void JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeSetSetting(JNIEnv * env, jclass, jstring jkey,
++                                                                          jstring jvalue)
++{
++  settings::Set(jni::ToNativeString(env, jkey), jni::ToNativeString(env, jvalue));
++}
++
++// Overlays -------------------------------------------------------------------------------------
++
++JNIEXPORT jlong JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeCreateGroup(JNIEnv * env, jclass, jstring jname)
++{
++  auto & bm = frm()->GetBookmarkManager();
++  auto const id = bm.CreateBookmarkCategory(jni::ToNativeString(env, jname), false /* autoSave */);
++  bm.GetEditSession().SetIsVisible(id, true);
++  return static_cast<jlong>(id);
++}
++
++// Replace the content of a group with point marks. latlon = [lat0, lon0, lat1, lon1, ...];
++// icons are kml::BookmarkIcon values, colors kml::PredefinedColor values.
++JNIEXPORT void JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeSetMarks(JNIEnv * env, jclass, jlong group,
++                                                                        jdoubleArray jlatlon, jobjectArray jnames,
++                                                                        jintArray jicons, jintArray jcolors)
++{
++  auto & bm = frm()->GetBookmarkManager();
++  auto es = bm.GetEditSession();
++  auto const gid = static_cast<kml::MarkGroupId>(group);
++  es.ClearGroup(gid);
++
++  jsize const n = env->GetArrayLength(jicons);
++  std::vector<double> latlon(static_cast<size_t>(n) * 2);
++  std::vector<jint> icons(static_cast<size_t>(n)), colors(static_cast<size_t>(n));
++  if (n > 0)
++  {
++    env->GetDoubleArrayRegion(jlatlon, 0, n * 2, latlon.data());
++    env->GetIntArrayRegion(jicons, 0, n, icons.data());
++    env->GetIntArrayRegion(jcolors, 0, n, colors.data());
++  }
++  for (jsize i = 0; i < n; ++i)
++  {
++    kml::BookmarkData data;
++    data.m_point = mercator::FromLatLon(latlon[2 * i], latlon[2 * i + 1]);
++    data.m_icon = static_cast<kml::BookmarkIcon>(icons[i]);
++    data.m_color.m_predefinedColor = static_cast<kml::PredefinedColor>(colors[i]);
++    data.m_visible = true;
++    jstring js = static_cast<jstring>(env->GetObjectArrayElement(jnames, i));
++    if (js)
++    {
++      kml::SetDefaultStr(data.m_name, jni::ToNativeString(env, js));
++      env->DeleteLocalRef(js);
++    }
++    es.CreateBookmark(std::move(data), gid);
++  }
++  es.SetIsVisible(gid, true);
++}
++
++// Replace the content of a group with polylines. counts[i] = number of points of line i; points are
++// flattened [lat, lon, ...]; argb[i] = 0xAARRGGBB; widths[i] in dp-ish pixels.
++JNIEXPORT void JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeSetTracks(JNIEnv * env, jclass, jlong group,
++                                                                         jintArray jcounts, jdoubleArray jlatlon,
++                                                                         jintArray jargb, jfloatArray jwidths)
++{
++  auto & bm = frm()->GetBookmarkManager();
++  auto es = bm.GetEditSession();
++  auto const gid = static_cast<kml::MarkGroupId>(group);
++  es.ClearGroup(gid);
++
++  jsize const lines = env->GetArrayLength(jcounts);
++  if (lines == 0)
++    return;
++  std::vector<jint> counts(lines), argb(lines);
++  std::vector<jfloat> widths(lines);
++  env->GetIntArrayRegion(jcounts, 0, lines, counts.data());
++  env->GetIntArrayRegion(jargb, 0, lines, argb.data());
++  env->GetFloatArrayRegion(jwidths, 0, lines, widths.data());
++  jsize const total = env->GetArrayLength(jlatlon);
++  std::vector<double> latlon(total);
++  env->GetDoubleArrayRegion(jlatlon, 0, total, latlon.data());
++
++  size_t offset = 0;
++  for (jsize i = 0; i < lines; ++i)
++  {
++    size_t const cnt = static_cast<size_t>(std::max(0, counts[i]));
++    if (cnt < 2 || (offset + cnt) * 2 > static_cast<size_t>(total))
++    {
++      offset += cnt;
++      continue;
++    }
++    kml::TrackData td;
++    kml::MultiGeometry::LineT line;
++    line.reserve(cnt);
++    for (size_t k = 0; k < cnt; ++k)
++    {
++      auto const merc = mercator::FromLatLon(latlon[2 * (offset + k)], latlon[2 * (offset + k) + 1]);
++      line.emplace_back(merc, geometry::kInvalidAltitude);
++    }
++    offset += cnt;
++    td.m_geometry.m_lines.push_back(std::move(line));
++    kml::TrackLayer layer;
++    layer.m_lineWidth = widths[i];
++    uint32_t const c = static_cast<uint32_t>(argb[i]);
++    // kml colour is RGBA.
++    layer.m_color.m_rgba = ((c & 0x00FFFFFFu) << 8) | ((c >> 24) & 0xFFu);
++    td.m_layers.push_back(layer);
++    td.m_visible = true;
++    if (auto * track = es.CreateTrack(std::move(td)))
++      es.AttachTrack(track->GetId(), gid);
++  }
++  es.SetIsVisible(gid, true);
++}
++
++// Route line drawn by the drape's route renderer (CoMaps route style). type: 0 car, 1 pedestrian,
++// 2 bicycle. turnIdx = polyline point indices that get a turn arrow. Returns nothing; use
++// nativeClearRoute to remove every subroute added so far.
++JNIEXPORT void JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeAddSubroute(JNIEnv * env, jclass,
++                                                                           jdoubleArray jlatlon, jint type,
++                                                                           jintArray jturnIdx)
++{
++  auto engine = frm()->GetDrapeEngine();
++  if (!engine)
++    return;
++  jsize const n2 = env->GetArrayLength(jlatlon);
++  size_t const n = static_cast<size_t>(n2 / 2);
++  if (n < 2)
++    return;
++  std::vector<double> latlon(n2);
++  env->GetDoubleArrayRegion(jlatlon, 0, n2, latlon.data());
++
++  std::vector<m2::PointD> pts;
++  pts.reserve(n);
++  std::vector<double> cum(n, 0.0);
++  for (size_t i = 0; i < n; ++i)
++  {
++    pts.push_back(mercator::FromLatLon(latlon[2 * i], latlon[2 * i + 1]));
++    if (i)
++      cum[i] = cum[i - 1] + pts[i].Length(pts[i - 1]);
++  }
++
++  auto subroute = std::make_shared<df::Subroute>();
++  subroute->m_baseDistance = 0.0;
++  subroute->m_baseDepthIndex = 0.0;
++  subroute->m_headFakeDistance = -1.0;
++  subroute->m_tailFakeDistance = cum.back() + 1.0;
++  subroute->m_polyline = m2::PolylineD(std::move(pts));
++  switch (type)
++  {
++  case 1:
++    subroute->m_routeType = df::RouteType::Pedestrian;
++    subroute->AddStyle(df::SubrouteStyle(df::kRoutePedestrian, df::RoutePattern(4.0, 2.0)));
++    break;
++  case 2:
++    subroute->m_routeType = df::RouteType::Bicycle;
++    subroute->AddStyle(df::SubrouteStyle(df::kRouteBicycle, df::RoutePattern(8.0, 2.0)));
++    break;
++  default:
++    subroute->m_routeType = df::RouteType::Car;
++    subroute->AddStyle(df::SubrouteStyle(df::kRouteColor, df::kRouteOutlineColor));
++    break;
++  }
++  if (jturnIdx)
++  {
++    jsize const tn = env->GetArrayLength(jturnIdx);
++    std::vector<jint> idx(tn);
++    env->GetIntArrayRegion(jturnIdx, 0, tn, idx.data());
++    for (jint k : idx)
++      if (k > 0 && static_cast<size_t>(k) < n)
++        subroute->m_turns.push_back(cum[static_cast<size_t>(k)]);
++  }
++  auto const id = engine->AddSubroute(df::SubrouteConstPtr(subroute));
++  std::lock_guard lock(g_routeMu);
++  g_subroutes.push_back(id);
++}
++
++JNIEXPORT void JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeClearRoute(JNIEnv *, jclass)
++{
++  auto engine = frm()->GetDrapeEngine();
++  std::vector<dp::DrapeID> ids;
++  {
++    std::lock_guard lock(g_routeMu);
++    ids.swap(g_subroutes);
++  }
++  if (!engine)
++    return;
++  for (auto const id : ids)
++    engine->RemoveSubroute(id, false /* deactivateFollowing */);
++}
++
++// Start / intermediate / finish pins drawn as CoMaps route points. latlon = [lat, lon, ...] in
++// order start, vias..., finish; titles parallel. Empty arrays remove every route point.
++JNIEXPORT void JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeSetRoutePoints(JNIEnv * env, jclass,
++                                                                              jdoubleArray jlatlon,
++                                                                              jobjectArray jtitles)
++{
++  auto & rm = frm()->GetRoutingManager();
++  rm.RemoveRoutePoints();
++  jsize const n2 = jlatlon ? env->GetArrayLength(jlatlon) : 0;
++  size_t const n = static_cast<size_t>(n2 / 2);
++  if (n == 0)
++    return;
++  std::vector<double> latlon(n2);
++  env->GetDoubleArrayRegion(jlatlon, 0, n2, latlon.data());
++  for (size_t i = 0; i < n; ++i)
++  {
++    RouteMarkData d;
++    d.m_position = mercator::FromLatLon(latlon[2 * i], latlon[2 * i + 1]);
++    if (i == 0)
++      d.m_pointType = RouteMarkType::Start;
++    else if (i + 1 == n)
++      d.m_pointType = RouteMarkType::Finish;
++    else
++    {
++      d.m_pointType = RouteMarkType::Intermediate;
++      d.m_intermediateIndex = i - 1;
++    }
++    if (jtitles && static_cast<jsize>(i) < env->GetArrayLength(jtitles))
++    {
++      jstring js = static_cast<jstring>(env->GetObjectArrayElement(jtitles, static_cast<jsize>(i)));
++      if (js)
++      {
++        d.m_title = jni::ToNativeString(env, js);
++        env->DeleteLocalRef(js);
++      }
++    }
++    d.m_isVisible = true;
++    rm.AddRoutePoint(std::move(d), false /* reorderIntermediatePoints */);
++  }
++}
++}  // extern "C"
+diff --git a/libs/drape_frontend/drape_engine.cpp b/libs/drape_frontend/drape_engine.cpp
+index fcef4d9da..19534ea23 100644
+--- a/libs/drape_frontend/drape_engine.cpp
++++ b/libs/drape_frontend/drape_engine.cpp
+@@ -565,6 +565,15 @@ void DrapeEngine::SwitchMyPositionNextMode()
+                                   MessagePriority::Normal);
+ }
+ 
++void DrapeEngine::SetMyPositionFollowMode(bool rotate)
++{
++  using Mode = ChangeMyPositionModeMessage::EChangeType;
++  m_threadCommutator->PostMessage(
++      ThreadsCommutator::RenderThread,
++      make_unique_dp<ChangeMyPositionModeMessage>(rotate ? Mode::SetFollowAndRotate : Mode::SetFollow),
++      MessagePriority::Normal);
++}
++
+ void DrapeEngine::StartPendingPositionMode()
+ {
+   m_threadCommutator->PostMessage(ThreadsCommutator::RenderThread, make_unique_dp<StartPendingPositionModeMessage>(),
+diff --git a/libs/drape_frontend/drape_engine.hpp b/libs/drape_frontend/drape_engine.hpp
+index dd124e199..9c3cac09d 100644
+--- a/libs/drape_frontend/drape_engine.hpp
++++ b/libs/drape_frontend/drape_engine.hpp
+@@ -182,6 +182,7 @@ public:
+   void SetGpsInfo(location::GpsInfo const & info, df::NavigationContext const & navigationContext,
+                   location::RouteMatchingInfo const & routeInfo);
+   void SwitchMyPositionNextMode();
++  void SetMyPositionFollowMode(bool rotate);
+   void StartPendingPositionMode();
+   void LoseLocation();
+   void StopLocationFollow();
+diff --git a/libs/drape_frontend/frontend_renderer.cpp b/libs/drape_frontend/frontend_renderer.cpp
+index 13552d4c7..6977da01f 100644
+--- a/libs/drape_frontend/frontend_renderer.cpp
++++ b/libs/drape_frontend/frontend_renderer.cpp
+@@ -453,6 +453,12 @@ void FrontendRenderer::AcceptMessage(ref_ptr<Message> message)
+       m_myPositionController->NextMode(m_userEventStream.GetCurrentScreen());
+       break;
+     case ChangeMyPositionModeMessage::StopFollowing: m_myPositionController->StopLocationFollow(); break;
++    case ChangeMyPositionModeMessage::SetFollow:
++      m_myPositionController->NaviSetMode(location::Follow, m_userEventStream.GetCurrentScreen());
++      break;
++    case ChangeMyPositionModeMessage::SetFollowAndRotate:
++      m_myPositionController->NaviSetMode(location::FollowAndRotate, m_userEventStream.GetCurrentScreen());
++      break;
+     case ChangeMyPositionModeMessage::LoseLocation: m_myPositionController->LoseLocation(); break;
+     default: ASSERT(false, ("Unknown change type:", static_cast<int>(msg->GetChangeType()))); break;
+     }
+diff --git a/libs/drape_frontend/message_subclasses.hpp b/libs/drape_frontend/message_subclasses.hpp
+index 20dfc7b60..ab5b69f71 100644
+--- a/libs/drape_frontend/message_subclasses.hpp
++++ b/libs/drape_frontend/message_subclasses.hpp
+@@ -449,7 +449,10 @@ public:
+   {
+     SwitchNextMode,
+     LoseLocation,
+-    StopFollowing
++    StopFollowing,
++    // Navi: switch directly to a follow mode instead of cycling with SwitchNextMode.
++    SetFollow,
++    SetFollowAndRotate
+   };
+ 
+   explicit ChangeMyPositionModeMessage(EChangeType changeType) : m_changeType(changeType) {}
+diff --git a/libs/drape_frontend/my_position_controller.cpp b/libs/drape_frontend/my_position_controller.cpp
+index 9c0c7106f..8bb82ec03 100644
+--- a/libs/drape_frontend/my_position_controller.cpp
++++ b/libs/drape_frontend/my_position_controller.cpp
+@@ -472,6 +472,40 @@ void MyPositionController::NextMode(ScreenBase const & screen)
+   }
+ }
+ 
++void MyPositionController::NaviSetMode(location::EMyPositionMode target, ScreenBase const & screen)
++{
++  if (target != location::Follow && target != location::FollowAndRotate)
++    return;
++
++  m_desiredInitMode = target;
++  if (m_mode == location::NotFollowNoPosition)
++  {
++    ChangeMode(location::PendingPosition);
++    return;
++  }
++  if (!m_isPositionAssigned || m_mode == location::PendingPosition)
++    return;
++  if (m_mode == target)
++    return;
++
++  // Same zoom rule as NextMode(): from a country / world scale view zoom in to the position.
++  int preferredZoomLevel = kDoNotChangeZoom;
++  if (GetZoomLevel(screen) < kZoomThreshold)
++    preferredZoomLevel = std::min(GetZoomLevel(screen, m_position, m_errorRadius), kMaxScaleZoomLevel);
++
++  m_lastFollowMode = target;
++  ChangeMode(target, true);
++  if (target == location::Follow)
++  {
++    // North-up follow: also reset the rotation (as leaving follow-and-rotate does in NextMode()).
++    ChangeModelView(m_position, 0.0, m_visiblePixelRect.Center(), preferredZoomLevel);
++  }
++  else
++  {
++    UpdateViewport(preferredZoomLevel);
++  }
++}
++
+ void MyPositionController::StartPendingPositionMode()
+ {
+   if (m_mode == location::NotFollowNoPosition)
+@@ -590,17 +624,23 @@ void MyPositionController::OnLocationUpdate(location::GpsInfo const & info,
+   {
+     ChangeMode(m_isInRouting ? m_preferredRoutingMode : m_desiredInitMode, true);
+ 
++    // Navi: when the first fix arrives while a follow mode is already requested and the view is
++    // still at the country / world start scale, zoom to the position like the locate button does.
++    int firstFixZoom = kDoNotChangeZoom;
++    if (GetZoomLevel(screen) < kZoomThreshold)
++      firstFixZoom = std::min(GetZoomLevel(screen, m_position, m_errorRadius), kMaxScaleZoomLevel);
++
+     if (!m_hints.m_isFirstLaunch || !AnimationSystem::Instance().AnimationExists(Animation::Object::MapPlane))
+     {
+       if (m_mode == location::Follow)
+       {
+-        ChangeModelView(m_position, kDoNotChangeZoom);
++        ChangeModelView(m_position, firstFixZoom);
+       }
+       else if (m_mode == location::FollowAndRotate)
+       {
+         ChangeModelView(m_position, m_direction,
+                         m_isInRouting ? GetRoutingRotationPixelCenter() : m_visiblePixelRect.Center(),
+-                        kDoNotChangeZoom);
++                        firstFixZoom);
+       }
+     }
+   }
+diff --git a/libs/drape_frontend/my_position_controller.hpp b/libs/drape_frontend/my_position_controller.hpp
+index 25c62af69..571965a92 100644
+--- a/libs/drape_frontend/my_position_controller.hpp
++++ b/libs/drape_frontend/my_position_controller.hpp
+@@ -147,6 +147,8 @@ public:
+ 
+   void StopLocationFollow();
+   void NextMode(ScreenBase const & screen);
++  // Navi: go straight to Follow / FollowAndRotate (no cycling). Applied on the first fix when none yet.
++  void NaviSetMode(location::EMyPositionMode target, ScreenBase const & screen);
+   void LoseLocation();
+   location::EMyPositionMode GetCurrentMode() const { return m_mode; }
+   void StartPendingPositionMode();
+diff --git a/libs/map/framework.hpp b/libs/map/framework.hpp
+index a8ef7c3e4..28f274107 100644
+--- a/libs/map/framework.hpp
++++ b/libs/map/framework.hpp
+@@ -656,6 +656,8 @@ public:
+                             platform::Distance & distance, double & azimut);
+ 
+   /// @name Manipulating with model view
++  /// Navi: current model view (pixel size, scale, angle, perspective) for external camera control.
++  ScreenBase const & GetCurrentModelView() const { return m_currentModelView; }
+   m2::PointD PtoG(m2::PointD const & p) const { return m_currentModelView.PtoG(p); }
+   m2::PointD P3dtoG(m2::PointD const & p) const { return m_currentModelView.PtoG(m_currentModelView.P3dtoP(p)); }
+   m2::PointD GtoP(m2::PointD const & p) const { return m_currentModelView.GtoP(p); }
+diff --git a/libs/routing/navi_wetland_cost.cpp b/libs/routing/navi_wetland_cost.cpp
+index 832a77e15..19332e636 100644
+--- a/libs/routing/navi_wetland_cost.cpp
++++ b/libs/routing/navi_wetland_cost.cpp
+@@ -1,5 +1,9 @@
+ #include "routing/navi_wetland_cost.hpp"
+ 
++#include <mutex>
++#include <string>
++#include <vector>
++
+ namespace navi_spike
+ {
+ namespace
+@@ -7,6 +11,8 @@ namespace
+ WetlandLookupFn g_lookup = nullptr;
+ ElevationLookupFn g_elevLookup = nullptr;
+ bool g_bikeEnabled = false;
++std::mutex g_namesMu;
++std::vector<std::string> g_mwmNames;
+ constexpr double kSoftMult = 5.0;
+ constexpr double kHardMult = 1.0e6;
+ }  // namespace
+@@ -19,11 +25,28 @@ void WetlandSidecar::SetBikeEnabled(bool enabled) { g_bikeEnabled = enabled; }
+ 
+ bool WetlandSidecar::BikeEnabled() { return g_bikeEnabled && Enabled(); }
+ 
+-WetlandClass WetlandSidecar::Lookup(uint32_t featureId, uint32_t segmentIdx, bool forward)
++WetlandClass WetlandSidecar::Lookup(routing::NumMwmId mwmId, uint32_t featureId, uint32_t segmentIdx, bool forward)
+ {
+-  if (!g_lookup)
++  if (!g_lookup || mwmId == routing::kFakeNumMwmId)
++    return WetlandClass::None;
++  std::lock_guard<std::mutex> lock(g_namesMu);
++  if (mwmId >= g_mwmNames.size() || g_mwmNames[mwmId].empty())
+     return WetlandClass::None;
+-  return g_lookup(featureId, segmentIdx, forward);
++  return g_lookup(g_mwmNames[mwmId].c_str(), featureId, segmentIdx, forward);
++}
++
++void WetlandSidecar::ClearMwmNames()
++{
++  std::lock_guard<std::mutex> lock(g_namesMu);
++  g_mwmNames.clear();
++}
++
++void WetlandSidecar::SetMwmName(routing::NumMwmId mwmId, std::string const & name)
++{
++  std::lock_guard<std::mutex> lock(g_namesMu);
++  if (g_mwmNames.size() <= mwmId)
++    g_mwmNames.resize(static_cast<size_t>(mwmId) + 1);
++  g_mwmNames[mwmId] = name;
+ }
+ 
+ double WetlandSidecar::CostMultiplier(WetlandClass c)
+diff --git a/libs/routing/navi_wetland_cost.hpp b/libs/routing/navi_wetland_cost.hpp
+index 2c20f1c4c..2a76d32dd 100644
+--- a/libs/routing/navi_wetland_cost.hpp
++++ b/libs/routing/navi_wetland_cost.hpp
+@@ -7,6 +7,7 @@
+ #include "routing/segment.hpp"
+ 
+ #include <cstdint>
++#include <string>
+ 
+ namespace navi_spike
+ {
+@@ -18,7 +19,10 @@ enum class WetlandClass : uint8_t
+   HardAvoid = 2,
+ };
+ 
+-using WetlandLookupFn = WetlandClass (*)(uint32_t featureId, uint32_t segmentIdx, bool forward);
++/** `mwmName` is the CoMaps leaf id (e.g. "Norway_Oppland"): feature ids are per-MWM, so the
++ *  sidecar lookup must be limited to that leaf's reader. */
++using WetlandLookupFn = WetlandClass (*)(char const * mwmName, uint32_t featureId, uint32_t segmentIdx,
++                                         bool forward);
+ 
+ /** Returns true when an EL02 override exists for this MWM leaf; altitude in decimetres.
+  *  `mwmName` is the CoMaps country/leaf id (e.g. "Norway_Oppland") — feature ids are
+@@ -35,7 +39,10 @@ public:
+   /** When false (default), bicycle estimator skips Soft/Hard. Foot always applies. */
+   static void SetBikeEnabled(bool enabled);
+   static bool BikeEnabled();
+-  static WetlandClass Lookup(uint32_t featureId, uint32_t segmentIdx, bool forward);
++  static WetlandClass Lookup(routing::NumMwmId mwmId, uint32_t featureId, uint32_t segmentIdx, bool forward);
++  /** Router-side NumMwmId -> leaf name registry (filled when the RoutesBuilder registers maps). */
++  static void ClearMwmNames();
++  static void SetMwmName(routing::NumMwmId mwmId, std::string const & name);
+   static double CostMultiplier(WetlandClass c);
+ 
+   static void SetElevationLookup(ElevationLookupFn fn);
+@@ -47,8 +54,8 @@ inline double ApplyWetlandCost(routing::Segment const & segment, double weightSe
+ {
+   if (!WetlandSidecar::Enabled())
+     return weightSeconds;
+-  auto const cls = WetlandSidecar::Lookup(
+-      segment.GetFeatureId(), segment.GetSegmentIdx(), segment.IsForward());
++  auto const cls = WetlandSidecar::Lookup(segment.GetMwmId(), segment.GetFeatureId(), segment.GetSegmentIdx(),
++                                          segment.IsForward());
+   return weightSeconds * WetlandSidecar::CostMultiplier(cls);
+ }
+ 
+diff --git a/libs/routing/routes_builder/routes_builder.cpp b/libs/routing/routes_builder/routes_builder.cpp
+index 339b86dfc..ff1a0b058 100644
+--- a/libs/routing/routes_builder/routes_builder.cpp
++++ b/libs/routing/routes_builder/routes_builder.cpp
+@@ -123,6 +123,7 @@ RoutesBuilder::RoutesBuilder(size_t threadsNumber) : m_threadPool(threadsNumber)
+   classificator::Load();
+   std::vector<platform::LocalCountryFile> localFiles;
+   platform::FindAllLocalMapsAndCleanup(std::numeric_limits<int64_t>::max(), localFiles);
++  navi_spike::WetlandSidecar::ClearMwmNames();
+ 
+   std::vector<std::unique_ptr<FrozenDataSource>> dataSources;
+   for (size_t i = 0; i < threadsNumber; ++i)
+@@ -136,6 +137,7 @@ RoutesBuilder::RoutesBuilder(size_t threadsNumber) : m_threadPool(threadsNumber)
+       continue;
+ 
+     m_numMwmIds->RegisterFile(countryFile);
++    navi_spike::WetlandSidecar::SetMwmName(m_numMwmIds->GetId(countryFile), countryFile.GetName());
+ 
+     for (auto & dataSource : dataSources)
+     {
+@@ -439,6 +441,30 @@ RoutesBuilder::Result RoutesBuilder::Processor::operator()(Params const & params
+     routeResult.m_turnsJson = json.str();
+   }
+ 
++  // Navi: per-segment posted maxspeed from the MWM maxspeeds section (car router only).
++  {
++    auto const & limSegs = route.GetRouteSegments();
++    std::ostringstream sj;
++    sj << '[';
++    for (size_t i = 0; i < limSegs.size(); ++i)
++    {
++      if (i)
++        sj << ',';
++      auto const & lim = limSegs[i].GetSpeedLimit();
++      int v = -1;
++      if (lim.IsValid())
++      {
++        if (lim.GetSpeed() == routing::kNoneMaxSpeed)
++          v = -2;
++        else if (lim.IsNumeric())
++          v = static_cast<int>(lim.GetSpeedKmPH());
++      }
++      sj << v;
++    }
++    sj << ']';
++    routeResult.m_speedLimitsJson = sj.str();
++  }
++
+   // Navi: CoMaps altitudes + optional EL02 sidecar overrides → ascent/descent
+   // and per-point profile (side-by-side comaps vs effective).
+   {
+diff --git a/libs/routing/routes_builder/routes_builder.hpp b/libs/routing/routes_builder/routes_builder.hpp
+index eb4779f81..a90c76cde 100644
+--- a/libs/routing/routes_builder/routes_builder.hpp
++++ b/libs/routing/routes_builder/routes_builder.hpp
+@@ -81,6 +81,9 @@ public:
+     std::string m_elevationJson;
+     /// "Joints" | "LeapsOnly" | "NoLeaps" | "Unknown"
+     std::string m_routerMode;
++    /// Navi: JSON array, one entry per route segment (polyline point i+1): posted maxspeed
++    /// in km/h, -1 when untagged / not applicable, -2 when explicitly unlimited ("none").
++    std::string m_speedLimitsJson;
+   };
+ 
+   struct Result

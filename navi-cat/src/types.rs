@@ -74,4 +74,10 @@ pub trait RigBackend: Send {
     fn freq_step_hz(&self) -> u64 {
         0
     }
+    /// True when the rig can only use analog FM. Repeater rows that offer no
+    /// analog FM output (DMR, D-STAR, C4FM, ...) are then never candidates.
+    /// Defaults to true: the Benshi / VR-N76 family and generic Hamlib FM rigs.
+    fn analog_fm_only(&self) -> bool {
+        true
+    }
 }

@@ -348,6 +348,35 @@ object MapHudPrefs {
             model = Build.MODEL,
         )
 
+    /** Drape graphics API pref: `Vulkan`, `OpenGLES3` or null (CoMaps default). */
+    fun loadDrapeGraphicsApi(context: Context): String? =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString("drape_graphics_api", null)
+            ?.takeIf { it == "Vulkan" || it == "OpenGLES3" }
+
+    /** Map day/night source: `system` (default) or `auto_sun` (sunrise / sunset at the current position). */
+    fun loadDrapeDayNight(context: Context): DrapeDayNight =
+        when (
+            context
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString("drape_day_night", "system")
+        ) {
+            "auto_sun" -> DrapeDayNight.AUTO_SUN
+            else -> DrapeDayNight.SYSTEM
+        }
+
+    fun saveDrapeDayNight(
+        context: Context,
+        mode: DrapeDayNight,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString("drape_day_night", if (mode == DrapeDayNight.AUTO_SUN) "auto_sun" else "system")
+            .apply()
+    }
+
     /** Opt-in experimental OpenFreeMap 3D (online only). Never the default. */
     fun loadOptIn3d(context: Context): Boolean =
         context

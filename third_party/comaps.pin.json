@@ -1,0 +1,13 @@
+{
+  "tag": "v2026.11.07-16",
+  "sha": "fd11cc6f2256443d4d69112a3c22299d4e0664ce",
+  "repo": "https://codeberg.org/comaps/comaps.git",
+  "mirror_github": "https://github.com/comaps/comaps.git",
+  "ndk": "r27c",
+  "ndk_version": "27.2.12479018",
+  "android_abi": ["arm64-v8a"],
+  "host_abi_optional": ["x86_64"],
+  "cmake_target": "organicmaps",
+  "shared_lib": "liborganicmaps.so",
+  "notes": "Client pin matches navi-server generator. Build Android organicmaps from source; never commit prebuilt .so. Drape cannot be excluded from the stock organicmaps target (map PUBLIC-links drape)."
+}

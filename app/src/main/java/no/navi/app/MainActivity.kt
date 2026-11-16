@@ -237,6 +237,11 @@ class MainActivity : ComponentActivity() {
             SystemClock.uptimeMillis() - splashStartedAtMs < SPLASH_MAX_HOLD_MS
         }
         super.onCreate(savedInstanceState)
+        MwmClientBootstrap.ensureInitialized()
+        // MWM path: the old .rkyv pack jobs (place index, basemap archives) must not run on their own.
+        if (MwmClientBootstrap.isEnabled()) IdlePackJobs.executeJobs = false
+        // Open the CoMaps session on the installed mwm/ root (background, never throws).
+        ComapsSessionBootstrap.openAsync(applicationContext)
         // Volume rocker / emulator media mute must control STREAM_MUSIC.
         // Do not use STREAM_ALARM (or other always-audible streams) for app
         // cues — that path was removed with ImuAlarmAudio and must not return.
@@ -245,6 +250,8 @@ class MainActivity : ComponentActivity() {
         // activity in this process; this launch may set a new one via extras.
         NaviMapTestHooks.clearDebugGpsInject()
         applyNaviLaunchExtras(intent)
+        // GPX open-with / share (not again after a configuration recreate).
+        if (savedInstanceState == null && MwmClientBootstrap.isEnabled()) GpxImport.importFromIntent(this, intent)
         runCatching { uniffi.navi.initNativeLogging() }
         // Bind place-search display locale before any native search (Compose
         // LaunchedEffect can race debug intents / early typeahead).
@@ -292,7 +299,8 @@ class MainActivity : ComponentActivity() {
         ).start()
         // IMU plugin: native setup runs off-main; sensors tick only while started and enabled.
         ImuPluginRuntime.attach(this, this)
-        WorldOverviewDownload.ensure(this)
+        // The z0-z6 PMTiles world overview belongs to the MapLibre map; the MWM path draws World.mwm.
+        if (!ComapsDrape.isMwmMapPath()) WorldOverviewDownload.ensure(this)
         setContent {
             var showMap by remember { mutableStateOf(false) }
             var configRev by remember { mutableIntStateOf(configurationRevision.get()) }
@@ -336,7 +344,7 @@ class MainActivity : ComponentActivity() {
                 firstFrameDrawn.set(true)
             }
             LaunchedEffect(Unit) {
-                MapLibre.getInstance(this@MainActivity)
+                if (!ComapsDrape.isMwmMapPath()) MapLibre.getInstance(this@MainActivity)
                 showMap = true
             }
         }
@@ -352,6 +360,8 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         // singleTask: am start with camera extras must apply without process restart.
         applyNaviLaunchExtras(intent)
+        // GPX open-with / share into a running Navi.
+        if (MwmClientBootstrap.isEnabled()) GpxImport.importFromIntent(this, intent)
     }
 
     /**
@@ -391,6 +401,10 @@ class MainActivity : ComponentActivity() {
      */
     private fun applyNaviLaunchExtras(intent: Intent?) {
         if (intent == null) return
+        // Drape graphics API for the next engine start (test builds only): Vulkan | OpenGLES3.
+        if (NaviMapTestHooks.replayHooksEnabled()) {
+            intent.getStringExtra("navi_drape_api")?.let { NaviMapTestHooks.drapeGraphicsApi = it }
+        }
         if (intent.getBooleanExtra("navi_clear_gps", false)) {
             NaviMapTestHooks.clearDebugGpsInject()
         }
@@ -636,11 +650,29 @@ class MainActivity : ComponentActivity() {
                 }
             Thread {
                 val t0 = android.os.SystemClock.elapsedRealtime()
-                if (dbFile == null || !dbFile.isFile) {
-                    android.util.Log.i(
-                        "NaviSearch",
-                        "app_search q=$q n=0 top= region= results=[] reason=place_index_unavailable",
+                // CoMaps search first when the MWM flag is ON and a session is open.
+                val comapsHits =
+                    ComapsSearchBridge.search(
+                        q,
+                        biasLat.takeUnless { it.isNaN() },
+                        biasLon.takeUnless { it.isNaN() },
+                        80,
                     )
+                if (dbFile == null || !dbFile.isFile) {
+                    if (comapsHits.isNotEmpty()) {
+                        val merged = comapsHits.map { ComapsSearchBridge.ffiToPlace(it) }
+                        android.util.Log.i(
+                            "NaviSearch",
+                            "app_search q=$q n=${merged.size} top=${merged.first().name} region= " +
+                                "duration_ms=${android.os.SystemClock.elapsedRealtime() - t0} " +
+                                "source=comaps results=${merged.joinToString("|") { it.name }}",
+                        )
+                    } else {
+                        android.util.Log.i(
+                            "NaviSearch",
+                            "app_search q=$q n=0 top= region= results=[] reason=place_index_unavailable",
+                        )
+                    }
                 } else {
                     val raw =
                         runCatching {
@@ -661,7 +693,7 @@ class MainActivity : ComponentActivity() {
                             emptyList()
                         }
                     val indexErr = raw.firstOrNull { it.kind == "index:error" }
-                    if (indexErr != null) {
+                    if (indexErr != null && comapsHits.isEmpty()) {
                         android.util.Log.i(
                             "NaviSearch",
                             "app_search q=$q q_hex=${q.toByteArray(Charsets.UTF_8).joinToString("") { b ->
@@ -671,14 +703,15 @@ class MainActivity : ComponentActivity() {
                         )
                         return@Thread
                     }
-                    val hits =
+                    val ranked =
                         rankPlaceHits(
                             q,
-                            raw,
+                            raw.filterNot { it.kind == "index:error" },
                             biasLat.takeUnless { it.isNaN() },
                             biasLon.takeUnless { it.isNaN() },
                             vis,
                         )
+                    val hits = ComapsSearchBridge.merge(q, comapsHits, ranked, 80)
                     val top = hits.firstOrNull()
                     val qHex =
                         q.toByteArray(Charsets.UTF_8).joinToString("") { b ->
@@ -689,6 +722,7 @@ class MainActivity : ComponentActivity() {
                         "app_search q=$q q_hex=$qHex n=${hits.size} top=${top?.name.orEmpty()} " +
                             "region=${top?.regionId.orEmpty()} " +
                             "duration_ms=${android.os.SystemClock.elapsedRealtime() - t0} " +
+                            "comaps=${comapsHits.size} " +
                             "results=${hits.joinToString("|") { "${it.name}@${it.regionId}" }}",
                     )
                 }
@@ -1157,6 +1191,10 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
         mutableStateOf(MapHudPrefs.loadNominatimBaseUrl(context))
     }
     var showTools by remember { mutableStateOf(false) }
+    // MWM path: the CoMaps drape is the only map renderer (flag OFF keeps MapLibre / PMTiles).
+    val mwmDrapeMap = remember { ComapsDrape.isMwmMapPath() }
+    var mapDayNight by remember { mutableStateOf(MapHudPrefs.loadDrapeDayNight(context)) }
+    var mwmMissingMaps by remember { mutableStateOf<List<String>?>(null) }
     var confirmDeleteRegion by remember { mutableStateOf(false) }
     var confirmDeletePlannedRoute by remember { mutableStateOf(false) }
     var confirmDeleteSavedRouteId by remember { mutableStateOf<String?>(null) }
@@ -1245,9 +1283,13 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             runCatching { InstalledMaps.refresh(context) }
-            IdlePackJobs.executeJobs = true
-            IdlePackJobs.attachContext(context)
-            IdlePackJobs.onAppIdle()
+            // MWM path: the old pack pipeline (place index, PMTiles basemap, skeletons) never starts by
+            // itself; leftover partial .rkyv downloads are the migration's business (Phase 7).
+            if (!MwmClientBootstrap.isEnabled()) {
+                IdlePackJobs.executeJobs = true
+                IdlePackJobs.attachContext(context)
+                IdlePackJobs.onAppIdle()
+            }
             val summary = InstalledMaps.summaryText()
             android.util.Log.i("InstalledMaps", summary)
             runCatching {
@@ -1268,9 +1310,11 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
         if (packCatalogEpoch == 0) return@LaunchedEffect
         withContext(Dispatchers.IO) {
             runCatching { InstalledMaps.refresh(context) }
-            IdlePackJobs.executeJobs = true
-            IdlePackJobs.attachContext(context)
-            IdlePackJobs.onAppIdle()
+            if (!MwmClientBootstrap.isEnabled()) {
+                IdlePackJobs.executeJobs = true
+                IdlePackJobs.attachContext(context)
+                IdlePackJobs.onAppIdle()
+            }
         }
         mapsEpoch += 1
         if (IdlePackJobs.lastRecheckAccepted() > 0) {
@@ -1480,6 +1524,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     var campingSessionDisableMessage by remember { mutableStateOf<String?>(null) }
     var hideChrome by remember { mutableStateOf(false) }
     var lastCatFollowTickMs by remember { mutableStateOf(0L) }
+    var lastCatFailureSeq by remember { mutableStateOf(0L) }
 
     fun applyCatNetworkFollow() {
         val choice = MapHudPrefs.loadCatNetworkChoice(context)
@@ -1988,6 +2033,10 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     var absurdDetourPrompt by remember {
         mutableStateOf<Pair<String, List<String>>?>(null)
     }
+    val snapChoice = remember { SnapChoiceFlow() }
+
+    /** START/END_NOT_ON_ROAD choice state; the nearest road is looked up only on user request. */
+    var snapChoiceState by remember { mutableStateOf<SnapChoiceFlow.State>(SnapChoiceFlow.State.Idle) }
     var rerouteJob by remember { mutableStateOf<Job?>(null) }
     val planAbort =
         remember {
@@ -2193,6 +2242,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
             RouteSimulator(
                 scope = scope,
                 samples = routeSamples,
+                // MWM path: fixes like a real 1 Hz GPS so the drape's follow camera animates continuously.
+                maxFixIntervalMs = simFixIntervalMs(mwmDrapeMap),
                 onFix = { loc -> applyFixRef.get().invoke(loc) },
                 onSample = { s ->
                     NaviMapTestHooks.lastSimSpeedKmh = s.speedKmh
@@ -2243,6 +2294,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
             RouteSimulator(
                 scope = scope,
                 samples = routeSamples,
+                // MWM path: fixes like a real 1 Hz GPS so the drape's follow camera animates continuously.
+                maxFixIntervalMs = simFixIntervalMs(mwmDrapeMap),
                 onFix = { loc -> applyFixRef.get().invoke(loc) },
                 onSample = { s ->
                     NaviMapTestHooks.lastSimSpeedKmh = s.speedKmh
@@ -3117,20 +3170,34 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
             MapHudPrefs.loadCatNetworkChoice(context) != MapHudPrefs.CAT_NETWORK_OFF
         ) {
             val nowMs = SystemClock.elapsedRealtime()
-            if (nowMs - lastCatFollowTickMs >= 5_000L) {
+            // The 30 s dwell / 60 s gap of network follow run in simulation time while a route is
+            // simulated (12x / 20x switch points then match real driving); tick every 5 s of that time.
+            val simScale = if (simulatingRef.get()) NaviMapTestHooks.simulationTimeScale.coerceAtLeast(1.0) else 1.0
+            val tickEveryMs = (5_000.0 / simScale).toLong().coerceAtLeast(250L)
+            if (nowMs - lastCatFollowTickMs >= tickEveryMs) {
                 lastCatFollowTickMs = nowMs
-                withContext(Dispatchers.Default) {
-                    uniffi.navi.catPluginSetPosition(lat, lon)
-                    val statusSnap = uniffi.navi.catPluginStatusJson()
-                    val followId =
-                        runCatching {
-                            org.json.JSONObject(statusSnap).optString("follow_network_id")
-                        }.getOrDefault("")
-                    val tickMsg = uniffi.navi.catPluginTickGuest()
-                    android.util.Log.i(
-                        "NaviCat",
-                        "follow_tick lat=$lat lon=$lon follow=$followId $tickMsg",
-                    )
+                val programFailure =
+                    withContext(Dispatchers.Default) {
+                        uniffi.navi.catPluginSetTimeScale(simScale)
+                        uniffi.navi.catPluginSetPosition(lat, lon)
+                        val statusSnap = uniffi.navi.catPluginStatusJson()
+                        val followId =
+                            runCatching {
+                                org.json.JSONObject(statusSnap).optString("follow_network_id")
+                            }.getOrDefault("")
+                        val tickMsg = uniffi.navi.catPluginTickGuest()
+                        android.util.Log.i(
+                            "NaviCat",
+                            "follow_tick lat=$lat lon=$lon follow=$followId $tickMsg",
+                        )
+                        catProgramFailure(uniffi.navi.catPluginStatusJson())
+                    }
+                // The radio refused the frequency after every attempt: say so even when the CAT sheet is closed.
+                if (programFailure != null && programFailure.seq > lastCatFailureSeq) {
+                    lastCatFailureSeq = programFailure.seq
+                    val text = catProgramFailureText(context, programFailure)
+                    status = text
+                    android.util.Log.i("NaviCat", "cat_vfo_failed_notice seq=${programFailure.seq} $text")
                 }
             }
         }
@@ -3412,6 +3479,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
             }
         rerouteJob?.cancel()
         cancelInFlightPlan()
+        MwmProductionPlanner.cancel()
         planAbort.set(false)
         rerouteJob =
             scope.launch {
@@ -3425,7 +3493,9 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     routePlanProgress = "Recalculating route…"
                     routePlanPct = 0
                     status = "Recalculating route… (may take several seconds)"
+                    val rerouteOnMwm = withContext(Dispatchers.IO) { MwmProductionPlanner.shouldUse(context) }
                     planIndexingHintVisible =
+                        !rerouteOnMwm &&
                         withContext(Dispatchers.IO) {
                             val planPbf = resolveRegionPbf()
                             if (planPbf == null || !planPbf.isFile) {
@@ -3453,29 +3523,61 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             }
                     val result =
                         runCatching {
-                            RouteReplan.plan(
-                                dataDir = dataDir,
-                                profile = profile,
-                                waypoints = pts,
-                                useEco = ecoForPlan,
-                                avoidMotorways = avoidMotorways,
-                                avoidTolls = avoidTolls,
-                                avoidFerries = avoidFerries,
-                                avoidTunnels,
-                                vehicle = vehicle,
-                                preferOfficialNetworks = preferOfficialNetworks,
-                                preferPilgrimRoutes = preferPilgrimRoutes,
-                                longTripEnabled = longTripEnabled,
-                                stayInCountry = stayInCountry,
-                                packDir =
-                                    runCatching {
-                                        LongTripPackStorage.packDownloadDir(context).absolutePath
-                                    }.getOrDefault(""),
-                                onProgress = { pct, detail ->
-                                    routePlanPct = pct
-                                    routePlanProgress = "Recalculating route… $detail"
-                                },
-                            )
+                            if (rerouteOnMwm) {
+                                // Same CoMaps planner as the initial plan; the legacy region
+                                // pipeline has no data on the MWM path.
+                                withContext(Dispatchers.IO) {
+                                    MwmProductionPlanner
+                                        .plan(
+                                            context = context,
+                                            profile = profile,
+                                            startLat = lat,
+                                            startLon = lon,
+                                            endLat = dest.lat,
+                                            endLon = dest.lon,
+                                            vias = remainingVias.map { it.lat to it.lon },
+                                            avoidMotorways = avoidMotorways,
+                                            avoidTolls = avoidTolls,
+                                            avoidFerries = avoidFerries,
+                                            turnsLocale =
+                                                java.util.Locale
+                                                    .getDefault()
+                                                    .language
+                                                    .ifBlank { "nb" },
+                                            bikeWetland = false,
+                                        ).also {
+                                            if (it.report.contains("PASS") && it.poiLat == 0.0 && it.poiLon == 0.0) {
+                                                it.poiLat = dest.lat
+                                                it.poiLon = dest.lon
+                                                it.poiName = dest.name
+                                            }
+                                        }
+                                }
+                            } else {
+                                RouteReplan.plan(
+                                    dataDir = dataDir,
+                                    profile = profile,
+                                    waypoints = pts,
+                                    useEco = ecoForPlan,
+                                    avoidMotorways = avoidMotorways,
+                                    avoidTolls = avoidTolls,
+                                    avoidFerries = avoidFerries,
+                                    avoidTunnels,
+                                    vehicle = vehicle,
+                                    preferOfficialNetworks = preferOfficialNetworks,
+                                    preferPilgrimRoutes = preferPilgrimRoutes,
+                                    longTripEnabled = longTripEnabled,
+                                    stayInCountry = stayInCountry,
+                                    packDir =
+                                        runCatching {
+                                            LongTripPackStorage.packDownloadDir(context).absolutePath
+                                        }.getOrDefault(""),
+                                    onProgress = { pct, detail ->
+                                        routePlanPct = pct
+                                        routePlanProgress = "Recalculating route… $detail"
+                                    },
+                                )
+                            }
                         }.getOrElse { e ->
                             if (e is kotlinx.coroutines.CancellationException) throw e
                             status = "Reroute failed: ${e.message}"
@@ -3815,6 +3917,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     }
 
     LaunchedEffect(dataDir) {
+        // MWM path: never resume the old pack / place-index / PMTiles pipeline on its own.
+        if (MwmClientBootstrap.isEnabled()) return@LaunchedEffect
         // Resume incomplete packs / place-index / basemap from region-download.json
         // (or synthesize from packs-on-disk when place index / basemap still missing).
         RegionDownloadBackground.ensureStartedFromPending(
@@ -3867,6 +3971,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     // place_index.db and must never run on the Compose main dispatcher (ANR on SM-P613
     // when Use GPS also queries the same DB).
     LaunchedEffect(Unit) {
+        // MWM path: search comes from CoMaps; no passive place-index / indexed-maps background work.
+        if (MwmClientBootstrap.isEnabled()) return@LaunchedEffect
         while (isActive) {
             val regionPath = selectedGeofabrikPath.trim().trim('/')
             val planning = planningRoute
@@ -4080,7 +4186,10 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 dataDir,
                 longTripPackDirForCoverage,
             )
-        if (missing != null && !longTripEnabled) {
+        val useMwmPlanner = MwmProductionPlanner.shouldUse(context)
+        // Geofabrik/`.rkyv` coverage gate: when MWM production planner is active,
+        // leaf MWMs are the coverage source (session must already be open).
+        if (missing != null && !longTripEnabled && !useMwmPlanner) {
             missingCoveragePrompt = missing
             NaviMapTestHooks.missingCoveragePromptVisible = true
             NaviMapTestHooks.lastMissingCoveragePath =
@@ -4153,7 +4262,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
             profile == TravelProfile.HIKING &&
                 NaviMapTestHooks.preferStagedHikingRoute &&
                 File("/data/local/tmp/navi_fixtures/skolla_rondvassbu.polyline.txt").isFile
-        if (pbf == null && !stagedOk) {
+        if (pbf == null && !stagedOk && !useMwmPlanner) {
             if (longTripEnabled) {
                 val line =
                     longTripStatusLine
@@ -4311,8 +4420,95 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                 routeUsesTolls = false,
                             )
                         } else {
-                            when (profile) {
-                                TravelProfile.HIKING -> {
+                            when {
+                                useMwmPlanner -> {
+                                    if (planAbort.get()) {
+                                        return@runCatching cancelledCorridorResult()
+                                    }
+                                    RoutingPlanLog.progress(
+                                        10,
+                                        ecoForPlan,
+                                        detail = "mwm_plan",
+                                    )
+                                    android.util.Log.i(
+                                        "NaviPlan",
+                                        "planner=mwm profile=$profile " +
+                                            "from=${start.lat},${start.lon} to=${toPoint.lat},${toPoint.lon} " +
+                                            "vias=${viaPoints.size} " +
+                                            "time_to_planner_ms=${System.currentTimeMillis() - planStarted}",
+                                    )
+                                    if (!RoutePlanGate.tryBeginOrReplace({
+                                            cancelInFlightPlan()
+                                            MwmProductionPlanner.cancel()
+                                        })
+                                    ) {
+                                        return@runCatching uniffi.navi.CorridorRouteResult(
+                                            report =
+                                                "TEST_KIND=PLAN_MWM_ROUTE\nFAIL: plan already running\nPLANNER=mwm\n",
+                                            distanceKm = 0.0,
+                                            etaMinutes = 0.0,
+                                            cacheHit = false,
+                                            coldBuildS = 0.0,
+                                            warmLoadS = 0.0,
+                                            routePolyline = "",
+                                            poiLat = 0.0,
+                                            poiLon = 0.0,
+                                            poiName = "",
+                                            poiIconKey = "",
+                                            breakPoisJson = "[]",
+                                            daysJson = "[]",
+                                            simSamplesJson = "[]",
+                                            maneuversJson = "[]",
+                                            priorityPathSharePct = 0.0,
+                                            routeSegmentsJson = "[]",
+                                            offTrailAdvisory = "",
+                                            tollPolicy = "allow",
+                                            padAttemptsJson = "[]",
+                                            searchExpansions = 0u,
+                                            searchTerminateReason = "busy",
+                                            tollAvoidanceIncomplete = false,
+                                            routeUsesTolls = false,
+                                        )
+                                    }
+                                    val planned =
+                                        try {
+                                            MwmProductionPlanner.plan(
+                                                context = context,
+                                                profile = profile,
+                                                startLat = start.lat,
+                                                startLon = start.lon,
+                                                endLat = toPoint.lat,
+                                                endLon = toPoint.lon,
+                                                vias = viaPoints.map { it.lat to it.lon },
+                                                avoidMotorways = avoidMotorways,
+                                                avoidTolls = avoidTolls,
+                                                avoidFerries = avoidFerries,
+                                                turnsLocale =
+                                                    java.util.Locale
+                                                        .getDefault()
+                                                        .language
+                                                        .ifBlank { "nb" },
+                                                bikeWetland = false,
+                                            )
+                                        } finally {
+                                            RoutePlanGate.end()
+                                        }
+                                    RoutingPlanLog.progress(
+                                        90,
+                                        ecoForPlan,
+                                        detail = "mwm_path",
+                                    )
+                                    if (planned.report.contains("PASS") &&
+                                        planned.poiLat == 0.0 &&
+                                        planned.poiLon == 0.0
+                                    ) {
+                                        planned.poiLat = toPoint.lat
+                                        planned.poiLon = toPoint.lon
+                                        planned.poiName = toPoint.name
+                                    }
+                                    planned
+                                }
+                                profile == TravelProfile.HIKING -> {
                                     if (planAbort.get()) {
                                         return@runCatching cancelledCorridorResult()
                                     }
@@ -4370,7 +4566,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                     )
                                     android.util.Log.i(
                                         "NaviPlan",
-                                        "planCarRoute pbf=${pbf!!.absolutePath} " +
+                                        "planner=rkyv planCarRoute pbf=${pbf!!.absolutePath} " +
                                             "packDir=$planPackDirPath dataDir=${dataDir.absolutePath} " +
                                             "longTrip=$longTripEnabled " +
                                             "from=${start.lat},${start.lon} to=${toPoint.lat},${toPoint.lon} " +
@@ -4813,6 +5009,38 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 )
                 return@LaunchedEffect
             }
+            // CoMaps missing maps: name the leaves that cover the route and offer the download.
+            if (MwmClientBootstrap.isEnabled() && result.report.contains("comaps_route_code=NEED_MORE_MAPS")) {
+                val leaves =
+                    Regex("""missing_leaves=([^\n]+)""")
+                        .find(result.report)
+                        ?.groupValues
+                        ?.getOrNull(1)
+                        ?.split(',')
+                        ?.map { it.trim() }
+                        ?.filter { it.isNotEmpty() }
+                        .orEmpty()
+                if (leaves.isNotEmpty()) {
+                    mwmMissingMaps = leaves
+                    status = "Missing maps: " + leaves.joinToString(", ") { it.replace('_', ' ') }
+                    planNotice = status
+                    RoutingPlanLog.failed(ecoForPlan, durationMs, status, result)
+                    return@LaunchedEffect
+                }
+            }
+            // CoMaps START/END_NOT_ON_ROAD: never auto-snap; offer the nearest road.
+            if (MwmClientBootstrap.isEnabled()) {
+                val notOnRoad = SnapChoiceFlow.roleFromReport(result.report)
+                if (notOnRoad != null) {
+                    val failedPoint = if (notOnRoad == NotOnRoadRole.START) start else toPoint
+                    snapChoice.onRouteFailed(notOnRoad, failedPoint.lat, failedPoint.lon)
+                    snapChoiceState = snapChoice.state
+                    status = userFacingStatus(result.report).ifBlank { "Point is not on a drivable road" }
+                    planNotice = status
+                    RoutingPlanLog.failed(ecoForPlan, durationMs, status, result)
+                    return@LaunchedEffect
+                }
+            }
             if (pendingGpxExportRouteId != null) {
                 pendingGpxExportRouteId = null
                 status =
@@ -4831,6 +5059,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
             )
             return@LaunchedEffect
         }
+        // MWM path publishes climb inside MwmProductionPlanner; .rkyv path uses
+        // plan-report climb. RoutingPlanLog.complete picks climb_source accordingly.
         RoutingPlanLog.complete(result, ecoForPlan, durationMs)
         NaviMapTestHooks.routeStartLabel = start.name
         NaviMapTestHooks.routeEndLabel = toPoint.name
@@ -5053,6 +5283,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
             val provider = loc.provider.orEmpty()
             // Always update map GPS mark from a valid fix.
             if (loc.latitude != 0.0 || loc.longitude != 0.0) {
+                // The CoMaps drape draws the position puck and follows it natively.
+                if (!positionLost) ComapsDrape.pushLocation(loc)
                 NaviMapTestHooks.lastGpsProvider = provider
                 NaviMapTestHooks.gpsEstimated = gpsEstimated
                 NaviMapTestHooks.positionLost = positionLost
@@ -6147,6 +6379,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                     RouteSimulator(
                                         scope = scope,
                                         samples = routeSamples,
+                                        // MWM path: fixes like a real 1 Hz GPS so the drape's follow camera animates continuously.
+                                        maxFixIntervalMs = simFixIntervalMs(mwmDrapeMap),
                                         onFix = { loc -> applyFixRef.get().invoke(loc) },
                                         onSample = { s ->
                                             NaviMapTestHooks.lastSimSpeedKmh = s.speedKmh
@@ -6231,6 +6465,13 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             NaviMapTestHooks.requestOptIn3d = null
                             driveHud = driveHud.copy(optIn3d = opt3dReq)
                             MapHudPrefs.saveOptIn3d(context, opt3dReq)
+                            styleEpoch += 1
+                        }
+                        val contoursReq = NaviMapTestHooks.requestContoursEnabled
+                        if (contoursReq != null) {
+                            NaviMapTestHooks.requestContoursEnabled = null
+                            driveHud = driveHud.copy(contoursEnabled = contoursReq)
+                            MapHudPrefs.saveContoursEnabled(context, contoursReq)
                             styleEpoch += 1
                         }
                         val tiltReq = NaviMapTestHooks.requestCameraTiltDeg
@@ -6629,6 +6870,33 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             val hasEntries =
                                 runCatching { placeIndexHasEntries(dbPath) }.getOrDefault(false)
                             ensureActive()
+                            // MWM flag ON and a CoMaps session: prefer CoMaps hits and merge the
+                            // place_index FTS hits into them. Empty (flag off, no session after
+                            // readiness wait, no match) leaves the FTS path below unchanged.
+                            // Stream partial CoMaps batches to the UI so the first hit is not
+                            // blocked on every leaf finishing.
+                            val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+                            val comapsOutcome =
+                                ComapsSearchBridge.searchDetailed(
+                                    query = placeQ,
+                                    biasLat = mapState.cameraLat,
+                                    biasLon = mapState.cameraLon,
+                                    limit = 80,
+                                    stillActive = { isActive },
+                                    onPartial = { partial ->
+                                        if (partial.isNotEmpty()) {
+                                            val preview = partial.map { ComapsSearchBridge.ffiToPlace(it) }
+                                            mainHandler.post {
+                                                if (isActive) {
+                                                    hits = preview
+                                                    searchBusy = true
+                                                }
+                                            }
+                                        }
+                                    },
+                                )
+                            val comapsHits = if (comapsOutcome.notReady) emptyList() else comapsOutcome.hits
+                            ensureActive()
                             val rawHits =
                                 runCatching {
                                     val lat = mapState.cameraLat
@@ -6665,13 +6933,17 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                     )
                                 }
                             val indexErr = rawHits.firstOrNull { it.kind == "index:error" }
-                            if (indexErr != null) {
+                            if (indexErr != null && comapsHits.isEmpty()) {
                                 return@withContext PlaceSearchOutcome(
                                     hits = emptyList(),
                                     hasEntries = hasEntries,
                                     usedOnline = false,
                                     onlineOk = false,
                                     errorLine = indexErr.name,
+                                    comapsReadyMs = comapsOutcome.timing.readyWaitMs,
+                                    comapsFirstMs = comapsOutcome.timing.firstResultMs,
+                                    comapsTotalMs = comapsOutcome.timing.totalMs,
+                                    comapsNotReady = comapsOutcome.notReady,
                                 )
                             }
                             var list =
@@ -6679,12 +6951,16 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                     placeQ,
                                     PlaceIndexReady.filterHitsToReadyRegions(
                                         dataDir,
-                                        rawHits,
+                                        rawHits.filterNot { it.kind == "index:error" },
                                     ),
                                     mapState.cameraLat,
                                     mapState.cameraLon,
                                     visibleSearchRegion(),
                                 )
+                            val comapsUsed = comapsHits.isNotEmpty()
+                            if (comapsUsed) {
+                                list = ComapsSearchBridge.merge(placeQ, comapsHits, list, 80)
+                            }
                             var usedOnline = false
                             // Online Nominatim only on explicit submit, when the
                             // setting is on and the base URL is non-empty. Typing
@@ -6727,7 +7003,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             list = filterHitsByCountryIso(list, countryIso)
                             // Keep places, POIs, and address-like hits in one list.
                             val filtered =
-                                if (usedOnline) {
+                                if (usedOnline || comapsUsed) {
                                     list
                                 } else {
                                     list
@@ -6752,35 +7028,47 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                 hasEntries = hasEntries,
                                 usedOnline = usedOnline,
                                 onlineOk = onlineOk,
+                                comapsReadyMs = comapsOutcome.timing.readyWaitMs,
+                                comapsFirstMs = comapsOutcome.timing.firstResultMs,
+                                comapsTotalMs = comapsOutcome.timing.totalMs,
+                                comapsNotReady = comapsOutcome.notReady,
                             )
                         }
                     hits = outcome.hits
                     searchUsedOnline = outcome.usedOnline
                     searchIndexHint =
-                        outcome.errorLine?.takeIf { it.isNotBlank() }
-                            ?: placeSearchBuildingMessage(
-                                outcome.hits.isEmpty(),
-                                outcome.hasEntries,
-                                PlaceIndexBackground.isRunning(),
-                                onlineAvailable =
-                                    outcome.usedOnline ||
-                                        (outcome.hits.isEmpty() && outcome.onlineOk),
-                                indexProblem = InstalledMaps.current()?.placeIndexProblem,
-                            ).orEmpty()
-                                .ifBlank {
-                                    placeSearchNoWholeMatchHint(
-                                        query = splitCountryQualifiedQuery(trimmed).placeQuery.ifBlank { trimmed },
-                                        hits = outcome.hits,
-                                        onlineEnabled = onlinePlaceSearchEnabled,
-                                        usedOnline = outcome.usedOnline,
-                                        submitted = allowOnline,
-                                    ).orEmpty()
-                                }.ifBlank {
-                                    placeSearchOfflineMoreHint(
-                                        onlineEnabled = onlinePlaceSearchEnabled,
-                                        topKind = outcome.hits.firstOrNull()?.kind,
-                                    ).orEmpty()
-                                }
+                        if (outcome.comapsNotReady) {
+                            // Readiness timeout: clear message; clearing the box cancels sooner.
+                            context.getString(R.string.search_maps_not_ready)
+                        } else {
+                            outcome.errorLine?.takeIf { it.isNotBlank() }
+                                ?: placeSearchBuildingMessage(
+                                    outcome.hits.isEmpty(),
+                                    outcome.hasEntries,
+                                    PlaceIndexBackground.isRunning(),
+                                    onlineAvailable =
+                                        outcome.usedOnline ||
+                                            (outcome.hits.isEmpty() && outcome.onlineOk),
+                                    indexProblem = InstalledMaps.current()?.placeIndexProblem,
+                                ).orEmpty()
+                                    .ifBlank {
+                                        placeSearchNoWholeMatchHint(
+                                            query =
+                                                splitCountryQualifiedQuery(trimmed).placeQuery.ifBlank {
+                                                    trimmed
+                                                },
+                                            hits = outcome.hits,
+                                            onlineEnabled = onlinePlaceSearchEnabled,
+                                            usedOnline = outcome.usedOnline,
+                                            submitted = allowOnline,
+                                        ).orEmpty()
+                                    }.ifBlank {
+                                        placeSearchOfflineMoreHint(
+                                            onlineEnabled = onlinePlaceSearchEnabled,
+                                            topKind = outcome.hits.firstOrNull()?.kind,
+                                        ).orEmpty()
+                                    }
+                        }
                     NaviMapTestHooks.lastSearchHitCount = hits.size
                     NaviMapTestHooks.lastSearchQuery = trimmed
                     val disambiguate = hits.size > 1
@@ -6792,6 +7080,9 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             "%02x".format(b)
                         }} n=${hits.size} " +
                             "duration_ms=${android.os.SystemClock.elapsedRealtime() - tSearch} " +
+                            "comaps_ready_ms=${outcome.comapsReadyMs} " +
+                            "comaps_first_ms=${outcome.comapsFirstMs} " +
+                            "comaps_total_ms=${outcome.comapsTotalMs} " +
                             "top=${hits.firstOrNull()?.name.orEmpty()} " +
                             "online=${outcome.usedOnline} " +
                             "hint=${searchIndexHint.take(40)} " +
@@ -6924,93 +7215,173 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        CorridorMapView(
-            state = mapState,
-            dataDir = dataDir,
-            prefer3d = driveHud.optIn3d,
-            contoursEnabled = driveHud.contoursEnabled,
-            cameraTiltDeg = driveHud.cameraTiltDeg,
-            vulkanAvailable = driveHud.vulkanAvailable,
-            unitSystem = driveHud.unitSystem,
-            breakRemindersEnabled = driveHud.breakRemindersEnabled,
-            styleEpoch = styleEpoch,
-            bearingEpoch = bearingApplyEpoch,
-            weatherPluginEnabled = weatherPluginEnabled,
-            weatherMapSymbolsEnabled = weatherMapSymbolsEnabled,
-            weatherAppActive = weatherAppActive,
-            weatherIconsDir = File(iconsDir, "weather").absolutePath,
-            placeIndexDbPath = resolvePlaceIndexDb().absolutePath,
-            weatherMapEpoch = weatherMapEpoch,
-            datexHud = datexHud,
-            datexEpoch = datexEpoch,
-            modifier = Modifier.fillMaxSize(),
-            onLayerCount = { mapLayerCount = it },
-            onUserPan = {
-                if (mapState.followGps) {
-                    mapState = mapState.copy(followGps = false)
-                    NaviMapTestHooks.followGps = false
-                    DiagnosticLog.logToggle("follow_gps", false)
-                }
-            },
-            onMapLongPress = { lat, lon ->
-                scope.launch(Dispatchers.IO) {
-                    val (name, kind) = resolveLabelAt(lat, lon)
-                    withContext(Dispatchers.Main) {
-                        mapMarkPending =
-                            MapMarkPending(
-                                lat = lat,
-                                lon = lon,
-                                suggestedName = name,
-                                kind = kind,
-                            )
-                        mapState =
-                            mapState.copy(
-                                followGps = false,
-                                cameraLat = lat,
-                                cameraLon = lon,
-                                poiLat = lat,
-                                poiLon = lon,
-                                poiName = name,
-                                layerEpoch = mapState.layerEpoch + 1,
-                            )
+        if (mwmDrapeMap) {
+            // MWM path: the CoMaps drape is the only map renderer and owns the camera.
+            ComapsDrapeMap(
+                state = mapState,
+                prefer3d = driveHud.optIn3d,
+                cameraTiltDeg = driveHud.cameraTiltDeg,
+                contoursEnabled = driveHud.contoursEnabled,
+                rotationMode = driveHud.rotationMode,
+                navigating =
+                    simulating ||
+                        (mapState.polyline.isNotBlank() && (driveHud.currentSpeedKmh ?: 0.0) > 3.0),
+                nightMode = mapDayNight,
+                breakRemindersEnabled = driveHud.breakRemindersEnabled,
+                weatherPluginEnabled = weatherPluginEnabled,
+                weatherMapSymbolsEnabled = weatherMapSymbolsEnabled,
+                weatherAppActive = weatherAppActive,
+                weatherIconsDir = File(iconsDir, "weather").absolutePath,
+                placeIndexDbPath = resolvePlaceIndexDb().absolutePath,
+                weatherMapEpoch = weatherMapEpoch,
+                datexHud = datexHud,
+                datexEpoch = datexEpoch,
+                bearingEpoch = bearingApplyEpoch,
+                dataDir = dataDir,
+                modifier = Modifier.fillMaxSize(),
+                onUserPan = {
+                    if (mapState.followGps) {
+                        mapState = mapState.copy(followGps = false)
                         NaviMapTestHooks.followGps = false
-                        NaviMapTestHooks.lastMapLongPressLat = lat
-                        NaviMapTestHooks.lastMapLongPressLon = lon
-                        NaviMapTestHooks.mapLongPressCount += 1
-                        status = "Marked: $name"
+                        DiagnosticLog.logToggle("follow_gps", false)
                     }
-                }
-            },
-            onUserRotate = { bearing -> onManualRotateEnded(bearing) },
-            onCameraIdleTarget = { lat, lon, zoom ->
-                NaviMapTestHooks.lastCameraLat = lat
-                NaviMapTestHooks.lastCameraLon = lon
-                NaviMapTestHooks.lastCameraZoom = zoom
-                NaviMapTestHooks.followGps = mapState.followGps
-                // Keep Compose camera in sync with the real MapLibre view after
-                // gestures so HUD zoom does not invent a stale GPS center.
-                if (!mapState.followGps) {
+                },
+                onMapLongPress = { lat, lon ->
+                    scope.launch(Dispatchers.IO) {
+                        val (name, kind) = resolveLabelAt(lat, lon)
+                        withContext(Dispatchers.Main) {
+                            mapMarkPending =
+                                MapMarkPending(
+                                    lat = lat,
+                                    lon = lon,
+                                    suggestedName = name,
+                                    kind = kind,
+                                )
+                            mapState =
+                                mapState.copy(
+                                    followGps = false,
+                                    cameraLat = lat,
+                                    cameraLon = lon,
+                                    poiLat = lat,
+                                    poiLon = lon,
+                                    poiName = name,
+                                    layerEpoch = mapState.layerEpoch + 1,
+                                )
+                            NaviMapTestHooks.followGps = false
+                            NaviMapTestHooks.lastMapLongPressLat = lat
+                            NaviMapTestHooks.lastMapLongPressLon = lon
+                            NaviMapTestHooks.mapLongPressCount += 1
+                            status = "Marked: $name"
+                        }
+                    }
+                },
+                onUserRotate = { bearing -> onManualRotateEnded(bearing) },
+                onCameraIdleTarget = { lat, lon, zoom ->
+                    NaviMapTestHooks.lastCameraLat = lat
+                    NaviMapTestHooks.lastCameraLon = lon
+                    NaviMapTestHooks.lastCameraZoom = zoom
+                    NaviMapTestHooks.followGps = mapState.followGps
                     val cur = mapState
-                    if (cur.cameraLat != lat || cur.cameraLon != lon || cur.cameraZoom != zoom) {
-                        mapState =
-                            cur.copy(
-                                cameraLat = lat,
-                                cameraLon = lon,
-                                cameraZoom = zoom,
-                            )
+                    if (!cur.followGps) {
+                        if (cur.cameraLat != lat || cur.cameraLon != lon || cur.cameraZoom != zoom) {
+                            mapState = cur.copy(cameraLat = lat, cameraLon = lon, cameraZoom = zoom)
+                        }
+                    } else if (cur.cameraZoom != null && kotlin.math.abs(cur.cameraZoom - zoom) > 0.2) {
+                        // The user pinched while following: keep the HUD zoom in step.
+                        mapState = cur.copy(cameraZoom = zoom)
                     }
-                }
-            },
-            onStyleNote = { note ->
-                if (!note.isNullOrBlank()) status = localizeBasemapStyleNote(context, note)
-            },
-            on3dFailed = {
-                driveHud = driveHud.copy(optIn3d = false)
-                MapHudPrefs.saveOptIn3d(context, false)
-                status = "3D unavailable on this device; using 2D Liberty"
-                styleEpoch += 1
-            },
-        )
+                },
+                onOpenMapDownloads = { showTools = true },
+            )
+        } else {
+            CorridorMapView(
+                state = mapState,
+                dataDir = dataDir,
+                prefer3d = driveHud.optIn3d,
+                contoursEnabled = driveHud.contoursEnabled,
+                cameraTiltDeg = driveHud.cameraTiltDeg,
+                vulkanAvailable = driveHud.vulkanAvailable,
+                unitSystem = driveHud.unitSystem,
+                breakRemindersEnabled = driveHud.breakRemindersEnabled,
+                styleEpoch = styleEpoch,
+                bearingEpoch = bearingApplyEpoch,
+                weatherPluginEnabled = weatherPluginEnabled,
+                weatherMapSymbolsEnabled = weatherMapSymbolsEnabled,
+                weatherAppActive = weatherAppActive,
+                weatherIconsDir = File(iconsDir, "weather").absolutePath,
+                placeIndexDbPath = resolvePlaceIndexDb().absolutePath,
+                weatherMapEpoch = weatherMapEpoch,
+                datexHud = datexHud,
+                datexEpoch = datexEpoch,
+                modifier = Modifier.fillMaxSize(),
+                onLayerCount = { mapLayerCount = it },
+                onUserPan = {
+                    if (mapState.followGps) {
+                        mapState = mapState.copy(followGps = false)
+                        NaviMapTestHooks.followGps = false
+                        DiagnosticLog.logToggle("follow_gps", false)
+                    }
+                },
+                onMapLongPress = { lat, lon ->
+                    scope.launch(Dispatchers.IO) {
+                        val (name, kind) = resolveLabelAt(lat, lon)
+                        withContext(Dispatchers.Main) {
+                            mapMarkPending =
+                                MapMarkPending(
+                                    lat = lat,
+                                    lon = lon,
+                                    suggestedName = name,
+                                    kind = kind,
+                                )
+                            mapState =
+                                mapState.copy(
+                                    followGps = false,
+                                    cameraLat = lat,
+                                    cameraLon = lon,
+                                    poiLat = lat,
+                                    poiLon = lon,
+                                    poiName = name,
+                                    layerEpoch = mapState.layerEpoch + 1,
+                                )
+                            NaviMapTestHooks.followGps = false
+                            NaviMapTestHooks.lastMapLongPressLat = lat
+                            NaviMapTestHooks.lastMapLongPressLon = lon
+                            NaviMapTestHooks.mapLongPressCount += 1
+                            status = "Marked: $name"
+                        }
+                    }
+                },
+                onUserRotate = { bearing -> onManualRotateEnded(bearing) },
+                onCameraIdleTarget = { lat, lon, zoom ->
+                    NaviMapTestHooks.lastCameraLat = lat
+                    NaviMapTestHooks.lastCameraLon = lon
+                    NaviMapTestHooks.lastCameraZoom = zoom
+                    NaviMapTestHooks.followGps = mapState.followGps
+                    // Keep Compose camera in sync with the real MapLibre view after
+                    // gestures so HUD zoom does not invent a stale GPS center.
+                    if (!mapState.followGps) {
+                        val cur = mapState
+                        if (cur.cameraLat != lat || cur.cameraLon != lon || cur.cameraZoom != zoom) {
+                            mapState =
+                                cur.copy(
+                                    cameraLat = lat,
+                                    cameraLon = lon,
+                                    cameraZoom = zoom,
+                                )
+                        }
+                    }
+                },
+                onStyleNote = { note ->
+                    if (!note.isNullOrBlank()) status = localizeBasemapStyleNote(context, note)
+                },
+                on3dFailed = {
+                    driveHud = driveHud.copy(optIn3d = false)
+                    MapHudPrefs.saveOptIn3d(context, false)
+                    status = "3D unavailable on this device; using 2D Liberty"
+                    styleEpoch += 1
+                },
+            )
+        }
 
         if (locationDiagOverlay) {
             Box(
@@ -7516,6 +7887,82 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 },
             )
         }
+        mwmMissingMaps?.let { leaves ->
+            MwmMissingMapsDialog(
+                leaves = leaves,
+                onDownload = {
+                    mwmMissingMaps = null
+                    showTools = true
+                    MwmMapDownloader.install(context, leaves, leaves.joinToString(", ") { it.replace('_', ' ') }) { ok ->
+                        status = if (ok) "Maps installed - plan the route again" else "Map download failed"
+                        if (ok) planKick += 1
+                    }
+                },
+                onDismiss = { mwmMissingMaps = null },
+            )
+        }
+        // Phase 7: .rkyv -> leaf-set migration offer / progress / old-maps question / Map storage.
+        MwmMigrationHost()
+        RouteSnapChoiceDialog(
+            state = snapChoiceState,
+            onRequestSnap = {
+                val lookup = snapChoice.requestSnap()
+                snapChoiceState = snapChoice.state
+                if (lookup != null) {
+                    val code =
+                        if (lookup.role == NotOnRoadRole.START) {
+                            uniffi.navi.FfiComapsRouteCode.START_NOT_ON_ROAD
+                        } else {
+                            uniffi.navi.FfiComapsRouteCode.END_NOT_ON_ROAD
+                        }
+                    scope.launch {
+                        val suggestion =
+                            withContext(Dispatchers.IO) {
+                                runCatching {
+                                    uniffi.navi.comapsSessionSnapSuggestion(
+                                        SnapChoiceFlow.comapsProfileFor(profile),
+                                        code,
+                                        lookup.lat,
+                                        lookup.lon,
+                                        0.0,
+                                    )
+                                }.getOrNull()
+                            }
+                        snapChoice.onSnapResult(suggestion?.let { SnapChoiceFlow.offerFrom(it) })
+                        snapChoiceState = snapChoice.state
+                    }
+                }
+            },
+            onConfirm = {
+                val offer = snapChoice.confirm()
+                snapChoiceState = snapChoice.state
+                if (offer != null) {
+                    val labelled = { name: String ->
+                        context.getString(R.string.dialog_nearest_road_suffix, name.ifBlank { "Point" })
+                    }
+                    if (offer.role == NotOnRoadRole.START) {
+                        fromPoint =
+                            fromPoint?.copy(
+                                name = labelled(fromPoint?.name.orEmpty()),
+                                lat = offer.snapLat,
+                                lon = offer.snapLon,
+                            )
+                    } else {
+                        toPoint =
+                            toPoint.copy(
+                                name = labelled(toPoint.name),
+                                lat = offer.snapLat,
+                                lon = offer.snapLon,
+                            )
+                    }
+                    planKick += 1
+                }
+            },
+            onDismiss = {
+                snapChoice.dismiss()
+                snapChoiceState = snapChoice.state
+            },
+        )
         absurdDetourPrompt?.let { (msg, missingNames) ->
             AlertDialog(
                 onDismissRequest = {
@@ -8554,6 +9001,13 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                         modifier = Modifier.testTag("toggle_avoid_motorways"),
                                     )
                                 }
+                                if (MwmClientBootstrap.isEnabled() && MwmProductionPlanner.limitsNotApplied(profile)) {
+                                    Text(
+                                        stringResource(R.string.profile_limits_not_applied),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.testTag("profile_limits_note"),
+                                    )
+                                }
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
@@ -9433,6 +9887,56 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
             }
         }
 
+        if (MwmClientBootstrap.isEnabled() && !hideChrome && !showTools) {
+            GpxImportHost(
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 88.dp),
+                onNavigateAlong = { line ->
+                    val n = line.pointCount
+                    val start = Waypoint(name = line.name, lat = line.latlon[0], lon = line.latlon[1])
+                    val end = Waypoint(name = line.name, lat = line.latlon[2 * (n - 1)], lon = line.latlon[2 * (n - 1) + 1])
+                    val res =
+                        MwmProductionPlanner.trackRoute(
+                            profile = profile,
+                            latlon = line.latlon,
+                            lengthM = line.lengthM,
+                            ascentM = line.ascentM ?: 0.0,
+                            endLabel = line.name,
+                        )
+                    fromPoint = start
+                    fromFollowsGps = false
+                    viaPoints = emptyList()
+                    toPoint = end
+                    applyPlannedRoute(res)
+                    val msg = context.getString(R.string.gpx_navigating, line.name, "%.1f km".format(java.util.Locale.US, line.lengthM / 1000.0))
+                    status = msg
+                    GpxImport.noteAction(msg)
+                    android.util.Log.i("GpxImport", "navigate_along name=${line.name} points=$n length_m=${line.lengthM.toInt()} profile=$profile")
+                    GpxImport.hidePanel()
+                },
+                onRouteToStart = { line ->
+                    val gpsKnown = mapState.gpsLat != 0.0 || mapState.gpsLon != 0.0
+                    val target = Waypoint(name = line.name + " (start)", lat = line.latlon[0], lon = line.latlon[1])
+                    if (!gpsKnown) {
+                        val msg = "No position yet: set a start, then plan to ${target.name}"
+                        status = msg
+                        GpxImport.noteAction(msg)
+                        toPoint = target
+                    } else {
+                        fromPoint = Waypoint(name = "My position", lat = mapState.gpsLat, lon = mapState.gpsLon)
+                        fromFollowsGps = true
+                        viaPoints = emptyList()
+                        toPoint = target
+                        val msg = context.getString(R.string.gpx_route_to_start_set, line.name)
+                        status = msg
+                        GpxImport.noteAction(msg)
+                        android.util.Log.i("GpxImport", "route_to_start name=${line.name} from=${mapState.gpsLat},${mapState.gpsLon} to=${target.lat},${target.lon}")
+                        planKick += 1
+                        GpxImport.hidePanel()
+                    }
+                },
+            )
+        }
+
         if (showTools && !hideChrome) {
             Surface(
                 shape = RoundedCornerShape(12.dp),
@@ -9463,6 +9967,10 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                 .verticalScroll(toolsScroll),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
+                        if (mwmDrapeMap || MwmClientBootstrap.isEnabled()) {
+                            MwmMapsSection()
+                            GpxImportButton()
+                        }
                         PluginSettingsSection(
                             weatherPluginEnabled = weatherPluginEnabled,
                             onWeatherPluginChange = { on ->
@@ -9679,662 +10187,665 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.testTag("tools_camping_legal_note"),
                         )
-                        Text(stringResource(R.string.ui_region), style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            stringResource(R.string.map_layers_count, mapLayerCount),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        if (updateReminderDue) {
+                        // Geofabrik / PMTiles / DEM region downloads belong to the classic map; the MWM path has its own section above.
+                        if (!mwmDrapeMap) {
+                            Text(stringResource(R.string.ui_region), style = MaterialTheme.typography.titleSmall)
                             Text(
-                                stringResource(R.string.ui_weekly_osm_update_check_is_due_opt_in_reminder_nothing_was_d),
+                                stringResource(R.string.map_layers_count, mapLayerCount),
                                 style = MaterialTheme.typography.bodySmall,
                             )
-                        }
-                        Text(
-                            stringResource(R.string.ui_download_scope_geofabrik),
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                        Text(
-                            "Countries and bboxes come from Geofabrik's published index. " +
-                                "Central America extracts are listed under North America. " +
-                                "Jurisdiction packs still follow GPS, not this picker. " +
-                                "Green pills = published on the pack server or already indexed on device. " +
-                                "Green Download = install packs only; otherwise Download builds a place index.",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        val readyChipGreen = Color(0xFF2E7D32)
-                        val readyChipMuted = readyChipGreen.copy(alpha = 0.30f)
-
-                        @Composable
-                        fun readyChipColors(ready: Boolean) =
-                            FilterChipDefaults.filterChipColors(
-                                containerColor =
-                                    if (ready) {
-                                        readyChipMuted
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceContainerHighest
-                                    },
-                                selectedContainerColor =
-                                    if (ready) {
-                                        readyChipGreen
-                                    } else {
-                                        MaterialTheme.colorScheme.secondaryContainer
-                                    },
-                                labelColor = MaterialTheme.colorScheme.onSurface,
-                                selectedLabelColor =
-                                    if (ready) {
-                                        Color.White
-                                    } else {
-                                        MaterialTheme.colorScheme.onSecondaryContainer
-                                    },
-                            )
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(
-                                selected = downloadScopeCountry,
-                                onClick = {
-                                    downloadScopeCountry = true
-                                    val current =
-                                        GeofabrikDownloadCatalog.findByPath(selectedGeofabrikPath)
-                                    val pick =
-                                        current
-                                            ?: GeofabrikDownloadCatalog
-                                                .countriesIn(downloadContinent)
-                                                .firstOrNull()
-                                            ?: GeofabrikDownloadCatalog.countries.first()
-                                    downloadContinent = pick.continent
-                                    selectedGeofabrikPath = pick.path
-                                },
-                                label = { Text(stringResource(R.string.geo_label_country)) },
-                                modifier = Modifier.testTag("chip_download_country"),
-                            )
-                            FilterChip(
-                                selected = !downloadScopeCountry,
-                                onClick = {
-                                    downloadScopeCountry = false
-                                    if (GeofabrikDownloadCatalog.hasRegionChips(selectedGeofabrikPath)) {
-                                        val base =
-                                            GeofabrikDownloadCatalog.regionChipBasePath(
-                                                selectedGeofabrikPath,
-                                            )
-                                        val defaultPath =
-                                            GeofabrikDownloadCatalog.defaultRegionChipPath(
-                                                selectedGeofabrikPath,
-                                            )
-                                        if (base != null &&
-                                            defaultPath != null &&
-                                            (
-                                                selectedGeofabrikPath == base ||
-                                                    !selectedGeofabrikPath.startsWith("$base/")
-                                            )
-                                        ) {
-                                            selectedGeofabrikPath = defaultPath
-                                        }
-                                    } else {
-                                        // Keep country path; sub-region chips are
-                                        // only for curated countries (NO/SE/DE/UK).
-                                        val country =
-                                            GeofabrikDownloadCatalog.findByPath(selectedGeofabrikPath)
-                                        if (country != null) {
-                                            selectedGeofabrikPath = country.path
-                                        }
-                                    }
-                                },
-                                label = { Text(stringResource(R.string.ui_region_in_country)) },
-                                modifier = Modifier.testTag("chip_download_region"),
-                            )
-                        }
-                        if (downloadScopeCountry) {
-                            Text(
-                                "Country-scale extracts may be slow or fail on low-RAM devices " +
-                                    "(~4 GB). Prefer a region in country when possible.",
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.testTag("country_download_low_ram_warning"),
-                            )
-                            Text(stringResource(R.string.geo_label_continent), style = MaterialTheme.typography.labelMedium)
-                            Row(
-                                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                GeofabrikDownloadCatalog.continents.forEach { continent ->
-                                    val ready = continentPillReady(continent)
-                                    FilterChip(
-                                        selected = downloadContinent == continent,
-                                        onClick = {
-                                            downloadContinent = continent
-                                            GeofabrikDownloadCatalog
-                                                .countriesIn(continent)
-                                                .firstOrNull()
-                                                ?.let { selectedGeofabrikPath = it.path }
-                                        },
-                                        label = { Text(stringResource(continent.labelRes)) },
-                                        colors = readyChipColors(ready),
-                                        modifier = Modifier.testTag(continent.testTag),
-                                    )
-                                }
-                            }
-                            Text(stringResource(R.string.geo_label_country), style = MaterialTheme.typography.labelMedium)
-                            val continentCountries =
-                                GeofabrikDownloadCatalog.countriesIn(downloadContinent)
-                            if (continentCountries.isEmpty()) {
+                            if (updateReminderDue) {
                                 Text(
-                                    GeofabrikDownloadCatalog.EMPTY_CONTINENT_NOTE,
+                                    stringResource(R.string.ui_weekly_osm_update_check_is_due_opt_in_reminder_nothing_was_d),
                                     style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.testTag("continent_empty_note"),
                                 )
-                            } else {
-                                Row(
-                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    continentCountries.forEach { country ->
-                                        val ready = pathPillReady(country.path)
-                                        FilterChip(
-                                            selected = selectedGeofabrikPath == country.path,
-                                            onClick = { selectedGeofabrikPath = country.path },
-                                            label = { Text(country.label) },
-                                            colors = readyChipColors(ready),
-                                            modifier = Modifier.testTag(country.testTag),
-                                        )
-                                    }
-                                }
-                                GeofabrikDownloadCatalog.findByPath(selectedGeofabrikPath)?.let { country ->
-                                    if (country.path == selectedGeofabrikPath.trim().trim('/') &&
-                                        country.continent == downloadContinent
-                                    ) {
-                                        Text(
-                                            country.supportNote,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            modifier = Modifier.testTag("country_support_note"),
-                                        )
-                                    }
-                                }
                             }
-                        } else if (GeofabrikDownloadCatalog.hasRegionChips(selectedGeofabrikPath)) {
-                            val chipBase =
-                                GeofabrikDownloadCatalog.regionChipBasePath(selectedGeofabrikPath)
-                            val chips =
-                                GeofabrikDownloadCatalog.regionChipsFor(selectedGeofabrikPath)
-                            if (chipBase != null && chips != null) {
-                                val tagPrefix =
-                                    when (chipBase) {
-                                        "europe/norway" -> "chip_norway"
-                                        "europe/sweden" -> "chip_sweden"
-                                        "europe/germany" -> "chip_germany"
-                                        "europe/germany/baden-wuerttemberg" -> "chip_germany_bw"
-                                        "europe/germany/bayern" -> "chip_germany_bayern"
-                                        "europe/germany/nordrhein-westfalen" -> "chip_germany_nrw"
-                                        "europe/united-kingdom" -> "chip_uk"
-                                        "europe/united-kingdom/england" -> "chip_england"
-                                        else ->
-                                            "chip_" +
-                                                chipBase.replace('/', '_').replace('-', '_')
-                                    }
-                                Row(
-                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    chips.forEach { (slug, label) ->
-                                        val path = "$chipBase/$slug"
-                                        val ready = pathPillReady(path)
-                                        FilterChip(
-                                            selected = selectedGeofabrikPath == path,
-                                            onClick = { selectedGeofabrikPath = path },
-                                            label = { Text(label) },
-                                            colors = readyChipColors(ready),
-                                            modifier = Modifier.testTag("${tagPrefix}_$slug"),
-                                        )
-                                    }
-                                }
-                            }
-                        } else {
                             Text(
-                                GeofabrikDownloadCatalog.regionGranularityNote(selectedGeofabrikPath),
+                                stringResource(R.string.ui_download_scope_geofabrik),
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                            Text(
+                                "Countries and bboxes come from Geofabrik's published index. " +
+                                    "Central America extracts are listed under North America. " +
+                                    "Jurisdiction packs still follow GPS, not this picker. " +
+                                    "Green pills = published on the pack server or already indexed on device. " +
+                                    "Green Download = install packs only; otherwise Download builds a place index.",
                                 style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.testTag("region_chips_norway_only_note"),
                             )
-                        }
-                        val packStatus =
-                            PackRegionAvailability.statusLine(
-                                selectedPath = selectedGeofabrikPath,
-                                serverReadyIds = packServerReadyIds,
-                                dataSource = packCatalogDataSource,
-                                unreachableReason = packCatalogUnreachable,
-                                probing = packCatalogProbing,
-                                dataDir = dataDir,
-                            )
-                        if (packStatus.isNotBlank()) {
-                            Text(
-                                packStatus,
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.testTag("pack_region_availability_status"),
-                            )
-                        }
-                        TextButton(
-                            onClick = { packCatalogEpoch += 1 },
-                            enabled = !packCatalogProbing,
-                            modifier = Modifier.testTag("btn_refresh_pack_catalog"),
-                        ) {
-                            Text(if (packCatalogProbing) "Checking pack server…" else "Refresh pack availability")
-                        }
-                        OutlinedTextField(
-                            value = selectedGeofabrikPath,
-                            onValueChange = { selectedGeofabrikPath = it.trim() },
-                            label = { Text(stringResource(R.string.geo_label_path)) },
-                            singleLine = true,
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .testTag("field_geofabrik_path"),
-                        )
-                        val selectedServerReady =
-                            PackRegionAvailability.pathCoveredByReadyIds(
-                                selectedGeofabrikPath,
-                                packServerReadyIds,
-                            )
-                        Button(
-                            onClick = {
-                                val path = selectedGeofabrikPath.trim().trim('/')
-                                if (path.isEmpty()) {
-                                    status = "Enter a Geofabrik path (e.g. europe/norway/ostlandet)."
-                                } else {
-                                    startRegionDownload(path)
-                                }
-                            },
-                            colors =
-                                if (PackRegionAvailability.downloadRegionUsesReadyStyle(selectedServerReady)) {
-                                    ButtonDefaults.buttonColors(
-                                        containerColor = readyChipGreen,
-                                        contentColor = Color.White,
-                                    )
-                                } else {
-                                    ButtonDefaults.buttonColors()
-                                },
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .testTag("btn_download_region"),
-                        ) {
-                            Text(
-                                PackRegionAvailability.downloadRegionButtonLabel(
-                                    selectedServerReady,
-                                    context.resources,
-                                ),
-                            )
-                        }
-                        Button(
-                            onClick = {
-                                val path = selectedGeofabrikPath.trim().trim('/')
-                                if (path.isEmpty()) {
-                                    status = "Select a Geofabrik path first."
-                                    return@Button
-                                }
-                                scope.launch {
-                                    val block =
-                                        withContext(Dispatchers.IO) {
-                                            val packDirForDelete =
-                                                runCatching {
-                                                    LongTripPackStorage.packDownloadDir(context)
-                                                }.getOrNull()
-                                            DownloadedRegionDelete.blockReason(
-                                                path,
-                                                dataDir,
-                                                listOfNotNull(packDirForDelete),
-                                            )
-                                        }
-                                    if (block != null) {
-                                        status = block
-                                        return@launch
-                                    }
-                                    confirmDeleteRegion = true
-                                }
-                            },
-                            enabled = selectedLocalReady,
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .testTag("btn_delete_downloaded_region"),
-                        ) {
-                            Text(stringResource(R.string.tools_delete_downloaded_region))
-                        }
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    val packDir =
-                                        runCatching {
-                                            LongTripPackStorage.packDownloadDir(context)
-                                        }.getOrNull()
-                                    val rid = selectedGeofabrikPath.trim().trim('/')
-                                    val stem =
-                                        if (rid.isNotEmpty()) {
-                                            PackRegionAvailability.localStem(rid)
+                            val readyChipGreen = Color(0xFF2E7D32)
+                            val readyChipMuted = readyChipGreen.copy(alpha = 0.30f)
+
+                            @Composable
+                            fun readyChipColors(ready: Boolean) =
+                                FilterChipDefaults.filterChipColors(
+                                    containerColor =
+                                        if (ready) {
+                                            readyChipMuted
                                         } else {
-                                            ""
+                                            MaterialTheme.colorScheme.surfaceContainerHighest
+                                        },
+                                    selectedContainerColor =
+                                        if (ready) {
+                                            readyChipGreen
+                                        } else {
+                                            MaterialTheme.colorScheme.secondaryContainer
+                                        },
+                                    labelColor = MaterialTheme.colorScheme.onSurface,
+                                    selectedLabelColor =
+                                        if (ready) {
+                                            Color.White
+                                        } else {
+                                            MaterialTheme.colorScheme.onSecondaryContainer
+                                        },
+                                )
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(
+                                    selected = downloadScopeCountry,
+                                    onClick = {
+                                        downloadScopeCountry = true
+                                        val current =
+                                            GeofabrikDownloadCatalog.findByPath(selectedGeofabrikPath)
+                                        val pick =
+                                            current
+                                                ?: GeofabrikDownloadCatalog
+                                                    .countriesIn(downloadContinent)
+                                                    .firstOrNull()
+                                                ?: GeofabrikDownloadCatalog.countries.first()
+                                        downloadContinent = pick.continent
+                                        selectedGeofabrikPath = pick.path
+                                    },
+                                    label = { Text(stringResource(R.string.geo_label_country)) },
+                                    modifier = Modifier.testTag("chip_download_country"),
+                                )
+                                FilterChip(
+                                    selected = !downloadScopeCountry,
+                                    onClick = {
+                                        downloadScopeCountry = false
+                                        if (GeofabrikDownloadCatalog.hasRegionChips(selectedGeofabrikPath)) {
+                                            val base =
+                                                GeofabrikDownloadCatalog.regionChipBasePath(
+                                                    selectedGeofabrikPath,
+                                                )
+                                            val defaultPath =
+                                                GeofabrikDownloadCatalog.defaultRegionChipPath(
+                                                    selectedGeofabrikPath,
+                                                )
+                                            if (base != null &&
+                                                defaultPath != null &&
+                                                (
+                                                    selectedGeofabrikPath == base ||
+                                                        !selectedGeofabrikPath.startsWith("$base/")
+                                                )
+                                            ) {
+                                                selectedGeofabrikPath = defaultPath
+                                            }
+                                        } else {
+                                            // Keep country path; sub-region chips are
+                                            // only for curated countries (NO/SE/DE/UK).
+                                            val country =
+                                                GeofabrikDownloadCatalog.findByPath(selectedGeofabrikPath)
+                                            if (country != null) {
+                                                selectedGeofabrikPath = country.path
+                                            }
                                         }
-                                    // Prefer the long-trip pack root PBF when present
-                                    // (Tools Refresh used to pick the first files/*.osm.pbf,
-                                    // which could be a stale root Ostlandet v8 copy).
-                                    val pbf =
-                                        listOfNotNull(packDir, dataDir)
-                                            .asSequence()
-                                            .mapNotNull { dir ->
-                                                if (stem.isNotBlank()) {
-                                                    File(dir, "$stem.osm.pbf").takeIf { it.isFile }
-                                                } else {
-                                                    null
-                                                }
-                                                    ?: dir.listFiles()?.firstOrNull {
-                                                        it.isFile && it.name.endsWith(".osm.pbf")
-                                                    }
-                                            }.firstOrNull()
-                                    if (pbf == null) {
-                                        status = "No local region PBF to refresh indexed maps from"
-                                        return@launch
+                                    },
+                                    label = { Text(stringResource(R.string.ui_region_in_country)) },
+                                    modifier = Modifier.testTag("chip_download_region"),
+                                )
+                            }
+                            if (downloadScopeCountry) {
+                                Text(
+                                    "Country-scale extracts may be slow or fail on low-RAM devices " +
+                                        "(~4 GB). Prefer a region in country when possible.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.testTag("country_download_low_ram_warning"),
+                                )
+                                Text(stringResource(R.string.geo_label_continent), style = MaterialTheme.typography.labelMedium)
+                                Row(
+                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    GeofabrikDownloadCatalog.continents.forEach { continent ->
+                                        val ready = continentPillReady(continent)
+                                        FilterChip(
+                                            selected = downloadContinent == continent,
+                                            onClick = {
+                                                downloadContinent = continent
+                                                GeofabrikDownloadCatalog
+                                                    .countriesIn(continent)
+                                                    .firstOrNull()
+                                                    ?.let { selectedGeofabrikPath = it.path }
+                                            },
+                                            label = { Text(stringResource(continent.labelRes)) },
+                                            colors = readyChipColors(ready),
+                                            modifier = Modifier.testTag(continent.testTag),
+                                        )
                                     }
-                                    val refreshDir =
-                                        pbf.parentFile?.takeIf { it.isDirectory } ?: dataDir
-                                    val elevDir =
-                                        listOf(
-                                            File(refreshDir, "elevation"),
-                                            File(dataDir, "elevation"),
-                                        ).firstOrNull { it.isDirectory }
-                                    val before =
-                                        withContext(Dispatchers.IO) {
-                                            indexedMapsStatus(
-                                                pbf.absolutePath,
-                                                refreshDir.absolutePath,
+                                }
+                                Text(stringResource(R.string.geo_label_country), style = MaterialTheme.typography.labelMedium)
+                                val continentCountries =
+                                    GeofabrikDownloadCatalog.countriesIn(downloadContinent)
+                                if (continentCountries.isEmpty()) {
+                                    Text(
+                                        GeofabrikDownloadCatalog.EMPTY_CONTINENT_NOTE,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.testTag("continent_empty_note"),
+                                    )
+                                } else {
+                                    Row(
+                                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        continentCountries.forEach { country ->
+                                            val ready = pathPillReady(country.path)
+                                            FilterChip(
+                                                selected = selectedGeofabrikPath == country.path,
+                                                onClick = { selectedGeofabrikPath = country.path },
+                                                label = { Text(country.label) },
+                                                colors = readyChipColors(ready),
+                                                modifier = Modifier.testTag(country.testTag),
                                             )
                                         }
-                                    IndexedMapsBackground.ensureStarted(
-                                        scope,
-                                        pbf,
-                                        refreshDir,
-                                        elevDir,
-                                        selectedGeofabrikPath.ifBlank { null },
-                                        forceRefresh = true,
-                                    )
-                                    status =
-                                        "indexed before=$before — refresh started (pack server first, " +
-                                        "local rebuild only if server pack unavailable); " +
-                                        "stale files/ root duplicates removed on PASS"
+                                    }
+                                    GeofabrikDownloadCatalog.findByPath(selectedGeofabrikPath)?.let { country ->
+                                        if (country.path == selectedGeofabrikPath.trim().trim('/') &&
+                                            country.continent == downloadContinent
+                                        ) {
+                                            Text(
+                                                country.supportNote,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                modifier = Modifier.testTag("country_support_note"),
+                                            )
+                                        }
+                                    }
                                 }
-                            },
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .testTag("btn_rebuild_indexed_maps"),
-                        ) {
-                            Text(stringResource(R.string.ui_refresh_indexed_maps_server_first_then_local))
-                        }
-                        Text(
-                            stringResource(R.string.ui_basemap_pmtiles_included_in_download_region_dem_is_optional),
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                        OutlinedTextField(
-                            value = pmtilesBaseUrl,
-                            onValueChange = {
-                                pmtilesBaseUrl = it.trim()
-                                MapHudPrefs.savePmtilesBaseUrl(context, pmtilesBaseUrl)
-                            },
-                            label = { Text(stringResource(R.string.ui_planet_pmtiles_url_blank_latest_protomaps)) },
-                            singleLine = true,
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .testTag("field_pmtiles_base_url"),
-                        )
-                        if (offlineIntegrity.canRestoreFromStaging) {
-                            Text(
-                                offlineIntegrity.userMessage()
-                                    ?: "Staged offline map files are available to restore.",
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.testTag("offline_data_mismatch_msg"),
+                            } else if (GeofabrikDownloadCatalog.hasRegionChips(selectedGeofabrikPath)) {
+                                val chipBase =
+                                    GeofabrikDownloadCatalog.regionChipBasePath(selectedGeofabrikPath)
+                                val chips =
+                                    GeofabrikDownloadCatalog.regionChipsFor(selectedGeofabrikPath)
+                                if (chipBase != null && chips != null) {
+                                    val tagPrefix =
+                                        when (chipBase) {
+                                            "europe/norway" -> "chip_norway"
+                                            "europe/sweden" -> "chip_sweden"
+                                            "europe/germany" -> "chip_germany"
+                                            "europe/germany/baden-wuerttemberg" -> "chip_germany_bw"
+                                            "europe/germany/bayern" -> "chip_germany_bayern"
+                                            "europe/germany/nordrhein-westfalen" -> "chip_germany_nrw"
+                                            "europe/united-kingdom" -> "chip_uk"
+                                            "europe/united-kingdom/england" -> "chip_england"
+                                            else ->
+                                                "chip_" +
+                                                    chipBase.replace('/', '_').replace('-', '_')
+                                        }
+                                    Row(
+                                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        chips.forEach { (slug, label) ->
+                                            val path = "$chipBase/$slug"
+                                            val ready = pathPillReady(path)
+                                            FilterChip(
+                                                selected = selectedGeofabrikPath == path,
+                                                onClick = { selectedGeofabrikPath = path },
+                                                label = { Text(label) },
+                                                colors = readyChipColors(ready),
+                                                modifier = Modifier.testTag("${tagPrefix}_$slug"),
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                                Text(
+                                    GeofabrikDownloadCatalog.regionGranularityNote(selectedGeofabrikPath),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.testTag("region_chips_norway_only_note"),
+                                )
+                            }
+                            val packStatus =
+                                PackRegionAvailability.statusLine(
+                                    selectedPath = selectedGeofabrikPath,
+                                    serverReadyIds = packServerReadyIds,
+                                    dataSource = packCatalogDataSource,
+                                    unreachableReason = packCatalogUnreachable,
+                                    probing = packCatalogProbing,
+                                    dataDir = dataDir,
+                                )
+                            if (packStatus.isNotBlank()) {
+                                Text(
+                                    packStatus,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.testTag("pack_region_availability_status"),
+                                )
+                            }
+                            TextButton(
+                                onClick = { packCatalogEpoch += 1 },
+                                enabled = !packCatalogProbing,
+                                modifier = Modifier.testTag("btn_refresh_pack_catalog"),
+                            ) {
+                                Text(if (packCatalogProbing) "Checking pack server…" else "Refresh pack availability")
+                            }
+                            OutlinedTextField(
+                                value = selectedGeofabrikPath,
+                                onValueChange = { selectedGeofabrikPath = it.trim() },
+                                label = { Text(stringResource(R.string.geo_label_path)) },
+                                singleLine = true,
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .testTag("field_geofabrik_path"),
                             )
+                            val selectedServerReady =
+                                PackRegionAvailability.pathCoveredByReadyIds(
+                                    selectedGeofabrikPath,
+                                    packServerReadyIds,
+                                )
+                            Button(
+                                onClick = {
+                                    val path = selectedGeofabrikPath.trim().trim('/')
+                                    if (path.isEmpty()) {
+                                        status = "Enter a Geofabrik path (e.g. europe/norway/ostlandet)."
+                                    } else {
+                                        startRegionDownload(path)
+                                    }
+                                },
+                                colors =
+                                    if (PackRegionAvailability.downloadRegionUsesReadyStyle(selectedServerReady)) {
+                                        ButtonDefaults.buttonColors(
+                                            containerColor = readyChipGreen,
+                                            contentColor = Color.White,
+                                        )
+                                    } else {
+                                        ButtonDefaults.buttonColors()
+                                    },
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .testTag("btn_download_region"),
+                            ) {
+                                Text(
+                                    PackRegionAvailability.downloadRegionButtonLabel(
+                                        selectedServerReady,
+                                        context.resources,
+                                    ),
+                                )
+                            }
+                            Button(
+                                onClick = {
+                                    val path = selectedGeofabrikPath.trim().trim('/')
+                                    if (path.isEmpty()) {
+                                        status = "Select a Geofabrik path first."
+                                        return@Button
+                                    }
+                                    scope.launch {
+                                        val block =
+                                            withContext(Dispatchers.IO) {
+                                                val packDirForDelete =
+                                                    runCatching {
+                                                        LongTripPackStorage.packDownloadDir(context)
+                                                    }.getOrNull()
+                                                DownloadedRegionDelete.blockReason(
+                                                    path,
+                                                    dataDir,
+                                                    listOfNotNull(packDirForDelete),
+                                                )
+                                            }
+                                        if (block != null) {
+                                            status = block
+                                            return@launch
+                                        }
+                                        confirmDeleteRegion = true
+                                    }
+                                },
+                                enabled = selectedLocalReady,
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .testTag("btn_delete_downloaded_region"),
+                            ) {
+                                Text(stringResource(R.string.tools_delete_downloaded_region))
+                            }
                             Button(
                                 onClick = {
                                     scope.launch {
-                                        status = "Restoring staged offline maps…"
-                                        val report =
-                                            withContext(Dispatchers.IO) {
-                                                OfflinePmtilesBootstrap.restoreOstlandetFromStaging(dataDir)
+                                        val packDir =
+                                            runCatching {
+                                                LongTripPackStorage.packDownloadDir(context)
+                                            }.getOrNull()
+                                        val rid = selectedGeofabrikPath.trim().trim('/')
+                                        val stem =
+                                            if (rid.isNotEmpty()) {
+                                                PackRegionAvailability.localStem(rid)
+                                            } else {
+                                                ""
                                             }
-                                        status = report
-                                        if (report.startsWith("OK:")) {
+                                        // Prefer the long-trip pack root PBF when present
+                                        // (Tools Refresh used to pick the first files/*.osm.pbf,
+                                        // which could be a stale root Ostlandet v8 copy).
+                                        val pbf =
+                                            listOfNotNull(packDir, dataDir)
+                                                .asSequence()
+                                                .mapNotNull { dir ->
+                                                    if (stem.isNotBlank()) {
+                                                        File(dir, "$stem.osm.pbf").takeIf { it.isFile }
+                                                    } else {
+                                                        null
+                                                    }
+                                                        ?: dir.listFiles()?.firstOrNull {
+                                                            it.isFile && it.name.endsWith(".osm.pbf")
+                                                        }
+                                                }.firstOrNull()
+                                        if (pbf == null) {
+                                            status = "No local region PBF to refresh indexed maps from"
+                                            return@launch
+                                        }
+                                        val refreshDir =
+                                            pbf.parentFile?.takeIf { it.isDirectory } ?: dataDir
+                                        val elevDir =
+                                            listOf(
+                                                File(refreshDir, "elevation"),
+                                                File(dataDir, "elevation"),
+                                            ).firstOrNull { it.isDirectory }
+                                        val before =
+                                            withContext(Dispatchers.IO) {
+                                                indexedMapsStatus(
+                                                    pbf.absolutePath,
+                                                    refreshDir.absolutePath,
+                                                )
+                                            }
+                                        IndexedMapsBackground.ensureStarted(
+                                            scope,
+                                            pbf,
+                                            refreshDir,
+                                            elevDir,
+                                            selectedGeofabrikPath.ifBlank { null },
+                                            forceRefresh = true,
+                                        )
+                                        status =
+                                            "indexed before=$before — refresh started (pack server first, " +
+                                            "local rebuild only if server pack unavailable); " +
+                                            "stale files/ root duplicates removed on PASS"
+                                    }
+                                },
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .testTag("btn_rebuild_indexed_maps"),
+                            ) {
+                                Text(stringResource(R.string.ui_refresh_indexed_maps_server_first_then_local))
+                            }
+                            Text(
+                                stringResource(R.string.ui_basemap_pmtiles_included_in_download_region_dem_is_optional),
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                            OutlinedTextField(
+                                value = pmtilesBaseUrl,
+                                onValueChange = {
+                                    pmtilesBaseUrl = it.trim()
+                                    MapHudPrefs.savePmtilesBaseUrl(context, pmtilesBaseUrl)
+                                },
+                                label = { Text(stringResource(R.string.ui_planet_pmtiles_url_blank_latest_protomaps)) },
+                                singleLine = true,
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .testTag("field_pmtiles_base_url"),
+                            )
+                            if (offlineIntegrity.canRestoreFromStaging) {
+                                Text(
+                                    offlineIntegrity.userMessage()
+                                        ?: "Staged offline map files are available to restore.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.testTag("offline_data_mismatch_msg"),
+                                )
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            status = "Restoring staged offline maps…"
+                                            val report =
+                                                withContext(Dispatchers.IO) {
+                                                    OfflinePmtilesBootstrap.restoreOstlandetFromStaging(dataDir)
+                                                }
+                                            status = report
+                                            if (report.startsWith("OK:")) {
+                                                MapHudPrefs.rememberDownloadedPmtilesRegion(
+                                                    context,
+                                                    "europe_norway_ostlandet",
+                                                )
+                                                offlineIntegrity =
+                                                    OfflineDataIntegrity.inspect(context, dataDir)
+                                                styleEpoch += 1
+                                            }
+                                        }
+                                    },
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .testTag("btn_restore_staged_pmtiles"),
+                                ) {
+                                    Text(stringResource(R.string.ui_restore_staged_offline_maps))
+                                }
+                            }
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        val path = selectedGeofabrikPath.trim().trim('/')
+                                        if (path.isEmpty()) {
+                                            status = "Select a Geofabrik path first."
+                                            return@launch
+                                        }
+                                        DownloadProgressClear.clearIfIdle()
+                                        toolsProcessReady = false
+                                        status = "Extracting Mapterhorn DEM for $path..."
+                                        val job =
+                                            withContext(Dispatchers.IO) {
+                                                uniffi.navi.pmtilesQueueDemRegion(
+                                                    dataDir.absolutePath,
+                                                    path,
+                                                )
+                                            }
+                                        if (job.id.isBlank() || job.status.startsWith("failed")) {
+                                            status = "DEM queue failed: ${job.status}"
+                                            return@launch
+                                        }
+                                        pmtilesJobId = job.id
+                                        pmtilesProgress = "Downloading terrain DEM… 0%"
+                                        downloadPolling = true
+                                        val done =
+                                            withContext(Dispatchers.IO) {
+                                                pmtilesRunJob(dataDir.absolutePath, job.id)
+                                            }
+                                        downloadPolling = false
+                                        pmtilesProgress =
+                                            formatProgressPct(
+                                                done.bytesReceived,
+                                                done.totalBytes,
+                                                "Downloading terrain DEM…",
+                                            )
+                                        status = "DEM ${done.status}: ${done.localPath}"
+                                        if (done.status == "completed") {
                                             MapHudPrefs.rememberDownloadedPmtilesRegion(
                                                 context,
-                                                "europe_norway_ostlandet",
+                                                done.regionKey.ifBlank {
+                                                    File(done.localPath).nameWithoutExtension
+                                                },
                                             )
-                                            offlineIntegrity =
-                                                OfflineDataIntegrity.inspect(context, dataDir)
+                                            offlineIntegrity = OfflineDataIntegrity.inspect(context, dataDir)
                                             styleEpoch += 1
+                                            pmtilesProgress = ""
+                                            pmtilesJobId = null
+                                            toolsProcessReady = true
                                         }
                                     }
                                 },
                                 modifier =
                                     Modifier
                                         .fillMaxWidth()
-                                        .testTag("btn_restore_staged_pmtiles"),
+                                        .testTag("btn_download_dem"),
                             ) {
-                                Text(stringResource(R.string.ui_restore_staged_offline_maps))
+                                Text(stringResource(R.string.tools_download_dem))
                             }
-                        }
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    val path = selectedGeofabrikPath.trim().trim('/')
-                                    if (path.isEmpty()) {
-                                        status = "Select a Geofabrik path first."
-                                        return@launch
-                                    }
-                                    DownloadProgressClear.clearIfIdle()
-                                    toolsProcessReady = false
-                                    status = "Extracting Mapterhorn DEM for $path..."
-                                    val job =
-                                        withContext(Dispatchers.IO) {
-                                            uniffi.navi.pmtilesQueueDemRegion(
-                                                dataDir.absolutePath,
-                                                path,
-                                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(
+                                    onClick = {
+                                        pmtilesJobId?.let { id ->
+                                            pmtilesPauseJob(id)
+                                            status = "PMTiles paused"
                                         }
-                                    if (job.id.isBlank() || job.status.startsWith("failed")) {
-                                        status = "DEM queue failed: ${job.status}"
-                                        return@launch
-                                    }
-                                    pmtilesJobId = job.id
-                                    pmtilesProgress = "Downloading terrain DEM… 0%"
-                                    downloadPolling = true
-                                    val done =
-                                        withContext(Dispatchers.IO) {
-                                            pmtilesRunJob(dataDir.absolutePath, job.id)
+                                    },
+                                    enabled = pmtilesJobId != null,
+                                    modifier = Modifier.testTag("btn_pmtiles_pause"),
+                                ) { Text(stringResource(R.string.ui_pause)) }
+                                TextButton(
+                                    onClick = {
+                                        val id = pmtilesJobId ?: return@TextButton
+                                        // Only clear the pause flag — do not start a second run_job
+                                        // (that raced the paused extract and prevented resume).
+                                        pmtilesResumeJob(id)
+                                        status = "PMTiles resuming…"
+                                        downloadPolling = true
+                                    },
+                                    enabled = pmtilesJobId != null,
+                                    modifier = Modifier.testTag("btn_pmtiles_resume"),
+                                ) { Text(stringResource(R.string.ui_resume)) }
+                                TextButton(
+                                    onClick = {
+                                        pmtilesJobId?.let { id ->
+                                            pmtilesCancelJob(id)
+                                            status = "PMTiles cancel requested"
                                         }
-                                    downloadPolling = false
-                                    pmtilesProgress =
-                                        formatProgressPct(
-                                            done.bytesReceived,
-                                            done.totalBytes,
-                                            "Downloading terrain DEM…",
-                                        )
-                                    status = "DEM ${done.status}: ${done.localPath}"
-                                    if (done.status == "completed") {
-                                        MapHudPrefs.rememberDownloadedPmtilesRegion(
-                                            context,
-                                            done.regionKey.ifBlank {
-                                                File(done.localPath).nameWithoutExtension
-                                            },
-                                        )
-                                        offlineIntegrity = OfflineDataIntegrity.inspect(context, dataDir)
-                                        styleEpoch += 1
-                                        pmtilesProgress = ""
-                                        pmtilesJobId = null
-                                        toolsProcessReady = true
-                                    }
-                                }
-                            },
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .testTag("btn_download_dem"),
-                        ) {
-                            Text(stringResource(R.string.tools_download_dem))
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(
-                                onClick = {
-                                    pmtilesJobId?.let { id ->
-                                        pmtilesPauseJob(id)
-                                        status = "PMTiles paused"
-                                    }
-                                },
-                                enabled = pmtilesJobId != null,
-                                modifier = Modifier.testTag("btn_pmtiles_pause"),
-                            ) { Text(stringResource(R.string.ui_pause)) }
-                            TextButton(
-                                onClick = {
-                                    val id = pmtilesJobId ?: return@TextButton
-                                    // Only clear the pause flag — do not start a second run_job
-                                    // (that raced the paused extract and prevented resume).
-                                    pmtilesResumeJob(id)
-                                    status = "PMTiles resuming…"
-                                    downloadPolling = true
-                                },
-                                enabled = pmtilesJobId != null,
-                                modifier = Modifier.testTag("btn_pmtiles_resume"),
-                            ) { Text(stringResource(R.string.ui_resume)) }
-                            TextButton(
-                                onClick = {
-                                    pmtilesJobId?.let { id ->
-                                        pmtilesCancelJob(id)
-                                        status = "PMTiles cancel requested"
-                                    }
-                                },
-                                enabled = pmtilesJobId != null,
-                                modifier = Modifier.testTag("btn_pmtiles_cancel"),
-                            ) { Text(stringResource(R.string.action_cancel)) }
-                        }
-                        Text(
-                            stringResource(R.string.ui_osm_updates_pack_server_first_geofabrik_if_unreachable_opt_i),
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                        val osmCheckReady = pathPillReady(selectedGeofabrikPath)
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    val raw =
-                                        withContext(Dispatchers.IO) {
-                                            checkOsmUpdates(dataDir.absolutePath)
-                                        }
-                                    pendingUpdatePlan = raw
-                                    status = OsmUpdateUserCopy.forCheckReport(raw)
-                                    updateReminderDue = osmWeeklyReminderDue(dataDir.absolutePath)
-                                }
-                            },
-                            colors =
-                                if (PackRegionAvailability.osmCheckUsesReadyStyle(osmCheckReady)) {
-                                    ButtonDefaults.buttonColors(
-                                        containerColor = readyChipGreen,
-                                        contentColor = Color.White,
-                                    )
-                                } else {
-                                    ButtonDefaults.buttonColors()
-                                },
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .testTag("btn_check_osm_updates"),
-                        ) {
-                            Text(stringResource(R.string.tools_check_osm_updates))
-                        }
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    val plan = pendingUpdatePlan
-                                    if (plan.isNullOrBlank() || plan.contains("up to date", ignoreCase = true)) {
-                                        status = OsmUpdateUserCopy.NEED_CHECK
-                                        return@launch
-                                    }
-                                    if (plan.contains("Unsupported", ignoreCase = true) ||
-                                        plan.contains("unsupported", ignoreCase = true)
-                                    ) {
-                                        status = OsmUpdateUserCopy.NO_BINDING
-                                        return@launch
-                                    }
-                                    status = OsmUpdateUserCopy.APPLYING
-                                    val raw =
-                                        withContext(Dispatchers.IO) {
-                                            applyOsmUpdate(dataDir.absolutePath)
-                                        }
-                                    pendingUpdatePlan = null
-                                    // applyOsmUpdate clears place_index + graph-cache and
-                                    // fingerprints the new PBF so packs become stale_pbf.
-                                    // Mirror the download button: rebuild index + queue packs.
-                                    if (raw.contains("PASS", ignoreCase = true)) {
-                                        val pbf = resolveRegionPbf()
-                                        if (pbf != null && pbf.isFile) {
-                                            val pathForReady =
-                                                selectedGeofabrikPath.trim().trim('/').ifBlank { null }
-                                            withContext(Dispatchers.IO) {
-                                                if (pathForReady != null &&
-                                                    PlaceIndexIntact.isIntact(dataDir, pathForReady)
-                                                ) {
-                                                    PlaceIndexReady.markReady(dataDir, pathForReady)
-                                                    return@withContext
-                                                }
-                                                val report =
-                                                    ensurePlaceIndex(
-                                                        pbf.absolutePath,
-                                                        placeIndexDbForWrite().absolutePath,
-                                                        pathForReady,
-                                                    )
-                                                if (report.contains("PASS") && pathForReady != null) {
-                                                    PlaceIndexReady.markReady(dataDir, pathForReady)
-                                                }
-                                            }
-                                            val elevDir =
-                                                File(dataDir, "elevation").takeIf { it.isDirectory }
-                                            IndexedMapsBackground.ensureStarted(
-                                                scope,
-                                                pbf,
-                                                dataDir,
-                                                elevDir,
-                                                selectedGeofabrikPath.ifBlank { null },
-                                            )
-                                            status = OsmUpdateUserCopy.UPDATED_INDEXING
-                                        } else {
-                                            status = OsmUpdateUserCopy.UPDATED
-                                        }
-                                    } else {
-                                        status = OsmUpdateUserCopy.forApplyReport(raw)
-                                    }
-                                }
-                            },
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .testTag("btn_apply_osm_update"),
-                            enabled = !pendingUpdatePlan.isNullOrBlank(),
-                        ) {
-                            Text(stringResource(R.string.tools_apply_osm_update))
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Text(stringResource(R.string.tools_weekly_update_reminder))
-                            Switch(
-                                checked = weeklyReminder,
-                                onCheckedChange = { on ->
-                                    weeklyReminder = on
-                                    setOsmWeeklyReminder(dataDir.absolutePath, on)
-                                    updateReminderDue = osmWeeklyReminderDue(dataDir.absolutePath)
-                                    status =
-                                        if (on) {
-                                            "Weekly OSM check reminder enabled"
-                                        } else {
-                                            "Weekly OSM check reminder disabled"
-                                        }
-                                },
+                                    },
+                                    enabled = pmtilesJobId != null,
+                                    modifier = Modifier.testTag("btn_pmtiles_cancel"),
+                                ) { Text(stringResource(R.string.action_cancel)) }
+                            }
+                            Text(
+                                stringResource(R.string.ui_osm_updates_pack_server_first_geofabrik_if_unreachable_opt_i),
+                                style = MaterialTheme.typography.labelLarge,
                             )
+                            val osmCheckReady = pathPillReady(selectedGeofabrikPath)
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        val raw =
+                                            withContext(Dispatchers.IO) {
+                                                checkOsmUpdates(dataDir.absolutePath)
+                                            }
+                                        pendingUpdatePlan = raw
+                                        status = OsmUpdateUserCopy.forCheckReport(raw)
+                                        updateReminderDue = osmWeeklyReminderDue(dataDir.absolutePath)
+                                    }
+                                },
+                                colors =
+                                    if (PackRegionAvailability.osmCheckUsesReadyStyle(osmCheckReady)) {
+                                        ButtonDefaults.buttonColors(
+                                            containerColor = readyChipGreen,
+                                            contentColor = Color.White,
+                                        )
+                                    } else {
+                                        ButtonDefaults.buttonColors()
+                                    },
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .testTag("btn_check_osm_updates"),
+                            ) {
+                                Text(stringResource(R.string.tools_check_osm_updates))
+                            }
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        val plan = pendingUpdatePlan
+                                        if (plan.isNullOrBlank() || plan.contains("up to date", ignoreCase = true)) {
+                                            status = OsmUpdateUserCopy.NEED_CHECK
+                                            return@launch
+                                        }
+                                        if (plan.contains("Unsupported", ignoreCase = true) ||
+                                            plan.contains("unsupported", ignoreCase = true)
+                                        ) {
+                                            status = OsmUpdateUserCopy.NO_BINDING
+                                            return@launch
+                                        }
+                                        status = OsmUpdateUserCopy.APPLYING
+                                        val raw =
+                                            withContext(Dispatchers.IO) {
+                                                applyOsmUpdate(dataDir.absolutePath)
+                                            }
+                                        pendingUpdatePlan = null
+                                        // applyOsmUpdate clears place_index + graph-cache and
+                                        // fingerprints the new PBF so packs become stale_pbf.
+                                        // Mirror the download button: rebuild index + queue packs.
+                                        if (raw.contains("PASS", ignoreCase = true)) {
+                                            val pbf = resolveRegionPbf()
+                                            if (pbf != null && pbf.isFile) {
+                                                val pathForReady =
+                                                    selectedGeofabrikPath.trim().trim('/').ifBlank { null }
+                                                withContext(Dispatchers.IO) {
+                                                    if (pathForReady != null &&
+                                                        PlaceIndexIntact.isIntact(dataDir, pathForReady)
+                                                    ) {
+                                                        PlaceIndexReady.markReady(dataDir, pathForReady)
+                                                        return@withContext
+                                                    }
+                                                    val report =
+                                                        ensurePlaceIndex(
+                                                            pbf.absolutePath,
+                                                            placeIndexDbForWrite().absolutePath,
+                                                            pathForReady,
+                                                        )
+                                                    if (report.contains("PASS") && pathForReady != null) {
+                                                        PlaceIndexReady.markReady(dataDir, pathForReady)
+                                                    }
+                                                }
+                                                val elevDir =
+                                                    File(dataDir, "elevation").takeIf { it.isDirectory }
+                                                IndexedMapsBackground.ensureStarted(
+                                                    scope,
+                                                    pbf,
+                                                    dataDir,
+                                                    elevDir,
+                                                    selectedGeofabrikPath.ifBlank { null },
+                                                )
+                                                status = OsmUpdateUserCopy.UPDATED_INDEXING
+                                            } else {
+                                                status = OsmUpdateUserCopy.UPDATED
+                                            }
+                                        } else {
+                                            status = OsmUpdateUserCopy.forApplyReport(raw)
+                                        }
+                                    }
+                                },
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .testTag("btn_apply_osm_update"),
+                                enabled = !pendingUpdatePlan.isNullOrBlank(),
+                            ) {
+                                Text(stringResource(R.string.tools_apply_osm_update))
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(stringResource(R.string.tools_weekly_update_reminder))
+                                Switch(
+                                    checked = weeklyReminder,
+                                    onCheckedChange = { on ->
+                                        weeklyReminder = on
+                                        setOsmWeeklyReminder(dataDir.absolutePath, on)
+                                        updateReminderDue = osmWeeklyReminderDue(dataDir.absolutePath)
+                                        status =
+                                            if (on) {
+                                                "Weekly OSM check reminder enabled"
+                                            } else {
+                                                "Weekly OSM check reminder disabled"
+                                            }
+                                    },
+                                )
+                            }
                         }
                         Text(stringResource(R.string.tools_diagnostics), style = MaterialTheme.typography.titleSmall)
                         Row(
@@ -10771,6 +11282,14 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                         driveHud = driveHud.copy(optIn3d = on)
                         MapHudPrefs.saveOptIn3d(context, on)
                         styleEpoch += 1
+                    },
+                    showMapTheme = mwmDrapeMap,
+                    mapThemeAutoSun = mapDayNight == DrapeDayNight.AUTO_SUN,
+                    onMapThemeAutoSun = { auto ->
+                        val next = if (auto) DrapeDayNight.AUTO_SUN else DrapeDayNight.SYSTEM
+                        DiagnosticLog.logToggle("map_theme_auto_sun", auto)
+                        mapDayNight = next
+                        MapHudPrefs.saveDrapeDayNight(context, next)
                     },
                     onToggleContours = { on ->
                         DiagnosticLog.logToggle("contours_enabled", on)
@@ -12896,6 +13415,18 @@ private fun CorridorMapView(
     }
 }
 
+/**
+ * Longest gap between simulated fixes on the MWM path: 1 s of wall clock (a real 1 Hz GPS), shorter at
+ * high time scales (at most 5 fixes per second) so one fix is never more than a few seconds of
+ * simulated driving. 0 keeps the classic one-fix-per-sample behaviour.
+ */
+private fun simFixIntervalMs(drapePath: Boolean): Long =
+    if (!drapePath) {
+        0L
+    } else {
+        (1_000.0 / NaviMapTestHooks.simulationTimeScale.coerceAtLeast(1.0)).toLong().coerceIn(200L, 1_000L)
+    }
+
 private fun ensureRouteAboveHillshade(style: Style) {
     // Route must sit above hillshade / road *geometry*, but BELOW road-name and
     // other symbol labels. A blanket remove+addLayer(top) undoes applyRouteToStyle's
@@ -13343,7 +13874,7 @@ private fun parseBreakPoisJson(raw: String): List<BreakPoiMark> {
 }
 
 /** Split `route_segments_json` into concatenated on-trail / off-trail polylines. */
-private fun splitRouteSegmentPolylines(raw: String): Pair<String, String> {
+internal fun splitRouteSegmentPolylines(raw: String): Pair<String, String> {
     if (raw.isBlank() || raw == "[]") return "" to ""
     return try {
         val arr = org.json.JSONArray(raw)

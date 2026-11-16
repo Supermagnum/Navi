@@ -16,9 +16,8 @@ use navi_cat::benshi::{
     ALLOWED_PRODUCT_VR_N76, ALLOWED_PRODUCT_VR_N76_FW,
 };
 use navi_cat::gating::{GateDecision, GateStatus};
-use navi_cat::program::{program_vfo1_verified, ProgramRequest};
 use navi_cat::types::{RigBackend, RigError, VfoState};
-use navi_cat::{CatService, FfiRigBackend, RepeaterDb, TcpRigBackend};
+use navi_cat::{CatService, FfiRigBackend, RepeaterDb, RetryPolicy, TcpRigBackend};
 use navi_plugin_host::{
     cranelift_abi_supported, plugin_set_enabled, Capability, FilePluginKv, HostApi, PluginHost,
     PluginKvStatus, PluginLimits, PoiWrite, Position, DEFAULT_MEMORY_BYTES,
@@ -28,6 +27,8 @@ const CAT_NAME: &str = "cat";
 const ENABLE_FILE: &str = "plugin_enable_cat.json";
 const KV_REL: &str = "plugin_kv/cat.json";
 const PLUGINS_REL: &str = "plugins";
+/// Plugin KV key the guest reads at its next tick (see `navi-plugin-cats` `FOLLOW_RESULT_KEY`).
+const FOLLOW_RESULT_KEY: &str = "cat_follow_result";
 
 #[derive(Debug, Default)]
 struct OfflineRig;
@@ -236,6 +237,14 @@ impl RigBackend for LiveBackend {
             Self::Tcp(b) => b.freq_step_hz(),
             Self::Ffi(b) => b.freq_step_hz(),
             Self::Benshi(b) => b.freq_step_hz(),
+        }
+    }
+    fn analog_fm_only(&self) -> bool {
+        match self {
+            Self::Offline(b) => b.analog_fm_only(),
+            Self::Tcp(b) => b.analog_fm_only(),
+            Self::Ffi(b) => b.analog_fm_only(),
+            Self::Benshi(b) => b.analog_fm_only(),
         }
     }
 }
@@ -461,14 +470,9 @@ pub fn cat_plugin_connect_tcp(host: String, port: u16, allow_beta: bool) -> Stri
     };
     match TcpRigBackend::connect(&host, port, allow_beta) {
         Ok(tcp) => {
-            let follow_net = session.cat.follow_network_id.clone();
-            let follow_pin = session.cat.follow_pinned.clone();
-            let follow_stop = session.cat.follow_stopped_reason.clone();
             let db = open_db(&session.files_dir);
             let mut cat = CatService::new(LiveBackend::Tcp(tcp), db);
-            cat.follow_network_id = follow_net;
-            cat.follow_pinned = follow_pin;
-            cat.follow_stopped_reason = follow_stop;
+            cat.adopt_session_state(&session.cat);
             session.cat = cat;
             "OK: connected".into()
         }
@@ -486,14 +490,9 @@ pub fn cat_plugin_connect_ffi(model: i32, allow_beta: bool) -> String {
     };
     match FfiRigBackend::open(model, allow_beta) {
         Ok(ffi) => {
-            let follow_net = session.cat.follow_network_id.clone();
-            let follow_pin = session.cat.follow_pinned.clone();
-            let follow_stop = session.cat.follow_stopped_reason.clone();
             let db = open_db(&session.files_dir);
             let mut cat = CatService::new(LiveBackend::Ffi(ffi), db);
-            cat.follow_network_id = follow_net;
-            cat.follow_pinned = follow_pin;
-            cat.follow_stopped_reason = follow_stop;
+            cat.adopt_session_state(&session.cat);
             session.cat = cat;
             format!("OK: connected ffi model={model}")
         }
@@ -514,15 +513,10 @@ fn connect_benshi_link(session: &mut Session, link: BenshiLink, scratch_channel:
     if let Err(e) = backend.handshake() {
         return format!("FAIL: {e}");
     }
-    let follow_net = session.cat.follow_network_id.clone();
-    let follow_pin = session.cat.follow_pinned.clone();
-    let follow_stop = session.cat.follow_stopped_reason.clone();
     let db = open_db(&session.files_dir);
     let model = backend.model_name();
     let mut cat = CatService::new(LiveBackend::Benshi(backend), db);
-    cat.follow_network_id = follow_net;
-    cat.follow_pinned = follow_pin;
-    cat.follow_stopped_reason = follow_stop;
+    cat.adopt_session_state(&session.cat);
     session.cat = cat;
     if is_lab {
         format!("OK: connected benshi lab ({model})")
@@ -588,14 +582,9 @@ pub fn cat_plugin_disconnect() -> String {
     let Some(session) = guard.as_mut() else {
         return "FAIL: not configured".into();
     };
-    let follow_net = session.cat.follow_network_id.clone();
-    let follow_pin = session.cat.follow_pinned.clone();
-    let follow_stop = session.cat.follow_stopped_reason.clone();
     let db = open_db(&session.files_dir);
     let mut cat = CatService::new(LiveBackend::Offline(OfflineRig), db);
-    cat.follow_network_id = follow_net;
-    cat.follow_pinned = follow_pin;
-    cat.follow_stopped_reason = follow_stop;
+    cat.adopt_session_state(&session.cat);
     session.cat = cat;
     "OK: disconnected".into()
 }
@@ -661,6 +650,27 @@ pub fn cat_plugin_network_follow_json(request_json: String) -> String {
     session.cat.network_follow_json(&request_json)
 }
 
+/// Set the follow clock time scale. Pass the route simulation speed while a
+/// route is simulated (for example 12.0 or 20.0) and 1.0 otherwise, so the
+/// 30 s dwell and 60 s gap of network follow run in simulation time.
+/// Idempotent: repeating the scale already in force changes nothing.
+#[uniffi::export]
+pub fn cat_plugin_set_time_scale(scale: f64) -> String {
+    let mut guard = session_lock().lock().expect("cat session");
+    let Some(session) = guard.as_mut() else {
+        return r#"{"ok":false,"error":"not configured"}"#.into();
+    };
+    if session.cat.set_time_scale(scale) {
+        serde_json::json!({"ok":true,"time_scale":session.cat.clock.scale()}).to_string()
+    } else {
+        serde_json::json!({
+            "ok": false,
+            "error": format!("time scale {scale} outside {}..{}", navi_cat::clock::MIN_TIME_SCALE, navi_cat::clock::MAX_TIME_SCALE),
+        })
+        .to_string()
+    }
+}
+
 /// Load + run the CATS wasm guest once (selection / follow decision helpers).
 #[uniffi::export]
 pub fn cat_plugin_tick_guest() -> String {
@@ -691,6 +701,10 @@ pub fn cat_plugin_tick_guest() -> String {
                 .map(|s| s.to_string())
         })
         .unwrap_or_default();
+    let follow_now_unix_s = serde_json::from_str::<serde_json::Value>(&status_json)
+        .ok()
+        .and_then(|v| v.get("now_unix_s").and_then(|x| x.as_u64()))
+        .unwrap_or(0);
     // Named follow: shrink host JSON so the WASM guest query buffer is not truncated
     // (Ostlandet full near-set is ~70–80 KiB; guest used to cap at 64 KiB → live=0).
     let follow_filter = match follow_id.as_str() {
@@ -766,60 +780,19 @@ pub fn cat_plugin_tick_guest() -> String {
     // Re-open KV after the guest returns: plugin_kv_set flushes to disk on each
     // write, so cat_follow_switch is visible here when the guest requested a tune.
     if let Ok(mut kv) = FilePluginKv::open(session.kv_path()) {
-        if let Some(site_id) = kv.get("cat_follow_switch") {
+        if let Some(site_id) = kv.get("cat_follow_switch").filter(|s| !s.is_empty()) {
             let _ = kv.set("cat_follow_switch", "");
             log::info!(target: "NaviCat", "follow_switch site_id={site_id}");
-            let site = session
-                .cat
-                .db
-                .list_sites()
-                .into_iter()
-                .find(|s| s.id == site_id);
-            let Some(site) = site else {
-                log::warn!(
-                    target: "NaviCat",
-                    "VFO1 skip: site_id={site_id} not in repeater db",
-                );
-                return match call {
-                    Ok(outcome) => format!("OK: {outcome:?}"),
-                    Err(e) => format!("FAIL: {e}"),
-                };
-            };
-            let burst = site.access == navi_cat::AccessTone::ToneBurst1750;
-            let shift = site.shift_mhz.unwrap_or(f64::NAN);
-            let req = ProgramRequest {
-                freq_out_mhz: site.freq_out_mhz,
-                shift_mhz: shift,
-                ctcss_hz: if burst { None } else { site.ctcss_hz },
-                dcs_code: if burst { None } else { site.dcs_code },
-                mode: "FM".into(),
-                passband_hz: 12_500,
-                vfo: "VFOA".into(),
-                leaves_follow: false,
-            };
-            match program_vfo1_verified(&mut session.cat.backend, &req) {
-                Ok(reported) => {
-                    log::info!(
-                        target: "NaviCat",
-                        "VFO1 program {} {} freq={:.3} shift={:.3} ctcss={:?} dcs={:?} readback={reported:?}",
-                        site.callsign,
-                        site.id,
-                        site.freq_out_mhz,
-                        shift,
-                        if burst { None } else { site.ctcss_hz },
-                        if burst { None } else { site.dcs_code },
-                    );
-                }
-                Err(e) => {
-                    log::warn!(
-                        target: "NaviCat",
-                        "VFO1 program FAIL {} {} freq={:.3}: {e}",
-                        site.callsign,
-                        site.id,
-                        site.freq_out_mhz,
-                    );
-                }
-            }
+            // Bounded retry (navi-cat follow_program): up to VFO_PROGRAM_ATTEMPTS tries with
+            // VFO_RETRY_PAUSE between them. The report goes back to the guest, which
+            // restores its follow state on a failure instead of keeping it as tuned.
+            let report = session.cat.program_follow_site(
+                &site_id,
+                follow_now_unix_s,
+                &RetryPolicy::default(),
+                &mut std::thread::sleep,
+            );
+            let _ = kv.set(FOLLOW_RESULT_KEY, &report.to_json());
         }
     }
     match call {
@@ -893,9 +866,6 @@ pub fn cat_plugin_update_repeaters_from_server(base_url: String) -> String {
     if report.ok || local_ok {
         // Reload DB handle so subsequent queries see the new rows.
         let db = open_db(&session.files_dir);
-        let follow_net = session.cat.follow_network_id.clone();
-        let follow_pin = session.cat.follow_pinned.clone();
-        let follow_stop = session.cat.follow_stopped_reason.clone();
         let connected = session.cat.backend.is_connected();
         let model = session.cat.backend.model_name();
         let _ = (connected, model);
@@ -903,9 +873,7 @@ pub fn cat_plugin_update_repeaters_from_server(base_url: String) -> String {
         // simplest: reopen offline if disconnected; keep TCP by reconstructing CatService.
         let backend = std::mem::replace(&mut session.cat.backend, LiveBackend::Offline(OfflineRig));
         let mut cat = CatService::new(backend, db);
-        cat.follow_network_id = follow_net;
-        cat.follow_pinned = follow_pin;
-        cat.follow_stopped_reason = follow_stop;
+        cat.adopt_session_state(&session.cat);
         session.cat = cat;
     }
     let mut combined = serde_json::to_value(&report).unwrap_or_else(|_| serde_json::json!({}));

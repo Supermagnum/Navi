@@ -164,6 +164,55 @@ Builds:
       - ../scripts/build-plugin-wasm.sh
     ndk: r27c
 
+  # MWM client (CoMaps leaf maps + drape). Everything native is built from source in this order:
+  #   1. build: scripts/fetch-comaps.sh clones CoMaps at the commit pinned in third_party/comaps.pin.json
+  #      (the only network use besides crates, before Gradle; it runs after the source scan, so the
+  #      CoMaps tree is built from the pin and never scanned as repository content) and runs its configure step;
+  #   2. build: scripts/build-comaps-android.sh applies patches/comaps/*.patch and compiles liborganicmaps.so
+  #      with the NDK; scripts/build-android-native.sh compiles the Rust core (libnavi.so) and the UniFFI
+  #      bindings; scripts/build-plugin-wasm.sh compiles the plugin guests;
+  #   3. gradle: :comaps-sdk generates the drape symbol atlases (puck, APRS and CoMaps icons) from the SVG
+  #      sources in this repository with scripts/generate-comaps-symbols.py (librsvg2-bin + python3-pil).
+  # No prebuilt .so / .jar / atlas is read from the repository. `commit:` is the release tag commit; the
+  # local check (tools/fdroid-check/run-podman-build.sh) replaces PLACEHOLDER_COMMIT with its snapshot.
+  - versionName: 0.4.0-beta
+    versionCode: 34
+    commit: PLACEHOLDER_COMMIT
+    timeout: 28800
+    subdir: app
+    sudo:
+      - apt-get update
+      - apt-get install -y --no-install-recommends make gcc g++ libc-dev autoconf automake
+        libtool pkg-config libssl-dev rustup cmake ninja-build ccache git python3 python3-venv
+        python3-pil python3-protobuf librsvg2-bin fonts-dejavu-core unzip zip rsync jq icu-devtools python3-pip
+    gradle:
+      - yes
+    prebuild:
+      - rustup toolchain install 1.98.0 --profile minimal
+      - rustup default 1.98.0
+      - rustup target add aarch64-linux-android x86_64-linux-android wasm32-unknown-unknown
+      - CLANG_PRE="$$NDK$$/toolchains/llvm/prebuilt/linux-x86_64/bin"
+      - mkdir -p ../.cargo
+      - echo '[target.x86_64-linux-android]' > ../.cargo/config.toml
+      - echo "linker = \"$CLANG_PRE/x86_64-linux-android34-clang\"" >> ../.cargo/config.toml
+      - echo 'rustflags = ["-C", "link-arg=-lc++_shared"]' >> ../.cargo/config.toml
+      - echo '[target.aarch64-linux-android]' >> ../.cargo/config.toml
+      - echo "linker = \"$CLANG_PRE/aarch64-linux-android34-clang\"" >> ../.cargo/config.toml
+      - echo 'rustflags = ["-C", "link-arg=-lc++_shared"]' >> ../.cargo/config.toml
+      - printf 'sdk.dir=%s\nndk.dir=%s\n' "$$SDK$$" "$$NDK$$" > ../local.properties
+    scanignore:
+      - core/src/long_trip/data/region_adjacency.bin
+      - core/src/routing/elevation/data/country_polys.bin
+    build:
+      - export ANDROID_NDK_HOME="$$NDK$$"
+      - export ANDROID_HOME="$$SDK$$"
+      - export SOURCE_DATE_EPOCH=1700000000
+      - ../scripts/fetch-comaps.sh
+      - ../scripts/build-comaps-android.sh
+      - ../scripts/build-android-native.sh all release
+      - ../scripts/build-plugin-wasm.sh
+    ndk: r27c
+
 AllowedAPKSigningKeys: 7a6a218e8a497a51232ca11c9a10b362769c4969fa7dd26b359838a08cb7dd9a
 
 AutoUpdateMode: Version

@@ -533,6 +533,51 @@ pub fn is_fm_programmable(s: &RepeaterSite) -> bool {
     m.is_empty() || m.contains("FM") || m.contains("11K2") || m.contains("F3E")
 }
 
+/// True when `modulation` names only digital modes and no analog FM output.
+/// `FM;DMR` is not digital-only: the analog FM output is usable. An empty or
+/// unrecognised string is not digital-only (unknown is never assumed digital).
+pub fn is_digital_only(modulation: &str) -> bool {
+    const DIGITAL: &[&str] = &[
+        "DMR", "D-STAR", "DSTAR", "C4FM", "YSF", "P25", "NXDN", "TETRA", "M17", "7K60FXE", "F7W",
+        "FXE",
+    ];
+    let upper = modulation.to_ascii_uppercase();
+    if !DIGITAL.iter().any(|d| upper.contains(d)) {
+        return false;
+    }
+    // C4FM contains "FM" but is digital; strip it before looking for analog FM.
+    let analog_probe = upper.replace("C4FM", "");
+    let analog = analog_probe.contains("FM")
+        || analog_probe.contains("11K2")
+        || analog_probe.contains("F3E")
+        || analog_probe.contains("ANALOG");
+    !analog
+}
+
+/// Why a repeater row is not a follow / auto-tune candidate for this rig.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CandidateSkip {
+    /// Digital-only row and the rig is analog FM only.
+    DigitalOnly,
+    /// Shift is not a plausible standard offset for the band.
+    InvalidShift(crate::bandplan::ShiftReject),
+}
+
+/// Rig-capability and band-plan gate for follow candidates. `None` means the
+/// row may be a candidate. An unknown shift (`None`) is allowed here: it is
+/// never programmed, the rig shift is left untouched.
+pub fn candidate_skip(s: &RepeaterSite, analog_fm_only: bool) -> Option<CandidateSkip> {
+    if analog_fm_only && is_digital_only(&s.modulation) {
+        return Some(CandidateSkip::DigitalOnly);
+    }
+    if let Some(shift) = s.shift_mhz {
+        if let Err(why) = crate::bandplan::validate_shift(s.freq_out_mhz, shift) {
+            return Some(CandidateSkip::InvalidShift(why));
+        }
+    }
+    None
+}
+
 pub fn normalize_network_name(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -721,6 +766,31 @@ mod tests {
         .unwrap();
         assert!(db.query_near(61.0, 10.5, 50.0, None).is_empty());
         assert_eq!(db.list_sites().len(), 1);
+    }
+
+    #[test]
+    fn digital_only_detection() {
+        for digital in [
+            "DMR",
+            "dmr",
+            "D-STAR",
+            "C4FM",
+            "P25",
+            "7K60FXE;6K00F7W;9K36F7W",
+        ] {
+            assert!(is_digital_only(digital), "{digital}");
+        }
+        for analog in [
+            "FM",
+            "NFM",
+            "11K2F3E",
+            "FM;DMR",
+            "DMR;FM",
+            "11K2F3E;7K60FXE",
+            "",
+        ] {
+            assert!(!is_digital_only(analog), "{analog}");
+        }
     }
 
     #[test]

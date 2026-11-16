@@ -309,6 +309,30 @@ A switch happens only when **all** of these hold:
 Distance is a proxy for coverage; terrain can make a farther site better. The
 user can **pin** a site, which suspends follow mode until unpinned.
 
+The 30 s and 60 s timers run on the follow clock (`now_unix_s` in the host
+status). That is real time by default. While the app plays a simulated route at
+N times real speed it calls `cat_plugin_set_time_scale(N)` so the follow clock
+runs N times faster too, and `cat_plugin_set_time_scale(1.0)` otherwise. The
+scale is idempotent and re-anchors continuously, so stored follow state never
+ends up in the future. The follow tick should run every 5 s of simulated time
+to reproduce real driving exactly; a 5 s real-time tick at 12x or 20x covers
+60 to 100 s of driving per tick and can step over a short intermediate site.
+
+### Candidates the host never offers
+
+`repeater_query_json` (the follow candidate list) drops rows the connected rig
+must not be tuned to. Each drop is logged once per session with target `NaviCat`.
+The CAT sheet list and the database keep these rows.
+
+| Rule | Log line |
+|---|---|
+| Rig is analog FM only (`RigBackend::analog_fm_only`, default true) and the row has no analog FM output (DMR, D-STAR, C4FM, P25, ...). `FM;DMR` stays a candidate. | `cat_skip digital_only callsign=.. id=.. modulation=.. source=..` |
+| Shift is not a plausible standard offset: more than 10 MHz; 2 m other than 0 or 0.6 MHz; 70 cm other than 0, 1.6, 2.0 or 7.6 MHz; TX outside the band of the RX frequency. Never clamped or guessed. | `cat_skip invalid_shift callsign=.. id=.. freq_mhz=.. shift_mhz=.. reason=".."` |
+
+`program_vfo1_verified` applies the same shift check before any rig write
+(`cat_skip invalid_shift stage=program ...`), so a manual selection of a bad row
+is refused too.
+
 ### Interlocks for follow mode
 
 - Never switch while PTT is active.

@@ -25,11 +25,25 @@ app/keystore/
 app/src/main/jniLibs/**/*.so
 # Built by scripts/build-plugin-wasm.sh — never commit guest binaries.
 app/src/main/assets/plugins/
+# Built by scripts/stage-comaps-data-assets.sh from the CoMaps pin (not World.mwm).
+app/src/main/assets/comaps-data/
+# Accidental / local CoMaps clone (use scripts/fetch-comaps.sh + pin JSON).
+third_party/comaps/
+# Large Phase 3 device route artifacts (adb pull); do not commit GeoJSON dumps.
+test-artifacts/mwm-phase3/
+test-artifacts/mwm-phase4/
+# Phase 6 on-device acceptance output (screenshots, logs, perf captures).
+test-artifacts/phase6/
+test-artifacts/phase6a/
+test-artifacts/phase6b/
+# Phase 7 on-device acceptance output (adb screencap screenshots, logs, state dumps).
+test-artifacts/phase7/
 # Kotlin/IDE incremental compile scratch
 .kotlin/
 
 # Local F-Droid buildability check workspace (not for commit)
 tools/fdroid-check/work/
+tools/fdroid-check/work-*/
 tools/fdroid-check/logs/
 tools/fdroid-check/fdroidserver/
 

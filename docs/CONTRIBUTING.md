@@ -324,7 +324,8 @@ run. Warm-cache wall time must stay at or under 10 minutes.
 | Job | What it checks |
 |---|---|
 | `rust-fmt` | `cargo fmt --all -- --check` |
-| `rust-lib-tests` | `cargo test -p driver-break-core --lib` and `cargo test -p navi-ffi --lib` |
+| `rust-lib-tests` | `cargo test -p driver-break-core --lib` and `cargo test -p navi-ffi --lib` (`NAVI_MWM_CLIENT_ENABLED=1`) |
+| `rust-lib-tests-mwm-off` | Same core lib suite with `NAVI_MWM_CLIENT_ENABLED=0` (classic `.rkyv` path) |
 | `android-native-compile` | `cargo build -p navi-ffi --target aarch64-linux-android --lib` |
 | `kotlin-fast` | ktlint and `./gradlew :app:testDebugUnitTest` |
 | `android-app-compile` | `./gradlew :app:assembleDebug -PnaviAbis=arm64-v8a` |

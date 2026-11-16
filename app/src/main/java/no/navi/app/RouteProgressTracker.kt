@@ -115,7 +115,7 @@ class RouteProgressTracker(
         }
         val nearest = nearestSampleIndex(lat, lon)
         val sample = samples[nearest]
-        val crossTrack = haversineM(lat, lon, sample.lat, sample.lon)
+        val crossTrack = crossTrackM(lat, lon, nearest)
         val offRoute = crossTrack > offRouteThresholdM
 
         // Via / end geofences still use the raw GPS fix (physical proximity).
@@ -216,6 +216,43 @@ class RouteProgressTracker(
             hours += (dm / 1000.0) / speed
         }
         return hours * 60.0
+    }
+
+    /**
+     * Distance from the fix to the planned polyline around [nearest]: the closer of the two
+     * segments that meet at that sample. The samples of an MWM route are spaced by road shape
+     * (hundreds of metres on a straight road), so the distance to the sample point alone makes
+     * a fix in the middle of a long segment look off-route.
+     */
+    private fun crossTrackM(
+        lat: Double,
+        lon: Double,
+        nearest: Int,
+    ): Double {
+        var best = haversineM(lat, lon, samples[nearest].lat, samples[nearest].lon)
+        if (nearest > 0) best = minOf(best, distanceToSegmentM(lat, lon, samples[nearest - 1], samples[nearest]))
+        if (nearest + 1 < samples.size) best = minOf(best, distanceToSegmentM(lat, lon, samples[nearest], samples[nearest + 1]))
+        return best
+    }
+
+    private fun distanceToSegmentM(
+        lat: Double,
+        lon: Double,
+        a: RouteSimSample,
+        b: RouteSimSample,
+    ): Double {
+        // Local equirectangular frame around the fix: exact enough for segments of a few km.
+        val mPerDegLat = 111_320.0
+        val mPerDegLon = mPerDegLat * cos(Math.toRadians(lat))
+        val ax = (a.lon - lon) * mPerDegLon
+        val ay = (a.lat - lat) * mPerDegLat
+        val bx = (b.lon - lon) * mPerDegLon
+        val by = (b.lat - lat) * mPerDegLat
+        val dx = bx - ax
+        val dy = by - ay
+        val len2 = dx * dx + dy * dy
+        val t = if (len2 <= 0.0) 0.0 else (-(ax * dx + ay * dy) / len2).coerceIn(0.0, 1.0)
+        return sqrt((ax + t * dx) * (ax + t * dx) + (ay + t * dy) * (ay + t * dy))
     }
 
     private fun nearestSampleIndex(

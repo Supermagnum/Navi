@@ -13,7 +13,8 @@ verifies the unsigned APK content against the GitHub release asset
   or sideload wording, or held-back features in it.
 - Choose `versionCode` as **upstream fdroiddata `CurrentVersionCode` + 1**.
   Upstream `master` currently has **`CurrentVersionCode` 33**
-  (`0.3.30-beta`), so the next release must use **versionCode 34 or higher**
+  (`0.3.30-beta`). This G3 release uses **`0.4.0-beta` / versionCode 34**;
+  after that is published, the next release must use **versionCode 35 or higher**
   (never reuse a published code). The public F-Droid **client index** can still
   suggest an older build while fdroiddata already lists a newer
   `CurrentVersion` — check both before bumping.
