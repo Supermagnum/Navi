@@ -60,7 +60,7 @@ log = "0.4"
 libc = "0.2"
 uniffi = "0.32"
 usvg = "0.48"
-resvg = "0.48"
+resvg = "0.49"
 flate2 = "1"
 png = "0.18"
 rkyv = { version = "0.8", features = ["alloc"] }
