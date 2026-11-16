@@ -18,8 +18,21 @@ fn search_suite_shape() {
     let queries = suite["queries"].as_array().expect("queries array");
     assert!(queries.len() >= 40, "got {}", queries.len());
 
+    assert!(
+        suite["default_user_context"]["locale"].as_str().is_some(),
+        "default_user_context.locale"
+    );
+    assert!(
+        suite["app_search_context"]["viewport"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Everywhere"),
+        "app_search_context must document Everywhere / no viewport"
+    );
+
     let mut ids = HashSet::new();
     let mut reverse = 0;
+    let mut high = 0;
     let mut kinds = HashSet::new();
     for q in queries {
         let id = q["id"].as_str().expect("id");
@@ -27,6 +40,29 @@ fn search_suite_shape() {
         let kind = q["kind"].as_str().expect("kind");
         let conf = q["confidence"].as_str().expect("confidence");
         assert!(matches!(conf, "high" | "medium"), "{id}: {conf}");
+        let ctx = &q["user_context"];
+        assert!(
+            ctx["locale"]
+                .as_str()
+                .map(|s| !s.is_empty())
+                .unwrap_or(false),
+            "{id}: user_context.locale"
+        );
+        assert!(
+            ctx["lat"].is_f64() && ctx["lon"].is_f64(),
+            "{id}: user_context lat/lon"
+        );
+        if conf == "high" {
+            high += 1;
+        } else {
+            assert!(
+                q["non_gating_reason"]
+                    .as_str()
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false),
+                "{id}: medium rows need non_gating_reason"
+            );
+        }
         match kind {
             "free_text" => {
                 assert!(!q["query"].as_str().unwrap().is_empty(), "{id}");
@@ -64,6 +100,7 @@ fn search_suite_shape() {
         kinds.insert(kind.to_string());
     }
     assert_eq!(reverse, 5);
+    assert_eq!(high, 21, "high-confidence gate is per-query 21/21");
     assert_eq!(kinds.len(), 3);
 
     // Required topic coverage.

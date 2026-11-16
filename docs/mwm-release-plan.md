@@ -64,7 +64,16 @@ upward trend).
 4. Client: remove `.rkyv` UI / download path in a later release (not the first
    MWM ship).
 
-## 3. References
+## 3. G2 search parity (pre-release)
+
+Gate G2 search half: headless and in-app Phase 5 suites must use the same
+Everywhere context as production `ComapsSearchBridge` (device locale / per-query
+`user_context`, position bias, **no** viewport, limit 80) and assert per-query
+21/21 high-confidence — not an 80% pass-rate gate. Details:
+`docs/mwm-phase5-search.md`. Migration pause/resume evidence remains in
+`docs/mwm-phase7-migration.md`.
+
+## 4. References
 
 - `docs/mwm-client-migration.md` — phases 1–8 overview
 - `docs/mwm-phase7-migration.md` — migration E2E

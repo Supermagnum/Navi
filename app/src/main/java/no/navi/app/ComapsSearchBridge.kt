@@ -8,6 +8,7 @@ import uniffi.navi.FfiSearchHitKind
 import uniffi.navi.FfiSearchListener
 import uniffi.navi.PlaceHit
 import uniffi.navi.comapsSearchCancel
+import uniffi.navi.comapsSearchClearViewport
 import uniffi.navi.comapsSearchEnabled
 import uniffi.navi.comapsSearchMerge
 import uniffi.navi.comapsSearchSetLocale
@@ -27,6 +28,13 @@ import java.util.concurrent.TimeUnit
  * label). An empty result (flag off, no session, no hit, timeout) means the
  * caller keeps the FTS list unchanged. Both entry points block; call them off
  * the main thread.
+ *
+ * Production context (Everywhere / To-field):
+ * - locale: [Locale.getDefault] language (or [locale] override), fallback `en`
+ * - position: optional bias lat/lon when finite and not (0,0)
+ * - viewport: none — always [comapsSearchClearViewport] (Everywhere mode)
+ * - mode: free-text (`isCategory=false`); no category/country hints
+ * - max results: caller [limit] (UI uses 80)
  */
 object ComapsSearchBridge {
     private const val TAG = "NaviSearch"
@@ -52,32 +60,52 @@ object ComapsSearchBridge {
     }
 
     /**
+     * Apply the production Everywhere search context: locale, optional position,
+     * cleared viewport. Shared by [search], [searchCategory], and instrumented
+     * harnesses so headless / in-app match the app.
+     */
+    fun applyEverywhereContext(
+        locale: String?,
+        biasLat: Double?,
+        biasLon: Double?,
+    ) {
+        val lang =
+            locale?.trim()?.takeIf { it.isNotEmpty() }
+                ?: Locale.getDefault().language.ifBlank { "en" }
+        comapsSearchSetLocale(lang)
+        comapsSearchClearViewport()
+        val pos =
+            if (biasLat != null &&
+                biasLon != null &&
+                biasLat.isFinite() &&
+                biasLon.isFinite() &&
+                !(biasLat == 0.0 && biasLon == 0.0)
+            ) {
+                biasLat to biasLon
+            } else {
+                null
+            }
+        comapsSearchSetPosition(pos?.first ?: 0.0, pos?.second ?: 0.0, pos != null)
+    }
+
+    /**
      * CoMaps hits for [query], in engine order. Empty when search is not
      * available, nothing matched, or [stillActive] turned false (the request is
      * then cancelled).
+     *
+     * @param locale when null, uses the device default language (production path)
      */
     fun search(
         query: String,
         biasLat: Double?,
         biasLon: Double?,
         limit: Int,
+        locale: String? = null,
         stillActive: () -> Boolean = { true },
     ): List<FfiSearchHit> {
         if (!enabled()) return emptyList()
         return runCatching {
-            comapsSearchSetLocale(Locale.getDefault().language.ifBlank { "en" })
-            val pos =
-                if (biasLat != null &&
-                    biasLon != null &&
-                    biasLat.isFinite() &&
-                    biasLon.isFinite() &&
-                    !(biasLat == 0.0 && biasLon == 0.0)
-                ) {
-                    biasLat to biasLon
-                } else {
-                    null
-                }
-            comapsSearchSetPosition(pos?.first ?: 0.0, pos?.second ?: 0.0, pos != null)
+            applyEverywhereContext(locale, biasLat, biasLon)
             val collector = Collector()
             val id = comapsSearchStart(query, false, limit.toUInt(), collector)
             if (id == 0uL) {
@@ -96,6 +124,36 @@ object ComapsSearchBridge {
             if (!stillActive()) emptyList() else collector.hits.toList()
         }.getOrElse { e ->
             Log.w(TAG, "comaps_search failed q=$query: ${e.message}")
+            emptyList()
+        }
+    }
+
+    /**
+     * Category-mode search with the same Everywhere locale/position/viewport
+     * context as [search]. Used by the Phase 5 suite; production chips typically
+     * go through free-text [search] after resolving a synonym.
+     */
+    fun searchCategory(
+        queryText: String,
+        biasLat: Double?,
+        biasLon: Double?,
+        limit: Int,
+        locale: String? = null,
+        timeoutSec: Long = 60,
+    ): List<FfiSearchHit> {
+        if (!enabled()) return emptyList()
+        return runCatching {
+            applyEverywhereContext(locale, biasLat, biasLon)
+            val collector = Collector()
+            val id = comapsSearchStart(queryText, true, limit.toUInt(), collector)
+            if (id == 0uL) return@runCatching emptyList()
+            if (!collector.done.await(timeoutSec, TimeUnit.SECONDS)) {
+                comapsSearchCancel(id)
+                collector.done.await(2_000L, TimeUnit.MILLISECONDS)
+            }
+            collector.hits.toList()
+        }.getOrElse { e ->
+            Log.w(TAG, "comaps_search_category failed q=$queryText: ${e.message}")
             emptyList()
         }
     }

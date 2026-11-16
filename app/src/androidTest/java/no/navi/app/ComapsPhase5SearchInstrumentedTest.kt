@@ -23,9 +23,6 @@ import uniffi.navi.comapsNativeAvailable
 import uniffi.navi.comapsReverseGeocode
 import uniffi.navi.comapsSearchCancel
 import uniffi.navi.comapsSearchEnabled
-import uniffi.navi.comapsSearchSetLocale
-import uniffi.navi.comapsSearchSetPosition
-import uniffi.navi.comapsSearchSetViewport
 import uniffi.navi.comapsSearchStart
 import uniffi.navi.comapsSessionClose
 import uniffi.navi.comapsSessionOpen
@@ -41,17 +38,24 @@ import java.util.concurrent.TimeUnit
  * Phase 5 offline search suite on device (Østlandet MWMs, flag ON).
  *
  * Fixture: androidTest/assets/search-suite-ostlandet.json (copy of
- * core/tests/fixtures/mwm/search-suite-ostlandet.json). The whole class is
- * skipped when the native core is not linked, the flag is off or the MWMs are
- * not on the device, so it is safe to leave in the default instrumented run.
+ * core/tests/fixtures/mwm/search-suite-ostlandet.json). Skipped when the native
+ * core is not linked, the flag is off, or MWMs are missing.
  *
- * Gate: at least 80% of `confidence=high` rows must pass; medium rows and
- * every row outcome are written to out-phase5-search/search-suite-summary.json.
+ * Search context matches production [ComapsSearchBridge]: per-query
+ * `user_context` locale + position, viewport cleared (Everywhere), free-text
+ * `isCategory=false`, limit 80. Gate: every `confidence=high` row must pass
+ * individually (no percentage gate); medium rows are reported with
+ * `non_gating_reason`.
  */
 @RunWith(AndroidJUnit4::class)
 class ComapsPhase5SearchInstrumentedTest {
     private lateinit var root: File
     private lateinit var outDir: File
+
+    companion object {
+        /** Same limit as the app search panel / MainActivity CoMaps path. */
+        private const val APP_LIMIT = 80
+    }
 
     @Before
     fun setUp() {
@@ -100,7 +104,15 @@ class ComapsPhase5SearchInstrumentedTest {
                 loadWetlandSidecars = false,
             )
         assumeTrue("session: ${open.errorMessage}", open.ok)
-        comapsSearchSetLocale("nb")
+        // Match in-app: wait until Everywhere search actually returns hits
+        // (enabled/session-open can precede the lazy search Engine).
+        val warmed =
+            ComapsPhase6Harness.waitFor(90_000L, 750L) {
+                ComapsSearchBridge
+                    .search("Oslo", 59.9139, 10.7522, 5, locale = "nb")
+                    .isNotEmpty()
+            }
+        assumeTrue("CoMaps Everywhere search engine did not warm up", warmed)
     }
 
     @After
@@ -122,63 +134,90 @@ class ComapsPhase5SearchInstrumentedTest {
 
     private fun norm(s: String): String = s.filter { it.isLetterOrDigit() }.lowercase()
 
-    private fun runSearch(
-        query: String,
-        isCategory: Boolean,
-        near: JSONObject?,
-    ): Collector {
-        if (near != null) {
-            val lat = near.getDouble("lat")
-            val lon = near.getDouble("lon")
-            comapsSearchSetPosition(lat, lon, true)
-            comapsSearchSetViewport(lat - 0.5, lon - 0.8, lat + 0.5, lon + 0.8)
-        } else {
-            // Wide South/East Norway viewport for unbound To-field queries.
-            // Everywhere mode used to finish in ~1 s against the old comaps-data
-            // staging; after the drape SDK root-asset staging it never delivers
-            // an EndMarker for town queries (cancel still works). A Norway-scale
-            // Viewport completes and still ranks Østlandet towns in the top hits.
-            comapsSearchSetPosition(61.0, 10.5, true)
-            comapsSearchSetViewport(58.5, 7.5, 63.5, 13.5)
+    private fun userContext(q: JSONObject): Triple<String, Double, Double> {
+        val ctx = q.optJSONObject("user_context")
+        requireNotNull(ctx) { "query ${q.optString("id")} missing user_context" }
+        return Triple(
+            ctx.getString("locale"),
+            ctx.getDouble("lat"),
+            ctx.getDouble("lon"),
+        )
+    }
+
+    private fun rankOf(
+        hits: List<FfiSearchHit>,
+        wanted: JSONArray,
+    ): Int {
+        for ((idx, hit) in hits.withIndex()) {
+            val hay = norm(hit.name + " " + hit.address)
+            for (i in 0 until wanted.length()) {
+                if (hay.contains(norm(wanted.getString(i)))) return idx + 1
+            }
         }
-        val collector = Collector()
-        val id = comapsSearchStart(query, isCategory, 30u, collector)
-        assertTrue("search '$query' did not start", id != 0uL)
-        // Everywhere free-text over Østlandet + World can take longer than a viewport query on cold cache.
-        assertTrue("search '$query' timed out", collector.done.await(60, TimeUnit.SECONDS))
-        // Give the search worker a quiet gap before the next Everywhere query.
-        // Back-to-back searches have SEGV'd in CountryInfoGetter (headless).
-        Thread.sleep(250)
-        return collector
+        return -1
     }
 
     private fun evaluate(
         q: JSONObject,
         hits: List<FfiSearchHit>,
-    ): Pair<Boolean, String> {
+    ): Triple<Boolean, Int, String> {
         if (hits.size < q.optInt("min_results", 0)) {
-            return false to "got ${hits.size} < min_results ${q.optInt("min_results")}"
+            return Triple(false, -1, "got ${hits.size} < min_results ${q.optInt("min_results")}")
         }
         val topN = q.optInt("top_n", 3)
-        val top = hits.take(topN)
         q.optJSONArray("expect_top_any")?.let { wanted ->
-            val ok =
-                (0 until wanted.length()).any { i ->
-                    val needle = norm(wanted.getString(i))
-                    top.any {
-                        norm(it.name).contains(needle) || norm(it.address).contains(needle)
-                    }
-                }
-            if (!ok) return false to "top$topN=${top.map { it.name to it.address }}"
+            val rank = rankOf(hits, wanted)
+            val ok = rank in 1..topN
+            return Triple(
+                ok,
+                rank,
+                if (ok) "" else "top$topN=${hits.take(topN).map { it.name to it.address }}",
+            )
         }
         q.optJSONArray("expect_address_any")?.let { wanted ->
+            val top = hits.take(topN)
             val ok =
                 (0 until wanted.length()).any { i ->
                     top.any { norm(it.address + it.name).contains(norm(wanted.getString(i))) }
                 }
-            if (!ok) return false to "top$topN addresses=${top.map { it.address }}"
+            val rank = if (ok) rankOf(hits, wanted) else -1
+            return Triple(
+                ok,
+                rank,
+                if (ok) "" else "top$topN addresses=${top.map { it.address }}",
+            )
         }
-        return true to ""
+        return Triple(true, if (hits.isNotEmpty()) 1 else -1, "")
+    }
+
+    private fun runFreeText(q: JSONObject): List<FfiSearchHit> {
+        val (locale, lat, lon) = userContext(q)
+        // Same code path as the app search panel.
+        return ComapsSearchBridge.search(
+            query = q.getString("query"),
+            biasLat = lat,
+            biasLon = lon,
+            limit = APP_LIMIT,
+            locale = locale,
+        )
+    }
+
+    private fun runCategory(q: JSONObject): Pair<List<FfiSearchHit>, String> {
+        val (locale, lat, lon) = userContext(q)
+        val key = q.getString("query")
+        val text = comapsCategoryQuery(key, locale)
+        if (text == null) return emptyList<FfiSearchHit>() to "no category string for $key"
+        val hits =
+            ComapsSearchBridge.searchCategory(
+                queryText = text,
+                biasLat = lat,
+                biasLon = lon,
+                limit = APP_LIMIT,
+                locale = locale,
+            )
+        // Quiet gap between category/Everywhere queries (SEGV history).
+        Thread.sleep(250)
+        return hits to "q=$text"
     }
 
     @Test
@@ -194,61 +233,85 @@ class ComapsPhase5SearchInstrumentedTest {
         val results = JSONArray()
         var highTotal = 0
         var highPass = 0
+        val highFailures = mutableListOf<String>()
 
         for (i in 0 until queries.length()) {
             val q = queries.getJSONObject(i)
             val id = q.getString("id")
             val high = q.getString("confidence") == "high"
             val started = System.currentTimeMillis()
-            val (ok, detail) =
-                when (q.getString("kind")) {
-                    "free_text" ->
-                        evaluate(q, runSearch(q.getString("query"), false, q.optJSONObject("near")).hits)
-                    "category" -> {
-                        val key = q.getString("query")
-                        val text = comapsCategoryQuery(key, "nb")
-                        if (text == null) {
-                            false to "no category string for $key"
-                        } else {
-                            evaluate(q, runSearch(text, true, q.optJSONObject("near")).hits)
-                        }
-                    }
-                    "reverse" -> {
-                        val addr = comapsReverseGeocode(q.getDouble("lat"), q.getDouble("lon"))
-                        val wanted = q.getJSONArray("expect_street_any")
-                        val streetOk =
-                            addr.found &&
-                                (0 until wanted.length()).any { norm(addr.street).contains(norm(wanted.getString(it))) }
-                        val distOk = addr.distanceM <= q.optDouble("max_distance_m", 150.0)
-                        (streetOk && distOk) to "street='${addr.street}' dist=${addr.distanceM}"
-                    }
-                    else -> false to "unknown kind"
+            var hits: List<FfiSearchHit> = emptyList()
+            var ok: Boolean
+            var rank = -1
+            var detail: String
+            when (q.getString("kind")) {
+                "free_text" -> {
+                    hits = runFreeText(q)
+                    val ev = evaluate(q, hits)
+                    ok = ev.first
+                    rank = ev.second
+                    detail = ev.third
+                    Thread.sleep(250)
                 }
+                "category" -> {
+                    val (h, note) = runCategory(q)
+                    hits = h
+                    val ev = evaluate(q, hits)
+                    ok = ev.first
+                    rank = ev.second
+                    detail = listOf(ev.third, note).filter { it.isNotEmpty() }.joinToString(" ")
+                }
+                "reverse" -> {
+                    val addr = comapsReverseGeocode(q.getDouble("lat"), q.getDouble("lon"))
+                    val wanted = q.getJSONArray("expect_street_any")
+                    val streetOk =
+                        addr.found &&
+                            (0 until wanted.length()).any {
+                                norm(addr.street).contains(norm(wanted.getString(it)))
+                            }
+                    val distOk = addr.distanceM <= q.optDouble("max_distance_m", 150.0)
+                    ok = streetOk && distOk
+                    rank = if (ok) 1 else -1
+                    detail = "street='${addr.street}' dist=${addr.distanceM}"
+                }
+                else -> {
+                    ok = false
+                    detail = "unknown kind"
+                }
+            }
             if (high) {
                 highTotal++
-                if (ok) highPass++
+                if (ok) highPass++ else highFailures.add("$id: $detail")
             }
             results.put(
                 JSONObject()
                     .put("id", id)
+                    .put("kind", q.getString("kind"))
                     .put("confidence", q.getString("confidence"))
                     .put("pass", ok)
+                    .put("rank", rank)
                     .put("detail", detail)
-                    .put("ms", System.currentTimeMillis() - started),
+                    .put("ms", System.currentTimeMillis() - started)
+                    .put("top", JSONArray(hits.take(5).map { it.name }))
+                    .put("non_gating_reason", q.optString("non_gating_reason", "")),
             )
         }
         File(outDir, "search-suite-summary.json").writeText(
             JSONObject()
+                .put("path", "headless-ComapsSearchBridge-Everywhere")
                 .put("query_count", queries.length())
                 .put("high_total", highTotal)
                 .put("high_pass", highPass)
+                .put("high_failures", JSONArray(highFailures))
                 .put("results", results)
                 .toString(2),
         )
+        assertTrue("no high-confidence rows in fixture", highTotal > 0)
         assertTrue(
-            "high-confidence pass rate too low: $highPass / $highTotal (see out-phase5-search)",
-            highTotal > 0 && highPass * 5 >= highTotal * 4,
+            "high-confidence per-query failures ($highPass/$highTotal): $highFailures",
+            highFailures.isEmpty(),
         )
+        assertEquals("high pass must equal high total", highTotal, highPass)
     }
 
     @Test
@@ -267,6 +330,7 @@ class ComapsPhase5SearchInstrumentedTest {
 
     @Test
     fun searchIsCancellable() {
+        ComapsSearchBridge.applyEverywhereContext("nb", 61.0, 10.5)
         val collector = Collector()
         val id = comapsSearchStart("Lillehammer", false, 30u, collector)
         assertTrue(id != 0uL)

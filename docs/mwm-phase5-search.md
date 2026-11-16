@@ -138,10 +138,31 @@ Host checks (no engine): fixture shape, category mapping, merge with Navi POI
 sources, parity-suite `expect` values (`mwm_phase5_fixtures`,
 `mwm::comaps_search`, `mwm::comaps_snap`).
 
-Device: `ComapsPhase5SearchInstrumentedTest` skips unless the native core is
-linked, the flag is on and `World.mwm` plus at least one leaf are present under
-`navi-mwm-test/261105`. It runs the suite (gate: >= 80% of `high` rows),
-cancellation, and the off-road snap flow.
+Device: `ComapsPhase5SearchInstrumentedTest` (headless) and
+`ComapsPhase5InAppSearchInstrumentedTest` skip unless the native core is
+linked, the flag is on and `World.mwm` plus at least one leaf are present.
+Both use the production Everywhere context via `ComapsSearchBridge`
+(per-query `user_context` locale + position, viewport cleared, limit 80).
+Gate: every `confidence=high` row must pass individually (21/21); medium rows
+carry `non_gating_reason` and are reported only. Also covers cancellation and
+the off-road snap flow (headless class).
+
+### Production search context (`ComapsSearchBridge`)
+
+| Parameter | Value |
+|-----------|--------|
+| Locale | `Locale.getDefault().language` (fallback `en`); suite overrides via `user_context.locale` |
+| Position | Optional bias lat/lon when finite and not `(0,0)` |
+| Viewport | **None** — `comapsSearchClearViewport` (Everywhere) |
+| Mode | Free-text `isCategory=false` (category suite rows use `searchCategory` with the same locale/position/viewport) |
+| Max results | Caller limit (UI / suite = 80) |
+| Category / country hints | None on the CoMaps bridge |
+
+Deliberate: search around the user (camera) position in the device language,
+Everywhere over installed MWMs. Concern if viewport were set instead: a Norway-scale
+viewport can mask Everywhere ranking bugs; if locale were forced `en`, Norwegian
+synonyms (`drikkevann`, `lading`) and some æøå folds can weaken. Suite locks
+`locale=nb` + Ostlandet bias explicitly so headless and in-app stay aligned.
 
 ## Acceptance notes (Samsung `R52TB0JQEDE`, 2026-11-15)
 
