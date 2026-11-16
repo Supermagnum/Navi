@@ -99,6 +99,30 @@ android {
                 enableV3Signing = true
             }
         }
+        // Local releasetest key (gitignored). scripts/make-releasetest-keystore.sh
+        create("releasetest") {
+            val store = file("keystore/navi-releasetest.jks")
+            if (store.isFile) {
+                storeFile = store
+                storePassword =
+                    providers
+                        .gradleProperty("navi.releasetest.storePassword")
+                        .orElse("navi-releasetest-local")
+                        .get()
+                keyAlias =
+                    providers
+                        .gradleProperty("navi.releasetest.keyAlias")
+                        .orElse("navi-releasetest")
+                        .get()
+                keyPassword =
+                    providers
+                        .gradleProperty("navi.releasetest.keyPassword")
+                        .orElse("navi-releasetest-local")
+                        .get()
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
     }
 
     buildTypes {
@@ -127,7 +151,41 @@ android {
                 signingConfig = upload
             }
         }
+        // Sideloadable release-opt build that installs next to debug
+        // (applicationId no.navi.app.releasetest). Used for Phase 5/6 device
+        // measurements. Native/Rust are release; R8 matches production release
+        // (minify currently off — same as `release`).
+        create("releasetest") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".releasetest"
+            versionNameSuffix = "-releasetest"
+            matchingFallbacks += listOf("release")
+            isDebuggable = false
+            isMinifyEnabled = false
+            isShrinkResources = false
+            vcsInfo {
+                include = false
+            }
+            val rt = signingConfigs.findByName("releasetest")
+            if (rt?.storeFile?.isFile == true) {
+                signingConfig = rt
+            } else {
+                logger.warn(
+                    "releasetest: missing app/keystore/navi-releasetest.jks — " +
+                        "run scripts/make-releasetest-keystore.sh",
+                )
+            }
+        }
     }
+
+    // Instrumented tests target debug by default. For releasetest:
+    //   ./gradlew :app:connectedReleasetestAndroidTest -Pnavi.testBuildType=releasetest
+    val testBuild =
+        providers
+            .gradleProperty("navi.testBuildType")
+            .orElse("debug")
+            .get()
+    testBuildType = testBuild
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -151,7 +209,39 @@ android {
     }
 
     androidResources {
-        noCompress += listOf("svg", "svgz")
+        // CoMaps' ZipFileReader reads APK entries as raw bytes (no inflate): every asset
+        // type the Framework / drape reads from the APK must be stored uncompressed
+        // (same list as the CoMaps app's own build.gradle.kts, plus the ICU data file).
+        noCompress +=
+            listOf(
+                "svg",
+                "svgz",
+                "txt",
+                "bin",
+                "html",
+                "png",
+                "json",
+                "mwm",
+                "ttf",
+                "sdf",
+                "ui",
+                "config",
+                "csv",
+                "spv",
+                "obj",
+                "dat",
+            )
+    }
+
+    // Phase 6 hybrid drape: the SDK-backed host code (src/drape/java) only compiles
+    // together with the :comaps-sdk library, which settings.gradle.kts includes when
+    // the CoMaps checkout exists. Without it the app builds MapLibre-only.
+    if (rootProject.findProject(":comaps-sdk") != null) {
+        sourceSets {
+            getByName("main") {
+                java.srcDir("src/drape/java")
+            }
+        }
     }
 
     // Incomplete nb/nn translations must not fail the build while keys are filled
@@ -181,6 +271,10 @@ dependencies {
     // Evidence 2026-07-31: AAOS BearingCrashIsolationTest PASS (no SIGSEGV);
     // SM-P613 online/offline 3D wash cleared (demHitsOk>=1).
     implementation("org.maplibre.gl:android-sdk:13.6.1")
+    // CoMaps drape (Java/res/assets of the pinned checkout, no CMake): see comaps-sdk/.
+    if (rootProject.findProject(":comaps-sdk") != null) {
+        implementation(project(":comaps-sdk"))
+    }
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")
@@ -216,6 +310,7 @@ detekt {
     config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
     source.setFrom(
         "src/main/java",
+        "src/drape/java",
         "src/test/java",
         "src/androidTest/java",
     )

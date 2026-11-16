@@ -225,6 +225,14 @@ A4: `climb_source=mwm` on every OK route above.
 ### Still open
 
 - Snap projection quality in sparse mountain areas (confirm still required).
-- Production UI still plans via `planCarRoute` (`.rkyv`); MWM climb HUD is
-  proven on the CoMaps session path (`RouteClimbSource` + closeout). Wire
-  `publishIfOk` when production switches the planner.
+
+### Production planner (pre–Phase 6)
+
+When `NAVI_MWM_CLIENT_ENABLED` / `MWM_CLIENT_ENABLED` is ON and a CoMaps
+session is open, `MainActivity` plans through `MwmProductionPlanner` (CoMaps
+session → `CorridorRouteResult`, `PLANNER=mwm` in the report, climb via
+`RouteClimbSource`). `.rkyv` `planCarRoute` / `planHikingRoute` are blocked for
+that window (`set_mwm_production_planner_active`). Flag OFF keeps the `.rkyv`
+path. Parity suite on device uses the same adapter. See
+`docs/mwm-releasetest-build.md` for the releasetest APK used for measurements.
+

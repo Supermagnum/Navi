@@ -313,6 +313,53 @@ pub fn comaps_session_close() {
     }
 }
 
+/// Arm CoMaps `navi_comaps_cancel`. This is a pre-flight latch: the next
+/// [`comaps_session_route`] call consumes it and returns `Cancelled` before routing; a
+/// route that is already running is **not** interrupted. Callers that cancel and then
+/// start a new plan must not use it (the new plan would be cancelled instead).
+#[uniffi::export]
+pub fn comaps_session_cancel() {
+    if let Ok(guard) = SESSION.lock() {
+        if let Some(r) = guard.as_ref() {
+            r.cancel();
+        }
+    }
+}
+
+/// True when [`comaps_session_open`] currently holds a live router.
+#[uniffi::export]
+pub fn comaps_session_is_open() -> bool {
+    SESSION.lock().ok().map(|g| g.is_some()).unwrap_or(false)
+}
+
+/// When true, [`crate::plan_car_route`] / hiking must not run (MWM production
+/// path is active). Set from Kotlin around MWM plans; cleared afterwards.
+static MWM_PRODUCTION_PLANNER: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[uniffi::export]
+pub fn set_mwm_production_planner_active(active: bool) {
+    MWM_PRODUCTION_PLANNER.store(active, std::sync::atomic::Ordering::SeqCst);
+}
+
+#[uniffi::export]
+pub fn mwm_production_planner_active() -> bool {
+    MWM_PRODUCTION_PLANNER.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Call from `.rkyv` planners: logs + returns true when the MWM production
+/// path forbids them (runtime assertion for flag-ON end-to-end).
+pub(crate) fn assert_rkyv_planner_allowed(who: &str) -> bool {
+    if !mwm_production_planner_active() {
+        return true;
+    }
+    log::error!(
+        target: "NaviPlan",
+        "ASSERT: {who} called while MWM production planner is active (flag ON path must not use .rkyv)"
+    );
+    false
+}
+
 #[uniffi::export]
 pub fn comaps_session_set_bike_wetland(enabled: bool) {
     if let Ok(guard) = SESSION.lock() {

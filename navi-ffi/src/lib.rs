@@ -189,6 +189,8 @@ pub fn set_test_index_phase_sleep_ms(ms: u64) {
 #[uniffi::export]
 pub fn cancel_in_flight_plan() {
     driver_break_core::download::plan_cancel::request_cancel();
+    // Also abort an in-flight CoMaps route when the MWM production path is active.
+    mwm_comaps_ffi::comaps_session_cancel();
 }
 
 /// True when the place-index SQLite file has at least one searchable row.
@@ -2383,6 +2385,12 @@ pub fn plan_car_route_at(
     via_points: Vec<FfiLatLon>,
 ) -> CorridorRouteResult {
     ensure_native_logging();
+    if !mwm_comaps_ffi::assert_rkyv_planner_allowed("plan_car_route") {
+        return empty_corridor(
+            "TEST_KIND=PLAN_CAR_ROUTE\nFAIL: MWM production planner active; .rkyv plan_car_route forbidden\nPLANNER=rkyv_forbidden\n"
+                .into(),
+        );
+    }
     driver_break_core::routing::plan_file_log::set_data_dir(&data_dir);
     let _flight = match PLAN_CAR_ROUTE_FLIGHT.try_lock() {
         Ok(g) => g,
@@ -6422,6 +6430,12 @@ pub fn plan_hiking_route(
     data_dir: String,
     avoid_ferries: bool,
 ) -> CorridorRouteResult {
+    if !mwm_comaps_ffi::assert_rkyv_planner_allowed("plan_hiking_route") {
+        return empty_corridor(
+            "TEST_KIND=PLAN_HIKING_ROUTE\nFAIL: MWM production planner active; .rkyv plan_hiking_route forbidden\nPLANNER=rkyv_forbidden\n"
+                .into(),
+        );
+    }
     let _ch = driver_break_core::download::progress::ChannelGuard::enter(
         driver_break_core::download::progress::ProgressChannel::Plan,
     );

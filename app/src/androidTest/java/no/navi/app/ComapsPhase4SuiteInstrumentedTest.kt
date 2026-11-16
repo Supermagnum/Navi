@@ -10,12 +10,11 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import uniffi.navi.FfiComapsOptimize
-import uniffi.navi.FfiComapsProfile
 import uniffi.navi.FfiComapsRouteCode
+import uniffi.navi.TravelProfile
 import uniffi.navi.comapsNativeAvailable
 import uniffi.navi.comapsSessionClose
 import uniffi.navi.comapsSessionOpen
-import uniffi.navi.comapsSessionRoute
 import uniffi.navi.comapsSessionSetAvoidOptions
 import uniffi.navi.comapsSessionSetBikeWetland
 import uniffi.navi.comapsSessionSetOptimize
@@ -64,13 +63,23 @@ class ComapsPhase4SuiteInstrumentedTest {
         copyAssetDir("comaps-data", root)
     }
 
-    private fun profileOf(s: String): FfiComapsProfile =
+    private fun travelProfileOf(s: String): TravelProfile =
         when (s.lowercase()) {
-            "car" -> FfiComapsProfile.CAR
-            "foot", "hike", "pedestrian" -> FfiComapsProfile.PEDESTRIAN
-            "bike", "bicycle" -> FfiComapsProfile.BICYCLE
-            else -> FfiComapsProfile.CAR
+            "car" -> TravelProfile.CAR
+            "foot", "hike", "pedestrian" -> TravelProfile.HIKING
+            "bike", "bicycle" -> TravelProfile.BICYCLE
+            else -> TravelProfile.CAR
         }
+
+    private fun codeFromReport(report: String): FfiComapsRouteCode {
+        val token =
+            Regex("""comaps_route_code=([A-Za-z_]+)""")
+                .find(report)
+                ?.groupValues
+                ?.getOrNull(1)
+                ?: return if (report.contains("PASS")) FfiComapsRouteCode.OK else FfiComapsRouteCode.INTERNAL
+        return runCatching { FfiComapsRouteCode.valueOf(token) }.getOrDefault(FfiComapsRouteCode.INTERNAL)
+    }
 
     @Test
     fun runParitySuiteMwm() {
@@ -83,6 +92,7 @@ class ComapsPhase4SuiteInstrumentedTest {
         val suite = JSONObject(suiteText)
         val routes = suite.getJSONArray("routes")
 
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val open =
             comapsSessionOpen(
                 storagePath = root.absolutePath,
@@ -91,6 +101,7 @@ class ComapsPhase4SuiteInstrumentedTest {
                 loadWetlandSidecars = true,
             )
         assertTrue("session: ${open.errorMessage}", open.ok)
+        assertTrue("production planner should see open session", MwmProductionPlanner.shouldUse(ctx))
         comapsSessionSetTurnsLocale("nb")
         comapsSessionSetBikeWetland(false)
         comapsSessionSetOptimize(FfiComapsOptimize.TIME)
@@ -118,36 +129,45 @@ class ComapsPhase4SuiteInstrumentedTest {
                 } == true
             val from = r.getJSONObject("from")
             val to = r.getJSONObject("to")
-            val route =
-                comapsSessionRoute(
-                    profile = profileOf(r.getString("profile")),
-                    fromLat = from.getDouble("lat"),
-                    fromLon = from.getDouble("lon"),
-                    toLat = to.getDouble("lat"),
-                    toLon = to.getDouble("lon"),
-                    wetlandHook = wetland || r.getString("profile") in setOf("foot", "hike"),
+            // Production UI path: same adapter MainActivity uses (CorridorRouteResult + PLANNER=mwm).
+            val corridor =
+                MwmProductionPlanner.plan(
+                    context = ctx,
+                    profile = travelProfileOf(r.getString("profile")),
+                    startLat = from.getDouble("lat"),
+                    startLon = from.getDouble("lon"),
+                    endLat = to.getDouble("lat"),
+                    endLon = to.getDouble("lon"),
+                    vias = emptyList(),
+                    avoidMotorways = id == "lillehammer_drammen_shortest",
+                    avoidTolls = false,
+                    avoidFerries = false,
+                    turnsLocale = "nb",
+                    bikeWetland = wetland,
                 )
-            // Always enable wetland hook for foot in parity (Navi policy); car only when tagged.
+            assertTrue("$id: missing PLANNER=mwm", corridor.report.contains("PLANNER=mwm"))
+            val code = codeFromReport(corridor.report)
             val expect = r.optString("expect", "ok")
             if (expect == "ok") {
-                if (route.code == FfiComapsRouteCode.OK) okCount++
+                if (code == FfiComapsRouteCode.OK && corridor.report.contains("PASS")) okCount++
             } else {
-                // Off-road endpoints must come back as the business code, never auto-snapped.
                 val want =
                     when (expect) {
                         "end_not_on_road" -> FfiComapsRouteCode.END_NOT_ON_ROAD
                         "start_not_on_road" -> FfiComapsRouteCode.START_NOT_ON_ROAD
                         else -> error("$id: unknown expect '$expect'")
                     }
-                assertEquals("$id: expected $expect", want, route.code)
-                assertTrue("$id: no polyline for a failed route", route.points.isEmpty())
+                assertEquals("$id: expected $expect", want, code)
+                assertTrue("$id: no polyline for a failed route", corridor.routePolyline.isEmpty())
                 expectedFailures++
             }
 
-            // GeoJSON for every route
             val coords = JSONArray()
-            for (p in route.points) {
-                coords.put(JSONArray().put(p.lon).put(p.lat))
+            for (pair in corridor.routePolyline.split(';').filter { it.isNotBlank() }) {
+                val xy = pair.split(',')
+                if (xy.size >= 2) {
+                    coords.put(JSONArray().put(xy[0].toDouble()).put(xy[1].toDouble()))
+                }
             }
             val gj =
                 JSONObject()
@@ -159,10 +179,10 @@ class ComapsPhase4SuiteInstrumentedTest {
                         "properties",
                         JSONObject()
                             .put("id", id)
-                            .put("router", "mwm")
-                            .put("code", route.code.name)
-                            .put("length_m", route.lengthM)
-                            .put("time_s", route.timeS),
+                            .put("router", "mwm_production")
+                            .put("code", code.name)
+                            .put("length_m", corridor.distanceKm * 1000.0)
+                            .put("eta_minutes", corridor.etaMinutes),
                     )
             File(outDir, "$id.mwm.geojson").writeText(gj.toString())
 
@@ -171,14 +191,20 @@ class ComapsPhase4SuiteInstrumentedTest {
                     .put("id", id)
                     .put("profile", r.getString("profile"))
                     .put("tags", r.optJSONArray("tags"))
-                    .put("code", route.code.name)
-                    .put("length_m", route.lengthM)
-                    .put("time_s", route.timeS)
-                    .put("build_s", route.buildTimeS)
-                    .put("point_count", route.points.size)
-                    .put("turn_count", JSONArray(route.turnsJson).length())
+                    .put("code", code.name)
+                    .put("length_m", corridor.distanceKm * 1000.0)
+                    .put("eta_minutes", corridor.etaMinutes)
+                    .put("build_s", corridor.coldBuildS)
+                    .put("point_count", coords.length())
+                    .put("planner", "mwm")
                     .put("geojson", File(outDir, "$id.mwm.geojson").absolutePath)
-                    .put("error", route.errorMessage),
+                    .put(
+                        "report_head",
+                        corridor.report
+                            .lineSequence()
+                            .take(6)
+                            .joinToString(" | "),
+                    ),
             )
         }
         comapsSessionClose()

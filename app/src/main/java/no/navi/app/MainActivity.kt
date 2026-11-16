@@ -3439,6 +3439,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
             }
         rerouteJob?.cancel()
         cancelInFlightPlan()
+        MwmProductionPlanner.cancel()
         planAbort.set(false)
         rerouteJob =
             scope.launch {
@@ -4107,7 +4108,10 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 dataDir,
                 longTripPackDirForCoverage,
             )
-        if (missing != null && !longTripEnabled) {
+        val useMwmPlanner = MwmProductionPlanner.shouldUse(context)
+        // Geofabrik/`.rkyv` coverage gate: when MWM production planner is active,
+        // leaf MWMs are the coverage source (session must already be open).
+        if (missing != null && !longTripEnabled && !useMwmPlanner) {
             missingCoveragePrompt = missing
             NaviMapTestHooks.missingCoveragePromptVisible = true
             NaviMapTestHooks.lastMissingCoveragePath =
@@ -4180,7 +4184,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
             profile == TravelProfile.HIKING &&
                 NaviMapTestHooks.preferStagedHikingRoute &&
                 File("/data/local/tmp/navi_fixtures/skolla_rondvassbu.polyline.txt").isFile
-        if (pbf == null && !stagedOk) {
+        if (pbf == null && !stagedOk && !useMwmPlanner) {
             if (longTripEnabled) {
                 val line =
                     longTripStatusLine
@@ -4338,8 +4342,95 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                 routeUsesTolls = false,
                             )
                         } else {
-                            when (profile) {
-                                TravelProfile.HIKING -> {
+                            when {
+                                useMwmPlanner -> {
+                                    if (planAbort.get()) {
+                                        return@runCatching cancelledCorridorResult()
+                                    }
+                                    RoutingPlanLog.progress(
+                                        10,
+                                        ecoForPlan,
+                                        detail = "mwm_plan",
+                                    )
+                                    android.util.Log.i(
+                                        "NaviPlan",
+                                        "planner=mwm profile=$profile " +
+                                            "from=${start.lat},${start.lon} to=${toPoint.lat},${toPoint.lon} " +
+                                            "vias=${viaPoints.size} " +
+                                            "time_to_planner_ms=${System.currentTimeMillis() - planStarted}",
+                                    )
+                                    if (!RoutePlanGate.tryBeginOrReplace({
+                                            cancelInFlightPlan()
+                                            MwmProductionPlanner.cancel()
+                                        })
+                                    ) {
+                                        return@runCatching uniffi.navi.CorridorRouteResult(
+                                            report =
+                                                "TEST_KIND=PLAN_MWM_ROUTE\nFAIL: plan already running\nPLANNER=mwm\n",
+                                            distanceKm = 0.0,
+                                            etaMinutes = 0.0,
+                                            cacheHit = false,
+                                            coldBuildS = 0.0,
+                                            warmLoadS = 0.0,
+                                            routePolyline = "",
+                                            poiLat = 0.0,
+                                            poiLon = 0.0,
+                                            poiName = "",
+                                            poiIconKey = "",
+                                            breakPoisJson = "[]",
+                                            daysJson = "[]",
+                                            simSamplesJson = "[]",
+                                            maneuversJson = "[]",
+                                            priorityPathSharePct = 0.0,
+                                            routeSegmentsJson = "[]",
+                                            offTrailAdvisory = "",
+                                            tollPolicy = "allow",
+                                            padAttemptsJson = "[]",
+                                            searchExpansions = 0u,
+                                            searchTerminateReason = "busy",
+                                            tollAvoidanceIncomplete = false,
+                                            routeUsesTolls = false,
+                                        )
+                                    }
+                                    val planned =
+                                        try {
+                                            MwmProductionPlanner.plan(
+                                                context = context,
+                                                profile = profile,
+                                                startLat = start.lat,
+                                                startLon = start.lon,
+                                                endLat = toPoint.lat,
+                                                endLon = toPoint.lon,
+                                                vias = viaPoints.map { it.lat to it.lon },
+                                                avoidMotorways = avoidMotorways,
+                                                avoidTolls = avoidTolls,
+                                                avoidFerries = avoidFerries,
+                                                turnsLocale =
+                                                    java.util.Locale
+                                                        .getDefault()
+                                                        .language
+                                                        .ifBlank { "nb" },
+                                                bikeWetland = false,
+                                            )
+                                        } finally {
+                                            RoutePlanGate.end()
+                                        }
+                                    RoutingPlanLog.progress(
+                                        90,
+                                        ecoForPlan,
+                                        detail = "mwm_path",
+                                    )
+                                    if (planned.report.contains("PASS") &&
+                                        planned.poiLat == 0.0 &&
+                                        planned.poiLon == 0.0
+                                    ) {
+                                        planned.poiLat = toPoint.lat
+                                        planned.poiLon = toPoint.lon
+                                        planned.poiName = toPoint.name
+                                    }
+                                    planned
+                                }
+                                profile == TravelProfile.HIKING -> {
                                     if (planAbort.get()) {
                                         return@runCatching cancelledCorridorResult()
                                     }
@@ -4397,7 +4488,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                     )
                                     android.util.Log.i(
                                         "NaviPlan",
-                                        "planCarRoute pbf=${pbf!!.absolutePath} " +
+                                        "planner=rkyv planCarRoute pbf=${pbf!!.absolutePath} " +
                                             "packDir=$planPackDirPath dataDir=${dataDir.absolutePath} " +
                                             "longTrip=$longTripEnabled " +
                                             "from=${start.lat},${start.lon} to=${toPoint.lat},${toPoint.lon} " +
@@ -4871,9 +4962,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
             )
             return@LaunchedEffect
         }
-        // Production still plans through the .rkyv planner. When a CoMaps (MWM)
-        // route feeds this path, call RouteClimbSource.publishIfOk(comapsRoute)
-        // right before this line so ECO_CALC uses climb_source=mwm.
+        // MWM path publishes climb inside MwmProductionPlanner; .rkyv path uses
+        // plan-report climb. RoutingPlanLog.complete picks climb_source accordingly.
         RoutingPlanLog.complete(result, ecoForPlan, durationMs)
         NaviMapTestHooks.routeStartLabel = start.name
         NaviMapTestHooks.routeEndLabel = toPoint.name
@@ -6274,6 +6364,13 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             NaviMapTestHooks.requestOptIn3d = null
                             driveHud = driveHud.copy(optIn3d = opt3dReq)
                             MapHudPrefs.saveOptIn3d(context, opt3dReq)
+                            styleEpoch += 1
+                        }
+                        val contoursReq = NaviMapTestHooks.requestContoursEnabled
+                        if (contoursReq != null) {
+                            NaviMapTestHooks.requestContoursEnabled = null
+                            driveHud = driveHud.copy(contoursEnabled = contoursReq)
+                            MapHudPrefs.saveContoursEnabled(context, contoursReq)
                             styleEpoch += 1
                         }
                         val tiltReq = NaviMapTestHooks.requestCameraTiltDeg
@@ -11360,14 +11457,47 @@ private fun CorridorMapView(
     on3dFailed: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    // Phase 6 hybrid: with the MWM flag ON and the CoMaps SDK packaged, MapLibre
+    // renders into a translucent texture above the CoMaps drape (basemap) and keeps
+    // drawing Navi's overlays. Without the SDK this stays the plain MapLibre view.
+    val drapeCandidate =
+        remember {
+            ComapsDrape.likelyAvailable(context) &&
+                !NaviMapTestHooks.drapeDisabled
+        }
     val mapView =
         remember {
-            MapView(context).apply {
-                setBackgroundColor(android.graphics.Color.parseColor("#E8EEF2"))
-                onCreate(null)
+            if (drapeCandidate) {
+                MapView(
+                    context,
+                    org.maplibre.android.maps.MapLibreMapOptions
+                        .createFromAttributes(context)
+                        .textureMode(true)
+                        .translucentTextureSurface(true),
+                ).apply { onCreate(null) }
+            } else {
+                MapView(context).apply {
+                    setBackgroundColor(android.graphics.Color.parseColor("#E8EEF2"))
+                    onCreate(null)
+                }
             }
         }
     var mapRef by remember { mutableStateOf<MapLibreMap?>(null) }
+    var drapeReady by remember { mutableStateOf(false) }
+    val drapeReadyRef =
+        remember {
+            java.util.concurrent.atomic
+                .AtomicBoolean(false)
+        }
+    drapeReadyRef.set(drapeReady)
+    val drapeMask = remember { DrapeBasemapMask() }
+    val drapeSync = remember { DrapeCameraSync() }
+    val drapeNightSystem =
+        (LocalConfiguration.current.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+    val drapeNightLive = androidx.compose.runtime.rememberUpdatedState(drapeNightSystem)
+    val drapePrefer3dLive = androidx.compose.runtime.rememberUpdatedState(prefer3d)
+    val drapeContoursLive = androidx.compose.runtime.rememberUpdatedState(contoursEnabled)
 
     data class OverlayMark(
         val x: Float,
@@ -11558,6 +11688,39 @@ private fun CorridorMapView(
         map.moveCamera(CameraUpdateFactory.newCameraPosition(pos))
         // Prefer the engine's post-clamp pitch so hooks/UI stay truthful.
         NaviMapTestHooks.lastCameraPitch = map.cameraPosition.tilt
+    }
+
+    /**
+     * Phase 6 hybrid: follow MapLibre's camera with the drape and mask MapLibre's
+     * basemap layers while the drape can reproduce the camera (north-up, flat);
+     * otherwise restore MapLibre's own basemap.
+     */
+    fun syncDrape(map: MapLibreMap) {
+        val backend = ComapsDrape.backend
+        val style = map.style
+        if (!drapeReadyRef.get() || backend == null || NaviMapTestHooks.drapeDisabled) {
+            if (style != null && drapeMask.masked) drapeMask.apply(style, hide = false)
+            NaviMapTestHooks.drapeBasemapVisible = false
+            return
+        }
+        val pos = map.cameraPosition
+        val target = pos.target ?: return
+        val aligned = drapeSync.aligned(pos.bearing, pos.tilt)
+        val rendering = backend.renderingActive()
+        if (aligned) {
+            drapeSync.push(
+                backend,
+                target.latitude,
+                target.longitude,
+                pos.zoom,
+                force = rendering != drapeSync.wasRendering,
+            )
+        }
+        drapeSync.wasRendering = rendering
+        if (style != null && style.isFullyLoaded) {
+            drapeMask.apply(style, hide = aligned && rendering)
+        }
+        NaviMapTestHooks.drapeBasemapVisible = drapeMask.masked
     }
 
     fun invalidateViewportTiles(map: MapLibreMap) {
@@ -12221,7 +12384,44 @@ private fun CorridorMapView(
         }
     }
 
+    // Drape bring-up: wait for the headless session (Platform resource dir must be
+    // set first), then init Platform + Framework once. Failure keeps MapLibre.
+    LaunchedEffect(drapeCandidate) {
+        if (!drapeCandidate) return@LaunchedEffect
+        while (isActive && !drapeReady) {
+            if (ComapsDrape.eligible()) {
+                when (ComapsDrape.ensureInitialized(context)) {
+                    ComapsDrape.State.READY -> drapeReady = true
+                    ComapsDrape.State.FAILED, ComapsDrape.State.UNAVAILABLE -> return@LaunchedEffect
+                    else -> Unit
+                }
+            }
+            delay(500L)
+        }
+    }
+
+    // Navi prefs -> Framework while the drape is active (setters are idempotent).
+    // Day/night: Navi has no in-app map theme, so this follows the system night mode
+    // unless a test overrides it.
+    LaunchedEffect(drapeReady) {
+        if (!drapeReady) return@LaunchedEffect
+        while (isActive) {
+            ComapsDrape.backend?.let { backend ->
+                runCatching {
+                    backend.setNight(NaviMapTestHooks.drapeNightOverride ?: drapeNightLive.value)
+                    backend.setContours(drapeContoursLive.value)
+                    backend.set3d(drapePrefer3dLive.value, drapePrefer3dLive.value)
+                }.onFailure { android.util.Log.w("ComapsDrape", "pref sync failed", it) }
+            }
+            mapRef?.let { syncDrape(it) }
+            delay(400L)
+        }
+    }
+
     Box(modifier = modifier) {
+        if (drapeReady) {
+            ComapsDrapeMap(modifier = Modifier.fillMaxSize())
+        }
         AndroidView(
             factory = { mapView },
             modifier = Modifier.fillMaxSize(),
@@ -12233,6 +12433,7 @@ private fun CorridorMapView(
                         // Keep Compose waypoint/track pins glued to geo while
                         // pan/zoom is in progress (idle-only refresh drifts on screen).
                         refreshTrackOverlay(map)
+                        syncDrape(map)
                     }
                     mapView.addOnDidBecomeIdleListener {
                         Fu49MapDiag.logEvent("idle")
@@ -12256,6 +12457,9 @@ private fun CorridorMapView(
                     }
                     mapView.addOnDidFinishLoadingStyleListener {
                         Fu49MapDiag.logEvent("style_loaded_lib")
+                        // A replaced style drops our saved layer visibilities.
+                        drapeMask.reset()
+                        syncDrape(map)
                     }
                     mapView.addOnDidFinishLoadingMapListener {
                         Fu49MapDiag.logEvent("map_loaded")
@@ -12265,6 +12469,7 @@ private fun CorridorMapView(
                     }
                     map.addOnCameraIdleListener {
                         refreshTrackOverlay(map)
+                        syncDrape(map)
                         val pos = map.cameraPosition
                         NaviMapTestHooks.lastCameraZoom = pos.zoom
                         NaviMapTestHooks.lastCameraBearing = pos.bearing

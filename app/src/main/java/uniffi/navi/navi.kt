@@ -1323,7 +1323,11 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_comaps_search_start(
     ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_cancel(
+    ): Int
     external fun uniffi_navi_checksum_func_comaps_session_close(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_is_open(
     ): Int
     external fun uniffi_navi_checksum_func_comaps_session_open(
     ): Int
@@ -1338,6 +1342,10 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_comaps_session_set_turns_locale(
     ): Int
     external fun uniffi_navi_checksum_func_comaps_session_snap_suggestion(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_production_planner_active(
+    ): Int
+    external fun uniffi_navi_checksum_func_set_mwm_production_planner_active(
     ): Int
     external fun uniffi_navi_checksum_method_ffitrackstore_all(
     ): Int
@@ -2000,8 +2008,12 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_navi_fn_func_comaps_search_start(`query`: RustBuffer.ByValue,`isCategory`: Byte,`maxResults`: Int,`listener`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
+    external fun uniffi_navi_fn_func_comaps_session_cancel(uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_navi_fn_func_comaps_session_close(uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    external fun uniffi_navi_fn_func_comaps_session_is_open(uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
     external fun uniffi_navi_fn_func_comaps_session_open(`storagePath`: RustBuffer.ByValue,`writablePath`: RustBuffer.ByValue,`sidecarDir`: RustBuffer.ByValue,`loadWetlandSidecars`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_comaps_session_route(`profile`: RustBuffer.ByValue,`fromLat`: Double,`fromLon`: Double,`toLat`: Double,`toLon`: Double,`wetlandHook`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -2016,6 +2028,10 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_navi_fn_func_comaps_session_snap_suggestion(`profile`: RustBuffer.ByValue,`code`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`radiusM`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_production_planner_active(uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_set_mwm_production_planner_active(`active`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun ffi_navi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun ffi_navi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -2966,7 +2982,13 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_comaps_search_start() and 0xFFFF) != 49058) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_cancel() and 0xFFFF) != 3384) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_comaps_session_close() and 0xFFFF) != 44861) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_is_open() and 0xFFFF) != 57708) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_comaps_session_open() and 0xFFFF) != 54056) {
@@ -2988,6 +3010,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_comaps_session_snap_suggestion() and 0xFFFF) != 44768) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_production_planner_active() and 0xFFFF) != 36651) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_set_mwm_production_planner_active() and 0xFFFF) != 21992) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_method_ffitrackstore_all() and 0xFFFF) != 684) {
@@ -12826,6 +12854,18 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     )
     }
     
+
+        /**
+         * Cancel an in-flight [`comaps_session_route`] (CoMaps `navi_comaps_cancel`).
+         */ fun `comapsSessionCancel`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_cancel(
+    
+        _status)
+}
+    
+    
  fun `comapsSessionClose`()
         = 
     uniffiRustCall() { _status ->
@@ -12834,6 +12874,19 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
         _status)
 }
     
+    
+
+        /**
+         * True when [`comaps_session_open`] currently holds a live router.
+         */ fun `comapsSessionIsOpen`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_is_open(
+    
+        _status)
+}
+    )
+    }
     
 
         /**
@@ -12932,6 +12985,26 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
 }
     )
     }
+    
+ fun `mwmProductionPlannerActive`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_production_planner_active(
+    
+        _status)
+}
+    )
+    }
+    
+ fun `setMwmProductionPlannerActive`(`active`: kotlin.Boolean)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_set_mwm_production_planner_active(
+    
+        
+        FfiConverterBoolean.lower(`active`),_status)
+}
+    
     
 
 

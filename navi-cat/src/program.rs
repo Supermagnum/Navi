@@ -203,7 +203,21 @@ pub fn program_vfo1_verified(
     let step = backend.freq_step_hz();
 
     let mut last_err = None;
-    for _attempt in 0..2 {
+    for attempt in 0..2 {
+        // One line per rig write so a dry run (Benshi lab / Hamlib dummy, no radio) shows
+        // exactly what would be sent to a real transceiver.
+        log::info!(
+            target: "NaviCat",
+            "cat_cmd set_vfo_state attempt={attempt} vfo={} freq_hz={} mode={} passband_hz={} shift={:?} offset_hz={} ctcss_tenths_hz={:?} dcs={:?}",
+            want.vfo,
+            want.freq_hz,
+            want.mode,
+            want.passband_hz,
+            want.shift,
+            want.offset_hz,
+            want.ctcss_tenths_hz,
+            want.dcs_code,
+        );
         backend.set_vfo_state(&want)?;
         let got = match backend.read_vfo_state() {
             Ok(s) => s,

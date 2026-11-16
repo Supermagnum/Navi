@@ -190,8 +190,7 @@ Device `place_index.db` (Ostlandet, pulled from Samsung app files):
 ## Open items
 
 - App search is wired (`ComapsSearchBridge` + `ComapsSessionBootstrap`).
-- Production planning still goes through `planCarRoute`. Any CoMaps route
-  must call `RouteClimbSource.publishIfOk(route)` before
-  `RoutingPlanLog.complete` (hook comment in `MainActivity`); the Phase 4
-  closeout test does this for every route it builds.
+- Production planning (flag ON) goes through `MwmProductionPlanner` (climb
+  published there). Flag OFF keeps `.rkyv` `planCarRoute`.
 - Shelter and brewery coverage if the owner wants parity with the Navi catalog.
+

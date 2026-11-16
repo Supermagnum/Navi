@@ -50,8 +50,13 @@ object MwmClientBootstrap {
                 runCatching { Os.setenv(ENV, want, true) }
                     .onFailure { Log.w(TAG, "setenv $ENV=$want failed", it) }
             }
-            // Headless CoMaps: JNI_OnLoad caches JavaVM only (no MapObject classes).
-            runCatching { Os.setenv("NAVI_COMAPS_HEADLESS", "1", true) }
+            // Headless CoMaps (routing / search only): JNI_OnLoad caches the JavaVM and
+            // skips the CoMaps Java class cache. When the CoMaps Java SDK is packaged
+            // (:comaps-sdk, Phase 6 drape) JNI_OnLoad must cache those classes, so the
+            // headless marker is left unset and the Framework can be created later.
+            if (!ComapsDrape.sdkPackaged()) {
+                runCatching { Os.setenv("NAVI_COMAPS_HEADLESS", "1", true) }
+            }
             nativeLoaded =
                 runCatching { System.loadLibrary("organicmaps") }
                     .onFailure { Log.w(TAG, "liborganicmaps not loaded", it) }

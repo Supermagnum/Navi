@@ -32,6 +32,8 @@ third_party/comaps/
 # Large Phase 3 device route artifacts (adb pull); do not commit GeoJSON dumps.
 test-artifacts/mwm-phase3/
 test-artifacts/mwm-phase4/
+# Phase 6 on-device acceptance output (screenshots, logs, perf captures).
+test-artifacts/phase6/
 # Kotlin/IDE incremental compile scratch
 .kotlin/
 

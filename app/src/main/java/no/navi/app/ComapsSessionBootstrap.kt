@@ -202,23 +202,40 @@ object ComapsSessionBootstrap {
             return false
         }
         val current = runCatching { stampFile.readText() }.getOrNull() == stamp
-        val missing = names.any { n -> File(root, n).let { !it.isFile || it.length() == 0L } }
+        val missing =
+            names.any { n ->
+                File(root, n).let { if (it.isDirectory) it.list().isNullOrEmpty() else !it.isFile || it.length() == 0L }
+            }
         if (current && !missing) return true
         return runCatching {
-            for (name in names) {
-                val dest = File(root, name)
-                if (current && dest.isFile && dest.length() > 0L) continue
-                val tmp = File(root, "$name.tmp")
-                ctx.assets.open("$ASSET_DIR/$name").use { input ->
-                    tmp.outputStream().use { input.copyTo(it) }
-                }
-                if (!tmp.renameTo(dest)) error("rename ${tmp.name} failed")
-            }
+            for (name in names) copyAsset(ctx, "$ASSET_DIR/$name", File(root, name), skipExisting = current)
             stampFile.writeText(stamp)
             true
         }.getOrElse {
             Log.w(TAG, "staging $ASSET_DIR into ${root.absolutePath} failed", it)
             false
         }
+    }
+
+    /** Copies an asset file or (recursively) directory; directories such as `countries-strings`. */
+    private fun copyAsset(
+        ctx: Context,
+        assetPath: String,
+        dest: File,
+        skipExisting: Boolean,
+    ) {
+        val children = ctx.assets.list(assetPath).orEmpty()
+        if (children.isNotEmpty()) {
+            dest.mkdirs()
+            for (child in children) copyAsset(ctx, "$assetPath/$child", File(dest, child), skipExisting)
+            return
+        }
+        if (skipExisting && dest.isFile && dest.length() > 0L) return
+        dest.parentFile?.mkdirs()
+        val tmp = File(dest.parentFile, "${dest.name}.tmp")
+        ctx.assets.open(assetPath).use { input ->
+            tmp.outputStream().use { input.copyTo(it) }
+        }
+        if (!tmp.renameTo(dest)) error("rename ${tmp.name} failed")
     }
 }

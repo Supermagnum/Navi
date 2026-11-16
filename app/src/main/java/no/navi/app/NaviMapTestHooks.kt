@@ -55,6 +55,33 @@ object NaviMapTestHooks {
     @Volatile
     var localDemHitsMiss: Long = 0
 
+    /** [ComapsDrape.State] name, mirrored for instrumented tests / logs. */
+    @Volatile
+    var drapeState: String = "IDLE"
+
+    @Volatile
+    var drapeError: String? = null
+
+    /** True while the MapLibre basemap layers are masked and drape is the visible basemap. */
+    @Volatile
+    var drapeBasemapVisible: Boolean = false
+
+    /** Count of viewport syncs pushed from MapLibre to drape (diagnostics). */
+    @Volatile
+    var drapeViewportSyncs: Long = 0
+
+    /** Test override for the drape day/night appearance (null = follow the system). */
+    @Volatile
+    var drapeNightOverride: Boolean? = null
+
+    /** Test override for the MapLibre-to-CoMaps zoom offset (null = [DrapeCameraSync.ZOOM_OFFSET]). */
+    @Volatile
+    var drapeZoomOffset: Double? = null
+
+    /** Test switch: never use drape even when it is ready (MapLibre-only comparison shots). */
+    @Volatile
+    var drapeDisabled: Boolean = false
+
     /** When true, [BasemapStyleResolver.resolve] skips local PMTiles (Liberty online). */
     @Volatile
     var forceOnlineBasemap: Boolean = false
@@ -678,6 +705,10 @@ object NaviMapTestHooks {
     @Volatile
     var requestCameraTiltDeg: Double? = null
 
+    /** Optional test injection for the contour-lines toggle (null = no request). */
+    @Volatile
+    var requestContoursEnabled: Boolean? = null
+
     /** Optional test injection for Trip ETA toggle (null = no request). */
     @Volatile
     var requestShowTripEta: Boolean? = null
@@ -912,9 +943,12 @@ object NaviMapTestHooks {
 
     /**
      * Replay controls (live-fix ignore, sensor injection, mock routes) run
-     * only in debug. Release keeps the fields, and every effect stays off.
+     * only in debug and in the local `releasetest` build type (device
+     * measurements with release-optimised native code, see
+     * docs/mwm-releasetest-build.md). The shipped `release` keeps the fields,
+     * and every effect stays off.
      */
-    fun replayHooksEnabled(): Boolean = BuildConfig.DEBUG
+    fun replayHooksEnabled(): Boolean = BuildConfig.DEBUG || BuildConfig.BUILD_TYPE == "releasetest"
 
     /** Live GPS is dropped only while replay hooks are enabled and the flag is set. */
     fun shouldIgnoreLiveGpsFixes(): Boolean = replayHooksEnabled() && ignoreLiveGpsFixes
