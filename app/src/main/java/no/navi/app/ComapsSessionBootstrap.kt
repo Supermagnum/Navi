@@ -4,7 +4,6 @@ import android.content.Context
 import android.system.Os
 import android.system.OsConstants
 import android.util.Log
-import app.organicmaps.sdk.OrganicMaps
 import org.json.JSONObject
 import uniffi.navi.comapsNativeAvailable
 import uniffi.navi.comapsSessionOpen
@@ -167,9 +166,14 @@ object ComapsSessionBootstrap {
             // drape Framework also sets this, but search can run before the map
             // surface is ready — set it here so cold Everywhere queries get
             // addresses instead of empty fields / readiness races.
+            // Reflection: :comaps-sdk (OrganicMaps) is not on every variant
+            // classpath (CI debug / -Pnavi.comapsDrape=false).
             if (ComapsDrape.sdkPackaged()) {
-                runCatching { OrganicMaps.nativeSetContext(ctx.applicationContext) }
-                    .onFailure { Log.w(TAG, "nativeSetContext before session open failed", it) }
+                runCatching {
+                    val clazz = Class.forName("app.organicmaps.sdk.OrganicMaps")
+                    val method = clazz.getMethod("nativeSetContext", Context::class.java)
+                    method.invoke(null, ctx.applicationContext)
+                }.onFailure { Log.w(TAG, "nativeSetContext before session open failed", it) }
             }
             Log.i(
                 TAG,
