@@ -1,0 +1,314 @@
+diff --git a/android/sdk/src/main/cpp/navi/navi_drape.cpp b/android/sdk/src/main/cpp/navi/navi_drape.cpp
+index 00fbad1..e2d8858 100644
+--- a/android/sdk/src/main/cpp/navi/navi_drape.cpp
++++ b/android/sdk/src/main/cpp/navi/navi_drape.cpp
+@@ -10,6 +10,7 @@
+ #include "map/framework.hpp"
+ #include "map/routing_mark.hpp"
+ 
++#include "drape_frontend/my_position.hpp"
+ #include "drape_frontend/route_renderer.hpp"
+ #include "drape_frontend/drape_engine.hpp"
+ #include "drape_frontend/route_shape.hpp"
+@@ -178,6 +179,25 @@ JNIEXPORT void JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeRegisterMaps(JNI
+     g_framework->AddLocalMaps();
+ }
+ 
++// Re-scan the writable dir after a leaf MWM was deleted: deregister every map and register what is still on
++// disk (what the CoMaps app does when the storage path changes). Releases the deleted file.
++JNIEXPORT void JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeReloadMaps(JNIEnv *, jclass)
++{
++  if (!g_framework)
++    return;
++  g_framework->RemoveLocalMaps();
++  g_framework->AddLocalMaps();
++}
++
++// Navi position puck: 0 = GPS (blue), 1 = estimated (amber), 2 = position lost (grey). Selects the arrow colour
++// and the navi-puck-* point sprite.
++JNIEXPORT void JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeSetPuckState(JNIEnv *, jclass, jint state)
++{
++  df::SetNaviPuckStateGlobal(static_cast<int>(state));
++  if (auto engine = frm()->GetDrapeEngine())
++    frm()->InvalidateRendering();
++}
++
+ // CoMaps settings.ini string (e.g. PreferredGraphicsAPI = Vulkan | OpenGLES3).
+ JNIEXPORT void JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeSetSetting(JNIEnv * env, jclass, jstring jkey,
+                                                                           jstring jvalue)
+@@ -197,9 +217,12 @@ JNIEXPORT jlong JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeCreateGroup(JNI
+ 
+ // Replace the content of a group with point marks. latlon = [lat0, lon0, lat1, lon1, ...];
+ // icons are kml::BookmarkIcon values, colors kml::PredefinedColor values.
++// symbols[i] (may be null / empty): atlas symbol name drawn instead of the predefined pin (Navi sprites such as
++// aprs-car, generated into the atlas from SVG sources at build time).
+ JNIEXPORT void JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeSetMarks(JNIEnv * env, jclass, jlong group,
+                                                                         jdoubleArray jlatlon, jobjectArray jnames,
+-                                                                        jintArray jicons, jintArray jcolors)
++                                                                        jintArray jicons, jintArray jcolors,
++                                                                        jobjectArray jsymbols)
+ {
+   auto & bm = frm()->GetBookmarkManager();
+   auto es = bm.GetEditSession();
+@@ -228,6 +251,17 @@ JNIEXPORT void JNICALL Java_app_organicmaps_sdk_NaviDrape_nativeSetMarks(JNIEnv
+       kml::SetDefaultStr(data.m_name, jni::ToNativeString(env, js));
+       env->DeleteLocalRef(js);
+     }
++    if (jsymbols)
++    {
++      jstring jsym = static_cast<jstring>(env->GetObjectArrayElement(jsymbols, i));
++      if (jsym)
++      {
++        std::string const sym = jni::ToNativeString(env, jsym);
++        env->DeleteLocalRef(jsym);
++        if (!sym.empty())
++          data.m_properties["CustomImage"] = "1," + sym;  // Bookmark::GetCustomSymbolNames format
++      }
++    }
+     es.CreateBookmark(std::move(data), gid);
+   }
+   es.SetIsVisible(gid, true);
+diff --git a/libs/drape_frontend/arrow3d.cpp b/libs/drape_frontend/arrow3d.cpp
+index 359072e..36ba6a5 100644
+--- a/libs/drape_frontend/arrow3d.cpp
++++ b/libs/drape_frontend/arrow3d.cpp
+@@ -439,7 +439,10 @@ void Arrow3d::Render(ref_ptr<dp::GraphicsContext> context, ref_ptr<gpu::ProgramM
+   }
+   else
+   {
+-    dp::Color const color = df::GetColorConstant(m_obsoletePosition ? df::kArrow3DObsoleteColor : df::kArrow3DColor);
++    dp::Color color = df::GetColorConstant(m_obsoletePosition || m_naviPuckState == 2 ? df::kArrow3DObsoleteColor
++                                                                                      : df::kArrow3DColor);
++    if (m_naviPuckState == 1)
++      color = dp::Color(0xF9, 0xA8, 0x25, 0xFF);  // Navi estimated position (dead reckoning): amber
+     RenderArrow(context, mng, m_arrowMesh, screen, gpu::Program::Arrow3d, color, 0.0f /* dz */, 1.0f /* scaleFactor */);
+   }
+ }
+diff --git a/libs/drape_frontend/arrow3d.hpp b/libs/drape_frontend/arrow3d.hpp
+index d811c0e..6f007b5 100644
+--- a/libs/drape_frontend/arrow3d.hpp
++++ b/libs/drape_frontend/arrow3d.hpp
+@@ -71,6 +71,8 @@ public:
+   void SetPosition(m2::PointD const & position);
+   void SetAzimuth(double azimuth);
+   void SetPositionObsolete(bool obsolete);
++  // Navi: 0 = GPS (blue), 1 = estimated (amber), 2 = position lost (grey, like an obsolete position).
++  void SetNaviPuckState(int state) { m_naviPuckState = state; }
+ 
+   // Leyout is axes (in the plane of map): x - right, y - up,
+   // -z - perpendicular to the map's plane directed towards the observer.
+@@ -104,6 +106,7 @@ private:
+   m2::PointD m_position;
+   double m_azimuth = 0.0;
+   bool m_obsoletePosition = false;
++  int m_naviPuckState = 0;
+ 
+   dp::RenderState m_state;
+ 
+diff --git a/libs/drape_frontend/frontend_renderer.cpp b/libs/drape_frontend/frontend_renderer.cpp
+index 6977da0..858913b 100644
+--- a/libs/drape_frontend/frontend_renderer.cpp
++++ b/libs/drape_frontend/frontend_renderer.cpp
+@@ -70,6 +70,8 @@
+ 
+ #include <algorithm>
+ #include <cmath>
++#include <cstdlib>
++#include <string>
+ 
+ namespace df
+ {
+@@ -1906,10 +1908,17 @@ void FrontendRenderer::RenderFrame()
+   m_context->Present();
+ #endif
+ 
+-  // Limit fps in following mode.
++  // Navi: 30 fps cap while following and while idle (the scene is only redrawn for animations, the puck
++  // or a route follow); full rate while a finger is down or a fling runs. Saves battery and heat.
+   double constexpr kFrameTime = 1.0 / 30.0;
+   auto const ft = m_frameData.m_timer.ElapsedSeconds();
+-  if (!canSuspend && ft < kFrameTime && m_myPositionController->IsRouteFollowingActive())
++  // NAVI_DRAPE_FPS_CAP=0 turns the cap off (battery / thermal A/B measurements only).
++  static bool const capEnabled = []
++  {
++    char const * v = std::getenv("NAVI_DRAPE_FPS_CAP");
++    return v == nullptr || std::string(v) != "0";
++  }();
++  if (capEnabled && !canSuspend && ft < kFrameTime && !m_userEventStream.IsGestureActive())
+   {
+     auto const ms = static_cast<uint32_t>((kFrameTime - ft) * 1000);
+     std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+diff --git a/libs/drape_frontend/my_position.cpp b/libs/drape_frontend/my_position.cpp
+index fb792a4..4813832 100644
+--- a/libs/drape_frontend/my_position.cpp
++++ b/libs/drape_frontend/my_position.cpp
+@@ -31,8 +31,25 @@
+ #include "base/math.hpp"
+ #include "base/matrix.hpp"
+ 
++#include <atomic>
++
+ namespace df
+ {
++namespace
++{
++std::atomic<int> g_naviPuckState{0};
++}  // namespace
++
++void SetNaviPuckStateGlobal(int state)
++{
++  g_naviPuckState.store(state, std::memory_order_relaxed);
++}
++
++int GetNaviPuckStateGlobal()
++{
++  return g_naviPuckState.load(std::memory_order_relaxed);
++}
++
+ namespace mp
+ {
+ df::ColorConstant const kMyPositionAccuracyColor = "MyPositionAccuracy";
+@@ -75,7 +92,7 @@ MyPosition::MyPosition(ref_ptr<dp::GraphicsContext> context, ref_ptr<dp::Texture
+   , m_showAzimuth(false)
+   , m_isRoutingMode(false)
+ {
+-  m_parts.resize(4);
++  m_parts.resize(4);  // accuracy, point (GPS), point (estimated), point (lost)
+   CacheAccuracySector(context, mng);
+   CachePointPosition(context, mng);
+ }
+@@ -112,6 +129,13 @@ void MyPosition::SetRoutingMode(bool routingMode)
+   m_isRoutingMode = routingMode;
+ }
+ 
++void MyPosition::SetNaviPuckState(int state)
++{
++  m_naviPuckState = state;
++  if (m_arrow3d)
++    m_arrow3d->SetNaviPuckState(state);
++}
++
+ void MyPosition::SetPositionObsolete(bool obsolete)
+ {
+   CHECK(m_arrow3d != nullptr, ());
+@@ -165,7 +189,10 @@ void MyPosition::RenderMyPosition(ref_ptr<dp::GraphicsContext> context, ref_ptr<
+         MapShape::ConvertToLocal(m2::PointD(m_position), key.GetGlobalRect().Center(), kShapeCoordScalar));
+     params.m_position = glsl::vec3(pos.x, pos.y, dp::depth::kMyPositionMarkDepth);
+     params.m_azimut = -(m_azimuth + static_cast<float>(screen.GetAngle()));
+-    RenderPart(context, mng, params, MyPositionPoint);
++    RenderPart(context, mng, params,
++               m_naviPuckState == 1 ? MyPositionPointEstimated
++               : m_naviPuckState == 2 ? MyPositionPointLost
++                                      : MyPositionPoint);
+   }
+ }
+ 
+@@ -235,17 +262,22 @@ void MyPosition::CacheSymbol(ref_ptr<dp::GraphicsContext> context, dp::TextureMa
+ 
+ void MyPosition::CachePointPosition(ref_ptr<dp::GraphicsContext> context, ref_ptr<dp::TextureManager> mng)
+ {
+-  int constexpr kSymbolsCount = 1;
++  // Navi: three point sprites from the atlas (the navi-puck-* SVGs are generated into it at build time).
++  int constexpr kSymbolsCount = 3;
+   dp::TextureManager::SymbolRegion pointSymbol;
+   mng->GetSymbolRegion("current-position", pointSymbol);
++  dp::TextureManager::SymbolRegion estimatedSymbol;
++  mng->GetSymbolRegion("navi-puck-estimated", estimatedSymbol);
++  dp::TextureManager::SymbolRegion lostSymbol;
++  mng->GetSymbolRegion("navi-puck-lost", lostSymbol);
+ 
+   auto state = CreateRenderState(gpu::Program::MyPosition, DepthLayer::OverlayLayer);
+   state.SetDepthTestEnabled(false);
+   state.SetColorTexture(pointSymbol.GetTexture());
+   state.SetTextureIndex(pointSymbol.GetTextureIndex());
+ 
+-  dp::TextureManager::SymbolRegion * symbols[kSymbolsCount] = {&pointSymbol};
+-  EMyPositionPart partIndices[kSymbolsCount] = {MyPositionPoint};
++  dp::TextureManager::SymbolRegion * symbols[kSymbolsCount] = {&pointSymbol, &estimatedSymbol, &lostSymbol};
++  EMyPositionPart partIndices[kSymbolsCount] = {MyPositionPoint, MyPositionPointEstimated, MyPositionPointLost};
+   {
+     dp::Batcher batcher(kSymbolsCount * dp::Batcher::IndexPerQuad, kSymbolsCount * dp::Batcher::VertexPerQuad);
+     batcher.SetBatcherHash(static_cast<uint64_t>(BatcherBucket::Default));
+diff --git a/libs/drape_frontend/my_position.hpp b/libs/drape_frontend/my_position.hpp
+index 6685c47..33c73f7 100644
+--- a/libs/drape_frontend/my_position.hpp
++++ b/libs/drape_frontend/my_position.hpp
+@@ -26,6 +26,10 @@ namespace df
+ {
+ struct FrameValues;
+ 
++// Navi: puck state set from the app thread (0 GPS, 1 estimated, 2 lost); read by the render thread every frame.
++void SetNaviPuckStateGlobal(int state);
++int GetNaviPuckStateGlobal();
++
+ class MyPosition
+ {
+ public:
+@@ -41,6 +45,8 @@ public:
+   void SetAccuracy(float accuracy);
+   void SetRoutingMode(bool routingMode);
+   void SetPositionObsolete(bool obsolete);
++  // Navi: 0 = GPS, 1 = estimated, 2 = lost; also picks the point sprite (navi-puck-*).
++  void SetNaviPuckState(int state);
+ 
+   void RenderAccuracy(ref_ptr<dp::GraphicsContext> context, ref_ptr<gpu::ProgramManager> mng, ScreenBase const & screen,
+                       int zoomLevel, FrameValues const & frameValues);
+@@ -57,6 +63,8 @@ private:
+     // Don't change the order and the values.
+     MyPositionAccuracy = 0,
+     MyPositionPoint = 1,
++    MyPositionPointEstimated = 2,
++    MyPositionPointLost = 3,
+   };
+ 
+   void RenderPart(ref_ptr<dp::GraphicsContext> context, ref_ptr<gpu::ProgramManager> mng,
+@@ -71,6 +79,7 @@ private:
+   float m_interpolatedAccuracy;
+   bool m_showAzimuth;
+   bool m_isRoutingMode;
++  int m_naviPuckState = 0;
+ 
+   using TPart = std::pair<dp::IndicesRange, size_t>;
+ 
+diff --git a/libs/drape_frontend/my_position_controller.cpp b/libs/drape_frontend/my_position_controller.cpp
+index 8bb82ec..b3a6d8c 100644
+--- a/libs/drape_frontend/my_position_controller.cpp
++++ b/libs/drape_frontend/my_position_controller.cpp
+@@ -766,6 +766,7 @@ void MyPositionController::Render(ref_ptr<dp::GraphicsContext> context, ref_ptr<
+     /// @todo Put under !m_hints.m_screenshotMode?
+     /// Why do we have 6 modifiers (and 6 variables inside), if better to make 1 function m_shape->Render(Params)?
+     m_shape->SetPositionObsolete(m_positionIsObsolete);
++    m_shape->SetNaviPuckState(GetNaviPuckStateGlobal());
+     m_shape->SetPosition(m2::PointF(GetDrawablePosition()));
+     m_shape->SetAzimuth(static_cast<float>(GetDrawableAzimut()));
+     m_shape->SetIsValidAzimuth(IsArrowRotationAvailable());
+diff --git a/libs/drape_frontend/user_event_stream.cpp b/libs/drape_frontend/user_event_stream.cpp
+index dbf9fae..b32a5ba 100644
+--- a/libs/drape_frontend/user_event_stream.cpp
++++ b/libs/drape_frontend/user_event_stream.cpp
+@@ -1288,6 +1288,11 @@ bool UserEventStream::IsWaitingForActionCompletion() const
+   return m_state != STATE_EMPTY;
+ }
+ 
++bool UserEventStream::IsGestureActive() const
++{
++  return m_state != STATE_EMPTY || m_scroller.IsActive();
++}
++
+ void UserEventStream::SetKineticScrollEnabled(bool enabled)
+ {
+   m_kineticScrollEnabled = enabled;
+diff --git a/libs/drape_frontend/user_event_stream.hpp b/libs/drape_frontend/user_event_stream.hpp
+index 293f42b..ef64c8e 100644
+--- a/libs/drape_frontend/user_event_stream.hpp
++++ b/libs/drape_frontend/user_event_stream.hpp
+@@ -458,6 +458,9 @@ public:
+ 
+   bool IsInUserAction() const;
+   bool IsWaitingForActionCompletion() const;
++  // Navi: a finger is down (any recognition state) or a kinetic fling is running. The renderer lifts its
++  // 30 fps cap while this is true so gestures keep the full frame rate.
++  bool IsGestureActive() const;
+ 
+   void SetListener(ref_ptr<Listener> listener) { m_listener = listener; }
+ 

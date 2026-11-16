@@ -6,7 +6,7 @@
 use navi_cat::benshi::{BenshiBackend, FakeBenshiPeer, InProcessTransport};
 use navi_cat::mirror::import_mirror_payload;
 use navi_cat::program::{program_vfo1_verified, ProgramRequest};
-use navi_cat::repeater::{RepeaterDb, RepeaterSite};
+use navi_cat::repeater::{candidate_skip, RepeaterDb, RepeaterSite};
 use navi_cat::types::RigBackend;
 use navi_plugin_cats::demo::{
     cadence_ok, demo_schedule_unix_s, plan_demo_route, DemoPlan, DEMO_STEP_SECS,
@@ -40,7 +40,12 @@ fn load_la5mr_members() -> Vec<RepeaterSite> {
     let db = RepeaterDb::open_memory().unwrap();
     let n = import_mirror_payload(&db, &json, "osm", None).unwrap();
     assert!(n >= 8, "expected LA5MR members, got {n}");
+    // Same gate as the host follow candidate list: the fixture carries LA2TRR with a
+    // 287.9375 MHz shift, which must never be tuned or programmed.
     db.query_near(61.3, 10.5, 500.0, Some("LA5MR"))
+        .into_iter()
+        .filter(|s| candidate_skip(s, true).is_none())
+        .collect()
 }
 
 fn to_follow(sites: &[RepeaterSite]) -> Vec<FollowSite> {

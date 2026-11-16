@@ -101,7 +101,11 @@ object RoutingPlanLog {
                 "route_uses_tolls=${result.routeUsesTolls}",
         )
         logPois(result.breakPoisJson)
-        DiagnosticLog.logRoutePlanComplete(result)
+        // MWM flag ON: climb / descent from the CoMaps route, not the .rkyv report.
+        // The route code that built the CoMaps route must have called
+        // RouteClimbSource.publishIfOk(route) before this point.
+        val comapsClimb = RouteClimbSource.takeComaps().takeIf { MwmClientBootstrap.isEnabled() }
+        DiagnosticLog.logRoutePlanComplete(result, comapsClimb)
         NaviManeuverDump.dump(result)
         // Debug intent: restore cabin/bike settings snapshotted before the plan.
         restoreDebugIntentSettings()
@@ -128,6 +132,7 @@ object RoutingPlanLog {
             TAG,
             "planning_failed eco=$ecoEnabled duration_ms=$durationMs reason=$reason$diag",
         )
+        RouteClimbSource.takeComaps()
         DiagnosticLog.logRoutePlanFailed(reason, result)
         restoreDebugIntentSettings()
     }
@@ -142,6 +147,7 @@ object RoutingPlanLog {
             TAG,
             "planning_cancelled eco=$ecoEnabled duration_ms=$durationMs reason=$reason",
         )
+        RouteClimbSource.takeComaps()
         DiagnosticLog.logRoutePlanCancelled(reason, report)
         restoreDebugIntentSettings()
     }

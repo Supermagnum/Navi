@@ -671,6 +671,9 @@ internal interface UniffiCallbackInterfaceSensorPlatformMethod2 : com.sun.jna.Ca
 internal interface UniffiCallbackInterfaceSensorPlatformMethod3 : com.sun.jna.Callback {
     fun callback(`uniffiHandle`: Long,`kindCode`: Int,`uniffiOutReturn`: RustBuffer,uniffiCallStatus: UniffiRustCallStatus,)
 }
+internal interface UniffiCallbackInterfaceFfiSearchListenerMethod0 : com.sun.jna.Callback {
+    fun callback(`uniffiHandle`: Long,`batch`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,)
+}
 @Structure.FieldOrder("uniffiFree", "uniffiClone", "writeBytes", "readBytes", "shutdown")
 internal open class UniffiVTableCallbackInterfaceBenshiBytePipe(
     @JvmField internal var `uniffiFree`: UniffiCallbackInterfaceFree? = null,
@@ -721,6 +724,25 @@ internal open class UniffiVTableCallbackInterfaceSensorPlatform(
         `registerSensor` = other.`registerSensor`
         `unregisterSensor` = other.`unregisterSensor`
         `latestSensorSample` = other.`latestSensorSample`
+    }
+
+}
+@Structure.FieldOrder("uniffiFree", "uniffiClone", "onBatch")
+internal open class UniffiVTableCallbackInterfaceFfiSearchListener(
+    @JvmField internal var `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+    @JvmField internal var `uniffiClone`: UniffiCallbackInterfaceClone? = null,
+    @JvmField internal var `onBatch`: UniffiCallbackInterfaceFfiSearchListenerMethod0? = null,
+) : Structure() {
+    class UniffiByValue(
+        `uniffiFree`: UniffiCallbackInterfaceFree? = null,
+        `uniffiClone`: UniffiCallbackInterfaceClone? = null,
+        `onBatch`: UniffiCallbackInterfaceFfiSearchListenerMethod0? = null,
+    ): UniffiVTableCallbackInterfaceFfiSearchListener(`uniffiFree`,`uniffiClone`,`onBatch`,), Structure.ByValue
+
+   internal fun uniffiSetValue(other: UniffiVTableCallbackInterfaceFfiSearchListener) {
+        `uniffiFree` = other.`uniffiFree`
+        `uniffiClone` = other.`uniffiClone`
+        `onBatch` = other.`onBatch`
     }
 
 }
@@ -1237,6 +1259,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_set_position(
     ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_set_time_scale(
+    ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_status_json(
     ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_tick_guest(
@@ -1244,6 +1268,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_cat_plugin_update_repeaters_from_server(
     ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_vfo_set_json(
+    ): Int
+    external fun uniffi_navi_checksum_func_gpx_parse_json(
     ): Int
     external fun uniffi_navi_checksum_func_imu_plugin_android_sensor_types(
     ): Int
@@ -1270,6 +1296,116 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_imu_plugin_set_enabled(
     ): Int
     external fun uniffi_navi_checksum_func_imu_plugin_tick(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_category_keys(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_category_query(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_leaf_for_point(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_native_available(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_poi_category_mappings(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_quick_category_key(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_reverse_geocode(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_route_once(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_search_cancel(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_search_clear_viewport(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_search_enabled(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_search_merge(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_search_set_locale(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_search_set_position(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_search_set_viewport(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_search_start(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_cancel(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_close(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_is_open(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_open(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_route(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_set_avoid_options(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_set_bike_wetland(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_set_optimize(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_set_turns_locale(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_snap_suggestion(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_set_platform_locked(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_production_planner_active(
+    ): Int
+    external fun uniffi_navi_checksum_func_set_mwm_production_planner_active(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_install_cancel(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_install_leaves(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_install_progress(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_installed(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_list_regions(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_discard(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_forget_kept(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_kept_regions(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_later_until(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_old_maps_decision(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_pause(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_plan(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_progress(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_remind_later(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_run(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_running(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_set_status(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_set_wifi_only(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_should_offer(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_start(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_state(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_verify(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_storage_delete_block_reason(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_storage_delete_leaf(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_storage_delete_old_releases(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_storage_summary(
     ): Int
     external fun uniffi_navi_checksum_method_ffitrackstore_all(
     ): Int
@@ -1299,6 +1435,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_method_sensorplatform_latest_sensor_sample(
     ): Int
+    external fun uniffi_navi_checksum_method_ffisearchlistener_on_batch(
+    ): Int
     external fun uniffi_navi_checksum_constructor_ffitrackstore_new(
     ): Int
     external fun ffi_navi_uniffi_contract_version(
@@ -1318,6 +1456,7 @@ internal object UniffiLib {
     init {
         Native.register(UniffiLib::class.java, findLibraryName(componentName = "navi"))
         uniffiCallbackInterfaceBenshiBytePipe.register(this)
+        uniffiCallbackInterfaceFfiSearchListener.register(this)
         uniffiCallbackInterfaceSensorPlatform.register(this)
         
     }
@@ -1367,6 +1506,14 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_navi_fn_method_sensorplatform_latest_sensor_sample(`ptr`: Long,`kindCode`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_clone_ffisearchlistener(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Long
+    external fun uniffi_navi_fn_free_ffisearchlistener(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_init_callback_vtable_ffisearchlistener(`vtable`: UniffiVTableCallbackInterfaceFfiSearchListener,
+    ): Unit
+    external fun uniffi_navi_fn_method_ffisearchlistener_on_batch(`ptr`: Long,`batch`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_navi_fn_func_apply_osm_update(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_approach_appear_m(uniffi_out_err: UniffiRustCallStatus, 
@@ -1857,6 +2004,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_set_position(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    external fun uniffi_navi_fn_func_cat_plugin_set_time_scale(`scale`: Double,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_status_json(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_tick_guest(uniffi_out_err: UniffiRustCallStatus, 
@@ -1864,6 +2013,8 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_cat_plugin_update_repeaters_from_server(`baseUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_vfo_set_json(`requestJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_gpx_parse_json(`text`: RustBuffer.ByValue,`maxPointsPerLine`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_imu_plugin_android_sensor_types(`kindCode`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1890,6 +2041,116 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_imu_plugin_set_enabled(`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_imu_plugin_tick(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_category_keys(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_category_query(`key`: RustBuffer.ByValue,`locale`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_leaf_for_point(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_native_available(uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_comaps_poi_category_mappings(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_quick_category_key(`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_reverse_geocode(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_route_once(`storagePath`: RustBuffer.ByValue,`writablePath`: RustBuffer.ByValue,`sidecarDir`: RustBuffer.ByValue,`profile`: RustBuffer.ByValue,`fromLat`: Double,`fromLon`: Double,`toLat`: Double,`toLon`: Double,`wetlandHook`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_search_cancel(`requestId`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_search_clear_viewport(uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_search_enabled(uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_comaps_search_merge(`query`: RustBuffer.ByValue,`categoryMode`: Byte,`comapsHits`: RustBuffer.ByValue,`naviHits`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_search_set_locale(`locale`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_search_set_position(`lat`: Double,`lon`: Double,`hasPosition`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_search_set_viewport(`minLat`: Double,`minLon`: Double,`maxLat`: Double,`maxLon`: Double,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_search_start(`query`: RustBuffer.ByValue,`isCategory`: Byte,`maxResults`: Int,`listener`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Long
+    external fun uniffi_navi_fn_func_comaps_session_cancel(uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_session_close(uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_session_is_open(uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_comaps_session_open(`storagePath`: RustBuffer.ByValue,`writablePath`: RustBuffer.ByValue,`sidecarDir`: RustBuffer.ByValue,`loadWetlandSidecars`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_session_route(`profile`: RustBuffer.ByValue,`fromLat`: Double,`fromLon`: Double,`toLat`: Double,`toLon`: Double,`wetlandHook`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_session_set_avoid_options(`avoidToll`: Byte,`avoidMotorway`: Byte,`avoidFerry`: Byte,`avoidDirty`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_session_set_bike_wetland(`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_session_set_optimize(`mode`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_session_set_turns_locale(`locale`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_session_snap_suggestion(`profile`: RustBuffer.ByValue,`code`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`radiusM`: Double,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_set_platform_locked(`locked`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_mwm_production_planner_active(uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_set_mwm_production_planner_active(`active`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_mwm_install_cancel(uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_mwm_install_leaves(`dataDir`: RustBuffer.ByValue,`naviOrigin`: RustBuffer.ByValue,`leafIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_install_progress(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_installed(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_list_regions(`naviOrigin`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_migration_discard(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_mwm_migration_forget_kept(`dataDir`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_mwm_migration_kept_regions(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_migration_later_until(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Long
+    external fun uniffi_navi_fn_func_mwm_migration_old_maps_decision(`dataDir`: RustBuffer.ByValue,`decision`: RustBuffer.ByValue,`bytesFreed`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_mwm_migration_pause(uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_mwm_migration_plan(`dataDir`: RustBuffer.ByValue,`naviOrigin`: RustBuffer.ByValue,`detectedJson`: RustBuffer.ByValue,`selectedJson`: RustBuffer.ByValue,`excludedJson`: RustBuffer.ByValue,`freeBytes`: Long,`forceRefresh`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_migration_progress(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_migration_remind_later(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Long
+    external fun uniffi_navi_fn_func_mwm_migration_run(`dataDir`: RustBuffer.ByValue,`naviOrigin`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_migration_running(uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_mwm_migration_set_status(`dataDir`: RustBuffer.ByValue,`status`: RustBuffer.ByValue,`error`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_mwm_migration_set_wifi_only(`dataDir`: RustBuffer.ByValue,`wifiOnly`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_mwm_migration_should_offer(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_mwm_migration_start(`dataDir`: RustBuffer.ByValue,`naviOrigin`: RustBuffer.ByValue,`detectedJson`: RustBuffer.ByValue,`selectedJson`: RustBuffer.ByValue,`excludedJson`: RustBuffer.ByValue,`freeBytes`: Long,`wifiOnly`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_migration_state(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_migration_verify(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_storage_delete_block_reason(`dataDir`: RustBuffer.ByValue,`leafId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_storage_delete_leaf(`dataDir`: RustBuffer.ByValue,`leafId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_storage_delete_old_releases(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_storage_summary(`dataDir`: RustBuffer.ByValue,`naviOrigin`: RustBuffer.ByValue,`refresh`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun ffi_navi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -2745,6 +3006,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_cat_plugin_set_position() and 0xFFFF) != 22746) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_set_time_scale() and 0xFFFF) != 63045) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_cat_plugin_status_json() and 0xFFFF) != 60742) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2755,6 +3019,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_cat_plugin_vfo_set_json() and 0xFFFF) != 6218) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_gpx_parse_json() and 0xFFFF) != 40783) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_imu_plugin_android_sensor_types() and 0xFFFF) != 62062) {
@@ -2794,6 +3061,171 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_imu_plugin_tick() and 0xFFFF) != 13373) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_category_keys() and 0xFFFF) != 58683) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_category_query() and 0xFFFF) != 57595) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_leaf_for_point() and 0xFFFF) != 47602) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_native_available() and 0xFFFF) != 20822) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_poi_category_mappings() and 0xFFFF) != 44692) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_quick_category_key() and 0xFFFF) != 45753) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_reverse_geocode() and 0xFFFF) != 53272) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_route_once() and 0xFFFF) != 44798) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_search_cancel() and 0xFFFF) != 12561) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_search_clear_viewport() and 0xFFFF) != 46780) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_search_enabled() and 0xFFFF) != 60411) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_search_merge() and 0xFFFF) != 51378) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_search_set_locale() and 0xFFFF) != 64780) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_search_set_position() and 0xFFFF) != 15387) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_search_set_viewport() and 0xFFFF) != 42707) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_search_start() and 0xFFFF) != 49058) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_cancel() and 0xFFFF) != 31008) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_close() and 0xFFFF) != 44861) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_is_open() and 0xFFFF) != 57708) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_open() and 0xFFFF) != 54056) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_route() and 0xFFFF) != 10498) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_set_avoid_options() and 0xFFFF) != 7866) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_set_bike_wetland() and 0xFFFF) != 26956) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_set_optimize() and 0xFFFF) != 28709) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_set_turns_locale() and 0xFFFF) != 9442) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_snap_suggestion() and 0xFFFF) != 44768) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_set_platform_locked() and 0xFFFF) != 4557) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_production_planner_active() and 0xFFFF) != 36651) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_set_mwm_production_planner_active() and 0xFFFF) != 21992) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_install_cancel() and 0xFFFF) != 16036) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_install_leaves() and 0xFFFF) != 63303) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_install_progress() and 0xFFFF) != 10370) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_installed() and 0xFFFF) != 65171) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_list_regions() and 0xFFFF) != 46636) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_discard() and 0xFFFF) != 41547) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_forget_kept() and 0xFFFF) != 49603) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_kept_regions() and 0xFFFF) != 64132) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_later_until() and 0xFFFF) != 17649) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_old_maps_decision() and 0xFFFF) != 6774) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_pause() and 0xFFFF) != 59193) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_plan() and 0xFFFF) != 42920) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_progress() and 0xFFFF) != 2534) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_remind_later() and 0xFFFF) != 35033) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_run() and 0xFFFF) != 40221) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_running() and 0xFFFF) != 13722) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_set_status() and 0xFFFF) != 5991) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_set_wifi_only() and 0xFFFF) != 38835) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_should_offer() and 0xFFFF) != 33453) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_start() and 0xFFFF) != 30563) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_state() and 0xFFFF) != 57099) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_verify() and 0xFFFF) != 51153) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_storage_delete_block_reason() and 0xFFFF) != 39407) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_storage_delete_leaf() and 0xFFFF) != 26033) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_storage_delete_old_releases() and 0xFFFF) != 63608) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_storage_summary() and 0xFFFF) != 1108) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_method_ffitrackstore_all() and 0xFFFF) != 684) {
@@ -2836,6 +3268,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_method_sensorplatform_latest_sensor_sample() and 0xFFFF) != 28221) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_method_ffisearchlistener_on_batch() and 0xFFFF) != 17623) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_constructor_ffitrackstore_new() and 0xFFFF) != 16107) {
@@ -3691,6 +4126,325 @@ public object FfiConverterTypeBenshiBytePipe: FfiConverter<BenshiBytePipe, Long>
     override fun allocationSize(value: BenshiBytePipe) = 8UL
 
     override fun write(value: BenshiBytePipe, buf: ByteBuffer) {
+        buf.putLong(lower(value))
+    }
+}
+
+
+// This template implements a class for working with a Rust struct via a handle
+// to the live Rust struct on the other side of the FFI.
+//
+// There's some subtlety here, because we have to be careful not to operate on a Rust
+// struct after it has been dropped, and because we must expose a public API for freeing
+// theq Kotlin wrapper object in lieu of reliable finalizers. The core requirements are:
+//
+//   * Each instance holds an opaque handle to the underlying Rust struct.
+//     Method calls need to read this handle from the object's state and pass it in to
+//     the Rust FFI.
+//
+//   * When an instance is no longer needed, its handle should be passed to a
+//     special destructor function provided by the Rust FFI, which will drop the
+//     underlying Rust struct.
+//
+//   * Given an instance, calling code is expected to call the special
+//     `destroy` method in order to free it after use, either by calling it explicitly
+//     or by using a higher-level helper like the `use` method. Failing to do so risks
+//     leaking the underlying Rust struct.
+//
+//   * We can't assume that calling code will do the right thing, and must be prepared
+//     to handle Kotlin method calls executing concurrently with or even after a call to
+//     `destroy`, and to handle multiple (possibly concurrent!) calls to `destroy`.
+//
+//   * We must never allow Rust code to operate on the underlying Rust struct after
+//     the destructor has been called, and must never call the destructor more than once.
+//     Doing so may trigger memory unsafety.
+//
+//   * To mitigate many of the risks of leaking memory and use-after-free unsafety, a `Cleaner`
+//     is implemented to call the destructor when the Kotlin object becomes unreachable.
+//     This is done in a background thread. This is not a panacea, and client code should be aware that
+//      1. the thread may starve if some there are objects that have poorly performing
+//     `drop` methods or do significant work in their `drop` methods.
+//      2. the thread is shared across the whole library. This can be tuned by using `android_cleaner = true`,
+//         or `android = true` in the [`kotlin` section of the `uniffi.toml` file](https://mozilla.github.io/uniffi-rs/kotlin/configuration.html).
+//
+// If we try to implement this with mutual exclusion on access to the handle, there is the
+// possibility of a race between a method call and a concurrent call to `destroy`:
+//
+//    * Thread A starts a method call, reads the value of the handle, but is interrupted
+//      before it can pass the handle over the FFI to Rust.
+//    * Thread B calls `destroy` and frees the underlying Rust struct.
+//    * Thread A resumes, passing the already-read handle value to Rust and triggering
+//      a use-after-free.
+//
+// One possible solution would be to use a `ReadWriteLock`, with each method call taking
+// a read lock (and thus allowed to run concurrently) and the special `destroy` method
+// taking a write lock (and thus blocking on live method calls). However, we aim not to
+// generate methods with any hidden blocking semantics, and a `destroy` method that might
+// block if called incorrectly seems to meet that bar.
+//
+// So, we achieve our goals by giving each instance an associated `AtomicLong` counter to track
+// the number of in-flight method calls, and an `AtomicBoolean` flag to indicate whether `destroy`
+// has been called. These are updated according to the following rules:
+//
+//    * The initial value of the counter is 1, indicating a live object with no in-flight calls.
+//      The initial value for the flag is false.
+//
+//    * At the start of each method call, we atomically check the counter.
+//      If it is 0 then the underlying Rust struct has already been destroyed and the call is aborted.
+//      If it is nonzero them we atomically increment it by 1 and proceed with the method call.
+//
+//    * At the end of each method call, we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+//    * When `destroy` is called, we atomically flip the flag from false to true.
+//      If the flag was already true we silently fail.
+//      Otherwise we atomically decrement and check the counter.
+//      If it has reached zero then we destroy the underlying Rust struct.
+//
+// Astute readers may observe that this all sounds very similar to the way that Rust's `Arc<T>` works,
+// and indeed it is, with the addition of a flag to guard against multiple calls to `destroy`.
+//
+// The overall effect is that the underlying Rust struct is destroyed only when `destroy` has been
+// called *and* all in-flight method calls have completed, avoiding violating any of the expectations
+// of the underlying Rust code.
+//
+// This makes a cleaner a better alternative to _not_ calling `destroy()` as
+// and when the object is finished with, but the abstraction is not perfect: if the Rust object's `drop`
+// method is slow, and/or there are many objects to cleanup, and it's on a low end Android device, then the cleaner
+// thread may be starved, and the app will leak memory.
+//
+// In this case, `destroy`ing manually may be a better solution.
+//
+// The cleaner can live side by side with the manual calling of `destroy`. In the order of responsiveness, uniffi objects
+// with Rust peers are reclaimed:
+//
+// 1. By calling the `destroy` method of the object, which calls `rustObject.free()`. If that doesn't happen:
+// 2. When the object becomes unreachable, AND the Cleaner thread gets to call `rustObject.free()`. If the thread is starved then:
+// 3. The memory is reclaimed when the process terminates.
+//
+// [1] https://stackoverflow.com/questions/24376768/can-java-finalize-an-object-when-it-is-still-in-scope/24380219
+//
+
+
+/**
+ * Receives streamed search batches. Called from a search worker thread;
+ * implementations must not call back into the search functions synchronously.
+ */
+public interface FfiSearchListener {
+    
+    fun `onBatch`(`batch`: FfiSearchBatch)
+    
+    companion object
+}
+
+/**
+ * Receives streamed search batches. Called from a search worker thread;
+ * implementations must not call back into the search functions synchronously.
+ */
+open class FfiSearchListenerImpl: Disposable, AutoCloseable, FfiSearchListener
+{
+
+    @Suppress("UNUSED_PARAMETER")
+    /**
+     * @suppress
+     */
+    constructor(withHandle: UniffiWithHandle, handle: Long) {
+        this.handle = handle
+        this.cleanable = UniffiLib.CLEANER.register(this, UniffiCleanAction(handle))
+    }
+
+    /**
+     * @suppress
+     *
+     * This constructor can be used to instantiate a fake object. Only used for tests. Any
+     * attempt to actually use an object constructed this way will fail as there is no
+     * connected Rust object.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    constructor(noHandle: NoHandle) {
+        this.handle = 0
+        this.cleanable = null
+    }
+
+    protected val handle: Long
+    protected val cleanable: UniffiCleaner.Cleanable?
+
+    private val wasDestroyed = AtomicBoolean(false)
+    private val callCounter = AtomicLong(1)
+
+    /**
+     * Whether the current object has been destroyed and its reference is gone in the Rust side.
+     */
+    val uniffiIsDestroyed: Boolean get() = wasDestroyed.get()
+
+    override fun destroy() {
+        // Only allow a single call to this method.
+        // TODO: maybe we should log a warning if called more than once?
+        if (this.wasDestroyed.compareAndSet(false, true)) {
+            // This decrement always matches the initial count of 1 given at creation time.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable?.clean()
+            }
+        }
+    }
+
+    @Synchronized
+    override fun close() {
+        this.destroy()
+    }
+
+    internal inline fun <R> callWithHandle(block: (handle: Long) -> R): R {
+        // Check and increment the call counter, to keep the object alive.
+        // This needs a compare-and-set retry loop in case of concurrent updates.
+        do {
+            val c = this.callCounter.get()
+            if (c == 0L) {
+                throw IllegalStateException("${this.javaClass.simpleName} object has already been destroyed")
+            }
+            if (c == Long.MAX_VALUE) {
+                throw IllegalStateException("${this.javaClass.simpleName} call counter would overflow")
+            }
+        } while (! this.callCounter.compareAndSet(c, c + 1L))
+        // Now we can safely do the method call without the handle being freed concurrently.
+        try {
+            return block(this.uniffiCloneHandle())
+        } finally {
+            // This decrement always matches the increment we performed above.
+            if (this.callCounter.decrementAndGet() == 0L) {
+                cleanable?.clean()
+            }
+        }
+    }
+
+    // Use a static inner class instead of a closure so as not to accidentally
+    // capture `this` as part of the cleanable's action.
+    private class UniffiCleanAction(private val handle: Long) : Runnable {
+        override fun run() {
+            if (handle == 0.toLong()) {
+                // Fake object created with `NoHandle`, don't try to free.
+                return;
+            }
+            uniffiRustCall { status ->
+                UniffiLib.uniffi_navi_fn_free_ffisearchlistener(handle, status)
+            }
+        }
+    }
+
+    /**
+     * @suppress
+     */
+    fun uniffiCloneHandle(): Long {
+        if (handle == 0.toLong()) {
+            throw InternalException("uniffiCloneHandle() called on NoHandle object");
+        }
+        return uniffiRustCall() { status ->
+            UniffiLib.uniffi_navi_fn_clone_ffisearchlistener(handle, status)
+        }
+    }
+
+    override fun `onBatch`(`batch`: FfiSearchBatch)
+        = 
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_method_ffisearchlistener_on_batch(
+        it,
+        
+        FfiConverterTypeFfiSearchBatch.lower(`batch`),_status)
+}
+    }
+    
+    
+
+    
+
+    
+
+
+    
+    
+    /**
+     * @suppress
+     */
+    companion object
+    
+}
+
+
+
+// Put the implementation in an object so we don't pollute the top-level namespace
+internal object uniffiCallbackInterfaceFfiSearchListener {
+    internal object `onBatch`: UniffiCallbackInterfaceFfiSearchListenerMethod0 {
+        override fun callback(`uniffiHandle`: Long,`batch`: RustBuffer.ByValue,`uniffiOutReturn`: Pointer,uniffiCallStatus: UniffiRustCallStatus,) {
+            val uniffiObj = FfiConverterTypeFfiSearchListener.handleMap.get(uniffiHandle)
+            val makeCall = { ->
+                uniffiObj.`onBatch`(
+                    FfiConverterTypeFfiSearchBatch.lift(`batch`),
+                )
+            }
+            val writeReturn = { _: Unit -> Unit }
+            uniffiTraitInterfaceCall(uniffiCallStatus, makeCall, writeReturn)
+        }
+    }
+
+    internal object uniffiFree: UniffiCallbackInterfaceFree {
+        override fun callback(handle: Long) {
+            FfiConverterTypeFfiSearchListener.handleMap.remove(handle)
+        }
+    }
+
+    internal object uniffiClone: UniffiCallbackInterfaceClone {
+        override fun callback(handle: Long): Long {
+            return FfiConverterTypeFfiSearchListener.handleMap.clone(handle)
+        }
+    }
+
+    internal var vtable = UniffiVTableCallbackInterfaceFfiSearchListener.UniffiByValue(
+        uniffiFree,
+        uniffiClone,
+        `onBatch`,
+    )
+
+    // Registers the foreign callback with the Rust side.
+    // This method is generated for each callback interface.
+    internal fun register(lib: UniffiLib) {
+        lib.uniffi_navi_fn_init_callback_vtable_ffisearchlistener(vtable)
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiSearchListener: FfiConverter<FfiSearchListener, Long> {
+    internal val handleMap = UniffiHandleMap<FfiSearchListener>()
+
+    override fun lower(value: FfiSearchListener): Long {
+        if (value is FfiSearchListenerImpl) {
+             // Rust-implemented object.  Clone the handle and return it
+            return value.uniffiCloneHandle()
+         } else {
+            // Kotlin object, generate a new vtable handle and return that.
+            return handleMap.insert(value)
+         }
+    }
+
+    override fun lift(value: Long): FfiSearchListener {
+        if ((value and 1.toLong()) == 0.toLong()) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return FfiSearchListenerImpl(UniffiWithHandle, value)
+        } else {
+            // Kotlin-generated handle, get the object from the handle map
+            return handleMap.remove(value)
+        }
+    }
+
+    override fun read(buf: ByteBuffer): FfiSearchListener {
+        return lift(buf.getLong())
+    }
+
+    override fun allocationSize(value: FfiSearchListener) = 8UL
+
+    override fun write(value: FfiSearchListener, buf: ByteBuffer) {
         buf.putLong(lower(value))
     }
 }
@@ -4888,6 +5642,245 @@ public object FfiConverterTypeFfiCarRestSettings: FfiConverterRustBuffer<FfiCarR
 
 
 
+data class FfiCategoryMapping (
+    /**
+     * `PoiCategory` variant name (`Water`, `Cabin`, ...).
+     */
+    var `naviCategory`: kotlin.String
+    , 
+    var `comapsKey`: kotlin.String?
+    , 
+    var `coverage`: FfiCategoryCoverage
+    , 
+    var `note`: kotlin.String
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiCategoryMapping: FfiConverterRustBuffer<FfiCategoryMapping> {
+    override fun read(buf: ByteBuffer): FfiCategoryMapping {
+        return FfiCategoryMapping(
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterTypeFfiCategoryCoverage.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiCategoryMapping) = (
+            FfiConverterString.allocationSize(value.`naviCategory`) +
+            FfiConverterOptionalString.allocationSize(value.`comapsKey`) +
+            FfiConverterTypeFfiCategoryCoverage.allocationSize(value.`coverage`) +
+            FfiConverterString.allocationSize(value.`note`)
+    )
+
+    override fun write(value: FfiCategoryMapping, buf: ByteBuffer) {
+            FfiConverterString.write(value.`naviCategory`, buf)
+            FfiConverterOptionalString.write(value.`comapsKey`, buf)
+            FfiConverterTypeFfiCategoryCoverage.write(value.`coverage`, buf)
+            FfiConverterString.write(value.`note`, buf)
+    }
+}
+
+
+
+data class FfiComapsLatLon (
+    var `lat`: kotlin.Double
+    , 
+    var `lon`: kotlin.Double
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiComapsLatLon: FfiConverterRustBuffer<FfiComapsLatLon> {
+    override fun read(buf: ByteBuffer): FfiComapsLatLon {
+        return FfiComapsLatLon(
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiComapsLatLon) = (
+            FfiConverterDouble.allocationSize(value.`lat`) +
+            FfiConverterDouble.allocationSize(value.`lon`)
+    )
+
+    override fun write(value: FfiComapsLatLon, buf: ByteBuffer) {
+            FfiConverterDouble.write(value.`lat`, buf)
+            FfiConverterDouble.write(value.`lon`, buf)
+    }
+}
+
+
+
+data class FfiComapsRoute (
+    var `code`: FfiComapsRouteCode
+    , 
+    var `lengthM`: kotlin.Double
+    , 
+    var `timeS`: kotlin.Double
+    , 
+    var `buildTimeS`: kotlin.Double
+    , 
+    var `points`: List<FfiComapsLatLon>
+    , 
+    var `errorMessage`: kotlin.String?
+    , 
+    var `turnsJson`: kotlin.String
+    , 
+    var `instructionsJson`: kotlin.String
+    , 
+    var `ascentM`: kotlin.Double
+    , 
+    var `descentM`: kotlin.Double
+    , 
+    var `elevationJson`: kotlin.String
+    , 
+    var `routerMode`: kotlin.String
+    , 
+    /**
+     * JSON int array, one entry per polyline segment: posted maxspeed km/h, -1 untagged or not
+     * applicable (foot, bike), -2 explicitly unlimited.
+     */
+    var `speedLimitsJson`: kotlin.String
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiComapsRoute: FfiConverterRustBuffer<FfiComapsRoute> {
+    override fun read(buf: ByteBuffer): FfiComapsRoute {
+        return FfiComapsRoute(
+            FfiConverterTypeFfiComapsRouteCode.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterSequenceTypeFfiComapsLatLon.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiComapsRoute) = (
+            FfiConverterTypeFfiComapsRouteCode.allocationSize(value.`code`) +
+            FfiConverterDouble.allocationSize(value.`lengthM`) +
+            FfiConverterDouble.allocationSize(value.`timeS`) +
+            FfiConverterDouble.allocationSize(value.`buildTimeS`) +
+            FfiConverterSequenceTypeFfiComapsLatLon.allocationSize(value.`points`) +
+            FfiConverterOptionalString.allocationSize(value.`errorMessage`) +
+            FfiConverterString.allocationSize(value.`turnsJson`) +
+            FfiConverterString.allocationSize(value.`instructionsJson`) +
+            FfiConverterDouble.allocationSize(value.`ascentM`) +
+            FfiConverterDouble.allocationSize(value.`descentM`) +
+            FfiConverterString.allocationSize(value.`elevationJson`) +
+            FfiConverterString.allocationSize(value.`routerMode`) +
+            FfiConverterString.allocationSize(value.`speedLimitsJson`)
+    )
+
+    override fun write(value: FfiComapsRoute, buf: ByteBuffer) {
+            FfiConverterTypeFfiComapsRouteCode.write(value.`code`, buf)
+            FfiConverterDouble.write(value.`lengthM`, buf)
+            FfiConverterDouble.write(value.`timeS`, buf)
+            FfiConverterDouble.write(value.`buildTimeS`, buf)
+            FfiConverterSequenceTypeFfiComapsLatLon.write(value.`points`, buf)
+            FfiConverterOptionalString.write(value.`errorMessage`, buf)
+            FfiConverterString.write(value.`turnsJson`, buf)
+            FfiConverterString.write(value.`instructionsJson`, buf)
+            FfiConverterDouble.write(value.`ascentM`, buf)
+            FfiConverterDouble.write(value.`descentM`, buf)
+            FfiConverterString.write(value.`elevationJson`, buf)
+            FfiConverterString.write(value.`routerMode`, buf)
+            FfiConverterString.write(value.`speedLimitsJson`, buf)
+    }
+}
+
+
+
+data class FfiComapsSessionOpen (
+    var `ok`: kotlin.Boolean
+    , 
+    var `initMs`: kotlin.Double
+    , 
+    var `registerMs`: kotlin.Double
+    , 
+    var `sidecarsLoaded`: kotlin.UInt
+    , 
+    var `errorMessage`: kotlin.String?
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiComapsSessionOpen: FfiConverterRustBuffer<FfiComapsSessionOpen> {
+    override fun read(buf: ByteBuffer): FfiComapsSessionOpen {
+        return FfiComapsSessionOpen(
+            FfiConverterBoolean.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiComapsSessionOpen) = (
+            FfiConverterBoolean.allocationSize(value.`ok`) +
+            FfiConverterDouble.allocationSize(value.`initMs`) +
+            FfiConverterDouble.allocationSize(value.`registerMs`) +
+            FfiConverterUInt.allocationSize(value.`sidecarsLoaded`) +
+            FfiConverterOptionalString.allocationSize(value.`errorMessage`)
+    )
+
+    override fun write(value: FfiComapsSessionOpen, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`ok`, buf)
+            FfiConverterDouble.write(value.`initMs`, buf)
+            FfiConverterDouble.write(value.`registerMs`, buf)
+            FfiConverterUInt.write(value.`sidecarsLoaded`, buf)
+            FfiConverterOptionalString.write(value.`errorMessage`, buf)
+    }
+}
+
+
+
 data class FfiCorridorSkeletonProgress (
     var `stem`: kotlin.String
     , 
@@ -5321,6 +6314,224 @@ public object FfiConverterTypeFfiLiveHazardLoadStats: FfiConverterRustBuffer<Ffi
 
 
 
+data class FfiMwmInstallProgress (
+    var `running`: kotlin.Boolean
+    , 
+    var `finished`: kotlin.Boolean
+    , 
+    var `ok`: kotlin.Boolean
+    , 
+    var `error`: kotlin.String?
+    , 
+    var `version`: kotlin.String
+    , 
+    var `downloadedLeaves`: kotlin.UInt
+    , 
+    var `alreadyInstalledLeaves`: kotlin.UInt
+    , 
+    var `sidecarsInstalled`: kotlin.UInt
+    , 
+    var `activatedNewRelease`: kotlin.Boolean
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiMwmInstallProgress: FfiConverterRustBuffer<FfiMwmInstallProgress> {
+    override fun read(buf: ByteBuffer): FfiMwmInstallProgress {
+        return FfiMwmInstallProgress(
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiMwmInstallProgress) = (
+            FfiConverterBoolean.allocationSize(value.`running`) +
+            FfiConverterBoolean.allocationSize(value.`finished`) +
+            FfiConverterBoolean.allocationSize(value.`ok`) +
+            FfiConverterOptionalString.allocationSize(value.`error`) +
+            FfiConverterString.allocationSize(value.`version`) +
+            FfiConverterUInt.allocationSize(value.`downloadedLeaves`) +
+            FfiConverterUInt.allocationSize(value.`alreadyInstalledLeaves`) +
+            FfiConverterUInt.allocationSize(value.`sidecarsInstalled`) +
+            FfiConverterBoolean.allocationSize(value.`activatedNewRelease`)
+    )
+
+    override fun write(value: FfiMwmInstallProgress, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`running`, buf)
+            FfiConverterBoolean.write(value.`finished`, buf)
+            FfiConverterBoolean.write(value.`ok`, buf)
+            FfiConverterOptionalString.write(value.`error`, buf)
+            FfiConverterString.write(value.`version`, buf)
+            FfiConverterUInt.write(value.`downloadedLeaves`, buf)
+            FfiConverterUInt.write(value.`alreadyInstalledLeaves`, buf)
+            FfiConverterUInt.write(value.`sidecarsInstalled`, buf)
+            FfiConverterBoolean.write(value.`activatedNewRelease`, buf)
+    }
+}
+
+
+
+data class FfiMwmInstalled (
+    var `version`: kotlin.String?
+    , 
+    var `leafIds`: List<kotlin.String>
+    , 
+    var `sidecarCount`: kotlin.UInt
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiMwmInstalled: FfiConverterRustBuffer<FfiMwmInstalled> {
+    override fun read(buf: ByteBuffer): FfiMwmInstalled {
+        return FfiMwmInstalled(
+            FfiConverterOptionalString.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiMwmInstalled) = (
+            FfiConverterOptionalString.allocationSize(value.`version`) +
+            FfiConverterSequenceString.allocationSize(value.`leafIds`) +
+            FfiConverterUInt.allocationSize(value.`sidecarCount`)
+    )
+
+    override fun write(value: FfiMwmInstalled, buf: ByteBuffer) {
+            FfiConverterOptionalString.write(value.`version`, buf)
+            FfiConverterSequenceString.write(value.`leafIds`, buf)
+            FfiConverterUInt.write(value.`sidecarCount`, buf)
+    }
+}
+
+
+
+data class FfiMwmRegion (
+    /**
+     * Catalog `region_to_leaves` key, e.g. `europe_norway_ostlandet`.
+     */
+    var `id`: kotlin.String
+    , 
+    var `displayName`: kotlin.String
+    , 
+    var `leafIds`: List<kotlin.String>
+    , 
+    /**
+     * MWM + sidecar bytes of the leaves (World overlays excluded).
+     */
+    var `totalBytes`: kotlin.ULong
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiMwmRegion: FfiConverterRustBuffer<FfiMwmRegion> {
+    override fun read(buf: ByteBuffer): FfiMwmRegion {
+        return FfiMwmRegion(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiMwmRegion) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`displayName`) +
+            FfiConverterSequenceString.allocationSize(value.`leafIds`) +
+            FfiConverterULong.allocationSize(value.`totalBytes`)
+    )
+
+    override fun write(value: FfiMwmRegion, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`displayName`, buf)
+            FfiConverterSequenceString.write(value.`leafIds`, buf)
+            FfiConverterULong.write(value.`totalBytes`, buf)
+    }
+}
+
+
+
+data class FfiMwmRegionList (
+    var `ok`: kotlin.Boolean
+    , 
+    var `error`: kotlin.String?
+    , 
+    var `version`: kotlin.String
+    , 
+    var `regions`: List<FfiMwmRegion>
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiMwmRegionList: FfiConverterRustBuffer<FfiMwmRegionList> {
+    override fun read(buf: ByteBuffer): FfiMwmRegionList {
+        return FfiMwmRegionList(
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceTypeFfiMwmRegion.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiMwmRegionList) = (
+            FfiConverterBoolean.allocationSize(value.`ok`) +
+            FfiConverterOptionalString.allocationSize(value.`error`) +
+            FfiConverterString.allocationSize(value.`version`) +
+            FfiConverterSequenceTypeFfiMwmRegion.allocationSize(value.`regions`)
+    )
+
+    override fun write(value: FfiMwmRegionList, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`ok`, buf)
+            FfiConverterOptionalString.write(value.`error`, buf)
+            FfiConverterString.write(value.`version`, buf)
+            FfiConverterSequenceTypeFfiMwmRegion.write(value.`regions`, buf)
+    }
+}
+
+
+
 /**
  * Pack-host catalog snapshot for region-pill availability coloring.
  */
@@ -5698,6 +6909,69 @@ public object FfiConverterTypeFfiRegionAcquisitionDecision: FfiConverterRustBuff
 
 
 
+data class FfiReverseAddress (
+    var `found`: kotlin.Boolean
+    , 
+    var `houseNumber`: kotlin.String
+    , 
+    var `street`: kotlin.String
+    , 
+    var `formatted`: kotlin.String
+    , 
+    var `countryId`: kotlin.String
+    , 
+    var `distanceM`: kotlin.Double
+    , 
+    var `errorMessage`: kotlin.String?
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiReverseAddress: FfiConverterRustBuffer<FfiReverseAddress> {
+    override fun read(buf: ByteBuffer): FfiReverseAddress {
+        return FfiReverseAddress(
+            FfiConverterBoolean.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiReverseAddress) = (
+            FfiConverterBoolean.allocationSize(value.`found`) +
+            FfiConverterString.allocationSize(value.`houseNumber`) +
+            FfiConverterString.allocationSize(value.`street`) +
+            FfiConverterString.allocationSize(value.`formatted`) +
+            FfiConverterString.allocationSize(value.`countryId`) +
+            FfiConverterDouble.allocationSize(value.`distanceM`) +
+            FfiConverterOptionalString.allocationSize(value.`errorMessage`)
+    )
+
+    override fun write(value: FfiReverseAddress, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`found`, buf)
+            FfiConverterString.write(value.`houseNumber`, buf)
+            FfiConverterString.write(value.`street`, buf)
+            FfiConverterString.write(value.`formatted`, buf)
+            FfiConverterString.write(value.`countryId`, buf)
+            FfiConverterDouble.write(value.`distanceM`, buf)
+            FfiConverterOptionalString.write(value.`errorMessage`, buf)
+    }
+}
+
+
+
 data class FfiRoadNearInfo (
     /**
      * Street label (name → ref → highway class), empty when no edge in range.
@@ -5928,6 +7202,250 @@ public object FfiConverterTypeFfiSavedRoute: FfiConverterRustBuffer<FfiSavedRout
             FfiConverterOptionalDouble.write(value.`lastBreakLon`, buf)
             FfiConverterString.write(value.`summaryJson`, buf)
             FfiConverterString.write(value.`viaJson`, buf)
+    }
+}
+
+
+
+data class FfiSearchBatch (
+    var `requestId`: kotlin.ULong
+    , 
+    /**
+     * Hits appended since the previous batch of this request.
+     */
+    var `hits`: List<FfiSearchHit>
+    , 
+    var `isFinal`: kotlin.Boolean
+    , 
+    var `cancelled`: kotlin.Boolean
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiSearchBatch: FfiConverterRustBuffer<FfiSearchBatch> {
+    override fun read(buf: ByteBuffer): FfiSearchBatch {
+        return FfiSearchBatch(
+            FfiConverterULong.read(buf),
+            FfiConverterSequenceTypeFfiSearchHit.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiSearchBatch) = (
+            FfiConverterULong.allocationSize(value.`requestId`) +
+            FfiConverterSequenceTypeFfiSearchHit.allocationSize(value.`hits`) +
+            FfiConverterBoolean.allocationSize(value.`isFinal`) +
+            FfiConverterBoolean.allocationSize(value.`cancelled`)
+    )
+
+    override fun write(value: FfiSearchBatch, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`requestId`, buf)
+            FfiConverterSequenceTypeFfiSearchHit.write(value.`hits`, buf)
+            FfiConverterBoolean.write(value.`isFinal`, buf)
+            FfiConverterBoolean.write(value.`cancelled`, buf)
+    }
+}
+
+
+
+data class FfiSearchHit (
+    var `name`: kotlin.String
+    , 
+    var `address`: kotlin.String
+    , 
+    var `featureType`: kotlin.String
+    , 
+    var `lat`: kotlin.Double
+    , 
+    var `lon`: kotlin.Double
+    , 
+    /**
+     * Negative when no search position was set.
+     */
+    var `distanceM`: kotlin.Double
+    , 
+    var `kind`: FfiSearchHitKind
+    , 
+    /**
+     * `comaps` or a `navi:*` label.
+     */
+    var `source`: kotlin.String
+    , 
+    var `mergedSources`: List<kotlin.String>
+    , 
+    var `categoryKey`: kotlin.String?
+    , 
+    var `featureId`: kotlin.UInt?
+    , 
+    var `mwmName`: kotlin.String?
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiSearchHit: FfiConverterRustBuffer<FfiSearchHit> {
+    override fun read(buf: ByteBuffer): FfiSearchHit {
+        return FfiSearchHit(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterTypeFfiSearchHitKind.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalUInt.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiSearchHit) = (
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterString.allocationSize(value.`address`) +
+            FfiConverterString.allocationSize(value.`featureType`) +
+            FfiConverterDouble.allocationSize(value.`lat`) +
+            FfiConverterDouble.allocationSize(value.`lon`) +
+            FfiConverterDouble.allocationSize(value.`distanceM`) +
+            FfiConverterTypeFfiSearchHitKind.allocationSize(value.`kind`) +
+            FfiConverterString.allocationSize(value.`source`) +
+            FfiConverterSequenceString.allocationSize(value.`mergedSources`) +
+            FfiConverterOptionalString.allocationSize(value.`categoryKey`) +
+            FfiConverterOptionalUInt.allocationSize(value.`featureId`) +
+            FfiConverterOptionalString.allocationSize(value.`mwmName`)
+    )
+
+    override fun write(value: FfiSearchHit, buf: ByteBuffer) {
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterString.write(value.`address`, buf)
+            FfiConverterString.write(value.`featureType`, buf)
+            FfiConverterDouble.write(value.`lat`, buf)
+            FfiConverterDouble.write(value.`lon`, buf)
+            FfiConverterDouble.write(value.`distanceM`, buf)
+            FfiConverterTypeFfiSearchHitKind.write(value.`kind`, buf)
+            FfiConverterString.write(value.`source`, buf)
+            FfiConverterSequenceString.write(value.`mergedSources`, buf)
+            FfiConverterOptionalString.write(value.`categoryKey`, buf)
+            FfiConverterOptionalUInt.write(value.`featureId`, buf)
+            FfiConverterOptionalString.write(value.`mwmName`, buf)
+    }
+}
+
+
+
+/**
+ * Proposed replacement endpoint after `StartNotOnRoad` / `EndNotOnRoad`.
+ * Informational: the app shows it and only routes after the user confirms.
+ */
+data class FfiSnapSuggestion (
+    /**
+     * False when there is nothing to offer (other route code, flag off, no
+     * road inside the radius, or the engine is not available).
+     */
+    var `found`: kotlin.Boolean
+    , 
+    /**
+     * `true` = the start failed to match a road, `false` = the destination.
+     */
+    var `isStart`: kotlin.Boolean
+    , 
+    var `originalLat`: kotlin.Double
+    , 
+    var `originalLon`: kotlin.Double
+    , 
+    var `snapLat`: kotlin.Double
+    , 
+    var `snapLon`: kotlin.Double
+    , 
+    var `distanceM`: kotlin.Double
+    , 
+    var `featureId`: kotlin.UInt
+    , 
+    var `segmentIdx`: kotlin.UInt
+    , 
+    var `mwmName`: kotlin.String?
+    , 
+    var `message`: kotlin.String
+    , 
+    var `errorMessage`: kotlin.String?
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiSnapSuggestion: FfiConverterRustBuffer<FfiSnapSuggestion> {
+    override fun read(buf: ByteBuffer): FfiSnapSuggestion {
+        return FfiSnapSuggestion(
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiSnapSuggestion) = (
+            FfiConverterBoolean.allocationSize(value.`found`) +
+            FfiConverterBoolean.allocationSize(value.`isStart`) +
+            FfiConverterDouble.allocationSize(value.`originalLat`) +
+            FfiConverterDouble.allocationSize(value.`originalLon`) +
+            FfiConverterDouble.allocationSize(value.`snapLat`) +
+            FfiConverterDouble.allocationSize(value.`snapLon`) +
+            FfiConverterDouble.allocationSize(value.`distanceM`) +
+            FfiConverterUInt.allocationSize(value.`featureId`) +
+            FfiConverterUInt.allocationSize(value.`segmentIdx`) +
+            FfiConverterOptionalString.allocationSize(value.`mwmName`) +
+            FfiConverterString.allocationSize(value.`message`) +
+            FfiConverterOptionalString.allocationSize(value.`errorMessage`)
+    )
+
+    override fun write(value: FfiSnapSuggestion, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`found`, buf)
+            FfiConverterBoolean.write(value.`isStart`, buf)
+            FfiConverterDouble.write(value.`originalLat`, buf)
+            FfiConverterDouble.write(value.`originalLon`, buf)
+            FfiConverterDouble.write(value.`snapLat`, buf)
+            FfiConverterDouble.write(value.`snapLon`, buf)
+            FfiConverterDouble.write(value.`distanceM`, buf)
+            FfiConverterUInt.write(value.`featureId`, buf)
+            FfiConverterUInt.write(value.`segmentIdx`, buf)
+            FfiConverterOptionalString.write(value.`mwmName`, buf)
+            FfiConverterString.write(value.`message`, buf)
+            FfiConverterOptionalString.write(value.`errorMessage`, buf)
     }
 }
 
@@ -6526,6 +8044,166 @@ public object FfiConverterTypeCampingCallKind: FfiConverterRustBuffer<CampingCal
 
 
 
+enum class FfiCategoryCoverage {
+    
+    FULL,
+    PARTIAL,
+    GAP;
+
+    
+
+
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiCategoryCoverage: FfiConverterRustBuffer<FfiCategoryCoverage> {
+    override fun read(buf: ByteBuffer) = try {
+        FfiCategoryCoverage.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FfiCategoryCoverage) = 4UL
+
+    override fun write(value: FfiCategoryCoverage, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
+enum class FfiComapsOptimize {
+    
+    /**
+     * CoMaps default time/ETA weight.
+     */
+    TIME,
+    /**
+     * Not supported by CoMaps RoutesBuilder (returns Unsupported).
+     */
+    DISTANCE,
+    /**
+     * Avoid motorways via RoutingOptions (E6 vs Rv4-style switch).
+     */
+    PREFER_NON_MOTORWAY;
+
+    
+
+
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiComapsOptimize: FfiConverterRustBuffer<FfiComapsOptimize> {
+    override fun read(buf: ByteBuffer) = try {
+        FfiComapsOptimize.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FfiComapsOptimize) = 4UL
+
+    override fun write(value: FfiComapsOptimize, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
+enum class FfiComapsProfile {
+    
+    CAR,
+    PEDESTRIAN,
+    BICYCLE;
+
+    
+
+
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiComapsProfile: FfiConverterRustBuffer<FfiComapsProfile> {
+    override fun read(buf: ByteBuffer) = try {
+        FfiComapsProfile.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FfiComapsProfile) = 4UL
+
+    override fun write(value: FfiComapsProfile, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
+enum class FfiComapsRouteCode {
+    
+    OK,
+    NOT_INIT,
+    ROUTE_NOT_FOUND,
+    NEED_MORE_MAPS,
+    CANCELLED,
+    /**
+     * Shim/exception only — never a mapped CoMaps business code.
+     */
+    INTERNAL,
+    UNSUPPORTED,
+    UNAVAILABLE,
+    START_NOT_ON_ROAD,
+    END_NOT_ON_ROAD,
+    ROAD_CLOSED;
+
+    
+
+
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiComapsRouteCode: FfiConverterRustBuffer<FfiComapsRouteCode> {
+    override fun read(buf: ByteBuffer) = try {
+        FfiComapsRouteCode.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FfiComapsRouteCode) = 4UL
+
+    override fun write(value: FfiComapsRouteCode, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
 enum class FfiIconTheme {
     
     DAY,
@@ -6594,6 +8272,41 @@ public object FfiConverterTypeFfiRegionSourceKind: FfiConverterRustBuffer<FfiReg
     override fun allocationSize(value: FfiRegionSourceKind) = 4UL
 
     override fun write(value: FfiRegionSourceKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
+enum class FfiSearchHitKind {
+    
+    FEATURE,
+    LAT_LON,
+    POSTCODE;
+
+    
+
+
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiSearchHitKind: FfiConverterRustBuffer<FfiSearchHitKind> {
+    override fun read(buf: ByteBuffer) = try {
+        FfiSearchHitKind.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FfiSearchHitKind) = 4UL
+
+    override fun write(value: FfiSearchHitKind, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
     }
 }
@@ -7158,6 +8871,62 @@ public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.Str
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeFfiCategoryMapping: FfiConverterRustBuffer<List<FfiCategoryMapping>> {
+    override fun read(buf: ByteBuffer): List<FfiCategoryMapping> {
+        val len = buf.getInt()
+        return List<FfiCategoryMapping>(len) {
+            FfiConverterTypeFfiCategoryMapping.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiCategoryMapping>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiCategoryMapping.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiCategoryMapping>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiCategoryMapping.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFfiComapsLatLon: FfiConverterRustBuffer<List<FfiComapsLatLon>> {
+    override fun read(buf: ByteBuffer): List<FfiComapsLatLon> {
+        val len = buf.getInt()
+        return List<FfiComapsLatLon>(len) {
+            FfiConverterTypeFfiComapsLatLon.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiComapsLatLon>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiComapsLatLon.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiComapsLatLon>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiComapsLatLon.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeFfiLatLon: FfiConverterRustBuffer<List<FfiLatLon>> {
     override fun read(buf: ByteBuffer): List<FfiLatLon> {
         val len = buf.getInt()
@@ -7176,6 +8945,34 @@ public object FfiConverterSequenceTypeFfiLatLon: FfiConverterRustBuffer<List<Ffi
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeFfiLatLon.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFfiMwmRegion: FfiConverterRustBuffer<List<FfiMwmRegion>> {
+    override fun read(buf: ByteBuffer): List<FfiMwmRegion> {
+        val len = buf.getInt()
+        return List<FfiMwmRegion>(len) {
+            FfiConverterTypeFfiMwmRegion.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiMwmRegion>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiMwmRegion.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiMwmRegion>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiMwmRegion.write(it, buf)
         }
     }
 }
@@ -7260,6 +9057,34 @@ public object FfiConverterSequenceTypeFfiSavedRoute: FfiConverterRustBuffer<List
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeFfiSavedRoute.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFfiSearchHit: FfiConverterRustBuffer<List<FfiSearchHit>> {
+    override fun read(buf: ByteBuffer): List<FfiSearchHit> {
+        val len = buf.getInt()
+        return List<FfiSearchHit>(len) {
+            FfiConverterTypeFfiSearchHit.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiSearchHit>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiSearchHit.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiSearchHit>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiSearchHit.write(it, buf)
         }
     }
 }
@@ -11053,6 +12878,23 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
 }
     
     
+
+        /**
+         * Set the follow clock time scale. Pass the route simulation speed while a
+         * route is simulated (for example 12.0 or 20.0) and 1.0 otherwise, so the
+         * 30 s dwell and 60 s gap of network follow run in simulation time.
+         * Idempotent: repeating the scale already in force changes nothing.
+         */ fun `catPluginSetTimeScale`(`scale`: kotlin.Double): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_set_time_scale(
+    
+        
+        FfiConverterDouble.lower(`scale`),_status)
+}
+    )
+    }
+    
  fun `catPluginStatusJson`(): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
@@ -11099,6 +12941,36 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     
         
         FfiConverterString.lower(`requestJson`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Parse GPX text and return JSON:
+         *
+         * ```text
+         * {ok, error, name, version,
+         * tracks:    [{name, points:[[lat,lon],...], original_point_count, length_m, ascent_m?}],
+         * routes:    [{name, points:[[lat,lon],...], original_point_count, length_m, ascent_m?}],
+         * waypoints: [{name, desc, lat, lon, sym}],
+         * unsupported: [string],
+         * bounds: [minlat, minlon, maxlat, maxlon] | null}
+         * ```
+         *
+         * Track and route lines are reduced to at most `max_points_per_line` points with Douglas-Peucker
+         * using an automatic tolerance (`0` selects a default of 2000). `length_m` and `ascent_m` are
+         * computed from the full-resolution data, `ascent_m` only when the file carries elevation.
+         * Segments of one track are joined into a single line. On failure the result is
+         * `{"ok": false, "error": "<readable message>"}`.
+         */ fun `gpxParseJson`(`text`: kotlin.String, `maxPointsPerLine`: kotlin.UInt): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_gpx_parse_json(
+    
+        
+        FfiConverterString.lower(`text`),
+        FfiConverterUInt.lower(`maxPointsPerLine`),_status)
 }
     )
     }
@@ -11275,6 +13147,777 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     UniffiLib.uniffi_navi_fn_func_imu_plugin_tick(
     
         _status)
+}
+    )
+    }
+    
+
+        /**
+         * CoMaps `DisplayedCategories` keys from the native engine (empty if unavailable).
+         */ fun `comapsCategoryKeys`(): List<kotlin.String> {
+            return FfiConverterSequenceString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_category_keys(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Localized query string for a category key, falling back to English.
+         */ fun `comapsCategoryQuery`(`key`: kotlin.String, `locale`: kotlin.String): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_category_query(
+    
+        
+        FfiConverterString.lower(`key`),
+        FfiConverterString.lower(`locale`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * CoMaps leaf (country id, e.g. `Norway_Oppland`) containing the point according to the
+         * bundled borders (`packed_polygons`). `Some("")` = outside every country (sea), `None` =
+         * engine not initialised.
+         */ fun `comapsLeafForPoint`(`lat`: kotlin.Double, `lon`: kotlin.Double): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_leaf_for_point(
+    
+        
+        FfiConverterDouble.lower(`lat`),
+        FfiConverterDouble.lower(`lon`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Probe whether the CoMaps native core is linked into this build.
+         */ fun `comapsNativeAvailable`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_native_available(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Navi `PoiCategory` to CoMaps category mapping with coverage; pure logic.
+         */ fun `comapsPoiCategoryMappings`(): List<FfiCategoryMapping> {
+            return FfiConverterSequenceTypeFfiCategoryMapping.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_poi_category_mappings(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Quick-chip name (`fuel`, `ev`, ...) to a CoMaps category key; pure logic.
+         */ fun `comapsQuickCategoryKey`(`name`: kotlin.String): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_quick_category_key(
+    
+        
+        FfiConverterString.lower(`name`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Nearest address for a point from the registered MWMs.
+         */ fun `comapsReverseGeocode`(`lat`: kotlin.Double, `lon`: kotlin.Double): FfiReverseAddress {
+            return FfiConverterTypeFfiReverseAddress.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_reverse_geocode(
+    
+        
+        FfiConverterDouble.lower(`lat`),
+        FfiConverterDouble.lower(`lon`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * One-shot CoMaps route for device smoke tests (runs on a background caller).
+         */ fun `comapsRouteOnce`(`storagePath`: kotlin.String, `writablePath`: kotlin.String, `sidecarDir`: kotlin.String?, `profile`: FfiComapsProfile, `fromLat`: kotlin.Double, `fromLon`: kotlin.Double, `toLat`: kotlin.Double, `toLon`: kotlin.Double, `wetlandHook`: kotlin.Boolean): FfiComapsRoute {
+            return FfiConverterTypeFfiComapsRoute.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_route_once(
+    
+        
+        FfiConverterString.lower(`storagePath`),
+        FfiConverterString.lower(`writablePath`),
+        FfiConverterOptionalString.lower(`sidecarDir`),
+        FfiConverterTypeFfiComapsProfile.lower(`profile`),
+        FfiConverterDouble.lower(`fromLat`),
+        FfiConverterDouble.lower(`fromLon`),
+        FfiConverterDouble.lower(`toLat`),
+        FfiConverterDouble.lower(`toLon`),
+        FfiConverterBoolean.lower(`wetlandHook`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Cancel one request, or every in-flight request when `request_id` is 0.
+         */ fun `comapsSearchCancel`(`requestId`: kotlin.ULong)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_search_cancel(
+    
+        
+        FfiConverterULong.lower(`requestId`),_status)
+}
+    
+    
+ fun `comapsSearchClearViewport`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_search_clear_viewport(
+    
+        _status)
+}
+    
+    
+
+        /**
+         * True when the app should use CoMaps search: the MWM client flag is on and
+         * the native core is linked. Otherwise keep the `place_index` FTS search.
+         */ fun `comapsSearchEnabled`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_search_enabled(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Merge CoMaps hits with Navi catalog hits (labelled `navi:*`) without
+         * changing either storage. `category_mode` orders by distance instead of
+         * CoMaps rank.
+         */ fun `comapsSearchMerge`(`query`: kotlin.String, `categoryMode`: kotlin.Boolean, `comapsHits`: List<FfiSearchHit>, `naviHits`: List<FfiSearchHit>, `limit`: kotlin.UInt): List<FfiSearchHit> {
+            return FfiConverterSequenceTypeFfiSearchHit.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_search_merge(
+    
+        
+        FfiConverterString.lower(`query`),
+        FfiConverterBoolean.lower(`categoryMode`),
+        FfiConverterSequenceTypeFfiSearchHit.lower(`comapsHits`),
+        FfiConverterSequenceTypeFfiSearchHit.lower(`naviHits`),
+        FfiConverterUInt.lower(`limit`),_status)
+}
+    )
+    }
+    
+ fun `comapsSearchSetLocale`(`locale`: kotlin.String)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_search_set_locale(
+    
+        
+        FfiConverterString.lower(`locale`),_status)
+}
+    
+    
+ fun `comapsSearchSetPosition`(`lat`: kotlin.Double, `lon`: kotlin.Double, `hasPosition`: kotlin.Boolean)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_search_set_position(
+    
+        
+        FfiConverterDouble.lower(`lat`),
+        FfiConverterDouble.lower(`lon`),
+        FfiConverterBoolean.lower(`hasPosition`),_status)
+}
+    
+    
+ fun `comapsSearchSetViewport`(`minLat`: kotlin.Double, `minLon`: kotlin.Double, `maxLat`: kotlin.Double, `maxLon`: kotlin.Double)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_search_set_viewport(
+    
+        
+        FfiConverterDouble.lower(`minLat`),
+        FfiConverterDouble.lower(`minLon`),
+        FfiConverterDouble.lower(`maxLat`),
+        FfiConverterDouble.lower(`maxLon`),_status)
+}
+    
+    
+
+        /**
+         * Start an async, cancellable search; batches stream to `listener`. Returns a
+         * request id, or 0 when search is unavailable (flag off, native core missing
+         * or no session). `is_category` takes the string from [`comaps_category_query`].
+         */ fun `comapsSearchStart`(`query`: kotlin.String, `isCategory`: kotlin.Boolean, `maxResults`: kotlin.UInt, `listener`: FfiSearchListener): kotlin.ULong {
+            return FfiConverterULong.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_search_start(
+    
+        
+        FfiConverterString.lower(`query`),
+        FfiConverterBoolean.lower(`isCategory`),
+        FfiConverterUInt.lower(`maxResults`),
+        FfiConverterTypeFfiSearchListener.lower(`listener`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Arm CoMaps `navi_comaps_cancel`. This is a pre-flight latch: the next
+         * [`comaps_session_route`] call consumes it and returns `Cancelled` before routing; a
+         * route that is already running is **not** interrupted. Callers that cancel and then
+         * start a new plan must not use it (the new plan would be cancelled instead).
+         */ fun `comapsSessionCancel`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_cancel(
+    
+        _status)
+}
+    
+    
+ fun `comapsSessionClose`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_close(
+    
+        _status)
+}
+    
+    
+
+        /**
+         * True when [`comaps_session_open`] currently holds a live router.
+         */ fun `comapsSessionIsOpen`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_is_open(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Open a persistent CoMaps session (cold init + MWM register). Call
+         * [`comaps_session_route`] then [`comaps_session_close`].
+         */ fun `comapsSessionOpen`(`storagePath`: kotlin.String, `writablePath`: kotlin.String, `sidecarDir`: kotlin.String?, `loadWetlandSidecars`: kotlin.Boolean): FfiComapsSessionOpen {
+            return FfiConverterTypeFfiComapsSessionOpen.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_open(
+    
+        
+        FfiConverterString.lower(`storagePath`),
+        FfiConverterString.lower(`writablePath`),
+        FfiConverterOptionalString.lower(`sidecarDir`),
+        FfiConverterBoolean.lower(`loadWetlandSidecars`),_status)
+}
+    )
+    }
+    
+ fun `comapsSessionRoute`(`profile`: FfiComapsProfile, `fromLat`: kotlin.Double, `fromLon`: kotlin.Double, `toLat`: kotlin.Double, `toLon`: kotlin.Double, `wetlandHook`: kotlin.Boolean): FfiComapsRoute {
+            return FfiConverterTypeFfiComapsRoute.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_route(
+    
+        
+        FfiConverterTypeFfiComapsProfile.lower(`profile`),
+        FfiConverterDouble.lower(`fromLat`),
+        FfiConverterDouble.lower(`fromLon`),
+        FfiConverterDouble.lower(`toLat`),
+        FfiConverterDouble.lower(`toLon`),
+        FfiConverterBoolean.lower(`wetlandHook`),_status)
+}
+    )
+    }
+    
+ fun `comapsSessionSetAvoidOptions`(`avoidToll`: kotlin.Boolean, `avoidMotorway`: kotlin.Boolean, `avoidFerry`: kotlin.Boolean, `avoidDirty`: kotlin.Boolean)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_set_avoid_options(
+    
+        
+        FfiConverterBoolean.lower(`avoidToll`),
+        FfiConverterBoolean.lower(`avoidMotorway`),
+        FfiConverterBoolean.lower(`avoidFerry`),
+        FfiConverterBoolean.lower(`avoidDirty`),_status)
+}
+    
+    
+ fun `comapsSessionSetBikeWetland`(`enabled`: kotlin.Boolean)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_set_bike_wetland(
+    
+        
+        FfiConverterBoolean.lower(`enabled`),_status)
+}
+    
+    
+ fun `comapsSessionSetOptimize`(`mode`: FfiComapsOptimize)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_set_optimize(
+    
+        
+        FfiConverterTypeFfiComapsOptimize.lower(`mode`),_status)
+}
+    
+    
+ fun `comapsSessionSetTurnsLocale`(`locale`: kotlin.String)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_set_turns_locale(
+    
+        
+        FfiConverterString.lower(`locale`),_status)
+}
+    
+    
+
+        /**
+         * Nearest drivable road for the endpoint that failed with `code`. Returns
+         * `found = false` for every code except `StartNotOnRoad` / `EndNotOnRoad`.
+         * Never called by [`comaps_session_route`]; the app calls it after a failure
+         * and shows the result before routing anywhere.
+         */ fun `comapsSessionSnapSuggestion`(`profile`: FfiComapsProfile, `code`: FfiComapsRouteCode, `lat`: kotlin.Double, `lon`: kotlin.Double, `radiusM`: kotlin.Double): FfiSnapSuggestion {
+            return FfiConverterTypeFfiSnapSuggestion.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_snap_suggestion(
+    
+        
+        FfiConverterTypeFfiComapsProfile.lower(`profile`),
+        FfiConverterTypeFfiComapsRouteCode.lower(`code`),
+        FfiConverterDouble.lower(`lat`),
+        FfiConverterDouble.lower(`lon`),
+        FfiConverterDouble.lower(`radiusM`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * While the drape Framework is alive it owns the Platform resource / writable / settings
+         * directories and the map style. With the lock set, a session re-open (leaf download) only
+         * rebuilds the router and leaves Platform and style alone.
+         */ fun `comapsSetPlatformLocked`(`locked`: kotlin.Boolean)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_set_platform_locked(
+    
+        
+        FfiConverterBoolean.lower(`locked`),_status)
+}
+    
+    
+ fun `mwmProductionPlannerActive`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_production_planner_active(
+    
+        _status)
+}
+    )
+    }
+    
+ fun `setMwmProductionPlannerActive`(`active`: kotlin.Boolean)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_set_mwm_production_planner_active(
+    
+        
+        FfiConverterBoolean.lower(`active`),_status)
+}
+    
+    
+
+        /**
+         * Ask the running install to stop between leaves (the staging tree is kept for resume).
+         */ fun `mwmInstallCancel`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_install_cancel(
+    
+        _status)
+}
+    
+    
+
+        /**
+         * Download, verify and register `leaf_ids` into `data_dir/mwm` (blocking; call off the main
+         * thread). Already installed leaves are skipped; an incremental install keeps the active
+         * release (and its open files) intact. Returns the final progress state.
+         */ fun `mwmInstallLeaves`(`dataDir`: kotlin.String, `naviOrigin`: kotlin.String, `leafIds`: List<kotlin.String>): FfiMwmInstallProgress {
+            return FfiConverterTypeFfiMwmInstallProgress.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_install_leaves(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`naviOrigin`),
+        FfiConverterSequenceString.lower(`leafIds`),_status)
+}
+    )
+    }
+    
+ fun `mwmInstallProgress`(): FfiMwmInstallProgress {
+            return FfiConverterTypeFfiMwmInstallProgress.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_install_progress(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Leaves of the active release under `data_dir/mwm` (no network).
+         */ fun `mwmInstalled`(`dataDir`: kotlin.String): FfiMwmInstalled {
+            return FfiConverterTypeFfiMwmInstalled.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_installed(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Fetch the live catalog and list the downloadable regions (blocking network call).
+         */ fun `mwmListRegions`(`naviOrigin`: kotlin.String): FfiMwmRegionList {
+            return FfiConverterTypeFfiMwmRegionList.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_list_regions(
+    
+        
+        FfiConverterString.lower(`naviOrigin`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Cancel the migration for good (partial downloads are removed, installed maps stay).
+         */ fun `mwmMigrationDiscard`(`dataDir`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_discard(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The old maps of a kept region were deleted: stop listing it.
+         */ fun `mwmMigrationForgetKept`(`dataDir`: kotlin.String, `regionId`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_forget_kept(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`regionId`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Old regions the user migrated and kept (JSON list of {region_id, old_bytes}).
+         */ fun `mwmMigrationKeptRegions`(`dataDir`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_kept_regions(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+ fun `mwmMigrationLaterUntil`(`dataDir`: kotlin.String): kotlin.ULong {
+            return FfiConverterULong.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_later_until(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * `deleted` / `kept`: finishes the migration (only valid once the new maps are verified).
+         */ fun `mwmMigrationOldMapsDecision`(`dataDir`: kotlin.String, `decision`: kotlin.String, `bytesFreed`: kotlin.ULong): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_old_maps_decision(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`decision`),
+        FfiConverterULong.lower(`bytesFreed`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Ask the running migration to stop (state becomes `paused`; the staging tree is kept).
+         */ fun `mwmMigrationPause`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_pause(
+    
+        _status)
+}
+    
+    
+
+        /**
+         * Plan the migration of the detected `.rkyv` regions (network: catalog + region mapping, cached
+         * for ten minutes). `selected_json` is a JSON list of region ids (empty string = all mapped
+         * regions); `excluded_json` a JSON list of leaf ids the user took off the list.
+         */ fun `mwmMigrationPlan`(`dataDir`: kotlin.String, `naviOrigin`: kotlin.String, `detectedJson`: kotlin.String, `selectedJson`: kotlin.String, `excludedJson`: kotlin.String, `freeBytes`: kotlin.ULong, `forceRefresh`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_plan(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`naviOrigin`),
+        FfiConverterString.lower(`detectedJson`),
+        FfiConverterString.lower(`selectedJson`),
+        FfiConverterString.lower(`excludedJson`),
+        FfiConverterULong.lower(`freeBytes`),
+        FfiConverterBoolean.lower(`forceRefresh`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Overall progress: bytes of the pinned download that are on disk (staging, or everything once
+         * switched) against the planned download size.
+         */ fun `mwmMigrationProgress`(`dataDir`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_progress(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * "Later": returns the epoch millis before which the offer is not shown again.
+         */ fun `mwmMigrationRemindLater`(`dataDir`: kotlin.String): kotlin.ULong {
+            return FfiConverterULong.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_remind_later(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Run (or resume) the pinned migration; blocks until verified, paused, or stopped by an error.
+         */ fun `mwmMigrationRun`(`dataDir`: kotlin.String, `naviOrigin`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_run(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`naviOrigin`),_status)
+}
+    )
+    }
+    
+ fun `mwmMigrationRunning`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_running(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Set a status the Kotlin side owns (`paused`, `waiting_wifi`, `queued`).
+         */ fun `mwmMigrationSetStatus`(`dataDir`: kotlin.String, `status`: kotlin.String, `error`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_set_status(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`status`),
+        FfiConverterString.lower(`error`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Change the Wi-Fi-only choice of the pinned migration.
+         */ fun `mwmMigrationSetWifiOnly`(`dataDir`: kotlin.String, `wifiOnly`: kotlin.Boolean): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_set_wifi_only(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterBoolean.lower(`wifiOnly`),_status)
+}
+    )
+    }
+    
+ fun `mwmMigrationShouldOffer`(`dataDir`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_should_offer(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Persist the user's choice (state `queued`) and pin the catalog it was planned with.
+         */ fun `mwmMigrationStart`(`dataDir`: kotlin.String, `naviOrigin`: kotlin.String, `detectedJson`: kotlin.String, `selectedJson`: kotlin.String, `excludedJson`: kotlin.String, `freeBytes`: kotlin.ULong, `wifiOnly`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_start(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`naviOrigin`),
+        FfiConverterString.lower(`detectedJson`),
+        FfiConverterString.lower(`selectedJson`),
+        FfiConverterString.lower(`excludedJson`),
+        FfiConverterULong.lower(`freeBytes`),
+        FfiConverterBoolean.lower(`wifiOnly`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The persisted state as JSON, or `"null"`.
+         */ fun `mwmMigrationState`(`dataDir`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_state(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Deep verification (sizes + SHA-1 + sidecar SHA-256 + World) of the migrated set.
+         */ fun `mwmMigrationVerify`(`dataDir`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_verify(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+ fun `mwmStorageDeleteBlockReason`(`dataDir`: kotlin.String, `leafId`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_storage_delete_block_reason(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`leafId`),_status)
+}
+    )
+    }
+    
+ fun `mwmStorageDeleteLeaf`(`dataDir`: kotlin.String, `leafId`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_storage_delete_leaf(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`leafId`),_status)
+}
+    )
+    }
+    
+ fun `mwmStorageDeleteOldReleases`(`dataDir`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_storage_delete_old_releases(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Installed leaves per country group, sizes, release version, and (when `navi_origin` is
+         * reachable) whether a newer CoMaps release is available. Falls back to the cached catalog
+         * offline. `refresh` forces a network fetch.
+         */ fun `mwmStorageSummary`(`dataDir`: kotlin.String, `naviOrigin`: kotlin.String, `refresh`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_storage_summary(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`naviOrigin`),
+        FfiConverterBoolean.lower(`refresh`),_status)
 }
     )
     }

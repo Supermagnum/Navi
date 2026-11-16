@@ -54,6 +54,110 @@ pub struct FollowState {
     pub held_site: Option<String>,
     #[serde(default)]
     pub leave_notified: bool,
+    /// Switch handed to the host but not yet confirmed programmed. Holds the values
+    /// to restore if the host reports that the radio did not accept it.
+    #[serde(default)]
+    pub pending: Option<PendingSwitch>,
+    /// Site the radio refused after all attempts, and when (follow clock). The same
+    /// site is not tried again for [`MIN_GAP_S`], so the user is not spammed.
+    #[serde(default)]
+    pub failed_site: Option<String>,
+    #[serde(default)]
+    pub failed_at_unix_s: u64,
+}
+
+/// State before a switch was committed, kept until the host confirms the program.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PendingSwitch {
+    pub site_id: String,
+    pub prev_site: Option<String>,
+    pub prev_dist_km: Option<f64>,
+    pub prev_site_since_unix_s: u64,
+    pub prev_last_switch_unix_s: u64,
+}
+
+/// Host report after it tried to program a switch (`navi-cat` `FollowProgramReport`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProgramResult {
+    pub site_id: String,
+    pub ok: bool,
+    #[serde(default)]
+    pub attempts: u32,
+    #[serde(default)]
+    pub notified: bool,
+    #[serde(default)]
+    pub at_unix_s: u64,
+}
+
+/// Apply the host program report to the follow state.
+///
+/// Success confirms the switch. Failure restores the state from before the switch
+/// (the site is not "tuned") and remembers the failed site and time, so
+/// [`tick_at`] holds off that site for [`MIN_GAP_S`] and then tries it again.
+pub fn apply_program_result(state: &mut FollowState, result: &ProgramResult) {
+    let pending = match state.pending.take() {
+        Some(p) if p.site_id == result.site_id => Some(p),
+        other => {
+            // A report for another site than the one pending: keep the pending switch.
+            state.pending = other;
+            None
+        }
+    };
+    if result.ok {
+        if state.failed_site.as_deref() == Some(result.site_id.as_str()) {
+            state.failed_site = None;
+        }
+        return;
+    }
+    match pending {
+        Some(p) => {
+            state.current_site = p.prev_site;
+            state.current_dist_km = p.prev_dist_km;
+            state.site_since_unix_s = p.prev_site_since_unix_s;
+            state.last_switch_unix_s = p.prev_last_switch_unix_s;
+        }
+        None => {
+            if state.current_site.as_deref() == Some(result.site_id.as_str()) {
+                state.current_site = None;
+                state.current_dist_km = None;
+            }
+        }
+    }
+    state.failed_site = Some(result.site_id.clone());
+    state.failed_at_unix_s = result.at_unix_s;
+}
+
+/// Parse a host report from plugin KV (empty or invalid text is ignored) and apply it.
+/// Returns the applied result so the caller can log it.
+pub fn apply_program_result_json(state: &mut FollowState, json: &str) -> Option<ProgramResult> {
+    let json = json.trim();
+    if json.is_empty() {
+        return None;
+    }
+    let result: ProgramResult = serde_json::from_str(json).ok()?;
+    apply_program_result(state, &result);
+    Some(result)
+}
+
+/// True while `site_id` is inside the cool-down after a failed program.
+pub fn in_failure_cooldown(state: &FollowState, site_id: &str, now_unix_s: u64) -> bool {
+    state.failed_site.as_deref() == Some(site_id)
+        && now_unix_s.saturating_sub(state.failed_at_unix_s) < MIN_GAP_S
+}
+
+/// Commit a switch and remember what to restore if the radio refuses it.
+fn commit_switch(state: &mut FollowState, site: &FollowSite, dist_km: f64, now_unix_s: u64) {
+    state.pending = Some(PendingSwitch {
+        site_id: site.id.clone(),
+        prev_site: state.current_site.clone(),
+        prev_dist_km: state.current_dist_km,
+        prev_site_since_unix_s: state.site_since_unix_s,
+        prev_last_switch_unix_s: state.last_switch_unix_s,
+    });
+    state.current_site = Some(site.id.clone());
+    state.current_dist_km = Some(dist_km);
+    state.site_since_unix_s = now_unix_s;
+    state.last_switch_unix_s = now_unix_s;
 }
 
 /// Minimal site fields for follow (guest-side; host DB maps into this).
@@ -159,6 +263,17 @@ pub fn parse_navi_polyline(s: &str) -> Vec<(f64, f64)> {
         .collect()
 }
 
+/// The follow state is persisted by the host and outlives the process, but the
+/// follow clock does not: a simulated drive stores timestamps ahead of real time,
+/// and the next process starts at real time again. Timestamps in the future would
+/// make dwell and gap checks fail until real time catches up, so they are clamped
+/// to `now_unix_s` (the dwell and gap then restart from now).
+fn clamp_future_timestamps(state: &mut FollowState, now_unix_s: u64) {
+    state.site_since_unix_s = state.site_since_unix_s.min(now_unix_s);
+    state.last_switch_unix_s = state.last_switch_unix_s.min(now_unix_s);
+    state.failed_at_unix_s = state.failed_at_unix_s.min(now_unix_s);
+}
+
 pub fn tick_at(
     state: &mut FollowState,
     lat: f64,
@@ -169,6 +284,7 @@ pub fn tick_at(
     if state.network_id.is_none() || state.stopped_reason.is_some() {
         return FollowTick::Hold;
     }
+    clamp_future_timestamps(state, now_unix_s);
     let mut in_range: Vec<(&FollowSite, f64)> = Vec::new();
     for s in members {
         let d = haversine_km(lat, lon, s.lat, s.lon);
@@ -195,12 +311,25 @@ pub fn tick_at(
         };
     }
 
+    // A held site that is not a member in range any more (network changed, standalone to
+    // network, member out of range) has no valid distance: its stored value is stale, and the
+    // hysteresis rule would keep the old site until a candidate beats that old distance. Drop
+    // it so the nearest member is tuned at once.
+    if let (Some(cur), None) = (state.current_site.as_deref(), state.pinned.as_ref()) {
+        if !in_range.iter().any(|(s, _)| s.id == cur) {
+            state.current_site = None;
+            state.current_dist_km = None;
+        }
+    }
+
     let (best, best_d) = in_range[0];
+    // The radio refused this site a moment ago: do not try it again, or tell the user
+    // again, until the cool-down is over.
+    if in_failure_cooldown(state, &best.id, now_unix_s) {
+        return FollowTick::Hold;
+    }
     if state.current_site.is_none() {
-        state.current_site = Some(best.id.clone());
-        state.current_dist_km = Some(best_d);
-        state.site_since_unix_s = now_unix_s;
-        state.last_switch_unix_s = now_unix_s;
+        commit_switch(state, best, best_d, now_unix_s);
         return FollowTick::Switch {
             site_id: best.id.clone(),
         };
@@ -211,10 +340,7 @@ pub fn tick_at(
         }
     }
     if should_switch(state, &best.id, best_d, now_unix_s) {
-        state.current_site = Some(best.id.clone());
-        state.current_dist_km = Some(best_d);
-        state.site_since_unix_s = now_unix_s;
-        state.last_switch_unix_s = now_unix_s;
+        commit_switch(state, best, best_d, now_unix_s);
         return FollowTick::Switch {
             site_id: best.id.clone(),
         };
@@ -228,6 +354,50 @@ pub struct LiveMember {
     pub site: FollowSite,
     pub network: String,
     pub distance_km: f64,
+}
+
+/// Parse host `repeater_query` rows (compact follow JSON) into live members.
+/// Rows without id, lat or lon are dropped. The host has already removed rows the
+/// rig must not tune (digital-only, invalid shift).
+pub fn live_members_from_rows(rows: &[serde_json::Value]) -> Vec<LiveMember> {
+    let mut live = Vec::new();
+    for row in rows {
+        let Some(id) = row.get("id").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(lat) = row.get("lat").and_then(|v| v.as_f64()) else {
+            continue;
+        };
+        let Some(lon) = row.get("lon").and_then(|v| v.as_f64()) else {
+            continue;
+        };
+        let str_field = |key: &str| {
+            row.get(key)
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        };
+        live.push(LiveMember {
+            site: FollowSite {
+                id: id.to_string(),
+                callsign: str_field("callsign"),
+                lat,
+                lon,
+                freq_out_mhz: row
+                    .get("freq_out_mhz")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0),
+                shift_mhz: row.get("shift_mhz").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                ctcss_hz: row.get("ctcss_hz").and_then(|v| v.as_f64()),
+            },
+            network: str_field("network_id"),
+            distance_km: row
+                .get("distance_km")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(f64::MAX),
+        });
+    }
+    live
 }
 
 /// `auto` follows the nearest network that has a programmable member.
@@ -281,6 +451,9 @@ pub fn select_members(choice: &str, sites: &[LiveMember]) -> Vec<FollowSite> {
 /// KV keys. Values are site ids and follow state, never file paths.
 pub const FOLLOW_STATE_KEY: &str = "cat_follow_state";
 pub const FOLLOW_SWITCH_KEY: &str = "cat_follow_switch";
+/// Host report of the last program attempt (JSON [`ProgramResult`]); the guest
+/// applies it at the start of the next tick and then clears it.
+pub const FOLLOW_RESULT_KEY: &str = "cat_follow_result";
 
 #[cfg(test)]
 mod tests {
@@ -298,9 +471,77 @@ mod tests {
             stopped_reason: None,
             held_site: None,
             leave_notified: false,
+            ..Default::default()
         };
         assert!(!should_switch(&state, "B", 18.0, 1000));
         assert!(should_switch(&state, "B", 14.0, 1000));
+    }
+
+    #[test]
+    fn timestamps_from_a_faster_clock_do_not_block_switching() {
+        let site = |id: &str, lat: f64| FollowSite {
+            id: id.into(),
+            callsign: id.into(),
+            lat,
+            lon: 10.0,
+            freq_out_mhz: 145.6,
+            shift_mhz: -0.6,
+            ctcss_hz: None,
+        };
+        let members = vec![site("A", 60.0), site("B", 61.0)];
+        // Stored by an earlier simulated drive: three hours ahead of the real clock.
+        let mut st = FollowState {
+            network_id: Some("standalone".into()),
+            current_site: Some("A".into()),
+            current_dist_km: Some(5.0),
+            last_switch_unix_s: 1_000_000 + 10_800,
+            site_since_unix_s: 1_000_000 + 10_800,
+            ..Default::default()
+        };
+        // Real time now: the vehicle is at B. Dwell and gap restart at `now`.
+        assert_eq!(
+            tick_at(&mut st, 61.0, 10.0, &members, 1_000_000),
+            FollowTick::Hold
+        );
+        assert_eq!(st.site_since_unix_s, 1_000_000);
+        let later = 1_000_000 + MIN_GAP_S + 1;
+        assert_eq!(
+            tick_at(&mut st, 61.0, 10.0, &members, later),
+            FollowTick::Switch {
+                site_id: "B".into()
+            }
+        );
+    }
+
+    #[test]
+    fn held_site_outside_the_followed_set_is_replaced_at_once() {
+        let site = |id: &str, lat: f64| FollowSite {
+            id: id.into(),
+            callsign: id.into(),
+            lat,
+            lon: 10.0,
+            freq_out_mhz: 145.6,
+            shift_mhz: -0.6,
+            ctcss_hz: None,
+        };
+        // Held from an earlier standalone follow (distance 21 km); now following a network
+        // whose members do not include it. The nearest member is 15 km away, which is not 20 %
+        // closer than the stale 21 km, so the hysteresis rule alone would never switch.
+        let members = vec![site("N1", 60.15), site("N2", 61.5)];
+        let mut st = FollowState {
+            network_id: Some("LA5MR".into()),
+            current_site: Some("S".into()),
+            current_dist_km: Some(21.0),
+            last_switch_unix_s: 500,
+            site_since_unix_s: 500,
+            ..Default::default()
+        };
+        assert_eq!(
+            tick_at(&mut st, 60.0, 10.0, &members, 1_000),
+            FollowTick::Switch {
+                site_id: "N1".into()
+            }
+        );
     }
 
     #[test]
@@ -315,6 +556,7 @@ mod tests {
             stopped_reason: None,
             held_site: None,
             leave_notified: false,
+            ..Default::default()
         };
         assert!(!should_switch(&state, "B", 1.0, 1000));
     }
@@ -428,5 +670,163 @@ mod tests {
         let (choice, notice) = resolve_network_choice("standalone", &[]);
         assert_eq!(choice, NETWORK_STANDALONE);
         assert!(notice.is_none());
+    }
+    fn plain_site(id: &str, lat: f64) -> FollowSite {
+        FollowSite {
+            id: id.into(),
+            callsign: id.into(),
+            lat,
+            lon: 10.0,
+            freq_out_mhz: 145.6,
+            shift_mhz: -0.6,
+            ctcss_hz: None,
+        }
+    }
+
+    fn failed(site: &str, at: u64) -> ProgramResult {
+        ProgramResult {
+            site_id: site.into(),
+            ok: false,
+            attempts: 3,
+            notified: true,
+            at_unix_s: at,
+        }
+    }
+
+    #[test]
+    fn failed_first_program_leaves_nothing_tuned_and_holds_the_site() {
+        let members = vec![plain_site("A", 60.0)];
+        let mut st = FollowState {
+            network_id: Some("standalone".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            tick_at(&mut st, 60.0, 10.0, &members, 1_000),
+            FollowTick::Switch {
+                site_id: "A".into()
+            }
+        );
+        assert_eq!(st.current_site.as_deref(), Some("A"));
+        assert!(st.pending.is_some());
+
+        apply_program_result(&mut st, &failed("A", 1_000));
+        assert_eq!(st.current_site, None, "failed program is not tuned");
+        assert!(st.pending.is_none());
+        assert_eq!(st.failed_site.as_deref(), Some("A"));
+
+        // Inside the cool-down: no second switch to the same site.
+        for t in [1_005, 1_030, 1_000 + MIN_GAP_S - 1] {
+            assert_eq!(
+                tick_at(&mut st, 60.0, 10.0, &members, t),
+                FollowTick::Hold,
+                "t={t}"
+            );
+        }
+        // After it: tried again.
+        assert_eq!(
+            tick_at(&mut st, 60.0, 10.0, &members, 1_000 + MIN_GAP_S),
+            FollowTick::Switch {
+                site_id: "A".into()
+            }
+        );
+    }
+
+    #[test]
+    fn failed_switch_restores_the_previous_site_and_timers() {
+        let members = vec![plain_site("A", 60.0), plain_site("B", 61.0)];
+        let mut st = FollowState {
+            network_id: Some("standalone".into()),
+            current_site: Some("A".into()),
+            current_dist_km: Some(60.0),
+            site_since_unix_s: 100,
+            last_switch_unix_s: 100,
+            ..Default::default()
+        };
+        // Vehicle now at B; A is 111 km away, B is at the position.
+        assert_eq!(
+            tick_at(&mut st, 61.0, 10.0, &members, 1_000),
+            FollowTick::Switch {
+                site_id: "B".into()
+            }
+        );
+        assert_eq!(st.site_since_unix_s, 1_000);
+        apply_program_result(&mut st, &failed("B", 1_000));
+        assert_eq!(st.current_site.as_deref(), Some("A"));
+        // The distance to A is the one measured on the failed tick (A is 1 degree away).
+        let d_a = haversine_km(61.0, 10.0, 60.0, 10.0);
+        assert_eq!(st.current_dist_km, Some(d_a));
+        assert_eq!(st.site_since_unix_s, 100);
+        assert_eq!(st.last_switch_unix_s, 100);
+        assert_eq!(
+            tick_at(&mut st, 61.0, 10.0, &members, 1_010),
+            FollowTick::Hold
+        );
+    }
+
+    #[test]
+    fn success_report_confirms_and_clears_an_old_failure() {
+        let members = vec![plain_site("A", 60.0)];
+        let mut st = FollowState {
+            network_id: Some("standalone".into()),
+            failed_site: Some("A".into()),
+            failed_at_unix_s: 0,
+            ..Default::default()
+        };
+        assert!(matches!(
+            tick_at(&mut st, 60.0, 10.0, &members, 5_000),
+            FollowTick::Switch { .. }
+        ));
+        let ok = ProgramResult {
+            site_id: "A".into(),
+            ok: true,
+            attempts: 2,
+            notified: false,
+            at_unix_s: 5_000,
+        };
+        apply_program_result(&mut st, &ok);
+        assert_eq!(st.current_site.as_deref(), Some("A"));
+        assert!(st.pending.is_none());
+        assert!(st.failed_site.is_none());
+    }
+
+    #[test]
+    fn report_for_another_site_is_ignored() {
+        let members = vec![plain_site("A", 60.0)];
+        let mut st = FollowState {
+            network_id: Some("standalone".into()),
+            ..Default::default()
+        };
+        assert!(matches!(
+            tick_at(&mut st, 60.0, 10.0, &members, 1_000),
+            FollowTick::Switch { .. }
+        ));
+        apply_program_result(&mut st, &failed("OTHER", 1_000));
+        assert_eq!(st.current_site.as_deref(), Some("A"));
+        assert!(st.pending.is_some());
+    }
+
+    #[test]
+    fn result_json_round_trip_and_garbage_is_ignored() {
+        let mut st = FollowState::default();
+        assert!(apply_program_result_json(&mut st, "").is_none());
+        assert!(apply_program_result_json(&mut st, "not json").is_none());
+        let r = apply_program_result_json(
+            &mut st,
+            r#"{"site_id":"A","ok":false,"attempts":3,"notified":true,"at_unix_s":42}"#,
+        )
+        .unwrap();
+        assert!(!r.ok);
+        assert_eq!(st.failed_site.as_deref(), Some("A"));
+        assert_eq!(st.failed_at_unix_s, 42);
+    }
+
+    #[test]
+    fn old_persisted_state_without_new_fields_still_loads() {
+        let st: FollowState = serde_json::from_str(
+            r#"{"network_id":"auto","current_site":"A","current_dist_km":1.0,"pinned":null,
+                "last_switch_unix_s":1,"site_since_unix_s":1,"stopped_reason":null}"#,
+        )
+        .unwrap();
+        assert!(st.pending.is_none() && st.failed_site.is_none());
     }
 }

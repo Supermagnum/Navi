@@ -815,6 +815,9 @@ fun MapSettingsSheet(
     revealOnlinePlaceSearch: Boolean = false,
     catPluginEnabled: Boolean = false,
     onCatPluginChange: (Boolean) -> Unit = {},
+    showMapTheme: Boolean = false,
+    mapThemeAutoSun: Boolean = false,
+    onMapThemeAutoSun: (Boolean) -> Unit = {},
     onSave: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -961,6 +964,29 @@ fun MapSettingsSheet(
                         stringResource(R.string.ui_unavailable_on_this_gpu_path),
                         style = MaterialTheme.typography.bodySmall,
                     )
+                }
+            }
+            if (showMapTheme) {
+                Column(modifier = Modifier.fillMaxWidth().testTag("map_theme_control")) {
+                    Text(stringResource(R.string.settings_map_theme), style = MaterialTheme.typography.bodySmall)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        FilterChip(
+                            selected = !mapThemeAutoSun,
+                            onClick = { onMapThemeAutoSun(false) },
+                            label = { Text(stringResource(R.string.settings_map_theme_system)) },
+                            modifier = Modifier.testTag("map_theme_system"),
+                        )
+                        FilterChip(
+                            selected = mapThemeAutoSun,
+                            onClick = { onMapThemeAutoSun(true) },
+                            label = { Text(stringResource(R.string.settings_map_theme_sun)) },
+                            modifier = Modifier.testTag("map_theme_sun"),
+                        )
+                    }
                 }
             }
             Row(

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="navi-test" xmlns="http://www.topografix.com/GPX/1/1">
+  <wpt lat="62.221461" lon="12.015027">
+    <ele>830</ele>
+    <name>Svukuriset</name>
+    <desc>capacity=43&#10;tents=yes</desc>
+    <sym>Lodging</sym>
+  </wpt>
+  <wpt lat="61.809196" lon="7.710248">
+    <name>Sota S&#230;ter &amp; Hytte</name>
+    <sym>Campground</sym>
+  </wpt>
+  <wpt lat="59.913900" lon="10.752200">
+    <name>Gr&#229;bendalsvegen &#8211; &#197;stdalsveien</name>
+  </wpt>
+  <wpt lat="55.676100" lon="12.568300">
+    <name>K&#248;benhavn</name>
+    <sym>Flag, Blue</sym>
+  </wpt>
+</gpx>

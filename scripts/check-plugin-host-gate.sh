@@ -95,7 +95,9 @@ while IFS= read -r toml; do
     fi
     OTHER+="${toml}:${hit}"$'\n'
   done <<< "$hits"
-done < <(find . -name Cargo.toml ! -path './target/*' ! -path '*/target/*')
+done < <(find . -name Cargo.toml \
+  ! -path './target/*' ! -path '*/target/*' \
+  ! -path './tools/fdroid-check/work/*' ! -path './tools/fdroid-check/work-*/*')
 
 if [[ -n "$OTHER" ]]; then
   echo "FAIL: wasmtime referenced outside plugin-host:" >&2

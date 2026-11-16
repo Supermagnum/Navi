@@ -69,47 +69,7 @@ fn run_position_follow(lat: f64, lon: f64) {
             json.chars().take(80).collect::<String>()
         ));
     }
-    let mut live = Vec::new();
-    for row in rows {
-        let Some(id) = row.get("id").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        let Some(lat_s) = row.get("lat").and_then(|v| v.as_f64()) else {
-            continue;
-        };
-        let Some(lon_s) = row.get("lon").and_then(|v| v.as_f64()) else {
-            continue;
-        };
-        let network = row
-            .get("network_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let distance = row
-            .get("distance_km")
-            .and_then(|v| v.as_f64())
-            .unwrap_or(f64::MAX);
-        live.push(follow::LiveMember {
-            site: follow::FollowSite {
-                id: id.to_string(),
-                callsign: row
-                    .get("callsign")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                lat: lat_s,
-                lon: lon_s,
-                freq_out_mhz: row
-                    .get("freq_out_mhz")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0),
-                shift_mhz: row.get("shift_mhz").and_then(|v| v.as_f64()).unwrap_or(0.0),
-                ctcss_hz: row.get("ctcss_hz").and_then(|v| v.as_f64()),
-            },
-            network,
-            distance_km: distance,
-        });
-    }
+    let live = follow::live_members_from_rows(&rows);
     let members = follow::select_members(choice, &live);
     if members.is_empty() {
         navi_plugin_sdk::host_log(&format!(
@@ -124,6 +84,20 @@ fn run_position_follow(lat: f64, lon: f64) {
         .and_then(|s| serde_json::from_str::<follow::FollowState>(s).ok())
         .unwrap_or_default();
     state.network_id = Some(choice.to_string());
+    // Outcome of the host's last program attempt: confirms the switch, or restores the
+    // state from before it and starts the cool-down for the refused site.
+    let mut result_buf = [0u8; 512];
+    if let Some(n) = navi_plugin_sdk::host_plugin_kv_get(follow::FOLLOW_RESULT_KEY, &mut result_buf)
+    {
+        let text = std::str::from_utf8(&result_buf[..n]).unwrap_or("");
+        if let Some(r) = follow::apply_program_result_json(&mut state, text) {
+            navi_plugin_sdk::host_log(&format!(
+                "cat: follow program result site={} ok={} attempts={}",
+                r.site_id, r.ok, r.attempts
+            ));
+        }
+        let _ = navi_plugin_sdk::host_plugin_kv_set(follow::FOLLOW_RESULT_KEY, "");
+    }
     if let follow::FollowTick::Switch { site_id } =
         follow::tick_at(&mut state, lat, lon, &members, now)
     {

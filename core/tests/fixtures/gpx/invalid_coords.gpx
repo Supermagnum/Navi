@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="navi-test" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Damaged</name>
+    <trkseg>
+      <trkpt lat="60.000" lon="10.000"/>
+      <trkpt lat="not-a-number" lon="10.001"/>
+      <trkpt lon="10.002"/>
+      <trkpt lat="91.5" lon="10.003"/>
+      <trkpt lat="60.004" lon="181.0"/>
+      <trkpt lat="60.005" lon="10.005"/>
+    </trkseg>
+  </trk>
+  <trk>
+    <name>No points at all</name>
+    <trkseg/>
+  </trk>
+  <wpt lat="95" lon="10"><name>Bad waypoint</name></wpt>
+  <wpt lat="60.5" lon="10.5"><name>Good waypoint</name></wpt>
+</gpx>

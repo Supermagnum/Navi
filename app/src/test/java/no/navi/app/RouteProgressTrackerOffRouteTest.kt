@@ -73,4 +73,29 @@ class RouteProgressTrackerOffRouteTest {
         assertNull("maneuver must be suppressed while off-route", off.maneuver)
         assertTrue(off.distanceToManeuverM.isInfinite())
     }
+
+    @Test
+    fun fixInTheMiddleOfALongSegment_isOnRoute() {
+        // Samples 1 km apart: a fix halfway is 500 m from either sample but on the road.
+        val samples =
+            listOf(
+                RouteSimSample(60.80, 11.30, 0.0, 50.0, "primary", true, street = "E6"),
+                RouteSimSample(60.81, 11.30, 1_112.0, 50.0, "primary", true, street = "E6"),
+                RouteSimSample(60.82, 11.30, 2_224.0, 50.0, "primary", true, street = "E6"),
+            )
+        val tracker =
+            RouteProgressTracker(
+                samples = samples,
+                maneuvers = emptyList(),
+                viaPoints = emptyList(),
+                endPoint = Waypoint("End", 60.82, 11.30),
+                hideDistanceM = 25.0,
+            )
+        val mid = tracker.update(60.805, 11.30)
+        assertFalse("mid-segment fix must be on route, cross-track=${mid.crossTrackM}", mid.offRoute)
+        assertTrue(mid.crossTrackM < 1.0)
+        // 100 m to the side of the same segment is still off-route (threshold 75 m).
+        val side = tracker.update(60.805, 11.30 + 0.0019)
+        assertTrue("side=${side.crossTrackM}", side.offRoute)
+    }
 }

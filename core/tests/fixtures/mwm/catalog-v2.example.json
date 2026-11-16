@@ -1,0 +1,140 @@
+{
+  "schema": "navi-mwm-catalog/v2",
+  "mode": "comaps-release",
+  "version": "261105",
+  "comaps": {
+    "map_series": "2026.10.27",
+    "release_version": 261105,
+    "countries_txt_sha256": "3313f6d86fcb4cd98f605bbc92d89b4b6a3dc3079f187ea999e0e1cbbd354998",
+    "countries_txt_bytes": 315504,
+    "countries_txt_sig_verified": true,
+    "countries_txt_sig_sha256": "4034e5dcbce5569ef541afce9c67d5806461db57dd620fa14df3d9fb451a0506",
+    "countries_txt_pubkey_hex": "91c0a9f6aa182371f047e256ab46489211acc2b51b13197fbe8c94eaa9749c7b",
+    "metaserver_url": "https://cdn-us-1.comaps.app",
+    "maps_json_url": "https://cdn-us-1.comaps.app/meta/maps.json",
+    "note": "Clients discover mirrors via metaserver /servers; no hard-coded mirror list"
+  },
+  "generator": {
+    "tag": "v2026.11.07-16",
+    "sha": "fd11cc6f2256443d4d69112a3c22299d4e0664ce",
+    "role": "navi-sidecar-tools-pin"
+  },
+  "limitation": "Base MWMs come from a single CoMaps planet release; Navi publishes sidecars only. region_to_leaves maps frozen .rkyv bake_ids to CoMaps leaves for migration; country_groups is the primary region UI source.",
+  "region_to_leaves": {
+    "europe_norway_ostlandet": [
+      "Norway_Hedmark",
+      "Norway_Oppland",
+      "Norway_Southern",
+      "Norway_Central",
+      "Denmark_North Denmark Region",
+      "Sweden_Bergslagen",
+      "Norway_Western",
+      "Sweden_Vastra Gotaland",
+      "Norway_Hordaland"
+    ],
+    "europe_sweden_stockholm": [
+      "Sweden_Stockholm"
+    ]
+  },
+  "shared_leaves": {
+    "Norway_Southern": [
+      "europe_norway_ostlandet",
+      "europe_norway_sorlandet"
+    ],
+    "Norway_Western": [
+      "europe_norway_ostlandet",
+      "europe_norway_vestlandet"
+    ]
+  },
+  "country_groups": [
+    {
+      "id": "Norway",
+      "display_name": "Norway",
+      "parent_groups": [],
+      "leaf_count": 2,
+      "leaves": [
+        {
+          "id": "Norway_Hedmark",
+          "display_name": "Innlandet (Hedmark)",
+          "comaps_display_name": "Hedmark",
+          "display_name_overridden": true,
+          "comaps_bytes": 102194292,
+          "mwm_bytes": 102194292,
+          "sidecar_bytes": 261797,
+          "total_bytes": 102456089
+        },
+        {
+          "id": "Norway_Oppland",
+          "display_name": "Innlandet (Oppland)",
+          "comaps_display_name": "Oppland",
+          "display_name_overridden": true,
+          "comaps_bytes": 100044396,
+          "mwm_bytes": 100044396,
+          "sidecar_bytes": 1,
+          "total_bytes": 100044397
+        }
+      ],
+      "subgroups": []
+    }
+  ],
+  "country_groups_url": "261105/country_groups.json",
+  "display_name_overrides": {
+    "leaves": {
+      "Norway_Hedmark": {
+        "display_name": "Innlandet (Hedmark)",
+        "note": "Norwegian county reform 2020"
+      },
+      "Norway_Oppland": {
+        "display_name": "Innlandet (Oppland)",
+        "note": "Norwegian county reform 2020"
+      }
+    },
+    "likely_outdated_elsewhere": [
+      {
+        "country": "France",
+        "note": "Pre-2016 region names may linger; review before overrides."
+      }
+    ]
+  },
+  "region_migration_url": "261105/region-migration.json",
+  "world_leaf_count": 1161,
+  "elevation_policy_version": 1,
+  "non_routable_leaves": ["World", "WorldCoasts"],
+  "leaves": [
+    {
+      "id": "Norway_Hedmark",
+      "sidecar_sha256": "593e2ec42bf6827763a4707b356d80f4e43d993c68a4a8ee93cac094a033d200",
+      "sidecar_bytes": 261797,
+      "sidecar_url": "261105/Norway_Hedmark.navi-sidecar.v1.zst",
+      "shared": false,
+      "no_sidecar": false,
+      "elevation_policy_version": 1,
+      "comaps_file": "Norway_Hedmark.mwm",
+      "comaps_bytes": 102194292,
+      "comaps_sha1_base64": "SYcBVbtm7e8BwcOGWpo0WV8bFK4=",
+      "mwm_bytes": 102194292,
+      "mwm_sha256": "2852a363342183bf4df6b1b78f9790685dd7e6a1bc34eaefbf177fc6432799af",
+      "mwm_fingerprint": {
+        "size": 102194292,
+        "sha256": "2852a363342183bf4df6b1b78f9790685dd7e6a1bc34eaefbf177fc6432799af"
+      }
+    },
+    {
+      "id": "Sweden_Stockholm",
+      "sidecar_sha256": "ec3acf9756639033a5b00ff74bf91aad5e46775c85caa95b5d41af514c408f50",
+      "sidecar_bytes": 531934,
+      "sidecar_url": "261105/Sweden_Stockholm.navi-sidecar.v1.zst",
+      "shared": false,
+      "comaps_file": "Sweden_Stockholm.mwm",
+      "comaps_bytes": 74188228,
+      "comaps_sha1_base64": "kDqyO+f8eGwLQTlajb8cLEfyAmg=",
+      "mwm_bytes": 74188228,
+      "mwm_sha256": "4ed0e8f01592a4a165b84dc59606f9487d2d637e06c19ea0029e2691c84eaeb2",
+      "mwm_fingerprint": {
+        "size": 74188228,
+        "sha256": "4ed0e8f01592a4a165b84dc59606f9487d2d637e06c19ea0029e2691c84eaeb2"
+      }
+    }
+  ],
+  "_comment": "Subset example for docs/CI: two leaves only. Live current.json lists every published leaf."
+}

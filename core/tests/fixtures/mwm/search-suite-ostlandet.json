@@ -1,0 +1,623 @@
+{
+  "schema": "navi-search-suite/v1",
+  "release": "261105",
+  "region": "ostlandet",
+  "locale": "nb",
+  "notes": "Phase 5 offline search suite. expect_top_any: any of the top top_n result names contains one of the strings (letter/digit-normalized, case-insensitive). expect_address_any: any top-N result address contains the string. confidence=high rows gate the instrumented run; medium rows are reported. Expectations are authored from OSM knowledge of Ostlandet and must be confirmed on the first device run with the 261105 maps.",
+  "queries": [
+    {
+      "id": "town_lillehammer",
+      "kind": "free_text",
+      "query": "Lillehammer",
+      "tags": [
+        "town"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Lillehammer"
+      ],
+      "top_n": 1
+    },
+    {
+      "id": "town_hamar",
+      "kind": "free_text",
+      "query": "Hamar",
+      "tags": [
+        "town"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Hamar"
+      ],
+      "top_n": 1
+    },
+    {
+      "id": "town_gjovik",
+      "kind": "free_text",
+      "query": "Gjøvik",
+      "tags": [
+        "town",
+        "aeoa"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Gjøvik"
+      ],
+      "top_n": 1
+    },
+    {
+      "id": "town_elverum",
+      "kind": "free_text",
+      "query": "Elverum",
+      "tags": [
+        "town"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Elverum"
+      ],
+      "top_n": 1
+    },
+    {
+      "id": "town_kongsvinger",
+      "kind": "free_text",
+      "query": "Kongsvinger",
+      "tags": [
+        "town"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Kongsvinger"
+      ],
+      "top_n": 1
+    },
+    {
+      "id": "town_fagernes",
+      "kind": "free_text",
+      "query": "Fagernes",
+      "tags": [
+        "town"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Fagernes"
+      ],
+      "top_n": 2
+    },
+    {
+      "id": "street_storgata_lillehammer",
+      "kind": "free_text",
+      "query": "Storgata Lillehammer",
+      "tags": [
+        "street"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Storgata"
+      ],
+      "top_n": 3
+    },
+    {
+      "id": "street_strandgata_hamar",
+      "kind": "free_text",
+      "query": "Strandgata Hamar",
+      "tags": [
+        "street"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Strandgata"
+      ],
+      "top_n": 3
+    },
+    {
+      "id": "street_karl_johan_oslo",
+      "kind": "free_text",
+      "query": "Karl Johans gate Oslo",
+      "tags": [
+        "street"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Karl Johans gate"
+      ],
+      "top_n": 3
+    },
+    {
+      "id": "street_jernbanegata_gjovik",
+      "kind": "free_text",
+      "query": "Jernbanegata Gjøvik",
+      "tags": [
+        "street"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Jernbanegata"
+      ],
+      "top_n": 5
+    },
+    {
+      "id": "address_karl_johan_31",
+      "kind": "free_text",
+      "query": "Karl Johans gate 31 Oslo",
+      "tags": [
+        "address"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Karl Johans gate 31"
+      ],
+      "top_n": 3
+    },
+    {
+      "id": "address_storgata_lillehammer_1",
+      "kind": "free_text",
+      "query": "Storgata 1 Lillehammer",
+      "tags": [
+        "address"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Storgata 1"
+      ],
+      "top_n": 3
+    },
+    {
+      "id": "address_strandgata_hamar_13",
+      "kind": "free_text",
+      "query": "Strandgata 13 Hamar",
+      "tags": [
+        "address"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Strandgata 13"
+      ],
+      "top_n": 3,
+      "notes": "Suite originally asked for Strandgata 10; that house number does not exist in Hamar OSM/place_index."
+    },
+    {
+      "id": "postcode_2609",
+      "kind": "free_text",
+      "query": "2609",
+      "tags": [
+        "postcode"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_address_any": [
+        "Lillehammer"
+      ]
+    },
+    {
+      "id": "postcode_2317",
+      "kind": "free_text",
+      "query": "2317 Hamar",
+      "tags": [
+        "postcode"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_address_any": [
+        "Hamar"
+      ]
+    },
+    {
+      "id": "postcode_2815",
+      "kind": "free_text",
+      "query": "2815",
+      "tags": [
+        "postcode"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_address_any": [
+        "Gjøvik"
+      ]
+    },
+    {
+      "id": "cabin_rondvassbu",
+      "kind": "free_text",
+      "query": "Rondvassbu",
+      "tags": [
+        "cabin"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Rondvassbu"
+      ],
+      "top_n": 2
+    },
+    {
+      "id": "cabin_spiterstulen",
+      "kind": "free_text",
+      "query": "Spiterstulen",
+      "tags": [
+        "cabin"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Spiterstulen"
+      ],
+      "top_n": 2
+    },
+    {
+      "id": "cabin_gjendebu",
+      "kind": "free_text",
+      "query": "Gjendebu",
+      "tags": [
+        "cabin"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Gjendebu"
+      ],
+      "top_n": 2
+    },
+    {
+      "id": "cabin_glitterheim",
+      "kind": "free_text",
+      "query": "Glitterheim",
+      "tags": [
+        "cabin"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Glitterheim"
+      ],
+      "top_n": 2
+    },
+    {
+      "id": "shelter_gapahuk",
+      "kind": "free_text",
+      "query": "gapahuk",
+      "tags": [
+        "shelter"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "near": {
+        "lat": 61.1153,
+        "lon": 10.4662
+      }
+    },
+    {
+      "id": "shelter_ly",
+      "kind": "free_text",
+      "query": "ly",
+      "tags": [
+        "shelter"
+      ],
+      "confidence": "medium",
+      "min_results": 0,
+      "near": {
+        "lat": 60.7945,
+        "lon": 11.068
+      }
+    },
+    {
+      "id": "water_category_lillehammer",
+      "kind": "category",
+      "query": "category_water",
+      "tags": [
+        "water",
+        "category"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "near": {
+        "lat": 61.1153,
+        "lon": 10.4662
+      }
+    },
+    {
+      "id": "water_drikkevann",
+      "kind": "free_text",
+      "query": "drikkevann",
+      "tags": [
+        "water"
+      ],
+      "confidence": "medium",
+      "min_results": 0,
+      "near": {
+        "lat": 61.1153,
+        "lon": 10.4662
+      }
+    },
+    {
+      "id": "water_kilde",
+      "kind": "free_text",
+      "query": "kilde",
+      "tags": [
+        "water"
+      ],
+      "confidence": "medium",
+      "min_results": 0,
+      "near": {
+        "lat": 60.7957,
+        "lon": 10.6915
+      }
+    },
+    {
+      "id": "fuel_category_hamar",
+      "kind": "category",
+      "query": "category_fuel",
+      "tags": [
+        "fuel",
+        "category"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "near": {
+        "lat": 60.7945,
+        "lon": 11.068
+      }
+    },
+    {
+      "id": "fuel_category_oslo",
+      "kind": "category",
+      "query": "category_fuel",
+      "tags": [
+        "fuel",
+        "category"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "near": {
+        "lat": 59.9139,
+        "lon": 10.7522
+      }
+    },
+    {
+      "id": "fuel_circle_k_hamar",
+      "kind": "free_text",
+      "query": "Circle K Hamar",
+      "tags": [
+        "fuel",
+        "brand"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Circle K"
+      ],
+      "top_n": 5
+    },
+    {
+      "id": "ev_category_lillehammer",
+      "kind": "category",
+      "query": "charging_station",
+      "tags": [
+        "ev",
+        "category"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "near": {
+        "lat": 61.1153,
+        "lon": 10.4662
+      }
+    },
+    {
+      "id": "ev_category_gjovik",
+      "kind": "category",
+      "query": "charging_station",
+      "tags": [
+        "ev",
+        "category"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "near": {
+        "lat": 60.7957,
+        "lon": 10.6915
+      }
+    },
+    {
+      "id": "ev_lading_elverum",
+      "kind": "free_text",
+      "query": "lading Elverum",
+      "tags": [
+        "ev"
+      ],
+      "confidence": "medium",
+      "min_results": 0,
+      "near": {
+        "lat": 60.8819,
+        "lon": 11.5623
+      }
+    },
+    {
+      "id": "misspell_lilehammer",
+      "kind": "free_text",
+      "query": "Lilehammer",
+      "tags": [
+        "misspelling"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Lillehammer"
+      ],
+      "top_n": 3
+    },
+    {
+      "id": "misspell_gjovik_ascii",
+      "kind": "free_text",
+      "query": "Gjovik",
+      "tags": [
+        "misspelling",
+        "aeoa"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Gjøvik"
+      ],
+      "top_n": 3
+    },
+    {
+      "id": "misspell_kongsvinge",
+      "kind": "free_text",
+      "query": "Kongsvinge",
+      "tags": [
+        "misspelling"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Kongsvinger"
+      ],
+      "top_n": 3
+    },
+    {
+      "id": "misspell_rondvasbu",
+      "kind": "free_text",
+      "query": "Rondvasbu",
+      "tags": [
+        "misspelling",
+        "cabin"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Rondvassbu"
+      ],
+      "top_n": 3
+    },
+    {
+      "id": "aeoa_honefoss",
+      "kind": "free_text",
+      "query": "Hønefoss",
+      "tags": [
+        "aeoa",
+        "town"
+      ],
+      "confidence": "high",
+      "min_results": 1,
+      "expect_top_any": [
+        "Hønefoss"
+      ],
+      "top_n": 2
+    },
+    {
+      "id": "aeoa_amot",
+      "kind": "free_text",
+      "query": "Åmot",
+      "tags": [
+        "aeoa",
+        "town"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Åmot"
+      ],
+      "top_n": 3
+    },
+    {
+      "id": "aeoa_tonsberg",
+      "kind": "free_text",
+      "query": "Tønsberg",
+      "tags": [
+        "aeoa",
+        "town"
+      ],
+      "confidence": "medium",
+      "min_results": 1,
+      "expect_top_any": [
+        "Tønsberg"
+      ],
+      "top_n": 2
+    },
+    {
+      "id": "reverse_lillehammer_storgata",
+      "kind": "reverse",
+      "lat": 61.11535,
+      "lon": 10.46635,
+      "tags": [
+        "reverse"
+      ],
+      "confidence": "high",
+      "expect_street_any": [
+        "Storgata"
+      ],
+      "max_distance_m": 150
+    },
+    {
+      "id": "reverse_hamar_strandgata",
+      "kind": "reverse",
+      "lat": 60.794125,
+      "lon": 11.07143,
+      "tags": [
+        "reverse"
+      ],
+      "confidence": "medium",
+      "expect_street_any": [
+        "Strandgata"
+      ],
+      "max_distance_m": 150,
+      "notes": "Pin on Strandgata 53; previous pin was at Stortorget/Storhamargata."
+    },
+    {
+      "id": "reverse_oslo_karl_johan",
+      "kind": "reverse",
+      "lat": 59.9133,
+      "lon": 10.7407,
+      "tags": [
+        "reverse"
+      ],
+      "confidence": "high",
+      "expect_street_any": [
+        "Karl Johans gate"
+      ],
+      "max_distance_m": 150
+    },
+    {
+      "id": "reverse_gjovik_storgata",
+      "kind": "reverse",
+      "lat": 60.79568,
+      "lon": 10.69102,
+      "tags": [
+        "reverse"
+      ],
+      "confidence": "medium",
+      "expect_street_any": [
+        "Storgata"
+      ],
+      "max_distance_m": 150,
+      "notes": "Pin on Storgata 3; previous pin was between Hunnsvegen and Storgata."
+    },
+    {
+      "id": "reverse_elverum_storgata",
+      "kind": "reverse",
+      "lat": 60.8819,
+      "lon": 11.5623,
+      "tags": [
+        "reverse"
+      ],
+      "confidence": "medium",
+      "expect_street_any": [
+        "Storgata"
+      ],
+      "max_distance_m": 150
+    }
+  ]
+}

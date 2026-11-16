@@ -74,6 +74,7 @@ pub fn download_file(url: &str, dest: &Path) -> anyhow::Result<u64> {
         retries,
         progress_label: "navi.msg.download_region",
         allow_not_found: false,
+        cancel: None,
     })?
     .ok_or_else(|| anyhow::anyhow!("download returned empty for {url}"))?;
     Ok(result.bytes)

@@ -96,6 +96,21 @@ if ! command -v cc >/dev/null 2>&1; then
   apt-get update -qq
   apt-get install -y --no-install-recommends build-essential >/tmp/apt-cc.log
 fi
+# Hamlib bootstrap (scripts/build-hamlib-android.sh) needs autoreconf; the local image bake
+# should already provide them, but a fresh upstream FDROID_IMAGE may not.
+if ! command -v autoreconf >/dev/null 2>&1 || ! command -v libtoolize >/dev/null 2>&1; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y --no-install-recommends autoconf automake libtool libtool-bin >/tmp/apt-autotools.log
+fi
+# CoMaps + symbol atlas (same packages as the recipe sudo: / Dockerfile Phase 7 layer).
+if ! command -v cmake >/dev/null 2>&1 || ! command -v rsvg-convert >/dev/null 2>&1; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y --no-install-recommends \
+    cmake ninja-build ccache python3-pil python3-protobuf librsvg2-bin fonts-dejavu-core \
+    jq icu-devtools >/tmp/apt-comaps.log
+fi
 if [[ ! -x /home/vagrant/gradlew-fdroid/gradlew-fdroid ]]; then
   rm -rf /home/vagrant/gradlew-fdroid
   git clone --depth 1 https://gitlab.com/fdroid/gradlew-fdroid.git /home/vagrant/gradlew-fdroid
@@ -121,13 +136,39 @@ rsync -a \
   --exclude target/ \
   --exclude .gradle/ \
   --exclude app/build/ \
-  --exclude tools/fdroid-check/work/ \
+  --exclude 'tools/fdroid-check/work*/' \
   --exclude tools/fdroid-check/logs/ \
   --exclude tools/fdroid-check/fdroidserver/ \
+  --exclude third_party/comaps/ \
+  --exclude out/ \
+  --exclude .avd-sd/ \
+  --exclude test-artifacts/ \
+  --exclude local/ \
+  --exclude .deps-prefix/ \
+  --exclude app/src/main/jniLibs/ \
+  --exclude comaps-sdk/build/ \
+  --exclude app/src/main/assets/comaps-data/ \
+  --exclude app/src/main/assets/plugins/ \
   --exclude app/keystore/ \
   --exclude "*.apk" \
   --exclude "*.aab" \
   /build/navi/ "$SNAP/"
+# The check builds the working tree as the release of the LAST Builds entry in the metadata: the snapshot's
+# version is set to that entry so fdroid's version check passes (a real submission uses the release tag).
+BUILD_VC=$(python3 - <<'PY'
+import re
+t = open('/build/fdroiddata/metadata/no.navi.app.yml').read()
+print(re.findall(r'versionCode:\s*(\d+)', t)[-1])
+PY
+)
+BUILD_VN=$(python3 - <<'PY'
+import re
+t = open('/build/fdroiddata/metadata/no.navi.app.yml').read()
+print(re.findall(r'versionName:\s*(\S+)', t)[-1])
+PY
+)
+echo "check build: versionCode=$BUILD_VC versionName=$BUILD_VN"
+sed -i "s/versionCode = [0-9]*/versionCode = $BUILD_VC/; s/versionName = \"[^\"]*\"/versionName = \"$BUILD_VN\"/" "$SNAP/app/build.gradle.kts"
 cd "$SNAP"
 rm -rf .git
 git init -q
@@ -170,8 +211,12 @@ fdroid readmeta
 fdroid rewritemeta no.navi.app || true
 fdroid lint -W ignore no.navi.app || true
 
-echo "=== fdroid build no.navi.app:2 ==="
-fdroid build -v -t --skip-scan --no-tarball -W ignore -s no.navi.app:2
+SCAN_FLAG="--skip-scan"
+if [[ "${FDROID_SCAN:-1}" == "1" ]]; then SCAN_FLAG=""; fi
+echo "=== fdroid build no.navi.app:$BUILD_VC (scan: ${FDROID_SCAN:-1}) ==="
+date -u +%FT%TZ > /build/fdroiddata/logs/build-start.txt
+fdroid build -v -t $SCAN_FLAG --no-tarball -W ignore -s no.navi.app:$BUILD_VC
+date -u +%FT%TZ > /build/fdroiddata/logs/build-end.txt
 echo "=== fdroid build finished OK ==="
 ls -la unsigned/ tmp/ 2>/dev/null || true
 find tmp unsigned -name "*.apk" 2>/dev/null || true
