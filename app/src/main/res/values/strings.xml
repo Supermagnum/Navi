@@ -66,6 +66,7 @@
     <string name="label_route">Route</string>
     <string name="status_ready">Ready</string>
     <string name="search_in_progress">Searching...</string>
+    <string name="search_maps_not_ready">Map search did not start. Clear the box to cancel, or try again.</string>
     <string name="dialog_speed_camera_title">Speed camera warnings</string>
     <string name="dialog_off_trail_title">Off trail</string>
     <string name="dialog_map_data_needed_title">Map data needed</string>

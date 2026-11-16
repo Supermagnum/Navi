@@ -6943,6 +6943,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                     comapsReadyMs = comapsOutcome.timing.readyWaitMs,
                                     comapsFirstMs = comapsOutcome.timing.firstResultMs,
                                     comapsTotalMs = comapsOutcome.timing.totalMs,
+                                    comapsNotReady = comapsOutcome.notReady,
                                 )
                             }
                             var list =
@@ -7030,35 +7031,44 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                 comapsReadyMs = comapsOutcome.timing.readyWaitMs,
                                 comapsFirstMs = comapsOutcome.timing.firstResultMs,
                                 comapsTotalMs = comapsOutcome.timing.totalMs,
+                                comapsNotReady = comapsOutcome.notReady,
                             )
                         }
                     hits = outcome.hits
                     searchUsedOnline = outcome.usedOnline
                     searchIndexHint =
-                        outcome.errorLine?.takeIf { it.isNotBlank() }
-                            ?: placeSearchBuildingMessage(
-                                outcome.hits.isEmpty(),
-                                outcome.hasEntries,
-                                PlaceIndexBackground.isRunning(),
-                                onlineAvailable =
-                                    outcome.usedOnline ||
-                                        (outcome.hits.isEmpty() && outcome.onlineOk),
-                                indexProblem = InstalledMaps.current()?.placeIndexProblem,
-                            ).orEmpty()
-                                .ifBlank {
-                                    placeSearchNoWholeMatchHint(
-                                        query = splitCountryQualifiedQuery(trimmed).placeQuery.ifBlank { trimmed },
-                                        hits = outcome.hits,
-                                        onlineEnabled = onlinePlaceSearchEnabled,
-                                        usedOnline = outcome.usedOnline,
-                                        submitted = allowOnline,
-                                    ).orEmpty()
-                                }.ifBlank {
-                                    placeSearchOfflineMoreHint(
-                                        onlineEnabled = onlinePlaceSearchEnabled,
-                                        topKind = outcome.hits.firstOrNull()?.kind,
-                                    ).orEmpty()
-                                }
+                        if (outcome.comapsNotReady) {
+                            // Readiness timeout: clear message; clearing the box cancels sooner.
+                            context.getString(R.string.search_maps_not_ready)
+                        } else {
+                            outcome.errorLine?.takeIf { it.isNotBlank() }
+                                ?: placeSearchBuildingMessage(
+                                    outcome.hits.isEmpty(),
+                                    outcome.hasEntries,
+                                    PlaceIndexBackground.isRunning(),
+                                    onlineAvailable =
+                                        outcome.usedOnline ||
+                                            (outcome.hits.isEmpty() && outcome.onlineOk),
+                                    indexProblem = InstalledMaps.current()?.placeIndexProblem,
+                                ).orEmpty()
+                                    .ifBlank {
+                                        placeSearchNoWholeMatchHint(
+                                            query =
+                                                splitCountryQualifiedQuery(trimmed).placeQuery.ifBlank {
+                                                    trimmed
+                                                },
+                                            hits = outcome.hits,
+                                            onlineEnabled = onlinePlaceSearchEnabled,
+                                            usedOnline = outcome.usedOnline,
+                                            submitted = allowOnline,
+                                        ).orEmpty()
+                                    }.ifBlank {
+                                        placeSearchOfflineMoreHint(
+                                            onlineEnabled = onlinePlaceSearchEnabled,
+                                            topKind = outcome.hits.firstOrNull()?.kind,
+                                        ).orEmpty()
+                                    }
+                        }
                     NaviMapTestHooks.lastSearchHitCount = hits.size
                     NaviMapTestHooks.lastSearchQuery = trimmed
                     val disambiguate = hits.size > 1

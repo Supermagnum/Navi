@@ -15,4 +15,9 @@ internal data class PlaceSearchOutcome(
     val comapsFirstMs: Long = -1L,
     /** Time from search start to final CoMaps batch (-1 if unused). */
     val comapsTotalMs: Long = -1L,
+    /**
+     * True when CoMaps search stayed unavailable until the readiness timeout
+     * (not when the user cancelled by clearing the field).
+     */
+    val comapsNotReady: Boolean = false,
 )

@@ -184,11 +184,15 @@ object ComapsSearchBridge {
             }
             readyWait = SystemClock.elapsedRealtime() - tReady0
             if (id == 0uL) {
-                Log.w(TAG, "comaps_search not ready after ${readyWait}ms q=$query")
+                // Cancelled mid-wait: not a timeout — caller should not show an error.
+                val timedOut = stillActive()
+                if (timedOut) {
+                    Log.w(TAG, "comaps_search not ready after ${readyWait}ms q=$query")
+                }
                 return@runCatching SearchOutcome(
                     hits = emptyList(),
                     timing = SearchTiming(readyWait, -1, readyWait, 0u),
-                    notReady = true,
+                    notReady = timedOut,
                 )
             }
             while (!collector.done.await(POLL_MS, TimeUnit.MILLISECONDS)) {

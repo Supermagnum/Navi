@@ -9,8 +9,10 @@ The CoMaps search Engine is created lazily on the first successful `comapsSearch
 
 **Fix:** `search` / `searchDetailed` wait until `comapsSessionIsOpen()` and a start returns a
 non-zero request id (up to 90 s). They never treat a cold Engine as “no results”.
-The UI already shows `search_in_progress` while `searchBusy` is true; partial CoMaps
-batches update the hit list before the final merge.
+The UI shows `search_in_progress` while `searchBusy` is true; partial CoMaps batches
+update the hit list before the final merge. Clearing the search box cancels the job
+(`searchJob` / `isActive`) and stops the wait. If the 90 s limit is hit, the hint
+`search_maps_not_ready` is shown instead of a silent empty list.
 
 Warm-up “Oslo” queries were removed from both suites. New test:
 `coldStartImmediateLillehammer` (headless + in-app).
