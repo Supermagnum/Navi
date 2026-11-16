@@ -131,12 +131,22 @@ Phase 8 retirement.
 - **Acceptance (Samsung SM-P613, releasetest):** `mwm-phase6b-drape.md` (function matrix, screenshots,
   performance, APK size, CAT dry runs). Phase 6 (first pass): `mwm-phase6-drape.md`.
 
-### Phase 7 — Migrating users' existing `.rkyv` downloads
+### Phase 7 — Migrating users' existing `.rkyv` downloads (done on this branch, with documented decisions)
 
-- One-tap: `region_to_leaves[bake_id]` / `region-migration.json` → download leaf
-  union; keep `.rkyv` until user confirms.
-- **Acceptance:** Østlandet → documented leaf set; Sørlandet shares
-  `Norway_Southern`; shared leaves stored once.
+- Detection on the first start with the MWM path: `.rkyv` regions with a loadable graph are mapped to leaf sets with
+  `region-migration.json` (shared leaves counted once, World / WorldCoasts included). One screen shows what the user has,
+  which map areas they get, the download size, the free space needed and available, and that old maps are removed only
+  after the new ones are verified. Options: **Migrate now**, **Later**, **Choose regions**. Nothing happens without a tap.
+- Wi-Fi only by default for large migrations; background run in a foreground service with progress, pause / resume,
+  restart and network-loss recovery; the catalog the plan was made with is pinned, so a release published while it runs
+  is finished first and then offered as an update.
+- Atomic switch only after every chosen leaf, World and sidecars are downloaded and verified, then a deep verify from
+  disk; only then the app asks before deleting the old `.rkyv` (showing the space freed). Declined: the old maps stay and
+  Settings / Map storage offers the cleanup. "Map storage" lists installed leaf sets per country group, release version,
+  per-leaf delete and the update offer.
+- **Acceptance (Samsung SM-P613, releasetest):** `docs/mwm-phase7-migration.md` (end-to-end run with Østlandet +
+  Sørlandet through the UI, edge cases, host end-to-end tests with a fake mirror, screenshots, defects found).
+  Østlandet and Sørlandet share `Norway_Southern` and `Denmark_North Denmark Region`; both are downloaded once.
 
 ### Phase 8 — Retiring `.rkyv`
 
@@ -181,7 +191,11 @@ See also the `mwm` module docs. Under the app `data_dir`:
     leaf-state.json           # per-leaf verify + fingerprint status
   staging/{version}/          # incomplete download; never active
   migration-cache/
-    region-migration.json     # last fetched mapping for one-tap migrate UI
+    state.json                # Phase 7 migration state (queued / running / paused / ... / verified / done)
+    catalog-{version}.json    # the catalog the migration was planned with (pinned)
+    later.json                # "Later" reminder, three days
+    kept.json                 # migrated .rkyv regions the user kept (never offered again)
+  catalog-cache.json          # last catalog fetched for Map storage (offline summary)
 ```
 
 Rules: never mix `version` values under `active`; shared leaves are paths under

@@ -10,6 +10,10 @@ build needs no Qt6 development packages: SVGs are rendered at default_size * (sy
 packed (+2 px border each side) into a power-of-two atlas, and an `.sdf` XML with the packed
 rectangles is written in the format the drape reads (`DefinitionLoader`).
 
+Navi sprites: every SVG in comaps-sdk/navi-symbols/ (position puck states) and core/src/icons/aprs/
+(APRS station icons) is added to the atlas of both styles (same id wins over a CoMaps symbol). The
+sources live in this repository, so the sprites are generated at build time like every other symbol.
+
 Usage: generate-comaps-symbols.py [CHECKOUT_DIR]   (default third_party/comaps)
 Requires: rsvg-convert (librsvg2-bin), python3-pil.
 """
@@ -86,11 +90,23 @@ def render(svg, w, h):
     return Image.open(io.BytesIO(out)).convert("RGBA")
 
 
+def navi_symbol_dirs():
+    here = os.path.dirname(os.path.abspath(__file__))
+    repo = os.path.normpath(os.path.join(here, ".."))
+    return [
+        os.path.join(repo, "comaps-sdk", "navi-symbols"),
+        os.path.join(repo, "core", "src", "icons", "aprs"),
+    ]
+
+
 def build(symbols_dir, out_dir, symbol_size, pool):
-    files = sorted(f for f in os.listdir(symbols_dir) if f.endswith(".svg"))
+    by_name = {f: os.path.join(symbols_dir, f) for f in os.listdir(symbols_dir) if f.endswith(".svg")}
+    for extra in navi_symbol_dirs():
+        if os.path.isdir(extra):
+            by_name.update({f: os.path.join(extra, f) for f in os.listdir(extra) if f.endswith(".svg")})
     syms = []
-    for f in files:
-        svg = os.path.join(symbols_dir, f)
+    for f in sorted(by_name):
+        svg = by_name[f]
         dw, dh = svg_default_size(svg)
         sw = max(1, qround(dw * (symbol_size / MEDIUM)))
         sh = max(1, qround(dh * (symbol_size / MEDIUM)))

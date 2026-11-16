@@ -48,7 +48,7 @@ object ComapsSessionBootstrap {
      * Headless router resources taken from the CoMaps SDK's APK root assets when the drape build ships
      * them (so `assets/comaps-data` does not have to duplicate them).
      */
-    private val ROOT_ASSETS =
+    internal val ROOT_ASSETS =
         listOf(
             "classificator.txt",
             "types.txt",
@@ -64,6 +64,8 @@ object ComapsSessionBootstrap {
             "patterns.txt",
             "drules_proto_default_light.bin",
             "drules_proto_default_dark.bin",
+            // Search / transliteration (Everywhere free-text). Not needed for routing alone.
+            "icudt75l.dat",
         )
     private const val ASSET_STAMP = "comaps-data.stamp"
     private val VERSION_DIR = Regex("\\d{1,6}")

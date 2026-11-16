@@ -31,7 +31,12 @@ val generateComapsSymbols =
     tasks.register<Exec>("generateComapsSymbols") {
         workingDir = rootProject.projectDir
         commandLine("python3", "scripts/generate-comaps-symbols.py", comapsCheckout.absolutePath)
-        onlyIf { !File(comapsCheckout, "data/symbols/hdpi/light/symbols.sdf").isFile }
+        // Navi sprites (puck states, APRS icons) come from SVG sources in this repository: regenerate when
+        // they or the script change, or when the atlas is missing.
+        inputs.files(fileTree(rootProject.file("comaps-sdk/navi-symbols")) { include("*.svg") })
+        inputs.files(fileTree(rootProject.file("core/src/icons/aprs")) { include("*.svg") })
+        inputs.file(rootProject.file("scripts/generate-comaps-symbols.py"))
+        outputs.file(File(comapsCheckout, "data/symbols/hdpi/light/symbols.sdf"))
     }
 
 val stageComapsSdkAssets =

@@ -132,6 +132,9 @@ object ComapsDrape {
         /** Register leaf MWMs that appeared after the Framework was created (live download). */
         fun registerMaps()
 
+        /** Re-scan the leaf MWMs after the user deleted one (releases the file); [leafId] is for logging. */
+        fun deregisterMap(leafId: String)
+
         fun setNight(night: Boolean)
 
         /** CoMaps' own sunrise / sunset test (polar day counts as day). */
@@ -184,7 +187,11 @@ object ComapsDrape {
             names: Array<String>,
             icons: IntArray,
             colors: IntArray,
+            symbols: Array<String>?,
         )
+
+        /** Navi position puck: 0 = GPS (blue), 1 = estimated (amber), 2 = lost (grey). */
+        fun setPuckState(state: Int)
 
         fun setTracks(
             group: Long,

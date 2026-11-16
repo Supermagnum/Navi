@@ -20,6 +20,8 @@ pub mod download;
 pub mod fingerprint;
 pub mod flag;
 pub mod install;
+pub mod map_storage;
+pub mod migrate;
 pub mod migration;
 pub mod region_ui;
 pub mod release;
@@ -61,9 +63,9 @@ pub use comaps_snap::{
 };
 pub use download::{
     download_leaf_set, download_leaf_set_with, download_world_overlays, fetch_current_catalog,
-    leaf_ids_with_world_overlays, DownloadPlan, DownloadProgress, LeafDownloadResult,
-    LeafSetOptions, MwmDownloadError, DEFAULT_MWM_CONCURRENCY, NAVI_MWM_USER_AGENT,
-    WORLD_OVERLAY_LEAF_IDS,
+    fetch_current_catalog_text, leaf_ids_with_world_overlays, DownloadPlan, DownloadProgress,
+    LeafDownloadResult, LeafSetOptions, MwmDownloadError, DEFAULT_MWM_CONCURRENCY,
+    NAVI_MWM_USER_AGENT, WORLD_OVERLAY_LEAF_IDS,
 };
 pub use fingerprint::{
     check_local_mwm_fingerprint, fingerprint_from_catalog_leaf, FingerprintMismatch,
@@ -74,8 +76,8 @@ pub use flag::{
     MWM_CLIENT_ENABLED_ENV,
 };
 pub use install::{
-    install_leaf_set, installed_leaf_ids, installed_leaf_ids_active, installed_sidecar_count,
-    InstallReport,
+    install_leaf_set, install_leaf_set_with_catalog, installed_leaf_ids, installed_leaf_ids_active,
+    installed_sidecar_count, InstallReport,
 };
 pub use migration::{
     leaf_set_for_bake_id, leaf_set_for_region_id, parse_region_migration_json, RegionMigration,

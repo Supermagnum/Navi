@@ -1269,6 +1269,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_vfo_set_json(
     ): Int
+    external fun uniffi_navi_checksum_func_gpx_parse_json(
+    ): Int
     external fun uniffi_navi_checksum_func_imu_plugin_android_sensor_types(
     ): Int
     external fun uniffi_navi_checksum_func_imu_plugin_calibration_instruction(
@@ -1362,6 +1364,48 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_mwm_installed(
     ): Int
     external fun uniffi_navi_checksum_func_mwm_list_regions(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_discard(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_forget_kept(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_kept_regions(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_later_until(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_old_maps_decision(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_pause(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_plan(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_progress(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_remind_later(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_run(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_running(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_set_status(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_set_wifi_only(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_should_offer(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_start(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_state(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_migration_verify(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_storage_delete_block_reason(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_storage_delete_leaf(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_storage_delete_old_releases(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_storage_summary(
     ): Int
     external fun uniffi_navi_checksum_method_ffitrackstore_all(
     ): Int
@@ -1970,6 +2014,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_vfo_set_json(`requestJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_gpx_parse_json(`text`: RustBuffer.ByValue,`maxPointsPerLine`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_imu_plugin_android_sensor_types(`kindCode`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_imu_plugin_calibration_instruction(uniffi_out_err: UniffiRustCallStatus, 
@@ -2063,6 +2109,48 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_mwm_installed(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_mwm_list_regions(`naviOrigin`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_migration_discard(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_mwm_migration_forget_kept(`dataDir`: RustBuffer.ByValue,`regionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_mwm_migration_kept_regions(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_migration_later_until(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Long
+    external fun uniffi_navi_fn_func_mwm_migration_old_maps_decision(`dataDir`: RustBuffer.ByValue,`decision`: RustBuffer.ByValue,`bytesFreed`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_mwm_migration_pause(uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_mwm_migration_plan(`dataDir`: RustBuffer.ByValue,`naviOrigin`: RustBuffer.ByValue,`detectedJson`: RustBuffer.ByValue,`selectedJson`: RustBuffer.ByValue,`excludedJson`: RustBuffer.ByValue,`freeBytes`: Long,`forceRefresh`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_migration_progress(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_migration_remind_later(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Long
+    external fun uniffi_navi_fn_func_mwm_migration_run(`dataDir`: RustBuffer.ByValue,`naviOrigin`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_migration_running(uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_mwm_migration_set_status(`dataDir`: RustBuffer.ByValue,`status`: RustBuffer.ByValue,`error`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_mwm_migration_set_wifi_only(`dataDir`: RustBuffer.ByValue,`wifiOnly`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_mwm_migration_should_offer(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_mwm_migration_start(`dataDir`: RustBuffer.ByValue,`naviOrigin`: RustBuffer.ByValue,`detectedJson`: RustBuffer.ByValue,`selectedJson`: RustBuffer.ByValue,`excludedJson`: RustBuffer.ByValue,`freeBytes`: Long,`wifiOnly`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_migration_state(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_migration_verify(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_storage_delete_block_reason(`dataDir`: RustBuffer.ByValue,`leafId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_storage_delete_leaf(`dataDir`: RustBuffer.ByValue,`leafId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_storage_delete_old_releases(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_storage_summary(`dataDir`: RustBuffer.ByValue,`naviOrigin`: RustBuffer.ByValue,`refresh`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun ffi_navi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -2933,6 +3021,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_cat_plugin_vfo_set_json() and 0xFFFF) != 6218) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_gpx_parse_json() and 0xFFFF) != 40783) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_imu_plugin_android_sensor_types() and 0xFFFF) != 62062) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -3072,6 +3163,69 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_mwm_list_regions() and 0xFFFF) != 46636) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_discard() and 0xFFFF) != 41547) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_forget_kept() and 0xFFFF) != 49603) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_kept_regions() and 0xFFFF) != 64132) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_later_until() and 0xFFFF) != 17649) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_old_maps_decision() and 0xFFFF) != 6774) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_pause() and 0xFFFF) != 59193) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_plan() and 0xFFFF) != 42920) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_progress() and 0xFFFF) != 2534) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_remind_later() and 0xFFFF) != 35033) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_run() and 0xFFFF) != 40221) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_running() and 0xFFFF) != 13722) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_set_status() and 0xFFFF) != 5991) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_set_wifi_only() and 0xFFFF) != 38835) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_should_offer() and 0xFFFF) != 33453) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_start() and 0xFFFF) != 30563) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_state() and 0xFFFF) != 57099) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_migration_verify() and 0xFFFF) != 51153) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_storage_delete_block_reason() and 0xFFFF) != 39407) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_storage_delete_leaf() and 0xFFFF) != 26033) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_storage_delete_old_releases() and 0xFFFF) != 63608) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_storage_summary() and 0xFFFF) != 1108) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_method_ffitrackstore_all() and 0xFFFF) != 684) {
@@ -12793,6 +12947,36 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     
 
         /**
+         * Parse GPX text and return JSON:
+         *
+         * ```text
+         * {ok, error, name, version,
+         * tracks:    [{name, points:[[lat,lon],...], original_point_count, length_m, ascent_m?}],
+         * routes:    [{name, points:[[lat,lon],...], original_point_count, length_m, ascent_m?}],
+         * waypoints: [{name, desc, lat, lon, sym}],
+         * unsupported: [string],
+         * bounds: [minlat, minlon, maxlat, maxlon] | null}
+         * ```
+         *
+         * Track and route lines are reduced to at most `max_points_per_line` points with Douglas-Peucker
+         * using an automatic tolerance (`0` selects a default of 2000). `length_m` and `ascent_m` are
+         * computed from the full-resolution data, `ascent_m` only when the file carries elevation.
+         * Segments of one track are joined into a single line. On failure the result is
+         * `{"ok": false, "error": "<readable message>"}`.
+         */ fun `gpxParseJson`(`text`: kotlin.String, `maxPointsPerLine`: kotlin.UInt): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_gpx_parse_json(
+    
+        
+        FfiConverterString.lower(`text`),
+        FfiConverterUInt.lower(`maxPointsPerLine`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Android `android.hardware.Sensor` types for a wire code, most preferred first.
          *
          * Single source of truth for the Kotlin backend (ambient temperature prefers
@@ -13433,6 +13617,307 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     
         
         FfiConverterString.lower(`naviOrigin`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Cancel the migration for good (partial downloads are removed, installed maps stay).
+         */ fun `mwmMigrationDiscard`(`dataDir`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_discard(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The old maps of a kept region were deleted: stop listing it.
+         */ fun `mwmMigrationForgetKept`(`dataDir`: kotlin.String, `regionId`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_forget_kept(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`regionId`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Old regions the user migrated and kept (JSON list of {region_id, old_bytes}).
+         */ fun `mwmMigrationKeptRegions`(`dataDir`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_kept_regions(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+ fun `mwmMigrationLaterUntil`(`dataDir`: kotlin.String): kotlin.ULong {
+            return FfiConverterULong.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_later_until(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * `deleted` / `kept`: finishes the migration (only valid once the new maps are verified).
+         */ fun `mwmMigrationOldMapsDecision`(`dataDir`: kotlin.String, `decision`: kotlin.String, `bytesFreed`: kotlin.ULong): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_old_maps_decision(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`decision`),
+        FfiConverterULong.lower(`bytesFreed`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Ask the running migration to stop (state becomes `paused`; the staging tree is kept).
+         */ fun `mwmMigrationPause`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_pause(
+    
+        _status)
+}
+    
+    
+
+        /**
+         * Plan the migration of the detected `.rkyv` regions (network: catalog + region mapping, cached
+         * for ten minutes). `selected_json` is a JSON list of region ids (empty string = all mapped
+         * regions); `excluded_json` a JSON list of leaf ids the user took off the list.
+         */ fun `mwmMigrationPlan`(`dataDir`: kotlin.String, `naviOrigin`: kotlin.String, `detectedJson`: kotlin.String, `selectedJson`: kotlin.String, `excludedJson`: kotlin.String, `freeBytes`: kotlin.ULong, `forceRefresh`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_plan(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`naviOrigin`),
+        FfiConverterString.lower(`detectedJson`),
+        FfiConverterString.lower(`selectedJson`),
+        FfiConverterString.lower(`excludedJson`),
+        FfiConverterULong.lower(`freeBytes`),
+        FfiConverterBoolean.lower(`forceRefresh`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Overall progress: bytes of the pinned download that are on disk (staging, or everything once
+         * switched) against the planned download size.
+         */ fun `mwmMigrationProgress`(`dataDir`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_progress(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * "Later": returns the epoch millis before which the offer is not shown again.
+         */ fun `mwmMigrationRemindLater`(`dataDir`: kotlin.String): kotlin.ULong {
+            return FfiConverterULong.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_remind_later(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Run (or resume) the pinned migration; blocks until verified, paused, or stopped by an error.
+         */ fun `mwmMigrationRun`(`dataDir`: kotlin.String, `naviOrigin`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_run(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`naviOrigin`),_status)
+}
+    )
+    }
+    
+ fun `mwmMigrationRunning`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_running(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Set a status the Kotlin side owns (`paused`, `waiting_wifi`, `queued`).
+         */ fun `mwmMigrationSetStatus`(`dataDir`: kotlin.String, `status`: kotlin.String, `error`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_set_status(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`status`),
+        FfiConverterString.lower(`error`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Change the Wi-Fi-only choice of the pinned migration.
+         */ fun `mwmMigrationSetWifiOnly`(`dataDir`: kotlin.String, `wifiOnly`: kotlin.Boolean): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_set_wifi_only(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterBoolean.lower(`wifiOnly`),_status)
+}
+    )
+    }
+    
+ fun `mwmMigrationShouldOffer`(`dataDir`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_should_offer(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Persist the user's choice (state `queued`) and pin the catalog it was planned with.
+         */ fun `mwmMigrationStart`(`dataDir`: kotlin.String, `naviOrigin`: kotlin.String, `detectedJson`: kotlin.String, `selectedJson`: kotlin.String, `excludedJson`: kotlin.String, `freeBytes`: kotlin.ULong, `wifiOnly`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_start(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`naviOrigin`),
+        FfiConverterString.lower(`detectedJson`),
+        FfiConverterString.lower(`selectedJson`),
+        FfiConverterString.lower(`excludedJson`),
+        FfiConverterULong.lower(`freeBytes`),
+        FfiConverterBoolean.lower(`wifiOnly`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The persisted state as JSON, or `"null"`.
+         */ fun `mwmMigrationState`(`dataDir`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_state(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Deep verification (sizes + SHA-1 + sidecar SHA-256 + World) of the migrated set.
+         */ fun `mwmMigrationVerify`(`dataDir`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_migration_verify(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+ fun `mwmStorageDeleteBlockReason`(`dataDir`: kotlin.String, `leafId`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_storage_delete_block_reason(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`leafId`),_status)
+}
+    )
+    }
+    
+ fun `mwmStorageDeleteLeaf`(`dataDir`: kotlin.String, `leafId`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_storage_delete_leaf(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`leafId`),_status)
+}
+    )
+    }
+    
+ fun `mwmStorageDeleteOldReleases`(`dataDir`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_storage_delete_old_releases(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Installed leaves per country group, sizes, release version, and (when `navi_origin` is
+         * reachable) whether a newer CoMaps release is available. Falls back to the cached catalog
+         * offline. `refresh` forces a network fetch.
+         */ fun `mwmStorageSummary`(`dataDir`: kotlin.String, `naviOrigin`: kotlin.String, `refresh`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_storage_summary(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`naviOrigin`),
+        FfiConverterBoolean.lower(`refresh`),_status)
 }
     )
     }

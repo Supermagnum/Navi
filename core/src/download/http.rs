@@ -42,6 +42,33 @@ pub struct StreamDownloadOpts<'a> {
     pub progress_label: &'a str,
     /// When true, treat HTTP 404 as `Ok(None)` instead of an error.
     pub allow_not_found: bool,
+    /// Checked between body chunks; when set the download stops with a `cancelled` error and keeps
+    /// the `.partial` file so a later call resumes with a Range request.
+    pub cancel: Option<&'a std::sync::atomic::AtomicBool>,
+}
+
+/// Error text of a download stopped by [`StreamDownloadOpts::cancel`].
+pub const DOWNLOAD_CANCELLED: &str = "cancelled";
+
+/// Await `fut`, but give up with [`DOWNLOAD_CANCELLED`] within ~250 ms of `cancel` being set (a
+/// stalled connection must not delay a user pause until the request timeout).
+async fn with_cancel<F: std::future::Future>(
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+    fut: F,
+) -> anyhow::Result<F::Output> {
+    let Some(flag) = cancel else {
+        return Ok(fut.await);
+    };
+    tokio::pin!(fut);
+    loop {
+        if flag.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(anyhow!(DOWNLOAD_CANCELLED));
+        }
+        tokio::select! {
+            out = &mut fut => return Ok(out),
+            _ = tokio::time::sleep(Duration::from_millis(250)) => {}
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -531,6 +558,9 @@ pub async fn stream_get_to_file(
                 return Ok(v);
             }
             Err(e) => {
+                if e.to_string() == DOWNLOAD_CANCELLED {
+                    return Err(e);
+                }
                 log::warn!(
                     target: "NaviDownload",
                     "[NaviDownload] download failed attempt={attempt}/{retries} dest={} err={e}",
@@ -618,14 +648,16 @@ async fn stream_get_to_file_once(
         request = request.header(RANGE, format!("bytes={resume_from}-"));
     }
 
-    let response = request.send().await.map_err(|e| {
-        anyhow!(format_reqwest_error(
-            &e,
-            &format!("GET {}", short_url(request_url)),
-            resume_from,
-            opts.expected_bytes
-        ))
-    })?;
+    let response = with_cancel(opts.cancel, request.send())
+        .await?
+        .map_err(|e| {
+            anyhow!(format_reqwest_error(
+                &e,
+                &format!("GET {}", short_url(request_url)),
+                resume_from,
+                opts.expected_bytes
+            ))
+        })?;
 
     let status = response.status();
     if status == StatusCode::NOT_FOUND && opts.allow_not_found {
@@ -651,6 +683,7 @@ async fn stream_get_to_file_once(
                     retries: 1,
                     progress_label: opts.progress_label,
                     allow_not_found: opts.allow_not_found,
+                    cancel: opts.cancel,
                 };
                 // Drop the failed response before recursing.
                 drop(response);
@@ -746,7 +779,14 @@ async fn stream_get_to_file_once(
     download_progress::set(written, expected, &ui_label);
 
     let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
+    while let Some(chunk) = with_cancel(opts.cancel, stream.next()).await? {
+        if opts
+            .cancel
+            .is_some_and(|c| c.load(std::sync::atomic::Ordering::SeqCst))
+        {
+            let _ = file.flush().await;
+            return Err(anyhow!(DOWNLOAD_CANCELLED));
+        }
         let chunk = chunk.map_err(|e| {
             anyhow!(format_reqwest_error(
                 &e,
@@ -1101,6 +1141,7 @@ mod tests {
                 retries: 2,
                 progress_label: "test…",
                 allow_not_found: false,
+                cancel: None,
             },
         )
         .await

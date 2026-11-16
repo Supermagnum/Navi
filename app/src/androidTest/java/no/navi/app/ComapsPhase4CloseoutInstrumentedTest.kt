@@ -66,7 +66,7 @@ class ComapsPhase4CloseoutInstrumentedTest {
                 copyAssetDir("$assetPath/$child", File(destDir, child))
             }
         }
-        copyAssetDir("comaps-data", root)
+        ComapsPhase6Harness.stageHeadlessAssets(ctx, root)
     }
 
     private fun assertNoInternal(

@@ -1,7 +1,8 @@
 # Phase 6b -- CoMaps drape is the only map renderer on the MWM path
 
 Status: **Phase 6 acceptance met on the Samsung SM-P613 (releasetest), with documented
-decisions** (section 15). Phase 7 and 8 are untouched. Decision record and plan:
+decisions** (section 15). Phase 7 closes those decisions on `feat/mwm-client`
+(`docs/mwm-phase7-migration.md` section 8). Decision record and plan:
 `docs/mwm-client-migration.md` section 9; the first (hybrid) pass is `docs/mwm-phase6-drape.md`.
 
 All device numbers below come from `scripts/phase6-device-accept.sh` against the physical

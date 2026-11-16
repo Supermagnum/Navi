@@ -830,6 +830,14 @@ object NaviMapTestHooks {
     @Volatile
     var lastTrackOverlayCount: Int = 0
 
+    /** Last GPX fit box sent to the drape (minLat, minLon, maxLat, maxLon). */
+    @Volatile
+    var lastGpxFit: DoubleArray? = null
+
+    /** Last puck state sent to the drape: 0 GPS, 1 estimated, 2 lost. */
+    @Volatile
+    var lastPuckState: Int = 0
+
     /**
      * Sorted "id:x:y" fingerprint of screen-space overlay marks (coords rounded
      * to int). Instrumented tests wait for this to change after a track push so

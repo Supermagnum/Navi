@@ -15,6 +15,7 @@ pub mod ecu;
 pub mod export;
 pub mod i18n;
 pub mod icons;
+pub mod import;
 pub mod long_trip;
 pub mod mwm;
 pub mod nav;

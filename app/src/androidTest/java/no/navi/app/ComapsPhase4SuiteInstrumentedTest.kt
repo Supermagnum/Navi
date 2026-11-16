@@ -60,7 +60,7 @@ class ComapsPhase4SuiteInstrumentedTest {
                 copyAssetDir("$assetPath/$child", File(destDir, child))
             }
         }
-        copyAssetDir("comaps-data", root)
+        ComapsPhase6Harness.stageHeadlessAssets(ctx, root)
     }
 
     private fun travelProfileOf(s: String): TravelProfile =

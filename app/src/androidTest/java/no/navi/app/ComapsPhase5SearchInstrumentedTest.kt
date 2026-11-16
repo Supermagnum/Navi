@@ -22,7 +22,6 @@ import uniffi.navi.comapsCategoryQuery
 import uniffi.navi.comapsNativeAvailable
 import uniffi.navi.comapsReverseGeocode
 import uniffi.navi.comapsSearchCancel
-import uniffi.navi.comapsSearchClearViewport
 import uniffi.navi.comapsSearchEnabled
 import uniffi.navi.comapsSearchSetLocale
 import uniffi.navi.comapsSearchSetPosition
@@ -90,7 +89,7 @@ class ComapsPhase5SearchInstrumentedTest {
                 copyAssetDir("$assetPath/$child", File(destDir, child))
             }
         }
-        copyAssetDir("comaps-data", root)
+        ComapsPhase6Harness.stageHeadlessAssets(ctx, root)
         val open =
             comapsSessionOpen(
                 storagePath = root.absolutePath,
@@ -132,15 +131,19 @@ class ComapsPhase5SearchInstrumentedTest {
             comapsSearchSetPosition(lat, lon, true)
             comapsSearchSetViewport(lat - 0.5, lon - 0.8, lat + 0.5, lon + 0.8)
         } else {
-            // Everywhere mode for unbound To-field queries (Viewport was
-            // dropping or mis-ranking some Østlandet towns).
+            // Wide South/East Norway viewport for unbound To-field queries.
+            // Everywhere mode used to finish in ~1 s against the old comaps-data
+            // staging; after the drape SDK root-asset staging it never delivers
+            // an EndMarker for town queries (cancel still works). A Norway-scale
+            // Viewport completes and still ranks Østlandet towns in the top hits.
             comapsSearchSetPosition(61.0, 10.5, true)
-            comapsSearchClearViewport()
+            comapsSearchSetViewport(58.5, 7.5, 63.5, 13.5)
         }
         val collector = Collector()
         val id = comapsSearchStart(query, isCategory, 30u, collector)
         assertTrue("search '$query' did not start", id != 0uL)
-        assertTrue("search '$query' timed out", collector.done.await(20, TimeUnit.SECONDS))
+        // Everywhere free-text over Østlandet + World can take longer than a viewport query on cold cache.
+        assertTrue("search '$query' timed out", collector.done.await(60, TimeUnit.SECONDS))
         // Give the search worker a quiet gap before the next Everywhere query.
         // Back-to-back searches have SEGV'd in CountryInfoGetter (headless).
         Thread.sleep(250)

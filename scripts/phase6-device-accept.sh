@@ -18,7 +18,12 @@ export ANDROID_SERIAL="$SERIAL"
 ADB=(adb -s "$SERIAL")
 RUNNER=no.navi.app.releasetest.test/no.navi.app.NaviAndroidTestRunner
 CLASS=no.navi.app.ComapsPhase6bAcceptanceInstrumentedTest
-OUT="$ROOT/test-artifacts/phase6b"
+# PHASE_OUT=phase7 keeps a re-run apart from the Phase 6b artifacts (device dir /data/local/tmp/$PHASE_OUT).
+PHASE_OUT="${PHASE_OUT:-phase6b}"
+OUT="$ROOT/test-artifacts/$PHASE_OUT"
+DEVICE_OUT="/data/local/tmp/$PHASE_OUT"
+# Extra instrumentation arguments for every run, e.g. EXTRA_ARGS="-e perf_minutes 5 -e fps_cap 0".
+EXTRA_ARGS="${EXTRA_ARGS:-}"
 
 cmd="${1:-}"
 shift || true
@@ -38,20 +43,21 @@ case "$cmd" in
     ;;
   run)
     mkdir -p "$OUT/logs"
+    "${ADB[@]}" shell "mkdir -p $DEVICE_OUT/screenshots $DEVICE_OUT/logs; chmod -R 777 $DEVICE_OUT"
     for m in "$@"; do
       "${ADB[@]}" logcat -c
       "${ADB[@]}" logcat -v time NaviCat:I NaviNative:I Phase6:I ComapsDrape:I NaviPlan:I \
         ComapsSession:I ComapsDrapeMap:I MwmMapDownloader:I NaviPlan:I AndroidRuntime:E DEBUG:F libc:F '*:S' >"$OUT/logs/logcat-$m.txt" 2>&1 &
       lc=$!
-      "${ADB[@]}" shell am instrument -w -r -e class "$CLASS#$m" "$RUNNER" | tee "$OUT/logs/instrument-$m.txt" \
+      "${ADB[@]}" shell am instrument -w -r -e out_dir "$DEVICE_OUT" $EXTRA_ARGS -e class "$CLASS#$m" "$RUNNER" | tee "$OUT/logs/instrument-$m.txt" \
         | grep -E "INSTRUMENTATION_STATUS: (test|stack)|^OK|FAILURES|Tests run" || true
       kill "$lc" 2>/dev/null || true
     done
     ;;
   pull)
     mkdir -p "$OUT"
-    "${ADB[@]}" pull /data/local/tmp/phase6b/screenshots "$OUT/"
-    "${ADB[@]}" pull /data/local/tmp/phase6b/logs "$OUT/"
+    "${ADB[@]}" pull "$DEVICE_OUT/screenshots" "$OUT/"
+    "${ADB[@]}" pull "$DEVICE_OUT/logs" "$OUT/"
     ;;
   *)
     sed -n '2,13p' "${BASH_SOURCE[0]}"

@@ -88,6 +88,7 @@ pub async fn download_tile(
             retries: DEFAULT_RETRIES,
             progress_label: "navi.msg.download_elevation",
             allow_not_found: true,
+            cancel: None,
         },
     )
     .await?

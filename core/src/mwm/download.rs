@@ -30,6 +30,9 @@ use crate::pack_server::{http_get_bytes, http_get_text, PackServerError};
 pub const NAVI_MWM_USER_AGENT: &str =
     "Navi/0.1.0 (+https://github.com/Supermagnum/Navi; contact=https://github.com/Supermagnum/Navi/issues)";
 
+/// Error text of a download stopped by the cancel flag (pause); the staging tree is kept.
+pub const CANCELLED: &str = "cancelled";
+
 /// Max concurrent MWM downloads (navi-server uses 2).
 pub const DEFAULT_MWM_CONCURRENCY: usize = 2;
 
@@ -83,7 +86,7 @@ fn ua_headers() -> HeaderMap {
     h
 }
 
-fn join_url(base: &str, rel: &str) -> String {
+pub(crate) fn join_url(base: &str, rel: &str) -> String {
     let base = base.trim().trim_end_matches('/');
     let rel = rel.trim().trim_start_matches('/');
     format!("{base}/{rel}")
@@ -95,12 +98,19 @@ fn backoff_sleep(attempt: u32) {
     thread::sleep(Duration::from_millis(base_ms + jitter));
 }
 
+type CancelFlag<'a> = Option<&'a std::sync::atomic::AtomicBool>;
+
+fn cancelled(cancel: CancelFlag<'_>) -> bool {
+    cancel.is_some_and(|c| c.load(std::sync::atomic::Ordering::SeqCst))
+}
+
 fn download_with_mirrors(
     mirrors: &[String],
     relative_path: &str,
     dest: &Path,
     expected_bytes: Option<u64>,
     label: &str,
+    cancel: CancelFlag<'_>,
 ) -> Result<(), MwmDownloadError> {
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent)?;
@@ -125,6 +135,7 @@ fn download_with_mirrors(
                 retries: 1,
                 progress_label: &ui,
                 allow_not_found: false,
+                cancel,
             }) {
                 Ok(Some(_)) => return Ok(()),
                 Ok(None) => {
@@ -132,6 +143,9 @@ fn download_with_mirrors(
                 }
                 Err(e) => {
                     let msg = e.to_string();
+                    if msg == crate::download::http::DOWNLOAD_CANCELLED || cancelled(cancel) {
+                        return Err(MwmDownloadError::Other(CANCELLED.into()));
+                    }
                     last_err = Some(MwmDownloadError::Other(msg.clone()));
                     if msg.contains("429") || msg.contains("503") || msg.contains("502") {
                         backoff_sleep(attempt);
@@ -146,7 +160,12 @@ fn download_with_mirrors(
     Err(last_err.unwrap_or_else(|| MwmDownloadError::Other("all mirrors failed".into())))
 }
 
-fn download_navi_file(origin: &str, relative: &str, dest: &Path) -> Result<(), MwmDownloadError> {
+fn download_navi_file(
+    origin: &str,
+    relative: &str,
+    dest: &Path,
+    cancel: CancelFlag<'_>,
+) -> Result<(), MwmDownloadError> {
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -167,6 +186,7 @@ fn download_navi_file(origin: &str, relative: &str, dest: &Path) -> Result<(), M
         retries: DEFAULT_RETRIES,
         progress_label: &ui,
         allow_not_found: false,
+        cancel,
     })
     .map_err(|e| MwmDownloadError::Other(e.to_string()))?
     .ok_or_else(|| MwmDownloadError::Other(format!("not found: {url}")))?;
@@ -190,6 +210,7 @@ fn download_one_leaf(
     countries: &CountriesTxt,
     discovery: &ComapsDiscovery,
     navi_origin: &str,
+    cancel: CancelFlag<'_>,
 ) -> Result<LeafDownloadResult, MwmDownloadError> {
     let mwm_dest = leaf_mwm_path(staging, &leaf.id);
     let countries_leaf = countries
@@ -212,6 +233,7 @@ fn download_one_leaf(
             &mwm_dest,
             Some(countries_leaf.size),
             &format!("MWM {}", leaf.id),
+            cancel,
         )?;
     }
     verify_path_sha1_base64(
@@ -245,7 +267,7 @@ fn download_one_leaf(
             .map(|b| fs::metadata(&sc_dest).map(|m| m.len()).unwrap_or(0) == b)
             .unwrap_or(false));
     if need_sc {
-        download_navi_file(navi_origin, sc_url, &sc_dest)?;
+        download_navi_file(navi_origin, sc_url, &sc_dest, cancel)?;
     }
     verify_path_sha256(&sc_dest, leaf.sidecar_bytes, sc_sha)?;
 
@@ -375,13 +397,20 @@ pub fn download_leaf_set_with(
             .map(|c| c.load(std::sync::atomic::Ordering::SeqCst))
             .unwrap_or(false)
         {
-            return Err(MwmDownloadError::Other("cancelled".into()));
+            return Err(MwmDownloadError::Other(CANCELLED.into()));
         }
         progress.current_label = leaf_id.clone();
         let catalog_leaf = catalog
             .leaf(leaf_id)
             .ok_or_else(|| MwmDownloadError::MissingLeaf(leaf_id.clone()))?;
-        let result = download_one_leaf(&staging, catalog_leaf, countries, discovery, navi_origin)?;
+        let result = download_one_leaf(
+            &staging,
+            catalog_leaf,
+            countries,
+            discovery,
+            navi_origin,
+            opts.cancel,
+        )?;
         progress.completed_leaves += 1;
         results.push(result);
     }
@@ -469,12 +498,21 @@ pub fn install_leaf_bytes_for_test(
 
 /// Fetch catalog from navi-server DocumentRoot (`/mwm/current.json`).
 pub fn fetch_current_catalog(navi_origin: &str) -> Result<MwmCatalog, MwmDownloadError> {
+    fetch_current_catalog_text(navi_origin).map(|(c, _)| c)
+}
+
+/// [`fetch_current_catalog`] that also returns the JSON body (a migration pins it on disk).
+pub fn fetch_current_catalog_text(
+    navi_origin: &str,
+) -> Result<(MwmCatalog, String), MwmDownloadError> {
     if !mwm_client_enabled() {
         return Err(MwmDownloadError::Disabled);
     }
     let url = join_url(navi_origin, "mwm/current.json");
     let text = http_get_text(&url, Duration::from_secs(120))?;
-    super::catalog::parse_catalog_json(&text).map_err(|e| MwmDownloadError::Other(e.to_string()))
+    let catalog = super::catalog::parse_catalog_json(&text)
+        .map_err(|e| MwmDownloadError::Other(e.to_string()))?;
+    Ok((catalog, text))
 }
 
 /// World + WorldCoasts overlay leaf ids (catalog `non_routable_leaves`, no sidecar).

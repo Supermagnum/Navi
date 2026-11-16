@@ -11,7 +11,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::catalog::MwmCatalog;
 use super::comaps::{
@@ -108,8 +108,29 @@ fn leaf_present(release: &Path, countries: &CountriesTxt, catalog: &MwmCatalog, 
     }
 }
 
+/// Process-wide guard: one leaf install / migration at a time (they share the staging tree).
+static INSTALL_RUNNING: AtomicBool = AtomicBool::new(false);
+
+struct InstallGuard;
+
+impl InstallGuard {
+    fn acquire() -> Result<Self, MwmDownloadError> {
+        INSTALL_RUNNING
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .map(|_| InstallGuard)
+            .map_err(|_| MwmDownloadError::Other("another map install is already running".into()))
+    }
+}
+
+impl Drop for InstallGuard {
+    fn drop(&mut self) {
+        INSTALL_RUNNING.store(false, Ordering::SeqCst);
+    }
+}
+
 /// Install `wanted` leaves (and, for a new release, World + WorldCoasts and the leaves of the
-/// previous release). `cancel` stops between leaves and keeps the staging tree for resume.
+/// previous release). `cancel` stops the download (between leaves and inside a leaf, within about
+/// a quarter of a second) and keeps the staging tree for resume.
 pub fn install_leaf_set(
     data_dir: &Path,
     navi_origin: &str,
@@ -121,6 +142,24 @@ pub fn install_leaf_set(
         return Err(MwmDownloadError::Disabled);
     }
     let catalog = fetch_current_catalog(navi_origin)?;
+    install_leaf_set_with_catalog(data_dir, navi_origin, &catalog, wanted, progress, cancel)
+}
+
+/// [`install_leaf_set`] against a catalog the caller already holds. A migration pins the catalog
+/// it planned with, so a release published while it runs does not change what it downloads.
+pub fn install_leaf_set_with_catalog(
+    data_dir: &Path,
+    navi_origin: &str,
+    catalog: &MwmCatalog,
+    wanted: &[String],
+    progress: &mut DownloadProgress,
+    cancel: Option<&AtomicBool>,
+) -> Result<InstallReport, MwmDownloadError> {
+    if !mwm_client_enabled() {
+        return Err(MwmDownloadError::Disabled);
+    }
+    let _guard = InstallGuard::acquire()?;
+    let catalog = catalog.clone();
     let discovery = discover_mirrors(
         &catalog.comaps.metaserver_url,
         &catalog.comaps.map_series,

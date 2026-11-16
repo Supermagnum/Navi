@@ -36,11 +36,14 @@ test-artifacts/mwm-phase4/
 test-artifacts/phase6/
 test-artifacts/phase6a/
 test-artifacts/phase6b/
+# Phase 7 on-device acceptance output (adb screencap screenshots, logs, state dumps).
+test-artifacts/phase7/
 # Kotlin/IDE incremental compile scratch
 .kotlin/
 
 # Local F-Droid buildability check workspace (not for commit)
 tools/fdroid-check/work/
+tools/fdroid-check/work-*/
 tools/fdroid-check/logs/
 tools/fdroid-check/fdroidserver/
 

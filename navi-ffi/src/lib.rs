@@ -56,10 +56,14 @@ uniffi::setup_scaffolding!();
 
 pub mod bin_freshness;
 
+mod gpx_import_ffi;
+pub use gpx_import_ffi::*;
 mod mwm_comaps_ffi;
 pub use mwm_comaps_ffi::*;
 mod mwm_install_ffi;
 pub use mwm_install_ffi::*;
+mod mwm_migrate_ffi;
+pub use mwm_migrate_ffi::*;
 
 mod camping_plugin;
 pub use camping_plugin::*;

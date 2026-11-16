@@ -233,6 +233,12 @@ object ComapsDrapeBootstrap : ComapsDrape.Backend {
         NaviDrape.nativeRegisterMaps()
     }
 
+    override fun deregisterMap(leafId: String) {
+        if (!Map.isEngineCreated()) return
+        runCatching { NaviDrape.nativeReloadMaps() }
+            .onFailure { Log.w(TAG, "reload maps after deleting $leafId failed: ${it.message}") }
+    }
+
     override fun setNight(night: Boolean) {
         val want = if (night) MapAppearance.Dark else MapAppearance.Light
         if (MapAppearance.get() != want) MapAppearance.set(want)
@@ -296,7 +302,14 @@ object ComapsDrapeBootstrap : ComapsDrape.Backend {
         names: Array<String>,
         icons: IntArray,
         colors: IntArray,
-    ) = NaviDrape.nativeSetMarks(group, latlon, names, icons, colors)
+        symbols: Array<String>?,
+    ) = NaviDrape.nativeSetMarks(group, latlon, names, icons, colors, symbols)
+
+    override fun setPuckState(state: Int) {
+        if (!Map.isEngineCreated()) return
+        runCatching { NaviDrape.nativeSetPuckState(state) }
+            .onFailure { Log.w(TAG, "setPuckState failed: ${it.message}") }
+    }
 
     override fun setTracks(
         group: Long,

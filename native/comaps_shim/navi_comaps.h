@@ -67,6 +67,9 @@ typedef struct NaviComapsRouteResult {
   char * elevation_json;
   /* "Joints" | "Leaps" | "NoLeaps" | "Unknown" — diagnostic. */
   char * router_mode;
+  /* JSON int array, one entry per polyline segment (i = segment between point i and i+1):
+   * posted maxspeed km/h, -1 untagged / not applicable, -2 explicitly unlimited. May be NULL. */
+  char * speed_limits_json;
 } NaviComapsRouteResult;
 
 /* storage_path: directory containing CoMaps data/ + writable maps dir with .mwm.
@@ -75,13 +78,26 @@ typedef struct NaviComapsRouteResult {
 NaviComapsCode navi_comaps_init(char const * storage_path, char const * writable_path,
                                 char const * sidecar_dir);
 
+/* While the drape Framework is alive it owns the Platform resource / writable / settings
+ * directories and the map style. With the lock set, navi_comaps_init() only rebuilds the
+ * RoutesBuilder (re-registers MWMs) and leaves Platform and style untouched, so a leaf
+ * download can re-init the router without moving the resource dir under a live drape. */
+void navi_comaps_set_platform_locked(int locked);
+
+/* CoMaps country (leaf) id containing the point according to packed_polygons / countries.txt
+ * (e.g. "Norway_Oppland"), or "" when the point is outside every country (sea). Caller frees
+ * with navi_comaps_free_string. NULL on error / not initialised. */
+char * navi_comaps_leaf_for_point(double lat, double lon);
+
 /* Register/refresh MWMs under writable_path (Phase 1 layout). */
 NaviComapsCode navi_comaps_register_mwms(void);
 
 /* Enable/disable wetland Soft×5 / Hard≈forbid (env gate + loader). */
 void navi_comaps_set_wetland_hook(int enabled);
 /* Install Rust SidecarReader-backed lookup; pass NULL to clear. */
-typedef uint8_t (*NaviComapsWetlandLookupFn)(uint32_t feature_id, uint32_t segment_idx, int forward);
+/** mwm_name: CoMaps leaf id of the segment (feature ids are per MWM). */
+typedef uint8_t (*NaviComapsWetlandLookupFn)(char const * mwm_name, uint32_t feature_id, uint32_t segment_idx,
+                                             int forward);
 void navi_comaps_set_wetland_lookup(NaviComapsWetlandLookupFn fn);
 /** EL02 elevation override for one MWM leaf (`mwm_name` e.g. "Norway_Oppland").
  *  Return 1 and write absolute altitude (dm) when present. */

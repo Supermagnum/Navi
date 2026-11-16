@@ -23,6 +23,9 @@ git submodule update --init --recursive --depth 1
 
 export PATH="${NAVI_HOST_TOOLS_BIN:-}:${PATH}"
 export SKIP_MAP_DOWNLOAD="${SKIP_MAP_DOWNLOAD:-1}"
+# The drape symbol atlases are generated from SVG (CoMaps' own and Navi's) by scripts/generate-comaps-symbols.py
+# (rsvg-convert + Pillow) when Gradle builds :comaps-sdk; CoMaps' Qt skin_generator is not needed.
+export SKIP_GENERATE_SYMBOLS="${SKIP_GENERATE_SYMBOLS:-1}"
 ./configure.sh
 
 echo "CoMaps ready at $DEST ($TAG / $SHA)"

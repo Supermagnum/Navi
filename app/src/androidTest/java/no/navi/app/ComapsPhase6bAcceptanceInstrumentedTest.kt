@@ -320,6 +320,11 @@ class ComapsPhase6bAcceptanceInstrumentedTest {
         threeD: Boolean = false,
     ) {
         MwmClientBootstrap.ensureInitialized()
+        // Measurement aid (Phase 7): -e fps_cap 0 turns the drape's 30 fps cap off for an A/B run.
+        androidx.test.platform.app.InstrumentationRegistry
+            .getArguments()
+            .getString("fps_cap")
+            ?.let { android.system.Os.setenv("NAVI_DRAPE_FPS_CAP", it, true) }
         if (cat) provisionCat(network) else MapHudPrefs.saveCatPluginEnabled(h.context, false)
         launch(chromeHidden = false)
         if (cat) {
@@ -427,6 +432,38 @@ class ComapsPhase6bAcceptanceInstrumentedTest {
             rotation = MapRotationMode.DirectionOfTravel,
             tiltDeg = 45.0,
             threeD = true,
+        )
+    }
+
+    /**
+     * Phase 7 (decision 15c): north-up follow at real speed, no tilt, no 3D (the case that ran at 60 fps
+     * before the 30 fps cap). `-e perf_minutes N` (default 20); `-e fps_cap 0` measures the uncapped baseline.
+     */
+    @Test
+    fun u_perf_northup_follow() {
+        val minutes =
+            androidx.test.platform.app.InstrumentationRegistry
+                .getArguments()
+                .getString("perf_minutes")
+                ?.toIntOrNull() ?: 20
+        runCatRoute(
+            "perf_northup_${minutes}min" +
+                if (androidx.test.platform.app.InstrumentationRegistry
+                        .getArguments()
+                        .getString("fps_cap") == "0"
+                ) {
+                    "_uncapped"
+                } else {
+                    ""
+                },
+            espa,
+            dombas,
+            MapHudPrefs.CAT_NETWORK_OFF,
+            1.0,
+            minutes,
+            perf = true,
+            cat = false,
+            rotation = MapRotationMode.NorthUp,
         )
     }
 
@@ -1259,7 +1296,23 @@ class ComapsPhase6bAcceptanceInstrumentedTest {
             val trkpts = Regex("<trkpt ").findAll(gpx).count()
             if (gpx.startsWith("<?xml") && gpx.contains("<rte>") && trkpts > 50) "PASS: GPX 1.1 with <rte> and $trkpts <trkpt>" else "FAIL: ${gpx.take(120)}"
         }
-        m.add("gpx_import", "GPX import", "NOT_TESTED", "no GPX import entry point exists in the app or FFI (export only); not changed by Phase 6")
+        // Phase 7 (decision 15d): the exported GPX goes back in through the same code path as open-with / share.
+        m.check("gpx_import", "GPX import of the exported route (round trip)") {
+            val rte =
+                JSONArray()
+                    .put(JSONObject().put("name", espa.first).put("lat", espa.second).put("lon", espa.third))
+                    .put(JSONObject().put("name", hamar.first).put("lat", hamar.second).put("lon", hamar.third))
+            val gpx = uniffi.navi.routeToGpx("phase7-roundtrip", "", rte.toString(), tbt.routePolyline)
+            val doc = GpxImport.parse("matrix.gpx", gpx.toByteArray()).getOrNull()
+            val line = doc?.lines?.maxByOrNull { it.lengthM }
+            val expectKm = tbt.distanceKm
+            when {
+                doc == null || line == null -> "FAIL: import returned nothing (${gpx.take(80)})"
+                kotlin.math.abs(line.lengthM / 1000.0 - expectKm) > expectKm * 0.03 + 0.2 ->
+                    "FAIL: imported ${line.lengthM / 1000.0} km vs planned $expectKm km"
+                else -> "PASS: ${doc.lines.size} line(s), longest ${"%.1f".format(java.util.Locale.US, line.lengthM / 1000.0)} km vs planned ${"%.1f".format(java.util.Locale.US, expectKm)} km, ${line.originalPoints} points, unsupported=${doc.unsupported}"
+            }
+        }
 
         // 13. DATEX
         m.check("datex", "DATEX situations refresh (online)") {

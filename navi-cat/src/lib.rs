@@ -12,6 +12,7 @@ pub mod clock;
 pub mod consensus;
 pub mod coverage;
 pub mod ffi;
+pub mod follow_program;
 pub mod gating;
 pub mod importers;
 pub mod mirror;
@@ -25,6 +26,10 @@ pub mod types;
 pub use benshi::{BenshiBackend, FakeBenshiPeer, TuningMethod};
 pub use clock::SimClock;
 pub use ffi::FfiRigBackend;
+pub use follow_program::{
+    follow_request, program_with_retry, FollowProgramReport, ProgramFailureNotice, RetryOutcome,
+    RetryPolicy, VFO_PROGRAM_ATTEMPTS, VFO_RETRY_PAUSE,
+};
 pub use gating::{gate_from_dump_caps, GateDecision, GateStatus};
 pub use program::{program_vfo1_verified, ProgramError, ProgramRequest, ReportedVfo};
 pub use repeater::{AccessTone, RepeaterDb, RepeaterSite, RepeaterSource};
@@ -40,6 +45,10 @@ pub struct CatService<B: RigBackend> {
     pub follow_stopped_reason: Option<String>,
     /// Follow time. Real time unless the app simulates a route at a time scale.
     pub clock: SimClock,
+    /// Last follow program that failed after all attempts; shown to the user.
+    /// Cleared by a successful program. A new service (reconnect) starts clear.
+    pub(crate) program_failure: Option<ProgramFailureNotice>,
+    pub(crate) failure_seq: u64,
     /// `reason|id` of rows already logged as skipped, so a 5 s follow tick does
     /// not repeat the same `cat_skip` line.
     skip_logged: std::sync::Mutex<std::collections::HashSet<String>>,
@@ -61,6 +70,8 @@ impl<B: RigBackend> CatService<B> {
             follow_pinned: None,
             follow_stopped_reason: None,
             clock: SimClock::default(),
+            program_failure: None,
+            failure_seq: 0,
             skip_logged: Default::default(),
         }
     }
@@ -73,6 +84,8 @@ impl<B: RigBackend> CatService<B> {
         self.follow_pinned = prev.follow_pinned.clone();
         self.follow_stopped_reason = prev.follow_stopped_reason.clone();
         self.clock = prev.clock;
+        // The failure sequence carries over so a UI never sees `seq` restart.
+        self.failure_seq = prev.failure_seq;
     }
 
     /// Set the simulation time scale (1.0 = real time) at real time `real_now_s`.
@@ -105,6 +118,7 @@ impl<B: RigBackend> CatService<B> {
             "follow_stopped_reason": self.follow_stopped_reason,
             "now_unix_s": self.clock.sim_now_unix_s(real_now_s),
             "time_scale": self.clock.scale(),
+            "program_failure": self.program_failure,
         })
         .to_string()
     }

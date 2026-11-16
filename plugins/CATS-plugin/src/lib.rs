@@ -84,6 +84,20 @@ fn run_position_follow(lat: f64, lon: f64) {
         .and_then(|s| serde_json::from_str::<follow::FollowState>(s).ok())
         .unwrap_or_default();
     state.network_id = Some(choice.to_string());
+    // Outcome of the host's last program attempt: confirms the switch, or restores the
+    // state from before it and starts the cool-down for the refused site.
+    let mut result_buf = [0u8; 512];
+    if let Some(n) = navi_plugin_sdk::host_plugin_kv_get(follow::FOLLOW_RESULT_KEY, &mut result_buf)
+    {
+        let text = std::str::from_utf8(&result_buf[..n]).unwrap_or("");
+        if let Some(r) = follow::apply_program_result_json(&mut state, text) {
+            navi_plugin_sdk::host_log(&format!(
+                "cat: follow program result site={} ok={} attempts={}",
+                r.site_id, r.ok, r.attempts
+            ));
+        }
+        let _ = navi_plugin_sdk::host_plugin_kv_set(follow::FOLLOW_RESULT_KEY, "");
+    }
     if let follow::FollowTick::Switch { site_id } =
         follow::tick_at(&mut state, lat, lon, &members, now)
     {

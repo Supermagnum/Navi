@@ -240,6 +240,60 @@ object MwmProductionPlanner {
         }
     }
 
+    /**
+     * A route whose geometry is an imported track: the HUD, ETA, progress and simulation work on the
+     * file's own line. No router is involved, so there are no turn instructions: the only maneuver is
+     * the end of the track. Speed is the walking / cycling / driving average of [profile].
+     */
+    fun trackRoute(
+        profile: TravelProfile,
+        latlon: DoubleArray,
+        lengthM: Double,
+        ascentM: Double,
+        endLabel: String,
+    ): CorridorRouteResult {
+        val n = latlon.size / 2
+        if (n < 2) return failCorridor("TEST_KIND=PLAN_MWM_ROUTE\nFAIL: track has fewer than two points\nPLANNER=track\n")
+        lastRouteStyle =
+            when (profile) {
+                TravelProfile.HIKING -> 1
+                TravelProfile.BICYCLE, TravelProfile.BICYCLE_ELECTRIC -> 2
+                else -> 0
+            }
+        val kmh =
+            when (profile) {
+                TravelProfile.HIKING -> 4.5
+                TravelProfile.BICYCLE, TravelProfile.BICYCLE_ELECTRIC -> 16.0
+                else -> 50.0
+            }
+        val dest =
+            JSONObject()
+                .put("kind", "destination")
+                .put("dist_m", lengthM)
+                .put("street", endLabel)
+                .put("text_nb", "Du er ved slutten av sporet")
+                .put("text_en", "You are at the end of the track")
+                .put("voice_nb", "Du er ved slutten av sporet")
+                .put("voice_en", "You are at the end of the track")
+        val route =
+            FfiComapsRoute(
+                code = FfiComapsRouteCode.OK,
+                lengthM = lengthM,
+                timeS = lengthM / (kmh / 3.6),
+                buildTimeS = 0.0,
+                points = (0 until n).map { FfiComapsLatLon(latlon[2 * it], latlon[2 * it + 1]) },
+                errorMessage = null,
+                turnsJson = "[]",
+                instructionsJson = JSONArray().put(dest).toString(),
+                ascentM = ascentM,
+                descentM = 0.0,
+                elevationJson = "[]",
+                routerMode = "track",
+                speedLimitsJson = "[]",
+            )
+        return toCorridor(route, latlon[2 * (n - 1)], latlon[2 * (n - 1) + 1], profile)
+    }
+
     fun toCorridor(
         route: FfiComapsRoute,
         endLat: Double,

@@ -20,7 +20,60 @@ object ComapsPhase6Harness {
     val context: Context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
     /** adb-pullable output directory (shell can write it; app can read it). */
-    const val SHELL_DIR = "/data/local/tmp/phase6b"
+    val SHELL_DIR: String
+        get() =
+            InstrumentationRegistry.getArguments().getString("out_dir") ?: "/data/local/tmp/phase6b"
+
+    /**
+     * Stage the headless CoMaps resources (classificator, drules, countries, ...) into [root] the way the app does:
+     * from the SDK's root assets on the drape build, from `assets/comaps-data` on an SDK-less build. The Phase 4 / 5
+     * suites used to copy only `comaps-data`, which the drape build no longer packages.
+     */
+    fun stageHeadlessAssets(
+        ctx: Context,
+        root: File,
+    ) {
+        fun copy(
+            assetPath: String,
+            dest: File,
+        ) {
+            val children = ctx.assets.list(assetPath).orEmpty()
+            if (children.isNotEmpty()) {
+                dest.mkdirs()
+                for (c in children) copy("$assetPath/$c", File(dest, c))
+                return
+            }
+            val input = runCatching { ctx.assets.open(assetPath) }.getOrNull() ?: return
+            dest.parentFile?.mkdirs()
+            input.use { i -> dest.outputStream().use { o -> i.copyTo(o) } }
+        }
+        val legacy =
+            ctx.assets
+                .list("comaps-data")
+                .orEmpty()
+                .filter { it != "MANIFEST.txt" }
+        if (legacy.isNotEmpty()) {
+            for (n in legacy) copy("comaps-data/$n", File(root, n))
+        } else {
+            // The app stages the minimum for routing (ROOT_ASSETS); search also needs the ICU data
+            // (icudt75l.dat: transliteration). AssetManager.list("") is not a reliable inventory of
+            // every root file on all devices, so ICU is always named explicitly.
+            val plain =
+                ctx.assets
+                    .list("")
+                    .orEmpty()
+                    .filter {
+                        ctx.assets
+                            .list(it)
+                            .orEmpty()
+                            .isEmpty() &&
+                            !it.endsWith(".kotlin_module")
+                    }
+            for (n in (ComapsSessionBootstrap.ROOT_ASSETS + plain + listOf("countries-strings", "icudt75l.dat")).distinct()) {
+                copy(n, File(root, n))
+            }
+        }
+    }
 
     fun productionRoot(): File = File(NaviAppData.resolve(context), "mwm")
 
@@ -199,12 +252,26 @@ object ComapsPhase6Harness {
                 .put("pss_total_kb", memLine("TOTAL PSS") ?: memLine("TOTAL"))
                 .put("native_heap_kb", memLine("Native Heap"))
                 .put("graphics_kb", memLine("Graphics"))
+                .put("cpu_pct_one_core", cpuPct())
                 .put("battery_pct", batt("level"))
                 .put("battery_temp_tenthC", batt("temperature"))
                 .put("thermal_status", status)
                 .put("thermal_temps", temps)
                 .put("drape", NaviMapTestHooks.drapeBasemapVisible)
                 .put("gps", "${NaviMapTestHooks.lastGpsLat},${NaviMapTestHooks.lastGpsLon}")
+        }
+
+        private var lastCpuMs = android.os.Process.getElapsedCpuTime()
+        private var lastWallMs = android.os.SystemClock.elapsedRealtime()
+
+        /** CPU time of this process since the previous sample, in percent of one core. */
+        private fun cpuPct(): Double {
+            val cpu = android.os.Process.getElapsedCpuTime()
+            val wall = android.os.SystemClock.elapsedRealtime()
+            val pct = if (wall > lastWallMs) (cpu - lastCpuMs) * 100.0 / (wall - lastWallMs) else 0.0
+            lastCpuMs = cpu
+            lastWallMs = wall
+            return "%.1f".format(java.util.Locale.US, pct).toDouble()
         }
 
         /** FPS of the drape SurfaceView layer from SurfaceFlinger's per-layer latency ring. */

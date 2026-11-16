@@ -228,6 +228,10 @@ internal fun MwmMapsSection(modifier: Modifier = Modifier) {
                     },
                     modifier = Modifier.testTag("btn_mwm_regions"),
                 ) { Text(stringResource(R.string.mwm_maps_choose)) }
+                OutlinedButton(
+                    onClick = { MwmMigration.showStorage(true) },
+                    modifier = Modifier.testTag("btn_mwm_map_storage"),
+                ) { Text(stringResource(R.string.mwm_storage_open_button)) }
             }
             if (showRegions) {
                 if (st.regionsError != null) {

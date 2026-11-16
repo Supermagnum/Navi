@@ -80,6 +80,23 @@ internal object DrapeColor {
 }
 
 private const val TAG = "ComapsDrapeMap"
+
+/** The APRS sprites generated into the drape atlas (SVG sources in comaps-sdk/navi-symbols and core/src/icons/aprs); anything else keeps the pin. */
+internal fun aprsSymbol(key: String): String? = key.takeIf { it in APRS_ATLAS_SYMBOLS }
+
+private val APRS_ATLAS_SYMBOLS = setOf("aprs_car", "aprs_digi", "aprs_house", "aprs_human")
+
+/** 0 = GPS (blue), 1 = estimated (amber), 2 = lost (grey): selects the drape puck sprite / arrow colour. */
+internal fun puckState(
+    positionLost: Boolean,
+    estimated: Boolean,
+): Int =
+    when {
+        positionLost -> 2
+        estimated -> 1
+        else -> 0
+    }
+
 private const val POLL_MS = 250L
 private const val FOLLOW_CMD_GRACE_MS = 1_500L
 
@@ -90,6 +107,8 @@ internal data class DrapeMark(
     val name: String,
     val icon: Int,
     val color: Int,
+    /** Atlas symbol drawn instead of the predefined pin (Navi sprites, e.g. `aprs_car`); null = pin. */
+    val symbol: String? = null,
 )
 
 /** A polyline overlay (tracks): `latlon` flattened `[lat, lon, ...]`. */
@@ -123,14 +142,16 @@ internal class DrapeOverlays(
         val names = Array(n) { "" }
         val icons = IntArray(n)
         val colors = IntArray(n)
+        val symbols = Array(n) { "" }
         items.forEachIndexed { i, m ->
             latlon[2 * i] = m.lat
             latlon[2 * i + 1] = m.lon
             names[i] = m.name
             icons[i] = m.icon
             colors[i] = m.color
+            symbols[i] = m.symbol.orEmpty()
         }
-        backend.setMarks(group(name), latlon, names, icons, colors)
+        backend.setMarks(group(name), latlon, names, icons, colors, if (items.any { it.symbol != null }) symbols else null)
     }
 
     fun lines(
@@ -606,6 +627,49 @@ internal fun ComapsDrapeMap(
         }
     }
 
+    // Imported GPX: the lines and waypoints as CoMaps tracks / marks; fit the camera when a file arrives.
+    val gpx = GpxImport.ui
+    LaunchedEffect(gpx.doc, gpx.selected, ready) {
+        if (!ready) return@LaunchedEffect
+        overlays.lines("navi-gpx", GpxImport.drapeLines(gpx))
+        overlays.marks("navi-gpx-wpt", GpxImport.drapeMarks(gpx))
+    }
+    LaunchedEffect(gpx.fitEpoch, ready) {
+        if (!ready || gpx.fitEpoch == 0) return@LaunchedEffect
+        val doc = gpx.doc ?: return@LaunchedEffect
+        val line = doc.lines.getOrNull(gpx.selected)
+        val b = doc.bounds
+        var minLat = b?.get(0) ?: 0.0
+        var minLon = b?.get(1) ?: 0.0
+        var maxLat = b?.get(2) ?: 0.0
+        var maxLon = b?.get(3) ?: 0.0
+        if (line != null) {
+            minLat = 90.0
+            minLon = 180.0
+            maxLat = -90.0
+            maxLon = -180.0
+            for (i in 0 until line.pointCount) {
+                val la = line.latlon[2 * i]
+                val lo = line.latlon[2 * i + 1]
+                if (la < minLat) minLat = la
+                if (la > maxLat) maxLat = la
+                if (lo < minLon) minLon = lo
+                if (lo > maxLon) maxLon = lo
+            }
+        }
+        if (maxLat <= minLat && maxLon <= minLon) return@LaunchedEffect
+        backend.fitRect(minLat, minLon, maxLat, maxLon, true)
+        NaviMapTestHooks.lastGpxFit = doubleArrayOf(minLat, minLon, maxLat, maxLon)
+    }
+
+    // Position puck: amber when estimated (IMU dead reckoning), grey when the position is lost.
+    LaunchedEffect(state.positionLost, state.gpsEstimated, ready) {
+        if (!ready) return@LaunchedEffect
+        val puck = puckState(state.positionLost, state.gpsEstimated)
+        backend.setPuckState(puck)
+        NaviMapTestHooks.lastPuckState = puck
+    }
+
     // Marks: the long-press POI, break stops, camping suggestions, tracks.
     LaunchedEffect(
         state.poiLat,
@@ -637,7 +701,7 @@ internal fun ComapsDrapeMap(
         )
         overlays.marks(
             "navi-tracks",
-            state.tracks.map { DrapeMark(it.lat, it.lon, it.label, DrapeIcon.TRANSPORT, DrapeColor.YELLOW) },
+            state.tracks.map { DrapeMark(it.lat, it.lon, it.label, DrapeIcon.TRANSPORT, DrapeColor.YELLOW, aprsSymbol(it.symbolKey)) },
         )
         NaviMapTestHooks.lastTrackFeatureCount = state.tracks.size
         NaviMapTestHooks.lastTrackOverlayCount = state.tracks.size

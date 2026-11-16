@@ -148,6 +148,13 @@ void ApplyAvoidSettings(routing::VehicleType vt)
 }
 }  // namespace
 
+namespace
+{
+std::atomic<bool> g_platformLocked{false};
+}  // namespace
+
+extern "C" void navi_comaps_set_platform_locked(int locked) { g_platformLocked.store(locked != 0); }
+
 extern "C" NaviComapsCode navi_comaps_init(char const * storage_path, char const * writable_path,
                                            char const * sidecar_dir)
 {
@@ -160,16 +167,24 @@ extern "C" NaviComapsCode navi_comaps_init(char const * storage_path, char const
     setenv("NAVI_COMAPS_HEADLESS", "1", 0);
     jni::EnsureJvmFromProcess();
     auto & platform = GetPlatform();
-    platform.SetResourceDir(storage_path);
-    platform.SetWritableDirForTests(writable_path);
-    platform.SetSettingsDir(writable_path);
+    // Drape (Framework) live: it already owns these directories and the style; moving the
+    // resource dir back to the MWM root would break its lazy APK reads (fonts, symbols).
+    bool const locked = g_platformLocked.load();
+    if (!locked)
+    {
+      platform.SetResourceDir(storage_path);
+      platform.SetWritableDirForTests(writable_path);
+      platform.SetSettingsDir(writable_path);
+    }
     if (sidecar_dir && sidecar_dir[0] != '\0')
       setenv("NAVI_WETLAND_SIDECAR_DIR", sidecar_dir, 1);
     else
       unsetenv("NAVI_WETLAND_SIDECAR_DIR");
 
-    LOG(LINFO, ("navi_comaps_init resource=", storage_path, " writable=", writable_path));
-    GetStyleReader().SetCurrentStyle(kDefaultMapStyle);
+    LOG(LINFO, ("navi_comaps_init resource=", storage_path, " writable=", writable_path,
+                " platform_locked=", locked));
+    if (!locked)
+      GetStyleReader().SetCurrentStyle(kDefaultMapStyle);
     g_builder = std::make_unique<routing::routes_builder::RoutesBuilder>(1 /* threads */);
     if (!g_builder)
     {
@@ -333,6 +348,8 @@ extern "C" NaviComapsCode navi_comaps_route(NaviComapsProfile profile, double fr
       }
     }
     out->turns_json = strdup(route.m_turnsJson.empty() ? "[]" : route.m_turnsJson.c_str());
+    out->speed_limits_json =
+        strdup(route.m_speedLimitsJson.empty() ? "[]" : route.m_speedLimitsJson.c_str());
     out->elevation_json =
         strdup(route.m_elevationJson.empty() ? "[]" : route.m_elevationJson.c_str());
     out->router_mode =
@@ -361,6 +378,8 @@ extern "C" void navi_comaps_free_route(NaviComapsRouteResult * result)
   std::free(result->turns_json);
   std::free(result->elevation_json);
   std::free(result->router_mode);
+  std::free(result->speed_limits_json);
+  result->speed_limits_json = nullptr;
   result->points = nullptr;
   result->error_message = nullptr;
   result->turns_json = nullptr;
@@ -570,8 +589,11 @@ NaviComapsSearchResult ConvertResult(search::Result const & r, bool hasPosition,
   }
   out.name = Dup(r.GetString());
   out.address = Dup(r.GetAddress());
-  out.feature_type =
-      Dup(r.GetResultType() == search::Result::Type::Feature ? r.GetLocalizedFeatureType() : std::string());
+  // Do not call GetLocalizedFeatureType(): on Android that goes through
+  // Utils.getStringValueByKey and aborts when Platform has no Context (headless
+  // instrumented tests and early session open before the activity). Name +
+  // address are enough for the search suite and the To-field UI.
+  out.feature_type = Dup(std::string());
   out.mwm_name = Dup(mwm);
   return out;
 }
@@ -689,7 +711,10 @@ extern "C" uint64_t navi_comaps_search(char const * query, int is_category, size
                            : search::SearchParams::kDefaultNumResultsEverywhere);
     params.m_batchSize = search::SearchParams::kDefaultBatchSizeEverywhere;
     params.m_suggestsEnabled = false;
-    params.m_needAddress = true;
+    // Address formatting calls into Android Utils.getStringValueByKey; without a
+    // Platform Context (headless tests / early open) that aborts the process.
+    // Names are enough for ranking and the To-field; addresses stay empty here.
+    params.m_needAddress = false;
     params.m_needHighlighting = false;
     params.m_categorialRequest = is_category != 0;
 
@@ -799,6 +824,36 @@ extern "C" char * navi_comaps_category_query(char const * key, char const * loca
 }
 
 extern "C" void navi_comaps_free_string(char * s) { std::free(s); }
+
+namespace
+{
+std::mutex g_leafMu;
+std::shared_ptr<storage::CountryInfoGetter> g_leafInfo;
+}  // namespace
+
+extern "C" char * navi_comaps_leaf_for_point(double lat, double lon)
+{
+  if (!g_inited.load())
+    return nullptr;
+  try
+  {
+    std::shared_ptr<storage::CountryInfoGetter> info;
+    {
+      std::lock_guard lock(g_leafMu);
+      if (!g_leafInfo)
+        g_leafInfo = storage::CountryInfoReader::CreateCountryInfoGetter(GetPlatform());
+      info = g_leafInfo;
+    }
+    if (!info)
+      return nullptr;
+    return strdup(info->GetRegionCountryId(mercator::FromLatLon(lat, lon)).c_str());
+  }
+  catch (std::exception const & e)
+  {
+    LOG(LERROR, ("navi_comaps_leaf_for_point exception:", e.what()));
+    return nullptr;
+  }
+}
 
 extern "C" NaviComapsCode navi_comaps_reverse_geocode(double lat, double lon, NaviComapsAddress * out)
 {

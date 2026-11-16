@@ -238,6 +238,8 @@ class MainActivity : ComponentActivity() {
         }
         super.onCreate(savedInstanceState)
         MwmClientBootstrap.ensureInitialized()
+        // MWM path: the old .rkyv pack jobs (place index, basemap archives) must not run on their own.
+        if (MwmClientBootstrap.isEnabled()) IdlePackJobs.executeJobs = false
         // Open the CoMaps session on the installed mwm/ root (background, never throws).
         ComapsSessionBootstrap.openAsync(applicationContext)
         // Volume rocker / emulator media mute must control STREAM_MUSIC.
@@ -248,6 +250,8 @@ class MainActivity : ComponentActivity() {
         // activity in this process; this launch may set a new one via extras.
         NaviMapTestHooks.clearDebugGpsInject()
         applyNaviLaunchExtras(intent)
+        // GPX open-with / share (not again after a configuration recreate).
+        if (savedInstanceState == null && MwmClientBootstrap.isEnabled()) GpxImport.importFromIntent(this, intent)
         runCatching { uniffi.navi.initNativeLogging() }
         // Bind place-search display locale before any native search (Compose
         // LaunchedEffect can race debug intents / early typeahead).
@@ -356,6 +360,8 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         // singleTask: am start with camera extras must apply without process restart.
         applyNaviLaunchExtras(intent)
+        // GPX open-with / share into a running Navi.
+        if (MwmClientBootstrap.isEnabled()) GpxImport.importFromIntent(this, intent)
     }
 
     /**
@@ -1277,9 +1283,13 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             runCatching { InstalledMaps.refresh(context) }
-            IdlePackJobs.executeJobs = true
-            IdlePackJobs.attachContext(context)
-            IdlePackJobs.onAppIdle()
+            // MWM path: the old pack pipeline (place index, PMTiles basemap, skeletons) never starts by
+            // itself; leftover partial .rkyv downloads are the migration's business (Phase 7).
+            if (!MwmClientBootstrap.isEnabled()) {
+                IdlePackJobs.executeJobs = true
+                IdlePackJobs.attachContext(context)
+                IdlePackJobs.onAppIdle()
+            }
             val summary = InstalledMaps.summaryText()
             android.util.Log.i("InstalledMaps", summary)
             runCatching {
@@ -1300,9 +1310,11 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
         if (packCatalogEpoch == 0) return@LaunchedEffect
         withContext(Dispatchers.IO) {
             runCatching { InstalledMaps.refresh(context) }
-            IdlePackJobs.executeJobs = true
-            IdlePackJobs.attachContext(context)
-            IdlePackJobs.onAppIdle()
+            if (!MwmClientBootstrap.isEnabled()) {
+                IdlePackJobs.executeJobs = true
+                IdlePackJobs.attachContext(context)
+                IdlePackJobs.onAppIdle()
+            }
         }
         mapsEpoch += 1
         if (IdlePackJobs.lastRecheckAccepted() > 0) {
@@ -1512,6 +1524,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     var campingSessionDisableMessage by remember { mutableStateOf<String?>(null) }
     var hideChrome by remember { mutableStateOf(false) }
     var lastCatFollowTickMs by remember { mutableStateOf(0L) }
+    var lastCatFailureSeq by remember { mutableStateOf(0L) }
 
     fun applyCatNetworkFollow() {
         val choice = MapHudPrefs.loadCatNetworkChoice(context)
@@ -3163,19 +3176,28 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
             val tickEveryMs = (5_000.0 / simScale).toLong().coerceAtLeast(250L)
             if (nowMs - lastCatFollowTickMs >= tickEveryMs) {
                 lastCatFollowTickMs = nowMs
-                withContext(Dispatchers.Default) {
-                    uniffi.navi.catPluginSetTimeScale(simScale)
-                    uniffi.navi.catPluginSetPosition(lat, lon)
-                    val statusSnap = uniffi.navi.catPluginStatusJson()
-                    val followId =
-                        runCatching {
-                            org.json.JSONObject(statusSnap).optString("follow_network_id")
-                        }.getOrDefault("")
-                    val tickMsg = uniffi.navi.catPluginTickGuest()
-                    android.util.Log.i(
-                        "NaviCat",
-                        "follow_tick lat=$lat lon=$lon follow=$followId $tickMsg",
-                    )
+                val programFailure =
+                    withContext(Dispatchers.Default) {
+                        uniffi.navi.catPluginSetTimeScale(simScale)
+                        uniffi.navi.catPluginSetPosition(lat, lon)
+                        val statusSnap = uniffi.navi.catPluginStatusJson()
+                        val followId =
+                            runCatching {
+                                org.json.JSONObject(statusSnap).optString("follow_network_id")
+                            }.getOrDefault("")
+                        val tickMsg = uniffi.navi.catPluginTickGuest()
+                        android.util.Log.i(
+                            "NaviCat",
+                            "follow_tick lat=$lat lon=$lon follow=$followId $tickMsg",
+                        )
+                        catProgramFailure(uniffi.navi.catPluginStatusJson())
+                    }
+                // The radio refused the frequency after every attempt: say so even when the CAT sheet is closed.
+                if (programFailure != null && programFailure.seq > lastCatFailureSeq) {
+                    lastCatFailureSeq = programFailure.seq
+                    val text = catProgramFailureText(context, programFailure)
+                    status = text
+                    android.util.Log.i("NaviCat", "cat_vfo_failed_notice seq=${programFailure.seq} $text")
                 }
             }
         }
@@ -3895,6 +3917,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     }
 
     LaunchedEffect(dataDir) {
+        // MWM path: never resume the old pack / place-index / PMTiles pipeline on its own.
+        if (MwmClientBootstrap.isEnabled()) return@LaunchedEffect
         // Resume incomplete packs / place-index / basemap from region-download.json
         // (or synthesize from packs-on-disk when place index / basemap still missing).
         RegionDownloadBackground.ensureStartedFromPending(
@@ -3947,6 +3971,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     // place_index.db and must never run on the Compose main dispatcher (ANR on SM-P613
     // when Use GPS also queries the same DB).
     LaunchedEffect(Unit) {
+        // MWM path: search comes from CoMaps; no passive place-index / indexed-maps background work.
+        if (MwmClientBootstrap.isEnabled()) return@LaunchedEffect
         while (isActive) {
             val regionPath = selectedGeofabrikPath.trim().trim('/')
             val planning = planningRoute
@@ -7840,6 +7866,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 onDismiss = { mwmMissingMaps = null },
             )
         }
+        // Phase 7: .rkyv -> leaf-set migration offer / progress / old-maps question / Map storage.
+        MwmMigrationHost()
         RouteSnapChoiceDialog(
             state = snapChoiceState,
             onRequestSnap = {
@@ -9824,6 +9852,56 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
             }
         }
 
+        if (MwmClientBootstrap.isEnabled() && !hideChrome && !showTools) {
+            GpxImportHost(
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 88.dp),
+                onNavigateAlong = { line ->
+                    val n = line.pointCount
+                    val start = Waypoint(name = line.name, lat = line.latlon[0], lon = line.latlon[1])
+                    val end = Waypoint(name = line.name, lat = line.latlon[2 * (n - 1)], lon = line.latlon[2 * (n - 1) + 1])
+                    val res =
+                        MwmProductionPlanner.trackRoute(
+                            profile = profile,
+                            latlon = line.latlon,
+                            lengthM = line.lengthM,
+                            ascentM = line.ascentM ?: 0.0,
+                            endLabel = line.name,
+                        )
+                    fromPoint = start
+                    fromFollowsGps = false
+                    viaPoints = emptyList()
+                    toPoint = end
+                    applyPlannedRoute(res)
+                    val msg = context.getString(R.string.gpx_navigating, line.name, "%.1f km".format(java.util.Locale.US, line.lengthM / 1000.0))
+                    status = msg
+                    GpxImport.noteAction(msg)
+                    android.util.Log.i("GpxImport", "navigate_along name=${line.name} points=$n length_m=${line.lengthM.toInt()} profile=$profile")
+                    GpxImport.hidePanel()
+                },
+                onRouteToStart = { line ->
+                    val gpsKnown = mapState.gpsLat != 0.0 || mapState.gpsLon != 0.0
+                    val target = Waypoint(name = line.name + " (start)", lat = line.latlon[0], lon = line.latlon[1])
+                    if (!gpsKnown) {
+                        val msg = "No position yet: set a start, then plan to ${target.name}"
+                        status = msg
+                        GpxImport.noteAction(msg)
+                        toPoint = target
+                    } else {
+                        fromPoint = Waypoint(name = "My position", lat = mapState.gpsLat, lon = mapState.gpsLon)
+                        fromFollowsGps = true
+                        viaPoints = emptyList()
+                        toPoint = target
+                        val msg = context.getString(R.string.gpx_route_to_start_set, line.name)
+                        status = msg
+                        GpxImport.noteAction(msg)
+                        android.util.Log.i("GpxImport", "route_to_start name=${line.name} from=${mapState.gpsLat},${mapState.gpsLon} to=${target.lat},${target.lon}")
+                        planKick += 1
+                        GpxImport.hidePanel()
+                    }
+                },
+            )
+        }
+
         if (showTools && !hideChrome) {
             Surface(
                 shape = RoundedCornerShape(12.dp),
@@ -9856,6 +9934,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     ) {
                         if (mwmDrapeMap || MwmClientBootstrap.isEnabled()) {
                             MwmMapsSection()
+                            GpxImportButton()
                         }
                         PluginSettingsSection(
                             weatherPluginEnabled = weatherPluginEnabled,

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <!-- Navi original (GPL-3.0-or-later): simple car, side view. Drape atlas sprite; shapes only, no text. -->
+  <rect width="48" height="48" fill="none"/>
+  <path d="M6 30 L9 21 Q10 18 14 18 L21 18 L26 12 L34 12 Q36 12 37 14 L40 21 Q43 22 43 26 L43 31 Q43 32 42 32 L6 32 Q5 32 5 31 Z" fill="#1565c0" stroke="#0d47a1" stroke-width="1.2" stroke-linejoin="round"/>
+  <path d="M24 19 L27 14.5 L33 14.5 L36 19 Z" fill="#e3f2fd"/>
+  <circle cx="14" cy="33" r="5" fill="#212121" stroke="#ffffff" stroke-width="1.2"/>
+  <circle cx="35" cy="33" r="5" fill="#212121" stroke="#ffffff" stroke-width="1.2"/>
+  <circle cx="14" cy="33" r="1.8" fill="#bdbdbd"/>
+  <circle cx="35" cy="33" r="1.8" fill="#bdbdbd"/>
+</svg>

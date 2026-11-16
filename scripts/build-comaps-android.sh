@@ -32,6 +32,13 @@ while IFS= read -r patch || [[ -n "$patch" ]]; do
   git apply --whitespace=nowarn "${ROOT}/patches/comaps/${patch}"
 done < "${ROOT}/patches/comaps/series"
 
+# The C ABI shim has one source of truth: native/comaps_shim. Patch 0002 only creates the file in the
+# CoMaps tree (an older copy); the repository version (Phase 5 search additions plus the drape changes that
+# patch 0004 also carries) is installed over it so a build from the pinned commit is the same as the one
+# the Rust side (core/src/mwm/*.rs extern declarations) expects.
+install -m 0644 "${ROOT}/native/comaps_shim/navi_comaps.cpp" "${ROOT}/native/comaps_shim/navi_comaps.h" \
+  "${SRC}/android/sdk/src/main/cpp/navi/"
+
 mkdir -p "$BUILD"
 cmake -S "$SRC" -B "$BUILD" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \

@@ -24,11 +24,15 @@ public final class NaviDrape
   public static native void nativeBlockTapEvents(boolean block);
   public static native double[] nativeScreenToLatLon(float x, float y);
   public static native void nativeRegisterMaps();
+  /** Re-scan the writable dir after a leaf MWM was deleted (releases the file). */
+  public static native void nativeReloadMaps();
+  /** 0 = GPS, 1 = estimated (amber), 2 = lost (grey). */
+  public static native void nativeSetPuckState(int state);
   public static native void nativeSetSetting(String key, String value);
 
   // Overlays.
   public static native long nativeCreateGroup(String name);
-  public static native void nativeSetMarks(long group, double[] latlon, String[] names, int[] icons, int[] colors);
+  public static native void nativeSetMarks(long group, double[] latlon, String[] names, int[] icons, int[] colors, String[] symbols);
   public static native void nativeSetTracks(long group, int[] counts, double[] latlon, int[] argb, float[] widths);
   public static native void nativeAddSubroute(double[] latlon, int type, int[] turnIdx);
   public static native void nativeClearRoute();

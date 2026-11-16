@@ -16,9 +16,8 @@ use navi_cat::benshi::{
     ALLOWED_PRODUCT_VR_N76, ALLOWED_PRODUCT_VR_N76_FW,
 };
 use navi_cat::gating::{GateDecision, GateStatus};
-use navi_cat::program::{program_vfo1_verified, ProgramRequest};
 use navi_cat::types::{RigBackend, RigError, VfoState};
-use navi_cat::{CatService, FfiRigBackend, RepeaterDb, TcpRigBackend};
+use navi_cat::{CatService, FfiRigBackend, RepeaterDb, RetryPolicy, TcpRigBackend};
 use navi_plugin_host::{
     cranelift_abi_supported, plugin_set_enabled, Capability, FilePluginKv, HostApi, PluginHost,
     PluginKvStatus, PluginLimits, PoiWrite, Position, DEFAULT_MEMORY_BYTES,
@@ -28,6 +27,8 @@ const CAT_NAME: &str = "cat";
 const ENABLE_FILE: &str = "plugin_enable_cat.json";
 const KV_REL: &str = "plugin_kv/cat.json";
 const PLUGINS_REL: &str = "plugins";
+/// Plugin KV key the guest reads at its next tick (see `navi-plugin-cats` `FOLLOW_RESULT_KEY`).
+const FOLLOW_RESULT_KEY: &str = "cat_follow_result";
 
 #[derive(Debug, Default)]
 struct OfflineRig;
@@ -700,6 +701,10 @@ pub fn cat_plugin_tick_guest() -> String {
                 .map(|s| s.to_string())
         })
         .unwrap_or_default();
+    let follow_now_unix_s = serde_json::from_str::<serde_json::Value>(&status_json)
+        .ok()
+        .and_then(|v| v.get("now_unix_s").and_then(|x| x.as_u64()))
+        .unwrap_or(0);
     // Named follow: shrink host JSON so the WASM guest query buffer is not truncated
     // (Ostlandet full near-set is ~70–80 KiB; guest used to cap at 64 KiB → live=0).
     let follow_filter = match follow_id.as_str() {
@@ -775,60 +780,19 @@ pub fn cat_plugin_tick_guest() -> String {
     // Re-open KV after the guest returns: plugin_kv_set flushes to disk on each
     // write, so cat_follow_switch is visible here when the guest requested a tune.
     if let Ok(mut kv) = FilePluginKv::open(session.kv_path()) {
-        if let Some(site_id) = kv.get("cat_follow_switch") {
+        if let Some(site_id) = kv.get("cat_follow_switch").filter(|s| !s.is_empty()) {
             let _ = kv.set("cat_follow_switch", "");
             log::info!(target: "NaviCat", "follow_switch site_id={site_id}");
-            let site = session
-                .cat
-                .db
-                .list_sites()
-                .into_iter()
-                .find(|s| s.id == site_id);
-            let Some(site) = site else {
-                log::warn!(
-                    target: "NaviCat",
-                    "VFO1 skip: site_id={site_id} not in repeater db",
-                );
-                return match call {
-                    Ok(outcome) => format!("OK: {outcome:?}"),
-                    Err(e) => format!("FAIL: {e}"),
-                };
-            };
-            let burst = site.access == navi_cat::AccessTone::ToneBurst1750;
-            let shift = site.shift_mhz.unwrap_or(f64::NAN);
-            let req = ProgramRequest {
-                freq_out_mhz: site.freq_out_mhz,
-                shift_mhz: shift,
-                ctcss_hz: if burst { None } else { site.ctcss_hz },
-                dcs_code: if burst { None } else { site.dcs_code },
-                mode: "FM".into(),
-                passband_hz: 12_500,
-                vfo: "VFOA".into(),
-                leaves_follow: false,
-            };
-            match program_vfo1_verified(&mut session.cat.backend, &req) {
-                Ok(reported) => {
-                    log::info!(
-                        target: "NaviCat",
-                        "VFO1 program {} {} freq={:.3} shift={:.3} ctcss={:?} dcs={:?} readback={reported:?}",
-                        site.callsign,
-                        site.id,
-                        site.freq_out_mhz,
-                        shift,
-                        if burst { None } else { site.ctcss_hz },
-                        if burst { None } else { site.dcs_code },
-                    );
-                }
-                Err(e) => {
-                    log::warn!(
-                        target: "NaviCat",
-                        "VFO1 program FAIL {} {} freq={:.3}: {e}",
-                        site.callsign,
-                        site.id,
-                        site.freq_out_mhz,
-                    );
-                }
-            }
+            // Bounded retry (navi-cat follow_program): up to VFO_PROGRAM_ATTEMPTS tries with
+            // VFO_RETRY_PAUSE between them. The report goes back to the guest, which
+            // restores its follow state on a failure instead of keeping it as tuned.
+            let report = session.cat.program_follow_site(
+                &site_id,
+                follow_now_unix_s,
+                &RetryPolicy::default(),
+                &mut std::thread::sleep,
+            );
+            let _ = kv.set(FOLLOW_RESULT_KEY, &report.to_json());
         }
     }
     match call {
