@@ -197,6 +197,59 @@ pub fn activate_release(data_dir: &Path, version: &str) -> Result<PathBuf, Relea
     Ok(dest)
 }
 
+/// Add the leaves + sidecars of a complete staging tree to the **already active** release of
+/// the same version, file by file (atomic renames inside one filesystem). Existing leaves are
+/// never removed, so a running router / drape that has them open keeps working, and an
+/// interrupted merge leaves a valid (smaller) release. World overlays in the staging tree (only
+/// present when they were downloaded) are promoted to the MWM root. The staging tree is removed.
+pub fn merge_staging_into_release(
+    data_dir: &Path,
+    version: &str,
+) -> Result<PathBuf, ReleaseSwitchError> {
+    let staging = staging_dir(data_dir, version);
+    if !staging_is_complete(&staging) {
+        return Err(ReleaseSwitchError::IncompleteStaging(
+            version.to_string(),
+            "missing .complete marker — refuse partial merge".into(),
+        ));
+    }
+    let dest = release_dir(data_dir, version);
+    if !dest.is_dir() {
+        return Err(ReleaseSwitchError::NoActiveRelease);
+    }
+    let has_world = WORLD_OVERLAY_LEAF_IDS
+        .iter()
+        .all(|id| staging_world_path(&staging, id).is_file());
+    if has_world {
+        promote_world_overlays_to_root(data_dir, &staging, version)?;
+    }
+    for sub in ["leaves", "sidecars"] {
+        let src_dir = staging.join(sub);
+        if !src_dir.is_dir() {
+            continue;
+        }
+        let dst_dir = dest.join(sub);
+        fs::create_dir_all(&dst_dir)?;
+        for entry in fs::read_dir(&src_dir)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            if name.to_string_lossy().ends_with(".partial") {
+                continue;
+            }
+            fs::rename(entry.path(), dst_dir.join(&name))?;
+        }
+    }
+    for name in ["attribution.json", "ATTRIBUTION.md"] {
+        let from = staging.join(name);
+        let to = dest.join(name);
+        if from.is_file() && !to.exists() {
+            let _ = fs::rename(&from, &to);
+        }
+    }
+    fs::remove_dir_all(&staging)?;
+    Ok(dest)
+}
+
 /// Refuse routing when active release and root World overlays disagree (or
 /// World files are absent). Call before opening a CoMaps session.
 pub fn assert_world_matches_active(data_dir: &Path) -> Result<ActiveRelease, ReleaseSwitchError> {
@@ -338,6 +391,55 @@ mod tests {
         assert!(matches!(
             err,
             ReleaseSwitchError::WorldVersionMismatch { .. }
+        ));
+    }
+
+    #[test]
+    fn merge_adds_leaves_and_keeps_the_active_release() {
+        let dir = tempdir().unwrap();
+        let data = dir.path();
+        let s1 = begin_staging(data, "261105").unwrap();
+        write_staging_with_world(&s1, b"a", b"world-261105");
+        fs::write(s1.join("sidecars").join("A.navi-sidecar.v1.zst"), b"sa").unwrap();
+        mark_staging_complete(&s1).unwrap();
+        activate_release(data, "261105").unwrap();
+        let world_before = fs::read(world_mwm_path(data)).unwrap();
+
+        // Incremental install of leaf B into the same release: no World files in staging.
+        let s2 = begin_staging(data, "261105").unwrap();
+        fs::write(s2.join("leaves").join("B.mwm"), b"bb").unwrap();
+        fs::write(s2.join("sidecars").join("B.navi-sidecar.v1.zst"), b"sb").unwrap();
+        mark_staging_complete(&s2).unwrap();
+        let dest = merge_staging_into_release(data, "261105").unwrap();
+
+        assert_eq!(fs::read(dest.join("leaves/A.mwm")).unwrap(), b"a");
+        assert_eq!(fs::read(dest.join("leaves/B.mwm")).unwrap(), b"bb");
+        assert_eq!(
+            fs::read(dest.join("sidecars/B.navi-sidecar.v1.zst")).unwrap(),
+            b"sb"
+        );
+        assert!(!s2.exists(), "staging removed after the merge");
+        assert_eq!(fs::read(world_mwm_path(data)).unwrap(), world_before);
+        assert_eq!(
+            read_active_version(data).unwrap().unwrap().version,
+            "261105"
+        );
+    }
+
+    #[test]
+    fn merge_refuses_incomplete_staging_and_missing_release() {
+        let dir = tempdir().unwrap();
+        let data = dir.path();
+        let s = begin_staging(data, "261105").unwrap();
+        fs::write(s.join("leaves").join("B.mwm"), b"b").unwrap();
+        assert!(matches!(
+            merge_staging_into_release(data, "261105"),
+            Err(ReleaseSwitchError::IncompleteStaging(_, _))
+        ));
+        mark_staging_complete(&s).unwrap();
+        assert!(matches!(
+            merge_staging_into_release(data, "261105"),
+            Err(ReleaseSwitchError::NoActiveRelease)
         ));
     }
 }

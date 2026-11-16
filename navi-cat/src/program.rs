@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::bandplan::validate_shift;
 use crate::types::{RigBackend, RigError, ShiftDir, VfoState};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,6 +76,12 @@ pub enum ProgramError {
     },
     #[error("field unverified (cannot read back): {0}")]
     Unverified(String),
+    #[error("invalid shift {shift_mhz} MHz at {freq_mhz} MHz: {reason}")]
+    InvalidShift {
+        freq_mhz: f64,
+        shift_mhz: f64,
+        reason: String,
+    },
 }
 
 impl ProgramError {
@@ -82,6 +89,7 @@ impl ProgramError {
         match self {
             Self::ReadbackMismatch { field, .. } => Some(field),
             Self::Unverified(f) => Some(f),
+            Self::InvalidShift { .. } => Some("shift"),
             _ => None,
         }
     }
@@ -195,6 +203,23 @@ pub fn program_vfo1_verified(
     let gate = backend.gate();
     if !gate.allowed {
         return Err(ProgramError::NotGated(gate.reason));
+    }
+    // An unknown shift (NaN) leaves the rig shift untouched. A known shift must be
+    // a plausible standard offset: never guess, never clamp.
+    if req.shift_mhz.is_finite() {
+        if let Err(why) = validate_shift(req.freq_out_mhz, req.shift_mhz) {
+            log::warn!(
+                target: "NaviCat",
+                "cat_skip invalid_shift stage=program freq_mhz={} shift_mhz={} reason=\"{why}\"",
+                req.freq_out_mhz,
+                req.shift_mhz,
+            );
+            return Err(ProgramError::InvalidShift {
+                freq_mhz: req.freq_out_mhz,
+                shift_mhz: req.shift_mhz,
+                reason: why.to_string(),
+            });
+        }
     }
     if backend.get_ptt()? {
         return Err(ProgramError::PttActive);
@@ -364,6 +389,49 @@ mod tests {
             .log
             .iter()
             .all(|c| !c.to_ascii_lowercase().contains("tburst")));
+    }
+
+    #[test]
+    fn absurd_shift_is_refused_before_any_rig_write() {
+        let mut req = base_req();
+        req.freq_out_mhz = 145.2375;
+        req.shift_mhz = 287.9375;
+        let mut rig = MockRig {
+            state: want_from_request(&base_req()),
+            ptt: false,
+            fail_ctcss_once: false,
+            calls: 0,
+            log: Vec::new(),
+        };
+        let err = program_vfo1_verified(&mut rig, &req).unwrap_err();
+        assert!(matches!(err, ProgramError::InvalidShift { .. }), "{err}");
+        assert_eq!(err.field(), Some("shift"));
+        assert_eq!(rig.calls, 0, "rig must not be written");
+        assert!(rig.log.is_empty());
+    }
+
+    #[test]
+    fn valid_two_metre_and_seventy_cm_shifts_program() {
+        for (freq, shift) in [
+            (145.725, -0.6),
+            (434.775, -2.0),
+            (433.0, -1.6),
+            (145.5, 0.0),
+        ] {
+            let mut req = base_req();
+            req.freq_out_mhz = freq;
+            req.shift_mhz = shift;
+            let mut rig = MockRig {
+                state: want_from_request(&req),
+                ptt: false,
+                fail_ctcss_once: false,
+                calls: 0,
+                log: Vec::new(),
+            };
+            let r = program_vfo1_verified(&mut rig, &req)
+                .unwrap_or_else(|e| panic!("{freq} {shift}: {e}"));
+            assert_eq!(r.freq_hz, (freq * 1e6).round() as u64);
+        }
     }
 
     #[test]

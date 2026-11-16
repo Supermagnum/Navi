@@ -516,4 +516,22 @@
     <string name="style_note_offline_hillshade">Offline Protomaps + Mapterhorn DEM hillshade</string>
     <string name="label_last_stop">Last stop</string>
     <string name="status_route_planning_closed">Route planning closed</string>
+    <string name="drape_map_failed">The map engine could not start</string>
+    <string name="drape_map_starting">Starting the map engine...</string>
+    <string name="drape_no_maps_title">No offline maps installed</string>
+    <string name="drape_no_maps_body">Download a region to show the map and plan routes. Maps are stored on this device and work without a connection.</string>
+    <string name="drape_open_map_downloads">Download maps</string>
+    <string name="mwm_maps_title">Offline maps</string>
+    <string name="mwm_maps_none">No maps installed</string>
+    <string name="mwm_maps_installed">Release %1$s: %2$d regions, %3$d with Navi route layers</string>
+    <string name="mwm_maps_done">Maps are installed and ready</string>
+    <string name="mwm_maps_failed">Map download failed: %1$s</string>
+    <string name="mwm_maps_choose">Choose region</string>
+    <string name="mwm_maps_download">Download</string>
+    <string name="mwm_missing_title">Maps missing for this route</string>
+    <string name="mwm_missing_body">The route needs these map regions, which are not installed: %1$s. Download them now?</string>
+    <string name="settings_map_theme">Map day and night</string>
+    <string name="settings_map_theme_system">Follow system setting</string>
+    <string name="settings_map_theme_sun">Automatic by sunrise and sunset at the current position</string>
+    <string name="profile_limits_not_applied">Vehicle limits (height, weight, axle load) are not applied on this map type</string>
 </resources>

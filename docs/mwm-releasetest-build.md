@@ -51,12 +51,14 @@ acceptance (`pendingRoute`, `requestStartRouteSimulation`, `requestRecenterGps`,
 therefore work against the release-optimised native code. The debug-only intent
 extras (`NaviDebugIntent`, debug source set) are still absent.
 
-## Hybrid CoMaps drape (Phase 6)
+## CoMaps drape (Phase 6b)
 
 When the CoMaps checkout exists (`third_party/comaps`, `NAVI_COMAPS_SRC` or
 `../Navi-local-artifacts/comaps-<sha8>`), `settings.gradle.kts` includes `:comaps-sdk`
-and the app packages the CoMaps Java SDK. Measured releasetest APK on this branch:
-**171.2 MB** with the SDK versus **134.1 MB** with `-Pnavi.comapsDrape=false`
-(SDK assets about 14 MB, stored uncompressed because CoMaps reads APK entries
-without inflating). `docs/mwm-phase6-drape.md` has the device acceptance
-procedure (`scripts/phase6-device-accept.sh`).
+and the app packages the CoMaps Java SDK; with the MWM flag ON the drape is the only map
+renderer. Measured releasetest APK on this branch (`-PnaviAbis=arm64-v8a`): **94.3 MB**
+(breakdown in `docs/mwm-phase6b-drape.md` section 12). The symbol atlases come from
+`scripts/generate-comaps-symbols.py` (needs `rsvg-convert` and Pillow).
+`docs/mwm-phase6b-drape.md` has the device acceptance procedure
+(`scripts/phase6-device-accept.sh install | clean | run <test>... | pull`). Espa-start tests
+hold Espa as the GPS fix with Navi's own debug GPS hold; no third-party mock-location app.

@@ -1259,6 +1259,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_set_position(
     ): Int
+    external fun uniffi_navi_checksum_func_cat_plugin_set_time_scale(
+    ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_status_json(
     ): Int
     external fun uniffi_navi_checksum_func_cat_plugin_tick_guest(
@@ -1296,6 +1298,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_comaps_category_keys(
     ): Int
     external fun uniffi_navi_checksum_func_comaps_category_query(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_leaf_for_point(
     ): Int
     external fun uniffi_navi_checksum_func_comaps_native_available(
     ): Int
@@ -1343,9 +1347,21 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_comaps_session_snap_suggestion(
     ): Int
+    external fun uniffi_navi_checksum_func_comaps_set_platform_locked(
+    ): Int
     external fun uniffi_navi_checksum_func_mwm_production_planner_active(
     ): Int
     external fun uniffi_navi_checksum_func_set_mwm_production_planner_active(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_install_cancel(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_install_leaves(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_install_progress(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_installed(
+    ): Int
+    external fun uniffi_navi_checksum_func_mwm_list_regions(
     ): Int
     external fun uniffi_navi_checksum_method_ffitrackstore_all(
     ): Int
@@ -1944,6 +1960,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_set_position(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    external fun uniffi_navi_fn_func_cat_plugin_set_time_scale(`scale`: Double,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_status_json(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cat_plugin_tick_guest(uniffi_out_err: UniffiRustCallStatus, 
@@ -1981,6 +1999,8 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_comaps_category_keys(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_comaps_category_query(`key`: RustBuffer.ByValue,`locale`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_leaf_for_point(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_comaps_native_available(uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
@@ -2028,10 +2048,22 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_navi_fn_func_comaps_session_snap_suggestion(`profile`: RustBuffer.ByValue,`code`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`radiusM`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_set_platform_locked(`locked`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_navi_fn_func_mwm_production_planner_active(uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_navi_fn_func_set_mwm_production_planner_active(`active`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    external fun uniffi_navi_fn_func_mwm_install_cancel(uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_mwm_install_leaves(`dataDir`: RustBuffer.ByValue,`naviOrigin`: RustBuffer.ByValue,`leafIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_install_progress(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_installed(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_mwm_list_regions(`naviOrigin`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun ffi_navi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun ffi_navi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -2886,6 +2918,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_cat_plugin_set_position() and 0xFFFF) != 22746) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_cat_plugin_set_time_scale() and 0xFFFF) != 63045) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_cat_plugin_status_json() and 0xFFFF) != 60742) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2943,6 +2978,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_comaps_category_query() and 0xFFFF) != 57595) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_comaps_leaf_for_point() and 0xFFFF) != 47602) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_comaps_native_available() and 0xFFFF) != 20822) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2982,7 +3020,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_comaps_search_start() and 0xFFFF) != 49058) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_comaps_session_cancel() and 0xFFFF) != 3384) {
+    if ((lib.uniffi_navi_checksum_func_comaps_session_cancel() and 0xFFFF) != 31008) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_comaps_session_close() and 0xFFFF) != 44861) {
@@ -3012,10 +3050,28 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_comaps_session_snap_suggestion() and 0xFFFF) != 44768) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_comaps_set_platform_locked() and 0xFFFF) != 4557) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_mwm_production_planner_active() and 0xFFFF) != 36651) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_set_mwm_production_planner_active() and 0xFFFF) != 21992) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_install_cancel() and 0xFFFF) != 16036) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_install_leaves() and 0xFFFF) != 63303) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_install_progress() and 0xFFFF) != 10370) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_installed() and 0xFFFF) != 65171) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_mwm_list_regions() and 0xFFFF) != 46636) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_method_ffitrackstore_all() and 0xFFFF) != 684) {
@@ -5545,6 +5601,12 @@ data class FfiComapsRoute (
     var `elevationJson`: kotlin.String
     , 
     var `routerMode`: kotlin.String
+    , 
+    /**
+     * JSON int array, one entry per polyline segment: posted maxspeed km/h, -1 untagged or not
+     * applicable (foot, bike), -2 explicitly unlimited.
+     */
+    var `speedLimitsJson`: kotlin.String
     
 ){
     
@@ -5573,6 +5635,7 @@ public object FfiConverterTypeFfiComapsRoute: FfiConverterRustBuffer<FfiComapsRo
             FfiConverterDouble.read(buf),
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
         )
     }
 
@@ -5588,7 +5651,8 @@ public object FfiConverterTypeFfiComapsRoute: FfiConverterRustBuffer<FfiComapsRo
             FfiConverterDouble.allocationSize(value.`ascentM`) +
             FfiConverterDouble.allocationSize(value.`descentM`) +
             FfiConverterString.allocationSize(value.`elevationJson`) +
-            FfiConverterString.allocationSize(value.`routerMode`)
+            FfiConverterString.allocationSize(value.`routerMode`) +
+            FfiConverterString.allocationSize(value.`speedLimitsJson`)
     )
 
     override fun write(value: FfiComapsRoute, buf: ByteBuffer) {
@@ -5604,6 +5668,7 @@ public object FfiConverterTypeFfiComapsRoute: FfiConverterRustBuffer<FfiComapsRo
             FfiConverterDouble.write(value.`descentM`, buf)
             FfiConverterString.write(value.`elevationJson`, buf)
             FfiConverterString.write(value.`routerMode`, buf)
+            FfiConverterString.write(value.`speedLimitsJson`, buf)
     }
 }
 
@@ -6090,6 +6155,224 @@ public object FfiConverterTypeFfiLiveHazardLoadStats: FfiConverterRustBuffer<Ffi
             FfiConverterUInt.write(value.`bumps`, buf)
             FfiConverterULong.write(value.`compactJsonUtf8`, buf)
             FfiConverterDouble.write(value.`coneM`, buf)
+    }
+}
+
+
+
+data class FfiMwmInstallProgress (
+    var `running`: kotlin.Boolean
+    , 
+    var `finished`: kotlin.Boolean
+    , 
+    var `ok`: kotlin.Boolean
+    , 
+    var `error`: kotlin.String?
+    , 
+    var `version`: kotlin.String
+    , 
+    var `downloadedLeaves`: kotlin.UInt
+    , 
+    var `alreadyInstalledLeaves`: kotlin.UInt
+    , 
+    var `sidecarsInstalled`: kotlin.UInt
+    , 
+    var `activatedNewRelease`: kotlin.Boolean
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiMwmInstallProgress: FfiConverterRustBuffer<FfiMwmInstallProgress> {
+    override fun read(buf: ByteBuffer): FfiMwmInstallProgress {
+        return FfiMwmInstallProgress(
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiMwmInstallProgress) = (
+            FfiConverterBoolean.allocationSize(value.`running`) +
+            FfiConverterBoolean.allocationSize(value.`finished`) +
+            FfiConverterBoolean.allocationSize(value.`ok`) +
+            FfiConverterOptionalString.allocationSize(value.`error`) +
+            FfiConverterString.allocationSize(value.`version`) +
+            FfiConverterUInt.allocationSize(value.`downloadedLeaves`) +
+            FfiConverterUInt.allocationSize(value.`alreadyInstalledLeaves`) +
+            FfiConverterUInt.allocationSize(value.`sidecarsInstalled`) +
+            FfiConverterBoolean.allocationSize(value.`activatedNewRelease`)
+    )
+
+    override fun write(value: FfiMwmInstallProgress, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`running`, buf)
+            FfiConverterBoolean.write(value.`finished`, buf)
+            FfiConverterBoolean.write(value.`ok`, buf)
+            FfiConverterOptionalString.write(value.`error`, buf)
+            FfiConverterString.write(value.`version`, buf)
+            FfiConverterUInt.write(value.`downloadedLeaves`, buf)
+            FfiConverterUInt.write(value.`alreadyInstalledLeaves`, buf)
+            FfiConverterUInt.write(value.`sidecarsInstalled`, buf)
+            FfiConverterBoolean.write(value.`activatedNewRelease`, buf)
+    }
+}
+
+
+
+data class FfiMwmInstalled (
+    var `version`: kotlin.String?
+    , 
+    var `leafIds`: List<kotlin.String>
+    , 
+    var `sidecarCount`: kotlin.UInt
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiMwmInstalled: FfiConverterRustBuffer<FfiMwmInstalled> {
+    override fun read(buf: ByteBuffer): FfiMwmInstalled {
+        return FfiMwmInstalled(
+            FfiConverterOptionalString.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiMwmInstalled) = (
+            FfiConverterOptionalString.allocationSize(value.`version`) +
+            FfiConverterSequenceString.allocationSize(value.`leafIds`) +
+            FfiConverterUInt.allocationSize(value.`sidecarCount`)
+    )
+
+    override fun write(value: FfiMwmInstalled, buf: ByteBuffer) {
+            FfiConverterOptionalString.write(value.`version`, buf)
+            FfiConverterSequenceString.write(value.`leafIds`, buf)
+            FfiConverterUInt.write(value.`sidecarCount`, buf)
+    }
+}
+
+
+
+data class FfiMwmRegion (
+    /**
+     * Catalog `region_to_leaves` key, e.g. `europe_norway_ostlandet`.
+     */
+    var `id`: kotlin.String
+    , 
+    var `displayName`: kotlin.String
+    , 
+    var `leafIds`: List<kotlin.String>
+    , 
+    /**
+     * MWM + sidecar bytes of the leaves (World overlays excluded).
+     */
+    var `totalBytes`: kotlin.ULong
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiMwmRegion: FfiConverterRustBuffer<FfiMwmRegion> {
+    override fun read(buf: ByteBuffer): FfiMwmRegion {
+        return FfiMwmRegion(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiMwmRegion) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`displayName`) +
+            FfiConverterSequenceString.allocationSize(value.`leafIds`) +
+            FfiConverterULong.allocationSize(value.`totalBytes`)
+    )
+
+    override fun write(value: FfiMwmRegion, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`displayName`, buf)
+            FfiConverterSequenceString.write(value.`leafIds`, buf)
+            FfiConverterULong.write(value.`totalBytes`, buf)
+    }
+}
+
+
+
+data class FfiMwmRegionList (
+    var `ok`: kotlin.Boolean
+    , 
+    var `error`: kotlin.String?
+    , 
+    var `version`: kotlin.String
+    , 
+    var `regions`: List<FfiMwmRegion>
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiMwmRegionList: FfiConverterRustBuffer<FfiMwmRegionList> {
+    override fun read(buf: ByteBuffer): FfiMwmRegionList {
+        return FfiMwmRegionList(
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceTypeFfiMwmRegion.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiMwmRegionList) = (
+            FfiConverterBoolean.allocationSize(value.`ok`) +
+            FfiConverterOptionalString.allocationSize(value.`error`) +
+            FfiConverterString.allocationSize(value.`version`) +
+            FfiConverterSequenceTypeFfiMwmRegion.allocationSize(value.`regions`)
+    )
+
+    override fun write(value: FfiMwmRegionList, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`ok`, buf)
+            FfiConverterOptionalString.write(value.`error`, buf)
+            FfiConverterString.write(value.`version`, buf)
+            FfiConverterSequenceTypeFfiMwmRegion.write(value.`regions`, buf)
     }
 }
 
@@ -8508,6 +8791,34 @@ public object FfiConverterSequenceTypeFfiLatLon: FfiConverterRustBuffer<List<Ffi
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeFfiLatLon.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFfiMwmRegion: FfiConverterRustBuffer<List<FfiMwmRegion>> {
+    override fun read(buf: ByteBuffer): List<FfiMwmRegion> {
+        val len = buf.getInt()
+        return List<FfiMwmRegion>(len) {
+            FfiConverterTypeFfiMwmRegion.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiMwmRegion>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiMwmRegion.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiMwmRegion>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiMwmRegion.write(it, buf)
         }
     }
 }
@@ -12413,6 +12724,23 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
 }
     
     
+
+        /**
+         * Set the follow clock time scale. Pass the route simulation speed while a
+         * route is simulated (for example 12.0 or 20.0) and 1.0 otherwise, so the
+         * 30 s dwell and 60 s gap of network follow run in simulation time.
+         * Idempotent: repeating the scale already in force changes nothing.
+         */ fun `catPluginSetTimeScale`(`scale`: kotlin.Double): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cat_plugin_set_time_scale(
+    
+        
+        FfiConverterDouble.lower(`scale`),_status)
+}
+    )
+    }
+    
  fun `catPluginStatusJson`(): kotlin.String {
             return FfiConverterString.lift(
     uniffiRustCall() { _status ->
@@ -12669,6 +12997,23 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     
 
         /**
+         * CoMaps leaf (country id, e.g. `Norway_Oppland`) containing the point according to the
+         * bundled borders (`packed_polygons`). `Some("")` = outside every country (sea), `None` =
+         * engine not initialised.
+         */ fun `comapsLeafForPoint`(`lat`: kotlin.Double, `lon`: kotlin.Double): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_leaf_for_point(
+    
+        
+        FfiConverterDouble.lower(`lat`),
+        FfiConverterDouble.lower(`lon`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Probe whether the CoMaps native core is linked into this build.
          */ fun `comapsNativeAvailable`(): kotlin.Boolean {
             return FfiConverterBoolean.lift(
@@ -12856,7 +13201,10 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     
 
         /**
-         * Cancel an in-flight [`comaps_session_route`] (CoMaps `navi_comaps_cancel`).
+         * Arm CoMaps `navi_comaps_cancel`. This is a pre-flight latch: the next
+         * [`comaps_session_route`] call consumes it and returns `Cancelled` before routing; a
+         * route that is already running is **not** interrupted. Callers that cancel and then
+         * start a new plan must not use it (the new plan would be cancelled instead).
          */ fun `comapsSessionCancel`()
         = 
     uniffiRustCall() { _status ->
@@ -12986,6 +13334,21 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     )
     }
     
+
+        /**
+         * While the drape Framework is alive it owns the Platform resource / writable / settings
+         * directories and the map style. With the lock set, a session re-open (leaf download) only
+         * rebuilds the router and leaves Platform and style alone.
+         */ fun `comapsSetPlatformLocked`(`locked`: kotlin.Boolean)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_set_platform_locked(
+    
+        
+        FfiConverterBoolean.lower(`locked`),_status)
+}
+    
+    
  fun `mwmProductionPlannerActive`(): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     uniffiRustCall() { _status ->
@@ -13005,6 +13368,74 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
         FfiConverterBoolean.lower(`active`),_status)
 }
     
+    
+
+        /**
+         * Ask the running install to stop between leaves (the staging tree is kept for resume).
+         */ fun `mwmInstallCancel`()
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_install_cancel(
+    
+        _status)
+}
+    
+    
+
+        /**
+         * Download, verify and register `leaf_ids` into `data_dir/mwm` (blocking; call off the main
+         * thread). Already installed leaves are skipped; an incremental install keeps the active
+         * release (and its open files) intact. Returns the final progress state.
+         */ fun `mwmInstallLeaves`(`dataDir`: kotlin.String, `naviOrigin`: kotlin.String, `leafIds`: List<kotlin.String>): FfiMwmInstallProgress {
+            return FfiConverterTypeFfiMwmInstallProgress.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_install_leaves(
+    
+        
+        FfiConverterString.lower(`dataDir`),
+        FfiConverterString.lower(`naviOrigin`),
+        FfiConverterSequenceString.lower(`leafIds`),_status)
+}
+    )
+    }
+    
+ fun `mwmInstallProgress`(): FfiMwmInstallProgress {
+            return FfiConverterTypeFfiMwmInstallProgress.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_install_progress(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Leaves of the active release under `data_dir/mwm` (no network).
+         */ fun `mwmInstalled`(`dataDir`: kotlin.String): FfiMwmInstalled {
+            return FfiConverterTypeFfiMwmInstalled.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_installed(
+    
+        
+        FfiConverterString.lower(`dataDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Fetch the live catalog and list the downloadable regions (blocking network call).
+         */ fun `mwmListRegions`(`naviOrigin`: kotlin.String): FfiMwmRegionList {
+            return FfiConverterTypeFfiMwmRegionList.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_mwm_list_regions(
+    
+        
+        FfiConverterString.lower(`naviOrigin`),_status)
+}
+    )
+    }
     
 
 

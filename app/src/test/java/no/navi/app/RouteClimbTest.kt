@@ -103,6 +103,7 @@ class RouteClimbTest {
         descentM = descentM,
         elevationJson = elevJson,
         routerMode = "Joints",
+        speedLimitsJson = "[]",
     )
 
     @Test

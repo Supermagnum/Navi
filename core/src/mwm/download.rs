@@ -290,6 +290,49 @@ pub fn download_leaf_set(
     leaf_ids: &[String],
     progress: &mut DownloadProgress,
 ) -> Result<Vec<LeafDownloadResult>, MwmDownloadError> {
+    download_leaf_set_with(
+        data_dir,
+        catalog,
+        countries,
+        discovery,
+        navi_origin,
+        leaf_ids,
+        progress,
+        &LeafSetOptions::default(),
+    )
+}
+
+/// Options for [`download_leaf_set_with`].
+#[derive(Debug, Clone, Copy)]
+pub struct LeafSetOptions<'a> {
+    /// Prepend `World` + `WorldCoasts` (needed for a new release; an incremental leaf
+    /// download into the already active release must not re-fetch them).
+    pub include_world: bool,
+    /// Checked between leaves and before each leaf; when set the download stops with
+    /// [`MwmDownloadError::Other`] `"cancelled"` and keeps the staging tree for resume.
+    pub cancel: Option<&'a std::sync::atomic::AtomicBool>,
+}
+
+impl Default for LeafSetOptions<'_> {
+    fn default() -> Self {
+        Self {
+            include_world: true,
+            cancel: None,
+        }
+    }
+}
+
+/// [`download_leaf_set`] with [`LeafSetOptions`].
+pub fn download_leaf_set_with(
+    data_dir: &Path,
+    catalog: &MwmCatalog,
+    countries: &CountriesTxt,
+    discovery: &ComapsDiscovery,
+    navi_origin: &str,
+    leaf_ids: &[String],
+    progress: &mut DownloadProgress,
+    opts: &LeafSetOptions<'_>,
+) -> Result<Vec<LeafDownloadResult>, MwmDownloadError> {
     if !mwm_client_enabled() {
         return Err(MwmDownloadError::Disabled);
     }
@@ -317,12 +360,23 @@ pub fn download_leaf_set(
         let _ = fs::write(attribution_md_path(&staging), bytes);
     }
 
-    let leaves = unique_leaf_ids(&leaf_ids_with_world_overlays(leaf_ids));
+    let leaves = if opts.include_world {
+        unique_leaf_ids(&leaf_ids_with_world_overlays(leaf_ids))
+    } else {
+        unique_leaf_ids(leaf_ids)
+    };
     progress.total_leaves = leaves.len();
     progress.completed_leaves = 0;
 
     let mut results = Vec::new();
     for leaf_id in &leaves {
+        if opts
+            .cancel
+            .map(|c| c.load(std::sync::atomic::Ordering::SeqCst))
+            .unwrap_or(false)
+        {
+            return Err(MwmDownloadError::Other("cancelled".into()));
+        }
         progress.current_label = leaf_id.clone();
         let catalog_leaf = catalog
             .leaf(leaf_id)

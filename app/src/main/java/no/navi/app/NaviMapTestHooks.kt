@@ -62,21 +62,21 @@ object NaviMapTestHooks {
     @Volatile
     var drapeError: String? = null
 
-    /** True while the MapLibre basemap layers are masked and drape is the visible basemap. */
+    /** True while the drape surface is the live map. */
     @Volatile
     var drapeBasemapVisible: Boolean = false
 
-    /** Count of viewport syncs pushed from MapLibre to drape (diagnostics). */
+    /** CoMaps my-position mode of the drape camera (3 = follow, 4 = heading up, 2 = free). */
     @Volatile
-    var drapeViewportSyncs: Long = 0
+    var drapeMode: Int = -1
 
     /** Test override for the drape day/night appearance (null = follow the system). */
     @Volatile
     var drapeNightOverride: Boolean? = null
 
-    /** Test override for the MapLibre-to-CoMaps zoom offset (null = [DrapeCameraSync.ZOOM_OFFSET]). */
+    /** Test override of the drape graphics API: `Vulkan`, `OpenGLES3` or null (pref / CoMaps default). */
     @Volatile
-    var drapeZoomOffset: Double? = null
+    var drapeGraphicsApi: String? = null
 
     /** Test switch: never use drape even when it is ready (MapLibre-only comparison shots). */
     @Volatile

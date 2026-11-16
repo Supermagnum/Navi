@@ -238,6 +238,14 @@ impl RigBackend for LiveBackend {
             Self::Benshi(b) => b.freq_step_hz(),
         }
     }
+    fn analog_fm_only(&self) -> bool {
+        match self {
+            Self::Offline(b) => b.analog_fm_only(),
+            Self::Tcp(b) => b.analog_fm_only(),
+            Self::Ffi(b) => b.analog_fm_only(),
+            Self::Benshi(b) => b.analog_fm_only(),
+        }
+    }
 }
 
 struct Session {
@@ -461,14 +469,9 @@ pub fn cat_plugin_connect_tcp(host: String, port: u16, allow_beta: bool) -> Stri
     };
     match TcpRigBackend::connect(&host, port, allow_beta) {
         Ok(tcp) => {
-            let follow_net = session.cat.follow_network_id.clone();
-            let follow_pin = session.cat.follow_pinned.clone();
-            let follow_stop = session.cat.follow_stopped_reason.clone();
             let db = open_db(&session.files_dir);
             let mut cat = CatService::new(LiveBackend::Tcp(tcp), db);
-            cat.follow_network_id = follow_net;
-            cat.follow_pinned = follow_pin;
-            cat.follow_stopped_reason = follow_stop;
+            cat.adopt_session_state(&session.cat);
             session.cat = cat;
             "OK: connected".into()
         }
@@ -486,14 +489,9 @@ pub fn cat_plugin_connect_ffi(model: i32, allow_beta: bool) -> String {
     };
     match FfiRigBackend::open(model, allow_beta) {
         Ok(ffi) => {
-            let follow_net = session.cat.follow_network_id.clone();
-            let follow_pin = session.cat.follow_pinned.clone();
-            let follow_stop = session.cat.follow_stopped_reason.clone();
             let db = open_db(&session.files_dir);
             let mut cat = CatService::new(LiveBackend::Ffi(ffi), db);
-            cat.follow_network_id = follow_net;
-            cat.follow_pinned = follow_pin;
-            cat.follow_stopped_reason = follow_stop;
+            cat.adopt_session_state(&session.cat);
             session.cat = cat;
             format!("OK: connected ffi model={model}")
         }
@@ -514,15 +512,10 @@ fn connect_benshi_link(session: &mut Session, link: BenshiLink, scratch_channel:
     if let Err(e) = backend.handshake() {
         return format!("FAIL: {e}");
     }
-    let follow_net = session.cat.follow_network_id.clone();
-    let follow_pin = session.cat.follow_pinned.clone();
-    let follow_stop = session.cat.follow_stopped_reason.clone();
     let db = open_db(&session.files_dir);
     let model = backend.model_name();
     let mut cat = CatService::new(LiveBackend::Benshi(backend), db);
-    cat.follow_network_id = follow_net;
-    cat.follow_pinned = follow_pin;
-    cat.follow_stopped_reason = follow_stop;
+    cat.adopt_session_state(&session.cat);
     session.cat = cat;
     if is_lab {
         format!("OK: connected benshi lab ({model})")
@@ -588,14 +581,9 @@ pub fn cat_plugin_disconnect() -> String {
     let Some(session) = guard.as_mut() else {
         return "FAIL: not configured".into();
     };
-    let follow_net = session.cat.follow_network_id.clone();
-    let follow_pin = session.cat.follow_pinned.clone();
-    let follow_stop = session.cat.follow_stopped_reason.clone();
     let db = open_db(&session.files_dir);
     let mut cat = CatService::new(LiveBackend::Offline(OfflineRig), db);
-    cat.follow_network_id = follow_net;
-    cat.follow_pinned = follow_pin;
-    cat.follow_stopped_reason = follow_stop;
+    cat.adopt_session_state(&session.cat);
     session.cat = cat;
     "OK: disconnected".into()
 }
@@ -659,6 +647,27 @@ pub fn cat_plugin_network_follow_json(request_json: String) -> String {
         return r#"{"ok":false,"error":"not configured"}"#.into();
     };
     session.cat.network_follow_json(&request_json)
+}
+
+/// Set the follow clock time scale. Pass the route simulation speed while a
+/// route is simulated (for example 12.0 or 20.0) and 1.0 otherwise, so the
+/// 30 s dwell and 60 s gap of network follow run in simulation time.
+/// Idempotent: repeating the scale already in force changes nothing.
+#[uniffi::export]
+pub fn cat_plugin_set_time_scale(scale: f64) -> String {
+    let mut guard = session_lock().lock().expect("cat session");
+    let Some(session) = guard.as_mut() else {
+        return r#"{"ok":false,"error":"not configured"}"#.into();
+    };
+    if session.cat.set_time_scale(scale) {
+        serde_json::json!({"ok":true,"time_scale":session.cat.clock.scale()}).to_string()
+    } else {
+        serde_json::json!({
+            "ok": false,
+            "error": format!("time scale {scale} outside {}..{}", navi_cat::clock::MIN_TIME_SCALE, navi_cat::clock::MAX_TIME_SCALE),
+        })
+        .to_string()
+    }
 }
 
 /// Load + run the CATS wasm guest once (selection / follow decision helpers).
@@ -893,9 +902,6 @@ pub fn cat_plugin_update_repeaters_from_server(base_url: String) -> String {
     if report.ok || local_ok {
         // Reload DB handle so subsequent queries see the new rows.
         let db = open_db(&session.files_dir);
-        let follow_net = session.cat.follow_network_id.clone();
-        let follow_pin = session.cat.follow_pinned.clone();
-        let follow_stop = session.cat.follow_stopped_reason.clone();
         let connected = session.cat.backend.is_connected();
         let model = session.cat.backend.model_name();
         let _ = (connected, model);
@@ -903,9 +909,7 @@ pub fn cat_plugin_update_repeaters_from_server(base_url: String) -> String {
         // simplest: reopen offline if disconnected; keep TCP by reconstructing CatService.
         let backend = std::mem::replace(&mut session.cat.backend, LiveBackend::Offline(OfflineRig));
         let mut cat = CatService::new(backend, db);
-        cat.follow_network_id = follow_net;
-        cat.follow_pinned = follow_pin;
-        cat.follow_stopped_reason = follow_stop;
+        cat.adopt_session_state(&session.cat);
         session.cat = cat;
     }
     let mut combined = serde_json::to_value(&report).unwrap_or_else(|_| serde_json::json!({}));

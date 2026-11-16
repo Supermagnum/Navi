@@ -70,6 +70,9 @@ pub struct FfiComapsRoute {
     pub descent_m: f64,
     pub elevation_json: String,
     pub router_mode: String,
+    /// JSON int array, one entry per polyline segment: posted maxspeed km/h, -1 untagged or not
+    /// applicable (foot, bike), -2 explicitly unlimited.
+    pub speed_limits_json: String,
 }
 
 fn empty_route(code: FfiComapsRouteCode, msg: impl Into<String>) -> FfiComapsRoute {
@@ -86,6 +89,7 @@ fn empty_route(code: FfiComapsRouteCode, msg: impl Into<String>) -> FfiComapsRou
         descent_m: 0.0,
         elevation_json: "[]".into(),
         router_mode: "Unknown".into(),
+        speed_limits_json: "[]".into(),
     }
 }
 
@@ -110,6 +114,7 @@ fn from_comaps_route(r: driver_break_core::mwm::ComapsRoute) -> FfiComapsRoute {
         descent_m: r.descent_m,
         elevation_json: r.elevation_json,
         router_mode: r.router_mode,
+        speed_limits_json: r.speed_limits_json,
     }
 }
 
@@ -209,6 +214,12 @@ pub fn comaps_session_open(
     load_wetland_sidecars: bool,
 ) -> FfiComapsSessionOpen {
     let t0 = Instant::now();
+    // Drop the previous router first: `ComapsRouter::drop` shuts the native session down, which
+    // would otherwise tear down the router built below when a re-open replaces the old one
+    // (leaf download / release switch).
+    if let Ok(mut g) = SESSION.lock() {
+        *g = None;
+    }
     let router = match ComapsRouter::init(&storage_path, &writable_path, sidecar_dir.as_deref()) {
         Ok(r) => r,
         Err(ComapsRouterError::Unavailable) => {
@@ -304,6 +315,22 @@ pub fn comaps_session_route(
         Ok(r) => from_comaps_route(r),
         Err(e) => empty_route(FfiComapsRouteCode::Internal, e.to_string()),
     }
+}
+
+/// While the drape Framework is alive it owns the Platform resource / writable / settings
+/// directories and the map style. With the lock set, a session re-open (leaf download) only
+/// rebuilds the router and leaves Platform and style alone.
+#[uniffi::export]
+pub fn comaps_set_platform_locked(locked: bool) {
+    driver_break_core::mwm::set_platform_locked(locked);
+}
+
+/// CoMaps leaf (country id, e.g. `Norway_Oppland`) containing the point according to the
+/// bundled borders (`packed_polygons`). `Some("")` = outside every country (sea), `None` =
+/// engine not initialised.
+#[uniffi::export]
+pub fn comaps_leaf_for_point(lat: f64, lon: f64) -> Option<String> {
+    driver_break_core::mwm::leaf_for_point(lat, lon)
 }
 
 #[uniffi::export]

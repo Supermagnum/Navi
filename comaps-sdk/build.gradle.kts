@@ -22,9 +22,25 @@ val sdkDir =
 // SDK assets are symlinks into the checkout's data/ directory; Sync dereferences them.
 val stagedSdkAssets = layout.buildDirectory.dir("comaps-sdk-assets").get().asFile
 
+val comapsCheckout = sdkDir.parentFile.parentFile
+
+// The drape symbol atlases (data/symbols/<density>/<style>/symbols.{png,sdf}) are build outputs of
+// CoMaps' Qt skin generator and are not in the checkout. scripts/generate-comaps-symbols.py makes the
+// same files with rsvg-convert + Pillow (no Qt6 development packages needed).
+val generateComapsSymbols =
+    tasks.register<Exec>("generateComapsSymbols") {
+        workingDir = rootProject.projectDir
+        commandLine("python3", "scripts/generate-comaps-symbols.py", comapsCheckout.absolutePath)
+        onlyIf { !File(comapsCheckout, "data/symbols/hdpi/light/symbols.sdf").isFile }
+    }
+
 val stageComapsSdkAssets =
     tasks.register<Sync>("stageComapsSdkAssets") {
+        dependsOn(generateComapsSymbols)
         from(File(sdkDir, "src/main/assets"))
+        // Also the one routing resource the SDK asset list lacks: the headless router (session) reads
+        // visibility.txt, and navi stages its resources from these APK root assets (no second copy).
+        from(File(comapsCheckout, "data/visibility.txt"))
         into(stagedSdkAssets)
     }
 

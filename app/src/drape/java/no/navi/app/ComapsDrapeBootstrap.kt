@@ -1,7 +1,6 @@
 package no.navi.app
 
 import android.content.Context
-import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.View
@@ -12,14 +11,15 @@ import app.organicmaps.sdk.MapAppearance
 import app.organicmaps.sdk.MapController
 import app.organicmaps.sdk.MapRenderingListener
 import app.organicmaps.sdk.MapView
+import app.organicmaps.sdk.NaviDrape
 import app.organicmaps.sdk.OrganicMaps
 import app.organicmaps.sdk.location.BaseLocationProvider
 import app.organicmaps.sdk.location.LocationProviderFactory
+import app.organicmaps.sdk.location.LocationState
+import app.organicmaps.sdk.location.NaviLocationBridge
 import app.organicmaps.sdk.util.ConnectionState
+import uniffi.navi.comapsSetPlatformLocked
 import java.io.File
-import kotlin.math.abs
-import kotlin.math.pow
-import kotlin.math.roundToInt
 
 /**
  * CoMaps drape backend (see [ComapsDrape]). Initialises the CoMaps Platform and
@@ -35,10 +35,6 @@ import kotlin.math.roundToInt
 object ComapsDrapeBootstrap : ComapsDrape.Backend {
     private const val TAG = "ComapsDrape"
     private const val MWM_ROOT = "mwm"
-    private const val MIN_LEVEL = 1
-    private const val MAX_LEVEL = 19
-    private const val MIN_FRACTION = 0.02
-    private const val FRACTION_DELAY_MS = 1500L
 
     private var organicMaps: OrganicMaps? = null
     private var controller: MapController? = null
@@ -73,6 +69,11 @@ object ComapsDrapeBootstrap : ComapsDrape.Backend {
 
             @Suppress("DEPRECATION")
             val code = info.versionCode
+            // Graphics API: CoMaps' own default (Vulkan, GLES fallback) unless a pref / test hook
+            // asks for one (read when the render engine is created, i.e. at the first surface).
+            (NaviMapTestHooks.drapeGraphicsApi ?: MapHudPrefs.loadDrapeGraphicsApi(context))?.let {
+                NaviDrape.nativeSetSetting("PreferredGraphicsAPI", it)
+            }
             val om =
                 OrganicMaps(
                     context,
@@ -89,6 +90,9 @@ object ComapsDrapeBootstrap : ComapsDrape.Backend {
             if (!om.init { frameworkReady = true }) return "OrganicMaps.init returned false"
             organicMaps = om
             Framework.nativeChangeWritableDir(root.absolutePath.trimEnd('/') + "/")
+            // The Framework now owns the Platform directories and the style: a later session
+            // re-open (leaf download) must only rebuild the router.
+            comapsSetPlatformLocked(true)
             applyNavi3d(context)
             Log.i(
                 TAG,
@@ -110,7 +114,8 @@ object ComapsDrapeBootstrap : ComapsDrape.Backend {
     override fun createMapView(context: Context): View {
         mapView?.let { return it }
         val om = checkNotNull(organicMaps) { "drape not initialised" }
-        val view = MapView(context)
+        // Application context: the surface outlives any one Activity (recreation on dark-mode switch).
+        val view = MapView(context.applicationContext)
         val ctl =
             MapController(
                 view,
@@ -144,52 +149,100 @@ object ComapsDrapeBootstrap : ComapsDrape.Backend {
         controller?.let { owner.lifecycle.removeObserver(it) }
     }
 
-    @Volatile
-    private var lockedZoomOffset: Double? = null
-
-    /** Computed once the engine exists: the drape fixes its tile size from the first surface. */
-    override fun zoomOffset(): Double? {
-        lockedZoomOffset?.let { return it }
-        val view = mapView ?: return null
-        if (view.width == 0 || view.height == 0 || controller?.isRenderingActive() != true) return null
-        val res = view.resources
-        return DrapeCameraSync
-            .zoomOffset(res.configuration.densityDpi, res.displayMetrics.density, maxOf(view.width, view.height))
-            .also {
-                lockedZoomOffset = it
-                Log.i(TAG, "zoom offset=$it dpi=${res.configuration.densityDpi} surface=${view.width}x${view.height}")
-            }
-    }
-
-    private val handler = Handler(Looper.getMainLooper())
-    private var pendingFraction: Runnable? = null
-
-    override fun setViewport(
+    override fun setCamera(
         lat: Double,
         lon: Double,
-        zoomLevel: Double,
+        level: Double,
+        bearingDeg: Double,
+        animated: Boolean,
+    ) = NaviDrape.nativeSetCamera(lat, lon, level, bearingDeg, animated)
+
+    override fun camera(): ComapsDrape.Camera? {
+        if (!Map.isEngineCreated()) return null
+        val v = runCatching { NaviDrape.nativeGetCamera() }.getOrNull() ?: return null
+        if (v.size < 8) return null
+        return ComapsDrape.Camera(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7].toInt())
+    }
+
+    override fun rotateTo(
+        bearingDeg: Double,
+        animated: Boolean,
+    ) = NaviDrape.nativeRotateTo(bearingDeg, animated)
+
+    override fun fitRect(
+        minLat: Double,
+        minLon: Double,
+        maxLat: Double,
+        maxLon: Double,
+        animated: Boolean,
+    ) = NaviDrape.nativeFitRect(minLat, minLon, maxLat, maxLon, animated)
+
+    override fun scaleBy(
+        factor: Double,
+        animated: Boolean,
+    ) = NaviDrape.nativeScaleBy(factor, animated)
+
+    override fun setFollowMode(mode: Int) = NaviDrape.nativeSetFollowMode(mode)
+
+    override fun setNavigation(
+        on: Boolean,
+        pedestrian: Boolean,
+    ) = NaviDrape.nativeSetNavigation(on, pedestrian)
+
+    override fun pushLocation(
+        timeMs: Long,
+        lat: Double,
+        lon: Double,
+        accuracyM: Float,
+        altitudeM: Double,
+        speedMps: Float,
+        bearingDeg: Float,
     ) {
-        val level = zoomLevel.roundToInt().coerceIn(MIN_LEVEL, MAX_LEVEL)
-        Framework.nativeSetViewportCenter(lat, lon, level)
-        pendingFraction?.let { handler.removeCallbacks(it) }
-        pendingFraction = null
-        val fraction = zoomLevel - level
-        val view = mapView
-        if (abs(fraction) < MIN_FRACTION || view == null) return
-        // SetViewportCenter animates to the integer level; scale relatively once it landed.
-        val task =
-            Runnable {
-                pendingFraction = null
-                Map.onScale(2.0.pow(fraction), view.width / 2.0, view.height / 2.0, false)
-            }
-        pendingFraction = task
-        handler.postDelayed(task, FRACTION_DELAY_MS)
+        if (!Map.isEngineCreated()) return
+        NaviLocationBridge.push(timeMs, lat, lon, accuracyM, altitudeM, speedMps, bearingDeg)
+    }
+
+    override fun pushCompass(headingDeg: Double) {
+        if (!Map.isEngineCreated()) return
+        Map.onCompassUpdated(Math.toRadians(headingDeg), false)
+    }
+
+    override fun setModeListener(listener: ((Int) -> Unit)?) {
+        if (listener == null) {
+            runCatching { LocationState.nativeRemoveListener() }
+            return
+        }
+        LocationState.nativeSetListener(
+            object : LocationState.ModeChangeListener {
+                override fun onMyPositionModeChanged(newMode: Int) = listener(newMode)
+            },
+        )
+    }
+
+    override fun screenToLatLon(
+        x: Float,
+        y: Float,
+    ): Pair<Double, Double>? {
+        if (!Map.isEngineCreated()) return null
+        val v = runCatching { NaviDrape.nativeScreenToLatLon(x, y) }.getOrNull() ?: return null
+        return if (v.size >= 2) v[0] to v[1] else null
+    }
+
+    override fun registerMaps() {
+        if (!Map.isEngineCreated()) return
+        NaviDrape.nativeRegisterMaps()
     }
 
     override fun setNight(night: Boolean) {
         val want = if (night) MapAppearance.Dark else MapAppearance.Light
         if (MapAppearance.get() != want) MapAppearance.set(want)
     }
+
+    override fun isDayAt(
+        lat: Double,
+        lon: Double,
+        utcSeconds: Long,
+    ): Boolean = Framework.nativeIsDayTime(utcSeconds, lat, lon)
 
     override fun isNight(): Boolean = MapAppearance.get() == MapAppearance.Dark
 
@@ -219,4 +272,37 @@ object ComapsDrapeBootstrap : ComapsDrape.Backend {
     override fun renderingActive(): Boolean = controller?.isRenderingActive() == true
 
     override fun drawScale(): Int = Framework.nativeGetDrawScale()
+
+    override fun blockTapEvents(block: Boolean) = NaviDrape.nativeBlockTapEvents(block)
+
+    override fun clearRoute() = NaviDrape.nativeClearRoute()
+
+    override fun addSubroute(
+        latlon: DoubleArray,
+        type: Int,
+        turnIdx: IntArray?,
+    ) = NaviDrape.nativeAddSubroute(latlon, type, turnIdx)
+
+    override fun setRoutePoints(
+        latlon: DoubleArray,
+        titles: Array<String>,
+    ) = NaviDrape.nativeSetRoutePoints(latlon, titles)
+
+    override fun createGroup(name: String): Long = NaviDrape.nativeCreateGroup(name)
+
+    override fun setMarks(
+        group: Long,
+        latlon: DoubleArray,
+        names: Array<String>,
+        icons: IntArray,
+        colors: IntArray,
+    ) = NaviDrape.nativeSetMarks(group, latlon, names, icons, colors)
+
+    override fun setTracks(
+        group: Long,
+        counts: IntArray,
+        latlon: DoubleArray,
+        argb: IntArray,
+        widths: FloatArray,
+    ) = NaviDrape.nativeSetTracks(group, counts, latlon, argb, widths)
 }

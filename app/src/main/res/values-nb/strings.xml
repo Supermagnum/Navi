@@ -516,4 +516,22 @@
     <string name="style_note_offline_hillshade">Frakoblet Protomaps + Mapterhorn DEM-skyggerelieff</string>
     <string name="label_last_stop">Siste stopp</string>
     <string name="status_route_planning_closed">Ruteplanlegging lukket</string>
+    <string name="drape_map_failed">Kartmotoren kunne ikke starte</string>
+    <string name="drape_map_starting">Starter kartmotoren ...</string>
+    <string name="drape_no_maps_title">Ingen frakoblede kart er installert</string>
+    <string name="drape_no_maps_body">Last ned en region for å vise kartet og planlegge ruter. Kartene lagres på enheten og virker uten nett.</string>
+    <string name="drape_open_map_downloads">Last ned kart</string>
+    <string name="mwm_maps_title">Frakoblede kart</string>
+    <string name="mwm_maps_none">Ingen kart er installert</string>
+    <string name="mwm_maps_installed">Utgave %1$s: %2$d regioner, %3$d med Navi-rutelag</string>
+    <string name="mwm_maps_done">Kartene er installert og klare</string>
+    <string name="mwm_maps_failed">Nedlasting av kart mislyktes: %1$s</string>
+    <string name="mwm_maps_choose">Velg region</string>
+    <string name="mwm_maps_download">Last ned</string>
+    <string name="mwm_missing_title">Kart mangler for denne ruten</string>
+    <string name="mwm_missing_body">Ruten trenger disse kartregionene, som ikke er installert: %1$s. Laste dem ned nå?</string>
+    <string name="settings_map_theme">Kart dag og natt</string>
+    <string name="settings_map_theme_system">Følg systeminnstillingen</string>
+    <string name="settings_map_theme_sun">Automatisk etter soloppgang og solnedgang på nåværende posisjon</string>
+    <string name="profile_limits_not_applied">Kjøretøygrenser (høyde, vekt, akseltrykk) brukes ikke på denne korttypen</string>
 </resources>

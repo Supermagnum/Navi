@@ -42,6 +42,10 @@ pub struct ComapsRoute {
     pub elevation_json: String,
     /// Router mode diagnostic (`Joints` / `LeapsOnly` / …).
     pub router_mode: String,
+    /// JSON int array, one entry per polyline segment (point `i` to `i + 1`): posted maxspeed
+    /// in km/h from the MWM maxspeeds section, `-1` untagged / not applicable (foot, bike),
+    /// `-2` explicitly unlimited.
+    pub speed_limits_json: String,
 }
 
 /// Nearest routable-road projection for a point that is not on the profile's
@@ -257,6 +261,33 @@ impl ComapsRouter {
     }
 }
 
+/// While the drape Framework is alive it owns the Platform directories and the style; the lock makes
+/// `ComapsRouter::init` rebuild only the router (re-register leaves) and leave Platform untouched.
+pub fn set_platform_locked(locked: bool) {
+    #[cfg(feature = "comaps-native")]
+    {
+        ffi::set_platform_locked(locked);
+    }
+    #[cfg(not(feature = "comaps-native"))]
+    {
+        let _ = locked;
+    }
+}
+
+/// CoMaps leaf (country id) containing the point from packed_polygons / countries.txt.
+/// `None` when the engine is not initialised; `Some("")` outside every country.
+pub fn leaf_for_point(lat: f64, lon: f64) -> Option<String> {
+    #[cfg(feature = "comaps-native")]
+    {
+        ffi::leaf_for_point(lat, lon)
+    }
+    #[cfg(not(feature = "comaps-native"))]
+    {
+        let _ = (lat, lon);
+        None
+    }
+}
+
 impl Drop for ComapsRouter {
     fn drop(&mut self) {
         #[cfg(feature = "comaps-native")]
@@ -287,8 +318,11 @@ mod ffi {
         fn navi_comaps_register_mwms() -> c_int;
         fn navi_comaps_set_wetland_hook(enabled: c_int);
         fn navi_comaps_set_wetland_lookup(
-            fn_ptr: Option<unsafe extern "C" fn(u32, u32, c_int) -> u8>,
+            fn_ptr: Option<unsafe extern "C" fn(*const c_char, u32, u32, c_int) -> u8>,
         );
+        fn navi_comaps_set_platform_locked(locked: c_int);
+        fn navi_comaps_leaf_for_point(lat: f64, lon: f64) -> *mut c_char;
+        fn navi_comaps_free_string(s: *mut c_char);
         fn navi_comaps_set_elevation_lookup(
             fn_ptr: Option<unsafe extern "C" fn(*const c_char, u32, u32, *mut i32) -> c_int>,
         );
@@ -354,6 +388,22 @@ mod ffi {
         descent_m: f64,
         elevation_json: *mut c_char,
         router_mode: *mut c_char,
+        speed_limits_json: *mut c_char,
+    }
+
+    pub fn set_platform_locked(locked: bool) {
+        unsafe { navi_comaps_set_platform_locked(if locked { 1 } else { 0 }) };
+    }
+
+    /// CoMaps country (leaf) id containing the point (`Some("")` = outside every country).
+    pub fn leaf_for_point(lat: f64, lon: f64) -> Option<String> {
+        let p = unsafe { navi_comaps_leaf_for_point(lat, lon) };
+        if p.is_null() {
+            return None;
+        }
+        let s = unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned();
+        unsafe { navi_comaps_free_string(p) };
+        Some(s)
     }
 
     pub fn set_bike_wetland(enabled: bool) {
@@ -394,19 +444,29 @@ mod ffi {
     }
 
     unsafe extern "C" fn wetland_lookup_cb(
+        mwm_name: *const c_char,
         feature_id: u32,
         segment_idx: u32,
         forward: c_int,
     ) -> u8 {
+        if mwm_name.is_null() {
+            return 0;
+        }
+        let Ok(name) = CStr::from_ptr(mwm_name).to_str() else {
+            return 0;
+        };
         // Sidecar direction bit: 0 = forward, 1 = reverse (matches NVSC encoder).
         let direction: u8 = if forward != 0 { 0 } else { 1 };
         let seg = segment_idx.min(u16::MAX as u32) as u16;
         let Ok(guard) = sidecars().lock() else {
             return 0;
         };
-        // Wetland records are also per-leaf; without an MWM name on this ABI we
-        // still scan all readers (boardwalk exemption first). Elev uses leaf id.
-        for (_leaf, reader) in guard.iter() {
+        // Feature ids are per MWM: only the reader of the segment's own leaf may answer
+        // (boardwalk exemption first).
+        for (leaf, reader) in guard.iter() {
+            if leaf != name {
+                continue;
+            }
             if reader
                 .is_boardwalk(feature_id, seg, direction)
                 .unwrap_or(false)
@@ -559,6 +619,7 @@ mod ffi {
             descent_m: 0.0,
             elevation_json: ptr::null_mut(),
             router_mode: ptr::null_mut(),
+            speed_limits_json: ptr::null_mut(),
         };
         unsafe {
             navi_comaps_route(profile_i, from.lat, from.lon, to.lat, to.lon, &mut out);
@@ -607,6 +668,13 @@ mod ffi {
                 .to_string_lossy()
                 .into_owned()
         };
+        let speed_limits_json = if out.speed_limits_json.is_null() {
+            "[]".to_string()
+        } else {
+            unsafe { CStr::from_ptr(out.speed_limits_json) }
+                .to_string_lossy()
+                .into_owned()
+        };
         unsafe { navi_comaps_free_route(&mut out) };
         let instructions_json = crate::mwm::comaps_instructions::enrich_turns_json(&turns_json)
             .unwrap_or_else(|_| "[]".to_string());
@@ -623,6 +691,7 @@ mod ffi {
             descent_m,
             elevation_json,
             router_mode,
+            speed_limits_json,
         })
     }
 

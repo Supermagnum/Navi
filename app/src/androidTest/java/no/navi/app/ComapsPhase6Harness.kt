@@ -1,67 +1,28 @@
 package no.navi.app
 
 import android.content.Context
-import android.system.Os
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONObject
 import java.io.File
 
 /**
- * Shared helpers for the Phase 6 on-device acceptance (hybrid CoMaps drape).
+ * Shared helpers for the Phase 6 / 6b on-device acceptance (CoMaps drape).
  *
  * Everything runs inside the app under test (debug or releasetest) on the physical
- * device: map data is staged into the production MWM layout under `{filesDir}/mwm`
- * (symlinks into the sideloaded test leaves, no copy), screenshots go through the
- * instrumentation UiAutomation + shell `screencap` (no other apps), and the
- * "location" comes from Navi's own route simulation or camera hooks.
+ * device: map data comes from the app's own downloader into `{filesDir}/mwm` (nothing is
+ * pushed with adb), screenshots go through the instrumentation UiAutomation + shell
+ * `screencap` (no other apps), and the "location" comes from Navi's own route
+ * simulation or camera hooks.
  */
 object ComapsPhase6Harness {
     const val TAG = "Phase6"
-    const val RELEASE = "261105"
-
-    /** Leaves needed for the Østlandet / Gudbrandsdalen test corridors. */
-    private const val LEAF_PREFIX = "Norway_"
 
     val context: Context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
     /** adb-pullable output directory (shell can write it; app can read it). */
-    const val SHELL_DIR = "/data/local/tmp/phase6"
+    const val SHELL_DIR = "/data/local/tmp/phase6b"
 
     fun productionRoot(): File = File(NaviAppData.resolve(context), "mwm")
-
-    private fun sideloadRoot(): File = File(context.getExternalFilesDir(null), "navi-mwm-test")
-
-    /**
-     * Link the sideloaded Norway leaves + World files into the production layout the
-     * app reads (`active.json`, `world-release.json`, `releases/{ver}/leaves`). Idempotent.
-     */
-    fun stageProductionMwmRoot(): String {
-        val src = File(sideloadRoot(), RELEASE)
-        val leaves = src.listFiles { f -> f.name.startsWith(LEAF_PREFIX) && f.name.endsWith(".mwm") }.orEmpty()
-        check(leaves.isNotEmpty()) { "no Norway_*.mwm under ${src.absolutePath}" }
-        val root = productionRoot().also { it.mkdirs() }
-        val leafDir = File(root, "releases/$RELEASE/leaves").also { it.mkdirs() }
-
-        fun link(
-            target: File,
-            link: File,
-        ) {
-            if (link.exists() || runCatching { Os.lstat(link.path) }.isSuccess) {
-                if (runCatching { Os.readlink(link.path) }.getOrNull() == target.absolutePath) return
-                link.delete()
-            }
-            Os.symlink(target.absolutePath, link.path)
-        }
-        for (f in leaves) link(f, File(leafDir, f.name))
-        for (w in listOf("World.mwm", "WorldCoasts.mwm")) {
-            val t = File(sideloadRoot(), w)
-            check(t.isFile) { "missing $w in ${sideloadRoot().absolutePath}" }
-            link(t, File(root, w))
-        }
-        File(root, "active.json").writeText(JSONObject().put("version", RELEASE).toString())
-        File(root, "world-release.json").writeText(JSONObject().put("version", RELEASE).toString())
-        return "root=${root.absolutePath} leaves=${leaves.size}"
-    }
 
     fun shell(cmd: String): String {
         val pfd = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(cmd)

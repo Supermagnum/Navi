@@ -5,7 +5,6 @@
 //!
 //! Flag defaults ON; force classic path with `NAVI_MWM_CLIENT_ENABLED=0`.
 
-use std::path::PathBuf;
 use std::time::Instant;
 
 use driver_break_core::mwm::{
@@ -70,7 +69,7 @@ fn download_ostlandet_leaf_set_live() {
     )
     .expect("countries.txt verify");
 
-    let data_dir = PathBuf::from(std::env::temp_dir()).join("navi-mwm-live-ostlandet");
+    let data_dir = std::env::temp_dir().join("navi-mwm-live-ostlandet");
     let _ = std::fs::remove_dir_all(&data_dir);
     std::fs::create_dir_all(&data_dir).unwrap();
 

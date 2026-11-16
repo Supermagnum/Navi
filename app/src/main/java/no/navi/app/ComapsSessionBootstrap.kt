@@ -43,12 +43,41 @@ object ComapsSessionBootstrap {
     private const val WORLD_RELEASE_FILE = "world-release.json"
     private const val WORLD_MWM_FILE = "World.mwm"
     private const val ASSET_DIR = "comaps-data"
+
+    /**
+     * Headless router resources taken from the CoMaps SDK's APK root assets when the drape build ships
+     * them (so `assets/comaps-data` does not have to duplicate them).
+     */
+    private val ROOT_ASSETS =
+        listOf(
+            "classificator.txt",
+            "types.txt",
+            "visibility.txt",
+            "countries.txt",
+            "countries_meta.txt",
+            "countries-strings",
+            "packed_polygons.bin",
+            "categories.txt",
+            "categories_brands.txt",
+            "subtypes.csv",
+            "colors.txt",
+            "patterns.txt",
+            "drules_proto_default_light.bin",
+            "drules_proto_default_dark.bin",
+        )
     private const val ASSET_STAMP = "comaps-data.stamp"
     private val VERSION_DIR = Regex("\\d{1,6}")
 
+    private const val THREAD_NAME = "comaps-session"
+
+    /**
+     * The CoMaps router owns objects with a thread checker (the map downloader inside its
+     * `Storage`): they must be destroyed on the thread that created them. Every open / re-open
+     * therefore runs on this one thread, whoever asks (planner, downloader, UI).
+     */
     private val executor =
         Executors.newSingleThreadExecutor { r ->
-            Thread(r, "comaps-session").apply { isDaemon = true }
+            Thread(r, THREAD_NAME).apply { isDaemon = true }
         }
 
     private val lock = Any()
@@ -69,7 +98,7 @@ object ComapsSessionBootstrap {
         appContext: Context,
         force: Boolean,
     ) {
-        runCatching { executor.execute { ensureOpen(appContext, force) } }
+        runCatching { executor.execute { runCatching { openInternal(appContext, force) } } }
             .onFailure { Log.w(TAG, "could not schedule session open", it) }
     }
 
@@ -79,7 +108,12 @@ object ComapsSessionBootstrap {
         force: Boolean = false,
     ): Boolean =
         try {
-            openInternal(context.applicationContext, force)
+            val app = context.applicationContext
+            if (Thread.currentThread().name == THREAD_NAME) {
+                openInternal(app, force)
+            } else {
+                executor.submit(java.util.concurrent.Callable { openInternal(app, force) }).get()
+            }
         } catch (t: Throwable) {
             Log.w(TAG, "session open failed", t)
             false
@@ -126,13 +160,28 @@ object ComapsSessionBootstrap {
             if (!force && key == openKey) return true
             linkActiveRelease(root, version)
             if (!stageResources(ctx, root)) return false
+            Log.i(
+                TAG,
+                "mwm root=" +
+                    root.listFiles().orEmpty().sortedBy { it.name }.joinToString(",") {
+                        "${it.name}${if (isSymlink(it)) {
+                            "@"
+                        } else if (it.isDirectory) {
+                            "/"
+                        } else {
+                            ":${it.length()}"
+                        }}"
+                    },
+            )
             val sidecars = File(root, "releases/$version/sidecars").takeIf { it.isDirectory }
             val res =
                 comapsSessionOpen(
                     storagePath = root.absolutePath,
                     writablePath = root.absolutePath,
                     sidecarDir = sidecars?.absolutePath,
-                    loadWetlandSidecars = false,
+                    // Wetland Soft/Hard costs and EL02 elevation overrides need the verified sidecars
+                    // of the installed leaves; without them the router runs as plain CoMaps.
+                    loadWetlandSidecars = sidecars?.list()?.any { it.endsWith(".navi-sidecar.v1.zst") } == true,
                 )
             if (res.ok) {
                 openKey = key
@@ -192,15 +241,24 @@ object ComapsSessionBootstrap {
                     .lastUpdateTime
                     .toString()
             }.getOrDefault("0")
-        val names =
+        val legacy =
             ctx.assets
                 .list(ASSET_DIR)
                 .orEmpty()
                 .filter { it != "MANIFEST.txt" }
-        if (names.isEmpty()) {
-            Log.w(TAG, "skip: no $ASSET_DIR assets in the APK")
+        // Drape build: the SDK's root assets are the single copy; SDK-less builds stage comaps-data.
+        val rootNames =
+            ctx.assets
+                .list("")
+                .orEmpty()
+                .toSet()
+        val fromRoot = legacy.isEmpty()
+        val names = if (fromRoot) ROOT_ASSETS.filter { it in rootNames } else legacy
+        if (names.isEmpty() || (fromRoot && names.size < ROOT_ASSETS.size)) {
+            Log.w(TAG, "skip: CoMaps resources missing in the APK (comaps-data=${legacy.size}, root=${names.size})")
             return false
         }
+        val assetBase = if (fromRoot) "" else "$ASSET_DIR/"
         val current = runCatching { stampFile.readText() }.getOrNull() == stamp
         val missing =
             names.any { n ->
@@ -208,7 +266,7 @@ object ComapsSessionBootstrap {
             }
         if (current && !missing) return true
         return runCatching {
-            for (name in names) copyAsset(ctx, "$ASSET_DIR/$name", File(root, name), skipExisting = current)
+            for (name in names) copyAsset(ctx, "$assetBase$name", File(root, name), skipExisting = current)
             stampFile.writeText(stamp)
             true
         }.getOrElse {
@@ -233,9 +291,16 @@ object ComapsSessionBootstrap {
         if (skipExisting && dest.isFile && dest.length() > 0L) return
         dest.parentFile?.mkdirs()
         val tmp = File(dest.parentFile, "${dest.name}.tmp")
-        ctx.assets.open(assetPath).use { input ->
-            tmp.outputStream().use { input.copyTo(it) }
-        }
+        // An empty directory in the checkout (e.g. countries-strings/ta.json/) is not packaged by AAPT:
+        // it lists as a name but has nothing to open.
+        val input =
+            try {
+                ctx.assets.open(assetPath)
+            } catch (_: java.io.FileNotFoundException) {
+                Log.i(TAG, "asset $assetPath not packaged (empty directory in the checkout); skipped")
+                return
+            }
+        input.use { tmp.outputStream().use { out -> it.copyTo(out) } }
         if (!tmp.renameTo(dest)) error("rename ${tmp.name} failed")
     }
 }

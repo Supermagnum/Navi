@@ -115,19 +115,21 @@ Phase 8 retirement.
   pass; the on-device suite (`ComapsPhase5SearchInstrumentedTest`) has not been
   run yet.
 
-### Phase 6 — Rendering / drape (partial, this branch)
+### Phase 6 — Rendering / drape (done on this branch, with documented decisions)
 
-- **Hybrid, behind the MWM flag:** the CoMaps drape engine draws the basemap behind a
-  transparent MapLibre view that keeps Navi's own overlays (route, waypoints, GPS puck,
-  DATEX, repeaters, weather, camping). MapLibre stays the camera master; the drape follows
-  it. Day/night, contour lines (isolines) and 3D buildings are wired to the drape.
-- Falls back to the MapLibre basemap when the drape cannot start (no SDK in the build, no
-  World/leaf maps, Framework init failure) **and** whenever the camera is rotated or tilted
-  (the CoMaps SDK has no bearing/pitch setter).
-- **Not done:** retiring MapLibre / PMTiles / DEM on the MWM path, moving the overlays into
-  drape, a Navi in-app day/night theme, drape rotation/tilt. See §9 and
-  [`mwm-phase6-drape.md`](mwm-phase6-drape.md) for the open list and device results.
-- **Acceptance (Samsung SM-P613, releasetest):** see `mwm-phase6-drape.md`.
+- **Drape only on the MWM path** (Phase 6b): the CoMaps drape engine is the only map renderer when the
+  MWM flag is ON; MapLibre and PMTiles are not initialised there. The drape owns the camera (gestures,
+  zoom, rotation, tilt, heading-up, follow, navigation camera) through the native entry points of
+  `patches/comaps/0004-*.patch` (905 lines). No per-device zoom offset, no rotation/tilt fallback.
+- Navi overlays (route with turn arrows, route points, position, DATEX, weather,
+  tracks, camping, markers) are drape route subroutes, route points, user marks and tracks. Items that
+  cannot be expressed (estimated / lost puck colours, APRS and weather sprites) are listed with the
+  smallest alternative in `mwm-phase6b-drape.md`.
+- In-app map download (catalog, mirrors, verified countries.txt, sidecars) and live leaf registration
+  without restart; missing-maps dialog naming the leaves; per-segment maxspeed to the speed-limit HUD.
+- Flag OFF keeps the Phase 5 UI (MapLibre, PMTiles) unchanged.
+- **Acceptance (Samsung SM-P613, releasetest):** `mwm-phase6b-drape.md` (function matrix, screenshots,
+  performance, APK size, CAT dry runs). Phase 6 (first pass): `mwm-phase6-drape.md`.
 
 ### Phase 7 — Migrating users' existing `.rkyv` downloads
 
@@ -380,18 +382,19 @@ Standing rule: **ADB to the connected Samsung only** — no emulator/AVD. Use
 
 ---
 
-## 9. Phase 6 decision record — CoMaps drape over MapLibre (partial hybrid)
+## 9. Phase 6 decision record -- CoMaps drape over MapLibre
 
-**Decision (owner-approved for this pass):** ship a **hybrid** MWM path. CoMaps drape is
-the basemap when the MWM flag is ON and the Framework initialises; Navi overlays stay on
-MapLibre/Compose until a follow-up moves them. Phase 6 is **partial**; open items below.
-Details, screenshots, function matrix and device numbers: `docs/mwm-phase6-drape.md`.
+**Decision (owner-approved, implemented in Phase 6b):** CoMaps drape is the only map renderer on the
+MWM path. Phase 6a shipped a hybrid (drape basemap under a transparent MapLibre view); Phase 6b moved
+the camera, gestures and every overlay to the drape and retired MapLibre / PMTiles / DEM there. Details,
+device results and the remaining decisions: `docs/mwm-phase6b-drape.md` (and `docs/mwm-phase6-drape.md`
+for the first pass).
 
 ### Why drape
 
 - `liborganicmaps.so` already **PUBLIC-links drape / GLES** for the Android
-  `organicmaps` target — the binary cost is paid even for headless routing.
-- Drape renders the same `.mwm` leaves Phase 1 already downloads — fully offline, no
+  `organicmaps` target -- the binary cost is paid even for headless routing.
+- Drape renders the same `.mwm` leaves Phase 1 already downloads -- fully offline, no
   second tile pipeline (and it carries contour lines and 3D buildings in the leaf data).
 - MapLibre would need a **separate** vector-tile (or PMTiles) source that does not reuse
   CoMaps leaf geometry; that doubles download size and keeps two map stacks warm.
@@ -403,26 +406,16 @@ Details, screenshots, function matrix and device numbers: `docs/mwm-phase6-drape
 | `:comaps-sdk` Android library (Java, res, assets of the pinned checkout, **no CMake**) | `comaps-sdk/`, included by `settings.gradle.kts` only when the gitignored checkout exists |
 | `ComapsDrape` facade (no SDK types, safe without the checkout) | `app/src/main/.../ComapsDrape.kt` |
 | `ComapsDrapeBootstrap` (OrganicMaps Platform + Framework on top of the headless session) | `app/src/drape/java/` (compiled only with `:comaps-sdk`) |
-| `ComapsDrapeMap` Compose host, MapLibre basemap mask, camera sync | `app/src/main/.../ComapsDrapeMap.kt`, `CorridorMapView` |
-| Day/night, isolines, 3D wiring | `CorridorMapView` pref sync -> `MapAppearance`, `Framework.nativeSetIsolinesLayerEnabled`, `nativeSet3dMode` |
+| `ComapsDrapeMap` Compose host (camera, overlays, placeholder, missing maps) | `app/src/main/.../ComapsDrapeMap.kt` |
+| Native camera / follow / overlay API | `patches/comaps/0004-navi-drape-camera-overlays-and-leaf-lock.patch`, JNI class `NaviDrape` |
+| In-app download + install | `core/src/mwm/install.rs`, `navi-ffi/src/mwm_install_ffi.rs`, `MwmMapDownloader.kt` |
+| Symbol atlas generation | `scripts/generate-comaps-symbols.py` (run by `comaps-sdk/build.gradle.kts`) |
 
-### Navi UI that still depends on MapLibre (not moved)
+### What still uses MapLibre
 
-| Area | What uses MapLibre today |
-|------|---------------------------|
-| Camera / gestures | MapLibre owns pan, pinch, rotate, tilt; the drape follows (integer zoom + relative scale; no bearing/pitch) |
-| Geometry overlays | `GeoJsonSource` route / waypoint / track / GPS / DATEX / weather / camping layers (a translucent MapLibre texture above the drape) |
-| Basemap fallback | Offline PMTiles / online Liberty style whenever the drape is hidden (rotated or tilted camera, init failure) |
-| 3D terrain | Mapterhorn hillshade / terrain stays MapLibre (drape only draws extruded buildings) |
-| DEM / contours | `MapterhornContours` is masked while the drape shows its own isolines |
-| Init | `MapLibre.getInstance`, dependency `org.maplibre.gl:android-sdk` |
+Only the flag OFF path (`CorridorMapView`, Basemap*, Mapterhorn*, PMTiles / DEM / region downloads).
+Section 5 of `mwm-phase6b-drape.md` lists the files. Retirement of that code belongs with Phase 8.
 
 ### Open items
 
-1. Full retirement of MapLibre / PMTiles on the MWM path.
-2. Moving DATEX / repeater / corridor overlays into drape (or one dedicated overlay surface).
-3. Drape rotation and tilt (heading-up navigation currently falls back to the MapLibre basemap).
-4. Platform resource directory vs headless re-open (`navi_comaps_init` after the Framework
-   exists points the resource dir back at `{filesDir}/mwm`; needs a native guard).
-5. Navi has no in-app map day/night preference; the drape follows the system night mode.
-6. Visual-parity items listed with causes in `mwm-phase6-drape.md`.
+See section 10 of `mwm-phase6b-drape.md`.

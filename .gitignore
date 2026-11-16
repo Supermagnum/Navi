@@ -34,6 +34,8 @@ test-artifacts/mwm-phase3/
 test-artifacts/mwm-phase4/
 # Phase 6 on-device acceptance output (screenshots, logs, perf captures).
 test-artifacts/phase6/
+test-artifacts/phase6a/
+test-artifacts/phase6b/
 # Kotlin/IDE incremental compile scratch
 .kotlin/
 

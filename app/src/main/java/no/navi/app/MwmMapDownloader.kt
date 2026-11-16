@@ -1,0 +1,293 @@
+package no.navi.app
+
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import uniffi.navi.FfiMwmRegion
+import uniffi.navi.defaultPackServerBaseUrl
+import uniffi.navi.downloadProgressSnapshot
+import uniffi.navi.mwmInstallLeaves
+import java.util.concurrent.Executors
+
+/**
+ * In-app owner of the Phase 1 leaf download (catalog -> verified mirrors -> MWM + sidecar,
+ * checksum and fingerprint verified -> register). One install at a time; installs and
+ * registers without an app restart: the headless router is re-opened and the live drape
+ * registers the new leaves.
+ */
+object MwmMapDownloader {
+    private const val TAG = "MwmMapDownloader"
+
+    data class State(
+        val running: Boolean = false,
+        val label: String = "",
+        val percent: Int? = null,
+        val message: String = "",
+        val ok: Boolean? = null,
+        val version: String? = null,
+        val installedLeaves: List<String> = emptyList(),
+        val sidecars: Int = 0,
+        val regions: List<FfiMwmRegion> = emptyList(),
+        val regionsError: String? = null,
+    )
+
+    var state by mutableStateOf(State())
+        private set
+
+    private val executor =
+        Executors.newSingleThreadExecutor { r -> Thread(r, "mwm-install").apply { isDaemon = true } }
+    private val main = Handler(Looper.getMainLooper())
+
+    private fun set(f: (State) -> State) = main.post { state = f(state) }
+
+    /** Reads the active release from disk (no network). */
+    fun refreshInstalled(context: Context) {
+        val dir = NaviAppData.resolve(context).absolutePath
+        executor.execute {
+            val inst = runCatching { uniffi.navi.mwmInstalled(dir) }.getOrNull() ?: return@execute
+            set { it.copy(installedLeaves = inst.leafIds, sidecars = inst.sidecarCount.toInt(), version = inst.version) }
+        }
+    }
+
+    fun loadRegions() {
+        executor.execute {
+            val r = runCatching { uniffi.navi.mwmListRegions(defaultPackServerBaseUrl()) }.getOrNull()
+            set {
+                if (r == null || !r.ok) {
+                    it.copy(regionsError = r?.error ?: "catalog unavailable")
+                } else {
+                    it.copy(regions = r.regions, regionsError = null, version = it.version ?: r.version)
+                }
+            }
+        }
+    }
+
+    fun cancel() = uniffi.navi.mwmInstallCancel()
+
+    /** Install [leafIds]; [onDone] runs on the main thread with success. */
+    fun install(
+        context: Context,
+        leafIds: List<String>,
+        label: String,
+        onDone: (Boolean) -> Unit = {},
+    ) {
+        if (state.running) return
+        val app = context.applicationContext
+        val dir = NaviAppData.resolve(app).absolutePath
+        set { it.copy(running = true, label = label, percent = null, message = "", ok = null) }
+        executor.execute {
+            val poller =
+                Thread {
+                    while (!Thread.currentThread().isInterrupted) {
+                        val p = runCatching { downloadProgressSnapshot() }.getOrNull()
+                        if (p != null && p.label.isNotBlank()) {
+                            set { it.copy(percent = p.percent?.toInt(), message = p.label) }
+                        }
+                        try {
+                            Thread.sleep(500)
+                        } catch (_: InterruptedException) {
+                            break
+                        }
+                    }
+                }.apply { isDaemon = true }
+            poller.start()
+            val res =
+                runCatching { mwmInstallLeaves(dir, defaultPackServerBaseUrl(), leafIds) }
+                    .onFailure { Log.w(TAG, "install threw", it) }
+                    .getOrNull()
+            poller.interrupt()
+            var ok = res?.ok == true
+            var msg = res?.error ?: ""
+            if (ok) {
+                // Re-scan + re-open the router (also loads the new wetland sidecars), then let the
+                // live drape register the new leaves. No restart.
+                ok = ComapsSessionBootstrap.ensureOpen(app, force = true)
+                if (!ok) msg = "Maps installed but the routing session did not reopen"
+            }
+            Log.i(
+                TAG,
+                "install done ok=$ok leaves=$leafIds downloaded=${res?.downloadedLeaves} " +
+                    "already=${res?.alreadyInstalledLeaves} sidecars=${res?.sidecarsInstalled} err=$msg",
+            )
+            val inst = runCatching { uniffi.navi.mwmInstalled(dir) }.getOrNull()
+            main.post {
+                if (ok) ComapsDrape.backend?.registerMaps()
+                state =
+                    state.copy(
+                        running = false,
+                        ok = ok,
+                        percent = if (ok) 100 else state.percent,
+                        message = if (ok) "" else msg,
+                        version = inst?.version ?: state.version,
+                        installedLeaves = inst?.leafIds ?: state.installedLeaves,
+                        sidecars = inst?.sidecarCount?.toInt() ?: state.sidecars,
+                    )
+                onDone(ok)
+            }
+        }
+    }
+
+    /** Leaves (of [wanted]) that are not installed in the active release. */
+    fun missing(
+        context: Context,
+        wanted: Collection<String>,
+    ): List<String> {
+        val inst = runCatching { uniffi.navi.mwmInstalled(NaviAppData.resolve(context).absolutePath) }.getOrNull()
+        // No active release under this app's data dir (e.g. a test staged its own MWM root):
+        // coverage is unknown, so never claim a leaf is missing.
+        if (inst?.version == null) return emptyList()
+        val have = inst.leafIds.toSet()
+        return wanted.filter { it !in have }
+    }
+}
+
+private fun formatMb(bytes: Long): String = "%.0f MB".format(java.util.Locale.US, bytes / 1_000_000.0)
+
+/** Tools-menu section: installed release, region list with sizes, progress and cancel. */
+@Composable
+internal fun MwmMapsSection(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val st = MwmMapDownloader.state
+    var showRegions by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        MwmMapDownloader.refreshInstalled(context)
+        // Poll disk state while the section is on screen (installs finish in the background).
+        while (true) {
+            delay(5_000)
+            if (!MwmMapDownloader.state.running) MwmMapDownloader.refreshInstalled(context)
+        }
+    }
+    Column(
+        modifier = modifier.fillMaxWidth().testTag("mwm_maps_section"),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(stringResource(R.string.mwm_maps_title), style = MaterialTheme.typography.titleSmall)
+        Text(
+            text =
+                if (st.installedLeaves.isEmpty()) {
+                    stringResource(R.string.mwm_maps_none)
+                } else {
+                    stringResource(R.string.mwm_maps_installed, st.version ?: "?", st.installedLeaves.size, st.sidecars)
+                },
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.testTag("mwm_maps_installed"),
+        )
+        if (st.running) {
+            LinearProgressIndicator(
+                progress = { (st.percent ?: 0) / 100f },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                text = "${st.label}: ${st.message} ${st.percent?.let { "$it %" } ?: ""}".trim(),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("mwm_maps_progress"),
+            )
+            OutlinedButton(onClick = { MwmMapDownloader.cancel() }) { Text(stringResource(R.string.action_cancel)) }
+        } else {
+            if (st.ok == true) {
+                Text(stringResource(R.string.mwm_maps_done), style = MaterialTheme.typography.bodySmall)
+            } else if (st.ok == false) {
+                Text(
+                    stringResource(R.string.mwm_maps_failed, st.message),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = {
+                        showRegions = !showRegions
+                        if (showRegions) MwmMapDownloader.loadRegions()
+                    },
+                    modifier = Modifier.testTag("btn_mwm_regions"),
+                ) { Text(stringResource(R.string.mwm_maps_choose)) }
+            }
+            if (showRegions) {
+                if (st.regionsError != null) {
+                    Text(
+                        stringResource(R.string.mwm_maps_failed, st.regionsError ?: ""),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                for (r in st.regions.filter { it.id.contains("norway") }) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            "${r.displayName} (${formatMb(r.totalBytes.toLong())})",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(
+                            onClick = { MwmMapDownloader.install(context, r.leafIds, r.displayName) },
+                            modifier = Modifier.testTag("btn_mwm_install_${r.id}"),
+                        ) { Text(stringResource(R.string.mwm_maps_download)) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Offer to download the leaves a route needs (missing-maps), naming them. */
+@Composable
+internal fun MwmMissingMapsDialog(
+    leaves: List<String>,
+    onDownload: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.mwm_missing_title)) },
+        text = {
+            Text(
+                stringResource(R.string.mwm_missing_body, leaves.joinToString(", ") { it.replace('_', ' ') }),
+                modifier = Modifier.padding(top = 4.dp).testTag("mwm_missing_body"),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDownload, modifier = Modifier.testTag("btn_mwm_missing_download")) {
+                Text(stringResource(R.string.mwm_maps_download))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.testTag("btn_mwm_missing_dismiss")) {
+                Text(stringResource(R.string.action_not_now))
+            }
+        },
+    )
+}
+
+/** Used by the planner: leaf names for a point, switched off the main thread. */
+internal suspend fun leafForPoint(
+    lat: Double,
+    lon: Double,
+): String? = withContext(Dispatchers.IO) { runCatching { uniffi.navi.comapsLeafForPoint(lat, lon) }.getOrNull() }

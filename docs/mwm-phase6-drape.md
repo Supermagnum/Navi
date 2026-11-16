@@ -1,8 +1,9 @@
 # Phase 6 -- hybrid CoMaps drape (partial) and Samsung acceptance
 
-Status: **partial**. The CoMaps drape engine draws the basemap behind a transparent
-MapLibre view when the MWM client flag is ON; Navi's overlays, camera and gestures stay on
-MapLibre. MapLibre / PMTiles are **not** retired. Phase 7 and 8 are untouched.
+Status: **first pass, superseded by Phase 6b** (`docs/mwm-phase6b-drape.md`). This document describes
+the hybrid (drape basemap behind a transparent MapLibre view) and its Samsung numbers; on branch
+`feat/mwm-client` the MWM path is now drape only. Kept for the history of the bugs found and the
+first-pass measurements.
 
 Decision record and phase plan: `docs/mwm-client-migration.md` section 9.
 

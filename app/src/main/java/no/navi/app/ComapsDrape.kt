@@ -6,24 +6,50 @@ import android.view.View
 import androidx.lifecycle.LifecycleOwner
 import java.util.concurrent.atomic.AtomicBoolean
 
+/** Map day/night source: the system setting, or sunrise / sunset at the current position. */
+enum class DrapeDayNight { SYSTEM, AUTO_SUN }
+
 /**
- * Phase 6 hybrid rendering: when the MWM client flag is ON and the pinned CoMaps
- * Java SDK (`:comaps-sdk`) is packaged, the CoMaps drape engine draws the basemap
- * behind a transparent MapLibre view that keeps drawing Navi's own overlays
- * (route, waypoints, DATEX, repeaters, GPS puck ...). MapLibre stays the camera
- * master; drape follows it ([ComapsDrapeMap]).
+ * Phase 6b: with the MWM client flag ON and the pinned CoMaps Java SDK (`:comaps-sdk`)
+ * packaged, the CoMaps drape engine is the only map renderer. It owns the camera
+ * (centre, zoom, rotation, perspective, heading-up and follow mode, gestures) and draws
+ * Navi's overlays through CoMaps route rendering, route points, user marks and tracks
+ * ([ComapsDrapeMap]). MapLibre and PMTiles are not used on this path.
  *
  * This facade lives in the main source set and never references `app.organicmaps.sdk`
  * classes, so the app still compiles when the (gitignored) CoMaps checkout is not
  * present. The real implementation, `no.navi.app.ComapsDrapeBootstrap`, lives in
  * `src/drape/java` and is looked up by name; if it is absent or initialisation fails
- * the app keeps the MapLibre basemap and records the reason in [lastError].
+ * the reason is kept in [lastError] and the map area shows it.
  */
+
 object ComapsDrape {
     private const val TAG = "ComapsDrape"
     private const val BACKEND_CLASS = "no.navi.app.ComapsDrapeBootstrap"
 
     enum class State { UNAVAILABLE, IDLE, INITIALIZING, READY, FAILED }
+
+    /** Camera as read back from the engine. [mode] uses the CoMaps my-position constants (3 = follow, 4 = heading up). */
+    data class Camera(
+        val lat: Double,
+        val lon: Double,
+        val level: Double,
+        val bearingDeg: Double,
+        val pitchDeg: Double,
+        val widthPx: Double,
+        val heightPx: Double,
+        val mode: Int,
+    )
+
+    /** Bearing value that keeps the current rotation (the native build uses -ffast-math, so no NaN). */
+    const val NO_BEARING = 1000.0
+
+    /** Follow modes Navi asks for. */
+    object Follow {
+        const val FREE = 0
+        const val NORTH_UP = 1
+        const val HEADING_UP = 2
+    }
 
     /** Everything the Compose host needs from the SDK-backed implementation. */
     interface Backend {
@@ -40,23 +66,80 @@ object ComapsDrape {
 
         fun detachLifecycle(owner: LifecycleOwner)
 
-        /**
-         * Centre + CoMaps scale level. The CoMaps API only takes an integer level (animated
-         * by the engine); the fractional part is applied afterwards as a relative scale.
-         */
-        fun setViewport(
+        /** Centre, CoMaps scale level (fractional) and map bearing; level < 0 / [NO_BEARING] keep the current value. */
+        fun setCamera(
             lat: Double,
             lon: Double,
-            zoomLevel: Double,
+            level: Double,
+            bearingDeg: Double,
+            animated: Boolean,
         )
 
-        /**
-         * MapLibre-zoom to CoMaps-level offset for this device (see
-         * [DrapeCameraSync.zoomOffset]); null until the drape surface has a size.
-         */
-        fun zoomOffset(): Double?
+        fun camera(): Camera?
+
+        /** Rotate to a map bearing about the visible centre; keeps a follow mode. */
+        fun rotateTo(
+            bearingDeg: Double,
+            animated: Boolean,
+        )
+
+        /** Fit a lat/lon box into the viewport (route overview). */
+        fun fitRect(
+            minLat: Double,
+            minLon: Double,
+            maxLat: Double,
+            maxLon: Double,
+            animated: Boolean,
+        )
+
+        /** Relative zoom around the visible centre; keeps a follow mode. */
+        fun scaleBy(
+            factor: Double,
+            animated: Boolean,
+        )
+
+        /** [Follow.FREE], [Follow.NORTH_UP] or [Follow.HEADING_UP]. */
+        fun setFollowMode(mode: Int)
+
+        /** Navigation camera (puck low on screen, perspective when 3D is allowed). */
+        fun setNavigation(
+            on: Boolean,
+            pedestrian: Boolean,
+        )
+
+        /** Feeds a position into the drape (puck, follow mode, heading from [bearing] when moving). */
+        fun pushLocation(
+            timeMs: Long,
+            lat: Double,
+            lon: Double,
+            accuracyM: Float,
+            altitudeM: Double,
+            speedMps: Float,
+            bearingDeg: Float,
+        )
+
+        /** Compass heading in degrees (heading-up when no GPS bearing is fresh). */
+        fun pushCompass(headingDeg: Double)
+
+        /** Called with the CoMaps my-position mode whenever it changes (user pan -> not follow). */
+        fun setModeListener(listener: ((Int) -> Unit)?)
+
+        fun screenToLatLon(
+            x: Float,
+            y: Float,
+        ): Pair<Double, Double>?
+
+        /** Register leaf MWMs that appeared after the Framework was created (live download). */
+        fun registerMaps()
 
         fun setNight(night: Boolean)
+
+        /** CoMaps' own sunrise / sunset test (polar day counts as day). */
+        fun isDayAt(
+            lat: Double,
+            lon: Double,
+            utcSeconds: Long,
+        ): Boolean
 
         fun isNight(): Boolean
 
@@ -74,7 +157,42 @@ object ComapsDrape {
 
         fun renderingActive(): Boolean
 
+        /** Navi has no CoMaps place page: block the drape's own tap selection. */
+        fun blockTapEvents(block: Boolean)
+
         fun drawScale(): Int
+
+        // Overlays (main thread only). `type`: 0 car, 1 pedestrian, 2 bicycle.
+        fun clearRoute()
+
+        fun addSubroute(
+            latlon: DoubleArray,
+            type: Int,
+            turnIdx: IntArray?,
+        )
+
+        fun setRoutePoints(
+            latlon: DoubleArray,
+            titles: Array<String>,
+        )
+
+        fun createGroup(name: String): Long
+
+        fun setMarks(
+            group: Long,
+            latlon: DoubleArray,
+            names: Array<String>,
+            icons: IntArray,
+            colors: IntArray,
+        )
+
+        fun setTracks(
+            group: Long,
+            counts: IntArray,
+            latlon: DoubleArray,
+            argb: IntArray,
+            widths: FloatArray,
+        )
     }
 
     @Volatile
@@ -103,14 +221,24 @@ object ComapsDrape {
     private val started = AtomicBoolean(false)
 
     /**
-     * Cheap synchronous pre-check used before the MapLibre view is created (the view must
-     * be built translucent up front): the SDK is packaged and an MWM release with World
-     * maps is installed. Does not guarantee the Framework will start.
+     * True when the live map is the CoMaps drape (MWM flag ON, SDK packaged, not disabled by a
+     * test hook). With the flag OFF, or without the SDK in the APK, the classic MapLibre /
+     * PMTiles map is used unchanged.
      */
-    fun likelyAvailable(context: Context): Boolean {
-        if (!MwmClientBootstrap.isEnabled() || !sdkPackaged()) return false
-        val root = java.io.File(NaviAppData.resolve(context), "mwm")
-        return java.io.File(root, "active.json").isFile && java.io.File(root, "World.mwm").exists()
+    fun isMwmMapPath(): Boolean = MwmClientBootstrap.isEnabled() && sdkPackaged() && !NaviMapTestHooks.drapeDisabled
+
+    /** Forward a fix to the drape (no-op until it is ready). Safe from any thread that owns the fix. */
+    fun pushLocation(loc: android.location.Location) {
+        val b = backend ?: return
+        b.pushLocation(
+            timeMs = if (loc.time > 0L) loc.time else System.currentTimeMillis(),
+            lat = loc.latitude,
+            lon = loc.longitude,
+            accuracyM = if (loc.hasAccuracy()) loc.accuracy else 0f,
+            altitudeM = if (loc.hasAltitude()) loc.altitude else 0.0,
+            speedMps = if (loc.hasSpeed()) loc.speed else 0f,
+            bearingDeg = if (loc.hasBearing()) loc.bearing else 0f,
+        )
     }
 
     /**
@@ -155,7 +283,7 @@ object ComapsDrape {
         } else {
             state = State.FAILED
             lastError = err
-            Log.w(TAG, "drape unavailable (MapLibre fallback): $err init_ms=$ms")
+            Log.w(TAG, "drape unavailable: $err init_ms=$ms")
         }
         NaviMapTestHooks.drapeState = state.name
         NaviMapTestHooks.drapeError = lastError

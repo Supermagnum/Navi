@@ -19,6 +19,7 @@ pub mod comaps_snap;
 pub mod download;
 pub mod fingerprint;
 pub mod flag;
+pub mod install;
 pub mod migration;
 pub mod region_ui;
 pub mod release;
@@ -46,8 +47,8 @@ pub use comaps_instructions::{
     NaviInstruction,
 };
 pub use comaps_router::{
-    ComapsLatLon, ComapsProfile, ComapsRoute, ComapsRouter, ComapsRouterCode, ComapsRouterError,
-    ComapsSnap,
+    leaf_for_point, set_platform_locked, ComapsLatLon, ComapsProfile, ComapsRoute, ComapsRouter,
+    ComapsRouterCode, ComapsRouterError, ComapsSnap,
 };
 pub use comaps_search::{
     map_poi_category, merge_hits, navi_quick_category_key, CategoryCoverage, CategoryMapping,
@@ -59,9 +60,10 @@ pub use comaps_snap::{
     DEFAULT_SNAP_RADIUS_M,
 };
 pub use download::{
-    download_leaf_set, download_world_overlays, fetch_current_catalog,
+    download_leaf_set, download_leaf_set_with, download_world_overlays, fetch_current_catalog,
     leaf_ids_with_world_overlays, DownloadPlan, DownloadProgress, LeafDownloadResult,
-    MwmDownloadError, DEFAULT_MWM_CONCURRENCY, NAVI_MWM_USER_AGENT, WORLD_OVERLAY_LEAF_IDS,
+    LeafSetOptions, MwmDownloadError, DEFAULT_MWM_CONCURRENCY, NAVI_MWM_USER_AGENT,
+    WORLD_OVERLAY_LEAF_IDS,
 };
 pub use fingerprint::{
     check_local_mwm_fingerprint, fingerprint_from_catalog_leaf, FingerprintMismatch,
@@ -70,6 +72,10 @@ pub use fingerprint::{
 pub use flag::{
     mwm_client_enabled, set_mwm_client_enabled_override, with_mwm_client_override,
     MWM_CLIENT_ENABLED_ENV,
+};
+pub use install::{
+    install_leaf_set, installed_leaf_ids, installed_leaf_ids_active, installed_sidecar_count,
+    InstallReport,
 };
 pub use migration::{
     leaf_set_for_bake_id, leaf_set_for_region_id, parse_region_migration_json, RegionMigration,

@@ -37,6 +37,36 @@ object MwmProductionPlanner {
     private const val MAX_SIM_KMH = 110.0
     private const val DEFAULT_SIM_KMH = 60.0
 
+    /** Drape route style of the last plan: 0 car, 1 pedestrian, 2 bicycle ([drapeRouteType]). */
+    @Volatile
+    var lastRouteStyle: Int = 0
+        private set
+
+    @Volatile
+    private var turnKey: Int = 0
+
+    @Volatile
+    private var turnIdx: IntArray = IntArray(0)
+
+    /** Polyline point indices of the last plan's turns, for drape turn arrows; null for another polyline. */
+    fun lastTurnPointIndices(polyline: String): IntArray? = if (polyline.isNotBlank() && polyline.hashCode() == turnKey && turnIdx.isNotEmpty()) turnIdx else null
+
+    /**
+     * Profiles that CoMaps routes as a plain car without vehicle dimension / weight limits
+     * (electric car, truck, mobile home, motorcycle): the UI says so next to the route options.
+     */
+    fun limitsNotApplied(profile: TravelProfile): Boolean =
+        when (profile) {
+            TravelProfile.CAR_ELECTRIC,
+            TravelProfile.TRUCK,
+            TravelProfile.TRUCK_ELECTRIC,
+            TravelProfile.MOBILE_HOME,
+            TravelProfile.MOTORCYCLE,
+            TravelProfile.MOTORCYCLE_ELECTRIC,
+            -> true
+            else -> false
+        }
+
     /** True when this process should use CoMaps for the live route screen. */
     fun shouldUse(context: Context): Boolean {
         if (!MwmClientBootstrap.isEnabled()) return false
@@ -93,6 +123,19 @@ object MwmProductionPlanner {
         val generation = cancelGeneration.get()
 
         fun cancelled() = cancelGeneration.get() != generation
+        lastRouteStyle =
+            when (profile) {
+                TravelProfile.HIKING -> 1
+                TravelProfile.BICYCLE, TravelProfile.BICYCLE_ELECTRIC -> 2
+                else -> 0
+            }
+        // Missing maps: name the leaves that cover the start / vias / end before the router
+        // reports a misleading "not on a routable road".
+        val endpoints = ArrayList<Pair<Double, Double>>(2 + vias.size)
+        endpoints.add(startLat to startLon)
+        vias.forEach { endpoints.add(it) }
+        endpoints.add(endLat to endLon)
+        missingLeavesFor(context, endpoints)?.let { return it }
         setMwmProductionPlannerActive(true)
         Log.i(TAG, "planner=mwm profile=$profile vias=${vias.size}")
         return try {
@@ -126,6 +169,7 @@ object MwmProductionPlanner {
             var turns = JSONArray()
             var instructions = JSONArray()
             var elev = JSONArray()
+            val speedLimits = JSONArray()
             var mode = "Unknown"
             var last: FfiComapsRoute? = null
 
@@ -146,6 +190,10 @@ object MwmProductionPlanner {
                 if (cancelled()) return cancelledCorridor()
                 if (leg.code != FfiComapsRouteCode.OK) {
                     RouteClimbSource.publishIfOk(leg)
+                    if (leg.code == FfiComapsRouteCode.NEED_MORE_MAPS) {
+                        // The route crosses a leaf that is not installed: name it.
+                        missingLeavesAlong(context, la0, lo0, la1, lo1)?.let { return it }
+                    }
                     return toCorridor(leg, endLat, endLon, profile)
                 }
                 RouteClimbSource.publishIfOk(leg)
@@ -163,6 +211,7 @@ object MwmProductionPlanner {
                 appendJsonArray(turns, leg.turnsJson)
                 appendJsonArray(instructions, leg.instructionsJson)
                 appendJsonArray(elev, leg.elevationJson)
+                appendJsonArray(speedLimits, leg.speedLimitsJson)
             }
 
             val ok =
@@ -179,6 +228,7 @@ object MwmProductionPlanner {
                     descentM = descent,
                     elevationJson = elev.toString(),
                     routerMode = mode,
+                    speedLimitsJson = speedLimits.toString(),
                 )
             // Climb already published per leg; re-publish aggregate for HUD.
             RouteClimbSource.publishComaps(
@@ -199,6 +249,7 @@ object MwmProductionPlanner {
         val codeName = route.code.name
         val polyline = pointsToPolyline(route.points)
         val (maneuvers, samples) = buildManeuversAndSamples(route)
+        turnKey = polyline.hashCode()
         if (route.code != FfiComapsRouteCode.OK) {
             val msg =
                 route.errorMessage?.ifBlank { null }
@@ -327,44 +378,66 @@ object MwmProductionPlanner {
             } else {
                 DEFAULT_SIM_KMH
             }
-        // Subsample long polylines for the HUD / sim path.
-        val step = (pts.size / 800).coerceAtLeast(1)
-        var i = 0
-        while (i < pts.size) {
-            samples.put(
+        // Posted maxspeed per segment from the MWM maxspeeds section (car router only; -1 = none).
+        val limits =
+            runCatching { JSONArray(route.speedLimitsJson.ifBlank { "[]" }) }.getOrElse { JSONArray() }
+
+        // A sample covers `step` segments; use the lowest posted limit among them so a short
+        // limit change is not skipped by the subsampling.
+        fun limitAt(
+            i: Int,
+            step: Int,
+        ): Int {
+            var best = -1
+            val to = minOf(i + step, limits.length())
+            for (k in i until to) {
+                val v = limits.optInt(k, -1)
+                if (v > 0 && (best < 0 || v < best)) best = v
+            }
+            if (best < 0 && i < limits.length() && limits.optInt(i, -1) == -2) return -2
+            return best
+        }
+
+        fun sampleJson(
+            i: Int,
+            step: Int,
+        ): JSONObject {
+            val lim = limitAt(i.coerceAtMost((limits.length() - 1).coerceAtLeast(0)), step)
+            val o =
                 JSONObject()
                     .put("lat", pts[i].lat)
                     .put("lon", pts[i].lon)
                     .put("cum_m", cum[i])
                     .put("speed_kmh", avgKmh)
                     .put("highway", JSONObject.NULL)
-                    .put("maxspeed_posted", JSONObject.NULL),
-            )
+                    .put("maxspeed_posted", lim > 0)
+            if (lim > 0) o.put("maxspeed_kmh", lim.toDouble())
+            return o
+        }
+
+        // Subsample long polylines for the HUD / sim path.
+        val step = (pts.size / 800).coerceAtLeast(1)
+        var i = 0
+        while (i < pts.size) {
+            samples.put(sampleJson(i, step))
             i += step
         }
         if (pts.isNotEmpty() && (pts.size - 1) % step != 0) {
-            val last = pts.size - 1
-            samples.put(
-                JSONObject()
-                    .put("lat", pts[last].lat)
-                    .put("lon", pts[last].lon)
-                    .put("cum_m", cum[last])
-                    .put("speed_kmh", avgKmh)
-                    .put("highway", JSONObject.NULL)
-                    .put("maxspeed_posted", JSONObject.NULL),
-            )
+            samples.put(sampleJson(pts.size - 1, 1))
         }
 
         val instructions =
             runCatching { JSONArray(route.instructionsJson.ifBlank { "[]" }) }
                 .getOrElse { JSONArray() }
         val maneuvers = JSONArray()
+        val turnPoints = ArrayList<Int>()
         var along = 0.0
         for (j in 0 until instructions.length()) {
             val step = instructions.optJSONObject(j) ?: continue
             val dist = step.optDouble("dist_m", 0.0)
             along += dist
             val idx = indexAtCum(cum, along)
+            if (step.optString("kind") != "destination") turnPoints.add(idx)
             val p = pts.getOrNull(idx) ?: pts.lastOrNull()
             maneuvers.put(
                 JSONObject()
@@ -386,7 +459,59 @@ object MwmProductionPlanner {
                     .put("voice_en", step.optString("voice_en", step.optString("voice", ""))),
             )
         }
+        turnIdx = turnPoints.distinct().filter { it in 1 until pts.size }.toIntArray()
         return maneuvers.toString() to samples.toString()
+    }
+
+    /**
+     * Missing-maps check for the route endpoints: a point whose CoMaps country (leaf) is not
+     * installed gets a NEED_MORE_MAPS result that names the leaves, instead of the router's
+     * "not on a routable road". Null when every endpoint is covered (or the leaf is unknown).
+     */
+    private fun missingLeavesFor(
+        context: Context,
+        points: List<Pair<Double, Double>>,
+    ): CorridorRouteResult? {
+        val leaves = LinkedHashSet<String>()
+        for ((la, lo) in points) {
+            val leaf = runCatching { uniffi.navi.comapsLeafForPoint(la, lo) }.getOrNull()
+            if (!leaf.isNullOrBlank()) leaves.add(leaf)
+        }
+        return missingResult(context, leaves)
+    }
+
+    /** Leaves crossed by the straight line between two route points, for a NeedMoreMaps result. */
+    private fun missingLeavesAlong(
+        context: Context,
+        la0: Double,
+        lo0: Double,
+        la1: Double,
+        lo1: Double,
+    ): CorridorRouteResult? {
+        val dKm = haversineM(la0, lo0, la1, lo1) / 1000.0
+        val n = (dKm / 8.0).toInt().coerceIn(2, 240)
+        val leaves = LinkedHashSet<String>()
+        for (k in 0..n) {
+            val f = k.toDouble() / n
+            val leaf =
+                runCatching { uniffi.navi.comapsLeafForPoint(la0 + (la1 - la0) * f, lo0 + (lo1 - lo0) * f) }.getOrNull()
+            if (!leaf.isNullOrBlank()) leaves.add(leaf)
+        }
+        return missingResult(context, leaves)
+    }
+
+    private fun missingResult(
+        context: Context,
+        leaves: Collection<String>,
+    ): CorridorRouteResult? {
+        if (leaves.isEmpty()) return null
+        val missing = MwmMapDownloader.missing(context, leaves)
+        if (missing.isEmpty()) return null
+        Log.i(TAG, "missing maps: ${missing.joinToString(",")}")
+        return failCorridor(
+            "TEST_KIND=PLAN_MWM_ROUTE\nFAIL: Missing maps: ${missing.joinToString(", ") { it.replace('_', ' ') }}\n" +
+                "PLANNER=mwm\ncomaps_route_code=NEED_MORE_MAPS\nmissing_leaves=${missing.joinToString(",")}\n",
+        )
     }
 
     private fun indexAtCum(

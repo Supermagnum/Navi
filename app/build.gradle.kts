@@ -337,14 +337,31 @@ tasks.register<Exec>("buildPluginWasm") {
 
 // Stage CoMaps classificator / countries / packed_polygons from the pinned
 // source tree into APK assets (gitignored; no prebuilt World.mwm here).
+//
+// With :comaps-sdk (the drape build) the same files already ship as the SDK's APK root assets and
+// ComapsSessionBootstrap stages the headless router's copy from there, so nothing is staged a second
+// time and a stale staged dir is removed. Only SDK-less builds still stage `assets/comaps-data`.
+val comapsSdkPresent = rootProject.findProject(":comaps-sdk") != null
+
+tasks.register<Delete>("removeStagedComapsData") {
+    delete("src/main/assets/comaps-data")
+}
+
 tasks.register<Exec>("stageComapsDataAssets") {
     workingDir = rootProject.projectDir
     commandLine("bash", "scripts/stage-comaps-data-assets.sh")
     onlyIf {
         // Skip when the pin clone / local-artifacts cache is unavailable (CI
         // host unit tests); device / F-Droid builds must have the tree.
-        file("${rootProject.projectDir}/scripts/stage-comaps-data-assets.sh").exists()
+        !comapsSdkPresent &&
+            file("${rootProject.projectDir}/scripts/stage-comaps-data-assets.sh").exists()
     }
+}
+
+if (comapsSdkPresent) {
+    tasks
+        .matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
+        .configureEach { dependsOn("removeStagedComapsData") }
 }
 
 val packageTasks =

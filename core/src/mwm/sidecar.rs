@@ -949,10 +949,9 @@ mod tests {
                 })
                 .collect(),
         };
-        let body = encode_elevation_el02(&[feat.clone()]).unwrap();
+        let body = encode_elevation_el02(std::slice::from_ref(&feat)).unwrap();
         let parsed = parse_elevation_el02(&body).unwrap();
         assert_eq!(parsed, vec![feat]);
-        assert!(32768 > 32767); // beyond i16 max
     }
 
     #[test]

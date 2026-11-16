@@ -21,6 +21,11 @@ class RouteSimulator(
     private val onFix: (Location) -> Unit,
     private val onSample: (RouteSimSample) -> Unit = {},
     private val onFinished: () -> Unit = {},
+    /**
+     * When > 0 a sample interval longer than this is split into interpolated fixes at most this far
+     * apart (wall clock), like a real 1 Hz GPS. 0 keeps one fix per sample (classic behaviour).
+     */
+    private val maxFixIntervalMs: Long = 0L,
 ) {
     private var job: Job? = null
 
@@ -53,7 +58,18 @@ class RouteSimulator(
                     val distM = (b.cumM - a.cumM).coerceAtLeast(0.5)
                     val speedMs = (a.speedKmh.coerceAtLeast(1.0) / 3.6)
                     val waitMs = ((distM / speedMs) * 1000.0 / scale).toLong().coerceIn(15L, 60_000L)
-                    delay(waitMs)
+                    if (maxFixIntervalMs > 0L && waitMs > maxFixIntervalMs) {
+                        val steps = ((waitMs + maxFixIntervalMs - 1) / maxFixIntervalMs).toInt()
+                        val stepMs = waitMs / steps
+                        for (k in 1 until steps) {
+                            delay(stepMs)
+                            if (!isActive) return@launch
+                            onFix(locationAt(a, b, k.toDouble() / steps))
+                        }
+                        delay(waitMs - stepMs * (steps - 1))
+                    } else {
+                        delay(waitMs)
+                    }
                     i++
                 }
                 if (isActive) {
@@ -93,10 +109,11 @@ class RouteSimulator(
     private fun locationAt(
         a: RouteSimSample,
         b: RouteSimSample,
+        fraction: Double = 0.0,
     ): Location {
         val loc = Location("navi-route-sim")
-        loc.latitude = a.lat
-        loc.longitude = a.lon
+        loc.latitude = a.lat + (b.lat - a.lat) * fraction
+        loc.longitude = a.lon + (b.lon - a.lon) * fraction
         loc.time = System.currentTimeMillis()
         loc.accuracy = 5f
         val speedMs = (a.speedKmh / 3.6).toFloat()

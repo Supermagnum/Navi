@@ -58,6 +58,8 @@ pub mod bin_freshness;
 
 mod mwm_comaps_ffi;
 pub use mwm_comaps_ffi::*;
+mod mwm_install_ffi;
+pub use mwm_install_ffi::*;
 
 mod camping_plugin;
 pub use camping_plugin::*;

@@ -42,7 +42,7 @@ fn read_ostlandet_sidecars_and_report_rss() {
         .to_vec();
     assert_eq!(leaves.len(), 9);
 
-    let dir = PathBuf::from(std::env::temp_dir()).join("navi-mwm-sidecar-live");
+    let dir = std::env::temp_dir().join("navi-mwm-sidecar-live");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
 
