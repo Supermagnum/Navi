@@ -81,16 +81,16 @@ fn env_enabled() -> bool {
     }
 }
 
-/// Whether MWM catalog/download APIs should be used. Default **true** when the
-/// env var is unset (all build types / F-Droid). Set
-/// `NAVI_MWM_CLIENT_ENABLED=0` to force the classic `.rkyv` path for debugging.
+/// Whether MWM catalog/download APIs should be used.
+///
+/// Phase 8 / G4: always **true** for product builds (env OFF no longer selects
+/// classic `.rkyv`). Unit tests may still force OFF via
+/// [`set_mwm_client_enabled_override`] / [`with_mwm_client_override`].
 pub fn mwm_client_enabled() -> bool {
-    // Do not take FLAG_TEST_LOCK here: production reads must not block on a
-    // test that holds the override lock for a long download. OVERRIDE is atomic.
     match OVERRIDE.load(Ordering::SeqCst) {
+        -1 => true,
         0 => false,
-        1 => true,
-        _ => env_enabled(),
+        _ => true,
     }
 }
 
