@@ -30,6 +30,9 @@
 #include "platform/settings.hpp"
 
 #include "app/organicmaps/sdk/core/jni_helper.hpp"
+#ifdef __ANDROID__
+#include "app/organicmaps/sdk/platform/AndroidPlatform.hpp"
+#endif
 
 #include "geometry/latlon.hpp"
 #include "geometry/mercator.hpp"
@@ -587,13 +590,18 @@ NaviComapsSearchResult ConvertResult(search::Result const & r, bool hasPosition,
     if (fid.m_mwmId.IsAlive())
       mwm = fid.m_mwmId.GetInfo()->GetCountryName();
   }
-  out.name = Dup(r.GetString());
+  // Town Suggests often leave GetString() empty and put the display title in
+  // GetSuggestionString() / GetLocalizedFeatureType() (CoMaps UI does the same).
+  // Localization.cpp is null-Context-safe; prefer a real title over blank rows.
+  std::string name = r.GetString();
+  if (name.empty() && r.IsSuggest())
+    name = r.GetSuggestionString();
+  std::string featureType = r.GetLocalizedFeatureType();
+  if (name.empty())
+    name = featureType;
+  out.name = Dup(name);
   out.address = Dup(r.GetAddress());
-  // Do not call GetLocalizedFeatureType(): on Android that goes through
-  // Utils.getStringValueByKey and aborts when Platform has no Context (headless
-  // instrumented tests and early session open before the activity). Name +
-  // address are enough for the search suite and the To-field UI.
-  out.feature_type = Dup(std::string());
+  out.feature_type = Dup(featureType);
   out.mwm_name = Dup(mwm);
   return out;
 }
@@ -711,10 +719,28 @@ extern "C" uint64_t navi_comaps_search(char const * query, int is_category, size
                            : search::SearchParams::kDefaultNumResultsEverywhere);
     params.m_batchSize = search::SearchParams::kDefaultBatchSizeEverywhere;
     params.m_suggestsEnabled = false;
-    // Address formatting calls into Android Utils.getStringValueByKey; without a
-    // Platform Context (headless tests / early open) that aborts the process.
-    // Names are enough for ranking and the To-field; addresses stay empty here.
-    params.m_needAddress = false;
+    // Address formatting calls into Android Utils.getStringValueByKey. On Phase 6b
+    // drape builds Utils is cached in JNI_OnLoad; without a Platform Context that
+    // path used to abort. Localization.cpp now returns the key when Context is
+    // null, and headless suites must call OrganicMaps.nativeSetContext first.
+    // Prefer addresses when Context is present (production UI / fixed headless).
+#ifdef __ANDROID__
+    bool const hasCtx = android::Platform::Instance().GetContext() != nullptr;
+    if (!hasCtx)
+    {
+      LOG(LERROR, ("navi_comaps_search: Platform Context is null. "
+                   "Call OrganicMaps.nativeSetContext (or open the drape) before search; "
+                   "headless suites use ComapsHeadlessPlatform.ensureContext."));
+      __android_log_print(ANDROID_LOG_ERROR, "navi_comaps",
+                          "Platform Context is null; call ComapsHeadlessPlatform.ensureContext "
+                          "or open the drape before search");
+      // Still run without addresses so ranking works; Localization.cpp also
+      // refuses Utils calls when Context is null (no abort).
+    }
+    params.m_needAddress = hasCtx;
+#else
+    params.m_needAddress = true;
+#endif
     params.m_needHighlighting = false;
     params.m_categorialRequest = is_category != 0;
 

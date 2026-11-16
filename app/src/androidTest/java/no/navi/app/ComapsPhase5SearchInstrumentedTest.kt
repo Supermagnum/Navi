@@ -68,6 +68,8 @@ class ComapsPhase5SearchInstrumentedTest {
         // World overlays live at the writable root (same as Phase 3/4 tests),
         // not under releases/{ver}/.
         assumeTrue("World.mwm missing at root", File(root, "World.mwm").isFile)
+        // Phase 6b packages the CoMaps Java SDK; Utils localization needs a Context.
+        ComapsHeadlessPlatform.requireContext(ctx)
 
         fun copyAssetDir(
             assetPath: String,
@@ -246,6 +248,20 @@ class ComapsPhase5SearchInstrumentedTest {
         assertTrue(
             "high-confidence pass rate too low: $highPass / $highTotal (see out-phase5-search)",
             highTotal > 0 && highPass * 5 >= highTotal * 4,
+        )
+    }
+
+    @Test
+    fun platformContextRequiredWhenSdkPackaged() {
+        assumeTrue("CoMaps Java SDK not packaged", ComapsDrape.sdkPackaged())
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        // Must fail loudly (AssertionError) if nativeSetContext cannot run — not a silent miss.
+        ComapsHeadlessPlatform.requireContext(ctx)
+        val addr = comapsReverseGeocode(61.115, 10.466) // Lillehammer Storgata pin
+        assertNotNull(addr)
+        android.util.Log.i(
+            "NaviPhase5Search",
+            "platformContextReady street='${addr.street}' found=${addr.found} dist=${addr.distanceM}",
         )
     }
 

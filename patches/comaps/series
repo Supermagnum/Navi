@@ -3,3 +3,4 @@
 0003-navi-headless-jni.patch
 0004-navi-drape-camera-overlays-and-leaf-lock.patch
 0005-navi-fps-cap-puck-states-and-mark-symbols.patch
+0006-navi-null-platform-context-guard.patch
