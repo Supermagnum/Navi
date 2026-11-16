@@ -275,7 +275,7 @@
         "lat": 61.0,
         "lon": 10.5
       },
-      "non_gating_reason": "Postcode result shape varies; address substring check only."
+      "non_gating_reason": "Bare postcode queries often return street Feature hits (not Postcode kind) with empty GetAddress(); locality may be missing in CoMaps data for those rows. Non-gating until address/locality is present on the hit."
     },
     {
       "id": "postcode_2317",
@@ -313,7 +313,7 @@
         "lat": 61.0,
         "lon": 10.5
       },
-      "non_gating_reason": "Postcode result shape varies; address substring check only."
+      "non_gating_reason": "Bare postcode queries often return street Feature hits (not Postcode kind) with empty GetAddress(); locality may be missing in CoMaps data for those rows. Non-gating until address/locality is present on the hit."
     },
     {
       "id": "cabin_rondvassbu",

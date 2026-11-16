@@ -6,6 +6,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
@@ -13,10 +14,12 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import uniffi.navi.FfiSearchHit
+import uniffi.navi.FfiSearchHitKind
 import uniffi.navi.comapsCategoryQuery
 import uniffi.navi.comapsNativeAvailable
 import uniffi.navi.comapsReverseGeocode
 import uniffi.navi.comapsSearchEnabled
+import uniffi.navi.comapsSessionIsOpen
 import java.io.File
 
 /**
@@ -26,7 +29,8 @@ import java.io.File
  *
  * Per-query `user_context` (locale + position) matches the headless harness;
  * viewport is cleared (Everywhere); limit 80. Gate: every high-confidence row
- * must pass individually (no percentage gate).
+ * must pass individually (no percentage gate). No warm-up query — the bridge
+ * waits for engine readiness itself.
  *
  * Output: `{externalFiles}/phase5-inapp/search-suite-summary.json`.
  */
@@ -36,6 +40,7 @@ class ComapsPhase5InAppSearchInstrumentedTest {
     val composeRule = createAndroidComposeRule<MainActivity>()
 
     private lateinit var outDir: File
+    private lateinit var dataMwm: File
 
     companion object {
         private const val APP_LIMIT = 80
@@ -49,12 +54,7 @@ class ComapsPhase5InAppSearchInstrumentedTest {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         outDir = File(ctx.getExternalFilesDir(null), "phase5-inapp")
         outDir.mkdirs()
-        // Production path only: MainActivity (compose rule) already opened the
-        // CoMaps session. A second comapsSessionOpen from the test aborts inside
-        // ~HttpMapFilesDownloader (CalledOnOriginalThread). Prefer installed
-        // production leaves; fall back to navi-mwm-test only if production is empty
-        // (stage assets, then let ComapsSessionBootstrap reopen once).
-        val dataMwm = File(NaviAppData.resolve(ctx), "mwm")
+        dataMwm = File(NaviAppData.resolve(ctx), "mwm")
         val testRoot = File(ctx.getExternalFilesDir(null), "navi-mwm-test")
         val productionReady =
             File(dataMwm, "World.mwm").isFile ||
@@ -64,24 +64,17 @@ class ComapsPhase5InAppSearchInstrumentedTest {
         if (!productionReady) {
             assumeTrue("no test MWMs under ${testRoot.absolutePath}", File(testRoot, "World.mwm").isFile)
             ComapsPhase6Harness.stageHeadlessAssets(ctx, testRoot)
-            // Single reopen through the same bootstrap production uses.
             ComapsSessionBootstrap.ensureOpen(ctx, force = true)
         }
-        // Wait until the activity-owned session can serve search.
+        // Same Platform Context the headless suite sets, so address formatting
+        // matches (drape may not have called nativeSetContext yet).
+        ComapsHeadlessPlatform.requireContext(ctx)
+        // Wait only for the activity-owned session — do not warm with a real query.
         val ready =
             ComapsPhase6Harness.waitFor(120_000L, 500L) {
-                ComapsSearchBridge.enabled()
+                ComapsSearchBridge.enabled() && comapsSessionIsOpen()
             }
-        assumeTrue("ComapsSearchBridge not enabled after MainActivity start", ready)
-        // enabled() can race ahead of the lazy search Engine; first Everywhere
-        // starts then return id=0 / empty. Warm until a known town yields hits.
-        val warmed =
-            ComapsPhase6Harness.waitFor(90_000L, 750L) {
-                ComapsSearchBridge
-                    .search("Oslo", 59.9139, 10.7522, 5, locale = "nb")
-                    .isNotEmpty()
-            }
-        assumeTrue("CoMaps Everywhere search engine did not warm up", warmed)
+        assumeTrue("ComapsSearchBridge/session not ready after MainActivity start", ready)
     }
 
     private fun norm(s: String): String = s.filter { it.isLetterOrDigit() }.lowercase()
@@ -101,7 +94,7 @@ class ComapsPhase5InAppSearchInstrumentedTest {
         wanted: JSONArray,
     ): Int {
         for ((idx, hit) in hits.withIndex()) {
-            val hay = norm(hit.name + " " + hit.address)
+            val hay = norm(hit.name + " " + hit.address + " " + hit.featureType)
             for (i in 0 until wanted.length()) {
                 if (hay.contains(norm(wanted.getString(i)))) return idx + 1
             }
@@ -130,16 +123,73 @@ class ComapsPhase5InAppSearchInstrumentedTest {
             val top = hits.take(topN)
             val ok =
                 (0 until wanted.length()).any { i ->
-                    top.any { norm(it.address + it.name).contains(norm(wanted.getString(i))) }
+                    val needle = norm(wanted.getString(i))
+                    top.any { hit ->
+                        norm(hit.address + hit.name + hit.featureType).contains(needle) ||
+                            (hit.kind == FfiSearchHitKind.POSTCODE && norm(hit.name + hit.address).contains(needle))
+                    }
                 }
             val rank = if (ok) rankOf(hits, wanted) else -1
             return Triple(
                 ok,
                 rank,
-                if (ok) "" else "addresses=${top.map { it.address }}",
+                if (ok) {
+                    ""
+                } else {
+                    "addresses=${top.map { Triple(it.name, it.address, it.kind) }} " +
+                        "mwm=${top.map { it.mwmName }} leaves=${listProductionLeaves()}"
+                },
             )
         }
         return Triple(hits.size >= q.optInt("min_results", 0), if (hits.isNotEmpty()) 1 else -1, "n=${hits.size}")
+    }
+
+    private fun listProductionLeaves(): List<String> {
+        val releases = File(dataMwm, "releases")
+        return releases
+            .listFiles()
+            .orEmpty()
+            .flatMap { rel ->
+                File(rel, "leaves").listFiles { f -> f.name.endsWith(".mwm") }.orEmpty().map { it.name }
+            }.sorted()
+    }
+
+    /**
+     * Cold start: first Everywhere query after activity/session ready must not
+     * return empty solely because the lazy Engine was still building.
+     */
+    @Test
+    fun coldStartImmediateLillehammer() {
+        // Force a fresh engine by relying on bridge readiness wait — no Oslo warm-up.
+        val outcome =
+            ComapsSearchBridge.searchDetailed(
+                query = "Lillehammer",
+                biasLat = 61.115,
+                biasLon = 10.466,
+                limit = APP_LIMIT,
+                locale = "nb",
+            )
+        assertFalse("engine must become ready for cold-start search", outcome.notReady)
+        assertTrue(
+            "cold-start Lillehammer must return hits (got ${outcome.hits.size}; " +
+                "ready_ms=${outcome.timing.readyWaitMs} first_ms=${outcome.timing.firstResultMs})",
+            outcome.hits.isNotEmpty(),
+        )
+        val rank =
+            rankOf(
+                outcome.hits,
+                JSONArray().put("Lillehammer"),
+            )
+        assertTrue("Lillehammer should be in top 3 (rank=$rank)", rank in 1..3)
+        File(outDir, "cold-start-lillehammer.json").writeText(
+            JSONObject()
+                .put("ready_ms", outcome.timing.readyWaitMs)
+                .put("first_ms", outcome.timing.firstResultMs)
+                .put("total_ms", outcome.timing.totalMs)
+                .put("n", outcome.hits.size)
+                .put("top", JSONArray(outcome.hits.take(5).map { it.name }))
+                .toString(2),
+        )
     }
 
     @Test
@@ -162,24 +212,30 @@ class ComapsPhase5InAppSearchInstrumentedTest {
             val q = queries.getJSONObject(i)
             val id = q.getString("id")
             val high = q.getString("confidence") == "high"
-            val started = System.currentTimeMillis()
             var hit = false
             var rank = -1
             var detail = ""
             var topNames = emptyList<String>()
+            var readyMs = -1L
+            var firstMs = -1L
+            var totalMs = -1L
             when (q.getString("kind")) {
                 "free_text" -> {
                     val (locale, lat, lon) = userContext(q)
-                    val hits =
-                        ComapsSearchBridge.search(
-                            q.getString("query"),
-                            lat,
-                            lon,
-                            APP_LIMIT,
+                    val outcome =
+                        ComapsSearchBridge.searchDetailed(
+                            query = q.getString("query"),
+                            biasLat = lat,
+                            biasLon = lon,
+                            limit = APP_LIMIT,
                             locale = locale,
                         )
-                    topNames = hits.take(5).map { it.name }
-                    val ev = evaluateFreeText(q, hits)
+                    readyMs = outcome.timing.readyWaitMs
+                    firstMs = outcome.timing.firstResultMs
+                    totalMs = outcome.timing.totalMs
+                    assertFalse("$id: engine not ready", outcome.notReady)
+                    topNames = outcome.hits.take(5).map { it.name }
+                    val ev = evaluateFreeText(q, outcome.hits)
                     hit = ev.first
                     rank = ev.second
                     detail = ev.third
@@ -193,16 +249,20 @@ class ComapsPhase5InAppSearchInstrumentedTest {
                         hit = false
                         detail = "no category string for $key"
                     } else {
-                        val hits =
-                            ComapsSearchBridge.searchCategory(
-                                queryText = text,
+                        val outcome =
+                            ComapsSearchBridge.searchDetailed(
+                                query = text,
                                 biasLat = lat,
                                 biasLon = lon,
                                 limit = APP_LIMIT,
                                 locale = locale,
+                                isCategory = true,
                             )
-                        topNames = hits.take(5).map { it.name }
-                        val ev = evaluateFreeText(q, hits)
+                        readyMs = outcome.timing.readyWaitMs
+                        firstMs = outcome.timing.firstResultMs
+                        totalMs = outcome.timing.totalMs
+                        topNames = outcome.hits.take(5).map { it.name }
+                        val ev = evaluateFreeText(q, outcome.hits)
                         hit = ev.first
                         rank = ev.second
                         detail = listOf(ev.third, "q=$text").filter { it.isNotEmpty() }.joinToString(" ")
@@ -210,7 +270,11 @@ class ComapsPhase5InAppSearchInstrumentedTest {
                     }
                 }
                 "reverse" -> {
+                    val t0 = System.currentTimeMillis()
                     val addr = comapsReverseGeocode(q.getDouble("lat"), q.getDouble("lon"))
+                    totalMs = System.currentTimeMillis() - t0
+                    firstMs = totalMs
+                    readyMs = 0
                     val wanted = q.getJSONArray("expect_street_any")
                     val streetOk =
                         addr.found &&
@@ -239,7 +303,10 @@ class ComapsPhase5InAppSearchInstrumentedTest {
                     .put("hit", hit)
                     .put("pass", hit)
                     .put("rank", rank)
-                    .put("ms", System.currentTimeMillis() - started)
+                    .put("ready_ms", readyMs)
+                    .put("first_ms", firstMs)
+                    .put("total_ms", totalMs)
+                    .put("ms", totalMs)
                     .put("detail", detail)
                     .put("top", JSONArray(topNames))
                     .put("non_gating_reason", q.optString("non_gating_reason", "")),
@@ -249,6 +316,8 @@ class ComapsPhase5InAppSearchInstrumentedTest {
         val summary =
             JSONObject()
                 .put("path", "in-app-ComapsSearchBridge+MainActivity")
+                .put("mwm_root", dataMwm.absolutePath)
+                .put("leaves", JSONArray(listProductionLeaves()))
                 .put("query_count", queries.length())
                 .put("high_total", highTotal)
                 .put("high_pass", highPass)
