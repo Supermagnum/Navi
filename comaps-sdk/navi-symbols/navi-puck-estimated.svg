@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Navi position puck, estimated position (IMU dead reckoning): amber. Same 20x20 geometry as CoMaps current-position. -->
+<svg width="20" height="20" version="1.1" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+ <circle cx="10" cy="10" r="9.5" fill="#f9a825" stroke="#ff8f00"/>
+</svg>

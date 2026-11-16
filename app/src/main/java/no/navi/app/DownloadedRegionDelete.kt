@@ -261,6 +261,7 @@ object DownloadedRegionDelete {
     internal fun deleteStemArtifacts(
         packDir: File,
         stem: String,
+        dryRun: Boolean = false,
     ): Pair<Long, Int> {
         if (stem.isBlank() || !packDir.isDirectory) return 0L to 0
         var bytes = 0L
@@ -276,7 +277,7 @@ object DownloadedRegionDelete {
                     name == ".pack-fetch-$stem.partial" ||
                     name.startsWith(".pack-fetch-$stem.")
             if (!match) continue
-            val (b, n) = deleteRecursivelyCounted(f)
+            val (b, n) = deleteRecursivelyCounted(f, dryRun)
             bytes += b
             count += n
         }
@@ -348,6 +349,7 @@ object DownloadedRegionDelete {
     internal fun deleteGraphCaches(
         dataDir: File,
         stem: String,
+        dryRun: Boolean = false,
     ): Pair<Long, Int> {
         if (stem.isBlank() || !dataDir.isDirectory) return 0L to 0
         var bytes = 0L
@@ -358,7 +360,7 @@ object DownloadedRegionDelete {
             // graph-cache, graph-cache-foot are shared — only stem-scoped dirs.
             if (!name.startsWith("graph-cache")) continue
             if (name.contains(stem)) {
-                val (b, n) = deleteRecursivelyCounted(f)
+                val (b, n) = deleteRecursivelyCounted(f, dryRun)
                 bytes += b
                 count += n
             }
@@ -387,26 +389,71 @@ object DownloadedRegionDelete {
         }
     }
 
-    private fun deleteFile(f: File): Pair<Long, Int> {
+    private fun deleteFile(
+        f: File,
+        dryRun: Boolean = false,
+    ): Pair<Long, Int> {
         if (!f.exists()) return 0L to 0
-        return deleteRecursivelyCounted(f)
+        return deleteRecursivelyCounted(f, dryRun)
     }
 
-    private fun deleteRecursivelyCounted(f: File): Pair<Long, Int> {
+    /** With [dryRun] nothing is deleted; the counts are what a delete would remove. */
+    private fun deleteRecursivelyCounted(
+        f: File,
+        dryRun: Boolean = false,
+    ): Pair<Long, Int> {
         if (!f.exists()) return 0L to 0
         var bytes = 0L
         var count = 0
         if (f.isDirectory) {
             f.listFiles()?.forEach { child ->
-                val (b, n) = deleteRecursivelyCounted(child)
+                val (b, n) = deleteRecursivelyCounted(child, dryRun)
                 bytes += b
                 count += n
             }
-            if (f.delete()) count++
+            if (dryRun || f.delete()) count++
         } else {
             bytes += f.length().coerceAtLeast(0L)
-            if (f.delete()) count++
+            if (dryRun || f.delete()) count++
         }
         return bytes to count
+    }
+
+    /**
+     * Bytes a [delete] of [geofabrikPath] would free (pack files, basemap / DEM archives, graph
+     * caches), without removing anything. The place-index rows live in a shared database and are
+     * not counted.
+     */
+    fun measureBytes(
+        context: Context?,
+        dataDir: File,
+        geofabrikPath: String,
+        extraPackDirs: List<File> = emptyList(),
+    ): Long {
+        val path = PackRegionAvailability.normalize(geofabrikPath)
+        val packDirs =
+            linkedSetOf(dataDir).apply {
+                add(File(dataDir, LongTripPackStorage.PACKS_SUBDIR))
+                extraPackDirs.forEach { add(it) }
+                if (context != null) {
+                    runCatching { LongTripPackStorage.packDownloadDir(context) }.getOrNull()?.let { add(it) }
+                }
+            }
+        var bytes = 0L
+        val stems = leafStems(path)
+        val regionKeys = regionKeys(path)
+        for (dir in packDirs) {
+            if (!dir.isDirectory) continue
+            for (stem in stems) bytes += deleteStemArtifacts(dir, stem, dryRun = true).first
+            val pm = File(dir, "pmtiles")
+            if (!pm.isDirectory) continue
+            for (key in regionKeys) {
+                for (name in listOf("$key.pmtiles", "${key}_dem.pmtiles")) {
+                    bytes += deleteFile(File(pm, name), dryRun = true).first
+                }
+            }
+        }
+        for (stem in stems) bytes += deleteGraphCaches(dataDir, stem, dryRun = true).first
+        return bytes
     }
 }

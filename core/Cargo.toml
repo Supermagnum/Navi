@@ -12,6 +12,8 @@ default = []
 gpsd = ["dep:gpsd_proto"]
 ## Linux SBC IMU publish helpers (software fusion stub; board drivers optional).
 linux-imu = []
+## Link CoMaps `liborganicmaps.so` + `navi_comaps` C ABI (Android device builds).
+comaps-native = []
 
 [dependencies]
 anyhow.workspace = true
@@ -50,7 +52,11 @@ chrono = { workspace = true }
 opening-hours = { workspace = true }
 roxmltree = { workspace = true }
 sha2 = { workspace = true }
+sha1 = { workspace = true }
 hex = { workspace = true }
+base64 = { workspace = true }
+ed25519-dalek = { workspace = true }
+zstd = { workspace = true }
 geozero = { version = "0.14", default-features = false, features = ["with-mvt"] }
 
 [dev-dependencies]

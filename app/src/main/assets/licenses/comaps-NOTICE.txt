@@ -1,0 +1,3 @@
+CoMaps / Organic Maps native core (liborganicmaps.so) is built from source at
+the pin in third_party/comaps.pin.json. Upstream licenses: see the CoMaps tree
+LICENSE / NOTICE and 3party notices after fetch-comaps.sh.

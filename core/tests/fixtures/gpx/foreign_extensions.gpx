@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<gpx version="1.1" creator="outdooractive - http://www.outdooractive.com"
+     xmlns="http://www.topografix.com/GPX/1/1"
+     xmlns:oa="http://www.outdooractive.com/GPX/Extensions/1"
+     xmlns:gpxdata="http://www.cluetrust.com/XML/GPXDATA/1/0"
+     xmlns:osmand="https://osmand.net"
+     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <metadata>
+    <name>Extension noise</name>
+    <author><name>Someone</name></author>
+    <extensions><oa:oaCategory>pilgrimTrack</oa:oaCategory></extensions>
+  </metadata>
+  <trk>
+    <name>Track with extensions</name>
+    <extensions><osmand:color>#ff0000</osmand:color></extensions>
+    <trkseg>
+      <trkpt lat="56.100000" lon="15.500000"><ele>5</ele><extensions><gpxdata:hr>90</gpxdata:hr><oa:speed>1.2</oa:speed></extensions></trkpt>
+      <trkpt lat="56.101000" lon="15.501000"><ele>6</ele><extensions><gpxdata:hr>92</gpxdata:hr></extensions></trkpt>
+      <trkpt lat="56.102000" lon="15.502000"><oa:ele>9999</oa:ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

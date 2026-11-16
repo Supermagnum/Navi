@@ -249,6 +249,7 @@ fn http_download_verified(
         retries: crate::download::http::DEFAULT_RETRIES,
         progress_label: &label,
         allow_not_found: false,
+        cancel: None,
     })
     .map_err(|e| e.to_string())?
     .ok_or_else(|| format!("GET {url}: not found"))?;

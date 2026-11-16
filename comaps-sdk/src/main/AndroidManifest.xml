@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Navi-owned manifest for the CoMaps SDK sources. The upstream SDK manifest also
+  requests storage / location-extra permissions and requires GLES 3.0; Navi already
+  declares the permissions it needs and keeps GLES optional so the app can fall back
+  to MapLibre.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-feature
+        android:glEsVersion="0x00030000"
+        android:required="false" />
+</manifest>

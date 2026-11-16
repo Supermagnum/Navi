@@ -85,3 +85,20 @@ RUN printf '%s\n' \
       'export PATH="/opt/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"' \
       > /etc/profile.d/navi-rust.sh \
     && chmod 644 /etc/profile.d/navi-rust.sh
+
+# Phase 7 / MWM client: the F-Droid recipe builds the CoMaps native core and the drape symbol atlas from
+# source. These are the packages the recipe's `sudo:` block installs on a real build VM (sudo is skipped
+# in this local container, so they are baked here): CMake + Ninja + ccache for liborganicmaps.so,
+# python3 + librsvg2-bin + python3-pil for scripts/generate-comaps-symbols.py (no Qt needed), git for
+# scripts/fetch-comaps.sh (pinned CoMaps commit + submodules), python3-venv + python3-protobuf for the
+# CoMaps configure step (drules are compiled with tools/kothic), jq for its string generation,
+# autoconf/automake/libtool for scripts/build-hamlib-android.sh (Hamlib 4.7.2 bootstrap).
+RUN apt-get update -qq \
+    && apt-get install -y --no-install-recommends \
+        cmake ninja-build ccache git python3 python3-venv python3-pil python3-protobuf \
+        librsvg2-bin fonts-dejavu-core unzip zip rsync jq icu-devtools python3-pip \
+        autoconf automake libtool libtool-bin \
+    && rm -rf /var/lib/apt/lists/* \
+    && cmake --version | head -1 && ninja --version && rsvg-convert --version \
+    && command -v autoreconf && command -v automake && command -v libtoolize \
+    && python3 -c 'import PIL, google.protobuf; print("PIL", PIL.__version__)'

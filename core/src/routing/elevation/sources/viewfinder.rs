@@ -46,6 +46,7 @@ pub async fn download_tile(
             retries: DEFAULT_RETRIES,
             progress_label: "navi.msg.download_elevation",
             allow_not_found: true,
+            cancel: None,
         },
     )
     .await?
@@ -57,7 +58,8 @@ pub async fn download_tile(
     let mut archive = ZipArchive::new(file)?;
     for i in 0..archive.len() {
         let mut zf = archive.by_index(i)?;
-        if zf.name().ends_with(".hgt") {
+        let Ok(name) = zf.name() else { continue };
+        if name.ends_with(".hgt") {
             let mut buffer = Vec::new();
             zf.read_to_end(&mut buffer)?;
             std::fs::write(&dest, &buffer)?;

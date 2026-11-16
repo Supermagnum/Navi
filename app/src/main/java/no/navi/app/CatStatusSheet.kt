@@ -43,6 +43,41 @@ const val CAT_LINK_BENSHI_RFCOMM = "benshi_rfcomm"
 const val CAT_LINK_BENSHI_LAB = "benshi_lab"
 
 /**
+ * Last follow program the radio refused after all attempts (`program_failure` in
+ * `catPluginStatusJson`, null when none). [seq] grows with every new failure, so a
+ * toast or snackbar can show each failure once.
+ */
+internal data class CatProgramFailure(
+    val seq: Long,
+    val callsign: String,
+    val freqText: String,
+    val attempts: Int,
+)
+
+internal fun catProgramFailure(statusJson: String): CatProgramFailure? =
+    runCatching {
+        val f = JSONObject(statusJson).optJSONObject("program_failure") ?: return@runCatching null
+        CatProgramFailure(
+            seq = f.optLong("seq"),
+            callsign = f.optString("callsign"),
+            freqText = String.format(java.util.Locale.US, "%.4f", f.optDouble("freq_mhz")),
+            attempts = f.optInt("attempts"),
+        )
+    }.getOrNull()
+
+/** Localized text for [CatProgramFailure]; shared by the sheet and any toast. */
+internal fun catProgramFailureText(
+    context: android.content.Context,
+    failure: CatProgramFailure,
+): String =
+    context.getString(
+        R.string.cat_vfo_program_failed,
+        failure.callsign,
+        failure.freqText,
+        failure.attempts,
+    )
+
+/**
  * True when [preset] is the Hamlib model reported connected in status JSON.
  * Matches Hamlib model_name (e.g. "Dummy") against curated preset labels.
  */
@@ -366,6 +401,19 @@ fun CatStatusSheet(
                 Text(
                     stringResource(R.string.network_follow, follow),
                     style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            catProgramFailure(state.statusJson)?.let { failure ->
+                Text(
+                    stringResource(
+                        R.string.cat_vfo_program_failed,
+                        failure.callsign,
+                        failure.freqText,
+                        failure.attempts,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag("cat_vfo_program_failed"),
                 )
             }
             Text(stringResource(R.string.cat_backend), style = MaterialTheme.typography.titleSmall)

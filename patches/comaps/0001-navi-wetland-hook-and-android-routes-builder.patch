@@ -1,0 +1,533 @@
+diff --git a/libs/routing/CMakeLists.txt b/libs/routing/CMakeLists.txt
+index 3300fa877..ab80c8297 100644
+--- a/libs/routing/CMakeLists.txt
++++ b/libs/routing/CMakeLists.txt
+@@ -50,6 +50,8 @@ set(SRC
+   directions_engine_helpers.hpp
+   dummy_world_graph.hpp
+   edge_estimator.cpp
++  navi_wetland_cost.cpp
++  navi_wetland_cost.hpp
+   edge_estimator.hpp
+   fake_edges_container.hpp
+   fake_ending.cpp
+@@ -221,6 +223,10 @@ if (PLATFORM_DESKTOP)
+   add_subdirectory(routing_quality)
+   add_subdirectory(routes_builder)
+ endif()
++# Navi: headless RoutesBuilder on Android for FFI routing (no GLES).
++if (PLATFORM_ANDROID)
++  add_subdirectory(routes_builder)
++endif()
+ 
+ omim_add_test_subdirectory(routing_benchmarks)
+ omim_add_test_subdirectory(routing_consistency_tests)
+diff --git a/libs/routing/edge_estimator.cpp b/libs/routing/edge_estimator.cpp
+index 259f70165..f506f250f 100644
+--- a/libs/routing/edge_estimator.cpp
++++ b/libs/routing/edge_estimator.cpp
+@@ -1,4 +1,5 @@
+ #include "routing/edge_estimator.hpp"
++#include "routing/navi_wetland_cost.hpp"
+ 
+ #include "routing/geometry.hpp"
+ #include "routing/latlon_with_altitude.hpp"
+@@ -628,9 +629,10 @@ public:
+ 
+   double CalcSegmentWeight(Segment const & segment, RoadGeometry const & road, Purpose purpose) const override
+   {
+-    return CalcClimbSegment(purpose, segment, road,
++    double const weight = CalcClimbSegment(purpose, segment, road,
+                             [purpose](double speedMpS, double tangent, geometry::Altitude altitude)
+     { return speedMpS / GetPedestrianClimbPenalty(purpose, tangent, altitude); });
++    return navi_spike::ApplyWetlandCost(segment, weight);
+   }
+ };
+ 
+@@ -660,7 +662,7 @@ public:
+ 
+   double CalcSegmentWeight(Segment const & segment, RoadGeometry const & road, Purpose purpose) const override
+   {
+-    return CalcClimbSegment(purpose, segment, road,
++    double const weight = CalcClimbSegment(purpose, segment, road,
+                             [purpose, this](double speedMpS, double tangent, geometry::Altitude altitude)
+     {
+       auto const factor = GetBicycleClimbPenalty(purpose, tangent, altitude);
+@@ -690,6 +692,7 @@ public:
+ 
+       return std::min(speedMpS, GetMaxWeightSpeedMpS());
+     });
++    return navi_spike::ApplyWetlandCostForBike(segment, weight);
+   }
+ };
+ 
+diff --git a/libs/routing/index_router.cpp b/libs/routing/index_router.cpp
+index 6dcd8dd12..48d50495f 100644
+--- a/libs/routing/index_router.cpp
++++ b/libs/routing/index_router.cpp
+@@ -1813,5 +1813,8 @@ void IndexRouter::SetupAlgorithmMode(IndexGraphStarter & starter, bool guidesAct
+     break;
+   case VehicleType::Count: CHECK(false, ("Unknown vehicle type:", m_vehicleType)); break;
+   }
++  // Navi: surface mode for performance diagnostics (Joints vs LeapsOnly).
++  LOG(LINFO, ("Navi IndexRouter mode:", DebugPrint(starter.GetGraph().GetMode()),
++              " vehicle:", static_cast<int>(m_vehicleType)));
+ }
+ }  // namespace routing
+diff --git a/libs/routing/navi_wetland_cost.cpp b/libs/routing/navi_wetland_cost.cpp
+new file mode 100644
+index 000000000..832a77e15
+--- /dev/null
++++ b/libs/routing/navi_wetland_cost.cpp
+@@ -0,0 +1,49 @@
++#include "routing/navi_wetland_cost.hpp"
++
++namespace navi_spike
++{
++namespace
++{
++WetlandLookupFn g_lookup = nullptr;
++ElevationLookupFn g_elevLookup = nullptr;
++bool g_bikeEnabled = false;
++constexpr double kSoftMult = 5.0;
++constexpr double kHardMult = 1.0e6;
++}  // namespace
++
++void WetlandSidecar::SetLookup(WetlandLookupFn fn) { g_lookup = fn; }
++
++bool WetlandSidecar::Enabled() { return g_lookup != nullptr; }
++
++void WetlandSidecar::SetBikeEnabled(bool enabled) { g_bikeEnabled = enabled; }
++
++bool WetlandSidecar::BikeEnabled() { return g_bikeEnabled && Enabled(); }
++
++WetlandClass WetlandSidecar::Lookup(uint32_t featureId, uint32_t segmentIdx, bool forward)
++{
++  if (!g_lookup)
++    return WetlandClass::None;
++  return g_lookup(featureId, segmentIdx, forward);
++}
++
++double WetlandSidecar::CostMultiplier(WetlandClass c)
++{
++  switch (c)
++  {
++  case WetlandClass::SoftAvoid: return kSoftMult;
++  case WetlandClass::HardAvoid: return kHardMult;
++  case WetlandClass::None: return 1.0;
++  }
++  return 1.0;
++}
++
++void WetlandSidecar::SetElevationLookup(ElevationLookupFn fn) { g_elevLookup = fn; }
++
++bool WetlandSidecar::ElevationOverride(char const * mwmName, uint32_t featureId, uint32_t pointIdx,
++                                       int32_t & outAltitudeDm)
++{
++  if (!g_elevLookup || !mwmName || mwmName[0] == '\0')
++    return false;
++  return g_elevLookup(mwmName, featureId, pointIdx, &outAltitudeDm);
++}
++}  // namespace navi_spike
+diff --git a/libs/routing/navi_wetland_cost.hpp b/libs/routing/navi_wetland_cost.hpp
+new file mode 100644
+index 000000000..2c20f1c4c
+--- /dev/null
++++ b/libs/routing/navi_wetland_cost.hpp
+@@ -0,0 +1,62 @@
++#pragma once
++// Navi wetland cost hook for CoMaps EdgeEstimator.
++// Lookups are supplied by the Navi FFI shim (Rust SidecarReader), not by
++// embedding a zstd/NVSC parser inside CoMaps.
++// SoftAvoid ×5 (weight/ETA); HardAvoid → enormous penalty (avoid).
++
++#include "routing/segment.hpp"
++
++#include <cstdint>
++
++namespace navi_spike
++{
++
++enum class WetlandClass : uint8_t
++{
++  None = 0,
++  SoftAvoid = 1,
++  HardAvoid = 2,
++};
++
++using WetlandLookupFn = WetlandClass (*)(uint32_t featureId, uint32_t segmentIdx, bool forward);
++
++/** Returns true when an EL02 override exists for this MWM leaf; altitude in decimetres.
++ *  `mwmName` is the CoMaps country/leaf id (e.g. "Norway_Oppland") — feature ids are
++ *  per-MWM and must not be looked up across leaves. */
++using ElevationLookupFn =
++    bool (*)(char const * mwmName, uint32_t featureId, uint32_t pointIdx, int32_t * outAltitudeDm);
++
++class WetlandSidecar
++{
++public:
++  // Install / clear the lookup provided by navi_comaps (Rust).
++  static void SetLookup(WetlandLookupFn fn);
++  static bool Enabled();
++  /** When false (default), bicycle estimator skips Soft/Hard. Foot always applies. */
++  static void SetBikeEnabled(bool enabled);
++  static bool BikeEnabled();
++  static WetlandClass Lookup(uint32_t featureId, uint32_t segmentIdx, bool forward);
++  static double CostMultiplier(WetlandClass c);
++
++  static void SetElevationLookup(ElevationLookupFn fn);
++  static bool ElevationOverride(char const * mwmName, uint32_t featureId, uint32_t pointIdx,
++                                int32_t & outAltitudeDm);
++};
++
++inline double ApplyWetlandCost(routing::Segment const & segment, double weightSeconds)
++{
++  if (!WetlandSidecar::Enabled())
++    return weightSeconds;
++  auto const cls = WetlandSidecar::Lookup(
++      segment.GetFeatureId(), segment.GetSegmentIdx(), segment.IsForward());
++  return weightSeconds * WetlandSidecar::CostMultiplier(cls);
++}
++
++inline double ApplyWetlandCostForBike(routing::Segment const & segment, double weightSeconds)
++{
++  if (!WetlandSidecar::BikeEnabled())
++    return weightSeconds;
++  return ApplyWetlandCost(segment, weightSeconds);
++}
++
++}  // namespace navi_spike
+diff --git a/libs/routing/routes_builder/routes_builder.cpp b/libs/routing/routes_builder/routes_builder.cpp
+index 78f6d77bc..339b86dfc 100644
+--- a/libs/routing/routes_builder/routes_builder.cpp
++++ b/libs/routing/routes_builder/routes_builder.cpp
+@@ -1,7 +1,10 @@
+ #include "routing/routes_builder/routes_builder.hpp"
+ 
+ #include "routing/index_router.hpp"
++#include "routing/navi_wetland_cost.hpp"
+ #include "routing/route.hpp"
++#include "routing/routing_options.hpp"
++#include "routing/turns.hpp"
+ #include "routing/vehicle_mask.hpp"
+ 
+ #include "storage/routing_helpers.hpp"
+@@ -14,20 +17,28 @@
+ #include "platform/country_file.hpp"
+ #include "platform/local_country_file.hpp"
+ #include "platform/local_country_file_utils.hpp"
++#include "platform/settings.hpp"
+ 
+ #include "coding/file_reader.hpp"
+ #include "coding/file_writer.hpp"
+ #include "coding/reader.hpp"
+ #include "coding/write_to_sink.hpp"
+ 
++#include "geometry/distance_on_sphere.hpp"
++#include "geometry/latlon.hpp"
+ #include "geometry/mercator.hpp"
++#include "geometry/point_with_altitude.hpp"
+ 
+ #include "base/assert.hpp"
+ #include "base/logging.hpp"
+ #include "base/scope_guard.hpp"
+ #include "base/timer.hpp"
+ 
++#include <algorithm>
++#include <cmath>
+ #include <limits>
++#include <sstream>
++#include <vector>
+ 
+ namespace
+ {
+@@ -147,6 +158,12 @@ RoutesBuilder::Result RoutesBuilder::ProcessTask(Params const & params)
+   return processor(params);
+ }
+ 
++RoutesBuilder::SnapResult RoutesBuilder::FindClosestRoad(VehicleType type, m2::PointD const & point, double radiusM)
++{
++  Processor processor(m_numMwmIds, m_dataSourcesStorage, m_cpg, m_cig);
++  return processor.FindClosestRoad(type, point, radiusM);
++}
++
+ std::future<RoutesBuilder::Result> RoutesBuilder::ProcessTaskAsync(Params const & params)
+ {
+   // Should be copyable to workaround MSVC bug (https://developercommunity.visualstudio.com/t/108672)
+@@ -281,7 +298,8 @@ void RoutesBuilder::Processor::InitRouter(VehicleType type)
+     return cigSharedPtr->GetLimitRectForLeaf(countryId);
+   };
+ 
+-  bool const loadAltitudes = (type != VehicleType::Car) && (type != VehicleType::Decoder);
++  // Navi: always load altitudes so ascent/descent + elevation profile work for car too.
++  bool const loadAltitudes = (type != VehicleType::Transit);
+   if (!m_dataSource)
+     m_dataSource = m_dataSourceStorage.GetDataSource();
+ 
+@@ -290,6 +308,31 @@ void RoutesBuilder::Processor::InitRouter(VehicleType type)
+                                            *m_dataSource);
+ }
+ 
++RoutesBuilder::SnapResult RoutesBuilder::Processor::FindClosestRoad(VehicleType type, m2::PointD const & point,
++                                                                    double radiusM)
++{
++  InitRouter(type);
++  SCOPE_GUARD(returnDataSource, [&]() { m_dataSourceStorage.PushDataSource(std::move(m_dataSource)); });
++  CHECK(m_dataSource, ());
++
++  SnapResult out;
++  EdgeProj proj;
++  // Zero direction: closest edge regardless of heading.
++  if (!m_router->FindClosestProjectionToRoad(point, m2::PointD::Zero(), radiusM, proj))
++    return out;
++
++  out.m_found = true;
++  out.m_point = proj.m_point;
++  out.m_distanceM = mercator::DistanceOnEarth(point, proj.m_point);
++  auto const & fid = proj.m_edge.GetFeatureId();
++  out.m_featureId = fid.m_index;
++  out.m_segId = proj.m_edge.GetSegId();
++  if (fid.m_mwmId.IsAlive())
++    out.m_mwmName = fid.m_mwmId.GetInfo()->GetCountryName();
++  m_router->ClearState();
++  return out;
++}
++
+ RoutesBuilder::Result RoutesBuilder::Processor::operator()(Params const & params)
+ {
+   InitRouter(params.m_type);
+@@ -327,6 +370,187 @@ RoutesBuilder::Result RoutesBuilder::Processor::operator()(Params const & params
+ 
+   routeResult.m_followedPolyline = route.GetFollowedPolyline();
+ 
++  // Failed routes have empty subroute attrs — skip turns/elev (CHECKs abort).
++  if (resultCode != RouterResultCode::NoError)
++  {
++    result.m_routes.emplace_back(std::move(routeResult));
++    return result;
++  }
++
++  // Navi: export display turns for guidance / voice (locale from settings or en).
++  // Instruction text is filled by Navi (Rust); export turn types + ferry flag.
++  {
++    std::string locale = "en";
++    settings::Get("locale", locale);
++    auto const steps = route.GetTurnsForDisplay(locale);
++    auto const & segs = route.GetRouteSegments();
++    std::ostringstream json;
++    json << '[';
++    auto escape = [](std::string const & in, std::ostringstream & out) {
++      for (char c : in)
++      {
++        if (c == '\\' || c == '"')
++          out << '\\';
++        else if (c == '\n')
++        {
++          out << "\\n";
++          continue;
++        }
++        out << c;
++      }
++    };
++    // m_index is polyline point index (= segment index + 1). Scan the
++    // segments belonging to each step (prev point .. this point) so a ferry
++    // leg is tagged even when the turn point itself sits on a non-ferry road.
++    size_t prevPoint = 0;
++    for (size_t i = 0; i < steps.size(); ++i)
++    {
++      auto const & s = steps[i];
++      if (i)
++        json << ',';
++      size_t const endPoint = std::min(static_cast<size_t>(s.m_index), segs.size());
++      bool isFerry = false;
++      for (size_t si = prevPoint; si < endPoint; ++si)
++      {
++        if (segs[si].GetRoadTypes().Has(routing::RoutingOptions::Option::Ferry))
++        {
++          isFerry = true;
++          break;
++        }
++      }
++      prevPoint = endPoint;
++      json << '{'
++          << "\"index\":" << s.m_index << ','
++          << "\"sequence\":" << s.m_sequence << ','
++          << "\"exit_num\":" << s.m_exitNum << ','
++          << "\"dist_m\":" << s.m_distMeters << ','
++          << "\"turn\":\"" << DebugPrint(s.m_turn) << "\","
++          << "\"ped_turn\":\"" << DebugPrint(s.m_pedestrianTurn) << "\","
++          << "\"is_ferry\":" << (isFerry ? "true" : "false") << ','
++          << "\"street\":\"";
++      escape(s.m_toRoad.m_name, json);
++      json << "\",\"ref\":\"";
++      escape(s.m_toRoad.m_ref, json);
++      json << "\",\"destination\":\"";
++      escape(s.m_toRoad.m_destination, json);
++      json << "\"}";
++    }
++    json << ']';
++    routeResult.m_turnsJson = json.str();
++  }
++
++  // Navi: CoMaps altitudes + optional EL02 sidecar overrides → ascent/descent
++  // and per-point profile (side-by-side comaps vs effective).
++  {
++    geometry::Altitudes alts;
++    route.GetAltitudes(alts);
++    auto const & elevSegs = route.GetRouteSegments();
++    double ascentComaps = 0.0;
++    double descentComaps = 0.0;
++    double ascent = 0.0;
++    double descent = 0.0;
++    size_t sidecarHits = 0;
++    size_t bandWouldReject = 0;  // |sidecar−comaps| > 75 m (diagnostic; band removed)
++    std::ostringstream ej;
++    // points first into a buffer so we can prefix totals
++    std::ostringstream pts;
++    pts << '[';
++    std::vector<double> effective;
++    effective.reserve(alts.size());
++    for (size_t i = 0; i < alts.size(); ++i)
++    {
++      if (i)
++        pts << ',';
++      auto const a = alts[i];
++      bool const comapsOk = a != geometry::kInvalidAltitude;
++      double comapsM = comapsOk ? static_cast<double>(a) : 0.0;
++      double eleM = comapsM;
++      char const * source = "comaps";
++      bool overrideOk = false;
++      auto tryOverride = [&](routing::Segment const & seg, uint32_t pointIdx) {
++        if (!m_numMwmIds || seg.GetMwmId() == routing::kFakeNumMwmId)
++          return;
++        auto const & cfile = m_numMwmIds->GetFile(seg.GetMwmId());
++        int32_t dm = 0;
++        if (navi_spike::WetlandSidecar::ElevationOverride(cfile.GetName().c_str(),
++                                                          seg.GetFeatureId(), pointIdx, dm))
++        {
++          // Sidecars are fingerprint- and checksum-verified — trust EL02 values.
++          // Report how many would have failed the old 75 m client band.
++          double const cand = static_cast<double>(dm) / 10.0;
++          if (comapsOk && std::fabs(cand - comapsM) > 75.0)
++            ++bandWouldReject;
++          eleM = cand;
++          source = "sidecar";
++          overrideOk = true;
++          ++sidecarHits;
++        }
++      };
++      // altitudes[0] = subroute start; altitudes[i+1] = end of elevSegs[i]
++      if (i > 0 && i - 1 < elevSegs.size())
++      {
++        auto const & seg = elevSegs[i - 1].GetSegment();
++        tryOverride(seg, seg.GetSegmentIdx() + 1);
++      }
++      else if (i == 0 && !elevSegs.empty())
++      {
++        auto const & seg = elevSegs.front().GetSegment();
++        tryOverride(seg, seg.GetSegmentIdx());
++      }
++      if (!comapsOk && !overrideOk)
++      {
++        pts << "null";
++        effective.push_back(std::numeric_limits<double>::quiet_NaN());
++      }
++      else
++      {
++        if (!comapsOk)
++          source = "sidecar";
++        pts << "{\"ele_m\":" << static_cast<int>(std::lround(eleM))
++            << ",\"ele_comaps_m\":";
++        if (comapsOk)
++          pts << static_cast<int>(a);
++        else
++          pts << "null";
++        pts << ",\"source\":\"" << source << "\"}";
++        effective.push_back(eleM);
++      }
++      if (i > 0 && comapsOk && alts[i - 1] != geometry::kInvalidAltitude)
++      {
++        double const d = static_cast<double>(alts[i] - alts[i - 1]);
++        if (d > 0)
++          ascentComaps += d;
++        else
++          descentComaps += -d;
++      }
++      if (i > 0 && !std::isnan(effective[i]) && !std::isnan(effective[i - 1]))
++      {
++        double const d = effective[i] - effective[i - 1];
++        if (d > 0)
++          ascent += d;
++        else
++          descent += -d;
++      }
++    }
++    pts << ']';
++    ej << "{\"comaps_ascent_m\":" << ascentComaps << ",\"comaps_descent_m\":" << descentComaps
++       << ",\"ascent_m\":" << ascent << ",\"descent_m\":" << descent
++       << ",\"sidecar_hits\":" << sidecarHits
++       << ",\"band_would_reject_75m\":" << bandWouldReject
++       << ",\"points\":" << pts.str() << '}';
++    routeResult.m_ascentM = ascent;
++    routeResult.m_descentM = descent;
++    routeResult.m_elevationJson = ej.str();
++  }
++  // Mode is logged from IndexRouter; approximate from great-circle for the ABI.
++  {
++    auto const from = params.m_checkpoints.GetPointFrom();
++    auto const to = params.m_checkpoints.GetPointTo();
++    double const distM = ms::DistanceOnEarth(mercator::ToLatLon(from), mercator::ToLatLon(to));
++    // Mirror AreMwmsNear fallback threshold (300 km) when neighbour test unknown here.
++    routeResult.m_routerMode = (distM < 300000.0) ? "Joints(likely)" : "LeapsOnly(likely)";
++  }
++
+   result.m_routes.emplace_back(std::move(routeResult));
+ 
+   return result;
+diff --git a/libs/routing/routes_builder/routes_builder.hpp b/libs/routing/routes_builder/routes_builder.hpp
+index 7ba01aa28..eb4779f81 100644
+--- a/libs/routing/routes_builder/routes_builder.hpp
++++ b/libs/routing/routes_builder/routes_builder.hpp
+@@ -74,6 +74,13 @@ public:
+     double m_eta = 0.0;
+     double m_distance = 0.0;
+     FollowedPolyline m_followedPolyline;
++    std::string m_turnsJson;
++    double m_ascentM = 0.0;
++    double m_descentM = 0.0;
++    /// JSON array of elev metres aligned with polyline points (invalid = null).
++    std::string m_elevationJson;
++    /// "Joints" | "LeapsOnly" | "NoLeaps" | "Unknown"
++    std::string m_routerMode;
+   };
+ 
+   struct Result
+@@ -94,6 +101,20 @@ public:
+     double m_buildTimeSeconds = 0.0;
+   };
+ 
++  /// Navi: nearest routable edge projection for a point (A2 off-road UX). Never called from route
++  /// building; the client shows the snap point and only routes after user confirmation.
++  struct SnapResult
++  {
++    bool m_found = false;
++    m2::PointD m_point;
++    double m_distanceM = 0.0;
++    uint32_t m_featureId = 0;
++    uint32_t m_segId = 0;
++    std::string m_mwmName;
++  };
++
++  SnapResult FindClosestRoad(VehicleType type, m2::PointD const & point, double radiusM);
++
+   Result ProcessTask(Params const & params);
+   std::future<Result> ProcessTaskAsync(Params const & params);
+ 
+@@ -108,6 +129,7 @@ private:
+     Processor(Processor && rhs) noexcept;
+ 
+     Result operator()(Params const & params);
++    SnapResult FindClosestRoad(VehicleType type, m2::PointD const & point, double radiusM);
+ 
+   private:
+     void InitRouter(VehicleType type);

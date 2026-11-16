@@ -242,12 +242,41 @@ build_one_abi() {
     fi
   fi
 
+  # CoMaps organicmaps (Phase 3). Prefer a staged .so; build from pin if asked.
+  local COMAPS_DST="$LIB_DST_DIR/liborganicmaps.so"
+  if [[ ! -f "$COMAPS_DST" && "${NAVI_BUILD_COMAPS:-}" == "1" && "$ABI_DIR" == "arm64-v8a" ]]; then
+    echo "Building CoMaps liborganicmaps.so (scripts/build-comaps-android.sh)..."
+    "$ROOT/scripts/build-comaps-android.sh"
+  fi
+  if [[ ! -f "$COMAPS_DST" && "$ABI_DIR" == "arm64-v8a" ]]; then
+    local COMAPS_ALT
+    for COMAPS_ALT in \
+      "$ROOT/out/comaps-build-arm64/android/sdk/src/main/cpp/liborganicmaps.so" \
+      "/mnt/2e9a1e9f-2097-408c-ab9a-a01b32f11d28/github-projects/Navi-local-artifacts/comaps-build-arm64/android/sdk/src/main/cpp/liborganicmaps.so"; do
+      if [[ -f "$COMAPS_ALT" ]]; then
+        cp -f "$COMAPS_ALT" "$COMAPS_DST"
+        echo "Staged $COMAPS_DST from $COMAPS_ALT"
+        break
+      fi
+    done
+  fi
+
   local CARGO_FEATURES=()
   local ABI_RUSTFLAGS="$BASE_RUSTFLAGS"
   if [[ -f "$HAMLIB_DST" ]]; then
     CARGO_FEATURES+=(hamlib-ffi)
     ABI_RUSTFLAGS="${ABI_RUSTFLAGS} -L native=${LIB_DST_DIR}"
     echo "Enabling navi-ffi feature hamlib-ffi (link libhamlib)"
+  fi
+  if [[ -f "$COMAPS_DST" ]]; then
+    CARGO_FEATURES+=(comaps-native)
+    if [[ "$ABI_RUSTFLAGS" != *"-L native=${LIB_DST_DIR}"* ]]; then
+      ABI_RUSTFLAGS="${ABI_RUSTFLAGS} -L native=${LIB_DST_DIR}"
+    fi
+    echo "Enabling navi-ffi feature comaps-native (link liborganicmaps)"
+  elif [[ "$ABI_DIR" == "arm64-v8a" ]]; then
+    echo "warning: liborganicmaps.so missing for $ABI_DIR — CoMaps routes unavailable." >&2
+    echo "  Run: ./scripts/build-comaps-android.sh   (or NAVI_BUILD_COMAPS=1)" >&2
   fi
   # Debug/emulator CAT dummy-rig tests: NAVI_ALLOW_DUMMY_RIG=1
   if [[ "${NAVI_ALLOW_DUMMY_RIG:-}" == "1" ]]; then
@@ -337,6 +366,9 @@ build_one_abi() {
   echo "Copied $LIB_SRC -> $LIB_DST_DIR/libnavi.so"
   if [[ -f "$HAMLIB_DST" ]]; then
     echo "Packaged alongside: $HAMLIB_DST"
+  fi
+  if [[ -f "$COMAPS_DST" ]]; then
+    echo "Packaged alongside: $COMAPS_DST"
   fi
 }
 

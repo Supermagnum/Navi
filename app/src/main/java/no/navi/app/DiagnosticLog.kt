@@ -433,7 +433,10 @@ object DiagnosticLog {
         )
     }
 
-    fun logRoutePlanComplete(result: CorridorRouteResult) {
+    fun logRoutePlanComplete(
+        result: CorridorRouteResult,
+        comapsClimb: RouteClimb? = null,
+    ) {
         val breaks =
             runCatching {
                 JSONArray(result.breakPoisJson.ifBlank { "[]" }).length()
@@ -463,7 +466,7 @@ object DiagnosticLog {
             ).filterValues { it != null },
         )
         logRoutePlanStagesFromReport(result.report)
-        logEcoFromReport(result.report)
+        logEcoFromReport(result.report, comapsClimb)
         logPoisFromJson(result.breakPoisJson)
         logPausesFromDaysJson(result.daysJson)
         logPausesFromBreakPois(result.breakPoisJson)
@@ -639,6 +642,7 @@ object DiagnosticLog {
         downhillJ: Double,
         regenCreditJ: Double,
         netJ: Double,
+        climbSource: String = RouteClimb.Source.PLAN_REPORT.label,
     ) {
         write(
             Category.ECO_CALC,
@@ -651,21 +655,39 @@ object DiagnosticLog {
                 "downhill_energy_j" to downhillJ,
                 "regen_credit_j" to regenCreditJ,
                 "net_energy_j" to netJ,
+                "climb_source" to climbSource,
             ),
         )
     }
 
-    fun logEcoFromReport(report: String) {
+    /**
+     * Eco line from the plan report. With a [comapsClimb] (MWM flag ON) the
+     * climb / descent come from the CoMaps route instead of `eco_climb_m` /
+     * `eco_descent_m`; energy terms still come from the report when present.
+     */
+    fun logEcoFromReport(
+        report: String,
+        comapsClimb: RouteClimb? = null,
+    ) {
         if (!enabled.get()) return
-        val climb = parseReportDouble(report, "eco_climb_m") ?: return
-        val descent = parseReportDouble(report, "eco_descent_m") ?: 0.0
+        val climb = RouteClimbSource.resolve(comapsClimb != null, comapsClimb, report) ?: return
         val up = parseReportDouble(report, "eco_uphill_j") ?: 0.0
         val down = parseReportDouble(report, "eco_downhill_j") ?: 0.0
         val regen = parseReportDouble(report, "eco_regen_credit_j") ?: 0.0
         val net = parseReportDouble(report, "eco_net_j") ?: (up + down)
         val profile = parseReportToken(report, "profile") ?: "unknown"
         val ecoMode = parseReportToken(report, "use_eco")?.equals("true", true) ?: true
-        logEcoCalc(profile, ecoMode, climb, descent, up, down, regen, net)
+        logEcoCalc(
+            profile,
+            ecoMode,
+            climb.climbM,
+            climb.descentM,
+            up,
+            down,
+            regen,
+            net,
+            climb.source.label,
+        )
     }
 
     fun logPoisFromJson(breakPoisJson: String) {
