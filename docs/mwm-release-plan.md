@@ -10,8 +10,8 @@ fallback toggle for end users; `.rkyv` is being retired.
 | Gate | Meaning | Status |
 |------|---------|--------|
 | G2 | Search parity (Everywhere context, per-query 21/21) + migration pause/resume | Met (PR #222) |
-| G3 | First release with MWM as default (`0.4.0-beta` / versionCode 34) | **Prepared** 2026-11-16 — pending tag / publish go-ahead |
-| G4 | Client `.rkyv` removal (PR #221), keeping Phase 7 migration that reads the old on-disk `.rkyv` region list | **In progress on #221.** Flag forced ON + flag-OFF CI removed; MapLibre/pack loaders deletion still open. Owner chooses this-release vs next-release. Keep migration + thin `.rkyv` detection + FTS5. |
+| G3 | First release with MWM as default (`0.4.0-beta` / versionCode 34) | **Ready for tag** 2026-11-17 — #221 (partial) on `dev`; pending tag / publish go-ahead |
+| G4 | Client `.rkyv` removal (PR #221), keeping Phase 7 migration that reads the old on-disk `.rkyv` region list | **Partial merged** (#221): flag forced ON, flag-OFF CI removed. MapLibre/pack loaders deletion still open (next release / follow-up). Keep migration + thin `.rkyv` detection + FTS5. |
 | G5 | Server `.rkyv` retirement after adoption near zero | Still required — users on `0.3.30-beta` keep hitting frozen packs until they update. Measure with `measure-rkyv-adoption.py` / weekly timer. |
 
 ## 1. Client release steps (G3)
