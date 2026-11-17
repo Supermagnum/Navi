@@ -47,20 +47,10 @@ android {
         versionCode = 34
         versionName = "0.4.0-beta"
         testInstrumentationRunner = "no.navi.app.NaviAndroidTestRunner"
-        // MWM client default ON for every build type / F-Droid recipe. Override
-        // with -Pnavi.mwmClient=false (also sets NAVI_MWM_CLIENT_ENABLED=0 via
-        // MwmClientBootstrap) for emergency / operator builds only — not a
-        // user-facing classic-maps setting.
-        val mwmClientDefault =
-            providers
-                .gradleProperty("navi.mwmClient")
-                .orElse("true")
-                .get()
-                .equals("true", ignoreCase = true)
-        buildConfigField("boolean", "MWM_CLIENT_ENABLED", mwmClientDefault.toString())
+        // Phase 8 / G4: MWM client always ON (no classic MapLibre / `.rkyv` product path).
+        buildConfigField("boolean", "MWM_CLIENT_ENABLED", "true")
         // Restrict packaging to naviAbis so every lib/<abi>/ folder contains the
-        // same .so set (libnavi + MapLibre + JNA + graphics.path). Strips JNA's
-        // armeabi/mips* and incomplete 32-bit MapLibre folders that lack libnavi.
+        // same .so set (libnavi + JNA + graphics.path + CoMaps when packaged).
         ndk {
             abiFilters.clear()
             abiFilters += naviAbis
@@ -234,9 +224,8 @@ android {
             )
     }
 
-    // Phase 6 hybrid drape: the SDK-backed host code (src/drape/java) only compiles
-    // together with the :comaps-sdk library, which settings.gradle.kts includes when
-    // the CoMaps checkout exists. Without it the app builds MapLibre-only.
+    // Phase 6b/8: SDK-backed host code (src/drape/java) compiles with :comaps-sdk when
+    // the CoMaps checkout exists. Without it the map surface shows the download placeholder.
     if (rootProject.findProject(":comaps-sdk") != null) {
         sourceSets {
             getByName("main") {
@@ -267,10 +256,7 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("net.java.dev.jna:jna:5.19.1@aar")
-    // Default (finalized): MapLibre GLES android-sdk. Prefer 11.13.5 over 11.8.8
-    // (Maven has GLES 11.13.5 — keep version, change renderer from android-sdk-vulkan).
-    // Evidence 2026-07-31: AAOS BearingCrashIsolationTest PASS (no SIGSEGV);
-    // SM-P613 online/offline 3D wash cleared (demHitsOk>=1).
+    // MapLibre still packaged until Phase 8 deletion completes (dead on MWM-only path).
     implementation("org.maplibre.gl:android-sdk:13.6.1")
     // CoMaps drape (Java/res/assets of the pinned checkout, no CMake): see comaps-sdk/.
     if (rootProject.findProject(":comaps-sdk") != null) {
