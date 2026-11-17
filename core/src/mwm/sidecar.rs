@@ -496,8 +496,14 @@ impl SidecarReader {
         let wetland = self.wetland_records()?;
         let boardwalk = self.boardwalk_records()?;
         self.ensure_elevation()?;
-        let elev_guard = self.elevation.lock().unwrap();
-        let elevation = elev_guard.as_ref().unwrap();
+        // Drop the elevation lock before vehicle_limit_records(): that path
+        // may call maybe_release_logical(), which also locks elevation (and
+        // std::sync::Mutex is not reentrant — holding both deadlocks).
+        let (elevation_features, elevation_points) = {
+            let elev_guard = self.elevation.lock().unwrap();
+            let elevation = elev_guard.as_ref().unwrap();
+            (elevation.feature_count(), elevation.point_count_total())
+        };
         let soft = wetland.iter().filter(|r| r.class == CLASS_SOFT).count();
         let hard = wetland.iter().filter(|r| r.class == CLASS_HARD).count();
         let vehicle_limits = self.vehicle_limit_records()?;
@@ -506,8 +512,8 @@ impl SidecarReader {
             soft_records: soft,
             hard_records: hard,
             boardwalk_records: boardwalk.len(),
-            elevation_features: elevation.feature_count(),
-            elevation_points: elevation.point_count_total(),
+            elevation_features,
+            elevation_points,
             vehicle_limits_records: vehicle_limits.len(),
             sections: self
                 .header
