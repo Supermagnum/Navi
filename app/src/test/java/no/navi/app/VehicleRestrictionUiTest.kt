@@ -67,10 +67,66 @@ class VehicleRestrictionUiTest {
     fun warnDataUnavailableFormatsRegionList() {
         assertNull(VehicleRestrictionUi.warnDataUnavailable(emptyList(), "Missing: %s"))
         assertEquals(
-            "Missing: Norway_Hedmark, Norway_Oppland",
+            "Missing: Norway Hedmark, Norway Oppland",
             VehicleRestrictionUi.warnDataUnavailable(
                 listOf("Norway_Hedmark", "Norway_Oppland"),
                 "Missing: %s",
+            ),
+        )
+    }
+
+    @Test
+    fun parseCoverageFromPlanReport() {
+        val unknown = VehicleRestrictionUi.parseCoverage("PASS\n")
+        assertFalse(unknown.known)
+        assertFalse(unknown.dataAvailable)
+
+        val ok = VehicleRestrictionUi.parseCoverage("PASS\nvehicle_limits_ok=true\n")
+        assertTrue(ok.known)
+        assertTrue(ok.dataAvailable)
+        assertTrue(ok.missingLeaves.isEmpty())
+
+        val miss =
+            VehicleRestrictionUi.parseCoverage(
+                "PASS\nvehicle_limits_ok=false\nvehicle_limits_missing=Norway_Hedmark,Norway_Oppland\n",
+            )
+        assertTrue(miss.known)
+        assertFalse(miss.dataAvailable)
+        assertEquals(listOf("Norway_Hedmark", "Norway_Oppland"), miss.missingLeaves)
+    }
+
+    @Test
+    fun routeWarningTextPrefersNamedRegions() {
+        assertNull(
+            VehicleRestrictionUi.routeWarningText(
+                TravelProfile.TRUCK,
+                null,
+                dataAvailable = true,
+                missingLeaves = emptyList(),
+                genericBanner = "generic",
+                regionTemplate = "Missing: %s",
+            ),
+        )
+        assertEquals(
+            "generic",
+            VehicleRestrictionUi.routeWarningText(
+                TravelProfile.TRUCK,
+                null,
+                dataAvailable = false,
+                missingLeaves = emptyList(),
+                genericBanner = "generic",
+                regionTemplate = "Missing: %s",
+            ),
+        )
+        assertEquals(
+            "Missing: Norway Hedmark",
+            VehicleRestrictionUi.routeWarningText(
+                TravelProfile.TRUCK,
+                null,
+                dataAvailable = false,
+                missingLeaves = listOf("Norway_Hedmark"),
+                genericBanner = "generic",
+                regionTemplate = "Missing: %s",
             ),
         )
     }

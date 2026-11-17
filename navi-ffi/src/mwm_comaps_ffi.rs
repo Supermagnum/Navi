@@ -333,6 +333,13 @@ pub fn comaps_leaf_for_point(lat: f64, lon: f64) -> Option<String> {
     driver_break_core::mwm::leaf_for_point(lat, lon)
 }
 
+/// Among `leaf_ids`, those whose loaded sidecar has no `vehicle_limits` section (or no
+/// sidecar loaded). Used by the planner to decide honesty banners after a route.
+#[uniffi::export]
+pub fn comaps_leaves_missing_vehicle_limits(leaf_ids: Vec<String>) -> Vec<String> {
+    driver_break_core::mwm::leaves_missing_vehicle_limits(&leaf_ids)
+}
+
 #[uniffi::export]
 pub fn comaps_session_close() {
     if let Ok(mut g) = SESSION.lock() {

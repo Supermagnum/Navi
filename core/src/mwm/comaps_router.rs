@@ -300,6 +300,25 @@ pub fn leaf_for_point(lat: f64, lon: f64) -> Option<String> {
     }
 }
 
+/// Leaf ids among `leaf_ids` whose loaded sidecar has no `vehicle_limits` section
+/// (or whose sidecar is not loaded). Empty input ⇒ empty result. Blank ids skipped.
+///
+/// Without `comaps-native`, every non-blank id is reported missing (conservative).
+pub fn leaves_missing_vehicle_limits(leaf_ids: &[String]) -> Vec<String> {
+    #[cfg(feature = "comaps-native")]
+    {
+        ffi::leaves_missing_vehicle_limits(leaf_ids)
+    }
+    #[cfg(not(feature = "comaps-native"))]
+    {
+        leaf_ids
+            .iter()
+            .filter(|id| !id.is_empty())
+            .cloned()
+            .collect()
+    }
+}
+
 impl Drop for ComapsRouter {
     fn drop(&mut self) {
         #[cfg(feature = "comaps-native")]
@@ -436,6 +455,28 @@ mod ffi {
 
     pub fn set_platform_locked(locked: bool) {
         unsafe { navi_comaps_set_platform_locked(if locked { 1 } else { 0 }) };
+    }
+
+    /// Leaf ids that lack a loaded sidecar `vehicle_limits` section.
+    pub fn leaves_missing_vehicle_limits(leaf_ids: &[String]) -> Vec<String> {
+        let Ok(guard) = sidecars().lock() else {
+            return leaf_ids
+                .iter()
+                .filter(|id| !id.is_empty())
+                .cloned()
+                .collect();
+        };
+        let mut missing = Vec::new();
+        for id in leaf_ids {
+            if id.is_empty() {
+                continue;
+            }
+            match guard.iter().find(|(leaf, _)| leaf == id) {
+                Some((_, reader)) if reader.has_vehicle_limits_section() => {}
+                _ => missing.push(id.clone()),
+            }
+        }
+        missing
     }
 
     /// CoMaps country (leaf) id containing the point (`Some("")` = outside every country).
@@ -931,6 +972,22 @@ mod tests {
         {
             let err = ComapsRouter::init("/tmp", "/tmp", None).unwrap_err();
             assert!(matches!(err, ComapsRouterError::Unavailable));
+        }
+    }
+
+    #[test]
+    fn leaves_missing_vehicle_limits_without_native_is_conservative() {
+        #[cfg(not(feature = "comaps-native"))]
+        {
+            let missing = leaves_missing_vehicle_limits(&[
+                "Norway_Hedmark".into(),
+                "".into(),
+                "Norway_Oppland".into(),
+            ]);
+            assert_eq!(
+                missing,
+                vec!["Norway_Hedmark".to_string(), "Norway_Oppland".to_string()]
+            );
         }
     }
 

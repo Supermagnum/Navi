@@ -91,7 +91,51 @@ object VehicleRestrictionUi {
     ): String? {
         val names = regionNames.map { it.trim() }.filter { it.isNotEmpty() }
         if (names.isEmpty()) return null
-        val joined = names.distinct().joinToString(", ")
+        val joined = names.distinct().joinToString(", ") { it.replace('_', ' ') }
         return unavailableTemplate.replace("%1\$s", joined).replace("%s", joined)
+    }
+
+    /**
+     * Coverage parsed from a MWM plan report (`vehicle_limits_ok=` /
+     * `vehicle_limits_missing=`). When the keys are absent, [known] is false
+     * and callers keep the conservative default (warn).
+     */
+    data class Coverage(
+        val known: Boolean,
+        val dataAvailable: Boolean,
+        val missingLeaves: List<String>,
+    )
+
+    fun parseCoverage(report: String): Coverage {
+        val okLine =
+            report.lineSequence().firstOrNull { it.startsWith("vehicle_limits_ok=") }
+                ?: return Coverage(known = false, dataAvailable = false, missingLeaves = emptyList())
+        val ok = okLine.substringAfter('=').trim().equals("true", ignoreCase = true)
+        val missing =
+            report
+                .lineSequence()
+                .firstOrNull { it.startsWith("vehicle_limits_missing=") }
+                ?.substringAfter('=')
+                ?.split(',')
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                .orEmpty()
+        return Coverage(known = true, dataAvailable = ok && missing.isEmpty(), missingLeaves = missing)
+    }
+
+    /**
+     * Banner / status text when [warnOnPlannedRoute] is true. Prefers a named
+     * region list when [missingLeaves] is non-empty.
+     */
+    fun routeWarningText(
+        profile: TravelProfile,
+        heightM: Double?,
+        dataAvailable: Boolean,
+        missingLeaves: List<String>,
+        genericBanner: String,
+        regionTemplate: String,
+    ): String? {
+        if (!warnOnPlannedRoute(profile, heightM, dataAvailable)) return null
+        return warnDataUnavailable(missingLeaves, regionTemplate) ?: genericBanner
     }
 }

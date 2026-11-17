@@ -50,8 +50,8 @@ pub use comaps_instructions::{
     NaviInstruction,
 };
 pub use comaps_router::{
-    leaf_for_point, set_platform_locked, ComapsLatLon, ComapsProfile, ComapsRoute, ComapsRouter,
-    ComapsRouterCode, ComapsRouterError, ComapsSnap,
+    leaf_for_point, leaves_missing_vehicle_limits, set_platform_locked, ComapsLatLon,
+    ComapsProfile, ComapsRoute, ComapsRouter, ComapsRouterCode, ComapsRouterError, ComapsSnap,
 };
 pub use comaps_search::{
     map_poi_category, merge_hits, navi_quick_category_key, CategoryCoverage, CategoryMapping,

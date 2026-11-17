@@ -1303,6 +1303,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_comaps_leaf_for_point(
     ): Int
+    external fun uniffi_navi_checksum_func_comaps_leaves_missing_vehicle_limits(
+    ): Int
     external fun uniffi_navi_checksum_func_comaps_native_available(
     ): Int
     external fun uniffi_navi_checksum_func_comaps_poi_category_mappings(
@@ -2049,6 +2051,8 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_comaps_category_query(`key`: RustBuffer.ByValue,`locale`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_comaps_leaf_for_point(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_leaves_missing_vehicle_limits(`leafIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_comaps_native_available(uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
@@ -3074,6 +3078,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_comaps_leaf_for_point() and 0xFFFF) != 47602) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_leaves_missing_vehicle_limits() and 0xFFFF) != 22686) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_comaps_native_available() and 0xFFFF) != 20822) {
@@ -13199,6 +13206,21 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
         
         FfiConverterDouble.lower(`lat`),
         FfiConverterDouble.lower(`lon`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Among `leaf_ids`, those whose loaded sidecar has no `vehicle_limits` section (or no
+         * sidecar loaded). Used by the planner to decide honesty banners after a route.
+         */ fun `comapsLeavesMissingVehicleLimits`(`leafIds`: List<kotlin.String>): List<kotlin.String> {
+            return FfiConverterSequenceString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_leaves_missing_vehicle_limits(
+    
+        
+        FfiConverterSequenceString.lower(`leafIds`),_status)
 }
     )
     }

@@ -48,7 +48,7 @@ impl VehicleLimitViolation {
 }
 
 fn metres_to_cm(m: f64) -> Option<u16> {
-    if !(m > 0.0) || !m.is_finite() {
+    if !m.is_finite() || m <= 0.0 {
         return None;
     }
     let cm = (m * 100.0).round();
@@ -59,7 +59,7 @@ fn metres_to_cm(m: f64) -> Option<u16> {
 }
 
 fn kg_to_10kg(kg: f64) -> Option<u16> {
-    if !(kg > 0.0) || !kg.is_finite() {
+    if !kg.is_finite() || kg <= 0.0 {
         return None;
     }
     let v = (kg / 10.0).round();
@@ -279,6 +279,40 @@ mod tests {
         };
         let segments = vec![seg("Fokholgutua")];
         let v = find_route_vehicle_violation(&segments, &limits, |_, _, _| Some(rec(270)));
+        assert!(v.is_none());
+    }
+
+    #[test]
+    fn weight_over_limit_is_rejected() {
+        let limits = VehicleLimits {
+            total_weight_kg: Some(12_000.0),
+            ..Default::default()
+        };
+        let rec = VehicleLimitRecord {
+            feature_id: 1,
+            segment_index: 0,
+            max_height_cm: 0,
+            max_width_cm: 0,
+            max_length_cm: 0,
+            max_weight_10kg: 1_000, // 10 t
+            max_axleload_10kg: 0,
+            max_bogie_10kg: 0,
+        };
+        let v = find_route_vehicle_violation(&[seg("Bridge")], &limits, |_, _, _| Some(rec));
+        let v = v.expect("must reject overweight");
+        assert!(v.detail.contains("weight"));
+        assert!(v.detail.contains("10.00 t"));
+    }
+
+    #[test]
+    fn zero_posted_limit_never_blocks() {
+        let limits = VehicleLimits {
+            height_m: Some(4.0),
+            width_m: Some(3.0),
+            total_weight_kg: Some(40_000.0),
+            ..Default::default()
+        };
+        let v = find_route_vehicle_violation(&[seg("Open")], &limits, |_, _, _| Some(rec(0)));
         assert!(v.is_none());
     }
 
