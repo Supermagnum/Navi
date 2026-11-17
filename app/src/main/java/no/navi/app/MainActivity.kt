@@ -1407,9 +1407,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     var heightM by remember { mutableStateOf("") }
     var widthM by remember { mutableStateOf("") }
     var lengthM by remember { mutableStateOf("") }
-    // Persisted total weight (no product UI field). Must survive [persistVehicle]
-    // so T6 / clearance saves do not wipe maxweight avoidance.
-    var totalWeightKgStored by remember { mutableStateOf<Double?>(null) }
+    var totalWeightKg by remember { mutableStateOf("") }
     var showProfilePanel by remember { mutableStateOf(true) }
     var showVehiclePanel by remember { mutableStateOf(true) }
     var showRoutesPanel by remember { mutableStateOf(true) }
@@ -1996,7 +1994,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     heightM = lim.heightM?.toString().orEmpty()
                     widthM = lim.widthM?.toString().orEmpty()
                     lengthM = lim.lengthM?.toString().orEmpty()
-                    totalWeightKgStored = lim.totalWeightKg
+                    totalWeightKg = lim.totalWeightKg?.toString().orEmpty()
                 }
                 trip.avoidMotorways?.let { avoidMotorways = it }
                 trip.avoidTunnels?.let { avoidTunnels = it }
@@ -3620,9 +3618,20 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     fromPoint = startWp
                     fromFollowsGps = true
                     applyPlannedRoute(result)
-                    status =
+                    val rerouteLine =
                         "Route updated · ${"%.1f".format(result.distanceKm)} km " +
-                        "(recalculated after detour)"
+                            "(recalculated after detour)"
+                    status =
+                        if (MwmClientBootstrap.isEnabled()) {
+                            VehicleRestrictionUi.appendPlanWarning(
+                                rerouteLine,
+                                context.getString(R.string.vehicle_limits_not_yet_applied_banner),
+                                profile,
+                                heightM.toDoubleOrNull(),
+                            )
+                        } else {
+                            rerouteLine
+                        }
                 } finally {
                     // A newer reroute may already own the flags; only clear our own.
                     if (rerouteJob === coroutineContext[Job]) {
@@ -3647,6 +3656,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     val showVehicleLimitsPanel = showVehicleClearance || showVehicleHeightOnly
 
     fun persistVehicle() {
+        // Car height-only saves keep the total-weight string (field hidden) so a
+        // Save does not wipe a previously stored maxweight value.
         val limits =
             FfiVehicleLimits(
                 axleWeightKg = if (showVehicleClearance) axleKg.toDoubleOrNull() else null,
@@ -3654,9 +3665,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 heightM = if (showVehicleLimitsPanel) heightM.toDoubleOrNull() else null,
                 widthM = if (showVehicleClearance) widthM.toDoubleOrNull() else null,
                 lengthM = if (showVehicleClearance) lengthM.toDoubleOrNull() else null,
-                // No product UI for total weight; keep the stored/spec value so
-                // clearance saves do not disable maxweight avoidance.
-                totalWeightKg = totalWeightKgStored,
+                totalWeightKg = totalWeightKg.toDoubleOrNull(),
             )
         val ok = saveVehicleLimits(dataDir.absolutePath, limits)
         if (ok) {
@@ -5116,7 +5125,20 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
             )
         // Replace any prior ferry/skeleton "preparing…" notice so a finished
         // plan never leaves that line stuck under the Plan button.
-        planNotice = status
+        planNotice =
+            if (MwmClientBootstrap.isEnabled()) {
+                VehicleRestrictionUi.appendPlanWarning(
+                    status,
+                    context.getString(R.string.vehicle_limits_not_yet_applied_banner),
+                    profile,
+                    heightM.toDoubleOrNull(),
+                )
+            } else {
+                status
+            }
+        if (planNotice != status) {
+            status = planNotice
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -5126,7 +5148,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
         heightM = limits.heightM?.toString().orEmpty()
         widthM = limits.widthM?.toString().orEmpty()
         lengthM = limits.lengthM?.toString().orEmpty()
-        totalWeightKgStored = limits.totalWeightKg
+        totalWeightKg = limits.totalWeightKg?.toString().orEmpty()
         refreshRoutes()
         refreshPlaces()
         updateReminderDue = osmWeeklyReminderDue(dataDir.absolutePath)
@@ -9001,7 +9023,12 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                         modifier = Modifier.testTag("toggle_avoid_motorways"),
                                     )
                                 }
-                                if (MwmClientBootstrap.isEnabled() && MwmProductionPlanner.limitsNotApplied(profile)) {
+                                if (MwmClientBootstrap.isEnabled() &&
+                                    VehicleRestrictionUi.showProfilePanelNote(
+                                        profile,
+                                        heightM.toDoubleOrNull(),
+                                    )
+                                ) {
                                     Text(
                                         stringResource(R.string.profile_limits_not_applied),
                                         style = MaterialTheme.typography.bodySmall,
@@ -9307,6 +9334,16 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                         )
                                     }
                                     if (showVehicleClearance) {
+                                        OutlinedTextField(
+                                            value = totalWeightKg,
+                                            onValueChange = { totalWeightKg = it },
+                                            label = { Text(stringResource(R.string.vehicle_total_weight_kg)) },
+                                            singleLine = true,
+                                            modifier =
+                                                Modifier
+                                                    .fillMaxWidth()
+                                                    .testTag("field_vehicle_total_weight"),
+                                        )
                                         OutlinedTextField(
                                             value = widthM,
                                             onValueChange = { widthM = it },
@@ -9815,6 +9852,29 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                         horizontalAlignment = Alignment.Start,
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
+                        if (MwmClientBootstrap.isEnabled() &&
+                            mapState.polyline.isNotBlank() &&
+                            VehicleRestrictionUi.warnOnPlannedRoute(
+                                profile,
+                                heightM.toDoubleOrNull(),
+                            )
+                        ) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.errorContainer,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .testTag("vehicle_limits_route_banner"),
+                            ) {
+                                Text(
+                                    stringResource(R.string.vehicle_limits_not_yet_applied_banner),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.padding(10.dp),
+                                )
+                            }
+                        }
                         ApproachInstructionBox(
                             state = approachGuidance,
                             iconsDir = iconsDir.absolutePath,
