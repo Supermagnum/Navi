@@ -70,6 +70,8 @@ typedef struct NaviComapsRouteResult {
   /* JSON int array, one entry per polyline segment (i = segment between point i and i+1):
    * posted maxspeed km/h, -1 untagged / not applicable, -2 explicitly unlimited. May be NULL. */
   char * speed_limits_json;
+  /* JSON array of {mwm,fid,seg,name,lat,lon} for vehicle_limits post-route guard. May be NULL. */
+  char * vehicle_segments_json;
 } NaviComapsRouteResult;
 
 /* storage_path: directory containing CoMaps data/ + writable maps dir with .mwm.
@@ -107,6 +109,18 @@ void navi_comaps_set_elevation_lookup(NaviComapsElevLookupFn fn);
 
 /** Bike wetland Soft/Hard (default off). Foot/hike always apply when hook on. */
 void navi_comaps_set_bike_wetland(int enabled);
+
+/** Vehicle dimension caps from NVSC `vehicle_limits` (car estimator ×1e6 HardAvoid). */
+typedef int (*NaviComapsVehicleLimitLookupFn)(char const * mwm_name, uint32_t feature_id,
+                                              uint32_t segment_idx, uint16_t * max_height_cm,
+                                              uint16_t * max_width_cm, uint16_t * max_length_cm,
+                                              uint16_t * max_weight_10kg, uint16_t * max_axle_10kg,
+                                              uint16_t * max_bogie_10kg);
+void navi_comaps_set_vehicle_limit_lookup(NaviComapsVehicleLimitLookupFn fn);
+/** Metres / kilograms. Pass 0 (or negative) to leave a dimension unused. */
+void navi_comaps_set_vehicle(double height_m, double width_m, double length_m,
+                             double total_weight_kg, double axle_weight_kg, double bogie_weight_kg);
+void navi_comaps_clear_vehicle(void);
 
 /** Avoid flags written into CoMaps RoutingOptions settings before each route. */
 void navi_comaps_set_avoid_options(int avoid_toll, int avoid_motorway, int avoid_ferry,

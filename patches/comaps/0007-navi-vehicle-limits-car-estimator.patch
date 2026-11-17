@@ -1,0 +1,250 @@
+From: Navi
+Subject: [PATCH] navi: vehicle_limits hook on CarEstimator
+
+Apply posted vehicle limits via HardAvoid-style x1e6 weight.
+CarEstimator has no impassable API on this pin.
+
+---
+diff --git a/libs/routing/CMakeLists.txt b/libs/routing/CMakeLists.txt
+index ab80c8297..c0ffee001 100644
+--- a/libs/routing/CMakeLists.txt
++++ b/libs/routing/CMakeLists.txt
+@@ -50,6 +50,8 @@ set(SRC
+   directions_engine_helpers.hpp
+   dummy_world_graph.hpp
+   edge_estimator.cpp
+   navi_wetland_cost.cpp
+   navi_wetland_cost.hpp
++  navi_vehicle_cost.cpp
++  navi_vehicle_cost.hpp
+   edge_estimator.hpp
+   fake_edges_container.hpp
+   fake_ending.cpp
+diff --git a/libs/routing/edge_estimator.cpp b/libs/routing/edge_estimator.cpp
+index f506f250f..a1b2c3d4e 100644
+--- a/libs/routing/edge_estimator.cpp
++++ b/libs/routing/edge_estimator.cpp
+@@ -1,5 +1,6 @@
+ #include "routing/edge_estimator.hpp"
+ #include "routing/navi_wetland_cost.hpp"
++#include "routing/navi_vehicle_cost.hpp"
+ 
+ #include "routing/geometry.hpp"
+ #include "routing/latlon_with_altitude.hpp"
+@@ -809,7 +810,8 @@ double CarEstimator::CalcSegmentWeight(Segment const & segment, RoadGeometry con
+       result *= 1.8;
+     }
+   }
+-
+-  return result;
++  // Navi: posted vehicle limits (x1e6 HardAvoid — no impassable API on CarEstimator).
++  return navi_spike::ApplyVehicleLimitCost(segment, result);
+ }
+ 
+ // EdgeEstimator -----------------------------------------------------------------------------------
+diff --git a/libs/routing/navi_wetland_cost.hpp b/libs/routing/navi_wetland_cost.hpp
+index 2a76d32dd..b0c0d0e01 100644
+--- a/libs/routing/navi_wetland_cost.hpp
++++ b/libs/routing/navi_wetland_cost.hpp
+@@ -42,6 +42,8 @@ public:
+   static WetlandClass Lookup(routing::NumMwmId mwmId, uint32_t featureId, uint32_t segmentIdx, bool forward);
+   static void ClearMwmNames();
+   static void SetMwmName(routing::NumMwmId mwmId, std::string const & name);
++  /** Pointer valid until the next ClearMwmNames/SetMwmName; nullptr if unknown. */
++  static char const * MwmName(routing::NumMwmId mwmId);
+   static double CostMultiplier(WetlandClass c);
+ 
+   static void SetElevationLookup(ElevationLookupFn fn);
+diff --git a/libs/routing/navi_wetland_cost.cpp b/libs/routing/navi_wetland_cost.cpp
+index 19332e636..c0ffee002 100644
+--- a/libs/routing/navi_wetland_cost.cpp
++++ b/libs/routing/navi_wetland_cost.cpp
+@@ -48,6 +48,17 @@ void WetlandSidecar::SetMwmName(routing::NumMwmId mwmId, std::string const & nam
+   g_mwmNames[mwmId] = name;
+ }
+ 
++char const * WetlandSidecar::MwmName(routing::NumMwmId mwmId)
++{
++  if (mwmId == routing::kFakeNumMwmId)
++    return nullptr;
++  std::lock_guard<std::mutex> lock(g_namesMu);
++  if (mwmId >= g_mwmNames.size() || g_mwmNames[mwmId].empty())
++    return nullptr;
++  return g_mwmNames[mwmId].c_str();
++}
++
+ double WetlandSidecar::CostMultiplier(WetlandClass c)
+ {
+   switch (c)
+diff --git a/libs/routing/navi_vehicle_cost.hpp b/libs/routing/navi_vehicle_cost.hpp
+new file mode 100644
+index 000000000..111111111
+--- /dev/null
++++ b/libs/routing/navi_vehicle_cost.hpp
+@@ -0,0 +1,44 @@
++#pragma once
++// Navi vehicle-limit cost hook for CoMaps CarEstimator.
++// Lookups come from the Navi FFI shim (Rust SidecarReader).
++//
++// CarEstimator has no impassable-edge API in this pin: a segment that exceeds a
++// posted limit is multiplied by 1e6 (same HardAvoid pattern as wetland).
++
++#include "routing/segment.hpp"
++
++#include <cstdint>
++
++namespace navi_spike
++{
++
++/** Return 1 and fill limit fields when a record exists; 0 = no record.
++ *  Zero in a limit field means that dimension does not block. */
++using VehicleLimitLookupFn = int (*)(char const * mwmName, uint32_t featureId, uint32_t segmentIdx,
++                                     uint16_t * maxHeightCm, uint16_t * maxWidthCm, uint16_t * maxLengthCm,
++                                     uint16_t * maxWeight10kg, uint16_t * maxAxle10kg, uint16_t * maxBogie10kg);
++
++class VehicleSidecar
++{
++public:
++  static void SetLookup(VehicleLimitLookupFn fn);
++  static bool Enabled();
++
++  /** Metres / kilograms. Pass 0 (or negative) for a dimension to leave it unused. */
++  static void SetVehicle(double heightM, double widthM, double lengthM, double totalWeightKg,
++                         double axleWeightKg, double bogieWeightKg);
++  static void ClearVehicle();
++
++  static bool ExceedsLimits(routing::NumMwmId mwmId, uint32_t featureId, uint32_t segmentIdx);
++};
++
++inline double ApplyVehicleLimitCost(routing::Segment const & segment, double weightSeconds)
++{
++  if (!VehicleSidecar::Enabled())
++    return weightSeconds;
++  if (VehicleSidecar::ExceedsLimits(segment.GetMwmId(), segment.GetFeatureId(), segment.GetSegmentIdx()))
++    return weightSeconds * 1.0e6;
++  return weightSeconds;
++}
++
++}  // namespace navi_spike
+diff --git a/libs/routing/navi_vehicle_cost.cpp b/libs/routing/navi_vehicle_cost.cpp
+new file mode 100644
+index 000000000..111111111
+--- /dev/null
++++ b/libs/routing/navi_vehicle_cost.cpp
+@@ -0,0 +1,116 @@
++#include "routing/navi_vehicle_cost.hpp"
++
++#include "routing/navi_wetland_cost.hpp"
++
++#include <cmath>
++#include <mutex>
++#include <string>
++#include <vector>
++
++namespace navi_spike
++{
++namespace
++{
++VehicleLimitLookupFn g_lookup = nullptr;
++double g_heightM = 0.0;
++double g_widthM = 0.0;
++double g_lengthM = 0.0;
++double g_totalKg = 0.0;
++double g_axleKg = 0.0;
++double g_bogieKg = 0.0;
++bool g_anyDim = false;
++
++// Mirror of WetlandSidecar name registry: RoutesBuilder fills wetland names;
++// we re-query via WetlandSidecar::Lookup's registry by duplicating SetMwmName
++// calls is unnecessary — resolve through a friend accessor added in 0007.
++char const * ResolveMwmName(routing::NumMwmId mwmId)
++{
++  return WetlandSidecar::MwmName(mwmId);
++}
++
++uint16_t MetresToCm(double m)
++{
++  if (!(m > 0.0) || !std::isfinite(m))
++    return 0;
++  double const cm = std::round(m * 100.0);
++  if (cm <= 0.0)
++    return 0;
++  if (cm >= 65535.0)
++    return 65535;
++  return static_cast<uint16_t>(cm);
++}
++
++uint16_t KgTo10kg(double kg)
++{
++  if (!(kg > 0.0) || !std::isfinite(kg))
++    return 0;
++  double const v = std::round(kg / 10.0);
++  if (v <= 0.0)
++    return 0;
++  if (v >= 65535.0)
++    return 65535;
++  return static_cast<uint16_t>(v);
++}
++
++bool StrictExceeds(uint16_t vehicle, uint16_t limit)
++{
++  return limit != 0 && vehicle > limit;
++}
++}  // namespace
++
++void VehicleSidecar::SetLookup(VehicleLimitLookupFn fn) { g_lookup = fn; }
++
++bool VehicleSidecar::Enabled() { return g_lookup != nullptr && g_anyDim; }
++
++void VehicleSidecar::SetVehicle(double heightM, double widthM, double lengthM, double totalWeightKg,
++                                double axleWeightKg, double bogieWeightKg)
++{
++  g_heightM = heightM;
++  g_widthM = widthM;
++  g_lengthM = lengthM;
++  g_totalKg = totalWeightKg;
++  g_axleKg = axleWeightKg;
++  g_bogieKg = bogieWeightKg;
++  g_anyDim = (MetresToCm(heightM) != 0) || (MetresToCm(widthM) != 0) || (MetresToCm(lengthM) != 0)
++             || (KgTo10kg(totalWeightKg) != 0) || (KgTo10kg(axleWeightKg) != 0)
++             || (KgTo10kg(bogieWeightKg) != 0);
++}
++
++void VehicleSidecar::ClearVehicle()
++{
++  g_heightM = g_widthM = g_lengthM = 0.0;
++  g_totalKg = g_axleKg = g_bogieKg = 0.0;
++  g_anyDim = false;
++}
++
++bool VehicleSidecar::ExceedsLimits(routing::NumMwmId mwmId, uint32_t featureId, uint32_t segmentIdx)
++{
++  if (!g_lookup || !g_anyDim)
++    return false;
++
++  char const * namePtr = ResolveMwmName(mwmId);
++  if (!namePtr || !*namePtr)
++    return false;
++  // Copy before unlock races on WetlandSidecar::MwmName storage.
++  std::string const name(namePtr);
++
++  uint16_t maxH = 0, maxW = 0, maxL = 0, maxWt = 0, maxAx = 0, maxBg = 0;
++  if (!g_lookup(name.c_str(), featureId, segmentIdx, &maxH, &maxW, &maxL, &maxWt, &maxAx, &maxBg))
++    return false;
++
++  if (StrictExceeds(MetresToCm(g_heightM), maxH))
++    return true;
++  if (StrictExceeds(MetresToCm(g_widthM), maxW))
++    return true;
++  if (StrictExceeds(MetresToCm(g_lengthM), maxL))
++    return true;
++  if (StrictExceeds(KgTo10kg(g_totalKg), maxWt))
++    return true;
++  if (StrictExceeds(KgTo10kg(g_axleKg), maxAx))
++    return true;
++  if (StrictExceeds(KgTo10kg(g_bogieKg), maxBg))
++    return true;
++  return false;
++}
++
++}  // namespace navi_spike

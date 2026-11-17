@@ -29,6 +29,7 @@ pub mod sidecar;
 #[cfg(test)]
 mod sidecar_tests;
 pub mod storage;
+pub mod vehicle_route_guard;
 
 pub use attribution::{store_attribution_files, AttributionStore};
 pub use catalog::{
@@ -49,8 +50,8 @@ pub use comaps_instructions::{
     NaviInstruction,
 };
 pub use comaps_router::{
-    leaf_for_point, set_platform_locked, ComapsLatLon, ComapsProfile, ComapsRoute, ComapsRouter,
-    ComapsRouterCode, ComapsRouterError, ComapsSnap,
+    leaf_for_point, leaves_missing_vehicle_limits, set_platform_locked, ComapsLatLon,
+    ComapsProfile, ComapsRoute, ComapsRouter, ComapsRouterCode, ComapsRouterError, ComapsSnap,
 };
 pub use comaps_search::{
     map_poi_category, merge_hits, navi_quick_category_key, CategoryCoverage, CategoryMapping,
@@ -92,15 +93,21 @@ pub use release::{
     staging_is_complete, write_active_version, ActiveRelease, ReleaseSwitchError, WorldRelease,
 };
 pub use sidecar::{
-    encode_elevation_el02, encode_test_sidecar_zstd, parse_elevation_el02, zigzag_decode_i32,
-    zigzag_encode_i32, BoardwalkRecord, ElevationFeature, ElevationPoint, InspectCounts,
-    SidecarError, SidecarHeader, SidecarReader, WetlandRecord, CLASS_HARD, CLASS_SOFT,
+    encode_elevation_el02, encode_test_sidecar_zstd, parse_elevation_el02,
+    parse_vehicle_limits_body, vehicle_exceeds_limit, zigzag_decode_i32, zigzag_encode_i32,
+    BoardwalkRecord, ElevationFeature, ElevationPoint, InspectCounts, SidecarError, SidecarHeader,
+    SidecarReader, VehicleLimitRecord, WetlandRecord, CLASS_HARD, CLASS_SOFT,
     ELEVATION_BODY_MAGIC_EL02, FORMAT_VERSION, MAGIC, REQUIRED_SECTIONS, SECTION_ATTRIBUTION,
-    SECTION_BOARDWALK, SECTION_ELEVATION, SECTION_WETLAND,
+    SECTION_BOARDWALK, SECTION_ELEVATION, SECTION_VEHICLE_LIMITS, SECTION_WETLAND,
+    VEHICLE_LIMIT_RECORD_LEN,
 };
 pub use storage::{
     active_path, attribution_json_path, attribution_md_path, catalog_snapshot_path, leaf_mwm_path,
     leaf_sidecar_path, release_dir, staging_dir, world_coasts_mwm_path, world_mwm_path,
     world_release_path, MwmPaths, ACTIVE_FILE, MWM_ROOT, WORLD_COASTS_MWM_FILE, WORLD_MWM_FILE,
     WORLD_RELEASE_FILE,
+};
+pub use vehicle_route_guard::{
+    find_route_vehicle_violation, parse_vehicle_segments_json, vehicle_vs_record, RouteSegmentRef,
+    VehicleLimitViolation,
 };

@@ -2,75 +2,137 @@ package no.navi.app
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import uniffi.navi.TravelProfile
 
 class VehicleRestrictionUiTest {
     @Test
-    fun truckMobileHomeAndElectricTruckAlwaysWarn() {
-        for (p in listOf(TravelProfile.TRUCK, TravelProfile.TRUCK_ELECTRIC, TravelProfile.MOBILE_HOME)) {
-            assertTrue("$p", VehicleRestrictionUi.alwaysWarnOnMwm(p))
-            assertTrue("$p", VehicleRestrictionUi.warnOnPlannedRoute(p, null))
-            assertTrue("$p", VehicleRestrictionUi.warnOnPlannedRoute(p, 4.0))
+    fun appliesStoredLimitsForCarTruckMobileHome() {
+        for (p in listOf(
+            TravelProfile.CAR,
+            TravelProfile.CAR_ELECTRIC,
+            TravelProfile.TRUCK,
+            TravelProfile.TRUCK_ELECTRIC,
+            TravelProfile.MOBILE_HOME,
+        )) {
+            assertTrue("$p", VehicleRestrictionUi.appliesStoredLimits(p))
         }
+        assertFalse(VehicleRestrictionUi.appliesStoredLimits(TravelProfile.MOTORCYCLE))
+        assertFalse(VehicleRestrictionUi.appliesStoredLimits(TravelProfile.HIKING))
     }
 
     @Test
-    fun carWarnsOnlyWhenHeightIsStored() {
-        assertFalse(VehicleRestrictionUi.warnOnPlannedRoute(TravelProfile.CAR, null))
-        assertTrue(VehicleRestrictionUi.warnOnPlannedRoute(TravelProfile.CAR, 2.0))
-        assertFalse(VehicleRestrictionUi.warnOnPlannedRoute(TravelProfile.CAR_ELECTRIC, null))
-        assertTrue(VehicleRestrictionUi.warnOnPlannedRoute(TravelProfile.CAR_ELECTRIC, 1.9))
+    fun noWarnWhenDataAvailable() {
+        for (p in listOf(TravelProfile.TRUCK, TravelProfile.TRUCK_ELECTRIC, TravelProfile.MOBILE_HOME)) {
+            assertFalse("$p", VehicleRestrictionUi.warnOnPlannedRoute(p, null, dataAvailable = true))
+            assertFalse("$p", VehicleRestrictionUi.warnOnPlannedRoute(p, 4.0, dataAvailable = true))
+        }
+        assertFalse(VehicleRestrictionUi.warnOnPlannedRoute(TravelProfile.CAR, 2.0, dataAvailable = true))
     }
 
     @Test
-    fun motorcycleDoesNotWarnOnPlannedRoute() {
-        assertFalse(VehicleRestrictionUi.warnOnPlannedRoute(TravelProfile.MOTORCYCLE, null))
-        assertFalse(VehicleRestrictionUi.warnOnPlannedRoute(TravelProfile.MOTORCYCLE, 1.5))
-        assertFalse(VehicleRestrictionUi.warnOnPlannedRoute(TravelProfile.BICYCLE, null))
-        assertFalse(VehicleRestrictionUi.warnOnPlannedRoute(TravelProfile.HIKING, null))
+    fun warnWhenDataMissingForTruckAndCarWithHeight() {
+        for (p in listOf(TravelProfile.TRUCK, TravelProfile.TRUCK_ELECTRIC, TravelProfile.MOBILE_HOME)) {
+            assertTrue("$p", VehicleRestrictionUi.warnOnPlannedRoute(p, null, dataAvailable = false))
+        }
+        assertFalse(VehicleRestrictionUi.warnOnPlannedRoute(TravelProfile.CAR, null, dataAvailable = false))
+        assertTrue(VehicleRestrictionUi.warnOnPlannedRoute(TravelProfile.CAR, 2.0, dataAvailable = false))
+        assertFalse(VehicleRestrictionUi.warnOnPlannedRoute(TravelProfile.MOTORCYCLE, 1.5, dataAvailable = false))
     }
 
     @Test
     fun profilePanelStillCoversMotorcycleViaLimitsNotApplied() {
-        assertTrue(
-            VehicleRestrictionUi.showProfilePanelNote(TravelProfile.MOTORCYCLE, null),
+        assertTrue(VehicleRestrictionUi.showProfilePanelNote(TravelProfile.MOTORCYCLE, null))
+        assertFalse(VehicleRestrictionUi.showProfilePanelNote(TravelProfile.CAR, 2.5, dataAvailable = true))
+        assertTrue(VehicleRestrictionUi.showProfilePanelNote(TravelProfile.CAR, 2.5, dataAvailable = false))
+        assertFalse(VehicleRestrictionUi.showProfilePanelNote(TravelProfile.HIKING, null, dataAvailable = true))
+    }
+
+    @Test
+    fun appendPlanWarningRespectsDataAvailable() {
+        val warn = "Caution: limits not available"
+        assertEquals(
+            "ok",
+            VehicleRestrictionUi.appendPlanWarning("ok", warn, TravelProfile.TRUCK, null, dataAvailable = true),
         )
-        assertTrue(
-            VehicleRestrictionUi.showProfilePanelNote(TravelProfile.CAR, 2.5),
-        )
-        assertFalse(
-            VehicleRestrictionUi.showProfilePanelNote(TravelProfile.CAR, null),
-        )
-        assertFalse(
-            VehicleRestrictionUi.showProfilePanelNote(TravelProfile.HIKING, null),
+        assertEquals(
+            warn,
+            VehicleRestrictionUi.appendPlanWarning("", warn, TravelProfile.TRUCK, null, dataAvailable = false),
         )
     }
 
     @Test
-    fun appendPlanWarningIsIdempotentAndSkipsWhenNotNeeded() {
-        val warn = "Caution: limits not yet applied"
-        assertEquals("ok", VehicleRestrictionUi.appendPlanWarning("ok", warn, TravelProfile.CAR, null))
-        assertEquals(warn, VehicleRestrictionUi.appendPlanWarning("", warn, TravelProfile.TRUCK, null))
+    fun warnDataUnavailableFormatsRegionList() {
+        assertNull(VehicleRestrictionUi.warnDataUnavailable(emptyList(), "Missing: %s"))
         assertEquals(
-            "12.3 km\n$warn",
-            VehicleRestrictionUi.appendPlanWarning("12.3 km", warn, TravelProfile.MOBILE_HOME, null),
-        )
-        assertEquals(
-            "12.3 km\n$warn",
-            VehicleRestrictionUi.appendPlanWarning("12.3 km\n$warn", warn, TravelProfile.TRUCK, null),
-        )
-        assertEquals(
-            "car route\n$warn",
-            VehicleRestrictionUi.appendPlanWarning("car route", warn, TravelProfile.CAR, 2.8),
+            "Missing: Norway Hedmark, Norway Oppland",
+            VehicleRestrictionUi.warnDataUnavailable(
+                listOf("Norway_Hedmark", "Norway_Oppland"),
+                "Missing: %s",
+            ),
         )
     }
 
     @Test
-    fun totalWeightUiProfilesMatchAlwaysWarnProfiles() {
-        // Vehicle panel shows total weight for the same clearance profiles that
-        // always get the temporary MWM warning (truck / electric truck / mobile home).
+    fun parseCoverageFromPlanReport() {
+        val unknown = VehicleRestrictionUi.parseCoverage("PASS\n")
+        assertFalse(unknown.known)
+        assertFalse(unknown.dataAvailable)
+
+        val ok = VehicleRestrictionUi.parseCoverage("PASS\nvehicle_limits_ok=true\n")
+        assertTrue(ok.known)
+        assertTrue(ok.dataAvailable)
+        assertTrue(ok.missingLeaves.isEmpty())
+
+        val miss =
+            VehicleRestrictionUi.parseCoverage(
+                "PASS\nvehicle_limits_ok=false\nvehicle_limits_missing=Norway_Hedmark,Norway_Oppland\n",
+            )
+        assertTrue(miss.known)
+        assertFalse(miss.dataAvailable)
+        assertEquals(listOf("Norway_Hedmark", "Norway_Oppland"), miss.missingLeaves)
+    }
+
+    @Test
+    fun routeWarningTextPrefersNamedRegions() {
+        assertNull(
+            VehicleRestrictionUi.routeWarningText(
+                TravelProfile.TRUCK,
+                null,
+                dataAvailable = true,
+                missingLeaves = emptyList(),
+                genericBanner = "generic",
+                regionTemplate = "Missing: %s",
+            ),
+        )
+        assertEquals(
+            "generic",
+            VehicleRestrictionUi.routeWarningText(
+                TravelProfile.TRUCK,
+                null,
+                dataAvailable = false,
+                missingLeaves = emptyList(),
+                genericBanner = "generic",
+                regionTemplate = "Missing: %s",
+            ),
+        )
+        assertEquals(
+            "Missing: Norway Hedmark",
+            VehicleRestrictionUi.routeWarningText(
+                TravelProfile.TRUCK,
+                null,
+                dataAvailable = false,
+                missingLeaves = listOf("Norway_Hedmark"),
+                genericBanner = "generic",
+                regionTemplate = "Missing: %s",
+            ),
+        )
+    }
+
+    @Test
+    fun totalWeightUiProfilesMatchClearanceProfiles() {
         for (p in TravelProfile.entries) {
             val showTotalWeight =
                 p == TravelProfile.TRUCK ||

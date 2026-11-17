@@ -63,6 +63,9 @@ mod golden {
             counts.elevation_points,
             insp["elevation_points"].as_u64().unwrap() as usize
         );
+        // Pre-rebuild Hedmark fixture has no vehicle_limits section.
+        assert_eq!(counts.vehicle_limits_records, 0);
+        assert!(!r.has_vehicle_limits_section());
         assert_eq!(
             counts.sections,
             vec![

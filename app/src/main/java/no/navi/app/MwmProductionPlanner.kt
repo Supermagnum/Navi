@@ -9,6 +9,7 @@ import uniffi.navi.FfiComapsLatLon
 import uniffi.navi.FfiComapsOptimize
 import uniffi.navi.FfiComapsRoute
 import uniffi.navi.FfiComapsRouteCode
+import uniffi.navi.FfiVehicleLimits
 import uniffi.navi.TravelProfile
 import uniffi.navi.comapsNativeAvailable
 import uniffi.navi.comapsSessionIsOpen
@@ -17,6 +18,8 @@ import uniffi.navi.comapsSessionSetAvoidOptions
 import uniffi.navi.comapsSessionSetBikeWetland
 import uniffi.navi.comapsSessionSetOptimize
 import uniffi.navi.comapsSessionSetTurnsLocale
+import uniffi.navi.comapsSessionSetVehicle
+import uniffi.navi.loadVehicleLimits
 import uniffi.navi.setMwmProductionPlannerActive
 import java.util.Locale
 import kotlin.math.atan2
@@ -52,15 +55,12 @@ object MwmProductionPlanner {
     fun lastTurnPointIndices(polyline: String): IntArray? = if (polyline.isNotBlank() && polyline.hashCode() == turnKey && turnIdx.isNotEmpty()) turnIdx else null
 
     /**
-     * Profiles that CoMaps routes as a plain car without vehicle dimension / weight limits
-     * (electric car, truck, mobile home, motorcycle): the UI says so next to the route options.
+     * Profiles that never pass vehicle dimensions to the car estimator
+     * (motorcycle). Truck / mobile home / car with height now apply sidecar
+     * `vehicle_limits` when present.
      */
     fun limitsNotApplied(profile: TravelProfile): Boolean =
         when (profile) {
-            TravelProfile.CAR_ELECTRIC,
-            TravelProfile.TRUCK,
-            TravelProfile.TRUCK_ELECTRIC,
-            TravelProfile.MOBILE_HOME,
             TravelProfile.MOTORCYCLE,
             TravelProfile.MOTORCYCLE_ELECTRIC,
             -> true
@@ -141,6 +141,17 @@ object MwmProductionPlanner {
         return try {
             comapsSessionSetTurnsLocale(turnsLocale.ifBlank { "nb" })
             comapsSessionSetBikeWetland(bikeWetland)
+            // Vehicle dimensions for car estimator (motorcycle clears).
+            val dataDir = NaviAppData.resolve(context)
+            val stored =
+                runCatching { loadVehicleLimits(dataDir.absolutePath) }.getOrNull()
+            if (VehicleRestrictionUi.appliesStoredLimits(profile) && stored != null) {
+                comapsSessionSetVehicle(stored)
+            } else {
+                comapsSessionSetVehicle(
+                    FfiVehicleLimits(null, null, null, null, null, null),
+                )
+            }
             comapsSessionSetAvoidOptions(
                 avoidToll = avoidTolls,
                 avoidMotorway = avoidMotorways,
@@ -172,11 +183,13 @@ object MwmProductionPlanner {
             val speedLimits = JSONArray()
             var mode = "Unknown"
             var last: FfiComapsRoute? = null
+            val routeLeaves = LinkedHashSet<String>()
 
             for (i in 0 until legs.size - 1) {
                 if (cancelled()) return cancelledCorridor()
                 val (la0, lo0) = legs[i]
                 val (la1, lo1) = legs[i + 1]
+                collectLeavesAlong(la0, lo0, la1, lo1, routeLeaves)
                 val leg =
                     comapsSessionRoute(
                         profile = comapsProfile,
@@ -194,7 +207,7 @@ object MwmProductionPlanner {
                         // The route crosses a leaf that is not installed: name it.
                         missingLeavesAlong(context, la0, lo0, la1, lo1)?.let { return it }
                     }
-                    return toCorridor(leg, endLat, endLon, profile)
+                    return toCorridor(leg, endLat, endLon, profile, vehicleLimitsCoverage(routeLeaves))
                 }
                 RouteClimbSource.publishIfOk(leg)
                 lengthM += leg.lengthM
@@ -234,7 +247,7 @@ object MwmProductionPlanner {
             RouteClimbSource.publishComaps(
                 RouteClimbSource.fromComaps(ascent, descent, elev.toString()),
             )
-            toCorridor(ok, endLat, endLon, profile)
+            toCorridor(ok, endLat, endLon, profile, vehicleLimitsCoverage(routeLeaves))
         } finally {
             setMwmProductionPlannerActive(false)
         }
@@ -291,7 +304,7 @@ object MwmProductionPlanner {
                 routerMode = "track",
                 speedLimitsJson = "[]",
             )
-        return toCorridor(route, latlon[2 * (n - 1)], latlon[2 * (n - 1) + 1], profile)
+        return toCorridor(route, latlon[2 * (n - 1)], latlon[2 * (n - 1) + 1], profile, null)
     }
 
     fun toCorridor(
@@ -299,6 +312,7 @@ object MwmProductionPlanner {
         endLat: Double,
         endLon: Double,
         profile: TravelProfile,
+        vehicleLimitsMissing: List<String>? = null,
     ): CorridorRouteResult {
         val codeName = route.code.name
         val polyline = pointsToPolyline(route.points)
@@ -310,7 +324,8 @@ object MwmProductionPlanner {
                     ?: "CoMaps route failed: $codeName"
             return failCorridor(
                 "TEST_KIND=PLAN_MWM_ROUTE\nFAIL: $msg\nPLANNER=mwm\n" +
-                    "comaps_route_code=$codeName\n",
+                    "comaps_route_code=$codeName\n" +
+                    vehicleLimitsReportLines(vehicleLimitsMissing),
             )
         }
         val km = route.lengthM / 1000.0
@@ -336,6 +351,7 @@ object MwmProductionPlanner {
                 append("descent_m=${route.descentM}\n")
                 append("build_s=${route.buildTimeS}\n")
                 append("comaps_route_code=$codeName\n")
+                append(vehicleLimitsReportLines(vehicleLimitsMissing))
             }
         return CorridorRouteResult(
             report = report,
@@ -542,16 +558,46 @@ object MwmProductionPlanner {
         la1: Double,
         lo1: Double,
     ): CorridorRouteResult? {
+        val leaves = LinkedHashSet<String>()
+        collectLeavesAlong(la0, lo0, la1, lo1, leaves)
+        return missingResult(context, leaves)
+    }
+
+    private fun collectLeavesAlong(
+        la0: Double,
+        lo0: Double,
+        la1: Double,
+        lo1: Double,
+        into: MutableSet<String>,
+    ) {
         val dKm = haversineM(la0, lo0, la1, lo1) / 1000.0
         val n = (dKm / 8.0).toInt().coerceIn(2, 240)
-        val leaves = LinkedHashSet<String>()
         for (k in 0..n) {
             val f = k.toDouble() / n
             val leaf =
-                runCatching { uniffi.navi.comapsLeafForPoint(la0 + (la1 - la0) * f, lo0 + (lo1 - lo0) * f) }.getOrNull()
-            if (!leaf.isNullOrBlank()) leaves.add(leaf)
+                runCatching {
+                    uniffi.navi.comapsLeafForPoint(la0 + (la1 - la0) * f, lo0 + (lo1 - lo0) * f)
+                }.getOrNull()
+            if (!leaf.isNullOrBlank()) into.add(leaf)
         }
-        return missingResult(context, leaves)
+    }
+
+    /** Leaves along the route whose sidecars lack a `vehicle_limits` section. */
+    private fun vehicleLimitsCoverage(leaves: Collection<String>): List<String> {
+        if (leaves.isEmpty()) return emptyList()
+        return runCatching {
+            uniffi.navi.comapsLeavesMissingVehicleLimits(leaves.toList())
+        }.getOrDefault(leaves.toList())
+    }
+
+    private fun vehicleLimitsReportLines(missing: List<String>?): String {
+        if (missing == null) return ""
+        return buildString {
+            append("vehicle_limits_ok=${missing.isEmpty()}\n")
+            if (missing.isNotEmpty()) {
+                append("vehicle_limits_missing=${missing.joinToString(",")}\n")
+            }
+        }
     }
 
     private fun missingResult(

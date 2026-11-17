@@ -3,6 +3,7 @@
 
 #include "routing/routes_builder/routes_builder.hpp"
 #include "routing/navi_wetland_cost.hpp"
+#include "routing/navi_vehicle_cost.hpp"
 #include "routing/routing_callbacks.hpp"
 #include "routing/routing_options.hpp"
 
@@ -261,6 +262,25 @@ extern "C" void navi_comaps_set_bike_wetland(int enabled)
   navi_spike::WetlandSidecar::SetBikeEnabled(enabled != 0);
 }
 
+extern "C" void navi_comaps_set_vehicle_limit_lookup(NaviComapsVehicleLimitLookupFn fn)
+{
+  navi_spike::VehicleSidecar::SetLookup(
+      reinterpret_cast<navi_spike::VehicleLimitLookupFn>(fn));
+}
+
+extern "C" void navi_comaps_set_vehicle(double height_m, double width_m, double length_m,
+                                        double total_weight_kg, double axle_weight_kg,
+                                        double bogie_weight_kg)
+{
+  navi_spike::VehicleSidecar::SetVehicle(height_m, width_m, length_m, total_weight_kg,
+                                         axle_weight_kg, bogie_weight_kg);
+}
+
+extern "C" void navi_comaps_clear_vehicle(void)
+{
+  navi_spike::VehicleSidecar::ClearVehicle();
+}
+
 extern "C" void navi_comaps_set_avoid_options(int avoid_toll, int avoid_motorway, int avoid_ferry,
                                               int avoid_dirty)
 {
@@ -353,6 +373,8 @@ extern "C" NaviComapsCode navi_comaps_route(NaviComapsProfile profile, double fr
     out->turns_json = strdup(route.m_turnsJson.empty() ? "[]" : route.m_turnsJson.c_str());
     out->speed_limits_json =
         strdup(route.m_speedLimitsJson.empty() ? "[]" : route.m_speedLimitsJson.c_str());
+    out->vehicle_segments_json =
+        strdup(route.m_vehicleSegmentsJson.empty() ? "[]" : route.m_vehicleSegmentsJson.c_str());
     out->elevation_json =
         strdup(route.m_elevationJson.empty() ? "[]" : route.m_elevationJson.c_str());
     out->router_mode =
@@ -382,7 +404,9 @@ extern "C" void navi_comaps_free_route(NaviComapsRouteResult * result)
   std::free(result->elevation_json);
   std::free(result->router_mode);
   std::free(result->speed_limits_json);
+  std::free(result->vehicle_segments_json);
   result->speed_limits_json = nullptr;
+  result->vehicle_segments_json = nullptr;
   result->points = nullptr;
   result->error_message = nullptr;
   result->turns_json = nullptr;

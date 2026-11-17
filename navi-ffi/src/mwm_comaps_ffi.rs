@@ -333,6 +333,13 @@ pub fn comaps_leaf_for_point(lat: f64, lon: f64) -> Option<String> {
     driver_break_core::mwm::leaf_for_point(lat, lon)
 }
 
+/// Among `leaf_ids`, those whose loaded sidecar has no `vehicle_limits` section (or no
+/// sidecar loaded). Used by the planner to decide honesty banners after a route.
+#[uniffi::export]
+pub fn comaps_leaves_missing_vehicle_limits(leaf_ids: Vec<String>) -> Vec<String> {
+    driver_break_core::mwm::leaves_missing_vehicle_limits(&leaf_ids)
+}
+
 #[uniffi::export]
 pub fn comaps_session_close() {
     if let Ok(mut g) = SESSION.lock() {
@@ -392,6 +399,21 @@ pub fn comaps_session_set_bike_wetland(enabled: bool) {
     if let Ok(guard) = SESSION.lock() {
         if let Some(r) = guard.as_ref() {
             r.set_bike_wetland(enabled);
+        }
+    }
+}
+
+/// Install vehicle dimensions for the car estimator (truck / mobile home / car height).
+/// Pass a zeroed [`FfiVehicleLimits`] (all nulls) to clear.
+#[uniffi::export]
+pub fn comaps_session_set_vehicle(limits: crate::FfiVehicleLimits) {
+    let core = crate::ffi_vehicle_to_limits(&limits);
+    if let Ok(guard) = SESSION.lock() {
+        if let Some(r) = guard.as_ref() {
+            match &core {
+                Some(v) => r.set_vehicle_limits(Some(v)),
+                None => r.set_vehicle_limits(None),
+            }
         }
     }
 }

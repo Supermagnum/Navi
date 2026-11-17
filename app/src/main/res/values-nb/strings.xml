@@ -536,8 +536,10 @@
     <string name="settings_map_theme">Kart dag og natt</string>
     <string name="settings_map_theme_system">Følg systeminnstillingen</string>
     <string name="settings_map_theme_sun">Automatisk etter soloppgang og solnedgang på nåværende posisjon</string>
-    <string name="profile_limits_not_applied">Kjøretøygrenser (høyde, bredde, lengde, vekt) brukes ennå ikke på denne karttypen. Ruten kan gå på veier som er for lave eller har for lav vektgrense for kjøretøyet.</string>
-    <string name="vehicle_limits_not_yet_applied_banner">Obs: høyde-, bredde-, lengde- og vektgrenser brukes ennå ikke på denne ruten.</string>
+    <string name="profile_limits_not_applied">Kjøretøygrenser (høyde, bredde, lengde, vekt) brukes ikke for motorsykkel på denne karttypen.</string>
+    <string name="vehicle_limits_not_yet_applied_banner">Obs: høyde-, bredde-, lengde- og vektgrenser er ikke tilgjengelige for deler av denne ruten.</string>
+    <string name="vehicle_limits_unavailable_for_region">Kjøretøybegrensninger er ikke tilgjengelige for %1$s. Ruten kan gå på veier som er for lave eller har for lav vektgrense for kjøretøyet.</string>
+    <string name="vehicle_limits_blocked_route">Ingen rute uten å passere en begrensning.</string>
 
     <!-- Phase 7: .rkyv to MWM migration and Map storage -->
     <string name="mwm_mig_title">Flytt kartene dine til det nye kartformatet</string>

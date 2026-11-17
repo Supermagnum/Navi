@@ -1408,6 +1408,10 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     var widthM by remember { mutableStateOf("") }
     var lengthM by remember { mutableStateOf("") }
     var totalWeightKg by remember { mutableStateOf("") }
+
+    /** True after a plan confirms vehicle_limits for every route leaf. */
+    var vehicleLimitsDataAvailable by remember { mutableStateOf(false) }
+    var vehicleLimitsMissingLeaves by remember { mutableStateOf<List<String>>(emptyList()) }
     var showProfilePanel by remember { mutableStateOf(true) }
     var showVehiclePanel by remember { mutableStateOf(true) }
     var showRoutesPanel by remember { mutableStateOf(true) }
@@ -3618,17 +3622,36 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     fromPoint = startWp
                     fromFollowsGps = true
                     applyPlannedRoute(result)
+                    val coverage = VehicleRestrictionUi.parseCoverage(result.report)
+                    if (coverage.known) {
+                        vehicleLimitsDataAvailable = coverage.dataAvailable
+                        vehicleLimitsMissingLeaves = coverage.missingLeaves
+                    }
                     val rerouteLine =
                         "Route updated · ${"%.1f".format(result.distanceKm)} km " +
                             "(recalculated after detour)"
                     status =
                         if (MwmClientBootstrap.isEnabled()) {
-                            VehicleRestrictionUi.appendPlanWarning(
-                                rerouteLine,
-                                context.getString(R.string.vehicle_limits_not_yet_applied_banner),
-                                profile,
-                                heightM.toDoubleOrNull(),
-                            )
+                            val warn =
+                                VehicleRestrictionUi.routeWarningText(
+                                    profile,
+                                    heightM.toDoubleOrNull(),
+                                    vehicleLimitsDataAvailable,
+                                    vehicleLimitsMissingLeaves,
+                                    context.getString(R.string.vehicle_limits_not_yet_applied_banner),
+                                    context.getString(R.string.vehicle_limits_unavailable_for_region),
+                                )
+                            if (warn != null) {
+                                VehicleRestrictionUi.appendPlanWarning(
+                                    rerouteLine,
+                                    warn,
+                                    profile,
+                                    heightM.toDoubleOrNull(),
+                                    vehicleLimitsDataAvailable,
+                                )
+                            } else {
+                                rerouteLine
+                            }
                         } else {
                             rerouteLine
                         }
@@ -5125,14 +5148,33 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
             )
         // Replace any prior ferry/skeleton "preparing…" notice so a finished
         // plan never leaves that line stuck under the Plan button.
+        val coverage = VehicleRestrictionUi.parseCoverage(result.report)
+        if (coverage.known) {
+            vehicleLimitsDataAvailable = coverage.dataAvailable
+            vehicleLimitsMissingLeaves = coverage.missingLeaves
+        }
         planNotice =
             if (MwmClientBootstrap.isEnabled()) {
-                VehicleRestrictionUi.appendPlanWarning(
-                    status,
-                    context.getString(R.string.vehicle_limits_not_yet_applied_banner),
-                    profile,
-                    heightM.toDoubleOrNull(),
-                )
+                val warn =
+                    VehicleRestrictionUi.routeWarningText(
+                        profile,
+                        heightM.toDoubleOrNull(),
+                        vehicleLimitsDataAvailable,
+                        vehicleLimitsMissingLeaves,
+                        context.getString(R.string.vehicle_limits_not_yet_applied_banner),
+                        context.getString(R.string.vehicle_limits_unavailable_for_region),
+                    )
+                if (warn != null) {
+                    VehicleRestrictionUi.appendPlanWarning(
+                        status,
+                        warn,
+                        profile,
+                        heightM.toDoubleOrNull(),
+                        vehicleLimitsDataAvailable,
+                    )
+                } else {
+                    status
+                }
             } else {
                 status
             }
@@ -9027,10 +9069,15 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                     VehicleRestrictionUi.showProfilePanelNote(
                                         profile,
                                         heightM.toDoubleOrNull(),
+                                        vehicleLimitsDataAvailable,
                                     )
                                 ) {
                                     Text(
-                                        stringResource(R.string.profile_limits_not_applied),
+                                        if (VehicleRestrictionUi.motorcycleNoLimits(profile)) {
+                                            stringResource(R.string.profile_limits_not_applied)
+                                        } else {
+                                            stringResource(R.string.vehicle_limits_not_yet_applied_banner)
+                                        },
                                         style = MaterialTheme.typography.bodySmall,
                                         modifier = Modifier.testTag("profile_limits_note"),
                                     )
@@ -9852,27 +9899,32 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                         horizontalAlignment = Alignment.Start,
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        if (MwmClientBootstrap.isEnabled() &&
-                            mapState.polyline.isNotBlank() &&
-                            VehicleRestrictionUi.warnOnPlannedRoute(
-                                profile,
-                                heightM.toDoubleOrNull(),
-                            )
-                        ) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.errorContainer,
-                                shape = RoundedCornerShape(8.dp),
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .testTag("vehicle_limits_route_banner"),
-                            ) {
-                                Text(
+                        if (MwmClientBootstrap.isEnabled() && mapState.polyline.isNotBlank()) {
+                            val routeWarn =
+                                VehicleRestrictionUi.routeWarningText(
+                                    profile,
+                                    heightM.toDoubleOrNull(),
+                                    vehicleLimitsDataAvailable,
+                                    vehicleLimitsMissingLeaves,
                                     stringResource(R.string.vehicle_limits_not_yet_applied_banner),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                    modifier = Modifier.padding(10.dp),
+                                    stringResource(R.string.vehicle_limits_unavailable_for_region),
                                 )
+                            if (routeWarn != null) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.errorContainer,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .testTag("vehicle_limits_route_banner"),
+                                ) {
+                                    Text(
+                                        routeWarn,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                        modifier = Modifier.padding(10.dp),
+                                    )
+                                }
                             }
                         }
                         ApproachInstructionBox(

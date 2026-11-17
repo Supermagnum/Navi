@@ -1,0 +1,73 @@
+From: Navi
+Subject: [PATCH] navi: emit vehicle_segments_json on finished car routes
+
+Post-route guard needs (mwm, fid, seg, name, lat, lon) for each segment so
+Rust can reject a ×1e6-only corridor that still uses a restricted road.
+
+---
+diff --git a/libs/routing/routes_builder/routes_builder.cpp b/libs/routing/routes_builder/routes_builder.cpp
+index a90c76cde..b1c2d3e4f 100644
+--- a/libs/routing/routes_builder/routes_builder.cpp
++++ b/libs/routing/routes_builder/routes_builder.cpp
+@@ -466,6 +466,55 @@ RoutesBuilder::Result RoutesBuilder::Processor::operator()(Params const & params
+     routeResult.m_speedLimitsJson = sj.str();
+   }
+ 
++  // Navi: per-segment identity for vehicle_limits post-route check.
++  {
++    auto const & vSegs = route.GetRouteSegments();
++    std::ostringstream vj;
++    auto escape = [](std::string const & in, std::ostringstream & out) {
++      for (char c : in)
++      {
++        if (c == '\\' || c == '"')
++          out << '\\';
++        else if (c == '\n')
++        {
++          out << "\\n";
++          continue;
++        }
++        out << c;
++      }
++    };
++    vj << '[';
++    for (size_t i = 0; i < vSegs.size(); ++i)
++    {
++      if (i)
++        vj << ',';
++      auto const & seg = vSegs[i].GetSegment();
++      char const * mwm = navi_spike::WetlandSidecar::MwmName(seg.GetMwmId());
++      auto const ll = mercator::ToLatLon(vSegs[i].GetJunction().GetPoint());
++      auto const & rni = vSegs[i].GetRoadNameInfo();
++      std::string name = rni.m_name.empty() ? rni.m_ref : rni.m_name;
++      vj << '{'
++         << "\"mwm\":\"";
++      escape(mwm ? mwm : "", vj);
++      vj << "\",\"fid\":" << seg.GetFeatureId()
++         << ",\"seg\":" << seg.GetSegmentIdx()
++         << ",\"name\":\"";
++      escape(name, vj);
++      vj << "\",\"lat\":" << ll.m_lat
++         << ",\"lon\":" << ll.m_lon
++         << '}';
++    }
++    vj << ']';
++    routeResult.m_vehicleSegmentsJson = vj.str();
++  }
++
+   // Navi: CoMaps altitudes + optional EL02 sidecar overrides → ascent/descent
+   // and per-point profile (side-by-side comaps vs effective).
+   {
+diff --git a/libs/routing/routes_builder/routes_builder.hpp b/libs/routing/routes_builder/routes_builder.hpp
+index a90c76cde..b1c2d3e4f 100644
+--- a/libs/routing/routes_builder/routes_builder.hpp
++++ b/libs/routing/routes_builder/routes_builder.hpp
+@@ -84,6 +84,9 @@ public:
+     /// Navi: JSON array, one entry per route segment (polyline point i+1): posted maxspeed
+     /// in km/h, -1 when untagged / not applicable, -2 when explicitly unlimited ("none").
+     std::string m_speedLimitsJson;
++    /// Navi: JSON array of {mwm,fid,seg,name,lat,lon} for vehicle_limits post-route guard.
++    std::string m_vehicleSegmentsJson;
+   };
+ 
+   struct Result

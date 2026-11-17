@@ -1303,6 +1303,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_comaps_leaf_for_point(
     ): Int
+    external fun uniffi_navi_checksum_func_comaps_leaves_missing_vehicle_limits(
+    ): Int
     external fun uniffi_navi_checksum_func_comaps_native_available(
     ): Int
     external fun uniffi_navi_checksum_func_comaps_poi_category_mappings(
@@ -1346,6 +1348,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_comaps_session_set_optimize(
     ): Int
     external fun uniffi_navi_checksum_func_comaps_session_set_turns_locale(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_set_vehicle(
     ): Int
     external fun uniffi_navi_checksum_func_comaps_session_snap_suggestion(
     ): Int
@@ -2048,6 +2052,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_comaps_leaf_for_point(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_leaves_missing_vehicle_limits(`leafIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_comaps_native_available(uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_navi_fn_func_comaps_poi_category_mappings(uniffi_out_err: UniffiRustCallStatus, 
@@ -2091,6 +2097,8 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_comaps_session_set_optimize(`mode`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_navi_fn_func_comaps_session_set_turns_locale(`locale`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_session_set_vehicle(`limits`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_navi_fn_func_comaps_session_snap_suggestion(`profile`: RustBuffer.ByValue,`code`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`radiusM`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -3072,6 +3080,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_comaps_leaf_for_point() and 0xFFFF) != 47602) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_comaps_leaves_missing_vehicle_limits() and 0xFFFF) != 22686) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_comaps_native_available() and 0xFFFF) != 20822) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -3136,6 +3147,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_comaps_session_set_turns_locale() and 0xFFFF) != 9442) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_set_vehicle() and 0xFFFF) != 62462) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_comaps_session_snap_suggestion() and 0xFFFF) != 44768) {
@@ -13198,6 +13212,21 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     
 
         /**
+         * Among `leaf_ids`, those whose loaded sidecar has no `vehicle_limits` section (or no
+         * sidecar loaded). Used by the planner to decide honesty banners after a route.
+         */ fun `comapsLeavesMissingVehicleLimits`(`leafIds`: List<kotlin.String>): List<kotlin.String> {
+            return FfiConverterSequenceString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_leaves_missing_vehicle_limits(
+    
+        
+        FfiConverterSequenceString.lower(`leafIds`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Probe whether the CoMaps native core is linked into this build.
          */ fun `comapsNativeAvailable`(): kotlin.Boolean {
             return FfiConverterBoolean.lift(
@@ -13494,6 +13523,20 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     
         
         FfiConverterString.lower(`locale`),_status)
+}
+    
+    
+
+        /**
+         * Install vehicle dimensions for the car estimator (truck / mobile home / car height).
+         * Pass a zeroed [`FfiVehicleLimits`] (all nulls) to clear.
+         */ fun `comapsSessionSetVehicle`(`limits`: FfiVehicleLimits)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_set_vehicle(
+    
+        
+        FfiConverterTypeFfiVehicleLimits.lower(`limits`),_status)
 }
     
     

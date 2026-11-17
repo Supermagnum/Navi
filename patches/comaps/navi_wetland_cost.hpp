@@ -7,6 +7,7 @@
 #include "routing/segment.hpp"
 
 #include <cstdint>
+#include <string>
 
 namespace navi_spike
 {
@@ -18,25 +19,47 @@ enum class WetlandClass : uint8_t
   HardAvoid = 2,
 };
 
-using WetlandLookupFn = WetlandClass (*)(uint32_t featureId, uint32_t segmentIdx, bool forward);
+/** `mwmName` is the CoMaps leaf id (e.g. "Norway_Oppland"): feature ids are per-MWM. */
+using WetlandLookupFn = WetlandClass (*)(char const * mwmName, uint32_t featureId, uint32_t segmentIdx,
+                                         bool forward);
+
+/** Returns true when an EL02 override exists for this MWM leaf; altitude in decimetres. */
+using ElevationLookupFn = bool (*)(char const * mwmName, uint32_t featureId, uint32_t pointIdx,
+                                   int32_t * outAltitudeDm);
 
 class WetlandSidecar
 {
 public:
-  // Install / clear the lookup provided by navi_comaps (Rust).
   static void SetLookup(WetlandLookupFn fn);
   static bool Enabled();
-  static WetlandClass Lookup(uint32_t featureId, uint32_t segmentIdx, bool forward);
+  static void SetBikeEnabled(bool enabled);
+  static bool BikeEnabled();
+  static WetlandClass Lookup(routing::NumMwmId mwmId, uint32_t featureId, uint32_t segmentIdx, bool forward);
+  static void ClearMwmNames();
+  static void SetMwmName(routing::NumMwmId mwmId, std::string const & name);
+  /** Pointer valid until the next ClearMwmNames/SetMwmName; nullptr if unknown. */
+  static char const * MwmName(routing::NumMwmId mwmId);
   static double CostMultiplier(WetlandClass c);
+
+  static void SetElevationLookup(ElevationLookupFn fn);
+  static bool ElevationLookup(routing::NumMwmId mwmId, uint32_t featureId, uint32_t pointIdx,
+                              int32_t * outAltitudeDm);
 };
 
 inline double ApplyWetlandCost(routing::Segment const & segment, double weightSeconds)
 {
   if (!WetlandSidecar::Enabled())
     return weightSeconds;
-  auto const cls = WetlandSidecar::Lookup(
-      segment.GetFeatureId(), segment.GetSegmentIdx(), segment.IsForward());
+  auto const cls = WetlandSidecar::Lookup(segment.GetMwmId(), segment.GetFeatureId(), segment.GetSegmentIdx(),
+                                          segment.IsForward());
   return weightSeconds * WetlandSidecar::CostMultiplier(cls);
+}
+
+inline double ApplyWetlandCostForBike(routing::Segment const & segment, double weightSeconds)
+{
+  if (!WetlandSidecar::BikeEnabled())
+    return weightSeconds;
+  return ApplyWetlandCost(segment, weightSeconds);
 }
 
 }  // namespace navi_spike
