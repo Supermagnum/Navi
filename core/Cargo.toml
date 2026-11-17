@@ -57,7 +57,7 @@ hex = { workspace = true }
 base64 = { workspace = true }
 ed25519-dalek = { workspace = true }
 zstd = { workspace = true }
-geozero = { version = "0.14", default-features = false, features = ["with-mvt"] }
+geozero = { version = "0.15", default-features = false, features = ["with-mvt"] }
 
 [dev-dependencies]
 tempfile = "3"
