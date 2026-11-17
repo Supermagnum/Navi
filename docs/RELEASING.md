@@ -11,11 +11,14 @@ verifies the unsigned APK content against the GitHub release asset
   That file is **user-facing** store text (plain sentences about what changed for
   the user). Do not put version headers, test-case names, branch names, unit-test
   or sideload wording, or held-back features in it.
-- Choose `versionCode` as **upstream fdroiddata `CurrentVersionCode` + 1**.
-  Upstream `master` currently has **`CurrentVersionCode` 33**
-  (`0.3.30-beta`). This G3 release uses **`0.4.0-beta` / versionCode 34**;
-  after that is published, the next release must use **versionCode 35 or higher**
-  (never reuse a published code). The public F-Droid **client index** can still
+- Choose `versionCode` as **one above the highest code already used** in
+  upstream fdroiddata, published releases, and current `main`/`dev` tips
+  (never reuse a published or shipped sideload code). Upstream `master`
+  currently has **`CurrentVersionCode` 33** (`0.3.30-beta`). This G3 release
+  uses **`0.5.0-beta` / versionCode 35** (CAT already owns tags
+  `v0.4.0-beta` / `v0.4.1-beta`; an earlier mainline draft at
+  `0.4.0-beta` / 34 was renumbered). After publish, the next release must use
+  **versionCode 36 or higher**. The public F-Droid **client index** can still
   suggest an older build while fdroiddata already lists a newer
   `CurrentVersion` — check both before bumping.
 - `tools/fdroid-check/metadata/no.navi.app.yml` must stay **byte-identical** to
