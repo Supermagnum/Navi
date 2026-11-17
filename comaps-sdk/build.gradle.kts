@@ -97,12 +97,12 @@ tasks
 dependencies {
     // Versions follow third_party/comaps/android/gradle/libs.versions.toml
     // (minSdk 26 here, so the newer androidx lines are fine).
-    implementation("androidx.core:core:1.17.0")
-    implementation("androidx.core:core-ktx:1.17.0")
-    implementation("androidx.media:media:1.7.1")
-    implementation("com.google.android.material:material:1.12.0")
-    implementation("androidx.fragment:fragment:1.8.9")
-    implementation("androidx.annotation:annotation:1.9.1")
+    implementation("androidx.core:core:1.19.1")
+    implementation("androidx.core:core-ktx:1.19.1")
+    implementation("androidx.media:media:1.8.0")
+    implementation("com.google.android.material:material:1.14.0")
+    implementation("androidx.fragment:fragment:1.9.1")
+    implementation("androidx.annotation:annotation:1.11.0")
     implementation("androidx.customview:customview:1.2.0")
     implementation("androidx.preference:preference:1.2.1")
     implementation("androidx.recyclerview:recyclerview:1.4.0")
