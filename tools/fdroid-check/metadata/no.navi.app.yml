@@ -175,8 +175,8 @@ Builds:
   #      sources in this repository with scripts/generate-comaps-symbols.py (librsvg2-bin + python3-pil).
   # No prebuilt .so / .jar / atlas is read from the repository. `commit:` is the release tag commit; the
   # local check (tools/fdroid-check/run-podman-build.sh) replaces PLACEHOLDER_COMMIT with its snapshot.
-  - versionName: 0.4.0-beta
-    versionCode: 34
+  - versionName: 0.5.0-beta
+    versionCode: 35
     commit: PLACEHOLDER_COMMIT
     timeout: 28800
     subdir: app

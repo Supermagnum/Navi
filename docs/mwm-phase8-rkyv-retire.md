@@ -1,7 +1,8 @@
 # Phase 8 — client `.rkyv` retirement
 
-**Status:** preparation on PR #221 (rebased on `dev` @ 0.4.0-beta / vc34).
-Do **not** merge until the owner chooses this-release vs next-release.
+**Status:** partial merged via #221; mainline G3 version is now `0.5.0-beta` / vc35
+(renumbered from the mistaken `0.4.0-beta` / vc34 draft; CAT tags `v0.4.0-beta` /
+`v0.4.1-beta` stay untouched).
 
 ## Done on this branch
 
@@ -39,5 +40,5 @@ Do **not** merge until the owner chooses this-release vs next-release.
 | Gate | Notes |
 |------|-------|
 | G2 | Met (PR #222). |
-| G3 | `0.4.0-beta` / vc34 on `dev`; #226 merged to `main` (tag/publish still need go-ahead). |
+| G3 | `0.5.0-beta` / vc35 on `dev`/`main` (renumbered; CAT `v0.4.x-beta` tags untouched). Tag/publish still need go-ahead. |
 | G4 | This PR — owner chooses this-release vs next-release. |
