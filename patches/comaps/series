@@ -5,3 +5,4 @@
 0005-navi-fps-cap-puck-states-and-mark-symbols.patch
 0006-navi-null-platform-context-guard.patch
 0007-navi-vehicle-limits-car-estimator.patch
+0008-navi-vehicle-route-segments-json.patch

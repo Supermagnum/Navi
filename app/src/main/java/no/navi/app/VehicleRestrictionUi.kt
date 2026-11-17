@@ -23,8 +23,8 @@ object VehicleRestrictionUi {
         }
 
     /** Motorcycle never applies dimension limits on MWM. */
-    fun motorcycleNoLimits(profile: TravelProfile): Boolean =
-        profile == TravelProfile.MOTORCYCLE || profile == TravelProfile.MOTORCYCLE_ELECTRIC
+    fun motorcycleNoLimits(profile: TravelProfile): Boolean = profile == TravelProfile.MOTORCYCLE || profile == TravelProfile.MOTORCYCLE_ELECTRIC
+
 
     /**
      * Temporary STEP-1 style "not applied" — kept for callers that still need

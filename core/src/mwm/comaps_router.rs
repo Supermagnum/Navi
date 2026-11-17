@@ -425,6 +425,13 @@ mod ffi {
         elevation_json: *mut c_char,
         router_mode: *mut c_char,
         speed_limits_json: *mut c_char,
+        vehicle_segments_json: *mut c_char,
+    }
+
+    /// Active vehicle dims for the post-route vehicle_limits guard (None = cleared).
+    fn active_vehicle_limits() -> &'static Mutex<Option<crate::config::VehicleLimits>> {
+        static LIMITS: OnceLock<Mutex<Option<crate::config::VehicleLimits>>> = OnceLock::new();
+        LIMITS.get_or_init(|| Mutex::new(None))
     }
 
     pub fn set_platform_locked(locked: bool) {
@@ -604,6 +611,9 @@ mod ffi {
     }
 
     pub fn set_vehicle_limits(limits: Option<&crate::config::VehicleLimits>) {
+        if let Ok(mut g) = active_vehicle_limits().lock() {
+            *g = limits.cloned();
+        }
         match limits {
             None => unsafe { navi_comaps_clear_vehicle() },
             Some(l) => {
@@ -726,11 +736,12 @@ mod ffi {
             elevation_json: ptr::null_mut(),
             router_mode: ptr::null_mut(),
             speed_limits_json: ptr::null_mut(),
+            vehicle_segments_json: ptr::null_mut(),
         };
         unsafe {
             navi_comaps_route(profile_i, from.lat, from.lon, to.lat, to.lon, &mut out);
         }
-        let code = map_code(out.code);
+        let mut code = map_code(out.code);
         let length_m = out.length_m;
         let time_s = out.time_s;
         let build_time_s = out.build_time_s;
@@ -744,7 +755,7 @@ mod ffi {
                 lon: p.lon,
             }));
         }
-        let error_message = if out.error_message.is_null() {
+        let mut error_message = if out.error_message.is_null() {
             None
         } else {
             Some(
@@ -781,13 +792,64 @@ mod ffi {
                 .to_string_lossy()
                 .into_owned()
         };
+        let vehicle_segments_json = if out.vehicle_segments_json.is_null() {
+            "[]".to_string()
+        } else {
+            unsafe { CStr::from_ptr(out.vehicle_segments_json) }
+                .to_string_lossy()
+                .into_owned()
+        };
         unsafe { navi_comaps_free_route(&mut out) };
+
+        // ×1e6 HardAvoid can still yield a finished route when the restricted
+        // segment is the only corridor — reject it against vehicle_limits.
+        if matches!(code, ComapsRouterCode::Ok) && matches!(profile, ComapsProfile::Car) {
+            if let Ok(guard) = active_vehicle_limits().lock() {
+                if let Some(ref limits) = *guard {
+                    if let Ok(segs) = crate::mwm::vehicle_route_guard::parse_vehicle_segments_json(
+                        &vehicle_segments_json,
+                    ) {
+                        let violation =
+                            crate::mwm::vehicle_route_guard::find_route_vehicle_violation(
+                                &segs,
+                                limits,
+                                |mwm, fid, seg| {
+                                    let Ok(sc) = sidecars().lock() else {
+                                        return None;
+                                    };
+                                    for (leaf, reader) in sc.iter() {
+                                        if leaf != mwm {
+                                            continue;
+                                        }
+                                        return reader.vehicle_limit(fid, seg).ok().flatten();
+                                    }
+                                    None
+                                },
+                            );
+                        if let Some(v) = violation {
+                            code = ComapsRouterCode::RouteNotFound;
+                            error_message = Some(v.no_route_message());
+                            points.clear();
+                        }
+                    }
+                }
+            }
+        }
+
         let instructions_json = crate::mwm::comaps_instructions::enrich_turns_json(&turns_json)
             .unwrap_or_else(|_| "[]".to_string());
         Ok(ComapsRoute {
             code,
-            length_m,
-            time_s,
+            length_m: if matches!(code, ComapsRouterCode::Ok) {
+                length_m
+            } else {
+                0.0
+            },
+            time_s: if matches!(code, ComapsRouterCode::Ok) {
+                time_s
+            } else {
+                0.0
+            },
             build_time_s,
             points,
             error_message,

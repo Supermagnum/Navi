@@ -373,6 +373,8 @@ extern "C" NaviComapsCode navi_comaps_route(NaviComapsProfile profile, double fr
     out->turns_json = strdup(route.m_turnsJson.empty() ? "[]" : route.m_turnsJson.c_str());
     out->speed_limits_json =
         strdup(route.m_speedLimitsJson.empty() ? "[]" : route.m_speedLimitsJson.c_str());
+    out->vehicle_segments_json =
+        strdup(route.m_vehicleSegmentsJson.empty() ? "[]" : route.m_vehicleSegmentsJson.c_str());
     out->elevation_json =
         strdup(route.m_elevationJson.empty() ? "[]" : route.m_elevationJson.c_str());
     out->router_mode =
@@ -402,7 +404,9 @@ extern "C" void navi_comaps_free_route(NaviComapsRouteResult * result)
   std::free(result->elevation_json);
   std::free(result->router_mode);
   std::free(result->speed_limits_json);
+  std::free(result->vehicle_segments_json);
   result->speed_limits_json = nullptr;
+  result->vehicle_segments_json = nullptr;
   result->points = nullptr;
   result->error_message = nullptr;
   result->turns_json = nullptr;
