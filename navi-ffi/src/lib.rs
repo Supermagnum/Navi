@@ -340,7 +340,7 @@ fn eco_for_travel_profile(profile: TravelProfile) -> EcoConfig {
     eco
 }
 
-fn ffi_vehicle_to_limits(v: &FfiVehicleLimits) -> Option<VehicleLimits> {
+pub(crate) fn ffi_vehicle_to_limits(v: &FfiVehicleLimits) -> Option<VehicleLimits> {
     if v.axle_weight_kg.is_none()
         && v.bogie_weight_kg.is_none()
         && v.height_m.is_none()

@@ -204,6 +204,18 @@ impl ComapsRouter {
         }
     }
 
+    /// Pass vehicle dimensions into the car estimator (None clears).
+    pub fn set_vehicle_limits(&self, limits: Option<&crate::config::VehicleLimits>) {
+        #[cfg(feature = "comaps-native")]
+        {
+            ffi::set_vehicle_limits(limits);
+        }
+        #[cfg(not(feature = "comaps-native"))]
+        {
+            let _ = limits;
+        }
+    }
+
     /// Load every `*.navi-sidecar.v1.zst` under `dir` for wetland lookups.
     pub fn load_sidecars_from_dir(&self, dir: &str) -> Result<usize, ComapsRouterError> {
         #[cfg(feature = "comaps-native")]
@@ -327,6 +339,30 @@ mod ffi {
             fn_ptr: Option<unsafe extern "C" fn(*const c_char, u32, u32, *mut i32) -> c_int>,
         );
         fn navi_comaps_set_bike_wetland(enabled: c_int);
+        fn navi_comaps_set_vehicle_limit_lookup(
+            fn_ptr: Option<
+                unsafe extern "C" fn(
+                    *const c_char,
+                    u32,
+                    u32,
+                    *mut u16,
+                    *mut u16,
+                    *mut u16,
+                    *mut u16,
+                    *mut u16,
+                    *mut u16,
+                ) -> c_int,
+            >,
+        );
+        fn navi_comaps_set_vehicle(
+            height_m: f64,
+            width_m: f64,
+            length_m: f64,
+            total_weight_kg: f64,
+            axle_weight_kg: f64,
+            bogie_weight_kg: f64,
+        );
+        fn navi_comaps_clear_vehicle();
         fn navi_comaps_set_avoid_options(
             avoid_toll: c_int,
             avoid_motorway: c_int,
@@ -517,6 +553,75 @@ mod ffi {
         unsafe { navi_comaps_set_elevation_lookup(Some(elevation_lookup_cb)) };
     }
 
+    unsafe extern "C" fn vehicle_limit_lookup_cb(
+        mwm_name: *const c_char,
+        feature_id: u32,
+        segment_idx: u32,
+        max_height_cm: *mut u16,
+        max_width_cm: *mut u16,
+        max_length_cm: *mut u16,
+        max_weight_10kg: *mut u16,
+        max_axle_10kg: *mut u16,
+        max_bogie_10kg: *mut u16,
+    ) -> c_int {
+        if mwm_name.is_null()
+            || max_height_cm.is_null()
+            || max_width_cm.is_null()
+            || max_length_cm.is_null()
+            || max_weight_10kg.is_null()
+            || max_axle_10kg.is_null()
+            || max_bogie_10kg.is_null()
+        {
+            return 0;
+        }
+        let Ok(name) = CStr::from_ptr(mwm_name).to_str() else {
+            return 0;
+        };
+        let seg = segment_idx.min(u16::MAX as u32) as u16;
+        let Ok(guard) = sidecars().lock() else {
+            return 0;
+        };
+        for (leaf, reader) in guard.iter() {
+            if leaf != name {
+                continue;
+            }
+            if let Ok(Some(rec)) = reader.vehicle_limit(feature_id, seg) {
+                *max_height_cm = rec.max_height_cm;
+                *max_width_cm = rec.max_width_cm;
+                *max_length_cm = rec.max_length_cm;
+                *max_weight_10kg = rec.max_weight_10kg;
+                *max_axle_10kg = rec.max_axleload_10kg;
+                *max_bogie_10kg = rec.max_bogie_10kg;
+                return 1;
+            }
+            return 0;
+        }
+        0
+    }
+
+    fn install_vehicle_limit_lookup() {
+        unsafe { navi_comaps_set_vehicle_limit_lookup(Some(vehicle_limit_lookup_cb)) };
+    }
+
+    pub fn set_vehicle_limits(limits: Option<&crate::config::VehicleLimits>) {
+        match limits {
+            None => unsafe { navi_comaps_clear_vehicle() },
+            Some(l) => {
+                let or0 = |v: Option<f64>| v.filter(|x| x.is_finite() && *x > 0.0).unwrap_or(0.0);
+                unsafe {
+                    navi_comaps_set_vehicle(
+                        or0(l.height_m),
+                        or0(l.width_m),
+                        or0(l.length_m),
+                        or0(l.total_weight_kg),
+                        or0(l.axle_weight_kg),
+                        or0(l.bogie_weight_kg),
+                    );
+                }
+            }
+        }
+    }
+
     fn map_code(code: c_int) -> ComapsRouterCode {
         super::map_navi_comaps_code(code)
     }
@@ -589,9 +694,10 @@ mod ffi {
         *sidecars()
             .lock()
             .map_err(|_| ComapsRouterError::NullPointer)? = loaded;
-        // Elevation overrides are independent of the wetland cost hook.
+        // Elevation + vehicle limits are independent of the wetland cost hook.
         if n > 0 {
             install_elevation_lookup();
+            install_vehicle_limit_lookup();
         }
         Ok(n)
     }

@@ -66,11 +66,18 @@ class MwmProductionPlannerTest {
     }
 
     @Test
-    fun vehicleLimitsAreNotAppliedForTheCarLikeProfiles() {
-        for (p in listOf(TravelProfile.TRUCK, TravelProfile.MOBILE_HOME, TravelProfile.MOTORCYCLE, TravelProfile.CAR_ELECTRIC)) {
+    fun vehicleLimitsAreNotAppliedOnlyForMotorcycle() {
+        for (p in listOf(TravelProfile.MOTORCYCLE, TravelProfile.MOTORCYCLE_ELECTRIC)) {
             assertTrue("$p", MwmProductionPlanner.limitsNotApplied(p))
         }
-        for (p in listOf(TravelProfile.CAR, TravelProfile.BICYCLE, TravelProfile.HIKING)) {
+        for (p in listOf(
+            TravelProfile.CAR,
+            TravelProfile.CAR_ELECTRIC,
+            TravelProfile.TRUCK,
+            TravelProfile.MOBILE_HOME,
+            TravelProfile.BICYCLE,
+            TravelProfile.HIKING,
+        )) {
             assertTrue("$p", !MwmProductionPlanner.limitsNotApplied(p))
         }
     }

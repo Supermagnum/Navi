@@ -9,6 +9,7 @@ import uniffi.navi.FfiComapsLatLon
 import uniffi.navi.FfiComapsOptimize
 import uniffi.navi.FfiComapsRoute
 import uniffi.navi.FfiComapsRouteCode
+import uniffi.navi.FfiVehicleLimits
 import uniffi.navi.TravelProfile
 import uniffi.navi.comapsNativeAvailable
 import uniffi.navi.comapsSessionIsOpen
@@ -17,6 +18,8 @@ import uniffi.navi.comapsSessionSetAvoidOptions
 import uniffi.navi.comapsSessionSetBikeWetland
 import uniffi.navi.comapsSessionSetOptimize
 import uniffi.navi.comapsSessionSetTurnsLocale
+import uniffi.navi.comapsSessionSetVehicle
+import uniffi.navi.loadVehicleLimits
 import uniffi.navi.setMwmProductionPlannerActive
 import java.util.Locale
 import kotlin.math.atan2
@@ -52,15 +55,12 @@ object MwmProductionPlanner {
     fun lastTurnPointIndices(polyline: String): IntArray? = if (polyline.isNotBlank() && polyline.hashCode() == turnKey && turnIdx.isNotEmpty()) turnIdx else null
 
     /**
-     * Profiles that CoMaps routes as a plain car without vehicle dimension / weight limits
-     * (electric car, truck, mobile home, motorcycle): the UI says so next to the route options.
+     * Profiles that never pass vehicle dimensions to the car estimator
+     * (motorcycle). Truck / mobile home / car with height now apply sidecar
+     * `vehicle_limits` when present.
      */
     fun limitsNotApplied(profile: TravelProfile): Boolean =
         when (profile) {
-            TravelProfile.CAR_ELECTRIC,
-            TravelProfile.TRUCK,
-            TravelProfile.TRUCK_ELECTRIC,
-            TravelProfile.MOBILE_HOME,
             TravelProfile.MOTORCYCLE,
             TravelProfile.MOTORCYCLE_ELECTRIC,
             -> true
@@ -141,6 +141,17 @@ object MwmProductionPlanner {
         return try {
             comapsSessionSetTurnsLocale(turnsLocale.ifBlank { "nb" })
             comapsSessionSetBikeWetland(bikeWetland)
+            // Vehicle dimensions for car estimator (motorcycle clears).
+            val dataDir = NaviAppData.resolve(context)
+            val stored =
+                runCatching { loadVehicleLimits(dataDir.absolutePath) }.getOrNull()
+            if (VehicleRestrictionUi.appliesStoredLimits(profile) && stored != null) {
+                comapsSessionSetVehicle(stored)
+            } else {
+                comapsSessionSetVehicle(
+                    FfiVehicleLimits(null, null, null, null, null, null),
+                )
+            }
             comapsSessionSetAvoidOptions(
                 avoidToll = avoidTolls,
                 avoidMotorway = avoidMotorways,

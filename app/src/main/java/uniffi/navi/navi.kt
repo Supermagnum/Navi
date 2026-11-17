@@ -1347,6 +1347,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_comaps_session_set_turns_locale(
     ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_set_vehicle(
+    ): Int
     external fun uniffi_navi_checksum_func_comaps_session_snap_suggestion(
     ): Int
     external fun uniffi_navi_checksum_func_comaps_set_platform_locked(
@@ -2091,6 +2093,8 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_comaps_session_set_optimize(`mode`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_navi_fn_func_comaps_session_set_turns_locale(`locale`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    external fun uniffi_navi_fn_func_comaps_session_set_vehicle(`limits`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_navi_fn_func_comaps_session_snap_suggestion(`profile`: RustBuffer.ByValue,`code`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`radiusM`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -3136,6 +3140,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_comaps_session_set_turns_locale() and 0xFFFF) != 9442) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_set_vehicle() and 0xFFFF) != 62462) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_comaps_session_snap_suggestion() and 0xFFFF) != 44768) {
@@ -13494,6 +13501,20 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     
         
         FfiConverterString.lower(`locale`),_status)
+}
+    
+    
+
+        /**
+         * Install vehicle dimensions for the car estimator (truck / mobile home / car height).
+         * Pass a zeroed [`FfiVehicleLimits`] (all nulls) to clear.
+         */ fun `comapsSessionSetVehicle`(`limits`: FfiVehicleLimits)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_set_vehicle(
+    
+        
+        FfiConverterTypeFfiVehicleLimits.lower(`limits`),_status)
 }
     
     

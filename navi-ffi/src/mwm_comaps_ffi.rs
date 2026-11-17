@@ -396,6 +396,21 @@ pub fn comaps_session_set_bike_wetland(enabled: bool) {
     }
 }
 
+/// Install vehicle dimensions for the car estimator (truck / mobile home / car height).
+/// Pass a zeroed [`FfiVehicleLimits`] (all nulls) to clear.
+#[uniffi::export]
+pub fn comaps_session_set_vehicle(limits: crate::FfiVehicleLimits) {
+    let core = crate::ffi_vehicle_to_limits(&limits);
+    if let Ok(guard) = SESSION.lock() {
+        if let Some(r) = guard.as_ref() {
+            match &core {
+                Some(v) => r.set_vehicle_limits(Some(v)),
+                None => r.set_vehicle_limits(None),
+            }
+        }
+    }
+}
+
 #[uniffi::export]
 pub fn comaps_session_set_avoid_options(
     avoid_toll: bool,

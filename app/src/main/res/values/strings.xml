@@ -536,8 +536,10 @@
     <string name="settings_map_theme">Map day and night</string>
     <string name="settings_map_theme_system">Follow system setting</string>
     <string name="settings_map_theme_sun">Automatic by sunrise and sunset at the current position</string>
-    <string name="profile_limits_not_applied">Vehicle limits (height, width, length, weight) are not yet applied on this map type. Routes may use roads that are too low or too light for your vehicle.</string>
-    <string name="vehicle_limits_not_yet_applied_banner">Caution: vehicle height, width, length and weight limits are not yet applied to this route.</string>
+    <string name="profile_limits_not_applied">Vehicle limits (height, width, length, weight) are not applied for motorcycles on this map type.</string>
+    <string name="vehicle_limits_not_yet_applied_banner">Caution: vehicle height, width, length and weight limits are not available for part of this route.</string>
+    <string name="vehicle_limits_unavailable_for_region">Vehicle restrictions are not available for %1$s. The route may use roads that are too low or too light for your vehicle.</string>
+    <string name="vehicle_limits_blocked_route">No route found: a height, width, length or weight limit blocks the way.</string>
 
     <!-- Phase 7: .rkyv to MWM migration and Map storage -->
     <string name="mwm_mig_title">Move your maps to the new map format</string>
