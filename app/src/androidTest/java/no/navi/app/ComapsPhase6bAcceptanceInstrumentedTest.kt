@@ -749,7 +749,10 @@ class ComapsPhase6bAcceptanceInstrumentedTest {
     private fun firstUncoveredStart(): Triple<String, Double, Double> {
         val installed =
             runCatching {
-                uniffi.navi.mwmInstalled(NaviAppData.resolve(h.context).absolutePath).leafIds.toSet()
+                uniffi.navi
+                    .mwmInstalled(NaviAppData.resolve(h.context).absolutePath)
+                    .leafIds
+                    .toSet()
             }.getOrDefault(emptySet())
         val candidates =
             listOf(
