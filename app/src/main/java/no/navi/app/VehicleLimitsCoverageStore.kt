@@ -14,7 +14,10 @@ object VehicleLimitsCoverageStore {
         val mapRelease: String?,
     )
 
-    fun leafCoverage(context: Context, leafId: String): LeafCoverage? {
+    fun leafCoverage(
+        context: Context,
+        leafId: String,
+    ): LeafCoverage? {
         val catalog = catalogFile(context) ?: return null
         return runCatching {
             val root = JSONObject(catalog.readText())
@@ -22,7 +25,9 @@ object VehicleLimitsCoverageStore {
             for (i in 0 until leaves.length()) {
                 val leaf = leaves.optJSONObject(i) ?: continue
                 if (leaf.optString("id") != leafId) continue
-                val cov = leaf.optJSONObject("vehicle_limits_coverage") ?: return LeafCoverage(null, null)
+                val cov =
+                    leaf.optJSONObject("vehicle_limits_coverage")
+                        ?: return LeafCoverage(null, null)
                 return LeafCoverage(
                     matchRate = if (cov.has("match_rate")) cov.getDouble("match_rate") else null,
                     mapRelease = cov.optString("map_release").ifBlank { null },

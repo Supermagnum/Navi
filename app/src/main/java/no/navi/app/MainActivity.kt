@@ -3644,6 +3644,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                     context.getString(R.string.vehicle_limits_unavailable_for_region),
                                     vehicleLimitsPartialLeaves,
                                     context.getString(R.string.vehicle_limits_partly_available_for_region),
+                                    context.getString(R.string.vehicle_limits_applied_where_available),
                                 )
                             if (warn != null) {
                                 VehicleRestrictionUi.appendPlanWarning(
@@ -5170,6 +5171,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                         context.getString(R.string.vehicle_limits_unavailable_for_region),
                         vehicleLimitsPartialLeaves,
                         context.getString(R.string.vehicle_limits_partly_available_for_region),
+                        context.getString(R.string.vehicle_limits_applied_where_available),
                     )
                 if (warn != null) {
                     VehicleRestrictionUi.appendPlanWarning(
@@ -9917,6 +9919,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                     stringResource(R.string.vehicle_limits_unavailable_for_region),
                                     vehicleLimitsPartialLeaves,
                                     stringResource(R.string.vehicle_limits_partly_available_for_region),
+                                    stringResource(R.string.vehicle_limits_applied_where_available),
                                 )
                             if (routeWarn != null) {
                                 Surface(

@@ -14,11 +14,16 @@ object VehicleLimitsCoverageConfig {
 
     fun threshold(context: Context): Double {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        return prefs.getFloat(KEY_THRESHOLD, DEFAULT_THRESHOLD.toFloat()).toDouble()
+        return prefs
+            .getFloat(KEY_THRESHOLD, DEFAULT_THRESHOLD.toFloat())
+            .toDouble()
             .coerceIn(0.0, 1.0)
     }
 
-    fun setThreshold(context: Context, value: Double) {
+    fun setThreshold(
+        context: Context,
+        value: Double,
+    ) {
         context
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()

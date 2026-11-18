@@ -9,9 +9,7 @@ diff --git a/libs/routing/CMakeLists.txt b/libs/routing/CMakeLists.txt
 index ab80c8297..c0ffee001 100644
 --- a/libs/routing/CMakeLists.txt
 +++ b/libs/routing/CMakeLists.txt
-@@ -50,6 +50,8 @@ set(SRC
-   directions_engine_helpers.hpp
-   dummy_world_graph.hpp
+@@ -55,6 +55,8 @@ set(SRC
    edge_estimator.cpp
    navi_wetland_cost.cpp
    navi_wetland_cost.hpp
@@ -31,23 +29,21 @@ index f506f250f..a1b2c3d4e 100644
  
  #include "routing/geometry.hpp"
  #include "routing/latlon_with_altitude.hpp"
-@@ -809,7 +810,8 @@ double CarEstimator::CalcSegmentWeight(Segment const & segment, RoadGeometry con
-       result *= 1.8;
+@@ -812,5 +813,6 @@ double CarEstimator::CalcSegmentWeight(Segment const & segment, RoadGeometry con
      }
    }
--
+ 
 -  return result;
-+  // Navi: posted vehicle limits (x1e6 HardAvoid — no impassable API on CarEstimator).
++  // Navi: posted vehicle limits (x1e6 HardAvoid - no impassable API on CarEstimator).
 +  return navi_spike::ApplyVehicleLimitCost(segment, result);
  }
- 
- // EdgeEstimator -----------------------------------------------------------------------------------
 diff --git a/libs/routing/navi_wetland_cost.hpp b/libs/routing/navi_wetland_cost.hpp
 index 2a76d32dd..b0c0d0e01 100644
 --- a/libs/routing/navi_wetland_cost.hpp
 +++ b/libs/routing/navi_wetland_cost.hpp
 @@ -42,6 +42,8 @@ public:
    static WetlandClass Lookup(routing::NumMwmId mwmId, uint32_t featureId, uint32_t segmentIdx, bool forward);
+   /** Router-side NumMwmId -> leaf name registry (filled when the RoutesBuilder registers maps). */
    static void ClearMwmNames();
    static void SetMwmName(routing::NumMwmId mwmId, std::string const & name);
 +  /** Pointer valid until the next ClearMwmNames/SetMwmName; nullptr if unknown. */
@@ -59,7 +55,7 @@ diff --git a/libs/routing/navi_wetland_cost.cpp b/libs/routing/navi_wetland_cost
 index 19332e636..c0ffee002 100644
 --- a/libs/routing/navi_wetland_cost.cpp
 +++ b/libs/routing/navi_wetland_cost.cpp
-@@ -48,6 +48,17 @@ void WetlandSidecar::SetMwmName(routing::NumMwmId mwmId, std::string const & nam
+@@ -48,6 +48,16 @@ void WetlandSidecar::SetMwmName(routing::NumMwmId mwmId, std::string const & nam
    g_mwmNames[mwmId] = name;
  }
  
@@ -145,7 +141,7 @@ index 000000000..111111111
 +{
 +namespace
 +{
-+VehicleLimitLookupFn g_lookup = nullptr;
++VehicleLimitLookupFn g_vehicleLookup = nullptr;
 +double g_heightM = 0.0;
 +double g_widthM = 0.0;
 +double g_lengthM = 0.0;
@@ -192,9 +188,9 @@ index 000000000..111111111
 +}
 +}  // namespace
 +
-+void VehicleSidecar::SetLookup(VehicleLimitLookupFn fn) { g_lookup = fn; }
++void VehicleSidecar::SetLookup(VehicleLimitLookupFn fn) { g_vehicleLookup = fn; }
 +
-+bool VehicleSidecar::Enabled() { return g_lookup != nullptr && g_anyDim; }
++bool VehicleSidecar::Enabled() { return g_vehicleLookup != nullptr && g_anyDim; }
 +
 +void VehicleSidecar::SetVehicle(double heightM, double widthM, double lengthM, double totalWeightKg,
 +                                double axleWeightKg, double bogieWeightKg)
@@ -219,7 +215,7 @@ index 000000000..111111111
 +
 +bool VehicleSidecar::ExceedsLimits(routing::NumMwmId mwmId, uint32_t featureId, uint32_t segmentIdx)
 +{
-+  if (!g_lookup || !g_anyDim)
++  if (!g_vehicleLookup || !g_anyDim)
 +    return false;
 +
 +  char const * namePtr = ResolveMwmName(mwmId);
@@ -229,7 +225,7 @@ index 000000000..111111111
 +  std::string const name(namePtr);
 +
 +  uint16_t maxH = 0, maxW = 0, maxL = 0, maxWt = 0, maxAx = 0, maxBg = 0;
-+  if (!g_lookup(name.c_str(), featureId, segmentIdx, &maxH, &maxW, &maxL, &maxWt, &maxAx, &maxBg))
++  if (!g_vehicleLookup(name.c_str(), featureId, segmentIdx, &maxH, &maxW, &maxL, &maxWt, &maxAx, &maxBg))
 +    return false;
 +
 +  if (StrictExceeds(MetresToCm(g_heightM), maxH))
