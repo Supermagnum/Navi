@@ -6,8 +6,10 @@ import uniffi.navi.TravelProfile
  * Vehicle clearance messaging on the MWM path.
  *
  * When sidecars carry `vehicle_limits`, truck / mobile-home / car-with-height
- * routes apply restrictions in the car estimator. Warnings are only for
- * missing data (or motorcycle, which never carries dimensions).
+ * routes apply restrictions in the car estimator. Banners never claim full
+ * coverage: at/above the match-rate threshold they say limits are applied
+ * where map data exists; below threshold or missing they name the region(s).
+ * Matched restrictions are still applied either way.
  */
 object VehicleRestrictionUi {
     /** Profiles that pass stored dimensions into the car estimator. */
@@ -41,17 +43,13 @@ object VehicleRestrictionUi {
         }
 
     /**
-     * When vehicle_limits data is present for the route leaves, do not warn
-     * "not applied". When [dataAvailable] is false, warn for truck/mobile-home
-     * and for car when a height is stored.
+     * Truck / mobile-home / car-with-height always get a coverage honesty
+     * banner on MWM (never silent "full coverage").
      */
-    fun warnOnPlannedRoute(
+    fun shouldShowRestrictionBanner(
         profile: TravelProfile,
         heightM: Double?,
-        /** False until the planner confirms `vehicle_limits` for the route leaves. */
-        dataAvailable: Boolean = false,
     ): Boolean {
-        if (dataAvailable) return false
         if (motorcycleNoLimits(profile)) return false
         if (alwaysWarnOnMwm(profile)) return true
         return when (profile) {
@@ -62,12 +60,26 @@ object VehicleRestrictionUi {
         }
     }
 
+    /**
+     * True when the route needs the below-threshold / missing-data warning
+     * (not the "applied where available" line).
+     */
+    fun warnOnPlannedRoute(
+        profile: TravelProfile,
+        heightM: Double?,
+        /** True when every leaf meets the match-rate threshold. */
+        dataAvailable: Boolean = false,
+    ): Boolean {
+        if (dataAvailable) return false
+        return shouldShowRestrictionBanner(profile, heightM)
+    }
+
     fun showProfilePanelNote(
         profile: TravelProfile,
         heightM: Double?,
         dataAvailable: Boolean = false,
     ): Boolean =
-        warnOnPlannedRoute(profile, heightM, dataAvailable) ||
+        shouldShowRestrictionBanner(profile, heightM) ||
             (motorcycleNoLimits(profile) && MwmProductionPlanner.limitsNotApplied(profile))
 
     fun appendPlanWarning(
@@ -77,7 +89,7 @@ object VehicleRestrictionUi {
         heightM: Double?,
         dataAvailable: Boolean = false,
     ): String {
-        if (!warnOnPlannedRoute(profile, heightM, dataAvailable)) return statusLine
+        if (!shouldShowRestrictionBanner(profile, heightM)) return statusLine
         val w = warning.trim()
         if (w.isEmpty()) return statusLine
         if (statusLine.contains(w)) return statusLine
@@ -97,35 +109,50 @@ object VehicleRestrictionUi {
 
     /**
      * Coverage parsed from a MWM plan report (`vehicle_limits_ok=` /
-     * `vehicle_limits_missing=`). When the keys are absent, [known] is false
-     * and callers keep the conservative default (warn).
+     * `vehicle_limits_missing=` / `vehicle_limits_partial=`).
      */
     data class Coverage(
         val known: Boolean,
+        /** True when every leaf has vehicle_limits and meets the match-rate threshold. */
         val dataAvailable: Boolean,
         val missingLeaves: List<String>,
+        val partialLeaves: List<String>,
     )
 
     fun parseCoverage(report: String): Coverage {
         val okLine =
             report.lineSequence().firstOrNull { it.startsWith("vehicle_limits_ok=") }
-                ?: return Coverage(known = false, dataAvailable = false, missingLeaves = emptyList())
+                ?: return Coverage(
+                    known = false,
+                    dataAvailable = false,
+                    missingLeaves = emptyList(),
+                    partialLeaves = emptyList(),
+                )
         val ok = okLine.substringAfter('=').trim().equals("true", ignoreCase = true)
-        val missing =
+
+        fun listAfter(prefix: String): List<String> =
             report
                 .lineSequence()
-                .firstOrNull { it.startsWith("vehicle_limits_missing=") }
+                .firstOrNull { it.startsWith(prefix) }
                 ?.substringAfter('=')
                 ?.split(',')
                 ?.map { it.trim() }
                 ?.filter { it.isNotEmpty() }
                 .orEmpty()
-        return Coverage(known = true, dataAvailable = ok && missing.isEmpty(), missingLeaves = missing)
+        val missing = listAfter("vehicle_limits_missing=")
+        val partial = listAfter("vehicle_limits_partial=")
+        return Coverage(
+            known = true,
+            dataAvailable = ok && missing.isEmpty() && partial.isEmpty(),
+            missingLeaves = missing,
+            partialLeaves = partial,
+        )
     }
 
     /**
-     * Banner / status text when [warnOnPlannedRoute] is true. Prefers a named
-     * region list when [missingLeaves] is non-empty.
+     * Banner on route preview / nav start. Never implies full coverage:
+     * - at/above threshold → [appliedTemplate]
+     * - below / missing → partial / missing / generic
      */
     fun routeWarningText(
         profile: TravelProfile,
@@ -134,8 +161,13 @@ object VehicleRestrictionUi {
         missingLeaves: List<String>,
         genericBanner: String,
         regionTemplate: String,
+        partialLeaves: List<String> = emptyList(),
+        partialTemplate: String = regionTemplate,
+        appliedTemplate: String = genericBanner,
     ): String? {
-        if (!warnOnPlannedRoute(profile, heightM, dataAvailable)) return null
+        if (!shouldShowRestrictionBanner(profile, heightM)) return null
+        if (dataAvailable) return appliedTemplate
+        warnDataUnavailable(partialLeaves, partialTemplate)?.let { return it }
         return warnDataUnavailable(missingLeaves, regionTemplate) ?: genericBanner
     }
 }

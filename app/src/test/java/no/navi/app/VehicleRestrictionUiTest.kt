@@ -24,37 +24,40 @@ class VehicleRestrictionUiTest {
     }
 
     @Test
-    fun noWarnWhenDataAvailable() {
+    fun belowThresholdWarnStillFiresWhenDataMissing() {
         for (p in listOf(TravelProfile.TRUCK, TravelProfile.TRUCK_ELECTRIC, TravelProfile.MOBILE_HOME)) {
             assertFalse("$p", VehicleRestrictionUi.warnOnPlannedRoute(p, null, dataAvailable = true))
-            assertFalse("$p", VehicleRestrictionUi.warnOnPlannedRoute(p, 4.0, dataAvailable = true))
+            assertTrue("$p", VehicleRestrictionUi.warnOnPlannedRoute(p, null, dataAvailable = false))
         }
         assertFalse(VehicleRestrictionUi.warnOnPlannedRoute(TravelProfile.CAR, 2.0, dataAvailable = true))
+        assertTrue(VehicleRestrictionUi.warnOnPlannedRoute(TravelProfile.CAR, 2.0, dataAvailable = false))
+        assertFalse(VehicleRestrictionUi.warnOnPlannedRoute(TravelProfile.CAR, null, dataAvailable = false))
+        assertFalse(VehicleRestrictionUi.warnOnPlannedRoute(TravelProfile.MOTORCYCLE, 1.5, dataAvailable = false))
     }
 
     @Test
-    fun warnWhenDataMissingForTruckAndCarWithHeight() {
-        for (p in listOf(TravelProfile.TRUCK, TravelProfile.TRUCK_ELECTRIC, TravelProfile.MOBILE_HOME)) {
-            assertTrue("$p", VehicleRestrictionUi.warnOnPlannedRoute(p, null, dataAvailable = false))
-        }
-        assertFalse(VehicleRestrictionUi.warnOnPlannedRoute(TravelProfile.CAR, null, dataAvailable = false))
-        assertTrue(VehicleRestrictionUi.warnOnPlannedRoute(TravelProfile.CAR, 2.0, dataAvailable = false))
-        assertFalse(VehicleRestrictionUi.warnOnPlannedRoute(TravelProfile.MOTORCYCLE, 1.5, dataAvailable = false))
+    fun bannerAlwaysForTruckAndCarWithHeight() {
+        assertTrue(VehicleRestrictionUi.shouldShowRestrictionBanner(TravelProfile.TRUCK, null))
+        assertTrue(VehicleRestrictionUi.shouldShowRestrictionBanner(TravelProfile.MOBILE_HOME, null))
+        assertTrue(VehicleRestrictionUi.shouldShowRestrictionBanner(TravelProfile.CAR, 2.5))
+        assertFalse(VehicleRestrictionUi.shouldShowRestrictionBanner(TravelProfile.CAR, null))
+        assertFalse(VehicleRestrictionUi.shouldShowRestrictionBanner(TravelProfile.MOTORCYCLE, 1.5))
+        assertFalse(VehicleRestrictionUi.shouldShowRestrictionBanner(TravelProfile.HIKING, null))
     }
 
     @Test
     fun profilePanelStillCoversMotorcycleViaLimitsNotApplied() {
         assertTrue(VehicleRestrictionUi.showProfilePanelNote(TravelProfile.MOTORCYCLE, null))
-        assertFalse(VehicleRestrictionUi.showProfilePanelNote(TravelProfile.CAR, 2.5, dataAvailable = true))
+        assertTrue(VehicleRestrictionUi.showProfilePanelNote(TravelProfile.CAR, 2.5, dataAvailable = true))
         assertTrue(VehicleRestrictionUi.showProfilePanelNote(TravelProfile.CAR, 2.5, dataAvailable = false))
         assertFalse(VehicleRestrictionUi.showProfilePanelNote(TravelProfile.HIKING, null, dataAvailable = true))
     }
 
     @Test
-    fun appendPlanWarningRespectsDataAvailable() {
-        val warn = "Caution: limits not available"
+    fun appendPlanWarningAlwaysForTruckBannerProfiles() {
+        val warn = "applied where available"
         assertEquals(
-            "ok",
+            "ok\n$warn",
             VehicleRestrictionUi.appendPlanWarning("ok", warn, TravelProfile.TRUCK, null, dataAvailable = true),
         )
         assertEquals(
@@ -93,11 +96,21 @@ class VehicleRestrictionUiTest {
         assertTrue(miss.known)
         assertFalse(miss.dataAvailable)
         assertEquals(listOf("Norway_Hedmark", "Norway_Oppland"), miss.missingLeaves)
+
+        val partial =
+            VehicleRestrictionUi.parseCoverage(
+                "PASS\nvehicle_limits_ok=false\nvehicle_limits_partial=Norway_Oppland\n",
+            )
+        assertTrue(partial.known)
+        assertFalse(partial.dataAvailable)
+        assertEquals(listOf("Norway_Oppland"), partial.partialLeaves)
+        assertTrue(partial.missingLeaves.isEmpty())
     }
 
     @Test
-    fun routeWarningTextPrefersNamedRegions() {
-        assertNull(
+    fun routeWarningTextNeverImpliesFullCoverage() {
+        assertEquals(
+            "applied where available",
             VehicleRestrictionUi.routeWarningText(
                 TravelProfile.TRUCK,
                 null,
@@ -105,6 +118,7 @@ class VehicleRestrictionUiTest {
                 missingLeaves = emptyList(),
                 genericBanner = "generic",
                 regionTemplate = "Missing: %s",
+                appliedTemplate = "applied where available",
             ),
         )
         assertEquals(
@@ -127,6 +141,19 @@ class VehicleRestrictionUiTest {
                 missingLeaves = listOf("Norway_Hedmark"),
                 genericBanner = "generic",
                 regionTemplate = "Missing: %s",
+            ),
+        )
+        assertEquals(
+            "Partial: Norway Oppland",
+            VehicleRestrictionUi.routeWarningText(
+                TravelProfile.TRUCK,
+                null,
+                dataAvailable = false,
+                missingLeaves = emptyList(),
+                genericBanner = "generic",
+                regionTemplate = "Missing: %s",
+                partialLeaves = listOf("Norway_Oppland"),
+                partialTemplate = "Partial: %s",
             ),
         )
     }

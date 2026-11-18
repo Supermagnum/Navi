@@ -720,15 +720,46 @@ fn find_vehicle_limit(
         .map(|i| &records[i])
 }
 
-/// Decode the `vehicle_limits` section body.
-pub fn parse_vehicle_limits_body(data: &[u8]) -> Result<Vec<VehicleLimitRecord>, SidecarError> {
-    if data.len() < 4 {
+/// Coverage header from a VL01 `vehicle_limits` body (defaults for legacy).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct VehicleLimitsCoverage {
+    pub tagged_ways: u32,
+    pub matched_ways: u32,
+    /// `round(match_rate * 1000)`.
+    pub match_rate_milli: u32,
+    pub non_numeric_no_limit: u32,
+    pub unknown_value: u32,
+    pub osm_data_date: String,
+    pub map_release: String,
+}
+
+impl VehicleLimitsCoverage {
+    pub fn match_rate(&self) -> f64 {
+        f64::from(self.match_rate_milli) / 1000.0
+    }
+
+    /// Default client threshold for treating a leaf as fully covered.
+    pub const DEFAULT_APPLY_THRESHOLD: f64 = 0.90;
+
+    pub fn meets_threshold(&self, threshold: f64) -> bool {
+        self.match_rate() + f64::EPSILON >= threshold
+    }
+}
+
+const VEHICLE_LIMITS_BODY_MAGIC: &[u8; 4] = b"VL01";
+
+fn parse_vehicle_limit_records(
+    data: &[u8],
+    mut off: usize,
+) -> Result<Vec<VehicleLimitRecord>, SidecarError> {
+    if off + 4 > data.len() {
         return Err(SidecarError::RecordBodyCorrupt(
-            "vehicle_limits too short".into(),
+            "vehicle_limits count truncated".into(),
         ));
     }
-    let count = read_u32(data, 0)? as usize;
-    let need = 4 + count * VEHICLE_LIMIT_RECORD_LEN;
+    let count = read_u32(data, off)? as usize;
+    off += 4;
+    let need = off + count * VEHICLE_LIMIT_RECORD_LEN;
     if data.len() != need {
         return Err(SidecarError::RecordBodyCorrupt(format!(
             "vehicle_limits len {} want {}",
@@ -737,21 +768,73 @@ pub fn parse_vehicle_limits_body(data: &[u8]) -> Result<Vec<VehicleLimitRecord>,
         )));
     }
     let mut out = Vec::with_capacity(count);
-    for i in 0..count {
-        // Wire: feature_id u32, segment_index u16, reserved u16, then six limit u16s.
-        let o = 4 + i * VEHICLE_LIMIT_RECORD_LEN;
+    for _ in 0..count {
         out.push(VehicleLimitRecord {
-            feature_id: read_u32(data, o)?,
-            segment_index: read_u16(data, o + 4)?,
-            max_height_cm: read_u16(data, o + 8)?,
-            max_width_cm: read_u16(data, o + 10)?,
-            max_length_cm: read_u16(data, o + 12)?,
-            max_weight_10kg: read_u16(data, o + 14)?,
-            max_axleload_10kg: read_u16(data, o + 16)?,
-            max_bogie_10kg: read_u16(data, o + 18)?,
+            feature_id: read_u32(data, off)?,
+            segment_index: read_u16(data, off + 4)?,
+            max_height_cm: read_u16(data, off + 8)?,
+            max_width_cm: read_u16(data, off + 10)?,
+            max_length_cm: read_u16(data, off + 12)?,
+            max_weight_10kg: read_u16(data, off + 14)?,
+            max_axleload_10kg: read_u16(data, off + 16)?,
+            max_bogie_10kg: read_u16(data, off + 18)?,
         });
+        off += VEHICLE_LIMIT_RECORD_LEN;
     }
     Ok(out)
+}
+
+/// Decode VL01 or legacy `vehicle_limits` body.
+pub fn parse_vehicle_limits_section(
+    data: &[u8],
+) -> Result<(VehicleLimitsCoverage, Vec<VehicleLimitRecord>), SidecarError> {
+    if data.len() < 4 {
+        return Err(SidecarError::RecordBodyCorrupt(
+            "vehicle_limits too short".into(),
+        ));
+    }
+    if data[..4] == *VEHICLE_LIMITS_BODY_MAGIC {
+        let mut off = 4;
+        if off + 20 > data.len() {
+            return Err(SidecarError::RecordBodyCorrupt(
+                "vehicle_limits VL01 coverage truncated".into(),
+            ));
+        }
+        let tagged_ways = read_u32(data, off)?;
+        off += 4;
+        let matched_ways = read_u32(data, off)?;
+        off += 4;
+        let match_rate_milli = read_u32(data, off)?;
+        off += 4;
+        let non_numeric_no_limit = read_u32(data, off)?;
+        off += 4;
+        let unknown_value = read_u32(data, off)?;
+        off += 4;
+        let osm_data_date = read_u16_str(data, &mut off)?;
+        let map_release = read_u16_str(data, &mut off)?;
+        let records = parse_vehicle_limit_records(data, off)?;
+        return Ok((
+            VehicleLimitsCoverage {
+                tagged_ways,
+                matched_ways,
+                match_rate_milli,
+                non_numeric_no_limit,
+                unknown_value,
+                osm_data_date,
+                map_release,
+            },
+            records,
+        ));
+    }
+    Ok((
+        VehicleLimitsCoverage::default(),
+        parse_vehicle_limit_records(data, 0)?,
+    ))
+}
+
+/// Decode the `vehicle_limits` section body (records only).
+pub fn parse_vehicle_limits_body(data: &[u8]) -> Result<Vec<VehicleLimitRecord>, SidecarError> {
+    Ok(parse_vehicle_limits_section(data)?.1)
 }
 
 /// Strict comparison used by the car estimator: block only when vehicle > limit.

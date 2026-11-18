@@ -539,6 +539,8 @@
     <string name="profile_limits_not_applied">Kjøretøygrenser (høyde, bredde, lengde, vekt) brukes ikke for motorsykkel på denne karttypen.</string>
     <string name="vehicle_limits_not_yet_applied_banner">Obs: høyde-, bredde-, lengde- og vektgrenser er ikke tilgjengelige for deler av denne ruten.</string>
     <string name="vehicle_limits_unavailable_for_region">Kjøretøybegrensninger er ikke tilgjengelige for %1$s. Ruten kan gå på veier som er for lave eller har for lav vektgrense for kjøretøyet.</string>
+    <string name="vehicle_limits_partly_available_for_region">Kjøretøybegrensninger er bare delvis tilgjengelige i dette området (%1$s). Grenser som er funnet brukes likevel.</string>
+    <string name="vehicle_limits_applied_where_available">Kjøretøybegrensninger brukes der kartdata finnes</string>
     <string name="vehicle_limits_blocked_route">Ingen rute uten å passere en begrensning.</string>
 
     <!-- Phase 7: .rkyv to MWM migration and Map storage -->

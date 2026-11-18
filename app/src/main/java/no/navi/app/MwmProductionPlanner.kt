@@ -207,7 +207,13 @@ object MwmProductionPlanner {
                         // The route crosses a leaf that is not installed: name it.
                         missingLeavesAlong(context, la0, lo0, la1, lo1)?.let { return it }
                     }
-                    return toCorridor(leg, endLat, endLon, profile, vehicleLimitsCoverage(routeLeaves))
+                    return toCorridor(
+                        leg,
+                        endLat,
+                        endLon,
+                        profile,
+                        vehicleLimitsCoverage(context, routeLeaves),
+                    )
                 }
                 RouteClimbSource.publishIfOk(leg)
                 lengthM += leg.lengthM
@@ -247,7 +253,7 @@ object MwmProductionPlanner {
             RouteClimbSource.publishComaps(
                 RouteClimbSource.fromComaps(ascent, descent, elev.toString()),
             )
-            toCorridor(ok, endLat, endLon, profile, vehicleLimitsCoverage(routeLeaves))
+            toCorridor(ok, endLat, endLon, profile, vehicleLimitsCoverage(context, routeLeaves))
         } finally {
             setMwmProductionPlannerActive(false)
         }
@@ -312,12 +318,14 @@ object MwmProductionPlanner {
         endLat: Double,
         endLon: Double,
         profile: TravelProfile,
-        vehicleLimitsMissing: List<String>? = null,
+        vehicleLimitsCoverage: Pair<List<String>, List<String>>? = null,
     ): CorridorRouteResult {
         val codeName = route.code.name
         val polyline = pointsToPolyline(route.points)
         val (maneuvers, samples) = buildManeuversAndSamples(route)
         turnKey = polyline.hashCode()
+        val missing = vehicleLimitsCoverage?.first
+        val partial = vehicleLimitsCoverage?.second.orEmpty()
         if (route.code != FfiComapsRouteCode.OK) {
             val msg =
                 route.errorMessage?.ifBlank { null }
@@ -325,7 +333,7 @@ object MwmProductionPlanner {
             return failCorridor(
                 "TEST_KIND=PLAN_MWM_ROUTE\nFAIL: $msg\nPLANNER=mwm\n" +
                     "comaps_route_code=$codeName\n" +
-                    vehicleLimitsReportLines(vehicleLimitsMissing),
+                    vehicleLimitsReportLines(missing, partial),
             )
         }
         val km = route.lengthM / 1000.0
@@ -351,7 +359,7 @@ object MwmProductionPlanner {
                 append("descent_m=${route.descentM}\n")
                 append("build_s=${route.buildTimeS}\n")
                 append("comaps_route_code=$codeName\n")
-                append(vehicleLimitsReportLines(vehicleLimitsMissing))
+                append(vehicleLimitsReportLines(missing, partial))
             }
         return CorridorRouteResult(
             report = report,
@@ -582,20 +590,37 @@ object MwmProductionPlanner {
         }
     }
 
-    /** Leaves along the route whose sidecars lack a `vehicle_limits` section. */
-    private fun vehicleLimitsCoverage(leaves: Collection<String>): List<String> {
-        if (leaves.isEmpty()) return emptyList()
-        return runCatching {
-            uniffi.navi.comapsLeavesMissingVehicleLimits(leaves.toList())
-        }.getOrDefault(leaves.toList())
+    /**
+     * Leaves along the route whose sidecars lack a `vehicle_limits` section,
+     * plus leaves whose catalog match rate is below the configured threshold.
+     */
+    private fun vehicleLimitsCoverage(
+        context: Context,
+        leaves: Collection<String>,
+    ): Pair<List<String>, List<String>> {
+        if (leaves.isEmpty()) return emptyList<String>() to emptyList()
+        val missing =
+            runCatching {
+                uniffi.navi.comapsLeavesMissingVehicleLimits(leaves.toList())
+            }.getOrDefault(leaves.toList())
+        val haveSection = leaves.filter { it.isNotBlank() && it !in missing }
+        val partial =
+            VehicleLimitsCoverageStore.partialLeaves(context, haveSection).filter { it !in missing }
+        return missing to partial
     }
 
-    private fun vehicleLimitsReportLines(missing: List<String>?): String {
+    private fun vehicleLimitsReportLines(
+        missing: List<String>?,
+        partial: List<String> = emptyList(),
+    ): String {
         if (missing == null) return ""
         return buildString {
-            append("vehicle_limits_ok=${missing.isEmpty()}\n")
+            append("vehicle_limits_ok=${missing.isEmpty() && partial.isEmpty()}\n")
             if (missing.isNotEmpty()) {
                 append("vehicle_limits_missing=${missing.joinToString(",")}\n")
+            }
+            if (partial.isNotEmpty()) {
+                append("vehicle_limits_partial=${partial.joinToString(",")}\n")
             }
         }
     }

@@ -90,22 +90,50 @@ pub fn installed_sidecar_count(data_dir: &Path, version: &str) -> usize {
         .unwrap_or(0)
 }
 
-fn leaf_present(release: &Path, countries: &CountriesTxt, catalog: &MwmCatalog, id: &str) -> bool {
+fn leaf_mwm_present(release: &Path, countries: &CountriesTxt, id: &str) -> bool {
     let Some(c) = countries.leaves.get(id) else {
         return false;
     };
-    let mwm_ok = fs::metadata(leaf_mwm_path(release, id))
+    fs::metadata(leaf_mwm_path(release, id))
         .map(|m| m.is_file() && m.len() == c.size)
-        .unwrap_or(false);
-    if !mwm_ok {
-        return false;
-    }
+        .unwrap_or(false)
+}
+
+fn leaf_sidecar_present(release: &Path, catalog: &MwmCatalog, id: &str) -> bool {
     match catalog.leaf(id) {
-        Some(l) if !l.no_sidecar => fs::metadata(leaf_sidecar_path(release, id))
-            .map(|m| m.is_file() && l.sidecar_bytes.map(|b| b == m.len()).unwrap_or(true))
-            .unwrap_or(false),
+        Some(l) if !l.no_sidecar => {
+            let path = leaf_sidecar_path(release, id);
+            let meta = match fs::metadata(&path) {
+                Ok(m) if m.is_file() => m,
+                _ => return false,
+            };
+            if let Some(b) = l.sidecar_bytes {
+                if meta.len() != b {
+                    return false;
+                }
+            }
+            // Prefer SHA when catalog carries one so same-size updates refresh.
+            if let Some(want) = l.sidecar_sha256.as_ref() {
+                return verify_sidecar_sha256(&path, want);
+            }
+            true
+        }
         _ => true,
     }
+}
+
+fn verify_sidecar_sha256(path: &Path, want_hex: &str) -> bool {
+    use sha2::{Digest, Sha256};
+    let Ok(bytes) = fs::read(path) else {
+        return false;
+    };
+    let got = Sha256::digest(&bytes);
+    let got_hex: String = got.iter().map(|b| format!("{b:02x}")).collect();
+    got_hex.eq_ignore_ascii_case(want_hex)
+}
+
+fn leaf_present(release: &Path, countries: &CountriesTxt, catalog: &MwmCatalog, id: &str) -> bool {
+    leaf_mwm_present(release, countries, id) && leaf_sidecar_present(release, catalog, id)
 }
 
 /// Process-wide guard: one leaf install / migration at a time (they share the staging tree).

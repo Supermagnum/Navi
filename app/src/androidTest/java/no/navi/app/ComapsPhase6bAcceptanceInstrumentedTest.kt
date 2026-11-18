@@ -692,11 +692,27 @@ class ComapsPhase6bAcceptanceInstrumentedTest {
                 ?.get(1)
                 .orEmpty()
         val hamar = placeNear("Hamar stasjon", 60.79, 11.07, "stasjon")
+        // Prefer Trondheim (South Trondelag) when only Ostlandet is installed; if vehicle_limits /
+        // Nordic installs already cover that leaf, fall back to a still-missing mainland leaf.
+        val uncoveredStart = firstUncoveredStart()
+        out.put(
+            "uncovered_start_picked",
+            JSONObject()
+                .put("name", uncoveredStart.first)
+                .put("lat", uncoveredStart.second)
+                .put("lon", uncoveredStart.third)
+                .put(
+                    "leaf",
+                    runCatching {
+                        uniffi.navi.comapsLeafForPoint(uncoveredStart.second, uncoveredStart.third)
+                    }.getOrNull(),
+                ),
+        )
         val cases =
             listOf(
                 Triple("start_covered_end_stockholm", espa, Triple("Stockholm", 59.3293, 18.0686)),
                 Triple("both_uncovered_berlin_potsdam", Triple("Berlin", 52.52, 13.405), Triple("Potsdam", 52.39, 13.06)),
-                Triple("start_uncovered_end_covered", Triple("Trondheim", 63.4305, 10.3951), hamar),
+                Triple("start_uncovered_end_covered", uncoveredStart, hamar),
             )
         var pass = 0
         holdGps(espa)
@@ -723,6 +739,36 @@ class ComapsPhase6bAcceptanceInstrumentedTest {
         NaviMapTestHooks.clearDebugGpsInject()
         writeLog("missing-maps.json", out.toString(2))
         assertTrue("every uncovered case names its leaves: $out", pass == cases.size)
+    }
+
+    /**
+     * Start point whose CoMaps leaf is not installed. Trondheim is the Phase 6b default
+     * (Ostlandet-only); Alta / Kirkenes cover devices that already pulled Trøndelag for
+     * vehicle_limits work.
+     */
+    private fun firstUncoveredStart(): Triple<String, Double, Double> {
+        val installed =
+            runCatching {
+                uniffi.navi
+                    .mwmInstalled(NaviAppData.resolve(h.context).absolutePath)
+                    .leafIds
+                    .toSet()
+            }.getOrDefault(emptySet())
+        val candidates =
+            listOf(
+                Triple("Trondheim", 63.4305, 10.3951), // Norway_South Trondelag
+                Triple("Alta", 69.9689, 23.2717), // Norway_Northern (Finnmark)
+                Triple("Kirkenes", 69.7271, 30.0458), // Norway_Northern (Finnmark)
+            )
+        for (c in candidates) {
+            val leaf =
+                runCatching { uniffi.navi.comapsLeafForPoint(c.second, c.third) }.getOrNull().orEmpty()
+            if (leaf.isNotBlank() && leaf !in installed) {
+                android.util.Log.i(h.TAG, "uncovered start ${c.first} leaf=$leaf (installed=${installed.size})")
+                return c
+            }
+        }
+        error("no uncovered start among $candidates; installed=$installed")
     }
 
     private fun samplesOf(r: uniffi.navi.CorridorRouteResult) = parseRouteSimSamples(r.simSamplesJson)

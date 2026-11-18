@@ -1,0 +1,23 @@
+--- a/android/sdk/src/main/java/app/organicmaps/sdk/util/Utils.java
++++ b/android/sdk/src/main/java/app/organicmaps/sdk/util/Utils.java
+@@ -19,6 +19,7 @@ import androidx.annotation.NonNull;
+ import androidx.annotation.Nullable;
+ import androidx.annotation.StringRes;
+ import app.organicmaps.sdk.BuildConfig;
++import app.organicmaps.sdk.util.concurrency.UiThread;
+ import app.organicmaps.sdk.util.log.Logger;
+ import java.io.Closeable;
+ import java.io.IOException;
+@@ -165,7 +166,11 @@ public class Utils
+       Logger.e(TAG, "Failed to get string with id '" + key + "'", e);
+       if (BuildConfig.BUILD_TYPE.equals("debug") || BuildConfig.BUILD_TYPE.equals("beta"))
+       {
+-        Toast.makeText(context, "Add string id for '" + key + "'!", Toast.LENGTH_LONG).show();
++        // Search / routing JNI may call this off the main thread. Toast requires a
++        // Looper; posting avoids process abort on headless suites and worker paths.
++        final String msg = "Add string id for '" + key + "'!";
++        UiThread.run(
++            () -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show());
+       }
+     }
+     return INVALID_ID;

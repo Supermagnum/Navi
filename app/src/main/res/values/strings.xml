@@ -539,6 +539,8 @@
     <string name="profile_limits_not_applied">Vehicle limits (height, width, length, weight) are not applied for motorcycles on this map type.</string>
     <string name="vehicle_limits_not_yet_applied_banner">Caution: vehicle height, width, length and weight limits are not available for part of this route.</string>
     <string name="vehicle_limits_unavailable_for_region">Vehicle restrictions are not available for %1$s. The route may use roads that are too low or too light for your vehicle.</string>
+    <string name="vehicle_limits_partly_available_for_region">Vehicle restrictions only partly available in this area (%1$s). Matched limits are still applied.</string>
+    <string name="vehicle_limits_applied_where_available">Vehicle restrictions applied where map data is available</string>
     <string name="vehicle_limits_blocked_route">No route without passing a restriction.</string>
 
     <!-- Phase 7: .rkyv to MWM migration and Map storage -->

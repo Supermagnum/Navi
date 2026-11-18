@@ -261,12 +261,23 @@ fn download_one_leaf(
     let sc_sha = leaf.sidecar_sha256.as_ref().ok_or_else(|| {
         MwmDownloadError::Other(format!("missing sidecar_sha256 for {}", leaf.id))
     })?;
-    let need_sc = !(sc_dest.is_file()
-        && leaf
-            .sidecar_bytes
-            .map(|b| fs::metadata(&sc_dest).map(|m| m.len()).unwrap_or(0) == b)
-            .unwrap_or(false));
+    // Re-fetch when missing, size changed, or catalog SHA no longer matches so
+    // same-release sidecar updates do not require re-downloading the MWM.
+    let need_sc = {
+        let meta_ok = sc_dest.is_file()
+            && leaf
+                .sidecar_bytes
+                .map(|b| fs::metadata(&sc_dest).map(|m| m.len()).unwrap_or(0) == b)
+                .unwrap_or(true);
+        if !meta_ok {
+            true
+        } else {
+            verify_path_sha256(&sc_dest, leaf.sidecar_bytes, sc_sha).is_err()
+        }
+    };
     if need_sc {
+        // Drop a stale same-size file so the downloader replaces it.
+        let _ = fs::remove_file(&sc_dest);
         download_navi_file(navi_origin, sc_url, &sc_dest, cancel)?;
     }
     verify_path_sha256(&sc_dest, leaf.sidecar_bytes, sc_sha)?;
@@ -593,6 +604,7 @@ mod tests {
                 ],
                 no_sidecar: false,
                 elevation_policy_version: Some(1),
+                vehicle_limits_coverage: None,
             };
             let r1 = install_leaf_bytes_for_test(&staging, &leaf, mwm, Some(b"side")).unwrap();
             assert!(r1.navi_layers_available);
@@ -628,6 +640,7 @@ mod tests {
                 shared_with_regions: vec![],
                 no_sidecar: false,
                 elevation_policy_version: Some(1),
+                vehicle_limits_coverage: None,
             };
             let r = install_leaf_bytes_for_test(&staging, &leaf, mwm, Some(b"side")).unwrap();
             assert!(!r.navi_layers_available);
