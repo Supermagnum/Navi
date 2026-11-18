@@ -6,8 +6,9 @@ import uniffi.navi.TravelProfile
  * Vehicle clearance messaging on the MWM path.
  *
  * When sidecars carry `vehicle_limits`, truck / mobile-home / car-with-height
- * routes apply restrictions in the car estimator. Warnings are only for
- * missing data (or motorcycle, which never carries dimensions).
+ * routes apply restrictions in the car estimator. Warnings are for missing
+ * data or leaves whose match rate is below the configured threshold (default
+ * 0.90); matched restrictions are still applied in those regions.
  */
 object VehicleRestrictionUi {
     /** Profiles that pass stored dimensions into the car estimator. */
@@ -23,7 +24,8 @@ object VehicleRestrictionUi {
         }
 
     /** Motorcycle never applies dimension limits on MWM. */
-    fun motorcycleNoLimits(profile: TravelProfile): Boolean = profile == TravelProfile.MOTORCYCLE || profile == TravelProfile.MOTORCYCLE_ELECTRIC
+    fun motorcycleNoLimits(profile: TravelProfile): Boolean =
+        profile == TravelProfile.MOTORCYCLE || profile == TravelProfile.MOTORCYCLE_ELECTRIC
 
     /**
      * Temporary STEP-1 style "not applied" — kept for callers that still need
@@ -41,14 +43,14 @@ object VehicleRestrictionUi {
         }
 
     /**
-     * When vehicle_limits data is present for the route leaves, do not warn
-     * "not applied". When [dataAvailable] is false, warn for truck/mobile-home
-     * and for car when a height is stored.
+     * When vehicle_limits data is present and every route leaf meets the
+     * coverage threshold, do not warn. When [dataAvailable] is false, warn for
+     * truck/mobile-home and for car when a height is stored.
      */
     fun warnOnPlannedRoute(
         profile: TravelProfile,
         heightM: Double?,
-        /** False until the planner confirms `vehicle_limits` for the route leaves. */
+        /** False until the planner confirms full coverage for the route leaves. */
         dataAvailable: Boolean = false,
     ): Boolean {
         if (dataAvailable) return false
@@ -97,35 +99,48 @@ object VehicleRestrictionUi {
 
     /**
      * Coverage parsed from a MWM plan report (`vehicle_limits_ok=` /
-     * `vehicle_limits_missing=`). When the keys are absent, [known] is false
-     * and callers keep the conservative default (warn).
+     * `vehicle_limits_missing=` / `vehicle_limits_partial=`).
      */
     data class Coverage(
         val known: Boolean,
+        /** True when every leaf has vehicle_limits and meets the match-rate threshold. */
         val dataAvailable: Boolean,
         val missingLeaves: List<String>,
+        val partialLeaves: List<String>,
     )
 
     fun parseCoverage(report: String): Coverage {
         val okLine =
             report.lineSequence().firstOrNull { it.startsWith("vehicle_limits_ok=") }
-                ?: return Coverage(known = false, dataAvailable = false, missingLeaves = emptyList())
+                ?: return Coverage(
+                    known = false,
+                    dataAvailable = false,
+                    missingLeaves = emptyList(),
+                    partialLeaves = emptyList(),
+                )
         val ok = okLine.substringAfter('=').trim().equals("true", ignoreCase = true)
-        val missing =
+        fun listAfter(prefix: String): List<String> =
             report
                 .lineSequence()
-                .firstOrNull { it.startsWith("vehicle_limits_missing=") }
+                .firstOrNull { it.startsWith(prefix) }
                 ?.substringAfter('=')
                 ?.split(',')
                 ?.map { it.trim() }
                 ?.filter { it.isNotEmpty() }
                 .orEmpty()
-        return Coverage(known = true, dataAvailable = ok && missing.isEmpty(), missingLeaves = missing)
+        val missing = listAfter("vehicle_limits_missing=")
+        val partial = listAfter("vehicle_limits_partial=")
+        return Coverage(
+            known = true,
+            dataAvailable = ok && missing.isEmpty() && partial.isEmpty(),
+            missingLeaves = missing,
+            partialLeaves = partial,
+        )
     }
 
     /**
      * Banner / status text when [warnOnPlannedRoute] is true. Prefers a named
-     * region list when [missingLeaves] is non-empty.
+     * partial-coverage message, then missing regions, then the generic banner.
      */
     fun routeWarningText(
         profile: TravelProfile,
@@ -134,8 +149,11 @@ object VehicleRestrictionUi {
         missingLeaves: List<String>,
         genericBanner: String,
         regionTemplate: String,
+        partialLeaves: List<String> = emptyList(),
+        partialTemplate: String = regionTemplate,
     ): String? {
         if (!warnOnPlannedRoute(profile, heightM, dataAvailable)) return null
+        warnDataUnavailable(partialLeaves, partialTemplate)?.let { return it }
         return warnDataUnavailable(missingLeaves, regionTemplate) ?: genericBanner
     }
 }

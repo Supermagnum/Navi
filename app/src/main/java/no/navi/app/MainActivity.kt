@@ -1409,9 +1409,10 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     var lengthM by remember { mutableStateOf("") }
     var totalWeightKg by remember { mutableStateOf("") }
 
-    /** True after a plan confirms vehicle_limits for every route leaf. */
+    /** True after a plan confirms vehicle_limits for every route leaf at/above threshold. */
     var vehicleLimitsDataAvailable by remember { mutableStateOf(false) }
     var vehicleLimitsMissingLeaves by remember { mutableStateOf<List<String>>(emptyList()) }
+    var vehicleLimitsPartialLeaves by remember { mutableStateOf<List<String>>(emptyList()) }
     var showProfilePanel by remember { mutableStateOf(true) }
     var showVehiclePanel by remember { mutableStateOf(true) }
     var showRoutesPanel by remember { mutableStateOf(true) }
@@ -3626,6 +3627,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     if (coverage.known) {
                         vehicleLimitsDataAvailable = coverage.dataAvailable
                         vehicleLimitsMissingLeaves = coverage.missingLeaves
+                        vehicleLimitsPartialLeaves = coverage.partialLeaves
                     }
                     val rerouteLine =
                         "Route updated · ${"%.1f".format(result.distanceKm)} km " +
@@ -3640,6 +3642,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                     vehicleLimitsMissingLeaves,
                                     context.getString(R.string.vehicle_limits_not_yet_applied_banner),
                                     context.getString(R.string.vehicle_limits_unavailable_for_region),
+                                    vehicleLimitsPartialLeaves,
+                                    context.getString(R.string.vehicle_limits_partly_available_for_region),
                                 )
                             if (warn != null) {
                                 VehicleRestrictionUi.appendPlanWarning(
@@ -5152,6 +5156,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
         if (coverage.known) {
             vehicleLimitsDataAvailable = coverage.dataAvailable
             vehicleLimitsMissingLeaves = coverage.missingLeaves
+            vehicleLimitsPartialLeaves = coverage.partialLeaves
         }
         planNotice =
             if (MwmClientBootstrap.isEnabled()) {
@@ -5163,6 +5168,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                         vehicleLimitsMissingLeaves,
                         context.getString(R.string.vehicle_limits_not_yet_applied_banner),
                         context.getString(R.string.vehicle_limits_unavailable_for_region),
+                        vehicleLimitsPartialLeaves,
+                        context.getString(R.string.vehicle_limits_partly_available_for_region),
                     )
                 if (warn != null) {
                     VehicleRestrictionUi.appendPlanWarning(
@@ -9908,6 +9915,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                     vehicleLimitsMissingLeaves,
                                     stringResource(R.string.vehicle_limits_not_yet_applied_banner),
                                     stringResource(R.string.vehicle_limits_unavailable_for_region),
+                                    vehicleLimitsPartialLeaves,
+                                    stringResource(R.string.vehicle_limits_partly_available_for_region),
                                 )
                             if (routeWarn != null) {
                                 Surface(

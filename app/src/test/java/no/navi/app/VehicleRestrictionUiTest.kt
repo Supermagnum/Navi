@@ -93,6 +93,15 @@ class VehicleRestrictionUiTest {
         assertTrue(miss.known)
         assertFalse(miss.dataAvailable)
         assertEquals(listOf("Norway_Hedmark", "Norway_Oppland"), miss.missingLeaves)
+
+        val partial =
+            VehicleRestrictionUi.parseCoverage(
+                "PASS\nvehicle_limits_ok=false\nvehicle_limits_partial=Norway_Oppland\n",
+            )
+        assertTrue(partial.known)
+        assertFalse(partial.dataAvailable)
+        assertEquals(listOf("Norway_Oppland"), partial.partialLeaves)
+        assertTrue(partial.missingLeaves.isEmpty())
     }
 
     @Test
@@ -127,6 +136,19 @@ class VehicleRestrictionUiTest {
                 missingLeaves = listOf("Norway_Hedmark"),
                 genericBanner = "generic",
                 regionTemplate = "Missing: %s",
+            ),
+        )
+        assertEquals(
+            "Partial: Norway Oppland",
+            VehicleRestrictionUi.routeWarningText(
+                TravelProfile.TRUCK,
+                null,
+                dataAvailable = false,
+                missingLeaves = emptyList(),
+                genericBanner = "generic",
+                regionTemplate = "Missing: %s",
+                partialLeaves = listOf("Norway_Oppland"),
+                partialTemplate = "Partial: %s",
             ),
         )
     }

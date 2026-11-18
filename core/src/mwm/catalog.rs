@@ -100,6 +100,34 @@ pub struct CatalogLeaf {
     pub no_sidecar: bool,
     #[serde(default)]
     pub elevation_policy_version: Option<u32>,
+    /// Per-leaf vehicle_limits match coverage (optional until world publish).
+    #[serde(default)]
+    pub vehicle_limits_coverage: Option<VehicleLimitsCoverageCatalog>,
+}
+
+/// Catalog copy of the sidecar VL01 coverage header.
+#[derive(Debug, Clone, Deserialize)]
+pub struct VehicleLimitsCoverageCatalog {
+    #[serde(default)]
+    pub tagged_ways: u32,
+    #[serde(default)]
+    pub matched_ways: u32,
+    #[serde(default)]
+    pub match_rate: f64,
+    #[serde(default)]
+    pub non_numeric_no_limit: u32,
+    #[serde(default)]
+    pub unknown_value: u32,
+    #[serde(default)]
+    pub osm_data_date: String,
+    #[serde(default)]
+    pub map_release: String,
+}
+
+impl VehicleLimitsCoverageCatalog {
+    pub fn meets_threshold(&self, threshold: f64) -> bool {
+        self.match_rate + f64::EPSILON >= threshold
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
