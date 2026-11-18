@@ -57,8 +57,13 @@ fetch_tags() {
 ensure_clone
 cd "$DEST"
 fetch_tags
+# Pin verify runs after primary (Codeberg) or mirror_github clone/fetch.
 git checkout --force "$SHA"
-test "$(git rev-parse HEAD)" = "$SHA"
+HEAD="$(git rev-parse HEAD)"
+if [[ "$HEAD" != "$SHA" ]]; then
+  echo "error: CoMaps HEAD ($HEAD) does not match pin sha ($SHA) from $PIN_JSON" >&2
+  exit 1
+fi
 git submodule update --init --recursive --depth 1
 
 export PATH="${NAVI_HOST_TOOLS_BIN:-}:${PATH}"
