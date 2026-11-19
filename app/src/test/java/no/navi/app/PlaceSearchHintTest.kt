@@ -17,7 +17,7 @@ class PlaceSearchHintTest {
                 indexProblem = "file missing",
             )
         assertEquals(
-            "Offline place search unavailable (place index file missing) — enter coordinates or tap the map",
+            "Offline place search unavailable (file missing) — enter coordinates or tap the map",
             offline,
         )
         val online =
@@ -28,7 +28,7 @@ class PlaceSearchHintTest {
                 onlineAvailable = true,
                 indexProblem = "pack volume unavailable",
             )
-        assertTrue(online!!.startsWith("Offline place search unavailable (place index pack volume unavailable)"))
+        assertTrue(online!!.startsWith("Offline place search unavailable (pack volume unavailable)"))
     }
 
     @Test
@@ -47,7 +47,7 @@ class PlaceSearchHintTest {
     @Test
     fun showsBuildingMessageWhenOfflineAndIndexRunning() {
         assertEquals(
-            "Place index is still building — try coordinates, map tap, or wait for Wi‑Fi search",
+            "Offline search is still preparing — try coordinates, map tap, or wait for Wi‑Fi search",
             placeSearchBuildingMessage(
                 hitsEmpty = true,
                 indexHasEntries = false,

@@ -78,6 +78,7 @@ object MwmMapDownloader {
 
     fun loadRegions() {
         executor.execute {
+            // Resolves live navi → (no data-dir here) → CoMaps-direct. Install uses disk cache.
             val r = runCatching { uniffi.navi.mwmListRegions(defaultPackServerBaseUrl()) }.getOrNull()
             set {
                 if (r == null || !r.ok) {

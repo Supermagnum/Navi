@@ -189,13 +189,14 @@ object RegionReadiness {
         val isActive =
             activePath.isNotEmpty() &&
                 PackRegionAvailability.regionIdsMatchForCatalog(activePath, regionId)
+        val placeBusy =
+            looksLikePlacePrepare(placeLine) || looksLikePlacePrepare(downloadLine)
         val downloading =
             isActive &&
                 RegionDownloadBackground.isRunning() &&
-                !placeLine.contains("Place index", ignoreCase = true) &&
-                !downloadLine.contains("Place index", ignoreCase = true)
+                !placeBusy
         val indexing =
-            (isActive && placeLine.contains("Place index", ignoreCase = true)) ||
+            (isActive && placeBusy) ||
                 longTripState == LongTripCoordinator.State.Indexing ||
                 (
                     PlaceIndexBackground.isRunning() &&
@@ -311,5 +312,13 @@ object RegionReadiness {
         if (line.isBlank()) return null
         val m = Regex("""(\d{1,3})\s*%""").find(line) ?: return null
         return m.groupValues[1].toIntOrNull()?.coerceIn(0, 100)
+    }
+
+    private fun looksLikePlacePrepare(line: String): Boolean {
+        if (line.isBlank()) return false
+        val lower = line.lowercase()
+        return lower.contains("place index") ||
+            lower.contains("preparing search") ||
+            lower.startsWith("region ready")
     }
 }

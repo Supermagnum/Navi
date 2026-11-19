@@ -108,24 +108,20 @@ object StatusUi {
     fun toolsVisibleLines(
         regionDownloadProgress: String,
         pmtilesProgress: String,
-        placeIndexUiLine: String,
-        indexedMapsUiLine: String,
+        @Suppress("UNUSED_PARAMETER") placeIndexUiLine: String,
+        @Suppress("UNUSED_PARAMETER") indexedMapsUiLine: String,
         toolsStatusRaw: String,
     ): List<Pair<String, String>> {
         val process =
             buildList {
                 if (regionDownloadProgress.isNotBlank()) {
-                    add("region_download_progress" to regionDownloadProgress)
+                    add("region_download_progress" to IndexingUiCopy.sanitizeProgress(regionDownloadProgress))
                 }
                 if (pmtilesProgress.isNotBlank()) {
-                    add("pmtiles_progress" to pmtilesProgress)
+                    add("pmtiles_progress" to IndexingUiCopy.sanitizeProgress(pmtilesProgress))
                 }
-                if (placeIndexUiLine.isNotBlank()) {
-                    add("place_index_bg_status" to placeIndexUiLine)
-                }
-                if (indexedMapsUiLine.isNotBlank()) {
-                    add("indexed_maps_bg_status" to indexedMapsUiLine)
-                }
+                // Legacy place-index / indexed-maps lines are not shown (MWM has
+                // search/routing built in). Keep params for call-site compatibility.
             }
         val toolsStatus = toolsStatusRaw.trim()
         if (toolsStatus.isBlank()) return process
@@ -175,11 +171,12 @@ object StatusUi {
         val lower = s.lowercase()
         return lower.contains('%') ||
             lower.contains("download") ||
-            lower.contains("place index") ||
-            lower.contains("indexed maps") ||
+            lower.contains("preparing search") ||
+            lower.contains("preparing maps") ||
             lower.contains("basemap") ||
             lower.contains("writing") ||
-            lower.contains("fetching")
+            lower.contains("fetching") ||
+            lower.contains("installing")
     }
 
     /**

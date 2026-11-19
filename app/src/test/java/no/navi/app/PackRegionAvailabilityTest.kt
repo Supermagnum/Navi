@@ -213,7 +213,7 @@ class PackRegionAvailabilityTest {
             PackRegionAvailability.downloadRegionButtonLabel(serverReady = true),
         )
         assertEquals(
-            "Download region + build place index",
+            "Download region",
             PackRegionAvailability.downloadRegionButtonLabel(serverReady = false),
         )
         assertTrue(PackRegionAvailability.downloadRegionUsesReadyStyle(true))

@@ -3176,7 +3176,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_mwm_installed() and 0xFFFF) != 65171) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_mwm_list_regions() and 0xFFFF) != 46636) {
+    if ((lib.uniffi_navi_checksum_func_mwm_list_regions() and 0xFFFF) != 3693) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_mwm_migration_discard() and 0xFFFF) != 41547) {
@@ -13652,7 +13652,8 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     
 
         /**
-         * Fetch the live catalog and list the downloadable regions (blocking network call).
+         * List downloadable regions (blocking). Uses live navi catalog, then disk cache, then
+         * CoMaps-direct fallback so Tools still works when navi leaves are empty/unreachable.
          */ fun `mwmListRegions`(`naviOrigin`: kotlin.String): FfiMwmRegionList {
             return FfiConverterTypeFfiMwmRegionList.lift(
     uniffiRustCall() { _status ->

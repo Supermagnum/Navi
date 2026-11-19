@@ -999,6 +999,42 @@ object NaviMapTestHooks {
     @Volatile
     var autoRerouteTriggeredCount: Int = 0
 
+    /** MWM DATEX Block avoidance changed the CoMaps geometry (plan-time). */
+    @Volatile
+    var datexMwmRerouteApplied: Boolean = false
+
+    @Volatile
+    var datexMwmRerouteBeforeKm: Double = 0.0
+
+    @Volatile
+    var datexMwmRerouteAfterKm: Double = 0.0
+
+    @Volatile
+    var datexMwmRerouteBeforePoly: String = ""
+
+    @Volatile
+    var datexMwmRerouteAfterPoly: String = ""
+
+    /** Instrumented: bump MainActivity DATEX refresh (clears 300s wait). */
+    @Volatile
+    var requestDatexRefresh: Boolean = false
+
+    /** Live count of DATEX drape bookmark pins (ComapsDrapeMap). */
+    @Volatile
+    var lastDatexDrapeMarkCount: Int = 0
+
+    /** Live count of DATEX Compose screen circles (ComapsDrapeMap). */
+    @Volatile
+    var lastDatexComposeMarkCount: Int = 0
+
+    /** Instrumented: force [startRerouteFromCurrent] from current GPS/sim position. */
+    @Volatile
+    var requestRerouteFromCurrent: Boolean = false
+
+    /** Ids of DATEX Blocks that already triggered an auto-reroute this session. */
+    @Volatile
+    var datexAutoRerouteBlockIds: String = ""
+
     @Volatile
     var simulatingActive: Boolean = false
 

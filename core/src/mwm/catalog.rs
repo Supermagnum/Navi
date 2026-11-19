@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Normative schema id.
@@ -22,7 +22,7 @@ pub enum CatalogError {
     Missing(&'static str),
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct MwmCatalog {
     pub schema: String,
     pub mode: String,
@@ -53,7 +53,7 @@ pub struct MwmCatalog {
     pub non_routable_leaves: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ComapsMeta {
     pub map_series: String,
     pub release_version: u64,
@@ -71,7 +71,7 @@ pub struct ComapsMeta {
     pub note: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CatalogLeaf {
     pub id: String,
     #[serde(default)]
@@ -106,7 +106,7 @@ pub struct CatalogLeaf {
 }
 
 /// Catalog copy of the sidecar VL01 coverage header.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct VehicleLimitsCoverageCatalog {
     #[serde(default)]
     pub tagged_ways: u32,
@@ -130,13 +130,13 @@ impl VehicleLimitsCoverageCatalog {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct MwmFingerprint {
     pub size: u64,
     pub sha256: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct DisplayNameOverrides {
     #[serde(default)]
     pub leaves: BTreeMap<String, DisplayNameOverride>,
@@ -144,14 +144,14 @@ pub struct DisplayNameOverrides {
     pub likely_outdated_elsewhere: Vec<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DisplayNameOverride {
     pub display_name: String,
     #[serde(default)]
     pub note: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CountryGroup {
     pub id: String,
     #[serde(default)]
@@ -166,7 +166,7 @@ pub struct CountryGroup {
     pub subgroups: Vec<CountryGroup>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CountryGroupLeaf {
     pub id: String,
     #[serde(default)]

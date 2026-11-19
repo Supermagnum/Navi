@@ -824,7 +824,7 @@ object GeofabrikDownloadCatalog {
                 iso = "se",
                 supportNote =
                     "Offline maps: Geofabrik publishes only the country extract; län chips install " +
-                        "pack-server regions and use the Sweden PBF for place index. " +
+                        "pack-server regions and use the Sweden PBF for search data. " +
                         "Truck HOS: EC 561 from GPS. Speed cameras: decline (not allow-listed).",
                 testTag = "chip_country_europe_sweden",
             ),

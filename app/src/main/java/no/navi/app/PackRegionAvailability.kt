@@ -320,28 +320,20 @@ object PackRegionAvailability {
             onDevice -> "Packs and basemap installed on device."
             packsOnly -> "Packs on device — basemap still missing (use Download region)."
             !unreachableReason.isNullOrBlank() && serverReadyIds.isEmpty() ->
-                "Pack server offline — Geofabrik download + place index + basemap."
+                "Pack server offline — Geofabrik download + basemap."
             else -> ""
         }
     }
 
     /** Tools Download button label — short when pack server lists the path. */
-    fun downloadRegionButtonLabel(serverReady: Boolean): String =
-        if (serverReady) {
-            "Download region"
-        } else {
-            "Download region + build place index"
-        }
+    @Suppress("UNUSED_PARAMETER")
+    fun downloadRegionButtonLabel(serverReady: Boolean): String = "Download region"
 
+    @Suppress("UNUSED_PARAMETER")
     fun downloadRegionButtonLabel(
         serverReady: Boolean,
         resources: android.content.res.Resources,
-    ): String =
-        if (serverReady) {
-            resources.getString(R.string.download_region_action)
-        } else {
-            resources.getString(R.string.download_region_and_place_index)
-        }
+    ): String = resources.getString(R.string.download_region_action)
 
     /** Green Download styling when the selected path is on the pack catalog. */
     fun downloadRegionUsesReadyStyle(serverReady: Boolean): Boolean = serverReady

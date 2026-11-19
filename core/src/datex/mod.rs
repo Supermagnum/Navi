@@ -253,8 +253,9 @@ fn read_plan_datex_xml(data_dir: &Path, now: DateTime<Utc>) -> Option<(String, b
     if !cache_dir.join(DATEX_APPLY_TO_ROUTING_STAMP).is_file() {
         return None;
     }
-    let (_meta, xml, fetched_unix, _fp) = load_disk_cache(&cache_dir)?;
-    let ignore_ttl = datex_plan_mode(data_dir) == DatexPlanMode::Saved;
+    let (_meta, xml, fetched_unix, fp) = load_disk_cache(&cache_dir)?;
+    let ignore_ttl = datex_plan_mode(data_dir) == DatexPlanMode::Saved
+        || fp.starts_with("navi-synth");
     if !ignore_ttl {
         let age_secs = now.timestamp().saturating_sub(fetched_unix);
         if age_secs > DATEX_PLAN_CACHE_MAX_AGE_SECS {
@@ -809,9 +810,9 @@ pub fn refresh_for_route(
     let now_unix = now.timestamp();
     if let Some(dir) = config.cache_dir.as_ref() {
         if let Some((meta, xml, fetched, fp)) = load_disk_cache(dir) {
-            if fp.starts_with("navi-synth")
-                && now_unix.saturating_sub(fetched) <= DATEX_PLAN_CACHE_MAX_AGE_SECS
-            {
+            // ADB / campaign synthetic fixtures must survive long plan waits
+            // (missing-maps downloads). Do not TTL-drop navi-synth snapshots.
+            if fp.starts_with("navi-synth") {
                 log::info!(
                     target: "NaviDatex",
                     "keeping navi-synth cache age_secs={}; skip NPRA pull",

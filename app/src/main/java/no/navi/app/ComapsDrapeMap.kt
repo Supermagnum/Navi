@@ -707,10 +707,11 @@ internal fun ComapsDrapeMap(
         NaviMapTestHooks.lastTrackOverlayCount = state.tracks.size
     }
 
-    // DATEX situations: marks (point) and lines (geometry).
+    // DATEX situations as drape bookmark pins (colored pin + road label; phase6b-proven).
+    // Do NOT draw DATEX geometry as drape tracks: SolidLineBuilder CapVertex can throw
+    // std::length_error on degenerate synth polylines and SIGABRT the process mid-sim.
     LaunchedEffect(datexEpoch, datexHud, ready) {
         val marks = ArrayList<DrapeMark>()
-        val lines = ArrayList<DrapeLine>()
         if (datexHud.overlayEnabled && datexHud.activeCount > 0) {
             val arr = runCatching { JSONArray(datexHud.activeJson) }.getOrNull() ?: JSONArray()
             for (i in 0 until arr.length()) {
@@ -719,28 +720,34 @@ internal fun ComapsDrapeMap(
                 val geom = o.optJSONArray("geometry")
                 var lat = o.optDouble("lat", Double.NaN)
                 var lon = o.optDouble("lon", Double.NaN)
-                if (geom != null && geom.length() > 0) {
-                    val flat = DoubleArray(geom.length() * 2)
-                    var n = 0
-                    for (k in 0 until geom.length()) {
-                        val p = geom.optJSONArray(k) ?: continue
-                        flat[2 * n] = p.optDouble(0)
-                        flat[2 * n + 1] = p.optDouble(1)
-                        n++
+                if ((!lat.isFinite() || !lon.isFinite()) && geom != null && geom.length() > 0) {
+                    val p = geom.optJSONArray(0)
+                    if (p != null) {
+                        lat = p.optDouble(0)
+                        lon = p.optDouble(1)
                     }
-                    if (n >= 1 && !lat.isFinite()) {
-                        lat = flat[0]
-                        lon = flat[1]
-                    }
-                    if (n >= 2) lines.add(DrapeLine(flat.copyOf(n * 2), 0xFFC62828.toInt(), 5f))
                 }
                 if (lat.isFinite() && lon.isFinite()) {
-                    marks.add(DrapeMark(lat, lon, label, DrapeIcon.NONE, DrapeColor.DEEP_ORANGE))
+                    // BookmarkIcon::None still draws the coloured pin + name (see phase6b
+                    // r_overlay_datex_z14). INFORMATION can miss the atlas on some builds.
+                    marks.add(
+                        DrapeMark(
+                            lat,
+                            lon,
+                            label.ifBlank { "DATEX" },
+                            DrapeIcon.NONE,
+                            DrapeColor.DEEP_ORANGE,
+                        ),
+                    )
                 }
             }
         }
         overlays.marks("navi-datex", marks)
-        overlays.lines("navi-datex-lines", lines)
+        overlays.lines("navi-datex-lines", emptyList())
+        NaviMapTestHooks.lastDatexDrapeMarkCount = marks.size
+        if (marks.isNotEmpty()) {
+            Log.i(TAG, "datex drape marks=${marks.size}")
+        }
     }
 
     // Weather symbols for the visible area (plugin + toggle gated, same Rust declutter as before).
@@ -766,6 +773,42 @@ internal fun ComapsDrapeMap(
                 )
             }
             delay(15_000L)
+        }
+    }
+
+    // Compose DATEX circles: guaranteed visible even if bookmark atlas pins are decluttered.
+    var datexScreenMarks by remember { mutableStateOf<List<Pair<Offset, Boolean>>>(emptyList()) }
+    LaunchedEffect(datexEpoch, datexHud, ready, state.cameraLat, state.cameraLon, state.cameraZoom) {
+        while (isActive) {
+            if (!ready || !datexHud.overlayEnabled || datexHud.activeCount <= 0) {
+                datexScreenMarks = emptyList()
+                NaviMapTestHooks.lastDatexComposeMarkCount = 0
+            } else {
+                val arr = runCatching { JSONArray(datexHud.activeJson) }.getOrNull() ?: JSONArray()
+                val projected = ArrayList<Pair<Offset, Boolean>>(arr.length())
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    var lat = o.optDouble("lat", Double.NaN)
+                    var lon = o.optDouble("lon", Double.NaN)
+                    if ((!lat.isFinite() || !lon.isFinite())) {
+                        val geom = o.optJSONArray("geometry")
+                        val p = geom?.optJSONArray(0)
+                        if (p != null) {
+                            lat = p.optDouble(0)
+                            lon = p.optDouble(1)
+                        }
+                    }
+                    if (!lat.isFinite() || !lon.isFinite()) continue
+                    val screen = latLonToScreenApprox(backend, lat, lon) ?: continue
+                    val block =
+                        o.optString("impact").equals("block", ignoreCase = true) ||
+                            o.optString("kind").contains("block", ignoreCase = true)
+                    projected.add(screen to block)
+                }
+                datexScreenMarks = projected
+                NaviMapTestHooks.lastDatexComposeMarkCount = projected.size
+            }
+            delay(POLL_MS)
         }
     }
 
@@ -866,6 +909,14 @@ internal fun ComapsDrapeMap(
                         }
                     },
         ) {
+            for ((pt, block) in datexScreenMarks) {
+                val fill = if (block) Color(0xFFC62828) else Color(0xFFE65100)
+                // Large high-contrast discs so emulator screenshots prove DATEX render.
+                drawCircle(Color(0xAA000000), radius = 34f, center = pt)
+                drawCircle(Color.White, radius = 28f, center = pt)
+                drawCircle(fill, radius = 22f, center = pt)
+                drawCircle(Color.White, radius = 7f, center = pt)
+            }
             if (holdProgress > 0f) {
                 val center = Offset(holdScreenX, holdScreenY)
                 val radius = 42f
@@ -886,6 +937,38 @@ internal fun ComapsDrapeMap(
             }
         }
     }
+}
+
+/** Project WGS84 onto the drape view via iterative screenToLatLon Jacobian steps. */
+internal fun latLonToScreenApprox(
+    backend: ComapsDrape.Backend,
+    lat: Double,
+    lon: Double,
+): Offset? {
+    val cam = backend.camera() ?: return null
+    val w = cam.widthPx.toFloat()
+    val h = cam.heightPx.toFloat()
+    if (w < 2f || h < 2f) return null
+    var x = w * 0.5f
+    var y = h * 0.5f
+    repeat(10) {
+        val here = backend.screenToLatLon(x, y) ?: return null
+        val right = backend.screenToLatLon(x + 8f, y) ?: return null
+        val down = backend.screenToLatLon(x, y + 8f) ?: return null
+        val dLonDx = (right.second - here.second) / 8.0
+        val dLatDx = (right.first - here.first) / 8.0
+        val dLonDy = (down.second - here.second) / 8.0
+        val dLatDy = (down.first - here.first) / 8.0
+        val det = dLonDx * dLatDy - dLatDx * dLonDy
+        if (abs(det) < 1e-18) return Offset(x, y)
+        val dLon = lon - here.second
+        val dLat = lat - here.first
+        x = (x + ((dLon * dLatDy - dLat * dLonDy) / det)).toFloat()
+        y = (y + ((dLat * dLonDx - dLon * dLatDx) / det)).toFloat()
+        if (x !in -w..2f * w || y !in -h..2f * h) return null
+    }
+    if (x !in 0f..w || y !in 0f..h) return null
+    return Offset(x, y)
 }
 
 private fun angleDiff(

@@ -13,24 +13,24 @@ fun placeSearchBuildingMessage(
 ): String? {
     if (indexProblem != null) {
         return if (onlineAvailable || !hitsEmpty) {
-            "Offline place search unavailable (place index $indexProblem) — showing online results (Nominatim)."
+            "Offline place search unavailable ($indexProblem) — showing online results (Nominatim)."
         } else {
-            "Offline place search unavailable (place index $indexProblem) — enter coordinates or tap the map"
+            "Offline place search unavailable ($indexProblem) — enter coordinates or tap the map"
         }
     }
     if (!hitsEmpty) return null
     return when {
         onlineAvailable && !indexHasEntries ->
-            "No offline place index yet — showing online results (Nominatim)."
+            "No offline search data yet — showing online results (Nominatim)."
         onlineAvailable && indexHasEntries ->
             "No local match — showing online results (Nominatim)."
         indexHasEntries ->
             "No offline match. Turn on Online place search in Map settings, " +
                 "or download the region that contains this place."
         indexRunning ->
-            "Place index is still building — try coordinates, map tap, or wait for Wi‑Fi search"
+            "Offline search is still preparing — try coordinates, map tap, or wait for Wi‑Fi search"
         else ->
-            "No place index on device — turn on Online place search in Map settings, " +
+            "No offline search data on device — turn on Online place search in Map settings, " +
                 "or enter coordinates / tap the map"
     }
 }

@@ -61,7 +61,7 @@ object DownloadedRegionDelete {
             if (active.isNotEmpty() &&
                 PackRegionAvailability.regionIdsMatchForCatalog(active, path)
             ) {
-                return "Cannot delete while this region is downloading or indexing."
+                return "Cannot delete while this region is downloading or installing."
             }
         }
         if (PlaceIndexBackground.isRunning()) {
@@ -69,7 +69,7 @@ object DownloadedRegionDelete {
             if (active.isNotEmpty() &&
                 PackRegionAvailability.regionIdsMatchForCatalog(active, path)
             ) {
-                return "Cannot delete while place index is building for this region."
+                return "Cannot delete while this region is still preparing."
             }
         }
         val plan = LongTripCoordinator.currentPlan()

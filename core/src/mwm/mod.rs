@@ -12,6 +12,7 @@ pub mod attribution;
 pub mod catalog;
 pub mod checksum;
 pub mod comaps;
+pub mod comaps_fallback;
 pub mod comaps_instructions;
 pub mod comaps_router;
 pub mod comaps_search;
@@ -42,9 +43,13 @@ pub use checksum::{
     verify_bytes_sha256, verify_path_sha1_base64, verify_path_sha256, ChecksumError,
 };
 pub use comaps::{
-    discover_mirrors, fetch_and_verify_countries_txt, parse_countries_txt, percent_encode_leaf_id,
-    verify_countries_txt_signature, ComapsDiscovery, CountriesTxt, CountriesTxtLeaf,
-    COMAPS_COUNTRIES_TXT_PUBKEY_HEX, DEFAULT_METASERVER,
+    discover_mirrors, discover_preferred_map_series, fetch_and_verify_countries_txt,
+    parse_countries_txt, percent_encode_leaf_id, verify_countries_txt_signature, ComapsDiscovery,
+    CountriesTxt, CountriesTxtLeaf, COMAPS_COUNTRIES_TXT_PUBKEY_HEX, DEFAULT_METASERVER,
+};
+pub use comaps_fallback::{
+    catalog_snapshot_json, fetch_comaps_direct_catalog, resolve_mwm_catalog,
+    synthesize_catalog_from_countries, CatalogResolveSource, ResolvedCatalog,
 };
 pub use comaps_instructions::{
     build_voice_prompts, enrich_turns_json, instructions_from_turns_json, ComapsTurnStep,

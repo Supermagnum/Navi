@@ -11,6 +11,7 @@ import uniffi.navi.FfiComapsRoute
 import uniffi.navi.FfiComapsRouteCode
 import uniffi.navi.FfiVehicleLimits
 import uniffi.navi.TravelProfile
+import uniffi.navi.comapsCategoryQuery
 import uniffi.navi.comapsNativeAvailable
 import uniffi.navi.comapsSessionIsOpen
 import uniffi.navi.comapsSessionRoute
@@ -19,9 +20,13 @@ import uniffi.navi.comapsSessionSetBikeWetland
 import uniffi.navi.comapsSessionSetOptimize
 import uniffi.navi.comapsSessionSetTurnsLocale
 import uniffi.navi.comapsSessionSetVehicle
+import uniffi.navi.datexRefreshJson
+import uniffi.navi.loadCarRestSettings
 import uniffi.navi.loadVehicleLimits
+import uniffi.navi.poiLookaheadIngestFromJson
 import uniffi.navi.setMwmProductionPlannerActive
 import java.util.Locale
+import kotlin.math.absoluteValue
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
@@ -113,6 +118,12 @@ object MwmProductionPlanner {
         avoidFerries: Boolean,
         turnsLocale: String,
         bikeWetland: Boolean = false,
+        /**
+         * When true (default), a successful CoMaps geometry is re-planned with detour
+         * vias if on-corridor DATEX **Block** situations are present. Nested replan
+         * passes false so avoidance does not recurse.
+         */
+        applyDatexAvoidance: Boolean = true,
     ): CorridorRouteResult {
         if (!shouldUse(context)) {
             return failCorridor(
@@ -137,7 +148,7 @@ object MwmProductionPlanner {
         endpoints.add(endLat to endLon)
         missingLeavesFor(context, endpoints)?.let { return it }
         setMwmProductionPlannerActive(true)
-        Log.i(TAG, "planner=mwm profile=$profile vias=${vias.size}")
+        Log.i(TAG, "planner=mwm profile=$profile vias=${vias.size} datex_avoid=$applyDatexAvoidance")
         return try {
             comapsSessionSetTurnsLocale(turnsLocale.ifBlank { "nb" })
             comapsSessionSetBikeWetland(bikeWetland)
@@ -233,6 +244,7 @@ object MwmProductionPlanner {
                 appendJsonArray(speedLimits, leg.speedLimitsJson)
             }
 
+            lastTurnsJson = turns.toString()
             val ok =
                 FfiComapsRoute(
                     code = FfiComapsRouteCode.OK,
@@ -241,7 +253,7 @@ object MwmProductionPlanner {
                     buildTimeS = buildS,
                     points = allPoints,
                     errorMessage = null,
-                    turnsJson = turns.toString(),
+                    turnsJson = lastTurnsJson,
                     instructionsJson = instructions.toString(),
                     ascentM = ascent,
                     descentM = descent,
@@ -253,7 +265,35 @@ object MwmProductionPlanner {
             RouteClimbSource.publishComaps(
                 RouteClimbSource.fromComaps(ascent, descent, elev.toString()),
             )
-            toCorridor(ok, endLat, endLon, profile, vehicleLimitsCoverage(context, routeLeaves))
+            val base =
+                toCorridor(ok, endLat, endLon, profile, vehicleLimitsCoverage(context, routeLeaves))
+            if (cancelled()) {
+                return enrichMwmPlan(context, profile, base)
+            }
+            if (!applyDatexAvoidance) {
+                return enrichMwmPlan(context, profile, base)
+            }
+            val avoided =
+                avoidDatexBlocks(
+                    context = context,
+                    profile = profile,
+                    startLat = startLat,
+                    startLon = startLon,
+                    endLat = endLat,
+                    endLon = endLon,
+                    vias = vias,
+                    avoidMotorways = avoidMotorways,
+                    avoidTolls = avoidTolls,
+                    avoidFerries = avoidFerries,
+                    turnsLocale = turnsLocale,
+                    bikeWetland = bikeWetland,
+                    base = base,
+                )
+            // Nested replan already ran enrichMwmPlan; do not duplicate soft-break lines.
+            if (avoided.report.contains("datex_mwm=reroute_apply")) {
+                return avoided
+            }
+            enrichMwmPlan(context, profile, avoided)
         } finally {
             setMwmProductionPlannerActive(false)
         }
@@ -347,6 +387,8 @@ object MwmProductionPlanner {
                     else -> km * 1.2
                 }
             }
+        // Tunnel / ferry runs are appended in enrichMwmPlan via annotatePathFlagsFromTurns
+        // (needs lastTurnsJson from the multi-leg aggregate).
         val report =
             buildString {
                 append("TEST_KIND=PLAN_MWM_ROUTE\n")
@@ -421,6 +463,704 @@ object MwmProductionPlanner {
             tollAvoidanceIncomplete = false,
             routeUsesTolls = false,
         )
+
+    /**
+     * CoMaps has no DATEX edge weights. When a corridor **Block** sits on the
+     * first-pass geometry, replan with perpendicular detour vias so the closed
+     * segment changes the route (not only overlay counters).
+     */
+    private fun avoidDatexBlocks(
+        context: Context,
+        profile: TravelProfile,
+        startLat: Double,
+        startLon: Double,
+        endLat: Double,
+        endLon: Double,
+        vias: List<Pair<Double, Double>>,
+        avoidMotorways: Boolean,
+        avoidTolls: Boolean,
+        avoidFerries: Boolean,
+        turnsLocale: String,
+        bikeWetland: Boolean,
+        base: CorridorRouteResult,
+    ): CorridorRouteResult {
+        if (!base.report.contains("PASS")) return base
+        if (!MapHudPrefs.loadDatexPluginEnabled(context)) return base
+        val pts = decodePolylinePairs(base.routePolyline)
+        if (pts.size < 2) return base
+        val blocks = loadOnRouteDatexBlocks(context, pts)
+        if (blocks.isEmpty()) {
+            Log.i(TAG, "mwm datex avoid: no Block on first-pass corridor")
+            return base
+        }
+        val beforeKm = base.distanceKm
+        val beforeEta = base.etaMinutes
+        val beforeHash = polylineFingerprint(base.routePolyline)
+        Log.i(TAG, "mwm datex avoid: blocks=${blocks.size} before_km=$beforeKm hash=$beforeHash")
+        // Cap attempts: each CoMaps replan is expensive on a long corridor.
+        // Mid-sim / live nav: keep this to one offset×side so we never stack up
+        // to six ProcessTask builds (native SIGABRT / std::length_error under load).
+        val simulating = NaviMapTestHooks.simulatingActive
+        val offsetsM =
+            if (simulating) {
+                listOf(2_500.0)
+            } else {
+                listOf(2_500.0, 5_000.0, 8_000.0)
+            }
+        val sides = if (simulating) listOf(1.0) else listOf(1.0, -1.0)
+        val maxAttempts = if (simulating) 2 else 6
+        var bestChanged: CorridorRouteResult? = null
+        var bestChangedClearance = -1.0
+        var bestMeta = ""
+        var attempts = 0
+        for (offsetM in offsetsM) {
+            for (side in sides) {
+                if (attempts >= maxAttempts) break
+                attempts++
+                val detours =
+                    blocks.take(2).mapNotNull { b ->
+                        detourViaForBlock(pts, b.lat, b.lon, offsetM, side)
+                    }
+                if (detours.isEmpty()) continue
+                val merged = mergeViasByRouteOrder(startLat, startLon, endLat, endLon, vias, detours)
+                val alt =
+                    plan(
+                        context = context,
+                        profile = profile,
+                        startLat = startLat,
+                        startLon = startLon,
+                        endLat = endLat,
+                        endLon = endLon,
+                        vias = merged,
+                        avoidMotorways = avoidMotorways,
+                        avoidTolls = avoidTolls,
+                        avoidFerries = avoidFerries,
+                        turnsLocale = turnsLocale,
+                        bikeWetland = bikeWetland,
+                        applyDatexAvoidance = false,
+                    )
+                if (!alt.report.contains("PASS")) continue
+                val clearance = minClearanceM(alt.routePolyline, blocks)
+                val deltaKm = (alt.distanceKm - beforeKm).absoluteValue
+                val afterHash = polylineFingerprint(alt.routePolyline)
+                val changed = deltaKm >= 0.25 || afterHash != beforeHash
+                val meta =
+                    "clearance_m=${"%.0f".format(Locale.US, clearance)}" +
+                        "; before_km=${"%.3f".format(Locale.US, beforeKm)}" +
+                        "; after_km=${"%.3f".format(Locale.US, alt.distanceKm)}" +
+                        "; before_eta_min=${"%.1f".format(Locale.US, beforeEta)}" +
+                        "; after_eta_min=${"%.1f".format(Locale.US, alt.etaMinutes)}" +
+                        "; before_poly=$beforeHash" +
+                        "; after_poly=$afterHash" +
+                        "; offset_m=${offsetM.toInt()}; side=${side.toInt()}"
+                // Prefer a real miss of the closed point; keep best geometry change as fallback.
+                if (clearance >= 150.0 && changed) {
+                    val evidence =
+                        buildString {
+                            append("datex_mwm=reroute_apply; blocks_avoided=${blocks.size}; $meta\n")
+                            for (b in blocks) {
+                                append(
+                                    "datex_avoided: id=${b.id}; impact=block; " +
+                                        "lat=${b.lat}; lon=${b.lon}; xsi=${b.xsi}\n",
+                                )
+                            }
+                        }
+                    alt.report = alt.report.trimEnd() + "\n" + evidence
+                    Log.i(TAG, "mwm datex avoid OK $meta")
+                    markDatexRerouteHooks(beforeKm, alt.distanceKm, beforeHash, afterHash, blocks)
+                    return alt
+                }
+                if (changed && clearance > bestChangedClearance) {
+                    bestChangedClearance = clearance
+                    bestChanged = alt
+                    bestMeta = meta
+                }
+            }
+        }
+        val fallback = bestChanged
+        if (fallback != null && bestChangedClearance >= 40.0) {
+            val afterHash = polylineFingerprint(fallback.routePolyline)
+            val evidence =
+                buildString {
+                    append(
+                        "datex_mwm=reroute_apply; blocks_avoided=${blocks.size}; " +
+                            "weak_clearance=true; $bestMeta\n",
+                    )
+                    for (b in blocks) {
+                        append(
+                            "datex_avoided: id=${b.id}; impact=block; " +
+                                "lat=${b.lat}; lon=${b.lon}; xsi=${b.xsi}\n",
+                        )
+                    }
+                }
+            fallback.report = fallback.report.trimEnd() + "\n" + evidence
+            Log.i(TAG, "mwm datex avoid WEAK $bestMeta")
+            markDatexRerouteHooks(
+                beforeKm,
+                fallback.distanceKm,
+                beforeHash,
+                afterHash,
+                blocks,
+            )
+            return fallback
+        }
+        val fail =
+            buildString {
+                append("datex_mwm=reroute_failed; blocks_seen=${blocks.size}")
+                append("; before_km=${"%.3f".format(Locale.US, beforeKm)}")
+                append("; before_poly=$beforeHash\n")
+                for (b in blocks) {
+                    append(
+                        "datex_avoided: id=${b.id}; impact=block; " +
+                            "lat=${b.lat}; lon=${b.lon}; xsi=${b.xsi}; status=unavoided\n",
+                    )
+                }
+            }
+        // Still mark Block ids so HUD auto-reroute does not loop on the same closure.
+        markDatexRerouteHooks(beforeKm, beforeKm, beforeHash, beforeHash, blocks, applied = false)
+        base.report = base.report.trimEnd() + "\n" + fail
+        Log.w(TAG, "mwm datex avoid FAILED blocks=${blocks.size}")
+        return base
+    }
+
+    private fun markDatexRerouteHooks(
+        beforeKm: Double,
+        afterKm: Double,
+        beforeHash: String,
+        afterHash: String,
+        blocks: List<DatexBlockHit>,
+        applied: Boolean = true,
+    ) {
+        NaviMapTestHooks.datexMwmRerouteApplied = applied
+        NaviMapTestHooks.datexMwmRerouteBeforeKm = beforeKm
+        NaviMapTestHooks.datexMwmRerouteAfterKm = afterKm
+        NaviMapTestHooks.datexMwmRerouteBeforePoly = beforeHash
+        NaviMapTestHooks.datexMwmRerouteAfterPoly = afterHash
+        val ids = blocks.map { it.id }.filter { it.isNotBlank() }
+        if (ids.isNotEmpty()) {
+            val prev =
+                NaviMapTestHooks.datexAutoRerouteBlockIds
+                    .split(',')
+                    .filter { it.isNotBlank() }
+                    .toMutableSet()
+            prev.addAll(ids)
+            NaviMapTestHooks.datexAutoRerouteBlockIds = prev.joinToString(",")
+        }
+    }
+
+    private data class DatexBlockHit(
+        val id: String,
+        val lat: Double,
+        val lon: Double,
+        val xsi: String,
+    )
+
+    private fun loadOnRouteDatexBlocks(
+        context: Context,
+        samples: List<Pair<Double, Double>>,
+    ): List<DatexBlockHit> {
+        val dataDir = NaviAppData.resolve(context)
+        val cacheDir = java.io.File(dataDir, "datex_cache").absolutePath
+        val raw =
+            runCatching {
+                datexRefreshJson(
+                    enabled = true,
+                    host = MapHudPrefs.loadDatexHost(context),
+                    port = MapHudPrefs.loadDatexPort(context).toUInt(),
+                    routeLatLonJson = latLonPairsToJson(samples),
+                    wifiOnly = false,
+                    onWifi = true,
+                    useDiscoveryChain = true,
+                    cacheDir = cacheDir,
+                )
+            }.getOrElse { e ->
+                Log.w(TAG, "mwm datex avoid refresh failed: ${e.message}")
+                return emptyList()
+            }
+        val o = runCatching { JSONObject(raw) }.getOrNull() ?: return emptyList()
+        val active = o.optJSONArray("active") ?: return emptyList()
+        val out = ArrayList<DatexBlockHit>()
+        for (i in 0 until active.length()) {
+            val s = active.optJSONObject(i) ?: continue
+            if (s.optString("impact").lowercase(Locale.US) != "block") continue
+            val lat = s.optDouble("lat", Double.NaN)
+            val lon = s.optDouble("lon", Double.NaN)
+            if (!lat.isFinite() || !lon.isFinite()) continue
+            val nearest = samples.minOf { (la, lo) -> haversineM(la, lo, lat, lon) }
+            // Slightly wider than DATEX_IMPACT_RADIUS_M (250) so snapped sits count.
+            if (nearest > 400.0) continue
+            out.add(
+                DatexBlockHit(
+                    id = s.optString("id").ifBlank { "block_$i" },
+                    lat = lat,
+                    lon = lon,
+                    xsi = s.optString("xsi_type"),
+                ),
+            )
+        }
+        return out
+    }
+
+    private fun detourViaForBlock(
+        pts: List<Pair<Double, Double>>,
+        blockLat: Double,
+        blockLon: Double,
+        offsetM: Double,
+        side: Double,
+    ): Pair<Double, Double>? {
+        if (pts.size < 2) return null
+        var bestI = 0
+        var bestD = Double.MAX_VALUE
+        for (i in pts.indices) {
+            val d = haversineM(pts[i].first, pts[i].second, blockLat, blockLon)
+            if (d < bestD) {
+                bestD = d
+                bestI = i
+            }
+        }
+        val i0 = (bestI - 1).coerceAtLeast(0)
+        val i1 = (bestI + 1).coerceAtMost(pts.lastIndex)
+        if (i0 == i1) return null
+        val (la0, lo0) = pts[i0]
+        val (la1, lo1) = pts[i1]
+        val dLat = la1 - la0
+        val dLon = lo1 - lo0
+        val len = sqrt(dLat * dLat + dLon * dLon)
+        if (len < 1e-9) return null
+        // Perpendicular in lat/lon degrees; scale lon by cos(lat).
+        val latRad = Math.toRadians(blockLat)
+        val metersPerDegLat = 111_320.0
+        val metersPerDegLon = 111_320.0 * cos(latRad).coerceAtLeast(0.2)
+        val ux = dLon / len
+        val uy = dLat / len
+        // Perpendicular unit in degree-space ≈ (-uy, ux)
+        val px = -uy
+        val py = ux
+        val outLat = blockLat + side * (offsetM / metersPerDegLat) * py
+        val outLon = blockLon + side * (offsetM / metersPerDegLon) * px
+        return outLat to outLon
+    }
+
+    private fun mergeViasByRouteOrder(
+        startLat: Double,
+        startLon: Double,
+        endLat: Double,
+        endLon: Double,
+        userVias: List<Pair<Double, Double>>,
+        detours: List<Pair<Double, Double>>,
+    ): List<Pair<Double, Double>> {
+        fun key(lat: Double, lon: Double): Double {
+            val dStart = haversineM(startLat, startLon, lat, lon)
+            val dEnd = haversineM(lat, lon, endLat, endLon)
+            return dStart / (dStart + dEnd + 1.0)
+        }
+        return (userVias + detours).sortedBy { key(it.first, it.second) }
+    }
+
+    private fun minClearanceM(
+        polyline: String,
+        blocks: List<DatexBlockHit>,
+    ): Double {
+        val pts = decodePolylinePairs(polyline)
+        if (pts.isEmpty() || blocks.isEmpty()) return Double.POSITIVE_INFINITY
+        var min = Double.POSITIVE_INFINITY
+        for (b in blocks) {
+            val d = pts.minOf { (la, lo) -> haversineM(la, lo, b.lat, b.lon) }
+            if (d < min) min = d
+        }
+        return min
+    }
+
+    private fun decodePolylinePairs(polyline: String): List<Pair<Double, Double>> =
+        polyline.split(';').mapNotNull { part ->
+            val bits = part.split(',')
+            if (bits.size < 2) return@mapNotNull null
+            val lo = bits[0].toDoubleOrNull() ?: return@mapNotNull null
+            val la = bits[1].toDoubleOrNull() ?: return@mapNotNull null
+            la to lo
+        }
+
+    private fun polylineFingerprint(polyline: String): String =
+        "%08x:len=%d".format(Locale.US, polyline.hashCode(), polyline.length)
+
+    /**
+     * MWM plans previously skipped DATEX / soft-break / nearby-attractions that the
+     * `.rkyv` planner fills. Annotate the PASS report and break pins from the same
+     * on-disk DATEX stamp + rest settings, and seed look-ahead from CoMaps tourism
+     * when Navi POI packs are absent.
+     */
+    private fun enrichMwmPlan(
+        context: Context,
+        profile: TravelProfile,
+        base: CorridorRouteResult,
+    ): CorridorRouteResult {
+        if (!base.report.contains("PASS")) return base
+        val dataDir = NaviAppData.resolve(context)
+        val samples = downsamplePolyline(base.routePolyline, maxPoints = 120)
+        val datexExtra = annotateDatex(context, dataDir, samples)
+        val (breaksJson, restExtra) =
+            softBreakPoisJson(dataDir, profile, base.routePolyline, base.distanceKm, base.etaMinutes)
+        seedAttractionsFromComaps(samples)
+        // Tunnel / ferry runs come from CoMaps turns_json (is_tunnel / is_ferry), which
+        // the .rkyv path emits via path_tunnel_legs / ferry edges. Keep the same report
+        // tokens so RoutePlanStats and the campaign corridor_counts stay populated.
+        val pathExtra = annotatePathFlagsFromTurns(base)
+        val report =
+            buildString {
+                append(base.report.trimEnd())
+                append('\n')
+                if (pathExtra.isNotBlank()) append(pathExtra)
+                if (datexExtra.isNotBlank()) append(datexExtra)
+                if (restExtra.isNotBlank()) append(restExtra)
+            }
+        Log.i(
+            TAG,
+            "mwm_enrich datex_lines=${datexExtra.lineSequence().count()} " +
+                "break_pois=${runCatching { JSONArray(breaksJson).length() }.getOrDefault(0)} " +
+                "path=${pathExtra.lineSequence().firstOrNull().orEmpty()}",
+        )
+        return CorridorRouteResult(
+            report = report,
+            distanceKm = base.distanceKm,
+            etaMinutes = base.etaMinutes,
+            cacheHit = base.cacheHit,
+            coldBuildS = base.coldBuildS,
+            warmLoadS = base.warmLoadS,
+            routePolyline = base.routePolyline,
+            poiLat = base.poiLat,
+            poiLon = base.poiLon,
+            poiName = base.poiName,
+            poiIconKey = base.poiIconKey,
+            breakPoisJson = breaksJson,
+            daysJson = base.daysJson,
+            simSamplesJson = base.simSamplesJson,
+            maneuversJson = base.maneuversJson,
+            priorityPathSharePct = base.priorityPathSharePct,
+            routeSegmentsJson = base.routeSegmentsJson,
+            offTrailAdvisory = base.offTrailAdvisory,
+            tollPolicy = base.tollPolicy,
+            padAttemptsJson = base.padAttemptsJson,
+            searchExpansions = base.searchExpansions,
+            searchTerminateReason = base.searchTerminateReason,
+            tollAvoidanceIncomplete = base.tollAvoidanceIncomplete,
+            routeUsesTolls = base.routeUsesTolls,
+        )
+    }
+
+    /**
+     * Count contiguous tunnel / ferry runs from CoMaps `turns_json` flags. Prefer the
+     * raw turns array (still available via [lastTurnsJson]); fall back to maneuvers that
+     * carry `is_tunnel` / `is_ferry` when a nested replan only kept maneuvers.
+     */
+    @Volatile
+    private var lastTurnsJson: String = "[]"
+
+    private fun annotatePathFlagsFromTurns(base: CorridorRouteResult): String {
+        val turns =
+            runCatching { JSONArray(lastTurnsJson.ifBlank { "[]" }) }.getOrElse { JSONArray() }
+        val source =
+            if (turns.length() > 0) {
+                turns
+            } else {
+                runCatching { JSONArray(base.maneuversJson.ifBlank { "[]" }) }.getOrElse { JSONArray() }
+            }
+        var tunnelCount = 0
+        var ferryCount = 0
+        val tunnelFp = ArrayList<String>()
+        val ferryFp = ArrayList<String>()
+        var prevTunnel = false
+        var prevFerry = false
+        var tunnelAlongKm = 0.0
+        var ferryAlongKm = 0.0
+        for (i in 0 until source.length()) {
+            val o = source.optJSONObject(i) ?: continue
+            val isTunnel = o.optBoolean("is_tunnel", false)
+            val isFerry = o.optBoolean("is_ferry", false)
+            val distKm = o.optDouble("dist_m", 0.0) / 1000.0
+            val label =
+                o.optString("street").ifBlank {
+                    o.optString("ref").ifBlank { o.optString("kind").ifBlank { "unnamed" } }
+                }
+            if (isTunnel) {
+                if (!prevTunnel) {
+                    tunnelCount++
+                    tunnelAlongKm = 0.0
+                }
+                tunnelAlongKm += distKm
+                if (tunnelFp.size < tunnelCount) {
+                    tunnelFp.add("$label@${"%.2f".format(Locale.US, tunnelAlongKm)}")
+                } else {
+                    tunnelFp[tunnelCount - 1] = "$label@${"%.2f".format(Locale.US, tunnelAlongKm)}"
+                }
+            }
+            if (isFerry) {
+                if (!prevFerry) {
+                    ferryCount++
+                    ferryAlongKm = 0.0
+                }
+                ferryAlongKm += distKm
+                if (ferryFp.size < ferryCount) {
+                    ferryFp.add("$label@${"%.2f".format(Locale.US, ferryAlongKm)}")
+                } else {
+                    ferryFp[ferryCount - 1] = "$label@${"%.2f".format(Locale.US, ferryAlongKm)}"
+                }
+            }
+            prevTunnel = isTunnel
+            prevFerry = isFerry
+        }
+        return buildString {
+            append("route_tunnel_count=$tunnelCount\n")
+            append("route_tunnel_fp=${tunnelFp.joinToString("|")}\n")
+            append("route_ferry_legs=$ferryCount\n")
+            append("route_ferry_fp=${ferryFp.joinToString("|")}\n")
+        }
+    }
+
+    private fun annotateDatex(
+        context: Context,
+        dataDir: java.io.File,
+        samples: List<Pair<Double, Double>>,
+    ): String {
+        if (samples.size < 2) {
+            return "datex_impacts=0; datex_block=0; datex_penalize=0\n"
+        }
+        if (!MapHudPrefs.loadDatexPluginEnabled(context)) {
+            return "datex_impacts=0; datex_block=0; datex_penalize=0\ndatex_mwm=plugin_off\n"
+        }
+        val routeJson = latLonPairsToJson(samples)
+        val cacheDir = java.io.File(dataDir, "datex_cache").absolutePath
+        val raw =
+            runCatching {
+                datexRefreshJson(
+                    enabled = true,
+                    host = MapHudPrefs.loadDatexHost(context),
+                    port = MapHudPrefs.loadDatexPort(context).toUInt(),
+                    routeLatLonJson = routeJson,
+                    wifiOnly = false,
+                    onWifi = true,
+                    useDiscoveryChain = true,
+                    cacheDir = cacheDir,
+                )
+            }.getOrElse { e ->
+                Log.w(TAG, "mwm datex refresh failed: ${e.message}")
+                return "datex_impacts=0; datex_block=0; datex_penalize=0\ndatex_mwm=refresh_failed\n"
+            }
+        val o = runCatching { JSONObject(raw) }.getOrNull()
+            ?: return "datex_impacts=0; datex_block=0; datex_penalize=0\ndatex_mwm=parse_failed\n"
+        val active = o.optJSONArray("active") ?: JSONArray()
+        var block = 0
+        var penalize = 0
+        val lines = StringBuilder()
+        for (i in 0 until active.length()) {
+            val s = active.optJSONObject(i) ?: continue
+            // DatexImpact::as_str uses "penalty" (not "penalize").
+            val impact = s.optString("impact").lowercase(Locale.US)
+            when (impact) {
+                "block" -> block++
+                "penalty", "penalize" -> penalize++
+                else -> continue
+            }
+            lines.append(
+                "datex_constraint: id=${s.optString("id")}; impact=$impact; " +
+                    "lat=${s.optDouble("lat")}; lon=${s.optDouble("lon")}; " +
+                    "xsi=${s.optString("xsi_type")}\n",
+            )
+        }
+        val impacts = block + penalize
+        return buildString {
+            append("datex_impacts=$impacts; datex_block=$block; datex_penalize=$penalize\n")
+            append("datex_mwm=overlay_apply; active=${active.length()}; warning=${o.optString("warning")}\n")
+            append(lines)
+        }
+    }
+
+    private fun softBreakPoisJson(
+        dataDir: java.io.File,
+        profile: TravelProfile,
+        polyline: String,
+        distanceKm: Double,
+        etaMinutes: Double,
+    ): Pair<String, String> {
+        if (!usesSoftMotorBreaks(profile) || distanceKm < 1.0 || polyline.isBlank()) {
+            return "[]" to "rest_place_count=0\nchunked_soft_breaks=skipped_profile\n"
+        }
+        val rest =
+            runCatching { loadCarRestSettings(dataDir.absolutePath) }.getOrNull()
+        val intervalH =
+            (rest?.breakIntervalHours ?: 2.0).coerceIn(1.0, 12.0)
+        val etaH = (etaMinutes / 60.0).coerceAtLeast(1e-6)
+        val speedKmh = (distanceKm / etaH).coerceAtLeast(1.0)
+        val intervalKm = (speedKmh * intervalH).coerceAtLeast(1.0)
+        val samples = samplePolylineKm(polyline)
+        if (samples.size < 2) {
+            return "[]" to "rest_place_count=0\nchunked_soft_breaks=no_samples\n"
+        }
+        val breaks = JSONArray()
+        var next = intervalKm
+        while (next < distanceKm - 0.5) {
+            val (lat, lon) = interpolateAtKm(samples, next)
+            breaks.put(
+                JSONObject()
+                    .put("name", "Rest stop")
+                    .put("lat", lat)
+                    .put("lon", lon)
+                    .put("kind", "amenity")
+                    .put("icon", "fuel")
+                    .put("along_km", next),
+            )
+            next += intervalKm
+        }
+        val extra =
+            "chunked_soft_breaks=true; break_interval_km=${"%.1f".format(Locale.US, intervalKm)}; " +
+                "break_interval_h=${"%.2f".format(Locale.US, intervalH)}\n" +
+                "rest_place_count=${breaks.length()}\n" +
+                "chunked_rest_pauses=${breaks.length()}; break_pois_total=${breaks.length()}\n"
+        return breaks.toString() to extra
+    }
+
+    private fun usesSoftMotorBreaks(profile: TravelProfile): Boolean =
+        when (profile) {
+            TravelProfile.CAR,
+            TravelProfile.CAR_ELECTRIC,
+            TravelProfile.MOTORCYCLE,
+            TravelProfile.MOTORCYCLE_ELECTRIC,
+            TravelProfile.MOBILE_HOME,
+            -> true
+            else -> false
+        }
+
+    private fun seedAttractionsFromComaps(samples: List<Pair<Double, Double>>) {
+        if (samples.isEmpty() || !ComapsSearchBridge.enabled()) return
+        val query =
+            runCatching { comapsCategoryQuery("category_tourism", "nb") }.getOrNull()
+                ?.trim()
+                ?.ifBlank { null }
+                ?: "Tourism"
+        // Few samples: each category search can take several seconds; keep plan snappy.
+        val step = (samples.size / 4).coerceAtLeast(1)
+        val picked = samples.filterIndexed { i, _ -> i % step == 0 }.take(4)
+        val pois = JSONArray()
+        var osm = -1_000_000L
+        val seen = HashSet<String>()
+        for ((lat, lon) in picked) {
+            val hits =
+                runCatching {
+                    ComapsSearchBridge.searchCategory(
+                        queryText = query,
+                        biasLat = lat,
+                        biasLon = lon,
+                        limit = 20,
+                        locale = "nb",
+                    )
+                }.getOrDefault(emptyList())
+            for (h in hits) {
+                if (!h.lat.isFinite() || !h.lon.isFinite()) continue
+                if (h.name.isBlank()) continue
+                // Look-ahead cone is 850 m; keep near-corridor hits only.
+                val distM =
+                    if (h.distanceM.isFinite() && h.distanceM >= 0.0) {
+                        h.distanceM
+                    } else {
+                        haversineM(lat, lon, h.lat, h.lon)
+                    }
+                if (distM > 1_200.0) continue
+                val key = "${h.name.trim().lowercase(Locale.US)}|${"%.4f".format(Locale.US, h.lat)}|${"%.4f".format(Locale.US, h.lon)}"
+                if (!seen.add(key)) continue
+                osm -= 1
+                pois.put(
+                    JSONObject()
+                        .put("osm_id", osm)
+                        .put("lat", h.lat)
+                        .put("lon", h.lon)
+                        .put("name", h.name)
+                        .put(
+                            "tags",
+                            JSONObject()
+                                .put("name", h.name)
+                                .put("tourism", "attraction"),
+                        ),
+                )
+            }
+        }
+        if (pois.length() == 0) {
+            Log.i(TAG, "mwm_attractions seed empty query=$query samples=${picked.size}")
+            return
+        }
+        val stats =
+            runCatching {
+                poiLookaheadIngestFromJson("mwm-corridor-tourism", pois.toString())
+            }.getOrNull()
+        Log.i(
+            TAG,
+            "mwm_attractions seeded=${pois.length()} records=${stats?.records} query=$query",
+        )
+    }
+
+    /** Lon,lat;… polyline → up to [maxPoints] evenly spaced (lat,lon) samples. */
+    private fun downsamplePolyline(
+        polyline: String,
+        maxPoints: Int,
+    ): List<Pair<Double, Double>> {
+        val all = ArrayList<Pair<Double, Double>>()
+        for (part in polyline.split(';')) {
+            val bits = part.split(',')
+            if (bits.size != 2) continue
+            val lon = bits[0].toDoubleOrNull() ?: continue
+            val lat = bits[1].toDoubleOrNull() ?: continue
+            all.add(lat to lon)
+        }
+        if (all.size <= maxPoints) return all
+        val step = ((all.size - 1).toDouble() / (maxPoints - 1)).coerceAtLeast(1.0)
+        val out = ArrayList<Pair<Double, Double>>(maxPoints)
+        var i = 0.0
+        while (out.size < maxPoints) {
+            out.add(all[i.toInt().coerceIn(0, all.lastIndex)])
+            i += step
+        }
+        if (out.last() != all.last()) {
+            out[out.lastIndex] = all.last()
+        }
+        return out
+    }
+
+    /** Wire format lon,lat;… → (lat, lon, cum_km). */
+    private fun samplePolylineKm(polyline: String): List<Triple<Double, Double, Double>> {
+        val out = ArrayList<Triple<Double, Double, Double>>()
+        var cum = 0.0
+        var prev: Pair<Double, Double>? = null
+        for (part in polyline.split(';')) {
+            val bits = part.split(',')
+            if (bits.size != 2) continue
+            val lon = bits[0].toDoubleOrNull() ?: continue
+            val lat = bits[1].toDoubleOrNull() ?: continue
+            if (prev != null) {
+                cum += haversineM(prev.first, prev.second, lat, lon) / 1000.0
+            }
+            out.add(Triple(lat, lon, cum))
+            prev = lat to lon
+        }
+        return out
+    }
+
+    private fun interpolateAtKm(
+        samples: List<Triple<Double, Double, Double>>,
+        targetKm: Double,
+    ): Pair<Double, Double> {
+        if (samples.isEmpty()) return 0.0 to 0.0
+        if (targetKm <= samples.first().third) {
+            return samples.first().first to samples.first().second
+        }
+        for (i in 0 until samples.size - 1) {
+            val (lat0, lon0, k0) = samples[i]
+            val (lat1, lon1, k1) = samples[i + 1]
+            if (targetKm <= k1) {
+                val t = if ((k1 - k0).absoluteValue < 1e-9) 0.0 else (targetKm - k0) / (k1 - k0)
+                return (lat0 + (lat1 - lat0) * t) to (lon0 + (lon1 - lon0) * t)
+            }
+        }
+        val last = samples.last()
+        return last.first to last.second
+    }
 
     private fun pointsToPolyline(points: List<FfiComapsLatLon>): String {
         if (points.isEmpty()) return ""

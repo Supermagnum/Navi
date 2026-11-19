@@ -14,7 +14,7 @@ class RegionDownloadOrderTest {
     @Test
     fun usable_status_prefix_is_stable_for_ui() {
         assertTrue(
-            RegionDownloadBackground.USABLE_STATUS_PREFIX.startsWith("Place index ready"),
+            RegionDownloadBackground.USABLE_STATUS_PREFIX.startsWith("Region ready"),
         )
     }
 

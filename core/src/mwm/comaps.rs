@@ -70,6 +70,40 @@ struct MapsJson {
 #[derive(Debug, Deserialize)]
 struct MapSeriesEntry {
     latest: u64,
+    #[serde(default)]
+    status: Option<String>,
+}
+
+/// Preferred CoMaps map-series name + latest release when no navi catalog is available.
+///
+/// Picks the lexicographically newest series whose `status` is `active` (or missing).
+/// Falls back to the newest series overall when none are marked active.
+pub fn discover_preferred_map_series(
+    metaserver_url: &str,
+) -> Result<(String, u64), ComapsError> {
+    let meta = metaserver_url.trim().trim_end_matches('/');
+    let maps_url = format!("{meta}/meta/maps.json");
+    let maps_text = http_get_text(&maps_url, DISCOVERY_TIMEOUT)?;
+    let maps: MapsJson = serde_json::from_str(&maps_text)?;
+    if maps.map_series.is_empty() {
+        return Err(ComapsError::Other("maps.json has no map-series".into()));
+    }
+    let mut active: Vec<(&String, &MapSeriesEntry)> = maps
+        .map_series
+        .iter()
+        .filter(|(_, e)| {
+            e.status
+                .as_deref()
+                .map(|s| s.eq_ignore_ascii_case("active"))
+                .unwrap_or(true)
+        })
+        .collect();
+    if active.is_empty() {
+        active = maps.map_series.iter().collect();
+    }
+    active.sort_by(|(a, _), (b, _)| b.cmp(a));
+    let (name, entry) = active[0];
+    Ok((name.clone(), entry.latest))
 }
 
 #[derive(Debug, Deserialize)]

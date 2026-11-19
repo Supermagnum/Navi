@@ -533,6 +533,9 @@ class MainActivity : ComponentActivity() {
         } else if (intent.action == Intent.ACTION_MAIN) {
             NaviMapTestHooks.disableGpsFollow = false
         }
+        if (intent.getBooleanExtra("navi_datex_refresh", false)) {
+            NaviMapTestHooks.requestDatexRefresh = true
+        }
         intent.getStringExtra("navi_overlay_polyline_file")?.trim()?.takeIf { it.isNotEmpty() }?.let { path ->
             val poly =
                 java.io
@@ -1084,7 +1087,7 @@ private fun userFacingStatus(raw: String): String {
     if (OsmUpdateUserCopy.looksTechnical(t)) {
         return OsmUpdateUserCopy.sanitize(t)
     }
-    return t.take(120)
+    return IndexingUiCopy.sanitizeProgress(t.take(120))
 }
 
 private fun datexIsOnWifi(context: android.content.Context): Boolean = NetworkUnmetered.isWifiOrEthernet(context)
@@ -1102,6 +1105,55 @@ private fun datexStatusLineForHud(
             "Active ${hud.activeCount} · upcoming ${hud.inactiveCount} · ${hud.dataSource}"
         else -> "DATEX idle (source=${hud.dataSource})"
     }
+
+/** Active DATEX situations with impact=block (ids). */
+private fun datexActiveBlockIds(hud: DatexHudState): List<String> {
+    val arr = runCatching { org.json.JSONArray(hud.activeJson) }.getOrNull() ?: return emptyList()
+    val out = ArrayList<String>()
+    for (i in 0 until arr.length()) {
+        val o = arr.optJSONObject(i) ?: continue
+        if (o.optString("impact").equals("block", ignoreCase = true)) {
+            out.add(o.optString("id").ifBlank { "block_$i" })
+        }
+    }
+    return out
+}
+
+/**
+ * Block situations whose coordinates still hug the live polyline (hard closure on path).
+ * Corridor overlay can keep a Block "active" after a detour; only on-path hits should
+ * force another recalculation.
+ */
+private fun datexBlocksOnPolyline(
+    hud: DatexHudState,
+    polyline: String,
+    thresholdM: Double = 400.0,
+): List<String> {
+    if (polyline.isBlank()) return emptyList()
+    val pts =
+        polyline.split(';').mapNotNull { part ->
+            val bits = part.split(',')
+            if (bits.size < 2) return@mapNotNull null
+            val lo = bits[0].toDoubleOrNull() ?: return@mapNotNull null
+            val la = bits[1].toDoubleOrNull() ?: return@mapNotNull null
+            la to lo
+        }
+    if (pts.size < 2) return emptyList()
+    val arr = runCatching { org.json.JSONArray(hud.activeJson) }.getOrNull() ?: return emptyList()
+    val out = ArrayList<String>()
+    for (i in 0 until arr.length()) {
+        val o = arr.optJSONObject(i) ?: continue
+        if (!o.optString("impact").equals("block", ignoreCase = true)) continue
+        val lat = o.optDouble("lat", Double.NaN)
+        val lon = o.optDouble("lon", Double.NaN)
+        if (!lat.isFinite() || !lon.isFinite()) continue
+        val nearest = pts.minOf { (la, lo) -> haversineMApprox(la, lo, lat, lon) }
+        if (nearest <= thresholdM) {
+            out.add(o.optString("id").ifBlank { "block_$i" })
+        }
+    }
+    return out
+}
 
 /**
  * Option D: rewrite street names in maneuvers / sim-samples from local Protomaps
@@ -1150,8 +1202,9 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     var jobProgressStatus by remember { mutableStateOf("") }
 
     fun showJobProgress(line: String) {
-        status = line
-        jobProgressStatus = line
+        val cleaned = IndexingUiCopy.sanitizeProgress(line)
+        status = cleaned
+        jobProgressStatus = cleaned
     }
     var mapState by remember {
         mutableStateOf(
@@ -2438,17 +2491,9 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 val out = ArrayList<String>(samples.size)
                 for (i in samples.indices) {
                     val s = samples[i]
-                    val heading =
-                        if (i + 1 < samples.size) {
-                            headingBetweenDeg(
-                                s.lat,
-                                s.lon,
-                                samples[i + 1].lat,
-                                samples[i + 1].lon,
-                            )
-                        } else {
-                            null
-                        }
+                    // Corridor attraction enumeration is isotropic: a heading cone
+                    // under-counts near-route tourism seeded from CoMaps / packs.
+                    // Live HUD look-ahead keeps the cone separately.
                     val raw =
                         runCatching {
                             val cover =
@@ -2470,7 +2515,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             uniffi.navi.poiLookaheadQueryJson(
                                 s.lat,
                                 s.lon,
-                                heading,
+                                /* headingDeg = */ null,
                                 true,
                                 poiLookaheadStrictHoursUnknown,
                             )
@@ -3061,6 +3106,45 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     "active=${datexHud.activeCount} inactive=${datexHud.inactiveCount} " +
                     "warn=${datexHud.warning}",
             )
+            // MWM CoMaps has no edge DATEX weights: when a Block still hugs the
+            // live polyline during sim/nav, replan so avoidance vias can change
+            // geometry (same path as off-route recalculation).
+            val navigatingOrSim =
+                simulatingRef.get() ||
+                    (
+                        mapState.polyline.isNotBlank() &&
+                            routeSamples.size >= 2 &&
+                            mapState.gpsLat.isFinite() &&
+                            mapState.gpsLat != 0.0
+                    )
+            if (datexPluginEnabled &&
+                navigatingOrSim &&
+                datexHud.activeCount > 0 &&
+                !planningRoute &&
+                !recalculatingRoute &&
+                !RoutePlanGate.isRunning() &&
+                !NaviMapTestHooks.reroutingActive
+            ) {
+                val onPath = datexBlocksOnPolyline(datexHud, mapState.polyline)
+                val already = NaviMapTestHooks.datexAutoRerouteBlockIds
+                val seen = already.split(',').filter { it.isNotBlank() }.toSet()
+                val fresh = onPath.filter { it !in seen }
+                if (fresh.isNotEmpty()) {
+                    val la = mapState.gpsLat
+                    val lo = mapState.gpsLon
+                    if (la.isFinite() && lo.isFinite() && la != 0.0) {
+                        NaviMapTestHooks.datexAutoRerouteBlockIds =
+                            (seen + fresh).joinToString(",")
+                        android.util.Log.i(
+                            "NaviDatex",
+                            "auto-reroute for on-path Block ids=${fresh.joinToString(",")}",
+                        )
+                        // Local fun startRerouteFromCurrent is declared later in this
+                        // composable; request via the same test/nav hook the HUD polls.
+                        NaviMapTestHooks.requestRerouteFromCurrent = true
+                    }
+                }
+            }
             // Match server Situation poll cadence (~300 s); fail soft between polls.
             delay(300_000L)
         }
@@ -3468,7 +3552,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
         lat: Double,
         lon: Double,
     ) {
-        if (recalculatingRoute || planningRoute) return
+        if (recalculatingRoute || planningRoute || RoutePlanGate.isRunning()) return
         if (toPoint.name.isBlank() && mapState.endName.isBlank()) return
         val dest =
             if (toPoint.lat != 0.0 || toPoint.lon != 0.0) {
@@ -3489,6 +3573,19 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 recalculatingRoute = true
                 planningRoute = true
                 planProgressClear()
+                val tookGate =
+                    withContext(Dispatchers.IO) {
+                        RoutePlanGate.tryBeginOrReplace({
+                            cancelInFlightPlan()
+                            MwmProductionPlanner.cancel()
+                        })
+                    }
+                if (!tookGate) {
+                    recalculatingRoute = false
+                    planningRoute = false
+                    android.util.Log.w("NaviRouting", "reroute skipped: RoutePlanGate busy")
+                    return@launch
+                }
                 try {
                     foregroundPlanEnter()
                     NaviMapTestHooks.reroutingActive = true
@@ -3548,6 +3645,10 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                                     .language
                                                     .ifBlank { "nb" },
                                             bikeWetland = false,
+                                            // Still apply DATEX vias while simulating, but
+                                            // avoidDatexBlocks self-caps attempts when
+                                            // simulatingActive (see MwmProductionPlanner).
+                                            applyDatexAvoidance = true,
                                         ).also {
                                             if (it.report.contains("PASS") && it.poiLat == 0.0 && it.poiLon == 0.0) {
                                                 it.poiLat = dest.lat
@@ -3584,8 +3685,6 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                         }.getOrElse { e ->
                             if (e is kotlinx.coroutines.CancellationException) throw e
                             status = "Reroute failed: ${e.message}"
-                            recalculatingRoute = false
-                            planningRoute = false
                             planIndexingHintVisible = false
                             NaviMapTestHooks.reroutingActive = false
                             routePlanProgress = ""
@@ -3593,11 +3692,11 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             return@launch
                         }
                     if (!isActive) return@launch
-                    recalculatingRoute = false
-                    planningRoute = false
                     planIndexingHintVisible = false
-                    NaviMapTestHooks.reroutingActive = false
                     routePlanProgress = ""
+                    // Keep planningRoute/recalculatingRoute true through applyPlannedRoute so
+                    // DATEX auto-reroute cannot stack another CoMaps BuildRoute (SIGABRT /
+                    // std::length_error under concurrent ProcessTask).
                     if (planAbort.get() || planReportIsCancelled(result.report)) {
                         NaviMapTestHooks.lastPlanReport = result.report
                         RoutingPlanLog.cancelled(
@@ -3668,7 +3767,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                         NaviMapTestHooks.reroutingActive = false
                     }
                     foregroundPlanLeave()
-                    IdlePackJobs.onPlanEnded()
+                    RoutePlanGate.end()
                     planProgressClear()
                 }
             }
@@ -3764,12 +3863,12 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     RegionProgressMessages.phaseForRegion("Resuming download", packPath)
                 serverReady ->
                     RegionProgressMessages.phaseForRegion(
-                        "Pack server has packs ($packCatalogDataSource); installing packs + place index",
+                        "Pack server has packs ($packCatalogDataSource); installing packs",
                         packPath,
                     )
                 else ->
                     RegionProgressMessages.phaseForRegion(
-                        "Downloading (download all data, then place index)",
+                        "Downloading map data",
                         packPath,
                     )
             }
@@ -3832,21 +3931,14 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     val line = regionActivityPulse.pulse(rawLine, nowPulse)
                     pmtilesProgress = line
                     if (!planningRoute) showJobProgress(toastActivityPulse.pulse(rawLine, nowPulse))
-                } else if (labeled.contains("Place index", ignoreCase = true)) {
-                    // Own Tools line so pack download % is not overwritten, but
-                    // still drive the toast: place-index phases can run for
-                    // minutes with no percent change and must not look frozen.
-                    val line = placeActivityPulse.pulse(rawLine, nowPulse)
-                    placeIndexUiLine = line
+                } else if (
+                    labeled.contains("Place index", ignoreCase = true) ||
+                    labeled.contains("Preparing search", ignoreCase = true)
+                ) {
+                    // Still drive the toast; do not pin a separate Tools line for
+                    // legacy place-index phases (MWM search is built-in).
                     if (!planningRoute) showJobProgress(toastActivityPulse.pulse(rawLine, nowPulse))
                 } else {
-                    // DEM/pack may briefly own the Download slot during indexing —
-                    // keep the sticky place-index % line visible in Tools.
-                    val stickyPlace = RegionDownloadBackground.placeIndexProgressLine()
-                    if (stickyPlace.isNotBlank() && stickyPlace.contains('%')) {
-                        placeIndexUiLine =
-                            placeActivityPulse.pulse(stickyPlace, nowPulse)
-                    }
                     val line = regionActivityPulse.pulse(rawLine, nowPulse)
                     regionDownloadProgress = line
                     if (!planningRoute) {
@@ -3857,17 +3949,14 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 val rawLine = RegionDownloadBackground.uiLine()
                 if (rawLine.isNotBlank()) {
                     val nowPulse = SystemClock.elapsedRealtime()
-                    if (rawLine.contains("Place index", ignoreCase = true)) {
-                        placeIndexUiLine = placeActivityPulse.pulse(rawLine, nowPulse)
+                    if (
+                        rawLine.contains("Place index", ignoreCase = true) ||
+                        rawLine.contains("Preparing search", ignoreCase = true)
+                    ) {
                         if (!planningRoute) {
                             showJobProgress(toastActivityPulse.pulse(rawLine, nowPulse))
                         }
                     } else {
-                        val stickyPlace = RegionDownloadBackground.placeIndexProgressLine()
-                        if (stickyPlace.isNotBlank() && stickyPlace.contains('%')) {
-                            placeIndexUiLine =
-                                placeActivityPulse.pulse(stickyPlace, nowPulse)
-                        }
                         val line = regionActivityPulse.pulse(rawLine, nowPulse)
                         regionDownloadProgress = line
                         if (!planningRoute) {
@@ -3884,7 +3973,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             regionDownloadProgress.contains("Downloading region") ||
                             regionDownloadProgress.contains("navi.msg.download_region") ||
                             regionDownloadProgress.contains("Downloading extract") ||
-                            regionDownloadProgress.contains("Place index")
+                            regionDownloadProgress.contains("Place index") ||
+                            regionDownloadProgress.contains("Preparing search")
                     )
                 ) {
                     regionDownloadProgress = ""
@@ -4056,13 +4146,15 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             PlaceIndexBackground.isRunning() -> {
                                 val st = PlaceIndexBackground.statusLine()
                                 if (st.isNotBlank() && st != "idle") {
-                                    if (st.startsWith("Place index", ignoreCase = true)) {
+                                    if (st.startsWith("Preparing search", ignoreCase = true) ||
+                                        st.startsWith("Region ready", ignoreCase = true)
+                                    ) {
                                         st
                                     } else {
-                                        "Place index: $st"
+                                        "Preparing search: $st"
                                     }
                                 } else {
-                                    "Place index: starting… 0% (0 / 6)"
+                                    "Preparing search… 0% (0 / 6)"
                                 }
                             }
                             else -> ""
@@ -4263,7 +4355,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                         .statusLine()
                         .ifBlank {
                             if (LongTripCoordinator.corridorPacksReady()) {
-                                "Long trip: waiting for region indexing…"
+                                "Long trip: waiting for region install…"
                             } else {
                                 "Long trip: downloading required regions…"
                             }
@@ -6345,6 +6437,22 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                 startRouteSimulation()
                             }
                         }
+                        if (NaviMapTestHooks.requestDatexRefresh) {
+                            NaviMapTestHooks.requestDatexRefresh = false
+                            datexEpoch += 1
+                        }
+                        if (NaviMapTestHooks.requestRerouteFromCurrent) {
+                            NaviMapTestHooks.requestRerouteFromCurrent = false
+                            val la =
+                                mapState.gpsLat.takeIf { it.isFinite() && it != 0.0 }
+                                    ?: routeSamples.firstOrNull()?.lat
+                            val lo =
+                                mapState.gpsLon.takeIf { it.isFinite() && it != 0.0 }
+                                    ?: routeSamples.firstOrNull()?.lon
+                            if (la != null && lo != null) {
+                                startRerouteFromCurrent(la, lo)
+                            }
+                        }
                         if (NaviMapTestHooks.requestStartLiveConeSimulation) {
                             val coords = NaviMapTestHooks.liveConeSimCoordsJson
                             if (!coords.isNullOrBlank()) {
@@ -6995,7 +7103,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                     listOf(
                                         uniffi.navi.PlaceHit(
                                             osmId = 0,
-                                            name = "Place index error: ${e.message}",
+                                            name = "Search data error: ${e.message}",
                                             kind = "index:error",
                                             lat = 0.0,
                                             lon = 0.0,
@@ -8144,7 +8252,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 title = { Text(stringResource(R.string.dialog_delete_region_title)) },
                 text = {
                     Text(
-                        "Remove packs, basemap, place-index rows, and graph cache for " +
+                        "Remove packs, basemap, search data, and graph cache for " +
                             "$deleteLabel. You can download it again later. " +
                             "This does not affect other installed regions.",
                     )
@@ -8608,22 +8716,6 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                                 .fillMaxWidth()
                                                 .testTag("route_plan_patience_hint"),
                                     )
-                                }
-                                if (planIndexingHintVisible) {
-                                    TextButton(
-                                        onClick = { showTools = true },
-                                        modifier =
-                                            Modifier
-                                                .fillMaxWidth()
-                                                .testTag("route_plan_indexing_hint"),
-                                    ) {
-                                        Text(
-                                            "Planning is faster once background indexing finishes " +
-                                                "(Tools → Indexed maps). This plan may take longer " +
-                                                "if indexing isn't done yet.",
-                                            style = MaterialTheme.typography.bodySmall,
-                                        )
-                                    }
                                 }
                             }
                             MultiDayPlanCards(
@@ -10329,11 +10421,11 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                 style = MaterialTheme.typography.labelLarge,
                             )
                             Text(
-                                "Countries and bboxes come from Geofabrik's published index. " +
+                                "Countries and bboxes come from Geofabrik's published catalog. " +
                                     "Central America extracts are listed under North America. " +
                                     "Jurisdiction packs still follow GPS, not this picker. " +
-                                    "Green pills = published on the pack server or already indexed on device. " +
-                                    "Green Download = install packs only; otherwise Download builds a place index.",
+                                    "Green pills = published on the pack server or already installed on device. " +
+                                    "Green Download = install packs from the pack server.",
                                 style = MaterialTheme.typography.bodySmall,
                             )
                             val readyChipGreen = Color(0xFF2E7D32)
@@ -10630,75 +10722,6 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                         .testTag("btn_delete_downloaded_region"),
                             ) {
                                 Text(stringResource(R.string.tools_delete_downloaded_region))
-                            }
-                            Button(
-                                onClick = {
-                                    scope.launch {
-                                        val packDir =
-                                            runCatching {
-                                                LongTripPackStorage.packDownloadDir(context)
-                                            }.getOrNull()
-                                        val rid = selectedGeofabrikPath.trim().trim('/')
-                                        val stem =
-                                            if (rid.isNotEmpty()) {
-                                                PackRegionAvailability.localStem(rid)
-                                            } else {
-                                                ""
-                                            }
-                                        // Prefer the long-trip pack root PBF when present
-                                        // (Tools Refresh used to pick the first files/*.osm.pbf,
-                                        // which could be a stale root Ostlandet v8 copy).
-                                        val pbf =
-                                            listOfNotNull(packDir, dataDir)
-                                                .asSequence()
-                                                .mapNotNull { dir ->
-                                                    if (stem.isNotBlank()) {
-                                                        File(dir, "$stem.osm.pbf").takeIf { it.isFile }
-                                                    } else {
-                                                        null
-                                                    }
-                                                        ?: dir.listFiles()?.firstOrNull {
-                                                            it.isFile && it.name.endsWith(".osm.pbf")
-                                                        }
-                                                }.firstOrNull()
-                                        if (pbf == null) {
-                                            status = "No local region PBF to refresh indexed maps from"
-                                            return@launch
-                                        }
-                                        val refreshDir =
-                                            pbf.parentFile?.takeIf { it.isDirectory } ?: dataDir
-                                        val elevDir =
-                                            listOf(
-                                                File(refreshDir, "elevation"),
-                                                File(dataDir, "elevation"),
-                                            ).firstOrNull { it.isDirectory }
-                                        val before =
-                                            withContext(Dispatchers.IO) {
-                                                indexedMapsStatus(
-                                                    pbf.absolutePath,
-                                                    refreshDir.absolutePath,
-                                                )
-                                            }
-                                        IndexedMapsBackground.ensureStarted(
-                                            scope,
-                                            pbf,
-                                            refreshDir,
-                                            elevDir,
-                                            selectedGeofabrikPath.ifBlank { null },
-                                            forceRefresh = true,
-                                        )
-                                        status =
-                                            "indexed before=$before — refresh started (pack server first, " +
-                                            "local rebuild only if server pack unavailable); " +
-                                            "stale files/ root duplicates removed on PASS"
-                                    }
-                                },
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .testTag("btn_rebuild_indexed_maps"),
-                            ) {
-                                Text(stringResource(R.string.ui_refresh_indexed_maps_server_first_then_local))
                             }
                             Text(
                                 stringResource(R.string.ui_basemap_pmtiles_included_in_download_region_dem_is_optional),

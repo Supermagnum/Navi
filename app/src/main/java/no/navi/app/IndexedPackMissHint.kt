@@ -12,8 +12,8 @@ internal fun reportIndicatesIndexedPackMiss(report: String): Boolean = Regex("""
 
 internal fun indexedPackMissHint(report: String): String? {
     if (!reportIndicatesIndexedPackMiss(report)) return null
-    return "Slow plan: indexed maps not ready (PBF fallback). " +
-        "Wait for background indexing, or Tools → Rebuild indexed maps."
+    return "Slow plan: map packs not ready yet (building from extract). " +
+        "Wait for download to finish, or download the region in Tools."
 }
 
 internal fun withIndexedPackMissHint(

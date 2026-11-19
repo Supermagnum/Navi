@@ -9,8 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use driver_break_core::mwm::{
-    fetch_current_catalog, install_leaf_set, installed_leaf_ids_active, installed_sidecar_count,
-    DownloadProgress,
+    install_leaf_set, installed_leaf_ids_active, installed_sidecar_count, resolve_mwm_catalog,
+    DownloadProgress, MwmCatalog,
 };
 
 static CANCEL: AtomicBool = AtomicBool::new(false);
@@ -78,39 +78,64 @@ fn pretty_region_name(id: &str) -> String {
         .join(" ")
 }
 
-/// Fetch the live catalog and list the downloadable regions (blocking network call).
+fn regions_from_catalog(cat: &MwmCatalog) -> Vec<FfiMwmRegion> {
+    let mut regions: Vec<FfiMwmRegion> = if !cat.region_to_leaves.is_empty() {
+        cat.region_to_leaves
+            .iter()
+            .map(|(id, leaves)| {
+                let total_bytes = leaves
+                    .iter()
+                    .filter_map(|l| cat.leaf(l))
+                    .map(|l| {
+                        l.comaps_bytes.or(l.mwm_bytes).unwrap_or(0) + l.sidecar_bytes.unwrap_or(0)
+                    })
+                    .sum();
+                FfiMwmRegion {
+                    id: id.clone(),
+                    display_name: pretty_region_name(id),
+                    leaf_ids: leaves.clone(),
+                    total_bytes,
+                }
+            })
+            .collect()
+    } else {
+        // CoMaps-direct / sparse catalogs: one row per country group.
+        cat.country_groups
+            .iter()
+            .filter_map(|g| {
+                let leaf_ids: Vec<String> = g.leaves.iter().map(|l| l.id.clone()).collect();
+                if leaf_ids.is_empty() {
+                    return None;
+                }
+                let total_bytes = leaf_ids
+                    .iter()
+                    .filter_map(|l| cat.leaf(l))
+                    .map(|l| l.comaps_bytes.or(l.mwm_bytes).unwrap_or(0))
+                    .sum();
+                Some(FfiMwmRegion {
+                    id: g.id.to_ascii_lowercase(),
+                    display_name: g.display_name.clone().unwrap_or_else(|| g.id.clone()),
+                    leaf_ids,
+                    total_bytes,
+                })
+            })
+            .collect()
+    };
+    regions.sort_by(|a, b| a.id.cmp(&b.id));
+    regions
+}
+
+/// List downloadable regions (blocking). Uses live navi catalog, then disk cache, then
+/// CoMaps-direct fallback so Tools still works when navi leaves are empty/unreachable.
 #[uniffi::export]
 pub fn mwm_list_regions(navi_origin: String) -> FfiMwmRegionList {
-    match fetch_current_catalog(&navi_origin) {
-        Ok(cat) => {
-            let mut regions: Vec<FfiMwmRegion> = cat
-                .region_to_leaves
-                .iter()
-                .map(|(id, leaves)| {
-                    let total_bytes = leaves
-                        .iter()
-                        .filter_map(|l| cat.leaf(l))
-                        .map(|l| {
-                            l.comaps_bytes.or(l.mwm_bytes).unwrap_or(0)
-                                + l.sidecar_bytes.unwrap_or(0)
-                        })
-                        .sum();
-                    FfiMwmRegion {
-                        id: id.clone(),
-                        display_name: pretty_region_name(id),
-                        leaf_ids: leaves.clone(),
-                        total_bytes,
-                    }
-                })
-                .collect();
-            regions.sort_by(|a, b| a.id.cmp(&b.id));
-            FfiMwmRegionList {
-                ok: true,
-                error: None,
-                version: cat.version,
-                regions,
-            }
-        }
+    match resolve_mwm_catalog(&navi_origin, None) {
+        Ok(resolved) => FfiMwmRegionList {
+            ok: true,
+            error: None,
+            version: resolved.catalog.version.clone(),
+            regions: regions_from_catalog(&resolved.catalog),
+        },
         Err(e) => FfiMwmRegionList {
             ok: false,
             error: Some(e.to_string()),

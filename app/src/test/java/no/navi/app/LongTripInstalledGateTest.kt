@@ -86,7 +86,7 @@ class LongTripInstalledGateTest {
         )
         assertTrue(LongTripCoordinator.corridorReadyForPlanning())
         assertTrue(
-            LongTripCoordinator.statusLine().contains("Indexing", ignoreCase = true),
+            LongTripCoordinator.statusLine().contains("Installing", ignoreCase = true),
         )
 
         // BuildingRoutes = packs + place-index done, skeleton still running.
