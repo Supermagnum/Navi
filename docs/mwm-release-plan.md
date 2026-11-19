@@ -77,6 +77,17 @@ configured `NAVI_ADOPTION_OUT` directory (`weekly-report.md`, `daily.csv`,
 4. Client: Phase 7 migration detection can shrink further once G5 is met and
    old installs are gone.
 
+
+## Post-G3 next steps
+
+1. **G5 adoption tracking** — install the weekly timer on **media** with
+   `/tmp/navi-rkyv-adoption-install.sh` (sudo). Read
+   `$HOME/navi-rkyv-adoption/weekly-report.md` (and `daily.csv` / `summary.json`).
+2. **Server `.rkyv` retirement** — only after several weeks of near-zero classic
+   pack traffic (G5). Do not delete DocumentRoot packs early.
+3. **Client cleanup** — delete remaining unreachable MapLibre / classic `.rkyv`
+   loaders tracked in the follow-up GitHub issue (G4 remainder).
+
 ## 3. References
 
 - `docs/mwm-client-migration.md` — phases 1–8 overview
