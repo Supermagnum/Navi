@@ -703,7 +703,7 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
                                         .put("name", h.name)
                                         .put(
                                             "tourism",
-                                            comapsHitToTourismTag(
+                                            MwmProductionPlanner.comapsHitToTourismTag(
                                                 h.featureType,
                                                 h.name,
                                             ),
@@ -1467,6 +1467,15 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
     }
 
     private fun datexImpactsPositive(rep: String): Boolean = Regex("""datex_impacts=([1-9]\d*)""").containsMatchIn(rep)
+
+    private fun datexImpactsInBand(
+        rep: String,
+        minInclusive: Int,
+        maxInclusive: Int,
+    ): Boolean {
+        val n = extractDatexFromPlanReport(rep).optInt("max_datex_impacts")
+        return n in minInclusive..maxInclusive
+    }
 
     private fun parseEtaMinutes(rep: String): Double {
         Regex("""chunked_eta_min=([0-9.]+)""").find(rep)?.groupValues?.get(1)?.toDoubleOrNull()?.let {

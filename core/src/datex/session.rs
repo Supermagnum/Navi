@@ -115,6 +115,10 @@ pub fn load_disk_cache(dir: &Path) -> Option<(DatexSourceMeta, String, i64, Stri
     None
 }
 
+pub fn is_navi_synth_fingerprint(fp: &str) -> bool {
+    fp.starts_with("navi-synth")
+}
+
 pub fn save_disk_cache(
     dir: &Path,
     meta: &DatexSourceMeta,
@@ -124,6 +128,18 @@ pub fn save_disk_cache(
     data_source: PackDataSource,
     base_url: &str,
 ) -> Result<(), String> {
+    // Live NPRA / duckdns must never wipe a campaign ADB navi-synth fixture.
+    if !is_navi_synth_fingerprint(fingerprint) {
+        if let Some((_, _, _, existing_fp)) = load_disk_cache(dir) {
+            if is_navi_synth_fingerprint(&existing_fp) {
+                log::info!(
+                    target: "NaviDatex",
+                    "refusing disk overwrite of {existing_fp} with live fingerprint {fingerprint}"
+                );
+                return Ok(());
+            }
+        }
+    }
     fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let (meta_path, xml_path) = cache_paths(dir);
     let partial_xml = xml_path.with_extension("xml.partial");
@@ -169,5 +185,51 @@ mod tests {
         fs::write(dir.path().join("datex-GetSituation.xml"), xml).unwrap();
         let loaded = load_disk_cache(dir.path()).expect("synth xml");
         assert!(loaded.3.starts_with("navi-synth"), "fp={}", loaded.3);
+    }
+
+    #[test]
+    fn save_disk_cache_refuses_live_overwrite_of_navi_synth() {
+        let dir = tempdir().unwrap();
+        let synth_xml = r#"<?xml version="1.0"?><d2LogicalModel><publicationCreator><nationalIdentifier>navi-synth</nationalIdentifier></publicationCreator><naviSynthetic>true</naviSynthetic><keep>synth</keep></d2LogicalModel>"#;
+        let synth_meta = DatexSourceMeta {
+            schema: Some(1),
+            source: Some("navi-synth".into()),
+            license: None,
+            attribution: Some("synthetic".into()),
+            endpoints: None,
+        };
+        save_disk_cache(
+            dir.path(),
+            &synth_meta,
+            synth_xml,
+            1_700_000_000,
+            "navi-synth-elsa",
+            PackDataSource::ServerDuckdns,
+            "https://example.test",
+        )
+        .unwrap();
+
+        let live_xml = r#"<?xml version="1.0"?><d2LogicalModel><live>npra</live></d2LogicalModel>"#;
+        let live_meta = DatexSourceMeta {
+            schema: Some(1),
+            source: Some("NPRA".into()),
+            license: None,
+            attribution: Some("NPRA".into()),
+            endpoints: None,
+        };
+        save_disk_cache(
+            dir.path(),
+            &live_meta,
+            live_xml,
+            1_700_000_100,
+            "abcdef0123456789",
+            PackDataSource::ServerDuckdns,
+            "https://navigate-me.duckdns.org",
+        )
+        .unwrap();
+
+        let loaded = load_disk_cache(dir.path()).expect("still synth");
+        assert_eq!(loaded.3, "navi-synth-elsa");
+        assert!(loaded.1.contains("keep>synth"), "xml wiped by live save");
     }
 }

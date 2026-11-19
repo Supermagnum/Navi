@@ -223,6 +223,93 @@ fn chain_falls_to_second_host_tagged_duckdns() {
 }
 
 #[test]
+fn navi_synth_disk_keeps_despite_live_host() {
+    let _lock = test_lock();
+    reset_session_for_tests();
+    let hits = Arc::new(Mutex::new(Vec::new()));
+    let base = serve_navi_root(hits.clone());
+
+    let dir = tempfile::tempdir().expect("tmpdir");
+    let synth_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<d2LogicalModel xmlns="http://datex2.eu/schema/3/d2Payload"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:sit="http://datex2.eu/schema/3/situation"
+  xmlns:com="http://datex2.eu/schema/3/common"
+  xmlns:loc="http://datex2.eu/schema/3/locationReferencing"
+  modelBaseVersion="3">
+  <payloadPublication xsi:type="sit:SituationPublication" lang="en">
+    <publicationCreator><nationalIdentifier>navi-synth</nationalIdentifier></publicationCreator>
+    <sit:situation id="syn-keep-1">
+      <sit:situationRecord xsi:type="sit:MaintenanceWorks" id="syn-keep-1-rec" version="1">
+        <com:situationRecordCreationTime>2026-09-01T00:00:00+02:00</com:situationRecordCreationTime>
+        <com:situationRecordVersionTime>2026-09-01T00:00:00+02:00</com:situationRecordVersionTime>
+        <sit:validity>
+          <com:validityStatus>definedByValidityTimeSpec</com:validityStatus>
+          <com:validityTimeSpecification>
+            <com:overallStartTime>2026-09-01T00:00:00+02:00</com:overallStartTime>
+            <com:overallEndTime>2027-09-01T00:00:00+02:00</com:overallEndTime>
+          </com:validityTimeSpecification>
+        </sit:validity>
+        <sit:groupOfLocations>
+          <loc:coordinatesForDisplay>
+            <loc:latitude>60.56</loc:latitude>
+            <loc:longitude>11.25</loc:longitude>
+          </loc:coordinatesForDisplay>
+        </sit:groupOfLocations>
+        <naviSynthetic>true</naviSynthetic>
+      </sit:situationRecord>
+    </sit:situation>
+  </payloadPublication>
+</d2LogicalModel>
+"#;
+    std::fs::write(dir.path().join("datex-GetSituation.xml"), synth_xml).unwrap();
+    std::fs::write(
+        dir.path().join("datex-cache.json"),
+        r#"{
+  "fetched_unix": 1700000000,
+  "source_fingerprint": "navi-synth-keep-test",
+  "data_source": "server-duckdns",
+  "base_url": "https://example.test",
+  "attribution": "synthetic",
+  "source": "navi-synth"
+}"#,
+    )
+    .unwrap();
+
+    let cfg = DatexConfig {
+        enabled: true,
+        use_discovery_chain: true,
+        wifi_only: false,
+        on_wifi: true,
+        cache_dir: Some(dir.path().to_path_buf()),
+        discovery_bases_override: Some(vec![(PackDataSource::ServerDuckdns, base)]),
+        min_poll_interval_secs: 0,
+        ..Default::default()
+    };
+
+    let r = refresh_for_route(&cfg, &route(), Utc::now());
+    assert_eq!(
+        r.warning.as_deref(),
+        Some("navi_synth_keep"),
+        "warn={:?} active={}",
+        r.warning,
+        r.active.len()
+    );
+    let paths = hits.lock().unwrap().clone();
+    assert!(
+        paths.is_empty(),
+        "live duckdns must not be contacted when navi-synth is on disk; paths={paths:?}"
+    );
+    let meta = std::fs::read_to_string(dir.path().join("datex-cache.json")).unwrap();
+    assert!(
+        meta.contains("navi-synth-keep-test"),
+        "disk fingerprint overwritten: {meta}"
+    );
+    let xml = std::fs::read_to_string(dir.path().join("datex-GetSituation.xml")).unwrap();
+    assert!(xml.contains("syn-keep-1"), "synth XML overwritten");
+}
+
+#[test]
 fn sticky_skips_lan_reprobe_on_second_cycle() {
     let _lock = test_lock();
     reset_session_for_tests();

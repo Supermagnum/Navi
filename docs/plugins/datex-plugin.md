@@ -251,19 +251,26 @@ Instrumented campaigns (Raufoss→Bergen, Elsa→Sjuvasslia) inject soft **Penal
 **3–6** `datex_impacts` (not `0` / `hosts_unreachable`):
 
 1. Write **`datex-GetSituation.xml`** containing `navi-synth` /
-   `<naviSynthetic>true</naviSynthetic>`.
+   `<naviSynthetic>true</naviSynthetic>`. Each `situationRecord` must expose
+   geometry as **`coordinatesForDisplay`** / `latitude`+`longitude` (the
+   parser ignores `pointByCoordinates`). Validity must cover wall-clock
+   `Utc::now()` used by refresh (not only a campaign departure day).
 2. Prefer also writing **`datex-cache.json`** with
    `source_fingerprint` starting with `navi-synth-…` (Raufoss host pattern).
    If the meta file is missing, `load_disk_cache` still treats synth XML as
    `navi-synth-disk-xml` so refresh keeps the fixture.
 3. `refresh_for_route` returns `warning=navi_synth_keep` and **skips** the NPRA
-   / duckdns pull so a live redistributor cannot wipe campaign sits.
+   / duckdns pull so a live redistributor cannot wipe campaign sits. Disk
+   `save_disk_cache` also refuses to overwrite an existing `navi-synth-*`
+   fingerprint with a live source.json hash (TOCTOU during inject).
 4. When hosts are unreachable, synth disk fixtures are still applied (not
    cleared). Corridor matching for synth uses a **≥ 25 km** margin so
    pre-plan seed coordinates near the eventual route still count.
 5. Soft-campaign host scripts must snap sits onto the **live corridor** (or
    keep seed lat/lon near it). Do **not** treat `naviMinutesBefore` as placement
-   km from the origin — that field is the HUD warning band only.
+   km from the origin — that field is the HUD warning band only. Host logcat
+   follow must use `adb logcat -T 1` so prior `ELSA_AWAIT_*` lines are not
+   replayed.
 
 MWM plan annotation (`MwmProductionPlanner.annotateDatex`) reads the same
 refresh result into `datex_impacts` / `datex_block` / `datex_penalize`.
