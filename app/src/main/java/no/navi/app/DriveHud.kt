@@ -212,6 +212,23 @@ fun breakIntervalHoursForProfile(
             .getOrDefault(4.0)
     }
 
+/**
+ * Minutes remaining until the next soft/mandatory break reminder.
+ *
+ * Soft profiles use a repeating interval (e.g. 4 h → 240 min at trip start).
+ * Elapsed driving time wraps within the interval so the HUD does not stick at
+ * "Break in 0 min" after the first interval on a long trip / GPS replay.
+ */
+fun minutesUntilNextBreak(
+    intervalHours: Double,
+    elapsedDrivingHours: Double,
+): Double {
+    val intervalH = intervalHours.coerceAtLeast(0.05)
+    val drivenH = elapsedDrivingHours.coerceAtLeast(0.0)
+    val sinceBreakH = drivenH % intervalH
+    return ((intervalH - sinceBreakH) * 60.0).coerceAtLeast(0.0)
+}
+
 enum class MapRotationMode {
     Compass,
     DirectionOfTravel,

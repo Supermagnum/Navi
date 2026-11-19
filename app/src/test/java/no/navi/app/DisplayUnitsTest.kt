@@ -182,4 +182,14 @@ class DisplayUnitsTest {
             ),
         )
     }
+
+    @Test
+    fun minutesUntilNextBreakCyclesOnLongTrip() {
+        assertEquals(240.0, minutesUntilNextBreak(4.0, 0.0), 0.01)
+        assertEquals(90.0, minutesUntilNextBreak(1.5, 0.0), 0.01)
+        // After 5 h on a 4 h interval: 1 h into the next cycle → 180 min left.
+        assertEquals(180.0, minutesUntilNextBreak(4.0, 5.0), 0.01)
+        // Must not stick at 0 after the first interval.
+        assertTrue(minutesUntilNextBreak(1.5, 3.0) > 1.0)
+    }
 }

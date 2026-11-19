@@ -111,7 +111,13 @@ class MwmOsloTromsoVehicleRestrictProbeInstrumentedTest {
                 .put("feature_id", snap.featureId.toLong())
                 .put("segment_idx", snap.segmentIdx.toLong())
                 .put("mwm_name", mwm)
-                .put("report_head", r.report.lineSequence().take(20).joinToString("\n"))
+                .put(
+                    "report_head",
+                    r.report
+                        .lineSequence()
+                        .take(20)
+                        .joinToString("\n"),
+                )
         writeProbe(dump)
         android.util.Log.i("OsloTromsoProbe", dump.toString())
     }
@@ -185,7 +191,13 @@ class MwmOsloTromsoVehicleRestrictProbeInstrumentedTest {
                 .put("inject_segment_idx", seg)
                 .put("inject_lat", rLat)
                 .put("inject_lon", rLon)
-                .put("report_head", r.report.lineSequence().take(30).joinToString("\n"))
+                .put(
+                    "report_head",
+                    r.report
+                        .lineSequence()
+                        .take(30)
+                        .joinToString("\n"),
+                )
         writeProbe(out)
         android.util.Log.i("OsloTromsoProbe", out.toString())
 

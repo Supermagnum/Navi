@@ -169,9 +169,10 @@ Full-tank style estimate for 428.5 km with 100 km margin and 500–600 mi range:
 
 ### DATEX (synthetic, ADB) — inject / apply / reroute / render / mid-sim
 
-Cache: `files/datex_cache/` (`datex-GetSituation.xml`, `apply_to_routing`,
-`navi-synth` fingerprint keep). Host snaps sit coordinates onto the corridor
-polyline.
+Cache: `files/datex_cache/` (`datex-GetSituation.xml`, `datex-cache.json` with
+`source_fingerprint=navi-synth-…`, `apply_to_routing`). Host snaps sit
+coordinates onto the corridor polyline (`naviMinutesBefore` is HUD band only).
+See `docs/plugins/datex-plugin.md` § Campaign / ADB synthetic fixtures.
 
 | Question | Answer | Evidence |
 |---|---|---|

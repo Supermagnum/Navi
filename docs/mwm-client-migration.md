@@ -267,7 +267,7 @@ Pin file: `third_party/comaps.pin.json` (tag `v2026.11.07-16` /
 | Native build | NDK **r27c** + CMake/Ninja target **`organicmaps`** (+ Navi `navi_comaps_*` C ABI) |
 | Prebuilt `.so` | **Forbidden** in git and in the F-Droid recipe — `app/src/main/jniLibs/**/*.so` already gitignored |
 | ABI | **arm64-v8a** for devices; `x86_64` only if needed for host unit tests — never AVD |
-| Patches | `patches/comaps/series` — full quilt series **0001–0009** (see §10) |
+| Patches | `patches/comaps/series` — full quilt series **0001–0012** (see §10) |
 | Pin verify | `fetch-comaps.sh` checks `git rev-parse HEAD` equals `comaps.pin.json` `sha` after Codeberg or `mirror_github` clone/fetch; mismatch exits non-zero (F-Droid recipe calls the same script) |
 | Cannot exclude | **drape** / GLES — stock `organicmaps` → `map` PUBLIC-links drape (Phase 6 uses or replaces rendering) |
 | Rust flag | Leave `NAVI_MWM_CLIENT_ENABLED` unset (default ON) |
@@ -452,6 +452,9 @@ Applied in order by `scripts/build-comaps-android.sh` (F-Droid recipe included):
 | `0007-navi-vehicle-limits-car-estimator.patch` | Apply sidecar `vehicle_limits` in `CarEstimator` (HardAvoid-style ×1e6 when over limit) |
 | `0008-navi-vehicle-route-segments-json.patch` | Emit per-segment JSON on finished car routes for the Rust post-route only-connection guard |
 | `0009-navi-utils-toast-main-thread.patch` | Show Toasts via `UiThread.run` so missing-string toasts are safe off the main thread |
+| `0010-navi-tunnel-turns-json.patch` | Emit `"is_tunnel":` on CoMaps turns JSON so MWM plans can count corridor tunnels |
+| `0011-navi-world-writable-scope.patch` | `GetAdditionalWorldScope` → `wr` so root World overlays are readable for Framework/search (see `docs/notes/navi-server-world-storage-rule.md`) |
+| `0012-navi-routes-builder-skip-world.patch` | Skip World / WorldCoasts registration in headless `RoutesBuilder` (avoids LeapsOnly `No route` when World is loaded for drape/search) |
 
 Extra sources next to the series (`navi_vehicle_cost.*`, `navi_wetland_cost.*`) are carried by the patches that need them; do not commit a dirty `third_party/comaps` tree.
 

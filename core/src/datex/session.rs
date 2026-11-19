@@ -75,20 +75,44 @@ pub fn cache_paths(dir: &Path) -> (PathBuf, PathBuf) {
 
 pub fn load_disk_cache(dir: &Path) -> Option<(DatexSourceMeta, String, i64, String)> {
     let (meta_path, xml_path) = cache_paths(dir);
-    let meta_text = fs::read_to_string(&meta_path).ok()?;
-    let disk: DiskCacheMeta = serde_json::from_str(&meta_text).ok()?;
     let xml = fs::read_to_string(&xml_path).ok()?;
     if xml.trim().is_empty() {
         return None;
     }
-    let meta = DatexSourceMeta {
-        schema: Some(1),
-        source: disk.source,
-        license: None,
-        attribution: disk.attribution,
-        endpoints: None,
-    };
-    Some((meta, xml, disk.fetched_unix, disk.source_fingerprint))
+    // Campaign ADB injects may write XML (+ apply stamp) without datex-cache.json.
+    // Detect navi-synth fixtures from XML so refresh_for_route keeps them.
+    let synth_xml =
+        xml.contains("navi-synth") || xml.contains("<naviSynthetic>true</naviSynthetic>");
+    if let Ok(meta_text) = fs::read_to_string(&meta_path) {
+        if let Ok(disk) = serde_json::from_str::<DiskCacheMeta>(&meta_text) {
+            let fp = if disk.source_fingerprint.starts_with("navi-synth") {
+                disk.source_fingerprint
+            } else if synth_xml {
+                "navi-synth-disk-xml".into()
+            } else {
+                disk.source_fingerprint
+            };
+            let meta = DatexSourceMeta {
+                schema: Some(1),
+                source: disk.source,
+                license: None,
+                attribution: disk.attribution,
+                endpoints: None,
+            };
+            return Some((meta, xml, disk.fetched_unix, fp));
+        }
+    }
+    if synth_xml {
+        let meta = DatexSourceMeta {
+            schema: Some(1),
+            source: Some("navi-synth".into()),
+            license: None,
+            attribution: Some("synthetic".into()),
+            endpoints: None,
+        };
+        return Some((meta, xml, 0, "navi-synth-disk-xml".into()));
+    }
+    None
 }
 
 pub fn save_disk_cache(
@@ -130,4 +154,20 @@ pub fn fingerprint_source_body(body: &str) -> String {
         hash = hash.wrapping_mul(0x100000001b3);
     }
     format!("{hash:016x}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn navi_synth_xml_without_meta_loads() {
+        let dir = tempdir().unwrap();
+        let xml = r#"<?xml version="1.0"?><d2LogicalModel><publicationCreator><nationalIdentifier>navi-synth</nationalIdentifier></publicationCreator><naviSynthetic>true</naviSynthetic></d2LogicalModel>"#;
+        fs::write(dir.path().join("datex-GetSituation.xml"), xml).unwrap();
+        let loaded = load_disk_cache(dir.path()).expect("synth xml");
+        assert!(loaded.3.starts_with("navi-synth"), "fp={}", loaded.3);
+    }
 }

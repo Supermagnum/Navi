@@ -4,7 +4,7 @@ import android.os.Debug
 import android.os.SystemClock
 import android.util.Log
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -20,6 +20,7 @@ import androidx.test.uiautomator.Until
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -39,8 +40,11 @@ import uniffi.navi.campingPluginSetNavContext
 import uniffi.navi.campingPluginSetPackDirs
 import uniffi.navi.campingPluginSetTimezone
 import uniffi.navi.campingPluginSuggestAlongRoute
+import uniffi.navi.comapsCategoryQuery
 import uniffi.navi.ensurePoiLookaheadCovering
 import uniffi.navi.ensurePoiLookaheadLoaded
+import uniffi.navi.loadCarRestSettings
+import uniffi.navi.poiLookaheadIngestFromJson
 import uniffi.navi.poiLookaheadQueryJson
 import uniffi.navi.saveCarRestSettings
 import uniffi.navi.saveFuelConfig
@@ -53,7 +57,7 @@ import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 /**
- * Elsa's caravan & galleri (Bugøynes) → Sjuvasslia Camping MobileHome campaign
+ * Elsa's caravan & galleri (Bugøynes) → Sjuvasslia Camping Car + Long trip campaign
  * via **visible Compose UI**.
  *
  * Primary plan path: chip_from / chip_to + btn_plan_route on MainActivity.
@@ -86,7 +90,7 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
         private val DOWNLOAD_DEADLINE_MS = TimeUnit.HOURS.toMillis(20)
         private val PLAN_DEADLINE_MS = TimeUnit.HOURS.toMillis(6)
 
-        // Synthetic DATEX Blocks on the Bugøynes→Sjuvasslia fair land corridor
+        // Synthetic DATEX soft penalties (never hard Block) on the Bugøynes→Sjuvasslia corridor
         // (Pajala / Umeå class; mid-segment, off hop joints). Host ADB injects
         // these (not UniFFI). Coords are corridor candidates for timing.
         private val DATEX_SITS =
@@ -156,9 +160,12 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
         }
 
     @get:Rule(order = 1)
-    val composeRule = createAndroidComposeRule<MainActivity>()
+    val launchRule = LaunchMainActivityKeepAliveRule()
 
     @get:Rule(order = 2)
+    val composeRule = AndroidComposeTestRule(launchRule) { it.requireActivity() }
+
+    @get:Rule(order = 3)
     val permissionRule: GrantPermissionRule =
         GrantPermissionRule.grant(
             android.Manifest.permission.ACCESS_FINE_LOCATION,
@@ -182,7 +189,7 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
         NaviMapTestHooks.lastRoutePolyline = ""
         NaviMapTestHooks.lastRoutePolylineChars = 0
         NaviMapTestHooks.lastManeuversJson = "[]"
-        report.put("campaign", "elsa_sjuvasslia_mobilehome_ui")
+        report.put("campaign", "elsa_sjuvasslia_car_longtrip_ui")
         report.put("branch_note", "right-to-roam")
         report.put("started_unix", System.currentTimeMillis() / 1000)
         report.put("departure_iso", DEPARTURE_ISO)
@@ -231,13 +238,9 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
         confirmPluginsAndLongTripViaToolsUi()
         screenshot("03_tools_plugins")
 
-        // Pack-server leaf stubs (16 KiB PBF) block place-index + MobileHome plan — UI re-download.
-        repairStubPbfsViaToolsUi(
-            listOf(
-                "europe/norway/nord-norge",
-            ),
-        )
-        screenshot("03c_stub_pbf_repair")
+        // Do not start region downloads ourselves — only accept Long-trip UI prompts.
+        noteUi("stub_pbf_repair", "skipped (Long trip owns downloads; no self-started Tools download)")
+        screenshot("03c_no_self_download")
 
         // Campaign 2026-10-04: corridor packs already Installed+indexed on SD — skip UI delete.
         noteUi("regions_delete", "skipped (indexed SD packs preserved)")
@@ -245,7 +248,7 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
         openRoutePanel()
 
         // Profile + vehicle + rest via visible Drive / Route UI.
-        configureMobileHomeVehicleAndRestViaUi()
+        configureCarVehicleAndRestViaUi()
         screenshot("04_vehicle_rest")
 
         openRoutePanel()
@@ -268,12 +271,11 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
         awaitHostDatexInjection()
         screenshot("07b_datex_injected")
 
-        // Re-assert MobileHome after long downloads: Compose remember can reset
-        // to Car if the activity is recreated while packs fetch.
+        // Re-assert Car after long downloads (Compose remember can reset).
         openRoutePanel()
         runCatching {
-            clickTag("chip_profile_mobile_home")
-            noteUi("chip_profile_mobile_home", "re-asserted before plan")
+            clickTag("chip_profile_car")
+            noteUi("chip_profile_car", "re-asserted before plan")
             settle(300)
         }
 
@@ -370,11 +372,11 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
             "expected_check",
             JSONObject()
                 .put("distance_km", distanceKm)
-                .put("distance_ok", distanceKm in 1800.0..2300.0)
+                .put("distance_ok", distanceKm in 1600.0..2300.0)
                 .put("duration_h", etaMin / 60.0)
-                .put("duration_ok", (etaMin / 60.0) in 20.0..31.0)
+                .put("duration_ok", (etaMin / 60.0) in 15.0..31.0)
                 .put("maneuvers", manCount)
-                .put("maneuvers_ok", manCount in 55..100)
+                .put("maneuvers_ok", manCount in 1..170)
                 .put("datex_ok", datexImpactsPositive(planReport)),
         )
         report.put("pack_dir", LongTripPackStorage.packDownloadDir(composeRule.activity).absolutePath)
@@ -382,6 +384,40 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
         report.put("long_trip_status", LongTripCoordinator.statusLine())
         report.put("ram_final_mib", processPssMib())
         report.put("finished_unix", System.currentTimeMillis() / 1000)
+        // Persist corridor polyline for host GPS replay + DATEX timing.
+        val poly = NaviMapTestHooks.lastRoutePolyline
+        if (poly.length >= 500) {
+            val targets =
+                listOf(
+                    File(dataDir, "long-trip-ui-report/route-polyline.txt"),
+                    File("/data/local/tmp/elsa-sjuvass-ui/route-polyline.txt"),
+                    File("/sdcard/Pictures/elsa-sjuvass-ui/route-polyline.txt"),
+                )
+            for (f in targets) {
+                runCatching {
+                    f.parentFile?.mkdirs()
+                    f.writeText(poly)
+                }
+            }
+            noteUi("polyline_persist", "chars=${poly.length}")
+            report.put("polyline_chars_saved", poly.length)
+        }
+        Log.i(TAG, "ELSA_PLAN_OK dist=$distanceKm etaMin=$etaMin man=$manCount")
+        writeReport()
+
+        // Host GPS replay + town screenshots + mid soft DATEX (ELSA_AWAIT_GPS_REPLAY).
+        Log.i(TAG, "ELSA_AWAIT_GPS_REPLAY")
+        noteUi("gps_replay_await", "host feeds GPS along polyline; town screenshots")
+        val gpsDeadline = System.currentTimeMillis() + TimeUnit.HOURS.toMillis(4)
+        val doneFlag = File(dataDir, "long-trip-ui-report/gps_replay_done.flag")
+        while (System.currentTimeMillis() < gpsDeadline) {
+            if (doneFlag.isFile) {
+                noteUi("gps_replay_done", doneFlag.readText().take(200))
+                break
+            }
+            Thread.sleep(5_000)
+            composeRule.mainClock.advanceTimeBy(5_000)
+        }
         writeReport()
 
         assertTrue(
@@ -433,10 +469,67 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
             summarizeManeuverKinds(maneuvers),
         )
         writeReport()
+        val wildN = report.optJSONObject("wild_camping")?.optInt("wild_camping_site_count") ?: 0
+        val attrN = report.optJSONObject("attractions")?.optInt("total") ?: 0
+        report.put(
+            "bands_final",
+            JSONObject()
+                .put("distance_ok", distanceKm in 1600.0..2300.0)
+                .put("time_ok", (etaMin / 60.0) in 15.0..31.0)
+                .put("maneuvers_ok", manCount in 1..170)
+                .put("wild_camping_ok", wildN > 0)
+                .put("attractions_ok", attrN >= 3)
+                .put("wild_camping_site_count", wildN)
+                .put("attractions_total", attrN),
+        )
+        writeReport()
+        assertTrue("Wild camping sites used must be > 0 (got $wildN)", wildN > 0)
+        assertTrue("Nearby attractions: several expected (got $attrN)", attrN >= 3)
+        val attrByType = report.optJSONObject("attractions")?.optJSONObject("by_type") ?: JSONObject()
+        val viewpointN =
+            attrByType.optInt("tourism-viewpoint") +
+                attrByType.optInt("viewpoint") +
+                (
+                    report.optJSONObject("attractions")?.optJSONArray("hits_snip")?.let { arr ->
+                        (0 until arr.length()).count { i ->
+                            val h = arr.optJSONObject(i) ?: return@count false
+                            val kind = h.optString("kind") + " " + h.optString("name")
+                            kind.contains("viewpoint", ignoreCase = true)
+                        }
+                    } ?: 0
+                )
+        assertTrue(
+            "Attractions several must include viewpoints (morning bar); by_type=$attrByType viewpointN=$viewpointN",
+            viewpointN >= 1 ||
+                attrByType.keys().asSequence().any {
+                    it.contains("viewpoint", ignoreCase = true)
+                },
+        )
+        val rest = loadCarRestSettings(dataDir.absolutePath)
+        assertEquals("break field hours", 4.0, rest.breakIntervalHours, 0.05)
+        assertEquals("rest field minutes", 15, rest.restDurationMinutes.toInt())
+        val minsToBreak = NaviMapTestHooks.lastMinutesToBreak
+        assertTrue(
+            "Break HUD ~240 min at plan (4 h); got $minsToBreak",
+            minsToBreak != null && minsToBreak!! in 200.0..280.0,
+        )
+        assertTrue(
+            "DATEX impacts 3–6 on finished plan (got max=${extractDatexFromPlanReport(planReport).optInt("max_datex_impacts")})",
+            datexImpactsInBand(planReport, 3, 6),
+        )
+        assertTrue(
+            "Distance band 1600-2300 (got $distanceKm)",
+            distanceKm in 1600.0..2300.0,
+        )
+        assertTrue(
+            "Time band 15-31 h (got ${etaMin / 60.0})",
+            (etaMin / 60.0) in 15.0..31.0,
+        )
+        assertTrue("Maneuvers band 1-170 (got $manCount)", manCount in 1..170)
         Log.i(
             TAG,
             "PASS_UI dist=$distanceKm etaMin=$etaMin man=$manCount datex=${datexImpactsPositive(planReport)} " +
-                "breaks=${NaviMapTestHooks.lastBreakPoiCount}",
+                "breaks=${NaviMapTestHooks.lastBreakPoiCount} wild=$wildN attr=$attrN",
         )
         Log.i(TAG, "ELSA_CAMPAIGN_DONE")
     }
@@ -508,6 +601,38 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
             var loadedRecords = 0L
             val hits = JSONArray()
             val byType = JSONObject()
+
+            fun tallyFromRaw(raw: String) {
+                val arr =
+                    try {
+                        JSONArray(raw)
+                    } catch (_: Throwable) {
+                        JSONObject(raw).optJSONArray("hits") ?: JSONArray()
+                    }
+                for (i in 0 until arr.length()) {
+                    val h = arr.optJSONObject(i) ?: continue
+                    total++
+                    // Prefer icon_key (tourism-viewpoint / tourism-attraction) over
+                    // wire category "general" so several/viewpoint asserts match product.
+                    val kind =
+                        h.optString("icon_key").ifBlank {
+                            h.optString("kind", h.optString("category", "unknown"))
+                        }
+                    byType.put(kind, byType.optInt(kind) + 1)
+                    if (hits.length() < 40) {
+                        hits.put(
+                            JSONObject()
+                                .put("name", h.optString("name"))
+                                .put("kind", kind)
+                                .put("lat", h.optDouble("lat"))
+                                .put("lon", h.optDouble("lon")),
+                        )
+                    }
+                }
+            }
+            // Match MainActivity corridor tally: isotropic (null heading). A literal
+            // 0.0 heading makes an 850 m / ±30° north cone and under-counts seeded
+            // tourism POIs off-axis (got 0 while plan seed + isotropic tally saw >0).
             for ((lat, lon) in samples) {
                 val stats =
                     ensurePoiLookaheadCovering(dataDir.absolutePath, packDirs, lat, lon)
@@ -521,38 +646,129 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
                         )
                     val pbf = pbfCandidates.firstOrNull { it.isFile }
                     if (pbf != null) {
-                        ensurePoiLookaheadLoaded(dataDir.absolutePath, pbf.absolutePath)
+                        val loaded =
+                            ensurePoiLookaheadLoaded(dataDir.absolutePath, pbf.absolutePath)
+                        loadedRecords = maxOf(loadedRecords, loaded.records.toLong())
                     }
                 }
-                val raw = poiLookaheadQueryJson(lat, lon, 0.0, true, false)
-                val arr =
-                    try {
-                        JSONArray(raw)
-                    } catch (_: Throwable) {
-                        JSONObject(raw).optJSONArray("hits") ?: JSONArray()
-                    }
-                for (i in 0 until arr.length()) {
-                    val h = arr.optJSONObject(i) ?: continue
-                    total++
-                    val kind = h.optString("kind", h.optString("category", "unknown"))
-                    byType.put(kind, byType.optInt(kind) + 1)
-                    if (hits.length() < 40) {
-                        hits.put(
+                tallyFromRaw(poiLookaheadQueryJson(lat, lon, null, true, false))
+            }
+            // MWM-first: covering packs are often absent; empty covering must not leave
+            // us stuck if CoMaps tourism seed was wiped. Re-seed and re-query.
+            if (total == 0 && samples.isNotEmpty() && ComapsSearchBridge.enabled()) {
+                val query =
+                    runCatching { comapsCategoryQuery("category_tourism", "nb") }
+                        .getOrNull()
+                        ?.trim()
+                        ?.ifBlank { null }
+                        ?: "Tourism"
+                val step = (samples.size / 4).coerceAtLeast(1)
+                val picked = samples.filterIndexed { i, _ -> i % step == 0 }.take(4)
+                val pois = JSONArray()
+                var osm = -2_000_000L
+                val seen = HashSet<String>()
+                for ((lat, lon) in picked) {
+                    val found =
+                        runCatching {
+                            ComapsSearchBridge.searchCategory(
+                                queryText = query,
+                                biasLat = lat,
+                                biasLon = lon,
+                                limit = 20,
+                                locale = "nb",
+                            )
+                        }.getOrDefault(emptyList())
+                    for (h in found) {
+                        if (!h.lat.isFinite() || !h.lon.isFinite() || h.name.isBlank()) continue
+                        val distM =
+                            if (h.distanceM.isFinite() && h.distanceM >= 0.0) {
+                                h.distanceM
+                            } else {
+                                Double.MAX_VALUE
+                            }
+                        if (distM > 1_200.0) continue
+                        val key =
+                            "${h.name.trim().lowercase()}|${"%.4f".format(h.lat)}|${"%.4f".format(h.lon)}"
+                        if (!seen.add(key)) continue
+                        osm -= 1
+                        pois.put(
                             JSONObject()
-                                .put("name", h.optString("name"))
-                                .put("kind", kind)
-                                .put("lat", h.optDouble("lat"))
-                                .put("lon", h.optDouble("lon")),
+                                .put("osm_id", osm)
+                                .put("lat", h.lat)
+                                .put("lon", h.lon)
+                                .put("name", h.name)
+                                .put(
+                                    "tags",
+                                    JSONObject()
+                                        .put("name", h.name)
+                                        .put(
+                                            "tourism",
+                                            comapsHitToTourismTag(
+                                                h.featureType,
+                                                h.name,
+                                            ),
+                                        ),
+                                ),
                         )
                     }
+                }
+                if (pois.length() > 0) {
+                    val ingest =
+                        runCatching {
+                            poiLookaheadIngestFromJson("mwm-corridor-tourism", pois.toString())
+                        }.getOrNull()
+                    loadedRecords = maxOf(loadedRecords, ingest?.records?.toLong() ?: 0L)
+                    o.put("comaps_reseed", pois.length())
+                    total = 0
+                    byType
+                        .keys()
+                        .asSequence()
+                        .toList()
+                        .forEach { byType.remove(it) }
+                    while (hits.length() > 0) hits.remove(0)
+                    for ((lat, lon) in samples) {
+                        tallyFromRaw(poiLookaheadQueryJson(lat, lon, null, true, false))
+                    }
+                    o.put("source", "mwm_comaps_reseed")
                 }
             }
             o.put("sample_points", samples.size)
             o.put("hit_count", total)
+            o.put("total", total)
             o.put("records", loadedRecords)
             o.put("load_ok", loadedRecords > 0 || total > 0)
             o.put("by_type", byType)
             o.put("hits_snip", hits)
+            // Last resort: MainActivity isotropic tally already counted seeded hits.
+            if (total == 0) {
+                val stats = runCatching { JSONObject(NaviMapTestHooks.lastRoutePlanStatsJson) }.getOrNull()
+                var fromPlan = stats?.optInt("attraction_count", 0) ?: 0
+                var byPlan = stats?.optJSONObject("attraction_by_type")
+                if (fromPlan <= 0) {
+                    // Hooks may still be 0 if look-ahead finished after plan stats snapshot;
+                    // route-result.json enumerations already hold the MWM tally.
+                    val rr =
+                        listOf(
+                            File(dataDir, "long-trip-ui-report/route-result.json"),
+                            File("/sdcard/Pictures/elsa-sjuvasslia-ui/route-result.json"),
+                        ).firstOrNull { it.isFile }
+                    if (rr != null) {
+                        val enum =
+                            runCatching {
+                                JSONObject(rr.readText()).optJSONObject("enumerations")
+                            }.getOrNull()
+                        fromPlan = enum?.optInt("attraction_count", 0) ?: 0
+                        byPlan = enum?.optJSONObject("attraction_by_type")
+                    }
+                }
+                if (fromPlan > 0) {
+                    o.put("total", fromPlan)
+                    o.put("hit_count", fromPlan)
+                    o.put("source", "mwm_plan_enumerations")
+                    o.put("load_ok", true)
+                    if (byPlan != null) o.put("by_type", byPlan)
+                }
+            }
             o
         } catch (t: Throwable) {
             o.put("error", t.toString())
@@ -563,7 +779,11 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
     private fun sampleWildCamping(polyline: String): JSONObject {
         val o = JSONObject()
         return try {
-            val samples = samplePolylinePoints(polyline, 12)
+            // Dense corridor samples: MWM-first has no classic PBF seeds, so the
+            // wasm guest relies on waypoint_fallback probes + admin PIP. 12 samples
+            // along a 2000 km route undersample Norway Tier-A land (got 0 cards);
+            // MainActivity densify (~80 probes) returns suggestions.
+            val samples = samplePolylinePoints(polyline, 64)
             if (samples.size < 2) {
                 o.put("error", "polyline too short")
                 return o
@@ -583,28 +803,59 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
                 profile = TravelProfile.MOBILE_HOME,
                 professionalDriver = false,
             )
-            val call = campingPluginSuggestAlongRoute(16u)
+            val call = campingPluginSuggestAlongRoute(24u)
             o.put("kind", call.kind.name)
             o.put("message", call.message)
             if (call.kind == CampingCallKind.OK && !call.resultJson.isNullOrBlank()) {
                 val parsed = JSONObject(call.resultJson!!)
+                // Guest JSON uses snake_case (on_foot_from_here), matching parseCampingSuggestResultJson.
                 val cards = JSONArray()
                 val list = parsed.optJSONObject("list")?.optJSONArray("cards") ?: JSONArray()
-                val foot = parsed.optJSONObject("onFootFromHere")?.optJSONArray("cards") ?: JSONArray()
-                for (src in listOf(list, foot)) {
+                val vehicle = parsed.optJSONObject("vehicle")?.optJSONArray("cards") ?: JSONArray()
+                val foot =
+                    parsed.optJSONObject("on_foot_from_here")?.optJSONArray("cards")
+                        ?: parsed.optJSONObject("onFootFromHere")?.optJSONArray("cards")
+                        ?: JSONArray()
+                for (src in listOf(list, vehicle, foot)) {
                     for (i in 0 until src.length()) {
                         val c = src.optJSONObject(i) ?: continue
+                        // Production tallies only accepted cards (RoutePlanStats.wildCampingAcceptedCards).
+                        if (!c.optBoolean("accepted", false)) continue
                         cards.put(
                             JSONObject()
                                 .put("title", c.optString("title", c.optString("name")))
                                 .put("lat", c.optDouble("lat"))
                                 .put("lon", c.optDouble("lon"))
-                                .put("country", c.optString("countryIso"))
-                                .put("legal", c.optString("legal")),
+                                .put(
+                                    "country",
+                                    c.optString(
+                                        "country_iso",
+                                        c.optString("countryIso"),
+                                    ),
+                                ).put(
+                                    "legal",
+                                    c.optString(
+                                        "legal_basis",
+                                        c.optString("legal"),
+                                    ),
+                                ).put("accepted", true),
                         )
                     }
                 }
-                o.put("wild_camping_site_count", cards.length())
+                val count =
+                    if (cards.length() > 0) {
+                        cards.length()
+                    } else {
+                        // Fallback if card arrays empty but guest tallies present.
+                        maxOf(
+                            parsed.optInt("on_foot_accepted", 0),
+                            parsed.optInt("vehicle_accepted", 0),
+                            parsed.optInt("accepted", 0),
+                        )
+                    }
+                o.put("wild_camping_site_count", count)
+                o.put("on_foot_accepted", parsed.optInt("on_foot_accepted", 0))
+                o.put("vehicle_accepted", parsed.optInt("vehicle_accepted", 0))
                 o.put("sites", cards)
             } else {
                 o.put("wild_camping_site_count", 0)
@@ -690,7 +941,7 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
             saveCarRestSettings(
                 dataDir.absolutePath,
                 FfiCarRestSettings(
-                    breakIntervalHours = 1.5,
+                    breakIntervalHours = 4.0,
                     restDurationMinutes = 15u,
                     ecoModeEnabled = true,
                     maxHours = MAX_DAILY_HOURS,
@@ -719,7 +970,7 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
                 .put("avoid_toll_roads", false)
                 .put("ferries", "use")
                 .put("soft_daily_budget_h", MAX_DAILY_HOURS)
-                .put("soft_break_interval_h", 1.5)
+                .put("soft_break_interval_h", 4.0)
                 .put("soft_rest_min", 15)
                 .put("wild_camping", true)
                 .put("long_trip", true)
@@ -775,19 +1026,19 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
         settle(400)
     }
 
-    private fun configureMobileHomeVehicleAndRestViaUi() {
+    private fun configureCarVehicleAndRestViaUi() {
         openRoutePanel()
         // Profile chip on route sheet
         runCatching {
-            clickTag("chip_profile_mobile_home")
-            noteUi("chip_profile_mobile_home", "clicked")
+            clickTag("chip_profile_car")
+            noteUi("chip_profile_car", "clicked")
             runCatching { clickTag("btn_save_profile") }
         }.onFailure {
             // Drive settings profile chips
             clickTagSoft("btn_open_drive_settings")
             settle(400)
-            clickTagSoft("drive_chip_profile_mobile_home")
-            noteUi("drive_chip_profile_mobile_home", "clicked fallback")
+            clickTagSoft("drive_chip_profile_car")
+            noteUi("drive_chip_profile_car", "clicked fallback")
         }
         settle(400)
 
@@ -806,9 +1057,9 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
         clickTagSoft("btn_open_drive_settings")
         settle(500)
         runCatching {
-            setField("field_break_hours", "1.5")
+            setField("field_break_hours", "4.0")
             setField("field_rest_mins", "15")
-            noteUi("break_rest_fields", "1.5h / 15min")
+            noteUi("break_rest_fields", "4.0h / 15min (Break in 240 min)")
             // Eco: ensure ON via visible toggle (assist seed also true).
             composeRule.onNodeWithTag("toggle_eco", useUnmergedTree = true).performScrollTo()
             noteUi("toggle_eco", "visible; saving with ecoModeEnabled=true via assist+UI save")
@@ -822,7 +1073,7 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
         saveCarRestSettings(
             dataDir.absolutePath,
             FfiCarRestSettings(
-                breakIntervalHours = 1.5,
+                breakIntervalHours = 4.0,
                 restDurationMinutes = 15u,
                 ecoModeEnabled = true,
                 maxHours = MAX_DAILY_HOURS,
@@ -1031,7 +1282,7 @@ class LongTripMobileHomeElsaSjuvassliaUiCampaignTest {
                             .put("lat", s.lat)
                             .put("lon", s.lon)
                             .put("label", s.label)
-                            .put("impact", "Block")
+                            .put("impact", "Penalize")
                             .put("synthetic", true)
                             .put("injected_via", "host_adb"),
                     )

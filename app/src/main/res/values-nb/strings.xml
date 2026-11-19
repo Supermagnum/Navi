@@ -202,7 +202,7 @@
     <string name="indexed_maps_outdated_refresh">Kart utdatert / inkompatibelt — trykk Last ned region for å oppdatere</string>
     <string name="label_internal_storage">Intern lagring</string>
     <string name="label_my_position">Min posisjon</string>
-    <string name="long_trip_wifi_packs_hint">Laster ned kartpakker langs ruten bare over Wi-Fi/Ethernet. Verktøy-nedlastinger blir på intern lagring.</string>
+    <string name="long_trip_wifi_packs_hint">Foretrekker CoMaps-kart langs ruten; Geofabrik-PBF bare som reserve (Wi-Fi/Ethernet). Verktøy-nedlastinger blir på intern lagring.</string>
     <string name="map_bar_a11y">Kartlinje. %1$s. Trykk for kartinnstillinger</string>
     <string name="map_layers_count">Kartlag: %1$d</string>
     <string name="map_settings_open_a11y">Kartinnstillinger åpne. %1$s</string>
@@ -351,7 +351,7 @@
     <string name="ui_denmark">Danmark</string>
     <string name="ui_developer_test_only">Kun utvikler / test</string>
     <string name="ui_download_scope_geofabrik">Nedlastingsområde (Geofabrik)</string>
-    <string name="ui_downloads_map_packs_along_the_route_on_wi_fi_ethernet_only">Laster ned kartpakker langs ruten bare over Wi-Fi/Ethernet. </string>
+    <string name="ui_downloads_map_packs_along_the_route_on_wi_fi_ethernet_only">Foretrekker CoMaps-kart langs ruten; Geofabrik-PBF-reserve over Wi-Fi/Ethernet. </string>
     <string name="ui_drive_vehicle_settings">Kjøring / kjøretøyinnstillinger</string>
     <string name="ui_ecuador">Ecuador</string>
     <string name="ui_egypt">Egypt</string>

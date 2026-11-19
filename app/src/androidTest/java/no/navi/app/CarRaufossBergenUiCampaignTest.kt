@@ -159,6 +159,7 @@ class CarRaufossBergenUiCampaignTest {
     private val report = JSONObject()
     private val uiEvents = JSONArray()
     private val regionTimings = JSONArray()
+
     /** Full plan polyline captured before marker/mid-sim steps that may clear the live route. */
     private var savedPlanPolyline: String = ""
 
@@ -178,7 +179,11 @@ class CarRaufossBergenUiCampaignTest {
         report.put("ram_before_mib", processPssMib())
         report.put(
             "origin",
-            JSONObject().put("lat", ORIGIN_LAT).put("lon", ORIGIN_LON).put("elev_m", ORIGIN_ELEV_M).put("name", "Raufoss"),
+            JSONObject()
+                .put("lat", ORIGIN_LAT)
+                .put("lon", ORIGIN_LON)
+                .put("elev_m", ORIGIN_ELEV_M)
+                .put("name", "Raufoss"),
         )
         report.put(
             "dest",
@@ -245,8 +250,12 @@ class CarRaufossBergenUiCampaignTest {
         deleteMwmViaStorageUi()
         screenshot("04_after_ui_delete")
         val leavesAfterDelete =
-            runCatching { uniffi.navi.mwmInstalled(dataDir.absolutePath)?.leafIds.orEmpty() }
-                .getOrDefault(emptyList())
+            runCatching {
+                uniffi.navi
+                    .mwmInstalled(dataDir.absolutePath)
+                    ?.leafIds
+                    .orEmpty()
+            }.getOrDefault(emptyList())
         report.put("leaves_after_ui_delete", JSONArray(leavesAfterDelete))
         assertTrue(
             "UI delete must clear downloaded leaves before Ostlandet redownload (left=${leavesAfterDelete.size})",
@@ -771,7 +780,12 @@ class CarRaufossBergenUiCampaignTest {
         val mans = runCatching { JSONArray(NaviMapTestHooks.lastManeuversJson) }.getOrNull()
         if (mans != null) {
             for (i in 0 until mans.length()) {
-                val k = mans.optJSONObject(i)?.optString("kind").orEmpty().ifBlank { "?" }
+                val k =
+                    mans
+                        .optJSONObject(i)
+                        ?.optString("kind")
+                        .orEmpty()
+                        .ifBlank { "?" }
                 kinds.put(k, kinds.optInt(k) + 1)
             }
         }
@@ -831,7 +845,7 @@ class CarRaufossBergenUiCampaignTest {
                     .put("eta_total_min", etaMin)
                     // Spec: sit appears N minutes before the vehicle reaches it,
                     // so along-route arrival ≈ N minutes after departure.
-                    .put("approx_minutes_after_departure", s.minutesBeforeArrival)
+                    .put("approx_minutes_after_departure", s.minutesBeforeArrival),
             )
         }
         report.put("datex_timing_vs_arrival", datexRows)
@@ -1032,8 +1046,12 @@ class CarRaufossBergenUiCampaignTest {
                 .flatMap { it.leaves }
                 .map { it.id }
                 .ifEmpty {
-                    runCatching { uniffi.navi.mwmInstalled(dataDir.absolutePath)?.leafIds.orEmpty() }
-                        .getOrDefault(emptyList())
+                    runCatching {
+                        uniffi.navi
+                            .mwmInstalled(dataDir.absolutePath)
+                            ?.leafIds
+                            .orEmpty()
+                    }.getOrDefault(emptyList())
                 }
         noteUi("delete_candidates", leafIds.joinToString(","))
         // Delete until storage shows no leaves or deadline.
@@ -1046,8 +1064,12 @@ class CarRaufossBergenUiCampaignTest {
                     .flatMap { it.leaves }
                     .map { it.id }
                     .ifEmpty {
-                        runCatching { uniffi.navi.mwmInstalled(dataDir.absolutePath)?.leafIds.orEmpty() }
-                            .getOrDefault(emptyList())
+                        runCatching {
+                            uniffi.navi
+                                .mwmInstalled(dataDir.absolutePath)
+                                ?.leafIds
+                                .orEmpty()
+                        }.getOrDefault(emptyList())
                     }
             if (current.isEmpty() && pass > 1) break
             var deletedThisPass = 0
@@ -1098,8 +1120,12 @@ class CarRaufossBergenUiCampaignTest {
             }
             // Trigger storage refresh by closing/reopening if still stuck.
             val left =
-                runCatching { uniffi.navi.mwmInstalled(dataDir.absolutePath)?.leafIds?.size ?: -1 }
-                    .getOrDefault(-1)
+                runCatching {
+                    uniffi.navi
+                        .mwmInstalled(dataDir.absolutePath)
+                        ?.leafIds
+                        ?.size ?: -1
+                }.getOrDefault(-1)
             noteUi("delete_pass_done", "pass=$pass left=$left")
             if (left == 0) break
             settle(2_000)
@@ -1630,7 +1656,12 @@ class CarRaufossBergenUiCampaignTest {
     }
 
     private fun extractDatex(rep: String): JSONObject {
-        val lines = rep.lineSequence().filter { it.contains("datex", ignoreCase = true) }.take(40).toList()
+        val lines =
+            rep
+                .lineSequence()
+                .filter { it.contains("datex", ignoreCase = true) }
+                .take(40)
+                .toList()
         var max = 0
         for (l in lines) {
             Regex("""datex_impacts=(\d+)""").find(l)?.groupValues?.get(1)?.toIntOrNull()?.let {
@@ -1641,9 +1672,24 @@ class CarRaufossBergenUiCampaignTest {
     }
 
     private fun parseEtaMinutes(rep: String): Double {
-        Regex("""chunked_eta_min=([0-9.]+)""").find(rep)?.groupValues?.get(1)?.toDoubleOrNull()?.let { return it }
-        Regex("""eta_minutes[=:]([0-9.]+)""").find(rep)?.groupValues?.get(1)?.toDoubleOrNull()?.let { return it }
-        Regex("""eta_min=([0-9.]+)""").find(rep)?.groupValues?.get(1)?.toDoubleOrNull()?.let { return it }
+        Regex("""chunked_eta_min=([0-9.]+)""")
+            .find(rep)
+            ?.groupValues
+            ?.get(1)
+            ?.toDoubleOrNull()
+            ?.let { return it }
+        Regex("""eta_minutes[=:]([0-9.]+)""")
+            .find(rep)
+            ?.groupValues
+            ?.get(1)
+            ?.toDoubleOrNull()
+            ?.let { return it }
+        Regex("""eta_min=([0-9.]+)""")
+            .find(rep)
+            ?.groupValues
+            ?.get(1)
+            ?.toDoubleOrNull()
+            ?.let { return it }
         return 0.0
     }
 
@@ -1737,11 +1783,13 @@ class CarRaufossBergenUiCampaignTest {
         }
         runCatching { File("/data/local/tmp/raufoss-bergen-ui.json").writeText(text) }
         runCatching {
-            File("/data/local/tmp/raufoss-bergen-ui").also { it.mkdirs() }
+            File("/data/local/tmp/raufoss-bergen-ui")
+                .also { it.mkdirs() }
                 .let { File(it, "report.json").writeText(text) }
         }
         runCatching {
-            File("/sdcard/Pictures/raufoss-bergen-ui").also { it.mkdirs() }
+            File("/sdcard/Pictures/raufoss-bergen-ui")
+                .also { it.mkdirs() }
                 .let { File(it, "report.json").writeText(text) }
         }
         val sd =

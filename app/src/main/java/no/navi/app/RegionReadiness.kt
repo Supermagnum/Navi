@@ -117,7 +117,11 @@ object RegionReadiness {
                 }
 
         val skelProg = runCatching { corridorSkeletonProgressSnapshot() }.getOrNull()
-        val downloadLine = RegionDownloadBackground.uiLine()
+        val mwmPath = MwmMapDownloader.activeGeofabrikPath().trim().trim('/')
+        val downloadLine =
+            RegionDownloadBackground.uiLine().ifBlank {
+                MwmMapDownloader.uiLine()
+            }
         val placeLine =
             RegionDownloadBackground.placeIndexProgressLine().ifBlank {
                 PlaceIndexBackground.statusLine()
@@ -144,6 +148,7 @@ object RegionReadiness {
                                 PackRegionAvailability.regionIdsMatchForCatalog(it.key, id)
                             }?.value,
                     activePath = activePath,
+                    mwmPath = mwmPath,
                     downloadLine = downloadLine,
                     placeLine = placeLine,
                     skelProg = skelProg,
@@ -178,6 +183,7 @@ object RegionReadiness {
         installed: InstalledMaps.Region?,
         longTripState: LongTripCoordinator.State?,
         activePath: String,
+        mwmPath: String,
         downloadLine: String,
         placeLine: String,
         skelProg: uniffi.navi.FfiCorridorSkeletonProgress?,
@@ -189,12 +195,15 @@ object RegionReadiness {
         val isActive =
             activePath.isNotEmpty() &&
                 PackRegionAvailability.regionIdsMatchForCatalog(activePath, regionId)
+        val mwmActive =
+            mwmPath.isNotEmpty() &&
+                PackRegionAvailability.regionIdsMatchForCatalog(mwmPath, regionId) &&
+                MwmMapDownloader.isRunning()
         val placeBusy =
             looksLikePlacePrepare(placeLine) || looksLikePlacePrepare(downloadLine)
         val downloading =
-            isActive &&
-                RegionDownloadBackground.isRunning() &&
-                !placeBusy
+            (isActive && RegionDownloadBackground.isRunning() && !placeBusy) ||
+                mwmActive
         val indexing =
             (isActive && placeBusy) ||
                 longTripState == LongTripCoordinator.State.Indexing ||

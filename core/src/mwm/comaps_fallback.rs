@@ -85,7 +85,10 @@ fn load_disk_catalog(data_dir: &Path) -> Option<(MwmCatalog, String)> {
         return Some(hit);
     }
     let active = read_active_version(data_dir).ok().flatten()?;
-    load_catalog_file(&catalog_snapshot_path(&release_dir(data_dir, &active.version)))
+    load_catalog_file(&catalog_snapshot_path(&release_dir(
+        data_dir,
+        &active.version,
+    )))
 }
 
 /// Resolve a catalog for install / region list without depending solely on live navi leaves.
@@ -138,7 +141,9 @@ pub fn resolve_mwm_catalog(
 }
 
 /// Build a synthetic catalog from CoMaps (maps only; VL coverage omitted on purpose).
-pub fn fetch_comaps_direct_catalog(data_dir: Option<&Path>) -> Result<MwmCatalog, MwmDownloadError> {
+pub fn fetch_comaps_direct_catalog(
+    data_dir: Option<&Path>,
+) -> Result<MwmCatalog, MwmDownloadError> {
     // Prefer the CoMaps pin from a prior navi catalog so on-disk sidecars can still match.
     let pinned = data_dir
         .and_then(load_disk_catalog)
@@ -153,13 +158,9 @@ pub fn fetch_comaps_direct_catalog(data_dir: Option<&Path>) -> Result<MwmCatalog
 
     let discovery = discover_mirrors(DEFAULT_METASERVER, &map_series, Some(release_version))
         .map_err(|e| MwmDownloadError::Other(format!("mirror discovery: {e}")))?;
-    let countries = fetch_and_verify_countries_txt(
-        &discovery,
-        None,
-        None,
-        COMAPS_COUNTRIES_TXT_PUBKEY_HEX,
-    )
-    .map_err(|e| MwmDownloadError::Other(format!("countries.txt: {e}")))?;
+    let countries =
+        fetch_and_verify_countries_txt(&discovery, None, None, COMAPS_COUNTRIES_TXT_PUBKEY_HEX)
+            .map_err(|e| MwmDownloadError::Other(format!("countries.txt: {e}")))?;
 
     Ok(synthesize_catalog_from_countries(
         &discovery.map_series,
@@ -248,9 +249,8 @@ pub fn synthesize_catalog_from_countries(
 ) -> MwmCatalog {
     let version = release_version.to_string();
     let countries_sha = sha256_hex_of_bytes(countries_raw);
-    let root: CountriesRoot = serde_json::from_slice(countries_raw).unwrap_or(CountriesRoot {
-        g: Vec::new(),
-    });
+    let root: CountriesRoot =
+        serde_json::from_slice(countries_raw).unwrap_or(CountriesRoot { g: Vec::new() });
     let country_groups = collect_group_tree(&root.g, None);
 
     let mut region_to_leaves: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -389,7 +389,11 @@ mod tests {
         let norway = cat.region_to_leaves.get("norway").expect("norway region");
         assert!(norway.contains(&"Norway_Hedmark".to_string()));
         assert!(norway.contains(&"Norway_Oppland".to_string()));
-        assert!(cat.limitation.as_deref().unwrap().contains("vehicle limits"));
+        assert!(cat
+            .limitation
+            .as_deref()
+            .unwrap()
+            .contains("vehicle limits"));
     }
 
     #[test]

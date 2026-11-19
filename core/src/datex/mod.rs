@@ -254,8 +254,8 @@ fn read_plan_datex_xml(data_dir: &Path, now: DateTime<Utc>) -> Option<(String, b
         return None;
     }
     let (_meta, xml, fetched_unix, fp) = load_disk_cache(&cache_dir)?;
-    let ignore_ttl = datex_plan_mode(data_dir) == DatexPlanMode::Saved
-        || fp.starts_with("navi-synth");
+    let ignore_ttl =
+        datex_plan_mode(data_dir) == DatexPlanMode::Saved || fp.starts_with("navi-synth");
     if !ignore_ttl {
         let age_secs = now.timestamp().saturating_sub(fetched_unix);
         if age_secs > DATEX_PLAN_CACHE_MAX_AGE_SECS {
@@ -818,10 +818,13 @@ pub fn refresh_for_route(
                     "keeping navi-synth cache age_secs={}; skip NPRA pull",
                     now_unix.saturating_sub(fetched)
                 );
+                // Campaign seeds are placed near the corridor (often before the
+                // final polyline exists). Use a wider band than overnight POI
+                // margin so soft Penalize sits still count as on-route impacts.
+                let margin_m = config.corridor_margin_m().max(25_000.0);
                 return match parse_situation_publication(&xml) {
                     Ok(all) => {
-                        let view =
-                            corridor_view(&all, route_lat_lon, config.corridor_margin_m(), now);
+                        let view = corridor_view(&all, route_lat_lon, margin_m, now);
                         view_result(
                             view,
                             meta.attribution.or(meta.source),
@@ -870,7 +873,31 @@ pub fn refresh_for_route(
     let host = match resolve_datex_host(config) {
         Ok(Some(h)) => h,
         Ok(None) => {
-            // Do not surface stale cache as active when hosts are unreachable.
+            // Prefer on-disk navi-synth fixtures over wiping when hosts are down.
+            if let Some(dir) = config.cache_dir.as_ref() {
+                if let Some((meta, xml, _fetched, fp)) = load_disk_cache(dir) {
+                    if fp.starts_with("navi-synth") {
+                        return match parse_situation_publication(&xml) {
+                            Ok(all) => {
+                                let view = corridor_view(
+                                    &all,
+                                    route_lat_lon,
+                                    config.corridor_margin_m().max(25_000.0),
+                                    now,
+                                );
+                                view_result(
+                                    view,
+                                    meta.attribution.or(meta.source),
+                                    Some("navi_synth_keep".into()),
+                                    PackDataSource::ServerDuckdns,
+                                )
+                            }
+                            Err(e) => empty_result(format!("parse_failed:{e}"), "none"),
+                        };
+                    }
+                }
+            }
+            // Do not surface stale NPRA cache as active when hosts are unreachable.
             with_session(|s| {
                 s.cached_xml = None;
                 s.cached_meta = None;
@@ -878,6 +905,29 @@ pub fn refresh_for_route(
             return empty_result("hosts_unreachable", "none");
         }
         Err(e) => {
+            if let Some(dir) = config.cache_dir.as_ref() {
+                if let Some((meta, xml, _fetched, fp)) = load_disk_cache(dir) {
+                    if fp.starts_with("navi-synth") {
+                        return match parse_situation_publication(&xml) {
+                            Ok(all) => {
+                                let view = corridor_view(
+                                    &all,
+                                    route_lat_lon,
+                                    config.corridor_margin_m().max(25_000.0),
+                                    now,
+                                );
+                                view_result(
+                                    view,
+                                    meta.attribution.or(meta.source),
+                                    Some("navi_synth_keep".into()),
+                                    PackDataSource::ServerDuckdns,
+                                )
+                            }
+                            Err(err) => empty_result(format!("parse_failed:{err}"), "none"),
+                        };
+                    }
+                }
+            }
             with_session(|s| {
                 s.clear_sticky();
                 s.cached_xml = None;

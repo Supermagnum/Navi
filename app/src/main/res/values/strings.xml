@@ -256,7 +256,7 @@
     <string name="ui_waiting_for_sensor_data">Waiting for sensor data...</string>
     <string name="ui_plugins">Plugins</string>
     <string name="ui_cached_npra_situations_via_navi_server_chain">Cached NPRA situations via navi-server chain (LAN then duckdns). No NPRA credentials on device.</string>
-    <string name="ui_downloads_map_packs_along_the_route_on_wi_fi_ethernet_only">Downloads map packs along the route on Wi-Fi/Ethernet only. </string>
+    <string name="ui_downloads_map_packs_along_the_route_on_wi_fi_ethernet_only">Prefers CoMaps maps along the route; Geofabrik PBF fallback on Wi-Fi/Ethernet. </string>
     <string name="ui_store_long_trip_packs_on">Store long-trip packs on</string>
     <string name="ui_quiet_look_ahead_for_attractions_fishing_and_craft_alcohol_w">Quiet look-ahead for attractions, fishing, and craft alcohol within 850 m ahead. Not a hazard warning.</string>
     <string name="ui_informational_overnight_camping_guidance_along_the_active_ro">Informational overnight camping guidance along the active route. Not legal advice.</string>
@@ -473,7 +473,7 @@
     <string name="status_queued_after">Queued %1$s (after %2$s; %3$d waiting)…</string>
     <string name="status_queued_waiting">Queued %1$s (%2$d waiting)…</string>
     <string name="status_queued">Queued %1$s…</string>
-    <string name="long_trip_wifi_packs_hint">Downloads map packs along the route on Wi-Fi/Ethernet only. Tools downloads stay on internal storage.</string>
+    <string name="long_trip_wifi_packs_hint">Prefers CoMaps maps along the route; Geofabrik PBF only as fallback (Wi-Fi/Ethernet). Tools downloads stay on internal storage.</string>
     <string name="units_liters">Units: liters</string>
     <string name="units_gallons">Units: gallons</string>
     <string name="label_my_position">My position</string>

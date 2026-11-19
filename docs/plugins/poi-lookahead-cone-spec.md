@@ -245,6 +245,17 @@ visual browsing surface, not an alert.
   tagged open venues.
 - No severity/urgency settings, since there is no urgency model.
 
+### MWM long-trip corridor seed
+
+When classic PBF covering packs are absent, `MwmProductionPlanner` seeds the
+look-ahead index from CoMaps **category_tourism** hits along the corridor
+(`mwm-corridor-tourism`). Feature type / name hints map to OSM `tourism=*`
+(`viewpoint`, `museum`, `artwork`, else `attraction`) so tallies keep
+`tourism-viewpoint` / `tourism-attraction` icons instead of collapsing every
+hit to a flat attraction. Corridor sampling uses up to **8** bias points so
+“several” attractions are not only origin-local. Plan stats
+`attraction_by_type` key off `icon_key` (same as Raufoss).
+
 ---
 
 ## Open questions

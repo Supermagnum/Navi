@@ -8,3 +8,5 @@
 0008-navi-vehicle-route-segments-json.patch
 0009-navi-utils-toast-main-thread.patch
 0010-navi-tunnel-turns-json.patch
+0011-navi-world-writable-scope.patch
+0012-navi-routes-builder-skip-world.patch

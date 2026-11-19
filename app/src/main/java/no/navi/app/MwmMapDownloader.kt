@@ -35,12 +35,17 @@ import uniffi.navi.defaultPackServerBaseUrl
 import uniffi.navi.downloadProgressSnapshot
 import uniffi.navi.mwmInstallLeaves
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * In-app owner of the Phase 1 leaf download (catalog -> verified mirrors -> MWM + sidecar,
  * checksum and fingerprint verified -> register). One install at a time; installs and
  * registers without an app restart: the headless router is re-opened and the live drape
  * registers the new leaves.
+ *
+ * Long-trip MWM installs ([LongTripMwmSupport]) also go through here so the same Tools
+ * progress strip, region-readiness panel, and MainActivity download toast see live %.
  */
 object MwmMapDownloader {
     private const val TAG = "MwmMapDownloader"
@@ -65,7 +70,24 @@ object MwmMapDownloader {
         Executors.newSingleThreadExecutor { r -> Thread(r, "mwm-install").apply { isDaemon = true } }
     private val main = Handler(Looper.getMainLooper())
 
+    private val runningFlag = AtomicBoolean(false)
+    private val activePathRef = AtomicReference("")
+    private val activeLabelRef = AtomicReference("")
+    private val uiLineRef = AtomicReference("")
+
     private fun set(f: (State) -> State) = main.post { state = f(state) }
+
+    /** True while a Tools or long-trip MWM install is in flight. */
+    fun isRunning(): Boolean = runningFlag.get()
+
+    /** Geofabrik corridor id for the active long-trip / labeled install, if any. */
+    fun activeGeofabrikPath(): String = activePathRef.get()
+
+    /**
+     * Live progress line for MainActivity / [RegionReadiness]
+     * (e.g. `Downloading maps: Ostlandet 42%`).
+     */
+    fun uiLine(): String = uiLineRef.get()
 
     /** Reads the active release from disk (no network). */
     fun refreshInstalled(context: Context) {
@@ -92,6 +114,134 @@ object MwmMapDownloader {
 
     fun cancel() = uniffi.navi.mwmInstallCancel()
 
+    private fun formatUiLine(
+        label: String,
+        message: String,
+        percent: Int?,
+        geofabrikPath: String,
+    ): String {
+        val region =
+            geofabrikPath
+                .takeIf { it.isNotBlank() }
+                ?.let { RegionProgressMessages.regionName(it) }
+                .orEmpty()
+                .ifBlank { label }
+        val phase = message.ifBlank { "Downloading maps" }
+        val withRegion =
+            if (region.isNotBlank()) {
+                val seq = RegionProgressMessages.sequenceFor(geofabrikPath)
+                RegionProgressMessages.annotate(
+                    phase,
+                    geofabrikPath.ifBlank { region },
+                    seq?.first,
+                    seq?.second,
+                )
+            } else {
+                phase
+            }
+        return if (percent != null) "$withRegion $percent%" else withRegion
+    }
+
+    private fun publishProgress(
+        label: String,
+        geofabrikPath: String,
+        message: String,
+        percent: Int?,
+    ) {
+        val line = formatUiLine(label, message, percent, geofabrikPath)
+        uiLineRef.set(line)
+        set { it.copy(percent = percent, message = message) }
+    }
+
+    /**
+     * Blocking install for callers already off the main thread (long-trip corridor).
+     * Updates [state] + [uiLine] so the normal download UI can poll.
+     */
+    fun installBlocking(
+        context: Context,
+        leafIds: List<String>,
+        label: String,
+        geofabrikPath: String = "",
+    ): Boolean {
+        if (!runningFlag.compareAndSet(false, true)) {
+            Log.w(TAG, "installBlocking skipped — already running ($label)")
+            return false
+        }
+        val app = context.applicationContext
+        val dir = NaviAppData.resolve(app).absolutePath
+        val path = geofabrikPath.trim().trim('/')
+        activePathRef.set(path)
+        activeLabelRef.set(label)
+        uiLineRef.set(formatUiLine(label, "Downloading maps", null, path))
+        set {
+            it.copy(
+                running = true,
+                label = label,
+                percent = null,
+                message = "Downloading maps",
+                ok = null,
+            )
+        }
+        val poller =
+            Thread {
+                while (!Thread.currentThread().isInterrupted) {
+                    val p = runCatching { downloadProgressSnapshot() }.getOrNull()
+                    if (p != null && p.label.isNotBlank()) {
+                        val pct = p.percent?.toInt()
+                        publishProgress(label, path, p.label, pct)
+                    }
+                    try {
+                        Thread.sleep(400)
+                    } catch (_: InterruptedException) {
+                        break
+                    }
+                }
+            }.apply {
+                name = "mwm-progress"
+                isDaemon = true
+            }
+        poller.start()
+        val res =
+            runCatching { mwmInstallLeaves(dir, defaultPackServerBaseUrl(), leafIds) }
+                .onFailure { Log.w(TAG, "install threw", it) }
+                .getOrNull()
+        poller.interrupt()
+        var ok = res?.ok == true
+        var msg = res?.error ?: ""
+        if (ok) {
+            // Re-scan + re-open the router (also loads the new wetland sidecars), then let the
+            // live drape register the new leaves. No restart.
+            ok = ComapsSessionBootstrap.ensureOpen(app, force = true)
+            if (!ok) msg = "Maps installed but the routing session did not reopen"
+        }
+        Log.i(
+            TAG,
+            "install done ok=$ok leaves=$leafIds downloaded=${res?.downloadedLeaves} " +
+                "already=${res?.alreadyInstalledLeaves} sidecars=${res?.sidecarsInstalled} err=$msg",
+        )
+        val inst = runCatching { uniffi.navi.mwmInstalled(dir) }.getOrNull()
+        if (ok) {
+            main.post { ComapsDrape.backend?.registerMaps() }
+        }
+        runningFlag.set(false)
+        activePathRef.set("")
+        activeLabelRef.set("")
+        uiLineRef.set("")
+        main.post {
+            state =
+                state.copy(
+                    running = false,
+                    ok = ok,
+                    percent = if (ok) 100 else state.percent,
+                    message = if (ok) "" else msg,
+                    version = inst?.version ?: state.version,
+                    installedLeaves = inst?.leafIds ?: state.installedLeaves,
+                    sidecars = inst?.sidecarCount?.toInt() ?: state.sidecars,
+                )
+        }
+        return ok
+    }
+
     /** Install [leafIds]; [onDone] runs on the main thread with success. */
     fun install(
         context: Context,
@@ -99,59 +249,11 @@ object MwmMapDownloader {
         label: String,
         onDone: (Boolean) -> Unit = {},
     ) {
-        if (state.running) return
+        if (runningFlag.get() || state.running) return
         val app = context.applicationContext
-        val dir = NaviAppData.resolve(app).absolutePath
-        set { it.copy(running = true, label = label, percent = null, message = "", ok = null) }
         executor.execute {
-            val poller =
-                Thread {
-                    while (!Thread.currentThread().isInterrupted) {
-                        val p = runCatching { downloadProgressSnapshot() }.getOrNull()
-                        if (p != null && p.label.isNotBlank()) {
-                            set { it.copy(percent = p.percent?.toInt(), message = p.label) }
-                        }
-                        try {
-                            Thread.sleep(500)
-                        } catch (_: InterruptedException) {
-                            break
-                        }
-                    }
-                }.apply { isDaemon = true }
-            poller.start()
-            val res =
-                runCatching { mwmInstallLeaves(dir, defaultPackServerBaseUrl(), leafIds) }
-                    .onFailure { Log.w(TAG, "install threw", it) }
-                    .getOrNull()
-            poller.interrupt()
-            var ok = res?.ok == true
-            var msg = res?.error ?: ""
-            if (ok) {
-                // Re-scan + re-open the router (also loads the new wetland sidecars), then let the
-                // live drape register the new leaves. No restart.
-                ok = ComapsSessionBootstrap.ensureOpen(app, force = true)
-                if (!ok) msg = "Maps installed but the routing session did not reopen"
-            }
-            Log.i(
-                TAG,
-                "install done ok=$ok leaves=$leafIds downloaded=${res?.downloadedLeaves} " +
-                    "already=${res?.alreadyInstalledLeaves} sidecars=${res?.sidecarsInstalled} err=$msg",
-            )
-            val inst = runCatching { uniffi.navi.mwmInstalled(dir) }.getOrNull()
-            main.post {
-                if (ok) ComapsDrape.backend?.registerMaps()
-                state =
-                    state.copy(
-                        running = false,
-                        ok = ok,
-                        percent = if (ok) 100 else state.percent,
-                        message = if (ok) "" else msg,
-                        version = inst?.version ?: state.version,
-                        installedLeaves = inst?.leafIds ?: state.installedLeaves,
-                        sidecars = inst?.sidecarCount?.toInt() ?: state.sidecars,
-                    )
-                onDone(ok)
-            }
+            val ok = installBlocking(app, leafIds, label)
+            main.post { onDone(ok) }
         }
     }
 

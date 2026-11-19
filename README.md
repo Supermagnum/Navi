@@ -843,7 +843,7 @@ not supposed to always match.
 
 | Line | What it means |
 |---|---|
-| **Break in XXX min** (or km/mi) | “When is the *next planned break due*?” — based on your break **interval** (for example every 2 hours) minus how long you have already been driving since the last break. |
+| **Break in XXX min** (or km/mi) | “When is the *next planned break due*?” — based on your break **interval** (default **4 h → Break in 240 min** at start) wrapping within that interval as you drive (`minutesUntilNextBreak`). |
 | **ETA XXX min** | “When do we expect to *arrive at the destination*?” — based on the remaining route. |
 
 So if your trip is only **45 minutes** but breaks are set to every **2 hours**,
@@ -855,8 +855,9 @@ Other common reasons they diverge:
 
 1. **Interval longer than the trip** — set a shorter “hours between breaks” (or
    accept that no mid-trip break is needed).
-2. **You are part-way along the route** — break time counts down from the
-   interval; ETA counts down the remaining road.
+2. **You are part-way along the route** — break time counts down inside the
+   repeating interval (it does **not** stick at 0 after the first cycle on a
+   long trip); ETA counts down the remaining road.
 3. **Break shown as distance** — minutes are turned into km/mi with a fixed
    assumed cruising speed (~80 km/h for display). That is not your live GPS
    speed, so the distance line is only a rough conversion.

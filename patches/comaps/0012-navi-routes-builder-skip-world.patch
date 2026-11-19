@@ -1,0 +1,26 @@
+diff --git a/libs/routing/routes_builder/routes_builder.cpp b/libs/routing/routes_builder/routes_builder.cpp
+index 000000000..111111111 100644
+--- a/libs/routing/routes_builder/routes_builder.cpp
++++ b/libs/routing/routes_builder/routes_builder.cpp
+@@ -37,6 +37,8 @@
+ #include "base/scope_guard.hpp"
+ #include "base/timer.hpp"
+ 
++#include "defines.hpp"
++
+ #include <algorithm>
+ #include <cmath>
+ #include <limits>
+@@ -206,6 +208,14 @@ RoutesBuilder::RoutesBuilder(size_t threadsNumber) : m_threadPool(threadsNumber)
+     // Only maps from countries.txt should be used.
+     if (!m_cpg->GetStorageForTesting().IsLeaf(countryFile.GetName()))
+       continue;
++    // World / WorldCoasts are overlays (routing_world / coasts). Registering them as
++    // ordinary CrossMwm leaves breaks LeapsOnly (No route found with build_s=0). Keep
++    // them for Framework/search via FindAllLocalMaps; skip in the headless router.
++    auto const & leafName = countryFile.GetName();
++    if (leafName == WORLD_FILE_NAME || leafName == WORLD_COASTS_FILE_NAME)
++      continue;
++
+     m_numMwmIds->RegisterFile(countryFile);
+     navi_spike::WetlandSidecar::SetMwmName(m_numMwmIds->GetId(countryFile), countryFile.GetName());

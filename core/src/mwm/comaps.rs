@@ -78,9 +78,7 @@ struct MapSeriesEntry {
 ///
 /// Picks the lexicographically newest series whose `status` is `active` (or missing).
 /// Falls back to the newest series overall when none are marked active.
-pub fn discover_preferred_map_series(
-    metaserver_url: &str,
-) -> Result<(String, u64), ComapsError> {
+pub fn discover_preferred_map_series(metaserver_url: &str) -> Result<(String, u64), ComapsError> {
     let meta = metaserver_url.trim().trim_end_matches('/');
     let maps_url = format!("{meta}/meta/maps.json");
     let maps_text = http_get_text(&maps_url, DISCOVERY_TIMEOUT)?;

@@ -749,7 +749,10 @@ object MwmProductionPlanner {
         userVias: List<Pair<Double, Double>>,
         detours: List<Pair<Double, Double>>,
     ): List<Pair<Double, Double>> {
-        fun key(lat: Double, lon: Double): Double {
+        fun key(
+            lat: Double,
+            lon: Double,
+        ): Double {
             val dStart = haversineM(startLat, startLon, lat, lon)
             val dEnd = haversineM(lat, lon, endLat, endLon)
             return dStart / (dStart + dEnd + 1.0)
@@ -780,8 +783,7 @@ object MwmProductionPlanner {
             la to lo
         }
 
-    private fun polylineFingerprint(polyline: String): String =
-        "%08x:len=%d".format(Locale.US, polyline.hashCode(), polyline.length)
+    private fun polylineFingerprint(polyline: String): String = "%08x:len=%d".format(Locale.US, polyline.hashCode(), polyline.length)
 
     /**
      * MWM plans previously skipped DATEX / soft-break / nearby-attractions that the
@@ -945,8 +947,9 @@ object MwmProductionPlanner {
                 Log.w(TAG, "mwm datex refresh failed: ${e.message}")
                 return "datex_impacts=0; datex_block=0; datex_penalize=0\ndatex_mwm=refresh_failed\n"
             }
-        val o = runCatching { JSONObject(raw) }.getOrNull()
-            ?: return "datex_impacts=0; datex_block=0; datex_penalize=0\ndatex_mwm=parse_failed\n"
+        val o =
+            runCatching { JSONObject(raw) }.getOrNull()
+                ?: return "datex_impacts=0; datex_block=0; datex_penalize=0\ndatex_mwm=parse_failed\n"
         val active = o.optJSONArray("active") ?: JSONArray()
         var block = 0
         var penalize = 0
@@ -986,8 +989,16 @@ object MwmProductionPlanner {
         }
         val rest =
             runCatching { loadCarRestSettings(dataDir.absolutePath) }.getOrNull()
-        val intervalH =
+        // Soft rest-stop pin spacing prefers ~1.5 h along the corridor (campaign /
+        // soft-break density). Drive HUD "Break in …" uses breakIntervalHours
+        // separately (e.g. 4 h → Break in 240 min).
+        val hudIntervalH =
             (rest?.breakIntervalHours ?: 2.0).coerceIn(1.0, 12.0)
+        val intervalH =
+            when {
+                hudIntervalH >= 3.0 -> 1.5
+                else -> hudIntervalH
+            }.coerceIn(1.0, 12.0)
         val etaH = (etaMinutes / 60.0).coerceAtLeast(1e-6)
         val speedKmh = (distanceKm / etaH).coerceAtLeast(1.0)
         val intervalKm = (speedKmh * intervalH).coerceAtLeast(1.0)
@@ -1032,13 +1043,15 @@ object MwmProductionPlanner {
     private fun seedAttractionsFromComaps(samples: List<Pair<Double, Double>>) {
         if (samples.isEmpty() || !ComapsSearchBridge.enabled()) return
         val query =
-            runCatching { comapsCategoryQuery("category_tourism", "nb") }.getOrNull()
+            runCatching { comapsCategoryQuery("category_tourism", "nb") }
+                .getOrNull()
                 ?.trim()
                 ?.ifBlank { null }
                 ?: "Tourism"
-        // Few samples: each category search can take several seconds; keep plan snappy.
-        val step = (samples.size / 4).coerceAtLeast(1)
-        val picked = samples.filterIndexed { i, _ -> i % step == 0 }.take(4)
+        // Sample along the full corridor (not only the origin) so long-trip
+        // tallies meet "several" attractions including viewpoints mid-route.
+        val step = (samples.size / 8).coerceAtLeast(1)
+        val picked = samples.filterIndexed { i, _ -> i % step == 0 }.take(8)
         val pois = JSONArray()
         var osm = -1_000_000L
         val seen = HashSet<String>()
@@ -1067,6 +1080,7 @@ object MwmProductionPlanner {
                 val key = "${h.name.trim().lowercase(Locale.US)}|${"%.4f".format(Locale.US, h.lat)}|${"%.4f".format(Locale.US, h.lon)}"
                 if (!seen.add(key)) continue
                 osm -= 1
+                val tourism = comapsHitToTourismTag(h.featureType, h.name)
                 pois.put(
                     JSONObject()
                         .put("osm_id", osm)
@@ -1077,7 +1091,7 @@ object MwmProductionPlanner {
                             "tags",
                             JSONObject()
                                 .put("name", h.name)
-                                .put("tourism", "attraction"),
+                                .put("tourism", tourism),
                         ),
                 )
             }
@@ -1094,6 +1108,35 @@ object MwmProductionPlanner {
             TAG,
             "mwm_attractions seeded=${pois.length()} records=${stats?.records} query=$query",
         )
+    }
+
+    /**
+     * Map CoMaps category / feature_type (+ name hints) onto OSM tourism=* so
+     * look-ahead icon keys preserve viewpoint / museum / artwork (not a flat
+     * tourism=attraction dump that collapses every hit to one type).
+     */
+    internal fun comapsHitToTourismTag(
+        featureType: String?,
+        name: String?,
+    ): String {
+        val hay =
+            listOfNotNull(featureType, name)
+                .joinToString(" ")
+                .lowercase(Locale.US)
+        return when {
+            hay.contains("viewpoint") ||
+                hay.contains("utsikt") ||
+                hay.contains("aussicht") ||
+                hay.contains("scenic") ||
+                hay.contains("lookout") ||
+                hay.contains("overlook") -> "viewpoint"
+            hay.contains("museum") -> "museum"
+            hay.contains("artwork") ||
+                hay.contains("sculpture") ||
+                hay.contains("statue") ||
+                hay.contains("memorial") -> "artwork"
+            else -> "attraction"
+        }
     }
 
     /** Lon,lat;… polyline → up to [maxPoints] evenly spaced (lat,lon) samples. */

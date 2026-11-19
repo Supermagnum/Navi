@@ -2515,7 +2515,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             uniffi.navi.poiLookaheadQueryJson(
                                 s.lat,
                                 s.lon,
-                                /* headingDeg = */ null,
+                                // headingDeg =
+                                null,
                                 true,
                                 poiLookaheadStrictHoursUnknown,
                             )
@@ -2955,7 +2956,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                         profile,
                     )
                 val minsLeft =
-                    ((intervalH - drivingHoursSinceBreak) * 60.0)
+                    minutesUntilNextBreak(intervalH, drivingHoursSinceBreak)
                         .coerceAtLeast(0.0)
                 val etaMin = preDepartureEtaMinutes(profile, pending)
                 driveHud =
@@ -2963,9 +2964,11 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                         minutesToBreak = minsLeft,
                         tripEtaMinutes = etaMin,
                     )
+                NaviMapTestHooks.lastMinutesToBreak = minsLeft
             }
         } else {
             driveHud = driveHud.copy(minutesToBreak = null, tripEtaMinutes = null)
+            NaviMapTestHooks.lastMinutesToBreak = null
         }
         pendingGpxExportRouteId?.let { exportId ->
             pendingGpxExportRouteId = null
@@ -3887,16 +3890,20 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     }
 
     LaunchedEffect(downloadPolling, pmtilesJobId) {
+        // Sticky: clear MWM-only polling after install ends without a classic job.
+        var trackingMwm = false
         while (isActive) {
             val regionRunning = RegionDownloadBackground.isRunning()
-            if (!downloadPolling && !regionRunning && pmtilesJobId == null) {
+            val mwmRunning = MwmMapDownloader.isRunning()
+            if (!downloadPolling && !regionRunning && !mwmRunning && pmtilesJobId == null) {
                 delay(400)
                 continue
             }
-            if (regionRunning) {
+            if (regionRunning || mwmRunning) {
                 downloadPolling = true
                 toolsProcessReady = false
             }
+            if (mwmRunning) trackingMwm = true
             val snap = runCatching { downloadProgressSnapshot() }.getOrNull()
             if (regionRunning && snap != null && snap.label.isNotBlank()) {
                 val region = RegionDownloadBackground.activeRegionPath()
@@ -3945,6 +3952,33 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                         showJobProgress(toastActivityPulse.pulse(rawLine, nowPulse))
                     }
                 }
+            } else if (mwmRunning) {
+                // Long-trip / Tools MWM installs write the shared snapshot; surface
+                // the same Tools + toast progress used for classic region downloads.
+                val region = MwmMapDownloader.activeGeofabrikPath()
+                val sticky = MwmMapDownloader.uiLine()
+                val rawLine =
+                    if (snap != null && snap.label.isNotBlank()) {
+                        val seq = RegionProgressMessages.sequenceFor(region)
+                        val labeled =
+                            RegionProgressMessages.annotate(
+                                snap.label,
+                                region,
+                                seq?.first,
+                                seq?.second,
+                            )
+                        formatProgressPct(snap.unitsDone, snap.unitsTotal, labeled)
+                    } else {
+                        sticky
+                    }
+                if (rawLine.isNotBlank()) {
+                    val nowPulse = SystemClock.elapsedRealtime()
+                    val line = regionActivityPulse.pulse(rawLine, nowPulse)
+                    regionDownloadProgress = line
+                    // Long-trip plan wait overwrites `status` with the corridor line;
+                    // still drive the job toast so download % stays visible.
+                    showJobProgress(toastActivityPulse.pulse(rawLine, nowPulse))
+                }
             } else if (regionRunning) {
                 val rawLine = RegionDownloadBackground.uiLine()
                 if (rawLine.isNotBlank()) {
@@ -3964,13 +3998,14 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                         }
                     }
                 }
-            } else if (!regionRunning && !downloadPolling) {
+            } else if (!regionRunning && !mwmRunning && !downloadPolling) {
                 // Idle: do not keep a finished percent line on screen.
                 if (regionDownloadProgress.isNotBlank() &&
                     (
                         regionDownloadProgress.contains("100%") ||
                             regionDownloadProgress.contains("Fetching packs") ||
                             regionDownloadProgress.contains("Downloading region") ||
+                            regionDownloadProgress.contains("Downloading maps") ||
                             regionDownloadProgress.contains("navi.msg.download_region") ||
                             regionDownloadProgress.contains("Downloading extract") ||
                             regionDownloadProgress.contains("Place index") ||
@@ -4007,12 +4042,13 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     pmtilesProgress = formatProgressPct(job.bytesReceived, job.totalBytes, label)
                 }
             }
-            if (!regionRunning && downloadPolling && pmtilesJobId == null) {
+            if (!regionRunning && !mwmRunning && downloadPolling && pmtilesJobId == null) {
                 val leftover = RegionDownloadBackground.statusLine()
                 if (leftover == "done" ||
                     leftover.startsWith("done ") ||
                     leftover.startsWith("failed")
                 ) {
+                    trackingMwm = false
                     downloadPolling = false
                     regionDownloadProgress = ""
                     runCatching { downloadProgressClear() }
@@ -4037,6 +4073,12 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     } else if (!planningRoute) {
                         status = leftover.take(120)
                     }
+                } else if (trackingMwm) {
+                    // MWM-only install finished (no classic RegionDownload job).
+                    trackingMwm = false
+                    downloadPolling = false
+                    regionDownloadProgress = ""
+                    runCatching { downloadProgressClear() }
                 }
             }
             delay(400)
@@ -5789,7 +5831,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                         // average so far, which inflates minutes-to-break).
                         val drivenH = snap.elapsedDrivingHours.coerceAtLeast(0.0)
                         drivingHoursSinceBreak = drivenH
-                        val minsLeft = ((intervalH - drivenH) * 60.0).coerceAtLeast(0.0)
+                        val minsLeft = minutesUntilNextBreak(intervalH, drivenH)
                         driveHud =
                             driveHud.copy(
                                 tripEtaMinutes = snap.remainingEtaMinutes,
@@ -6762,7 +6804,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                 driveHud =
                                     driveHud.copy(
                                         minutesToBreak =
-                                            ((intervalH - drivingHoursSinceBreak) * 60.0)
+                                            minutesUntilNextBreak(intervalH, drivingHoursSinceBreak)
                                                 .coerceAtLeast(0.0),
                                     )
                             }
@@ -7291,7 +7333,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
             runCatching {
                 val intervalH = breakIntervalHoursForProfile(dataDir.absolutePath, profile)
                 val minsLeft =
-                    ((intervalH - drivingHoursSinceBreak) * 60.0).coerceAtLeast(0.0)
+                    minutesUntilNextBreak(intervalH, drivingHoursSinceBreak)
                 driveHud = driveHud.copy(minutesToBreak = minsLeft)
             }
         }
@@ -11755,7 +11797,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             val routeActive = mapState.polyline.isNotBlank()
                             val minsLeft =
                                 if (routeActive) {
-                                    ((intervalH - drivingHoursSinceBreak) * 60.0)
+                                    minutesUntilNextBreak(intervalH, drivingHoursSinceBreak)
                                         .coerceAtLeast(0.0)
                                 } else {
                                     null

@@ -11787,13 +11787,36 @@ pub fn ensure_poi_lookahead_covering(
                     target: "NaviNative",
                     "poi_lookahead covering load failed at {lat:.4},{lon:.4}: {e:?}"
                 );
+                // Preserve any prior ingest (e.g. MWM CoMaps tourism seed) when packs are absent.
+                let existing = POI_LOOKAHEAD_STORE
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .as_ref()
+                    .map(|s| s.index.len() as u32)
+                    .unwrap_or(0);
                 return FfiPoiLookaheadLoadStats {
-                    records: 0,
+                    records: existing,
                     cone_m: POI_LOOKAHEAD_CONE_M,
                     half_width_deg: POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG,
                 };
             }
         };
+    // Empty pack hit must not wipe a non-empty seed (mwm-corridor-tourism).
+    if index.is_empty() {
+        let existing = POI_LOOKAHEAD_STORE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .map(|s| s.index.len() as u32)
+            .unwrap_or(0);
+        if existing > 0 {
+            return FfiPoiLookaheadLoadStats {
+                records: existing,
+                cone_m: POI_LOOKAHEAD_CONE_M,
+                half_width_deg: POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG,
+            };
+        }
+    }
     let out = FfiPoiLookaheadLoadStats {
         records: index.len() as u32,
         cone_m: POI_LOOKAHEAD_CONE_M,

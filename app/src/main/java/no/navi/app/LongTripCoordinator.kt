@@ -12,13 +12,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Phase C: wire Phase 3 orchestration onto the real [RegionDownloadBackground]
- * queue and place-index path ([RegionDownloadBackground.claimWorker] / core
- * `PLACE_INDEX_BUILD_LOCK`).
+ * Phase C: wire Phase 3 orchestration onto corridor downloads.
  *
- * Toggle ON: start-region check → adjacency corridor → [LongTripPackStorage]
- * target → sequential enqueue with the Wi‑Fi/Ethernet gate applied inside
- * [RegionDownloadBackground.ensureStarted] (`requireUnmetered = true`).
+ * Toggle ON: start-region check → adjacency corridor → for each region prefer
+ * **CoMaps MWM leaves** ([LongTripMwmSupport]); Geofabrik `.osm.pbf` via
+ * [RegionDownloadBackground] is **fallback only** when MWM is off, unmapped, or
+ * install fails. Wi‑Fi/Ethernet gate still applies to PBF downloads
+ * (`requireUnmetered = true`).
  * Toggle OFF: [RegionDownloadBackground.cancelPending] (keeps installed data).
  *
  * Volume eject/scrub → [State.Unavailable] (mirrors core
@@ -248,11 +248,14 @@ object LongTripCoordinator {
         planRef.set(plan)
         refreshStatusLine()
 
-        // Enqueue regions that still need packs. Installed-but-not-Indexed must
-        // still kick place-index (planning gate requires Indexed for every region).
+        // MWM-first for every corridor region (even when classic packs already
+        // marked Indexed). PBF/pack-server only when MWM is off/unmapped/fails.
+        // Installed-but-not-Indexed must still kick place-index on the PBF path.
         for (regionId in corridor) {
-            val st = states[regionId]
-            if (st == State.Indexed) continue
+            if (context != null && tryEnqueueMwm(context, regionId, states)) {
+                continue
+            }
+            if (states[regionId] == State.Indexed) continue
             enqueueRegion(context, dataDir, regionId, states)
         }
         // Drop leftover job/queue only when every corridor region is Indexed.
@@ -321,6 +324,7 @@ object LongTripCoordinator {
         regionId: String,
         states: MutableMap<String, State>,
     ) {
+        // Caller already attempted MWM; this is Geofabrik / pack-server fallback.
         val target = packTargetResolver.resolve(context, regionId)
         when (target) {
             is LongTripPackStorage.PackTarget.ReuseInternal -> {
@@ -336,8 +340,7 @@ object LongTripCoordinator {
                     }
                     return
                 }
-                // Manifest alone is not enough when the PBF is a stub/missing —
-                // re-download so place-index / local bake can finish.
+                // Packs not ready (no Ready manifest) — Geofabrik PBF fallback.
                 startPackDownload(context, internal, regionId, target.dataDir, states)
             }
             is LongTripPackStorage.PackTarget.DownloadTo -> {
@@ -358,6 +361,38 @@ object LongTripCoordinator {
         }
     }
 
+    /**
+     * Try MWM leaf install for [regionId]. Returns true when handled (ready or
+     * install kicked / completed on this thread). False → caller uses PBF.
+     */
+    private fun tryEnqueueMwm(
+        context: Context,
+        regionId: String,
+        states: MutableMap<String, State>,
+    ): Boolean {
+        if (!MwmClientBootstrap.isEnabled()) return false
+        val leaves = LongTripMwmSupport.resolveLeafIds(context, regionId) ?: return false
+        if (LongTripMwmSupport.leavesInstalled(context, leaves)) {
+            states[regionId] = State.Indexed
+            refreshStatusLine()
+            ComapsSessionBootstrap.ensureOpen(context, force = false)
+            return true
+        }
+        states[regionId] = State.Downloading
+        refreshStatusLine()
+        // Blocking install on caller thread — [enable] already runs from IO.
+        val ok = LongTripMwmSupport.ensureInstalled(context, regionId)
+        if (ok) {
+            states[regionId] = State.Indexed
+            refreshStatusLine()
+            return true
+        }
+        states[regionId] = State.Needed
+        refreshStatusLine()
+        Log.w(TAG, "MWM path failed for $regionId — falling back to Geofabrik PBF")
+        return false
+    }
+
     private fun startPackDownload(
         context: Context?,
         internal: File,
@@ -373,6 +408,7 @@ object LongTripCoordinator {
             runCatching { geofabrikLatestPbfUrl(packPath) }
                 .getOrElse { "https://download.geofabrik.de/$extractPath-latest.osm.pbf/" }
         states[regionId] = State.Downloading
+        Log.i(TAG, "PBF fallback download $regionId -> $filename")
         downloadStarter.start(
             context = context,
             dataDir = internal,

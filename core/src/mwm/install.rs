@@ -20,9 +20,7 @@ use super::comaps::{
 use super::comaps_fallback::{
     catalog_snapshot_json, resolve_mwm_catalog, CatalogResolveSource, ResolvedCatalog,
 };
-use super::download::{
-    download_leaf_set_with, DownloadProgress, LeafSetOptions, MwmDownloadError,
-};
+use super::download::{download_leaf_set_with, DownloadProgress, LeafSetOptions, MwmDownloadError};
 use super::flag::mwm_client_enabled;
 use super::release::{
     activate_release, merge_staging_into_release, read_active_version, read_world_release,
