@@ -467,6 +467,16 @@ Extra sources next to the series (`navi_vehicle_cost.*`, `navi_wetland_cost.*`) 
 - Catalog snapshot may include per-leaf `vehicle_limits_coverage` (`match_rate` and related counts) so the client can warn honestly when matching is incomplete.
 - Fingerprint rule unchanged: a sidecar is only applied when it matches the installed leaf `.mwm`.
 
+### Empty / unreachable navi catalog (client fallback)
+
+When `{origin}/mwm/current.json` is unreachable or has **no leaves**, the client does **not** fall back to `.rkyv` / Geofabrik pack convert. Resolve order:
+
+1. **Live navi catalog** (non-empty `leaves`) — full sidecars + coverage; sidecar download is required.
+2. **Disk cache** (`mwm/catalog-cache.json` or active `releases/{v}/catalog.json`) — keeps prior sidecar URLs and `vehicle_limits_coverage`; MWM still comes from CoMaps mirrors; **missing sidecars soft-fail** so maps install and VL honesty reports unavailable for those leaves.
+3. **CoMaps-direct** — synthetic catalog from metaserver + verified `countries.txt` (`mode: comaps-direct-fallback`, all `no_sidecar`). Maps/routing work; **no invented VL coverage**. Existing on-device sidecars for the same CoMaps release still load when fingerprints match; otherwise banners use `vehicle_limits_unavailable_for_region` / partly messages via the normal planner path (`leaves_missing_vehicle_limits` + `VehicleLimitsCoverageStore`).
+
+Gap: there is still **no on-device Geofabrik→MWM + VL sidecar generator**. Without a cached navi catalog/sidecars, VL cannot be manufactured offline — only honest “unavailable” while maps remain usable.
+
 ### Coverage threshold (0.90)
 
 - Default match-rate threshold: **0.90** (`VehicleLimitsCoverageConfig.DEFAULT_THRESHOLD`).
