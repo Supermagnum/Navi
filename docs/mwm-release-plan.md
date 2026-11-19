@@ -10,9 +10,9 @@ fallback toggle for end users; `.rkyv` is being retired.
 | Gate | Meaning | Status |
 |------|---------|--------|
 | G2 | Search parity (Everywhere context, per-query 21/21) + migration pause/resume | Met (PR #222) |
-| G3 | First mainline release with MWM as default (`0.5.0-beta` / versionCode 35). Note: CAT tags `v0.4.0-beta` / `v0.4.1-beta` are separate CAT-line builds; an earlier G3 draft reused the `0.4.0-beta` / 34 name by mistake and was renumbered. | **Prepared** 2026-11-17 — pending tag / publish go-ahead |
-| G4 | Client `.rkyv` removal (PR #221), keeping Phase 7 migration that reads the old on-disk `.rkyv` region list | **Partial merged** (#221): flag forced ON, flag-OFF CI removed. MapLibre/pack loaders deletion still open (next release / follow-up). Keep migration + thin `.rkyv` detection + FTS5. |
-| G5 | Server `.rkyv` retirement after adoption near zero | Still required — users on `0.3.30-beta` keep hitting frozen packs until they update. Measure with `measure-rkyv-adoption.py` / weekly timer. |
+| G3 | First mainline release with MWM as default (`0.5.0-beta` / versionCode 35). Note: CAT tags `v0.4.0-beta` / `v0.4.1-beta` are separate CAT-line builds; an earlier G3 draft reused the `0.4.0-beta` / 34 name by mistake and was renumbered. | **Met** 2026-11-17 — tag `v0.5.0-beta` (`3bdada4e6852ec01d3ef07eda86d3964b9167a36`); GitHub Release published |
+| G4 | Client `.rkyv` removal (PR #221), keeping Phase 7 migration that reads the old on-disk `.rkyv` region list | **Partial merged** (#221): flag forced ON, flag-OFF CI removed. MapLibre/pack loaders deletion tracked in #233. Keep migration + thin `.rkyv` detection + FTS5. |
+| G5 | Server `.rkyv` retirement after adoption near zero | **Next** — install weekly adoption timer on media; keep serving classic packs until measure shows near-zero `.rkyv` traffic for several weeks. |
 
 ## 1. Client release steps (G3)
 
@@ -61,8 +61,11 @@ awk '
 ```
 
 Install the weekly timer on **media** with
-`/tmp/navi-rkyv-adoption-install.sh` (sudo; prepared by the G3 agent). Read the
-weekly Markdown under the configured `NAVI_ADOPTION_OUT` directory.
+`/tmp/navi-rkyv-adoption-install.sh` (sudo; prepared for G3/G5). Also place
+`/tmp/measure-rkyv-adoption.py` and `/tmp/navi-rkyv-adoption.timer` beside it
+(or set `MEASURE_SRC` / `TIMER_SRC`). Read the weekly Markdown under the
+configured `NAVI_ADOPTION_OUT` directory (`weekly-report.md`, `daily.csv`,
+`summary.json`).
 
 ### Then remove (only after the criterion holds)
 
