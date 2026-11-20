@@ -1,0 +1,33 @@
+{
+  "ok": true,
+  "samples": 1262,
+  "polyline_pts": 21437,
+  "peak_pss_kb": 841211,
+  "cabins_screenshotted": [
+    {
+      "name": "Sandhaug_Turisthytte",
+      "kind": "cabin",
+      "lat": 60.192,
+      "lon": 7.512,
+      "passed_at_lat": 60.2017834326377,
+      "passed_at_lon": 7.521261479863966,
+      "sample_i": 1026
+    },
+    {
+      "name": "Lothepus_camping",
+      "kind": "cabin",
+      "lat": 60.087,
+      "lon": 6.543,
+      "passed_at_lat": 60.10856180307755,
+      "passed_at_lon": 6.555279989207378,
+      "sample_i": 1243
+    },
+    {
+      "name": "Nashaugsætra",
+      "kind": "seed",
+      "lat": 60.8835,
+      "lon": 9.972
+    }
+  ],
+  "departure_iso": "2026-06-01T08:00:00"
+}

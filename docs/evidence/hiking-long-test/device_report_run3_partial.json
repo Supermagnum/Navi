@@ -1,0 +1,1406 @@
+{
+  "campaign": "hiking_nashaugs_sandhaug_lothepus_longtrip_ui",
+  "started_unix": 1795173658,
+  "departure_local": "2026-06-01T08:00:00",
+  "ram_before_mib": 264.603515625,
+  "settings": {
+    "profile": "hiking",
+    "avoid_tunnels": true,
+    "avoid_ferries": false,
+    "wild_camping": true,
+    "long_trip": true,
+    "datex": false,
+    "nearby_attractions": true,
+    "download_ui": "mwm_choose_region_then_long_trip_prompts",
+    "departure_local": "2026-06-01T08:00:00"
+  },
+  "origin": {
+    "name": "Nashaugsætra",
+    "fallback_lat": 60.8835,
+    "fallback_lon": 9.972,
+    "elev_m": 820
+  },
+  "via": {
+    "name": "Sandhaug Turisthytte",
+    "fallback_lat": 60.192,
+    "fallback_lon": 7.512
+  },
+  "dest": {
+    "name": "Lothepus camping",
+    "fallback_lat": 60.087,
+    "fallback_lon": 6.543
+  },
+  "gps_mock_provider": true,
+  "delete_policy": "UI Map storage wipe of MWM leaves + Tools Geofabrik path deletes; clean start",
+  "mwm_regions_deleted_via_ui": [],
+  "mwm_leaf_files_after_delete": [],
+  "mwm_leaf_files_after_delete_count": 0,
+  "ui_events": [
+    {
+      "t": 1795173661307,
+      "step": "activity_foreground",
+      "detail": "MainActivity"
+    },
+    {
+      "t": 1795173661484,
+      "step": "screenshot",
+      "detail": "01_launch"
+    },
+    {
+      "t": 1795173661487,
+      "step": "gps_pin",
+      "detail": "Nashaugsætra mock=true"
+    },
+    {
+      "t": 1795173662345,
+      "step": "toggle_long_trip",
+      "detail": "already ON via prefs"
+    },
+    {
+      "t": 1795173662377,
+      "step": "toggle_datex_plugin",
+      "detail": "already OFF"
+    },
+    {
+      "t": 1795173662461,
+      "step": "toggle_poi_lookahead",
+      "detail": "already ON"
+    },
+    {
+      "t": 1795173662561,
+      "step": "toggle_camping_plugin",
+      "detail": "already ON"
+    },
+    {
+      "t": 1795173664113,
+      "step": "screenshot",
+      "detail": "02_tools_plugins"
+    },
+    {
+      "t": 1795173666099,
+      "step": "map_storage_open",
+      "detail": "opened=true"
+    },
+    {
+      "t": 1795173667728,
+      "step": "delete_old_releases_fail",
+      "detail": "Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'btn_mwm_storage_delete_releases')\n"
+    },
+    {
+      "t": 1795173669146,
+      "step": "delete_disk_confirm",
+      "detail": "leaf_mwm_files_left=0"
+    },
+    {
+      "t": 1795173670299,
+      "step": "toggle_long_trip",
+      "detail": "OFF for geofabrik delete"
+    },
+    {
+      "t": 1795173671544,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/germany\/niedersachsen: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795173672216,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/germany\/schleswig-holstein: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795173672860,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/norway\/ostlandet: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795173673517,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/norway\/vestlandet: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795173674160,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/norway\/hedmark: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795173674822,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/norway\/sorlandet: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795173675460,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/norway\/trondelag: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795173676122,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/norway\/nord-norge: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795173676760,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/sweden\/vastra-gotaland: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795173677422,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/sweden\/halland: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795173678060,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/sweden\/skane: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795173678722,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/denmark: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795173679634,
+      "step": "screenshot",
+      "detail": "03_after_ui_delete"
+    },
+    {
+      "t": 1795173679650,
+      "step": "disk_listing",
+      "detail": "after_delete leaves=0"
+    },
+    {
+      "t": 1795173679658,
+      "step": "delete_result",
+      "detail": "leaves_left=0"
+    },
+    {
+      "t": 1795173680388,
+      "step": "toggle_long_trip",
+      "detail": "turned ON"
+    },
+    {
+      "t": 1795173680711,
+      "step": "toggle_datex_plugin",
+      "detail": "already OFF"
+    },
+    {
+      "t": 1795173680778,
+      "step": "toggle_poi_lookahead",
+      "detail": "already ON"
+    },
+    {
+      "t": 1795173680895,
+      "step": "toggle_camping_plugin",
+      "detail": "already ON"
+    },
+    {
+      "t": 1795173682928,
+      "step": "toggle_long_trip",
+      "detail": "confirmed ON"
+    },
+    {
+      "t": 1795173685623,
+      "step": "btn_mwm_regions",
+      "detail": "attempt=0 opened=true"
+    },
+    {
+      "t": 1795173685624,
+      "step": "btn_mwm_regions",
+      "detail": "Choose region opened for europe_norway_ostlandet"
+    },
+    {
+      "t": 1795173688311,
+      "step": "install_clicked",
+      "detail": "btn_mwm_install_europe_norway_ostlandet"
+    },
+    {
+      "t": 1795173690336,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Downloading maps pct=null"
+    },
+    {
+      "t": 1795173693438,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Downloading maps pct=null"
+    },
+    {
+      "t": 1795173697318,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Denmark_North Denmark Region pct=50"
+    },
+    {
+      "t": 1795173700461,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Denmark_North Denmark Region pct=55"
+    },
+    {
+      "t": 1795173704317,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Central pct=35"
+    },
+    {
+      "t": 1795173708173,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Central pct=42"
+    },
+    {
+      "t": 1795173711288,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Central pct=44"
+    },
+    {
+      "t": 1795173714410,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Central pct=44"
+    },
+    {
+      "t": 1795173717507,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Central pct=44"
+    },
+    {
+      "t": 1795173721171,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Hedmark pct=0"
+    },
+    {
+      "t": 1795173724775,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Hedmark pct=11"
+    },
+    {
+      "t": 1795173727874,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Hedmark pct=11"
+    },
+    {
+      "t": 1795173730976,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Hedmark pct=11"
+    },
+    {
+      "t": 1795173734803,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Hordaland pct=93"
+    },
+    {
+      "t": 1795173737906,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Hordaland pct=100"
+    },
+    {
+      "t": 1795173741009,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Hordaland pct=100"
+    },
+    {
+      "t": 1795173744944,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Oppland pct=25"
+    },
+    {
+      "t": 1795173748103,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Oppland pct=33"
+    },
+    {
+      "t": 1795173751220,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Oppland pct=33"
+    },
+    {
+      "t": 1795173754332,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Oppland pct=33"
+    },
+    {
+      "t": 1795173758183,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Southern pct=13"
+    },
+    {
+      "t": 1795173762082,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Southern pct=17"
+    },
+    {
+      "t": 1795173765952,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Southern pct=22"
+    },
+    {
+      "t": 1795173769077,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Southern pct=22"
+    },
+    {
+      "t": 1795173772188,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Southern pct=22"
+    },
+    {
+      "t": 1795173775309,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Southern pct=22"
+    },
+    {
+      "t": 1795173778423,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Southern pct=22"
+    },
+    {
+      "t": 1795173781554,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Southern pct=22"
+    },
+    {
+      "t": 1795173785428,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Western pct=70"
+    },
+    {
+      "t": 1795173789111,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Western pct=77"
+    },
+    {
+      "t": 1795173792226,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Western pct=77"
+    },
+    {
+      "t": 1795173795356,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Western pct=77"
+    },
+    {
+      "t": 1795173798462,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Norway_Western pct=77"
+    },
+    {
+      "t": 1795173802377,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Sweden_Bergslagen pct=59"
+    },
+    {
+      "t": 1795173806290,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Sweden_Bergslagen pct=66"
+    },
+    {
+      "t": 1795173809398,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Sweden_Bergslagen pct=66"
+    },
+    {
+      "t": 1795173812510,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Sweden_Bergslagen pct=66"
+    },
+    {
+      "t": 1795173815633,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Sweden_Bergslagen pct=66"
+    },
+    {
+      "t": 1795173818754,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Sweden_Bergslagen pct=66"
+    },
+    {
+      "t": 1795173822591,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Sweden_Vastra Gotaland pct=83"
+    },
+    {
+      "t": 1795173825752,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Sweden_Vastra Gotaland pct=88"
+    },
+    {
+      "t": 1795173828848,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Sweden_Vastra Gotaland pct=88"
+    },
+    {
+      "t": 1795173831948,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Sweden_Vastra Gotaland pct=88"
+    },
+    {
+      "t": 1795173835051,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Sweden_Vastra Gotaland pct=88"
+    },
+    {
+      "t": 1795173838408,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=false ok=true msg= pct=100"
+    },
+    {
+      "t": 1795173838616,
+      "step": "comaps_session",
+      "detail": "install_ok_first_ostlandet open=true nativeLoaded=true"
+    },
+    {
+      "t": 1795173839620,
+      "step": "innlandet_check",
+      "detail": "leaves=[denmark_north denmark region, norway_central, norway_hedmark, norway_hordaland, norway_oppland, norway_southern, norway_western, sweden_bergslagen, sweden_vastra gotaland] hit=true"
+    },
+    {
+      "t": 1795173839831,
+      "step": "screenshot",
+      "detail": "04_ostlandet_installed"
+    },
+    {
+      "t": 1795173839875,
+      "step": "disk_listing",
+      "detail": "after_first_download leaves=9"
+    },
+    {
+      "t": 1795173840091,
+      "step": "comaps_session",
+      "detail": "after_maps_ready open=true nativeLoaded=true"
+    },
+    {
+      "t": 1795173840129,
+      "step": "open_route_panel",
+      "detail": "field_search already visible"
+    },
+    {
+      "t": 1795173840144,
+      "step": "open_route_panel",
+      "detail": "field_search already visible"
+    },
+    {
+      "t": 1795173842008,
+      "step": "chip_profile_hiking",
+      "detail": "selected"
+    },
+    {
+      "t": 1795173844513,
+      "step": "toggle_avoid_tunnels",
+      "detail": "turned ON"
+    },
+    {
+      "t": 1795173844544,
+      "step": "toggle_avoid_ferries",
+      "detail": "already OFF"
+    },
+    {
+      "t": 1795173844720,
+      "step": "screenshot",
+      "detail": "05_hiking_settings"
+    },
+    {
+      "t": 1795173850980,
+      "step": "from_nashaugs",
+      "detail": "name_search q=Nashaugsætra applied=61.15114453349263,9.843362494136102 name=Nashaugsætra, Oppland, Norway"
+    },
+    {
+      "t": 1795173851259,
+      "step": "screenshot",
+      "detail": "06_from_set"
+    },
+    {
+      "t": 1795173851279,
+      "step": "open_route_panel",
+      "detail": "field_search already visible"
+    },
+    {
+      "t": 1795173856206,
+      "step": "via_sandhaug",
+      "detail": "name_search q=Sandhaug Turisthytte applied=61.11713468227795,10.478084126750106 name=Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173856639,
+      "step": "screenshot",
+      "detail": "07_via_set"
+    },
+    {
+      "t": 1795173856645,
+      "step": "open_route_panel",
+      "detail": "field_search already visible"
+    },
+    {
+      "t": 1795173860863,
+      "step": "to_lothepus",
+      "detail": "name_search q=Lothepus camping applied=60.065072965712154,6.5526085090086355 name=Lothepus camping, Odda, Hordaland, Norway"
+    },
+    {
+      "t": 1795173861380,
+      "step": "screenshot",
+      "detail": "08_to_set"
+    },
+    {
+      "t": 1795173861395,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173862760,
+      "step": "toggle_long_trip",
+      "detail": "confirmed ON"
+    },
+    {
+      "t": 1795173863611,
+      "step": "open_route_panel",
+      "detail": "field_search already visible"
+    },
+    {
+      "t": 1795173864166,
+      "step": "open_route_panel",
+      "detail": "field_search already visible"
+    },
+    {
+      "t": 1795173864298,
+      "step": "toggle_avoid_tunnels",
+      "detail": "turned ON"
+    },
+    {
+      "t": 1795173864330,
+      "step": "toggle_avoid_ferries",
+      "detail": "already OFF"
+    },
+    {
+      "t": 1795173864611,
+      "step": "screenshot",
+      "detail": "09_before_plan"
+    },
+    {
+      "t": 1795173865774,
+      "step": "screenshot",
+      "detail": "10_after_plan_click"
+    },
+    {
+      "t": 1795173865877,
+      "step": "region_prompt",
+      "detail": "accepted MWM missing-maps download"
+    },
+    {
+      "t": 1795173866044,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173869344,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173872563,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173875946,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173880269,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=9"
+    },
+    {
+      "t": 1795173880311,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173883738,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=9"
+    },
+    {
+      "t": 1795173883778,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173887019,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=9"
+    },
+    {
+      "t": 1795173887044,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173891095,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=9"
+    },
+    {
+      "t": 1795173891148,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173894745,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=9"
+    },
+    {
+      "t": 1795173894778,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173898209,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=9"
+    },
+    {
+      "t": 1795173898246,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173901566,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173904995,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173908163,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173911333,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173914511,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173917745,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173920994,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795173921061,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173924325,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795173924379,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173927721,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795173927763,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173931064,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795173931111,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173934348,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795173934397,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173937713,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795173937744,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173940938,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173944128,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173947331,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173950530,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173953744,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173956962,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173960803,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795173960861,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173964114,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795173964161,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173967418,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795173967484,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173970737,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795173970812,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173974080,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795173974113,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173977340,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795173977394,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173980628,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173983794,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173986979,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173990178,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173993362,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173996511,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795173999687,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174002949,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174002996,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174006236,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174006294,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174009529,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174009578,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174012878,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174012929,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174016123,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174016161,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174019450,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174019496,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174022657,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174025828,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174028978,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174032127,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174035379,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174038577,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174041871,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174041911,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174045144,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174045195,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174048419,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174048496,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174051729,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174051778,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174055202,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174055245,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174058626,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174058678,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174062628,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174065812,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174069096,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174072361,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174075544,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174078728,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174081917,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174081962,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174085201,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174085247,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174088453,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174088497,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174091682,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174091727,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174094951,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174095011,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174098211,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174098244,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174101411,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174104581,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174107746,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174110898,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174114059,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174117227,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174120416,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174120461,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174123808,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174123866,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174127178,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174127229,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174130558,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174130612,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174133890,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174133948,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174137160,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    },
+    {
+      "t": 1795174137245,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174140712,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174143895,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174147111,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174150293,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174153478,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174156646,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174159829,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway"
+    },
+    {
+      "t": 1795174163097,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=11"
+    }
+  ],
+  "region_timings": [
+    {
+      "label": "first_ostlandet",
+      "region_id": "europe_norway_ostlandet",
+      "elapsed_ms": 155884,
+      "ok": true,
+      "version": "261105",
+      "leaf_count": 9,
+      "sidecar_count": "9",
+      "leaves": [
+        "Denmark_North Denmark Region",
+        "Norway_Central",
+        "Norway_Hedmark",
+        "Norway_Hordaland",
+        "Norway_Oppland",
+        "Norway_Southern",
+        "Norway_Western",
+        "Sweden_Bergslagen",
+        "Sweden_Vastra Gotaland"
+      ],
+      "placement": "\/data\/user\/0\/no.navi.app\/files\/mwm (internal)"
+    },
+    {
+      "label": "plan_requested_vestlandet",
+      "region_id": "europe_norway_vestlandet",
+      "elapsed_ms": 0,
+      "ok": true,
+      "placement": "\/data\/user\/0\/no.navi.app\/files\/mwm (internal)"
+    }
+  ],
+  "geofabrik_regions_deleted_via_ui": [],
+  "leaves_after_ui_delete": [],
+  "leaves_after_ui_delete_count": 0,
+  "disk_listing_after_delete": {
+    "mwm_leaves": [],
+    "mwm_version": "261105",
+    "placement": "\/data\/user\/0\/no.navi.app\/files\/mwm (internal)",
+    "internal_mwm_files": [],
+    "internal_mwm_count": 0,
+    "sd_long_trip_packs": [
+      "elevation:16384",
+      "graph-cache:16384",
+      "navi.db:65536",
+      "region_meta.json:264"
+    ],
+    "sd_mwm_files": [],
+    "sd_mwm_count": 0
+  },
+  "comaps_session_install_ok_first_ostlandet": {
+    "open": true,
+    "native_loaded": true
+  },
+  "disk_listing_after_first_download": {
+    "mwm_leaves": [
+      "Denmark_North Denmark Region",
+      "Norway_Central",
+      "Norway_Hedmark",
+      "Norway_Hordaland",
+      "Norway_Oppland",
+      "Norway_Southern",
+      "Norway_Western",
+      "Sweden_Bergslagen",
+      "Sweden_Vastra Gotaland"
+    ],
+    "mwm_version": "261105",
+    "placement": "\/data\/user\/0\/no.navi.app\/files\/mwm (internal)",
+    "internal_mwm_files": [
+      "\/data\/user\/0\/no.navi.app\/files\/mwm\/releases\/261105\/leaves\/Denmark_North Denmark Region.mwm",
+      "\/data\/user\/0\/no.navi.app\/files\/mwm\/releases\/261105\/leaves\/Norway_Central.mwm",
+      "\/data\/user\/0\/no.navi.app\/files\/mwm\/releases\/261105\/leaves\/Norway_Hedmark.mwm",
+      "\/data\/user\/0\/no.navi.app\/files\/mwm\/releases\/261105\/leaves\/Norway_Hordaland.mwm",
+      "\/data\/user\/0\/no.navi.app\/files\/mwm\/releases\/261105\/leaves\/Norway_Oppland.mwm",
+      "\/data\/user\/0\/no.navi.app\/files\/mwm\/releases\/261105\/leaves\/Norway_Southern.mwm",
+      "\/data\/user\/0\/no.navi.app\/files\/mwm\/releases\/261105\/leaves\/Norway_Western.mwm",
+      "\/data\/user\/0\/no.navi.app\/files\/mwm\/releases\/261105\/leaves\/Sweden_Bergslagen.mwm",
+      "\/data\/user\/0\/no.navi.app\/files\/mwm\/releases\/261105\/leaves\/Sweden_Vastra Gotaland.mwm"
+    ],
+    "internal_mwm_count": 9,
+    "sd_long_trip_packs": [
+      "elevation:16384",
+      "graph-cache:16384",
+      "navi.db:65536",
+      "region_meta.json:264"
+    ],
+    "sd_mwm_files": [],
+    "sd_mwm_count": 0
+  },
+  "comaps_session_after_maps_ready": {
+    "open": true,
+    "native_loaded": true
+  },
+  "from_nashaugs": {
+    "query": "Nashaugsætra",
+    "mode": "name_search",
+    "applied_lat": 61.15114453349263,
+    "applied_lon": 9.843362494136102,
+    "applied_name": "Nashaugsætra, Oppland, Norway"
+  },
+  "via_sandhaug": {
+    "query": "Sandhaug Turisthytte",
+    "mode": "name_search",
+    "applied_lat": 61.11713468227795,
+    "applied_lon": 10.478084126750106,
+    "applied_name": "Turisthotellvegen, Lillehammer, Oppland, Norway"
+  },
+  "to_lothepus": {
+    "query": "Lothepus camping",
+    "mode": "name_search",
+    "applied_lat": 60.065072965712154,
+    "applied_lon": 6.5526085090086355,
+    "applied_name": "Lothepus camping, Odda, Hordaland, Norway"
+  },
+  "waypoints_summary": "From: Nashaugsætra, Oppland, Norway | To: Lothepus camping, Odda, Hordaland, Norway | Via: Turisthotellvegen, Lillehammer, Oppland, Norway",
+  "last_progress": {
+    "t_ms": 297223,
+    "status": "Østlandet (1 of 2)=Ready · Vestlandet (2 of 2)=Ready",
+    "corridor_ready": true,
+    "polyline_chars": 785975,
+    "distance_km": 423.29173079068556,
+    "report_has_pass": true,
+    "maneuver_count": 468
+  },
+  "disk_listing_plan_wait": {
+    "mwm_leaves": [
+      "Denmark_North Denmark Region",
+      "Norway_Central",
+      "Norway_Hedmark",
+      "Norway_Hordaland",
+      "Norway_Oppland",
+      "Norway_Rogaland",
+      "Norway_South Trondelag",
+      "Norway_Southern",
+      "Norway_Western",
+      "Sweden_Bergslagen",
+      "Sweden_Vastra Gotaland"
+    ],
+    "mwm_version": "261105",
+    "placement": "\/data\/user\/0\/no.navi.app\/files\/mwm (internal)",
+    "internal_mwm_files": [
+      "\/data\/user\/0\/no.navi.app\/files\/mwm\/releases\/261105\/leaves\/Denmark_North Denmark Region.mwm",
+      "\/data\/user\/0\/no.navi.app\/files\/mwm\/releases\/261105\/leaves\/Norway_Central.mwm",
+      "\/data\/user\/0\/no.navi.app\/files\/mwm\/releases\/261105\/leaves\/Norway_Hedmark.mwm",
+      "\/data\/user\/0\/no.navi.app\/files\/mwm\/releases\/261105\/leaves\/Norway_Hordaland.mwm",
+      "\/data\/user\/0\/no.navi.app\/files\/mwm\/releases\/261105\/leaves\/Norway_Oppland.mwm",
+      "\/data\/user\/0\/no.navi.app\/files\/mwm\/releases\/261105\/leaves\/Norway_Southern.mwm",
+      "\/data\/user\/0\/no.navi.app\/files\/mwm\/releases\/261105\/leaves\/Norway_Western.mwm",
+      "\/data\/user\/0\/no.navi.app\/files\/mwm\/releases\/261105\/leaves\/Sweden_Bergslagen.mwm",
+      "\/data\/user\/0\/no.navi.app\/files\/mwm\/releases\/261105\/leaves\/Sweden_Vastra Gotaland.mwm",
+      "\/data\/user\/0\/no.navi.app\/files\/mwm\/releases\/261105\/leaves\/Norway_South Trondelag.mwm",
+      "\/data\/user\/0\/no.navi.app\/files\/mwm\/releases\/261105\/leaves\/Norway_Rogaland.mwm"
+    ],
+    "internal_mwm_count": 11,
+    "sd_long_trip_packs": [
+      "elevation:16384",
+      "graph-cache:16384",
+      "navi.db:65536",
+      "region_meta.json:264"
+    ],
+    "sd_mwm_files": [],
+    "sd_mwm_count": 0
+  }
+}
