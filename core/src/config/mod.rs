@@ -138,6 +138,12 @@ impl Profile {
         )
     }
 
+    /// Hiking: avoid-tunnels is forced on and not user-toggleable (foot tunnels
+    /// are rarely sensible; keep surface trails).
+    pub fn locks_avoid_tunnels(self) -> bool {
+        matches!(self, Profile::Hiking)
+    }
+
     /// Motor profiles that expose avoid-ferry.
     pub fn supports_ferry_avoid(self) -> bool {
         self.supports_toll_ferry_avoid()

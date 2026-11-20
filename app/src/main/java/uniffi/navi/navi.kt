@@ -1161,6 +1161,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_travel_profile_locks_avoid_motorways(
     ): Int
+    external fun uniffi_navi_checksum_func_travel_profile_locks_avoid_tunnels(
+    ): Int
     external fun uniffi_navi_checksum_func_travel_profile_menu_focus(
     ): Int
     external fun uniffi_navi_checksum_func_update_gps_fix(
@@ -1909,6 +1911,8 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_suggest_geofabrik_path(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_travel_profile_locks_avoid_motorways(`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_travel_profile_locks_avoid_tunnels(`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_navi_fn_func_travel_profile_menu_focus(`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
@@ -2865,6 +2869,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_travel_profile_locks_avoid_motorways() and 0xFFFF) != 40364) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_travel_profile_locks_avoid_tunnels() and 0xFFFF) != 42757) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_travel_profile_menu_focus() and 0xFFFF) != 26638) {
@@ -12184,6 +12191,20 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
             return FfiConverterBoolean.lift(
     uniffiRustCall() { _status ->
     UniffiLib.uniffi_navi_fn_func_travel_profile_locks_avoid_motorways(
+    
+        
+        FfiConverterTypeTravelProfile.lower(`profile`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Whether avoid-tunnels is forced on and locked for this profile (hiking only).
+         */ fun `travelProfileLocksAvoidTunnels`(`profile`: TravelProfile): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_travel_profile_locks_avoid_tunnels(
     
         
         FfiConverterTypeTravelProfile.lower(`profile`),_status)

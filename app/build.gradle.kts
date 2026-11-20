@@ -261,6 +261,9 @@ dependencies {
     // CoMaps drape (Java/res/assets of the pinned checkout, no CMake): see comaps-sdk/.
     if (rootProject.findProject(":comaps-sdk") != null) {
         implementation(project(":comaps-sdk"))
+        // androidTest compiles headless CoMaps suites that import app.organicmaps.sdk.*;
+        // keep the SDK on the instrumented classpath even when AGP does not expose it.
+        androidTestImplementation(project(":comaps-sdk"))
     }
     debugImplementation("androidx.compose.ui:ui-tooling")
 

@@ -138,6 +138,7 @@ fun wildCampingAcceptedCards(result: CampingSuggestResult): List<CampingCardMode
         }
     }
     add(result.list)
+    add(result.vehicle)
     add(result.onFootFromHere)
     return out
 }

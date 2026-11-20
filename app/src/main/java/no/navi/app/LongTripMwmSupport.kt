@@ -88,7 +88,7 @@ object LongTripMwmSupport {
         leafIds: Collection<String>,
     ): Boolean {
         if (leafIds.isEmpty()) return false
-        val dir = NaviAppData.resolve(context).absolutePath
+        val dir = MwmDataDir.resolve(context).absolutePath
         val inst =
             runCatching { mwmInstalled(dir) }
                 .getOrNull()

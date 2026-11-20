@@ -98,6 +98,7 @@
     <string name="avoid_tolls">Avoid toll roads</string>
     <string name="avoid_ferries">Avoid ferries</string>
     <string name="avoid_tunnels">Avoid tunnels</string>
+    <string name="label_avoid_tunnels_locked">Avoid tunnels (locked for this profile)</string>
     <string name="vehicle_limits_title">Vehicle limits</string>
     <string name="vehicle_axle_weight_kg">Axle weight (kg)</string>
     <string name="vehicle_bogie_weight_kg">Max bogie weight (kg)</string>

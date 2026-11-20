@@ -80,6 +80,7 @@
     <string name="avoid_tolls">Unngå bomveier</string>
     <string name="avoid_ferries">Unngå ferger</string>
     <string name="avoid_tunnels">Unngå tunneler</string>
+    <string name="label_avoid_tunnels_locked">Unngå tunneler (låst for denne profilen)</string>
     <string name="vehicle_limits_title">Kjøretøybegrensninger</string>
     <string name="saved_routes_title">Lagrede ruter</string>
     <string name="saved_places_title">Lagrede steder</string>

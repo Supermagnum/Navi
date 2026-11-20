@@ -182,6 +182,7 @@ import uniffi.navi.searchPlaces
 import uniffi.navi.searchPlacesBiased
 import uniffi.navi.setOsmWeeklyReminder
 import uniffi.navi.travelProfileLocksAvoidMotorways
+import uniffi.navi.travelProfileLocksAvoidTunnels
 import uniffi.navi.travelProfileMenuFocus
 import uniffi.navi.updateGpsFix
 import java.io.File
@@ -1878,6 +1879,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     LaunchedEffect(campingSuggestResult, campingSuggestStatus, mapState.polyline) {
         if (mapState.polyline.isBlank()) return@LaunchedEffect
         val n = wildCampingSiteCount(campingSuggestResult)
+        NaviMapTestHooks.lastWildCampingSiteCount = n
         val kind = campingSuggestStatus?.kind.orEmpty()
         val msg = campingSuggestStatus?.message.orEmpty()
         val (byCountry, bySub) = wildCampingRegionTallies(campingSuggestResult)
@@ -3648,6 +3650,9 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                                     .language
                                                     .ifBlank { "nb" },
                                             bikeWetland = false,
+                                            avoidTunnels =
+                                                avoidTunnels ||
+                                                    travelProfileLocksAvoidTunnels(profile),
                                             // Still apply DATEX vias while simulating, but
                                             // avoidDatexBlocks self-caps attempts when
                                             // simulatingActive (see MwmProductionPlanner).
@@ -4660,6 +4665,9 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                                         .language
                                                         .ifBlank { "nb" },
                                                 bikeWetland = false,
+                                                avoidTunnels =
+                                                    avoidTunnels ||
+                                                        travelProfileLocksAvoidTunnels(profile),
                                             )
                                         } finally {
                                             RoutePlanGate.end()
@@ -8933,6 +8941,9 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                                 if (travelProfileLocksAvoidMotorways(p)) {
                                                     avoidMotorways = true
                                                 }
+                                                if (travelProfileLocksAvoidTunnels(p)) {
+                                                    avoidTunnels = true
+                                                }
                                                 status = "Profile: ${p.name.lowercase()}"
                                             },
                                             label = {
@@ -9334,10 +9345,21 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
-                                    Text(stringResource(R.string.avoid_tunnels))
+                                    Text(
+                                        if (travelProfileLocksAvoidTunnels(profile)) {
+                                            stringResource(R.string.label_avoid_tunnels_locked)
+                                        } else {
+                                            stringResource(R.string.avoid_tunnels)
+                                        },
+                                    )
                                     Switch(
-                                        checked = avoidTunnels,
+                                        checked =
+                                            avoidTunnels ||
+                                                travelProfileLocksAvoidTunnels(profile),
                                         onCheckedChange = { on ->
+                                            if (travelProfileLocksAvoidTunnels(profile)) {
+                                                return@Switch
+                                            }
                                             avoidTunnels = on
                                             DiagnosticLog.logToggle("avoid_tunnels", on)
                                             status =
@@ -9354,15 +9376,18 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                                 )
                                         },
                                         enabled =
-                                            profile == TravelProfile.CAR ||
-                                                profile == TravelProfile.TRUCK ||
-                                                profile == TravelProfile.MOBILE_HOME ||
-                                                profile == TravelProfile.MOTORCYCLE ||
-                                                profile == TravelProfile.CAR_ELECTRIC ||
-                                                profile == TravelProfile.TRUCK_ELECTRIC ||
-                                                profile == TravelProfile.MOTORCYCLE_ELECTRIC ||
-                                                profile == TravelProfile.BICYCLE ||
-                                                profile == TravelProfile.BICYCLE_ELECTRIC,
+                                            !travelProfileLocksAvoidTunnels(profile) &&
+                                                (
+                                                    profile == TravelProfile.CAR ||
+                                                        profile == TravelProfile.TRUCK ||
+                                                        profile == TravelProfile.MOBILE_HOME ||
+                                                        profile == TravelProfile.MOTORCYCLE ||
+                                                        profile == TravelProfile.CAR_ELECTRIC ||
+                                                        profile == TravelProfile.TRUCK_ELECTRIC ||
+                                                        profile == TravelProfile.MOTORCYCLE_ELECTRIC ||
+                                                        profile == TravelProfile.BICYCLE ||
+                                                        profile == TravelProfile.BICYCLE_ELECTRIC
+                                                ),
                                         modifier = Modifier.testTag("toggle_avoid_tunnels"),
                                     )
                                 }
@@ -10374,6 +10399,9 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                 val vol = longTripPackVolumes.firstOrNull { it.id == id }
                                 longTripStatusLine =
                                     "Long-trip packs → ${vol?.label ?: id}"
+                                // MWM installs follow pack volume; reopen CoMaps on the new root.
+                                PlaceIndexStorage.ensureOnPackVolume(context)
+                                ComapsSessionBootstrap.onMwmsChanged(context)
                             },
                             poiLookaheadEnabled = poiLookaheadEnabled,
                             onPoiLookaheadChange = { on ->
@@ -11641,6 +11669,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                         val vol = longTripPackVolumes.firstOrNull { it.id == id }
                         longTripStatusLine =
                             "Long-trip packs → ${vol?.label ?: id}"
+                        PlaceIndexStorage.ensureOnPackVolume(context)
+                        ComapsSessionBootstrap.onMwmsChanged(context)
                     },
                     poiLookaheadEnabled = poiLookaheadEnabled,
                     onPoiLookaheadChange = { on ->

@@ -61,7 +61,7 @@ object ComapsDrapeBootstrap : ComapsDrape.Backend {
 
     override fun initialize(context: Context): String? {
         if (Looper.myLooper() != Looper.getMainLooper()) return "drape init must run on the main thread"
-        val root = File(NaviAppData.resolve(context), MWM_ROOT)
+        val root = MwmDataDir.mwmRoot(context)
         if (!File(root, "World.mwm").isFile) return "World.mwm missing under ${root.absolutePath}"
         return try {
             val pm = context.packageManager

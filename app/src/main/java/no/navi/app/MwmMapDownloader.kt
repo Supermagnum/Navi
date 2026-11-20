@@ -91,7 +91,7 @@ object MwmMapDownloader {
 
     /** Reads the active release from disk (no network). */
     fun refreshInstalled(context: Context) {
-        val dir = NaviAppData.resolve(context).absolutePath
+        val dir = MwmDataDir.resolve(context).absolutePath
         executor.execute {
             val inst = runCatching { uniffi.navi.mwmInstalled(dir) }.getOrNull() ?: return@execute
             set { it.copy(installedLeaves = inst.leafIds, sidecars = inst.sidecarCount.toInt(), version = inst.version) }
@@ -168,7 +168,7 @@ object MwmMapDownloader {
             return false
         }
         val app = context.applicationContext
-        val dir = NaviAppData.resolve(app).absolutePath
+        val dir = MwmDataDir.resolve(app).absolutePath
         val path = geofabrikPath.trim().trim('/')
         activePathRef.set(path)
         activeLabelRef.set(label)
@@ -262,7 +262,7 @@ object MwmMapDownloader {
         context: Context,
         wanted: Collection<String>,
     ): List<String> {
-        val inst = runCatching { uniffi.navi.mwmInstalled(NaviAppData.resolve(context).absolutePath) }.getOrNull()
+        val inst = runCatching { uniffi.navi.mwmInstalled(MwmDataDir.resolve(context).absolutePath) }.getOrNull()
         // No active release under this app's data dir (e.g. a test staged its own MWM root):
         // coverage is unknown, so never claim a leaf is missing.
         if (inst?.version == null) return emptyList()

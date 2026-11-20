@@ -134,7 +134,7 @@ object ComapsSessionBootstrap {
             Log.i(TAG, "skip: CoMaps native core not linked")
             return false
         }
-        val root = File(NaviAppData.resolve(ctx), MWM_ROOT)
+        val root = MwmDataDir.mwmRoot(ctx)
         val version = readVersion(File(root, ACTIVE_FILE))
         if (version == null) {
             Log.i(TAG, "skip: no active MWM release under ${root.absolutePath}")

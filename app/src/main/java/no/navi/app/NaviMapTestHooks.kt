@@ -629,6 +629,14 @@ object NaviMapTestHooks {
     @Volatile
     var lastRoutePlanStatsJson: String = "{}"
 
+    /**
+     * Accepted wild-camping sites from the latest suggestAlongRoute (0 until the
+     * camping LaunchedEffect finishes). Campaigns waiting only on attractions
+     * must also wait until this is > 0 when the camping plugin is on.
+     */
+    @Volatile
+    var lastWildCampingSiteCount: Int = 0
+
     /** Last planned soft-break / overnight POIs JSON (chunk finalize or in-leg). */
     @Volatile
     var lastBreakPoisJson: String = "[]"

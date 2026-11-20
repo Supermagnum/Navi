@@ -3384,6 +3384,11 @@ pub fn profile_locks_avoid_motorways(profile: RoutingProfile) -> bool {
     matches!(profile, RoutingProfile::Foot | RoutingProfile::Bicycle)
 }
 
+/// Foot (hiking) graphs: avoid tunnels is forced on (soft cost), not optional.
+pub fn profile_locks_avoid_tunnels(profile: RoutingProfile) -> bool {
+    matches!(profile, RoutingProfile::Foot)
+}
+
 fn edge_avoided_as_motorway(
     edge: &GraphEdge,
     options: &RouteOptions,
@@ -3752,7 +3757,8 @@ fn edge_travel_cost(
     if options.toll_policy == crate::routing::toll::TollPolicy::Penalize && edge.is_toll {
         cost *= crate::routing::toll::TOLL_AVOID_PENALTY_MULT;
     }
-    if options.avoid_tunnels && edge.is_tunnel {
+    let avoid_tunnels = options.avoid_tunnels || profile_locks_avoid_tunnels(profile);
+    if avoid_tunnels && edge.is_tunnel {
         cost *= crate::routing::toll::TUNNEL_AVOID_PENALTY_MULT;
     }
     if let Some(extra) = datex_penalize_extra_m(edge, options, edge_idx) {
@@ -5433,6 +5439,9 @@ mod tests {
         assert!(profile_locks_avoid_motorways(RoutingProfile::Bicycle));
         assert!(profile_locks_avoid_motorways(RoutingProfile::Foot));
         assert!(!profile_locks_avoid_motorways(RoutingProfile::Car));
+        assert!(profile_locks_avoid_tunnels(RoutingProfile::Foot));
+        assert!(!profile_locks_avoid_tunnels(RoutingProfile::Bicycle));
+        assert!(!profile_locks_avoid_tunnels(RoutingProfile::Car));
     }
 
     #[test]
