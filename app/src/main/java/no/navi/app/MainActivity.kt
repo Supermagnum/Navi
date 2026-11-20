@@ -1236,7 +1236,11 @@ private fun LongTripCorridorPrefetch(
             LongTripCoordinator.enable(context, wps)
         }
         while (isActive && enabled) {
-            val ready = LongTripCoordinator.corridorReadyForPlanning()
+            // MWM leaves on disk beat a stuck Geofabrik PBF "Downloading" state.
+            val ready =
+                withContext(Dispatchers.IO) {
+                    LongTripCoordinator.reconcileMwmReady(context)
+                }
             onReady(ready)
             val line = LongTripCoordinator.statusLine()
             if (line.isNotBlank()) {
@@ -2117,10 +2121,13 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     ecoEnabled = on
                     NaviMapTestHooks.requestEcoMode = on
                 }
-                val campingOn = trip.campingPluginEnabled == true
-                campingPluginEnabled = campingOn
-                uniffi.navi.campingPluginSetEnabled(campingOn)
-                MapHudPrefs.saveCampingPluginEnabled(context, campingOn)
+                // Null must not force camping OFF — cabin/debug trip seeds often omit
+                // navi_camping while the user (or UI campaign) already enabled wild camping.
+                trip.campingPluginEnabled?.let { on ->
+                    campingPluginEnabled = on
+                    uniffi.navi.campingPluginSetEnabled(on)
+                    MapHudPrefs.saveCampingPluginEnabled(context, on)
+                }
                 trip.poiLookaheadEnabled?.let { on ->
                     poiLookaheadEnabled = on
                     MapHudPrefs.savePoiLookaheadEnabled(context, on)
@@ -2576,12 +2583,15 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
             }
             return@LaunchedEffect
         }
+        // Dense corridor probes so MWM CoMaps tourism seeds (up to ~5 km off-sample)
+        // still fall inside the 850 m isotropic query around some probe.
+        val sampleCap = 48
         val samples =
-            if (routeSamples.size <= 8) {
+            if (routeSamples.size <= sampleCap) {
                 routeSamples
             } else {
-                val step = (routeSamples.size / 8).coerceAtLeast(1)
-                routeSamples.filterIndexed { idx, _ -> idx % step == 0 }.take(8)
+                val step = (routeSamples.size / sampleCap).coerceAtLeast(1)
+                routeSamples.filterIndexed { idx, _ -> idx % step == 0 }.take(sampleCap)
             }
         val packDirs = longTripPackDirsJson()
         val jsons =
@@ -4389,6 +4399,26 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 status = line
                 routePlanPct =
                     monotonicPlanPercent(routePlanPct, snap.percent?.toInt())
+            } else {
+                // MWM soft-avoid / enrich have no native planProgress units — surface
+                // RoutingPlanLog details so the HUD is not stuck on "starting…".
+                val ui = RoutingPlanLog.uiProgress()
+                if (ui.detail.isNotBlank()) {
+                    val label =
+                        when {
+                            ui.detail.startsWith("tunnel_avoid") ->
+                                "avoiding tunnels (${ui.detail})"
+                            ui.detail == "mwm_enrich" -> "enriching route"
+                            ui.detail == "mwm_datex" -> "checking traffic closures"
+                            ui.detail == "mwm_plan" -> "building route"
+                            ui.detail == "mwm_path" -> "finishing route"
+                            else -> ui.detail
+                        }
+                    val line = "Planning route: $label — ${ui.pct}%"
+                    routePlanProgress = line
+                    status = line
+                    routePlanPct = monotonicPlanPercent(routePlanPct, ui.pct)
+                }
             }
             delay(250)
         }
@@ -4491,18 +4521,19 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     }
                 status = longTripStatusLine.ifBlank { status }
             }
-            // Wait until corridor graph packs load. Place-index is not a plan gate.
-            while (isActive && !LongTripCoordinator.corridorPacksReady()) {
+            // Wait until corridor graph packs / MWM leaves load. Place-index is
+            // not a plan gate. Reconcile so a dead Geofabrik PBF "Downloading"
+            // state cannot block once CoMaps leaves are Ready on disk.
+            while (isActive) {
+                val ready =
+                    withContext(Dispatchers.IO) {
+                        LongTripCoordinator.reconcileMwmReady(context)
+                    }
+                if (ready) break
                 val line =
                     LongTripCoordinator
                         .statusLine()
-                        .ifBlank {
-                            if (LongTripCoordinator.corridorPacksReady()) {
-                                "Long trip: waiting for region install…"
-                            } else {
-                                "Long trip: downloading required regions…"
-                            }
-                        }
+                        .ifBlank { "Long trip: downloading required regions…" }
                 longTripStatusLine = line
                 status = line
                 planNotice = line

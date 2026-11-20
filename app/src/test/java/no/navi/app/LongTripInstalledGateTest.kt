@@ -152,6 +152,45 @@ class LongTripInstalledGateTest {
     }
 
     @Test
+    fun reconcile_promotes_pbf_downloading_when_mwm_leaves_ready() {
+        val dir = tmp.newFolder("mwm-reconcile")
+        val packDir = tmp.newFolder("packs-mwm-reconcile")
+        val started = mutableListOf<String>()
+
+        LongTripCoordinator.setCorridorProviderForTests { _, _, _ -> Result.success(regions) }
+        LongTripCoordinator.setPackTargetResolverForTests { _, _ ->
+            LongTripPackStorage.PackTarget.DownloadTo(packDir, "internal", false)
+        }
+        LongTripCoordinator.setDownloadStarterForTests { _, _, _, _, path, _, _ ->
+            started.add(path)
+        }
+
+        LongTripCoordinator.enableWithDataDir(
+            context = null,
+            dataDir = dir,
+            waypoints = listOf(60.79 to 11.08, 55.67 to 12.57),
+        )
+
+        // Simulate Geofabrik PBF fallback stuck on Downloading while MWM leaves exist.
+        RegionDownloadBackground.emitPhaseForTests(regions[0], "installed")
+        RegionDownloadBackground.emitPhaseForTests(regions[1], "downloading")
+        RegionDownloadBackground.emitPhaseForTests(regions[2], "downloading")
+        assertFalse(LongTripCoordinator.corridorReadyForPlanning())
+
+        LongTripCoordinator.setMwmLeavesReadyCheckForTests { id ->
+            id == regions[1] || id == regions[2]
+        }
+        assertTrue(
+            "MWM leaves on disk must open the plan gate despite PBF Downloading",
+            LongTripCoordinator.reconcileMwmReady(context = null),
+        )
+        assertTrue(LongTripCoordinator.corridorReadyForPlanning())
+        val plan = LongTripCoordinator.currentPlan()!!
+        assertEquals(LongTripCoordinator.State.Indexed, plan.states[regions[1]])
+        assertEquals(LongTripCoordinator.State.Indexed, plan.states[regions[2]])
+    }
+
+    @Test
     fun installed_region_without_place_index_is_not_searchable() {
         val dir = tmp.newFolder("search-gate")
         // Packs Ready stamp is irrelevant for PlaceIndexReady — only the stamp file.

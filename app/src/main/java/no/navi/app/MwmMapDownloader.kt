@@ -222,12 +222,32 @@ object MwmMapDownloader {
         label: String,
         geofabrikPath: String = "",
     ): Boolean {
-        if (!runningFlag.compareAndSet(false, true)) {
-            Log.w(TAG, "installBlocking skipped — already running ($label)")
-            return false
-        }
         val app = context.applicationContext
         val dir = MwmDataDir.resolve(app).absolutePath
+        // Concurrent long-trip enable() must not treat an in-flight install as
+        // failure and fall through to Geofabrik PBF (404 retries while MWM is
+        // already downloading / on disk). Wait, then reuse installed leaves.
+        if (!runningFlag.compareAndSet(false, true)) {
+            Log.w(TAG, "installBlocking waiting — already running ($label)")
+            val deadlineNs = System.nanoTime() + 30L * 60L * 1_000_000_000L
+            while (runningFlag.get() && System.nanoTime() < deadlineNs) {
+                try {
+                    Thread.sleep(400)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    break
+                }
+            }
+            if (leavesPresent(dir, leafIds)) {
+                Log.i(TAG, "installBlocking after wait: leaves present for $label")
+                return ComapsSessionBootstrap.ensureOpen(app, force = false)
+            }
+            if (!runningFlag.compareAndSet(false, true)) {
+                Log.w(TAG, "installBlocking still busy after wait ($label)")
+                return leavesPresent(dir, leafIds) &&
+                    ComapsSessionBootstrap.ensureOpen(app, force = false)
+            }
+        }
         val path = geofabrikPath.trim().trim('/')
         activePathRef.set(path)
         activeLabelRef.set(label)
@@ -321,6 +341,17 @@ object MwmMapDownloader {
                 )
             main.post { onDone(ok) }
         }
+    }
+
+    private fun leavesPresent(
+        mwmDir: String,
+        leafIds: List<String>,
+    ): Boolean {
+        if (leafIds.isEmpty()) return false
+        val inst = runCatching { uniffi.navi.mwmInstalled(mwmDir) }.getOrNull() ?: return false
+        if (inst.version.isNullOrBlank()) return false
+        val have = inst.leafIds.toSet()
+        return leafIds.all { it in have }
     }
 
     /** Leaves (of [wanted]) that are not installed in the active release. */

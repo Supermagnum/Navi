@@ -530,11 +530,14 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
     private fun configureHikingProfileAndAvoids() {
         openRoutePanel()
         runCatching {
+            composeRule.onNodeWithTag("chip_profile_hiking", useUnmergedTree = true).performScrollTo()
             clickTag("chip_profile_hiking")
             runCatching { clickTag("btn_save_profile") }
             noteUi("chip_profile_hiking", "selected")
         }
         configureHikingAvoidsOnly()
+        // Profile sheet covers field_search; dismiss so From/Via/To entry can proceed.
+        dismissProfileSheets()
     }
 
     private fun configureHikingAvoidsOnly() {
@@ -550,6 +553,32 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
             composeRule.onNodeWithTag("toggle_avoid_ferries", useUnmergedTree = true).performScrollTo()
             ensureToggleOff("toggle_avoid_ferries")
         }
+        dismissProfileSheets()
+    }
+
+    /** Close profile / drive-settings overlays that hide the route search field. */
+    private fun dismissProfileSheets() {
+        val profileOpen =
+            runCatching {
+                composeRule.onNodeWithTag("btn_close_profile", useUnmergedTree = true).assertExists()
+                true
+            }.getOrDefault(false) ||
+                runCatching {
+                    composeRule
+                        .onNodeWithTag("btn_close_drive_settings", useUnmergedTree = true)
+                        .assertExists()
+                    true
+                }.getOrDefault(false)
+        clickTagSoft("btn_close_profile")
+        clickTagSoft("btn_save_profile")
+        clickTagSoft("btn_close_drive_settings")
+        clickTagSoft("btn_save_drive_settings")
+        clickTagSoft("btn_close_vehicle")
+        // Only Back when a profile sheet is open — bare Back can send us to launcher.
+        if (profileOpen) {
+            runCatching { device.pressBack() }
+        }
+        settle(400)
     }
 
     private fun ensureToggleOn(toggleTag: String) {
@@ -1511,6 +1540,7 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
     private fun awaitCorridorReadyBeforePlan() {
         val t0 = System.currentTimeMillis()
         var lastLog = 0L
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         while (System.currentTimeMillis() - t0 < DOWNLOAD_DEADLINE_MS) {
             acceptAnyLongTripDownloadPrompt()
             runCatching { clickTagSoft("btn_mwm_missing_download") }
@@ -1518,7 +1548,8 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
                 device.findObject(By.text("Download"))?.click()
                     ?: device.findObject(By.textContains("Download"))?.click()
             }
-            val ready = LongTripCoordinator.corridorReadyForPlanning()
+            // Promote past stuck Geofabrik PBF Downloading when MWM leaves are Ready.
+            val ready = LongTripCoordinator.reconcileMwmReady(ctx)
             val line = LongTripCoordinator.statusLine()
             if (System.currentTimeMillis() - lastLog > 15_000) {
                 lastLog = System.currentTimeMillis()
@@ -1835,18 +1866,10 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
             noteUi("open_route_panel", "field_search already visible")
             return
         }
+        // Profile / drive sheets sit above search — dismiss before chrome flicker.
+        dismissProfileSheets()
+        if (fieldVisible()) return
         runCatching { launchRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED) }
-        runCatching {
-            val ctx = InstrumentationRegistry.getInstrumentation().targetContext
-            val launch = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)
-            if (launch != null) {
-                launch.addFlags(
-                    android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                        android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP,
-                )
-                ctx.startActivity(launch)
-            }
-        }
         settle(500)
         NaviMapTestHooks.hideUiChrome = true
         NaviMapTestHooks.hideSearchChrome = true
@@ -1857,32 +1880,42 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         settle(400)
         closeTools()
         dismissGeofabrikMissingCoverage()
+        dismissProfileSheets()
         if (fieldVisible()) return
         clickTagSoft("btn_open_search")
         settle(400)
         runCatching { device.findObject(By.text("Route"))?.click() }
         settle(500)
         val deadline = SystemClock.elapsedRealtime() + 45_000
+        var bringFrontAt = 0L
         while (SystemClock.elapsedRealtime() < deadline) {
             if (fieldVisible()) return
             closeTools()
             dismissGeofabrikMissingCoverage()
+            dismissProfileSheets()
             NaviMapTestHooks.hideUiChrome = false
             NaviMapTestHooks.hideSearchChrome = false
-            // If MainActivity was backgrounded (launcher), bring it back.
-            runCatching {
-                val ctx = InstrumentationRegistry.getInstrumentation().targetContext
-                val launch = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)
-                if (launch != null) {
-                    launch.addFlags(
-                        android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
-                            android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                            android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP,
-                    )
-                    ctx.startActivity(launch)
+            // Bring MainActivity forward at most every 8s — thrashing PAUSE/RESUME
+            // every loop iteration was closing search as soon as it opened.
+            val now = SystemClock.elapsedRealtime()
+            if (now - bringFrontAt > 8_000) {
+                bringFrontAt = now
+                runCatching {
+                    val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+                    val launch = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)
+                    if (launch != null) {
+                        launch.addFlags(
+                            android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                                android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                                android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                        )
+                        ctx.startActivity(launch)
+                    }
+                }
+                runCatching {
+                    launchRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
                 }
             }
-            runCatching { launchRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED) }
             clickTagSoft("btn_open_search")
             clickTagSoft("btn_tools_collapsed")
             runCatching { device.findObject(By.text("Route"))?.click() }

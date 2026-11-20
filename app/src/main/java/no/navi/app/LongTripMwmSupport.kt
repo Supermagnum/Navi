@@ -181,6 +181,14 @@ object LongTripMwmSupport {
                 geofabrikPath = geofabrikPath,
             )
         if (!ok) {
+            // Concurrent install / transient fail: disk leaves still satisfy routing.
+            if (leavesInstalled(context, leaves)) {
+                Log.i(
+                    TAG,
+                    "MWM install reported fail but leaves present for $geofabrikPath",
+                )
+                return ComapsSessionBootstrap.ensureOpen(context, force = false)
+            }
             Log.w(TAG, "MWM install failed for $geofabrikPath — PBF fallback")
             return false
         }

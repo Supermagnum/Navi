@@ -384,8 +384,7 @@ object LongTripCoordinator {
         if (!MwmClientBootstrap.isEnabled()) return false
         val leaves = LongTripMwmSupport.resolveLeafIds(context, regionId) ?: return false
         if (LongTripMwmSupport.leavesInstalled(context, leaves)) {
-            states[regionId] = State.Indexed
-            refreshStatusLine()
+            markRegionIndexed(states, regionId)
             ComapsSessionBootstrap.ensureOpen(context, force = false)
             return true
         }
@@ -393,15 +392,89 @@ object LongTripCoordinator {
         refreshStatusLine()
         // Blocking install on caller thread — [enable] already runs from IO.
         val ok = LongTripMwmSupport.ensureInstalled(context, regionId)
-        if (ok) {
-            states[regionId] = State.Indexed
-            refreshStatusLine()
+        if (ok || LongTripMwmSupport.leavesInstalled(context, leaves)) {
+            markRegionIndexed(states, regionId)
             return true
         }
         states[regionId] = State.Needed
         refreshStatusLine()
         Log.w(TAG, "MWM path failed for $regionId — falling back to Geofabrik PBF")
         return false
+    }
+
+    /**
+     * Mark [regionId] Indexed on both the enqueue [states] map and the live
+     * [planRef] when a concurrent [enable] replaced the plan mid-install.
+     */
+    private fun markRegionIndexed(
+        states: MutableMap<String, State>,
+        regionId: String,
+    ) {
+        states[regionId] = State.Indexed
+        val live = planRef.get()
+        if (live != null && live.states !== states) {
+            live.states.keys
+                .firstOrNull { PackRegionAvailability.regionIdsMatchForCatalog(it, regionId) }
+                ?.let { live.states[it] = State.Indexed }
+        }
+        refreshStatusLine()
+    }
+
+    /**
+     * Promote corridor regions to Indexed when CoMaps MWM leaves are already
+     * installed — even if a dead Geofabrik PBF fallback left the state at
+     * Downloading. Cancels leftover PBF work once the corridor is ready.
+     *
+     * Call from UI wait loops so concurrent [enable] / PBF 404 retries cannot
+     * block planning after MWM leaves land on disk.
+     */
+    fun reconcileMwmReady(context: Context?): Boolean {
+        val plan = planRef.get() ?: return false
+        val check = mwmLeavesReadyCheck
+        if (check == null &&
+            (context == null || !MwmClientBootstrap.isEnabled())
+        ) {
+            return corridorReadyForPlanning()
+        }
+        var promoted = false
+        for (regionId in plan.regionsInOrder) {
+            val st = plan.states[regionId] ?: continue
+            if (regionPacksReady(regionId)) continue
+            val leavesReady =
+                if (check != null) {
+                    check(regionId)
+                } else {
+                    val ctx = context ?: continue
+                    val leaves =
+                        LongTripMwmSupport.resolveLeafIds(ctx, regionId) ?: continue
+                    LongTripMwmSupport.leavesInstalled(ctx, leaves)
+                }
+            if (!leavesReady) continue
+            plan.states[regionId] = State.Indexed
+            promoted = true
+            Log.i(TAG, "MWM leaves ready for $regionId — promoted past $st (ignore PBF)")
+        }
+        if (promoted) {
+            refreshStatusLine()
+            if (corridorReadyForPlanning() && context != null) {
+                runCatching {
+                    RegionDownloadBackground.cancelPending(NaviAppData.resolve(context))
+                }.onSuccess {
+                    Log.i(TAG, "corridor MWM-ready — cancelled leftover PBF job/queue")
+                }.onFailure {
+                    Log.w(TAG, "cancelPending after MWM reconcile failed", it)
+                }
+            }
+        }
+        return corridorReadyForPlanning()
+    }
+
+    /** Host-test override for [reconcileMwmReady] without UniFFI MWM. */
+    @Volatile
+    private var mwmLeavesReadyCheck: ((String) -> Boolean)? = null
+
+    fun setMwmLeavesReadyCheckForTests(check: ((String) -> Boolean)?) {
+        mwmLeavesReadyCheck = check
     }
 
     private fun startPackDownload(
@@ -701,6 +774,7 @@ object LongTripCoordinator {
         enabled.set(false)
         planRef.set(null)
         statusLine.set("")
+        mwmLeavesReadyCheck = null
         RegionDownloadBackground.removePhaseListener(phaseListener)
         corridorProvider = defaultCorridorProvider
         downloadStarter = defaultDownloadStarter

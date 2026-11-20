@@ -1,44 +1,36 @@
 {
   "plan_ready": true,
-  "peak_pss_kb": 828626,
-  "logcat_alerts": [
-    {
-      "t": 1795174806.0440717,
-      "line": "11-20 12:40:05.708 29136 29136 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<"
-    },
-    {
-      "t": 1795174806.0462058,
-      "line": "11-20 12:40:05.710 29136 29136 I AndroidRuntime: Using default boot image"
-    },
-    {
-      "t": 1795174806.0463307,
-      "line": "11-20 12:40:05.710 29136 29136 I AndroidRuntime: Leaving lock profiling enabled"
-    },
-    {
-      "t": 1795174806.1228817,
-      "line": "11-20 12:40:05.787 29136 29136 D AndroidRuntime: Calling main entry com.android.commands.am.Am"
-    }
-  ],
+  "peak_pss_kb": 933054,
+  "logcat_alerts": [],
   "gps": {
     "ok": true,
     "cabins": [
+      {
+        "name": "Hadlaskard",
+        "kind": "cabin",
+        "lat": 60.22,
+        "lon": 7.65,
+        "passed_at_lat": 60.2411288154223,
+        "passed_at_lon": 7.662949172131334,
+        "sample_i": 926
+      },
       {
         "name": "Sandhaug_Turisthytte",
         "kind": "cabin",
         "lat": 60.192,
         "lon": 7.512,
-        "passed_at_lat": 60.2017834326377,
-        "passed_at_lon": 7.521261479863966,
-        "sample_i": 1026
+        "passed_at_lat": 60.21114049854685,
+        "passed_at_lon": 7.531408276642907,
+        "sample_i": 933
       },
       {
         "name": "Lothepus_camping",
         "kind": "cabin",
         "lat": 60.087,
         "lon": 6.543,
-        "passed_at_lat": 60.10856180307755,
-        "passed_at_lon": 6.555279989207378,
-        "sample_i": 1243
+        "passed_at_lat": 60.094292210201566,
+        "passed_at_lon": 6.575118052324488,
+        "sample_i": 1222
       },
       {
         "name": "Nashaugsætra",
@@ -47,7 +39,7 @@
         "lon": 9.972
       }
     ],
-    "peak_pss_kb": 841211
+    "peak_pss_kb": 948502
   },
-  "finished": "2026-11-20T11:49:51.884989+00:00"
+  "finished": "2026-11-20T21:02:43.316494+00:00"
 }

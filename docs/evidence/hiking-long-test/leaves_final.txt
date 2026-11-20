@@ -1,0 +1,7 @@
+Norway_Central
+Norway_Hedmark
+Norway_Hordaland
+Norway_Oppland
+Norway_Rogaland
+Norway_Southern
+Norway_Western

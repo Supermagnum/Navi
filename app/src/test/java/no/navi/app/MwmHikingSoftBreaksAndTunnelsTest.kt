@@ -53,6 +53,53 @@ class MwmHikingSoftBreaksAndTunnelsTest {
     }
 
     @Test
+    fun tunnelAvoidAnchorsIncludeEntranceMidExit() {
+        val poly =
+            buildString {
+                for (i in 0..20) {
+                    if (i > 0) append(';')
+                    val lat = 60.0 - i * 0.01
+                    append("10.0,$lat")
+                }
+            }
+        val turns =
+            JSONArray()
+                .put(turn(false, 2_000.0))
+                .put(turn(true, 1_000.0))
+                .put(turn(true, 1_000.0))
+                .put(turn(false, 5_000.0))
+        val anchors = MwmProductionPlanner.tunnelAvoidAnchors(turns.toString(), poly)
+        assertEquals(3, anchors.size)
+        // Entrance (15%) north of mid (50%); exit (85%) south of mid.
+        assertTrue("entrance=${anchors[0].first} mid=${anchors[1].first}", anchors[0].first > anchors[1].first)
+        assertTrue("mid=${anchors[1].first} exit=${anchors[2].first}", anchors[1].first > anchors[2].first)
+    }
+
+    @Test
+    fun tunnelFpSummaryNamesContiguousRuns() {
+        val turns =
+            JSONArray()
+                .put(turn(false, 100.0, "Surface"))
+                .put(turn(true, 200.0, "Ustedalen"))
+                .put(turn(true, 150.0, "Ustedalen"))
+                .put(turn(false, 50.0, "Surface"))
+                .put(turn(true, 80.0, "Lilletoppen"))
+        val fp = MwmProductionPlanner.tunnelFpSummary(turns.toString())
+        assertEquals("Ustedalen@0.35|Lilletoppen@0.08", fp)
+    }
+
+    @Test
+    fun tunnelMaxRunLengthMTracksLongestRun() {
+        val turns =
+            JSONArray()
+                .put(turn(true, 80.0))
+                .put(turn(false, 50.0))
+                .put(turn(true, 200.0))
+                .put(turn(true, 150.0))
+        assertEquals(350.0, MwmProductionPlanner.tunnelMaxRunLengthM(turns.toString()), 1e-6)
+    }
+
+    @Test
     fun springNameHintDetected() {
         assertTrue(MwmProductionPlanner.comapsHitLooksLikeSpring("natural-spring", "Cold spring"))
         assertTrue(MwmProductionPlanner.comapsHitLooksLikeSpring(null, "Fjellkilde"))
@@ -62,9 +109,10 @@ class MwmHikingSoftBreaksAndTunnelsTest {
     private fun turn(
         tunnel: Boolean,
         distM: Double,
+        street: String = if (tunnel) "Tunnelvegen" else "Surface",
     ): JSONObject =
         JSONObject()
             .put("is_tunnel", tunnel)
             .put("dist_m", distM)
-            .put("street", if (tunnel) "Tunnelvegen" else "Surface")
+            .put("street", street)
 }
