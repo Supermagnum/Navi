@@ -85,9 +85,68 @@ object MwmMapDownloader {
 
     /**
      * Live progress line for MainActivity / [RegionReadiness]
-     * (e.g. `Downloading maps: Ostlandet 42%`).
+     * (e.g. `Downloading maps: Østlandet 42%`).
      */
     fun uiLine(): String = uiLineRef.get()
+
+    /**
+     * UI label for a catalog bake id (`europe_norway_ostlandet` → `Østlandet`).
+     * Never use raw [FfiMwmRegion.displayName] from `pretty_region_name` for
+     * Norway landsdeler — that path yields ASCII "Ostlandet".
+     */
+    fun regionDisplayLabel(regionId: String): String {
+        val path = LongTripMwmSupport.bakeIdToGeofabrikPath(regionId)
+        return RegionCoverage.displayName(path).ifBlank {
+            regionId.substringAfterLast('_').replaceFirstChar {
+                if (it.isLowerCase()) it.titlecase() else it.toString()
+            }
+        }
+    }
+
+    /**
+     * Leaf set for Choose-region install: alias-first + strip foreign-country
+     * overlap leaves (Denmark_* under Østlandet, etc.).
+     */
+    fun leafIdsForRegionInstall(
+        regionId: String,
+        catalogLeaves: List<String>,
+    ): List<String> {
+        val path = LongTripMwmSupport.bakeIdToGeofabrikPath(regionId)
+        val alias =
+            LongTripMwmGeofabrikAliases.leafIdsForBakeId(regionId)
+                ?: LongTripMwmGeofabrikAliases.leafIdsForGeofabrikPath(path)
+        val raw = alias ?: catalogLeaves
+        return LongTripMwmSupport.filterLeavesForPath(regionId, raw)
+    }
+
+    /**
+     * Progress from the FFI installer is often the raw leaf id (`Denmark_…`).
+     * When installing a named region, keep the region label — never a foreign
+     * leaf country name.
+     */
+    internal fun mwmInstallPhase(
+        rawMessage: String,
+        label: String,
+        geofabrikPath: String,
+    ): String {
+        val region =
+            geofabrikPath
+                .takeIf { it.isNotBlank() }
+                ?.let { RegionProgressMessages.regionName(it) }
+                .orEmpty()
+                .ifBlank { label }
+                .ifBlank { "maps" }
+        val raw = rawMessage.trim()
+        if (raw.isEmpty()) return "Downloading maps: $region"
+        val looksLikeLeafId =
+            raw.contains('_') &&
+                raw.firstOrNull()?.isUpperCase() == true &&
+                raw.substringBefore('_').all { it.isLetter() }
+        if (looksLikeLeafId) {
+            return "Downloading maps: $region"
+        }
+        return raw
+    }
 
     /** Reads the active release from disk (no network). */
     fun refreshInstalled(context: Context) {
@@ -126,9 +185,9 @@ object MwmMapDownloader {
                 ?.let { RegionProgressMessages.regionName(it) }
                 .orEmpty()
                 .ifBlank { label }
-        val phase = message.ifBlank { "Downloading maps" }
+        val phase = mwmInstallPhase(message, label, geofabrikPath)
         val withRegion =
-            if (region.isNotBlank()) {
+            if (region.isNotBlank() && !phase.contains(region, ignoreCase = true)) {
                 val seq = RegionProgressMessages.sequenceFor(geofabrikPath)
                 RegionProgressMessages.annotate(
                     phase,
@@ -247,12 +306,19 @@ object MwmMapDownloader {
         context: Context,
         leafIds: List<String>,
         label: String,
+        geofabrikPath: String = "",
         onDone: (Boolean) -> Unit = {},
     ) {
         if (runningFlag.get() || state.running) return
         val app = context.applicationContext
         executor.execute {
-            val ok = installBlocking(app, leafIds, label)
+            val ok =
+                installBlocking(
+                    context = app,
+                    leafIds = leafIds,
+                    label = label,
+                    geofabrikPath = geofabrikPath,
+                )
             main.post { onDone(ok) }
         }
     }
@@ -343,18 +409,37 @@ internal fun MwmMapsSection(modifier: Modifier = Modifier) {
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
-                for (r in st.regions.filter { it.id.contains("norway") }) {
+                for (r in st.regions.filter { it.id.contains("norway", ignoreCase = true) }) {
+                    val uiLabel = MwmMapDownloader.regionDisplayLabel(r.id)
+                    val installLeaves =
+                        MwmMapDownloader.leafIdsForRegionInstall(r.id, r.leafIds)
+                    val installBytes =
+                        if (installLeaves == r.leafIds) {
+                            r.totalBytes.toLong()
+                        } else {
+                            // Size unknown after stripping foreign overlap leaves.
+                            r.totalBytes.toLong()
+                        }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Text(
-                            "${r.displayName} (${formatMb(r.totalBytes.toLong())})",
+                            "$uiLabel (${formatMb(installBytes)})",
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.weight(1f),
                         )
                         TextButton(
-                            onClick = { MwmMapDownloader.install(context, r.leafIds, r.displayName) },
+                            onClick = {
+                                val path =
+                                    LongTripMwmSupport.bakeIdToGeofabrikPath(r.id)
+                                MwmMapDownloader.install(
+                                    context = context,
+                                    leafIds = installLeaves,
+                                    label = uiLabel,
+                                    geofabrikPath = path,
+                                )
+                            },
                             modifier = Modifier.testTag("btn_mwm_install_${r.id}"),
                         ) { Text(stringResource(R.string.mwm_maps_download)) }
                     }

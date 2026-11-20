@@ -8,9 +8,9 @@ import org.junit.Test
 
 class LongTripMwmSupportTest {
     /**
-     * Bake-id prefixes covered by navi-mwm-catalog v2 `region_to_leaves`
-     * (Nordics only on device catalog 261115). Aliases are intentionally absent
-     * for these so catalog remains the source of truth.
+     * Nordic bake-id prefixes that may still appear in catalog `region_to_leaves`.
+     * Norway/Denmark also have curated alias rows so bloated catalog overlap
+     * leaves (Denmark_* under Østlandet) cannot win.
      */
     private val catalogCoveredBakePrefixes =
         listOf(
@@ -147,20 +147,39 @@ class LongTripMwmSupportTest {
     }
 
     @Test
-    fun nordic_paths_have_no_alias_rows_catalog_is_authoritative() {
-        val nordicSamples =
+    fun norway_ostlandet_alias_is_norway_only_never_denmark() {
+        val leaves =
+            LongTripMwmGeofabrikAliases.leafIdsForGeofabrikPath("europe/norway/ostlandet")
+        assertNotNull(leaves)
+        assertTrue(leaves!!.isNotEmpty())
+        assertTrue(
+            "Østlandet alias must be Norway_* only; got $leaves",
+            leaves.all { it.startsWith("Norway_") },
+        )
+        assertTrue(leaves.none { it.startsWith("Denmark_") })
+        assertTrue(leaves.none { it.startsWith("Sweden_") })
+    }
+
+    @Test
+    fun filterLeavesForPath_strips_denmark_from_ostlandet_catalog_row() {
+        val bloated =
             listOf(
-                "europe/norway",
-                "europe/norway/ostlandet",
-                "europe/sweden",
-                "europe/sweden/stockholm",
-                "europe/denmark",
-                "europe/finland",
+                "Norway_Hedmark",
+                "Denmark_North Denmark Region",
+                "Sweden_Bergslagen",
+                "Norway_Oppland",
             )
-        for (path in nordicSamples) {
+        val kept =
+            LongTripMwmSupport.filterLeavesForPath("europe/norway/ostlandet", bloated)
+        assertEquals(listOf("Norway_Hedmark", "Norway_Oppland"), kept)
+    }
+
+    @Test
+    fun sweden_finland_still_prefer_catalog_when_no_alias() {
+        for (path in listOf("europe/sweden", "europe/sweden/stockholm", "europe/finland")) {
             assertTrue("expected catalog coverage for $path", isCatalogCovered(path))
             assertNull(
-                "Nordic $path must not use alias table (catalog region_to_leaves)",
+                "Sweden/Finland $path stay catalog-only until curated",
                 LongTripMwmGeofabrikAliases.leafIdsForGeofabrikPath(path),
             )
         }

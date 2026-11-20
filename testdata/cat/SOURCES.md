@@ -86,7 +86,7 @@ Innlandet bbox extract: **not fetched**.
 
 ## RepeaterBook
 
-RepeaterBook data reaches the app only as files the user downloads from repeaterbook.com and copies into the app drop folder (`Android/data/no.navi.app/files/repeaters` on Android, `repeaters/` under the app data directory on desktop). The app never contacts repeaterbook.com. The user is responsible for complying with RepeaterBook's terms. No RepeaterBook export is committed here.
+OpenRepeater / RepeaterBook data reaches the app only as KML/KMZ the user exports and copies into `repeater-data` (SD if present, else internal: `Android/data/no.navi.app/files/repeater-data`; desktop: `{app_data}/repeater-data`). The app never contacts those sites. See [`docs/repeater-data.md`](../../docs/repeater-data.md). No exports are committed here (`/repeater-data/` is gitignored).
 
 `testdata/cat/repeaterbook/` holds the parser fixtures. The placemark text uses RepeaterBook's KML layout. The callsigns, frequencies, tones, and coordinates are the OSM LA5MR sites already in this directory (ODbL, changeset 189693189, user Visaman): LA5MR node 1705107664, LA6GR node 1640276661, LA2RRR node 471110617, LA5ARR node 3115922468. The KMZ is the same KML. The border pair repeats the LA5MR placemark with `state_id` NO and SE. The CSV files are the same sites, with and without coordinates, plus a file of rejected coordinates.
 

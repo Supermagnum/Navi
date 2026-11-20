@@ -58,6 +58,6 @@ real Bluetooth in CI.
 - Licence: you may listen, but do not transmit without an amateur radio
   licence.
 
-RepeaterBook is not fetched. The host reads KML/KMZ/CSV from the drop folder and passes parsed records to this guest. The guest never receives a path. Network choice `auto` follows the nearest programmable network; a named network with no members in the current area falls back to `auto` and the host shows a notice. Switching uses the live position (and dead reckoning when GNSS is lost). A planned route is not required. A drive with a physical radio and a user-copied KML is still a manual check: find `Android/data/no.navi.app/files/repeaters` over MTP, press Update, select the network, and confirm VFO A follows it with no route set.
+OpenRepeater / RepeaterBook are not fetched. The host reads KML/KMZ from `repeater-data` and passes parsed records to this guest. The guest never receives a path. Network choice `auto` follows the nearest programmable network; a named network with no members in the current area falls back to `auto` and the host shows a notice. Switching uses the live position (and dead reckoning when GNSS is lost). A planned route is not required. Manual check: copy KML into `Android/data/no.navi.app/files/repeater-data` over MTP, press Update, select the network, and confirm VFO A follows it with no route set. See [`docs/repeater-data.md`](../../docs/repeater-data.md).
 
 **Status:** Hamlib dummy verified on desktop + emulator; VR-N76 host BlueZ hardware Steps 5–6 PASS (2026-10-12).

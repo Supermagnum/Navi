@@ -34,9 +34,9 @@ pub mod vehicle_route_guard;
 
 pub use attribution::{store_attribution_files, AttributionStore};
 pub use catalog::{
-    parse_catalog_json, CatalogLeaf, ComapsMeta, DisplayNameOverride, DisplayNameOverrides,
-    MwmCatalog, MwmFingerprint, VehicleLimitsCoverageCatalog, COUNTRY_GROUPS_ROUTABLE_TARGET,
-    SCHEMA_V2,
+    install_leaves_for_region, parse_catalog_json, CatalogLeaf, ComapsMeta, DisplayNameOverride,
+    DisplayNameOverrides, MwmCatalog, MwmFingerprint, VehicleLimitsCoverageCatalog,
+    COUNTRY_GROUPS_ROUTABLE_TARGET, SCHEMA_V2,
 };
 pub use checksum::{
     sha1_base64_of_bytes, sha1_base64_of_path, sha256_hex_of_bytes, sha256_hex_of_path,

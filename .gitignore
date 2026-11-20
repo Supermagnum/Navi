@@ -90,3 +90,7 @@ testdata/cat/local/
 
 # User-downloaded RepeaterBook KML exports. Must never be committed.
 /klm/
+
+# Local OpenRepeater / RepeaterBook KML drops (device mirror / examples). Never commit.
+/repeater-data/
+/repeater-data/**

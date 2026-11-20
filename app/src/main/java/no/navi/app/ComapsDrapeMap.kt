@@ -257,8 +257,9 @@ internal fun ComapsDrapeMap(
                             note = null
                         }
                         ComapsDrape.State.FAILED, ComapsDrape.State.UNAVAILABLE -> {
+                            // Keep polling: World.mwm may appear when the pack-volume
+                            // SD mounts after a cold-start empty-internal fallback.
                             note = "failed"
-                            return@LaunchedEffect
                         }
                         else -> note = "starting"
                     }

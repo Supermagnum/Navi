@@ -6,12 +6,52 @@ package no.navi.app
  * normalized to underscores (`europe_germany_niedersachsen`).
  * Verified against navi-mwm-catalog v2 / CoMaps release 261115 leaf ids.
  *
- * Nordic bake ids (Norway/Sweden/Denmark/Finland) are intentionally absent:
- * [LongTripMwmSupport.resolveLeafIds] prefers catalog `region_to_leaves` first.
+ * Nordic bake ids are curated here too so bloated catalog rows (e.g. Østlandet
+ * pulling Denmark_* overlap leaves) cannot override Norway-only installs.
+ * [LongTripMwmSupport.resolveLeafIds] prefers this table over catalog.
  */
 internal object LongTripMwmGeofabrikAliases {
     private val bakeIdToLeaves: Map<String, List<String>> =
         mapOf(
+            // Norway — Norway_* only. Catalog region_to_leaves often lists
+            // Denmark/Sweden border-overlap leaves under Østlandet; those must
+            // never install when the user picks a Norway landsdel.
+            "europe_norway_ostlandet" to
+                listOf(
+                    "Norway_Central",
+                    "Norway_Hedmark",
+                    "Norway_Hordaland",
+                    "Norway_Oppland",
+                    "Norway_Southern",
+                    "Norway_Western",
+                ),
+            "europe_norway_sorlandet" to
+                listOf("Norway_Southern", "Norway_Rogaland"),
+            "europe_norway_vestlandet" to
+                listOf(
+                    "Norway_Western",
+                    "Norway_Hordaland",
+                    "Norway_Rogaland",
+                    "Norway_Central",
+                ),
+            "europe_norway_trondelag" to
+                listOf(
+                    "Norway_North Trondelag",
+                    "Norway_South Trondelag",
+                    "Norway_Nordland",
+                ),
+            "europe_norway_nord_norge" to
+                listOf("Norway_Northern", "Norway_Nordland", "Norway_Svalbard"),
+            "europe_norway_svalbard_janmayen" to
+                listOf("Norway_Svalbard", "Norway_Jan Mayen"),
+            "europe_denmark" to
+                listOf(
+                    "Denmark_Capital Region of Denmark",
+                    "Denmark_Central Denmark Region",
+                    "Denmark_North Denmark Region",
+                    "Denmark_Region Zealand",
+                    "Denmark_Region of Southern Denmark",
+                ),
             "europe_germany" to listOf("Germany_Baden-Wurttemberg_Regierungsbezirk Freiburg", "Germany_Baden-Wurttemberg_Regierungsbezirk Karlsruhe", "Germany_Baden-Wurttemberg_Regierungsbezirk Stuttgart_Heilbronn", "Germany_Baden-Wurttemberg_Regierungsbezirk Stuttgart_Stuttgart", "Germany_Baden-Wurttemberg_Regierungsbezirk Tubingen", "Germany_Berlin", "Germany_Brandenburg_North", "Germany_Brandenburg_South", "Germany_Free State of Bavaria_Lower Bavaria", "Germany_Free State of Bavaria_Lower Franconia", "Germany_Free State of Bavaria_Middle Franconia", "Germany_Free State of Bavaria_Swabia", "Germany_Free State of Bavaria_Upper Bavaria_East", "Germany_Free State of Bavaria_Upper Bavaria_Ingolstadt", "Germany_Free State of Bavaria_Upper Bavaria_Munchen", "Germany_Free State of Bavaria_Upper Bavaria_South", "Germany_Free State of Bavaria_Upper Franconia", "Germany_Free State of Bavaria_Upper Palatinate", "Germany_Hamburg_main", "Germany_Hesse_Regierungsbezirk Darmstadt", "Germany_Hesse_Regierungsbezirk Giessen", "Germany_Hesse_Regierungsbezirk Kassel", "Germany_Lower Saxony_Braunschweig", "Germany_Lower Saxony_Bremen_Bremen", "Germany_Lower Saxony_Bremen_Munster", "Germany_Lower Saxony_Hannover", "Germany_Lower Saxony_Oldenburg", "Germany_Mecklenburg-Vorpommern", "Germany_North Rhine-Westphalia_Regierungsbezirk Arnsberg_Arnsberg", "Germany_North Rhine-Westphalia_Regierungsbezirk Arnsberg_Dortmund", "Germany_North Rhine-Westphalia_Regierungsbezirk Detmold", "Germany_North Rhine-Westphalia_Regierungsbezirk Dusseldorf_Dusseldorf", "Germany_North Rhine-Westphalia_Regierungsbezirk Dusseldorf_Mulheim", "Germany_North Rhine-Westphalia_Regierungsbezirk Dusseldorf_Wesel", "Germany_North Rhine-Westphalia_Regierungsbezirk Koln_Aachen", "Germany_North Rhine-Westphalia_Regierungsbezirk Koln_Koln", "Germany_North Rhine-Westphalia_Regierungsbezirk Munster_Munster", "Germany_North Rhine-Westphalia_Regierungsbezirk Munster_Recklinghausen", "Germany_Rhineland-Palatinate_Koblenz", "Germany_Rhineland-Palatinate_South", "Germany_Saarland", "Germany_Saxony-Anhalt_Halle", "Germany_Saxony-Anhalt_Magdeburg", "Germany_Saxony_Dresden", "Germany_Saxony_Leipzig", "Germany_Schleswig-Holstein_Flensburg", "Germany_Schleswig-Holstein_Kiel", "Germany_Thuringia"),
             "europe_germany_baden_wuerttemberg" to listOf("Germany_Baden-Wurttemberg_Regierungsbezirk Freiburg", "Germany_Baden-Wurttemberg_Regierungsbezirk Karlsruhe", "Germany_Baden-Wurttemberg_Regierungsbezirk Stuttgart_Heilbronn", "Germany_Baden-Wurttemberg_Regierungsbezirk Stuttgart_Stuttgart", "Germany_Baden-Wurttemberg_Regierungsbezirk Tubingen"),
             "europe_germany_baden_wuerttemberg_freiburg_regbez" to listOf("Germany_Baden-Wurttemberg_Regierungsbezirk Freiburg"),

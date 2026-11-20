@@ -147,8 +147,17 @@ object PlaceIndexStorage {
             candidates.firstOrNull { it.absolutePath != target.dbFile.absolutePath }
         if (source == null) {
             runCatching { marker.writeText(target.volumeId + "\n") }
-            // Pollers call this often while the DB is still empty / tiny.
-            if (loggedNoMove.compareAndSet(false, true)) {
+            // Missing DB → search logs "Place index error: unable to open database"
+            // and CoMaps World.mwm returns Sandhausen for "Sandhaug". Do not create
+            // via Android framework SQLite (WAL/SHM fights the native NameIndex).
+            // Region download / IdlePackJobs rebuild rows; operators may also seed.
+            if (!target.dbFile.isFile && loggedNoMove.compareAndSet(false, true)) {
+                Log.w(
+                    TAG,
+                    "place_index.db missing on pack volume — search degraded until rebuild; " +
+                        locationSummary(context),
+                )
+            } else if (loggedNoMove.compareAndSet(false, true)) {
                 Log.i(TAG, "no existing DB to move; ${locationSummary(context)}")
             }
             return target

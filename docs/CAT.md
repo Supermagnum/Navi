@@ -475,17 +475,20 @@ Populate by importing and cross-referencing the sources in
    information-only for the Benshi backend).
 4. **Bundled extract** — regional SQLite table (callsign, lat, lon, freq_out_mhz,
    shift_mhz, ctcss_hz, modulation, network_id) shipped or built from the above.
-5. **RepeaterBook** — only from KML, KMZ, or CSV the user downloads and copies
-   into the drop folder. The app never contacts repeaterbook.com. There is no
-   API client and no server mirror.
+5. **OpenRepeater / RepeaterBook files** — only from KML, KMZ, or CSV the user
+   exports and copies into `repeater-data`. The app never contacts those sites.
+   There is no API client for them. Step-by-step: [`repeater-data.md`](repeater-data.md).
 
-### RepeaterBook files
+### `repeater-data` files (OpenRepeater / RepeaterBook)
 
-Android path (applicationId `no.navi.app`, no suffix):
-`Android/data/no.navi.app/files/repeaters`. Desktop default:
-`repeaters/` under the app data directory. The folder and a `README.txt` are
-created on first run. Android deletes the folder when the app is uninstalled.
-The old `Documents/repeater-csv` location is not used.
+Android (applicationId `no.navi.app`): prefer SD when present —
+`Android/data/no.navi.app/files/repeater-data` on that volume; otherwise the same
+path under internal app files. Desktop default: `repeater-data/` under the app
+data directory. The folder and a `README.txt` are created on first run (user
+writable for MTP). File names are arbitrary; do not overwrite prior exports.
+Android deletes the folder when the app is uninstalled. Legacy `repeaters/` and
+`Documents/repeater-csv` are not the primary location (legacy `repeaters/` is
+still scanned if present).
 
 KML/KMZ is the primary source. Real exports put the callsign in `<name>`, the
 place, output frequency, optional tone, and on-air flag in the description,
@@ -808,7 +811,7 @@ timelines: [`cat-test.md`](cat-test.md).
 |---|---|
 | JVM/Robolectric bridge unit tests | Fake USB/BT sockets through loopback bridge (reconnect, partial writes, disconnect) |
 | Emulator instrumentation | Real `libhamlib.so` + CATS-plugin in wasmtime; remote `rigctld` via `10.0.2.2:4532`; USB/BT via injected boundaries (SPP data path to a real radio is **not** reproducible on emulator) |
-| Real device (manual) | USB OTG + Bluetooth SPP with a physical radio; confirm read-back for every field after checking Hamlib backend status for that model. Also: connect to a computer, find `Android/data/no.navi.app/files/repeaters` over MTP, copy in a RepeaterBook KML, press Update, and check the import report. Select a network, drive without a route, and confirm VFO A follows that network. |
+| Real device (manual) | USB OTG + Bluetooth SPP with a physical radio; confirm read-back for every field after checking Hamlib backend status for that model. Also: copy OpenRepeater KML into `Android/data/no.navi.app/files/repeater-data` over MTP ([`repeater-data.md`](repeater-data.md)), press Update, and check the import report. Select a network, drive without a route, and confirm VFO A follows that network. |
 
 ### Fixture sources
 

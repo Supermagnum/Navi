@@ -74,7 +74,11 @@ class RegionProgressMessagesTest {
                 total = 4,
             )
         assertTrue(part.contains("1 of 4"))
-        assertTrue(part.contains("Ostlandet") || part.contains("ostlandet"))
+        assertTrue(
+            part.contains("Østlandet") ||
+                part.contains("Ostlandet") ||
+                part.contains("ostlandet"),
+        )
         assertTrue(part.contains("Downloading"))
         assertFalse(
             "must not be a bare leaf=State with no N-of-M",

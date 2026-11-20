@@ -22,15 +22,12 @@
   "limitation": "Base MWMs come from a single CoMaps planet release; Navi publishes sidecars only. region_to_leaves maps frozen .rkyv bake_ids to CoMaps leaves for migration; country_groups is the primary region UI source.",
   "region_to_leaves": {
     "europe_norway_ostlandet": [
+      "Norway_Central",
       "Norway_Hedmark",
+      "Norway_Hordaland",
       "Norway_Oppland",
       "Norway_Southern",
-      "Norway_Central",
-      "Denmark_North Denmark Region",
-      "Sweden_Bergslagen",
-      "Norway_Western",
-      "Sweden_Vastra Gotaland",
-      "Norway_Hordaland"
+      "Norway_Western"
     ],
     "europe_sweden_stockholm": [
       "Sweden_Stockholm"

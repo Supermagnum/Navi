@@ -246,7 +246,7 @@
     <string name="ui_a_1750_hz_burst_repeater_is_tuned_with_ctcss_and_dcs_off_nav">A 1750 Hz burst repeater is tuned with CTCSS and DCS off. Navi never sends the burst; you do that on the radio.</string>
     <string name="ui_off_by_default_uses_agreeing_radioid_and_file_positions_only">Off by default. Uses agreeing RadioID and file positions only. OSM sites stay put.</string>
     <string name="ui_receive_only_programming_navi_never_transmits_no_ptt">Receive-only programming. Navi never transmits (no PTT).</string>
-    <string name="ui_copy_repeaterbook_kml_kmz_exports_into_this_folder_networked">Copy RepeaterBook KML/KMZ exports into this folder. Networked repeaters may need several files, not one file per country.</string>
+    <string name="ui_copy_repeaterbook_kml_kmz_exports_into_this_folder_networked">Copy OpenRepeater (or RepeaterBook) KML/KMZ exports into repeater-data. Any file name is fine; do not overwrite existing files. Networked systems may need several files.</string>
     <string name="ui_plugin_controls_vfo_1_only_vfo_2_is_left_to_the_user">Plugin controls VFO 1 only; VFO 2 is left to the user.</string>
     <string name="ui_developer_test_only">Developer / test only</string>
     <string name="ui_off_by_default_steps_network_follow_along_a_planned_corridor">Off by default. Steps network follow along a planned corridor for FakeBenshiPeer / lab checks.</string>

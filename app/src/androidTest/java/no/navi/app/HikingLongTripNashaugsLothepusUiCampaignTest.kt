@@ -52,6 +52,7 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         private const val ORIGIN_LAT = 60.8835
         private const val ORIGIN_LON = 9.9720
         private const val ORIGIN_ELEV_M = 820.0
+
         // Sandhaug Turisthytte (DNT), Hardangervidda — not Lillehammer "Turisthotell*".
         private const val VIA_LAT = 60.1922
         private const val VIA_LON = 7.5125
@@ -59,10 +60,25 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         private const val DEST_LON = 6.5526
 
         private const val FROM_QUERY = "Nashaugsætra"
-        private const val VIA_QUERY = "Sandhaug"
+
+        /** DNT cabin on Hardangervidda — never bare "Sandhaug" (Sandhausen DE / Gjøvik AS). */
+        private const val VIA_QUERY = "Sandhaug Turisthytte"
         private const val TO_QUERY = "Lothepus camping"
         private const val VIA_NAME_NEEDLE = "Sandhaug"
+        private const val VIA_DISPLAY_NAME = "Sandhaug Turisthytte"
         private const val DEPARTURE_ISO = "2026-06-01T08:00:00"
+
+        private fun viaHitRejected(name: String): Boolean {
+            val n = name.lowercase()
+            return n.contains("sandhausen") ||
+                n.contains("germany") ||
+                n.contains("baden") ||
+                n.contains("gjøvik") ||
+                n.contains("gjovik") ||
+                n.contains("sandhaug as") ||
+                n.contains("lillehammer") ||
+                n.contains("turisthotell")
+        }
 
         private const val OSTLANDET_REGION = "europe_norway_ostlandet"
         private const val VESTLANDET_REGION = "europe_norway_vestlandet"
@@ -123,6 +139,7 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         )
 
     private lateinit var dataDir: File
+
     /** App-files root that owns `mwm/` (follows long-trip pack volume / SD). */
     private lateinit var mwmDataDir: File
     private lateinit var device: UiDevice
@@ -253,11 +270,7 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         // 4) Enter route via Navi UI search (names first; coords fallback).
         typeNameOrCoordAndPick("chip_from", FROM_QUERY, ORIGIN_LAT, ORIGIN_LON, "from_nashaugs")
         screenshot("06_from_set")
-        // Never name-search "Sandhaug": geocoders return Sandhausen (DE) or
-        // Lillehammer hotels first, which poisons LongTrip corridor (13 DE regions).
-        // Force Hardangervidda Turisthytte coords only.
-        noteUi("via_sandhaug_skip_name", "forcing Hardangervidda coords (avoid Sandhausen DE)")
-        typeCoordAndPickForced("chip_via", VIA_LAT, VIA_LON, "via_sandhaug_coord")
+        pickSandhaugHardangerviddaVia()
         screenshot("07_via_set")
         typeNameOrCoordAndPick("chip_to", TO_QUERY, DEST_LAT, DEST_LON, "to_lothepus")
         screenshot("08_to_set")
@@ -265,24 +278,7 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         report.put("waypoints_summary", wp)
         noteUi("waypoints_summary", wp)
         writeReport()
-        assertTrue(
-            "Via Sandhaug must be set before plan (got: $wp)",
-            wp.contains("Via:", ignoreCase = true) &&
-                !wp.contains("Via: (none)", ignoreCase = true) &&
-                !wp.contains("Via: none", ignoreCase = true) &&
-                !wp.contains("Sandhausen", ignoreCase = true) &&
-                !wp.contains("Germany", ignoreCase = true) &&
-                !wp.contains("Lillehammer", ignoreCase = true),
-        )
-        val viaApplied = report.optJSONObject("via_sandhaug_coord")
-        val viaLatOk = viaApplied?.optDouble("applied_lat") ?: Double.NaN
-        val viaLonOk = viaApplied?.optDouble("applied_lon") ?: Double.NaN
-        assertTrue(
-            "Via must be Hardangervidda coords (got lat=$viaLatOk lon=$viaLonOk wp=$wp)",
-            !viaLatOk.isNaN() &&
-                viaLatOk in 59.8..60.6 &&
-                viaLonOk in 7.0..8.2,
-        )
+        assertViaHardangervidda(wp)
 
         // Keep long trip ON; DATEX stays OFF.
         ensureLongTripOnViaTools()
@@ -290,8 +286,14 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         runCatching { clickTag("chip_profile_hiking") }
         configureHikingAvoidsOnly()
 
+        // HARD: all corridor regions downloaded + ready BEFORE any Plan click.
+        awaitCorridorReadyBeforePlan()
         composeRule.onNodeWithTag("btn_plan_route", useUnmergedTree = true).performScrollTo()
         screenshot("09_before_plan")
+        assertTrue(
+            "corridorReadyForPlanning must be true before Plan click",
+            LongTripCoordinator.corridorReadyForPlanning(),
+        )
         clickTag("btn_plan_route")
         screenshot("10_after_plan_click")
         Log.i(TAG, "HIKING_PLAN_CLICKED")
@@ -300,7 +302,7 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         var planned = false
         var vestlandetHandled = false
         var lastReplan = 0L
-        while (System.currentTimeMillis() - t0 < DOWNLOAD_DEADLINE_MS) {
+        while (System.currentTimeMillis() - t0 < PLAN_DEADLINE_MS) {
             if (dismissGeofabrikMissingCoverage()) {
                 ensureComapsSessionOpen("after_geofabrik_dismiss")
                 if (System.currentTimeMillis() - lastReplan > 8_000) {
@@ -805,6 +807,7 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         }
         clickTagSoft("btn_mwm_storage_close")
         closeTools()
+
         // Orphan leaves can remain on disk when UI already shows empty — wipe then.
         fun listLeafMwmFiles(): List<String> {
             val roots =
@@ -895,10 +898,10 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
                     clickTag("btn_mwm_regions")
                     true
                 }.getOrDefault(false) ||
-                    runCatching {
-                        device.findObject(By.textContains("Choose region"))?.click()
-                        true
-                    }.getOrDefault(false)
+                runCatching {
+                    device.findObject(By.textContains("Choose region"))?.click()
+                    true
+                }.getOrDefault(false)
             noteUi("btn_mwm_regions", "attempt=$attempt opened=$openedCatalog")
             if (openedCatalog) break
             closeTools()
@@ -1056,7 +1059,8 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
                     clickTagSoft("btn_mwm_regions")
                     settle(1_500)
                     clickTagSoft("btn_mwm_install_$OSTLANDET_REGION")
-                    device.findObject(By.textContains("Østlandet"))
+                    device
+                        .findObject(By.textContains("Østlandet"))
                         ?.parent
                         ?.findObject(By.text("Download"))
                         ?.click()
@@ -1371,13 +1375,186 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
 
     private fun reapplyWaypointsAndPlan(reason: String) {
         typeNameOrCoordAndPick("chip_from", FROM_QUERY, ORIGIN_LAT, ORIGIN_LON, "from_re_$reason")
-        typeNameOrCoordAndPick("chip_via", VIA_QUERY, VIA_LAT, VIA_LON, "via_re_$reason")
+        pickSandhaugHardangerviddaVia()
         typeNameOrCoordAndPick("chip_to", TO_QUERY, DEST_LAT, DEST_LON, "to_re_$reason")
         runCatching { clickTag("chip_profile_hiking") }
         configureHikingAvoidsOnly()
+        awaitCorridorReadyBeforePlan()
         composeRule.onNodeWithTag("btn_plan_route", useUnmergedTree = true).performScrollTo()
         clickTag("btn_plan_route")
         noteUi("replan", reason)
+    }
+
+    /**
+     * Pick Sandhaug Turisthytte on Hardangervidda. Prefer seeded place-index /
+     * "Sandhaug Turisthytte" hits; reject Sandhausen DE, Gjøvik AS, Lillehammer
+     * hotels. Always clear vias first so a bad hit cannot leave a second via.
+     */
+    private fun pickSandhaugHardangerviddaVia() {
+        clearAllViasSoft()
+        openRoutePanel()
+        clickTag("chip_via")
+        settle(300)
+        val nameOk = trySearchPickSandhaug(VIA_QUERY, "via_sandhaug_name")
+        if (nameOk) {
+            noteUi("via_sandhaug", "accepted Hardangervidda name hit")
+            return
+        }
+        noteUi(
+            "via_sandhaug_skip_name",
+            "forcing Hardangervidda coords (reject Sandhausen DE / Gjøvik AS)",
+        )
+        clearAllViasSoft()
+        typeCoordAndPickForced("chip_via", VIA_LAT, VIA_LON, "via_sandhaug_coord")
+        // Coords-as-name is fine; prove lat/lon landed in Hardangervidda box.
+        val applied = report.optJSONObject("via_sandhaug_coord")
+        val lat = applied?.optDouble("applied_lat") ?: Double.NaN
+        val lon = applied?.optDouble("applied_lon") ?: Double.NaN
+        assertTrue(
+            "Forced via must be Hardangervidda (got $lat,$lon)",
+            !lat.isNaN() && lat in 59.8..60.6 && lon in 7.0..8.2,
+        )
+    }
+
+    private fun trySearchPickSandhaug(
+        query: String,
+        step: String,
+    ): Boolean {
+        NaviMapTestHooks.lastSearchHitCount = -1
+        NaviMapTestHooks.lastAppliedHitLat = Double.NaN
+        NaviMapTestHooks.lastAppliedHitName = ""
+        setField("field_search", query)
+        clickTagSoft("btn_submit_search")
+        val deadline = SystemClock.elapsedRealtime() + 20_000
+        while (SystemClock.elapsedRealtime() < deadline && NaviMapTestHooks.lastSearchHitCount < 1) {
+            Thread.sleep(250)
+            composeRule.mainClock.advanceTimeBy(250)
+        }
+        if (NaviMapTestHooks.lastSearchHitCount < 1) {
+            noteUi(step, "name_search_miss q=$query")
+            return false
+        }
+        clickTag("search_hit_0")
+        val applyDeadline = SystemClock.elapsedRealtime() + 12_000
+        while (SystemClock.elapsedRealtime() < applyDeadline && NaviMapTestHooks.lastAppliedHitLat.isNaN()) {
+            Thread.sleep(100)
+        }
+        val name = NaviMapTestHooks.lastAppliedHitName
+        val lat = NaviMapTestHooks.lastAppliedHitLat
+        val lon = NaviMapTestHooks.lastAppliedHitLon
+        if (lat.isNaN() || viaHitRejected(name) || lat !in 59.8..60.6 || lon !in 7.0..8.2) {
+            noteUi(step, "name_search_reject q=$query hit='$name' @$lat,$lon")
+            clearAllViasSoft()
+            return false
+        }
+        if (!name.contains(VIA_NAME_NEEDLE, ignoreCase = true)) {
+            noteUi(step, "name_search_reject_no_needle q=$query hit='$name'")
+            clearAllViasSoft()
+            return false
+        }
+        report.put(
+            step,
+            JSONObject()
+                .put("query", query)
+                .put("mode", "name_search")
+                .put("applied_lat", lat)
+                .put("applied_lon", lon)
+                .put("applied_name", name),
+        )
+        noteUi(step, "name_search q=$query applied=$lat,$lon name=$name")
+        writeReport()
+        return true
+    }
+
+    private fun assertViaHardangervidda(wp: String) {
+        assertTrue(
+            "Via Sandhaug Turisthytte must be set (got: $wp)",
+            wp.contains("Via:", ignoreCase = true) &&
+                !wp.contains("Via: (none)", ignoreCase = true) &&
+                !wp.contains("Via: none", ignoreCase = true) &&
+                !viaHitRejected(wp) &&
+                !wp.contains("→"),
+        )
+        val viaApplied =
+            report.optJSONObject("via_sandhaug_name")
+                ?: report.optJSONObject("via_sandhaug_coord")
+        val viaLatOk = viaApplied?.optDouble("applied_lat") ?: Double.NaN
+        val viaLonOk = viaApplied?.optDouble("applied_lon") ?: Double.NaN
+        assertTrue(
+            "Via must be Hardangervidda DNT cabin coords (got lat=$viaLatOk lon=$viaLonOk wp=$wp)",
+            !viaLatOk.isNaN() &&
+                viaLatOk in 59.8..60.6 &&
+                viaLonOk in 7.0..8.2,
+        )
+        report.put(
+            "via_proof",
+            JSONObject()
+                .put("waypoints_summary", wp)
+                .put("applied_lat", viaLatOk)
+                .put("applied_lon", viaLonOk)
+                .put("applied_name", viaApplied?.optString("applied_name").orEmpty())
+                .put("expected_name", VIA_DISPLAY_NAME)
+                .put("expected_lat", VIA_LAT)
+                .put("expected_lon", VIA_LON),
+        )
+        Log.i(
+            TAG,
+            "VIA_PROOF name=${viaApplied?.optString("applied_name")} " +
+                "lat=$viaLatOk lon=$viaLonOk expected=$VIA_LAT,$VIA_LON wp=$wp",
+        )
+    }
+
+    /**
+     * Product + harness gate: wait until [LongTripCoordinator.corridorReadyForPlanning]
+     * before any Plan click. Accept MWM/long-trip download prompts while waiting.
+     */
+    private fun awaitCorridorReadyBeforePlan() {
+        val t0 = System.currentTimeMillis()
+        var lastLog = 0L
+        while (System.currentTimeMillis() - t0 < DOWNLOAD_DEADLINE_MS) {
+            acceptAnyLongTripDownloadPrompt()
+            runCatching { clickTagSoft("btn_mwm_missing_download") }
+            runCatching {
+                device.findObject(By.text("Download"))?.click()
+                    ?: device.findObject(By.textContains("Download"))?.click()
+            }
+            val ready = LongTripCoordinator.corridorReadyForPlanning()
+            val line = LongTripCoordinator.statusLine()
+            if (System.currentTimeMillis() - lastLog > 15_000) {
+                lastLog = System.currentTimeMillis()
+                val sample =
+                    JSONObject()
+                        .put("t_ms", System.currentTimeMillis() - t0)
+                        .put("corridor_ready", ready)
+                        .put("status", line)
+                Log.i(TAG, "corridor_wait $sample")
+                noteUi("corridor_wait", sample.toString())
+                writeReport()
+                listRegionsOnDisk("corridor_wait")
+            }
+            if (ready) {
+                noteUi("corridor_ready_before_plan", line)
+                report.put("corridor_ready_before_plan", true)
+                report.put("corridor_wait_ms", System.currentTimeMillis() - t0)
+                writeReport()
+                return
+            }
+            Thread.sleep(3_000)
+            composeRule.mainClock.advanceTimeBy(3_000)
+        }
+        report.put("corridor_ready_before_plan", false)
+        writeReport()
+        assertTrue(
+            "Corridor must be fully ready before Plan (last=${LongTripCoordinator.statusLine()})",
+            LongTripCoordinator.corridorReadyForPlanning(),
+        )
+    }
+
+    /** Drop any prior vias so a forced Sandhaug coord cannot append beside Sandhausen. */
+    private fun clearAllViasSoft() {
+        openRoutePanel()
+        runCatching { clickTagSoft("btn_clear_vias") }
+        settle(200)
     }
 
     private fun persistPlanArtifactsNow(

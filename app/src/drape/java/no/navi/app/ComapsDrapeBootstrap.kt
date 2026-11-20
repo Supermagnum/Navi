@@ -27,10 +27,11 @@ import java.io.File
  * [ComapsSessionBootstrap] already opened.
  *
  * Order matters: `navi_comaps_init` points the Platform *resource* directory at
- * `{filesDir}/mwm`; the Framework then re-initialises the Platform with the APK as
- * resource directory (fonts, symbols, drules, classificator are read from the APK
- * assets) and, once built, `Framework.nativeChangeWritableDir` moves the *writable*
- * directory to `{filesDir}/mwm` so the same leaf MWMs the router uses are drawn.
+ * [MwmDataDir.mwmRoot] (pack-volume SD when selected); the Framework then
+ * re-initialises the Platform with the APK as resource directory (fonts, symbols,
+ * drules, classificator are read from the APK assets) and, once built,
+ * `Framework.nativeChangeWritableDir` moves the *writable* directory to that same
+ * MWM root so the leaf MWMs the router uses are drawn.
  */
 object ComapsDrapeBootstrap : ComapsDrape.Backend {
     private const val TAG = "ComapsDrape"

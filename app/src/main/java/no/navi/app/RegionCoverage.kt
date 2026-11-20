@@ -55,11 +55,11 @@ object RegionCoverage {
         val norm = geofabrikPath.trim().trim('/').lowercase()
         return when (norm) {
             "europe/norway" -> "Norway"
-            "europe/norway/ostlandet" -> "Ostlandet"
+            "europe/norway/ostlandet" -> "Østlandet"
             "europe/norway/vestlandet" -> "Vestlandet"
-            "europe/norway/trondelag" -> "Trondelag"
+            "europe/norway/trondelag" -> "Trøndelag"
             "europe/norway/nord-norge" -> "Nord-Norge"
-            "europe/norway/sorlandet" -> "Sorlandet"
+            "europe/norway/sorlandet" -> "Sørlandet"
             "europe/sweden" -> "Sweden"
             "europe/finland" -> "Finland"
             "europe/germany" -> "Germany"

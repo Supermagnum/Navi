@@ -9,8 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use driver_break_core::mwm::{
-    install_leaf_set, installed_leaf_ids_active, installed_sidecar_count, resolve_mwm_catalog,
-    DownloadProgress, MwmCatalog,
+    install_leaf_set, install_leaves_for_region, installed_leaf_ids_active, installed_sidecar_count,
+    resolve_mwm_catalog, DownloadProgress, MwmCatalog,
 };
 
 static CANCEL: AtomicBool = AtomicBool::new(false);
@@ -63,6 +63,18 @@ pub struct FfiMwmRegionList {
 }
 
 fn pretty_region_name(id: &str) -> String {
+    // Norway landsdeler: keep Norwegian orthography (Ø/ø, Sør, Trøndelag).
+    // Catalog bake ids stay ASCII (`europe_norway_ostlandet`).
+    let key = id.trim().to_ascii_lowercase().replace('-', "_");
+    match key.as_str() {
+        "europe_norway_ostlandet" => return "Østlandet".to_string(),
+        "europe_norway_sorlandet" => return "Sørlandet".to_string(),
+        "europe_norway_vestlandet" => return "Vestlandet".to_string(),
+        "europe_norway_trondelag" => return "Trøndelag".to_string(),
+        "europe_norway_nord_norge" => return "Nord-Norge".to_string(),
+        "europe_norway" => return "Norway".to_string(),
+        _ => {}
+    }
     let parts: Vec<&str> = id.split('_').collect();
     let skip = if parts.len() > 1 { 1 } else { 0 };
     parts[skip..]
@@ -83,7 +95,8 @@ fn regions_from_catalog(cat: &MwmCatalog) -> Vec<FfiMwmRegion> {
         cat.region_to_leaves
             .iter()
             .map(|(id, leaves)| {
-                let total_bytes = leaves
+                let leaf_ids = install_leaves_for_region(id, leaves);
+                let total_bytes = leaf_ids
                     .iter()
                     .filter_map(|l| cat.leaf(l))
                     .map(|l| {
@@ -93,7 +106,7 @@ fn regions_from_catalog(cat: &MwmCatalog) -> Vec<FfiMwmRegion> {
                 FfiMwmRegion {
                     id: id.clone(),
                     display_name: pretty_region_name(id),
-                    leaf_ids: leaves.clone(),
+                    leaf_ids,
                     total_bytes,
                 }
             })

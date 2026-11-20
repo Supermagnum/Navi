@@ -72,6 +72,9 @@ class RegionCoverageTest {
     fun missing_coverage_message_names_landsdel_not_country_fallback_copy() {
         // Message templates no longer steer cross-landsdel trips to a Norway
         // country extract; uncovered points keep a landsdel/country-specific line.
+        assertEquals("Østlandet", RegionCoverage.displayName("europe/norway/ostlandet"))
+        assertEquals("Sørlandet", RegionCoverage.displayName("europe/norway/sorlandet"))
+        assertEquals("Trøndelag", RegionCoverage.displayName("europe/norway/trondelag"))
         assertEquals("Nord-Norge", RegionCoverage.displayName("europe/norway/nord-norge"))
         assertEquals("Vestlandet", RegionCoverage.displayName("europe/norway/vestlandet"))
         assertFalse(

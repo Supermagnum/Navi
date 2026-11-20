@@ -1,13 +1,13 @@
 package no.navi.app
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 /**
- * [MwmDataDir] mirrors pack-volume selection: when the preferred volume is
- * internal, MWM roots under [NaviAppData]; SD selection is covered by
- * instrumented volume probes (writable app-files dir).
+ * [MwmDataDir] searches SD and internal for World.mwm; SD wins when present.
  */
 class MwmDataDirTest {
     @Test
@@ -17,10 +17,32 @@ class MwmDataDirTest {
 
     @Test
     fun mwmRootAppendsMwmSegment() {
-        // Pure path contract: mwmRoot = resolve + "/mwm".
-        val base = java.io.File("/tmp/navi-mwm-data-dir-test")
-        val root = java.io.File(base, "mwm")
+        val base = File("/tmp/navi-mwm-data-dir-test")
+        val root = File(base, "mwm")
         assertEquals("mwm", root.name)
         assertTrue(root.path.endsWith("/mwm") || root.path.endsWith("\\mwm"))
+    }
+
+    @Test
+    fun hasWorldMwmRequiresWorldFileUnderMwm() {
+        val base =
+            File.createTempFile("navi-mwm-world", null).apply {
+                delete()
+                mkdirs()
+            }
+        try {
+            assertFalse(MwmDataDir.hasWorldMwm(base))
+            val mwm = File(base, "mwm").also { it.mkdirs() }
+            assertFalse(MwmDataDir.hasWorldMwm(base))
+            File(mwm, "World.mwm").writeText("x")
+            assertTrue(MwmDataDir.hasWorldMwm(base))
+        } finally {
+            base.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun repeaterDataDirNameIsStable() {
+        assertEquals("repeater-data", CatBootstrap.REPEATER_DATA_DIR_NAME)
     }
 }

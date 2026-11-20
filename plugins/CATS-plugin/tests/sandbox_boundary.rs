@@ -14,6 +14,7 @@ fn guest_sources_have_no_paths_or_http_client() {
         assert!(!src.contains("std::net"), "{rel}");
         assert!(!src.contains("reqwest"), "{rel}");
         assert!(!src.contains("files/repeaters"), "{rel}");
+        assert!(!src.contains("files/repeater-data"), "{rel}");
         assert!(!src.contains("repeaterbook.com"), "{rel}");
     }
 }

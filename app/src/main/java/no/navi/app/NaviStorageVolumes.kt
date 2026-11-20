@@ -326,6 +326,16 @@ object NaviStorageVolumes {
         val root = volumeRoot.trimEnd('/')
         matchAppFilesDir(appDirs, root)?.let { matched ->
             if (probeWritable(matched)) return matched
+            // Read-only but maps already installed: still expose the path so drape /
+            // routing can open World.mwm (write probe can flake on VFAT / media_rw).
+            if (hasWorldMwm(matched)) {
+                Log.w(
+                    TAG,
+                    "getExternalFilesDirs match not writable but World.mwm present: " +
+                        matched.absolutePath,
+                )
+                return matched
+            }
             Log.w(TAG, "getExternalFilesDirs match not writable: ${matched.absolutePath}")
         }
         if (!root.startsWith("/storage/")) return null
@@ -334,10 +344,16 @@ object NaviStorageVolumes {
             val refreshed = context.getExternalFilesDirs(null) ?: emptyArray()
             matchAppFilesDir(refreshed, root)?.let { matched ->
                 if (probeWritable(matched)) return matched
+                if (hasWorldMwm(matched)) return matched
             }
             if (probeWritable(candidate)) return candidate
+            if (hasWorldMwm(candidate)) return candidate
         }
         if (probeWritable(candidate)) return candidate
+        if (hasWorldMwm(candidate)) {
+            Log.w(TAG, "candidate not writable but World.mwm present: ${candidate.absolutePath}")
+            return candidate
+        }
         Log.i(
             TAG,
             "no writable app-files dir for $root " +
@@ -345,6 +361,9 @@ object NaviStorageVolumes {
         )
         return null
     }
+
+    /** True when `{appFiles}/mwm/World.mwm` exists (maps already on this volume). */
+    private fun hasWorldMwm(appFiles: File): Boolean = File(appFiles, "mwm/World.mwm").isFile
 
     /** True when [dir] exists (or can be created) and accepts a create/delete probe. */
     internal fun probeWritable(dir: File): Boolean =

@@ -8,11 +8,11 @@ import uniffi.navi.mwmListRegions
 
 /**
  * Long-trip corridor downloads prefer CoMaps **MWM leaves** (catalog regions).
- * Catalog `region_to_leaves` is tried first; [LongTripMwmGeofabrikAliases] fills
- * gaps when CoMaps leaves exist but the bake id is missing from the catalog.
- * Geofabrik `.osm.pbf` remains the fallback when the MWM client is off, the
- * catalog/alias resolve fails, or an MWM install fails — not merely because a
- * non-Nordic bake id is absent from `region_to_leaves`.
+ * [LongTripMwmGeofabrikAliases] is preferred over catalog `region_to_leaves` so
+ * bloated catalog rows (e.g. Østlandet listing Denmark or Sweden overlap leaves)
+ * cannot pull the wrong country. Catalog fills gaps when aliases omit a bake id.
+ * Geofabrik `.osm.pbf` remains the fallback when the MWM client is off, resolve
+ * fails, or an MWM install fails.
  *
  * Installs go through [MwmMapDownloader.installBlocking] so the normal in-app
  * download progress UI (Tools strip, readiness panel, toast) sees live %.
@@ -28,11 +28,65 @@ object LongTripMwmSupport {
             .lowercase()
             .replace('/', '_')
 
+    /**
+     * Best-effort bake id → Geofabrik path (`europe_norway_ostlandet` →
+     * `europe/norway/ostlandet`). Underscores inside leaf names are not
+     * recovered; Norway landsdel ids are unambiguous.
+     */
+    fun bakeIdToGeofabrikPath(bakeId: String): String =
+        bakeId
+            .trim()
+            .trim('/')
+            .lowercase()
+            .replace('_', '/')
+
     /** Hyphen and underscore variants for catalog id matching. */
     fun bakeIdCandidates(geofabrikPath: String): List<String> {
         val base = geofabrikPathToBakeId(geofabrikPath)
         val underscored = base.replace('-', '_')
         return listOf(base, underscored).distinct()
+    }
+
+    /**
+     * Expected CoMaps leaf country prefix for a Geofabrik / bake id path
+     * (`europe/norway/ostlandet` → `Norway_`). Null when unknown.
+     */
+    fun expectedLeafCountryPrefix(geofabrikOrBakeId: String): String? {
+        val norm =
+            geofabrikOrBakeId
+                .trim()
+                .trim('/')
+                .lowercase()
+                .replace('-', '_')
+                .replace('/', '_')
+        return when {
+            norm == "europe_norway" || norm.startsWith("europe_norway_") -> "Norway_"
+            norm == "europe_denmark" || norm.startsWith("europe_denmark_") -> "Denmark_"
+            norm == "europe_sweden" || norm.startsWith("europe_sweden_") -> "Sweden_"
+            norm == "europe_finland" || norm.startsWith("europe_finland_") -> "Finland_"
+            norm == "europe_germany" || norm.startsWith("europe_germany_") -> "Germany_"
+            else -> null
+        }
+    }
+
+    /**
+     * Drop foreign-country leaves from a catalog row (e.g. Denmark_* under
+     * Østlandet). Returns [leaves] unchanged when no country prefix is known.
+     */
+    fun filterLeavesForPath(
+        geofabrikOrBakeId: String,
+        leaves: List<String>,
+    ): List<String> {
+        val prefix = expectedLeafCountryPrefix(geofabrikOrBakeId) ?: return leaves
+        val kept = leaves.filter { it.startsWith(prefix) }
+        if (kept.size != leaves.size) {
+            val dropped = leaves.filterNot { it.startsWith(prefix) }
+            Log.w(
+                TAG,
+                "stripped ${dropped.size} foreign leaf(s) from $geofabrikOrBakeId: $dropped",
+            )
+        }
+        return kept.ifEmpty { leaves }
     }
 
     /**
@@ -44,6 +98,18 @@ object LongTripMwmSupport {
         geofabrikPath: String,
     ): List<String>? {
         if (!MwmClientBootstrap.isEnabled()) return null
+        val alias =
+            bakeIdCandidates(geofabrikPath)
+                .firstNotNullOfOrNull { LongTripMwmGeofabrikAliases.leafIdsForBakeId(it) }
+                ?: LongTripMwmGeofabrikAliases.leafIdsForGeofabrikPath(geofabrikPath)
+        if (alias != null) {
+            val filtered = filterLeavesForPath(geofabrikPath, alias)
+            Log.i(
+                TAG,
+                "mapped $geofabrikPath -> alias (${filtered.size} leaves, alias-first)",
+            )
+            return filtered
+        }
         val origin = defaultPackServerBaseUrl()
         val list =
             runCatching { mwmListRegions(origin) }
@@ -61,22 +127,13 @@ object LongTripMwmSupport {
                 id in want || id.replace('-', '_') in want
             }
         if (hit != null && hit.leafIds.isNotEmpty()) {
+            val filtered = filterLeavesForPath(geofabrikPath, hit.leafIds)
             Log.i(
                 TAG,
-                "mapped $geofabrikPath -> ${hit.id} leaves=${hit.leafIds.size} bytes=${hit.totalBytes}",
+                "mapped $geofabrikPath -> ${hit.id} leaves=${filtered.size} " +
+                    "(catalog ${hit.leafIds.size}) bytes=${hit.totalBytes}",
             )
-            return hit.leafIds
-        }
-        val alias =
-            bakeIdCandidates(geofabrikPath)
-                .firstNotNullOfOrNull { LongTripMwmGeofabrikAliases.leafIdsForBakeId(it) }
-                ?: LongTripMwmGeofabrikAliases.leafIdsForGeofabrikPath(geofabrikPath)
-        if (alias != null) {
-            Log.i(
-                TAG,
-                "mapped $geofabrikPath -> alias (${alias.size} leaves, catalog had no $want)",
-            )
-            return alias
+            return filtered
         }
         Log.i(TAG, "no MWM region mapping for $geofabrikPath (tried $want)")
         return null

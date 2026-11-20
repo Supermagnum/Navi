@@ -342,7 +342,7 @@
     <string name="ui_chile">Chile</string>
     <string name="ui_china">Kina</string>
     <string name="ui_colombia">Colombia</string>
-    <string name="ui_copy_repeaterbook_kml_kmz_exports_into_this_folder_networked">Kopier RepeaterBook KML/KMZ-eksporter til denne mappen. Nettverksrepetere kan trenge flere filer, ikke én fil per land.</string>
+    <string name="ui_copy_repeaterbook_kml_kmz_exports_into_this_folder_networked">Kopier OpenRepeater- (eller RepeaterBook-) KML/KMZ-eksporter til repeater-data. Filnavn er valgfritt; ikke overskriv eksisterende filer. Nettverk kan trenge flere filer.</string>
     <string name="ui_costa_rica">Costa Rica</string>
     <string name="ui_countries_and_bboxes_come_from_geofabrik_s_published_index">Land og bbox-er kommer fra Geofabriks publiserte katalog. </string>
     <string name="ui_country_scale_extracts_may_be_slow_or_fail_on_low_ram_device">Landuttrekk kan være trege eller feile på enheter med lite RAM </string>

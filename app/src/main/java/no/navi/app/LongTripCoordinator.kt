@@ -208,6 +208,16 @@ object LongTripCoordinator {
             return statusLine.get()
         }
 
+        // Log exact lat/lon so a poisoned via (e.g. Sandhausen DE on a NO hike)
+        // is obvious when regionsInOrder unexpectedly includes europe/denmark.
+        Log.i(
+            TAG,
+            "enable waypoints=${waypoints.size} iso=${countryIso ?: "-"} " +
+                waypoints.joinToString(" | ") { (lat, lon) ->
+                    String.format(java.util.Locale.US, "%.5f,%.5f", lat, lon)
+                },
+        )
+
         val installed = installedHint
         val corridor =
             corridorProvider.orderedRegions(waypoints, installed, countryIso).getOrElse { e ->
@@ -219,6 +229,7 @@ object LongTripCoordinator {
             statusLine.set("Long trip on — no regions needed")
             return statusLine.get()
         }
+        Log.i(TAG, "regionsInOrder(${corridor.size})=${corridor.joinToString(",")}")
 
         val start = corridor.first()
         val states = ConcurrentHashMap<String, State>()

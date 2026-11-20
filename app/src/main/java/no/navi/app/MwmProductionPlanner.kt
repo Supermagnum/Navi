@@ -133,10 +133,26 @@ object MwmProductionPlanner {
         applyDatexAvoidance: Boolean = true,
         /** Nested tunnel replans pass false so avoidance does not recurse. */
         applyTunnelAvoidance: Boolean = true,
+        /**
+         * Eco routing on the MWM/CoMaps path. CoMaps has no joule weights; eco maps
+         * to [FfiComapsOptimize.PREFER_NON_MOTORWAY] (same lever as avoid-motorways)
+         * so the router prefers the easier / less motorway corridor.
+         */
+        ecoEnabled: Boolean = false,
     ): CorridorRouteResult {
         if (!shouldUse(context)) {
             return failCorridor(
                 "TEST_KIND=PLAN_MWM_ROUTE\nFAIL: MWM session not open (maps or native missing)\n" +
+                    "PLANNER=mwm\ncomaps_route_code=NeedMoreMaps\n",
+            )
+        }
+        // CoMaps IndexRouter aborts (SIGABRT) when numMwmIds is empty — only World
+        // overlays registered. Refuse before the native route call when country
+        // leaves are not exposed under {mwmRoot}/{version}/.
+        if (!ComapsSessionBootstrap.countryMapsExposed(context)) {
+            Log.w(TAG, "refuse plan: country leaf MWMs not exposed (VFAT link/mirror pending?)")
+            return failCorridor(
+                "TEST_KIND=PLAN_MWM_ROUTE\nFAIL: Country maps not registered yet\n" +
                     "PLANNER=mwm\ncomaps_route_code=NeedMoreMaps\n",
             )
         }
@@ -157,9 +173,12 @@ object MwmProductionPlanner {
         endpoints.add(endLat to endLon)
         missingLeavesFor(context, endpoints)?.let { return it }
         setMwmProductionPlannerActive(true)
+        // CoMaps eco lever: prefer non-motorway (easier / more economic corridor).
+        val preferNonMotorway = ecoEnabled || avoidMotorways
         Log.i(
             TAG,
-            "planner=mwm profile=$profile vias=${vias.size} " +
+            "planner=mwm profile=$profile vias=${vias.size} eco=$ecoEnabled " +
+                "optimize=${if (preferNonMotorway) "prefer_non_motorway" else "time"} " +
                 "datex_avoid=$applyDatexAvoidance tunnel_avoid=$avoidTunnels/$applyTunnelAvoidance",
         )
         return try {
@@ -178,12 +197,14 @@ object MwmProductionPlanner {
             }
             comapsSessionSetAvoidOptions(
                 avoidToll = avoidTolls,
-                avoidMotorway = avoidMotorways,
+                // Eco also asks CoMaps to treat motorways as avoided (same as
+                // PREFER_NON_MOTORWAY in ApplyAvoidSettings).
+                avoidMotorway = preferNonMotorway,
                 avoidFerry = avoidFerries,
                 avoidDirty = false,
             )
             comapsSessionSetOptimize(
-                if (avoidMotorways) {
+                if (preferNonMotorway) {
                     FfiComapsOptimize.PREFER_NON_MOTORWAY
                 } else {
                     FfiComapsOptimize.TIME
@@ -302,6 +323,7 @@ object MwmProductionPlanner {
                     avoidTunnels = avoidTunnels,
                     turnsLocale = turnsLocale,
                     bikeWetland = bikeWetland,
+                    ecoEnabled = ecoEnabled,
                     base = result,
                 )
             if (avoidTunnels && applyTunnelAvoidance && result.report.contains("PASS")) {
@@ -319,6 +341,7 @@ object MwmProductionPlanner {
                         avoidFerries = avoidFerries,
                         turnsLocale = turnsLocale,
                         bikeWetland = bikeWetland,
+                        ecoEnabled = ecoEnabled,
                         base = result,
                     )
             }
@@ -518,6 +541,7 @@ object MwmProductionPlanner {
         avoidTunnels: Boolean,
         turnsLocale: String,
         bikeWetland: Boolean,
+        ecoEnabled: Boolean,
         base: CorridorRouteResult,
     ): CorridorRouteResult {
         if (!base.report.contains("PASS")) return base
@@ -576,6 +600,7 @@ object MwmProductionPlanner {
                         avoidTunnels = avoidTunnels,
                         applyDatexAvoidance = false,
                         applyTunnelAvoidance = false,
+                        ecoEnabled = ecoEnabled,
                     )
                 if (!alt.report.contains("PASS")) continue
                 val clearance = minClearanceM(alt.routePolyline, blocks)
@@ -679,6 +704,7 @@ object MwmProductionPlanner {
         avoidFerries: Boolean,
         turnsLocale: String,
         bikeWetland: Boolean,
+        ecoEnabled: Boolean,
         base: CorridorRouteResult,
     ): CorridorRouteResult {
         if (!base.report.contains("PASS")) return base
@@ -691,7 +717,7 @@ object MwmProductionPlanner {
         if (mids.isEmpty()) {
             base.report =
                 base.report.trimEnd() +
-                    "\ntunnel_mwm=reroute_incomplete; tunnels_before=$beforeCount; reason=no_midpoints\n"
+                "\ntunnel_mwm=reroute_incomplete; tunnels_before=$beforeCount; reason=no_midpoints\n"
             return base
         }
         val pts = decodePolylinePairs(base.routePolyline)
@@ -733,6 +759,7 @@ object MwmProductionPlanner {
                         avoidTunnels = true,
                         applyDatexAvoidance = false,
                         applyTunnelAvoidance = false,
+                        ecoEnabled = ecoEnabled,
                     )
                 if (!alt.report.contains("PASS")) continue
                 val afterCount = tunnelRunCount(lastTurnsJson)
@@ -762,8 +789,8 @@ object MwmProductionPlanner {
         }
         base.report =
             base.report.trimEnd() +
-                "\ntunnel_mwm=reroute_incomplete; tunnels_before=$beforeCount; " +
-                "tunnels_after=$beforeCount; midpoints=${mids.size}; attempts=$attempts\n"
+            "\ntunnel_mwm=reroute_incomplete; tunnels_before=$beforeCount; " +
+            "tunnels_after=$beforeCount; midpoints=${mids.size}; attempts=$attempts\n"
         Log.w(TAG, "mwm tunnel avoid incomplete tunnels=$beforeCount")
         return base
     }
@@ -795,6 +822,7 @@ object MwmProductionPlanner {
         val mids = ArrayList<Pair<Double, Double>>()
         var alongKm = 0.0
         var runStart = -1.0
+
         fun flush() {
             if (runStart < 0.0) return
             val mid = (runStart + alongKm) * 0.5

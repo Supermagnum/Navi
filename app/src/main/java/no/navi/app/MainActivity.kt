@@ -1186,6 +1186,71 @@ private fun localizeRouteStreetsForLocale(
     }.getOrDefault(maneuversJson to simSamplesJson)
 }
 
+/**
+ * Starts the long-trip corridor download as soon as origin and destination
+ * are set, and reports when every needed region is ready to plan.
+ * Own composable so [NaviMapScreen] stays under the JVM method size limit.
+ */
+@Composable
+private fun LongTripCorridorPrefetch(
+    enabled: Boolean,
+    fromPoint: Waypoint?,
+    toPoint: Waypoint,
+    viaPoints: List<Waypoint>,
+    planningRoute: Boolean,
+    onReady: (Boolean) -> Unit,
+    onStatus: (String) -> Unit,
+    onPlanNotice: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    LaunchedEffect(
+        enabled,
+        fromPoint?.lat,
+        fromPoint?.lon,
+        toPoint.lat,
+        toPoint.lon,
+        viaPoints,
+    ) {
+        if (!enabled) {
+            onReady(true)
+            return@LaunchedEffect
+        }
+        val wps =
+            buildList {
+                val start = fromPoint
+                if (start != null && (start.lat != 0.0 || start.lon != 0.0)) {
+                    add(start.lat to start.lon)
+                }
+                for (v in viaPoints) {
+                    if (v.lat != 0.0 || v.lon != 0.0) add(v.lat to v.lon)
+                }
+                if (toPoint.lat != 0.0 || toPoint.lon != 0.0) {
+                    add(toPoint.lat to toPoint.lon)
+                }
+            }
+        if (wps.size < 2) {
+            onReady(false)
+            return@LaunchedEffect
+        }
+        withContext(Dispatchers.IO) {
+            LongTripCoordinator.enable(context, wps)
+        }
+        while (isActive && enabled) {
+            val ready = LongTripCoordinator.corridorReadyForPlanning()
+            onReady(ready)
+            val line = LongTripCoordinator.statusLine()
+            if (line.isNotBlank()) {
+                onStatus(line)
+                if (!ready && !planningRoute) {
+                    onPlanNotice(line)
+                }
+            }
+            if (ready) break
+            delay(1_000)
+        }
+    }
+}
+
 @Composable
 private fun NaviMapScreen(configurationRevision: Int = 0) {
     // Observed so locale/layoutDirection changes refresh stringResource / RTL
@@ -1960,6 +2025,21 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     /** Why the last Plan route press did not plan, shown under the button. */
     var planNotice by remember { mutableStateOf("") }
 
+    // Prefetch corridor downloads as soon as O/D(/via) are set so Plan can stay
+    // disabled until every needed region is downloaded + ready (no plan/route
+    // build against a half-ready corridor).
+    var longTripCorridorReady by remember { mutableStateOf(false) }
+    LongTripCorridorPrefetch(
+        enabled = longTripEnabled,
+        fromPoint = fromPoint,
+        toPoint = toPoint,
+        viaPoints = viaPoints,
+        planningRoute = planningRoute,
+        onReady = { longTripCorridorReady = it },
+        onStatus = { longTripStatusLine = it },
+        onPlanNotice = { planNotice = it },
+    )
+
     LaunchedEffect(Unit) {
         val dataDir = NaviAppData.resolve(context)
         while (isActive) {
@@ -2071,10 +2151,26 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 }
                 status = "Trip seeded: ${trip.fromName} → ${trip.toName}"
                 if (trip.autoPlan) {
-                    delay(1_200)
-                    ferryPreparingRetries = 0
-                    skeletonPreparingRetries = 0
-                    planKick += 1
+                    // Wait until country leaf MWMs are exposed to CoMaps (symlink or
+                    // VFAT mirror). A fixed sleep raced cold open and aborted native
+                    // with empty numMwmIds when only World overlays were registered.
+                    status = "Waiting for offline maps before plan…"
+                    val mapsReady =
+                        withContext(Dispatchers.IO) {
+                            ComapsSessionBootstrap.awaitCountryMapsReady(context)
+                        }
+                    if (!mapsReady) {
+                        status =
+                            "Offline maps not ready — open Tools → Offline maps, then Plan route"
+                        android.util.Log.w(
+                            "NaviPlan",
+                            "auto_plan skipped: country maps not exposed under MWM root",
+                        )
+                    } else {
+                        ferryPreparingRetries = 0
+                        skeletonPreparingRetries = 0
+                        planKick += 1
+                    }
                 }
             }
             delay(400)
@@ -4668,6 +4764,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                                 avoidTunnels =
                                                     avoidTunnels ||
                                                         travelProfileLocksAvoidTunnels(profile),
+                                                ecoEnabled = ecoForPlan,
                                             )
                                         } finally {
                                             RoutePlanGate.end()
@@ -8356,1688 +8453,1701 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     .heightIn(max = 520.dp)
                     .verticalScroll(rememberScrollState()),
         ) {
-            if (!hideChrome) {
-                TopDriveHud(
-                    state =
-                        driveHud.copy(
-                            ecoActive = ecoEnabled,
-                        ),
-                    expanded = showMapSettings,
-                    onToggleExpanded = {
-                        showMapSettings = !showMapSettings
-                        if (showMapSettings) {
-                            showDriveSettings = false
-                            showTools = false
-                        }
-                    },
-                    modifier = Modifier.padding(bottom = 8.dp),
-                )
-                if (!hideSearch) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        tonalElevation = 4.dp,
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .testTag("search_chrome"),
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    // Shared query/hits are not per-chip drafts: on switching,
-                                    // the box shows the chosen field's own place (empty for Via)
-                                    // so a label from From does not linger on To/Via.
-                                    fun selectSearchTarget(next: SearchTarget) {
-                                        // Re-tapping Via clears the box so another via can be typed.
-                                        if (searchTarget == next) {
-                                            if (next == SearchTarget.Via) {
-                                                query = ""
-                                                hits = emptyList()
-                                            }
-                                            return
-                                        }
-                                        searchTarget = next
-                                        searchJob?.cancel()
-                                        searchBusy = false
-                                        query =
-                                            when (next) {
-                                                SearchTarget.From -> fromPoint?.name.orEmpty()
-                                                SearchTarget.To -> toPoint.name
-                                                SearchTarget.Via -> ""
-                                            }
-                                        hits = emptyList()
-                                        searchIndexHint = ""
-                                    }
-                                    FilterChip(
-                                        selected = searchTarget == SearchTarget.From,
-                                        onClick = { selectSearchTarget(SearchTarget.From) },
-                                        label = { NaviText(stringResource(R.string.waypoint_from)) },
-                                        modifier = Modifier.testTag("chip_from"),
-                                    )
-                                    FilterChip(
-                                        selected = searchTarget == SearchTarget.To,
-                                        onClick = { selectSearchTarget(SearchTarget.To) },
-                                        label = { NaviText(stringResource(R.string.waypoint_to)) },
-                                        modifier = Modifier.testTag("chip_to"),
-                                    )
-                                    FilterChip(
-                                        selected = searchTarget == SearchTarget.Via,
-                                        onClick = { selectSearchTarget(SearchTarget.Via) },
-                                        label = {
-                                            NaviText(
-                                                if (viaPoints.isEmpty()) {
-                                                    "Via"
-                                                } else {
-                                                    "Via (${viaPoints.size}/$MAX_ROUTE_VIAS)"
-                                                },
-                                            )
-                                        },
-                                        modifier = Modifier.testTag("chip_via"),
-                                    )
-                                }
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    TextButton(
-                                        onClick = { showTools = !showTools },
-                                        modifier = Modifier.testTag("btn_tools"),
-                                    ) {
-                                        NaviText(if (showTools) stringResource(R.string.action_hide_tools) else stringResource(R.string.action_tools))
-                                    }
-                                    TextButton(
-                                        onClick = {
-                                            hideSearch = true
-                                            showTools = false
-                                            status = context.getString(R.string.status_route_planning_closed)
-                                        },
-                                        modifier = Modifier.testTag("btn_close_search"),
-                                    ) {
-                                        NaviText(stringResource(R.string.action_close))
-                                    }
-                                }
+            @Composable
+            fun RouteChrome() {
+                if (!hideChrome) {
+                    TopDriveHud(
+                        state =
+                            driveHud.copy(
+                                ecoActive = ecoEnabled,
+                            ),
+                        expanded = showMapSettings,
+                        onToggleExpanded = {
+                            showMapSettings = !showMapSettings
+                            if (showMapSettings) {
+                                showDriveSettings = false
+                                showTools = false
                             }
-                            Text(
-                                stringResource(
-                                    R.string.waypoints_summary,
-                                    fromPoint?.name
-                                        ?: stringResource(R.string.waypoint_unset),
-                                    toPoint.name.ifBlank {
-                                        stringResource(R.string.waypoint_unset)
-                                    },
-                                    if (viaPoints.isEmpty()) {
-                                        stringResource(R.string.waypoint_none)
-                                    } else {
-                                        viaPoints.joinToString(" → ") { it.name }
-                                    },
-                                ),
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.testTag("search_waypoints_summary"),
-                            )
-                            if (viaPoints.isNotEmpty()) {
-                                Column(
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .testTag("via_list"),
+                        },
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                    if (!hideSearch) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            tonalElevation = 4.dp,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .testTag("search_chrome"),
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth(),
                                 ) {
-                                    viaPoints.forEachIndexed { idx, v ->
-                                        Row(
-                                            modifier =
-                                                Modifier
-                                                    .fillMaxWidth()
-                                                    .testTag("via_row_$idx"),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            Text(
-                                                "Via ${idx + 1}: ${v.name}",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                modifier = Modifier.weight(1f),
-                                            )
-                                            TextButton(
-                                                onClick = {
-                                                    viaPoints =
-                                                        viaPoints.filterIndexed { i, _ ->
-                                                            i != idx
-                                                        }
-                                                },
-                                                modifier = Modifier.testTag("btn_remove_via_$idx"),
-                                            ) {
-                                                Text(stringResource(R.string.action_remove))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        // Shared query/hits are not per-chip drafts: on switching,
+                                        // the box shows the chosen field's own place (empty for Via)
+                                        // so a label from From does not linger on To/Via.
+                                        fun selectSearchTarget(next: SearchTarget) {
+                                            // Re-tapping Via clears the box so another via can be typed.
+                                            if (searchTarget == next) {
+                                                if (next == SearchTarget.Via) {
+                                                    query = ""
+                                                    hits = emptyList()
+                                                }
+                                                return
                                             }
+                                            searchTarget = next
+                                            searchJob?.cancel()
+                                            searchBusy = false
+                                            query =
+                                                when (next) {
+                                                    SearchTarget.From -> fromPoint?.name.orEmpty()
+                                                    SearchTarget.To -> toPoint.name
+                                                    SearchTarget.Via -> ""
+                                                }
+                                            hits = emptyList()
+                                            searchIndexHint = ""
                                         }
-                                    }
-                                    TextButton(
-                                        onClick = { viaPoints = emptyList() },
-                                        modifier = Modifier.testTag("btn_clear_vias"),
-                                    ) {
-                                        Text(
-                                            stringResource(
-                                                R.string.action_clear_all_vias,
-                                                viaPoints.size,
-                                            ),
+                                        FilterChip(
+                                            selected = searchTarget == SearchTarget.From,
+                                            onClick = { selectSearchTarget(SearchTarget.From) },
+                                            label = { NaviText(stringResource(R.string.waypoint_from)) },
+                                            modifier = Modifier.testTag("chip_from"),
+                                        )
+                                        FilterChip(
+                                            selected = searchTarget == SearchTarget.To,
+                                            onClick = { selectSearchTarget(SearchTarget.To) },
+                                            label = { NaviText(stringResource(R.string.waypoint_to)) },
+                                            modifier = Modifier.testTag("chip_to"),
+                                        )
+                                        FilterChip(
+                                            selected = searchTarget == SearchTarget.Via,
+                                            onClick = { selectSearchTarget(SearchTarget.Via) },
+                                            label = {
+                                                NaviText(
+                                                    if (viaPoints.isEmpty()) {
+                                                        "Via"
+                                                    } else {
+                                                        "Via (${viaPoints.size}/$MAX_ROUTE_VIAS)"
+                                                    },
+                                                )
+                                            },
+                                            modifier = Modifier.testTag("chip_via"),
                                         )
                                     }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        TextButton(
+                                            onClick = { showTools = !showTools },
+                                            modifier = Modifier.testTag("btn_tools"),
+                                        ) {
+                                            NaviText(if (showTools) stringResource(R.string.action_hide_tools) else stringResource(R.string.action_tools))
+                                        }
+                                        TextButton(
+                                            onClick = {
+                                                hideSearch = true
+                                                showTools = false
+                                                status = context.getString(R.string.status_route_planning_closed)
+                                            },
+                                            modifier = Modifier.testTag("btn_close_search"),
+                                        ) {
+                                            NaviText(stringResource(R.string.action_close))
+                                        }
+                                    }
                                 }
-                            }
-                            OutlinedTextField(
-                                value = query,
-                                onValueChange = {
-                                    query = it
-                                    runSearch(it, allowOnline = false)
-                                },
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .testTag("field_search"),
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                keyboardActions =
-                                    KeyboardActions(
-                                        onSearch = {
-                                            runSearch(query, allowOnline = true)
+                                Text(
+                                    stringResource(
+                                        R.string.waypoints_summary,
+                                        fromPoint?.name
+                                            ?: stringResource(R.string.waypoint_unset),
+                                        toPoint.name.ifBlank {
+                                            stringResource(R.string.waypoint_unset)
+                                        },
+                                        if (viaPoints.isEmpty()) {
+                                            stringResource(R.string.waypoint_none)
+                                        } else {
+                                            viaPoints.joinToString(" → ") { it.name }
                                         },
                                     ),
-                                placeholder = {
-                                    Text(
-                                        when (searchTarget) {
-                                            SearchTarget.Via ->
-                                                when {
-                                                    viaPoints.size >= MAX_ROUTE_VIAS ->
-                                                        stringResource(
-                                                            R.string.search_placeholder_via_full,
-                                                            MAX_ROUTE_VIAS,
-                                                            MAX_ROUTE_VIAS,
-                                                        )
-                                                    viaPoints.isEmpty() ->
-                                                        stringResource(
-                                                            R.string.search_placeholder_via_empty,
-                                                        )
-                                                    else ->
-                                                        stringResource(
-                                                            R.string.search_placeholder_via_n,
-                                                            viaPoints.size + 1,
-                                                            MAX_ROUTE_VIAS,
-                                                        )
-                                                }
-                                            else -> stringResource(R.string.search_placeholder)
-                                        },
-                                    )
-                                },
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                TextButton(
-                                    onClick = { runSearch(query, allowOnline = true) },
-                                    modifier = Modifier.testTag("btn_submit_search"),
-                                ) {
-                                    Text(stringResource(R.string.action_search))
-                                }
-                                TextButton(
-                                    onClick = {
-                                        searchJob?.cancel()
-                                        searchBusy = false
-                                        query = ""
-                                        hits = emptyList()
-                                        searchIndexHint = ""
-                                        searchUsedOnline = false
-                                        when (searchTarget) {
-                                            SearchTarget.From -> {
-                                                fromPoint = null
-                                                fromFollowsGps = true
-                                            }
-                                            SearchTarget.To -> toPoint = Waypoint()
-                                            SearchTarget.Via -> Unit
-                                        }
-                                    },
-                                    modifier = Modifier.testTag("btn_clear_route_field"),
-                                ) {
-                                    Text(
-                                        when (searchTarget) {
-                                            SearchTarget.From ->
-                                                stringResource(R.string.action_clear_from)
-                                            SearchTarget.To ->
-                                                stringResource(R.string.action_clear_to)
-                                            SearchTarget.Via ->
-                                                stringResource(R.string.action_clear)
-                                        },
-                                    )
-                                }
-                                OnlinePlaceSearchSwitch(
-                                    enabled = onlinePlaceSearchEnabled,
-                                    onChange = { on -> setOnlinePlaceSearch(on) },
-                                    switchTag = "toggle_online_place_search_search",
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                            if (searchBusy) {
-                                Text(stringResource(R.string.search_in_progress), style = MaterialTheme.typography.bodySmall)
-                            }
-                            if (regionReadinessPanel.isNotBlank()) {
-                                Text(
-                                    regionReadinessPanel,
                                     style = MaterialTheme.typography.bodySmall,
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .testTag("region_readiness_panel"),
+                                    modifier = Modifier.testTag("search_waypoints_summary"),
                                 )
-                            }
-                            if (searchIndexHint.isNotBlank() && !searchBusy) {
-                                val openOnlineSettings =
-                                    searchIndexHint.contains("Online place search")
-                                Text(
-                                    searchIndexHint,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color =
-                                        if (openOnlineSettings) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            Color.Unspecified
-                                        },
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .testTag("search_index_building_hint")
-                                            .then(
-                                                if (openOnlineSettings) {
-                                                    Modifier.clickable {
-                                                        showMapSettings = true
-                                                        revealOnlineSearchSetting = true
-                                                        NaviMapTestHooks.mapSettingsOpen = true
-                                                    }
-                                                } else {
-                                                    Modifier
-                                                },
-                                            ),
-                                )
-                            }
-                            if (searchUsedOnline && hits.isNotEmpty()) {
-                                Text(
-                                    OSM_PLACE_SEARCH_ATTRIBUTION,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .testTag("online_place_search_attribution"),
-                                )
-                            }
-                            if (hits.isNotEmpty()) {
-                                val disambiguate = hits.size > 1
-                                hits.take(8).forEachIndexed { idx, hit ->
+                                if (viaPoints.isNotEmpty()) {
                                     Column(
                                         modifier =
                                             Modifier
                                                 .fillMaxWidth()
-                                                .testTag("search_hit_$idx")
-                                                .clickable { applyHit(hit, target = searchTarget) }
-                                                .padding(vertical = 6.dp, horizontal = 4.dp),
+                                                .testTag("via_list"),
                                     ) {
-                                        Text(
-                                            placeHitSearchLabel(hit, disambiguate),
-                                            style = MaterialTheme.typography.bodyLarge,
-                                        )
-                                        Text(hit.kind, style = MaterialTheme.typography.bodySmall)
-                                    }
-                                }
-                            }
-                            Text(
-                                stringResource(R.string.online_place_search_explanation),
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.testTag("online_place_search_explain_search"),
-                            )
-                            Button(
-                                onClick = {
-                                    ferryPreparingRetries = 0
-                                    skeletonPreparingRetries = 0
-                                    planKick += 1
-                                },
-                                enabled = !planningRoute,
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .testTag("btn_plan_route"),
-                            ) {
-                                NaviText(if (planningRoute) stringResource(R.string.action_planning) else stringResource(R.string.action_plan_route))
-                            }
-                            if (planNotice.isNotBlank() && !planningRoute) {
-                                Text(
-                                    planNotice,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .testTag("route_plan_notice"),
-                                )
-                            }
-                            if (mapState.polyline.isNotBlank()) {
-                                TextButton(
-                                    onClick = { confirmDeletePlannedRoute = true },
-                                    enabled = !planningRoute,
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .testTag("btn_delete_planned_route"),
-                                ) {
-                                    NaviText(stringResource(R.string.action_delete_route))
-                                }
-                            }
-                            if (routePlanProgress.isNotBlank() || planningRoute) {
-                                Text(
-                                    text = routePlanProgress.ifBlank { "Planning route…" },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .testTag("route_plan_progress"),
-                                )
-                                if (routePlanPct in 0..100) {
-                                    LinearProgressIndicator(
-                                        progress = { routePlanPct / 100f },
-                                        modifier =
-                                            Modifier
-                                                .fillMaxWidth()
-                                                .height(6.dp)
-                                                .testTag("route_plan_bar"),
-                                    )
-                                } else {
-                                    LinearProgressIndicator(
-                                        modifier =
-                                            Modifier
-                                                .fillMaxWidth()
-                                                .height(6.dp)
-                                                .testTag("route_plan_bar"),
-                                    )
-                                }
-                                if (longTripEnabled) {
-                                    Text(
-                                        text =
-                                            "Long-distance planning takes time and may appear " +
-                                                "to hang. Patience is a virtue.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier =
-                                            Modifier
-                                                .fillMaxWidth()
-                                                .testTag("route_plan_patience_hint"),
-                                    )
-                                }
-                            }
-                            MultiDayPlanCards(
-                                days = mapState.multiDayCards,
-                                unitSystem = driveHud.unitSystem,
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 4.dp),
-                            )
-                            if (mapState.polyline.isNotBlank()) {
-                                RoutePlanStatsCard(
-                                    stats = routePlanStats,
-                                    breakRemindersEnabled = driveHud.breakRemindersEnabled,
-                                    campingPluginEnabled = campingPluginEnabled,
-                                    campingSuggestStatus = campingSuggestStatus,
-                                    modifier = Modifier.padding(top = 4.dp),
-                                )
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                TextButton(
-                                    onClick = {
-                                        val hasDeviceFix =
-                                            mapState.gpsLat != 0.0 || mapState.gpsLon != 0.0
-                                        if (!hasDeviceFix) {
-                                            status = "GPS unavailable"
-                                            return@TextButton
-                                        }
-                                        val fixLat = mapState.gpsLat
-                                        val fixLon = mapState.gpsLon
-                                        val targetAtClick = searchTarget
-                                        val immediate = gpsImmediateCoordHit(fixLat, fixLon)
-                                        applyHit(
-                                            immediate,
-                                            target = targetAtClick,
-                                            fromFollowsGpsHit = targetAtClick == SearchTarget.From,
-                                        )
-                                        NaviMapTestHooks.lastGpsImmediateCoord =
-                                            formatCoordWaypointName(fixLat, fixLon)
-                                        // Resolve on IO — never park the Compose scope
-                                        // on Nominatim / place-index while the UI waits.
-                                        scope.launch(Dispatchers.IO) {
-                                            val (name, kind) = resolveLabelAt(fixLat, fixLon)
-                                            withContext(Dispatchers.Main) {
-                                                val current =
-                                                    when (targetAtClick) {
-                                                        SearchTarget.From -> fromPoint
-                                                        SearchTarget.To -> toPoint
-                                                        SearchTarget.Via -> viaPoints.lastOrNull()
-                                                    }
-                                                if (!gpsWaypointShouldUpgrade(
-                                                        current?.lat,
-                                                        current?.lon,
-                                                        current?.name,
-                                                        fixLat,
-                                                        fixLon,
-                                                        name,
-                                                        kind,
-                                                    )
-                                                ) {
-                                                    return@withContext
-                                                }
-                                                val hitKind =
-                                                    when (kind) {
-                                                        "map-resolved" -> "gps-resolved"
-                                                        "map-mark" -> "gps"
-                                                        else -> kind
-                                                    }
-                                                applyHit(
-                                                    PlaceHit(
-                                                        osmId = 0L,
-                                                        name = name,
-                                                        kind = hitKind,
-                                                        lat = fixLat,
-                                                        lon = fixLon,
-                                                        subArea = "",
-                                                        municipality = "",
-                                                        regionId = "",
-                                                    ),
-                                                    target = targetAtClick,
-                                                    replaceLastVia =
-                                                        targetAtClick == SearchTarget.Via,
-                                                    fromFollowsGpsHit =
-                                                        targetAtClick == SearchTarget.From,
-                                                )
-                                            }
-                                        }
-                                    },
-                                    modifier = Modifier.testTag("btn_use_gps"),
-                                ) {
-                                    Text(
-                                        when (searchTarget) {
-                                            SearchTarget.From ->
-                                                stringResource(R.string.action_use_gps_as_from)
-                                            SearchTarget.To ->
-                                                stringResource(R.string.action_use_gps_as_to)
-                                            SearchTarget.Via ->
-                                                stringResource(R.string.action_use_gps_as_via)
-                                        },
-                                    )
-                                }
-                                TextButton(
-                                    onClick = {
-                                        val last =
-                                            savedRoutes.firstOrNull {
-                                                it.lastBreakLat != null && it.lastBreakLon != null
-                                            }
-                                        if (last?.lastBreakLat != null && last.lastBreakLon != null) {
-                                            fromPoint =
-                                                Waypoint(
-                                                    context.getString(R.string.label_last_stop),
-                                                    last.lastBreakLat!!,
-                                                    last.lastBreakLon!!,
-                                                )
-                                            fromFollowsGps = false
-                                            status = "Continue from last stop on ${last.endName}"
-                                        } else if (viaPoints.isNotEmpty()) {
-                                            fromPoint = viaPoints.last()
-                                            fromFollowsGps = false
-                                            status = "Continue from via (${viaPoints.last().name})"
-                                        } else {
-                                            status = "No last stop saved yet"
-                                        }
-                                    },
-                                ) { Text(stringResource(R.string.action_continue_last_stop)) }
-                            }
-                            if (isDebuggable && mapState.polyline.isNotBlank() && routeSamples.size >= 2) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    TextButton(
-                                        onClick = {
-                                            if (simulating) stopRouteSimulation() else startRouteSimulation()
-                                        },
-                                        modifier = Modifier.testTag("btn_simulate_route"),
-                                    ) {
-                                        Text(if (simulating) "Stop simulation" else "Simulate route")
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        tonalElevation = 3.dp,
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .testTag("profile_menu"),
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            if (!showProfilePanel) {
-                                TextButton(
-                                    onClick = { showProfilePanel = true },
-                                    modifier = Modifier.testTag("btn_open_profile"),
-                                ) { Text(stringResource(R.string.label_profile)) }
-                            } else {
-                                Text(stringResource(R.string.label_profile), style = MaterialTheme.typography.labelLarge)
-                                Row(
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                ) {
-                                    TravelProfile.entries.filter { travelProfileMenuFocus(it) }.forEach { p ->
-                                        FilterChip(
-                                            selected = profile == p,
-                                            onClick = {
-                                                profile = p
-                                                ecoEnabled = ecoModeDefault(p)
-                                                if (travelProfileLocksAvoidMotorways(p)) {
-                                                    avoidMotorways = true
-                                                }
-                                                if (travelProfileLocksAvoidTunnels(p)) {
-                                                    avoidTunnels = true
-                                                }
-                                                status = "Profile: ${p.name.lowercase()}"
-                                            },
-                                            label = {
+                                        viaPoints.forEachIndexed { idx, v ->
+                                            Row(
+                                                modifier =
+                                                    Modifier
+                                                        .fillMaxWidth()
+                                                        .testTag("via_row_$idx"),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
                                                 Text(
-                                                    travelProfileChipLabel(
-                                                        p,
-                                                        context.resources,
-                                                    ),
+                                                    "Via ${idx + 1}: ${v.name}",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    modifier = Modifier.weight(1f),
                                                 )
-                                            },
-                                            modifier =
-                                                Modifier.testTag(
-                                                    when (p) {
-                                                        TravelProfile.HIKING -> "chip_profile_hiking"
-                                                        TravelProfile.CAR -> "chip_profile_car"
-                                                        TravelProfile.BICYCLE_ELECTRIC ->
-                                                            "chip_profile_bicycle_electric"
-                                                        else -> "chip_profile_${p.name.lowercase()}"
-                                                    },
-                                                ),
-                                        )
-                                    }
-                                }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                ) {
-                                    Text(
-                                        if (ecoModeToggleable(profile)) {
-                                            stringResource(R.string.label_eco_routing)
-                                        } else {
-                                            stringResource(R.string.label_eco_routing_locked)
-                                        },
-                                    )
-                                    Switch(
-                                        checked = if (ecoModeToggleable(profile)) ecoEnabled else true,
-                                        onCheckedChange = { enabled ->
-                                            if (ecoModeToggleable(profile)) {
-                                                ecoEnabled = enabled
-                                                DiagnosticLog.logToggle(
-                                                    "eco_mode",
-                                                    enabled,
-                                                    mapOf("profile" to profile.name),
-                                                )
-                                            }
-                                        },
-                                        enabled = ecoModeToggleable(profile),
-                                    )
-                                }
-                                if (profile == TravelProfile.HIKING ||
-                                    profile == TravelProfile.BICYCLE ||
-                                    profile == TravelProfile.BICYCLE_ELECTRIC
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                    ) {
-                                        Text(stringResource(R.string.profile_follow_networks))
-                                        Switch(
-                                            checked = preferOfficialNetworks,
-                                            onCheckedChange = { on ->
-                                                preferOfficialNetworks = on
-                                                uniffi.navi.savePreferOfficialNetworks(
-                                                    dataDir.absolutePath,
-                                                    on,
-                                                )
-                                                DiagnosticLog.logToggle(
-                                                    "prefer_official_networks",
-                                                    on,
-                                                    mapOf("profile" to profile.name),
-                                                )
-                                                DiagnosticLog.logSettingSaved(
-                                                    "prefer_official_networks",
-                                                    on,
-                                                )
-                                            },
-                                        )
-                                    }
-                                    Column(modifier = Modifier.fillMaxWidth()) {
-                                        val cabinTogglesLive = profile == TravelProfile.HIKING
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                        ) {
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(stringResource(R.string.profile_unlocked_cabins))
-                                                if (cabinTogglesLive && useUnlockedCabins) {
-                                                    Text(
-                                                        stringResource(R.string.ui_uses_cabins_huts_that_are_unlocked),
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                    )
-                                                }
-                                            }
-                                            Switch(
-                                                checked = useUnlockedCabins,
-                                                onCheckedChange = { on ->
-                                                    if (!cabinTogglesLive) return@Switch
-                                                    useUnlockedCabins = on
-                                                    uniffi.navi.saveUseUnlockedCabins(
-                                                        dataDir.absolutePath,
-                                                        on,
-                                                    )
-                                                    DiagnosticLog.logToggle(
-                                                        "use_unlocked_cabins",
-                                                        on,
-                                                        mapOf("profile" to profile.name),
-                                                    )
-                                                    DiagnosticLog.logSettingSaved(
-                                                        "use_unlocked_cabins",
-                                                        on,
-                                                    )
-                                                },
-                                                enabled = cabinTogglesLive,
-                                                modifier = Modifier.testTag("toggle_use_unlocked_cabins"),
-                                            )
-                                        }
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                        ) {
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(stringResource(R.string.profile_networked_cabins))
-                                                if (cabinTogglesLive && useNetworkedCabins) {
-                                                    Text(
-                                                        stringResource(R.string.ui_uses_cabins_huts_that_are_networked),
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                    )
-                                                }
-                                            }
-                                            Switch(
-                                                checked = useNetworkedCabins,
-                                                onCheckedChange = { on ->
-                                                    if (!cabinTogglesLive) return@Switch
-                                                    useNetworkedCabins = on
-                                                    networkHutMember = on
-                                                    uniffi.navi.saveUseNetworkedCabins(
-                                                        dataDir.absolutePath,
-                                                        on,
-                                                    )
-                                                    DiagnosticLog.logToggle(
-                                                        "use_networked_cabins",
-                                                        on,
-                                                        mapOf("profile" to profile.name),
-                                                    )
-                                                    DiagnosticLog.logSettingSaved(
-                                                        "use_networked_cabins",
-                                                        on,
-                                                    )
-                                                },
-                                                enabled = cabinTogglesLive,
-                                                modifier = Modifier.testTag("toggle_use_networked_cabins"),
-                                            )
-                                        }
-                                        if (!cabinTogglesLive) {
-                                            Text(
-                                                stringResource(R.string.ui_applies_to_hiking_overnight_planning_only),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                modifier = Modifier.testTag("cabin_toggles_hiking_only_note"),
-                                            )
-                                        }
-                                    }
-                                }
-                                if (profile == TravelProfile.BICYCLE ||
-                                    profile == TravelProfile.BICYCLE_ELECTRIC
-                                ) {
-                                    Column(modifier = Modifier.fillMaxWidth()) {
-                                        Text(stringResource(R.string.profile_bike_type))
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        ) {
-                                            listOf(
-                                                "road" to "Road",
-                                                "trekking" to "Gravel",
-                                                "mountain" to "MTB",
-                                            ).forEach { (id, label) ->
                                                 TextButton(
                                                     onClick = {
-                                                        bikeCapability = id
-                                                        uniffi.navi.saveBikeCapability(
-                                                            dataDir.absolutePath,
-                                                            id,
-                                                        )
-                                                        DiagnosticLog.logSettingSaved(
-                                                            "bike_capability",
-                                                            id,
-                                                        )
+                                                        viaPoints =
+                                                            viaPoints.filterIndexed { i, _ ->
+                                                                i != idx
+                                                            }
                                                     },
+                                                    modifier = Modifier.testTag("btn_remove_via_$idx"),
                                                 ) {
-                                                    Text(
-                                                        label,
-                                                        fontWeight =
-                                                            if (bikeCapability == id) {
-                                                                FontWeight.Bold
-                                                            } else {
-                                                                FontWeight.Normal
-                                                            },
-                                                    )
+                                                    Text(stringResource(R.string.action_remove))
                                                 }
                                             }
                                         }
+                                        TextButton(
+                                            onClick = { viaPoints = emptyList() },
+                                            modifier = Modifier.testTag("btn_clear_vias"),
+                                        ) {
+                                            Text(
+                                                stringResource(
+                                                    R.string.action_clear_all_vias,
+                                                    viaPoints.size,
+                                                ),
+                                            )
+                                        }
                                     }
                                 }
-                                if (profile == TravelProfile.HIKING) {
+                                OutlinedTextField(
+                                    value = query,
+                                    onValueChange = {
+                                        query = it
+                                        runSearch(it, allowOnline = false)
+                                    },
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .testTag("field_search"),
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                    keyboardActions =
+                                        KeyboardActions(
+                                            onSearch = {
+                                                runSearch(query, allowOnline = true)
+                                            },
+                                        ),
+                                    placeholder = {
+                                        Text(
+                                            when (searchTarget) {
+                                                SearchTarget.Via ->
+                                                    when {
+                                                        viaPoints.size >= MAX_ROUTE_VIAS ->
+                                                            stringResource(
+                                                                R.string.search_placeholder_via_full,
+                                                                MAX_ROUTE_VIAS,
+                                                                MAX_ROUTE_VIAS,
+                                                            )
+                                                        viaPoints.isEmpty() ->
+                                                            stringResource(
+                                                                R.string.search_placeholder_via_empty,
+                                                            )
+                                                        else ->
+                                                            stringResource(
+                                                                R.string.search_placeholder_via_n,
+                                                                viaPoints.size + 1,
+                                                                MAX_ROUTE_VIAS,
+                                                            )
+                                                    }
+                                                else -> stringResource(R.string.search_placeholder)
+                                            },
+                                        )
+                                    },
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    TextButton(
+                                        onClick = { runSearch(query, allowOnline = true) },
+                                        modifier = Modifier.testTag("btn_submit_search"),
+                                    ) {
+                                        Text(stringResource(R.string.action_search))
+                                    }
+                                    TextButton(
+                                        onClick = {
+                                            searchJob?.cancel()
+                                            searchBusy = false
+                                            query = ""
+                                            hits = emptyList()
+                                            searchIndexHint = ""
+                                            searchUsedOnline = false
+                                            when (searchTarget) {
+                                                SearchTarget.From -> {
+                                                    fromPoint = null
+                                                    fromFollowsGps = true
+                                                }
+                                                SearchTarget.To -> toPoint = Waypoint()
+                                                SearchTarget.Via -> Unit
+                                            }
+                                        },
+                                        modifier = Modifier.testTag("btn_clear_route_field"),
+                                    ) {
+                                        Text(
+                                            when (searchTarget) {
+                                                SearchTarget.From ->
+                                                    stringResource(R.string.action_clear_from)
+                                                SearchTarget.To ->
+                                                    stringResource(R.string.action_clear_to)
+                                                SearchTarget.Via ->
+                                                    stringResource(R.string.action_clear)
+                                            },
+                                        )
+                                    }
+                                    OnlinePlaceSearchSwitch(
+                                        enabled = onlinePlaceSearchEnabled,
+                                        onChange = { on -> setOnlinePlaceSearch(on) },
+                                        switchTag = "toggle_online_place_search_search",
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                                if (searchBusy) {
+                                    Text(stringResource(R.string.search_in_progress), style = MaterialTheme.typography.bodySmall)
+                                }
+                                if (regionReadinessPanel.isNotBlank()) {
+                                    Text(
+                                        regionReadinessPanel,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .testTag("region_readiness_panel"),
+                                    )
+                                }
+                                if (searchIndexHint.isNotBlank() && !searchBusy) {
+                                    val openOnlineSettings =
+                                        searchIndexHint.contains("Online place search")
+                                    Text(
+                                        searchIndexHint,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color =
+                                            if (openOnlineSettings) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                Color.Unspecified
+                                            },
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .testTag("search_index_building_hint")
+                                                .then(
+                                                    if (openOnlineSettings) {
+                                                        Modifier.clickable {
+                                                            showMapSettings = true
+                                                            revealOnlineSearchSetting = true
+                                                            NaviMapTestHooks.mapSettingsOpen = true
+                                                        }
+                                                    } else {
+                                                        Modifier
+                                                    },
+                                                ),
+                                    )
+                                }
+                                if (searchUsedOnline && hits.isNotEmpty()) {
+                                    Text(
+                                        OSM_PLACE_SEARCH_ATTRIBUTION,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .testTag("online_place_search_attribution"),
+                                    )
+                                }
+                                if (hits.isNotEmpty()) {
+                                    val disambiguate = hits.size > 1
+                                    hits.take(8).forEachIndexed { idx, hit ->
+                                        Column(
+                                            modifier =
+                                                Modifier
+                                                    .fillMaxWidth()
+                                                    .testTag("search_hit_$idx")
+                                                    .clickable { applyHit(hit, target = searchTarget) }
+                                                    .padding(vertical = 6.dp, horizontal = 4.dp),
+                                        ) {
+                                            Text(
+                                                placeHitSearchLabel(hit, disambiguate),
+                                                style = MaterialTheme.typography.bodyLarge,
+                                            )
+                                            Text(hit.kind, style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                }
+                                Text(
+                                    stringResource(R.string.online_place_search_explanation),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.testTag("online_place_search_explain_search"),
+                                )
+                                Button(
+                                    onClick = {
+                                        if (longTripEnabled && !longTripCorridorReady) {
+                                            planNotice =
+                                                longTripStatusLine.ifBlank {
+                                                    "Long trip: download required regions before planning"
+                                                }
+                                            return@Button
+                                        }
+                                        ferryPreparingRetries = 0
+                                        skeletonPreparingRetries = 0
+                                        planKick += 1
+                                    },
+                                    enabled =
+                                        !planningRoute &&
+                                            (!longTripEnabled || longTripCorridorReady),
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .testTag("btn_plan_route"),
+                                ) {
+                                    NaviText(if (planningRoute) stringResource(R.string.action_planning) else stringResource(R.string.action_plan_route))
+                                }
+                                if (planNotice.isNotBlank() && !planningRoute) {
+                                    Text(
+                                        planNotice,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .testTag("route_plan_notice"),
+                                    )
+                                }
+                                if (mapState.polyline.isNotBlank()) {
+                                    TextButton(
+                                        onClick = { confirmDeletePlannedRoute = true },
+                                        enabled = !planningRoute,
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .testTag("btn_delete_planned_route"),
+                                    ) {
+                                        NaviText(stringResource(R.string.action_delete_route))
+                                    }
+                                }
+                                if (routePlanProgress.isNotBlank() || planningRoute) {
+                                    Text(
+                                        text = routePlanProgress.ifBlank { "Planning route…" },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .testTag("route_plan_progress"),
+                                    )
+                                    if (routePlanPct in 0..100) {
+                                        LinearProgressIndicator(
+                                            progress = { routePlanPct / 100f },
+                                            modifier =
+                                                Modifier
+                                                    .fillMaxWidth()
+                                                    .height(6.dp)
+                                                    .testTag("route_plan_bar"),
+                                        )
+                                    } else {
+                                        LinearProgressIndicator(
+                                            modifier =
+                                                Modifier
+                                                    .fillMaxWidth()
+                                                    .height(6.dp)
+                                                    .testTag("route_plan_bar"),
+                                        )
+                                    }
+                                    if (longTripEnabled) {
+                                        Text(
+                                            text =
+                                                "Long-distance planning takes time and may appear " +
+                                                    "to hang. Patience is a virtue.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier =
+                                                Modifier
+                                                    .fillMaxWidth()
+                                                    .testTag("route_plan_patience_hint"),
+                                        )
+                                    }
+                                }
+                                MultiDayPlanCards(
+                                    days = mapState.multiDayCards,
+                                    unitSystem = driveHud.unitSystem,
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 4.dp),
+                                )
+                                if (mapState.polyline.isNotBlank()) {
+                                    RoutePlanStatsCard(
+                                        stats = routePlanStats,
+                                        breakRemindersEnabled = driveHud.breakRemindersEnabled,
+                                        campingPluginEnabled = campingPluginEnabled,
+                                        campingSuggestStatus = campingSuggestStatus,
+                                        modifier = Modifier.padding(top = 4.dp),
+                                    )
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    TextButton(
+                                        onClick = {
+                                            val hasDeviceFix =
+                                                mapState.gpsLat != 0.0 || mapState.gpsLon != 0.0
+                                            if (!hasDeviceFix) {
+                                                status = "GPS unavailable"
+                                                return@TextButton
+                                            }
+                                            val fixLat = mapState.gpsLat
+                                            val fixLon = mapState.gpsLon
+                                            val targetAtClick = searchTarget
+                                            val immediate = gpsImmediateCoordHit(fixLat, fixLon)
+                                            applyHit(
+                                                immediate,
+                                                target = targetAtClick,
+                                                fromFollowsGpsHit = targetAtClick == SearchTarget.From,
+                                            )
+                                            NaviMapTestHooks.lastGpsImmediateCoord =
+                                                formatCoordWaypointName(fixLat, fixLon)
+                                            // Resolve on IO — never park the Compose scope
+                                            // on Nominatim / place-index while the UI waits.
+                                            scope.launch(Dispatchers.IO) {
+                                                val (name, kind) = resolveLabelAt(fixLat, fixLon)
+                                                withContext(Dispatchers.Main) {
+                                                    val current =
+                                                        when (targetAtClick) {
+                                                            SearchTarget.From -> fromPoint
+                                                            SearchTarget.To -> toPoint
+                                                            SearchTarget.Via -> viaPoints.lastOrNull()
+                                                        }
+                                                    if (!gpsWaypointShouldUpgrade(
+                                                            current?.lat,
+                                                            current?.lon,
+                                                            current?.name,
+                                                            fixLat,
+                                                            fixLon,
+                                                            name,
+                                                            kind,
+                                                        )
+                                                    ) {
+                                                        return@withContext
+                                                    }
+                                                    val hitKind =
+                                                        when (kind) {
+                                                            "map-resolved" -> "gps-resolved"
+                                                            "map-mark" -> "gps"
+                                                            else -> kind
+                                                        }
+                                                    applyHit(
+                                                        PlaceHit(
+                                                            osmId = 0L,
+                                                            name = name,
+                                                            kind = hitKind,
+                                                            lat = fixLat,
+                                                            lon = fixLon,
+                                                            subArea = "",
+                                                            municipality = "",
+                                                            regionId = "",
+                                                        ),
+                                                        target = targetAtClick,
+                                                        replaceLastVia =
+                                                            targetAtClick == SearchTarget.Via,
+                                                        fromFollowsGpsHit =
+                                                            targetAtClick == SearchTarget.From,
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier.testTag("btn_use_gps"),
+                                    ) {
+                                        Text(
+                                            when (searchTarget) {
+                                                SearchTarget.From ->
+                                                    stringResource(R.string.action_use_gps_as_from)
+                                                SearchTarget.To ->
+                                                    stringResource(R.string.action_use_gps_as_to)
+                                                SearchTarget.Via ->
+                                                    stringResource(R.string.action_use_gps_as_via)
+                                            },
+                                        )
+                                    }
+                                    TextButton(
+                                        onClick = {
+                                            val last =
+                                                savedRoutes.firstOrNull {
+                                                    it.lastBreakLat != null && it.lastBreakLon != null
+                                                }
+                                            if (last?.lastBreakLat != null && last.lastBreakLon != null) {
+                                                fromPoint =
+                                                    Waypoint(
+                                                        context.getString(R.string.label_last_stop),
+                                                        last.lastBreakLat!!,
+                                                        last.lastBreakLon!!,
+                                                    )
+                                                fromFollowsGps = false
+                                                status = "Continue from last stop on ${last.endName}"
+                                            } else if (viaPoints.isNotEmpty()) {
+                                                fromPoint = viaPoints.last()
+                                                fromFollowsGps = false
+                                                status = "Continue from via (${viaPoints.last().name})"
+                                            } else {
+                                                status = "No last stop saved yet"
+                                            }
+                                        },
+                                    ) { Text(stringResource(R.string.action_continue_last_stop)) }
+                                }
+                                if (isDebuggable && mapState.polyline.isNotBlank() && routeSamples.size >= 2) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        TextButton(
+                                            onClick = {
+                                                if (simulating) stopRouteSimulation() else startRouteSimulation()
+                                            },
+                                            modifier = Modifier.testTag("btn_simulate_route"),
+                                        ) {
+                                            Text(if (simulating) "Stop simulation" else "Simulate route")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            tonalElevation = 3.dp,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .testTag("profile_menu"),
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                if (!showProfilePanel) {
+                                    TextButton(
+                                        onClick = { showProfilePanel = true },
+                                        modifier = Modifier.testTag("btn_open_profile"),
+                                    ) { Text(stringResource(R.string.label_profile)) }
+                                } else {
+                                    Text(stringResource(R.string.label_profile), style = MaterialTheme.typography.labelLarge)
+                                    Row(
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        TravelProfile.entries.filter { travelProfileMenuFocus(it) }.forEach { p ->
+                                            FilterChip(
+                                                selected = profile == p,
+                                                onClick = {
+                                                    profile = p
+                                                    ecoEnabled = ecoModeDefault(p)
+                                                    if (travelProfileLocksAvoidMotorways(p)) {
+                                                        avoidMotorways = true
+                                                    }
+                                                    if (travelProfileLocksAvoidTunnels(p)) {
+                                                        avoidTunnels = true
+                                                    }
+                                                    status = "Profile: ${p.name.lowercase()}"
+                                                },
+                                                label = {
+                                                    Text(
+                                                        travelProfileChipLabel(
+                                                            p,
+                                                            context.resources,
+                                                        ),
+                                                    )
+                                                },
+                                                modifier =
+                                                    Modifier.testTag(
+                                                        when (p) {
+                                                            TravelProfile.HIKING -> "chip_profile_hiking"
+                                                            TravelProfile.CAR -> "chip_profile_car"
+                                                            TravelProfile.BICYCLE_ELECTRIC ->
+                                                                "chip_profile_bicycle_electric"
+                                                            else -> "chip_profile_${p.name.lowercase()}"
+                                                        },
+                                                    ),
+                                            )
+                                        }
+                                    }
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                     ) {
-                                        Text(stringResource(R.string.profile_pilgrim))
-                                        Switch(
-                                            checked = preferPilgrimRoutes,
-                                            onCheckedChange = { on ->
-                                                preferPilgrimRoutes = on
-                                                uniffi.navi.savePreferPilgrimRoutes(
-                                                    dataDir.absolutePath,
-                                                    on,
-                                                )
-                                                DiagnosticLog.logToggle(
-                                                    "prefer_pilgrim_routes",
-                                                    on,
-                                                    mapOf("profile" to profile.name),
-                                                )
-                                                DiagnosticLog.logSettingSaved(
-                                                    "prefer_pilgrim_routes",
-                                                    on,
-                                                )
+                                        Text(
+                                            if (ecoModeToggleable(profile)) {
+                                                stringResource(R.string.label_eco_routing)
+                                            } else {
+                                                stringResource(R.string.label_eco_routing_locked)
                                             },
-                                            modifier = Modifier.testTag("toggle_prefer_pilgrim_routes"),
+                                        )
+                                        Switch(
+                                            checked = if (ecoModeToggleable(profile)) ecoEnabled else true,
+                                            onCheckedChange = { enabled ->
+                                                if (ecoModeToggleable(profile)) {
+                                                    ecoEnabled = enabled
+                                                    DiagnosticLog.logToggle(
+                                                        "eco_mode",
+                                                        enabled,
+                                                        mapOf("profile" to profile.name),
+                                                    )
+                                                }
+                                            },
+                                            enabled = ecoModeToggleable(profile),
                                         )
                                     }
-                                }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                ) {
-                                    Text(
-                                        if (travelProfileLocksAvoidMotorways(profile)) {
-                                            "Avoid motorways (locked for this profile)"
-                                        } else {
-                                            "Avoid motorways"
-                                        },
-                                    )
-                                    Switch(
-                                        checked =
-                                            avoidMotorways ||
-                                                travelProfileLocksAvoidMotorways(profile),
-                                        onCheckedChange = { on ->
-                                            if (travelProfileLocksAvoidMotorways(profile)) {
-                                                return@Switch
+                                    if (profile == TravelProfile.HIKING ||
+                                        profile == TravelProfile.BICYCLE ||
+                                        profile == TravelProfile.BICYCLE_ELECTRIC
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                        ) {
+                                            Text(stringResource(R.string.profile_follow_networks))
+                                            Switch(
+                                                checked = preferOfficialNetworks,
+                                                onCheckedChange = { on ->
+                                                    preferOfficialNetworks = on
+                                                    uniffi.navi.savePreferOfficialNetworks(
+                                                        dataDir.absolutePath,
+                                                        on,
+                                                    )
+                                                    DiagnosticLog.logToggle(
+                                                        "prefer_official_networks",
+                                                        on,
+                                                        mapOf("profile" to profile.name),
+                                                    )
+                                                    DiagnosticLog.logSettingSaved(
+                                                        "prefer_official_networks",
+                                                        on,
+                                                    )
+                                                },
+                                            )
+                                        }
+                                        Column(modifier = Modifier.fillMaxWidth()) {
+                                            val cabinTogglesLive = profile == TravelProfile.HIKING
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(stringResource(R.string.profile_unlocked_cabins))
+                                                    if (cabinTogglesLive && useUnlockedCabins) {
+                                                        Text(
+                                                            stringResource(R.string.ui_uses_cabins_huts_that_are_unlocked),
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                        )
+                                                    }
+                                                }
+                                                Switch(
+                                                    checked = useUnlockedCabins,
+                                                    onCheckedChange = { on ->
+                                                        if (!cabinTogglesLive) return@Switch
+                                                        useUnlockedCabins = on
+                                                        uniffi.navi.saveUseUnlockedCabins(
+                                                            dataDir.absolutePath,
+                                                            on,
+                                                        )
+                                                        DiagnosticLog.logToggle(
+                                                            "use_unlocked_cabins",
+                                                            on,
+                                                            mapOf("profile" to profile.name),
+                                                        )
+                                                        DiagnosticLog.logSettingSaved(
+                                                            "use_unlocked_cabins",
+                                                            on,
+                                                        )
+                                                    },
+                                                    enabled = cabinTogglesLive,
+                                                    modifier = Modifier.testTag("toggle_use_unlocked_cabins"),
+                                                )
                                             }
-                                            avoidMotorways = on
-                                            DiagnosticLog.logToggle("avoid_motorways", on)
-                                            status =
-                                                formatRouteAvoidanceReport(
-                                                    avoidMotorways,
-                                                    if (avoidTolls) {
-                                                        uniffi.navi.FfiTollPolicy.PENALIZE
-                                                    } else {
-                                                        uniffi.navi.FfiTollPolicy.ALLOW
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(stringResource(R.string.profile_networked_cabins))
+                                                    if (cabinTogglesLive && useNetworkedCabins) {
+                                                        Text(
+                                                            stringResource(R.string.ui_uses_cabins_huts_that_are_networked),
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                        )
+                                                    }
+                                                }
+                                                Switch(
+                                                    checked = useNetworkedCabins,
+                                                    onCheckedChange = { on ->
+                                                        if (!cabinTogglesLive) return@Switch
+                                                        useNetworkedCabins = on
+                                                        networkHutMember = on
+                                                        uniffi.navi.saveUseNetworkedCabins(
+                                                            dataDir.absolutePath,
+                                                            on,
+                                                        )
+                                                        DiagnosticLog.logToggle(
+                                                            "use_networked_cabins",
+                                                            on,
+                                                            mapOf("profile" to profile.name),
+                                                        )
+                                                        DiagnosticLog.logSettingSaved(
+                                                            "use_networked_cabins",
+                                                            on,
+                                                        )
                                                     },
-                                                    avoidFerries,
-                                                    avoidTunnels,
-                                                    prioritySharePct,
+                                                    enabled = cabinTogglesLive,
+                                                    modifier = Modifier.testTag("toggle_use_networked_cabins"),
                                                 )
-                                        },
-                                        enabled = !travelProfileLocksAvoidMotorways(profile),
-                                        modifier = Modifier.testTag("toggle_avoid_motorways"),
-                                    )
-                                }
-                                if (MwmClientBootstrap.isEnabled() &&
-                                    VehicleRestrictionUi.showProfilePanelNote(
-                                        profile,
-                                        heightM.toDoubleOrNull(),
-                                        vehicleLimitsDataAvailable,
-                                    )
-                                ) {
-                                    Text(
-                                        if (VehicleRestrictionUi.motorcycleNoLimits(profile)) {
-                                            stringResource(R.string.profile_limits_not_applied)
-                                        } else {
-                                            stringResource(R.string.vehicle_limits_not_yet_applied_banner)
-                                        },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.testTag("profile_limits_note"),
-                                    )
-                                }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                ) {
-                                    Text(stringResource(R.string.avoid_tolls))
-                                    Switch(
-                                        // UI is Allow/Penalize only; NeverUse is FFI-only (docs/API.md).
-                                        checked = avoidTolls,
-                                        onCheckedChange = { on ->
-                                            avoidTolls = on
-                                            DiagnosticLog.logToggle("avoid_tolls", on)
-                                            status =
-                                                formatRouteAvoidanceReport(
-                                                    avoidMotorways,
-                                                    if (avoidTolls) {
-                                                        uniffi.navi.FfiTollPolicy.PENALIZE
-                                                    } else {
-                                                        uniffi.navi.FfiTollPolicy.ALLOW
-                                                    },
-                                                    avoidFerries,
-                                                    avoidTunnels,
-                                                    prioritySharePct,
+                                            }
+                                            if (!cabinTogglesLive) {
+                                                Text(
+                                                    stringResource(R.string.ui_applies_to_hiking_overnight_planning_only),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    modifier = Modifier.testTag("cabin_toggles_hiking_only_note"),
                                                 )
-                                        },
-                                        enabled =
-                                            profile == TravelProfile.CAR ||
-                                                profile == TravelProfile.TRUCK ||
-                                                profile == TravelProfile.MOBILE_HOME ||
-                                                profile == TravelProfile.MOTORCYCLE ||
-                                                profile == TravelProfile.CAR_ELECTRIC ||
-                                                profile == TravelProfile.TRUCK_ELECTRIC ||
-                                                profile == TravelProfile.MOTORCYCLE_ELECTRIC ||
-                                                profile == TravelProfile.BICYCLE ||
-                                                profile == TravelProfile.BICYCLE_ELECTRIC ||
-                                                profile == TravelProfile.HIKING,
-                                    )
-                                }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                ) {
-                                    val profileIsMotor =
-                                        profile == TravelProfile.CAR ||
-                                            profile == TravelProfile.TRUCK ||
-                                            profile == TravelProfile.MOBILE_HOME ||
-                                            profile == TravelProfile.MOTORCYCLE ||
-                                            profile == TravelProfile.CAR_ELECTRIC ||
-                                            profile == TravelProfile.TRUCK_ELECTRIC ||
-                                            profile == TravelProfile.MOTORCYCLE_ELECTRIC
-                                    val profileIsHikingOrBike =
-                                        profile == TravelProfile.HIKING ||
-                                            profile == TravelProfile.BICYCLE ||
-                                            profile == TravelProfile.BICYCLE_ELECTRIC
-                                    val avoidFerriesEnabled =
-                                        AvoidFerriesUi.toggleEnabled(
-                                            profileIsMotor = profileIsMotor,
-                                            profileIsHikingOrBike = profileIsHikingOrBike,
-                                            graphFerryEdges = graphFerryEdges,
-                                        )
-                                    val avoidFerriesNote =
-                                        AvoidFerriesUi.unavailableNote(graphFerryEdges)
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(stringResource(R.string.avoid_ferries))
-                                        // Same bodySmall note pattern as cabin toggles
-                                        // ("Applies to hiking overnight planning only.").
-                                        if (avoidFerriesNote != null) {
-                                            Text(
-                                                avoidFerriesNote,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                modifier =
-                                                    Modifier.testTag("avoid_ferries_unavailable_note"),
+                                            }
+                                        }
+                                    }
+                                    if (profile == TravelProfile.BICYCLE ||
+                                        profile == TravelProfile.BICYCLE_ELECTRIC
+                                    ) {
+                                        Column(modifier = Modifier.fillMaxWidth()) {
+                                            Text(stringResource(R.string.profile_bike_type))
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            ) {
+                                                listOf(
+                                                    "road" to "Road",
+                                                    "trekking" to "Gravel",
+                                                    "mountain" to "MTB",
+                                                ).forEach { (id, label) ->
+                                                    TextButton(
+                                                        onClick = {
+                                                            bikeCapability = id
+                                                            uniffi.navi.saveBikeCapability(
+                                                                dataDir.absolutePath,
+                                                                id,
+                                                            )
+                                                            DiagnosticLog.logSettingSaved(
+                                                                "bike_capability",
+                                                                id,
+                                                            )
+                                                        },
+                                                    ) {
+                                                        Text(
+                                                            label,
+                                                            fontWeight =
+                                                                if (bikeCapability == id) {
+                                                                    FontWeight.Bold
+                                                                } else {
+                                                                    FontWeight.Normal
+                                                                },
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if (profile == TravelProfile.HIKING) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                        ) {
+                                            Text(stringResource(R.string.profile_pilgrim))
+                                            Switch(
+                                                checked = preferPilgrimRoutes,
+                                                onCheckedChange = { on ->
+                                                    preferPilgrimRoutes = on
+                                                    uniffi.navi.savePreferPilgrimRoutes(
+                                                        dataDir.absolutePath,
+                                                        on,
+                                                    )
+                                                    DiagnosticLog.logToggle(
+                                                        "prefer_pilgrim_routes",
+                                                        on,
+                                                        mapOf("profile" to profile.name),
+                                                    )
+                                                    DiagnosticLog.logSettingSaved(
+                                                        "prefer_pilgrim_routes",
+                                                        on,
+                                                    )
+                                                },
+                                                modifier = Modifier.testTag("toggle_prefer_pilgrim_routes"),
                                             )
                                         }
                                     }
-                                    Switch(
-                                        checked = avoidFerries,
-                                        onCheckedChange = { on ->
-                                            if (!avoidFerriesEnabled) return@Switch
-                                            avoidFerries = on
-                                            uniffi.navi.saveAvoidFerries(
-                                                dataDir.absolutePath,
-                                                on,
-                                            )
-                                            DiagnosticLog.logToggle("avoid_ferries", on)
-                                            DiagnosticLog.logSettingSaved("avoid_ferries", on)
-                                            status =
-                                                formatRouteAvoidanceReport(
-                                                    avoidMotorways,
-                                                    if (avoidTolls) {
-                                                        uniffi.navi.FfiTollPolicy.PENALIZE
-                                                    } else {
-                                                        uniffi.navi.FfiTollPolicy.ALLOW
-                                                    },
-                                                    avoidFerries,
-                                                    avoidTunnels,
-                                                    prioritySharePct,
-                                                )
-                                        },
-                                        enabled = avoidFerriesEnabled,
-                                        modifier = Modifier.testTag("toggle_avoid_ferries"),
-                                    )
-                                }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                ) {
-                                    Text(
-                                        if (travelProfileLocksAvoidTunnels(profile)) {
-                                            stringResource(R.string.label_avoid_tunnels_locked)
-                                        } else {
-                                            stringResource(R.string.avoid_tunnels)
-                                        },
-                                    )
-                                    Switch(
-                                        checked =
-                                            avoidTunnels ||
-                                                travelProfileLocksAvoidTunnels(profile),
-                                        onCheckedChange = { on ->
-                                            if (travelProfileLocksAvoidTunnels(profile)) {
-                                                return@Switch
-                                            }
-                                            avoidTunnels = on
-                                            DiagnosticLog.logToggle("avoid_tunnels", on)
-                                            status =
-                                                formatRouteAvoidanceReport(
-                                                    avoidMotorways,
-                                                    if (avoidTolls) {
-                                                        uniffi.navi.FfiTollPolicy.PENALIZE
-                                                    } else {
-                                                        uniffi.navi.FfiTollPolicy.ALLOW
-                                                    },
-                                                    avoidFerries,
-                                                    avoidTunnels,
-                                                    prioritySharePct,
-                                                )
-                                        },
-                                        enabled =
-                                            !travelProfileLocksAvoidTunnels(profile) &&
-                                                (
-                                                    profile == TravelProfile.CAR ||
-                                                        profile == TravelProfile.TRUCK ||
-                                                        profile == TravelProfile.MOBILE_HOME ||
-                                                        profile == TravelProfile.MOTORCYCLE ||
-                                                        profile == TravelProfile.CAR_ELECTRIC ||
-                                                        profile == TravelProfile.TRUCK_ELECTRIC ||
-                                                        profile == TravelProfile.MOTORCYCLE_ELECTRIC ||
-                                                        profile == TravelProfile.BICYCLE ||
-                                                        profile == TravelProfile.BICYCLE_ELECTRIC
-                                                ),
-                                        modifier = Modifier.testTag("toggle_avoid_tunnels"),
-                                    )
-                                }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                ) {
-                                    Text(StayInCountry.LABEL)
-                                    Switch(
-                                        checked = stayInCountry,
-                                        onCheckedChange = { on ->
-                                            stayInCountry = on
-                                            MapHudPrefs.saveStayInCountry(context, on)
-                                            DiagnosticLog.logToggle("stay_in_country", on)
-                                            DiagnosticLog.logSettingSaved("stay_in_country", on)
-                                        },
-                                        enabled =
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Text(
+                                            if (travelProfileLocksAvoidMotorways(profile)) {
+                                                "Avoid motorways (locked for this profile)"
+                                            } else {
+                                                "Avoid motorways"
+                                            },
+                                        )
+                                        Switch(
+                                            checked =
+                                                avoidMotorways ||
+                                                    travelProfileLocksAvoidMotorways(profile),
+                                            onCheckedChange = { on ->
+                                                if (travelProfileLocksAvoidMotorways(profile)) {
+                                                    return@Switch
+                                                }
+                                                avoidMotorways = on
+                                                DiagnosticLog.logToggle("avoid_motorways", on)
+                                                status =
+                                                    formatRouteAvoidanceReport(
+                                                        avoidMotorways,
+                                                        if (avoidTolls) {
+                                                            uniffi.navi.FfiTollPolicy.PENALIZE
+                                                        } else {
+                                                            uniffi.navi.FfiTollPolicy.ALLOW
+                                                        },
+                                                        avoidFerries,
+                                                        avoidTunnels,
+                                                        prioritySharePct,
+                                                    )
+                                            },
+                                            enabled = !travelProfileLocksAvoidMotorways(profile),
+                                            modifier = Modifier.testTag("toggle_avoid_motorways"),
+                                        )
+                                    }
+                                    if (MwmClientBootstrap.isEnabled() &&
+                                        VehicleRestrictionUi.showProfilePanelNote(
+                                            profile,
+                                            heightM.toDoubleOrNull(),
+                                            vehicleLimitsDataAvailable,
+                                        )
+                                    ) {
+                                        Text(
+                                            if (VehicleRestrictionUi.motorcycleNoLimits(profile)) {
+                                                stringResource(R.string.profile_limits_not_applied)
+                                            } else {
+                                                stringResource(R.string.vehicle_limits_not_yet_applied_banner)
+                                            },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.testTag("profile_limits_note"),
+                                        )
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Text(stringResource(R.string.avoid_tolls))
+                                        Switch(
+                                            // UI is Allow/Penalize only; NeverUse is FFI-only (docs/API.md).
+                                            checked = avoidTolls,
+                                            onCheckedChange = { on ->
+                                                avoidTolls = on
+                                                DiagnosticLog.logToggle("avoid_tolls", on)
+                                                status =
+                                                    formatRouteAvoidanceReport(
+                                                        avoidMotorways,
+                                                        if (avoidTolls) {
+                                                            uniffi.navi.FfiTollPolicy.PENALIZE
+                                                        } else {
+                                                            uniffi.navi.FfiTollPolicy.ALLOW
+                                                        },
+                                                        avoidFerries,
+                                                        avoidTunnels,
+                                                        prioritySharePct,
+                                                    )
+                                            },
+                                            enabled =
+                                                profile == TravelProfile.CAR ||
+                                                    profile == TravelProfile.TRUCK ||
+                                                    profile == TravelProfile.MOBILE_HOME ||
+                                                    profile == TravelProfile.MOTORCYCLE ||
+                                                    profile == TravelProfile.CAR_ELECTRIC ||
+                                                    profile == TravelProfile.TRUCK_ELECTRIC ||
+                                                    profile == TravelProfile.MOTORCYCLE_ELECTRIC ||
+                                                    profile == TravelProfile.BICYCLE ||
+                                                    profile == TravelProfile.BICYCLE_ELECTRIC ||
+                                                    profile == TravelProfile.HIKING,
+                                        )
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        val profileIsMotor =
                                             profile == TravelProfile.CAR ||
                                                 profile == TravelProfile.TRUCK ||
                                                 profile == TravelProfile.MOBILE_HOME ||
                                                 profile == TravelProfile.MOTORCYCLE ||
                                                 profile == TravelProfile.CAR_ELECTRIC ||
                                                 profile == TravelProfile.TRUCK_ELECTRIC ||
-                                                profile == TravelProfile.MOTORCYCLE_ELECTRIC,
-                                        modifier = Modifier.testTag("toggle_stay_in_country"),
-                                    )
-                                }
-                                Text(
-                                    StayInCountry.SHORT_DESCRIPTION,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                stayInCountryInfoExpanded = !stayInCountryInfoExpanded
-                                            }.testTag("stay_in_country_short"),
-                                )
-                                if (stayInCountryInfoExpanded) {
-                                    Text(
-                                        StayInCountry.DETAILS,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.testTag("stay_in_country_details"),
-                                    )
-                                }
-                                Text(
-                                    formatRouteAvoidanceReport(
-                                        avoidMotorways,
-                                        if (avoidTolls) {
-                                            uniffi.navi.FfiTollPolicy.PENALIZE
-                                        } else {
-                                            uniffi.navi.FfiTollPolicy.ALLOW
-                                        },
-                                        avoidFerries,
-                                        avoidTunnels,
-                                        prioritySharePct,
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Button(
-                                        onClick = {
-                                            runCatching {
-                                                if (usesTruckRestSettings(profile)) {
-                                                    val rest = loadTruckRestSettings(dataDir.absolutePath)
-                                                    saveTruckRestSettings(
-                                                        dataDir.absolutePath,
-                                                        FfiTruckRestSettings(
-                                                            mandatoryBreakAfterHours =
-                                                                rest.mandatoryBreakAfterHours,
-                                                            breakDurationMinutes = rest.breakDurationMinutes,
-                                                            preferSplitBreak = rest.preferSplitBreak,
-                                                            maxDailyDrivingHours = rest.maxDailyDrivingHours,
-                                                            maxDailyDrivingExtendedHours =
-                                                                rest.maxDailyDrivingExtendedHours,
-                                                            maxDailyExtensionsPerWeek =
-                                                                rest.maxDailyExtensionsPerWeek,
-                                                            maxWeeklyDrivingHours = rest.maxWeeklyDrivingHours,
-                                                            maxFortnightlyDrivingHours =
-                                                                rest.maxFortnightlyDrivingHours,
-                                                            exceptionalExtensionArmed =
-                                                                rest.exceptionalExtensionArmed,
-                                                            ecoModeEnabled = ecoEnabled,
-                                                        ),
-                                                    )
-                                                } else {
-                                                    val rest = loadCarRestSettings(dataDir.absolutePath)
-                                                    saveCarRestSettings(
-                                                        dataDir.absolutePath,
-                                                        FfiCarRestSettings(
-                                                            breakIntervalHours = rest.breakIntervalHours,
-                                                            restDurationMinutes = rest.restDurationMinutes,
-                                                            ecoModeEnabled = ecoEnabled,
-                                                            maxHours = rest.maxHours,
-                                                        ),
-                                                    )
-                                                }
+                                                profile == TravelProfile.MOTORCYCLE_ELECTRIC
+                                        val profileIsHikingOrBike =
+                                            profile == TravelProfile.HIKING ||
+                                                profile == TravelProfile.BICYCLE ||
+                                                profile == TravelProfile.BICYCLE_ELECTRIC
+                                        val avoidFerriesEnabled =
+                                            AvoidFerriesUi.toggleEnabled(
+                                                profileIsMotor = profileIsMotor,
+                                                profileIsHikingOrBike = profileIsHikingOrBike,
+                                                graphFerryEdges = graphFerryEdges,
+                                            )
+                                        val avoidFerriesNote =
+                                            AvoidFerriesUi.unavailableNote(graphFerryEdges)
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(stringResource(R.string.avoid_ferries))
+                                            // Same bodySmall note pattern as cabin toggles
+                                            // ("Applies to hiking overnight planning only.").
+                                            if (avoidFerriesNote != null) {
+                                                Text(
+                                                    avoidFerriesNote,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    modifier =
+                                                        Modifier.testTag("avoid_ferries_unavailable_note"),
+                                                )
                                             }
-                                            status = "Profile settings saved"
-                                        },
-                                        modifier = Modifier.testTag("btn_save_profile"),
-                                    ) { Text(stringResource(R.string.action_save)) }
-                                    TextButton(
-                                        onClick = {
-                                            showProfilePanel = false
-                                            hideSearch = true
-                                            showTools = false
-                                            status = "Route planning closed"
-                                        },
-                                        modifier = Modifier.testTag("btn_close_profile"),
-                                    ) { Text(stringResource(R.string.action_close)) }
-                                }
-                            } // end showProfilePanel
+                                        }
+                                        Switch(
+                                            checked = avoidFerries,
+                                            onCheckedChange = { on ->
+                                                if (!avoidFerriesEnabled) return@Switch
+                                                avoidFerries = on
+                                                uniffi.navi.saveAvoidFerries(
+                                                    dataDir.absolutePath,
+                                                    on,
+                                                )
+                                                DiagnosticLog.logToggle("avoid_ferries", on)
+                                                DiagnosticLog.logSettingSaved("avoid_ferries", on)
+                                                status =
+                                                    formatRouteAvoidanceReport(
+                                                        avoidMotorways,
+                                                        if (avoidTolls) {
+                                                            uniffi.navi.FfiTollPolicy.PENALIZE
+                                                        } else {
+                                                            uniffi.navi.FfiTollPolicy.ALLOW
+                                                        },
+                                                        avoidFerries,
+                                                        avoidTunnels,
+                                                        prioritySharePct,
+                                                    )
+                                            },
+                                            enabled = avoidFerriesEnabled,
+                                            modifier = Modifier.testTag("toggle_avoid_ferries"),
+                                        )
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Text(
+                                            if (travelProfileLocksAvoidTunnels(profile)) {
+                                                stringResource(R.string.label_avoid_tunnels_locked)
+                                            } else {
+                                                stringResource(R.string.avoid_tunnels)
+                                            },
+                                        )
+                                        Switch(
+                                            checked =
+                                                avoidTunnels ||
+                                                    travelProfileLocksAvoidTunnels(profile),
+                                            onCheckedChange = { on ->
+                                                if (travelProfileLocksAvoidTunnels(profile)) {
+                                                    return@Switch
+                                                }
+                                                avoidTunnels = on
+                                                DiagnosticLog.logToggle("avoid_tunnels", on)
+                                                status =
+                                                    formatRouteAvoidanceReport(
+                                                        avoidMotorways,
+                                                        if (avoidTolls) {
+                                                            uniffi.navi.FfiTollPolicy.PENALIZE
+                                                        } else {
+                                                            uniffi.navi.FfiTollPolicy.ALLOW
+                                                        },
+                                                        avoidFerries,
+                                                        avoidTunnels,
+                                                        prioritySharePct,
+                                                    )
+                                            },
+                                            enabled =
+                                                !travelProfileLocksAvoidTunnels(profile) &&
+                                                    (
+                                                        profile == TravelProfile.CAR ||
+                                                            profile == TravelProfile.TRUCK ||
+                                                            profile == TravelProfile.MOBILE_HOME ||
+                                                            profile == TravelProfile.MOTORCYCLE ||
+                                                            profile == TravelProfile.CAR_ELECTRIC ||
+                                                            profile == TravelProfile.TRUCK_ELECTRIC ||
+                                                            profile == TravelProfile.MOTORCYCLE_ELECTRIC ||
+                                                            profile == TravelProfile.BICYCLE ||
+                                                            profile == TravelProfile.BICYCLE_ELECTRIC
+                                                    ),
+                                            modifier = Modifier.testTag("toggle_avoid_tunnels"),
+                                        )
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Text(StayInCountry.LABEL)
+                                        Switch(
+                                            checked = stayInCountry,
+                                            onCheckedChange = { on ->
+                                                stayInCountry = on
+                                                MapHudPrefs.saveStayInCountry(context, on)
+                                                DiagnosticLog.logToggle("stay_in_country", on)
+                                                DiagnosticLog.logSettingSaved("stay_in_country", on)
+                                            },
+                                            enabled =
+                                                profile == TravelProfile.CAR ||
+                                                    profile == TravelProfile.TRUCK ||
+                                                    profile == TravelProfile.MOBILE_HOME ||
+                                                    profile == TravelProfile.MOTORCYCLE ||
+                                                    profile == TravelProfile.CAR_ELECTRIC ||
+                                                    profile == TravelProfile.TRUCK_ELECTRIC ||
+                                                    profile == TravelProfile.MOTORCYCLE_ELECTRIC,
+                                            modifier = Modifier.testTag("toggle_stay_in_country"),
+                                        )
+                                    }
+                                    Text(
+                                        StayInCountry.SHORT_DESCRIPTION,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    stayInCountryInfoExpanded = !stayInCountryInfoExpanded
+                                                }.testTag("stay_in_country_short"),
+                                    )
+                                    if (stayInCountryInfoExpanded) {
+                                        Text(
+                                            StayInCountry.DETAILS,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.testTag("stay_in_country_details"),
+                                        )
+                                    }
+                                    Text(
+                                        formatRouteAvoidanceReport(
+                                            avoidMotorways,
+                                            if (avoidTolls) {
+                                                uniffi.navi.FfiTollPolicy.PENALIZE
+                                            } else {
+                                                uniffi.navi.FfiTollPolicy.ALLOW
+                                            },
+                                            avoidFerries,
+                                            avoidTunnels,
+                                            prioritySharePct,
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Button(
+                                            onClick = {
+                                                runCatching {
+                                                    if (usesTruckRestSettings(profile)) {
+                                                        val rest = loadTruckRestSettings(dataDir.absolutePath)
+                                                        saveTruckRestSettings(
+                                                            dataDir.absolutePath,
+                                                            FfiTruckRestSettings(
+                                                                mandatoryBreakAfterHours =
+                                                                    rest.mandatoryBreakAfterHours,
+                                                                breakDurationMinutes = rest.breakDurationMinutes,
+                                                                preferSplitBreak = rest.preferSplitBreak,
+                                                                maxDailyDrivingHours = rest.maxDailyDrivingHours,
+                                                                maxDailyDrivingExtendedHours =
+                                                                    rest.maxDailyDrivingExtendedHours,
+                                                                maxDailyExtensionsPerWeek =
+                                                                    rest.maxDailyExtensionsPerWeek,
+                                                                maxWeeklyDrivingHours = rest.maxWeeklyDrivingHours,
+                                                                maxFortnightlyDrivingHours =
+                                                                    rest.maxFortnightlyDrivingHours,
+                                                                exceptionalExtensionArmed =
+                                                                    rest.exceptionalExtensionArmed,
+                                                                ecoModeEnabled = ecoEnabled,
+                                                            ),
+                                                        )
+                                                    } else {
+                                                        val rest = loadCarRestSettings(dataDir.absolutePath)
+                                                        saveCarRestSettings(
+                                                            dataDir.absolutePath,
+                                                            FfiCarRestSettings(
+                                                                breakIntervalHours = rest.breakIntervalHours,
+                                                                restDurationMinutes = rest.restDurationMinutes,
+                                                                ecoModeEnabled = ecoEnabled,
+                                                                maxHours = rest.maxHours,
+                                                            ),
+                                                        )
+                                                    }
+                                                }
+                                                status = "Profile settings saved"
+                                            },
+                                            modifier = Modifier.testTag("btn_save_profile"),
+                                        ) { Text(stringResource(R.string.action_save)) }
+                                        TextButton(
+                                            onClick = {
+                                                showProfilePanel = false
+                                                hideSearch = true
+                                                showTools = false
+                                                status = "Route planning closed"
+                                            },
+                                            modifier = Modifier.testTag("btn_close_profile"),
+                                        ) { Text(stringResource(R.string.action_close)) }
+                                    }
+                                } // end showProfilePanel
+                            }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                    if (showVehicleLimitsPanel || !showVehiclePanel) {
+                        if (showVehicleLimitsPanel || !showVehiclePanel) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                tonalElevation = 3.dp,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    if (!showVehiclePanel) {
+                                        TextButton(
+                                            onClick = { showVehiclePanel = true },
+                                            modifier = Modifier.testTag("btn_open_vehicle"),
+                                        ) { Text(stringResource(R.string.label_vehicle)) }
+                                    } else if (showVehicleLimitsPanel) {
+                                        Text(stringResource(R.string.vehicle_limits_title), style = MaterialTheme.typography.labelLarge)
+                                        if (showVehicleClearance) {
+                                            OutlinedTextField(
+                                                value = axleKg,
+                                                onValueChange = { axleKg = it },
+                                                label = { Text(stringResource(R.string.vehicle_axle_weight_kg)) },
+                                                singleLine = true,
+                                                modifier = Modifier.fillMaxWidth(),
+                                            )
+                                            OutlinedTextField(
+                                                value = bogieKg,
+                                                onValueChange = { bogieKg = it },
+                                                label = { Text(stringResource(R.string.vehicle_bogie_weight_kg)) },
+                                                singleLine = true,
+                                                modifier = Modifier.fillMaxWidth(),
+                                            )
+                                        }
+                                        if (showVehicleHeightOnly || showVehicleClearance) {
+                                            OutlinedTextField(
+                                                value = heightM,
+                                                onValueChange = { heightM = it },
+                                                label = { Text(stringResource(R.string.vehicle_height_m)) },
+                                                singleLine = true,
+                                                modifier =
+                                                    Modifier
+                                                        .fillMaxWidth()
+                                                        .testTag("field_vehicle_height"),
+                                            )
+                                        }
+                                        if (showVehicleClearance) {
+                                            OutlinedTextField(
+                                                value = totalWeightKg,
+                                                onValueChange = { totalWeightKg = it },
+                                                label = { Text(stringResource(R.string.vehicle_total_weight_kg)) },
+                                                singleLine = true,
+                                                modifier =
+                                                    Modifier
+                                                        .fillMaxWidth()
+                                                        .testTag("field_vehicle_total_weight"),
+                                            )
+                                            OutlinedTextField(
+                                                value = widthM,
+                                                onValueChange = { widthM = it },
+                                                label = { Text(stringResource(R.string.vehicle_width_m)) },
+                                                singleLine = true,
+                                                modifier = Modifier.fillMaxWidth(),
+                                            )
+                                            OutlinedTextField(
+                                                value = lengthM,
+                                                onValueChange = { lengthM = it },
+                                                label = { Text(stringResource(R.string.vehicle_length_m)) },
+                                                singleLine = true,
+                                                modifier = Modifier.fillMaxWidth(),
+                                            )
+                                        }
+                                        Button(onClick = { persistVehicle() }, modifier = Modifier.fillMaxWidth().testTag("btn_save_vehicle")) {
+                                            Text(stringResource(R.string.action_save))
+                                        }
+                                        TextButton(
+                                            onClick = {
+                                                showVehiclePanel = false
+                                                hideSearch = true
+                                                showTools = false
+                                                status = "Route planning closed"
+                                            },
+                                            modifier = Modifier.testTag("btn_close_vehicle"),
+                                        ) { Text(stringResource(R.string.action_close)) }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             tonalElevation = 3.dp,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Column(modifier = Modifier.padding(10.dp)) {
-                                if (!showVehiclePanel) {
+                                if (!showRoutesPanel) {
                                     TextButton(
-                                        onClick = { showVehiclePanel = true },
-                                        modifier = Modifier.testTag("btn_open_vehicle"),
-                                    ) { Text(stringResource(R.string.label_vehicle)) }
-                                } else if (showVehicleLimitsPanel) {
-                                    Text(stringResource(R.string.vehicle_limits_title), style = MaterialTheme.typography.labelLarge)
-                                    if (showVehicleClearance) {
-                                        OutlinedTextField(
-                                            value = axleKg,
-                                            onValueChange = { axleKg = it },
-                                            label = { Text(stringResource(R.string.vehicle_axle_weight_kg)) },
-                                            singleLine = true,
-                                            modifier = Modifier.fillMaxWidth(),
-                                        )
-                                        OutlinedTextField(
-                                            value = bogieKg,
-                                            onValueChange = { bogieKg = it },
-                                            label = { Text(stringResource(R.string.vehicle_bogie_weight_kg)) },
-                                            singleLine = true,
-                                            modifier = Modifier.fillMaxWidth(),
-                                        )
+                                        onClick = { showRoutesPanel = true },
+                                        modifier = Modifier.testTag("btn_open_routes"),
+                                    ) { Text(stringResource(R.string.saved_routes_title)) }
+                                } else {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(stringResource(R.string.saved_routes_title), style = MaterialTheme.typography.labelLarge)
+                                        TextButton(onClick = { refreshRoutes() }) { Text(stringResource(R.string.action_refresh)) }
                                     }
-                                    if (showVehicleHeightOnly || showVehicleClearance) {
-                                        OutlinedTextField(
-                                            value = heightM,
-                                            onValueChange = { heightM = it },
-                                            label = { Text(stringResource(R.string.vehicle_height_m)) },
-                                            singleLine = true,
+                                    if (mapState.polyline.isNotBlank()) {
+                                        TextButton(
+                                            onClick = { clearActiveRoute("Planned route deleted") },
                                             modifier =
                                                 Modifier
                                                     .fillMaxWidth()
-                                                    .testTag("field_vehicle_height"),
-                                        )
-                                    }
-                                    if (showVehicleClearance) {
-                                        OutlinedTextField(
-                                            value = totalWeightKg,
-                                            onValueChange = { totalWeightKg = it },
-                                            label = { Text(stringResource(R.string.vehicle_total_weight_kg)) },
-                                            singleLine = true,
+                                                    .testTag("btn_delete_planned_route_saved"),
+                                        ) {
+                                            Text(stringResource(R.string.action_delete_planned_route))
+                                        }
+                                        TextButton(
+                                            onClick = {
+                                                val start =
+                                                    fromPoint
+                                                        ?: Waypoint(
+                                                            mapState.startName.ifBlank { "Start" },
+                                                            mapState.startLat,
+                                                            mapState.startLon,
+                                                        )
+                                                val end =
+                                                    toPoint.takeIf { it.name.isNotBlank() || it.lat != 0.0 }
+                                                        ?: Waypoint(
+                                                            mapState.endName.ifBlank { "Destination" },
+                                                            mapState.endLat,
+                                                            mapState.endLon,
+                                                        )
+                                                val vias =
+                                                    if (viaPoints.isNotEmpty()) {
+                                                        viaPoints
+                                                    } else {
+                                                        mapState.viaPoints
+                                                    }
+                                                val name =
+                                                    "${start.name.ifBlank { "Start" }} -> ${end.name.ifBlank { "Destination" }}"
+                                                val gpx =
+                                                    routeToGpx(
+                                                        name = name,
+                                                        timeIso = "",
+                                                        rteJson = waypointsToRteJson(start, vias, end),
+                                                        routePolyline = mapState.polyline,
+                                                    )
+                                                if (gpx.startsWith("FAIL")) {
+                                                    status = gpx
+                                                } else {
+                                                    pendingGpxExportFileName =
+                                                        gpxExportFileName(start.name, end.name)
+                                                    pendingGpxExportText = gpx
+                                                    createGpxLauncher.launch(pendingGpxExportFileName)
+                                                }
+                                            },
                                             modifier =
                                                 Modifier
                                                     .fillMaxWidth()
-                                                    .testTag("field_vehicle_total_weight"),
-                                        )
-                                        OutlinedTextField(
-                                            value = widthM,
-                                            onValueChange = { widthM = it },
-                                            label = { Text(stringResource(R.string.vehicle_width_m)) },
-                                            singleLine = true,
-                                            modifier = Modifier.fillMaxWidth(),
-                                        )
-                                        OutlinedTextField(
-                                            value = lengthM,
-                                            onValueChange = { lengthM = it },
-                                            label = { Text(stringResource(R.string.vehicle_length_m)) },
-                                            singleLine = true,
-                                            modifier = Modifier.fillMaxWidth(),
-                                        )
+                                                    .testTag("btn_export_planned_gpx"),
+                                        ) {
+                                            Text(stringResource(R.string.action_export_planned_gpx))
+                                        }
                                     }
-                                    Button(onClick = { persistVehicle() }, modifier = Modifier.fillMaxWidth().testTag("btn_save_vehicle")) {
+                                    if (savedRoutes.isEmpty()) {
+                                        Text(stringResource(R.string.saved_routes_empty), style = MaterialTheme.typography.bodySmall)
+                                    } else {
+                                        savedRoutes.forEach { route ->
+                                            Row(
+                                                modifier =
+                                                    Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(vertical = 4.dp),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        "${route.startName} -> ${route.endName}",
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                    )
+                                                    Text(
+                                                        "${route.profile} · ${route.createdAt}",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                    )
+                                                }
+                                                TextButton(
+                                                    onClick = {
+                                                        val loadedProfile =
+                                                            travelProfileFromSavedName(route.profile)
+                                                        if (loadedProfile == null) {
+                                                            status =
+                                                                "Unknown profile in saved route: ${route.profile}"
+                                                            return@TextButton
+                                                        }
+                                                        fromPoint =
+                                                            Waypoint(
+                                                                name =
+                                                                    route.startName.ifBlank {
+                                                                        "Start"
+                                                                    },
+                                                                lat = route.startLat,
+                                                                lon = route.startLon,
+                                                            )
+                                                        fromFollowsGps = false
+                                                        toPoint =
+                                                            Waypoint(
+                                                                name =
+                                                                    route.endName.ifBlank {
+                                                                        "Destination"
+                                                                    },
+                                                                lat = route.endLat,
+                                                                lon = route.endLon,
+                                                            )
+                                                        viaPoints = parseSavedViaPoints(route.viaJson)
+                                                        profile = loadedProfile
+                                                        ecoEnabled = ecoModeDefault(loadedProfile)
+                                                        applySavedRouteSummaryJson(
+                                                            route.summaryJson,
+                                                            onAvoidMotorways = { avoidMotorways = it },
+                                                            onAvoidTolls = { avoidTolls = it },
+                                                            onAvoidFerries = { avoidFerries = it },
+                                                            onAvoidTunnels = { avoidTunnels = it },
+                                                            onPriorityShare = { prioritySharePct = it },
+                                                        )
+                                                        // Bike / hike: motorways are unsuitable — keep lock semantics.
+                                                        if (loadedProfile == TravelProfile.BICYCLE ||
+                                                            loadedProfile == TravelProfile.BICYCLE_ELECTRIC ||
+                                                            loadedProfile == TravelProfile.HIKING
+                                                        ) {
+                                                            avoidMotorways = true
+                                                        }
+                                                        showRoutesPanel = true
+                                                        status =
+                                                            "Loaded ${route.startName} -> ${route.endName}; planning…"
+                                                        planKick += 1
+                                                    },
+                                                    enabled = !planningRoute,
+                                                    modifier = Modifier.testTag("btn_load_saved_route"),
+                                                ) { Text(stringResource(R.string.action_load)) }
+                                                TextButton(
+                                                    onClick = {
+                                                        val loadedProfile =
+                                                            travelProfileFromSavedName(route.profile)
+                                                        if (loadedProfile == null) {
+                                                            status =
+                                                                "Unknown profile in saved route: ${route.profile}"
+                                                            return@TextButton
+                                                        }
+                                                        fromPoint =
+                                                            Waypoint(
+                                                                name =
+                                                                    route.startName.ifBlank {
+                                                                        "Start"
+                                                                    },
+                                                                lat = route.startLat,
+                                                                lon = route.startLon,
+                                                            )
+                                                        fromFollowsGps = false
+                                                        toPoint =
+                                                            Waypoint(
+                                                                name =
+                                                                    route.endName.ifBlank {
+                                                                        "Destination"
+                                                                    },
+                                                                lat = route.endLat,
+                                                                lon = route.endLon,
+                                                            )
+                                                        viaPoints = parseSavedViaPoints(route.viaJson)
+                                                        profile = loadedProfile
+                                                        ecoEnabled = ecoModeDefault(loadedProfile)
+                                                        applySavedRouteSummaryJson(
+                                                            route.summaryJson,
+                                                            onAvoidMotorways = { avoidMotorways = it },
+                                                            onAvoidTolls = { avoidTolls = it },
+                                                            onAvoidFerries = { avoidFerries = it },
+                                                            onAvoidTunnels = { avoidTunnels = it },
+                                                            onPriorityShare = { prioritySharePct = it },
+                                                        )
+                                                        if (loadedProfile == TravelProfile.BICYCLE ||
+                                                            loadedProfile == TravelProfile.BICYCLE_ELECTRIC ||
+                                                            loadedProfile == TravelProfile.HIKING
+                                                        ) {
+                                                            avoidMotorways = true
+                                                        }
+                                                        pendingGpxExportRouteId = route.id
+                                                        showRoutesPanel = true
+                                                        status =
+                                                            "Exporting ${route.startName} -> ${route.endName}; planning…"
+                                                        planKick += 1
+                                                    },
+                                                    enabled = !planningRoute,
+                                                    modifier = Modifier.testTag("btn_export_saved_route_gpx"),
+                                                ) { Text(stringResource(R.string.action_export)) }
+                                                TextButton(
+                                                    onClick = { confirmDeleteSavedRouteId = route.id },
+                                                    modifier = Modifier.testTag("btn_delete_saved_route"),
+                                                ) { Text(stringResource(R.string.action_delete_route)) }
+                                            }
+                                        }
+                                    }
+                                    Button(
+                                        onClick = {
+                                            if (toPoint.name.isBlank()) {
+                                                status = "Set a To destination first"
+                                                return@Button
+                                            }
+                                            val start = fromPoint ?: Waypoint("Start", 61.2, 10.7)
+                                            val viaJson =
+                                                if (viaPoints.isEmpty()) {
+                                                    "[]"
+                                                } else {
+                                                    viaPoints.joinToString(",", "[", "]") {
+                                                        """{"name":${org.json.JSONObject.quote(it.name)},"lat":${it.lat},"lon":${it.lon}}"""
+                                                    }
+                                                }
+                                            val report =
+                                                saveNamedRoute(
+                                                    dataDir = dataDir.absolutePath,
+                                                    startLat = start.lat,
+                                                    startLon = start.lon,
+                                                    startName = start.name,
+                                                    endLat = toPoint.lat,
+                                                    endLon = toPoint.lon,
+                                                    endName = toPoint.name,
+                                                    viaJson = viaJson,
+                                                    profile = profile.name.lowercase(),
+                                                    summaryJson = """{"avoid_motorways":$avoidMotorways,"toll_policy":"${if (avoidTolls) "penalize" else "allow"}","avoid_tolls":$avoidTolls,"avoid_ferries":$avoidFerries,"avoid_tunnels":$avoidTunnels,"priority_share_pct":$prioritySharePct}""",
+                                                )
+                                            refreshRoutes()
+                                            status = report
+                                        },
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .testTag("btn_save_routes"),
+                                    ) {
                                         Text(stringResource(R.string.action_save))
                                     }
                                     TextButton(
                                         onClick = {
-                                            showVehiclePanel = false
+                                            showRoutesPanel = false
                                             hideSearch = true
                                             showTools = false
                                             status = "Route planning closed"
                                         },
-                                        modifier = Modifier.testTag("btn_close_vehicle"),
+                                        modifier = Modifier.testTag("btn_close_routes"),
                                     ) { Text(stringResource(R.string.action_close)) }
                                 }
                             }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        tonalElevation = 3.dp,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            if (!showRoutesPanel) {
-                                TextButton(
-                                    onClick = { showRoutesPanel = true },
-                                    modifier = Modifier.testTag("btn_open_routes"),
-                                ) { Text(stringResource(R.string.saved_routes_title)) }
-                            } else {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(stringResource(R.string.saved_routes_title), style = MaterialTheme.typography.labelLarge)
-                                    TextButton(onClick = { refreshRoutes() }) { Text(stringResource(R.string.action_refresh)) }
-                                }
-                                if (mapState.polyline.isNotBlank()) {
-                                    TextButton(
-                                        onClick = { clearActiveRoute("Planned route deleted") },
-                                        modifier =
-                                            Modifier
-                                                .fillMaxWidth()
-                                                .testTag("btn_delete_planned_route_saved"),
-                                    ) {
-                                        Text(stringResource(R.string.action_delete_planned_route))
-                                    }
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            tonalElevation = 3.dp,
+                            modifier = Modifier.fillMaxWidth().testTag("saved_places_panel"),
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                if (!showPlacesPanel) {
                                     TextButton(
                                         onClick = {
-                                            val start =
-                                                fromPoint
-                                                    ?: Waypoint(
-                                                        mapState.startName.ifBlank { "Start" },
-                                                        mapState.startLat,
-                                                        mapState.startLon,
-                                                    )
-                                            val end =
-                                                toPoint.takeIf { it.name.isNotBlank() || it.lat != 0.0 }
-                                                    ?: Waypoint(
-                                                        mapState.endName.ifBlank { "Destination" },
-                                                        mapState.endLat,
-                                                        mapState.endLon,
-                                                    )
-                                            val vias =
-                                                if (viaPoints.isNotEmpty()) {
-                                                    viaPoints
-                                                } else {
-                                                    mapState.viaPoints
-                                                }
-                                            val name =
-                                                "${start.name.ifBlank { "Start" }} -> ${end.name.ifBlank { "Destination" }}"
-                                            val gpx =
-                                                routeToGpx(
-                                                    name = name,
-                                                    timeIso = "",
-                                                    rteJson = waypointsToRteJson(start, vias, end),
-                                                    routePolyline = mapState.polyline,
-                                                )
-                                            if (gpx.startsWith("FAIL")) {
-                                                status = gpx
-                                            } else {
-                                                pendingGpxExportFileName =
-                                                    gpxExportFileName(start.name, end.name)
-                                                pendingGpxExportText = gpx
-                                                createGpxLauncher.launch(pendingGpxExportFileName)
-                                            }
+                                            showPlacesPanel = true
+                                            refreshPlaces()
                                         },
-                                        modifier =
-                                            Modifier
-                                                .fillMaxWidth()
-                                                .testTag("btn_export_planned_gpx"),
-                                    ) {
-                                        Text(stringResource(R.string.action_export_planned_gpx))
-                                    }
-                                }
-                                if (savedRoutes.isEmpty()) {
-                                    Text(stringResource(R.string.saved_routes_empty), style = MaterialTheme.typography.bodySmall)
+                                        modifier = Modifier.testTag("btn_open_places"),
+                                    ) { Text(stringResource(R.string.saved_places_title)) }
                                 } else {
-                                    savedRoutes.forEach { route ->
-                                        Row(
-                                            modifier =
-                                                Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(vertical = 4.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            Column(modifier = Modifier.weight(1f)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(stringResource(R.string.saved_places_title), style = MaterialTheme.typography.labelLarge)
+                                        TextButton(
+                                            onClick = { refreshPlaces() },
+                                            modifier = Modifier.testTag("btn_refresh_places"),
+                                        ) { Text(stringResource(R.string.action_refresh)) }
+                                    }
+                                    Text(
+                                        stringResource(R.string.ui_named_points_for_from_via_to_not_full_routes),
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                    if (savedPlaces.isEmpty()) {
+                                        Text(
+                                            stringResource(R.string.ui_no_saved_places),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.testTag("saved_places_empty"),
+                                        )
+                                    } else {
+                                        savedPlaces.forEach { place ->
+                                            Column(
+                                                modifier =
+                                                    Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(vertical = 4.dp)
+                                                        .testTag("saved_place_row"),
+                                            ) {
                                                 Text(
-                                                    "${route.startName} -> ${route.endName}",
+                                                    place.name,
                                                     style = MaterialTheme.typography.bodyMedium,
                                                 )
                                                 Text(
-                                                    "${route.profile} · ${route.createdAt}",
+                                                    formatCoordWaypointName(place.lat, place.lon),
                                                     style = MaterialTheme.typography.bodySmall,
                                                 )
-                                            }
-                                            TextButton(
-                                                onClick = {
-                                                    val loadedProfile =
-                                                        travelProfileFromSavedName(route.profile)
-                                                    if (loadedProfile == null) {
-                                                        status =
-                                                            "Unknown profile in saved route: ${route.profile}"
-                                                        return@TextButton
-                                                    }
-                                                    fromPoint =
-                                                        Waypoint(
-                                                            name =
-                                                                route.startName.ifBlank {
-                                                                    "Start"
-                                                                },
-                                                            lat = route.startLat,
-                                                            lon = route.startLon,
-                                                        )
-                                                    fromFollowsGps = false
-                                                    toPoint =
-                                                        Waypoint(
-                                                            name =
-                                                                route.endName.ifBlank {
-                                                                    "Destination"
-                                                                },
-                                                            lat = route.endLat,
-                                                            lon = route.endLon,
-                                                        )
-                                                    viaPoints = parseSavedViaPoints(route.viaJson)
-                                                    profile = loadedProfile
-                                                    ecoEnabled = ecoModeDefault(loadedProfile)
-                                                    applySavedRouteSummaryJson(
-                                                        route.summaryJson,
-                                                        onAvoidMotorways = { avoidMotorways = it },
-                                                        onAvoidTolls = { avoidTolls = it },
-                                                        onAvoidFerries = { avoidFerries = it },
-                                                        onAvoidTunnels = { avoidTunnels = it },
-                                                        onPriorityShare = { prioritySharePct = it },
-                                                    )
-                                                    // Bike / hike: motorways are unsuitable — keep lock semantics.
-                                                    if (loadedProfile == TravelProfile.BICYCLE ||
-                                                        loadedProfile == TravelProfile.BICYCLE_ELECTRIC ||
-                                                        loadedProfile == TravelProfile.HIKING
-                                                    ) {
-                                                        avoidMotorways = true
-                                                    }
-                                                    showRoutesPanel = true
-                                                    status =
-                                                        "Loaded ${route.startName} -> ${route.endName}; planning…"
-                                                    planKick += 1
-                                                },
-                                                enabled = !planningRoute,
-                                                modifier = Modifier.testTag("btn_load_saved_route"),
-                                            ) { Text(stringResource(R.string.action_load)) }
-                                            TextButton(
-                                                onClick = {
-                                                    val loadedProfile =
-                                                        travelProfileFromSavedName(route.profile)
-                                                    if (loadedProfile == null) {
-                                                        status =
-                                                            "Unknown profile in saved route: ${route.profile}"
-                                                        return@TextButton
-                                                    }
-                                                    fromPoint =
-                                                        Waypoint(
-                                                            name =
-                                                                route.startName.ifBlank {
-                                                                    "Start"
-                                                                },
-                                                            lat = route.startLat,
-                                                            lon = route.startLon,
-                                                        )
-                                                    fromFollowsGps = false
-                                                    toPoint =
-                                                        Waypoint(
-                                                            name =
-                                                                route.endName.ifBlank {
-                                                                    "Destination"
-                                                                },
-                                                            lat = route.endLat,
-                                                            lon = route.endLon,
-                                                        )
-                                                    viaPoints = parseSavedViaPoints(route.viaJson)
-                                                    profile = loadedProfile
-                                                    ecoEnabled = ecoModeDefault(loadedProfile)
-                                                    applySavedRouteSummaryJson(
-                                                        route.summaryJson,
-                                                        onAvoidMotorways = { avoidMotorways = it },
-                                                        onAvoidTolls = { avoidTolls = it },
-                                                        onAvoidFerries = { avoidFerries = it },
-                                                        onAvoidTunnels = { avoidTunnels = it },
-                                                        onPriorityShare = { prioritySharePct = it },
-                                                    )
-                                                    if (loadedProfile == TravelProfile.BICYCLE ||
-                                                        loadedProfile == TravelProfile.BICYCLE_ELECTRIC ||
-                                                        loadedProfile == TravelProfile.HIKING
-                                                    ) {
-                                                        avoidMotorways = true
-                                                    }
-                                                    pendingGpxExportRouteId = route.id
-                                                    showRoutesPanel = true
-                                                    status =
-                                                        "Exporting ${route.startName} -> ${route.endName}; planning…"
-                                                    planKick += 1
-                                                },
-                                                enabled = !planningRoute,
-                                                modifier = Modifier.testTag("btn_export_saved_route_gpx"),
-                                            ) { Text(stringResource(R.string.action_export)) }
-                                            TextButton(
-                                                onClick = { confirmDeleteSavedRouteId = route.id },
-                                                modifier = Modifier.testTag("btn_delete_saved_route"),
-                                            ) { Text(stringResource(R.string.action_delete_route)) }
-                                        }
-                                    }
-                                }
-                                Button(
-                                    onClick = {
-                                        if (toPoint.name.isBlank()) {
-                                            status = "Set a To destination first"
-                                            return@Button
-                                        }
-                                        val start = fromPoint ?: Waypoint("Start", 61.2, 10.7)
-                                        val viaJson =
-                                            if (viaPoints.isEmpty()) {
-                                                "[]"
-                                            } else {
-                                                viaPoints.joinToString(",", "[", "]") {
-                                                    """{"name":${org.json.JSONObject.quote(it.name)},"lat":${it.lat},"lon":${it.lon}}"""
+                                                Row(
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                ) {
+                                                    TextButton(
+                                                        onClick = {
+                                                            searchTarget = SearchTarget.From
+                                                            applyHit(
+                                                                PlaceHit(
+                                                                    osmId = 0L,
+                                                                    name = place.name,
+                                                                    kind = place.kind.ifBlank { "saved-place" },
+                                                                    lat = place.lat,
+                                                                    lon = place.lon,
+                                                                    subArea = "",
+                                                                    municipality = "",
+                                                                    regionId = "",
+                                                                ),
+                                                            )
+                                                        },
+                                                        modifier = Modifier.testTag("btn_place_as_from"),
+                                                    ) { Text(stringResource(R.string.waypoint_from)) }
+                                                    TextButton(
+                                                        onClick = {
+                                                            searchTarget = SearchTarget.Via
+                                                            applyHit(
+                                                                PlaceHit(
+                                                                    osmId = 0L,
+                                                                    name = place.name,
+                                                                    kind = place.kind.ifBlank { "saved-place" },
+                                                                    lat = place.lat,
+                                                                    lon = place.lon,
+                                                                    subArea = "",
+                                                                    municipality = "",
+                                                                    regionId = "",
+                                                                ),
+                                                            )
+                                                        },
+                                                        modifier = Modifier.testTag("btn_place_as_via"),
+                                                    ) { Text(stringResource(R.string.waypoint_via)) }
+                                                    TextButton(
+                                                        onClick = {
+                                                            searchTarget = SearchTarget.To
+                                                            applyHit(
+                                                                PlaceHit(
+                                                                    osmId = 0L,
+                                                                    name = place.name,
+                                                                    kind = place.kind.ifBlank { "saved-place" },
+                                                                    lat = place.lat,
+                                                                    lon = place.lon,
+                                                                    subArea = "",
+                                                                    municipality = "",
+                                                                    regionId = "",
+                                                                ),
+                                                            )
+                                                        },
+                                                        modifier = Modifier.testTag("btn_place_as_to"),
+                                                    ) { Text(stringResource(R.string.waypoint_to)) }
+                                                    TextButton(
+                                                        onClick = {
+                                                            renamePlaceId = place.id
+                                                            renamePlaceDraft = place.name
+                                                        },
+                                                        modifier = Modifier.testTag("btn_rename_saved_place"),
+                                                    ) { Text(stringResource(R.string.action_rename)) }
+                                                    TextButton(
+                                                        onClick = {
+                                                            if (deleteSavedPlace(dataDir.absolutePath, place.id)) {
+                                                                refreshPlaces()
+                                                                status = "Deleted saved place"
+                                                            } else {
+                                                                status = "Could not delete place"
+                                                            }
+                                                        },
+                                                        modifier = Modifier.testTag("btn_delete_saved_place"),
+                                                    ) { Text(stringResource(R.string.action_delete)) }
                                                 }
                                             }
-                                        val report =
-                                            saveNamedRoute(
-                                                dataDir = dataDir.absolutePath,
-                                                startLat = start.lat,
-                                                startLon = start.lon,
-                                                startName = start.name,
-                                                endLat = toPoint.lat,
-                                                endLon = toPoint.lon,
-                                                endName = toPoint.name,
-                                                viaJson = viaJson,
-                                                profile = profile.name.lowercase(),
-                                                summaryJson = """{"avoid_motorways":$avoidMotorways,"toll_policy":"${if (avoidTolls) "penalize" else "allow"}","avoid_tolls":$avoidTolls,"avoid_ferries":$avoidFerries,"avoid_tunnels":$avoidTunnels,"priority_share_pct":$prioritySharePct}""",
-                                            )
-                                        refreshRoutes()
-                                        status = report
-                                    },
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .testTag("btn_save_routes"),
-                                ) {
-                                    Text(stringResource(R.string.action_save))
-                                }
-                                TextButton(
-                                    onClick = {
-                                        showRoutesPanel = false
-                                        hideSearch = true
-                                        showTools = false
-                                        status = "Route planning closed"
-                                    },
-                                    modifier = Modifier.testTag("btn_close_routes"),
-                                ) { Text(stringResource(R.string.action_close)) }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        tonalElevation = 3.dp,
-                        modifier = Modifier.fillMaxWidth().testTag("saved_places_panel"),
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            if (!showPlacesPanel) {
-                                TextButton(
-                                    onClick = {
-                                        showPlacesPanel = true
-                                        refreshPlaces()
-                                    },
-                                    modifier = Modifier.testTag("btn_open_places"),
-                                ) { Text(stringResource(R.string.saved_places_title)) }
-                            } else {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(stringResource(R.string.saved_places_title), style = MaterialTheme.typography.labelLarge)
-                                    TextButton(
-                                        onClick = { refreshPlaces() },
-                                        modifier = Modifier.testTag("btn_refresh_places"),
-                                    ) { Text(stringResource(R.string.action_refresh)) }
-                                }
-                                Text(
-                                    stringResource(R.string.ui_named_points_for_from_via_to_not_full_routes),
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                                if (savedPlaces.isEmpty()) {
-                                    Text(
-                                        stringResource(R.string.ui_no_saved_places),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.testTag("saved_places_empty"),
-                                    )
-                                } else {
-                                    savedPlaces.forEach { place ->
-                                        Column(
-                                            modifier =
-                                                Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(vertical = 4.dp)
-                                                    .testTag("saved_place_row"),
-                                        ) {
-                                            Text(
-                                                place.name,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                            )
-                                            Text(
-                                                formatCoordWaypointName(place.lat, place.lon),
-                                                style = MaterialTheme.typography.bodySmall,
-                                            )
-                                            Row(
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                            ) {
-                                                TextButton(
-                                                    onClick = {
-                                                        searchTarget = SearchTarget.From
-                                                        applyHit(
-                                                            PlaceHit(
-                                                                osmId = 0L,
-                                                                name = place.name,
-                                                                kind = place.kind.ifBlank { "saved-place" },
-                                                                lat = place.lat,
-                                                                lon = place.lon,
-                                                                subArea = "",
-                                                                municipality = "",
-                                                                regionId = "",
-                                                            ),
-                                                        )
-                                                    },
-                                                    modifier = Modifier.testTag("btn_place_as_from"),
-                                                ) { Text(stringResource(R.string.waypoint_from)) }
-                                                TextButton(
-                                                    onClick = {
-                                                        searchTarget = SearchTarget.Via
-                                                        applyHit(
-                                                            PlaceHit(
-                                                                osmId = 0L,
-                                                                name = place.name,
-                                                                kind = place.kind.ifBlank { "saved-place" },
-                                                                lat = place.lat,
-                                                                lon = place.lon,
-                                                                subArea = "",
-                                                                municipality = "",
-                                                                regionId = "",
-                                                            ),
-                                                        )
-                                                    },
-                                                    modifier = Modifier.testTag("btn_place_as_via"),
-                                                ) { Text(stringResource(R.string.waypoint_via)) }
-                                                TextButton(
-                                                    onClick = {
-                                                        searchTarget = SearchTarget.To
-                                                        applyHit(
-                                                            PlaceHit(
-                                                                osmId = 0L,
-                                                                name = place.name,
-                                                                kind = place.kind.ifBlank { "saved-place" },
-                                                                lat = place.lat,
-                                                                lon = place.lon,
-                                                                subArea = "",
-                                                                municipality = "",
-                                                                regionId = "",
-                                                            ),
-                                                        )
-                                                    },
-                                                    modifier = Modifier.testTag("btn_place_as_to"),
-                                                ) { Text(stringResource(R.string.waypoint_to)) }
-                                                TextButton(
-                                                    onClick = {
-                                                        renamePlaceId = place.id
-                                                        renamePlaceDraft = place.name
-                                                    },
-                                                    modifier = Modifier.testTag("btn_rename_saved_place"),
-                                                ) { Text(stringResource(R.string.action_rename)) }
-                                                TextButton(
-                                                    onClick = {
-                                                        if (deleteSavedPlace(dataDir.absolutePath, place.id)) {
-                                                            refreshPlaces()
-                                                            status = "Deleted saved place"
-                                                        } else {
-                                                            status = "Could not delete place"
-                                                        }
-                                                    },
-                                                    modifier = Modifier.testTag("btn_delete_saved_place"),
-                                                ) { Text(stringResource(R.string.action_delete)) }
-                                            }
                                         }
                                     }
+                                    TextButton(
+                                        onClick = {
+                                            showPlacesPanel = false
+                                            hideSearch = true
+                                            showTools = false
+                                            status = "Route planning closed"
+                                        },
+                                        modifier = Modifier.testTag("btn_close_places"),
+                                    ) { Text(stringResource(R.string.action_close)) }
                                 }
-                                TextButton(
-                                    onClick = {
-                                        showPlacesPanel = false
-                                        hideSearch = true
-                                        showTools = false
-                                        status = "Route planning closed"
-                                    },
-                                    modifier = Modifier.testTag("btn_close_places"),
-                                ) { Text(stringResource(R.string.action_close)) }
+                            }
+                        }
+                    } else if (!hideChrome) {
+                        // Compact reopen when planning chrome is dismissed.
+                        Row(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Button(
+                                onClick = {
+                                    hideSearch = false
+                                    showProfilePanel = true
+                                    showVehiclePanel = true
+                                    showRoutesPanel = true
+                                    showPlacesPanel = true
+                                    refreshPlaces()
+                                },
+                                modifier = Modifier.testTag("btn_open_search"),
+                            ) {
+                                Text(stringResource(R.string.label_route))
+                            }
+                            // Same Material3 Button as Route (filled pill), not TextButton —
+                            // bare text had no container for shape/clip to show.
+                            Button(
+                                onClick = { showTools = !showTools },
+                                modifier = Modifier.testTag("btn_tools_collapsed"),
+                            ) {
+                                Text(if (showTools) stringResource(R.string.action_hide_tools) else stringResource(R.string.action_tools))
                             }
                         }
                     }
-                } else if (!hideChrome) {
-                    // Compact reopen when planning chrome is dismissed.
-                    Row(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Button(
-                            onClick = {
-                                hideSearch = false
-                                showProfilePanel = true
-                                showVehiclePanel = true
-                                showRoutesPanel = true
-                                showPlacesPanel = true
-                                refreshPlaces()
-                            },
-                            modifier = Modifier.testTag("btn_open_search"),
-                        ) {
-                            Text(stringResource(R.string.label_route))
-                        }
-                        // Same Material3 Button as Route (filled pill), not TextButton —
-                        // bare text had no container for shape/clip to show.
-                        Button(
-                            onClick = { showTools = !showTools },
-                            modifier = Modifier.testTag("btn_tools_collapsed"),
-                        ) {
-                            Text(if (showTools) stringResource(R.string.action_hide_tools) else stringResource(R.string.action_tools))
-                        }
-                    }
-                }
-            } // end if (!hideChrome)
+                } // end if (!hideChrome)
+            }
+            RouteChrome()
         }
 
         // Banners sit on the map under the top chrome (bar and route panel), not
