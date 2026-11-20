@@ -253,22 +253,11 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         // 4) Enter route via Navi UI search (names first; coords fallback).
         typeNameOrCoordAndPick("chip_from", FROM_QUERY, ORIGIN_LAT, ORIGIN_LON, "from_nashaugs")
         screenshot("06_from_set")
-        // Prefer name "Sandhaug"; if hit is not Hardangervidda Sandhaug, force coords.
-        typeNameOrCoordAndPick("chip_via", VIA_QUERY, VIA_LAT, VIA_LON, "via_sandhaug")
-        val viaHit = report.optJSONObject("via_sandhaug")
-        val viaName = viaHit?.optString("applied_name").orEmpty()
-        val viaLat = viaHit?.optDouble("applied_lat") ?: Double.NaN
-        val viaLon = viaHit?.optDouble("applied_lon") ?: Double.NaN
-        val viaOk =
-            viaName.contains(VIA_NAME_NEEDLE, ignoreCase = true) &&
-                !viaName.contains("Lillehammer", ignoreCase = true) &&
-                !viaLat.isNaN() &&
-                viaLat in 59.8..60.6 &&
-                viaLon in 7.0..8.2
-        if (!viaOk) {
-            noteUi("via_sandhaug_reject", "bad hit='$viaName' @ $viaLat,$viaLon — using Hardangervidda coords")
-            typeCoordAndPickForced("chip_via", VIA_LAT, VIA_LON, "via_sandhaug_coord")
-        }
+        // Never name-search "Sandhaug": geocoders return Sandhausen (DE) or
+        // Lillehammer hotels first, which poisons LongTrip corridor (13 DE regions).
+        // Force Hardangervidda Turisthytte coords only.
+        noteUi("via_sandhaug_skip_name", "forcing Hardangervidda coords (avoid Sandhausen DE)")
+        typeCoordAndPickForced("chip_via", VIA_LAT, VIA_LON, "via_sandhaug_coord")
         screenshot("07_via_set")
         typeNameOrCoordAndPick("chip_to", TO_QUERY, DEST_LAT, DEST_LON, "to_lothepus")
         screenshot("08_to_set")
@@ -280,7 +269,19 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
             "Via Sandhaug must be set before plan (got: $wp)",
             wp.contains("Via:", ignoreCase = true) &&
                 !wp.contains("Via: (none)", ignoreCase = true) &&
-                !wp.contains("Via: none", ignoreCase = true),
+                !wp.contains("Via: none", ignoreCase = true) &&
+                !wp.contains("Sandhausen", ignoreCase = true) &&
+                !wp.contains("Germany", ignoreCase = true) &&
+                !wp.contains("Lillehammer", ignoreCase = true),
+        )
+        val viaApplied = report.optJSONObject("via_sandhaug_coord")
+        val viaLatOk = viaApplied?.optDouble("applied_lat") ?: Double.NaN
+        val viaLonOk = viaApplied?.optDouble("applied_lon") ?: Double.NaN
+        assertTrue(
+            "Via must be Hardangervidda coords (got lat=$viaLatOk lon=$viaLonOk wp=$wp)",
+            !viaLatOk.isNaN() &&
+                viaLatOk in 59.8..60.6 &&
+                viaLonOk in 7.0..8.2,
         )
 
         // Keep long trip ON; DATEX stays OFF.
