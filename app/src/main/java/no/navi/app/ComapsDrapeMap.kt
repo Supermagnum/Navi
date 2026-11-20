@@ -562,8 +562,11 @@ internal fun ComapsDrapeMap(
     // Route line (CoMaps route renderer: casing, direction arrows at turns, pattern per profile).
     // Not keyed on layerEpoch: that counter moves with every GPS fix, and clearing and re-adding the
     // route at fix rate made the line flicker or vanish while driving.
-    LaunchedEffect(state.polyline, state.routeSegmentsJson, ready) {
+    LaunchedEffect(state.polyline, state.routeSegmentsJson, ready, NaviMapTestHooks.skipComapsRouteRender) {
         backend.clearRoute()
+        // Instrumented long-trip campaigns: keep plan/GPS/CAT, skip drape RouteBuilder
+        // (GenerateJoinNormals length_error / SIGABRT on ~30k-point via corridors).
+        if (NaviMapTestHooks.skipComapsRouteRender) return@LaunchedEffect
         val (onPoly, offPoly) = splitRouteSegmentPolylines(state.routeSegmentsJson)
         val onPts =
             parsePolylineLatLon(

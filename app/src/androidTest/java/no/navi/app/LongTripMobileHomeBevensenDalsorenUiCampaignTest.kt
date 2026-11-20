@@ -176,6 +176,7 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         NaviMapTestHooks.hideUiChrome = false
         NaviMapTestHooks.hideSearchChrome = false
+        NaviMapTestHooks.skipComapsRouteRender = true
         NaviMapTestHooks.lastPlanReport = ""
         NaviMapTestHooks.lastPlanDistanceKm = 0.0
         NaviMapTestHooks.lastRoutePolyline = ""
@@ -206,6 +207,7 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         writeReport()
         NaviMapTestHooks.hideUiChrome = false
         NaviMapTestHooks.hideSearchChrome = false
+        NaviMapTestHooks.skipComapsRouteRender = false
     }
 
     @Test
@@ -361,10 +363,9 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         }
 
         // PRIMARY PLAN PATH: visible Plan button.
-        // Do NOT set hideUiChrome before Plan — that removes btn_plan_route.
-        // After a via corridor exists we persist artifacts then clear the drawn
-        // route (requestClearRoute) so organicmaps RouteBuilder cannot SIGABRT
-        // the process mid GPS/CAT (GenerateJoinNormals length_error).
+        // Skip CoMaps drape RouteBuilder for this long via corridor (GenerateJoinNormals
+        // length_error / SIGABRT). Plan stats + polyline still land for host GPS/CAT.
+        NaviMapTestHooks.skipComapsRouteRender = true
         composeRule.onNodeWithTag("btn_plan_route", useUnmergedTree = true).performScrollTo()
         noteUi("click_btn_plan_route", "performClick")
         screenshot("08_before_plan")

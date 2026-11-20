@@ -228,6 +228,15 @@ object NaviMapTestHooks {
     var hideUiChrome: Boolean = false
 
     /**
+     * When true, [ComapsDrapeMap] skips `addSubroute` for the active corridor polyline.
+     * Long via campaigns (Bevensen→Ottadal→Luster) otherwise SIGABRT in organicmaps
+     * `GenerateJoinNormals` / `std::length_error` while building the drape route line.
+     * Plan stats, polyline persistence, GPS replay, and CAT sampling still run.
+     */
+    @Volatile
+    var skipComapsRouteRender: Boolean = false
+
+    /**
      * When true (and hideUiChrome is false), hide the search / tools panels but keep
      * the top and bottom drive HUDs visible for HUD-focused tests.
      */
