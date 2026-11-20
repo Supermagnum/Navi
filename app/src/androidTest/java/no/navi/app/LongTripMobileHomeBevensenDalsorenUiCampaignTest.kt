@@ -50,8 +50,9 @@ import java.util.concurrent.TimeUnit
  *
  * Primary plan path: chip_from / chip_via / chip_to + btn_plan_route on MainActivity.
  * UniFFI is assist-only (vehicle/rest seed, camping guest install). Synthetic DATEX is
- * injected by host ADB (marker BEVENSEN_AWAIT_DATEX). GPS start is host ADB.
- * Regions are deleted via Tools UI before plan. Not wired into CI.
+ * injected by host ADB as soft Penalize (marker BEVENSEN_AWAIT_DATEX). GPS start + replay
+ * are host ADB (marker BEVENSEN_AWAIT_GPS_REPLAY). CAT plugin set to Dummy radio via UI.
+ * Regions deleted via Tools UI before plan. Not wired into CI.
  */
 @RunWith(AndroidJUnit4::class)
 @LargeTest
@@ -137,6 +138,7 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                 MapHudPrefs.saveDatexWifiOnly(ctx, false)
                 MapHudPrefs.savePoiLookaheadEnabled(ctx, true)
                 MapHudPrefs.saveCampingPluginEnabled(ctx, true)
+                MapHudPrefs.saveCatPluginEnabled(ctx, true)
                 MapHudPrefs.saveSpeedCameraPromptShown(ctx, true)
                 val volumes = NaviStorageVolumes.list(ctx)
                 val sd =
@@ -214,6 +216,8 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
 
         // Assist: vehicle / soft rest / fuel / camping guest (disk). No DATEX here.
         seedAssistSettings()
+        // Origin GPS hint for host (before plan); full replay waits for corridor route.
+        Log.i(TAG, "BEVENSEN_GPS_HINT lon=$ORIGIN_LON lat=$ORIGIN_LAT")
         report.put("current_json_regions", fetchCurrentJsonRegions())
         writeReport()
 
@@ -222,6 +226,7 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         screenshot("02_route_panel")
 
         confirmPluginsAndLongTripViaToolsUi()
+        configureCatDummyViaUi()
         screenshot("03_tools_plugins")
 
         // Cold corridor: Tools UI delete, then Plan with long trip ON so the app
@@ -293,14 +298,19 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         screenshot("06_via_set")
         typeCoordAndPickHit("chip_to", DEST_LAT, DEST_LON, "to_dalsoren")
         screenshot("07_to_set")
-        noteUi(
-            "waypoints_summary",
-            waypointSummary(),
-        )
-        report.put("waypoints_summary", waypointSummary())
+        val wpSummary = waypointSummary()
+        noteUi("waypoints_summary", wpSummary)
+        report.put("waypoints_summary", wpSummary)
         writeReport()
+        assertTrue(
+            "Via Ottadal must be set before plan (got: $wpSummary)",
+            wpSummary.contains("Via:", ignoreCase = true) &&
+                !wpSummary.contains("Via: (none)", ignoreCase = true) &&
+                !wpSummary.contains("Via: none", ignoreCase = true),
+        )
+        Log.i(TAG, "WAYPOINTS_WITH_VIA $wpSummary")
 
-        // Host ADB injects synthetic DATEX into datex_cache (marker below).
+        // Host ADB injects synthetic DATEX soft Penalize into datex_cache (marker below).
         awaitHostDatexInjection()
         screenshot("07b_datex_injected")
 
@@ -447,7 +457,7 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                 .put("distance_km", distanceKm)
                 .put("distance_ok", distanceKm in 1461.3..1648.6)
                 .put("duration_h", etaMin / 60.0)
-                .put("duration_ok", (etaMin / 60.0) in 17.0..22.5)
+                .put("duration_ok", (etaMin / 60.0) in 17.0..22.0)
                 .put("maneuvers", manCount)
                 .put("maneuvers_ok", manCount in 55..100)
                 .put("datex_ok", datexImpactsPositive(planReport)),
@@ -456,7 +466,58 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         report.put("corridor", JSONArray(LongTripCoordinator.currentPlan()?.regionsInOrder.orEmpty()))
         report.put("long_trip_status", LongTripCoordinator.statusLine())
         report.put("ram_final_mib", processPssMib())
+        report.put("route_plan_stats", NaviMapTestHooks.lastRoutePlanStatsJson)
+        report.put("break_pois", NaviMapTestHooks.lastBreakPoisJson)
+        report.put("days_json", NaviMapTestHooks.lastDaysJson)
+        report.put("maneuver_kinds", summarizeManeuverKinds(maneuvers))
+        // Persist corridor polyline for host GPS replay + DATEX timing.
+        val poly = NaviMapTestHooks.lastRoutePolyline
+        if (poly.length >= 500) {
+            val targets =
+                listOf(
+                    File(dataDir, "long-trip-ui-report/route-polyline.txt"),
+                    File(dataDir, "long-trip-bevensen-dalsoren/route-polyline.txt"),
+                    File("/data/local/tmp/bevensen-ui/route-polyline.txt"),
+                    File("/sdcard/Pictures/bevensen-ui/route-polyline.txt"),
+                )
+            for (f in targets) {
+                runCatching {
+                    f.parentFile?.mkdirs()
+                    f.writeText(poly)
+                }
+            }
+            noteUi("polyline_persist", "chars=${poly.length}")
+            report.put("polyline_chars_saved", poly.length)
+        }
         report.put("finished_unix", System.currentTimeMillis() / 1000)
+        writeReport()
+        Log.i(TAG, "BEVENSEN_PLAN_OK dist=$distanceKm etaMin=$etaMin man=$manCount")
+
+        // Host GPS replay + town screenshots + mid soft DATEX (BEVENSEN_AWAIT_GPS_REPLAY).
+        // HARD RULE: host must not feed GPS until corridor route exists (polyline above).
+        Log.i(TAG, "BEVENSEN_AWAIT_GPS_REPLAY")
+        noteUi("gps_replay_await", "host feeds GPS along polyline; town screenshots")
+        val gpsDeadline = System.currentTimeMillis() + TimeUnit.HOURS.toMillis(4)
+        val doneFlag = File(dataDir, "long-trip-ui-report/gps_replay_done.flag")
+        while (System.currentTimeMillis() < gpsDeadline) {
+            if (doneFlag.isFile) {
+                noteUi("gps_replay_done", doneFlag.readText().take(200))
+                break
+            }
+            Thread.sleep(5_000)
+            composeRule.mainClock.advanceTimeBy(5_000)
+        }
+
+        // CAT repeaters along full corridor (Dummy radio): dense samples DE→DK→SE→NO.
+        val cat = sampleCatRepeaters(poly)
+        report.put("cat_repeaters", cat)
+        runCatching {
+            val full =
+                File(dataDir, "long-trip-bevensen-dalsoren/cat_repeaters_full.json")
+            full.parentFile?.mkdirs()
+            full.writeText(cat.toString(2))
+            File("/sdcard/Pictures/bevensen-ui/cat_repeaters_full.json").writeText(cat.toString(2))
+        }
         writeReport()
 
         assertTrue(
@@ -477,6 +538,209 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
             TAG,
             "PASS_UI dist=$distanceKm etaMin=$etaMin man=$manCount datex=${datexImpactsPositive(planReport)}",
         )
+        Log.i(TAG, "BEVENSEN_CAMPAIGN_DONE")
+    }
+
+    private fun summarizeManeuverKinds(raw: String): JSONObject {
+        val counts = JSONObject()
+        try {
+            val arr = JSONArray(raw)
+            for (i in 0 until arr.length()) {
+                val k = arr.optJSONObject(i)?.optString("kind") ?: "unknown"
+                counts.put(k, counts.optInt(k) + 1)
+            }
+        } catch (_: Throwable) {
+        }
+        return counts
+    }
+
+    /**
+     * Sample CAT UI repeater list along the corridor polyline.
+     * Dense enough to cover DE + DK + SE + NO. Never writes NaN into JSON
+     * (org.json forbids it). Name = network_id, else attribution (DB has no
+     * separate display-name column).
+     */
+    private fun sampleCatRepeaters(polyline: String): JSONObject {
+        val out = JSONObject()
+        val found = JSONArray()
+        val countries = JSONObject()
+        return try {
+            uniffi.navi.catPluginSetEnabled(true)
+            val pts = samplePolylinePoints(polyline, targetSpacingKm = 45.0, maxPoints = 48)
+            if (pts.none { it.first == VIA_LAT }) {
+                pts.add(VIA_LAT to VIA_LON)
+            }
+            if (pts.none { it.first == ORIGIN_LAT }) {
+                pts.add(0, ORIGIN_LAT to ORIGIN_LON)
+            }
+            if (pts.none { it.first == DEST_LAT }) {
+                pts.add(DEST_LAT to DEST_LON)
+            }
+            val seen = HashSet<String>()
+            val samplePts = JSONArray()
+            for ((lat, lon) in pts) {
+                samplePts.put(
+                    JSONObject().put("lat", lat).put("lon", lon),
+                )
+                uniffi.navi.catPluginSetPosition(lat, lon)
+                // Max UI radius is 150 km; stay under that.
+                val raw = uniffi.navi.catPluginRepeaterListUiJson(lat, lon, 120.0)
+                val arr =
+                    try {
+                        JSONArray(raw)
+                    } catch (_: Throwable) {
+                        val obj = JSONObject(raw)
+                        obj.optJSONArray("repeaters")
+                            ?: obj.optJSONArray("items")
+                            ?: JSONArray()
+                    }
+                for (j in 0 until arr.length()) {
+                    val o = arr.optJSONObject(j) ?: continue
+                    val call =
+                        o.optString("callsign").ifBlank {
+                            o.optString("call").ifBlank { o.optString("id") }
+                        }
+                    if (call.isBlank()) continue
+                    if (!seen.add(call)) continue
+                    val network = o.optString("network_id").takeIf { it.isNotBlank() && it != "null" }
+                    val attribution =
+                        o.optString("attribution").takeIf { it.isNotBlank() && it != "null" }
+                    val name =
+                        network
+                            ?: o.optString("name").takeIf { it.isNotBlank() && it != "null" }
+                            ?: attribution
+                            ?: ""
+                    val country = o.optString("country").takeIf { it.isNotBlank() && it != "null" } ?: ""
+                    if (country.isNotBlank()) {
+                        countries.put(country, countries.optInt(country) + 1)
+                    }
+                    val row =
+                        JSONObject()
+                            .put("callsign", call)
+                            .put("name", name)
+                            .put("country", country)
+                            .put("network_id", network ?: JSONObject.NULL)
+                            .put("attribution", attribution ?: JSONObject.NULL)
+                            .put("modulation", o.optString("modulation"))
+                    putFiniteOrNull(row, "lat", o.optDouble("lat", Double.NaN))
+                    putFiniteOrNull(row, "lon", o.optDouble("lon", Double.NaN))
+                    putFiniteOrNull(row, "distance_km", o.optDouble("distance_km", Double.NaN))
+                    found.put(row)
+                }
+            }
+            out.put("count", found.length())
+            out.put("sample_points", samplePts.length())
+            out.put("sample_pts", samplePts)
+            out.put("countries", countries)
+            out.put("repeaters", found)
+            out.put("radio", "Dummy")
+            out
+        } catch (t: Throwable) {
+            out.put("error", t.toString())
+            out.put("count", found.length())
+            out.put("countries", countries)
+            out.put("repeaters", found)
+            out.put("radio", "Dummy")
+            out
+        }
+    }
+
+    private fun putFiniteOrNull(
+        obj: JSONObject,
+        key: String,
+        value: Double,
+    ) {
+        if (value.isFinite()) {
+            obj.put(key, value)
+        } else {
+            obj.put(key, JSONObject.NULL)
+        }
+    }
+
+    /** Densify polyline into ~[targetSpacingKm] samples (lon,lat;lon,lat format). */
+    private fun samplePolylinePoints(
+        polyline: String,
+        targetSpacingKm: Double,
+        maxPoints: Int,
+    ): ArrayList<Pair<Double, Double>> {
+        val pts = ArrayList<Pair<Double, Double>>()
+        val parts = polyline.split(";")
+        var lastLat = Double.NaN
+        var lastLon = Double.NaN
+        var sinceLast = 0.0
+        for (part in parts) {
+            val bits = part.split(",")
+            if (bits.size != 2) continue
+            val lon = bits[0].toDoubleOrNull() ?: continue
+            val lat = bits[1].toDoubleOrNull() ?: continue
+            if (!lat.isFinite() || !lon.isFinite()) continue
+            if (pts.isEmpty()) {
+                pts.add(lat to lon)
+                lastLat = lat
+                lastLon = lon
+                continue
+            }
+            sinceLast += haversineKm(lastLat, lastLon, lat, lon)
+            lastLat = lat
+            lastLon = lon
+            if (sinceLast >= targetSpacingKm) {
+                pts.add(lat to lon)
+                sinceLast = 0.0
+                if (pts.size >= maxPoints) break
+            }
+        }
+        if (pts.isEmpty()) {
+            pts.add(ORIGIN_LAT to ORIGIN_LON)
+            pts.add(DEST_LAT to DEST_LON)
+        }
+        return pts
+    }
+
+    private fun haversineKm(
+        aLat: Double,
+        aLon: Double,
+        bLat: Double,
+        bLon: Double,
+    ): Double {
+        val r = 6371.0
+        val p1 = Math.toRadians(aLat)
+        val p2 = Math.toRadians(bLat)
+        val dPhi = Math.toRadians(bLat - aLat)
+        val dL = Math.toRadians(bLon - aLon)
+        val x =
+            Math.sin(dPhi / 2) * Math.sin(dPhi / 2) +
+                Math.cos(p1) * Math.cos(p2) * Math.sin(dL / 2) * Math.sin(dL / 2)
+        return 2 * r * Math.asin(Math.min(1.0, Math.sqrt(x)))
+    }
+
+    private fun configureCatDummyViaUi() {
+        runCatching {
+            clickTagSoft("btn_open_drive_settings")
+            settle(400)
+            composeRule.onNodeWithTag("toggle_cat_plugin", useUnmergedTree = true).performScrollTo()
+            if (!MapHudPrefs.loadCatPluginEnabled(composeRule.activity)) {
+                composeRule.onNodeWithTag("toggle_cat_plugin", useUnmergedTree = true).performClick()
+                noteUi("toggle_cat_plugin", "ON")
+            } else {
+                noteUi("toggle_cat_plugin", "already ON")
+            }
+            clickTagSoft("btn_save_drive_settings")
+            clickTagSoft("btn_close_drive_settings")
+        }
+        runCatching {
+            clickTagSoft("btn_cat_status")
+            clickTagSoft("cat_backend_hamlib")
+            clickTagSoft("cat_rig_model_1")
+            clickTagSoft("cat_btn_connect")
+            settle(800)
+            noteUi("cat_dummy", "selected Dummy (model 1) + connect")
+            clickTagSoft("cat_btn_close")
+        }.onFailure { e ->
+            noteUi("cat_dummy_soft_fail", e.message ?: "err")
+            runCatching { uniffi.navi.catPluginSetEnabled(true) }
+            runCatching { uniffi.navi.catPluginConnectFfi(1, true) }
+        }
+        report.put("cat_plugin", JSONObject().put("enabled", true).put("radio", "Dummy"))
     }
 
     private fun seedAssistSettings() {
@@ -754,7 +1018,7 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                             .put("lat", s.lat)
                             .put("lon", s.lon)
                             .put("label", s.label)
-                            .put("impact", "Block")
+                            .put("impact", "Penalize")
                             .put("synthetic", true)
                             .put("injected_via", "host_adb"),
                     )
