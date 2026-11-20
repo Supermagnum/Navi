@@ -1,0 +1,9 @@
+11-20 09:59:22.738 I/LongTripMwm(11191): mapped europe/germany/niedersachsen -> alias (5 leaves, catalog had no [europe_germany_niedersachsen])
+11-20 09:59:23.798 I/LongTripMwm(11191): mapped europe/germany/schleswig-holstein -> alias (2 leaves, catalog had no [europe_germany_schleswig-holstein, europe_germany_schleswig_holstein])
+11-20 09:59:24.869 I/LongTripMwm(11191): mapped europe/denmark -> europe_denmark leaves=5 bytes=449027356
+11-20 09:59:25.927 I/LongTripMwm(11191): mapped europe/sweden/skane -> europe_sweden_skane leaves=1 bytes=65592792
+11-20 09:59:26.983 I/LongTripMwm(11191): mapped europe/sweden/halland -> europe_sweden_halland leaves=1 bytes=152022619
+11-20 09:59:28.053 I/LongTripMwm(11191): mapped europe/sweden/vastra_gotaland -> europe_sweden_vastra_gotaland leaves=1 bytes=152022619
+11-20 09:59:29.113 I/LongTripMwm(11191): mapped europe/norway/ostlandet -> europe_norway_ostlandet leaves=5 bytes=760001532
+11-20 09:59:30.163 I/LongTripMwm(11191): mapped europe/norway/sorlandet -> europe_norway_sorlandet leaves=2 bytes=323121811
+11-20 09:59:31.214 I/LongTripMwm(11191): mapped europe/norway/vestlandet -> europe_norway_vestlandet leaves=3 bytes=302695222

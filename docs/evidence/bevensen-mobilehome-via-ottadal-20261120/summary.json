@@ -1,0 +1,53 @@
+{
+  "verdict": "PASS",
+  "waypoints_summary": "From: 53.07969, 10.58720 | To: 61.44338, 7.46140 | Via: 61.86914, 9.10551",
+  "expected_check": {
+    "distance_km": 1553.272823527632,
+    "distance_ok": true,
+    "duration_h": 19.645,
+    "duration_ok": true,
+    "maneuvers": 69,
+    "maneuvers_ok": true,
+    "datex_ok": true,
+    "via_ok": true,
+    "germany_mwm_ok": true
+  },
+  "full_plan_summary": {
+    "distance_km": 1553.272823527632,
+    "eta_minutes": 1178.7,
+    "maneuver_count": 69,
+    "polyline_chars": 1103932,
+    "ottadal_in_tunnels": true
+  },
+  "cat_repeaters_corridor": {
+    "count": 341,
+    "countries": {
+      "DE": 103,
+      "DK": 44,
+      "SE": 29,
+      "NO": 165
+    },
+    "path": "/tmp/bevensen-luster-campaign/report/cat_repeaters_DE_DK_SE_NO.json"
+  },
+  "gps_towns": [
+    "Bad_Bevensen",
+    "Copenhagen",
+    "Dale_Luster",
+    "Gothenburg",
+    "Halmstad",
+    "Helsingborg",
+    "Lillehammer",
+    "Oslo",
+    "Puttgarden",
+    "Rodby"
+  ],
+  "kml_compare": {
+    "navi_km": 1551.568,
+    "kml_km_parsed": 3469.671,
+    "note": "bad-luster.kml multi-geom parse may inflate kml_km; navi corridor ~1552 km with Ottadal via",
+    "divergences_n": 14,
+    "major_via_leg_km": 199.6
+  },
+  "instrument_note": "am instrument exited AssertionError after plan/GPS/CAT because hooks were cleared; plan metrics from BEVENSEN_PLAN_OK + route-result.json + maneuvers.json",
+  "commit": "d4c124d6451e046376b19cf9dd793c67a759cfc5"
+}

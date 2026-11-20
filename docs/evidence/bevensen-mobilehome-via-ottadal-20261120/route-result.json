@@ -1,0 +1,43 @@
+{
+  "t_ms": 5609433,
+  "distance_km": 1553.272823527632,
+  "report": "TEST_KIND=PLAN_MWM_ROUTE\nPLANNER=mwm\nPASS\ndistance_km=1553.273\neta_minutes=1178.7\nrouter_mode=Joints(likely)\nascent_m=18815.0\ndescent_m=18836.0\nbuild_s=32.876112439\ncomaps_route_code=OK\nvehicle_limits_ok=false\nvehicle_limits_missing=Germany_Lower Saxony_Bremen_Munster,Germany_Schleswig-Holstein_Kiel,Germany_Schleswig-Holstein_Flensburg,Denmark_Region of Southern Denmark,Denmark_Central Denmark Region,Denmark_North Denmark Region,Norway_Southern,Norway_Central,Norway_Oppland,Norway_Western\nroute_tunnel_count=9\nroute_tunnel_fp=E 6;E 20;E 6@455.23|Hjalmar Brantings vei@290.29|E 6@109.27|E 6@0.99|E 6@3.74|Ottadalsvegen@97.35|Tyinvegen@38.39|Storevegen@22.31|unnamed@16.39\nroute_ferry_legs=1\nroute_ferry_fp=Sydmotorvejen@19.17\ndatex_impacts=5; datex_block=0; datex_penalize=5\ndatex_mwm=overlay_apply; active=5; warning=navi_synth_keep\ndatex_constraint: id=syn-de-a7-rec; impact=penalty; lat=53.64485; lon=10.33915; xsi=MaintenanceWorks\ndatex_constraint: id=syn-se-e6-rec; impact=penalty; lat=56.4225; lon=12.96875; xsi=MaintenanceWorks\ndatex_constraint: id=syn-se-gbg-rec; impact=penalty; lat=57.70887; lon=11.97456; xsi=MaintenanceWorks\ndatex_constraint: id=syn-no-e6-rec; impact=penalty; lat=59.9139; lon=10.7522; xsi=MaintenanceWorks\ndatex_constraint: id=syn-no-rv55-rec; impact=penalty; lat=61.4434; lon=7.4614; xsi=MaintenanceWorks\nchunked_soft_breaks=true; break_interval_km=118.6; break_interval_h=1.50\nrest_place_count=13\nchunked_rest_pauses=13; break_pois_total=13\n",
+  "polyline_chars": 1103932,
+  "days_json": "[]",
+  "break_poi_count": 13,
+  "start": "53.07969, 10.58720",
+  "end": "61.44338, 7.46140",
+  "long_trip_status": "Niedersachsen (1 of 9)=Ready · Schleswig-Holstein (2 of 9)=Ready · Denmark (3 of 9)=Ready · Skåne (4 of 9)=Ready · Halland (5 of 9)=Ready · Västra Götaland (6 of 9)=Ready · Ostlandet (7 of 9)=Ready · Sorlandet (8 of 9)=Ready · Vestlandet (9 of 9)=Ready",
+  "enumerations": {
+    "route_tunnel_count": 9,
+    "route_tunnel_fp": "E 6;E 20;E 6@455.23|Hjalmar Brantings vei@290.29|E 6@109.27|E 6@0.99|E 6@3.74|Ottadalsvegen@97.35|Tyinvegen@38.39|Storevegen@22.31|unnamed@16.39",
+    "route_ferry_legs": 1,
+    "route_ferry_fp": "Sydmotorvejen@19.17",
+    "rest_place_count": 13,
+    "rest_place_names": [
+      "Rest stop",
+      "Rest stop",
+      "Rest stop",
+      "Rest stop",
+      "Rest stop",
+      "Rest stop",
+      "Rest stop",
+      "Rest stop",
+      "Rest stop",
+      "Rest stop",
+      "Rest stop",
+      "Rest stop",
+      "Rest stop"
+    ],
+    "attraction_count": 8,
+    "attraction_by_type": {
+      "tourism-attraction": 7,
+      "tourism-artwork": 1
+    },
+    "wild_camping_site_count": 0,
+    "wild_camping_status_kind": "",
+    "wild_camping_status_message": "",
+    "wild_camping_by_country": {},
+    "wild_camping_by_subdivision": {}
+  }
+}

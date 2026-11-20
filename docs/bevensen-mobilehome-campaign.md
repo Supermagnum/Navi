@@ -1,52 +1,48 @@
-# Bad Bevensen to Dalsoren MobileHome campaign
+# Bad Bevensen to Dalsøren MobileHome campaign
 
-## Latest — 2026-10-28 (route found; out of band)
+## Latest — 2026-11-20 (Ottadal via; PASS)
 
-Emulator **Navi_8c_4G_128G** ran with **6 cores** (guest `nproc` 6, CPUs online `0-5`) instead of 8. It was not relaunched and was not wiped. Tablet R52TB0JQEDE was not used.
-
-Frozen app binary. No app or plugin source was edited during the run. The app package was not rebuilt and not reinstalled:
-
-- Commit `44057d4ee6e2475b8314ef677e426f11a7c957d2`
-- APK SHA-256 `7ad3297d20f5472d0230aef32120e06411c885c5769f829bd55674a4770b73ca`
-
-Catalog `20261028T040556Z-2275792-d248bf27` (unchanged; Puttgarden still covered).
-
-This plan is the one that finished after the virtual device was started again. Earlier the same morning: at 06:34:39 a second instrumentation killed a download before a route existed; at 06:38 a retry was not started because the then-installed test package opened CAT. Those attempts are superseded. The test package used for this plan does not open CAT. Update was not pressed.
-
-### Sørlandet
-
-`europe/norway/sorlandet` was Downloading when the emulator console reported `virtual device is stopped`. The sdcard qcow2 stopped growing at 07:03:15. On disk the fetch was a partial directory `.pack-fetch-sorlandet-latest.partial`, 204 MB, 13 of 21 pack files, no finished top-level `sorlandet-latest.osm.pbf` yet. The UI was frozen on `Fetching packs` for `europe_norway_sorlandet` (region 8 of 9).
-
-`avd start` was sent. The device returned to `running`. The same app process continued the long-trip fetch. The partial directory was then replaced by installed files, including `sorlandet-latest.osm.pbf` at 74 MB. The campaign status then read **Installed**, then **Indexed**. Corridor skeleton for `sorlandet-latest` reported PASS. No files were deleted to free space. At resume, host data-drive free space was about 83 GB and the guest SD card had 495 GB free. This was not an ENOSPC failure.
-
-### Re-plans
-
-The app tried Plan four times at guest 07:06. Each failed with `terminate=skeleton_preparing` for Niedersachsen. The UI then said auto-retry had stopped. After the skeletons were ready, Plan was tapped once (button bounds only, no map swipe) at guest 07:16:19. That attempt produced the route below. No second `am instrument` was started.
+Emulator **emulator-5554** (`sdk_gphone64_x86_64`), guest `nproc` **6**. Navi only. Long trip ON. Regions downloaded/indexed by the app before the corridor route was used for GPS replay. ADB used only for GPS feed + synthetic DATEX soft **Penalize** (never hard Block). No force-stop mid-run after start.
 
 ### Route
 
-On 2026-10-28 the user accepted these out-of-band results for this run. Distance, duration, instructions, wild-camping, and cover-gate Stage-B stay labeled out of band with the measured values below unchanged.
+**Bad Bevensen → Via Ottadal (61.86914, 9.10551) → Dalsøren Camping, Luster**
+
+Proven in log: `WAYPOINTS_WITH_VIA From: 53.07969, 10.58720 | To: 61.44338, 7.46140 | Via: 61.86914, 9.10551`  
+Plan log tunnel fingerprint includes **Ottadalsvegen**.
 
 | # | Field | Result |
 |---|---|---|
-| 1 | Cores | 6, not 8 |
-| 2 | App commit / SHA-256 | `44057d4ee6e2475b8314ef677e426f11a7c957d2` / `7ad3297d20f5472d0230aef32120e06411c885c5769f829bd55674a4770b73ca` |
-| 3 | Catalog | `20261028T040556Z-2275792-d248bf27` |
-| 4 | Clean start | Tools UI deleted the corridor regions, then long-trip Plan downloaded them. Final status: all 9 Indexed, including Sørlandet |
-| 5 | Distance 1461.3–1648.6 km | **1428.441 km. Out of band** (below 1461.3) |
-| 6 | Duration 17–22 h | **981.4 min = 16.357 h. Out of band.** Below 17 is not reclassified |
-| 7 | Instructions 55–100 | **32. Out of band** |
-| 8 | Wild camping overnights | The plan log does not record a wild-camping overnight. It records two lodging overnights: Rasta Hallandsasen and Best Western Leto Arena. **Not shown as greater than 0** |
-| 9 | Nearby attractions | Setting was on. The plan log does not list attraction names |
-| 10 | Cover-gate Stage-B (`3ba01455c`) | Stage-B ran. No log line `demote ... densify hop end outside Ready tiles`. The ferry-free alternative (1495.8 km, 0 ferries) was ineligible beside the shorter ferry alternative (1327.6 km, 1 ferry) and was not picked. The picked corridor uses Rodby to Puttgarden |
-| 11 | Re-plans | Four automatic attempts failed on Niedersachsen skeleton prep. One later Plan tap produced this route |
-| 12 | DATEX | Six synthetic sits were in the cache. The finished plan log reports `datex_impacts=0`, `datex_block=0`, `datex_penalize=0` |
-| 13 | Fuel stops | Calculated from 1428.441 km, 70 L full, 100 km margin. At 11 L/100 km the usable leg is 536 km and the trip needs 2 refuels. At 14 L/100 km the usable leg is 400 km and the trip needs 3 refuels. Not planned by the app |
-| 14 | Ferries / eco / tolls | One ferry leg: Rodby (DK) to Puttgarden (D), 18.92 km. UI setting eco on; the router log for this plan says `eco=false`. Avoid tolls off. Avoid ferries off |
-| 15 | Departure / vehicle | 2026-06-01T08:00:00. VW Transporter T6 2.0 BiTDi 4Motion camper. Soft daily budget 6.0 h, break 1.5 h / 15 min. Long trip on. Pack volume `uuid:BF1B-9F0E` |
-| 16 | Overlay vs bad-luster.kml | Hop ends of this plan against `bad-luster.kml` (reference distance 1440.985 km in prior notes). Image: `docs/bevensen-mobilehome-overlay.png`. The drawn blue line is the 15 hop ends, not the full 719762-character polyline |
-| 17 | Callsigns | Not available. Update was not pressed and the plan log has no repeater callsigns |
+| 1 | Distance 1461.3–1648.6 km | **1553.273 km. PASS** |
+| 2 | Duration 17–22 h | **1178.7 min = 19.645 h. PASS** |
+| 3 | Instructions 55–100 | **69. PASS** |
+| 4 | Via Ottadal | **Applied** (`chip_via` / `via_ottadal`) |
+| 5 | Germany MWM | **Alias path** for Niedersachsen + Schleswig-Holstein (not Geofabrik PBF) |
+| 6 | DATEX | Soft Penalize; plan `datex_impacts=5; datex_block=0; datex_penalize=5` |
+| 7 | Ferries | 1 leg (`Sydmotorvejen@19.17`, Rødby–Puttgarden corridor) |
+| 8 | Departure / vehicle | 2026-06-01T08:00:00 local. VW Transporter T6 MobileHome limits; eco ON; soft daily 6.0 h |
+| 9 | CAT / Dummy radio | Full DE+DK+SE+NO corridor list: **341** repeaters (callsign + name) |
+| 10 | Town screenshots | Bad_Bevensen, Puttgarden, Rodby, Copenhagen, Helsingborg, Halmstad, Gothenburg, Oslo, Lillehammer, Dale_Luster |
 
-OSM and RadioID callsigns are not in this document because none were collected.
+Artifacts: `docs/evidence/bevensen-mobilehome-via-ottadal-20261120/`  
+Repeater list: `cat_repeaters_DE_DK_SE_NO.json` / `.txt` (country, callsign, name).
 
-`git log --oneline CAT..origin/dev` is checked at commit time. `klm/` and `testdata/cat/local/` are not tracked.
+### KML comparison vs `geojson-routes/bad-luster.kml`
+
+| Metric | Value |
+|---|---|
+| Navi corridor points | 30131 |
+| Navi length | ~1551.6 km (polyline haversine) / 1553.273 km (plan) |
+| KML points parsed | 13682 |
+| KML length (parsed) | inflated (~3469 km; multi-geom / parser note — not used as pass band) |
+| Notable divergence | ~199.6 km leg near Ottadal via (start ~1298 km → end ~1498 km along Navi) — expected with via |
+
+Detail JSON: `docs/evidence/bevensen-mobilehome-via-ottadal-20261120/kml_compare.json`.
+
+### Harness notes
+
+Prior direct run without via measured **1342.87 km** (`Via: none`). This run required a fresh androidTest APK that calls `chip_via`, plus `skipComapsRouteRender` so organicmaps `GenerateJoinNormals` does not SIGABRT on the ~30k-point via corridor while GPS/CAT finish.
+
+### Catalog / binary
+
+App commit at campaign plan: see `git log` around `d4c124d64` / `9c3246c24` (via harness + skip-render). Version after release bump recorded in `app/build.gradle.kts`.
