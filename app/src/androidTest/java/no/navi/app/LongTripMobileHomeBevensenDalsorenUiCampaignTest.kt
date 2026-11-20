@@ -361,11 +361,10 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         }
 
         // PRIMARY PLAN PATH: visible Plan button.
-        // Hide map chrome before Plan so organicmaps RouteBuilder does not SIGABRT
-        // on very long via corridors (GenerateJoinNormals length_error) before we
-        // can persist polyline / maneuvers / GPS markers.
-        NaviMapTestHooks.hideUiChrome = true
-        NaviMapTestHooks.hideSearchChrome = false
+        // Do NOT set hideUiChrome before Plan — that removes btn_plan_route.
+        // After a via corridor exists we persist artifacts then clear the drawn
+        // route (requestClearRoute) so organicmaps RouteBuilder cannot SIGABRT
+        // the process mid GPS/CAT (GenerateJoinNormals length_error).
         composeRule.onNodeWithTag("btn_plan_route", useUnmergedTree = true).performScrollTo()
         noteUi("click_btn_plan_route", "performClick")
         screenshot("08_before_plan")
@@ -404,6 +403,8 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
             if (poly >= 8 && dist > 100.0 && overallPass) {
                 // Persist immediately — map render may crash the process next.
                 persistPlanArtifactsNow(dist, rep)
+                NaviMapTestHooks.requestClearRoute = true
+                NaviMapTestHooks.hideUiChrome = true
                 planned = true
                 break
             }
