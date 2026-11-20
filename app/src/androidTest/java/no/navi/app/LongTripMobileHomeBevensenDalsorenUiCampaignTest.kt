@@ -176,7 +176,7 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         NaviMapTestHooks.hideUiChrome = false
         NaviMapTestHooks.hideSearchChrome = false
-        NaviMapTestHooks.skipComapsRouteRender = true
+        NaviMapTestHooks.skipComapsRouteRender = false
         NaviMapTestHooks.lastPlanReport = ""
         NaviMapTestHooks.lastPlanDistanceKm = 0.0
         NaviMapTestHooks.lastRoutePolyline = ""
@@ -363,9 +363,8 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         }
 
         // PRIMARY PLAN PATH: visible Plan button.
-        // Skip CoMaps drape RouteBuilder for this long via corridor (GenerateJoinNormals
-        // length_error / SIGABRT). Plan stats + polyline still land for host GPS/CAT.
-        NaviMapTestHooks.skipComapsRouteRender = true
+        // Route render is safe after prepareDrapeRoutePoints + GenerateJoinNormals guard.
+        NaviMapTestHooks.skipComapsRouteRender = false
         composeRule.onNodeWithTag("btn_plan_route", useUnmergedTree = true).performScrollTo()
         noteUi("click_btn_plan_route", "performClick")
         screenshot("08_before_plan")
@@ -402,9 +401,10 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                     !rep.startsWith("FAIL:") &&
                     !rep.contains("\nFAIL: chunk_leg")
             if (poly >= 8 && dist > 100.0 && overallPass) {
-                // Persist immediately — map render may crash the process next.
+                // Persist immediately; keep the drape route drawn for GPS replay
+                // (prepareDrapeRoutePoints + GenerateJoinNormals guard prevent the
+                // old RouteBuilder SIGABRT that previously forced a clear/skip).
                 persistPlanArtifactsNow(dist, rep)
-                NaviMapTestHooks.requestClearRoute = true
                 NaviMapTestHooks.hideUiChrome = true
                 planned = true
                 break
@@ -426,26 +426,57 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         report.put("corridor_ready_final", ready)
         report.put("ui_planned", planned)
         report.put("ram_post_plan_mib", processPssMib())
-        // Detach route from the map renderer before any more UI work.
-        NaviMapTestHooks.requestClearRoute = true
+        // Keep the planned corridor on the drape during host GPS replay / town shots.
         settle(200)
         runCatching { screenshot("10_plan_result") }
 
-        val planReport = NaviMapTestHooks.lastPlanReport
-        val distanceKm = NaviMapTestHooks.lastPlanDistanceKm
-        val maneuvers = NaviMapTestHooks.lastManeuversJson
-        val manCount = jsonArrayLen(maneuvers)
-        // ETA from report line if present
-        val etaMin = parseEtaMinutes(planReport)
-        report.put(
-            "full_plan",
-            JSONObject()
-                .put("distance_km", distanceKm)
-                .put("eta_minutes", etaMin)
-                .put("maneuver_count", manCount)
-                .put("polyline_chars", NaviMapTestHooks.lastRoutePolylineChars)
-                .put("report", planReport.take(120_000)),
-        )
+        // Prefer early-persisted plan if hooks were cleared after requestClearRoute.
+        val early = report.optJSONObject("full_plan")
+        val planReport =
+            when {
+                NaviMapTestHooks.lastPlanReport.contains("PASS") -> NaviMapTestHooks.lastPlanReport
+                early != null && early.optString("report").contains("PASS") -> early.optString("report")
+                else -> NaviMapTestHooks.lastPlanReport
+            }
+        val distanceKm =
+            when {
+                NaviMapTestHooks.lastPlanDistanceKm > 100.0 -> NaviMapTestHooks.lastPlanDistanceKm
+                early != null && early.optDouble("distance_km", 0.0) > 100.0 -> early.optDouble("distance_km")
+                else -> NaviMapTestHooks.lastPlanDistanceKm
+            }
+        val maneuvers =
+            when {
+                jsonArrayLen(NaviMapTestHooks.lastManeuversJson) > 0 -> NaviMapTestHooks.lastManeuversJson
+                else ->
+                    runCatching {
+                        File(dataDir, "long-trip-bevensen-dalsoren/maneuvers.json").readText()
+                    }.getOrDefault(NaviMapTestHooks.lastManeuversJson)
+            }
+        val manCount =
+            jsonArrayLen(maneuvers).takeIf { it > 0 }
+                ?: early?.optInt("maneuver_count", 0)
+                ?: 0
+        val etaMin =
+            parseEtaMinutes(planReport).takeIf { it > 0.0 }
+                ?: early?.optDouble("eta_minutes", 0.0)
+                ?: 0.0
+        val polylineChars =
+            maxOf(
+                NaviMapTestHooks.lastRoutePolylineChars,
+                early?.optInt("polyline_chars", 0) ?: 0,
+                report.optInt("polyline_chars_saved", 0),
+            )
+        if (distanceKm > 100.0) {
+            report.put(
+                "full_plan",
+                JSONObject()
+                    .put("distance_km", distanceKm)
+                    .put("eta_minutes", etaMin)
+                    .put("maneuver_count", manCount)
+                    .put("polyline_chars", polylineChars)
+                    .put("report", planReport.take(120_000)),
+            )
+        }
         report.put("maneuver_count", manCount)
         report.put("datex_in_plan_report", extractDatexFromPlanReport(planReport))
         report.put("fuel_stops_estimate", estimateFuelStops(distanceKm))
@@ -484,7 +515,13 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         report.put("days_json", NaviMapTestHooks.lastDaysJson)
         report.put("maneuver_kinds", summarizeManeuverKinds(maneuvers))
         // Persist corridor polyline for host GPS replay + DATEX timing.
-        val poly = NaviMapTestHooks.lastRoutePolyline
+        var poly = NaviMapTestHooks.lastRoutePolyline
+        if (poly.length < 500) {
+            poly =
+                runCatching {
+                    File(dataDir, "long-trip-ui-report/route-polyline.txt").readText()
+                }.getOrDefault("")
+        }
         if (poly.length >= 500) {
             val targets =
                 listOf(
@@ -544,8 +581,8 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
             uiEvents.toString().contains("click_btn_plan_route"),
         )
         assertTrue(
-            "UI plan must produce a route (km=$distanceKm chars=${NaviMapTestHooks.lastRoutePolylineChars})",
-            distanceKm > 100.0 && NaviMapTestHooks.lastRoutePolylineChars >= 8,
+            "UI plan must produce a route (km=$distanceKm chars=$polylineChars)",
+            distanceKm > 100.0 && polylineChars >= 8,
         )
         Log.i(
             TAG,
@@ -682,10 +719,19 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                             ?: o.optString("name").takeIf { it.isNotBlank() && it != "null" }
                             ?: attribution
                             ?: ""
-                    val country = o.optString("country").takeIf { it.isNotBlank() && it != "null" } ?: ""
-                    if (country.isNotBlank()) {
-                        countries.put(country, countries.optInt(country) + 1)
+                    var country = o.optString("country").takeIf { it.isNotBlank() && it != "null" } ?: ""
+                    if (country.isBlank()) {
+                        country =
+                            when (call.take(2).uppercase(Locale.US)) {
+                                "DB", "DM", "DO", "DH", "DL" -> "DE"
+                                "OZ" -> "DK"
+                                "SK", "SM", "SG" -> "SE"
+                                "LA", "LB", "LD" -> "NO"
+                                else -> ""
+                            }
                     }
+                    if (country !in setOf("DE", "DK", "SE", "NO")) continue
+                    countries.put(country, countries.optInt(country) + 1)
                     val row =
                         JSONObject()
                             .put("callsign", call)
