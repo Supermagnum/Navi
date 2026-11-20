@@ -57,15 +57,26 @@ object LongTripMwmSupport {
                 val id = r.id.lowercase()
                 id in want || id.replace('-', '_') in want
             }
-        if (hit == null || hit.leafIds.isEmpty()) {
-            Log.i(TAG, "no MWM region mapping for $geofabrikPath (tried $want)")
-            return null
+        if (hit != null && hit.leafIds.isNotEmpty()) {
+            Log.i(
+                TAG,
+                "mapped $geofabrikPath -> ${hit.id} leaves=${hit.leafIds.size} bytes=${hit.totalBytes}",
+            )
+            return hit.leafIds
         }
-        Log.i(
-            TAG,
-            "mapped $geofabrikPath -> ${hit.id} leaves=${hit.leafIds.size} bytes=${hit.totalBytes}",
-        )
-        return hit.leafIds
+        val alias =
+            bakeIdCandidates(geofabrikPath)
+                .firstNotNullOfOrNull { LongTripMwmGeofabrikAliases.leafIdsForBakeId(it) }
+                ?: LongTripMwmGeofabrikAliases.leafIdsForGeofabrikPath(geofabrikPath)
+        if (alias != null) {
+            Log.i(
+                TAG,
+                "mapped $geofabrikPath -> alias (${alias.size} leaves, catalog had no $want)",
+            )
+            return alias
+        }
+        Log.i(TAG, "no MWM region mapping for $geofabrikPath (tried $want)")
+        return null
     }
 
     /** True when every [leafIds] leaf is in the active MWM release. */
