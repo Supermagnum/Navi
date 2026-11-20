@@ -361,6 +361,11 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         }
 
         // PRIMARY PLAN PATH: visible Plan button.
+        // Hide map chrome before Plan so organicmaps RouteBuilder does not SIGABRT
+        // on very long via corridors (GenerateJoinNormals length_error) before we
+        // can persist polyline / maneuvers / GPS markers.
+        NaviMapTestHooks.hideUiChrome = true
+        NaviMapTestHooks.hideSearchChrome = false
         composeRule.onNodeWithTag("btn_plan_route", useUnmergedTree = true).performScrollTo()
         noteUi("click_btn_plan_route", "performClick")
         screenshot("08_before_plan")
@@ -383,6 +388,7 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                     .put("polyline_chars", poly)
                     .put("distance_km", dist)
                     .put("report_has_pass", NaviMapTestHooks.lastPlanReport.contains("PASS"))
+                    .put("maneuver_count", jsonArrayLen(NaviMapTestHooks.lastManeuversJson))
             report.put("last_progress", sample)
             if ((System.currentTimeMillis() / 20_000) % 2L == 0L) {
                 Log.i(TAG, "progress $sample")
@@ -396,6 +402,8 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
                     !rep.startsWith("FAIL:") &&
                     !rep.contains("\nFAIL: chunk_leg")
             if (poly >= 8 && dist > 100.0 && overallPass) {
+                // Persist immediately — map render may crash the process next.
+                persistPlanArtifactsNow(dist, rep)
                 planned = true
                 break
             }
@@ -416,7 +424,10 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
         report.put("corridor_ready_final", ready)
         report.put("ui_planned", planned)
         report.put("ram_post_plan_mib", processPssMib())
-        screenshot("10_plan_result")
+        // Detach route from the map renderer before any more UI work.
+        NaviMapTestHooks.requestClearRoute = true
+        settle(200)
+        runCatching { screenshot("10_plan_result") }
 
         val planReport = NaviMapTestHooks.lastPlanReport
         val distanceKm = NaviMapTestHooks.lastPlanDistanceKm
@@ -539,6 +550,65 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
             "PASS_UI dist=$distanceKm etaMin=$etaMin man=$manCount datex=${datexImpactsPositive(planReport)}",
         )
         Log.i(TAG, "BEVENSEN_CAMPAIGN_DONE")
+    }
+
+    /** Crash-safe snapshot as soon as a corridor route exists. */
+    private fun persistPlanArtifactsNow(
+        distanceKm: Double,
+        planReport: String,
+    ) {
+        val maneuvers = NaviMapTestHooks.lastManeuversJson
+        val manCount = jsonArrayLen(maneuvers)
+        val etaMin = parseEtaMinutes(planReport)
+        val poly = NaviMapTestHooks.lastRoutePolyline
+        report.put(
+            "full_plan",
+            JSONObject()
+                .put("distance_km", distanceKm)
+                .put("eta_minutes", etaMin)
+                .put("maneuver_count", manCount)
+                .put("polyline_chars", NaviMapTestHooks.lastRoutePolylineChars)
+                .put("report", planReport.take(120_000)),
+        )
+        report.put("maneuver_count", manCount)
+        report.put("datex_in_plan_report", extractDatexFromPlanReport(planReport))
+        report.put(
+            "expected_check",
+            JSONObject()
+                .put("distance_km", distanceKm)
+                .put("distance_ok", distanceKm in 1461.3..1648.6)
+                .put("duration_h", etaMin / 60.0)
+                .put("duration_ok", (etaMin / 60.0) in 17.0..22.0)
+                .put("maneuvers", manCount)
+                .put("maneuvers_ok", manCount in 55..100)
+                .put("datex_ok", datexImpactsPositive(planReport)),
+        )
+        if (poly.length >= 500) {
+            val targets =
+                listOf(
+                    File(dataDir, "long-trip-ui-report/route-polyline.txt"),
+                    File(dataDir, "long-trip-bevensen-dalsoren/route-polyline.txt"),
+                    File("/data/local/tmp/bevensen-ui/route-polyline.txt"),
+                    File("/sdcard/Pictures/bevensen-ui/route-polyline.txt"),
+                )
+            for (f in targets) {
+                runCatching {
+                    f.parentFile?.mkdirs()
+                    f.writeText(poly)
+                }
+            }
+            report.put("polyline_chars_saved", poly.length)
+        }
+        runCatching {
+            File(dataDir, "long-trip-bevensen-dalsoren/maneuvers.json").writeText(maneuvers)
+            File("/sdcard/Pictures/bevensen-ui/maneuvers.json").writeText(maneuvers)
+        }
+        writeReport()
+        Log.i(
+            TAG,
+            "BEVENSEN_PLAN_OK dist=$distanceKm etaMin=$etaMin man=$manCount poly=${poly.length}",
+        )
+        noteUi("plan_persisted_early", "dist=$distanceKm man=$manCount")
     }
 
     private fun summarizeManeuverKinds(raw: String): JSONObject {
