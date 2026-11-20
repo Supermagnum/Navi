@@ -8,8 +8,11 @@ import uniffi.navi.mwmListRegions
 
 /**
  * Long-trip corridor downloads prefer CoMaps **MWM leaves** (catalog regions).
+ * Catalog `region_to_leaves` is tried first; [LongTripMwmGeofabrikAliases] fills
+ * gaps when CoMaps leaves exist but the bake id is missing from the catalog.
  * Geofabrik `.osm.pbf` remains the fallback when the MWM client is off, the
- * catalog has no mapping for a corridor id, or an MWM install fails.
+ * catalog/alias resolve fails, or an MWM install fails — not merely because a
+ * non-Nordic bake id is absent from `region_to_leaves`.
  *
  * Installs go through [MwmMapDownloader.installBlocking] so the normal in-app
  * download progress UI (Tools strip, readiness panel, toast) sees live %.

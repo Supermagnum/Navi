@@ -1152,6 +1152,27 @@ object GeofabrikDownloadCatalog {
     /** All pack-catalog leaf paths under `europe/germany` (for ready-pill coverage). */
     fun germanyPackLeafPaths(): List<String> = packCatalogLeafPaths("europe/germany")
 
+    /**
+     * Europe Geofabrik pack paths that long-trip / download chips may request:
+     * chip leaves when present, otherwise the country root (`europe/austria`, …).
+     * Includes `europe/great-britain` alongside United Kingdom.
+     */
+    fun europePackLeafPaths(): List<String> {
+        val out = linkedSetOf<String>()
+        for (country in countriesIn(GeofabrikContinent.Europe)) {
+            if (!country.path.startsWith("europe/")) continue
+            val leaves = packCatalogLeafPaths(country.path)
+            if (leaves.isEmpty()) {
+                out += country.path
+            } else {
+                out.addAll(leaves)
+                // Country root is also a valid download / corridor id.
+                out += country.path
+            }
+        }
+        return out.toList()
+    }
+
     val norwayRegions: List<Pair<String, String>> =
         listOf(
             // Slugs match navi-server current.json under europe/norway.
