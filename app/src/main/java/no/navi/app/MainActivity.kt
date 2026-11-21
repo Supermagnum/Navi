@@ -9163,6 +9163,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                                         on,
                                                     )
                                                 },
+                                                modifier = Modifier.testTag("toggle_prefer_official_networks"),
                                             )
                                         }
                                         Column(modifier = Modifier.fillMaxWidth()) {
