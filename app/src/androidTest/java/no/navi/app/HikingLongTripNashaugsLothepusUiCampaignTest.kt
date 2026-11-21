@@ -38,9 +38,9 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Short pilgrim hiking probe: Mariakirken (Oslo) → Pilegrimssenter Oslo →
- * Pilegrimssenter Hamar (~tens of km / under 180 km). Avoid tunnels ON,
- * Follow pilgrim routes ON (+ official networks ON). Measures tunnel_count
- * and named_routes sidecar engagement. Not wired into CI.
+ * Eidsvoll (on the St. Olav / Østlandet pilgrim corridor, well under 180 km).
+ * Avoid tunnels ON, Follow pilgrim routes ON (+ official networks ON).
+ * Measures tunnel_count and named_routes sidecar engagement. Not wired into CI.
  *
  * OD constants adapted for short pilgrim corridor (androidTest only).
  */
@@ -59,13 +59,13 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         private const val VIA1_LAT = 59.9063300
         private const val VIA1_LON = 10.7695950
 
-        // Dest: Pilegrimssenter Hamar (short corridor; not Trondheim).
-        private const val DEST_LAT = 60.7927693
-        private const val DEST_LON = 11.0429432
+        // Dest: Eidsvoll kirke area (pilgrim corridor north of Oslo; not Hamar/Trondheim).
+        private const val DEST_LAT = 60.32940
+        private const val DEST_LON = 11.26190
 
         private const val FROM_QUERY = "Mariakirken"
         private const val VIA1_QUERY = "Pilegrimssenter Oslo"
-        private const val TO_QUERY = "Pilegrimssenter Hamar"
+        private const val TO_QUERY = "Eidsvoll kirke"
         private const val DEPARTURE_ISO = "2026-06-01T08:00:00"
 
         // Legacy single-via aliases used by leftover helpers.
@@ -170,7 +170,13 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         NaviMapTestHooks.lastBreakPoisJson = "[]"
         NaviMapTestHooks.lastPoiLookaheadJson = "[]"
         NaviMapTestHooks.lastDaysJson = "[]"
-        report.put("campaign", "pilgrim_oslo_hamar_short_ui")
+        // Force named-route prefs before UI so sidecar annotate runs even if the
+        // profile sheet scroll/click misses (prior short run had silent miss).
+        val dataAbs = dataDir.absolutePath
+        uniffi.navi.savePreferPilgrimRoutes(dataAbs, true)
+        uniffi.navi.savePreferOfficialNetworks(dataAbs, true)
+        uniffi.navi.saveUseNetworkedCabins(dataAbs, true)
+        report.put("campaign", "pilgrim_oslo_eidsvoll_short_ui")
         report.put("started_unix", System.currentTimeMillis() / 1000)
         report.put("departure_local", DEPARTURE_ISO)
         report.put("ram_before_mib", processPssMib())
@@ -186,6 +192,8 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
                 .put("nearby_attractions", true)
                 .put("follow_pilgrim_routes", true)
                 .put("prefer_official_networks", true)
+                .put("prefer_pilgrim_routes_pref", uniffi.navi.loadPreferPilgrimRoutes(dataAbs))
+                .put("prefer_official_networks_pref", uniffi.navi.loadPreferOfficialNetworks(dataAbs))
                 .put("use_unlocked_cabins", true)
                 .put("use_networked_cabins", true)
                 .put("download_ui", "mwm_choose_region_then_long_trip_prompts")
@@ -299,12 +307,12 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         configureHikingProfileAndAvoids()
         screenshot("05_hiking_settings")
 
-        // 4) Enter short pilgrim OD: Mariakirken → Pilegrimssenter Oslo → Hamar.
+        // 4) Enter short pilgrim OD: Mariakirken → Pilegrimssenter Oslo → Eidsvoll.
         typeNameOrCoordAndPick("chip_from", FROM_QUERY, ORIGIN_LAT, ORIGIN_LON, "from_mariakirken")
         screenshot("06_from_set")
         pickPilgrimVias()
         screenshot("07_vias_set")
-        typeNameOrCoordAndPick("chip_to", TO_QUERY, DEST_LAT, DEST_LON, "to_pilegrimssenter_hamar")
+        typeNameOrCoordAndPick("chip_to", TO_QUERY, DEST_LAT, DEST_LON, "to_eidsvoll")
         screenshot("08_to_set")
         val wp = waypointSummary()
         report.put("waypoints_summary", wp)
@@ -553,16 +561,21 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         runCatching {
             composeRule.onNodeWithTag("chip_profile_hiking", useUnmergedTree = true).performScrollTo()
             clickTag("chip_profile_hiking")
-            runCatching { clickTag("btn_save_profile") }
             noteUi("chip_profile_hiking", "selected")
         }
+        // Keep profile sheet open — toggles live here; do not save/close first.
         configureHikingAvoidsOnly()
-        // Profile sheet covers field_search; dismiss so From/Via/To entry can proceed.
+        runCatching { clickTag("btn_save_profile") }
         dismissProfileSheets()
     }
 
     private fun configureHikingAvoidsOnly() {
         openRoutePanel()
+        // Re-open hiking profile sheet if a prior save closed it.
+        runCatching {
+            composeRule.onNodeWithTag("chip_profile_hiking", useUnmergedTree = true).performScrollTo()
+            clickTag("chip_profile_hiking")
+        }
         // Avoid tunnels ON, Avoid ferries OFF.
         ensureAvoidOn("Avoid tunnels")
         ensureAvoidOff("Avoid ferries")
@@ -578,11 +591,11 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         runCatching {
             composeRule.onNodeWithTag("toggle_prefer_official_networks", useUnmergedTree = true).performScrollTo()
             ensureToggleOn("toggle_prefer_official_networks")
-        }
+        }.onFailure { noteUi("toggle_prefer_official_networks", "miss ${it.message}") }
         runCatching {
             composeRule.onNodeWithTag("toggle_prefer_pilgrim_routes", useUnmergedTree = true).performScrollTo()
             ensureToggleOn("toggle_prefer_pilgrim_routes")
-        }
+        }.onFailure { noteUi("toggle_prefer_pilgrim_routes", "miss ${it.message}") }
         runCatching {
             composeRule.onNodeWithTag("toggle_use_unlocked_cabins", useUnmergedTree = true).performScrollTo()
             ensureToggleOn("toggle_use_unlocked_cabins")
@@ -1589,9 +1602,10 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         assertTrue("Exactly 1 via required (got $viaCount in: $wp)", viaCount == 1)
         assertTrue("Via must be Pilegrimssenter Oslo (got: $wp)", wp.contains("Pilegrimssenter Oslo", ignoreCase = true))
         assertTrue(
-            "Dest must be Pilegrimssenter Hamar (got: $wp)",
-            wp.contains("Pilegrimssenter Hamar", ignoreCase = true) ||
-                wp.contains("60.792", ignoreCase = true),
+            "Dest must be Eidsvoll area (got: $wp)",
+            wp.contains("Eidsvoll", ignoreCase = true) ||
+                wp.contains("60.329", ignoreCase = true) ||
+                wp.contains("60.33", ignoreCase = true),
         )
         report.put(
             "via_proof",
