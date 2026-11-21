@@ -139,11 +139,41 @@ object MwmProductionPlanner {
          * so the router prefers the easier / less motorway corridor.
          */
         ecoEnabled: Boolean = false,
+        /**
+         * Hiking "follow official networks" and bicycle network toggle.
+         * Selects NR01 kind `hiking` or `bicycle`. Does not change edge costs.
+         */
+        preferOfficialNetworks: Boolean = false,
+        /** Hiking "follow pilgrim routes". Selects NR01 kind `pilgrimage`. */
+        preferPilgrimRoutes: Boolean = false,
+        /** Nested DATEX / tunnel replans pass false so stubs are attached once. */
+        applyNamedRouteStubs: Boolean = true,
     ): CorridorRouteResult {
+        val routeLeaves = LinkedHashSet<String>()
+
+        fun finish(result: CorridorRouteResult): CorridorRouteResult {
+            if (!applyNamedRouteStubs) return result
+            if (!preferOfficialNetworks && !preferPilgrimRoutes) return result
+            return try {
+                NamedRouteSidecar.annotate(
+                    mwmRoot = MwmDataDir.mwmRoot(context),
+                    leaves = routeLeaves,
+                    profile = profile,
+                    preferOfficialNetworks = preferOfficialNetworks,
+                    preferPilgrimRoutes = preferPilgrimRoutes,
+                    result = result,
+                )
+            } catch (t: Throwable) {
+                Log.w(TAG, "named-route sidecar skipped", t)
+                NamedRouteSidecar.markNotFollowed(result)
+            }
+        }
         if (!shouldUse(context)) {
-            return failCorridor(
-                "TEST_KIND=PLAN_MWM_ROUTE\nFAIL: MWM session not open (maps or native missing)\n" +
-                    "PLANNER=mwm\ncomaps_route_code=NeedMoreMaps\n",
+            return finish(
+                failCorridor(
+                    "TEST_KIND=PLAN_MWM_ROUTE\nFAIL: MWM session not open (maps or native missing)\n" +
+                        "PLANNER=mwm\ncomaps_route_code=NeedMoreMaps\n",
+                ),
             )
         }
         // CoMaps IndexRouter aborts (SIGABRT) when numMwmIds is empty — only World
@@ -151,9 +181,11 @@ object MwmProductionPlanner {
         // leaves are not exposed under {mwmRoot}/{version}/.
         if (!ComapsSessionBootstrap.countryMapsExposed(context)) {
             Log.w(TAG, "refuse plan: country leaf MWMs not exposed (VFAT link/mirror pending?)")
-            return failCorridor(
-                "TEST_KIND=PLAN_MWM_ROUTE\nFAIL: Country maps not registered yet\n" +
-                    "PLANNER=mwm\ncomaps_route_code=NeedMoreMaps\n",
+            return finish(
+                failCorridor(
+                    "TEST_KIND=PLAN_MWM_ROUTE\nFAIL: Country maps not registered yet\n" +
+                        "PLANNER=mwm\ncomaps_route_code=NeedMoreMaps\n",
+                ),
             )
         }
         val generation = cancelGeneration.get()
@@ -171,7 +203,7 @@ object MwmProductionPlanner {
         endpoints.add(startLat to startLon)
         vias.forEach { endpoints.add(it) }
         endpoints.add(endLat to endLon)
-        missingLeavesFor(context, endpoints)?.let { return it }
+        missingLeavesFor(context, endpoints)?.let { return finish(it) }
         setMwmProductionPlannerActive(true)
         // CoMaps eco lever: prefer non-motorway (easier / more economic corridor).
         val preferNonMotorway = ecoEnabled || avoidMotorways
@@ -228,10 +260,9 @@ object MwmProductionPlanner {
             val speedLimits = JSONArray()
             var mode = "Unknown"
             var last: FfiComapsRoute? = null
-            val routeLeaves = LinkedHashSet<String>()
 
             for (i in 0 until legs.size - 1) {
-                if (cancelled()) return cancelledCorridor()
+                if (cancelled()) return finish(cancelledCorridor())
                 val (la0, lo0) = legs[i]
                 val (la1, lo1) = legs[i + 1]
                 collectLeavesAlong(la0, lo0, la1, lo1, routeLeaves)
@@ -245,19 +276,21 @@ object MwmProductionPlanner {
                         wetlandHook = profile == TravelProfile.HIKING || bikeWetland,
                     )
                 last = leg
-                if (cancelled()) return cancelledCorridor()
+                if (cancelled()) return finish(cancelledCorridor())
                 if (leg.code != FfiComapsRouteCode.OK) {
                     RouteClimbSource.publishIfOk(leg)
                     if (leg.code == FfiComapsRouteCode.NEED_MORE_MAPS) {
                         // The route crosses a leaf that is not installed: name it.
-                        missingLeavesAlong(context, la0, lo0, la1, lo1)?.let { return it }
+                        missingLeavesAlong(context, la0, lo0, la1, lo1)?.let { return finish(it) }
                     }
-                    return toCorridor(
-                        leg,
-                        endLat,
-                        endLon,
-                        profile,
-                        vehicleLimitsCoverage(context, routeLeaves),
+                    return finish(
+                        toCorridor(
+                            leg,
+                            endLat,
+                            endLon,
+                            profile,
+                            vehicleLimitsCoverage(context, routeLeaves),
+                        ),
                     )
                 }
                 RouteClimbSource.publishIfOk(leg)
@@ -302,14 +335,14 @@ object MwmProductionPlanner {
             var result =
                 toCorridor(ok, endLat, endLon, profile, vehicleLimitsCoverage(context, routeLeaves))
             if (cancelled()) {
-                return enrichMwmPlan(context, profile, result, ecoEnabled)
+                return finish(enrichMwmPlan(context, profile, result, ecoEnabled))
             }
             // Nested DATEX / tunnel trials: return bare geometry. Full enrich
             // (DATEX annotate + soft breaks + CoMaps water/tourism seeding) runs
             // once on the accepted corridor below — re-seeding 48+16 probes on
             // every soft-avoid attempt left the HUD stuck at ~10% for minutes.
             if (!applyDatexAvoidance) {
-                return result
+                return finish(result)
             }
             RoutingPlanLog.progress(15, ecoEnabled, detail = "mwm_datex")
             result =
@@ -349,7 +382,7 @@ object MwmProductionPlanner {
                         base = result,
                     )
             }
-            enrichMwmPlan(context, profile, result, ecoEnabled)
+            finish(enrichMwmPlan(context, profile, result, ecoEnabled))
         } finally {
             setMwmProductionPlannerActive(false)
         }
@@ -599,6 +632,7 @@ object MwmProductionPlanner {
                         applyDatexAvoidance = false,
                         applyTunnelAvoidance = false,
                         ecoEnabled = ecoEnabled,
+                        applyNamedRouteStubs = false,
                     )
                 if (!alt.report.contains("PASS")) continue
                 val clearance = minClearanceM(alt.routePolyline, blocks)
@@ -881,6 +915,7 @@ object MwmProductionPlanner {
                                 applyDatexAvoidance = false,
                                 applyTunnelAvoidance = false,
                                 ecoEnabled = ecoEnabled,
+                                applyNamedRouteStubs = false,
                             )
                         // Nested plan() overwrites lastTurnsJson — restore on miss so
                         // enrich annotates the accepted corridor, not the last trial.

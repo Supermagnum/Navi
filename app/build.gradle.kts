@@ -255,6 +255,8 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    // NR01 named-route stubs are zstd section bodies inside `{leaf}.navi-sidecar.v1.zst`.
+    implementation("com.github.luben:zstd-jni:1.5.7-28")
     implementation("net.java.dev.jna:jna:5.19.1@aar")
     // MapLibre still packaged until Phase 8 deletion completes (dead on MWM-only path).
     implementation("org.maplibre.gl:android-sdk:13.6.1")

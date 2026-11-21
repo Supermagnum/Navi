@@ -4796,6 +4796,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                                     avoidTunnels ||
                                                         travelProfileLocksAvoidTunnels(profile),
                                                 ecoEnabled = ecoForPlan,
+                                                preferOfficialNetworks = preferOfficialNetworks,
+                                                preferPilgrimRoutes = preferPilgrimRoutes,
                                             )
                                         } finally {
                                             RoutePlanGate.end()
