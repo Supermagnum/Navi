@@ -279,6 +279,8 @@ panel.
 
 - Foot graph; wetland soft-avoid (bog/fen) and hard-avoid (swamp/reedbed) with
   **boardwalk** exceptions.
+- **Avoid tunnels** is not shown: unsafe (car-only) tunnels are HardAvoid'd
+  automatically; soft-avoid may still detour leftover forbidden tunnels.
 - **Eco mode** is locked on (not toggleable).
 - **POI search radius** slider (Drive settings) for hut / stop search.
 - **Follow official hiking/cycling networks** — soft preference for marked
@@ -299,6 +301,7 @@ panel.
 
 - **Bike type** (Drive settings): **Road / Gravel / MTB** — hard-excludes OSM
   ways whose `surface`, `tracktype`, or MTB tags exceed the selected capability.
+- **Avoid tunnels** is not shown (same auto HardAvoid rule as Hiking).
 - Same **Follow official hiking/cycling networks** and **Use networked cabins**
   toggles as Hiking.
 - **Network hut member** and **Follow pilgrim routes** are **not** shown for

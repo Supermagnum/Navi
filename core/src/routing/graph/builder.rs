@@ -3401,9 +3401,10 @@ pub fn profile_locks_avoid_motorways(profile: RoutingProfile) -> bool {
     matches!(profile, RoutingProfile::Foot | RoutingProfile::Bicycle)
 }
 
-/// Foot (hiking) graphs: avoid tunnels is forced on (soft cost), not optional.
-pub fn profile_locks_avoid_tunnels(profile: RoutingProfile) -> bool {
-    matches!(profile, RoutingProfile::Foot)
+/// Soft avoid-tunnels is never profile-locked. Non-motor HardAvoid handles
+/// forbidden tunnels; motor soft-avoid stays a user preference.
+pub fn profile_locks_avoid_tunnels(_profile: RoutingProfile) -> bool {
+    false
 }
 
 fn edge_avoided_as_motorway(
@@ -3782,8 +3783,8 @@ fn edge_travel_cost(
     if edge.is_tunnel {
         let mode = profile.access_mode();
         let nonmotor = matches!(mode, access::AccessMode::Foot | access::AccessMode::Bicycle);
-        let allowed = !nonmotor
-            || access::is_pedestrian_or_cycle_path_highway(edge.highway.as_deref());
+        let allowed =
+            !nonmotor || access::is_pedestrian_or_cycle_path_highway(edge.highway.as_deref());
         if nonmotor && !allowed {
             cost *= 1.0e6;
         } else if avoid_tunnels {
@@ -5468,7 +5469,7 @@ mod tests {
         assert!(profile_locks_avoid_motorways(RoutingProfile::Bicycle));
         assert!(profile_locks_avoid_motorways(RoutingProfile::Foot));
         assert!(!profile_locks_avoid_motorways(RoutingProfile::Car));
-        assert!(profile_locks_avoid_tunnels(RoutingProfile::Foot));
+        assert!(!profile_locks_avoid_tunnels(RoutingProfile::Foot));
         assert!(!profile_locks_avoid_tunnels(RoutingProfile::Bicycle));
         assert!(!profile_locks_avoid_tunnels(RoutingProfile::Car));
     }

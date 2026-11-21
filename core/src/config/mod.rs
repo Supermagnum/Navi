@@ -138,10 +138,11 @@ impl Profile {
         )
     }
 
-    /// Hiking: avoid-tunnels is forced on and not user-toggleable (foot tunnels
-    /// are rarely sensible; keep surface trails).
+    /// Soft avoid-tunnels is never locked: hiking / bike / e-bike keep unsafe
+    /// tunnels out via HardAvoid access rules, and motor profiles keep a user
+    /// toggle. Kept for ABI / call-site compatibility; always false.
     pub fn locks_avoid_tunnels(self) -> bool {
-        matches!(self, Profile::Hiking)
+        false
     }
 
     /// Motor profiles that expose avoid-ferry.

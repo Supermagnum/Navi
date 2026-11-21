@@ -6460,7 +6460,7 @@ pub fn plan_hiking_route(
         "prefer_official_networks={prefer_official_networks}; prefer_pilgrim_routes={prefer_pilgrim_routes}\n"
     ));
     report.push_str("avoid_motorways=true (locked for hiking)\n");
-    report.push_str("avoid_tunnels=true (locked for hiking)\n");
+    report.push_str("avoid_tunnels=auto (hard-avoid unsafe; soft-avoid backup)\n");
     report.push_str(&format!("avoid_ferries={avoid_ferries}\n"));
     let use_networked_cabins = load_use_networked_cabins_near_cache(&PathBuf::from(&cache_dir));
     report.push_str(&format!("use_networked_cabins={use_networked_cabins}\n"));
@@ -6718,7 +6718,8 @@ pub fn plan_hiking_route(
         );
     }
 
-    // Hiking permanently avoids tunnels (UI locked; soft cost in A*).
+    // Hiking: HardAvoid omits unsafe tunnels; soft avoid remains a backup for
+    // leftover tunnel edges on older packs (no user toggle).
     let hike_opts = RouteOptions {
         avoid_ferries,
         avoid_tunnels: true,
@@ -8093,7 +8094,9 @@ pub fn travel_profile_locks_avoid_motorways(profile: TravelProfile) -> bool {
     profile.to_core().locks_avoid_motorways()
 }
 
-/// Whether avoid-tunnels is forced on and locked for this profile (hiking only).
+/// Soft avoid-tunnels is never UI-locked. Hiking / bike / e-bike hide the
+/// toggle and rely on HardAvoid; this FFI helper stays for ABI compatibility
+/// and always returns false.
 #[uniffi::export]
 pub fn travel_profile_locks_avoid_tunnels(profile: TravelProfile) -> bool {
     profile.to_core().locks_avoid_tunnels()

@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Debug
 import android.os.SystemClock
 import android.util.Log
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -39,8 +40,9 @@ import java.util.concurrent.TimeUnit
 /**
  * Short pilgrim hiking probe: Mariakirken (Oslo) → Pilegrimssenter Oslo →
  * Eidsvoll (on the St. Olav / Østlandet pilgrim corridor, well under 180 km).
- * Avoid tunnels ON, Follow pilgrim routes ON (+ official networks ON).
- * Measures tunnel_count and named_routes sidecar engagement. Not wired into CI.
+ * Tunnels are auto-safe for hiking (no Avoid tunnels toggle). Follow pilgrim
+ * routes ON (+ official networks ON). Measures tunnel_count and named_routes
+ * sidecar engagement. Not wired into CI.
  *
  * OD constants adapted for short pilgrim corridor (androidTest only).
  */
@@ -184,7 +186,7 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
             "settings",
             JSONObject()
                 .put("profile", "hiking")
-                .put("avoid_tunnels", true)
+                .put("avoid_tunnels", "auto_hard_avoid")
                 .put("avoid_ferries", false)
                 .put("wild_camping", true)
                 .put("long_trip", true)
@@ -576,12 +578,13 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
             composeRule.onNodeWithTag("chip_profile_hiking", useUnmergedTree = true).performScrollTo()
             clickTag("chip_profile_hiking")
         }
-        // Avoid tunnels ON, Avoid ferries OFF.
-        ensureAvoidOn("Avoid tunnels")
+        // Hiking hides Avoid tunnels (HardAvoid is always on). Avoid ferries OFF.
         ensureAvoidOff("Avoid ferries")
         runCatching {
-            composeRule.onNodeWithTag("toggle_avoid_tunnels", useUnmergedTree = true).performScrollTo()
-            ensureToggleOn("toggle_avoid_tunnels")
+            composeRule
+                .onNodeWithTag("toggle_avoid_tunnels", useUnmergedTree = true)
+                .assertDoesNotExist()
+            noteUi("toggle_avoid_tunnels", "absent_for_hiking")
         }
         runCatching {
             composeRule.onNodeWithTag("toggle_avoid_ferries", useUnmergedTree = true).performScrollTo()

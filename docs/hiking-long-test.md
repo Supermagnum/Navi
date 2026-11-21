@@ -58,7 +58,7 @@ Nearby attractions was **ON**. Seed and cone both returned empty; this is **rout
 |---|---|
 | Emulator | `Navi_8c_4G` / `emulator-5554` (8c / ~4 GB) — unchanged |
 | Profile | **Hiking** |
-| Avoid tunnels | **ON** |
+| Avoid tunnels | *(no toggle — HardAvoid auto-safe)* |
 | Avoid ferries | **OFF** |
 | Wild camping | **ON** |
 | Nearby attractions | **ON** |

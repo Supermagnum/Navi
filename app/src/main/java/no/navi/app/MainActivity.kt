@@ -182,7 +182,6 @@ import uniffi.navi.searchPlaces
 import uniffi.navi.searchPlacesBiased
 import uniffi.navi.setOsmWeeklyReminder
 import uniffi.navi.travelProfileLocksAvoidMotorways
-import uniffi.navi.travelProfileLocksAvoidTunnels
 import uniffi.navi.travelProfileMenuFocus
 import uniffi.navi.updateGpsFix
 import java.io.File
@@ -2144,7 +2143,12 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     totalWeightKg = lim.totalWeightKg?.toString().orEmpty()
                 }
                 trip.avoidMotorways?.let { avoidMotorways = it }
-                trip.avoidTunnels?.let { avoidTunnels = it }
+                trip.avoidTunnels?.let { stored ->
+                    val tripProfile = trip.profile ?: profile
+                    if (AvoidTunnelsUi.acceptsPersistedPreference(tripProfile)) {
+                        avoidTunnels = stored
+                    }
+                }
                 trip.avoidTolls?.let { avoidTolls = it }
                 NaviMapTestHooks.forceLocalPbf = trip.forceLocalPbf
                 if (trip.injectGpsAtFrom) {
@@ -3757,8 +3761,10 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                                     .ifBlank { "nb" },
                                             bikeWetland = false,
                                             avoidTunnels =
-                                                avoidTunnels ||
-                                                    travelProfileLocksAvoidTunnels(profile),
+                                                AvoidTunnelsUi.effectiveAvoidTunnels(
+                                                    profile,
+                                                    avoidTunnels,
+                                                ),
                                             // Still apply DATEX vias while simulating, but
                                             // avoidDatexBlocks self-caps attempts when
                                             // simulatingActive (see MwmProductionPlanner).
@@ -3780,7 +3786,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                     avoidMotorways = avoidMotorways,
                                     avoidTolls = avoidTolls,
                                     avoidFerries = avoidFerries,
-                                    avoidTunnels,
+                                    AvoidTunnelsUi.effectiveAvoidTunnels(profile, avoidTunnels),
                                     vehicle = vehicle,
                                     preferOfficialNetworks = preferOfficialNetworks,
                                     preferPilgrimRoutes = preferPilgrimRoutes,
@@ -4593,7 +4599,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
             avoidMotorways = avoidMotorways,
             avoidTolls = avoidTolls,
             avoidFerries = avoidFerries,
-            avoidTunnels = avoidTunnels,
+            avoidTunnels = AvoidTunnelsUi.effectiveAvoidTunnels(profile, avoidTunnels),
         )
         planAbort.set(false)
         val planStarted = System.currentTimeMillis()
@@ -4793,8 +4799,10 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                                         .ifBlank { "nb" },
                                                 bikeWetland = false,
                                                 avoidTunnels =
-                                                    avoidTunnels ||
-                                                        travelProfileLocksAvoidTunnels(profile),
+                                                    AvoidTunnelsUi.effectiveAvoidTunnels(
+                                                        profile,
+                                                        avoidTunnels,
+                                                    ),
                                                 ecoEnabled = ecoForPlan,
                                                 preferOfficialNetworks = preferOfficialNetworks,
                                                 preferPilgrimRoutes = preferPilgrimRoutes,
@@ -4889,7 +4897,11 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                         avoidMotorways = avoidMotorways,
                                         avoidTolls = avoidTolls,
                                         avoidFerries = avoidFerries,
-                                        avoidTunnels = avoidTunnels,
+                                        avoidTunnels =
+                                            AvoidTunnelsUi.effectiveAvoidTunnels(
+                                                profile,
+                                                avoidTunnels,
+                                            ),
                                     )
                                     val ffiVias =
                                         viaPoints.map { v ->
@@ -5024,7 +5036,10 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                                     uniffi.navi.FfiTollPolicy.ALLOW
                                                 },
                                                 avoidFerries,
-                                                avoidTunnels,
+                                                AvoidTunnelsUi.effectiveAvoidTunnels(
+                                                    profile,
+                                                    avoidTunnels,
+                                                ),
                                                 loadVehicleLimits(dataDir.absolutePath),
                                                 preferOfficialNetworks,
                                                 dataDir.absolutePath,
@@ -9082,9 +9097,6 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                                     if (travelProfileLocksAvoidMotorways(p)) {
                                                         avoidMotorways = true
                                                     }
-                                                    if (travelProfileLocksAvoidTunnels(p)) {
-                                                        avoidTunnels = true
-                                                    }
                                                     status = "Profile: ${p.name.lowercase()}"
                                                 },
                                                 label = {
@@ -9482,56 +9494,42 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                             modifier = Modifier.testTag("toggle_avoid_ferries"),
                                         )
                                     }
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                    ) {
-                                        Text(
-                                            if (travelProfileLocksAvoidTunnels(profile)) {
-                                                stringResource(R.string.label_avoid_tunnels_locked)
-                                            } else {
-                                                stringResource(R.string.avoid_tunnels)
-                                            },
-                                        )
-                                        Switch(
-                                            checked =
-                                                avoidTunnels ||
-                                                    travelProfileLocksAvoidTunnels(profile),
-                                            onCheckedChange = { on ->
-                                                if (travelProfileLocksAvoidTunnels(profile)) {
-                                                    return@Switch
-                                                }
-                                                avoidTunnels = on
-                                                DiagnosticLog.logToggle("avoid_tunnels", on)
-                                                status =
-                                                    formatRouteAvoidanceReport(
-                                                        avoidMotorways,
-                                                        if (avoidTolls) {
-                                                            uniffi.navi.FfiTollPolicy.PENALIZE
-                                                        } else {
-                                                            uniffi.navi.FfiTollPolicy.ALLOW
-                                                        },
-                                                        avoidFerries,
-                                                        avoidTunnels,
-                                                        prioritySharePct,
-                                                    )
-                                            },
-                                            enabled =
-                                                !travelProfileLocksAvoidTunnels(profile) &&
-                                                    (
-                                                        profile == TravelProfile.CAR ||
-                                                            profile == TravelProfile.TRUCK ||
-                                                            profile == TravelProfile.MOBILE_HOME ||
-                                                            profile == TravelProfile.MOTORCYCLE ||
-                                                            profile == TravelProfile.CAR_ELECTRIC ||
-                                                            profile == TravelProfile.TRUCK_ELECTRIC ||
-                                                            profile == TravelProfile.MOTORCYCLE_ELECTRIC ||
-                                                            profile == TravelProfile.BICYCLE ||
-                                                            profile == TravelProfile.BICYCLE_ELECTRIC
-                                                    ),
-                                            modifier = Modifier.testTag("toggle_avoid_tunnels"),
-                                        )
+                                    if (AvoidTunnelsUi.showsUserToggle(profile)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                        ) {
+                                            Text(stringResource(R.string.avoid_tunnels))
+                                            Switch(
+                                                checked = avoidTunnels,
+                                                onCheckedChange = { on ->
+                                                    avoidTunnels = on
+                                                    DiagnosticLog.logToggle("avoid_tunnels", on)
+                                                    status =
+                                                        formatRouteAvoidanceReport(
+                                                            avoidMotorways,
+                                                            if (avoidTolls) {
+                                                                uniffi.navi.FfiTollPolicy.PENALIZE
+                                                            } else {
+                                                                uniffi.navi.FfiTollPolicy.ALLOW
+                                                            },
+                                                            avoidFerries,
+                                                            avoidTunnels,
+                                                            prioritySharePct,
+                                                        )
+                                                },
+                                                enabled =
+                                                    profile == TravelProfile.CAR ||
+                                                        profile == TravelProfile.TRUCK ||
+                                                        profile == TravelProfile.MOBILE_HOME ||
+                                                        profile == TravelProfile.MOTORCYCLE ||
+                                                        profile == TravelProfile.CAR_ELECTRIC ||
+                                                        profile == TravelProfile.TRUCK_ELECTRIC ||
+                                                        profile == TravelProfile.MOTORCYCLE_ELECTRIC,
+                                                modifier = Modifier.testTag("toggle_avoid_tunnels"),
+                                            )
+                                        }
                                     }
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -9871,7 +9869,14 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                                             onAvoidMotorways = { avoidMotorways = it },
                                                             onAvoidTolls = { avoidTolls = it },
                                                             onAvoidFerries = { avoidFerries = it },
-                                                            onAvoidTunnels = { avoidTunnels = it },
+                                                            onAvoidTunnels = { on ->
+                                                                if (AvoidTunnelsUi.acceptsPersistedPreference(
+                                                                        loadedProfile,
+                                                                    )
+                                                                ) {
+                                                                    avoidTunnels = on
+                                                                }
+                                                            },
                                                             onPriorityShare = { prioritySharePct = it },
                                                         )
                                                         // Bike / hike: motorways are unsuitable — keep lock semantics.
@@ -9925,7 +9930,14 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                                             onAvoidMotorways = { avoidMotorways = it },
                                                             onAvoidTolls = { avoidTolls = it },
                                                             onAvoidFerries = { avoidFerries = it },
-                                                            onAvoidTunnels = { avoidTunnels = it },
+                                                            onAvoidTunnels = { on ->
+                                                                if (AvoidTunnelsUi.acceptsPersistedPreference(
+                                                                        loadedProfile,
+                                                                    )
+                                                                ) {
+                                                                    avoidTunnels = on
+                                                                }
+                                                            },
                                                             onPriorityShare = { prioritySharePct = it },
                                                         )
                                                         if (loadedProfile == TravelProfile.BICYCLE ||
@@ -9976,7 +9988,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                                     endName = toPoint.name,
                                                     viaJson = viaJson,
                                                     profile = profile.name.lowercase(),
-                                                    summaryJson = """{"avoid_motorways":$avoidMotorways,"toll_policy":"${if (avoidTolls) "penalize" else "allow"}","avoid_tolls":$avoidTolls,"avoid_ferries":$avoidFerries,"avoid_tunnels":$avoidTunnels,"priority_share_pct":$prioritySharePct}""",
+                                                    summaryJson = """{"avoid_motorways":$avoidMotorways,"toll_policy":"${if (avoidTolls) "penalize" else "allow"}","avoid_tolls":$avoidTolls,"avoid_ferries":$avoidFerries,"avoid_tunnels":${AvoidTunnelsUi.effectiveAvoidTunnels(profile, avoidTunnels)},"priority_share_pct":$prioritySharePct}""",
                                                 )
                                             refreshRoutes()
                                             status = report
