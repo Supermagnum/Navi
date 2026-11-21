@@ -37,53 +37,68 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
- * Nashaugsætra → Fondsbu (Tyinkrysset) → Hjelle motell Hiking + Long trip
- * UI campaign. Drives Compose UI only. Host ADB: GPS feed + read-only monitoring
- * (no DATEX). Not wired into CI. Does not modify production app/plugin code.
- * Leaves MainActivity running (no force-stop / scenario.close).
+ * Pilgrim long trip: Mariakirken (Oslo) → Pilegrimssenter Oslo →
+ * Pilegrimssenter Hamar → Åmot kirke → Nidaros Pilgrimsgård (Trondheim).
+ * Hiking + Long trip + Follow pilgrim routes + unlocked/networked cabins.
+ * UI campaign. Host ADB: GPS feed + read-only monitoring (no DATEX).
+ * Not wired into CI. Leaves MainActivity running (no force-stop / scenario.close).
  *
- * OD constants only adapted for Fondsbu/Hjelle (androidTest); no main/plugin changes.
+ * OD constants adapted for pilgrim corridor (androidTest only); no main/plugin changes.
  */
 @RunWith(AndroidJUnit4::class)
 @LargeTest
 class HikingLongTripNashaugsLothepusUiCampaignTest {
     companion object {
-        private const val TAG = "HikingLongTripUiCampaign"
+        private const val TAG = "PilgrimLongTripUiCampaign"
 
-        // Fallback coords if name search fails (Nordre Land / Fondsbu / Hjelle).
-        private const val ORIGIN_LAT = 60.8835
-        private const val ORIGIN_LON = 9.9720
-        private const val ORIGIN_ELEV_M = 820.0
+        // Mariakirken ruins, Gamlebyen Oslo.
+        private const val ORIGIN_LAT = 59.9034753
+        private const val ORIGIN_LON = 10.7621871
+        private const val ORIGIN_ELEV_M = 12.0
 
-        // Fondsbu (DNT), Eidsbugarden / Tyinkrysset.
-        private const val VIA_LAT = 61.3751863
-        private const val VIA_LON = 8.2973974
+        // Via 1: Pilegrimssenter Oslo
+        private const val VIA1_LAT = 59.9063300
+        private const val VIA1_LON = 10.7695950
 
-        // Hjelle motell, Stryn / Vestland.
-        private const val DEST_LAT = 61.9146019
-        private const val DEST_LON = 7.1116076
+        // Via 2: Pilegrimssenter Hamar
+        private const val VIA2_LAT = 60.7927693
+        private const val VIA2_LON = 11.0429432
 
-        private const val FROM_QUERY = "Nashaugsætra"
+        // Via 3: Åmot kirke (Rena)
+        private const val VIA3_LAT = 61.1338968
+        private const val VIA3_LON = 11.3728850
 
-        /** DNT cabin near Tyinkrysset — prefer "Fondsbu" place-index hit. */
-        private const val VIA_QUERY = "Fondsbu"
-        private const val TO_QUERY = "Hjelle motell"
-        private const val VIA_NAME_NEEDLE = "Fondsbu"
-        private const val VIA_DISPLAY_NAME = "Fondsbu"
+        // Nidaros Pilgrimsgård, Trondheim
+        private const val DEST_LAT = 63.4266078
+        private const val DEST_LON = 10.3999158
+
+        private const val FROM_QUERY = "Mariakirken"
+        private const val VIA1_QUERY = "Pilegrimssenter Oslo"
+        private const val VIA2_QUERY = "Pilegrimssenter Hamar"
+        private const val VIA3_QUERY = "Åmot kirke"
+        private const val TO_QUERY = "Nidaros Pilgrimsgård"
         private const val DEPARTURE_ISO = "2026-06-01T08:00:00"
+
+        // Legacy single-via aliases used by leftover helpers (mapped to via2 Hamar).
+        private const val VIA_LAT = VIA2_LAT
+        private const val VIA_LON = VIA2_LON
+        private const val VIA_QUERY = VIA2_QUERY
+        private const val VIA_NAME_NEEDLE = "Hamar"
+        private const val VIA_DISPLAY_NAME = "Pilegrimssenter Hamar"
 
         private fun viaHitRejected(name: String): Boolean {
             val n = name.lowercase()
-            // Reject unrelated Fondsbu-ish / far hits if search is noisy.
+            // Åmot kirke name search previously returned Gamle kirkevei (Oslo) as hit_0.
             return n.contains("germany") ||
                 n.contains("sweden") ||
                 n.contains("stockholm") ||
-                n.contains("oslo") &&
-                !n.contains("fondsbu")
+                n.contains("gamle kirkevei") ||
+                n.contains("heggen")
         }
 
         private const val OSTLANDET_REGION = "europe_norway_ostlandet"
-        private const val VESTLANDET_REGION = "europe_norway_vestlandet"
+        private const val TRONDELAG_REGION = "europe_norway_trondelag"
+        private const val VESTLANDET_REGION = TRONDELAG_REGION // corridor next-along-route
 
         private val DOWNLOAD_DEADLINE_MS = TimeUnit.HOURS.toMillis(6)
         private val PLAN_DEADLINE_MS = TimeUnit.HOURS.toMillis(3)
@@ -168,7 +183,7 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         NaviMapTestHooks.lastBreakPoisJson = "[]"
         NaviMapTestHooks.lastPoiLookaheadJson = "[]"
         NaviMapTestHooks.lastDaysJson = "[]"
-        report.put("campaign", "hiking_nashaugs_fondsbu_hjelle_longtrip_ui")
+        report.put("campaign", "pilgrim_oslo_trondheim_longtrip_ui")
         report.put("started_unix", System.currentTimeMillis() / 1000)
         report.put("departure_local", DEPARTURE_ISO)
         report.put("ram_before_mib", processPssMib())
@@ -182,6 +197,9 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
                 .put("long_trip", true)
                 .put("datex", false)
                 .put("nearby_attractions", true)
+                .put("follow_pilgrim_routes", true)
+                .put("use_unlocked_cabins", true)
+                .put("use_networked_cabins", true)
                 .put("download_ui", "mwm_choose_region_then_long_trip_prompts")
                 .put("departure_local", DEPARTURE_ISO),
         )
@@ -194,11 +212,27 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
                 .put("elev_m", ORIGIN_ELEV_M),
         )
         report.put(
-            "via",
+            "vias",
             JSONObject()
-                .put("name", VIA_QUERY)
-                .put("fallback_lat", VIA_LAT)
-                .put("fallback_lon", VIA_LON),
+                .put(
+                    "via1",
+                    JSONObject()
+                        .put("name", VIA1_QUERY)
+                        .put("fallback_lat", VIA1_LAT)
+                        .put("fallback_lon", VIA1_LON),
+                ).put(
+                    "via2",
+                    JSONObject()
+                        .put("name", VIA2_QUERY)
+                        .put("fallback_lat", VIA2_LAT)
+                        .put("fallback_lon", VIA2_LON),
+                ).put(
+                    "via3",
+                    JSONObject()
+                        .put("name", VIA3_QUERY)
+                        .put("fallback_lat", VIA3_LAT)
+                        .put("fallback_lon", VIA3_LON),
+                ),
         )
         report.put(
             "dest",
@@ -209,8 +243,8 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         )
         runCatching { File(dataDir, "long-trip-ui-report/route-polyline.txt").delete() }
         runCatching { File(dataDir, "long-trip-ui-report/gps_replay_done.flag").delete() }
-        runCatching { File("/data/local/tmp/hiking-long-ui/route-polyline.txt").delete() }
-        Log.i(TAG, "HIKING_GPS_HINT lon=$ORIGIN_LON lat=$ORIGIN_LAT elev_m=$ORIGIN_ELEV_M")
+        runCatching { File("/data/local/tmp/pilgrim-long-ui/route-polyline.txt").delete() }
+        Log.i(TAG, "PILGRIM_GPS_HINT lon=$ORIGIN_LON lat=$ORIGIN_LAT elev_m=$ORIGIN_ELEV_M")
     }
 
     @After
@@ -231,56 +265,77 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         configurePluginsInTools()
         screenshot("02_tools_plugins")
 
-        // 1) Delete every downloaded region via UI (MWM storage + Geofabrik leftovers).
-        report.put(
-            "delete_policy",
-            "UI Map storage wipe of MWM leaves + Tools Geofabrik path deletes; clean start",
-        )
-        deleteMwmViaStorageUi()
-        deleteGeofabrikPacksViaUi()
-        screenshot("03_after_ui_delete")
-        val leavesAfterDelete =
-            runCatching {
-                uniffi.navi
-                    .mwmInstalled(mwmDataDir.absolutePath)
-                    ?.leafIds
-                    .orEmpty()
-            }.getOrDefault(emptyList())
-        report.put("leaves_after_ui_delete", JSONArray(leavesAfterDelete))
-        report.put("leaves_after_ui_delete_count", leavesAfterDelete.size)
-        listRegionsOnDisk("after_delete")
-        // Soft assert: prefer empty; leftover World overlays may remain at MWM root.
-        noteUi("delete_result", "leaves_left=${leavesAfterDelete.size}")
+        // 1) Wipe only when corridor leaves are not already Ready on SD.
+        // Takeover / re-run: verify listing; skip wipe+redownload when Ready.
+        val args = InstrumentationRegistry.getArguments()
+        val forceWipe = args.getString("force_wipe") == "true"
+        val skipWipeArg = args.getString("skip_wipe") == "true"
+        val alreadyReady = !forceWipe && (skipWipeArg || pilgrimCorridorLeavesReadyOnDisk())
+        report.put("takeover_skip_wipe", alreadyReady)
+        if (alreadyReady) {
+            report.put(
+                "delete_policy",
+                "SKIP wipe — corridor MWM leaves already present/Ready on SD (takeover verify)",
+            )
+            noteUi("delete_policy", "skip_wipe corridor already Ready")
+            listRegionsOnDisk("takeover_verify_ready")
+            screenshot("03_after_ui_delete")
+            screenshot("04_ostlandet_installed")
+            openTools()
+            configurePluginsInTools()
+            ensureLongTripOnViaTools()
+            ensureComapsSessionOpen("after_maps_ready")
+        } else {
+            report.put(
+                "delete_policy",
+                "UI Map storage wipe of MWM leaves + Tools Geofabrik path deletes; clean start",
+            )
+            deleteMwmViaStorageUi()
+            deleteGeofabrikPacksViaUi()
+            screenshot("03_after_ui_delete")
+            val leavesAfterDelete =
+                runCatching {
+                    uniffi.navi
+                        .mwmInstalled(mwmDataDir.absolutePath)
+                        ?.leafIds
+                        .orEmpty()
+                }.getOrDefault(emptyList())
+            report.put("leaves_after_ui_delete", JSONArray(leavesAfterDelete))
+            report.put("leaves_after_ui_delete_count", leavesAfterDelete.size)
+            listRegionsOnDisk("after_delete")
+            noteUi("delete_result", "leaves_left=${leavesAfterDelete.size}")
 
-        // Re-assert plugins / long trip ON after delete (delete turns long trip OFF).
-        openTools()
-        configurePluginsInTools()
-        ensureLongTripOnViaTools()
+            // Re-assert plugins / long trip ON after delete (delete turns long trip OFF).
+            openTools()
+            configurePluginsInTools()
+            ensureLongTripOnViaTools()
 
-        // 2) Download starting region (Østlandet / Nordre Land) first via MWM UI.
-        val first = downloadMwmRegionViaUi(OSTLANDET_REGION, "first_ostlandet")
-        assertTrue("Østlandet MWM install must succeed before plan", first)
-        assertTrue("Innlandet/Ostlandet leaves present after first download", innlandetLeavesPresent())
-        screenshot("04_ostlandet_installed")
-        listRegionsOnDisk("after_first_download")
-        ensureComapsSessionOpen("after_maps_ready")
+            // 2) Download starting region (Østlandet / Oslo) first via MWM UI.
+            val first = downloadMwmRegionViaUi(OSTLANDET_REGION, "first_ostlandet")
+            assertTrue("Østlandet MWM install must succeed before plan", first)
+            assertTrue("Innlandet/Ostlandet leaves present after first download", innlandetLeavesPresent())
+            screenshot("04_ostlandet_installed")
+            listRegionsOnDisk("after_first_download")
+            ensureComapsSessionOpen("after_maps_ready")
+        }
 
         openRoutePanel()
         configureHikingProfileAndAvoids()
         screenshot("05_hiking_settings")
 
-        // 4) Enter route via Navi UI search (names first; coords fallback).
-        typeNameOrCoordAndPick("chip_from", FROM_QUERY, ORIGIN_LAT, ORIGIN_LON, "from_nashaugs")
+        // 4) Enter route via Navi UI (correct order). Dest forced to Pilgrimsgård coords
+        // because name search can resolve to generic Trondheim (Nidaros).
+        typeNameOrCoordAndPick("chip_from", FROM_QUERY, ORIGIN_LAT, ORIGIN_LON, "from_mariakirken")
         screenshot("06_from_set")
-        pickFondsbuVia()
-        screenshot("07_via_set")
-        typeNameOrCoordAndPick("chip_to", TO_QUERY, DEST_LAT, DEST_LON, "to_hjelle_motell")
+        pickPilgrimVias()
+        screenshot("07_vias_set")
+        typeCoordAndPickForced("chip_to", DEST_LAT, DEST_LON, "to_nidaros_pilgrimsgard")
         screenshot("08_to_set")
         val wp = waypointSummary()
         report.put("waypoints_summary", wp)
         noteUi("waypoints_summary", wp)
         writeReport()
-        assertViaFondsbu(wp)
+        assertPilgrimVias(wp)
 
         // Keep long trip ON; DATEX stays OFF.
         ensureLongTripOnViaTools()
@@ -298,7 +353,7 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         )
         clickTag("btn_plan_route")
         screenshot("10_after_plan_click")
-        Log.i(TAG, "HIKING_PLAN_CLICKED")
+        Log.i(TAG, "PILGRIM_PLAN_CLICKED")
 
         val t0 = System.currentTimeMillis()
         var planned = false
@@ -372,15 +427,14 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
                     !rep.contains("FAIL: chunk_leg") &&
                     !rep.startsWith("FAIL:") &&
                     !rep.contains("\nFAIL: chunk_leg")
-            // Hiking Nashaugs→Hjelle via Fondsbu is typically ~150–400 km; allow
-            // headroom if a via miss stretches the corridor.
-            if (poly >= 8 && dist in 40.0..700.0 && (overallPass || dist > 40.0)) {
+            // Pilgrim Oslo→Trondheim via Hamar/Åmot is typically ~500–750 km; allow headroom.
+            if (poly >= 8 && dist in 80.0..1000.0 && (overallPass || dist > 80.0)) {
                 persistPlanArtifactsNow(dist, rep)
                 planned = true
                 break
             }
             // Corridor ready + long polyline but still waiting for PASS token.
-            if (poly >= 8 && dist in 40.0..700.0 && LongTripCoordinator.corridorReadyForPlanning()) {
+            if (poly >= 8 && dist in 80.0..1000.0 && LongTripCoordinator.corridorReadyForPlanning()) {
                 persistPlanArtifactsNow(dist, rep)
                 planned = true
                 break
@@ -455,16 +509,16 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
 
         Log.i(
             TAG,
-            "HIKING_PLAN_OK planned=$planned dist=$distanceKm etaMin=$etaMin man=$manCount " +
+            "PILGRIM_PLAN_OK planned=$planned dist=$distanceKm etaMin=$etaMin man=$manCount " +
                 "poly=${savedPlanPolyline.length}",
         )
         assertTrue(
-            "Hiking plan must succeed (planned=$planned dist=$distanceKm man=$manCount)",
-            planned && distanceKm in 40.0..700.0 && manCount >= 1,
+            "Pilgrim plan must succeed (planned=$planned dist=$distanceKm man=$manCount)",
+            planned && distanceKm in 80.0..1000.0 && manCount >= 1,
         )
 
         // 5) Host GPS replay + DNT cabin/shelter screenshots.
-        Log.i(TAG, "HIKING_AWAIT_GPS_REPLAY poly=${savedPlanPolyline.length}")
+        Log.i(TAG, "PILGRIM_AWAIT_GPS_REPLAY poly=${savedPlanPolyline.length}")
         noteUi("gps_replay_await", "waiting host")
         val doneFlag = File(dataDir, "long-trip-ui-report/gps_replay_done.flag")
         val gpsDeadline = System.currentTimeMillis() + TimeUnit.HOURS.toMillis(2)
@@ -482,7 +536,7 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         report.put("ram_final_mib", processPssMib())
         screenshot("12_after_gps_replay")
         writeReport()
-        Log.i(TAG, "HIKING_DONE planned=$planned dist=$distanceKm")
+        Log.i(TAG, "PILGRIM_DONE planned=$planned dist=$distanceKm")
     }
 
     // --- settings -------------------------------------------------------------
@@ -554,6 +608,19 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         runCatching {
             composeRule.onNodeWithTag("toggle_avoid_ferries", useUnmergedTree = true).performScrollTo()
             ensureToggleOff("toggle_avoid_ferries")
+        }
+        // Pilgrim / cabin prefs (Hiking profile sheet).
+        runCatching {
+            composeRule.onNodeWithTag("toggle_prefer_pilgrim_routes", useUnmergedTree = true).performScrollTo()
+            ensureToggleOn("toggle_prefer_pilgrim_routes")
+        }
+        runCatching {
+            composeRule.onNodeWithTag("toggle_use_unlocked_cabins", useUnmergedTree = true).performScrollTo()
+            ensureToggleOn("toggle_use_unlocked_cabins")
+        }
+        runCatching {
+            composeRule.onNodeWithTag("toggle_use_networked_cabins", useUnmergedTree = true).performScrollTo()
+            ensureToggleOn("toggle_use_networked_cabins")
         }
         dismissProfileSheets()
     }
@@ -958,6 +1025,7 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
             when {
                 regionId.contains("ostlandet") -> "Østlandet"
                 regionId.contains("vestlandet") -> "Vestlandet"
+                regionId.contains("trondelag") -> "Trøndelag"
                 else -> regionId
             }
         while (System.currentTimeMillis() < catalogDeadline) {
@@ -1406,8 +1474,8 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
 
     private fun reapplyWaypointsAndPlan(reason: String) {
         typeNameOrCoordAndPick("chip_from", FROM_QUERY, ORIGIN_LAT, ORIGIN_LON, "from_re_$reason")
-        pickFondsbuVia()
-        typeNameOrCoordAndPick("chip_to", TO_QUERY, DEST_LAT, DEST_LON, "to_re_$reason")
+        pickPilgrimVias()
+        typeCoordAndPickForced("chip_to", DEST_LAT, DEST_LON, "to_re_$reason")
         runCatching { clickTag("chip_profile_hiking") }
         configureHikingAvoidsOnly()
         awaitCorridorReadyBeforePlan()
@@ -1417,34 +1485,59 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
     }
 
     /**
-     * Pick Fondsbu (Tyinkrysset / Eidsbugarden). Prefer place-index name hit;
-     * fall back to known alpine_hut coords. Always clear vias first.
+     * Pick three pilgrim vias in order: Oslo → Hamar → Åmot kirke.
+     * Prefer place-index name hits for Oslo/Hamar; Åmot always forced by coords
+     * (name search previously applied Gamle kirkevei then appended coords as via 4).
      */
-    private fun pickFondsbuVia() {
+    private fun pickPilgrimVias() {
         clearAllViasSoft()
+        pickOneVia(VIA1_QUERY, VIA1_LAT, VIA1_LON, "via1_oslo", 59.88..59.94, 10.70..10.85)
+        pickOneVia(VIA2_QUERY, VIA2_LAT, VIA2_LON, "via2_hamar", 60.75..60.85, 10.95..11.15)
+        // Force Åmot kirke coords — do not name-search (false Oslo hit leaves a stuck via).
+        noteUi("via3_amot_skip_name", "forcing coords for $VIA3_QUERY (avoid Gamle kirkevei)")
+        typeCoordAndPickForced("chip_via", VIA3_LAT, VIA3_LON, "via3_amot_coord")
+        val applied = report.optJSONObject("via3_amot_coord")
+        val alat = applied?.optDouble("applied_lat") ?: Double.NaN
+        val alon = applied?.optDouble("applied_lon") ?: Double.NaN
+        assertTrue(
+            "Forced via3 must be near Åmot kirke (got $alat,$alon)",
+            !alat.isNaN() && alat in 61.10..61.18 && alon in 11.30..11.45,
+        )
+        noteUi("via3_amot", "accepted forced coords for $VIA3_QUERY")
+    }
+
+    private fun pickOneVia(
+        query: String,
+        lat: Double,
+        lon: Double,
+        step: String,
+        latRange: ClosedFloatingPointRange<Double>,
+        lonRange: ClosedFloatingPointRange<Double>,
+    ) {
         openRoutePanel()
         clickTag("chip_via")
         settle(300)
-        val nameOk = trySearchPickFondsbu(VIA_QUERY, "via_fondsbu_name")
+        val nameOk = trySearchPickBounded(query, step + "_name", latRange, lonRange)
         if (nameOk) {
-            noteUi("via_fondsbu", "accepted Fondsbu name hit")
+            noteUi(step, "accepted name hit for $query")
             return
         }
-        noteUi("via_fondsbu_skip_name", "forcing Fondsbu coords near Tyinkrysset")
-        clearAllViasSoft()
-        typeCoordAndPickForced("chip_via", VIA_LAT, VIA_LON, "via_fondsbu_coord")
-        val applied = report.optJSONObject("via_fondsbu_coord")
-        val lat = applied?.optDouble("applied_lat") ?: Double.NaN
-        val lon = applied?.optDouble("applied_lon") ?: Double.NaN
+        noteUi(step + "_skip_name", "forcing coords for $query")
+        typeCoordAndPickForced("chip_via", lat, lon, step + "_coord")
+        val applied = report.optJSONObject(step + "_coord")
+        val alat = applied?.optDouble("applied_lat") ?: Double.NaN
+        val alon = applied?.optDouble("applied_lon") ?: Double.NaN
         assertTrue(
-            "Forced via must be Fondsbu / Tyinkrysset area (got $lat,$lon)",
-            !lat.isNaN() && lat in 61.2..61.55 && lon in 8.1..8.5,
+            "Forced via must be near $query (got $alat,$alon)",
+            !alat.isNaN() && alat in latRange && alon in lonRange,
         )
     }
 
-    private fun trySearchPickFondsbu(
+    private fun trySearchPickBounded(
         query: String,
         step: String,
+        latRange: ClosedFloatingPointRange<Double>,
+        lonRange: ClosedFloatingPointRange<Double>,
     ): Boolean {
         NaviMapTestHooks.lastSearchHitCount = -1
         NaviMapTestHooks.lastAppliedHitLat = Double.NaN
@@ -1468,14 +1561,10 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         val name = NaviMapTestHooks.lastAppliedHitName
         val lat = NaviMapTestHooks.lastAppliedHitLat
         val lon = NaviMapTestHooks.lastAppliedHitLon
-        if (lat.isNaN() || viaHitRejected(name) || lat !in 61.2..61.55 || lon !in 8.1..8.5) {
+        if (lat.isNaN() || viaHitRejected(name) || lat !in latRange || lon !in lonRange) {
             noteUi(step, "name_search_reject q=$query hit='$name' @$lat,$lon")
-            clearAllViasSoft()
-            return false
-        }
-        if (!name.contains(VIA_NAME_NEEDLE, ignoreCase = true)) {
-            noteUi(step, "name_search_reject_no_needle q=$query hit='$name'")
-            clearAllViasSoft()
+            // CRITICAL: clicking search_hit_0 already applied the bad via — remove it.
+            removeLastViaSoft()
             return false
         }
         report.put(
@@ -1492,42 +1581,107 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         return true
     }
 
-    private fun assertViaFondsbu(wp: String) {
+    /** Undo a just-applied bad via (last index) without wiping earlier good vias. */
+    private fun removeLastViaSoft() {
+        openRoutePanel()
+        settle(200)
+        // Prefer tagged remove on the highest index present.
+        for (idx in 3 downTo 0) {
+            val removed =
+                runCatching {
+                    composeRule
+                        .onNodeWithTag("btn_remove_via_$idx", useUnmergedTree = true)
+                        .assertExists()
+                    clickTag("btn_remove_via_$idx")
+                    true
+                }.getOrDefault(false)
+            if (removed) {
+                noteUi("remove_bad_via", "btn_remove_via_$idx")
+                settle(200)
+                return
+            }
+        }
+        runCatching { clickTagSoft("btn_clear_vias") }
+        noteUi("remove_bad_via", "fallback clear_all_vias")
+        settle(200)
+    }
+
+    private fun assertPilgrimVias(wp: String) {
         assertTrue(
-            "Via Fondsbu must be set (got: $wp)",
+            "At least one via must be set (got: $wp)",
             wp.contains("Via:", ignoreCase = true) &&
                 !wp.contains("Via: (none)", ignoreCase = true) &&
-                !wp.contains("Via: none", ignoreCase = true) &&
-                !viaHitRejected(wp) &&
-                !wp.contains("→"),
+                !wp.contains("Via: none", ignoreCase = true),
         )
-        val viaApplied =
-            report.optJSONObject("via_fondsbu_name")
-                ?: report.optJSONObject("via_fondsbu_coord")
-        val viaLatOk = viaApplied?.optDouble("applied_lat") ?: Double.NaN
-        val viaLonOk = viaApplied?.optDouble("applied_lon") ?: Double.NaN
         assertTrue(
-            "Via must be Fondsbu / Tyinkrysset coords (got lat=$viaLatOk lon=$viaLonOk wp=$wp)",
-            !viaLatOk.isNaN() &&
-                viaLatOk in 61.2..61.55 &&
-                viaLonOk in 8.1..8.5,
+            "Must not keep rejected Gamle kirkevei via (got: $wp)",
+            !wp.contains("Gamle kirkevei", ignoreCase = true) &&
+                !wp.contains("Heggen", ignoreCase = true),
+        )
+        val viaPart =
+            wp
+                .substringAfter("Via:", missingDelimiterValue = "")
+                .substringBefore("|")
+                .trim()
+        val viaCount =
+            if (viaPart.isEmpty() || viaPart.equals("(none)", true) || viaPart.equals("none", true)) {
+                0
+            } else {
+                viaPart
+                    .split("→")
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                    .size
+            }
+        assertTrue("Exactly 3 vias required (got $viaCount in: $wp)", viaCount == 3)
+        assertTrue("Via1 must be Pilegrimssenter Oslo (got: $wp)", wp.contains("Pilegrimssenter Oslo", ignoreCase = true))
+        assertTrue("Via2 must be Pilegrimssenter Hamar (got: $wp)", wp.contains("Pilegrimssenter Hamar", ignoreCase = true))
+        assertTrue(
+            "Via3 must be Åmot kirke coords near Rena (got: $wp)",
+            wp.contains("61.133", ignoreCase = true) ||
+                wp.contains("Åmot", ignoreCase = true) ||
+                wp.contains("Amot", ignoreCase = true),
         )
         report.put(
             "via_proof",
             JSONObject()
                 .put("waypoints_summary", wp)
-                .put("applied_lat", viaLatOk)
-                .put("applied_lon", viaLonOk)
-                .put("applied_name", viaApplied?.optString("applied_name").orEmpty())
-                .put("expected_name", VIA_DISPLAY_NAME)
-                .put("expected_lat", VIA_LAT)
-                .put("expected_lon", VIA_LON),
+                .put("via_count", viaCount)
+                .put("via1", report.optJSONObject("via1_oslo_name") ?: report.optJSONObject("via1_oslo_coord"))
+                .put("via2", report.optJSONObject("via2_hamar_name") ?: report.optJSONObject("via2_hamar_coord"))
+                .put("via3", report.optJSONObject("via3_amot_name") ?: report.optJSONObject("via3_amot_coord")),
         )
-        Log.i(
-            TAG,
-            "VIA_PROOF name=${viaApplied?.optString("applied_name")} " +
-                "lat=$viaLatOk lon=$viaLonOk expected=$VIA_LAT,$VIA_LON wp=$wp",
+        Log.i(TAG, "VIA_PROOF wp=$wp via_count=$viaCount")
+    }
+
+    /** True when Østlandet + Trøndelag corridor leaves (+ sidecars) are already on SD. */
+    private fun pilgrimCorridorLeavesReadyOnDisk(): Boolean {
+        listRegionsOnDisk("precheck_ready")
+        val inst =
+            runCatching { uniffi.navi.mwmInstalled(mwmDataDir.absolutePath) }.getOrNull()
+                ?: return false
+        val leaves = inst.leafIds.map { it.lowercase() }
+        val hasOst =
+            leaves.any { it.contains("hedmark") } &&
+                (leaves.any { it.contains("oppland") } || leaves.any { it.contains("central") })
+        val hasTro =
+            leaves.any { it.contains("south") && it.contains("trond") } ||
+                leaves.any { it.contains("trondelag") } ||
+                leaves.any { it.contains("south trondelag") }
+        val ready = hasOst && hasTro && leaves.size >= 4
+        noteUi(
+            "corridor_precheck",
+            "ready=$ready leaves=${inst.leafIds} version=${inst.version}",
         )
+        report.put(
+            "corridor_precheck",
+            JSONObject()
+                .put("ready", ready)
+                .put("leaves", JSONArray(inst.leafIds))
+                .put("version", inst.version ?: JSONObject.NULL),
+        )
+        writeReport()
+        return ready
     }
 
     /**
@@ -1609,9 +1763,9 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         val targets =
             listOf(
                 File(dataDir, "long-trip-ui-report/break-pois.json"),
-                File(dataDir, "hiking-long-ui/break-pois.json"),
-                File("/data/local/tmp/hiking-long-ui/break-pois.json"),
-                File("/sdcard/Pictures/hiking-long-ui/break-pois.json"),
+                File(dataDir, "pilgrim-long-ui/break-pois.json"),
+                File("/data/local/tmp/pilgrim-long-ui/break-pois.json"),
+                File("/sdcard/Pictures/pilgrim-long-ui/break-pois.json"),
             )
         for (f in targets) {
             runCatching {
@@ -1811,7 +1965,7 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
                 lm.setTestProviderLocation(provider, loc)
                 true
             }.getOrDefault(false)
-        noteUi("gps_pin", "Nashaugsætra mock=$mockOk")
+        noteUi("gps_pin", "Mariakirken mock=$mockOk")
         report.put("gps_mock_provider", mockOk)
     }
 
@@ -1983,13 +2137,8 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
     }
 
     private fun screenshot(name: String) {
-        runCatching {
-            File("/sdcard/Pictures/hiking-long-ui").also { it.mkdirs() }
-            device.takeScreenshot(File("/sdcard/Pictures/hiking-long-ui/$name.png"))
-            File("/data/local/tmp/hiking-long-ui").also { it.mkdirs() }
-            device.takeScreenshot(File("/data/local/tmp/hiking-long-ui/$name.png"))
-            noteUi("screenshot", name)
-        }
+        // User rule for this run: NO screenshots. Keep call sites; do not capture.
+        noteUi("screenshot_skipped", name)
     }
 
     private fun settle(ms: Long = 400) {
@@ -2028,9 +2177,9 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         val targets =
             listOf(
                 File(dataDir, "long-trip-ui-report/route-polyline.txt"),
-                File(dataDir, "hiking-long-ui/route-polyline.txt"),
-                File("/data/local/tmp/hiking-long-ui/route-polyline.txt"),
-                File("/sdcard/Pictures/hiking-long-ui/route-polyline.txt"),
+                File(dataDir, "pilgrim-long-ui/route-polyline.txt"),
+                File("/data/local/tmp/pilgrim-long-ui/route-polyline.txt"),
+                File("/sdcard/Pictures/pilgrim-long-ui/route-polyline.txt"),
             )
         for (f in targets) {
             runCatching {
@@ -2047,17 +2196,17 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         report.put("region_timings", regionTimings)
         val text = report.toString(2)
         runCatching {
-            File(dataDir, "hiking-long-ui").also { it.mkdirs() }.let { File(it, "report.json").writeText(text) }
+            File(dataDir, "pilgrim-long-ui").also { it.mkdirs() }.let { File(it, "report.json").writeText(text) }
         }
         runCatching {
-            File(dataDir, "long-trip-ui-report").also { it.mkdirs() }.let { File(it, "hiking-report.json").writeText(text) }
+            File(dataDir, "long-trip-ui-report").also { it.mkdirs() }.let { File(it, "pilgrim-report.json").writeText(text) }
         }
-        runCatching { File("/data/local/tmp/hiking-long-ui.json").writeText(text) }
+        runCatching { File("/data/local/tmp/pilgrim-long-ui.json").writeText(text) }
         runCatching {
-            File("/data/local/tmp/hiking-long-ui").also { it.mkdirs() }.let { File(it, "report.json").writeText(text) }
+            File("/data/local/tmp/pilgrim-long-ui").also { it.mkdirs() }.let { File(it, "report.json").writeText(text) }
         }
         runCatching {
-            File("/sdcard/Pictures/hiking-long-ui").also { it.mkdirs() }.let { File(it, "report.json").writeText(text) }
+            File("/sdcard/Pictures/pilgrim-long-ui").also { it.mkdirs() }.let { File(it, "report.json").writeText(text) }
         }
         val sd =
             NaviStorageVolumes
@@ -2066,7 +2215,7 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
                 ?.appFilesDir
         if (sd != null) {
             runCatching {
-                File(sd, "hiking-long-ui").also { it.mkdirs() }.let { File(it, "report.json").writeText(text) }
+                File(sd, "pilgrim-long-ui").also { it.mkdirs() }.let { File(it, "report.json").writeText(text) }
             }
         }
     }

@@ -7,6 +7,7 @@ import org.json.JSONObject
 import uniffi.navi.CorridorRouteResult
 import uniffi.navi.FfiComapsLatLon
 import uniffi.navi.FfiComapsOptimize
+import uniffi.navi.FfiComapsProfile
 import uniffi.navi.FfiComapsRoute
 import uniffi.navi.FfiComapsRouteCode
 import uniffi.navi.FfiSearchHit
@@ -97,6 +98,14 @@ object MwmProductionPlanner {
         java.util.concurrent.atomic
             .AtomicLong(0)
 
+    /**
+     * Leg cache for the plan that is currently soft-avoiding tunnels.
+     * Nested replans share it. Cleared when that search returns.
+     * Never shared across overlapping plans; [comapsSessionRoute] stays serial.
+     */
+    @Volatile
+    private var tunnelLegCache: TunnelLegCache? = null
+
     /** Cancel the plan in flight (if any). Never affects a plan that starts afterwards. */
     fun cancel() {
         cancelGeneration.incrementAndGet()
@@ -173,6 +182,10 @@ object MwmProductionPlanner {
         endpoints.add(endLat to endLon)
         missingLeavesFor(context, endpoints)?.let { return it }
         setMwmProductionPlannerActive(true)
+        // One tunnel-avoid search, including the base legs it will reuse.
+        // Nested DATEX / tunnel plans see the same cache and must not clear it.
+        val ownsTunnelCache = tunnelLegCache == null && avoidTunnels && applyTunnelAvoidance
+        if (ownsTunnelCache) tunnelLegCache = TunnelLegCache()
         // CoMaps eco lever: prefer non-motorway (easier / more economic corridor).
         val preferNonMotorway = ecoEnabled || avoidMotorways
         Log.i(
@@ -211,6 +224,22 @@ object MwmProductionPlanner {
                 },
             )
             val comapsProfile = SnapChoiceFlow.comapsProfileFor(profile)
+            val legFlags =
+                TunnelLegFlags(
+                    profile = comapsProfile.name,
+                    avoidToll = avoidTolls,
+                    avoidMotorway = preferNonMotorway,
+                    avoidFerry = avoidFerries,
+                    avoidDirty = false,
+                    optimize = if (preferNonMotorway) "prefer_non_motorway" else "time",
+                    wetlandHook = profile == TravelProfile.HIKING || bikeWetland,
+                    turnsLocale = turnsLocale.ifBlank { "nb" },
+                    vehicleKey =
+                        tunnelVehicleKey(
+                            profile,
+                            if (VehicleRestrictionUi.appliesStoredLimits(profile)) stored else null,
+                        ),
+                )
             val legs = ArrayList<Pair<Double, Double>>(2 + vias.size)
             legs.add(startLat to startLon)
             vias.forEach { legs.add(it) }
@@ -236,13 +265,14 @@ object MwmProductionPlanner {
                 val (la1, lo1) = legs[i + 1]
                 collectLeavesAlong(la0, lo0, la1, lo1, routeLeaves)
                 val leg =
-                    comapsSessionRoute(
-                        profile = comapsProfile,
+                    routeLegCached(
+                        flags = legFlags,
+                        comapsProfile = comapsProfile,
                         fromLat = la0,
                         fromLon = lo0,
                         toLat = la1,
                         toLon = lo1,
-                        wetlandHook = profile == TravelProfile.HIKING || bikeWetland,
+                        wetlandHook = legFlags.wetlandHook,
                     )
                 last = leg
                 if (cancelled()) return cancelledCorridor()
@@ -351,6 +381,7 @@ object MwmProductionPlanner {
             }
             enrichMwmPlan(context, profile, result, ecoEnabled)
         } finally {
+            if (ownsTunnelCache) tunnelLegCache = null
             setMwmProductionPlannerActive(false)
         }
     }
@@ -684,13 +715,24 @@ object MwmProductionPlanner {
         return base
     }
 
+    private data class TunnelAttemptOutcome(
+        val result: CorridorRouteResult?,
+        val turnsJson: String,
+        val count: Int,
+        val routeChanged: Boolean,
+        val nativeCalled: Boolean,
+        val spliced: Boolean,
+    )
+
     /**
      * CoMaps [RoutingOptions] has no Tunnel flag. Soft-avoid by inserting
-     * perpendicular detour vias at tunnel anchors (from turns_json) and
-     * accepting geometries that cut the tunnel run count. Rounds repeat on the
-     * improved corridor until tunnels hit 0 or a round makes no progress.
-     * Hiking/bike: keep attacking leftovers with wider offsets + single-anchor
-     * sweeps; never claim success while tunnels remain (campaign gate: 0).
+     * perpendicular detour vias at the longest leftover tunnel and accepting
+     * geometries that cut the tunnel run count. A round that cuts the count
+     * keeps that geometry and moves on; the next round spends its attempt
+     * budget on the new longest leftover. Offsets escalate on one side,
+     * including 12/16/20 km, and the other side is tried only when that
+     * side's route fingerprint did not change. Unchanged from–to legs are
+     * reused from [tunnelLegCache]. Never claim success while tunnels remain.
      */
     private fun avoidTunnelsViaDetours(
         context: Context,
@@ -744,13 +786,6 @@ object MwmProductionPlanner {
                 hikingLike -> 8
                 else -> 3
             }
-        val midBatch =
-            when {
-                simulating -> 3
-                hikingLike -> 8
-                else -> 5
-            }
-
         var current = base
         var currentTurns = lastTurnsJson
         var currentCount = initialCount
@@ -758,13 +793,16 @@ object MwmProductionPlanner {
         var totalMids = 0
         var rounds = 0
         var stalledRounds = 0
+        var spliceAccepts = 0
+        val seenDetours = HashSet<String>()
+        val primarySide = sides.first()
+        val otherSide = if (sides.size > 1) sides[1] else null
 
         while (currentCount > 0 && rounds < maxRounds) {
             rounds++
-            // Entrance / mid / exit anchors give stubborn leftovers more attack points
-            // than a single midpoint (campaign leftover sat at mid-only 12 km).
-            val anchors = tunnelAvoidAnchors(currentTurns, current.routePolyline)
-            if (anchors.isEmpty()) {
+            val target = longestTunnelRun(currentTurns, current.routePolyline)
+            val anchors = target?.anchors.orEmpty()
+            if (target == null || anchors.isEmpty()) {
                 if (rounds == 1) {
                     lastTurnsJson = currentTurns
                     base.report =
@@ -781,7 +819,7 @@ object MwmProductionPlanner {
             val beforeKm = current.distanceKm
             val beforeHash = polylineFingerprint(current.routePolyline)
             val leftoverFp = tunnelFpSummary(currentTurns)
-            val maxRunM = tunnelMaxRunLengthM(currentTurns)
+            val maxRunM = target.lengthM
             // Macro offsets miss sub-km covered passages; switch to micro sweeps.
             val roundOffsets =
                 if (hikingLike && maxRunM > 0.0 && maxRunM < 500.0) {
@@ -791,149 +829,240 @@ object MwmProductionPlanner {
                 }
             Log.i(
                 TAG,
-                "mwm tunnel avoid round=$rounds tunnels=$currentCount anchors=${anchors.size} " +
-                    "before_km=$beforeKm max_run_m=${"%.0f".format(Locale.US, maxRunM)} " +
-                    "leftover_fp=$leftoverFp",
+                "mwm tunnel avoid round=$rounds tunnels=$currentCount " +
+                    "longest_m=${"%.0f".format(Locale.US, maxRunM)} " +
+                    "anchors=${anchors.size} before_km=$beforeKm leftover_fp=$leftoverFp",
             )
             RoutingPlanLog.progress(
                 tunnelAvoidProgressPct(rounds, maxRounds, 0, maxAttemptsPerRound),
                 ecoEnabled,
                 detail = "tunnel_avoid_r${rounds}_t$currentCount",
             )
-            var best: CorridorRouteResult? = null
-            var bestCount = currentCount
-            var bestTurns = currentTurns
+            val escalation = TunnelSideEscalation(roundOffsets, primarySide, otherSide)
             var attempts = 0
-            // Few leftovers: attack one anchor at a time. Many: rotate batches.
-            val batchSize = if (currentCount <= 2 || rounds >= 3) 1 else midBatch
-            val rotated =
-                if (anchors.size <= batchSize) {
-                    anchors
-                } else {
-                    val start = ((rounds - 1) * batchSize) % anchors.size
-                    anchors.drop(start) + anchors.take(start)
-                }
-            // For leftovers, also try entrance+exit pair on opposite sides.
-            val pairMode = hikingLike && currentCount <= 2
-            outer@ for (offsetM in roundOffsets) {
-                for (side in sides) {
-                    val detourSets: List<List<Pair<Double, Double>>> =
-                        if (batchSize == 1 && pairMode && rotated.size >= 2) {
-                            val a = rotated[0]
-                            val b = rotated.getOrNull(1) ?: rotated[0]
-                            listOf(
-                                listOfNotNull(
-                                    detourViaForBlock(pts, a.first, a.second, offsetM, side),
-                                ),
-                                listOfNotNull(
-                                    detourViaForBlock(pts, a.first, a.second, offsetM, side),
-                                    detourViaForBlock(pts, b.first, b.second, offsetM, -side),
-                                ),
-                            )
-                        } else {
-                            listOf(
-                                rotated.take(batchSize).mapNotNull { (lat, lon) ->
-                                    detourViaForBlock(pts, lat, lon, offsetM, side)
-                                },
-                            )
-                        }
-                    for (detours in detourSets) {
-                        if (attempts >= maxAttemptsPerRound) break@outer
-                        if (detours.isEmpty()) continue
-                        attempts++
-                        totalAttempts++
-                        RoutingPlanLog.progress(
-                            tunnelAvoidProgressPct(
-                                rounds,
-                                maxRounds,
-                                attempts,
-                                maxAttemptsPerRound,
-                            ),
-                            ecoEnabled,
-                            detail =
-                                "tunnel_avoid_r${rounds}_a${attempts}_t$currentCount" +
-                                    "_off=${offsetM.toInt()}",
-                        )
-                        val merged =
-                            mergeViasByRouteOrder(
-                                startLat,
-                                startLon,
-                                endLat,
-                                endLon,
-                                vias,
-                                detours,
-                            )
-                        val alt =
-                            plan(
-                                context = context,
-                                profile = profile,
-                                startLat = startLat,
-                                startLon = startLon,
-                                endLat = endLat,
-                                endLon = endLon,
-                                vias = merged,
-                                avoidMotorways = avoidMotorways,
-                                avoidTolls = avoidTolls,
-                                avoidFerries = avoidFerries,
-                                turnsLocale = turnsLocale,
-                                bikeWetland = bikeWetland,
-                                avoidTunnels = true,
-                                applyDatexAvoidance = false,
-                                applyTunnelAvoidance = false,
-                                ecoEnabled = ecoEnabled,
-                            )
-                        // Nested plan() overwrites lastTurnsJson — restore on miss so
-                        // enrich annotates the accepted corridor, not the last trial.
-                        if (!alt.report.contains("PASS")) {
-                            lastTurnsJson = currentTurns
-                            continue
-                        }
-                        val afterCount = tunnelRunCount(lastTurnsJson)
-                        val altTurns = lastTurnsJson
-                        lastTurnsJson = currentTurns
-                        val changed =
-                            polylineFingerprint(alt.routePolyline) != beforeHash ||
-                                (alt.distanceKm - beforeKm).absoluteValue >= 0.25
-                        if (afterCount < bestCount && changed) {
-                            bestCount = afterCount
-                            best = alt
-                            bestTurns = altTurns
-                        }
-                        if (afterCount == 0 && changed) {
-                            best = alt
-                            bestCount = 0
-                            bestTurns = altTurns
-                            break@outer
-                        }
-                    }
-                }
+            var advanced = false
+            var step = escalation.next(lastPrimaryUnchanged = false)
+
+            fun commit(outcome: TunnelAttemptOutcome) {
+                current = outcome.result ?: return
+                currentTurns = outcome.turnsJson
+                lastTurnsJson = outcome.turnsJson
+                currentCount = outcome.count
+                stalledRounds = 0
+                advanced = true
+                if (outcome.spliced) spliceAccepts++
             }
-            val improved = best
-            if (improved == null || bestCount >= currentCount) {
+
+            fun fullReplan(detours: List<Pair<Double, Double>>): TunnelAttemptOutcome {
+                val merged =
+                    mergeViasByRouteOrder(
+                        startLat,
+                        startLon,
+                        endLat,
+                        endLon,
+                        vias,
+                        detours,
+                    )
+                val alt =
+                    plan(
+                        context = context,
+                        profile = profile,
+                        startLat = startLat,
+                        startLon = startLon,
+                        endLat = endLat,
+                        endLon = endLon,
+                        vias = merged,
+                        avoidMotorways = avoidMotorways,
+                        avoidTolls = avoidTolls,
+                        avoidFerries = avoidFerries,
+                        turnsLocale = turnsLocale,
+                        bikeWetland = bikeWetland,
+                        avoidTunnels = true,
+                        applyDatexAvoidance = false,
+                        applyTunnelAvoidance = false,
+                        ecoEnabled = ecoEnabled,
+                    )
+                if (!alt.report.contains("PASS")) {
+                    lastTurnsJson = currentTurns
+                    return TunnelAttemptOutcome(
+                        result = null,
+                        turnsJson = currentTurns,
+                        count = currentCount,
+                        routeChanged = false,
+                        nativeCalled = true,
+                        spliced = false,
+                    )
+                }
+                val afterCount = tunnelRunCount(lastTurnsJson)
+                val altTurns = lastTurnsJson
                 lastTurnsJson = currentTurns
-                stalledRounds++
-                // Hiking: one extra sweep after a stall; allow a second when the
-                // leftover is a short covered passage (micro-offset pass).
-                val stallBudget =
-                    if (hikingLike && maxRunM > 0.0 && maxRunM < 500.0) 3 else 2
-                if (!hikingLike || stalledRounds >= stallBudget) break
+                val changed =
+                    polylineFingerprint(alt.routePolyline) != beforeHash ||
+                        (alt.distanceKm - beforeKm).absoluteValue >= 0.25
+                return TunnelAttemptOutcome(
+                    result = alt,
+                    turnsJson = altTurns,
+                    count = afterCount,
+                    routeChanged = changed,
+                    nativeCalled = true,
+                    spliced = false,
+                )
+            }
+
+            // A short window on the leg that holds this run. A rejected splice
+            // falls through to the full replan; it does not end the search.
+            fun trySplice(detours: List<Pair<Double, Double>>): TunnelAttemptOutcome? {
+                if (!hikingLike || simulating) return null
+                val viaAlong = vias.map { (lat, lon) -> viaAlongMeters(current.routePolyline, lat, lon) }
+                val window =
+                    spliceWindowMeters(
+                        runStartM = target.startM,
+                        runEndM = target.endM,
+                        routeLengthM = current.distanceKm * 1000.0,
+                        viaAlongM = viaAlong,
+                    ) ?: return null
+                val samples = samplePolylineKm(current.routePolyline)
+                val (w0, w1) = window
+                val (sLat, sLon) = interpolateAtKm(samples, w0 / 1000.0)
+                val (eLat, eLon) = interpolateAtKm(samples, w1 / 1000.0)
+                val windowRoute =
+                    plan(
+                        context = context,
+                        profile = profile,
+                        startLat = sLat,
+                        startLon = sLon,
+                        endLat = eLat,
+                        endLon = eLon,
+                        vias = detours,
+                        avoidMotorways = avoidMotorways,
+                        avoidTolls = avoidTolls,
+                        avoidFerries = avoidFerries,
+                        turnsLocale = turnsLocale,
+                        bikeWetland = bikeWetland,
+                        avoidTunnels = true,
+                        applyDatexAvoidance = false,
+                        applyTunnelAvoidance = false,
+                        ecoEnabled = ecoEnabled,
+                    )
+                val windowTurns = lastTurnsJson
+                lastTurnsJson = currentTurns
+                if (!windowRoute.report.contains("PASS") || windowRoute.distanceKm > 80.0) {
+                    return null
+                }
+                val spliced =
+                    spliceTunnelWindow(
+                        polyline = current.routePolyline,
+                        turnsJson = currentTurns,
+                        windowStartM = w0,
+                        windowEndM = w1,
+                        windowPolyline = windowRoute.routePolyline,
+                        windowTurnsJson = windowTurns,
+                        windowLengthM = windowRoute.distanceKm * 1000.0,
+                    ) ?: return null
+                if (!acceptTunnelSplice(currentTurns, spliced.turnsJson)) return null
+                val removed = (w1 - w0).coerceAtLeast(0.0)
+                val oldM = (current.distanceKm * 1000.0).coerceAtLeast(1.0)
+                val kept = (oldM - removed).coerceAtLeast(0.0)
+                val timeS =
+                    current.etaMinutes * 60.0 * (kept / oldM) + windowRoute.etaMinutes * 60.0
+                val updated =
+                    corridorWithSplicedGeometry(
+                        profile = profile,
+                        endLat = endLat,
+                        endLon = endLon,
+                        base = current,
+                        spliced = spliced,
+                        timeS = timeS,
+                    )
+                val afterCount = tunnelRunCount(spliced.turnsJson)
+                val changed =
+                    polylineFingerprint(updated.routePolyline) != beforeHash ||
+                        (updated.distanceKm - beforeKm).absoluteValue >= 0.25
+                val decision = tunnelRoundStep(currentCount, afterCount, changed)
+                if (decision == TunnelRoundStep.KEEP_TRYING) return null
+                return TunnelAttemptOutcome(
+                    result = updated,
+                    turnsJson = spliced.turnsJson,
+                    count = afterCount,
+                    routeChanged = changed,
+                    nativeCalled = true,
+                    spliced = true,
+                )
+            }
+
+            while (step != null && attempts < maxAttemptsPerRound) {
+                val (offsetM, side) = step
+                val detours =
+                    anchors.mapNotNull { (lat, lon) ->
+                        detourViaForBlock(pts, lat, lon, offsetM, side)
+                    }
+                if (detours.isEmpty()) {
+                    step = escalation.next(lastPrimaryUnchanged = false)
+                    continue
+                }
+                val fingerprint = detourViaFingerprint(detours)
+                if (skipKnownDetour(seenDetours, fingerprint)) {
+                    Log.i(TAG, "mwm tunnel avoid skip seen detour off=${offsetM.toInt()} side=${side.toInt()}")
+                    step = escalation.next(lastPrimaryUnchanged = false)
+                    continue
+                }
+                val spliced = trySplice(detours)
+                val outcome = spliced ?: fullReplan(detours)
+                if (outcome.nativeCalled) {
+                    attempts++
+                    totalAttempts++
+                    RoutingPlanLog.progress(
+                        tunnelAvoidProgressPct(
+                            rounds,
+                            maxRounds,
+                            attempts,
+                            maxAttemptsPerRound,
+                        ),
+                        ecoEnabled,
+                        detail =
+                            "tunnel_avoid_r${rounds}_a${attempts}_t$currentCount" +
+                                "_off=${offsetM.toInt()}",
+                    )
+                }
+                val decision = tunnelRoundStep(currentCount, outcome.count, outcome.routeChanged)
+                if (decision != TunnelRoundStep.KEEP_TRYING && outcome.result != null) {
+                    val beforeCount = currentCount
+                    commit(outcome)
+                    Log.i(
+                        TAG,
+                        "mwm tunnel avoid advance round=$rounds $beforeCount->${outcome.count} " +
+                            "splice=${outcome.spliced} off=${offsetM.toInt()}",
+                    )
+                    break
+                }
+                step =
+                    escalation.next(
+                        lastPrimaryUnchanged = side == primarySide && !outcome.routeChanged,
+                    )
+            }
+            if (advanced) {
+                if (currentCount == 0) break
                 continue
             }
-            stalledRounds = 0
-            current = improved
-            currentTurns = bestTurns
-            lastTurnsJson = bestTurns
-            currentCount = bestCount
-            if (currentCount == 0) break
+            lastTurnsJson = currentTurns
+            stalledRounds++
+            // Hiking: one extra sweep after a stall; allow a second when the
+            // leftover is a short covered passage (micro-offset pass).
+            val stallBudget = if (hikingLike && maxRunM > 0.0 && maxRunM < 500.0) 3 else 2
+            if (!hikingLike || stalledRounds >= stallBudget) break
         }
 
         lastTurnsJson = currentTurns
         val leftoverFp = tunnelFpSummary(currentTurns)
+        val cache = tunnelLegCache
+        val cacheStats =
+            "leg_cache_hits=${cache?.hits ?: 0}; leg_cache_misses=${cache?.misses ?: 0}; " +
+                "splice_accepts=$spliceAccepts"
         if (currentCount == 0) {
             val evidence =
                 "tunnel_mwm=reroute_apply; tunnels_before=$initialCount; " +
                     "tunnels_after=0; midpoints=$totalMids; " +
-                    "attempts=$totalAttempts; rounds=$rounds\n"
+                    "attempts=$totalAttempts; rounds=$rounds; $cacheStats\n"
             current.report = current.report.trimEnd() + "\n" + evidence
             Log.i(
                 TAG,
@@ -950,7 +1079,8 @@ object MwmProductionPlanner {
         val evidence =
             "tunnel_mwm=reroute_incomplete; tunnels_before=$initialCount; " +
                 "tunnels_after=$currentCount; midpoints=$totalMids; " +
-                "attempts=$totalAttempts; rounds=$rounds; leftover_fp=$leftoverFp\n"
+                "attempts=$totalAttempts; rounds=$rounds; leftover_fp=$leftoverFp; " +
+                "$cacheStats\n"
         val target = if (currentCount < initialCount) current else base
         target.report = target.report.trimEnd() + "\n" + evidence
         if (hikingLike) {
@@ -1079,6 +1209,58 @@ object MwmProductionPlanner {
         }
         flush()
         return anchors
+    }
+
+    /**
+     * The longest contiguous tunnel run, with entrance / mid / exit anchors.
+     * The soft-avoid budget is spent here instead of a rotating window from
+     * the start of the anchor list. Ties keep the earlier run.
+     */
+    internal fun longestTunnelRun(
+        turnsJson: String,
+        polyline: String,
+        fractions: List<Double> = listOf(0.15, 0.5, 0.85),
+    ): TunnelRunTarget? {
+        val samples = samplePolylineKm(polyline)
+        if (samples.size < 2) return null
+        val source = runCatching { JSONArray(turnsJson.ifBlank { "[]" }) }.getOrElse { JSONArray() }
+        var alongKm = 0.0
+        var runStart = -1.0
+        var best: TunnelRunTarget? = null
+
+        fun consider() {
+            if (runStart < 0.0) return
+            val runEnd = alongKm
+            val lenKm = (runEnd - runStart).coerceAtLeast(0.0)
+            val anchors =
+                fractions.map { fraction ->
+                    interpolateAtKm(samples, runStart + lenKm * fraction.coerceIn(0.0, 1.0))
+                }
+            val candidate =
+                TunnelRunTarget(
+                    lengthM = lenKm * 1000.0,
+                    startM = runStart * 1000.0,
+                    endM = runEnd * 1000.0,
+                    anchors = anchors,
+                )
+            val previous = best
+            if (previous == null || candidate.lengthM > previous.lengthM) best = candidate
+            runStart = -1.0
+        }
+        for (i in 0 until source.length()) {
+            val o = source.optJSONObject(i) ?: continue
+            val isTunnel = o.optBoolean("is_tunnel", false)
+            val distKm = (o.optDouble("dist_m", 0.0) / 1000.0).coerceAtLeast(0.0)
+            if (isTunnel) {
+                if (runStart < 0.0) runStart = alongKm
+                alongKm += distKm
+            } else {
+                consider()
+                alongKm += distKm
+            }
+        }
+        consider()
+        return best
     }
 
     /** Compact `street@km` fingerprints for leftover tunnel logging / report evidence. */
@@ -1274,6 +1456,142 @@ object MwmProductionPlanner {
         }
 
     private fun polylineFingerprint(polyline: String): String = "%08x:len=%d".format(Locale.US, polyline.hashCode(), polyline.length)
+
+    /**
+     * One from–to leg. Hits reuse points, turns, length, and travel time.
+     * [comapsSessionRoute] is only called on a miss, and only from this
+     * planner thread — never in parallel.
+     */
+    private fun routeLegCached(
+        flags: TunnelLegFlags,
+        comapsProfile: FfiComapsProfile,
+        fromLat: Double,
+        fromLon: Double,
+        toLat: Double,
+        toLon: Double,
+        wetlandHook: Boolean,
+    ): FfiComapsRoute {
+        val cache = tunnelLegCache
+        val key = tunnelLegCacheKey(fromLat, fromLon, toLat, toLon, flags)
+        if (cache != null) {
+            val hit = cache.get(key)
+            if (hit != null) {
+                Log.i(
+                    TAG,
+                    "mwm tunnel leg cache hit " +
+                        "${"%.4f".format(Locale.US, fromLat)},${"%.4f".format(Locale.US, fromLon)}->" +
+                        "${"%.4f".format(Locale.US, toLat)},${"%.4f".format(Locale.US, toLon)} " +
+                        "hits=${cache.hits} misses=${cache.misses}",
+                )
+                return hit
+            }
+        }
+        val routed =
+            comapsSessionRoute(
+                profile = comapsProfile,
+                fromLat = fromLat,
+                fromLon = fromLon,
+                toLat = toLat,
+                toLon = toLon,
+                wetlandHook = wetlandHook,
+            )
+        if (cache != null && routed.code == FfiComapsRouteCode.OK) {
+            cache.put(key, routed)
+            Log.i(
+                TAG,
+                "mwm tunnel leg cache store " +
+                    "${"%.4f".format(Locale.US, fromLat)},${"%.4f".format(Locale.US, fromLon)}->" +
+                    "${"%.4f".format(Locale.US, toLat)},${"%.4f".format(Locale.US, toLon)} " +
+                    "hits=${cache.hits} misses=${cache.misses}",
+            )
+        }
+        return routed
+    }
+
+    private fun tunnelVehicleKey(
+        profile: TravelProfile,
+        stored: FfiVehicleLimits?,
+    ): String {
+        if (!VehicleRestrictionUi.appliesStoredLimits(profile) || stored == null) return "none"
+        return listOf(
+            stored.heightM,
+            stored.widthM,
+            stored.lengthM,
+            stored.totalWeightKg,
+            stored.axleWeightKg,
+            stored.bogieWeightKg,
+        ).joinToString(",") { value ->
+            if (value == null) "-" else String.format(Locale.US, "%.3f", value)
+        }
+    }
+
+    private fun viaAlongMeters(
+        polyline: String,
+        lat: Double,
+        lon: Double,
+    ): Double {
+        val samples = samplePolylineKm(polyline)
+        if (samples.isEmpty()) return 0.0
+        var bestKm = samples.first().third
+        var bestD = Double.MAX_VALUE
+        for (sample in samples) {
+            val d = haversineM(sample.first, sample.second, lat, lon)
+            if (d < bestD) {
+                bestD = d
+                bestKm = sample.third
+            }
+        }
+        return bestKm * 1000.0
+    }
+
+    /** Keep the accepted corridor's report and swap in the spliced geometry. */
+    private fun corridorWithSplicedGeometry(
+        profile: TravelProfile,
+        endLat: Double,
+        endLon: Double,
+        base: CorridorRouteResult,
+        spliced: SplicedGeometry,
+        timeS: Double,
+    ): CorridorRouteResult {
+        val points =
+            decodePolylinePairs(spliced.polyline).map { (lat, lon) ->
+                FfiComapsLatLon(lat, lon)
+            }
+        val route =
+            FfiComapsRoute(
+                code = FfiComapsRouteCode.OK,
+                lengthM = spliced.lengthM,
+                timeS = timeS,
+                buildTimeS = 0.0,
+                points = points,
+                errorMessage = null,
+                turnsJson = spliced.turnsJson,
+                instructionsJson = spliced.turnsJson,
+                ascentM = 0.0,
+                descentM = 0.0,
+                elevationJson = "[]",
+                routerMode = "tunnel_splice",
+                speedLimitsJson = "[]",
+            )
+        val built = toCorridor(route, endLat, endLon, profile, null)
+        val report =
+            base.report
+                .replace(
+                    Regex("distance_km=[-0-9.]+"),
+                    "distance_km=${"%.3f".format(Locale.US, built.distanceKm)}",
+                ).replace(
+                    Regex("eta_minutes=[-0-9.]+"),
+                    "eta_minutes=${"%.1f".format(Locale.US, built.etaMinutes)}",
+                )
+        return base.copy(
+            report = report,
+            distanceKm = built.distanceKm,
+            etaMinutes = built.etaMinutes,
+            routePolyline = built.routePolyline,
+            maneuversJson = built.maneuversJson,
+            simSamplesJson = built.simSamplesJson,
+        )
+    }
 
     /**
      * MWM plans previously skipped DATEX / soft-break / nearby-attractions that the
