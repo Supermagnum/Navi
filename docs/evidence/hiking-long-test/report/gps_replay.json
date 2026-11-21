@@ -1,0 +1,30 @@
+{
+  "ok": true,
+  "cabins": [
+    {
+      "name": "Fondsbu",
+      "kind": "cabin",
+      "lat": 61.3751863,
+      "lon": 8.2973974,
+      "passed_at_lat": 61.37536070786402,
+      "passed_at_lon": 8.299651952830345,
+      "sample_i": 356
+    },
+    {
+      "name": "Hjelle_motell",
+      "kind": "seed",
+      "lat": 61.9146019,
+      "lon": 7.1116076,
+      "passed_at_lat": 61.91681864864833,
+      "passed_at_lon": 7.132008575886545,
+      "sample_i": 1356
+    },
+    {
+      "name": "Nashaugsætra",
+      "kind": "seed",
+      "lat": 60.8835,
+      "lon": 9.972
+    }
+  ],
+  "peak_pss_kb": 549326
+}

@@ -1,270 +1,180 @@
-12:40:04 hiking host start out=/tmp/hiking-long-campaign departure=2026-06-01T08:00:00
-12:40:04 pulled files/long-trip-ui-report/hiking-report.json
-12:40:04 polyline too short (0 chars)
-12:40:04 pulled files/long-trip-ui-report/hiking-report.json
-12:40:04 waiting plan… pts=0 planned=False dist=0.0
-12:40:06 LOGCAT_ALERT 11-20 12:40:05.708 29136 29136 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
-12:40:06 LOGCAT_ALERT 11-20 12:40:05.710 29136 29136 I AndroidRuntime: Using default boot image
-12:40:06 LOGCAT_ALERT 11-20 12:40:05.710 29136 29136 I AndroidRuntime: Leaving lock profiling enabled
-12:40:06 LOGCAT_ALERT 11-20 12:40:05.787 29136 29136 D AndroidRuntime: Calling main entry com.android.commands.am.Am
-12:40:09 pulled files/long-trip-ui-report/hiking-report.json
-12:40:09 polyline too short (0 chars)
-12:40:14 pulled files/long-trip-ui-report/hiking-report.json
-12:40:14 polyline too short (0 chars)
-12:40:19 pulled files/long-trip-ui-report/hiking-report.json
-12:40:19 polyline too short (0 chars)
-12:40:24 pulled files/hiking-long-ui/report.json
-12:40:24 polyline too short (0 chars)
-12:40:29 pulled files/hiking-long-ui/report.json
-12:40:30 polyline too short (0 chars)
-12:40:35 pulled files/hiking-long-ui/report.json
-12:40:35 polyline too short (0 chars)
-12:40:35 meminfo TOTAL_PSS_kb=430184
-12:40:35 waiting plan… pts=0 planned=False dist=0.0
-12:40:40 pulled files/hiking-long-ui/report.json
-12:40:40 polyline too short (0 chars)
-12:40:45 pulled files/hiking-long-ui/report.json
-12:40:45 polyline too short (0 chars)
-12:40:49 meminfo TOTAL_PSS_kb=431712
-12:40:49 pulled files/hiking-long-ui/report.json
-12:40:50 pulled files/hiking-long-ui/report.json
-12:40:50 polyline too short (0 chars)
-12:40:55 pulled files/hiking-long-ui/report.json
-12:40:55 polyline too short (0 chars)
-12:41:00 pulled files/hiking-long-ui/report.json
-12:41:01 polyline too short (0 chars)
-12:41:06 pulled files/hiking-long-ui/report.json
-12:41:06 polyline too short (0 chars)
-12:41:06 meminfo TOTAL_PSS_kb=410239
-12:41:06 waiting plan… pts=0 planned=False dist=0.0
-12:41:11 pulled files/hiking-long-ui/report.json
-12:41:11 polyline too short (0 chars)
-12:41:16 pulled files/hiking-long-ui/report.json
-12:41:16 polyline too short (0 chars)
-12:41:21 pulled files/hiking-long-ui/report.json
-12:41:21 polyline too short (0 chars)
-12:41:26 pulled files/hiking-long-ui/report.json
-12:41:26 polyline too short (0 chars)
-12:41:31 pulled files/hiking-long-ui/report.json
-12:41:31 polyline too short (0 chars)
-12:41:34 meminfo TOTAL_PSS_kb=428217
-12:41:34 pulled files/hiking-long-ui/report.json
-12:41:36 pulled files/hiking-long-ui/report.json
-12:41:37 polyline too short (0 chars)
-12:41:37 meminfo TOTAL_PSS_kb=429229
-12:41:37 waiting plan… pts=0 planned=False dist=0.0
-12:41:42 pulled files/hiking-long-ui/report.json
-12:41:42 polyline too short (0 chars)
-12:41:47 pulled files/hiking-long-ui/report.json
-12:41:47 polyline too short (0 chars)
-12:41:52 pulled files/hiking-long-ui/report.json
-12:41:52 polyline too short (0 chars)
-12:41:57 pulled files/hiking-long-ui/report.json
-12:41:57 polyline too short (0 chars)
-12:42:02 pulled files/hiking-long-ui/report.json
-12:42:03 polyline too short (0 chars)
-12:42:08 pulled files/hiking-long-ui/report.json
-12:42:08 polyline too short (0 chars)
-12:42:08 meminfo TOTAL_PSS_kb=425633
-12:42:08 waiting plan… pts=0 planned=False dist=0.0
-12:42:13 pulled files/hiking-long-ui/report.json
-12:42:13 polyline too short (0 chars)
-12:42:18 pulled files/hiking-long-ui/report.json
-12:42:18 polyline too short (0 chars)
-12:42:19 meminfo TOTAL_PSS_kb=426033
-12:42:19 pulled files/hiking-long-ui/report.json
-12:42:23 pulled files/hiking-long-ui/report.json
-12:42:23 polyline too short (0 chars)
-12:42:28 pulled files/hiking-long-ui/report.json
-12:42:28 polyline too short (0 chars)
-12:42:33 pulled files/hiking-long-ui/report.json
-12:42:34 polyline too short (0 chars)
-12:42:39 pulled files/hiking-long-ui/report.json
-12:42:39 polyline too short (0 chars)
-12:42:39 meminfo TOTAL_PSS_kb=432585
-12:42:39 waiting plan… pts=0 planned=False dist=0.0
-12:42:44 pulled files/hiking-long-ui/report.json
-12:42:44 polyline too short (0 chars)
-12:42:49 pulled files/hiking-long-ui/report.json
-12:42:49 polyline too short (0 chars)
-12:42:54 pulled files/hiking-long-ui/report.json
-12:42:54 polyline too short (0 chars)
-12:42:59 pulled files/hiking-long-ui/report.json
-12:42:59 polyline too short (0 chars)
-12:43:04 pulled files/hiking-long-ui/report.json
-12:43:05 polyline too short (0 chars)
-12:43:05 meminfo TOTAL_PSS_kb=432073
-12:43:05 pulled files/hiking-long-ui/report.json
-12:43:10 pulled files/hiking-long-ui/report.json
-12:43:10 polyline too short (0 chars)
-12:43:10 meminfo TOTAL_PSS_kb=430865
-12:43:10 waiting plan… pts=0 planned=False dist=0.0
-12:43:15 pulled files/hiking-long-ui/report.json
-12:43:15 polyline too short (0 chars)
-12:43:20 pulled files/hiking-long-ui/report.json
-12:43:20 polyline too short (0 chars)
-12:43:25 pulled files/hiking-long-ui/report.json
-12:43:25 polyline too short (0 chars)
-12:43:30 pulled files/hiking-long-ui/report.json
-12:43:30 polyline too short (0 chars)
-12:43:35 pulled files/hiking-long-ui/report.json
-12:43:35 polyline too short (0 chars)
-12:43:40 pulled files/hiking-long-ui/report.json
-12:43:41 polyline too short (0 chars)
-12:43:41 meminfo TOTAL_PSS_kb=435277
-12:43:41 waiting plan… pts=0 planned=False dist=0.0
-12:43:46 pulled files/hiking-long-ui/report.json
-12:43:46 polyline too short (0 chars)
-12:43:50 meminfo TOTAL_PSS_kb=435741
-12:43:50 pulled files/hiking-long-ui/report.json
-12:43:51 pulled files/hiking-long-ui/report.json
-12:43:51 polyline too short (0 chars)
-12:43:56 pulled files/hiking-long-ui/report.json
-12:43:56 polyline too short (0 chars)
-12:44:01 pulled files/hiking-long-ui/report.json
-12:44:01 polyline too short (0 chars)
-12:44:06 pulled files/hiking-long-ui/report.json
-12:44:07 polyline too short (0 chars)
-12:44:12 pulled files/hiking-long-ui/report.json
-12:44:12 polyline too short (0 chars)
-12:44:12 meminfo TOTAL_PSS_kb=431213
-12:44:12 waiting plan… pts=0 planned=False dist=0.0
-12:44:17 pulled files/hiking-long-ui/report.json
-12:44:17 polyline too short (0 chars)
-12:44:22 pulled files/hiking-long-ui/report.json
-12:44:22 polyline too short (0 chars)
-12:44:27 pulled files/hiking-long-ui/report.json
-12:44:27 polyline too short (0 chars)
-12:44:32 pulled files/hiking-long-ui/report.json
-12:44:32 polyline too short (0 chars)
-12:44:35 meminfo TOTAL_PSS_kb=553428
-12:44:35 pulled files/hiking-long-ui/report.json
-12:44:37 pulled files/hiking-long-ui/report.json
-12:44:38 polyline too short (0 chars)
-12:44:43 pulled files/hiking-long-ui/report.json
-12:44:43 polyline too short (0 chars)
-12:44:43 meminfo TOTAL_PSS_kb=756794
-12:44:43 waiting plan… pts=0 planned=False dist=0.0
-12:44:48 pulled files/hiking-long-ui/report.json
-12:44:48 polyline too short (0 chars)
-12:44:53 pulled files/hiking-long-ui/report.json
-12:44:53 polyline too short (0 chars)
-12:44:58 pulled files/hiking-long-ui/report.json
-12:44:58 polyline too short (0 chars)
-12:45:03 pulled files/hiking-long-ui/report.json
-12:45:04 polyline too short (0 chars)
-12:45:09 pulled files/hiking-long-ui/report.json
-12:45:09 polyline too short (0 chars)
-12:45:14 pulled files/hiking-long-ui/report.json
-12:45:14 polyline too short (0 chars)
-12:45:14 meminfo TOTAL_PSS_kb=774221
-12:45:14 waiting plan… pts=0 planned=False dist=0.0
-12:45:19 pulled files/hiking-long-ui/report.json
-12:45:19 polyline too short (0 chars)
-12:45:21 meminfo TOTAL_PSS_kb=777177
-12:45:21 pulled files/hiking-long-ui/report.json
-12:45:24 pulled files/hiking-long-ui/report.json
-12:45:24 polyline too short (0 chars)
-12:45:29 pulled files/hiking-long-ui/report.json
-12:45:29 polyline too short (0 chars)
-12:45:35 pulled files/hiking-long-ui/report.json
-12:45:35 polyline too short (0 chars)
-12:45:40 pulled files/hiking-long-ui/report.json
-12:45:40 polyline too short (0 chars)
-12:45:45 pulled files/hiking-long-ui/report.json
-12:45:45 polyline too short (0 chars)
-12:45:45 meminfo TOTAL_PSS_kb=1032042
-12:45:45 waiting plan… pts=0 planned=False dist=0.0
-12:45:50 pulled files/hiking-long-ui/report.json
-12:45:50 polyline too short (0 chars)
-12:45:55 pulled files/hiking-long-ui/report.json
-12:45:55 polyline too short (0 chars)
-12:46:00 pulled files/hiking-long-ui/report.json
-12:46:00 polyline too short (0 chars)
-12:46:05 pulled files/hiking-long-ui/report.json
-12:46:05 polyline too short (0 chars)
-12:46:06 meminfo TOTAL_PSS_kb=1093414
-12:46:06 pulled files/hiking-long-ui/report.json
-12:46:11 pulled files/hiking-long-ui/report.json
-12:46:11 polyline too short (0 chars)
-12:46:16 pulled files/hiking-long-ui/report.json
-12:46:16 polyline too short (0 chars)
-12:46:16 meminfo TOTAL_PSS_kb=1167982
-12:46:16 waiting plan… pts=0 planned=False dist=0.0
-12:46:21 pulled files/hiking-long-ui/report.json
-12:46:21 polyline too short (0 chars)
-12:46:26 pulled files/hiking-long-ui/report.json
-12:46:26 polyline too short (0 chars)
-12:46:31 pulled files/hiking-long-ui/report.json
-12:46:31 polyline too short (0 chars)
-12:46:36 pulled files/hiking-long-ui/report.json
-12:46:37 polyline too short (0 chars)
-12:46:42 pulled files/hiking-long-ui/report.json
-12:46:42 polyline too short (0 chars)
-12:46:47 pulled files/hiking-long-ui/report.json
-12:46:47 polyline too short (0 chars)
-12:46:47 meminfo TOTAL_PSS_kb=1293138
-12:46:47 waiting plan… pts=0 planned=False dist=0.0
-12:46:51 meminfo TOTAL_PSS_kb=1368210
-12:46:51 pulled files/hiking-long-ui/report.json
-12:46:52 pulled files/hiking-long-ui/report.json
-12:46:52 polyline too short (0 chars)
-12:46:57 pulled files/hiking-long-ui/report.json
-12:46:57 polyline too short (0 chars)
-12:47:02 pulled files/hiking-long-ui/report.json
-12:47:03 polyline too short (0 chars)
-12:47:08 pulled files/hiking-long-ui/report.json
-12:47:08 host polyline pts=21437
-12:47:13 pulled files/hiking-long-ui/report.json
-12:47:13 host polyline pts=21437
-12:47:13 plan ready pts=21437 planned=True dist=430.38112529914787
-12:47:13 break/cabin pois for screenshots: 8
-12:47:13 gps_replay start n=1262 of 21437 departure=2026-06-01T08:00:00
-12:47:13 meminfo TOTAL_PSS_kb=841211
-12:47:18 meminfo TOTAL_PSS_kb=832167
-12:47:23 meminfo TOTAL_PSS_kb=834051
-12:47:28 meminfo TOTAL_PSS_kb=835047
-12:47:33 meminfo TOTAL_PSS_kb=830175
-12:47:36 meminfo TOTAL_PSS_kb=829935
-12:47:37 pulled files/hiking-long-ui/report.json
-12:47:38 meminfo TOTAL_PSS_kb=829455
-12:47:43 meminfo TOTAL_PSS_kb=830015
-12:47:48 meminfo TOTAL_PSS_kb=828023
-12:47:53 meminfo TOTAL_PSS_kb=828143
-12:47:58 meminfo TOTAL_PSS_kb=827971
-12:48:03 meminfo TOTAL_PSS_kb=829431
-12:48:08 meminfo TOTAL_PSS_kb=832591
-12:48:13 meminfo TOTAL_PSS_kb=830743
-12:48:18 meminfo TOTAL_PSS_kb=830607
-12:48:22 meminfo TOTAL_PSS_kb=830539
-12:48:22 pulled files/hiking-long-ui/report.json
-12:48:23 meminfo TOTAL_PSS_kb=828479
-12:48:28 meminfo TOTAL_PSS_kb=831975
-12:48:32 meminfo TOTAL_PSS_kb=830419
-12:48:37 meminfo TOTAL_PSS_kb=829391
-12:48:42 meminfo TOTAL_PSS_kb=828831
-12:48:47 meminfo TOTAL_PSS_kb=829035
-12:48:52 meminfo TOTAL_PSS_kb=828811
-12:48:57 meminfo TOTAL_PSS_kb=828771
-12:49:02 meminfo TOTAL_PSS_kb=830459
-12:49:07 meminfo TOTAL_PSS_kb=831811
-12:49:07 meminfo TOTAL_PSS_kb=840899
-12:49:07 pulled files/hiking-long-ui/report.json
-12:49:12 meminfo TOTAL_PSS_kb=829591
-12:49:17 meminfo TOTAL_PSS_kb=833595
-12:49:21 screenshot DNT Sandhaug_Turisthytte
-12:49:21 DNT/rest passed Sandhaug_Turisthytte @60.20178,7.52126
-12:49:22 meminfo TOTAL_PSS_kb=831879
-12:49:27 meminfo TOTAL_PSS_kb=833471
-12:49:32 meminfo TOTAL_PSS_kb=830307
-12:49:37 meminfo TOTAL_PSS_kb=828799
-12:49:42 meminfo TOTAL_PSS_kb=828971
-12:49:47 meminfo TOTAL_PSS_kb=828851
-12:49:48 screenshot DNT Lothepus_camping
-12:49:48 DNT/rest passed Lothepus_camping @60.10856,6.55528
-12:49:51 screenshot DNT Nashaugsætra
-12:49:51 gps_replay done cabins=['Lothepus_camping', 'Nashaugsætra', 'Sandhaug_Turisthytte'] peak_pss_kb=841211
-12:49:51 pulled files/hiking-long-ui/report.json
-12:49:51 host polyline pts=21437
-12:49:51 meminfo TOTAL_PSS_kb=828626
-12:49:51 host done plan_ready=True alerts=4 peak_pss_kb=828626
+11:43:33 hiking host start out=/tmp/hiking-fondsbu-hjelle-campaign departure=2026-06-01T08:00:00
+11:43:34 meminfo TOTAL_PSS_kb=0
+11:43:34 pulled SD report
+11:43:34 pulled SD report
+11:43:34 polyline too short (0 chars)
+11:43:34 meminfo TOTAL_PSS_kb=0
+11:43:34 waiting plan… pts=0 planned=True dist=338.8987968347014
+11:43:39 pulled SD report
+11:43:39 polyline too short (0 chars)
+11:43:44 pulled SD report
+11:43:44 polyline too short (0 chars)
+11:43:50 no device report yet
+11:43:50 polyline too short (0 chars)
+11:43:55 pulled files/hiking-long-ui/report.json
+11:43:55 polyline too short (0 chars)
+11:44:00 pulled files/hiking-long-ui/report.json
+11:44:00 polyline too short (0 chars)
+11:44:05 pulled files/hiking-long-ui/report.json
+11:44:06 polyline too short (0 chars)
+11:44:06 meminfo TOTAL_PSS_kb=357284
+11:44:06 waiting plan… pts=0 planned=False dist=0.0
+11:44:11 pulled files/hiking-long-ui/report.json
+11:44:11 polyline too short (0 chars)
+11:44:16 pulled files/hiking-long-ui/report.json
+11:44:16 polyline too short (0 chars)
+11:44:19 meminfo TOTAL_PSS_kb=359371
+11:44:19 pulled files/hiking-long-ui/report.json
+11:44:21 pulled files/hiking-long-ui/report.json
+11:44:21 polyline too short (0 chars)
+11:44:26 pulled files/hiking-long-ui/report.json
+11:44:27 polyline too short (0 chars)
+11:44:32 pulled files/hiking-long-ui/report.json
+11:44:32 polyline too short (0 chars)
+11:44:37 pulled files/hiking-long-ui/report.json
+11:44:37 polyline too short (0 chars)
+11:44:37 LOGCAT_ALERT 11-21 11:44:36.981   606  1606 I ActivityManager: Process com.google.android.apps.safetyhub (pid 17960) has died: cch+65 CEM
+11:44:37 meminfo TOTAL_PSS_kb=362251
+11:44:37 waiting plan… pts=0 planned=False dist=0.0
+11:44:42 pulled files/hiking-long-ui/report.json
+11:44:43 polyline too short (0 chars)
+11:44:48 pulled files/hiking-long-ui/report.json
+11:44:48 polyline too short (0 chars)
+11:44:53 pulled files/hiking-long-ui/report.json
+11:44:53 polyline too short (0 chars)
+11:44:58 pulled files/hiking-long-ui/report.json
+11:44:58 polyline too short (0 chars)
+11:45:03 pulled files/hiking-long-ui/report.json
+11:45:04 polyline too short (0 chars)
+11:45:04 meminfo TOTAL_PSS_kb=365215
+11:45:04 pulled files/hiking-long-ui/report.json
+11:45:09 pulled files/hiking-long-ui/report.json
+11:45:09 polyline too short (0 chars)
+11:45:09 meminfo TOTAL_PSS_kb=364479
+11:45:09 waiting plan… pts=0 planned=False dist=0.0
+11:45:14 pulled files/hiking-long-ui/report.json
+11:45:14 polyline too short (0 chars)
+11:45:19 pulled files/hiking-long-ui/report.json
+11:45:20 polyline too short (0 chars)
+11:45:25 pulled files/hiking-long-ui/report.json
+11:45:25 polyline too short (0 chars)
+11:45:30 pulled files/hiking-long-ui/report.json
+11:45:30 polyline too short (0 chars)
+11:45:35 pulled files/hiking-long-ui/report.json
+11:45:35 polyline too short (0 chars)
+11:45:40 pulled files/hiking-long-ui/report.json
+11:45:41 polyline too short (0 chars)
+11:45:41 meminfo TOTAL_PSS_kb=362659
+11:45:41 waiting plan… pts=0 planned=False dist=0.0
+11:45:46 pulled files/hiking-long-ui/report.json
+11:45:46 polyline too short (0 chars)
+11:45:49 meminfo TOTAL_PSS_kb=361639
+11:45:49 pulled files/hiking-long-ui/report.json
+11:45:51 pulled files/hiking-long-ui/report.json
+11:45:51 polyline too short (0 chars)
+11:45:56 pulled files/hiking-long-ui/report.json
+11:45:56 polyline too short (0 chars)
+11:46:01 pulled files/hiking-long-ui/report.json
+11:46:02 polyline too short (0 chars)
+11:46:07 pulled files/hiking-long-ui/report.json
+11:46:07 polyline too short (0 chars)
+11:46:12 pulled files/hiking-long-ui/report.json
+11:46:12 polyline too short (0 chars)
+11:46:12 meminfo TOTAL_PSS_kb=470285
+11:46:13 waiting plan… pts=0 planned=False dist=0.0
+11:46:18 pulled files/hiking-long-ui/report.json
+11:46:18 polyline too short (0 chars)
+11:46:23 pulled files/hiking-long-ui/report.json
+11:46:23 polyline too short (0 chars)
+11:46:28 pulled files/hiking-long-ui/report.json
+11:46:28 polyline too short (0 chars)
+11:46:33 pulled files/hiking-long-ui/report.json
+11:46:34 polyline too short (0 chars)
+11:46:35 meminfo TOTAL_PSS_kb=503416
+11:46:35 pulled files/hiking-long-ui/report.json
+11:46:39 pulled files/hiking-long-ui/report.json
+11:46:39 polyline too short (0 chars)
+11:46:44 pulled files/hiking-long-ui/report.json
+11:46:44 polyline too short (0 chars)
+11:46:44 meminfo TOTAL_PSS_kb=516211
+11:46:44 waiting plan… pts=0 planned=False dist=0.0
+11:46:49 pulled files/hiking-long-ui/report.json
+11:46:50 polyline too short (0 chars)
+11:46:55 pulled files/hiking-long-ui/report.json
+11:46:55 polyline too short (0 chars)
+11:47:00 pulled files/hiking-long-ui/report.json
+11:47:00 host polyline pts=6870
+11:47:05 pulled files/hiking-long-ui/report.json
+11:47:05 host polyline pts=6870
+11:47:05 plan ready pts=6870 planned=False dist=244.90524828089738
+11:47:06 break/cabin pois for screenshots: 8
+11:47:06 gps_replay start n=1375 of 6870 departure=2026-06-01T08:00:00
+11:47:06 meminfo TOTAL_PSS_kb=549326
+11:47:08 meminfo TOTAL_PSS_kb=535982
+11:47:09 meminfo TOTAL_PSS_kb=534842
+11:47:11 meminfo TOTAL_PSS_kb=534426
+11:47:13 meminfo TOTAL_PSS_kb=534666
+11:47:15 meminfo TOTAL_PSS_kb=534610
+11:47:17 meminfo TOTAL_PSS_kb=534662
+11:47:18 meminfo TOTAL_PSS_kb=534650
+11:47:20 meminfo TOTAL_PSS_kb=534546
+11:47:20 pulled files/hiking-long-ui/report.json
+11:47:20 meminfo TOTAL_PSS_kb=534262
+11:47:22 meminfo TOTAL_PSS_kb=534630
+11:47:24 meminfo TOTAL_PSS_kb=534610
+11:47:26 meminfo TOTAL_PSS_kb=534682
+11:47:28 meminfo TOTAL_PSS_kb=534690
+11:47:29 meminfo TOTAL_PSS_kb=535806
+11:47:31 meminfo TOTAL_PSS_kb=534806
+11:47:33 screenshot DNT Fondsbu
+11:47:33 DNT/rest passed Fondsbu @61.37536,8.29965
+11:47:34 meminfo TOTAL_PSS_kb=535116
+11:47:36 meminfo TOTAL_PSS_kb=534764
+11:47:38 meminfo TOTAL_PSS_kb=534764
+11:47:40 meminfo TOTAL_PSS_kb=534768
+11:47:41 meminfo TOTAL_PSS_kb=534448
+11:47:43 meminfo TOTAL_PSS_kb=534700
+11:47:45 meminfo TOTAL_PSS_kb=534592
+11:47:47 meminfo TOTAL_PSS_kb=534708
+11:47:49 meminfo TOTAL_PSS_kb=534708
+11:47:50 meminfo TOTAL_PSS_kb=534624
+11:47:52 meminfo TOTAL_PSS_kb=534704
+11:47:54 meminfo TOTAL_PSS_kb=534560
+11:47:56 meminfo TOTAL_PSS_kb=534644
+11:47:58 meminfo TOTAL_PSS_kb=534620
+11:47:59 meminfo TOTAL_PSS_kb=534332
+11:48:01 meminfo TOTAL_PSS_kb=534688
+11:48:03 meminfo TOTAL_PSS_kb=545680
+11:48:05 meminfo TOTAL_PSS_kb=535016
+11:48:05 meminfo TOTAL_PSS_kb=534052
+11:48:05 pulled files/hiking-long-ui/report.json
+11:48:07 meminfo TOTAL_PSS_kb=534964
+11:48:08 meminfo TOTAL_PSS_kb=536116
+11:48:10 meminfo TOTAL_PSS_kb=534944
+11:48:12 meminfo TOTAL_PSS_kb=534820
+11:48:14 meminfo TOTAL_PSS_kb=534892
+11:48:16 meminfo TOTAL_PSS_kb=534048
+11:48:17 meminfo TOTAL_PSS_kb=534860
+11:48:19 meminfo TOTAL_PSS_kb=534892
+11:48:21 meminfo TOTAL_PSS_kb=534820
+11:48:23 meminfo TOTAL_PSS_kb=534900
+11:48:24 meminfo TOTAL_PSS_kb=534832
+11:48:26 meminfo TOTAL_PSS_kb=533916
+11:48:28 meminfo TOTAL_PSS_kb=534460
+11:48:30 meminfo TOTAL_PSS_kb=534592
+11:48:31 meminfo TOTAL_PSS_kb=534096
+11:48:33 meminfo TOTAL_PSS_kb=534060
+11:48:35 meminfo TOTAL_PSS_kb=534112
+11:48:37 meminfo TOTAL_PSS_kb=534004
+11:48:38 meminfo TOTAL_PSS_kb=533844
+11:48:40 meminfo TOTAL_PSS_kb=534060
+11:48:42 meminfo TOTAL_PSS_kb=534004
+11:48:44 meminfo TOTAL_PSS_kb=534060
+11:48:45 screenshot DNT Hjelle_motell
+11:48:45 DNT/rest passed Hjelle_motell @61.91682,7.13201
+11:48:47 screenshot DNT Nashaugsætra
+11:48:47 gps_replay done cabins=['Fondsbu', 'Hjelle_motell', 'Nashaugsætra'] peak_pss_kb=549326
+11:48:47 pulled files/hiking-long-ui/report.json
+11:48:47 host polyline pts=6870
+11:48:47 meminfo TOTAL_PSS_kb=534450
+11:48:48 host done plan_ready=True alerts=1 peak_pss_kb=534450

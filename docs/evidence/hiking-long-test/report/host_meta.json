@@ -1,10 +1,11 @@
 {
-  "started": "2026-11-20T11:40:04.014630+00:00",
+  "started": "2026-11-21T10:43:33.973814+00:00",
   "serial": "emulator-5554",
   "departure_iso": "2026-06-01T08:00:00",
   "origin": {
     "lat": 60.8835,
     "lon": 9.972,
     "elev_m": 820.0
-  }
+  },
+  "route": "Nashaugs\u00e6tra \u2192 Fondsbu \u2192 Hjelle motell"
 }

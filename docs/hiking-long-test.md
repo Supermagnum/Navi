@@ -1,14 +1,17 @@
-# Hiking long trip — Nashaugsætra → Sandhaug → Lothepus
+# Hiking long trip — Nashaugsætra → Fondsbu → Hjelle motell
 
-Date: **2026-11-20** (Europe/Oslo). Emulator **`Navi_8c_4G`** (`emulator-5554`).
-App `no.navi.app` **0.5.1-beta** (`versionCode` **36**), worktree branch
-**`cursor/hiking-campaign-fail-fixes-d723`** (base tip `a1893ae1d` + uncommitted
-tunnel soft-avoid strengthen). Not added to CI.
+Date: **2026-11-21** (Europe/Oslo). Emulator **`Navi_8c_4G`** (`emulator-5554`).
+App `no.navi.app` **0.5.1-beta** from **`origin/dev`** tip **`fbe5558ca`**
+(androidTest OD only adapted for Fondsbu/Hjelle; **no main/plugin changes**).
+Not added to CI.
 
 Driver: `HikingLongTripNashaugsLothepusUiCampaignTest#hiking_nashaugs_lothepus_ui_plan_campaign`
-(Compose UI). Host `/tmp/hiking-long-campaign/hiking_long_host.py`: ADB GPS only +
-read-only monitoring. Artifacts: `/tmp/hiking-long-campaign/` and
+(Compose UI). Host: `/tmp/hiking_long_host.py` (ADB GPS + read-only monitoring).
+Artifacts: `/tmp/hiking-fondsbu-hjelle-campaign/` and
 `docs/evidence/hiking-long-test/`.
+
+Instrument: **OK (1 test)** in ~314 s. Runner:
+`no.navi.app.test/no.navi.app.NaviAndroidTestRunner`.
 
 ---
 
@@ -16,19 +19,36 @@ read-only monitoring. Artifacts: `/tmp/hiking-long-campaign/` and
 
 | Check | Result |
 |---|---|
-| UI wipe → empty leaves | **PASS** (0 leaves after delete) |
-| Østlandet first on SD | **PASS** (~88 s) |
-| Vestlandet ready on SD | **PASS** — wait-on-in-flight + leaves-on-disk; Ready in **~8 s** corridor wait |
-| Unlocked + networked cabins | **ON** (Hiking profile) |
-| Plan found | **PASS** — **338.9 km**, 333 maneuvers, route on map |
-| Soft-avoid UI progress | **PASS** — `tunnel_avoid_r*` / `mwm_enrich` pct during ~23.7 min plan |
-| GPS replay + DNT screenshots | **PASS** (Nashaugsætra, Sandhaug, Lothepus + extras) |
-| Ferries | **0** |
-| Tunnels | **FAIL — 1** (`unnamed@0.08`, ~77 m). Soft-avoid `9→1` then `tunnel_avoid_fail=true`. Annotate matches soft-avoid (**reconciled**; was 10 vs 1). Ustedalen / Lilletoppen / Tyssedalsvegen cleared. |
-| Wild camping sites | **PASS — 12** (`camping_plugin` ON) |
-| Nearby attractions | **0** (cone-only @ 850 m; seed empty — no CoMaps report tallies) |
-| Water sources | **0** in corridor counts |
-| Overall | **FAIL** (one unavoidable micro-tunnel after soft-avoid) |
+| UI wipe → empty leaves | **PASS** (0 leaves; World.mwm kept) |
+| Østlandet first on SD | **PASS** (~77.2 s; release **261115**; 6 leaves) |
+| Vestlandet Ready before plan | **PASS** — corridor Ready in **~11.1 s**; order local then along-route |
+| Leaves on SD after plan | **PASS** — 7 leaves + World.mwm |
+| Plan found | **PASS** — **244.9 km**, route on map |
+| Ferries | **1** (`unnamed@29.22`) — Avoid ferries **OFF** (allowed by settings) |
+| Tunnels | **PASS — 0** (`route_tunnel_count=0`, empty fp) |
+| Wild camping | **PASS — 12** sites (`camping_plugin` ON) |
+| Nearby attractions (cone) | **Noted — 0** — **no attractions along this route** (not a product FAIL) |
+| Water sources | **0** |
+| GPS replay + DNT screenshots | **PASS** — Fondsbu, Hjelle_motell, Nashaugsætra |
+| Crashes / ANR / OOM / LMK | **PASS** — no app FATAL/ANR/OOM; 1 unrelated system `safetyhub` died |
+| Overall | **PASS** (attractions absent on corridor; documented below) |
+
+---
+
+## Nearby attractions — none on this corridor
+
+Nearby attractions was **ON**. Seed and cone both returned empty; this is **route data**, not a harness/tooling failure:
+
+| Evidence | Value |
+|---|---|
+| Settings | `nearby_attractions=true` |
+| Seed | `NaviPlan: mwm_attractions seed empty query=Severdigheter samples=48 max_dist_m=850.0` |
+| Cone tally | `NaviAttractions: lookahead tally attraction_count=0 types=0 samples=48` |
+| Lookahead JSON | `poi_lookahead_json` → `hits=[]`, `cone_m=850`, `half_width_deg=30` |
+| By-type | `attraction_by_type={}` |
+| Contrast | Wild camping still found **12** sites on the same plan (search path healthy) |
+
+**Conclusion:** no Severdigheter / attraction POIs exist along the Nashaugsætra → Fondsbu → Hjelle corridor within the 850 m cone. Criteria that expected “several” attractions do not apply here; noted as **no attractions on route**, not a missing-POI product FAIL.
 
 ---
 
@@ -36,37 +56,42 @@ read-only monitoring. Artifacts: `/tmp/hiking-long-campaign/` and
 
 | Item | Value |
 |---|---|
-| Emulator | `Navi_8c_4G` / `emulator-5554` (~4 GB RAM) |
+| Emulator | `Navi_8c_4G` / `emulator-5554` (8c / ~4 GB) — unchanged |
 | Profile | **Hiking** |
-| Avoid tunnels | **on** (locked for Hiking) |
-| Avoid ferries | **off** |
-| Wild camping | **on** |
-| Nearby attractions | **on** |
-| Long trip | **on** |
-| DATEX | **off** |
-| From | **Nashaugsætra** — `60.8835, 9.9720` |
-| Via | **Sandhaug Turisthytte** (Hardangervidda) — `60.19220, 7.51250` |
-| To | **Lothepus camping** — `60.0651, 6.5526` |
+| Avoid tunnels | **ON** |
+| Avoid ferries | **OFF** |
+| Wild camping | **ON** |
+| Nearby attractions | **ON** |
+| Long trip | **ON** |
+| DATEX | **OFF** |
+| From | **Nashaugsætra** — `60.8835, 9.9720` (search hit Oppland) |
+| Via | **Fondsbu**, Tyinkrysset / Eidsbugarden — `61.37519, 8.29740` |
+| To | **Hjelle motell** — `61.91460, 7.11161` |
+| Departure | `2026-06-01T08:00:00` local |
 
 ---
 
-## Regions downloaded (order, timing, path)
+## Regions downloaded (order, timing, paths)
 
-All MWM leaves landed under SD:
+All MWM leaves under SD:
 
 `/storage/0000-0000/Android/data/no.navi.app/files/mwm/`  
-(`releases/261105/leaves/` + mirrored `261105/`).
+(`releases/261115/leaves/` + mirrored). World.mwm at MWM root.
 
-| # | Region | Result | Wall time | Notes |
-|---|---|---|---|---|
-| 1 | **Østlandet** (`europe_norway_ostlandet`) | OK | **88.0 s** download/install | Leaves: Norway_Central, Hedmark, Hordaland, Oppland, Southern, Western (+ sidecars 6). Placement: SD |
-| 2 | **Vestlandet** (`europe_norway_vestlandet`) | OK | Corridor wait **8.0 s** | Alias leaves already overlapping Østlandet set + Rogaland → **Ready** |
+| Step | Region | Timing | Result |
+|---|---|---|---|
+| UI delete all except World | (prior leaves) | — | **0** leaves left |
+| First download (UI) | **Østlandet** `europe_norway_ostlandet` | **77 198 ms** | OK; version 261115; 6 leaves |
+| Corridor wait | Vestlandet downloading → Ready | **11 065 ms** to Ready-before-plan | Østlandet Ready → Vestlandet Ready |
+| Plan missing-maps prompt | Vestlandet accepted | elapsed_ms=0 (already in flight / Ready) | Prompt accepted |
+| After plan | — | — | **7** leaves on SD |
 
-Final leaf set on SD (World.mwm kept at MWM root):
+Final leaf set:
 
-- Norway_Central, Norway_Hedmark, Norway_Hordaland, Norway_Oppland, Norway_Rogaland, Norway_Southern, Norway_Western
+- Norway_Central, Norway_Hedmark, Norway_Hordaland, Norway_Oppland,
+  Norway_Rogaland, Norway_Southern, Norway_Western
 
-Corridor wait until Ready before Plan: **~8.0 s** (`corridor_wait_ms=7953`).
+Expected order observed: **local (Østlandet) first**, then **next along route (Vestlandet)**.
 
 ---
 
@@ -74,72 +99,134 @@ Corridor wait until Ready before Plan: **~8.0 s** (`corridor_wait_ms=7953`).
 
 | Metric | Value |
 |---|---|
-| Total length | **338.9 km** |
-| ETA | **5476 min** (~91.3 h) |
-| Soft-break interval | **11.3 km** / **3.04 h** (`chunked_soft_breaks`) |
-| Estimated stops | **29** soft rests (+ start/via/end) |
-| Ferries | **0** |
-| Tunnels (path annotate) | **1** — `unnamed@0.08` (~77 m). Soft-avoid leftover_fp matches. |
-| Soft-avoid summary | `tunnels_before=9; tunnels_after=1; midpoints=27; attempts=124; rounds=5; leftover_fp=unnamed@0.08` + `tunnel_avoid_fail=true` |
-| Wild camping sites | **12** |
-| Water sources (corridor) | **0** |
-| Attractions (cone @ 850 m) | **0** (by type: none) |
+| Total length | **244.9 km** |
+| ETA | **3476.4 min** (~57.9 h) |
+| Maneuvers | **107** |
+| Soft-break interval | **11.3 km** / **2.67 h** (`chunked_soft_breaks`) |
+| Estimated stops / rest places | **21** |
+| Ferries | **1** — `unnamed@29.22` |
+| Tunnels (path annotate) | **0** |
+| Soft-avoid | Not required (already 0 tunnels; `tunnel_avoid=true`; enrich `route_tunnel_count=0`) |
+| Plan build | `build_s=2.78`; `planning_done` **duration_ms=30053** (~30 s) |
+| Wild camping sites | **12** (`OK`; `no-34` ×12) |
+| Attractions (cone @ lookahead) | **0** — none along corridor (see section above) |
+| Water sources | **0** |
 
-### Rest places (29)
+### Rest places (name + coords)
 
-All named **Hiking rest**, kind `rest`. Sample coords (full list in `device_report.json`):
+All 21 soft rests labeled **Hiking rest**:
 
 | # | lat | lon |
 |---|---|---|
 | 1 | 61.17858 | 9.67115 |
-| 10 | 60.64615 | 9.10313 |
-| 22 | 60.22031 | 7.55907 |
-| 29 | 60.09011 | 6.60652 |
+| 2 | 61.24672 | 9.58565 |
+| 3 | 61.28958 | 9.41855 |
+| 4 | 61.28476 | 9.24507 |
+| 5 | 61.28503 | 9.07507 |
+| 6 | 61.29282 | 8.90955 |
+| 7 | 61.32158 | 8.76996 |
+| 8 | 61.35262 | 8.58492 |
+| 9 | 61.36475 | 8.38227 |
+| 10 | 61.38402 | 8.19301 |
+| 11 | 61.43921 | 8.07131 |
+| 12 | 61.51009 | 8.02321 |
+| 13 | 61.59053 | 7.97762 |
+| 14 | 61.64550 | 7.91965 |
+| 15 | 61.66260 | 7.75250 |
+| 16 | 61.74457 | 7.78512 |
+| 17 | 61.79783 | 7.66926 |
+| 18 | 61.82256 | 7.48442 |
+| 19 | 61.88061 | 7.51093 |
+| 20 | 61.89180 | 7.37450 |
+| 21 | 61.90354 | 7.21025 |
 
-### Navigation instructions
+### km / day (soft 8 h hiking budget)
 
-| Type | Count |
+| Day | km | hike hours |
+|---|---|---|
+| 1–7 | 33.82 each | 8.0 |
+| 8 | 8.20 | 1.94 |
+| **Total** | **244.9** | ~57.9 |
+
+### Nav instruction type counts
+
+| kind | count |
 |---|---|
-| left | 152 |
-| right | 171 |
-| destination | 10 |
-| **Total** | **333** |
+| left | 54 |
+| right | 49 |
+| straight | 2 |
+| destination | 2 |
 
 ---
 
-## Soft-avoid + enrich timing
+## DNT / place screenshots
 
-`planning_done` `duration_ms=1423330` (~23.7 min) — dominated by strengthened tunnel sweeps.
+Host GPS replay along planned polyline (6870 pts → 1375 samples).
+Screenshots named by place:
 
-| Phase | Detail |
+| Place | File |
 |---|---|
-| Initial MWM plan | ~315.6 km, **9** tunnels (incl. Ustedalen / Lilletoppen / Tyssedalsvegen) |
-| Round 1 | Macro offsets → **4** left (`unnamed@0.08\|unnamed@0.47\|Lilletoppen@4.16\|Tyssedalsvegen@1.86`) |
-| Round 2 | → **1** left (`unnamed@0.08`, max_run_m≈77) at **338.9 km** |
-| Rounds 3–5 | Micro offsets 80–3000 m + entrance/mid/exit anchors; **no further cut** |
-| Soft-avoid stop | `reroute_incomplete` + `tunnel_avoid_fail=true` (not `reroute_apply`) |
-| Enrich | path annotate **route_tunnel_count=1** (matches soft-avoid after); attractions seed empty @ 850 m |
+| Fondsbu (via DNT cabin) | `docs/evidence/hiking-long-test/dnt_cabins/Fondsbu.png` |
+| Hjelle motell (end) | `docs/evidence/hiking-long-test/dnt_cabins/Hjelle_motell.png` |
+| Nashaugsætra (start) | `docs/evidence/hiking-long-test/dnt_cabins/Nashaugsætra.png` |
 
-HUD/logcat showed continuous `tunnel_avoid_r*` progress (no multi-minute stuck at pct=10). Nested trials still skip enrich.
+Also campaign UI frames `01_launch` … `12_after_gps_replay` under
+`docs/evidence/hiking-long-test/screenshots/` (route visible on plan/GPS frames).
 
 ---
 
-## DNT cabin / shelter screenshots
+## Crashes / ANRs / memory
 
-| Place | Path |
+| Item | Value |
 |---|---|
-| Nashaugsætra | `docs/evidence/hiking-long-test/dnt_cabins/Nashaugsætra.png` |
-| Sandhaug Turisthytte | `docs/evidence/hiking-long-test/dnt_cabins/Sandhaug_Turisthytte.png` |
-| Lothepus camping | `docs/evidence/hiking-long-test/dnt_cabins/Lothepus_camping.png` |
+| Instrument | **OK (1 test)** |
+| App FATAL / ANR / OOM / LMK | **None** for `no.navi.app` |
+| Logcat alert (host) | 1× unrelated `com.google.android.apps.safetyhub` process died |
+| Peak TOTAL_PSS | **549 326 kB** (~536 MiB) during GPS replay |
+| RAM (test report) | before 314 MiB → post-plan 522 → final 523 MiB |
 
-Also: plan result `docs/evidence/hiking-long-test/screenshots/11_plan_result.png`.
+Excerpt (`docs/evidence/hiking-long-test/logs/crash_anr_excerpts.txt`):
+
+```
+11-21 11:44:36.981 ActivityManager: Process com.google.android.apps.safetyhub (pid 17960) has died: cch+65 CEM
+```
+
+Plan/tunnel excerpt:
+
+```
+NaviPlan: planner=mwm profile=HIKING ... tunnel_avoid=true/true
+NaviPlan: mwm_enrich ... path=route_tunnel_count=0
+NaviRouting: planning_done ... duration_ms=30053 distance_km=244.905
+```
+
+Attractions excerpt:
+
+```
+NaviPlan: mwm_attractions seed empty query=Severdigheter samples=48 max_dist_m=850.0
+NaviAttractions: lookahead tally attraction_count=0 types=0 samples=48
+```
 
 ---
 
-## Notes (tunnel diagnosis)
+## Evidence index
 
-1. **Annotate 10 vs soft-avoid 1 (prior run):** failed nested soft-avoid attempts overwrote `lastTurnsJson`; enrich annotated the last trial (10 tunnels) instead of the accepted corridor (1). Fixed by restoring `lastTurnsJson` to the accepted turns after every miss / before return.
-2. **Leftover identity:** not Ustedalen / Lilletoppen / Tyssedalsvegen — those clear by round 2. Final leftover is **`unnamed@0.08` (~77 m)** present from the first-pass corridor and resistant to macro + micro perpendicular detours (124 attempts / 5 rounds).
-3. **Fail clearly:** hiking soft-avoid no longer claims `reroute_apply` / OK while tunnels remain; emits `reroute_incomplete` + `tunnel_avoid_fail=true; tunnels_remain=N` with `leftover_fp`.
-4. **Tunnel-zero still open:** soft-avoid cannot remove this micro covered passage with via detours; product options are alternate corridor seeds, native tunnel costing, or a short-run policy (not applied here).
-5. **Intact:** region-reconcile Ready gate, nested-enrich-skip, `uiProgress` during soft-avoid; attractions stay cone-only (0 @ 850 m).
+| Artifact | Path |
+|---|---|
+| This report | `docs/hiking-long-test.md` |
+| Device report | `docs/evidence/hiking-long-test/report/final_device_report.json` |
+| Host summary | `docs/evidence/hiking-long-test/report/host_summary.json` |
+| Route result | `docs/evidence/hiking-long-test/report/route-result.json` |
+| Polyline | `docs/evidence/hiking-long-test/route-polyline.txt` |
+| Host / instrument logs | `docs/evidence/hiking-long-test/logs/` |
+| Screenshots + DNT | `docs/evidence/hiking-long-test/screenshots/` + `dnt_cabins/` |
+| Host tmp tree | `/tmp/hiking-fondsbu-hjelle-campaign/` |
+
+---
+
+## Notes
+
+1. **Tunnels = 0** on this Fondsbu/Hjelle corridor (unlike prior Sandhaug/Lothepus run).
+2. **Attractions = 0** because **none exist along this route** (`mwm_attractions seed empty` + cone tally 0 with nearby ON). Not a product FAIL for missing POIs.
+3. **Ferry = 1** with Avoid ferries OFF — reported, not a settings violation.
+4. androidTest OD constants adapted for Fondsbu/Hjelle and included with this campaign commit.
+5. Dirty Leira radial WIP was kept out of this commit (stashed separately on the prior working branch).

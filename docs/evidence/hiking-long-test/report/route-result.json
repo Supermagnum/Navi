@@ -1,0 +1,52 @@
+{
+  "t_ms": 61594523,
+  "distance_km": 244.90524828089738,
+  "report": "TEST_KIND=PLAN_MWM_ROUTE\nPLANNER=mwm\nPASS\ndistance_km=244.905\neta_minutes=3476.4\nrouter_mode=Joints(likely)\nascent_m=7767.0\ndescent_m=8632.0\nbuild_s=2.779036659\ncomaps_route_code=OK\nvehicle_limits_ok=false\nvehicle_limits_partial=Norway_Oppland,Norway_Western\nroute_tunnel_count=0\nroute_tunnel_fp=\nroute_ferry_legs=1\nroute_ferry_fp=unnamed@29.22\ndatex_impacts=0; datex_block=0; datex_penalize=0\ndatex_mwm=plugin_off\nchunked_soft_breaks=true; break_interval_km=11.3; break_interval_h=2.67\nrest_place_count=21\nchunked_rest_pauses=21; break_pois_total=21\n",
+  "polyline_chars": 248325,
+  "days_json": "[]",
+  "break_poi_count": 21,
+  "start": "Nashaugsætra, Oppland, Norway",
+  "end": "Hjelle motell, Hjelle, Western Norway, Norway",
+  "long_trip_status": "Østlandet (1 of 2)=Ready · Vestlandet (2 of 2)=Ready",
+  "enumerations": {
+    "route_tunnel_count": 0,
+    "route_tunnel_fp": "",
+    "route_ferry_legs": 1,
+    "route_ferry_fp": "unnamed@29.22",
+    "rest_place_count": 21,
+    "rest_place_names": [
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest"
+    ],
+    "attraction_count": 0,
+    "attraction_by_type": {},
+    "wild_camping_site_count": 12,
+    "wild_camping_status_kind": "OK",
+    "wild_camping_status_message": "ok",
+    "wild_camping_by_country": {
+      "no": 12
+    },
+    "wild_camping_by_subdivision": {
+      "no-34": 12
+    }
+  }
+}

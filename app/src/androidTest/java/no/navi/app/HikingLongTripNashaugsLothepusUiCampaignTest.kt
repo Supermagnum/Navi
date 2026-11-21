@@ -37,10 +37,12 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
- * Nashaugsætra → Sandhaug Turisthytte → Lothepus camping Hiking + Long trip
+ * Nashaugsætra → Fondsbu (Tyinkrysset) → Hjelle motell Hiking + Long trip
  * UI campaign. Drives Compose UI only. Host ADB: GPS feed + read-only monitoring
  * (no DATEX). Not wired into CI. Does not modify production app/plugin code.
  * Leaves MainActivity running (no force-stop / scenario.close).
+ *
+ * OD constants only adapted for Fondsbu/Hjelle (androidTest); no main/plugin changes.
  */
 @RunWith(AndroidJUnit4::class)
 @LargeTest
@@ -48,36 +50,36 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
     companion object {
         private const val TAG = "HikingLongTripUiCampaign"
 
-        // Fallback coords if name search fails (Nordre Land / Hardangervidda / Odda).
+        // Fallback coords if name search fails (Nordre Land / Fondsbu / Hjelle).
         private const val ORIGIN_LAT = 60.8835
         private const val ORIGIN_LON = 9.9720
         private const val ORIGIN_ELEV_M = 820.0
 
-        // Sandhaug Turisthytte (DNT), Hardangervidda — not Lillehammer "Turisthotell*".
-        private const val VIA_LAT = 60.1922
-        private const val VIA_LON = 7.5125
-        private const val DEST_LAT = 60.0651
-        private const val DEST_LON = 6.5526
+        // Fondsbu (DNT), Eidsbugarden / Tyinkrysset.
+        private const val VIA_LAT = 61.3751863
+        private const val VIA_LON = 8.2973974
+
+        // Hjelle motell, Stryn / Vestland.
+        private const val DEST_LAT = 61.9146019
+        private const val DEST_LON = 7.1116076
 
         private const val FROM_QUERY = "Nashaugsætra"
 
-        /** DNT cabin on Hardangervidda — never bare "Sandhaug" (Sandhausen DE / Gjøvik AS). */
-        private const val VIA_QUERY = "Sandhaug Turisthytte"
-        private const val TO_QUERY = "Lothepus camping"
-        private const val VIA_NAME_NEEDLE = "Sandhaug"
-        private const val VIA_DISPLAY_NAME = "Sandhaug Turisthytte"
+        /** DNT cabin near Tyinkrysset — prefer "Fondsbu" place-index hit. */
+        private const val VIA_QUERY = "Fondsbu"
+        private const val TO_QUERY = "Hjelle motell"
+        private const val VIA_NAME_NEEDLE = "Fondsbu"
+        private const val VIA_DISPLAY_NAME = "Fondsbu"
         private const val DEPARTURE_ISO = "2026-06-01T08:00:00"
 
         private fun viaHitRejected(name: String): Boolean {
             val n = name.lowercase()
-            return n.contains("sandhausen") ||
-                n.contains("germany") ||
-                n.contains("baden") ||
-                n.contains("gjøvik") ||
-                n.contains("gjovik") ||
-                n.contains("sandhaug as") ||
-                n.contains("lillehammer") ||
-                n.contains("turisthotell")
+            // Reject unrelated Fondsbu-ish / far hits if search is noisy.
+            return n.contains("germany") ||
+                n.contains("sweden") ||
+                n.contains("stockholm") ||
+                n.contains("oslo") &&
+                !n.contains("fondsbu")
         }
 
         private const val OSTLANDET_REGION = "europe_norway_ostlandet"
@@ -166,7 +168,7 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         NaviMapTestHooks.lastBreakPoisJson = "[]"
         NaviMapTestHooks.lastPoiLookaheadJson = "[]"
         NaviMapTestHooks.lastDaysJson = "[]"
-        report.put("campaign", "hiking_nashaugs_sandhaug_lothepus_longtrip_ui")
+        report.put("campaign", "hiking_nashaugs_fondsbu_hjelle_longtrip_ui")
         report.put("started_unix", System.currentTimeMillis() / 1000)
         report.put("departure_local", DEPARTURE_ISO)
         report.put("ram_before_mib", processPssMib())
@@ -270,15 +272,15 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         // 4) Enter route via Navi UI search (names first; coords fallback).
         typeNameOrCoordAndPick("chip_from", FROM_QUERY, ORIGIN_LAT, ORIGIN_LON, "from_nashaugs")
         screenshot("06_from_set")
-        pickSandhaugHardangerviddaVia()
+        pickFondsbuVia()
         screenshot("07_via_set")
-        typeNameOrCoordAndPick("chip_to", TO_QUERY, DEST_LAT, DEST_LON, "to_lothepus")
+        typeNameOrCoordAndPick("chip_to", TO_QUERY, DEST_LAT, DEST_LON, "to_hjelle_motell")
         screenshot("08_to_set")
         val wp = waypointSummary()
         report.put("waypoints_summary", wp)
         noteUi("waypoints_summary", wp)
         writeReport()
-        assertViaHardangervidda(wp)
+        assertViaFondsbu(wp)
 
         // Keep long trip ON; DATEX stays OFF.
         ensureLongTripOnViaTools()
@@ -370,15 +372,15 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
                     !rep.contains("FAIL: chunk_leg") &&
                     !rep.startsWith("FAIL:") &&
                     !rep.contains("\nFAIL: chunk_leg")
-            // Hiking Nashaugs→Lothepus via Sandhaug is typically ~80–250 km; allow
+            // Hiking Nashaugs→Hjelle via Fondsbu is typically ~150–400 km; allow
             // headroom if a via miss stretches the corridor.
-            if (poly >= 8 && dist in 40.0..550.0 && (overallPass || dist > 40.0)) {
+            if (poly >= 8 && dist in 40.0..700.0 && (overallPass || dist > 40.0)) {
                 persistPlanArtifactsNow(dist, rep)
                 planned = true
                 break
             }
             // Corridor ready + long polyline but still waiting for PASS token.
-            if (poly >= 8 && dist in 40.0..550.0 && LongTripCoordinator.corridorReadyForPlanning()) {
+            if (poly >= 8 && dist in 40.0..700.0 && LongTripCoordinator.corridorReadyForPlanning()) {
                 persistPlanArtifactsNow(dist, rep)
                 planned = true
                 break
@@ -458,7 +460,7 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         )
         assertTrue(
             "Hiking plan must succeed (planned=$planned dist=$distanceKm man=$manCount)",
-            planned && distanceKm in 40.0..550.0 && manCount >= 1,
+            planned && distanceKm in 40.0..700.0 && manCount >= 1,
         )
 
         // 5) Host GPS replay + DNT cabin/shelter screenshots.
@@ -1404,7 +1406,7 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
 
     private fun reapplyWaypointsAndPlan(reason: String) {
         typeNameOrCoordAndPick("chip_from", FROM_QUERY, ORIGIN_LAT, ORIGIN_LON, "from_re_$reason")
-        pickSandhaugHardangerviddaVia()
+        pickFondsbuVia()
         typeNameOrCoordAndPick("chip_to", TO_QUERY, DEST_LAT, DEST_LON, "to_re_$reason")
         runCatching { clickTag("chip_profile_hiking") }
         configureHikingAvoidsOnly()
@@ -1415,37 +1417,32 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
     }
 
     /**
-     * Pick Sandhaug Turisthytte on Hardangervidda. Prefer seeded place-index /
-     * "Sandhaug Turisthytte" hits; reject Sandhausen DE, Gjøvik AS, Lillehammer
-     * hotels. Always clear vias first so a bad hit cannot leave a second via.
+     * Pick Fondsbu (Tyinkrysset / Eidsbugarden). Prefer place-index name hit;
+     * fall back to known alpine_hut coords. Always clear vias first.
      */
-    private fun pickSandhaugHardangerviddaVia() {
+    private fun pickFondsbuVia() {
         clearAllViasSoft()
         openRoutePanel()
         clickTag("chip_via")
         settle(300)
-        val nameOk = trySearchPickSandhaug(VIA_QUERY, "via_sandhaug_name")
+        val nameOk = trySearchPickFondsbu(VIA_QUERY, "via_fondsbu_name")
         if (nameOk) {
-            noteUi("via_sandhaug", "accepted Hardangervidda name hit")
+            noteUi("via_fondsbu", "accepted Fondsbu name hit")
             return
         }
-        noteUi(
-            "via_sandhaug_skip_name",
-            "forcing Hardangervidda coords (reject Sandhausen DE / Gjøvik AS)",
-        )
+        noteUi("via_fondsbu_skip_name", "forcing Fondsbu coords near Tyinkrysset")
         clearAllViasSoft()
-        typeCoordAndPickForced("chip_via", VIA_LAT, VIA_LON, "via_sandhaug_coord")
-        // Coords-as-name is fine; prove lat/lon landed in Hardangervidda box.
-        val applied = report.optJSONObject("via_sandhaug_coord")
+        typeCoordAndPickForced("chip_via", VIA_LAT, VIA_LON, "via_fondsbu_coord")
+        val applied = report.optJSONObject("via_fondsbu_coord")
         val lat = applied?.optDouble("applied_lat") ?: Double.NaN
         val lon = applied?.optDouble("applied_lon") ?: Double.NaN
         assertTrue(
-            "Forced via must be Hardangervidda (got $lat,$lon)",
-            !lat.isNaN() && lat in 59.8..60.6 && lon in 7.0..8.2,
+            "Forced via must be Fondsbu / Tyinkrysset area (got $lat,$lon)",
+            !lat.isNaN() && lat in 61.2..61.55 && lon in 8.1..8.5,
         )
     }
 
-    private fun trySearchPickSandhaug(
+    private fun trySearchPickFondsbu(
         query: String,
         step: String,
     ): Boolean {
@@ -1471,7 +1468,7 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         val name = NaviMapTestHooks.lastAppliedHitName
         val lat = NaviMapTestHooks.lastAppliedHitLat
         val lon = NaviMapTestHooks.lastAppliedHitLon
-        if (lat.isNaN() || viaHitRejected(name) || lat !in 59.8..60.6 || lon !in 7.0..8.2) {
+        if (lat.isNaN() || viaHitRejected(name) || lat !in 61.2..61.55 || lon !in 8.1..8.5) {
             noteUi(step, "name_search_reject q=$query hit='$name' @$lat,$lon")
             clearAllViasSoft()
             return false
@@ -1495,9 +1492,9 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         return true
     }
 
-    private fun assertViaHardangervidda(wp: String) {
+    private fun assertViaFondsbu(wp: String) {
         assertTrue(
-            "Via Sandhaug Turisthytte must be set (got: $wp)",
+            "Via Fondsbu must be set (got: $wp)",
             wp.contains("Via:", ignoreCase = true) &&
                 !wp.contains("Via: (none)", ignoreCase = true) &&
                 !wp.contains("Via: none", ignoreCase = true) &&
@@ -1505,15 +1502,15 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
                 !wp.contains("→"),
         )
         val viaApplied =
-            report.optJSONObject("via_sandhaug_name")
-                ?: report.optJSONObject("via_sandhaug_coord")
+            report.optJSONObject("via_fondsbu_name")
+                ?: report.optJSONObject("via_fondsbu_coord")
         val viaLatOk = viaApplied?.optDouble("applied_lat") ?: Double.NaN
         val viaLonOk = viaApplied?.optDouble("applied_lon") ?: Double.NaN
         assertTrue(
-            "Via must be Hardangervidda DNT cabin coords (got lat=$viaLatOk lon=$viaLonOk wp=$wp)",
+            "Via must be Fondsbu / Tyinkrysset coords (got lat=$viaLatOk lon=$viaLonOk wp=$wp)",
             !viaLatOk.isNaN() &&
-                viaLatOk in 59.8..60.6 &&
-                viaLonOk in 7.0..8.2,
+                viaLatOk in 61.2..61.55 &&
+                viaLonOk in 8.1..8.5,
         )
         report.put(
             "via_proof",
@@ -1581,7 +1578,7 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         )
     }
 
-    /** Drop any prior vias so a forced Sandhaug coord cannot append beside Sandhausen. */
+    /** Drop any prior vias so a forced Fondsbu coord cannot append beside a bad hit. */
     private fun clearAllViasSoft() {
         openRoutePanel()
         runCatching { clickTagSoft("btn_clear_vias") }

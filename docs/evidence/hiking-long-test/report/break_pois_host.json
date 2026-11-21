@@ -1,0 +1,50 @@
+[
+  {
+    "lat": 60.8835,
+    "lon": 9.972,
+    "name": "Nashaugsætra",
+    "kind": "seed"
+  },
+  {
+    "lat": 61.3751863,
+    "lon": 8.2973974,
+    "name": "Fondsbu",
+    "kind": "cabin"
+  },
+  {
+    "lat": 61.9146019,
+    "lon": 7.1116076,
+    "name": "Hjelle_motell",
+    "kind": "seed"
+  },
+  {
+    "lat": 61.4943459,
+    "lon": 8.8126376,
+    "name": "Gjendesheim",
+    "kind": "cabin"
+  },
+  {
+    "lat": 61.386,
+    "lon": 8.31,
+    "name": "Eidsbugarden",
+    "kind": "cabin"
+  },
+  {
+    "lat": 61.55,
+    "lon": 8.25,
+    "name": "Leirvassbu",
+    "kind": "cabin"
+  },
+  {
+    "lat": 61.49,
+    "lon": 7.6,
+    "name": "Skjolden",
+    "kind": "cabin"
+  },
+  {
+    "lat": 61.72,
+    "lon": 7.28,
+    "name": "Sota_Sæter",
+    "kind": "cabin"
+  }
+]

@@ -1,0 +1,328 @@
+## /storage/0000-0000/Android/data/no.navi.app/files/mwm
+/storage/0000-0000/Android/data/no.navi.app/files/mwm:
+total 71456
+drwxrwx---  2 root media_rw    16384 2026-11-21 10:36 261105
+drwxrwx---  2 root media_rw    16384 2026-11-21 11:46 261115
+-rwxrwx---  1 root media_rw 53604231 2026-11-21 10:38 World.mwm
+-rwxrwx---  1 root media_rw  8491326 2026-11-21 10:38 WorldCoasts.mwm
+-rwxrwx---  1 root media_rw       25 2026-11-21 10:38 active.json
+-rwxrwx---  1 root media_rw      105 2026-11-21 11:43 bm.json
+-rwxrwx---  1 root media_rw  2042941 2026-11-21 11:46 catalog-cache.json
+-rwxrwx---  1 root media_rw   665631 2026-11-21 11:43 categories.txt
+-rwxrwx---  1 root media_rw    11930 2026-11-21 11:43 categories_brands.txt
+-rwxrwx---  1 root media_rw    36418 2026-11-21 11:43 classificator.txt
+-rwxrwx---  1 root media_rw     9181 2026-11-21 11:43 colors.txt
+-rwxrwx---  1 root media_rw       13 2026-11-21 11:43 comaps-data.stamp
+drwxrwx--- 51 root media_rw    16384 2026-11-20 16:36 countries-strings
+-rwxrwx---  1 root media_rw   315504 2026-11-21 11:43 countries.txt
+-rwxrwx---  1 root media_rw    12469 2026-11-21 11:43 countries_meta.txt
+-rwxrwx---  1 root media_rw   502387 2026-11-21 11:43 drules_proto_default_dark.bin
+-rwxrwx---  1 root media_rw   502244 2026-11-21 11:43 drules_proto_default_light.bin
+-rwxrwx---  1 root media_rw  1312992 2026-11-21 11:43 icudt75l.dat
+-rwxrwx---  1 root media_rw  5232189 2026-11-21 11:43 packed_polygons.bin
+-rwxrwx---  1 root media_rw     1182 2026-11-21 11:43 patterns.txt
+drwxrwx---  3 root media_rw    16384 2026-11-21 11:44 releases
+-rwxrwx---  1 root media_rw       38 2026-11-20 18:25 settings.ini
+drwxrwx---  2 root media_rw    16384 2026-11-21 11:46 staging
+-rwxrwx---  1 root media_rw     2721 2026-11-21 11:43 subtypes.csv
+-rwxrwx---  1 root media_rw    36121 2026-11-21 11:43 types.txt
+-rwxrwx---  1 root media_rw    72114 2026-11-21 11:43 visibility.txt
+-rwxrwx---  1 root media_rw       25 2026-11-21 10:38 world-release.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/261105:
+total 134544
+-rwxrwx--- 1 root media_rw 137766163 2026-11-20 19:05 Norway_Western.mwm
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/261115:
+total 898128
+-rwxrwx--- 1 root media_rw 167446591 2026-11-21 11:45 Norway_Central.mwm
+-rwxrwx--- 1 root media_rw 102200252 2026-11-21 11:45 Norway_Hedmark.mwm
+-rwxrwx--- 1 root media_rw  90350081 2026-11-21 11:45 Norway_Hordaland.mwm
+-rwxrwx--- 1 root media_rw 100109916 2026-11-21 11:45 Norway_Oppland.mwm
+-rwxrwx--- 1 root media_rw  72598458 2026-11-21 11:46 Norway_Rogaland.mwm
+-rwxrwx--- 1 root media_rw 249116832 2026-11-21 11:45 Norway_Southern.mwm
+-rwxrwx--- 1 root media_rw 137793436 2026-11-21 10:38 Norway_Western.mwm
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings:
+total 784
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 ar.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 ast.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 az.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 be.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 ca.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 cs.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 cy.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 da.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 de.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 default.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 10:36 el.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 10:36 en.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 en_CA.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 en_NZ.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 es.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 es_419.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 et.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 eu.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 fa.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 fi.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 fr.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 10:36 ga.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 he.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 hu.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 ia.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 10:36 id.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 it.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 ja.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 kab.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 ko.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 lt.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 mr.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 nb.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 nl.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 pl.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 pt.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 ro.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 ru.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 sk.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 sr.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 sr_Latn.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 sv.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 ta.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 th.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 tr.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 uk.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 vi.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 zh-Hans.json
+drwxrwx--- 2 root media_rw 16384 2026-11-21 11:43 zh-Hant.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/ar.json:
+total 160
+-rwxrwx--- 1 root media_rw 149336 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/ast.json:
+total 144
+-rwxrwx--- 1 root media_rw 138604 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/az.json:
+total 144
+-rwxrwx--- 1 root media_rw 137229 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/be.json:
+total 160
+-rwxrwx--- 1 root media_rw 150559 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/ca.json:
+total 144
+-rwxrwx--- 1 root media_rw 139645 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/cs.json:
+total 144
+-rwxrwx--- 1 root media_rw 135730 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/cy.json:
+total 144
+-rwxrwx--- 1 root media_rw 138530 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/da.json:
+total 144
+-rwxrwx--- 1 root media_rw 135012 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/de.json:
+total 144
+-rwxrwx--- 1 root media_rw 139499 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/default.json:
+total 144
+-rwxrwx--- 1 root media_rw 138515 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/el.json:
+total 192
+-rwxrwx--- 1 root media_rw 187294 2026-11-21 10:36 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/en.json:
+total 144
+-rwxrwx--- 1 root media_rw 138515 2026-11-21 10:36 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/en_CA.json:
+total 144
+-rwxrwx--- 1 root media_rw 138515 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/en_NZ.json:
+total 144
+-rwxrwx--- 1 root media_rw 138515 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/es.json:
+total 144
+-rwxrwx--- 1 root media_rw 140326 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/es_419.json:
+total 144
+-rwxrwx--- 1 root media_rw 138515 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/et.json:
+total 144
+-rwxrwx--- 1 root media_rw 138281 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/eu.json:
+total 144
+-rwxrwx--- 1 root media_rw 138525 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/fa.json:
+total 144
+-rwxrwx--- 1 root media_rw 143097 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/fi.json:
+total 144
+-rwxrwx--- 1 root media_rw 136168 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/fr.json:
+total 144
+-rwxrwx--- 1 root media_rw 134237 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/ga.json:
+total 144
+-rwxrwx--- 1 root media_rw 138515 2026-11-21 10:36 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/he.json:
+total 144
+-rwxrwx--- 1 root media_rw 141871 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/hu.json:
+total 144
+-rwxrwx--- 1 root media_rw 140330 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/ia.json:
+total 144
+-rwxrwx--- 1 root media_rw 138539 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/id.json:
+total 144
+-rwxrwx--- 1 root media_rw 136971 2026-11-21 10:36 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/it.json:
+total 144
+-rwxrwx--- 1 root media_rw 136423 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/ja.json:
+total 160
+-rwxrwx--- 1 root media_rw 151901 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/kab.json:
+total 144
+-rwxrwx--- 1 root media_rw 138531 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/ko.json:
+total 144
+-rwxrwx--- 1 root media_rw 139258 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/lt.json:
+total 144
+-rwxrwx--- 1 root media_rw 143178 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/mr.json:
+total 144
+-rwxrwx--- 1 root media_rw 143278 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/nb.json:
+total 144
+-rwxrwx--- 1 root media_rw 136334 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/nl.json:
+total 144
+-rwxrwx--- 1 root media_rw 136631 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/pl.json:
+total 144
+-rwxrwx--- 1 root media_rw 134403 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/pt.json:
+total 144
+-rwxrwx--- 1 root media_rw 134022 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/ro.json:
+total 144
+-rwxrwx--- 1 root media_rw 136854 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/ru.json:
+total 160
+-rwxrwx--- 1 root media_rw 160843 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/sk.json:
+total 144
+-rwxrwx--- 1 root media_rw 134614 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/sr.json:
+total 176
+-rwxrwx--- 1 root media_rw 177453 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/sr_Latn.json:
+total 144
+-rwxrwx--- 1 root media_rw 136343 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/sv.json:
+total 144
+-rwxrwx--- 1 root media_rw 138306 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/ta.json:
+total 144
+-rwxrwx--- 1 root media_rw 140019 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/th.json:
+total 192
+-rwxrwx--- 1 root media_rw 186003 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/tr.json:
+total 144
+-rwxrwx--- 1 root media_rw 136515 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/uk.json:
+total 160
+-rwxrwx--- 1 root media_rw 156274 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/vi.json:
+total 144
+-rwxrwx--- 1 root media_rw 136588 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/zh-Hans.json:
+total 144
+-rwxrwx--- 1 root media_rw 141968 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/countries-strings/zh-Hant.json:
+total 144
+-rwxrwx--- 1 root media_rw 139798 2026-11-21 11:43 localize.json
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/releases:
+total 16
+drwxrwx--- 4 root media_rw 16384 2026-11-21 10:38 261115
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/releases/261115:
+total 2176
+-rwxrwx--- 1 root media_rw       3 2026-11-21 10:38 .complete
+-rwxrwx--- 1 root media_rw     896 2026-11-21 10:37 ATTRIBUTION.md
+-rwxrwx--- 1 root media_rw  104301 2026-11-21 10:37 attribution.json
+-rwxrwx--- 1 root media_rw 2042941 2026-11-21 10:37 catalog.json
+drwxrwx--- 2 root media_rw   16384 2026-11-21 11:46 leaves
+drwxrwx--- 2 root media_rw   16384 2026-11-21 11:46 sidecars
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/releases/261115/leaves:
+total 898128
+-rwxrwx--- 1 root media_rw 167446591 2026-11-21 11:44 Norway_Central.mwm
+-rwxrwx--- 1 root media_rw 102200252 2026-11-21 11:45 Norway_Hedmark.mwm
+-rwxrwx--- 1 root media_rw  90350081 2026-11-21 11:45 Norway_Hordaland.mwm
+-rwxrwx--- 1 root media_rw 100109916 2026-11-21 11:45 Norway_Oppland.mwm
+-rwxrwx--- 1 root media_rw  72598458 2026-11-21 11:46 Norway_Rogaland.mwm
+-rwxrwx--- 1 root media_rw 249116832 2026-11-21 11:45 Norway_Southern.mwm
+-rwxrwx--- 1 root media_rw 137793436 2026-11-21 11:45 Norway_Western.mwm
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/releases/261115/sidecars:
+total 4560
+-rwxrwx--- 1 root media_rw  733278 2026-11-21 11:44 Norway_Central.navi-sidecar.v1.zst
+-rwxrwx--- 1 root media_rw  269369 2026-11-21 11:45 Norway_Hedmark.navi-sidecar.v1.zst
+-rwxrwx--- 1 root media_rw  864634 2026-11-21 11:45 Norway_Hordaland.navi-sidecar.v1.zst
+-rwxrwx--- 1 root media_rw  444620 2026-11-21 11:45 Norway_Oppland.navi-sidecar.v1.zst
+-rwxrwx--- 1 root media_rw  351780 2026-11-21 11:46 Norway_Rogaland.navi-sidecar.v1.zst
+-rwxrwx--- 1 root media_rw 1109115 2026-11-21 11:45 Norway_Southern.navi-sidecar.v1.zst
+-rwxrwx--- 1 root media_rw  848371 2026-11-21 11:45 Norway_Western.navi-sidecar.v1.zst
+
+/storage/0000-0000/Android/data/no.navi.app/files/mwm/staging:
+total 0
