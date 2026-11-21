@@ -763,10 +763,12 @@ object MwmProductionPlanner {
      * perpendicular detour vias at the longest leftover tunnel and accepting
      * geometries that cut the tunnel run count. A round that cuts the count
      * keeps that geometry and moves on; the next round spends its attempt
-     * budget on the new longest leftover. Offsets escalate on one side,
-     * including 12/16/20 km, and the other side is tried only when that
-     * side's route fingerprint did not change. Unchanged from–to legs are
-     * reused from [tunnelLegCache]. Never claim success while tunnels remain.
+     * budget on the new longest leftover, including a side that has not been
+     * routed yet. Primary offsets, including 12/16/20 km, are tried first.
+     * When they fail to cut the current longest run, the same offsets run on
+     * the opposite side. Already-seen vias are not routed again. A round that
+     * only skips those primary vias is not a stall. Unchanged from–to legs
+     * are reused from [tunnelLegCache]. Never claim success while tunnels remain.
      */
     private fun avoidTunnelsViaDetours(
         context: Context,
@@ -828,7 +830,9 @@ object MwmProductionPlanner {
         var rounds = 0
         var stalledRounds = 0
         var spliceAccepts = 0
+        var skipOnlyContinuations = 0
         val seenDetours = HashSet<String>()
+        val offsetsTried = ArrayList<String>()
         val primarySide = sides.first()
         val otherSide = if (sides.size > 1) sides[1] else null
 
@@ -875,6 +879,9 @@ object MwmProductionPlanner {
             val escalation = TunnelSideEscalation(roundOffsets, primarySide, otherSide)
             var attempts = 0
             var advanced = false
+            var nativeThisRound = 0
+            var skippedPrimary = 0
+            var oppositeConsidered = false
             var step = escalation.next(lastPrimaryUnchanged = false)
 
             fun commit(outcome: TunnelAttemptOutcome) {
@@ -1028,6 +1035,7 @@ object MwmProductionPlanner {
 
             while (step != null && attempts < maxAttemptsPerRound) {
                 val (offsetM, side) = step
+                if (side != primarySide) oppositeConsidered = true
                 val detours =
                     anchors.mapNotNull { (lat, lon) ->
                         detourViaForBlock(pts, lat, lon, offsetM, side)
@@ -1038,15 +1046,23 @@ object MwmProductionPlanner {
                 }
                 val fingerprint = detourViaFingerprint(detours)
                 if (skipKnownDetour(seenDetours, fingerprint)) {
+                    if (side == primarySide) skippedPrimary++
                     Log.i(TAG, "mwm tunnel avoid skip seen detour off=${offsetM.toInt()} side=${side.toInt()}")
                     step = escalation.next(lastPrimaryUnchanged = false)
                     continue
                 }
+                Log.i(
+                    TAG,
+                    "mwm tunnel avoid try round=$rounds off=${offsetM.toInt()} " +
+                        "side=${side.toInt()} tunnels=$currentCount",
+                )
                 val spliced = trySplice(detours)
                 val outcome = spliced ?: fullReplan(detours)
                 if (outcome.nativeCalled) {
                     attempts++
+                    nativeThisRound++
                     totalAttempts++
+                    offsetsTried.add("${offsetM.toInt()}@${side.toInt()}")
                     RoutingPlanLog.progress(
                         tunnelAvoidProgressPct(
                             rounds,
@@ -1057,7 +1073,7 @@ object MwmProductionPlanner {
                         ecoEnabled,
                         detail =
                             "tunnel_avoid_r${rounds}_a${attempts}_t$currentCount" +
-                                "_off=${offsetM.toInt()}",
+                                "_off=${offsetM.toInt()}_side=${side.toInt()}",
                     )
                 }
                 val decision = tunnelRoundStep(currentCount, outcome.count, outcome.routeChanged)
@@ -1067,7 +1083,7 @@ object MwmProductionPlanner {
                     Log.i(
                         TAG,
                         "mwm tunnel avoid advance round=$rounds $beforeCount->${outcome.count} " +
-                            "splice=${outcome.spliced} off=${offsetM.toInt()}",
+                            "splice=${outcome.spliced} off=${offsetM.toInt()} side=${side.toInt()}",
                     )
                     break
                 }
@@ -1077,7 +1093,26 @@ object MwmProductionPlanner {
                     )
             }
             if (advanced) {
+                skipOnlyContinuations = 0
                 if (currentCount == 0) break
+                continue
+            }
+            if (nativeThisRound > 0) skipOnlyContinuations = 0
+            if (
+                !tunnelAvoidRoundIsStall(
+                    nativeCalls = nativeThisRound,
+                    skippedPrimary = skippedPrimary,
+                    oppositeConsidered = oppositeConsidered,
+                    hasOtherSide = otherSide != null,
+                ) &&
+                skipOnlyContinuations < 1
+            ) {
+                skipOnlyContinuations++
+                Log.i(
+                    TAG,
+                    "mwm tunnel avoid round=$rounds skipped seen primary; opposite side still open",
+                )
+                rounds = (rounds - 1).coerceAtLeast(0)
                 continue
             }
             lastTurnsJson = currentTurns
@@ -1090,6 +1125,7 @@ object MwmProductionPlanner {
 
         lastTurnsJson = currentTurns
         val leftoverFp = tunnelFpSummary(currentTurns)
+        val triedOffsets = offsetsTried.joinToString(",").ifBlank { "-" }
         val cache = tunnelLegCache
         val cacheStats =
             "leg_cache_hits=${cache?.hits ?: 0}; leg_cache_misses=${cache?.misses ?: 0}; " +
@@ -1116,7 +1152,7 @@ object MwmProductionPlanner {
             "tunnel_mwm=reroute_incomplete; tunnels_before=$initialCount; " +
                 "tunnels_after=$currentCount; midpoints=$totalMids; " +
                 "attempts=$totalAttempts; rounds=$rounds; leftover_fp=$leftoverFp; " +
-                "$cacheStats\n"
+                "offsets_tried=$triedOffsets; $cacheStats\n"
         val target = if (currentCount < initialCount) current else base
         target.report = target.report.trimEnd() + "\n" + evidence
         if (hikingLike) {
@@ -1126,7 +1162,7 @@ object MwmProductionPlanner {
             Log.w(
                 TAG,
                 "mwm tunnel avoid FAIL leftover=$currentCount fp=$leftoverFp " +
-                    "rounds=$rounds (from $initialCount)",
+                    "rounds=$rounds offsets=$triedOffsets (from $initialCount)",
             )
         } else {
             Log.w(

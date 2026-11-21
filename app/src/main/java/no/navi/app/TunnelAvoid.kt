@@ -119,9 +119,29 @@ internal fun tunnelRoundStep(
 }
 
 /**
+ * A round that only skipped already-seen primary-side vias is not a stall.
+ * The opposite side of that same run has not been considered, so the search
+ * must continue. A native attempt that failed to cut, or a round that already
+ * walked the opposite side, is a stall.
+ */
+internal fun tunnelAvoidRoundIsStall(
+    nativeCalls: Int,
+    skippedPrimary: Int,
+    oppositeConsidered: Boolean,
+    hasOtherSide: Boolean,
+): Boolean {
+    val skipOnlyPrimary =
+        nativeCalls == 0 && skippedPrimary > 0 && !oppositeConsidered && hasOtherSide
+    return !skipOnlyPrimary
+}
+
+/**
  * Walks offsets on [primarySide] first, including the wide hiking offsets.
- * Emits [otherSide] at the same offset only when the caller reports that the
- * primary attempt left the route fingerprint unchanged.
+ * When a primary attempt leaves the route fingerprint unchanged, emits
+ * [otherSide] at that same offset before the next primary offset.
+ * After the primary offsets have all been offered without a cut, the same
+ * offsets are emitted on [otherSide]. A caller that only skips already-seen
+ * primary vias still receives that opposite side instead of a null stall.
  */
 internal class TunnelSideEscalation(
     private val offsetsM: List<Double>,
@@ -129,15 +149,26 @@ internal class TunnelSideEscalation(
     private val otherSide: Double?,
 ) {
     private var index = 0
+    private var onOtherSide = false
 
     fun next(lastPrimaryUnchanged: Boolean): Pair<Double, Double>? {
-        if (lastPrimaryUnchanged && otherSide != null && index > 0) {
+        if (!onOtherSide && lastPrimaryUnchanged && otherSide != null && index > 0) {
             return offsetsM[index - 1] to otherSide
         }
-        if (index >= offsetsM.size) return null
+        if (!onOtherSide) {
+            if (index < offsetsM.size) {
+                val offset = offsetsM[index]
+                index += 1
+                return offset to primarySide
+            }
+            if (otherSide == null) return null
+            onOtherSide = true
+            index = 0
+        }
+        if (otherSide == null || index >= offsetsM.size) return null
         val offset = offsetsM[index]
         index += 1
-        return offset to primarySide
+        return offset to otherSide
     }
 }
 

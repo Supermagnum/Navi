@@ -123,7 +123,7 @@ class TunnelAvoidSpeedTest {
         val got = ArrayList<Pair<Double, Double>>()
         var step = escalation.next(lastPrimaryUnchanged = false)
         var attempts = 0
-        while (step != null && attempts < 8) {
+        while (step != null && step.second == 1.0 && attempts < 8) {
             got.add(step)
             attempts++
             step = escalation.next(lastPrimaryUnchanged = false)
@@ -131,6 +131,49 @@ class TunnelAvoidSpeedTest {
         assertEquals(offsets, got.map { it.first })
         assertTrue(got.all { it.second == 1.0 })
         assertTrue(attempts <= 8)
+        assertNotNull(step)
+        assertEquals(1_500.0, step!!.first, 0.0)
+        assertEquals(-1.0, step.second, 0.0)
+    }
+
+    @Test
+    fun seenPrimaryNoCutStillEmitsOppositeSideInsteadOfStalling() {
+        val offsets =
+            listOf(1_500.0, 3_000.0, 5_000.0, 8_000.0, 12_000.0, 16_000.0, 20_000.0)
+        val seen = HashSet<String>()
+        for (offset in offsets) {
+            seen.add(detourViaFingerprint(listOf(offset to 1.0)))
+        }
+        assertFalse(
+            tunnelAvoidRoundIsStall(
+                nativeCalls = 0,
+                skippedPrimary = offsets.size,
+                oppositeConsidered = false,
+                hasOtherSide = true,
+            ),
+        )
+        val escalation = TunnelSideEscalation(offsets, primarySide = 1.0, otherSide = -1.0)
+        val routed = ArrayList<Pair<Double, Double>>()
+        var step = escalation.next(lastPrimaryUnchanged = false)
+        var native = 0
+        var skippedPrimary = 0
+        var guard = 0
+        while (step != null && native < 8 && guard++ < 32) {
+            val (offset, side) = step
+            val fp = detourViaFingerprint(listOf(offset to side))
+            if (skipKnownDetour(seen, fp)) {
+                if (side == 1.0) skippedPrimary++
+                step = escalation.next(lastPrimaryUnchanged = false)
+                continue
+            }
+            routed.add(offset to side)
+            native++
+            step = escalation.next(lastPrimaryUnchanged = false)
+        }
+        assertEquals(offsets.size, skippedPrimary)
+        assertEquals(offsets, routed.map { it.first })
+        assertTrue(routed.all { it.second == -1.0 })
+        assertTrue(native in 1..8)
     }
 
     @Test
