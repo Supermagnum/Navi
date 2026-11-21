@@ -371,3 +371,10 @@ index fafedff98..df68ca9df 100644
          if (isFerry && isTunnel)
            break;
        }
+
+@@ -504,6 +539,7 @@ RoutesBuilder::Result RoutesBuilder::Processor::operator()(Params const & params
+           << "\"ped_turn\":\"" << DebugPrint(s.m_pedestrianTurn) << "\","
+           << "\"is_ferry\":" << (isFerry ? "true" : "false") << ','
+           << "\"is_tunnel\":" << (isTunnel ? "true" : "false") << ','
++          << "\"tunnel_ok\":" << ((isTunnel && tunnelOk) ? "true" : "false") << ','
+           << "\"street\":\"";
