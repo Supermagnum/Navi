@@ -250,6 +250,15 @@ object RegionReadiness {
 
         val (phase, pct, detail) =
             when {
+                // MWM long-trip marks the region Indexed once leaves are Ready.
+                // There is often no Geofabrik `.osm.pbf` install, so the PBF
+                // checks below would otherwise report "not downloaded".
+                longTripState == LongTripCoordinator.State.Indexed ->
+                    Triple(
+                        Phase.Ready,
+                        100,
+                        resources.getString(R.string.region_readiness_ready, name),
+                    )
                 skelOk && indexOk ->
                     Triple(
                         Phase.Ready,

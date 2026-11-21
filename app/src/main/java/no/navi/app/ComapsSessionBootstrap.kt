@@ -27,7 +27,7 @@ import java.util.concurrent.Executors
  * - storage_path = writable_path = `{filesDir}/mwm`
  * - the active release is exposed as `{filesDir}/mwm/{ver}` → prefer a symlink to
  *   `releases/{ver}/leaves`; on VFAT/exFAT (no symlinks) mirror leaf `.mwm` files
- *   into a real `{ver}/` directory (stale version symlinks are pruned)
+ *   into a real `{ver}/` directory (stale version dirs, symlink or real, are pruned)
  * - `assets/comaps-data` is staged next to World.mwm (same as the device tests)
  * - sidecar_dir = `releases/{ver}/sidecars` when it exists
  *
@@ -196,7 +196,8 @@ object ComapsSessionBootstrap {
         synchronized(lock) {
             val key = "${root.absolutePath}|$version|${leaves.size}|${leaves.maxOf { it.lastModified() }}"
             if (!force && key == openKey && exposedLeafCount(root, version) > 0) return true
-            if (!linkActiveRelease(root, version, leaves)) {
+            val drapeScanVersion = readAssetCountriesVersion(ctx)
+            if (!linkActiveRelease(root, version, leaves, drapeScanVersion)) {
                 openKey = null
                 Log.w(
                     TAG,
@@ -216,6 +217,11 @@ object ComapsSessionBootstrap {
                 return false
             }
             if (!stageResources(ctx, root)) return false
+            // CoMaps refuses to scan a version directory newer than countries.txt
+            // "v". The APK asset is often an older release than the leaves just
+            // downloaded, which leaves the map as World-only (no cities, streets,
+            // rivers) and the storage UI as "not downloaded".
+            alignCountriesListVersion(root, version)
             // Search address/type strings need Platform Context (Utils JNI). The
             // drape Framework also sets this, but search can run before the map
             // surface is ready — set it here so cold Everywhere queries get
@@ -263,6 +269,9 @@ object ComapsSessionBootstrap {
                 // Drape Framework scans {writable}/{version}/ independently of the
                 // headless session — re-register so the map surface picks up leaves.
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    // Reload, not incremental add: an older version dir (for example
+                    // 261105/Norway_Western next to active 261115) pins VersionAlreadyExists
+                    // and the drape never draws the active leaves (blank cities/streets/rivers).
                     runCatching { ComapsDrape.backend?.registerMaps() }
                         .onFailure { Log.w(TAG, "registerMaps after session open failed", it) }
                 }
@@ -293,21 +302,75 @@ object ComapsSessionBootstrap {
     ): Int = listLeafMwms(File(root, version)).size
 
     /**
+     * Drop every `{root}/{digits}` entry that is not [activeVersion].
+     *
+     * CoMaps registers every version directory it finds. A leftover older
+     * release (real dir on VFAT, not only a symlink) wins `VersionAlreadyExists`
+     * and later leaves of the active release never reach the renderer or the
+     * storage "downloaded" list.
+     */
+    internal fun readCountriesListVersion(root: File): String? {
+        val file = File(root, "countries.txt")
+        if (!file.isFile) return null
+        val text = runCatching { file.readText() }.getOrNull() ?: return null
+        return Regex(""""v"\s*:\s*(\d+)""").find(text)?.groupValues?.get(1)
+    }
+
+    internal fun pruneStaleReleaseDirs(
+        root: File,
+        activeVersion: String,
+        keepVersion: String? = null,
+    ) {
+        root.listFiles()?.forEach { f ->
+            if (f.name == activeVersion || f.name == keepVersion || !VERSION_DIR.matches(f.name)) {
+                return@forEach
+            }
+            val gone =
+                runCatching {
+                    if (isSymlink(f)) f.delete() else f.deleteRecursively()
+                }.getOrDefault(false)
+            Log.i(TAG, "pruned stale MWM release ${f.absolutePath} gone=$gone")
+        }
+    }
+
+    /** `v` inside the APK `countries.txt`. The drape scans only directories at or below this. */
+    internal fun readAssetCountriesVersion(ctx: Context): String? {
+        val text =
+            runCatching {
+                ctx.assets.open("countries.txt").use { input ->
+                    input.bufferedReader().readText()
+                }
+            }.getOrNull() ?: return null
+        return Regex(""""v"\s*:\s*(\d+)""").find(text)?.groupValues?.get(1)
+    }
+
+    /**
      * Expose `releases/{ver}/leaves` at `{root}/{ver}` for CoMaps.
      *
      * Prefer a relative symlink (ext4 / internal). On VFAT/exFAT (EACCES /
      * EPERM) create a real directory and mirror each leaf `.mwm` (hardlink when
-     * possible, else copy). Returns false when no country maps end up exposed.
+     * possible, else copy). Also mirror into the APK countries.txt version
+     * directory when that is older than [version], because the drape will not
+     * scan a newer directory. Returns false when no country maps end up exposed.
      */
     private fun linkActiveRelease(
         root: File,
         version: String,
         leaves: Array<out File>,
+        drapeScanVersion: String?,
     ): Boolean {
-        root.listFiles()?.forEach { f ->
-            if (f.name != version && VERSION_DIR.matches(f.name) && isSymlink(f)) {
-                runCatching { f.delete() }
-            }
+        pruneStaleReleaseDirs(root, version, keepVersion = drapeScanVersion)
+        // Drape reads countries.txt from the APK (resource dir), whose "v" is
+        // often older than active.json. It skips any directory newer than that
+        // "v", so the active release dir is invisible and the map stays World-only.
+        // Writable countries.txt may already have been raised to [version]. The
+        // drape still uses the APK copy, so the scan directory name is that copy.
+        if (drapeScanVersion != null && drapeScanVersion != version) {
+            val scanDir = File(root, drapeScanVersion)
+            if (isSymlink(scanDir)) runCatching { scanDir.delete() }
+            if (!scanDir.isDirectory) scanDir.mkdirs()
+            mirrorLeavesInto(scanDir, leaves)
+            Log.i(TAG, "mirrored ${leaves.size} leaves into $drapeScanVersion for drape scan")
         }
         val link = File(root, version)
         val target = "releases/$version/leaves"
@@ -395,6 +458,29 @@ object ComapsSessionBootstrap {
             if (copied) ok++ else Log.w(TAG, "failed to mirror leaf ${src.name}")
         }
         return ok > 0 || leaves.isEmpty()
+    }
+
+    /**
+     * Raise `countries.txt` `"v"` up to [activeVersion] when the staged list is older.
+     *
+     * Does not rewrite the country tree. CoMaps uses this integer as the newest
+     * directory it will scan (`version > latestVersion` is skipped).
+     */
+    internal fun alignCountriesListVersion(
+        root: File,
+        activeVersion: String,
+    ) {
+        val active = activeVersion.toLongOrNull() ?: return
+        val file = File(root, "countries.txt")
+        if (!file.isFile) return
+        val text = runCatching { file.readText() }.getOrNull() ?: return
+        val match = Regex(""""v"\s*:\s*(\d+)""").find(text) ?: return
+        val current = match.groupValues[1].toLongOrNull() ?: return
+        if (active <= current) return
+        val updated = text.replaceRange(match.range, "\"v\": $active")
+        runCatching { file.writeText(updated) }
+            .onSuccess { Log.i(TAG, "countries.txt v $current -> $active (active release dir)") }
+            .onFailure { Log.w(TAG, "countries.txt version align failed", it) }
     }
 
     /** Copy `assets/comaps-data` next to World.mwm once per app install/update. */

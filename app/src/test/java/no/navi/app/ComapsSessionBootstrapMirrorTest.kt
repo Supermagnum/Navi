@@ -30,6 +30,35 @@ class ComapsSessionBootstrapMirrorTest {
     }
 
     @Test
+    fun alignCountriesListVersion_raisesStaleVAndLeavesTheTree() {
+        val root = tmp.newFolder("mwm2")
+        val file = File(root, "countries.txt")
+        file.writeText("""{ "id": "Countries", "v": 261105, "g": [ { "id": "Norway" } ] }""")
+        ComapsSessionBootstrap.alignCountriesListVersion(root, "261115")
+        val text = file.readText()
+        assertTrue(text.contains("\"v\": 261115"))
+        assertTrue(text.contains("Norway"))
+        ComapsSessionBootstrap.alignCountriesListVersion(root, "261105")
+        assertTrue(file.readText().contains("\"v\": 261115"))
+    }
+
+    @Test
+    fun pruneStaleReleaseDirs_removesOlderVersionDirAndKeepsActive() {
+        val root = tmp.newFolder("mwm")
+        val stale = File(root, "261105").also { it.mkdirs() }
+        File(stale, "Norway_Western.mwm").writeBytes(ByteArray(16) { 4 })
+        val active = File(root, "261115").also { it.mkdirs() }
+        File(active, "Norway_Hedmark.mwm").writeBytes(ByteArray(16) { 5 })
+        File(root, "World.mwm").writeBytes(ByteArray(8))
+        ComapsSessionBootstrap.pruneStaleReleaseDirs(root, "261115", keepVersion = "261105")
+        assertTrue(stale.exists())
+        ComapsSessionBootstrap.pruneStaleReleaseDirs(root, "261115")
+        assertTrue(!stale.exists())
+        assertTrue(File(active, "Norway_Hedmark.mwm").isFile)
+        assertTrue(File(root, "World.mwm").isFile)
+    }
+
+    @Test
     fun mirrorLeavesInto_removesStaleLeafNames() {
         val srcDir = tmp.newFolder("leaves2")
         val destDir = tmp.newFolder("261106")

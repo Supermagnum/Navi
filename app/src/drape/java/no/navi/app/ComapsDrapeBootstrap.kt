@@ -231,7 +231,11 @@ object ComapsDrapeBootstrap : ComapsDrape.Backend {
 
     override fun registerMaps() {
         if (!Map.isEngineCreated()) return
-        NaviDrape.nativeRegisterMaps()
+        // Incremental AddLocalMaps cannot replace a country file already
+        // registered from an older version directory (VersionAlreadyExists).
+        // A full rescan is what makes newly downloaded leaves visible.
+        runCatching { NaviDrape.nativeReloadMaps() }
+            .onFailure { Log.w(TAG, "reload maps failed: ${it.message}") }
     }
 
     override fun deregisterMap(leafId: String) {

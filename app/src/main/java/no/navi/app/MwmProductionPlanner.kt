@@ -727,15 +727,20 @@ object MwmProductionPlanner {
                 else -> listOf(1_500.0, 3_000.0, 5_000.0)
             }
         val sides = if (simulating) listOf(1.0) else listOf(1.0, -1.0)
+        // A multi-hundred-km hiking corridor with many tunnels must not run
+        // hundreds of full-country replans. That freezes the HUD on 20%.
+        val longCorridor = hikingLike && base.distanceKm >= 180.0
         val maxAttemptsPerRound =
             when {
                 simulating -> 2
+                longCorridor -> 8
                 hikingLike -> 36
                 else -> 12
             }
         val maxRounds =
             when {
                 simulating -> 1
+                longCorridor -> 4
                 hikingLike -> 8
                 else -> 3
             }
@@ -971,22 +976,24 @@ object MwmProductionPlanner {
         return target
     }
 
-    /** Map tunnel soft-avoid round/attempt into the 20–74% planning band. */
+    /**
+     * Map tunnel soft-avoid work into the 20–74% band.
+     *
+     * Each finished attempt moves the percent. The old per-round slice floored
+     * to 20% for most of round 1, so a long hiking replan looked hung.
+     */
     private fun tunnelAvoidProgressPct(
         round: Int,
         maxRounds: Int,
         attempt: Int,
         maxAttempts: Int,
     ): Int {
-        val roundSpan = 50.0 / maxRounds.coerceAtLeast(1).toDouble()
-        val within =
-            if (maxAttempts <= 0) {
-                0.0
-            } else {
-                (attempt.coerceAtLeast(0).toDouble() / maxAttempts.toDouble()) * roundSpan
-            }
-        val base = 20.0 + ((round - 1).coerceAtLeast(0).toDouble() * roundSpan) + within
-        return base.toInt().coerceIn(20, 74)
+        val perRound = maxAttempts.coerceAtLeast(1)
+        val total = (maxRounds.coerceAtLeast(1) * perRound).coerceAtLeast(1)
+        val done =
+            ((round - 1).coerceAtLeast(0) * perRound) + attempt.coerceAtLeast(0)
+        val pct = 20.0 + (done.coerceAtMost(total).toDouble() / total.toDouble()) * 54.0
+        return pct.toInt().coerceIn(20, 74)
     }
 
     /** Contiguous `is_tunnel` runs in CoMaps turns_json. */
