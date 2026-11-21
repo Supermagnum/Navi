@@ -116,6 +116,77 @@ pub fn tags_forbid_mode(tags: &HashMap<String, String>, mode: AccessMode) -> boo
     )
 }
 
+/// OSM `tunnel=*` — any non-empty value other than `no`.
+pub fn is_tunnel_tag(raw: &str) -> bool {
+    let t = raw.trim();
+    !t.is_empty() && !t.eq_ignore_ascii_case("no")
+}
+
+fn is_positive_sidewalk_tag(raw: &str) -> bool {
+    matches!(
+        raw.trim().to_ascii_lowercase().as_str(),
+        "yes" | "both" | "left" | "right" | "shared" | "shared_lane"
+    )
+}
+
+pub fn is_pedestrian_or_cycle_path_highway(highway: Option<&str>) -> bool {
+    matches!(
+        highway.map(|h| h.trim().to_ascii_lowercase()).as_deref(),
+        Some("footway") | Some("cycleway") | Some("path")
+    )
+}
+
+/// Product rule: hiking / bicycle / e-bike must not use a tunnel unless it has
+/// foot=yes|designated (foot mode), bicycle=yes|designated (bike mode), a
+/// sidewalk tag, or highway=footway|cycleway|path.
+///
+/// Returns `true` when the tunnel is allowed (or the way is not a tunnel).
+pub fn non_motor_tunnel_allowed(
+    mode: AccessMode,
+    is_tunnel: bool,
+    highway: Option<&str>,
+    foot: Option<&str>,
+    bicycle: Option<&str>,
+    sidewalk: Option<&str>,
+    footway: Option<&str>,
+) -> bool {
+    if !is_tunnel {
+        return true;
+    }
+    if is_pedestrian_or_cycle_path_highway(highway) {
+        return true;
+    }
+    if sidewalk.is_some_and(is_positive_sidewalk_tag) {
+        return true;
+    }
+    if footway.is_some_and(|v| v.eq_ignore_ascii_case("sidewalk")) {
+        return true;
+    }
+    match mode {
+        AccessMode::Foot => foot.is_some_and(is_access_yes),
+        AccessMode::Bicycle => bicycle.is_some_and(is_access_yes),
+        AccessMode::Motor => true,
+    }
+}
+
+/// Tag-map convenience for [`non_motor_tunnel_allowed`].
+pub fn tags_allow_non_motor_tunnel(tags: &HashMap<String, String>, mode: AccessMode) -> bool {
+    let is_tunnel = tags.get("tunnel").is_some_and(|s| is_tunnel_tag(s));
+    non_motor_tunnel_allowed(
+        mode,
+        is_tunnel,
+        tags.get("highway").map(String::as_str),
+        tags.get("foot").map(String::as_str),
+        tags.get("bicycle").map(String::as_str),
+        tags.get("sidewalk")
+            .or_else(|| tags.get("sidewalk:both"))
+            .or_else(|| tags.get("sidewalk:left"))
+            .or_else(|| tags.get("sidewalk:right"))
+            .map(String::as_str),
+        tags.get("footway").map(String::as_str),
+    )
+}
+
 /// OSM `barrier=*` node that carries access tags relevant to routing.
 pub fn barrier_node_forbids_mode(tags: &HashMap<String, String>, mode: AccessMode) -> bool {
     if !tags.contains_key("barrier") {
@@ -256,5 +327,164 @@ mod tests {
         assert!(tags_forbid_mode(&tags, AccessMode::Bicycle));
         tags.insert("bicycle".into(), "designated".into());
         assert!(!tags_forbid_mode(&tags, AccessMode::Bicycle));
+    }
+
+    #[test]
+    fn hiking_tunnel_allows_foot_yes_sidewalk_and_path() {
+        assert!(non_motor_tunnel_allowed(
+            AccessMode::Foot,
+            true,
+            Some("primary"),
+            Some("yes"),
+            None,
+            None,
+            None
+        ));
+        assert!(non_motor_tunnel_allowed(
+            AccessMode::Foot,
+            true,
+            Some("primary"),
+            Some("designated"),
+            None,
+            None,
+            None
+        ));
+        assert!(non_motor_tunnel_allowed(
+            AccessMode::Foot,
+            true,
+            Some("primary"),
+            None,
+            None,
+            Some("both"),
+            None
+        ));
+        assert!(non_motor_tunnel_allowed(
+            AccessMode::Foot,
+            true,
+            Some("footway"),
+            None,
+            None,
+            None,
+            None
+        ));
+        assert!(non_motor_tunnel_allowed(
+            AccessMode::Foot,
+            true,
+            Some("path"),
+            None,
+            None,
+            None,
+            None
+        ));
+        assert!(non_motor_tunnel_allowed(
+            AccessMode::Foot,
+            true,
+            Some("cycleway"),
+            None,
+            None,
+            None,
+            None
+        ));
+    }
+
+    #[test]
+    fn hiking_tunnel_denies_car_only() {
+        assert!(!non_motor_tunnel_allowed(
+            AccessMode::Foot,
+            true,
+            Some("trunk"),
+            None,
+            Some("yes"),
+            None,
+            None
+        ));
+        let mut tags = HashMap::new();
+        tags.insert("tunnel".into(), "yes".into());
+        tags.insert("highway".into(), "secondary".into());
+        assert!(!tags_allow_non_motor_tunnel(&tags, AccessMode::Foot));
+    }
+
+    #[test]
+    fn bicycle_tunnel_allows_bicycle_yes_sidewalk_and_path() {
+        assert!(non_motor_tunnel_allowed(
+            AccessMode::Bicycle,
+            true,
+            Some("primary"),
+            None,
+            Some("yes"),
+            None,
+            None
+        ));
+        assert!(non_motor_tunnel_allowed(
+            AccessMode::Bicycle,
+            true,
+            Some("primary"),
+            None,
+            Some("designated"),
+            None,
+            None
+        ));
+        assert!(non_motor_tunnel_allowed(
+            AccessMode::Bicycle,
+            true,
+            Some("primary"),
+            None,
+            None,
+            Some("left"),
+            None
+        ));
+        assert!(non_motor_tunnel_allowed(
+            AccessMode::Bicycle,
+            true,
+            Some("cycleway"),
+            None,
+            None,
+            None,
+            None
+        ));
+    }
+
+    #[test]
+    fn bicycle_tunnel_denies_foot_only_or_car_only() {
+        assert!(!non_motor_tunnel_allowed(
+            AccessMode::Bicycle,
+            true,
+            Some("primary"),
+            Some("yes"),
+            None,
+            None,
+            None
+        ));
+        assert!(!non_motor_tunnel_allowed(
+            AccessMode::Bicycle,
+            true,
+            Some("secondary"),
+            None,
+            None,
+            None,
+            None
+        ));
+    }
+
+    #[test]
+    fn non_tunnel_unrestricted_by_this_rule() {
+        assert!(non_motor_tunnel_allowed(
+            AccessMode::Foot,
+            false,
+            Some("motorway"),
+            None,
+            None,
+            None,
+            None
+        ));
+        assert!(non_motor_tunnel_allowed(
+            AccessMode::Bicycle,
+            false,
+            Some("motorway"),
+            None,
+            None,
+            None,
+            None
+        ));
     }
 }

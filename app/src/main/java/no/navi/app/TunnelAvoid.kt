@@ -297,7 +297,7 @@ internal fun tunnelRunLabels(turnsJson: String): List<String> {
     var prev = false
     for (i in 0 until source.length()) {
         val o = source.optJSONObject(i) ?: continue
-        val isTunnel = o.optBoolean("is_tunnel", false)
+        val isTunnel = isForbiddenTunnelTurn(o)
         if (!isTunnel) {
             prev = false
             continue

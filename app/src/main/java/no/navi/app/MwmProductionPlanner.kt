@@ -1198,15 +1198,20 @@ object MwmProductionPlanner {
         return pct.toInt().coerceIn(20, 74)
     }
 
-    /** Contiguous `is_tunnel` runs in CoMaps turns_json. */
+    /**
+     * Contiguous forbidden-tunnel runs in CoMaps turns_json.
+     * Allowed tunnels (`tunnel_ok=true` from the native access rule) are ignored;
+     * legacy turns without `tunnel_ok` still count as forbidden.
+     */
     internal fun tunnelRunCount(turnsJson: String): Int {
         val source = runCatching { JSONArray(turnsJson.ifBlank { "[]" }) }.getOrElse { JSONArray() }
         var count = 0
         var prev = false
         for (i in 0 until source.length()) {
-            val isTunnel = source.optJSONObject(i)?.optBoolean("is_tunnel", false) == true
-            if (isTunnel && !prev) count++
-            prev = isTunnel
+            val o = source.optJSONObject(i) ?: continue
+            val forbidden = isForbiddenTunnelTurn(o)
+            if (forbidden && !prev) count++
+            prev = forbidden
         }
         return count
     }
@@ -1219,15 +1224,15 @@ object MwmProductionPlanner {
         var prev = false
         for (i in 0 until source.length()) {
             val o = source.optJSONObject(i) ?: continue
-            val isTunnel = o.optBoolean("is_tunnel", false)
+            val forbidden = isForbiddenTunnelTurn(o)
             val distM = o.optDouble("dist_m", 0.0).coerceAtLeast(0.0)
-            if (isTunnel) {
+            if (forbidden) {
                 runM = if (prev) runM + distM else distM
                 if (runM > maxM) maxM = runM
             } else {
                 runM = 0.0
             }
-            prev = isTunnel
+            prev = forbidden
         }
         return maxM
     }
@@ -1269,9 +1274,9 @@ object MwmProductionPlanner {
         }
         for (i in 0 until source.length()) {
             val o = source.optJSONObject(i) ?: continue
-            val isTunnel = o.optBoolean("is_tunnel", false)
+            val forbidden = isForbiddenTunnelTurn(o)
             val distKm = (o.optDouble("dist_m", 0.0) / 1000.0).coerceAtLeast(0.0)
-            if (isTunnel) {
+            if (forbidden) {
                 if (runStart < 0.0) runStart = alongKm
                 alongKm += distKm
             } else {
@@ -1321,9 +1326,9 @@ object MwmProductionPlanner {
         }
         for (i in 0 until source.length()) {
             val o = source.optJSONObject(i) ?: continue
-            val isTunnel = o.optBoolean("is_tunnel", false)
+            val forbidden = isForbiddenTunnelTurn(o)
             val distKm = (o.optDouble("dist_m", 0.0) / 1000.0).coerceAtLeast(0.0)
-            if (isTunnel) {
+            if (forbidden) {
                 if (runStart < 0.0) runStart = alongKm
                 alongKm += distKm
             } else {
@@ -1335,7 +1340,7 @@ object MwmProductionPlanner {
         return best
     }
 
-    /** Compact `street@km` fingerprints for leftover tunnel logging / report evidence. */
+    /** Compact `street@km` fingerprints for leftover forbidden-tunnel logging. */
     internal fun tunnelFpSummary(turnsJson: String): String {
         val source = runCatching { JSONArray(turnsJson.ifBlank { "[]" }) }.getOrElse { JSONArray() }
         val fps = ArrayList<String>()
@@ -1344,9 +1349,9 @@ object MwmProductionPlanner {
         var label = "unnamed"
         for (i in 0 until source.length()) {
             val o = source.optJSONObject(i) ?: continue
-            val isTunnel = o.optBoolean("is_tunnel", false)
+            val forbidden = isForbiddenTunnelTurn(o)
             val distKm = (o.optDouble("dist_m", 0.0) / 1000.0).coerceAtLeast(0.0)
-            if (isTunnel) {
+            if (forbidden) {
                 if (!prev) {
                     alongKm = 0.0
                     label =
@@ -1362,7 +1367,7 @@ object MwmProductionPlanner {
                     fps[fps.lastIndex] = "$label@${"%.2f".format(Locale.US, alongKm)}"
                 }
             }
-            prev = isTunnel
+            prev = forbidden
         }
         return fps.joinToString("|").ifBlank { "-" }
     }
@@ -1763,7 +1768,7 @@ object MwmProductionPlanner {
         var ferryAlongKm = 0.0
         for (i in 0 until source.length()) {
             val o = source.optJSONObject(i) ?: continue
-            val isTunnel = o.optBoolean("is_tunnel", false)
+            val isTunnel = isForbiddenTunnelTurn(o)
             val isFerry = o.optBoolean("is_ferry", false)
             val distKm = o.optDouble("dist_m", 0.0) / 1000.0
             val label =

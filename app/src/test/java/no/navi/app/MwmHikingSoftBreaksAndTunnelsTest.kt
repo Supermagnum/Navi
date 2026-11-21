@@ -113,6 +113,7 @@ class MwmHikingSoftBreaksAndTunnelsTest {
     ): JSONObject =
         JSONObject()
             .put("is_tunnel", tunnel)
+            .put("tunnel_ok", false)
             .put("dist_m", distM)
             .put("street", street)
 }

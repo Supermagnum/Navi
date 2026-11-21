@@ -26,6 +26,7 @@ cd "$SRC"
 git checkout --force "$SHA"
 git clean -fd -- libs/routing/navi_wetland_cost.cpp libs/routing/navi_wetland_cost.hpp \
   libs/routing/navi_vehicle_cost.cpp libs/routing/navi_vehicle_cost.hpp \
+  libs/routing/navi_tunnel_access.hpp \
   android/sdk/src/main/cpp/navi 2>/dev/null || true
 while IFS= read -r patch || [[ -n "$patch" ]]; do
   [[ -z "$patch" || "$patch" =~ ^# ]] && continue
