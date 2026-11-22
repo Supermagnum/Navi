@@ -523,6 +523,8 @@
     <string name="drape_map_starting">Starting the map engine...</string>
     <string name="drape_no_maps_title">No offline maps installed</string>
     <string name="drape_no_maps_body">Download a region to show the map and plan routes. Maps are stored on this device and work without a connection.</string>
+    <string name="drape_maps_present_no_engine">Offline maps are installed</string>
+    <string name="drape_maps_present_no_engine_body">Map files are on this device, but the map display engine is not packaged in this build. Routing still uses the installed maps.</string>
     <string name="drape_open_map_downloads">Download maps</string>
     <string name="mwm_maps_title">Offline maps</string>
     <string name="mwm_maps_none">No maps installed</string>

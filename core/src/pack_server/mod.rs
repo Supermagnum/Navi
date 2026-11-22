@@ -341,8 +341,10 @@ fn unreachable(kind: ConnectivityFailureKind, reason: impl Into<String>) -> Conn
 }
 
 fn parse_current_json(body: &str, served_from: &str) -> Connectivity {
+    let served = served_from.trim().trim_end_matches('/').to_string();
     // Phase-8 host stub: rkyv packs retired; `/current.json` points at MWM.
-    // Treat as unreachable (local-bake / MWM Tools path) instead of a parse error.
+    // Host answered — return Ready with an empty region list so UI never claims
+    // the pack server is offline/unreachable. MWM install uses /mwm/current.json.
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(body) {
         let retired = v.get("status").and_then(|s| s.as_str()) == Some("retired")
             || v.get("schema")
@@ -353,10 +355,15 @@ fn parse_current_json(body: &str, served_from: &str) -> Connectivity {
                 .get("mwm_catalog_url")
                 .and_then(|s| s.as_str())
                 .unwrap_or("/mwm/current.json");
-            return unreachable(
-                ConnectivityFailureKind::Malformed,
-                format!("rkyv catalog retired; use MWM catalog at {mwm}"),
+            log::info!(
+                target: "NaviPack",
+                "rkyv catalog retired on {served}; empty ready list; MWM at {mwm}"
             );
+            return Connectivity::Ready(PackCatalog {
+                catalog_generation: "rkyv-retired".to_string(),
+                regions: Vec::new(),
+                served_from: served,
+            });
         }
     }
     let parsed: CurrentJson = match serde_json::from_str(body) {
@@ -394,7 +401,7 @@ fn parse_current_json(body: &str, served_from: &str) -> Connectivity {
     Connectivity::Ready(PackCatalog {
         catalog_generation: parsed.generation,
         regions,
-        served_from: served_from.trim().trim_end_matches('/').to_string(),
+        served_from: served,
     })
 }
 
@@ -465,12 +472,24 @@ pub async fn check_connectivity_timed(base_url: &str, timeout: Duration) -> Conn
 
     let ms = t0.elapsed().as_secs_f64() * 1000.0;
     let conn = parse_current_json(&body, base);
-    let n = conn.catalog().map(|c| c.regions.len()).unwrap_or(0);
-    log::info!(
-        target: "NaviPack",
-        "check_connectivity host={base} outcome=ready regions={n} body_bytes={} ms={ms:.1}",
-        body.len()
-    );
+    match &conn {
+        Connectivity::Ready(c) => {
+            log::info!(
+                target: "NaviPack",
+                "check_connectivity host={base} outcome=ready regions={} gen={} body_bytes={} ms={ms:.1}",
+                c.regions.len(),
+                c.catalog_generation,
+                body.len()
+            );
+        }
+        Connectivity::Unreachable { kind, reason } => {
+            log::info!(
+                target: "NaviPack",
+                "check_connectivity host={base} outcome=unreachable kind={kind:?} reason={reason} body_bytes={} ms={ms:.1}",
+                body.len()
+            );
+        }
+    }
     conn
 }
 
@@ -657,7 +676,7 @@ mod tests {
     }
 
     #[test]
-    fn retired_rkyv_catalog_is_unreachable_not_malformed_parse() {
+    fn retired_rkyv_catalog_is_ready_empty_not_offline() {
         let json = r#"{
             "schema": "navi-rkyv-catalog-retired/1",
             "status": "retired",
@@ -665,11 +684,14 @@ mod tests {
             "regions": {}
         }"#;
         match parse_current_json(json, "https://navigate-me.duckdns.org") {
-            Connectivity::Unreachable { reason, .. } => {
-                assert!(reason.contains("rkyv catalog retired"), "reason={reason}");
-                assert!(reason.contains("/mwm/current.json"), "reason={reason}");
+            Connectivity::Ready(c) => {
+                assert!(c.regions.is_empty(), "retired stub has no rkyv regions");
+                assert_eq!(c.catalog_generation, "rkyv-retired");
+                assert_eq!(c.served_from, "https://navigate-me.duckdns.org");
             }
-            Connectivity::Ready(_) => panic!("retired stub must not parse as Ready"),
+            Connectivity::Unreachable { reason, .. } => {
+                panic!("retired stub must not look offline/unreachable: {reason}")
+            }
         }
     }
 

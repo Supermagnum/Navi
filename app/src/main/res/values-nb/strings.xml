@@ -523,6 +523,8 @@
     <string name="drape_map_starting">Starter kartmotoren ...</string>
     <string name="drape_no_maps_title">Ingen frakoblede kart er installert</string>
     <string name="drape_no_maps_body">Last ned en region for å vise kartet og planlegge ruter. Kartene lagres på enheten og virker uten nett.</string>
+    <string name="drape_maps_present_no_engine">Frakoblede kart er installert</string>
+    <string name="drape_maps_present_no_engine_body">Kartfilene ligger på enheten, men kartvisningsmotoren er ikke pakket i denne byggingen. Ruting bruker fortsatt de installerte kartene.</string>
     <string name="drape_open_map_downloads">Last ned kart</string>
     <string name="mwm_maps_title">Frakoblede kart</string>
     <string name="mwm_maps_none">Ingen kart er installert</string>

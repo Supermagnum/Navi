@@ -41,11 +41,16 @@ run {
                 ?.get(1)
                 ?.take(8)
         }.getOrNull()
+    // Worktrees live under …/Navi-worktrees/<name>, so parent.parent is the
+    // github-projects root that holds Navi-local-artifacts and the main Navi clone.
+    val projectsRoot = root.parentFile?.parentFile
     val candidates =
         listOfNotNull(
             envSrc?.let { File(it) },
             File(root, "third_party/comaps"),
             pinSha?.let { File(root.parentFile, "Navi-local-artifacts/comaps-$it") },
+            pinSha?.let { projectsRoot?.let { pr -> File(pr, "Navi-local-artifacts/comaps-$it") } },
+            projectsRoot?.let { File(it, "Navi/third_party/comaps") },
         )
     val sdkDir =
         candidates

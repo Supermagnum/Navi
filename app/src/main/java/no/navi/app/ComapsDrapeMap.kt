@@ -247,9 +247,17 @@ internal fun ComapsDrapeMap(
     // once. Keeps polling so maps installed later in this process start the drape live.
     LaunchedEffect(Unit) {
         while (isActive && !ready) {
+            val mapsOnDisk =
+                MwmDataDir.hasWorldMwm(MwmDataDir.resolve(context)) ||
+                    MwmMapDownloader.state.installedLeaves.isNotEmpty() ||
+                    ComapsSessionBootstrap.isOpen()
             when {
                 !MwmClientBootstrap.nativeLoaded -> note = "native"
-                !ComapsDrape.eligible() -> note = "nomaps"
+                !ComapsDrape.sdkPackaged() ->
+                    note = if (mapsOnDisk) "nodrape" else "nomaps"
+                !ComapsSessionBootstrap.isOpen() && !mapsOnDisk -> note = "nomaps"
+                !ComapsDrape.eligible() ->
+                    note = if (mapsOnDisk) "starting" else "nomaps"
                 else ->
                     when (ComapsDrape.ensureInitialized(context)) {
                         ComapsDrape.State.READY -> {
@@ -1003,6 +1011,7 @@ private fun DrapePlaceholder(
                     when (note) {
                         "failed" -> stringResource(R.string.drape_map_failed)
                         "starting" -> stringResource(R.string.drape_map_starting)
+                        "nodrape" -> stringResource(R.string.drape_maps_present_no_engine)
                         else -> stringResource(R.string.drape_no_maps_title)
                     },
                 style = MaterialTheme.typography.titleMedium,
@@ -1016,6 +1025,12 @@ private fun DrapePlaceholder(
                 Button(onClick = onOpenMapDownloads, modifier = Modifier.padding(top = 12.dp)) {
                     Text(stringResource(R.string.drape_open_map_downloads))
                 }
+            } else if (note == "nodrape") {
+                Text(
+                    text = stringResource(R.string.drape_maps_present_no_engine_body),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
             } else if (!detail.isNullOrBlank()) {
                 Text(text = detail, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
             }

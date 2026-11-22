@@ -319,10 +319,47 @@ object PackRegionAvailability {
                 "Ready on pack server ($dataSource). Download installs packs + basemap."
             onDevice -> "Packs and basemap installed on device."
             packsOnly -> "Packs on device — basemap still missing (use Download region)."
-            !unreachableReason.isNullOrBlank() && serverReadyIds.isEmpty() ->
+            // Host answered with retired/empty rkyv catalog: not offline.
+            hostAnsweredButEmptyCatalog(unreachableReason, dataSource, serverReadyIds) ->
+                "Pack host reachable ($dataSource); use MWM download for maps."
+            !unreachableReason.isNullOrBlank() &&
+                serverReadyIds.isEmpty() &&
+                isNetworkUnreachable(unreachableReason) ->
                 "Pack server offline — Geofabrik download + basemap."
+            !unreachableReason.isNullOrBlank() && serverReadyIds.isEmpty() ->
+                "Pack host reachable; legacy pack catalog empty — use MWM download."
             else -> ""
         }
+    }
+
+    /** True when the probe reached a host that is up but has no rkyv ready ids. */
+    fun hostAnsweredButEmptyCatalog(
+        unreachableReason: String?,
+        dataSource: String,
+        serverReadyIds: Collection<String>,
+    ): Boolean {
+        if (serverReadyIds.isNotEmpty()) return false
+        val reason = unreachableReason.orEmpty()
+        if (reason.contains("rkyv", ignoreCase = true) ||
+            reason.contains("retired", ignoreCase = true)
+        ) {
+            return true
+        }
+        // Successful discover with empty ready list uses server-duckdns + null reason.
+        return unreachableReason.isNullOrBlank() &&
+            dataSource.contains("server", ignoreCase = true)
+    }
+
+    fun isNetworkUnreachable(reason: String?): Boolean {
+        val r = reason.orEmpty().lowercase()
+        if (r.isBlank()) return false
+        if (r.contains("rkyv") || r.contains("retired")) return false
+        return r.contains("timeout") ||
+            r.contains("connection_failed") ||
+            r.contains("network_error") ||
+            r.contains("discover_failed") ||
+            r.contains("unreachable") ||
+            r.startsWith("not ready (http")
     }
 
     /** Tools Download button label — short when pack server lists the path. */
