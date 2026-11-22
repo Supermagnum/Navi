@@ -40,8 +40,7 @@ fn read_ostlandet_sidecars_and_report_rss() {
         .leaves_for_bake_id("europe_norway_ostlandet")
         .expect("ostlandet")
         .to_vec();
-    let leaves =
-        driver_break_core::mwm::install_leaves_for_region("europe_norway_ostlandet", &raw);
+    let leaves = driver_break_core::mwm::install_leaves_for_region("europe_norway_ostlandet", &raw);
     assert!(leaves.iter().all(|id| id.starts_with("Norway_")));
 
     let dir = std::env::temp_dir().join("navi-mwm-sidecar-live");
