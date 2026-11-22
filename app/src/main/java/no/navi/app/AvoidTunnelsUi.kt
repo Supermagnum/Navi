@@ -41,4 +41,24 @@ object AvoidTunnelsUi {
      * disable tunnel safety.
      */
     fun acceptsPersistedPreference(profile: TravelProfile): Boolean = !isAutoSafeProfile(profile)
+
+    /**
+     * Rewrite the shared avoidance status block so hiking / bike / e-bike do
+     * not show an "Avoid tunnels: ON/OFF" line that looks like a user switch.
+     */
+    fun rewriteAvoidanceReport(
+        profile: TravelProfile,
+        report: String,
+    ): String {
+        if (!isAutoSafeProfile(profile)) return report
+        return report
+            .lineSequence()
+            .map { line ->
+                if (line.startsWith("Avoid tunnels:")) {
+                    "Unsafe tunnels: blocked automatically"
+                } else {
+                    line
+                }
+            }.joinToString("\n")
+    }
 }

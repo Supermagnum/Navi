@@ -1518,6 +1518,23 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     val rotationSnapHandler = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
     var pendingRotationSnap by remember { mutableStateOf<Runnable?>(null) }
     var prioritySharePct by remember { mutableDoubleStateOf(0.0) }
+
+    fun routeAvoidanceStatusText(): String =
+        AvoidTunnelsUi.rewriteAvoidanceReport(
+            profile,
+            formatRouteAvoidanceReport(
+                avoidMotorways,
+                if (avoidTolls) {
+                    uniffi.navi.FfiTollPolicy.PENALIZE
+                } else {
+                    uniffi.navi.FfiTollPolicy.ALLOW
+                },
+                avoidFerries,
+                AvoidTunnelsUi.effectiveAvoidTunnels(profile, avoidTunnels),
+                prioritySharePct,
+            ),
+        )
+
     var savedRoutes by remember { mutableStateOf<List<FfiSavedRoute>>(emptyList()) }
 
     /** When set, the next successful plan triggers a GPX export for this saved route id. */
@@ -5402,17 +5419,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 driveHud.unitSystem,
             )
                 ?: (
-                    formatRouteAvoidanceReport(
-                        avoidMotorways,
-                        if (avoidTolls) {
-                            uniffi.navi.FfiTollPolicy.PENALIZE
-                        } else {
-                            uniffi.navi.FfiTollPolicy.ALLOW
-                        },
-                        avoidFerries,
-                        avoidTunnels,
-                        prioritySharePct,
-                    ) + "\n" +
+                    routeAvoidanceStatusText() + "\n" +
                         DisplayUnits.formatRoutePlanned(
                             result.distanceKm,
                             driveHud.unitSystem,
@@ -9356,18 +9363,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                                 }
                                                 avoidMotorways = on
                                                 DiagnosticLog.logToggle("avoid_motorways", on)
-                                                status =
-                                                    formatRouteAvoidanceReport(
-                                                        avoidMotorways,
-                                                        if (avoidTolls) {
-                                                            uniffi.navi.FfiTollPolicy.PENALIZE
-                                                        } else {
-                                                            uniffi.navi.FfiTollPolicy.ALLOW
-                                                        },
-                                                        avoidFerries,
-                                                        avoidTunnels,
-                                                        prioritySharePct,
-                                                    )
+                                                status = routeAvoidanceStatusText()
                                             },
                                             enabled = !travelProfileLocksAvoidMotorways(profile),
                                             modifier = Modifier.testTag("toggle_avoid_motorways"),
@@ -9402,18 +9398,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                             onCheckedChange = { on ->
                                                 avoidTolls = on
                                                 DiagnosticLog.logToggle("avoid_tolls", on)
-                                                status =
-                                                    formatRouteAvoidanceReport(
-                                                        avoidMotorways,
-                                                        if (avoidTolls) {
-                                                            uniffi.navi.FfiTollPolicy.PENALIZE
-                                                        } else {
-                                                            uniffi.navi.FfiTollPolicy.ALLOW
-                                                        },
-                                                        avoidFerries,
-                                                        avoidTunnels,
-                                                        prioritySharePct,
-                                                    )
+                                                status = routeAvoidanceStatusText()
                                             },
                                             enabled =
                                                 profile == TravelProfile.CAR ||
@@ -9477,18 +9462,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                                 )
                                                 DiagnosticLog.logToggle("avoid_ferries", on)
                                                 DiagnosticLog.logSettingSaved("avoid_ferries", on)
-                                                status =
-                                                    formatRouteAvoidanceReport(
-                                                        avoidMotorways,
-                                                        if (avoidTolls) {
-                                                            uniffi.navi.FfiTollPolicy.PENALIZE
-                                                        } else {
-                                                            uniffi.navi.FfiTollPolicy.ALLOW
-                                                        },
-                                                        avoidFerries,
-                                                        avoidTunnels,
-                                                        prioritySharePct,
-                                                    )
+                                                status = routeAvoidanceStatusText()
                                             },
                                             enabled = avoidFerriesEnabled,
                                             modifier = Modifier.testTag("toggle_avoid_ferries"),
@@ -9506,18 +9480,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                                 onCheckedChange = { on ->
                                                     avoidTunnels = on
                                                     DiagnosticLog.logToggle("avoid_tunnels", on)
-                                                    status =
-                                                        formatRouteAvoidanceReport(
-                                                            avoidMotorways,
-                                                            if (avoidTolls) {
-                                                                uniffi.navi.FfiTollPolicy.PENALIZE
-                                                            } else {
-                                                                uniffi.navi.FfiTollPolicy.ALLOW
-                                                            },
-                                                            avoidFerries,
-                                                            avoidTunnels,
-                                                            prioritySharePct,
-                                                        )
+                                                    status = routeAvoidanceStatusText()
                                                 },
                                                 enabled =
                                                     profile == TravelProfile.CAR ||
@@ -9574,17 +9537,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                         )
                                     }
                                     Text(
-                                        formatRouteAvoidanceReport(
-                                            avoidMotorways,
-                                            if (avoidTolls) {
-                                                uniffi.navi.FfiTollPolicy.PENALIZE
-                                            } else {
-                                                uniffi.navi.FfiTollPolicy.ALLOW
-                                            },
-                                            avoidFerries,
-                                            avoidTunnels,
-                                            prioritySharePct,
-                                        ),
+                                        routeAvoidanceStatusText(),
                                         style = MaterialTheme.typography.bodySmall,
                                     )
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

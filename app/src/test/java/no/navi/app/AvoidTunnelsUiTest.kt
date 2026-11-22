@@ -1,5 +1,6 @@
 package no.navi.app
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -58,6 +59,24 @@ class AvoidTunnelsUiTest {
         )
         assertTrue(
             AvoidTunnelsUi.effectiveAvoidTunnels(TravelProfile.MOBILE_HOME, userPreference = true),
+        )
+    }
+
+    @Test
+    fun autoSafeProfilesRewriteTunnelStatusLine() {
+        val raw =
+            """
+            Avoid motorways: ON
+            Avoid tunnels: OFF
+            Avoid ferries: OFF
+            """.trimIndent()
+        val rewritten =
+            AvoidTunnelsUi.rewriteAvoidanceReport(TravelProfile.HIKING, raw)
+        assertTrue(rewritten.contains("Unsafe tunnels: blocked automatically"))
+        assertFalse(rewritten.contains("Avoid tunnels:"))
+        assertEquals(
+            raw,
+            AvoidTunnelsUi.rewriteAvoidanceReport(TravelProfile.CAR, raw),
         )
     }
 }
