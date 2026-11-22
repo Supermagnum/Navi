@@ -341,6 +341,24 @@ fn unreachable(kind: ConnectivityFailureKind, reason: impl Into<String>) -> Conn
 }
 
 fn parse_current_json(body: &str, served_from: &str) -> Connectivity {
+    // Phase-8 host stub: rkyv packs retired; `/current.json` points at MWM.
+    // Treat as unreachable (local-bake / MWM Tools path) instead of a parse error.
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body) {
+        let retired = v.get("status").and_then(|s| s.as_str()) == Some("retired")
+            || v.get("schema")
+                .and_then(|s| s.as_str())
+                .is_some_and(|s| s.contains("retired"));
+        if retired {
+            let mwm = v
+                .get("mwm_catalog_url")
+                .and_then(|s| s.as_str())
+                .unwrap_or("/mwm/current.json");
+            return unreachable(
+                ConnectivityFailureKind::Malformed,
+                format!("rkyv catalog retired; use MWM catalog at {mwm}"),
+            );
+        }
+    }
     let parsed: CurrentJson = match serde_json::from_str(body) {
         Ok(v) => v,
         Err(e) => {
@@ -635,6 +653,23 @@ mod tests {
                 assert_eq!(c.regions[1].bytes, None);
             }
             Connectivity::Unreachable { reason, .. } => panic!("expected Ready, got {reason}"),
+        }
+    }
+
+    #[test]
+    fn retired_rkyv_catalog_is_unreachable_not_malformed_parse() {
+        let json = r#"{
+            "schema": "navi-rkyv-catalog-retired/1",
+            "status": "retired",
+            "mwm_catalog_url": "/mwm/current.json",
+            "regions": {}
+        }"#;
+        match parse_current_json(json, "https://navigate-me.duckdns.org") {
+            Connectivity::Unreachable { reason, .. } => {
+                assert!(reason.contains("rkyv catalog retired"), "reason={reason}");
+                assert!(reason.contains("/mwm/current.json"), "reason={reason}");
+            }
+            Connectivity::Ready(_) => panic!("retired stub must not parse as Ready"),
         }
     }
 

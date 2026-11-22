@@ -2120,7 +2120,7 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_mwm_installed(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_navi_fn_func_mwm_list_regions(`naviOrigin`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_navi_fn_func_mwm_list_regions(`naviOrigin`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_mwm_migration_discard(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
@@ -2871,7 +2871,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_travel_profile_locks_avoid_motorways() and 0xFFFF) != 40364) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_travel_profile_locks_avoid_tunnels() and 0xFFFF) != 42757) {
+    if ((lib.uniffi_navi_checksum_func_travel_profile_locks_avoid_tunnels() and 0xFFFF) != 31223) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_travel_profile_menu_focus() and 0xFFFF) != 26638) {
@@ -3183,7 +3183,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_mwm_installed() and 0xFFFF) != 65171) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_mwm_list_regions() and 0xFFFF) != 3693) {
+    if ((lib.uniffi_navi_checksum_func_mwm_list_regions() and 0xFFFF) != 23808) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_mwm_migration_discard() and 0xFFFF) != 41547) {
@@ -12200,7 +12200,9 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     
 
         /**
-         * Whether avoid-tunnels is forced on and locked for this profile (hiking only).
+         * Soft avoid-tunnels is never UI-locked. Hiking / bike / e-bike hide the
+         * toggle and rely on HardAvoid; this FFI helper stays for ABI compatibility
+         * and always returns false.
          */ fun `travelProfileLocksAvoidTunnels`(`profile`: TravelProfile): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     uniffiRustCall() { _status ->
@@ -13673,15 +13675,16 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     
 
         /**
-         * List downloadable regions (blocking). Uses live navi catalog, then disk cache, then
-         * CoMaps-direct fallback so Tools still works when navi leaves are empty/unreachable.
-         */ fun `mwmListRegions`(`naviOrigin`: kotlin.String): FfiMwmRegionList {
+         * List downloadable regions (blocking). Prefers `data_dir`'s catalog cache, then
+         * live navi → CoMaps-direct so Tools stays populated on slow networks.
+         */ fun `mwmListRegions`(`naviOrigin`: kotlin.String, `dataDir`: kotlin.String?): FfiMwmRegionList {
             return FfiConverterTypeFfiMwmRegionList.lift(
     uniffiRustCall() { _status ->
     UniffiLib.uniffi_navi_fn_func_mwm_list_regions(
     
         
-        FfiConverterString.lower(`naviOrigin`),_status)
+        FfiConverterString.lower(`naviOrigin`),
+        FfiConverterOptionalString.lower(`dataDir`),_status)
 }
     )
     }

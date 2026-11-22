@@ -526,7 +526,8 @@ class ComapsPhase6bAcceptanceInstrumentedTest {
         h.shell("chmod 644 ${h.SHELL_DIR}/screenshots/a_no_maps_placeholder.png")
         assertTrue("no maps: drape must not be ready", NaviMapTestHooks.drapeState != "READY")
 
-        val regions = uniffi.navi.mwmListRegions(uniffi.navi.defaultPackServerBaseUrl())
+        val regions =
+            uniffi.navi.mwmListRegions(uniffi.navi.defaultPackServerBaseUrl(), h.context.filesDir.absolutePath)
         assertTrue("catalog: ${regions.error}", regions.ok)
         val ost = regions.regions.first { it.id == ostlandetRegion }
         android.util.Log.i(h.TAG, "region ${ost.id} leaves=${ost.leafIds} bytes=${ost.totalBytes}")

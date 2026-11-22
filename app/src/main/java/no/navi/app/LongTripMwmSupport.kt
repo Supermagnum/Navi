@@ -111,8 +111,9 @@ object LongTripMwmSupport {
             return filtered
         }
         val origin = defaultPackServerBaseUrl()
+        val dataDir = MwmDataDir.resolve(context).absolutePath
         val list =
-            runCatching { mwmListRegions(origin) }
+            runCatching { mwmListRegions(origin, dataDir) }
                 .onFailure { Log.w(TAG, "mwmListRegions failed for $geofabrikPath", it) }
                 .getOrNull()
                 ?: return null

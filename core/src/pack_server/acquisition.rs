@@ -7,8 +7,7 @@ use std::path::{Path, PathBuf};
 
 use super::fetch::{try_fetch_region_packs, ServerInstallStamp};
 use super::{
-    check_connectivity_blocking, check_connectivity_blocking_timed,
-    check_connectivity_chain_blocking, check_connectivity_chain_blocking_timed, Connectivity,
+    check_connectivity_blocking_timed, check_connectivity_chain_blocking_timed, Connectivity,
     ConnectivityFailureKind, ReadyRegion, CONNECTIVITY_RETRY_TIMEOUT, CONNECTIVITY_TIMEOUT,
     DEFAULT_PACK_SERVER_BASE_URL,
 };
@@ -290,18 +289,13 @@ pub struct PackCatalogSnapshot {
 /// Soft-fail: unreachable hosts yield an empty ready list and
 /// [`PackDataSource::LocalBake`] with a reason — never panics.
 pub fn discover_pack_catalog(base_url_override: Option<&str>) -> PackCatalogSnapshot {
-    let (connectivity, hop) = if let Some(base) = base_url_override
+    // Same timeout + one longer retry as acquisition planning so region pills
+    // do not stay empty on slow emulator / cellular TLS handshakes.
+    let override_base = base_url_override
         .map(|s| s.trim().trim_end_matches('/'))
         .filter(|s| !s.is_empty())
-    {
-        let tag = hop_tag_for_override_base(base);
-        let conn = check_connectivity_blocking(base);
-        let hop = if conn.is_ready() { Some(tag) } else { None };
-        (conn, hop)
-    } else {
-        let bases = pack_server_discovery_bases();
-        check_connectivity_chain_blocking(&bases)
-    };
+        .map(|s| s.to_string());
+    let (connectivity, hop, _) = probe_catalog_with_timeout_retry(override_base.as_deref());
 
     match connectivity {
         Connectivity::Ready(catalog) => {

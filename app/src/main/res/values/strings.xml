@@ -530,6 +530,7 @@
     <string name="mwm_maps_done">Maps are installed and ready</string>
     <string name="mwm_maps_failed">Map download failed: %1$s</string>
     <string name="mwm_maps_choose">Choose region</string>
+    <string name="mwm_maps_loading_regions">Loading regions…</string>
     <string name="mwm_maps_download">Download</string>
     <string name="mwm_missing_title">Maps missing for this route</string>
     <string name="mwm_missing_body">The route needs these map regions, which are not installed: %1$s. Download them now?</string>

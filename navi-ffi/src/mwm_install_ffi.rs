@@ -9,8 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use driver_break_core::mwm::{
-    install_leaf_set, install_leaves_for_region, installed_leaf_ids_active, installed_sidecar_count,
-    resolve_mwm_catalog, DownloadProgress, MwmCatalog,
+    install_leaf_set, install_leaves_for_region, installed_leaf_ids_active,
+    installed_sidecar_count, resolve_mwm_catalog_for_list, DownloadProgress, MwmCatalog,
 };
 
 static CANCEL: AtomicBool = AtomicBool::new(false);
@@ -138,11 +138,12 @@ fn regions_from_catalog(cat: &MwmCatalog) -> Vec<FfiMwmRegion> {
     regions
 }
 
-/// List downloadable regions (blocking). Uses live navi catalog, then disk cache, then
-/// CoMaps-direct fallback so Tools still works when navi leaves are empty/unreachable.
+/// List downloadable regions (blocking). Prefers `data_dir`'s catalog cache, then
+/// live navi → CoMaps-direct so Tools stays populated on slow networks.
 #[uniffi::export]
-pub fn mwm_list_regions(navi_origin: String) -> FfiMwmRegionList {
-    match resolve_mwm_catalog(&navi_origin, None) {
+pub fn mwm_list_regions(navi_origin: String, data_dir: Option<String>) -> FfiMwmRegionList {
+    let dir = data_dir.as_deref().map(Path::new);
+    match resolve_mwm_catalog_for_list(&navi_origin, dir) {
         Ok(resolved) => FfiMwmRegionList {
             ok: true,
             error: None,

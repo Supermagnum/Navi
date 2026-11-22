@@ -49,7 +49,8 @@ pub use comaps::{
 };
 pub use comaps_fallback::{
     catalog_snapshot_json, fetch_comaps_direct_catalog, resolve_mwm_catalog,
-    synthesize_catalog_from_countries, CatalogResolveSource, ResolvedCatalog,
+    resolve_mwm_catalog_for_list, synthesize_catalog_from_countries, CatalogResolveSource,
+    ResolvedCatalog,
 };
 pub use comaps_instructions::{
     build_voice_prompts, enrich_turns_json, instructions_from_turns_json, ComapsTurnStep,

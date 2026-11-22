@@ -61,6 +61,8 @@ object MwmMapDownloader {
         val sidecars: Int = 0,
         val regions: List<FfiMwmRegion> = emptyList(),
         val regionsError: String? = null,
+        /** True while [loadRegions] is resolving the catalog (disk or network). */
+        val regionsLoading: Boolean = false,
     )
 
     var state by mutableStateOf(State())
@@ -157,15 +159,29 @@ object MwmMapDownloader {
         }
     }
 
-    fun loadRegions() {
+    fun loadRegions(context: Context) {
+        set { it.copy(regionsLoading = true, regionsError = null) }
+        val dir = MwmDataDir.resolve(context).absolutePath
         executor.execute {
-            // Resolves live navi → (no data-dir here) → CoMaps-direct. Install uses disk cache.
-            val r = runCatching { uniffi.navi.mwmListRegions(defaultPackServerBaseUrl()) }.getOrNull()
+            // Disk-first via data_dir so Tools populates from catalog-cache.json
+            // when the pack host is slow; then live navi → CoMaps-direct.
+            val r =
+                runCatching {
+                    uniffi.navi.mwmListRegions(defaultPackServerBaseUrl(), dir)
+                }.getOrNull()
             set {
                 if (r == null || !r.ok) {
-                    it.copy(regionsError = r?.error ?: "catalog unavailable")
+                    it.copy(
+                        regionsLoading = false,
+                        regionsError = r?.error ?: "catalog unavailable",
+                    )
                 } else {
-                    it.copy(regions = r.regions, regionsError = null, version = it.version ?: r.version)
+                    it.copy(
+                        regionsLoading = false,
+                        regions = r.regions,
+                        regionsError = null,
+                        version = it.version ?: r.version,
+                    )
                 }
             }
         }
@@ -424,7 +440,7 @@ internal fun MwmMapsSection(modifier: Modifier = Modifier) {
                 Button(
                     onClick = {
                         showRegions = !showRegions
-                        if (showRegions) MwmMapDownloader.loadRegions()
+                        if (showRegions) MwmMapDownloader.loadRegions(context)
                     },
                     modifier = Modifier.testTag("btn_mwm_regions"),
                 ) { Text(stringResource(R.string.mwm_maps_choose)) }
@@ -434,6 +450,13 @@ internal fun MwmMapsSection(modifier: Modifier = Modifier) {
                 ) { Text(stringResource(R.string.mwm_storage_open_button)) }
             }
             if (showRegions) {
+                if (st.regionsLoading) {
+                    Text(
+                        stringResource(R.string.mwm_maps_loading_regions),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.testTag("mwm_maps_regions_loading"),
+                    )
+                }
                 if (st.regionsError != null) {
                     Text(
                         stringResource(R.string.mwm_maps_failed, st.regionsError ?: ""),

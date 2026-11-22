@@ -530,6 +530,7 @@
     <string name="mwm_maps_done">Kartene er installert og klare</string>
     <string name="mwm_maps_failed">Nedlasting av kart mislyktes: %1$s</string>
     <string name="mwm_maps_choose">Velg region</string>
+    <string name="mwm_maps_loading_regions">Laster regioner…</string>
     <string name="mwm_maps_download">Last ned</string>
     <string name="mwm_missing_title">Kart mangler for denne ruten</string>
     <string name="mwm_missing_body">Ruten trenger disse kartregionene, som ikke er installert: %1$s. Laste dem ned nå?</string>

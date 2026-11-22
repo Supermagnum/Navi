@@ -140,6 +140,28 @@ pub fn resolve_mwm_catalog(
     })
 }
 
+/// Region-list resolve: prefer on-disk cache so Tools stays usable when the
+/// live navi host is slow or unreachable (install still uses live-first
+/// [`resolve_mwm_catalog`]).
+pub fn resolve_mwm_catalog_for_list(
+    navi_origin: &str,
+    data_dir: Option<&Path>,
+) -> Result<ResolvedCatalog, MwmDownloadError> {
+    if !mwm_client_enabled() {
+        return Err(MwmDownloadError::Disabled);
+    }
+    if let Some(dir) = data_dir {
+        if let Some((cat, text)) = load_disk_catalog(dir) {
+            return Ok(ResolvedCatalog {
+                catalog: cat,
+                source: CatalogResolveSource::DiskCache,
+                raw_json: Some(text),
+            });
+        }
+    }
+    resolve_mwm_catalog(navi_origin, data_dir)
+}
+
 /// Build a synthetic catalog from CoMaps (maps only; VL coverage omitted on purpose).
 pub fn fetch_comaps_direct_catalog(
     data_dir: Option<&Path>,
@@ -413,6 +435,22 @@ mod tests {
             assert!(!hedmark.no_sidecar);
             assert!(hedmark.sidecar_url.is_some());
             assert!(resolved.source.allow_missing_sidecar());
+        });
+    }
+
+    #[test]
+    fn list_resolve_prefers_disk_without_hitting_network() {
+        with_mwm_client_override(Some(true), || {
+            let dir = tempdir().unwrap();
+            let cache = catalog_cache_path(dir.path());
+            fs::create_dir_all(cache.parent().unwrap()).unwrap();
+            let example = include_str!("../../tests/fixtures/mwm/catalog-v2.example.json");
+            fs::write(&cache, example).unwrap();
+            // Unreachable origin must not matter when a usable cache exists.
+            let resolved =
+                resolve_mwm_catalog_for_list("https://example.invalid", Some(dir.path())).unwrap();
+            assert_eq!(resolved.source, CatalogResolveSource::DiskCache);
+            assert!(catalog_usable(&resolved.catalog));
         });
     }
 
