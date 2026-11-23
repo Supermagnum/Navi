@@ -99,4 +99,14 @@ class MwmProductionPlannerTest {
         assertTrue(result.report.contains("FAIL: Missing or outdated maps"))
         assertEquals("", result.routePolyline)
     }
+
+    @Test
+    fun lookAheadProbeCapScalesWithDistance() {
+        // Short city hop: a handful of probes, not the long-trip max.
+        assertEquals(2, MwmProductionPlanner.lookAheadProbeCap(5.0, maxCap = 48, kmPerProbe = 8.0))
+        assertEquals(5, MwmProductionPlanner.lookAheadProbeCap(40.0, maxCap = 48, kmPerProbe = 8.0))
+        assertEquals(48, MwmProductionPlanner.lookAheadProbeCap(500.0, maxCap = 48, kmPerProbe = 8.0))
+        assertEquals(2, MwmProductionPlanner.lookAheadProbeCap(10.0, maxCap = 16, kmPerProbe = 12.0))
+        assertEquals(16, MwmProductionPlanner.lookAheadProbeCap(400.0, maxCap = 16, kmPerProbe = 12.0))
+    }
 }

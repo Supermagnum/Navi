@@ -99,6 +99,27 @@ object MwmProductionPlanner {
             .AtomicLong(0)
 
     /**
+     * Bumped when a new outer enrich starts. Background look-ahead seeding aborts
+     * when a newer plan supersedes this epoch (or [cancel] runs).
+     */
+    private val lookAheadSeedEpoch =
+        java.util.concurrent.atomic
+            .AtomicLong(0)
+
+    private val lookAheadSeedExecutor =
+        java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+            Thread(r, "mwm-lookahead-seed").apply { isDaemon = true }
+        }
+
+    /**
+     * Annotate string built from the DATEX refresh already done in
+     * [loadOnRouteDatexBlocks] for this plan. Consumed once by [enrichMwmPlan]
+     * so we do not call [datexRefreshJson] a second time on the critical path.
+     */
+    @Volatile
+    private var pendingDatexAnnotateExtra: String? = null
+
+    /**
      * Leg cache for the plan that is currently soft-avoiding tunnels.
      * Nested replans share it. Cleared when that search returns.
      * Never shared across overlapping plans; [comapsSessionRoute] stays serial.
@@ -109,6 +130,7 @@ object MwmProductionPlanner {
     /** Cancel the plan in flight (if any). Never affects a plan that starts afterwards. */
     fun cancel() {
         cancelGeneration.incrementAndGet()
+        lookAheadSeedEpoch.incrementAndGet()
     }
 
     /**
@@ -368,12 +390,13 @@ object MwmProductionPlanner {
                 return finish(enrichMwmPlan(context, profile, result, ecoEnabled))
             }
             // Nested DATEX / tunnel trials: return bare geometry. Full enrich
-            // (DATEX annotate + soft breaks + CoMaps water/tourism seeding) runs
-            // once on the accepted corridor below — re-seeding 48+16 probes on
-            // every soft-avoid attempt left the HUD stuck at ~10% for minutes.
+            // (DATEX annotate + soft breaks; look-ahead seed is async) runs once
+            // on the accepted corridor below — re-seeding dozens of CoMaps probes
+            // on every soft-avoid attempt left the HUD stuck for minutes.
             if (!applyDatexAvoidance) {
                 return finish(result)
             }
+            pendingDatexAnnotateExtra = null
             RoutingPlanLog.progress(15, ecoEnabled, detail = "mwm_datex")
             result =
                 avoidDatexBlocks(
@@ -1424,9 +1447,18 @@ object MwmProductionPlanner {
                 )
             }.getOrElse { e ->
                 Log.w(TAG, "mwm datex avoid refresh failed: ${e.message}")
+                pendingDatexAnnotateExtra =
+                    "datex_impacts=0; datex_block=0; datex_penalize=0\ndatex_mwm=refresh_failed\n"
                 return emptyList()
             }
-        val o = runCatching { JSONObject(raw) }.getOrNull() ?: return emptyList()
+        val o = runCatching { JSONObject(raw) }.getOrNull()
+        if (o == null) {
+            pendingDatexAnnotateExtra =
+                "datex_impacts=0; datex_block=0; datex_penalize=0\ndatex_mwm=parse_failed\n"
+            return emptyList()
+        }
+        // Stash annotate lines so enrichMwmPlan need not refresh DATEX again.
+        pendingDatexAnnotateExtra = datexActiveToAnnotateExtra(o)
         val active = o.optJSONArray("active") ?: return emptyList()
         val out = ArrayList<DatexBlockHit>()
         for (i in 0 until active.length()) {
@@ -1448,6 +1480,37 @@ object MwmProductionPlanner {
             )
         }
         return out
+    }
+
+    /** Build the enrich-report DATEX lines from a refresh JSON object. */
+    private fun datexActiveToAnnotateExtra(o: JSONObject): String {
+        val active = o.optJSONArray("active") ?: JSONArray()
+        var block = 0
+        var penalize = 0
+        val lines = StringBuilder()
+        for (i in 0 until active.length()) {
+            val s = active.optJSONObject(i) ?: continue
+            val impact = s.optString("impact").lowercase(Locale.US)
+            when (impact) {
+                "block" -> block++
+                "penalty", "penalize" -> penalize++
+                else -> continue
+            }
+            lines.append(
+                "datex_constraint: id=${s.optString("id")}; impact=$impact; " +
+                    "lat=${s.optDouble("lat")}; lon=${s.optDouble("lon")}; " +
+                    "xsi=${s.optString("xsi_type")}\n",
+            )
+        }
+        val impacts = block + penalize
+        return buildString {
+            append("datex_impacts=$impacts; datex_block=$block; datex_penalize=$penalize\n")
+            append(
+                "datex_mwm=overlay_apply; active=${active.length()}; " +
+                    "warning=${o.optString("warning")}\n",
+            )
+            append(lines)
+        }
     }
 
     private fun detourViaForBlock(
@@ -1672,9 +1735,9 @@ object MwmProductionPlanner {
 
     /**
      * MWM plans previously skipped DATEX / soft-break / nearby-attractions that the
-     * `.rkyv` planner fills. Annotate the PASS report and break pins from the same
-     * on-disk DATEX stamp + rest settings, and seed look-ahead from CoMaps tourism
-     * when Navi POI packs are absent.
+     * `.rkyv` planner fills. Annotate the PASS report and break pins on the critical
+     * path; CoMaps look-ahead seeding runs asynchronously so short plans are not
+     * blocked by dozens of serial category searches.
      */
     private fun enrichMwmPlan(
         context: Context,
@@ -1686,19 +1749,37 @@ object MwmProductionPlanner {
         RoutingPlanLog.progress(80, ecoEnabled, detail = "mwm_enrich")
         val dataDir = NaviAppData.resolve(context)
         val samples = downsamplePolyline(base.routePolyline, maxPoints = 120)
-        val datexExtra = annotateDatex(context, dataDir, samples)
+        // Prefer DATEX lines from the avoid-pass refresh; never call datexRefreshJson twice.
+        val reusedDatex = pendingDatexAnnotateExtra
+        pendingDatexAnnotateExtra = null
+        val datexExtra =
+            when {
+                base.report.contains("datex_impacts=") -> ""
+                reusedDatex != null -> reusedDatex
+                else -> annotateDatex(context, dataDir, samples)
+            }
         val (breaksJson, restExtra) =
             softBreakPoisJson(dataDir, profile, base.routePolyline, base.distanceKm, base.etaMinutes)
-        // Seed look-ahead store only — attraction *counts* come from the cone query
-        // in MainActivity, never from this report. Ingest replaces the whole store,
-        // so tourism must run after water or Severdigheter hits are wiped.
-        // Nested tunnel/DATEX trials no longer call enrich; this runs once per plan.
-        seedWaterFromComaps(samples)
-        seedAttractionsFromComaps(samples)
-        // Tunnel / ferry runs come from CoMaps turns_json (is_tunnel / is_ferry), which
-        // the .rkyv path emits via path_tunnel_legs / ferry edges. Keep the same report
-        // tokens so RoutePlanStats and the campaign corridor_counts stay populated.
+        // Tunnel / ferry runs come from CoMaps turns_json (is_tunnel / is_ferry).
         val pathExtra = annotatePathFlagsFromTurns(base)
+        // Look-ahead store seed only — attraction counts stay cone-only (MainActivity).
+        // Run off the plan critical path; a newer plan/cancel bumps the epoch.
+        val seedEpoch = lookAheadSeedEpoch.incrementAndGet()
+        val seedSamples = samples.toList()
+        val seedDistanceKm = base.distanceKm
+        lookAheadSeedExecutor.execute {
+            if (lookAheadSeedEpoch.get() != seedEpoch) return@execute
+            seedWaterFromComaps(seedSamples, seedDistanceKm)
+            if (lookAheadSeedEpoch.get() != seedEpoch) return@execute
+            seedAttractionsFromComaps(seedSamples, seedDistanceKm)
+            if (lookAheadSeedEpoch.get() == seedEpoch) {
+                Log.i(
+                    TAG,
+                    "mwm_enrich look-ahead seed done epoch=$seedEpoch " +
+                        "distance_km=${"%.1f".format(Locale.US, seedDistanceKm)}",
+                )
+            }
+        }
         val report =
             buildString {
                 append(base.report.trimEnd())
@@ -1706,12 +1787,14 @@ object MwmProductionPlanner {
                 if (pathExtra.isNotBlank()) append(pathExtra)
                 if (datexExtra.isNotBlank()) append(datexExtra)
                 if (restExtra.isNotBlank()) append(restExtra)
+                append("mwm_enrich_lookahead=async\n")
             }
         Log.i(
             TAG,
             "mwm_enrich datex_lines=${datexExtra.lineSequence().count()} " +
                 "break_pois=${runCatching { JSONArray(breaksJson).length() }.getOrDefault(0)} " +
-                "path=${pathExtra.lineSequence().firstOrNull().orEmpty()}",
+                "path=${pathExtra.lineSequence().firstOrNull().orEmpty()} " +
+                "lookahead=async epoch=$seedEpoch",
         )
         return CorridorRouteResult(
             report = report,
@@ -1842,31 +1925,7 @@ object MwmProductionPlanner {
         val o =
             runCatching { JSONObject(raw) }.getOrNull()
                 ?: return "datex_impacts=0; datex_block=0; datex_penalize=0\ndatex_mwm=parse_failed\n"
-        val active = o.optJSONArray("active") ?: JSONArray()
-        var block = 0
-        var penalize = 0
-        val lines = StringBuilder()
-        for (i in 0 until active.length()) {
-            val s = active.optJSONObject(i) ?: continue
-            // DatexImpact::as_str uses "penalty" (not "penalize").
-            val impact = s.optString("impact").lowercase(Locale.US)
-            when (impact) {
-                "block" -> block++
-                "penalty", "penalize" -> penalize++
-                else -> continue
-            }
-            lines.append(
-                "datex_constraint: id=${s.optString("id")}; impact=$impact; " +
-                    "lat=${s.optDouble("lat")}; lon=${s.optDouble("lon")}; " +
-                    "xsi=${s.optString("xsi_type")}\n",
-            )
-        }
-        val impacts = block + penalize
-        return buildString {
-            append("datex_impacts=$impacts; datex_block=$block; datex_penalize=$penalize\n")
-            append("datex_mwm=overlay_apply; active=${active.length()}; warning=${o.optString("warning")}\n")
-            append(lines)
-        }
+        return datexActiveToAnnotateExtra(o)
     }
 
     private fun softBreakPoisJson(
@@ -1981,17 +2040,20 @@ object MwmProductionPlanner {
             else -> false
         }
 
-    private fun seedAttractionsFromComaps(samples: List<Pair<Double, Double>>) {
+    private fun seedAttractionsFromComaps(
+        samples: List<Pair<Double, Double>>,
+        distanceKm: Double,
+    ) {
         // Fill the look-ahead store for the cone. Counts stay cone-only (MainActivity).
-        // Match POI_LOOKAHEAD_CONE_M (850 m): denser probes so mountain tourism within
-        // cone reach is ingestible (8×1.2 km probes previously seeded nothing).
+        // Probe count scales with corridor length so short plans are not charged
+        // the long-trip mountain density budget.
         seedComapsCategoryPois(
             samples = samples,
             categoryKey = "category_tourism",
             fallbackQuery = "Tourism",
             ingestId = "mwm-corridor-tourism",
             logLabel = "mwm_attractions",
-            sampleCap = 48,
+            sampleCap = lookAheadProbeCap(distanceKm, maxCap = 48, kmPerProbe = 8.0),
             maxDistM = 850.0,
             tagBuilder = { h ->
                 JSONObject()
@@ -2001,14 +2063,17 @@ object MwmProductionPlanner {
         )
     }
 
-    private fun seedWaterFromComaps(samples: List<Pair<Double, Double>>) {
+    private fun seedWaterFromComaps(
+        samples: List<Pair<Double, Double>>,
+        distanceKm: Double,
+    ) {
         seedComapsCategoryPois(
             samples = samples,
             categoryKey = "category_water",
             fallbackQuery = "Water",
             ingestId = "mwm-corridor-water",
             logLabel = "mwm_water",
-            sampleCap = 16,
+            sampleCap = lookAheadProbeCap(distanceKm, maxCap = 16, kmPerProbe = 12.0),
             maxDistM = 1_200.0,
             tagBuilder = { h ->
                 JSONObject()
@@ -2017,6 +2082,21 @@ object MwmProductionPlanner {
                     .put("natural", if (comapsHitLooksLikeSpring(h.featureType, h.name)) "spring" else "")
             },
         )
+    }
+
+    /**
+     * Look-ahead CoMaps probe budget from corridor length. Short hops stay cheap;
+     * long corridors still reach [maxCap].
+     */
+    internal fun lookAheadProbeCap(
+        distanceKm: Double,
+        maxCap: Int,
+        kmPerProbe: Double,
+        minCap: Int = 2,
+    ): Int {
+        val km = distanceKm.coerceAtLeast(0.0)
+        val spaced = if (kmPerProbe <= 0.0) maxCap else kotlin.math.ceil(km / kmPerProbe).toInt()
+        return spaced.coerceIn(minCap.coerceAtLeast(1), maxCap.coerceAtLeast(1))
     }
 
     private fun seedComapsCategoryPois(
