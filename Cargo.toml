@@ -75,7 +75,7 @@ sha1 = "0.10"
 zstd = "0.13"
 hex = "0.4"
 base64 = "0.22"
-ed25519-dalek = "2"
+ed25519-dalek = "3"
 
 # Android libnavi.so / release binaries: size-first (wasmtime Cranelift is large).
 # Do not set strip here — UniFFI bindgen needs metadata in the .so; scripts/
