@@ -7,9 +7,9 @@ import android.os.Build
 import android.os.Debug
 import android.os.SystemClock
 import android.util.Log
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -581,9 +581,13 @@ class HikingLongTripNashaugsLothepusUiCampaignTest {
         // Hiking hides Avoid tunnels (HardAvoid is always on). Avoid ferries OFF.
         ensureAvoidOff("Avoid ferries")
         runCatching {
-            composeRule
-                .onNodeWithTag("toggle_avoid_tunnels", useUnmergedTree = true)
-                .assertDoesNotExist()
+            val tunnelToggleNodes =
+                composeRule
+                    .onAllNodesWithTag("toggle_avoid_tunnels", useUnmergedTree = true)
+                    .fetchSemanticsNodes()
+            check(tunnelToggleNodes.isEmpty()) {
+                "toggle_avoid_tunnels should be hidden for hiking"
+            }
             noteUi("toggle_avoid_tunnels", "absent_for_hiking")
         }
         runCatching {
