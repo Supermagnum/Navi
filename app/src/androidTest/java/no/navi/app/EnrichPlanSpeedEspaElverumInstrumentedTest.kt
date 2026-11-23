@@ -24,9 +24,11 @@ import java.util.Locale
 class EnrichPlanSpeedEspaElverumInstrumentedTest {
     private val h = ComapsPhase6Harness
 
-    // Nominatim: St1 Espa / McDonald's Elverum.
+    // Nominatim: St1 Espa / McDonald's Elverum / Litjfossen (Kvikneveien, Tynset).
     private val st1Espa = Triple("St1 Espa", 60.5621914, 11.2561239)
     private val mcdonaldsElverum = Triple("McDonald's Elverum", 60.8871362, 11.5154077)
+    private val litjfossen =
+        Triple("Litjfossen", 62.6692299, 10.1522021)
 
     @Before
     fun openSession() {
@@ -40,6 +42,27 @@ class EnrichPlanSpeedEspaElverumInstrumentedTest {
 
     @Test
     fun st1_espa_to_mcdonalds_elverum_plans_under_6s() {
+        measureCorridor(
+            to = mcdonaldsElverum,
+            reportName = "enrich_plan_speed_espa_elverum.txt",
+            logLabel = "espa_elverum",
+        )
+    }
+
+    @Test
+    fun st1_espa_to_litjfossen_plans_under_6s() {
+        measureCorridor(
+            to = litjfossen,
+            reportName = "enrich_plan_speed_espa_litjfossen.txt",
+            logLabel = "espa_litjfossen",
+        )
+    }
+
+    private fun measureCorridor(
+        to: Triple<String, Double, Double>,
+        reportName: String,
+        logLabel: String,
+    ) {
         // Warm-up: first CoMaps route after session open can pay index cost.
         runCatching {
             MwmProductionPlanner.plan(
@@ -47,8 +70,8 @@ class EnrichPlanSpeedEspaElverumInstrumentedTest {
                 profile = TravelProfile.CAR,
                 startLat = st1Espa.second,
                 startLon = st1Espa.third,
-                endLat = mcdonaldsElverum.second,
-                endLon = mcdonaldsElverum.third,
+                endLat = to.second,
+                endLon = to.third,
                 vias = emptyList(),
                 avoidMotorways = false,
                 avoidTolls = false,
@@ -64,8 +87,8 @@ class EnrichPlanSpeedEspaElverumInstrumentedTest {
                 profile = TravelProfile.CAR,
                 startLat = st1Espa.second,
                 startLon = st1Espa.third,
-                endLat = mcdonaldsElverum.second,
-                endLon = mcdonaldsElverum.third,
+                endLat = to.second,
+                endLon = to.third,
                 vias = emptyList(),
                 avoidMotorways = false,
                 avoidTolls = false,
@@ -75,13 +98,10 @@ class EnrichPlanSpeedEspaElverumInstrumentedTest {
         val planMs = SystemClock.elapsedRealtime() - t0
 
         val dataDir = NaviAppData.resolve(h.context)
-        File(dataDir, "enrich_plan_speed_espa_elverum.txt").writeText(
+        File(dataDir, reportName).writeText(
             buildString {
                 appendLine("from=${st1Espa.first} ${st1Espa.second},${st1Espa.third}")
-                appendLine(
-                    "to=${mcdonaldsElverum.first} " +
-                        "${mcdonaldsElverum.second},${mcdonaldsElverum.third}",
-                )
+                appendLine("to=${to.first} ${to.second},${to.third}")
                 appendLine("plan_ms=$planMs")
                 appendLine("distance_km=${"%.3f".format(Locale.US, result.distanceKm)}")
                 appendLine("eta_min=${"%.1f".format(Locale.US, result.etaMinutes)}")
@@ -91,7 +111,7 @@ class EnrichPlanSpeedEspaElverumInstrumentedTest {
         )
         Log.i(
             TAG,
-            "espa_elverum plan_ms=$planMs distance_km=${result.distanceKm} " +
+            "$logLabel plan_ms=$planMs distance_km=${result.distanceKm} " +
                 "pass=${result.report.contains("PASS")}",
         )
 
