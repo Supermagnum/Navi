@@ -630,6 +630,14 @@ object NaviMapTestHooks {
     var lastRoutePlanStatsJson: String = "{}"
 
     /**
+     * Epoch from [MwmProductionPlanner] after async look-ahead seed finishes.
+     * Campaigns waiting on [lastRoutePlanStatsJson] attraction_count should also
+     * wait until this advances past the plan's seed start when enrich is async.
+     */
+    @Volatile
+    var lookAheadSeedCompletedEpoch: Long = 0L
+
+    /**
      * Accepted wild-camping sites from the latest suggestAlongRoute (0 until the
      * camping LaunchedEffect finishes). Campaigns waiting only on attractions
      * must also wait until this is > 0 when the camping plugin is on.

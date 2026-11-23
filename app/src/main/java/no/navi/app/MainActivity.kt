@@ -1502,6 +1502,19 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     /** Last plan's `graph_ferry_edges=N`; null until a plan reports it. */
     var graphFerryEdges by remember { mutableStateOf<Int?>(null) }
     var routePlanStats by remember { mutableStateOf(RoutePlanStats()) }
+    /**
+     * Bumped on the main thread when [MwmProductionPlanner]'s async look-ahead
+     * seed finishes so corridor attraction tallies re-query the ingest store.
+     */
+    var lookAheadSeedEpoch by remember { mutableLongStateOf(0L) }
+    DisposableEffect(Unit) {
+        val listener: (Long) -> Unit = { epoch -> lookAheadSeedEpoch = epoch }
+        MwmProductionPlanner.addLookAheadSeedListener(listener)
+        // Catch a seed that finished before this composition subscribed.
+        val already = MwmProductionPlanner.lookAheadSeedCompletedEpoch()
+        if (already > lookAheadSeedEpoch) lookAheadSeedEpoch = already
+        onDispose { MwmProductionPlanner.removeLookAheadSeedListener(listener) }
+    }
     var avoidTunnels by remember { mutableStateOf(false) }
     var preferOfficialNetworks by remember { mutableStateOf(false) }
     var preferPilgrimRoutes by remember { mutableStateOf(false) }
@@ -2594,6 +2607,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
         mapState.polyline,
         routeSamples,
         dataDir,
+        lookAheadSeedEpoch,
     ) {
         if (mapState.polyline.isBlank()) return@LaunchedEffect
         if (!poiLookaheadEnabled || routeSamples.size < 2) {
@@ -2606,6 +2620,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
         }
         // Dense corridor probes so MWM CoMaps tourism seeds (up to ~5 km off-sample)
         // still fall inside the 850 m isotropic query around some probe.
+        // [lookAheadSeedEpoch] re-runs this after async MWM tourism ingest finishes.
         val sampleCap = 48
         val samples =
             if (routeSamples.size <= sampleCap) {
@@ -2615,6 +2630,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 routeSamples.filterIndexed { idx, _ -> idx % step == 0 }.take(sampleCap)
             }
         val packDirs = longTripPackDirsJson()
+        val seedEpoch = lookAheadSeedEpoch
         val jsons =
             withContext(Dispatchers.IO) {
                 val out = ArrayList<String>(samples.size)
@@ -2660,7 +2676,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
         NaviMapTestHooks.lastRoutePlanStatsJson = routePlanStats.toReportJson().toString()
         android.util.Log.i(
             "NaviAttractions",
-            "lookahead tally attraction_count=$n types=${byType.size} samples=${samples.size}",
+            "lookahead tally attraction_count=$n types=${byType.size} " +
+                "samples=${samples.size} seed_epoch=$seedEpoch",
         )
         PlanReportStore.patchResultEnumerations(
             context,

@@ -174,6 +174,7 @@ class CarRaufossBergenUiCampaignTest {
         NaviMapTestHooks.lastPlanDistanceKm = 0.0
         NaviMapTestHooks.lastRoutePolylineChars = 0
         NaviMapTestHooks.lastManeuversJson = "[]"
+        NaviMapTestHooks.lookAheadSeedCompletedEpoch = 0L
         report.put("campaign", "raufoss_bergen_car_ui_mwm")
         report.put("started_unix", System.currentTimeMillis() / 1000)
         report.put("ram_before_mib", processPssMib())
@@ -402,16 +403,33 @@ class CarRaufossBergenUiCampaignTest {
             writeReport()
         }
 
-        // Nearby-attractions tally is async after apply; wait briefly so corridor_counts
-        // can pick up look-ahead hits seeded from CoMaps during the MWM plan.
-        val attrWaitDeadline = System.currentTimeMillis() + 45_000L
+        // Nearby-attractions tally is async: wait for look-ahead seed epoch first
+        // (48 CoMaps category probes can exceed 90s on this corridor), then for
+        // MainActivity's re-tally to publish attraction_count.
+        val seedBefore = NaviMapTestHooks.lookAheadSeedCompletedEpoch
+        val seedDeadline = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(5)
+        while (System.currentTimeMillis() < seedDeadline &&
+            NaviMapTestHooks.lookAheadSeedCompletedEpoch <= seedBefore
+        ) {
+            Thread.sleep(1_500)
+            composeRule.mainClock.advanceTimeBy(1_500)
+        }
+        val seedDone = NaviMapTestHooks.lookAheadSeedCompletedEpoch > seedBefore
+        noteUi(
+            "lookahead_seed",
+            "done=$seedDone epoch=${NaviMapTestHooks.lookAheadSeedCompletedEpoch}",
+        )
+        val attrWaitDeadline = System.currentTimeMillis() + 60_000L
         while (System.currentTimeMillis() < attrWaitDeadline) {
             val n =
                 runCatching {
                     JSONObject(NaviMapTestHooks.lastRoutePlanStatsJson).optInt("attraction_count")
                 }.getOrDefault(0)
             if (n > 0) {
-                noteUi("attractions_ready", "count=$n")
+                noteUi(
+                    "attractions_ready",
+                    "count=$n seed_epoch=${NaviMapTestHooks.lookAheadSeedCompletedEpoch}",
+                )
                 break
             }
             Thread.sleep(1_500)

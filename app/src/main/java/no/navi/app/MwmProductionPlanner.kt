@@ -106,10 +106,45 @@ object MwmProductionPlanner {
         java.util.concurrent.atomic
             .AtomicLong(0)
 
+    /**
+     * Last successfully finished look-ahead seed epoch (attractions + water).
+     * MainActivity re-tallies corridor attractions when this advances so async
+     * seed is not raced by the first empty [poiLookaheadQueryJson] pass.
+     */
+    private val lookAheadSeedCompletedEpoch =
+        java.util.concurrent.atomic
+            .AtomicLong(0)
+
+    private val lookAheadSeedListeners =
+        java.util.concurrent.CopyOnWriteArrayList<(Long) -> Unit>()
+
     private val lookAheadSeedExecutor =
         java.util.concurrent.Executors.newSingleThreadExecutor { r ->
             Thread(r, "mwm-lookahead-seed").apply { isDaemon = true }
         }
+
+    /** Epoch of the last completed async look-ahead seed (0 = none yet). */
+    fun lookAheadSeedCompletedEpoch(): Long = lookAheadSeedCompletedEpoch.get()
+
+    /** Receive main-thread callbacks when a look-ahead seed finishes. */
+    fun addLookAheadSeedListener(listener: (Long) -> Unit) {
+        lookAheadSeedListeners.add(listener)
+    }
+
+    fun removeLookAheadSeedListener(listener: (Long) -> Unit) {
+        lookAheadSeedListeners.remove(listener)
+    }
+
+    private fun notifyLookAheadSeedDone(epoch: Long) {
+        lookAheadSeedCompletedEpoch.set(epoch)
+        NaviMapTestHooks.lookAheadSeedCompletedEpoch = epoch
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        for (listener in lookAheadSeedListeners) {
+            main.post {
+                runCatching { listener(epoch) }
+            }
+        }
+    }
 
     /**
      * Annotate string built from the DATEX refresh already done in
@@ -1778,6 +1813,8 @@ object MwmProductionPlanner {
                     "mwm_enrich look-ahead seed done epoch=$seedEpoch " +
                         "distance_km=${"%.1f".format(Locale.US, seedDistanceKm)}",
                 )
+                // Wake corridor attraction tally (MainActivity LaunchedEffect).
+                notifyLookAheadSeedDone(seedEpoch)
             }
         }
         val report =
