@@ -174,6 +174,7 @@ class CarRaufossBergenUiCampaignTest {
         NaviMapTestHooks.lastPlanDistanceKm = 0.0
         NaviMapTestHooks.lastRoutePolylineChars = 0
         NaviMapTestHooks.lastManeuversJson = "[]"
+        NaviMapTestHooks.lookAheadSeedCompletedEpoch = 0L
         report.put("campaign", "raufoss_bergen_car_ui_mwm")
         report.put("started_unix", System.currentTimeMillis() / 1000)
         report.put("ram_before_mib", processPssMib())
@@ -402,16 +403,22 @@ class CarRaufossBergenUiCampaignTest {
             writeReport()
         }
 
-        // Nearby-attractions tally is async after apply; wait briefly so corridor_counts
-        // can pick up look-ahead hits seeded from CoMaps during the MWM plan.
-        val attrWaitDeadline = System.currentTimeMillis() + 45_000L
+        // Nearby-attractions tally is async: MWM tourism seed runs off the plan path,
+        // then MainActivity re-queries when lookAheadSeedCompletedEpoch advances.
+        val seedBefore = NaviMapTestHooks.lookAheadSeedCompletedEpoch
+        val attrWaitDeadline = System.currentTimeMillis() + 90_000L
         while (System.currentTimeMillis() < attrWaitDeadline) {
             val n =
                 runCatching {
                     JSONObject(NaviMapTestHooks.lastRoutePlanStatsJson).optInt("attraction_count")
                 }.getOrDefault(0)
+            val seedDone = NaviMapTestHooks.lookAheadSeedCompletedEpoch > seedBefore
             if (n > 0) {
-                noteUi("attractions_ready", "count=$n")
+                noteUi(
+                    "attractions_ready",
+                    "count=$n seed_epoch=${NaviMapTestHooks.lookAheadSeedCompletedEpoch} " +
+                        "seed_done=$seedDone",
+                )
                 break
             }
             Thread.sleep(1_500)

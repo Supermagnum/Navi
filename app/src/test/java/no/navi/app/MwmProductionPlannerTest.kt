@@ -109,4 +109,11 @@ class MwmProductionPlannerTest {
         assertEquals(2, MwmProductionPlanner.lookAheadProbeCap(10.0, maxCap = 16, kmPerProbe = 12.0))
         assertEquals(16, MwmProductionPlanner.lookAheadProbeCap(400.0, maxCap = 16, kmPerProbe = 12.0))
     }
+
+    @Test
+    fun lookAheadSeedCompletedEpochStartsAtZeroOrPositive() {
+        // Listener API is exercised on device; epoch getter must stay readable
+        // from JVM unit tests without requiring a Looper.
+        assertTrue(MwmProductionPlanner.lookAheadSeedCompletedEpoch() >= 0L)
+    }
 }
