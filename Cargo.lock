@@ -1044,7 +1044,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
 dependencies = [
  "quote",
- "syn 2.0.119",
+ "syn 3.0.2",
 ]
 
 [[package]]
@@ -1333,7 +1333,7 @@ dependencies = [
  "resvg",
  "rkyv",
  "roxmltree 0.21.2",
- "rstar 0.13.0",
+ "rstar 0.14.0",
  "rusqlite",
  "serde",
  "serde_json",
@@ -2259,6 +2259,16 @@ name = "heapless"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0bfb9eb618601c89945a70e254898da93b13be0388091d42117462b265bb3fad"
+dependencies = [
+ "hash32",
+ "stable_deref_trait",
+]
+
+[[package]]
+name = "heapless"
+version = "0.9.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "411fdef4df93751117bd9ef8caa0e7f99c65dafec5bd84313eb8e2fdd75e32f2"
 dependencies = [
  "hash32",
  "stable_deref_trait",
@@ -3630,6 +3640,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
+name = "ordered-float"
+version = "5.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f59006ce1e204c30956638535b74d317bca99477b9356dfaec54c37f6f600ab"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "osm4routing"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4608,19 +4627,20 @@ version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "421400d13ccfd26dfa5858199c30a5d76f9c54e0dba7575273025b43c5175dbb"
 dependencies = [
- "heapless",
+ "heapless 0.8.0",
  "num-traits",
  "smallvec",
 ]
 
 [[package]]
 name = "rstar"
-version = "0.13.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5912b862fa5ffb462607bfd1e35036c458c537921f508c8235a83d5f3987edfe"
+checksum = "d95c33d01e9acee7be3363f99e9ef88b1a587186e81e03843fbe39d77d9a0c1f"
 dependencies = [
- "heapless",
+ "heapless 0.9.4",
  "num-traits",
+ "ordered-float",
  "smallvec",
 ]
 
