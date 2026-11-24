@@ -178,9 +178,13 @@ Brief local leave of E 6 onto **Storgata / Hamarvegen (213)** ~along **1135–11
 | `wild_camping_status` | OK / ok | — |
 | By country | se=53, no=61 | — |
 | By subdivision | se=53; no-31=7; no-32=13; no-03=2; no-34=34; no-46=5 | — |
-| `rest_place_count` | **0** | (enumeration empty; soft rest fields seeded 1.5 h / 15 min) |
+| `rest_place_count` | **0** | enumeration empty at campaign time (see gap note) |
 | `break_poi_count` / overnight_stops | 0 / `[]` | no overnight stop objects in plan JSON |
 | Camping plugin | UI toggle visible, pref ON | — |
+
+**Why `rest_place_count` was 0 (do not invent names):** This Bevensen ART ran **before** `MwmBreakPois` (`aec359ec3`). `MwmProductionPlanner` hard-coded `breakPoisJson="[]"` on the MWM path even when Ostlandet/corridor leaves contain cabin / shelter / picnic POIs. Soft rest interval fields (1.5 h / 15 min) were seeded, but no named break POIs or coordinates were emitted. **No rest-place names are listed here** because none were produced by that ART.
+
+**Post-fix note (2026-11-24, after `MwmBreakPois`):** Full Bevensen MobileHome corridor was not re-planned. Ostlandet MWM smoke on device (`MwmBreakPoisSmokeInstrumentedTest` Hamar→Lillehammer Hiking) returned **`rest_place_count=6`** with named picnic pins + coords. Full Pilgrim Hiking re-run (`docs/test-results/pilgrim-long-test.md`, ART `attempt_20261124_114827`) returned **`rest_place_count=29`**. A dedicated MobileHome Bevensen corridor re-plan for named rest places was not executed in this update.
 
 ---
 
