@@ -1,4 +1,11 @@
-# Vehicle limits on the MWM path: design note (not built)
+# Vehicle limits on the MWM path: design note
+
+Status: STEP 1 (warnings + total weight) and STEP 2 (navi-server section) shipped;
+STEP 3 applies the hook in the **car** estimator (not the wetland Soft/Hard path).
+A segment is blocked only when the vehicle value is **strictly greater** than the
+posted limit. Missing / zero limit ⇒ allowed. CoMaps `CarEstimator` has no
+impassable API on pin `fd11cc6f`, so blocked segments use HardAvoid-style ×1e6
+weight. Lookup key is `(feature_id, segment_index)` (both travel directions).
 
 Decision 15a of `docs/mwm-phase6b-drape.md`: truck, mobile home, electric car and motorcycle routes are
 planned as the CoMaps car profile and the UI says "limits not applied on this map type". No truck model is

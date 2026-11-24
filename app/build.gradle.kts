@@ -44,8 +44,8 @@ android {
         minSdk = 26
         targetSdk = 36
         // F-Droid upstream CurrentVersionCode is 33 (0.3.30-beta); next is 34.
-        versionCode = 35
-        versionName = "0.5.0-beta"
+        versionCode = 36
+        versionName = "0.5.1-beta"
         testInstrumentationRunner = "no.navi.app.NaviAndroidTestRunner"
         // Phase 8 / G4: MWM client always ON (no classic MapLibre / `.rkyv` product path).
         buildConfigField("boolean", "MWM_CLIENT_ENABLED", "true")
@@ -255,12 +255,17 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    // NR01 named-route stubs are zstd section bodies inside `{leaf}.navi-sidecar.v1.zst`.
+    implementation("com.github.luben:zstd-jni:1.5.7-28")
     implementation("net.java.dev.jna:jna:5.19.1@aar")
     // MapLibre still packaged until Phase 8 deletion completes (dead on MWM-only path).
     implementation("org.maplibre.gl:android-sdk:13.7.1")
     // CoMaps drape (Java/res/assets of the pinned checkout, no CMake): see comaps-sdk/.
     if (rootProject.findProject(":comaps-sdk") != null) {
         implementation(project(":comaps-sdk"))
+        // androidTest compiles headless CoMaps suites that import app.organicmaps.sdk.*;
+        // keep the SDK on the instrumented classpath even when AGP does not expose it.
+        androidTestImplementation(project(":comaps-sdk"))
     }
     debugImplementation("androidx.compose.ui:ui-tooling")
 

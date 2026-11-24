@@ -29,6 +29,9 @@ app/src/main/assets/plugins/
 app/src/main/assets/comaps-data/
 # Accidental / local CoMaps clone (use scripts/fetch-comaps.sh + pin JSON).
 third_party/comaps/
+# Local campaign brief scripts / trip prompts (not for commit).
+/test-trips/
+
 # Large Phase 3 device route artifacts (adb pull); do not commit GeoJSON dumps.
 test-artifacts/mwm-phase3/
 test-artifacts/mwm-phase4/
@@ -90,3 +93,7 @@ testdata/cat/local/
 
 # User-downloaded RepeaterBook KML exports. Must never be committed.
 /klm/
+
+# Local OpenRepeater / RepeaterBook KML drops (device mirror / examples). Never commit.
+/repeater-data/
+/repeater-data/**

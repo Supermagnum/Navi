@@ -3084,14 +3084,31 @@ fn edge_meta(edge: &Edge, profile: RoutingProfile) -> EdgeMeta {
     let motor_vehicle_conditional = edge.tags.get("motor_vehicle:conditional").cloned();
     let access_conditional = edge.tags.get("access:conditional").cloned();
     let maxspeed_conditional = edge.tags.get("maxspeed:conditional").cloned();
+    let mode = profile.access_mode();
+    let tunnel_forbidden_for_nonmotor = is_tunnel
+        && matches!(mode, access::AccessMode::Foot | access::AccessMode::Bicycle)
+        && !access::non_motor_tunnel_allowed(
+            mode,
+            is_tunnel,
+            edge.tags.get("highway").map(String::as_str),
+            edge.tags.get("foot").map(String::as_str),
+            edge.tags.get("bicycle").map(String::as_str),
+            edge.tags
+                .get("sidewalk")
+                .or_else(|| edge.tags.get("sidewalk:both"))
+                .or_else(|| edge.tags.get("sidewalk:left"))
+                .or_else(|| edge.tags.get("sidewalk:right"))
+                .map(String::as_str),
+            edge.tags.get("footway").map(String::as_str),
+        );
     let access_forbidden = access::mode_access_forbidden_with_ferry(
-        profile.access_mode(),
+        mode,
         edge.tags.get("motor_vehicle").map(String::as_str),
         edge.tags.get("access").map(String::as_str),
         edge.tags.get("foot").map(String::as_str),
         edge.tags.get("bicycle").map(String::as_str),
         is_ferry,
-    );
+    ) || tunnel_forbidden_for_nonmotor;
     let surface_quality = classify_surface_tags(
         highway.as_deref(),
         edge.tags.get("surface").map(String::as_str),
@@ -3382,6 +3399,12 @@ pub(crate) fn motorway_grade_from_parts(
 /// Foot and bicycle graphs must never use motorway-grade edges (illegal / unsuitable).
 pub fn profile_locks_avoid_motorways(profile: RoutingProfile) -> bool {
     matches!(profile, RoutingProfile::Foot | RoutingProfile::Bicycle)
+}
+
+/// Soft avoid-tunnels is never profile-locked. Non-motor HardAvoid handles
+/// forbidden tunnels; motor soft-avoid stays a user preference.
+pub fn profile_locks_avoid_tunnels(_profile: RoutingProfile) -> bool {
+    false
 }
 
 fn edge_avoided_as_motorway(
@@ -3752,8 +3775,21 @@ fn edge_travel_cost(
     if options.toll_policy == crate::routing::toll::TollPolicy::Penalize && edge.is_toll {
         cost *= crate::routing::toll::TOLL_AVOID_PENALTY_MULT;
     }
-    if options.avoid_tunnels && edge.is_tunnel {
-        cost *= crate::routing::toll::TUNNEL_AVOID_PENALTY_MULT;
+    // Soft avoid remains as a backup for motor profiles / legacy packs. Foot
+    // and bicycle graphs already omit forbidden tunnels at bake time via
+    // access_forbidden; HardAvoid here covers edges that still carry is_tunnel
+    // without allow tags (e.g. older packs).
+    let avoid_tunnels = options.avoid_tunnels || profile_locks_avoid_tunnels(profile);
+    if edge.is_tunnel {
+        let mode = profile.access_mode();
+        let nonmotor = matches!(mode, access::AccessMode::Foot | access::AccessMode::Bicycle);
+        let allowed =
+            !nonmotor || access::is_pedestrian_or_cycle_path_highway(edge.highway.as_deref());
+        if nonmotor && !allowed {
+            cost *= 1.0e6;
+        } else if avoid_tunnels {
+            cost *= crate::routing::toll::TUNNEL_AVOID_PENALTY_MULT;
+        }
     }
     if let Some(extra) = datex_penalize_extra_m(edge, options, edge_idx) {
         cost += extra;
@@ -5433,6 +5469,9 @@ mod tests {
         assert!(profile_locks_avoid_motorways(RoutingProfile::Bicycle));
         assert!(profile_locks_avoid_motorways(RoutingProfile::Foot));
         assert!(!profile_locks_avoid_motorways(RoutingProfile::Car));
+        assert!(!profile_locks_avoid_tunnels(RoutingProfile::Foot));
+        assert!(!profile_locks_avoid_tunnels(RoutingProfile::Bicycle));
+        assert!(!profile_locks_avoid_tunnels(RoutingProfile::Car));
     }
 
     #[test]

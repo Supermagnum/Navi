@@ -66,11 +66,18 @@ class MwmProductionPlannerTest {
     }
 
     @Test
-    fun vehicleLimitsAreNotAppliedForTheCarLikeProfiles() {
-        for (p in listOf(TravelProfile.TRUCK, TravelProfile.MOBILE_HOME, TravelProfile.MOTORCYCLE, TravelProfile.CAR_ELECTRIC)) {
+    fun vehicleLimitsAreNotAppliedOnlyForMotorcycle() {
+        for (p in listOf(TravelProfile.MOTORCYCLE, TravelProfile.MOTORCYCLE_ELECTRIC)) {
             assertTrue("$p", MwmProductionPlanner.limitsNotApplied(p))
         }
-        for (p in listOf(TravelProfile.CAR, TravelProfile.BICYCLE, TravelProfile.HIKING)) {
+        for (p in listOf(
+            TravelProfile.CAR,
+            TravelProfile.CAR_ELECTRIC,
+            TravelProfile.TRUCK,
+            TravelProfile.MOBILE_HOME,
+            TravelProfile.BICYCLE,
+            TravelProfile.HIKING,
+        )) {
             assertTrue("$p", !MwmProductionPlanner.limitsNotApplied(p))
         }
     }
@@ -92,4 +99,71 @@ class MwmProductionPlannerTest {
         assertTrue(result.report.contains("FAIL: Missing or outdated maps"))
         assertEquals("", result.routePolyline)
     }
+
+    @Test
+    fun lookAheadProbeCapScalesWithDistance() {
+        // Short city hop: a handful of probes, not the long-trip max.
+        assertEquals(2, MwmProductionPlanner.lookAheadProbeCap(5.0, maxCap = 48, kmPerProbe = 8.0))
+        assertEquals(5, MwmProductionPlanner.lookAheadProbeCap(40.0, maxCap = 48, kmPerProbe = 8.0))
+        assertEquals(48, MwmProductionPlanner.lookAheadProbeCap(500.0, maxCap = 48, kmPerProbe = 8.0))
+        assertEquals(2, MwmProductionPlanner.lookAheadProbeCap(10.0, maxCap = 16, kmPerProbe = 12.0))
+        assertEquals(16, MwmProductionPlanner.lookAheadProbeCap(400.0, maxCap = 16, kmPerProbe = 12.0))
+    }
+
+    @Test
+    fun lookAheadSeedCompletedEpochStartsAtZeroOrPositive() {
+        // Listener API is exercised on device; epoch getter must stay readable
+        // from JVM unit tests without requiring a Looper.
+        assertTrue(MwmProductionPlanner.lookAheadSeedCompletedEpoch() >= 0L)
+    }
+
+    @Test
+    fun planReportIncludesFerryAndTunnelTokensFromTurns() {
+        val turns =
+            """
+            [
+              {"index":1,"sequence":1,"dist_m":1000.0,"is_ferry":false,"is_tunnel":true,"street":"Follotunnelen","ref":"E 6","destination":""},
+              {"index":2,"sequence":2,"dist_m":18900.0,"is_ferry":true,"is_tunnel":false,"street":"Rødby (DK) - Puttgarden (D)","ref":"","destination":"Puttgarden"},
+              {"index":3,"sequence":3,"dist_m":500.0,"is_ferry":false,"is_tunnel":false,"street":"E47","ref":"E 47","destination":""}
+            ]
+            """.trimIndent()
+        val instr =
+            """
+            [
+              {"dist_m":1000.0,"kind":"straight","street":"Follotunnelen","is_ferry":false},
+              {"dist_m":18900.0,"kind":"straight","street":"Rødby (DK) - Puttgarden (D)","is_ferry":true},
+              {"dist_m":500.0,"kind":"destination","street":"E47","is_ferry":false}
+            ]
+            """.trimIndent()
+        val result =
+            MwmProductionPlanner.toCorridor(
+                route(20_400.0, 1_200.0).copy(turnsJson = turns, instructionsJson = instr),
+                60.004,
+                11.004,
+                TravelProfile.CAR,
+            )
+        assertTrue(result.report.contains("PASS"))
+        assertTrue(result.report.contains("route_tunnel_count=1"))
+        assertTrue(result.report.contains("route_tunnel_fp=Follotunnelen@1.00"))
+        assertTrue(result.report.contains("route_ferry_legs=1"))
+        assertTrue(result.report.contains("route_ferry_fp=Rødby (DK) - Puttgarden (D)@18.90"))
+        assertTrue(result.report.contains("route_uses_ferry=true"))
+        val stats = routePlanStatsFromPlan(result.report, "[]")
+        assertEquals(1, stats.tunnelCount)
+        assertEquals(1, stats.ferryLegCount)
+        assertTrue(result.maneuversJson.contains("\"is_tunnel\":true"))
+        assertTrue(result.maneuversJson.contains("\"is_ferry\":true"))
+    }
+
+    @Test
+    fun planReportEmitsZeroFerryTunnelTokensWhenTurnsHaveNone() {
+        val result = MwmProductionPlanner.toCorridor(route(1_000.0, 60.0), 60.004, 11.004, TravelProfile.CAR)
+        assertTrue(result.report.contains("route_tunnel_count=0"))
+        assertTrue(result.report.contains("route_ferry_legs=0"))
+        assertTrue(result.report.contains("route_uses_ferry=false"))
+        val stats = routePlanStatsFromPlan(result.report, "[]")
+        assertEquals(0, stats.tunnelCount)
+        assertEquals(0, stats.ferryLegCount)
+    }
+
 }

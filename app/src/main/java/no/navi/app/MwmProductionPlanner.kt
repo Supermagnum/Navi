@@ -7,9 +7,13 @@ import org.json.JSONObject
 import uniffi.navi.CorridorRouteResult
 import uniffi.navi.FfiComapsLatLon
 import uniffi.navi.FfiComapsOptimize
+import uniffi.navi.FfiComapsProfile
 import uniffi.navi.FfiComapsRoute
 import uniffi.navi.FfiComapsRouteCode
+import uniffi.navi.FfiSearchHit
+import uniffi.navi.FfiVehicleLimits
 import uniffi.navi.TravelProfile
+import uniffi.navi.comapsCategoryQuery
 import uniffi.navi.comapsNativeAvailable
 import uniffi.navi.comapsSessionIsOpen
 import uniffi.navi.comapsSessionRoute
@@ -17,8 +21,14 @@ import uniffi.navi.comapsSessionSetAvoidOptions
 import uniffi.navi.comapsSessionSetBikeWetland
 import uniffi.navi.comapsSessionSetOptimize
 import uniffi.navi.comapsSessionSetTurnsLocale
+import uniffi.navi.comapsSessionSetVehicle
+import uniffi.navi.datexRefreshJson
+import uniffi.navi.loadCarRestSettings
+import uniffi.navi.loadVehicleLimits
+import uniffi.navi.poiLookaheadIngestFromJson
 import uniffi.navi.setMwmProductionPlannerActive
 import java.util.Locale
+import kotlin.math.absoluteValue
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
@@ -52,15 +62,12 @@ object MwmProductionPlanner {
     fun lastTurnPointIndices(polyline: String): IntArray? = if (polyline.isNotBlank() && polyline.hashCode() == turnKey && turnIdx.isNotEmpty()) turnIdx else null
 
     /**
-     * Profiles that CoMaps routes as a plain car without vehicle dimension / weight limits
-     * (electric car, truck, mobile home, motorcycle): the UI says so next to the route options.
+     * Profiles that never pass vehicle dimensions to the car estimator
+     * (motorcycle). Truck / mobile home / car with height now apply sidecar
+     * `vehicle_limits` when present.
      */
     fun limitsNotApplied(profile: TravelProfile): Boolean =
         when (profile) {
-            TravelProfile.CAR_ELECTRIC,
-            TravelProfile.TRUCK,
-            TravelProfile.TRUCK_ELECTRIC,
-            TravelProfile.MOBILE_HOME,
             TravelProfile.MOTORCYCLE,
             TravelProfile.MOTORCYCLE_ELECTRIC,
             -> true
@@ -91,9 +98,74 @@ object MwmProductionPlanner {
         java.util.concurrent.atomic
             .AtomicLong(0)
 
+    /**
+     * Bumped when a new outer enrich starts. Background look-ahead seeding aborts
+     * when a newer plan supersedes this epoch (or [cancel] runs).
+     */
+    private val lookAheadSeedEpoch =
+        java.util.concurrent.atomic
+            .AtomicLong(0)
+
+    /**
+     * Last successfully finished look-ahead seed epoch (attractions + water).
+     * MainActivity re-tallies corridor attractions when this advances so async
+     * seed is not raced by the first empty [poiLookaheadQueryJson] pass.
+     */
+    private val lookAheadSeedCompletedEpoch =
+        java.util.concurrent.atomic
+            .AtomicLong(0)
+
+    private val lookAheadSeedListeners =
+        java.util.concurrent.CopyOnWriteArrayList<(Long) -> Unit>()
+
+    private val lookAheadSeedExecutor =
+        java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+            Thread(r, "mwm-lookahead-seed").apply { isDaemon = true }
+        }
+
+    /** Epoch of the last completed async look-ahead seed (0 = none yet). */
+    fun lookAheadSeedCompletedEpoch(): Long = lookAheadSeedCompletedEpoch.get()
+
+    /** Receive main-thread callbacks when a look-ahead seed finishes. */
+    fun addLookAheadSeedListener(listener: (Long) -> Unit) {
+        lookAheadSeedListeners.add(listener)
+    }
+
+    fun removeLookAheadSeedListener(listener: (Long) -> Unit) {
+        lookAheadSeedListeners.remove(listener)
+    }
+
+    private fun notifyLookAheadSeedDone(epoch: Long) {
+        lookAheadSeedCompletedEpoch.set(epoch)
+        NaviMapTestHooks.lookAheadSeedCompletedEpoch = epoch
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        for (listener in lookAheadSeedListeners) {
+            main.post {
+                runCatching { listener(epoch) }
+            }
+        }
+    }
+
+    /**
+     * Annotate string built from the DATEX refresh already done in
+     * [loadOnRouteDatexBlocks] for this plan. Consumed once by [enrichMwmPlan]
+     * so we do not call [datexRefreshJson] a second time on the critical path.
+     */
+    @Volatile
+    private var pendingDatexAnnotateExtra: String? = null
+
+    /**
+     * Leg cache for the plan that is currently soft-avoiding tunnels.
+     * Nested replans share it. Cleared when that search returns.
+     * Never shared across overlapping plans; [comapsSessionRoute] stays serial.
+     */
+    @Volatile
+    private var tunnelLegCache: TunnelLegCache? = null
+
     /** Cancel the plan in flight (if any). Never affects a plan that starts afterwards. */
     fun cancel() {
         cancelGeneration.incrementAndGet()
+        lookAheadSeedEpoch.incrementAndGet()
     }
 
     /**
@@ -113,11 +185,73 @@ object MwmProductionPlanner {
         avoidFerries: Boolean,
         turnsLocale: String,
         bikeWetland: Boolean = false,
+        /**
+         * When true, CoMaps has no native tunnel RoutingOption — we soft-avoid by
+         * replanning with perpendicular detour vias around tunnel midpoints
+         * (same pattern as DATEX Block avoidance).
+         */
+        avoidTunnels: Boolean = false,
+        /**
+         * When true (default), a successful CoMaps geometry is re-planned with detour
+         * vias if on-corridor DATEX **Block** situations are present. Nested replan
+         * passes false so avoidance does not recurse.
+         */
+        applyDatexAvoidance: Boolean = true,
+        /** Nested tunnel replans pass false so avoidance does not recurse. */
+        applyTunnelAvoidance: Boolean = true,
+        /**
+         * Eco routing on the MWM/CoMaps path. CoMaps has no joule weights; eco maps
+         * to [FfiComapsOptimize.PREFER_NON_MOTORWAY] (same lever as avoid-motorways)
+         * so the router prefers the easier / less motorway corridor.
+         */
+        ecoEnabled: Boolean = false,
+        /**
+         * Hiking "follow official networks" and bicycle network toggle.
+         * Selects NR01 kind `hiking` or `bicycle`. Does not change edge costs.
+         */
+        preferOfficialNetworks: Boolean = false,
+        /** Hiking "follow pilgrim routes". Selects NR01 kind `pilgrimage`. */
+        preferPilgrimRoutes: Boolean = false,
+        /** Nested DATEX / tunnel replans pass false so stubs are attached once. */
+        applyNamedRouteStubs: Boolean = true,
     ): CorridorRouteResult {
+        val routeLeaves = LinkedHashSet<String>()
+
+        fun finish(result: CorridorRouteResult): CorridorRouteResult {
+            if (!applyNamedRouteStubs) return result
+            if (!preferOfficialNetworks && !preferPilgrimRoutes) return result
+            return try {
+                NamedRouteSidecar.annotate(
+                    mwmRoot = MwmDataDir.mwmRoot(context),
+                    leaves = routeLeaves,
+                    profile = profile,
+                    preferOfficialNetworks = preferOfficialNetworks,
+                    preferPilgrimRoutes = preferPilgrimRoutes,
+                    result = result,
+                )
+            } catch (t: Throwable) {
+                Log.w(TAG, "named-route sidecar skipped", t)
+                NamedRouteSidecar.markNotFollowed(result)
+            }
+        }
         if (!shouldUse(context)) {
-            return failCorridor(
-                "TEST_KIND=PLAN_MWM_ROUTE\nFAIL: MWM session not open (maps or native missing)\n" +
-                    "PLANNER=mwm\ncomaps_route_code=NeedMoreMaps\n",
+            return finish(
+                failCorridor(
+                    "TEST_KIND=PLAN_MWM_ROUTE\nFAIL: MWM session not open (maps or native missing)\n" +
+                        "PLANNER=mwm\ncomaps_route_code=NeedMoreMaps\n",
+                ),
+            )
+        }
+        // CoMaps IndexRouter aborts (SIGABRT) when numMwmIds is empty — only World
+        // overlays registered. Refuse before the native route call when country
+        // leaves are not exposed under {mwmRoot}/{version}/.
+        if (!ComapsSessionBootstrap.countryMapsExposed(context)) {
+            Log.w(TAG, "refuse plan: country leaf MWMs not exposed (VFAT link/mirror pending?)")
+            return finish(
+                failCorridor(
+                    "TEST_KIND=PLAN_MWM_ROUTE\nFAIL: Country maps not registered yet\n" +
+                        "PLANNER=mwm\ncomaps_route_code=NeedMoreMaps\n",
+                ),
             )
         }
         val generation = cancelGeneration.get()
@@ -135,26 +269,66 @@ object MwmProductionPlanner {
         endpoints.add(startLat to startLon)
         vias.forEach { endpoints.add(it) }
         endpoints.add(endLat to endLon)
-        missingLeavesFor(context, endpoints)?.let { return it }
+        missingLeavesFor(context, endpoints)?.let { return finish(it) }
         setMwmProductionPlannerActive(true)
-        Log.i(TAG, "planner=mwm profile=$profile vias=${vias.size}")
+        // One tunnel-avoid search, including the base legs it will reuse.
+        // Nested DATEX / tunnel plans see the same cache and must not clear it.
+        val ownsTunnelCache = tunnelLegCache == null && avoidTunnels && applyTunnelAvoidance
+        if (ownsTunnelCache) tunnelLegCache = TunnelLegCache()
+        // CoMaps eco lever: prefer non-motorway (easier / more economic corridor).
+        val preferNonMotorway = ecoEnabled || avoidMotorways
+        Log.i(
+            TAG,
+            "planner=mwm profile=$profile vias=${vias.size} eco=$ecoEnabled " +
+                "optimize=${if (preferNonMotorway) "prefer_non_motorway" else "time"} " +
+                "datex_avoid=$applyDatexAvoidance tunnel_avoid=$avoidTunnels/$applyTunnelAvoidance",
+        )
         return try {
             comapsSessionSetTurnsLocale(turnsLocale.ifBlank { "nb" })
             comapsSessionSetBikeWetland(bikeWetland)
+            // Vehicle dimensions for car estimator (motorcycle clears).
+            val dataDir = NaviAppData.resolve(context)
+            val stored =
+                runCatching { loadVehicleLimits(dataDir.absolutePath) }.getOrNull()
+            if (VehicleRestrictionUi.appliesStoredLimits(profile) && stored != null) {
+                comapsSessionSetVehicle(stored)
+            } else {
+                comapsSessionSetVehicle(
+                    FfiVehicleLimits(null, null, null, null, null, null),
+                )
+            }
             comapsSessionSetAvoidOptions(
                 avoidToll = avoidTolls,
-                avoidMotorway = avoidMotorways,
+                // Eco also asks CoMaps to treat motorways as avoided (same as
+                // PREFER_NON_MOTORWAY in ApplyAvoidSettings).
+                avoidMotorway = preferNonMotorway,
                 avoidFerry = avoidFerries,
                 avoidDirty = false,
             )
             comapsSessionSetOptimize(
-                if (avoidMotorways) {
+                if (preferNonMotorway) {
                     FfiComapsOptimize.PREFER_NON_MOTORWAY
                 } else {
                     FfiComapsOptimize.TIME
                 },
             )
             val comapsProfile = SnapChoiceFlow.comapsProfileFor(profile)
+            val legFlags =
+                TunnelLegFlags(
+                    profile = comapsProfile.name,
+                    avoidToll = avoidTolls,
+                    avoidMotorway = preferNonMotorway,
+                    avoidFerry = avoidFerries,
+                    avoidDirty = false,
+                    optimize = if (preferNonMotorway) "prefer_non_motorway" else "time",
+                    wetlandHook = profile == TravelProfile.HIKING || bikeWetland,
+                    turnsLocale = turnsLocale.ifBlank { "nb" },
+                    vehicleKey =
+                        tunnelVehicleKey(
+                            profile,
+                            if (VehicleRestrictionUi.appliesStoredLimits(profile)) stored else null,
+                        ),
+                )
             val legs = ArrayList<Pair<Double, Double>>(2 + vias.size)
             legs.add(startLat to startLon)
             vias.forEach { legs.add(it) }
@@ -174,27 +348,37 @@ object MwmProductionPlanner {
             var last: FfiComapsRoute? = null
 
             for (i in 0 until legs.size - 1) {
-                if (cancelled()) return cancelledCorridor()
+                if (cancelled()) return finish(cancelledCorridor())
                 val (la0, lo0) = legs[i]
                 val (la1, lo1) = legs[i + 1]
+                collectLeavesAlong(la0, lo0, la1, lo1, routeLeaves)
                 val leg =
-                    comapsSessionRoute(
-                        profile = comapsProfile,
+                    routeLegCached(
+                        flags = legFlags,
+                        comapsProfile = comapsProfile,
                         fromLat = la0,
                         fromLon = lo0,
                         toLat = la1,
                         toLon = lo1,
-                        wetlandHook = profile == TravelProfile.HIKING || bikeWetland,
+                        wetlandHook = legFlags.wetlandHook,
                     )
                 last = leg
-                if (cancelled()) return cancelledCorridor()
+                if (cancelled()) return finish(cancelledCorridor())
                 if (leg.code != FfiComapsRouteCode.OK) {
                     RouteClimbSource.publishIfOk(leg)
                     if (leg.code == FfiComapsRouteCode.NEED_MORE_MAPS) {
                         // The route crosses a leaf that is not installed: name it.
-                        missingLeavesAlong(context, la0, lo0, la1, lo1)?.let { return it }
+                        missingLeavesAlong(context, la0, lo0, la1, lo1)?.let { return finish(it) }
                     }
-                    return toCorridor(leg, endLat, endLon, profile)
+                    return finish(
+                        toCorridor(
+                            leg,
+                            endLat,
+                            endLon,
+                            profile,
+                            vehicleLimitsCoverage(context, routeLeaves),
+                        ),
+                    )
                 }
                 RouteClimbSource.publishIfOk(leg)
                 lengthM += leg.lengthM
@@ -214,6 +398,7 @@ object MwmProductionPlanner {
                 appendJsonArray(speedLimits, leg.speedLimitsJson)
             }
 
+            lastTurnsJson = turns.toString()
             val ok =
                 FfiComapsRoute(
                     code = FfiComapsRouteCode.OK,
@@ -222,7 +407,7 @@ object MwmProductionPlanner {
                     buildTimeS = buildS,
                     points = allPoints,
                     errorMessage = null,
-                    turnsJson = turns.toString(),
+                    turnsJson = lastTurnsJson,
                     instructionsJson = instructions.toString(),
                     ascentM = ascent,
                     descentM = descent,
@@ -234,8 +419,60 @@ object MwmProductionPlanner {
             RouteClimbSource.publishComaps(
                 RouteClimbSource.fromComaps(ascent, descent, elev.toString()),
             )
-            toCorridor(ok, endLat, endLon, profile)
+            var result =
+                toCorridor(ok, endLat, endLon, profile, vehicleLimitsCoverage(context, routeLeaves))
+            if (cancelled()) {
+                return finish(enrichMwmPlan(context, profile, result, ecoEnabled))
+            }
+            // Nested DATEX / tunnel trials: return bare geometry. Full enrich
+            // (DATEX annotate + soft breaks; look-ahead seed is async) runs once
+            // on the accepted corridor below — re-seeding dozens of CoMaps probes
+            // on every soft-avoid attempt left the HUD stuck for minutes.
+            if (!applyDatexAvoidance) {
+                return finish(result)
+            }
+            pendingDatexAnnotateExtra = null
+            RoutingPlanLog.progress(15, ecoEnabled, detail = "mwm_datex")
+            result =
+                avoidDatexBlocks(
+                    context = context,
+                    profile = profile,
+                    startLat = startLat,
+                    startLon = startLon,
+                    endLat = endLat,
+                    endLon = endLon,
+                    vias = vias,
+                    avoidMotorways = avoidMotorways,
+                    avoidTolls = avoidTolls,
+                    avoidFerries = avoidFerries,
+                    avoidTunnels = avoidTunnels,
+                    turnsLocale = turnsLocale,
+                    bikeWetland = bikeWetland,
+                    ecoEnabled = ecoEnabled,
+                    base = result,
+                )
+            if (avoidTunnels && applyTunnelAvoidance && result.report.contains("PASS")) {
+                result =
+                    avoidTunnelsViaDetours(
+                        context = context,
+                        profile = profile,
+                        startLat = startLat,
+                        startLon = startLon,
+                        endLat = endLat,
+                        endLon = endLon,
+                        vias = vias,
+                        avoidMotorways = avoidMotorways,
+                        avoidTolls = avoidTolls,
+                        avoidFerries = avoidFerries,
+                        turnsLocale = turnsLocale,
+                        bikeWetland = bikeWetland,
+                        ecoEnabled = ecoEnabled,
+                        base = result,
+                    )
+            }
+            finish(enrichMwmPlan(context, profile, result, ecoEnabled))
         } finally {
+            if (ownsTunnelCache) tunnelLegCache = null
             setMwmProductionPlannerActive(false)
         }
     }
@@ -291,7 +528,7 @@ object MwmProductionPlanner {
                 routerMode = "track",
                 speedLimitsJson = "[]",
             )
-        return toCorridor(route, latlon[2 * (n - 1)], latlon[2 * (n - 1) + 1], profile)
+        return toCorridor(route, latlon[2 * (n - 1)], latlon[2 * (n - 1) + 1], profile, null)
     }
 
     fun toCorridor(
@@ -299,18 +536,22 @@ object MwmProductionPlanner {
         endLat: Double,
         endLon: Double,
         profile: TravelProfile,
+        vehicleLimitsCoverage: Pair<List<String>, List<String>>? = null,
     ): CorridorRouteResult {
         val codeName = route.code.name
         val polyline = pointsToPolyline(route.points)
         val (maneuvers, samples) = buildManeuversAndSamples(route)
         turnKey = polyline.hashCode()
+        val missing = vehicleLimitsCoverage?.first
+        val partial = vehicleLimitsCoverage?.second.orEmpty()
         if (route.code != FfiComapsRouteCode.OK) {
             val msg =
                 route.errorMessage?.ifBlank { null }
                     ?: "CoMaps route failed: $codeName"
             return failCorridor(
                 "TEST_KIND=PLAN_MWM_ROUTE\nFAIL: $msg\nPLANNER=mwm\n" +
-                    "comaps_route_code=$codeName\n",
+                    "comaps_route_code=$codeName\n" +
+                    vehicleLimitsReportLines(missing, partial),
             )
         }
         val km = route.lengthM / 1000.0
@@ -324,6 +565,8 @@ object MwmProductionPlanner {
                     else -> km * 1.2
                 }
             }
+        // Tunnel / ferry runs are appended in enrichMwmPlan via annotatePathFlagsFromTurns
+        // (needs lastTurnsJson from the multi-leg aggregate).
         val report =
             buildString {
                 append("TEST_KIND=PLAN_MWM_ROUTE\n")
@@ -336,6 +579,9 @@ object MwmProductionPlanner {
                 append("descent_m=${route.descentM}\n")
                 append("build_s=${route.buildTimeS}\n")
                 append("comaps_route_code=$codeName\n")
+                append(vehicleLimitsReportLines(missing, partial))
+                // Ferry / tunnel legs from CoMaps turns (`is_ferry` / `is_tunnel`).
+                MwmRouteLegStats.appendReportTokens(this, route.turnsJson)
             }
         return CorridorRouteResult(
             report = report,
@@ -397,6 +643,1732 @@ object MwmProductionPlanner {
             tollAvoidanceIncomplete = false,
             routeUsesTolls = false,
         )
+
+    /**
+     * CoMaps has no DATEX edge weights. When a corridor **Block** sits on the
+     * first-pass geometry, replan with perpendicular detour vias so the closed
+     * segment changes the route (not only overlay counters).
+     */
+    private fun avoidDatexBlocks(
+        context: Context,
+        profile: TravelProfile,
+        startLat: Double,
+        startLon: Double,
+        endLat: Double,
+        endLon: Double,
+        vias: List<Pair<Double, Double>>,
+        avoidMotorways: Boolean,
+        avoidTolls: Boolean,
+        avoidFerries: Boolean,
+        avoidTunnels: Boolean,
+        turnsLocale: String,
+        bikeWetland: Boolean,
+        ecoEnabled: Boolean,
+        base: CorridorRouteResult,
+    ): CorridorRouteResult {
+        if (!base.report.contains("PASS")) return base
+        if (!MapHudPrefs.loadDatexPluginEnabled(context)) return base
+        val pts = decodePolylinePairs(base.routePolyline)
+        if (pts.size < 2) return base
+        val blocks = loadOnRouteDatexBlocks(context, pts)
+        if (blocks.isEmpty()) {
+            Log.i(TAG, "mwm datex avoid: no Block on first-pass corridor")
+            return base
+        }
+        val beforeKm = base.distanceKm
+        val beforeEta = base.etaMinutes
+        val beforeHash = polylineFingerprint(base.routePolyline)
+        Log.i(TAG, "mwm datex avoid: blocks=${blocks.size} before_km=$beforeKm hash=$beforeHash")
+        // Cap attempts: each CoMaps replan is expensive on a long corridor.
+        // Mid-sim / live nav: keep this to one offset×side so we never stack up
+        // to six ProcessTask builds (native SIGABRT / std::length_error under load).
+        val simulating = NaviMapTestHooks.simulatingActive
+        val offsetsM =
+            if (simulating) {
+                listOf(2_500.0)
+            } else {
+                listOf(2_500.0, 5_000.0, 8_000.0)
+            }
+        val sides = if (simulating) listOf(1.0) else listOf(1.0, -1.0)
+        val maxAttempts = if (simulating) 2 else 6
+        var bestChanged: CorridorRouteResult? = null
+        var bestChangedClearance = -1.0
+        var bestMeta = ""
+        var attempts = 0
+        for (offsetM in offsetsM) {
+            for (side in sides) {
+                if (attempts >= maxAttempts) break
+                attempts++
+                val detours =
+                    blocks.take(2).mapNotNull { b ->
+                        detourViaForBlock(pts, b.lat, b.lon, offsetM, side)
+                    }
+                if (detours.isEmpty()) continue
+                val merged = mergeViasByRouteOrder(startLat, startLon, endLat, endLon, vias, detours)
+                val alt =
+                    plan(
+                        context = context,
+                        profile = profile,
+                        startLat = startLat,
+                        startLon = startLon,
+                        endLat = endLat,
+                        endLon = endLon,
+                        vias = merged,
+                        avoidMotorways = avoidMotorways,
+                        avoidTolls = avoidTolls,
+                        avoidFerries = avoidFerries,
+                        turnsLocale = turnsLocale,
+                        bikeWetland = bikeWetland,
+                        avoidTunnels = avoidTunnels,
+                        applyDatexAvoidance = false,
+                        applyTunnelAvoidance = false,
+                        ecoEnabled = ecoEnabled,
+                        applyNamedRouteStubs = false,
+                    )
+                if (!alt.report.contains("PASS")) continue
+                val clearance = minClearanceM(alt.routePolyline, blocks)
+                val deltaKm = (alt.distanceKm - beforeKm).absoluteValue
+                val afterHash = polylineFingerprint(alt.routePolyline)
+                val changed = deltaKm >= 0.25 || afterHash != beforeHash
+                val meta =
+                    "clearance_m=${"%.0f".format(Locale.US, clearance)}" +
+                        "; before_km=${"%.3f".format(Locale.US, beforeKm)}" +
+                        "; after_km=${"%.3f".format(Locale.US, alt.distanceKm)}" +
+                        "; before_eta_min=${"%.1f".format(Locale.US, beforeEta)}" +
+                        "; after_eta_min=${"%.1f".format(Locale.US, alt.etaMinutes)}" +
+                        "; before_poly=$beforeHash" +
+                        "; after_poly=$afterHash" +
+                        "; offset_m=${offsetM.toInt()}; side=${side.toInt()}"
+                // Prefer a real miss of the closed point; keep best geometry change as fallback.
+                if (clearance >= 150.0 && changed) {
+                    val evidence =
+                        buildString {
+                            append("datex_mwm=reroute_apply; blocks_avoided=${blocks.size}; $meta\n")
+                            for (b in blocks) {
+                                append(
+                                    "datex_avoided: id=${b.id}; impact=block; " +
+                                        "lat=${b.lat}; lon=${b.lon}; xsi=${b.xsi}\n",
+                                )
+                            }
+                        }
+                    alt.report = alt.report.trimEnd() + "\n" + evidence
+                    Log.i(TAG, "mwm datex avoid OK $meta")
+                    markDatexRerouteHooks(beforeKm, alt.distanceKm, beforeHash, afterHash, blocks)
+                    return alt
+                }
+                if (changed && clearance > bestChangedClearance) {
+                    bestChangedClearance = clearance
+                    bestChanged = alt
+                    bestMeta = meta
+                }
+            }
+        }
+        val fallback = bestChanged
+        if (fallback != null && bestChangedClearance >= 40.0) {
+            val afterHash = polylineFingerprint(fallback.routePolyline)
+            val evidence =
+                buildString {
+                    append(
+                        "datex_mwm=reroute_apply; blocks_avoided=${blocks.size}; " +
+                            "weak_clearance=true; $bestMeta\n",
+                    )
+                    for (b in blocks) {
+                        append(
+                            "datex_avoided: id=${b.id}; impact=block; " +
+                                "lat=${b.lat}; lon=${b.lon}; xsi=${b.xsi}\n",
+                        )
+                    }
+                }
+            fallback.report = fallback.report.trimEnd() + "\n" + evidence
+            Log.i(TAG, "mwm datex avoid WEAK $bestMeta")
+            markDatexRerouteHooks(
+                beforeKm,
+                fallback.distanceKm,
+                beforeHash,
+                afterHash,
+                blocks,
+            )
+            return fallback
+        }
+        val fail =
+            buildString {
+                append("datex_mwm=reroute_failed; blocks_seen=${blocks.size}")
+                append("; before_km=${"%.3f".format(Locale.US, beforeKm)}")
+                append("; before_poly=$beforeHash\n")
+                for (b in blocks) {
+                    append(
+                        "datex_avoided: id=${b.id}; impact=block; " +
+                            "lat=${b.lat}; lon=${b.lon}; xsi=${b.xsi}; status=unavoided\n",
+                    )
+                }
+            }
+        // Still mark Block ids so HUD auto-reroute does not loop on the same closure.
+        markDatexRerouteHooks(beforeKm, beforeKm, beforeHash, beforeHash, blocks, applied = false)
+        base.report = base.report.trimEnd() + "\n" + fail
+        Log.w(TAG, "mwm datex avoid FAILED blocks=${blocks.size}")
+        return base
+    }
+
+    private data class TunnelAttemptOutcome(
+        val result: CorridorRouteResult?,
+        val turnsJson: String,
+        val count: Int,
+        val routeChanged: Boolean,
+        val nativeCalled: Boolean,
+        val spliced: Boolean,
+    )
+
+    /**
+     * CoMaps [RoutingOptions] has no Tunnel flag. Soft-avoid by inserting
+     * perpendicular detour vias at the longest leftover tunnel and accepting
+     * geometries that cut the tunnel run count. A round that cuts the count
+     * keeps that geometry and moves on; the next round spends its attempt
+     * budget on the new longest leftover, including a side that has not been
+     * routed yet. Primary offsets, including 12/16/20 km, are tried first.
+     * When they fail to cut the current longest run, the same offsets run on
+     * the opposite side. Already-seen vias are not routed again. A round that
+     * only skips those primary vias is not a stall. Unchanged from–to legs
+     * are reused from [tunnelLegCache]. Never claim success while tunnels remain.
+     */
+    private fun avoidTunnelsViaDetours(
+        context: Context,
+        profile: TravelProfile,
+        startLat: Double,
+        startLon: Double,
+        endLat: Double,
+        endLon: Double,
+        vias: List<Pair<Double, Double>>,
+        avoidMotorways: Boolean,
+        avoidTolls: Boolean,
+        avoidFerries: Boolean,
+        turnsLocale: String,
+        bikeWetland: Boolean,
+        ecoEnabled: Boolean,
+        base: CorridorRouteResult,
+    ): CorridorRouteResult {
+        if (!base.report.contains("PASS")) return base
+        val initialCount = tunnelRunCount(lastTurnsJson)
+        if (initialCount <= 0) {
+            Log.i(TAG, "mwm tunnel avoid: no tunnels on first-pass corridor")
+            return base
+        }
+        val simulating = NaviMapTestHooks.simulatingActive
+        val hikingLike =
+            profile == TravelProfile.HIKING ||
+                profile == TravelProfile.BICYCLE ||
+                profile == TravelProfile.BICYCLE_ELECTRIC
+        val offsetsM =
+            when {
+                simulating -> listOf(1_500.0)
+                hikingLike ->
+                    listOf(1_500.0, 3_000.0, 5_000.0, 8_000.0, 12_000.0, 16_000.0, 20_000.0)
+                else -> listOf(1_500.0, 3_000.0, 5_000.0)
+            }
+        val sides = if (simulating) listOf(1.0) else listOf(1.0, -1.0)
+        // A multi-hundred-km hiking corridor with many tunnels must not run
+        // hundreds of full-country replans. That freezes the HUD on 20%.
+        val longCorridor = hikingLike && base.distanceKm >= 180.0
+        val maxAttemptsPerRound =
+            when {
+                simulating -> 2
+                longCorridor -> 8
+                hikingLike -> 36
+                else -> 12
+            }
+        val maxRounds =
+            when {
+                simulating -> 1
+                longCorridor -> 4
+                hikingLike -> 8
+                else -> 3
+            }
+        var current = base
+        var currentTurns = lastTurnsJson
+        var currentCount = initialCount
+        var totalAttempts = 0
+        var totalMids = 0
+        var rounds = 0
+        var stalledRounds = 0
+        var spliceAccepts = 0
+        var skipOnlyContinuations = 0
+        val seenDetours = HashSet<String>()
+        val offsetsTried = ArrayList<String>()
+        val primarySide = sides.first()
+        val otherSide = if (sides.size > 1) sides[1] else null
+
+        while (currentCount > 0 && rounds < maxRounds) {
+            rounds++
+            val target = longestTunnelRun(currentTurns, current.routePolyline)
+            val anchors = target?.anchors.orEmpty()
+            if (target == null || anchors.isEmpty()) {
+                if (rounds == 1) {
+                    lastTurnsJson = currentTurns
+                    base.report =
+                        base.report.trimEnd() +
+                        "\ntunnel_mwm=reroute_incomplete; tunnels_before=$initialCount; " +
+                        "reason=no_midpoints\n"
+                    return base
+                }
+                break
+            }
+            totalMids = maxOf(totalMids, anchors.size)
+            val pts = decodePolylinePairs(current.routePolyline)
+            if (pts.size < 2) break
+            val beforeKm = current.distanceKm
+            val beforeHash = polylineFingerprint(current.routePolyline)
+            val leftoverFp = tunnelFpSummary(currentTurns)
+            val maxRunM = target.lengthM
+            // Macro offsets miss sub-km covered passages; switch to micro sweeps.
+            val roundOffsets =
+                if (hikingLike && maxRunM > 0.0 && maxRunM < 500.0) {
+                    listOf(80.0, 150.0, 250.0, 400.0, 600.0, 1_000.0, 1_500.0, 3_000.0)
+                } else {
+                    offsetsM
+                }
+            Log.i(
+                TAG,
+                "mwm tunnel avoid round=$rounds tunnels=$currentCount " +
+                    "longest_m=${"%.0f".format(Locale.US, maxRunM)} " +
+                    "anchors=${anchors.size} before_km=$beforeKm leftover_fp=$leftoverFp",
+            )
+            RoutingPlanLog.progress(
+                tunnelAvoidProgressPct(rounds, maxRounds, 0, maxAttemptsPerRound),
+                ecoEnabled,
+                detail = "tunnel_avoid_r${rounds}_t$currentCount",
+            )
+            val escalation = TunnelSideEscalation(roundOffsets, primarySide, otherSide)
+            var attempts = 0
+            var advanced = false
+            var nativeThisRound = 0
+            var skippedPrimary = 0
+            var oppositeConsidered = false
+            var step = escalation.next(lastPrimaryUnchanged = false)
+
+            fun commit(outcome: TunnelAttemptOutcome) {
+                current = outcome.result ?: return
+                currentTurns = outcome.turnsJson
+                lastTurnsJson = outcome.turnsJson
+                currentCount = outcome.count
+                stalledRounds = 0
+                advanced = true
+                if (outcome.spliced) spliceAccepts++
+            }
+
+            fun fullReplan(detours: List<Pair<Double, Double>>): TunnelAttemptOutcome {
+                val merged =
+                    mergeViasByRouteOrder(
+                        startLat,
+                        startLon,
+                        endLat,
+                        endLon,
+                        vias,
+                        detours,
+                    )
+                val alt =
+                    plan(
+                        context = context,
+                        profile = profile,
+                        startLat = startLat,
+                        startLon = startLon,
+                        endLat = endLat,
+                        endLon = endLon,
+                        vias = merged,
+                        avoidMotorways = avoidMotorways,
+                        avoidTolls = avoidTolls,
+                        avoidFerries = avoidFerries,
+                        turnsLocale = turnsLocale,
+                        bikeWetland = bikeWetland,
+                        avoidTunnels = true,
+                        applyDatexAvoidance = false,
+                        applyTunnelAvoidance = false,
+                        ecoEnabled = ecoEnabled,
+                        applyNamedRouteStubs = false,
+                    )
+                if (!alt.report.contains("PASS")) {
+                    lastTurnsJson = currentTurns
+                    return TunnelAttemptOutcome(
+                        result = null,
+                        turnsJson = currentTurns,
+                        count = currentCount,
+                        routeChanged = false,
+                        nativeCalled = true,
+                        spliced = false,
+                    )
+                }
+                val afterCount = tunnelRunCount(lastTurnsJson)
+                val altTurns = lastTurnsJson
+                lastTurnsJson = currentTurns
+                val changed =
+                    polylineFingerprint(alt.routePolyline) != beforeHash ||
+                        (alt.distanceKm - beforeKm).absoluteValue >= 0.25
+                return TunnelAttemptOutcome(
+                    result = alt,
+                    turnsJson = altTurns,
+                    count = afterCount,
+                    routeChanged = changed,
+                    nativeCalled = true,
+                    spliced = false,
+                )
+            }
+
+            // A short window on the leg that holds this run. A rejected splice
+            // falls through to the full replan; it does not end the search.
+            fun trySplice(detours: List<Pair<Double, Double>>): TunnelAttemptOutcome? {
+                if (!hikingLike || simulating) return null
+                val viaAlong = vias.map { (lat, lon) -> viaAlongMeters(current.routePolyline, lat, lon) }
+                val window =
+                    spliceWindowMeters(
+                        runStartM = target.startM,
+                        runEndM = target.endM,
+                        routeLengthM = current.distanceKm * 1000.0,
+                        viaAlongM = viaAlong,
+                    ) ?: return null
+                val samples = samplePolylineKm(current.routePolyline)
+                val (w0, w1) = window
+                val (sLat, sLon) = interpolateAtKm(samples, w0 / 1000.0)
+                val (eLat, eLon) = interpolateAtKm(samples, w1 / 1000.0)
+                val windowRoute =
+                    plan(
+                        context = context,
+                        profile = profile,
+                        startLat = sLat,
+                        startLon = sLon,
+                        endLat = eLat,
+                        endLon = eLon,
+                        vias = detours,
+                        avoidMotorways = avoidMotorways,
+                        avoidTolls = avoidTolls,
+                        avoidFerries = avoidFerries,
+                        turnsLocale = turnsLocale,
+                        bikeWetland = bikeWetland,
+                        avoidTunnels = true,
+                        applyDatexAvoidance = false,
+                        applyTunnelAvoidance = false,
+                        ecoEnabled = ecoEnabled,
+                        applyNamedRouteStubs = false,
+                    )
+                val windowTurns = lastTurnsJson
+                lastTurnsJson = currentTurns
+                if (!windowRoute.report.contains("PASS") || windowRoute.distanceKm > 80.0) {
+                    return null
+                }
+                val spliced =
+                    spliceTunnelWindow(
+                        polyline = current.routePolyline,
+                        turnsJson = currentTurns,
+                        windowStartM = w0,
+                        windowEndM = w1,
+                        windowPolyline = windowRoute.routePolyline,
+                        windowTurnsJson = windowTurns,
+                        windowLengthM = windowRoute.distanceKm * 1000.0,
+                    ) ?: return null
+                if (!acceptTunnelSplice(currentTurns, spliced.turnsJson)) return null
+                val removed = (w1 - w0).coerceAtLeast(0.0)
+                val oldM = (current.distanceKm * 1000.0).coerceAtLeast(1.0)
+                val kept = (oldM - removed).coerceAtLeast(0.0)
+                val timeS =
+                    current.etaMinutes * 60.0 * (kept / oldM) + windowRoute.etaMinutes * 60.0
+                val updated =
+                    corridorWithSplicedGeometry(
+                        profile = profile,
+                        endLat = endLat,
+                        endLon = endLon,
+                        base = current,
+                        spliced = spliced,
+                        timeS = timeS,
+                    )
+                val afterCount = tunnelRunCount(spliced.turnsJson)
+                val changed =
+                    polylineFingerprint(updated.routePolyline) != beforeHash ||
+                        (updated.distanceKm - beforeKm).absoluteValue >= 0.25
+                val decision = tunnelRoundStep(currentCount, afterCount, changed)
+                if (decision == TunnelRoundStep.KEEP_TRYING) return null
+                return TunnelAttemptOutcome(
+                    result = updated,
+                    turnsJson = spliced.turnsJson,
+                    count = afterCount,
+                    routeChanged = changed,
+                    nativeCalled = true,
+                    spliced = true,
+                )
+            }
+
+            while (step != null && attempts < maxAttemptsPerRound) {
+                val (offsetM, side) = step
+                if (side != primarySide) oppositeConsidered = true
+                val detours =
+                    anchors.mapNotNull { (lat, lon) ->
+                        detourViaForBlock(pts, lat, lon, offsetM, side)
+                    }
+                if (detours.isEmpty()) {
+                    step = escalation.next(lastPrimaryUnchanged = false)
+                    continue
+                }
+                val fingerprint = detourViaFingerprint(detours)
+                if (skipKnownDetour(seenDetours, fingerprint)) {
+                    if (side == primarySide) skippedPrimary++
+                    Log.i(TAG, "mwm tunnel avoid skip seen detour off=${offsetM.toInt()} side=${side.toInt()}")
+                    step = escalation.next(lastPrimaryUnchanged = false)
+                    continue
+                }
+                Log.i(
+                    TAG,
+                    "mwm tunnel avoid try round=$rounds off=${offsetM.toInt()} " +
+                        "side=${side.toInt()} tunnels=$currentCount",
+                )
+                val spliced = trySplice(detours)
+                val outcome = spliced ?: fullReplan(detours)
+                if (outcome.nativeCalled) {
+                    attempts++
+                    nativeThisRound++
+                    totalAttempts++
+                    offsetsTried.add("${offsetM.toInt()}@${side.toInt()}")
+                    RoutingPlanLog.progress(
+                        tunnelAvoidProgressPct(
+                            rounds,
+                            maxRounds,
+                            attempts,
+                            maxAttemptsPerRound,
+                        ),
+                        ecoEnabled,
+                        detail =
+                            "tunnel_avoid_r${rounds}_a${attempts}_t$currentCount" +
+                                "_off=${offsetM.toInt()}_side=${side.toInt()}",
+                    )
+                }
+                val decision = tunnelRoundStep(currentCount, outcome.count, outcome.routeChanged)
+                if (decision != TunnelRoundStep.KEEP_TRYING && outcome.result != null) {
+                    val beforeCount = currentCount
+                    commit(outcome)
+                    Log.i(
+                        TAG,
+                        "mwm tunnel avoid advance round=$rounds $beforeCount->${outcome.count} " +
+                            "splice=${outcome.spliced} off=${offsetM.toInt()} side=${side.toInt()}",
+                    )
+                    break
+                }
+                step =
+                    escalation.next(
+                        lastPrimaryUnchanged = side == primarySide && !outcome.routeChanged,
+                    )
+            }
+            if (advanced) {
+                skipOnlyContinuations = 0
+                if (currentCount == 0) break
+                continue
+            }
+            if (nativeThisRound > 0) skipOnlyContinuations = 0
+            if (
+                !tunnelAvoidRoundIsStall(
+                    nativeCalls = nativeThisRound,
+                    skippedPrimary = skippedPrimary,
+                    oppositeConsidered = oppositeConsidered,
+                    hasOtherSide = otherSide != null,
+                ) &&
+                skipOnlyContinuations < 1
+            ) {
+                skipOnlyContinuations++
+                Log.i(
+                    TAG,
+                    "mwm tunnel avoid round=$rounds skipped seen primary; opposite side still open",
+                )
+                rounds = (rounds - 1).coerceAtLeast(0)
+                continue
+            }
+            lastTurnsJson = currentTurns
+            stalledRounds++
+            // Hiking: one extra sweep after a stall; allow a second when the
+            // leftover is a short covered passage (micro-offset pass).
+            val stallBudget = if (hikingLike && maxRunM > 0.0 && maxRunM < 500.0) 3 else 2
+            if (!hikingLike || stalledRounds >= stallBudget) break
+        }
+
+        lastTurnsJson = currentTurns
+        val leftoverFp = tunnelFpSummary(currentTurns)
+        val triedOffsets = offsetsTried.joinToString(",").ifBlank { "-" }
+        val cache = tunnelLegCache
+        val cacheStats =
+            "leg_cache_hits=${cache?.hits ?: 0}; leg_cache_misses=${cache?.misses ?: 0}; " +
+                "splice_accepts=$spliceAccepts"
+        if (currentCount == 0) {
+            val evidence =
+                "tunnel_mwm=reroute_apply; tunnels_before=$initialCount; " +
+                    "tunnels_after=0; midpoints=$totalMids; " +
+                    "attempts=$totalAttempts; rounds=$rounds; $cacheStats\n"
+            current.report = current.report.trimEnd() + "\n" + evidence
+            Log.i(
+                TAG,
+                "mwm tunnel avoid OK before=$initialCount after=0 rounds=$rounds",
+            )
+            RoutingPlanLog.progress(75, ecoEnabled, detail = "tunnel_avoid_done_t0")
+            return current
+        }
+
+        // Partial / zero progress: keep best geometry for enrich, but never claim
+        // reroute_apply while tunnels remain. Hiking logs FAIL-grade leftover clearly;
+        // PASS stays so enrich (soft breaks / path annotate) still runs — campaign
+        // gates on route_tunnel_count==0.
+        val evidence =
+            "tunnel_mwm=reroute_incomplete; tunnels_before=$initialCount; " +
+                "tunnels_after=$currentCount; midpoints=$totalMids; " +
+                "attempts=$totalAttempts; rounds=$rounds; leftover_fp=$leftoverFp; " +
+                "offsets_tried=$triedOffsets; $cacheStats\n"
+        val target = if (currentCount < initialCount) current else base
+        target.report = target.report.trimEnd() + "\n" + evidence
+        if (hikingLike) {
+            target.report =
+                target.report.trimEnd() +
+                "\ntunnel_avoid_fail=true; tunnels_remain=$currentCount\n"
+            Log.w(
+                TAG,
+                "mwm tunnel avoid FAIL leftover=$currentCount fp=$leftoverFp " +
+                    "rounds=$rounds offsets=$triedOffsets (from $initialCount)",
+            )
+        } else {
+            Log.w(
+                TAG,
+                "mwm tunnel avoid incomplete tunnels=$currentCount fp=$leftoverFp",
+            )
+        }
+        RoutingPlanLog.progress(
+            75,
+            ecoEnabled,
+            detail = "tunnel_avoid_done_t$currentCount",
+        )
+        return target
+    }
+
+    /**
+     * Map tunnel soft-avoid work into the 20–74% band.
+     *
+     * Each finished attempt moves the percent. The old per-round slice floored
+     * to 20% for most of round 1, so a long hiking replan looked hung.
+     */
+    private fun tunnelAvoidProgressPct(
+        round: Int,
+        maxRounds: Int,
+        attempt: Int,
+        maxAttempts: Int,
+    ): Int {
+        val perRound = maxAttempts.coerceAtLeast(1)
+        val total = (maxRounds.coerceAtLeast(1) * perRound).coerceAtLeast(1)
+        val done =
+            ((round - 1).coerceAtLeast(0) * perRound) + attempt.coerceAtLeast(0)
+        val pct = 20.0 + (done.coerceAtMost(total).toDouble() / total.toDouble()) * 54.0
+        return pct.toInt().coerceIn(20, 74)
+    }
+
+    /**
+     * Contiguous forbidden-tunnel runs in CoMaps turns_json.
+     * Allowed tunnels (`tunnel_ok=true` from the native access rule) are ignored;
+     * legacy turns without `tunnel_ok` still count as forbidden.
+     */
+    internal fun tunnelRunCount(turnsJson: String): Int {
+        val source = runCatching { JSONArray(turnsJson.ifBlank { "[]" }) }.getOrElse { JSONArray() }
+        var count = 0
+        var prev = false
+        for (i in 0 until source.length()) {
+            val o = source.optJSONObject(i) ?: continue
+            val forbidden = isForbiddenTunnelTurn(o)
+            if (forbidden && !prev) count++
+            prev = forbidden
+        }
+        return count
+    }
+
+    /** Longest contiguous tunnel run length in meters (0 when none). */
+    internal fun tunnelMaxRunLengthM(turnsJson: String): Double {
+        val source = runCatching { JSONArray(turnsJson.ifBlank { "[]" }) }.getOrElse { JSONArray() }
+        var maxM = 0.0
+        var runM = 0.0
+        var prev = false
+        for (i in 0 until source.length()) {
+            val o = source.optJSONObject(i) ?: continue
+            val forbidden = isForbiddenTunnelTurn(o)
+            val distM = o.optDouble("dist_m", 0.0).coerceAtLeast(0.0)
+            if (forbidden) {
+                runM = if (prev) runM + distM else distM
+                if (runM > maxM) maxM = runM
+            } else {
+                runM = 0.0
+            }
+            prev = forbidden
+        }
+        return maxM
+    }
+
+    /**
+     * Midpoints of contiguous tunnel runs, projected onto [polyline] by cumulative
+     * turn `dist_m` (turns lack lat/lon).
+     */
+    internal fun tunnelMidpoints(
+        turnsJson: String,
+        polyline: String,
+    ): List<Pair<Double, Double>> = tunnelAvoidAnchors(turnsJson, polyline, fractions = listOf(0.5))
+
+    /**
+     * Sample points along each contiguous tunnel run at [fractions] of run length
+     * (default entrance / mid / exit) for soft-avoid detour vias.
+     */
+    internal fun tunnelAvoidAnchors(
+        turnsJson: String,
+        polyline: String,
+        fractions: List<Double> = listOf(0.15, 0.5, 0.85),
+    ): List<Pair<Double, Double>> {
+        val samples = samplePolylineKm(polyline)
+        if (samples.size < 2) return emptyList()
+        val source = runCatching { JSONArray(turnsJson.ifBlank { "[]" }) }.getOrElse { JSONArray() }
+        val anchors = ArrayList<Pair<Double, Double>>()
+        var alongKm = 0.0
+        var runStart = -1.0
+
+        fun flush() {
+            if (runStart < 0.0) return
+            val runEnd = alongKm
+            val len = (runEnd - runStart).coerceAtLeast(0.0)
+            for (f in fractions) {
+                val at = runStart + len * f.coerceIn(0.0, 1.0)
+                anchors.add(interpolateAtKm(samples, at))
+            }
+            runStart = -1.0
+        }
+        for (i in 0 until source.length()) {
+            val o = source.optJSONObject(i) ?: continue
+            val forbidden = isForbiddenTunnelTurn(o)
+            val distKm = (o.optDouble("dist_m", 0.0) / 1000.0).coerceAtLeast(0.0)
+            if (forbidden) {
+                if (runStart < 0.0) runStart = alongKm
+                alongKm += distKm
+            } else {
+                flush()
+                alongKm += distKm
+            }
+        }
+        flush()
+        return anchors
+    }
+
+    /**
+     * The longest contiguous tunnel run, with entrance / mid / exit anchors.
+     * The soft-avoid budget is spent here instead of a rotating window from
+     * the start of the anchor list. Ties keep the earlier run.
+     */
+    internal fun longestTunnelRun(
+        turnsJson: String,
+        polyline: String,
+        fractions: List<Double> = listOf(0.15, 0.5, 0.85),
+    ): TunnelRunTarget? {
+        val samples = samplePolylineKm(polyline)
+        if (samples.size < 2) return null
+        val source = runCatching { JSONArray(turnsJson.ifBlank { "[]" }) }.getOrElse { JSONArray() }
+        var alongKm = 0.0
+        var runStart = -1.0
+        var best: TunnelRunTarget? = null
+
+        fun consider() {
+            if (runStart < 0.0) return
+            val runEnd = alongKm
+            val lenKm = (runEnd - runStart).coerceAtLeast(0.0)
+            val anchors =
+                fractions.map { fraction ->
+                    interpolateAtKm(samples, runStart + lenKm * fraction.coerceIn(0.0, 1.0))
+                }
+            val candidate =
+                TunnelRunTarget(
+                    lengthM = lenKm * 1000.0,
+                    startM = runStart * 1000.0,
+                    endM = runEnd * 1000.0,
+                    anchors = anchors,
+                )
+            val previous = best
+            if (previous == null || candidate.lengthM > previous.lengthM) best = candidate
+            runStart = -1.0
+        }
+        for (i in 0 until source.length()) {
+            val o = source.optJSONObject(i) ?: continue
+            val forbidden = isForbiddenTunnelTurn(o)
+            val distKm = (o.optDouble("dist_m", 0.0) / 1000.0).coerceAtLeast(0.0)
+            if (forbidden) {
+                if (runStart < 0.0) runStart = alongKm
+                alongKm += distKm
+            } else {
+                consider()
+                alongKm += distKm
+            }
+        }
+        consider()
+        return best
+    }
+
+    /** Compact `street@km` fingerprints for leftover forbidden-tunnel logging. */
+    internal fun tunnelFpSummary(turnsJson: String): String {
+        val source = runCatching { JSONArray(turnsJson.ifBlank { "[]" }) }.getOrElse { JSONArray() }
+        val fps = ArrayList<String>()
+        var prev = false
+        var alongKm = 0.0
+        var label = "unnamed"
+        for (i in 0 until source.length()) {
+            val o = source.optJSONObject(i) ?: continue
+            val forbidden = isForbiddenTunnelTurn(o)
+            val distKm = (o.optDouble("dist_m", 0.0) / 1000.0).coerceAtLeast(0.0)
+            if (forbidden) {
+                if (!prev) {
+                    alongKm = 0.0
+                    label =
+                        o.optString("street").ifBlank {
+                            o.optString("ref").ifBlank { "unnamed" }
+                        }
+                    alongKm += distKm
+                    fps.add("$label@${"%.2f".format(Locale.US, alongKm)}")
+                } else {
+                    alongKm += distKm
+                    val street = o.optString("street")
+                    if (street.isNotBlank()) label = street
+                    fps[fps.lastIndex] = "$label@${"%.2f".format(Locale.US, alongKm)}"
+                }
+            }
+            prev = forbidden
+        }
+        return fps.joinToString("|").ifBlank { "-" }
+    }
+
+    private fun markDatexRerouteHooks(
+        beforeKm: Double,
+        afterKm: Double,
+        beforeHash: String,
+        afterHash: String,
+        blocks: List<DatexBlockHit>,
+        applied: Boolean = true,
+    ) {
+        NaviMapTestHooks.datexMwmRerouteApplied = applied
+        NaviMapTestHooks.datexMwmRerouteBeforeKm = beforeKm
+        NaviMapTestHooks.datexMwmRerouteAfterKm = afterKm
+        NaviMapTestHooks.datexMwmRerouteBeforePoly = beforeHash
+        NaviMapTestHooks.datexMwmRerouteAfterPoly = afterHash
+        val ids = blocks.map { it.id }.filter { it.isNotBlank() }
+        if (ids.isNotEmpty()) {
+            val prev =
+                NaviMapTestHooks.datexAutoRerouteBlockIds
+                    .split(',')
+                    .filter { it.isNotBlank() }
+                    .toMutableSet()
+            prev.addAll(ids)
+            NaviMapTestHooks.datexAutoRerouteBlockIds = prev.joinToString(",")
+        }
+    }
+
+    private data class DatexBlockHit(
+        val id: String,
+        val lat: Double,
+        val lon: Double,
+        val xsi: String,
+    )
+
+    private fun loadOnRouteDatexBlocks(
+        context: Context,
+        samples: List<Pair<Double, Double>>,
+    ): List<DatexBlockHit> {
+        val dataDir = NaviAppData.resolve(context)
+        val cacheDir = java.io.File(dataDir, "datex_cache").absolutePath
+        val raw =
+            runCatching {
+                datexRefreshJson(
+                    enabled = true,
+                    host = MapHudPrefs.loadDatexHost(context),
+                    port = MapHudPrefs.loadDatexPort(context).toUInt(),
+                    routeLatLonJson = latLonPairsToJson(samples),
+                    wifiOnly = false,
+                    onWifi = true,
+                    useDiscoveryChain = true,
+                    cacheDir = cacheDir,
+                )
+            }.getOrElse { e ->
+                Log.w(TAG, "mwm datex avoid refresh failed: ${e.message}")
+                pendingDatexAnnotateExtra =
+                    "datex_impacts=0; datex_block=0; datex_penalize=0\ndatex_mwm=refresh_failed\n"
+                return emptyList()
+            }
+        val o = runCatching { JSONObject(raw) }.getOrNull()
+        if (o == null) {
+            pendingDatexAnnotateExtra =
+                "datex_impacts=0; datex_block=0; datex_penalize=0\ndatex_mwm=parse_failed\n"
+            return emptyList()
+        }
+        // Stash annotate lines so enrichMwmPlan need not refresh DATEX again.
+        pendingDatexAnnotateExtra = datexActiveToAnnotateExtra(o)
+        val active = o.optJSONArray("active") ?: return emptyList()
+        val out = ArrayList<DatexBlockHit>()
+        for (i in 0 until active.length()) {
+            val s = active.optJSONObject(i) ?: continue
+            if (s.optString("impact").lowercase(Locale.US) != "block") continue
+            val lat = s.optDouble("lat", Double.NaN)
+            val lon = s.optDouble("lon", Double.NaN)
+            if (!lat.isFinite() || !lon.isFinite()) continue
+            val nearest = samples.minOf { (la, lo) -> haversineM(la, lo, lat, lon) }
+            // Slightly wider than DATEX_IMPACT_RADIUS_M (250) so snapped sits count.
+            if (nearest > 400.0) continue
+            out.add(
+                DatexBlockHit(
+                    id = s.optString("id").ifBlank { "block_$i" },
+                    lat = lat,
+                    lon = lon,
+                    xsi = s.optString("xsi_type"),
+                ),
+            )
+        }
+        return out
+    }
+
+    /** Build the enrich-report DATEX lines from a refresh JSON object. */
+    private fun datexActiveToAnnotateExtra(o: JSONObject): String {
+        val active = o.optJSONArray("active") ?: JSONArray()
+        var block = 0
+        var penalize = 0
+        val lines = StringBuilder()
+        for (i in 0 until active.length()) {
+            val s = active.optJSONObject(i) ?: continue
+            val impact = s.optString("impact").lowercase(Locale.US)
+            when (impact) {
+                "block" -> block++
+                "penalty", "penalize" -> penalize++
+                else -> continue
+            }
+            lines.append(
+                "datex_constraint: id=${s.optString("id")}; impact=$impact; " +
+                    "lat=${s.optDouble("lat")}; lon=${s.optDouble("lon")}; " +
+                    "xsi=${s.optString("xsi_type")}\n",
+            )
+        }
+        val impacts = block + penalize
+        return buildString {
+            append("datex_impacts=$impacts; datex_block=$block; datex_penalize=$penalize\n")
+            append(
+                "datex_mwm=overlay_apply; active=${active.length()}; " +
+                    "warning=${o.optString("warning")}\n",
+            )
+            append(lines)
+        }
+    }
+
+    private fun detourViaForBlock(
+        pts: List<Pair<Double, Double>>,
+        blockLat: Double,
+        blockLon: Double,
+        offsetM: Double,
+        side: Double,
+    ): Pair<Double, Double>? {
+        if (pts.size < 2) return null
+        var bestI = 0
+        var bestD = Double.MAX_VALUE
+        for (i in pts.indices) {
+            val d = haversineM(pts[i].first, pts[i].second, blockLat, blockLon)
+            if (d < bestD) {
+                bestD = d
+                bestI = i
+            }
+        }
+        val i0 = (bestI - 1).coerceAtLeast(0)
+        val i1 = (bestI + 1).coerceAtMost(pts.lastIndex)
+        if (i0 == i1) return null
+        val (la0, lo0) = pts[i0]
+        val (la1, lo1) = pts[i1]
+        val dLat = la1 - la0
+        val dLon = lo1 - lo0
+        val len = sqrt(dLat * dLat + dLon * dLon)
+        if (len < 1e-9) return null
+        // Perpendicular in lat/lon degrees; scale lon by cos(lat).
+        val latRad = Math.toRadians(blockLat)
+        val metersPerDegLat = 111_320.0
+        val metersPerDegLon = 111_320.0 * cos(latRad).coerceAtLeast(0.2)
+        val ux = dLon / len
+        val uy = dLat / len
+        // Perpendicular unit in degree-space ≈ (-uy, ux)
+        val px = -uy
+        val py = ux
+        val outLat = blockLat + side * (offsetM / metersPerDegLat) * py
+        val outLon = blockLon + side * (offsetM / metersPerDegLon) * px
+        return outLat to outLon
+    }
+
+    private fun mergeViasByRouteOrder(
+        startLat: Double,
+        startLon: Double,
+        endLat: Double,
+        endLon: Double,
+        userVias: List<Pair<Double, Double>>,
+        detours: List<Pair<Double, Double>>,
+    ): List<Pair<Double, Double>> {
+        fun key(
+            lat: Double,
+            lon: Double,
+        ): Double {
+            val dStart = haversineM(startLat, startLon, lat, lon)
+            val dEnd = haversineM(lat, lon, endLat, endLon)
+            return dStart / (dStart + dEnd + 1.0)
+        }
+        return (userVias + detours).sortedBy { key(it.first, it.second) }
+    }
+
+    private fun minClearanceM(
+        polyline: String,
+        blocks: List<DatexBlockHit>,
+    ): Double {
+        val pts = decodePolylinePairs(polyline)
+        if (pts.isEmpty() || blocks.isEmpty()) return Double.POSITIVE_INFINITY
+        var min = Double.POSITIVE_INFINITY
+        for (b in blocks) {
+            val d = pts.minOf { (la, lo) -> haversineM(la, lo, b.lat, b.lon) }
+            if (d < min) min = d
+        }
+        return min
+    }
+
+    private fun decodePolylinePairs(polyline: String): List<Pair<Double, Double>> =
+        polyline.split(';').mapNotNull { part ->
+            val bits = part.split(',')
+            if (bits.size < 2) return@mapNotNull null
+            val lo = bits[0].toDoubleOrNull() ?: return@mapNotNull null
+            val la = bits[1].toDoubleOrNull() ?: return@mapNotNull null
+            la to lo
+        }
+
+    private fun polylineFingerprint(polyline: String): String = "%08x:len=%d".format(Locale.US, polyline.hashCode(), polyline.length)
+
+    /**
+     * One from–to leg. Hits reuse points, turns, length, and travel time.
+     * [comapsSessionRoute] is only called on a miss, and only from this
+     * planner thread — never in parallel.
+     */
+    private fun routeLegCached(
+        flags: TunnelLegFlags,
+        comapsProfile: FfiComapsProfile,
+        fromLat: Double,
+        fromLon: Double,
+        toLat: Double,
+        toLon: Double,
+        wetlandHook: Boolean,
+    ): FfiComapsRoute {
+        val cache = tunnelLegCache
+        val key = tunnelLegCacheKey(fromLat, fromLon, toLat, toLon, flags)
+        if (cache != null) {
+            val hit = cache.get(key)
+            if (hit != null) {
+                Log.i(
+                    TAG,
+                    "mwm tunnel leg cache hit " +
+                        "${"%.4f".format(Locale.US, fromLat)},${"%.4f".format(Locale.US, fromLon)}->" +
+                        "${"%.4f".format(Locale.US, toLat)},${"%.4f".format(Locale.US, toLon)} " +
+                        "hits=${cache.hits} misses=${cache.misses}",
+                )
+                return hit
+            }
+        }
+        val routed =
+            comapsSessionRoute(
+                profile = comapsProfile,
+                fromLat = fromLat,
+                fromLon = fromLon,
+                toLat = toLat,
+                toLon = toLon,
+                wetlandHook = wetlandHook,
+            )
+        if (cache != null && routed.code == FfiComapsRouteCode.OK) {
+            cache.put(key, routed)
+            Log.i(
+                TAG,
+                "mwm tunnel leg cache store " +
+                    "${"%.4f".format(Locale.US, fromLat)},${"%.4f".format(Locale.US, fromLon)}->" +
+                    "${"%.4f".format(Locale.US, toLat)},${"%.4f".format(Locale.US, toLon)} " +
+                    "hits=${cache.hits} misses=${cache.misses}",
+            )
+        }
+        return routed
+    }
+
+    private fun tunnelVehicleKey(
+        profile: TravelProfile,
+        stored: FfiVehicleLimits?,
+    ): String {
+        if (!VehicleRestrictionUi.appliesStoredLimits(profile) || stored == null) return "none"
+        return listOf(
+            stored.heightM,
+            stored.widthM,
+            stored.lengthM,
+            stored.totalWeightKg,
+            stored.axleWeightKg,
+            stored.bogieWeightKg,
+        ).joinToString(",") { value ->
+            if (value == null) "-" else String.format(Locale.US, "%.3f", value)
+        }
+    }
+
+    private fun viaAlongMeters(
+        polyline: String,
+        lat: Double,
+        lon: Double,
+    ): Double {
+        val samples = samplePolylineKm(polyline)
+        if (samples.isEmpty()) return 0.0
+        var bestKm = samples.first().third
+        var bestD = Double.MAX_VALUE
+        for (sample in samples) {
+            val d = haversineM(sample.first, sample.second, lat, lon)
+            if (d < bestD) {
+                bestD = d
+                bestKm = sample.third
+            }
+        }
+        return bestKm * 1000.0
+    }
+
+    /** Keep the accepted corridor's report and swap in the spliced geometry. */
+    private fun corridorWithSplicedGeometry(
+        profile: TravelProfile,
+        endLat: Double,
+        endLon: Double,
+        base: CorridorRouteResult,
+        spliced: SplicedGeometry,
+        timeS: Double,
+    ): CorridorRouteResult {
+        val points =
+            decodePolylinePairs(spliced.polyline).map { (lat, lon) ->
+                FfiComapsLatLon(lat, lon)
+            }
+        val route =
+            FfiComapsRoute(
+                code = FfiComapsRouteCode.OK,
+                lengthM = spliced.lengthM,
+                timeS = timeS,
+                buildTimeS = 0.0,
+                points = points,
+                errorMessage = null,
+                turnsJson = spliced.turnsJson,
+                instructionsJson = spliced.turnsJson,
+                ascentM = 0.0,
+                descentM = 0.0,
+                elevationJson = "[]",
+                routerMode = "tunnel_splice",
+                speedLimitsJson = "[]",
+            )
+        val built = toCorridor(route, endLat, endLon, profile, null)
+        val report =
+            base.report
+                .replace(
+                    Regex("distance_km=[-0-9.]+"),
+                    "distance_km=${"%.3f".format(Locale.US, built.distanceKm)}",
+                ).replace(
+                    Regex("eta_minutes=[-0-9.]+"),
+                    "eta_minutes=${"%.1f".format(Locale.US, built.etaMinutes)}",
+                )
+        return base.copy(
+            report = report,
+            distanceKm = built.distanceKm,
+            etaMinutes = built.etaMinutes,
+            routePolyline = built.routePolyline,
+            maneuversJson = built.maneuversJson,
+            simSamplesJson = built.simSamplesJson,
+        )
+    }
+
+    /**
+     * MWM plans previously skipped DATEX / soft-break / nearby-attractions that the
+     * `.rkyv` planner fills. Annotate the PASS report and break pins on the critical
+     * path; CoMaps look-ahead seeding runs asynchronously so short plans are not
+     * blocked by dozens of serial category searches.
+     */
+    /**
+     * Soft-break / rest-place pins from installed MWM leaves (CoMaps search).
+     * Prefer this over classic soft-break geometry when CoMaps search returns hits.
+     */
+    private fun enrichBreakPois(
+        result: CorridorRouteResult,
+        profile: TravelProfile,
+        locale: String,
+        stillActive: () -> Boolean,
+    ) {
+        if (!result.report.contains("PASS")) return
+        if (result.routePolyline.isBlank() || result.distanceKm < 1.0) return
+        val built =
+            runCatching {
+                MwmBreakPois.buildAlongPolyline(
+                    polyline = result.routePolyline,
+                    profile = profile,
+                    distanceKm = result.distanceKm,
+                    locale = locale,
+                    stillActive = stillActive,
+                )
+            }.getOrElse { e ->
+                Log.w(TAG, "mwm_break_pois failed: ${e.message}")
+                return
+            }
+        if (built.breakPoisJson == "[]" || built.breakPoisJson.isBlank()) return
+        result.breakPoisJson = built.breakPoisJson
+        val sb = StringBuilder(result.report)
+        if (!result.report.contains("rest_place_count=")) {
+            MwmBreakPois.appendReportTokens(sb, built)
+        }
+        result.report = sb.toString()
+    }
+
+    private fun enrichMwmPlan(
+        context: Context,
+        profile: TravelProfile,
+        base: CorridorRouteResult,
+        ecoEnabled: Boolean = false,
+    ): CorridorRouteResult {
+        if (!base.report.contains("PASS")) return base
+        RoutingPlanLog.progress(80, ecoEnabled, detail = "mwm_enrich")
+        val dataDir = NaviAppData.resolve(context)
+        val samples = downsamplePolyline(base.routePolyline, maxPoints = 120)
+        enrichBreakPois(
+            base,
+            profile,
+            locale = java.util.Locale.getDefault().language.ifBlank { "en" },
+            stillActive = { true },
+        )
+        // Prefer DATEX lines from the avoid-pass refresh; never call datexRefreshJson twice.
+        val reusedDatex = pendingDatexAnnotateExtra
+        pendingDatexAnnotateExtra = null
+        val datexExtra =
+            when {
+                base.report.contains("datex_impacts=") -> ""
+                reusedDatex != null -> reusedDatex
+                else -> annotateDatex(context, dataDir, samples)
+            }
+        val (softBreaksJson, softRestExtra) =
+            softBreakPoisJson(dataDir, profile, base.routePolyline, base.distanceKm, base.etaMinutes)
+        val mwmBreaks = base.breakPoisJson
+        val useMwmBreaks = mwmBreaks.isNotBlank() && mwmBreaks != "[]"
+        val breaksJson = if (useMwmBreaks) mwmBreaks else softBreaksJson
+        val restExtra =
+            if (useMwmBreaks && base.report.contains("rest_place_count=")) {
+                ""
+            } else {
+                softRestExtra
+            }
+        // Tunnel / ferry runs come from CoMaps turns_json (is_tunnel / is_ferry).
+        val pathExtra = annotatePathFlagsFromTurns(base)
+        // Look-ahead store seed only — attraction counts stay cone-only (MainActivity).
+        // Run off the plan critical path; a newer plan/cancel bumps the epoch.
+        val seedEpoch = lookAheadSeedEpoch.incrementAndGet()
+        val seedSamples = samples.toList()
+        val seedDistanceKm = base.distanceKm
+        lookAheadSeedExecutor.execute {
+            if (lookAheadSeedEpoch.get() != seedEpoch) return@execute
+            seedWaterFromComaps(seedSamples, seedDistanceKm)
+            if (lookAheadSeedEpoch.get() != seedEpoch) return@execute
+            seedAttractionsFromComaps(seedSamples, seedDistanceKm)
+            if (lookAheadSeedEpoch.get() == seedEpoch) {
+                Log.i(
+                    TAG,
+                    "mwm_enrich look-ahead seed done epoch=$seedEpoch " +
+                        "distance_km=${"%.1f".format(Locale.US, seedDistanceKm)}",
+                )
+                // Wake corridor attraction tally (MainActivity LaunchedEffect).
+                notifyLookAheadSeedDone(seedEpoch)
+            }
+        }
+        val report =
+            buildString {
+                append(base.report.trimEnd())
+                append('\n')
+                if (pathExtra.isNotBlank()) append(pathExtra)
+                if (datexExtra.isNotBlank()) append(datexExtra)
+                if (restExtra.isNotBlank()) append(restExtra)
+                append("mwm_enrich_lookahead=async\n")
+            }
+        Log.i(
+            TAG,
+            "mwm_enrich datex_lines=${datexExtra.lineSequence().count()} " +
+                "break_pois=${runCatching { JSONArray(breaksJson).length() }.getOrDefault(0)} " +
+                "path=${pathExtra.lineSequence().firstOrNull().orEmpty()} " +
+                "lookahead=async epoch=$seedEpoch",
+        )
+        return CorridorRouteResult(
+            report = report,
+            distanceKm = base.distanceKm,
+            etaMinutes = base.etaMinutes,
+            cacheHit = base.cacheHit,
+            coldBuildS = base.coldBuildS,
+            warmLoadS = base.warmLoadS,
+            routePolyline = base.routePolyline,
+            poiLat = base.poiLat,
+            poiLon = base.poiLon,
+            poiName = base.poiName,
+            poiIconKey = base.poiIconKey,
+            breakPoisJson = breaksJson,
+            daysJson = base.daysJson,
+            simSamplesJson = base.simSamplesJson,
+            maneuversJson = base.maneuversJson,
+            priorityPathSharePct = base.priorityPathSharePct,
+            routeSegmentsJson = base.routeSegmentsJson,
+            offTrailAdvisory = base.offTrailAdvisory,
+            tollPolicy = base.tollPolicy,
+            padAttemptsJson = base.padAttemptsJson,
+            searchExpansions = base.searchExpansions,
+            searchTerminateReason = base.searchTerminateReason,
+            tollAvoidanceIncomplete = base.tollAvoidanceIncomplete,
+            routeUsesTolls = base.routeUsesTolls,
+        )
+    }
+
+    /**
+     * Count contiguous tunnel / ferry runs from CoMaps `turns_json` flags. Prefer the
+     * raw turns array (still available via [lastTurnsJson]); fall back to maneuvers that
+     * carry `is_tunnel` / `is_ferry` when a nested replan only kept maneuvers.
+     */
+    @Volatile
+    private var lastTurnsJson: String = "[]"
+
+    private fun annotatePathFlagsFromTurns(base: CorridorRouteResult): String {
+        // toCorridor may already have appended MwmRouteLegStats tokens.
+        if (base.report.contains("route_tunnel_count=") || base.report.contains("route_ferry_legs=")) {
+            return ""
+        }
+        val turns =
+            runCatching { JSONArray(lastTurnsJson.ifBlank { "[]" }) }.getOrElse { JSONArray() }
+        val source =
+            if (turns.length() > 0) {
+                turns
+            } else {
+                runCatching { JSONArray(base.maneuversJson.ifBlank { "[]" }) }.getOrElse { JSONArray() }
+            }
+        var tunnelCount = 0
+        var ferryCount = 0
+        val tunnelFp = ArrayList<String>()
+        val ferryFp = ArrayList<String>()
+        var prevTunnel = false
+        var prevFerry = false
+        var tunnelAlongKm = 0.0
+        var ferryAlongKm = 0.0
+        for (i in 0 until source.length()) {
+            val o = source.optJSONObject(i) ?: continue
+            val isTunnel = isForbiddenTunnelTurn(o)
+            val isFerry = o.optBoolean("is_ferry", false)
+            val distKm = o.optDouble("dist_m", 0.0) / 1000.0
+            val label =
+                o.optString("street").ifBlank {
+                    o.optString("ref").ifBlank { o.optString("kind").ifBlank { "unnamed" } }
+                }
+            if (isTunnel) {
+                if (!prevTunnel) {
+                    tunnelCount++
+                    tunnelAlongKm = 0.0
+                }
+                tunnelAlongKm += distKm
+                if (tunnelFp.size < tunnelCount) {
+                    tunnelFp.add("$label@${"%.2f".format(Locale.US, tunnelAlongKm)}")
+                } else {
+                    tunnelFp[tunnelCount - 1] = "$label@${"%.2f".format(Locale.US, tunnelAlongKm)}"
+                }
+            }
+            if (isFerry) {
+                if (!prevFerry) {
+                    ferryCount++
+                    ferryAlongKm = 0.0
+                }
+                ferryAlongKm += distKm
+                if (ferryFp.size < ferryCount) {
+                    ferryFp.add("$label@${"%.2f".format(Locale.US, ferryAlongKm)}")
+                } else {
+                    ferryFp[ferryCount - 1] = "$label@${"%.2f".format(Locale.US, ferryAlongKm)}"
+                }
+            }
+            prevTunnel = isTunnel
+            prevFerry = isFerry
+        }
+        return buildString {
+            append("route_tunnel_count=$tunnelCount\n")
+            append("route_tunnel_fp=${tunnelFp.joinToString("|")}\n")
+            append("route_ferry_legs=$ferryCount\n")
+            append("route_ferry_fp=${ferryFp.joinToString("|")}\n")
+        }
+    }
+
+    private fun annotateDatex(
+        context: Context,
+        dataDir: java.io.File,
+        samples: List<Pair<Double, Double>>,
+    ): String {
+        if (samples.size < 2) {
+            return "datex_impacts=0; datex_block=0; datex_penalize=0\n"
+        }
+        if (!MapHudPrefs.loadDatexPluginEnabled(context)) {
+            return "datex_impacts=0; datex_block=0; datex_penalize=0\ndatex_mwm=plugin_off\n"
+        }
+        val routeJson = latLonPairsToJson(samples)
+        val cacheDir = java.io.File(dataDir, "datex_cache").absolutePath
+        val raw =
+            runCatching {
+                datexRefreshJson(
+                    enabled = true,
+                    host = MapHudPrefs.loadDatexHost(context),
+                    port = MapHudPrefs.loadDatexPort(context).toUInt(),
+                    routeLatLonJson = routeJson,
+                    wifiOnly = false,
+                    onWifi = true,
+                    useDiscoveryChain = true,
+                    cacheDir = cacheDir,
+                )
+            }.getOrElse { e ->
+                Log.w(TAG, "mwm datex refresh failed: ${e.message}")
+                return "datex_impacts=0; datex_block=0; datex_penalize=0\ndatex_mwm=refresh_failed\n"
+            }
+        val o =
+            runCatching { JSONObject(raw) }.getOrNull()
+                ?: return "datex_impacts=0; datex_block=0; datex_penalize=0\ndatex_mwm=parse_failed\n"
+        return datexActiveToAnnotateExtra(o)
+    }
+
+    private fun softBreakPoisJson(
+        dataDir: java.io.File,
+        profile: TravelProfile,
+        polyline: String,
+        distanceKm: Double,
+        etaMinutes: Double,
+    ): Pair<String, String> {
+        if (!usesSoftBreaks(profile) || distanceKm < 1.0 || polyline.isBlank()) {
+            return "[]" to "rest_place_count=0\nchunked_soft_breaks=skipped_profile\n"
+        }
+        val samples = samplePolylineKm(polyline)
+        if (samples.size < 2) {
+            return "[]" to "rest_place_count=0\nchunked_soft_breaks=no_samples\n"
+        }
+        val (intervalKm, intervalH, icon, kind) = softBreakSpacing(dataDir, profile, distanceKm, etaMinutes)
+        val breaks = JSONArray()
+        var next = intervalKm
+        while (next < distanceKm - 0.5) {
+            val (lat, lon) = interpolateAtKm(samples, next)
+            val name =
+                when (profile) {
+                    TravelProfile.HIKING -> "Hiking rest"
+                    TravelProfile.BICYCLE, TravelProfile.BICYCLE_ELECTRIC -> "Cycle rest"
+                    else -> "Rest stop"
+                }
+            breaks.put(
+                JSONObject()
+                    .put("name", name)
+                    .put("lat", lat)
+                    .put("lon", lon)
+                    .put("kind", kind)
+                    .put("icon", icon)
+                    .put("along_km", next),
+            )
+            next += intervalKm
+        }
+        val extra =
+            "chunked_soft_breaks=true; break_interval_km=${"%.1f".format(Locale.US, intervalKm)}; " +
+                "break_interval_h=${"%.2f".format(Locale.US, intervalH)}\n" +
+                "rest_place_count=${breaks.length()}\n" +
+                "chunked_rest_pauses=${breaks.length()}; break_pois_total=${breaks.length()}\n"
+        return breaks.toString() to extra
+    }
+
+    /**
+     * Motor soft breaks (~1.5 h). Hiking uses Scandinavian rast spacing
+     * ([HIKING_MAIN_BREAK_KM]); bicycle a longer cycling rast.
+     */
+    private fun softBreakSpacing(
+        dataDir: java.io.File,
+        profile: TravelProfile,
+        distanceKm: Double,
+        etaMinutes: Double,
+    ): SoftBreakSpacing {
+        when (profile) {
+            TravelProfile.HIKING -> {
+                val intervalKm = HIKING_MAIN_BREAK_KM
+                val etaH = (etaMinutes / 60.0).coerceAtLeast(1e-6)
+                val speedKmh = (distanceKm / etaH).coerceAtLeast(1.0)
+                return SoftBreakSpacing(intervalKm, intervalKm / speedKmh, "shelter", "rest")
+            }
+            TravelProfile.BICYCLE, TravelProfile.BICYCLE_ELECTRIC -> {
+                val intervalKm = CYCLING_MAIN_BREAK_KM
+                val etaH = (etaMinutes / 60.0).coerceAtLeast(1e-6)
+                val speedKmh = (distanceKm / etaH).coerceAtLeast(1.0)
+                return SoftBreakSpacing(intervalKm, intervalKm / speedKmh, "picnic", "rest")
+            }
+            else -> {
+                val rest =
+                    runCatching { loadCarRestSettings(dataDir.absolutePath) }.getOrNull()
+                val hudIntervalH =
+                    (rest?.breakIntervalHours ?: 2.0).coerceIn(1.0, 12.0)
+                val intervalH =
+                    when {
+                        hudIntervalH >= 3.0 -> 1.5
+                        else -> hudIntervalH
+                    }.coerceIn(1.0, 12.0)
+                val etaH = (etaMinutes / 60.0).coerceAtLeast(1e-6)
+                val speedKmh = (distanceKm / etaH).coerceAtLeast(1.0)
+                val intervalKm = (speedKmh * intervalH).coerceAtLeast(1.0)
+                return SoftBreakSpacing(intervalKm, intervalH, "fuel", "amenity")
+            }
+        }
+    }
+
+    private data class SoftBreakSpacing(
+        val intervalKm: Double,
+        val intervalH: Double,
+        val icon: String,
+        val kind: String,
+    )
+
+    /** Matches `HIKING_MAIN_BREAK_DISTANCE_KM` in core defaults. */
+    private const val HIKING_MAIN_BREAK_KM = 11.295
+
+    /** Matches `CYCLING_MAIN_BREAK_DISTANCE_KM` in core defaults. */
+    private const val CYCLING_MAIN_BREAK_KM = 28.24
+
+    internal fun usesSoftBreaks(profile: TravelProfile): Boolean =
+        when (profile) {
+            TravelProfile.CAR,
+            TravelProfile.CAR_ELECTRIC,
+            TravelProfile.MOTORCYCLE,
+            TravelProfile.MOTORCYCLE_ELECTRIC,
+            TravelProfile.MOBILE_HOME,
+            TravelProfile.HIKING,
+            TravelProfile.BICYCLE,
+            TravelProfile.BICYCLE_ELECTRIC,
+            -> true
+            else -> false
+        }
+
+    private fun seedAttractionsFromComaps(
+        samples: List<Pair<Double, Double>>,
+        distanceKm: Double,
+    ) {
+        // Fill the look-ahead store for the cone. Counts stay cone-only (MainActivity).
+        // Probe count scales with corridor length so short plans are not charged
+        // the long-trip mountain density budget.
+        seedComapsCategoryPois(
+            samples = samples,
+            categoryKey = "category_tourism",
+            fallbackQuery = "Tourism",
+            ingestId = "mwm-corridor-tourism",
+            logLabel = "mwm_attractions",
+            sampleCap = lookAheadProbeCap(distanceKm, maxCap = 48, kmPerProbe = 8.0),
+            maxDistM = 850.0,
+            tagBuilder = { h ->
+                JSONObject()
+                    .put("name", h.name)
+                    .put("tourism", comapsHitToTourismTag(h.featureType, h.name))
+            },
+        )
+    }
+
+    private fun seedWaterFromComaps(
+        samples: List<Pair<Double, Double>>,
+        distanceKm: Double,
+    ) {
+        seedComapsCategoryPois(
+            samples = samples,
+            categoryKey = "category_water",
+            fallbackQuery = "Water",
+            ingestId = "mwm-corridor-water",
+            logLabel = "mwm_water",
+            sampleCap = lookAheadProbeCap(distanceKm, maxCap = 16, kmPerProbe = 12.0),
+            maxDistM = 1_200.0,
+            tagBuilder = { h ->
+                JSONObject()
+                    .put("name", h.name)
+                    .put("amenity", "drinking_water")
+                    .put("natural", if (comapsHitLooksLikeSpring(h.featureType, h.name)) "spring" else "")
+            },
+        )
+    }
+
+    /**
+     * Look-ahead CoMaps probe budget from corridor length. Short hops stay cheap;
+     * long corridors still reach [maxCap].
+     */
+    internal fun lookAheadProbeCap(
+        distanceKm: Double,
+        maxCap: Int,
+        kmPerProbe: Double,
+        minCap: Int = 2,
+    ): Int {
+        val km = distanceKm.coerceAtLeast(0.0)
+        val spaced = if (kmPerProbe <= 0.0) maxCap else kotlin.math.ceil(km / kmPerProbe).toInt()
+        return spaced.coerceIn(minCap.coerceAtLeast(1), maxCap.coerceAtLeast(1))
+    }
+
+    private fun seedComapsCategoryPois(
+        samples: List<Pair<Double, Double>>,
+        categoryKey: String,
+        fallbackQuery: String,
+        ingestId: String,
+        logLabel: String,
+        sampleCap: Int,
+        maxDistM: Double,
+        tagBuilder: (FfiSearchHit) -> JSONObject,
+    ) {
+        if (samples.isEmpty() || !ComapsSearchBridge.enabled()) return
+        val query =
+            runCatching { comapsCategoryQuery(categoryKey, "nb") }
+                .getOrNull()
+                ?.trim()
+                ?.ifBlank { null }
+                ?: fallbackQuery
+        val cap = sampleCap.coerceAtLeast(1)
+        val step = (samples.size / cap).coerceAtLeast(1)
+        val picked = samples.filterIndexed { i, _ -> i % step == 0 }.take(cap)
+        val pois = JSONArray()
+        var osm = -2_000_000L
+        val seen = HashSet<String>()
+        for ((lat, lon) in picked) {
+            val hits =
+                runCatching {
+                    ComapsSearchBridge.searchCategory(
+                        queryText = query,
+                        biasLat = lat,
+                        biasLon = lon,
+                        limit = 20,
+                        locale = "nb",
+                    )
+                }.getOrDefault(emptyList())
+            for (h in hits) {
+                if (!h.lat.isFinite() || !h.lon.isFinite()) continue
+                if (h.name.isBlank()) continue
+                // Haversine to the corridor probe (same geometry as the cone query).
+                val distM = haversineM(lat, lon, h.lat, h.lon)
+                if (distM > maxDistM) continue
+                val key =
+                    "${h.name.trim().lowercase(Locale.US)}|" +
+                        "${"%.4f".format(Locale.US, h.lat)}|${"%.4f".format(Locale.US, h.lon)}"
+                if (!seen.add(key)) continue
+                osm -= 1
+                pois.put(
+                    JSONObject()
+                        .put("osm_id", osm)
+                        .put("lat", h.lat)
+                        .put("lon", h.lon)
+                        .put("name", h.name)
+                        .put("tags", tagBuilder(h)),
+                )
+            }
+        }
+        if (pois.length() == 0) {
+            Log.i(
+                TAG,
+                "$logLabel seed empty query=$query samples=${picked.size} max_dist_m=$maxDistM",
+            )
+            return
+        }
+        val stats =
+            runCatching {
+                poiLookaheadIngestFromJson(ingestId, pois.toString())
+            }.getOrNull()
+        Log.i(
+            TAG,
+            "$logLabel seeded=${pois.length()} records=${stats?.records} query=$query " +
+                "samples=${picked.size} max_dist_m=$maxDistM",
+        )
+    }
+
+    internal fun comapsHitLooksLikeSpring(
+        featureType: String?,
+        name: String?,
+    ): Boolean {
+        val hay =
+            listOfNotNull(featureType, name)
+                .joinToString(" ")
+                .lowercase(Locale.US)
+        return hay.contains("spring") || hay.contains("kilde") || hay.contains("quelle")
+    }
+
+    /**
+     * Map CoMaps category / feature_type (+ name hints) onto OSM tourism=* so
+     * look-ahead icon keys preserve viewpoint / museum / artwork (not a flat
+     * tourism=attraction dump that collapses every hit to one type).
+     */
+    internal fun comapsHitToTourismTag(
+        featureType: String?,
+        name: String?,
+    ): String {
+        val hay =
+            listOfNotNull(featureType, name)
+                .joinToString(" ")
+                .lowercase(Locale.US)
+        return when {
+            hay.contains("viewpoint") ||
+                hay.contains("utsikt") ||
+                hay.contains("aussicht") ||
+                hay.contains("scenic") ||
+                hay.contains("lookout") ||
+                hay.contains("overlook") -> "viewpoint"
+            hay.contains("museum") -> "museum"
+            hay.contains("artwork") ||
+                hay.contains("sculpture") ||
+                hay.contains("statue") ||
+                hay.contains("memorial") -> "artwork"
+            else -> "attraction"
+        }
+    }
+
+    /** Lon,lat;… polyline → up to [maxPoints] evenly spaced (lat,lon) samples. */
+    private fun downsamplePolyline(
+        polyline: String,
+        maxPoints: Int,
+    ): List<Pair<Double, Double>> {
+        val all = ArrayList<Pair<Double, Double>>()
+        for (part in polyline.split(';')) {
+            val bits = part.split(',')
+            if (bits.size != 2) continue
+            val lon = bits[0].toDoubleOrNull() ?: continue
+            val lat = bits[1].toDoubleOrNull() ?: continue
+            all.add(lat to lon)
+        }
+        if (all.size <= maxPoints) return all
+        val step = ((all.size - 1).toDouble() / (maxPoints - 1)).coerceAtLeast(1.0)
+        val out = ArrayList<Pair<Double, Double>>(maxPoints)
+        var i = 0.0
+        while (out.size < maxPoints) {
+            out.add(all[i.toInt().coerceIn(0, all.lastIndex)])
+            i += step
+        }
+        if (out.last() != all.last()) {
+            out[out.lastIndex] = all.last()
+        }
+        return out
+    }
+
+    /** Wire format lon,lat;… → (lat, lon, cum_km). */
+    private fun samplePolylineKm(polyline: String): List<Triple<Double, Double, Double>> {
+        val out = ArrayList<Triple<Double, Double, Double>>()
+        var cum = 0.0
+        var prev: Pair<Double, Double>? = null
+        for (part in polyline.split(';')) {
+            val bits = part.split(',')
+            if (bits.size != 2) continue
+            val lon = bits[0].toDoubleOrNull() ?: continue
+            val lat = bits[1].toDoubleOrNull() ?: continue
+            if (prev != null) {
+                cum += haversineM(prev.first, prev.second, lat, lon) / 1000.0
+            }
+            out.add(Triple(lat, lon, cum))
+            prev = lat to lon
+        }
+        return out
+    }
+
+    private fun interpolateAtKm(
+        samples: List<Triple<Double, Double, Double>>,
+        targetKm: Double,
+    ): Pair<Double, Double> {
+        if (samples.isEmpty()) return 0.0 to 0.0
+        if (targetKm <= samples.first().third) {
+            return samples.first().first to samples.first().second
+        }
+        for (i in 0 until samples.size - 1) {
+            val (lat0, lon0, k0) = samples[i]
+            val (lat1, lon1, k1) = samples[i + 1]
+            if (targetKm <= k1) {
+                val t = if ((k1 - k0).absoluteValue < 1e-9) 0.0 else (targetKm - k0) / (k1 - k0)
+                return (lat0 + (lat1 - lat0) * t) to (lon0 + (lon1 - lon0) * t)
+            }
+        }
+        val last = samples.last()
+        return last.first to last.second
+    }
 
     private fun pointsToPolyline(points: List<FfiComapsLatLon>): String {
         if (points.isEmpty()) return ""
@@ -542,16 +2514,63 @@ object MwmProductionPlanner {
         la1: Double,
         lo1: Double,
     ): CorridorRouteResult? {
+        val leaves = LinkedHashSet<String>()
+        collectLeavesAlong(la0, lo0, la1, lo1, leaves)
+        return missingResult(context, leaves)
+    }
+
+    private fun collectLeavesAlong(
+        la0: Double,
+        lo0: Double,
+        la1: Double,
+        lo1: Double,
+        into: MutableSet<String>,
+    ) {
         val dKm = haversineM(la0, lo0, la1, lo1) / 1000.0
         val n = (dKm / 8.0).toInt().coerceIn(2, 240)
-        val leaves = LinkedHashSet<String>()
         for (k in 0..n) {
             val f = k.toDouble() / n
             val leaf =
-                runCatching { uniffi.navi.comapsLeafForPoint(la0 + (la1 - la0) * f, lo0 + (lo1 - lo0) * f) }.getOrNull()
-            if (!leaf.isNullOrBlank()) leaves.add(leaf)
+                runCatching {
+                    uniffi.navi.comapsLeafForPoint(la0 + (la1 - la0) * f, lo0 + (lo1 - lo0) * f)
+                }.getOrNull()
+            if (!leaf.isNullOrBlank()) into.add(leaf)
         }
-        return missingResult(context, leaves)
+    }
+
+    /**
+     * Leaves along the route whose sidecars lack a `vehicle_limits` section,
+     * plus leaves whose catalog match rate is below the configured threshold.
+     */
+    private fun vehicleLimitsCoverage(
+        context: Context,
+        leaves: Collection<String>,
+    ): Pair<List<String>, List<String>> {
+        if (leaves.isEmpty()) return emptyList<String>() to emptyList()
+        val missing =
+            runCatching {
+                uniffi.navi.comapsLeavesMissingVehicleLimits(leaves.toList())
+            }.getOrDefault(leaves.toList())
+        val haveSection = leaves.filter { it.isNotBlank() && it !in missing }
+        val partial =
+            VehicleLimitsCoverageStore.partialLeaves(context, haveSection).filter { it !in missing }
+        return missing to partial
+    }
+
+    private fun vehicleLimitsReportLines(
+        missing: List<String>?,
+        partial: List<String> = emptyList(),
+    ): String {
+        if (missing == null) return ""
+        return buildString {
+            append("vehicle_limits_ok=${missing.isEmpty() && partial.isEmpty()}\n")
+            if (missing.isNotEmpty()) {
+                append("vehicle_limits_missing=${missing.joinToString(",")}\n")
+            }
+            if (partial.isNotEmpty()) {
+                append("vehicle_limits_partial=${partial.joinToString(",")}\n")
+            }
+        }
     }
 
     private fun missingResult(

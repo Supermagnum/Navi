@@ -31,11 +31,19 @@ fn download_ostlandet_leaf_set_live() {
     let ui = region_ui_from_catalog(&catalog);
     assert_eq!(ui.len(), 224);
 
-    let leaves = catalog
+    let raw = catalog
         .leaves_for_bake_id("europe_norway_ostlandet")
         .expect("ostlandet mapping")
         .to_vec();
-    assert_eq!(leaves.len(), 9);
+    let leaves = driver_break_core::mwm::install_leaves_for_region("europe_norway_ostlandet", &raw);
+    assert!(
+        leaves.iter().all(|id| id.starts_with("Norway_")),
+        "Østlandet install must not include foreign leaves: {leaves:?} (raw {raw:?})"
+    );
+    assert!(
+        leaves.iter().any(|id| id == "Norway_Hedmark"),
+        "Hedmark missing from {leaves:?}"
+    );
 
     let mig_url = format!(
         "{}/mwm/{}",
@@ -47,7 +55,9 @@ fn download_ostlandet_leaf_set_live() {
     );
     let mig_text = http_get_text(&mig_url, std::time::Duration::from_secs(120)).unwrap();
     let mig = parse_region_migration_json(&mig_text).unwrap();
-    let from_mig = leaf_set_for_bake_id(&mig, "europe_norway_ostlandet").unwrap();
+    let from_mig_raw = leaf_set_for_bake_id(&mig, "europe_norway_ostlandet").unwrap();
+    let from_mig =
+        driver_break_core::mwm::install_leaves_for_region("europe_norway_ostlandet", &from_mig_raw);
     assert_eq!(from_mig, leaves);
 
     let discovery = discover_mirrors(

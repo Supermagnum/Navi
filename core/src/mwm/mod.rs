@@ -12,7 +12,9 @@ pub mod attribution;
 pub mod catalog;
 pub mod checksum;
 pub mod comaps;
+pub mod comaps_fallback;
 pub mod comaps_instructions;
+pub mod comaps_route_abi;
 pub mod comaps_router;
 pub mod comaps_search;
 pub mod comaps_snap;
@@ -29,28 +31,35 @@ pub mod sidecar;
 #[cfg(test)]
 mod sidecar_tests;
 pub mod storage;
+pub mod vehicle_route_guard;
 
 pub use attribution::{store_attribution_files, AttributionStore};
 pub use catalog::{
-    parse_catalog_json, CatalogLeaf, ComapsMeta, DisplayNameOverride, DisplayNameOverrides,
-    MwmCatalog, MwmFingerprint, COUNTRY_GROUPS_ROUTABLE_TARGET, SCHEMA_V2,
+    install_leaves_for_region, parse_catalog_json, CatalogLeaf, ComapsMeta, DisplayNameOverride,
+    DisplayNameOverrides, MwmCatalog, MwmFingerprint, VehicleLimitsCoverageCatalog,
+    COUNTRY_GROUPS_ROUTABLE_TARGET, SCHEMA_V2,
 };
 pub use checksum::{
     sha1_base64_of_bytes, sha1_base64_of_path, sha256_hex_of_bytes, sha256_hex_of_path,
     verify_bytes_sha256, verify_path_sha1_base64, verify_path_sha256, ChecksumError,
 };
 pub use comaps::{
-    discover_mirrors, fetch_and_verify_countries_txt, parse_countries_txt, percent_encode_leaf_id,
-    verify_countries_txt_signature, ComapsDiscovery, CountriesTxt, CountriesTxtLeaf,
-    COMAPS_COUNTRIES_TXT_PUBKEY_HEX, DEFAULT_METASERVER,
+    discover_mirrors, discover_preferred_map_series, fetch_and_verify_countries_txt,
+    parse_countries_txt, percent_encode_leaf_id, verify_countries_txt_signature, ComapsDiscovery,
+    CountriesTxt, CountriesTxtLeaf, COMAPS_COUNTRIES_TXT_PUBKEY_HEX, DEFAULT_METASERVER,
+};
+pub use comaps_fallback::{
+    catalog_snapshot_json, fetch_comaps_direct_catalog, resolve_mwm_catalog,
+    resolve_mwm_catalog_for_list, synthesize_catalog_from_countries, CatalogResolveSource,
+    ResolvedCatalog,
 };
 pub use comaps_instructions::{
     build_voice_prompts, enrich_turns_json, instructions_from_turns_json, ComapsTurnStep,
     NaviInstruction,
 };
 pub use comaps_router::{
-    leaf_for_point, set_platform_locked, ComapsLatLon, ComapsProfile, ComapsRoute, ComapsRouter,
-    ComapsRouterCode, ComapsRouterError, ComapsSnap,
+    leaf_for_point, leaves_missing_vehicle_limits, set_platform_locked, ComapsLatLon,
+    ComapsProfile, ComapsRoute, ComapsRouter, ComapsRouterCode, ComapsRouterError, ComapsSnap,
 };
 pub use comaps_search::{
     map_poi_category, merge_hits, navi_quick_category_key, CategoryCoverage, CategoryMapping,
@@ -92,15 +101,21 @@ pub use release::{
     staging_is_complete, write_active_version, ActiveRelease, ReleaseSwitchError, WorldRelease,
 };
 pub use sidecar::{
-    encode_elevation_el02, encode_test_sidecar_zstd, parse_elevation_el02, zigzag_decode_i32,
-    zigzag_encode_i32, BoardwalkRecord, ElevationFeature, ElevationPoint, InspectCounts,
-    SidecarError, SidecarHeader, SidecarReader, WetlandRecord, CLASS_HARD, CLASS_SOFT,
-    ELEVATION_BODY_MAGIC_EL02, FORMAT_VERSION, MAGIC, REQUIRED_SECTIONS, SECTION_ATTRIBUTION,
-    SECTION_BOARDWALK, SECTION_ELEVATION, SECTION_WETLAND,
+    encode_elevation_el02, encode_test_sidecar_zstd, parse_elevation_el02,
+    parse_vehicle_limits_body, parse_vehicle_limits_section, vehicle_exceeds_limit,
+    zigzag_decode_i32, zigzag_encode_i32, BoardwalkRecord, ElevationFeature, ElevationPoint,
+    InspectCounts, SidecarError, SidecarHeader, SidecarReader, VehicleLimitRecord,
+    VehicleLimitsCoverage, WetlandRecord, CLASS_HARD, CLASS_SOFT, ELEVATION_BODY_MAGIC_EL02,
+    FORMAT_VERSION, MAGIC, REQUIRED_SECTIONS, SECTION_ATTRIBUTION, SECTION_BOARDWALK,
+    SECTION_ELEVATION, SECTION_VEHICLE_LIMITS, SECTION_WETLAND, VEHICLE_LIMIT_RECORD_LEN,
 };
 pub use storage::{
     active_path, attribution_json_path, attribution_md_path, catalog_snapshot_path, leaf_mwm_path,
     leaf_sidecar_path, release_dir, staging_dir, world_coasts_mwm_path, world_mwm_path,
     world_release_path, MwmPaths, ACTIVE_FILE, MWM_ROOT, WORLD_COASTS_MWM_FILE, WORLD_MWM_FILE,
     WORLD_RELEASE_FILE,
+};
+pub use vehicle_route_guard::{
+    find_route_vehicle_violation, parse_vehicle_segments_json, vehicle_vs_record, RouteSegmentRef,
+    VehicleLimitViolation,
 };

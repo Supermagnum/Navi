@@ -57,7 +57,7 @@ class StatusUiStabilityTest {
             )
         val placeLine =
             RegionProgressMessages.annotate(
-                "Place index: writing… 55%",
+                "Preparing search: writing… 55%",
                 "europe/sweden/vastra_gotaland",
                 2,
                 2,
@@ -77,17 +77,20 @@ class StatusUiStabilityTest {
                 indexedMapsUiLine = "",
                 toolsStatusRaw = nearDup,
             )
-        assertEquals(2, lines.size)
+        // Place-index lines are omitted from the Tools footer; only region remains.
+        assertEquals(1, lines.size)
         assertFalse(
             "near-dup tools_status must not appear: $lines",
             lines.any { it.first == "tools_status" },
         )
         assertTrue(lines.any { it.second.contains(name) || it.second.contains("ostlandet", true) })
-        assertTrue(
+        assertFalse(
+            "place-index chrome must stay off the footer: $lines",
             lines.any {
                 it.second.contains("vastra", true) ||
                     it.second.contains("Götaland", true) ||
-                    it.second.contains("Gotaland", true)
+                    it.second.contains("Gotaland", true) ||
+                    it.second.contains("index", ignoreCase = true)
             },
         )
     }

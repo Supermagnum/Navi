@@ -1,0 +1,191 @@
+{
+  "navi_points": 30131,
+  "kml_points": 13682,
+  "navi_km": 1551.568,
+  "kml_km": 3469.671,
+  "delta_km": -1918.103,
+  "divergences": [
+    {
+      "start_km": 38.55,
+      "end_km": 90.13,
+      "length_km": 51.58,
+      "start_latlon": [
+        53.30053,
+        10.34381
+      ],
+      "end_latlon": [
+        53.7017,
+        10.36621
+      ]
+    },
+    {
+      "start_km": 96.49,
+      "end_km": 96.49,
+      "length_km": 0.0,
+      "start_latlon": [
+        53.74801,
+        10.36493
+      ],
+      "end_latlon": [
+        53.74801,
+        10.36493
+      ]
+    },
+    {
+      "start_km": 115.32,
+      "end_km": 115.32,
+      "length_km": 0.0,
+      "start_latlon": [
+        53.84681,
+        10.58667
+      ],
+      "end_latlon": [
+        53.84681,
+        10.58667
+      ]
+    },
+    {
+      "start_km": 279.97,
+      "end_km": 279.97,
+      "length_km": 0.0,
+      "start_latlon": [
+        54.91718,
+        11.9336
+      ],
+      "end_latlon": [
+        54.91718,
+        11.9336
+      ]
+    },
+    {
+      "start_km": 397.89,
+      "end_km": 397.89,
+      "length_km": 0.0,
+      "start_latlon": [
+        55.59582,
+        12.7604
+      ],
+      "end_latlon": [
+        55.59582,
+        12.7604
+      ]
+    },
+    {
+      "start_km": 404.49,
+      "end_km": 404.49,
+      "length_km": 0.0,
+      "start_latlon": [
+        55.56963,
+        12.85399
+      ],
+      "end_latlon": [
+        55.56963,
+        12.85399
+      ]
+    },
+    {
+      "start_km": 449.46,
+      "end_km": 449.46,
+      "length_km": 0.0,
+      "start_latlon": [
+        55.78563,
+        12.96737
+      ],
+      "end_latlon": [
+        55.78563,
+        12.96737
+      ]
+    },
+    {
+      "start_km": 525.65,
+      "end_km": 525.65,
+      "length_km": 0.0,
+      "start_latlon": [
+        56.4181,
+        12.94863
+      ],
+      "end_latlon": [
+        56.4181,
+        12.94863
+      ]
+    },
+    {
+      "start_km": 589.66,
+      "end_km": 589.66,
+      "length_km": 0.0,
+      "start_latlon": [
+        56.90747,
+        12.57161
+      ],
+      "end_latlon": [
+        56.90747,
+        12.57161
+      ]
+    },
+    {
+      "start_km": 610.54,
+      "end_km": 610.54,
+      "length_km": 0.0,
+      "start_latlon": [
+        57.05199,
+        12.36345
+      ],
+      "end_latlon": [
+        57.05199,
+        12.36345
+      ]
+    },
+    {
+      "start_km": 1075.63,
+      "end_km": 1075.63,
+      "length_km": 0.0,
+      "start_latlon": [
+        60.64937,
+        11.29295
+      ],
+      "end_latlon": [
+        60.64937,
+        11.29295
+      ]
+    },
+    {
+      "start_km": 1130.74,
+      "end_km": 1131.92,
+      "length_km": 1.18,
+      "start_latlon": [
+        60.97394,
+        10.65354
+      ],
+      "end_latlon": [
+        60.98236,
+        10.6426
+      ]
+    },
+    {
+      "start_km": 1137.51,
+      "end_km": 1145.51,
+      "length_km": 8.0,
+      "start_latlon": [
+        61.00987,
+        10.55867
+      ],
+      "end_latlon": [
+        61.05945,
+        10.48224
+      ]
+    },
+    {
+      "start_km": 1298.17,
+      "end_km": 1497.78,
+      "length_km": 199.6,
+      "start_latlon": [
+        61.82953,
+        8.96278
+      ],
+      "end_latlon": [
+        61.47487,
+        7.72827
+      ]
+    }
+  ]
+}

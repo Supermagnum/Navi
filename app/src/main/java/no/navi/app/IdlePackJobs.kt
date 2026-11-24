@@ -130,11 +130,13 @@ object IdlePackJobs {
     fun statusLine(): String {
         val rem = remainingSummary()
         val cur = lastStatus.get()
-        return if (rem.isNotEmpty() && !cur.contains("step")) {
-            "$cur — $rem"
-        } else {
-            cur
-        }
+        val raw =
+            if (rem.isNotEmpty() && !cur.contains("step")) {
+                "$cur — $rem"
+            } else {
+                cur
+            }
+        return IndexingUiCopy.sanitizeProgress(raw)
     }
 
     fun onInstalledMapsChanged() {
@@ -506,13 +508,13 @@ object IdlePackJobs {
                         ) {
                             // Keep [seen] so a parallel enqueue pass does not duplicate.
                             queue.offer(job)
-                            lastStatus.set("Waiting for download/index before corridor jobs…")
+                            lastStatus.set("Waiting for download before corridor jobs…")
                             deferPipeline = true
                             break
                         }
                         if (job.kind == Kind.PLACE_INDEX && RegionDownloadBackground.isRunning()) {
                             queue.offer(job)
-                            lastStatus.set("Waiting for region download before place index…")
+                            lastStatus.set("Waiting for region download before preparing search…")
                             deferPipeline = true
                             break
                         }
@@ -599,9 +601,9 @@ object IdlePackJobs {
             Kind.FERRY_TRUCK -> "ferry sidecar (truck) for $name"
             Kind.SKELETON -> "corridor skeleton for $name"
             Kind.SKELETON_TRUCK -> "corridor skeleton (truck) for $name"
-            Kind.PLACE_INDEX -> "place index for $name"
-            Kind.INDEX_QUICK_CHECK -> "place index health check"
-            Kind.PLACE_INDEX_COMPACT -> "place index compaction"
+            Kind.PLACE_INDEX -> "search data for $name"
+            Kind.INDEX_QUICK_CHECK -> "search data health check"
+            Kind.PLACE_INDEX_COMPACT -> "search data compaction"
         }
     }
 

@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Normative schema id.
@@ -22,7 +22,7 @@ pub enum CatalogError {
     Missing(&'static str),
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct MwmCatalog {
     pub schema: String,
     pub mode: String,
@@ -53,7 +53,7 @@ pub struct MwmCatalog {
     pub non_routable_leaves: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ComapsMeta {
     pub map_series: String,
     pub release_version: u64,
@@ -71,7 +71,7 @@ pub struct ComapsMeta {
     pub note: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CatalogLeaf {
     pub id: String,
     #[serde(default)]
@@ -100,15 +100,43 @@ pub struct CatalogLeaf {
     pub no_sidecar: bool,
     #[serde(default)]
     pub elevation_policy_version: Option<u32>,
+    /// Per-leaf vehicle_limits match coverage (optional until world publish).
+    #[serde(default)]
+    pub vehicle_limits_coverage: Option<VehicleLimitsCoverageCatalog>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+/// Catalog copy of the sidecar VL01 coverage header.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct VehicleLimitsCoverageCatalog {
+    #[serde(default)]
+    pub tagged_ways: u32,
+    #[serde(default)]
+    pub matched_ways: u32,
+    #[serde(default)]
+    pub match_rate: f64,
+    #[serde(default)]
+    pub non_numeric_no_limit: u32,
+    #[serde(default)]
+    pub unknown_value: u32,
+    #[serde(default)]
+    pub osm_data_date: String,
+    #[serde(default)]
+    pub map_release: String,
+}
+
+impl VehicleLimitsCoverageCatalog {
+    pub fn meets_threshold(&self, threshold: f64) -> bool {
+        self.match_rate + f64::EPSILON >= threshold
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct MwmFingerprint {
     pub size: u64,
     pub sha256: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct DisplayNameOverrides {
     #[serde(default)]
     pub leaves: BTreeMap<String, DisplayNameOverride>,
@@ -116,14 +144,14 @@ pub struct DisplayNameOverrides {
     pub likely_outdated_elsewhere: Vec<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DisplayNameOverride {
     pub display_name: String,
     #[serde(default)]
     pub note: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CountryGroup {
     pub id: String,
     #[serde(default)]
@@ -138,7 +166,7 @@ pub struct CountryGroup {
     pub subgroups: Vec<CountryGroup>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CountryGroupLeaf {
     pub id: String,
     #[serde(default)]
@@ -204,6 +232,14 @@ impl MwmCatalog {
         self.region_to_leaves.get(bake_id).map(|v| v.as_slice())
     }
 
+    /// Leaves to download for a bake id. Drops maps from another country
+    /// (`Denmark_*` under `europe_norway_ostlandet`). Raw `region_to_leaves`
+    /// is unchanged. If nothing matches, the original list is returned.
+    pub fn install_leaves_for_bake_id(&self, bake_id: &str) -> Option<Vec<String>> {
+        self.leaves_for_bake_id(bake_id)
+            .map(|leaves| install_leaves_for_region(bake_id, leaves))
+    }
+
     /// Unique leaf ids listed under `country_groups` (routable UI leaves).
     pub fn country_group_leaf_ids(&self) -> Vec<String> {
         let mut out = Vec::new();
@@ -224,6 +260,41 @@ impl MwmCatalog {
         }
         walk(&self.country_groups, &mut out, &mut seen);
         out
+    }
+}
+
+/// Country token of a Geofabrik bake id or path (`europe_norway_ostlandet`
+/// or `europe/norway/ostlandet` → `norway`).
+fn region_country_token(region_id: &str) -> Option<&str> {
+    let id = region_id.trim().trim_matches('/');
+    let rest = id
+        .strip_prefix("europe_")
+        .or_else(|| id.strip_prefix("europe/"))?;
+    let token = rest.split(['_', '/']).next().filter(|t| !t.is_empty())?;
+    Some(token)
+}
+
+fn leaf_is_country(leaf_id: &str, country_token: &str) -> bool {
+    let prefix = leaf_id.split('_').next().unwrap_or("");
+    prefix.eq_ignore_ascii_case(country_token)
+}
+
+/// Keep leaves whose id country matches the region (`Norway_*` for Østlandet).
+/// Foreign overlap rows in the published catalog (Denmark, Sweden, …) are
+/// dropped. An empty match returns [leaves] so unusual prefixes stay usable.
+pub fn install_leaves_for_region(region_id: &str, leaves: &[String]) -> Vec<String> {
+    let Some(token) = region_country_token(region_id) else {
+        return leaves.to_vec();
+    };
+    let kept: Vec<String> = leaves
+        .iter()
+        .filter(|leaf| leaf_is_country(leaf, token))
+        .cloned()
+        .collect();
+    if kept.is_empty() {
+        leaves.to_vec()
+    } else {
+        kept
     }
 }
 
@@ -266,9 +337,46 @@ mod tests {
             .display_name_overrides
             .leaves
             .contains_key("Norway_Hedmark"));
+        let install = c
+            .install_leaves_for_bake_id("europe_norway_ostlandet")
+            .expect("ostlandet");
+        assert!(install.iter().all(|id| id.starts_with("Norway_")));
         assert_eq!(
             c.non_routable_leaves,
             vec!["World".to_string(), "WorldCoasts".to_string()]
+        );
+    }
+
+    #[test]
+    fn ostlandet_install_drops_denmark_and_sweden() {
+        let raw = vec![
+            "Norway_Hedmark".to_string(),
+            "Norway_Oppland".to_string(),
+            "Denmark_North Denmark Region".to_string(),
+            "Sweden_Bergslagen".to_string(),
+            "Sweden_Vastra Gotaland".to_string(),
+            "Norway_Southern".to_string(),
+        ];
+        let kept = install_leaves_for_region("europe_norway_ostlandet", &raw);
+        assert_eq!(
+            kept,
+            vec![
+                "Norway_Hedmark".to_string(),
+                "Norway_Oppland".to_string(),
+                "Norway_Southern".to_string(),
+            ]
+        );
+        let sor = install_leaves_for_region(
+            "europe/norway/sorlandet",
+            &[
+                "Norway_Southern".into(),
+                "Denmark_North Denmark Region".into(),
+                "Norway_Rogaland".into(),
+            ],
+        );
+        assert_eq!(
+            sor,
+            vec!["Norway_Southern".to_string(), "Norway_Rogaland".to_string()]
         );
     }
 

@@ -203,18 +203,58 @@ object PlaceIndexReady {
     }
 
     /**
+     * True when [regionId] is listed in the ready stamp file (no heal / DB probe).
+     * Used by retired→MWM handoff: [isReady] requires place-index rows, but MWM
+     * marks the stamp without a Geofabrik PBF index.
+     */
+    fun hasReadyStamp(
+        dataDir: File,
+        regionId: String,
+    ): Boolean {
+        val id = PackRegionAvailability.normalize(regionId)
+        if (id.isEmpty()) return false
+        return loadStampOnly(dataDir).any {
+            PackRegionAvailability.regionIdsMatchForCatalog(it, id)
+        }
+    }
+
+    /**
      * Rewrite the stamp in [dataDir] to the regions the database reports as
      * intact. The stamp is a cache of the last known state; it never feeds
-     * back into readiness.
+     * back into readiness for PBF search.
+     *
+     * Stamp-only ids that [InstalledMaps] cannot inventory (retired→MWM handoff)
+     * are preserved — an empty intact set from a world_overview-only snapshot
+     * must not wipe corridor MWM readiness.
      */
     fun syncStampFromIndex(
         dataDir: File,
         intact: Set<String>,
     ) {
         val next = intact.map { PackRegionAvailability.normalize(it) }.filter { it.isNotEmpty() }.toSet()
-        if (readyFile(dataDir).isFile && loadStampOnly(dataDir) == next) return
-        save(dataDir, next)
-        runCatching { Log.i(TAG, "stamp rewritten from index regions=${next.sorted()}") }
+        val current = if (readyFile(dataDir).isFile) loadStampOnly(dataDir) else emptySet()
+        val snap = InstalledMaps.current()?.takeIf { InstalledMaps.snapshotIsFor(dataDir) }
+        val preserved =
+            if (snap == null) {
+                emptySet()
+            } else {
+                current
+                    .filter { id ->
+                        snap.regions.keys.none {
+                            PackRegionAvailability.regionIdsMatchForCatalog(it, id)
+                        }
+                    }.toSet()
+            }
+        val merged = next + preserved
+        if (readyFile(dataDir).isFile && loadStampOnly(dataDir) == merged) return
+        save(dataDir, merged)
+        runCatching {
+            Log.i(
+                TAG,
+                "stamp rewritten from index regions=${merged.sorted()} " +
+                    "preserved_mwm=${preserved.sorted()}",
+            )
+        }
     }
 
     /**

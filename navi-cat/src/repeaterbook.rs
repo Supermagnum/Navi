@@ -74,7 +74,7 @@ pub struct ImportBatch {
 }
 
 pub fn default_repeater_drop_dir(app_data_dir: &Path) -> std::path::PathBuf {
-    app_data_dir.join("repeaters")
+    app_data_dir.join("repeater-data")
 }
 
 /// Online mirror sources. RepeaterBook is not one of them.

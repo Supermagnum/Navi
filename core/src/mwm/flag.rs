@@ -50,6 +50,20 @@ pub fn with_mwm_client_override<R>(enabled: Option<bool>, f: impl FnOnce() -> R)
     }
 }
 
+/// Whether MWM catalog/download APIs should be used.
+///
+/// Phase 8 / G4: always **true** for product builds (env OFF no longer selects
+/// classic `.rkyv`). Unit tests may still force OFF via
+/// [`set_mwm_client_enabled_override`] / [`with_mwm_client_override`].
+pub fn mwm_client_enabled() -> bool {
+    match OVERRIDE.load(Ordering::SeqCst) {
+        -1 => true,
+        0 => false,
+        _ => true,
+    }
+}
+
+#[cfg(test)]
 fn parse_env_flag(raw: &str) -> Option<bool> {
     let t = raw.trim();
     if t.is_empty() {
@@ -72,26 +86,6 @@ fn parse_env_flag(raw: &str) -> Option<bool> {
     // Unknown values: treat as disabled so a typo does not silently enable in
     // an intentional OFF debug session — but default (unset) remains ON.
     Some(false)
-}
-
-fn env_enabled() -> bool {
-    match std::env::var(MWM_CLIENT_ENABLED_ENV) {
-        Ok(v) => parse_env_flag(&v).unwrap_or(true),
-        Err(_) => true,
-    }
-}
-
-/// Whether MWM catalog/download APIs should be used.
-///
-/// Phase 8 / G4: always **true** for product builds (env OFF no longer selects
-/// classic `.rkyv`). Unit tests may still force OFF via
-/// [`set_mwm_client_enabled_override`] / [`with_mwm_client_override`].
-pub fn mwm_client_enabled() -> bool {
-    match OVERRIDE.load(Ordering::SeqCst) {
-        -1 => true,
-        0 => false,
-        _ => true,
-    }
 }
 
 #[cfg(test)]

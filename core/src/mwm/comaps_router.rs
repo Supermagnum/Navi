@@ -204,6 +204,18 @@ impl ComapsRouter {
         }
     }
 
+    /// Pass vehicle dimensions into the car estimator (None clears).
+    pub fn set_vehicle_limits(&self, limits: Option<&crate::config::VehicleLimits>) {
+        #[cfg(feature = "comaps-native")]
+        {
+            ffi::set_vehicle_limits(limits);
+        }
+        #[cfg(not(feature = "comaps-native"))]
+        {
+            let _ = limits;
+        }
+    }
+
     /// Load every `*.navi-sidecar.v1.zst` under `dir` for wetland lookups.
     pub fn load_sidecars_from_dir(&self, dir: &str) -> Result<usize, ComapsRouterError> {
         #[cfg(feature = "comaps-native")]
@@ -288,6 +300,25 @@ pub fn leaf_for_point(lat: f64, lon: f64) -> Option<String> {
     }
 }
 
+/// Leaf ids among `leaf_ids` whose loaded sidecar has no `vehicle_limits` section
+/// (or whose sidecar is not loaded). Empty input ⇒ empty result. Blank ids skipped.
+///
+/// Without `comaps-native`, every non-blank id is reported missing (conservative).
+pub fn leaves_missing_vehicle_limits(leaf_ids: &[String]) -> Vec<String> {
+    #[cfg(feature = "comaps-native")]
+    {
+        ffi::leaves_missing_vehicle_limits(leaf_ids)
+    }
+    #[cfg(not(feature = "comaps-native"))]
+    {
+        leaf_ids
+            .iter()
+            .filter(|id| !id.is_empty())
+            .cloned()
+            .collect()
+    }
+}
+
 impl Drop for ComapsRouter {
     fn drop(&mut self) {
         #[cfg(feature = "comaps-native")]
@@ -327,6 +358,30 @@ mod ffi {
             fn_ptr: Option<unsafe extern "C" fn(*const c_char, u32, u32, *mut i32) -> c_int>,
         );
         fn navi_comaps_set_bike_wetland(enabled: c_int);
+        fn navi_comaps_set_vehicle_limit_lookup(
+            fn_ptr: Option<
+                unsafe extern "C" fn(
+                    *const c_char,
+                    u32,
+                    u32,
+                    *mut u16,
+                    *mut u16,
+                    *mut u16,
+                    *mut u16,
+                    *mut u16,
+                    *mut u16,
+                ) -> c_int,
+            >,
+        );
+        fn navi_comaps_set_vehicle(
+            height_m: f64,
+            width_m: f64,
+            length_m: f64,
+            total_weight_kg: f64,
+            axle_weight_kg: f64,
+            bogie_weight_kg: f64,
+        );
+        fn navi_comaps_clear_vehicle();
         fn navi_comaps_set_avoid_options(
             avoid_toll: c_int,
             avoid_motorway: c_int,
@@ -389,10 +444,39 @@ mod ffi {
         elevation_json: *mut c_char,
         router_mode: *mut c_char,
         speed_limits_json: *mut c_char,
+        vehicle_segments_json: *mut c_char,
+    }
+
+    /// Active vehicle dims for the post-route vehicle_limits guard (None = cleared).
+    fn active_vehicle_limits() -> &'static Mutex<Option<crate::config::VehicleLimits>> {
+        static LIMITS: OnceLock<Mutex<Option<crate::config::VehicleLimits>>> = OnceLock::new();
+        LIMITS.get_or_init(|| Mutex::new(None))
     }
 
     pub fn set_platform_locked(locked: bool) {
         unsafe { navi_comaps_set_platform_locked(if locked { 1 } else { 0 }) };
+    }
+
+    /// Leaf ids that lack a loaded sidecar `vehicle_limits` section.
+    pub fn leaves_missing_vehicle_limits(leaf_ids: &[String]) -> Vec<String> {
+        let Ok(guard) = sidecars().lock() else {
+            return leaf_ids
+                .iter()
+                .filter(|id| !id.is_empty())
+                .cloned()
+                .collect();
+        };
+        let mut missing = Vec::new();
+        for id in leaf_ids {
+            if id.is_empty() {
+                continue;
+            }
+            match guard.iter().find(|(leaf, _)| leaf == id) {
+                Some((_, reader)) if reader.has_vehicle_limits_section() => {}
+                _ => missing.push(id.clone()),
+            }
+        }
+        missing
     }
 
     /// CoMaps country (leaf) id containing the point (`Some("")` = outside every country).
@@ -517,6 +601,78 @@ mod ffi {
         unsafe { navi_comaps_set_elevation_lookup(Some(elevation_lookup_cb)) };
     }
 
+    unsafe extern "C" fn vehicle_limit_lookup_cb(
+        mwm_name: *const c_char,
+        feature_id: u32,
+        segment_idx: u32,
+        max_height_cm: *mut u16,
+        max_width_cm: *mut u16,
+        max_length_cm: *mut u16,
+        max_weight_10kg: *mut u16,
+        max_axle_10kg: *mut u16,
+        max_bogie_10kg: *mut u16,
+    ) -> c_int {
+        if mwm_name.is_null()
+            || max_height_cm.is_null()
+            || max_width_cm.is_null()
+            || max_length_cm.is_null()
+            || max_weight_10kg.is_null()
+            || max_axle_10kg.is_null()
+            || max_bogie_10kg.is_null()
+        {
+            return 0;
+        }
+        let Ok(name) = CStr::from_ptr(mwm_name).to_str() else {
+            return 0;
+        };
+        let seg = segment_idx.min(u16::MAX as u32) as u16;
+        let Ok(guard) = sidecars().lock() else {
+            return 0;
+        };
+        for (leaf, reader) in guard.iter() {
+            if leaf != name {
+                continue;
+            }
+            if let Ok(Some(rec)) = reader.vehicle_limit(feature_id, seg) {
+                *max_height_cm = rec.max_height_cm;
+                *max_width_cm = rec.max_width_cm;
+                *max_length_cm = rec.max_length_cm;
+                *max_weight_10kg = rec.max_weight_10kg;
+                *max_axle_10kg = rec.max_axleload_10kg;
+                *max_bogie_10kg = rec.max_bogie_10kg;
+                return 1;
+            }
+            return 0;
+        }
+        0
+    }
+
+    fn install_vehicle_limit_lookup() {
+        unsafe { navi_comaps_set_vehicle_limit_lookup(Some(vehicle_limit_lookup_cb)) };
+    }
+
+    pub fn set_vehicle_limits(limits: Option<&crate::config::VehicleLimits>) {
+        if let Ok(mut g) = active_vehicle_limits().lock() {
+            *g = limits.cloned();
+        }
+        match limits {
+            None => unsafe { navi_comaps_clear_vehicle() },
+            Some(l) => {
+                let or0 = |v: Option<f64>| v.filter(|x| x.is_finite() && *x > 0.0).unwrap_or(0.0);
+                unsafe {
+                    navi_comaps_set_vehicle(
+                        or0(l.height_m),
+                        or0(l.width_m),
+                        or0(l.length_m),
+                        or0(l.total_weight_kg),
+                        or0(l.axle_weight_kg),
+                        or0(l.bogie_weight_kg),
+                    );
+                }
+            }
+        }
+    }
+
     fn map_code(code: c_int) -> ComapsRouterCode {
         super::map_navi_comaps_code(code)
     }
@@ -589,9 +745,10 @@ mod ffi {
         *sidecars()
             .lock()
             .map_err(|_| ComapsRouterError::NullPointer)? = loaded;
-        // Elevation overrides are independent of the wetland cost hook.
+        // Elevation + vehicle limits are independent of the wetland cost hook.
         if n > 0 {
             install_elevation_lookup();
+            install_vehicle_limit_lookup();
         }
         Ok(n)
     }
@@ -620,11 +777,12 @@ mod ffi {
             elevation_json: ptr::null_mut(),
             router_mode: ptr::null_mut(),
             speed_limits_json: ptr::null_mut(),
+            vehicle_segments_json: ptr::null_mut(),
         };
         unsafe {
             navi_comaps_route(profile_i, from.lat, from.lon, to.lat, to.lon, &mut out);
         }
-        let code = map_code(out.code);
+        let mut code = map_code(out.code);
         let length_m = out.length_m;
         let time_s = out.time_s;
         let build_time_s = out.build_time_s;
@@ -638,7 +796,7 @@ mod ffi {
                 lon: p.lon,
             }));
         }
-        let error_message = if out.error_message.is_null() {
+        let mut error_message = if out.error_message.is_null() {
             None
         } else {
             Some(
@@ -675,13 +833,64 @@ mod ffi {
                 .to_string_lossy()
                 .into_owned()
         };
+        let vehicle_segments_json = if out.vehicle_segments_json.is_null() {
+            "[]".to_string()
+        } else {
+            unsafe { CStr::from_ptr(out.vehicle_segments_json) }
+                .to_string_lossy()
+                .into_owned()
+        };
         unsafe { navi_comaps_free_route(&mut out) };
+
+        // ×1e6 HardAvoid can still yield a finished route when the restricted
+        // segment is the only corridor — reject it against vehicle_limits.
+        if matches!(code, ComapsRouterCode::Ok) && matches!(profile, ComapsProfile::Car) {
+            if let Ok(guard) = active_vehicle_limits().lock() {
+                if let Some(ref limits) = *guard {
+                    if let Ok(segs) = crate::mwm::vehicle_route_guard::parse_vehicle_segments_json(
+                        &vehicle_segments_json,
+                    ) {
+                        let violation =
+                            crate::mwm::vehicle_route_guard::find_route_vehicle_violation(
+                                &segs,
+                                limits,
+                                |mwm, fid, seg| {
+                                    let Ok(sc) = sidecars().lock() else {
+                                        return None;
+                                    };
+                                    for (leaf, reader) in sc.iter() {
+                                        if leaf != mwm {
+                                            continue;
+                                        }
+                                        return reader.vehicle_limit(fid, seg).ok().flatten();
+                                    }
+                                    None
+                                },
+                            );
+                        if let Some(v) = violation {
+                            code = ComapsRouterCode::RouteNotFound;
+                            error_message = Some(v.no_route_message());
+                            points.clear();
+                        }
+                    }
+                }
+            }
+        }
+
         let instructions_json = crate::mwm::comaps_instructions::enrich_turns_json(&turns_json)
             .unwrap_or_else(|_| "[]".to_string());
         Ok(ComapsRoute {
             code,
-            length_m,
-            time_s,
+            length_m: if matches!(code, ComapsRouterCode::Ok) {
+                length_m
+            } else {
+                0.0
+            },
+            time_s: if matches!(code, ComapsRouterCode::Ok) {
+                time_s
+            } else {
+                0.0
+            },
             build_time_s,
             points,
             error_message,
@@ -763,6 +972,22 @@ mod tests {
         {
             let err = ComapsRouter::init("/tmp", "/tmp", None).unwrap_err();
             assert!(matches!(err, ComapsRouterError::Unavailable));
+        }
+    }
+
+    #[test]
+    fn leaves_missing_vehicle_limits_without_native_is_conservative() {
+        #[cfg(not(feature = "comaps-native"))]
+        {
+            let missing = leaves_missing_vehicle_limits(&[
+                "Norway_Hedmark".into(),
+                "".into(),
+                "Norway_Oppland".into(),
+            ]);
+            assert_eq!(
+                missing,
+                vec!["Norway_Hedmark".to_string(), "Norway_Oppland".to_string()]
+            );
         }
     }
 

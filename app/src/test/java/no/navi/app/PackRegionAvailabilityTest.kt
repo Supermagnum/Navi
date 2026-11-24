@@ -207,13 +207,54 @@ class PackRegionAvailabilityTest {
     }
 
     @Test
+    fun statusLine_retired_or_empty_catalog_is_not_offline() {
+        val hostUp =
+            PackRegionAvailability.statusLine(
+                selectedPath = "europe/norway/ostlandet",
+                serverReadyIds = emptyList(),
+                dataSource = "server-duckdns",
+                unreachableReason = null,
+                probing = false,
+                dataDir = null,
+            )
+        assertTrue("expected reachable, got: $hostUp", hostUp.contains("reachable"))
+        assertFalse("must not say offline: $hostUp", hostUp.contains("offline"))
+
+        val retiredReason =
+            PackRegionAvailability.statusLine(
+                selectedPath = "europe/norway/ostlandet",
+                serverReadyIds = emptyList(),
+                dataSource = "local-bake",
+                unreachableReason = "rkyv catalog retired; use MWM catalog at /mwm/current.json",
+                probing = false,
+                dataDir = null,
+            )
+        assertTrue(
+            "expected reachable/MWM, got: $retiredReason",
+            retiredReason.contains("reachable") || retiredReason.contains("MWM"),
+        )
+        assertFalse("must not say offline: $retiredReason", retiredReason.contains("offline"))
+
+        val offline =
+            PackRegionAvailability.statusLine(
+                selectedPath = "europe/norway/ostlandet",
+                serverReadyIds = emptyList(),
+                dataSource = "local-bake",
+                unreachableReason = "timeout: request timed out",
+                probing = false,
+                dataDir = null,
+            )
+        assertTrue("expected offline, got: $offline", offline.contains("offline"))
+    }
+
+    @Test
     fun download_and_osm_button_look() {
         assertEquals(
             "Download region",
             PackRegionAvailability.downloadRegionButtonLabel(serverReady = true),
         )
         assertEquals(
-            "Download region + build place index",
+            "Download region",
             PackRegionAvailability.downloadRegionButtonLabel(serverReady = false),
         )
         assertTrue(PackRegionAvailability.downloadRegionUsesReadyStyle(true))

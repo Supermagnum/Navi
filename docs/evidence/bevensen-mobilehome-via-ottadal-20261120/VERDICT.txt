@@ -1,0 +1,11 @@
+PASS vs expected bands
+- distance 1553.27 km (need 1461.3–1648.6) PASS
+- duration 19.64 h (need 17–22) PASS
+- maneuvers 69 (need 55–100) PASS
+- Via Ottadal applied: From: 53.07969, 10.58720 | To: 61.44338, 7.46140 | Via: 61.86914, 9.10551 PASS
+- DATEX soft impacts applied (5) PASS
+- Germany MWM alias path PASS (not PBF)
+- CAT DE+DK+SE+NO: 341 repeaters -> report/cat_repeaters_DE_DK_SE_NO.json
+- GPS towns: 10
+- instrument assert failed after success (hooks cleared); campaign artifacts complete
+- release bump: pending

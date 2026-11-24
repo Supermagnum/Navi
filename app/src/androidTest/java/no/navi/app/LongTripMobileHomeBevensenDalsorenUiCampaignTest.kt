@@ -50,8 +50,13 @@ import java.util.concurrent.TimeUnit
  *
  * Primary plan path: chip_from / chip_via / chip_to + btn_plan_route on MainActivity.
  * UniFFI is assist-only (vehicle/rest seed, camping guest install). Synthetic DATEX is
- * injected by host ADB (marker BEVENSEN_AWAIT_DATEX). GPS start is host ADB.
- * Regions are deleted via Tools UI before plan. Not wired into CI.
+ * injected by host ADB as soft Penalize (marker BEVENSEN_AWAIT_DATEX). GPS start + replay
+ * are host ADB (marker BEVENSEN_AWAIT_GPS_REPLAY). CAT plugin set to Dummy radio via UI.
+ * Regions deleted via Tools UI before plan. Not wired into CI.
+ *
+ * HARD RULE: never click Plan until every corridor region is Indexed / ready.
+ * Acquisition is started via [LongTripCoordinator.enable] and polled to ready;
+ * [btn_plan_route] is clicked only after that gate passes.
  */
 @RunWith(AndroidJUnit4::class)
 @LargeTest
@@ -350,17 +355,110 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
             openRoutePanel()
         }
 
-        // PRIMARY PLAN PATH: visible Plan button.
+        // HARD RULE: acquire every corridor region BEFORE clicking Plan.
+        // Plan must not start while any region is Needed/Downloading.
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val waypoints =
+            listOf(
+                ORIGIN_LAT to ORIGIN_LON,
+                VIA_LAT to VIA_LON,
+                DEST_LAT to DEST_LON,
+            )
+        val enableStatus = LongTripCoordinator.enable(ctx, waypoints)
+        noteUi("corridor_enable", enableStatus)
+        report.put("corridor_enable_status", enableStatus)
+        val plan0 = LongTripCoordinator.currentPlan()
+        assertTrue("corridor must exist before Plan: $enableStatus", plan0 != null)
+        report.put("corridor", JSONArray(plan0!!.regionsInOrder))
+        writeReport()
+
+        val tDownload0 = System.currentTimeMillis()
+        var regionsReady = false
+        while (System.currentTimeMillis() - tDownload0 < DOWNLOAD_DEADLINE_MS) {
+            val line = LongTripCoordinator.statusLine()
+            val corr = LongTripCoordinator.corridorReadyForPlanning()
+            val p = LongTripCoordinator.currentPlan()
+            val states =
+                p?.regionsInOrder?.associateWith { p.states[it]?.name ?: "?" } ?: emptyMap()
+            val allIndexed =
+                p != null &&
+                    p.regionsInOrder.isNotEmpty() &&
+                    p.regionsInOrder.all { rid ->
+                        val st = p.states[rid]
+                        st == LongTripCoordinator.State.Indexed ||
+                            st == LongTripCoordinator.State.Installed
+                    }
+            val sample =
+                JSONObject()
+                    .put("t_ms", System.currentTimeMillis() - tDownload0)
+                    .put("phase", "acquire_regions")
+                    .put("status", line)
+                    .put("corridor_ready", corr)
+                    .put("all_indexed_or_installed", allIndexed)
+                    .put(
+                        "states",
+                        JSONObject().also { o -> for ((k, v) in states) o.put(k, v) },
+                    )
+            report.put("last_progress", sample)
+            if ((System.currentTimeMillis() / 20_000) % 2L == 0L) {
+                Log.i(TAG, "progress $sample")
+                writeReport()
+            }
+            if (corr && allIndexed) {
+                regionsReady = true
+                break
+            }
+            if (states.values.any { it == "Failed" || it == "Unavailable" } &&
+                states.values.none { it == "Downloading" || it == "Queued" || it == "Needed" }
+            ) {
+                noteUi("region_acquire_failed", line)
+                break
+            }
+            Thread.sleep(3_000)
+            composeRule.mainClock.advanceTimeBy(3_000)
+        }
+        report.put("region_acquire_elapsed_ms", System.currentTimeMillis() - tDownload0)
+        report.put("regions_ready_before_plan", regionsReady)
+        writeReport()
+        assertTrue(
+            "HARD RULE: all corridor regions must be Indexed/Installed before Plan; " +
+                "status=${LongTripCoordinator.statusLine()}",
+            regionsReady,
+        )
+        noteUi(
+            "regions_ready_gate",
+            "all Indexed/Installed; clicking Plan now. line=${LongTripCoordinator.statusLine()}",
+        )
+
+        // PRIMARY PLAN PATH: visible Plan button — only after region gate.
+        // Route render is safe after prepareDrapeRoutePoints + GenerateJoinNormals guard.
+        NaviMapTestHooks.skipComapsRouteRender = false
+        openRoutePanel()
         composeRule.onNodeWithTag("btn_plan_route", useUnmergedTree = true).performScrollTo()
-        noteUi("click_btn_plan_route", "performClick")
+        noteUi("click_btn_plan_route", "performClick (after regions ready)")
         screenshot("08_before_plan")
         clickTag("btn_plan_route")
+        // Wait for the click to take. A second planKick cancels the in-flight MWM
+        // plan (RoutePlanGate + cancelInFlightPlan native latch) and the replan
+        // then fails Cancelled — so only kick when the click clearly missed.
+        settle(1_500)
+        val clickTook =
+            uniffi.navi.mwmProductionPlannerActive() ||
+                NaviMapTestHooks.lastPlanDistanceKm > 0.0 ||
+                NaviMapTestHooks.lastPlanReport.contains("PASS")
+        if (!clickTook) {
+            noteUi("request_plan_kick", "Compose click missed; belt-and-suspenders kick")
+            NaviMapTestHooks.requestPlanKick = true
+            settle(1_000)
+        } else {
+            noteUi("request_plan_kick", "skipped — Plan click already in flight")
+        }
         screenshot("09_after_plan_click")
 
         val t0 = System.currentTimeMillis()
-        var ready = false
+        var ready = regionsReady
         var planned = false
-        while (System.currentTimeMillis() - t0 < DOWNLOAD_DEADLINE_MS) {
+        while (System.currentTimeMillis() - t0 < PLAN_DEADLINE_MS) {
             val line = LongTripCoordinator.statusLine()
             val corr = LongTripCoordinator.corridorReadyForPlanning()
             val poly = NaviMapTestHooks.lastRoutePolylineChars
@@ -368,6 +466,7 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
             val sample =
                 JSONObject()
                     .put("t_ms", System.currentTimeMillis() - t0)
+                    .put("phase", "plan_wait")
                     .put("status", line)
                     .put("corridor_ready", corr)
                     .put("polyline_chars", poly)
@@ -400,7 +499,6 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
             }
             Thread.sleep(3_000)
             composeRule.mainClock.advanceTimeBy(3_000)
-            if (System.currentTimeMillis() - t0 > PLAN_DEADLINE_MS && planned) break
         }
         report.put("download_or_plan_elapsed_ms", System.currentTimeMillis() - t0)
         report.put("corridor_ready_final", ready)
@@ -473,9 +571,35 @@ class LongTripMobileHomeBevensenDalsorenUiCampaignTest {
             "UI plan must produce a route (km=$distanceKm chars=${NaviMapTestHooks.lastRoutePolylineChars})",
             distanceKm > 100.0 && NaviMapTestHooks.lastRoutePolylineChars >= 8,
         )
+        // Camping + attractions patch enumerations after plan publish; wait so
+        // host PASS_UI scrape / GPS replay see non-zero wild camping + attractions.
+        val enumDeadline = SystemClock.elapsedRealtime() + 120_000L
+        var wild = 0
+        var attrs = 0
+        while (SystemClock.elapsedRealtime() < enumDeadline) {
+            val raw = NaviMapTestHooks.lastRoutePlanStatsJson.orEmpty()
+            if (raw.isNotBlank()) {
+                runCatching {
+                    val o = JSONObject(raw)
+                    wild = o.optInt("wild_camping_site_count", 0)
+                    attrs = o.optInt("attraction_count", 0)
+                }
+            }
+            if (wild > 0 && attrs >= 3) break
+            settle(2_000)
+        }
+        report.put(
+            "enumerations_wait",
+            JSONObject()
+                .put("wild_camping_site_count", wild)
+                .put("attraction_count", attrs)
+                .put("last_route_plan_stats", NaviMapTestHooks.lastRoutePlanStatsJson),
+        )
+        writeReport()
         Log.i(
             TAG,
-            "PASS_UI dist=$distanceKm etaMin=$etaMin man=$manCount datex=${datexImpactsPositive(planReport)}",
+            "PASS_UI dist=$distanceKm etaMin=$etaMin man=$manCount datex=${datexImpactsPositive(planReport)} " +
+                "wild=$wild attractions=$attrs",
         )
     }
 

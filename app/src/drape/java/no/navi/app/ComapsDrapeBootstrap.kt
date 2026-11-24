@@ -27,10 +27,11 @@ import java.io.File
  * [ComapsSessionBootstrap] already opened.
  *
  * Order matters: `navi_comaps_init` points the Platform *resource* directory at
- * `{filesDir}/mwm`; the Framework then re-initialises the Platform with the APK as
- * resource directory (fonts, symbols, drules, classificator are read from the APK
- * assets) and, once built, `Framework.nativeChangeWritableDir` moves the *writable*
- * directory to `{filesDir}/mwm` so the same leaf MWMs the router uses are drawn.
+ * [MwmDataDir.mwmRoot] (pack-volume SD when selected); the Framework then
+ * re-initialises the Platform with the APK as resource directory (fonts, symbols,
+ * drules, classificator are read from the APK assets) and, once built,
+ * `Framework.nativeChangeWritableDir` moves the *writable* directory to that same
+ * MWM root so the leaf MWMs the router uses are drawn.
  */
 object ComapsDrapeBootstrap : ComapsDrape.Backend {
     private const val TAG = "ComapsDrape"
@@ -61,7 +62,7 @@ object ComapsDrapeBootstrap : ComapsDrape.Backend {
 
     override fun initialize(context: Context): String? {
         if (Looper.myLooper() != Looper.getMainLooper()) return "drape init must run on the main thread"
-        val root = File(NaviAppData.resolve(context), MWM_ROOT)
+        val root = MwmDataDir.mwmRoot(context)
         if (!File(root, "World.mwm").isFile) return "World.mwm missing under ${root.absolutePath}"
         return try {
             val pm = context.packageManager
@@ -131,6 +132,12 @@ object ComapsDrapeBootstrap : ComapsDrape.Backend {
 
                     override fun onRenderingInitializationFinished() {
                         Log.i(TAG, "rendering initialisation finished")
+                        // Pre-installed leaves live under {writable}/{countriesListVer}/;
+                        // Framework init only auto-registers World/WorldCoasts. Scan now
+                        // so cities/streets/rivers draw without waiting for a new download.
+                        runCatching { NaviDrape.nativeRegisterMaps() }
+                            .onSuccess { Log.i(TAG, "registerMaps after rendering init") }
+                            .onFailure { Log.w(TAG, "registerMaps after rendering init failed", it) }
                     }
                 },
                 { Log.w(TAG, "drape reports unsupported graphics (no GLES3 / Vulkan)") },
@@ -230,7 +237,11 @@ object ComapsDrapeBootstrap : ComapsDrape.Backend {
 
     override fun registerMaps() {
         if (!Map.isEngineCreated()) return
-        NaviDrape.nativeRegisterMaps()
+        // Incremental AddLocalMaps cannot replace a country file already
+        // registered from an older version directory (VersionAlreadyExists).
+        // A full rescan is what makes newly downloaded leaves visible.
+        runCatching { NaviDrape.nativeReloadMaps() }
+            .onFailure { Log.w(TAG, "reload maps failed: ${it.message}") }
     }
 
     override fun deregisterMap(leafId: String) {

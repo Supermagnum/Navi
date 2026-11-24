@@ -112,6 +112,36 @@ class RoutePlanStatsTest {
     }
 
     @Test
+    fun wildCampingAcceptedCardsIncludeVehicleList() {
+        val json =
+            """
+            {
+              "accepted": 2,
+              "list": {"cards": [], "probes_accepted": 0, "probes_rejected": 0, "seeds_considered": 0},
+              "vehicle": {
+                "cards": [{
+                  "accepted": true, "lat": 60.1, "lon": 10.1, "country_iso": "no",
+                  "location_id": "v1", "title": "Vehicle site"
+                }],
+                "probes_accepted": 1, "probes_rejected": 0, "seeds_considered": 1
+              },
+              "on_foot_from_here": {
+                "cards": [{
+                  "accepted": true, "lat": 60.2, "lon": 10.2, "country_iso": "no",
+                  "location_id": "f1", "title": "Foot site"
+                }],
+                "probes_accepted": 1, "probes_rejected": 0, "seeds_considered": 1
+              },
+              "vehicle_accepted": 1,
+              "on_foot_accepted": 1,
+              "via": "test"
+            }
+            """.trimIndent()
+        val parsed = parseCampingSuggestResultJson(json)
+        assertEquals(2, wildCampingSiteCount(parsed))
+    }
+
+    @Test
     fun wildCampingStatsLineDistinguishesUnavailableFromPluginOff() {
         assertEquals("Wild camping: plugin off", formatWildCampingStatsLine(false, 0, null))
         assertEquals(

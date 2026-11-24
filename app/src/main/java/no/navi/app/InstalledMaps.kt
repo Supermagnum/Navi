@@ -214,12 +214,12 @@ object InstalledMaps {
                         r.regionId,
                         r.pbfPath,
                         r.pbfKind,
-                        "search unavailable: place index on pack volume unavailable (not building elsewhere)",
+                        "search unavailable: pack volume unavailable (not building elsewhere)",
                     )
                 }
                 val searchNote =
                     if (problem != null) {
-                        "search unavailable: place index $problem; "
+                        "search unavailable: $problem; "
                     } else {
                         "search unavailable: no rows for this region; "
                     }
@@ -246,7 +246,7 @@ object InstalledMaps {
                                     mb >= 100 -> "about 30-90 minutes on-device"
                                     else -> "under 30 minutes on-device"
                                 }
-                            "would index ${leafPbf.name} (${leafPbf.length()} bytes); not started; $hours"
+                            "would prepare ${leafPbf.name} (${leafPbf.length()} bytes); not started; $hours"
                         }
                     }
                 MissingIndexBuild(r.regionId, pbf, r.pbfKind, searchNote + note)
@@ -285,7 +285,7 @@ object InstalledMaps {
         return buildString {
             appendLine("InstalledMaps regions=${snap.regions.size} missing_index=${snap.missingPlaceIndex.size}")
             snap.placeIndexProblem?.let {
-                appendLine("place search unavailable for all regions: place index $it")
+                appendLine("place search unavailable for all regions: $it")
             }
             for (r in snap.regions.values.sortedBy { it.regionId }) {
                 appendLine(

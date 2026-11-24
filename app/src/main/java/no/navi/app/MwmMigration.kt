@@ -132,7 +132,7 @@ object MwmMigration {
         if (Looper.myLooper() == Looper.getMainLooper()) ui = f(ui) else main.post { ui = f(ui) }
     }
 
-    fun dataDir(context: Context): File = NaviAppData.resolve(context)
+    fun dataDir(context: Context): File = MwmDataDir.resolve(context)
 
     // ------------------------------------------------------------------ detection
 

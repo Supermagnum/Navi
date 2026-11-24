@@ -1,0 +1,21 @@
+diff --git a/libs/platform/local_country_file_utils.cpp b/libs/platform/local_country_file_utils.cpp
+index 7ab3d0c8b..ba8971111 100644
+--- a/libs/platform/local_country_file_utils.cpp
++++ b/libs/platform/local_country_file_utils.cpp
+@@ -33,9 +33,15 @@ char constexpr kBitsExt[] = ".bftsegbits";
+ char constexpr kNodesExt[] = ".bftsegnodes";
+ char constexpr kOffsetsExt[] = ".offsets";
+ 
++// Navi keeps World.mwm / WorldCoasts.mwm at the writable MWM root (Phase 1 layout;
++// see docs/notes/navi-server-world-storage-rule.md). Stock CoMaps only looks in APK
++// resources here (`r`) and relocates root Worlds into a version folder via
++// Storage::GetForceDownloadWorlds. Scope `w` first so FindAllLocalMapsAndCleanup /
++// GetCountryReader pick up the root overlays without treating them as versioned
++// country leaves under 261105/ (which lacks cross-mwm sections and breaks Joints).
+ string GetAdditionalWorldScope()
+ {
+-  return "r";
++  return "wr";
+ }
+ /*
+ bool IsSpecialName(string const & name) { return name == "." || name == ".."; }

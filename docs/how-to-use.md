@@ -105,8 +105,14 @@ In Drive settings:
 
 - **Desired hours between breaks (Car)** — soft preference interval (label says
   “Car” even when another soft profile is active; values save as the Car
-  profile default pack).
-- **Rest time (minutes)** — suggested break length.
+  profile default pack). Default is **4.0 h** → HUD **Break in 240 min** at
+  trip start. The countdown **wraps** within the interval on long trips / GPS
+  replay (`minutesUntilNextBreak`) so it does not stick at **Break in 0 min**
+  after the first interval.
+- **Rest time (minutes)** — suggested break length (often **15**).
+- Soft **rest-stop pin** spacing along an MWM long-trip corridor prefers about
+  **1.5 h** when the HUD reminder interval is 3 h or longer, so dense soft pins
+  and a 4 h Break HUD can coexist.
 - **Next break shown as** → **Time** or **Distance**.
 - **Units** → **Metric**, **US · ft / mph**, or **UK · mi / mph** (first install
   may infer from SIM/network country; chips always override).
@@ -140,19 +146,23 @@ Mobile home uses **car-style** soft breaks, not EC 561 tracking.
 Opt-in in **Drive settings → Long trip** (off by default).
 
 1. Set **From** and **To** (vias optional), then turn **Long trip** on.
-2. Navi estimates which Geofabrik regions the corridor needs (adjacency graph;
+2. Navi estimates which regions the corridor needs (adjacency graph;
    online **BRouter** primary, **OpenRouteService** fallback for the preliminary
    polyline). Settings show a short privacy disclosure: origin / vias /
    destination coordinates may be sent to those services when online.
-3. Missing packs enqueue on the real region download queue with
-   **Wi‑Fi / Ethernet only** (metered mobile data is not used for long-trip
-   packs). Place index and ordinary Tools downloads stay on **internal**
-   storage.
+3. **MWM-first:** missing corridor regions install **CoMaps leaves** through the
+   normal in-app download progress UI (`LongTripMwmSupport` /
+   `MwmMapDownloader.installBlocking`). **Geofabrik `.osm.pbf`** is only the
+   fallback when the MWM client is off, the catalog has no mapping, or an MWM
+   install fails. Downloads stay **Wi‑Fi / Ethernet only**. Place index and
+   ordinary Tools downloads stay on **internal** storage.
 4. Optionally choose **Store long-trip packs on** a mounted removable volume
    (app-specific directory). If that volume is ejected mid-write, the UI marks
    those regions unavailable until you remount or move packs.
-5. When regions are installed and indexed, plan as usual. Soft rest and
-   overnight POIs run on chunked multi-day motor legs after routing.
+5. When regions are Ready (MWM indexed / packs present), plan as usual. Soft
+   rest and overnight POIs run on chunked multi-day motor legs after routing.
+   Wild camping on MWM-only corridors uses the camping plugin
+   **`waypoint_fallback`** path when classic PBF seeds are absent.
 
 Turn **Long trip** off to cancel pending long-trip downloads (installed data is
 kept).
@@ -269,6 +279,8 @@ panel.
 
 - Foot graph; wetland soft-avoid (bog/fen) and hard-avoid (swamp/reedbed) with
   **boardwalk** exceptions.
+- **Avoid tunnels** is not shown: unsafe (car-only) tunnels are HardAvoid'd
+  automatically; soft-avoid may still detour leftover forbidden tunnels.
 - **Eco mode** is locked on (not toggleable).
 - **POI search radius** slider (Drive settings) for hut / stop search.
 - **Follow official hiking/cycling networks** — soft preference for marked
@@ -289,6 +301,7 @@ panel.
 
 - **Bike type** (Drive settings): **Road / Gravel / MTB** — hard-excludes OSM
   ways whose `surface`, `tracktype`, or MTB tags exceed the selected capability.
+- **Avoid tunnels** is not shown (same auto HardAvoid rule as Hiking).
 - Same **Follow official hiking/cycling networks** and **Use networked cabins**
   toggles as Hiking.
 - **Network hut member** and **Follow pilgrim routes** are **not** shown for

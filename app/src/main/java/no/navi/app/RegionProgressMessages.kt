@@ -82,7 +82,8 @@ object RegionProgressMessages {
             regionName(regionId).ifBlank {
                 regionId.substringAfterLast('/').ifBlank { regionId }
             }
-        return "$name ($index of $total)=$state"
+        val label = IndexingUiCopy.longTripStateLabel(state)
+        return "$name ($index of $total)=$label"
     }
 
     /**

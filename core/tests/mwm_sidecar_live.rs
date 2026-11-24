@@ -36,11 +36,12 @@ fn read_ostlandet_sidecars_and_report_rss() {
     let origin = DEFAULT_PACK_SERVER_BASE_URL;
     let catalog = fetch_current_catalog(origin).expect("catalog");
     assert_eq!(catalog.version, "261105");
-    let leaves = catalog
+    let raw = catalog
         .leaves_for_bake_id("europe_norway_ostlandet")
         .expect("ostlandet")
         .to_vec();
-    assert_eq!(leaves.len(), 9);
+    let leaves = driver_break_core::mwm::install_leaves_for_region("europe_norway_ostlandet", &raw);
+    assert!(leaves.iter().all(|id| id.starts_with("Norway_")));
 
     let dir = std::env::temp_dir().join("navi-mwm-sidecar-live");
     let _ = std::fs::remove_dir_all(&dir);

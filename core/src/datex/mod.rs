@@ -46,7 +46,9 @@ use crate::pack_server::{
     PackDataSource,
 };
 
-use session::{fingerprint_source_body, load_disk_cache, save_disk_cache};
+use session::{
+    fingerprint_source_body, is_navi_synth_fingerprint, load_disk_cache, save_disk_cache,
+};
 
 use std::path::Path;
 
@@ -253,8 +255,9 @@ fn read_plan_datex_xml(data_dir: &Path, now: DateTime<Utc>) -> Option<(String, b
     if !cache_dir.join(DATEX_APPLY_TO_ROUTING_STAMP).is_file() {
         return None;
     }
-    let (_meta, xml, fetched_unix, _fp) = load_disk_cache(&cache_dir)?;
-    let ignore_ttl = datex_plan_mode(data_dir) == DatexPlanMode::Saved;
+    let (_meta, xml, fetched_unix, fp) = load_disk_cache(&cache_dir)?;
+    let ignore_ttl =
+        datex_plan_mode(data_dir) == DatexPlanMode::Saved || is_navi_synth_fingerprint(&fp);
     if !ignore_ttl {
         let age_secs = now.timestamp().saturating_sub(fetched_unix);
         if age_secs > DATEX_PLAN_CACHE_MAX_AGE_SECS {
@@ -730,13 +733,15 @@ fn resolve_datex_host(
             "discovery chain failed: {}",
             match &conn {
                 pack_server::Connectivity::Unreachable { reason, .. } => reason.as_str(),
-                pack_server::Connectivity::Ready(_) => "unknown",
+                pack_server::Connectivity::Ready(_)
+                | pack_server::Connectivity::Retired { .. } => "unknown",
             }
         );
         return Ok(None);
     };
     let base = match &conn {
         pack_server::Connectivity::Ready(c) => c.served_from.clone(),
+        pack_server::Connectivity::Retired { served_from, .. } => served_from.clone(),
         pack_server::Connectivity::Unreachable { .. } => return Ok(None),
     };
 
@@ -781,6 +786,68 @@ fn hydrate_session_from_disk(config: &DatexConfig) {
     });
 }
 
+/// Keep campaign ADB `navi-synth-*` fixtures: wide corridor + skip NPRA.
+fn navi_synth_keep_result(
+    meta: DatexSourceMeta,
+    xml: &str,
+    route_lat_lon: &[(f64, f64)],
+    margin_m: f64,
+    now: DateTime<Utc>,
+    data_source_on_parse_fail: &str,
+) -> DatexRefreshResult {
+    match parse_situation_publication(xml) {
+        Ok(all) => {
+            let view = corridor_view(&all, route_lat_lon, margin_m, now);
+            view_result(
+                view,
+                meta.attribution.or(meta.source),
+                Some("navi_synth_keep".into()),
+                PackDataSource::ServerDuckdns,
+            )
+        }
+        Err(e) => empty_result(format!("parse_failed:{e}"), data_source_on_parse_fail),
+    }
+}
+
+fn try_keep_navi_synth_disk(
+    config: &DatexConfig,
+    route_lat_lon: &[(f64, f64)],
+    now: DateTime<Utc>,
+    now_unix: i64,
+    log_age: bool,
+    data_source_on_parse_fail: &str,
+) -> Option<DatexRefreshResult> {
+    let dir = config.cache_dir.as_ref()?;
+    let (meta, xml, fetched, fp) = load_disk_cache(dir)?;
+    if !is_navi_synth_fingerprint(&fp) {
+        return None;
+    }
+    if log_age {
+        log::info!(
+            target: "NaviDatex",
+            "keeping navi-synth cache age_secs={}; skip NPRA pull",
+            now_unix.saturating_sub(fetched)
+        );
+    }
+    // Sync session so a later in-process refresh still sees synth if disk races.
+    with_session(|s| {
+        s.cached_meta = Some(meta.clone());
+        s.cached_xml = Some(xml.clone());
+        s.last_fetch_unix = Some(fetched);
+        s.source_fingerprint = Some(fp);
+    });
+    // Campaign seeds are often placed before the final polyline exists.
+    let margin_m = config.corridor_margin_m().max(25_000.0);
+    Some(navi_synth_keep_result(
+        meta,
+        &xml,
+        route_lat_lon,
+        margin_m,
+        now,
+        data_source_on_parse_fail,
+    ))
+}
+
 /// Refresh DATEX for the active route corridor.
 ///
 /// Network economy:
@@ -789,6 +856,7 @@ fn hydrate_session_from_disk(config: &DatexConfig) {
 /// - sticky host until it fails, then re-run chain
 /// - `source.json` fingerprint unchanged → skip GetSituation.xml body
 /// - both hosts down → `data_source=none`, empty overlay (no stale actives)
+/// - `navi-synth-*` disk/session fixtures skip NPRA and refuse live overwrite
 pub fn refresh_for_route(
     config: &DatexConfig,
     route_lat_lon: &[(f64, f64)],
@@ -807,31 +875,50 @@ pub fn refresh_for_route(
     hydrate_session_from_disk(config);
 
     let now_unix = now.timestamp();
-    if let Some(dir) = config.cache_dir.as_ref() {
-        if let Some((meta, xml, fetched, fp)) = load_disk_cache(dir) {
-            if fp.starts_with("navi-synth")
-                && now_unix.saturating_sub(fetched) <= DATEX_PLAN_CACHE_MAX_AGE_SECS
-            {
-                log::info!(
-                    target: "NaviDatex",
-                    "keeping navi-synth cache age_secs={}; skip NPRA pull",
-                    now_unix.saturating_sub(fetched)
-                );
-                return match parse_situation_publication(&xml) {
-                    Ok(all) => {
-                        let view =
-                            corridor_view(&all, route_lat_lon, config.corridor_margin_m(), now);
-                        view_result(
-                            view,
-                            meta.attribution.or(meta.source),
-                            Some("navi_synth_keep".into()),
-                            PackDataSource::ServerDuckdns,
-                        )
-                    }
-                    Err(e) => empty_result(format!("parse_failed:{e}"), "server-duckdns"),
-                };
-            }
-        }
+    // ADB / campaign synthetic fixtures must survive long plan waits
+    // (missing-maps downloads). Do not TTL-drop navi-synth snapshots.
+    if let Some(kept) =
+        try_keep_navi_synth_disk(config, route_lat_lon, now, now_unix, true, "server-duckdns")
+    {
+        return kept;
+    }
+
+    // In-memory synth (inject landed in session before disk, or disk path unset).
+    // Do not keep session synth when disk already holds a non-synth snapshot.
+    let session_synth = with_session(|s| {
+        s.source_fingerprint
+            .as_deref()
+            .is_some_and(is_navi_synth_fingerprint)
+            && s.cached_xml.is_some()
+    });
+    let disk_has_live = config
+        .cache_dir
+        .as_ref()
+        .and_then(|d| load_disk_cache(d))
+        .is_some_and(|(_, _, _, fp)| !is_navi_synth_fingerprint(&fp));
+    if session_synth && !disk_has_live {
+        return with_session(|s| {
+            let xml = s.cached_xml.clone().unwrap_or_default();
+            let meta = s.cached_meta.clone().unwrap_or(DatexSourceMeta {
+                schema: Some(1),
+                source: Some("navi-synth".into()),
+                license: None,
+                attribution: Some("synthetic".into()),
+                endpoints: None,
+            });
+            log::info!(
+                target: "NaviDatex",
+                "keeping in-memory navi-synth; skip NPRA pull"
+            );
+            navi_synth_keep_result(
+                meta,
+                &xml,
+                route_lat_lon,
+                config.corridor_margin_m().max(25_000.0),
+                now,
+                "server-duckdns",
+            )
+        });
     }
 
     let poll_secs = config.effective_poll_interval_secs() as i64;
@@ -869,7 +956,13 @@ pub fn refresh_for_route(
     let host = match resolve_datex_host(config) {
         Ok(Some(h)) => h,
         Ok(None) => {
-            // Do not surface stale cache as active when hosts are unreachable.
+            // Prefer on-disk navi-synth fixtures over wiping when hosts are down.
+            if let Some(kept) =
+                try_keep_navi_synth_disk(config, route_lat_lon, now, now_unix, false, "none")
+            {
+                return kept;
+            }
+            // Do not surface stale NPRA cache as active when hosts are unreachable.
             with_session(|s| {
                 s.cached_xml = None;
                 s.cached_meta = None;
@@ -877,6 +970,11 @@ pub fn refresh_for_route(
             return empty_result("hosts_unreachable", "none");
         }
         Err(e) => {
+            if let Some(kept) =
+                try_keep_navi_synth_disk(config, route_lat_lon, now, now_unix, false, "none")
+            {
+                return kept;
+            }
             with_session(|s| {
                 s.clear_sticky();
                 s.cached_xml = None;
@@ -899,6 +997,14 @@ pub fn refresh_for_route(
         }
     };
     let fp = fingerprint_source_body(&source_body);
+
+    // Campaign inject may land on disk while the live source.json round-trip
+    // is in flight — re-check before replacing session/disk with NPRA.
+    if let Some(kept) =
+        try_keep_navi_synth_disk(config, route_lat_lon, now, now_unix, true, "server-duckdns")
+    {
+        return kept;
+    }
 
     let skip_xml = with_session(|s| {
         s.source_fingerprint.as_deref() == Some(fp.as_str()) && s.cached_xml.is_some()
@@ -925,6 +1031,13 @@ pub fn refresh_for_route(
         }
     };
 
+    // Final TOCTOU guard after GetSituation body fetch.
+    if let Some(kept) =
+        try_keep_navi_synth_disk(config, route_lat_lon, now, now_unix, true, "server-duckdns")
+    {
+        return kept;
+    }
+
     with_session(|s| {
         s.cached_xml = Some(xml.clone());
         s.cached_meta = Some(meta.clone());
@@ -936,6 +1049,12 @@ pub fn refresh_for_route(
     if let Some(dir) = config.cache_dir.as_ref() {
         if let Err(e) = save_disk_cache(dir, &meta, &xml, now_unix, &fp, tag, &base) {
             log::warn!(target: "NaviDatex", "persist cache failed: {e}");
+        }
+        // If save refused because synth appeared, prefer the kept fixture.
+        if let Some(kept) =
+            try_keep_navi_synth_disk(config, route_lat_lon, now, now_unix, true, "server-duckdns")
+        {
+            return kept;
         }
     }
 

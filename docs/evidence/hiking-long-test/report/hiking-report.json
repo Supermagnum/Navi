@@ -1,0 +1,1191 @@
+{
+  "campaign": "hiking_nashaugs_fondsbu_hjelle_longtrip_ui",
+  "started_unix": 1795257819,
+  "departure_local": "2026-06-01T08:00:00",
+  "ram_before_mib": 313.896484375,
+  "settings": {
+    "profile": "hiking",
+    "avoid_tunnels": true,
+    "avoid_ferries": false,
+    "wild_camping": true,
+    "long_trip": true,
+    "datex": false,
+    "nearby_attractions": true,
+    "download_ui": "mwm_choose_region_then_long_trip_prompts",
+    "departure_local": "2026-06-01T08:00:00"
+  },
+  "origin": {
+    "name": "Nashaugsætra",
+    "fallback_lat": 60.8835,
+    "fallback_lon": 9.972,
+    "elev_m": 820
+  },
+  "via": {
+    "name": "Fondsbu",
+    "fallback_lat": 61.3751863,
+    "fallback_lon": 8.2973974
+  },
+  "dest": {
+    "name": "Hjelle motell",
+    "fallback_lat": 61.9146019,
+    "fallback_lon": 7.1116076
+  },
+  "gps_mock_provider": true,
+  "delete_policy": "UI Map storage wipe of MWM leaves + Tools Geofabrik path deletes; clean start",
+  "ui_events": [
+    {
+      "t": 1795257822488,
+      "step": "activity_foreground",
+      "detail": "MainActivity"
+    },
+    {
+      "t": 1795257822843,
+      "step": "screenshot",
+      "detail": "01_launch"
+    },
+    {
+      "t": 1795257822850,
+      "step": "gps_pin",
+      "detail": "Nashaugsætra mock=true"
+    },
+    {
+      "t": 1795257823804,
+      "step": "toggle_long_trip",
+      "detail": "already ON via prefs"
+    },
+    {
+      "t": 1795257823836,
+      "step": "toggle_datex_plugin",
+      "detail": "already OFF"
+    },
+    {
+      "t": 1795257823921,
+      "step": "toggle_poi_lookahead",
+      "detail": "already ON"
+    },
+    {
+      "t": 1795257824005,
+      "step": "toggle_camping_plugin",
+      "detail": "already ON"
+    },
+    {
+      "t": 1795257825699,
+      "step": "screenshot",
+      "detail": "02_tools_plugins"
+    },
+    {
+      "t": 1795257827940,
+      "step": "map_storage_open",
+      "detail": "opened=true"
+    },
+    {
+      "t": 1795257833054,
+      "step": "delete_leaf",
+      "detail": "pass=1 id=Norway_Central hit=true"
+    },
+    {
+      "t": 1795257836049,
+      "step": "delete_leaf",
+      "detail": "pass=1 id=Norway_Hedmark hit=true"
+    },
+    {
+      "t": 1795257839145,
+      "step": "delete_leaf",
+      "detail": "pass=1 id=Norway_Oppland hit=true"
+    },
+    {
+      "t": 1795257842300,
+      "step": "delete_leaf",
+      "detail": "pass=1 id=Norway_Rogaland hit=true"
+    },
+    {
+      "t": 1795257845398,
+      "step": "delete_leaf",
+      "detail": "pass=1 id=Norway_Southern hit=true"
+    },
+    {
+      "t": 1795257848403,
+      "step": "delete_leaf",
+      "detail": "pass=1 id=Norway_Hordaland hit=true"
+    },
+    {
+      "t": 1795257851520,
+      "step": "delete_leaf",
+      "detail": "pass=1 id=Norway_Western hit=true"
+    },
+    {
+      "t": 1795257851537,
+      "step": "delete_pass_done",
+      "detail": "pass=1 hits=7 left=0"
+    },
+    {
+      "t": 1795257856890,
+      "step": "delete_old_releases",
+      "detail": "clicked btn_mwm_storage_delete_releases"
+    },
+    {
+      "t": 1795257858266,
+      "step": "delete_disk_confirm",
+      "detail": "leaf_mwm_files_left=0"
+    },
+    {
+      "t": 1795257859391,
+      "step": "toggle_long_trip",
+      "detail": "OFF for geofabrik delete"
+    },
+    {
+      "t": 1795257860735,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/germany\/niedersachsen: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795257861395,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/germany\/schleswig-holstein: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795257862035,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/norway\/ostlandet: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795257862697,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/norway\/vestlandet: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795257863346,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/norway\/hedmark: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795257864002,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/norway\/sorlandet: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795257864652,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/norway\/trondelag: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795257865311,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/norway\/nord-norge: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795257865953,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/sweden\/vastra-gotaland: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795257866603,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/sweden\/halland: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795257867253,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/sweden\/skane: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795257867902,
+      "step": "delete_geofabrik_fail",
+      "detail": "europe\/denmark: Action performScrollTo() failed.\nReason: Expected exactly '1' node but could not find any node that satisfies: (TestTag = 'field_geofabrik_path')\n"
+    },
+    {
+      "t": 1795257868937,
+      "step": "screenshot",
+      "detail": "03_after_ui_delete"
+    },
+    {
+      "t": 1795257869095,
+      "step": "disk_listing",
+      "detail": "after_delete leaves=0"
+    },
+    {
+      "t": 1795257869116,
+      "step": "delete_result",
+      "detail": "leaves_left=0"
+    },
+    {
+      "t": 1795257869964,
+      "step": "toggle_long_trip",
+      "detail": "turned ON"
+    },
+    {
+      "t": 1795257870353,
+      "step": "toggle_datex_plugin",
+      "detail": "already OFF"
+    },
+    {
+      "t": 1795257870437,
+      "step": "toggle_poi_lookahead",
+      "detail": "already ON"
+    },
+    {
+      "t": 1795257870555,
+      "step": "toggle_camping_plugin",
+      "detail": "already ON"
+    },
+    {
+      "t": 1795257872687,
+      "step": "toggle_long_trip",
+      "detail": "confirmed ON"
+    },
+    {
+      "t": 1795257875591,
+      "step": "btn_mwm_regions",
+      "detail": "attempt=0 opened=true"
+    },
+    {
+      "t": 1795257875591,
+      "step": "btn_mwm_regions",
+      "detail": "Choose region opened for europe_norway_ostlandet"
+    },
+    {
+      "t": 1795257878621,
+      "step": "install_clicked",
+      "detail": "btn_mwm_install_europe_norway_ostlandet"
+    },
+    {
+      "t": 1795257880647,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Downloading maps pct=null"
+    },
+    {
+      "t": 1795257883819,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Downloading maps pct=null"
+    },
+    {
+      "t": 1795257887065,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=Downloading maps pct=null"
+    },
+    {
+      "t": 1795257890922,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=MWM Norway_Central pct=26"
+    },
+    {
+      "t": 1795257894841,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=MWM Norway_Central pct=73"
+    },
+    {
+      "t": 1795257898025,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=MWM Norway_Central pct=100"
+    },
+    {
+      "t": 1795257902027,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=MWM Norway_Hedmark pct=31"
+    },
+    {
+      "t": 1795257906203,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=MWM Norway_Hedmark pct=100"
+    },
+    {
+      "t": 1795257910222,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=MWM Norway_Hordaland pct=34"
+    },
+    {
+      "t": 1795257913389,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=MWM Norway_Hordaland pct=100"
+    },
+    {
+      "t": 1795257917161,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=MWM Norway_Oppland pct=33"
+    },
+    {
+      "t": 1795257920523,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=MWM Norway_Oppland pct=100"
+    },
+    {
+      "t": 1795257924214,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=MWM Norway_Southern pct=11"
+    },
+    {
+      "t": 1795257928179,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=MWM Norway_Southern pct=45"
+    },
+    {
+      "t": 1795257931873,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=MWM Norway_Southern pct=76"
+    },
+    {
+      "t": 1795257935045,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=MWM Norway_Southern pct=100"
+    },
+    {
+      "t": 1795257938962,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=MWM Norway_Western pct=18"
+    },
+    {
+      "t": 1795257943073,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=MWM Norway_Western pct=77"
+    },
+    {
+      "t": 1795257946273,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=true ok=null msg=261115\/Norway_Western.navi-sidecar.v1.zst pct=100"
+    },
+    {
+      "t": 1795257949563,
+      "step": "install_progress",
+      "detail": "first_ostlandet running=false ok=true msg= pct=100"
+    },
+    {
+      "t": 1795257949826,
+      "step": "comaps_session",
+      "detail": "install_ok_first_ostlandet open=true nativeLoaded=true"
+    },
+    {
+      "t": 1795257950716,
+      "step": "innlandet_check",
+      "detail": "leaves=[norway_central, norway_hedmark, norway_hordaland, norway_oppland, norway_southern, norway_western] hit=true"
+    },
+    {
+      "t": 1795257951399,
+      "step": "screenshot",
+      "detail": "04_ostlandet_installed"
+    },
+    {
+      "t": 1795257951534,
+      "step": "disk_listing",
+      "detail": "after_first_download leaves=6"
+    },
+    {
+      "t": 1795257951752,
+      "step": "comaps_session",
+      "detail": "after_maps_ready open=true nativeLoaded=true"
+    },
+    {
+      "t": 1795257951836,
+      "step": "open_route_panel",
+      "detail": "field_search already visible"
+    },
+    {
+      "t": 1795257951852,
+      "step": "open_route_panel",
+      "detail": "field_search already visible"
+    },
+    {
+      "t": 1795257953554,
+      "step": "chip_profile_hiking",
+      "detail": "selected"
+    },
+    {
+      "t": 1795257960161,
+      "step": "screenshot",
+      "detail": "05_hiking_settings"
+    },
+    {
+      "t": 1795257960169,
+      "step": "open_route_panel",
+      "detail": "field_search already visible"
+    },
+    {
+      "t": 1795257964037,
+      "step": "from_nashaugs",
+      "detail": "name_search q=Nashaugsætra applied=61.15114453349263,9.843362494136102 name=Nashaugsætra, Oppland, Norway"
+    },
+    {
+      "t": 1795257964241,
+      "step": "screenshot",
+      "detail": "06_from_set"
+    },
+    {
+      "t": 1795257964265,
+      "step": "open_route_panel",
+      "detail": "field_search already visible"
+    },
+    {
+      "t": 1795257964535,
+      "step": "open_route_panel",
+      "detail": "field_search already visible"
+    },
+    {
+      "t": 1795257967644,
+      "step": "via_fondsbu_name",
+      "detail": "name_search q=Fondsbu applied=61.375185952242354,8.297396215031995 name=Fondsbu, Eidsbugarden, Oppland, Norway"
+    },
+    {
+      "t": 1795257967665,
+      "step": "via_fondsbu",
+      "detail": "accepted Fondsbu name hit"
+    },
+    {
+      "t": 1795257967846,
+      "step": "screenshot",
+      "detail": "07_via_set"
+    },
+    {
+      "t": 1795257967902,
+      "step": "open_route_panel",
+      "detail": "field_search already visible"
+    },
+    {
+      "t": 1795257972406,
+      "step": "to_hjelle_motell",
+      "detail": "name_search q=Hjelle motell applied=61.9146013412573,7.111607693967272 name=Hjelle motell, Hjelle, Western Norway, Norway"
+    },
+    {
+      "t": 1795257972964,
+      "step": "screenshot",
+      "detail": "08_to_set"
+    },
+    {
+      "t": 1795257972987,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Hjelle motell, Hjelle, Western Norway, Norway | Via: Fondsbu, Eidsbugarden, Oppland, Norway"
+    },
+    {
+      "t": 1795257974587,
+      "step": "toggle_long_trip",
+      "detail": "confirmed ON"
+    },
+    {
+      "t": 1795257975368,
+      "step": "open_route_panel",
+      "detail": "field_search already visible"
+    },
+    {
+      "t": 1795257975435,
+      "step": "open_route_panel",
+      "detail": "field_search already visible"
+    },
+    {
+      "t": 1795257976396,
+      "step": "corridor_wait",
+      "detail": "{\"t_ms\":184,\"corridor_ready\":false,\"status\":\"Østlandet (1 of 2)=Ready · Vestlandet (2 of 2)=Downloading\"}"
+    },
+    {
+      "t": 1795257976642,
+      "step": "disk_listing",
+      "detail": "corridor_wait leaves=6"
+    },
+    {
+      "t": 1795257987277,
+      "step": "corridor_ready_before_plan",
+      "detail": "Østlandet (1 of 2)=Ready · Vestlandet (2 of 2)=Ready"
+    },
+    {
+      "t": 1795257988139,
+      "step": "screenshot",
+      "detail": "09_before_plan"
+    },
+    {
+      "t": 1795257989893,
+      "step": "screenshot",
+      "detail": "10_after_plan_click"
+    },
+    {
+      "t": 1795257989999,
+      "step": "region_prompt",
+      "detail": "accepted MWM missing-maps download"
+    },
+    {
+      "t": 1795257990152,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Hjelle motell, Hjelle, Western Norway, Norway | Via: Fondsbu, Eidsbugarden, Oppland, Norway"
+    },
+    {
+      "t": 1795257993402,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Hjelle motell, Hjelle, Western Norway, Norway | Via: Fondsbu, Eidsbugarden, Oppland, Norway"
+    },
+    {
+      "t": 1795257996569,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Hjelle motell, Hjelle, Western Norway, Norway | Via: Fondsbu, Eidsbugarden, Oppland, Norway"
+    },
+    {
+      "t": 1795257999753,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Hjelle motell, Hjelle, Western Norway, Norway | Via: Fondsbu, Eidsbugarden, Oppland, Norway"
+    },
+    {
+      "t": 1795258003364,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=7"
+    },
+    {
+      "t": 1795258003402,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Hjelle motell, Hjelle, Western Norway, Norway | Via: Fondsbu, Eidsbugarden, Oppland, Norway"
+    },
+    {
+      "t": 1795258006937,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=7"
+    },
+    {
+      "t": 1795258006969,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Hjelle motell, Hjelle, Western Norway, Norway | Via: Fondsbu, Eidsbugarden, Oppland, Norway"
+    },
+    {
+      "t": 1795258010390,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=7"
+    },
+    {
+      "t": 1795258010420,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Hjelle motell, Hjelle, Western Norway, Norway | Via: Fondsbu, Eidsbugarden, Oppland, Norway"
+    },
+    {
+      "t": 1795258013698,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=7"
+    },
+    {
+      "t": 1795258013719,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Hjelle motell, Hjelle, Western Norway, Norway | Via: Fondsbu, Eidsbugarden, Oppland, Norway"
+    },
+    {
+      "t": 1795258017017,
+      "step": "disk_listing",
+      "detail": "plan_wait leaves=7"
+    },
+    {
+      "t": 1795258017086,
+      "step": "waypoints_summary",
+      "detail": "From: Nashaugsætra, Oppland, Norway | To: Hjelle motell, Hjelle, Western Norway, Norway | Via: Fondsbu, Eidsbugarden, Oppland, Norway"
+    },
+    {
+      "t": 1795258020719,
+      "step": "polyline_persist",
+      "detail": "chars=248325"
+    },
+    {
+      "t": 1795258081784,
+      "step": "disk_listing",
+      "detail": "after_plan leaves=7"
+    },
+    {
+      "t": 1795258082814,
+      "step": "screenshot",
+      "detail": "11_plan_result"
+    },
+    {
+      "t": 1795258082849,
+      "step": "polyline_persist",
+      "detail": "chars=248325"
+    },
+    {
+      "t": 1795258082856,
+      "step": "break_pois_persist",
+      "detail": "chars=2625"
+    },
+    {
+      "t": 1795258082892,
+      "step": "gps_replay_await",
+      "detail": "waiting host"
+    },
+    {
+      "t": 1795258128541,
+      "step": "gps_replay_done",
+      "detail": "ok peak_pss_kb=549326\n"
+    },
+    {
+      "t": 1795258128860,
+      "step": "screenshot",
+      "detail": "12_after_gps_replay"
+    }
+  ],
+  "region_timings": [
+    {
+      "label": "first_ostlandet",
+      "region_id": "europe_norway_ostlandet",
+      "elapsed_ms": 77198,
+      "ok": true,
+      "version": "261115",
+      "leaf_count": 6,
+      "sidecar_count": "6",
+      "leaves": [
+        "Norway_Central",
+        "Norway_Hedmark",
+        "Norway_Hordaland",
+        "Norway_Oppland",
+        "Norway_Southern",
+        "Norway_Western"
+      ],
+      "placement": "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm (SD)"
+    },
+    {
+      "label": "plan_requested_vestlandet",
+      "region_id": "europe_norway_vestlandet",
+      "elapsed_ms": 0,
+      "ok": true,
+      "placement": "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm (SD)"
+    }
+  ],
+  "mwm_regions_deleted_via_ui": [
+    {
+      "leaf_id": "Norway_Central",
+      "pass": 1,
+      "tag_hit": true
+    },
+    {
+      "leaf_id": "Norway_Hedmark",
+      "pass": 1,
+      "tag_hit": true
+    },
+    {
+      "leaf_id": "Norway_Oppland",
+      "pass": 1,
+      "tag_hit": true
+    },
+    {
+      "leaf_id": "Norway_Rogaland",
+      "pass": 1,
+      "tag_hit": true
+    },
+    {
+      "leaf_id": "Norway_Southern",
+      "pass": 1,
+      "tag_hit": true
+    },
+    {
+      "leaf_id": "Norway_Hordaland",
+      "pass": 1,
+      "tag_hit": true
+    },
+    {
+      "leaf_id": "Norway_Western",
+      "pass": 1,
+      "tag_hit": true
+    },
+    {
+      "old_releases": true
+    }
+  ],
+  "mwm_leaf_files_after_delete": [],
+  "mwm_leaf_files_after_delete_count": 0,
+  "geofabrik_regions_deleted_via_ui": [],
+  "leaves_after_ui_delete": [],
+  "leaves_after_ui_delete_count": 0,
+  "disk_listing_after_delete": {
+    "mwm_leaves": [],
+    "mwm_version": "261115",
+    "placement": "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm (SD)",
+    "internal_mwm_files": [],
+    "internal_mwm_count": 0,
+    "sd_long_trip_packs": [
+      "elevation:16384",
+      "graph-cache:16384",
+      "navi.db:65536",
+      "region_meta.json:264"
+    ],
+    "sd_mwm_files": [
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/World.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261105\/Norway_Western.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/WorldCoasts.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Western.mwm"
+    ],
+    "sd_mwm_count": 4
+  },
+  "comaps_session_install_ok_first_ostlandet": {
+    "open": true,
+    "native_loaded": true
+  },
+  "disk_listing_after_first_download": {
+    "mwm_leaves": [
+      "Norway_Central",
+      "Norway_Hedmark",
+      "Norway_Hordaland",
+      "Norway_Oppland",
+      "Norway_Southern",
+      "Norway_Western"
+    ],
+    "mwm_version": "261115",
+    "placement": "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm (SD)",
+    "internal_mwm_files": [],
+    "internal_mwm_count": 0,
+    "sd_long_trip_packs": [
+      "elevation:16384",
+      "graph-cache:16384",
+      "navi.db:65536",
+      "region_meta.json:264"
+    ],
+    "sd_mwm_files": [
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Hordaland.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Central.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Hedmark.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Southern.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Oppland.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Western.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/World.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261105\/Norway_Western.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/WorldCoasts.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Hordaland.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Central.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Hedmark.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Southern.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Oppland.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Western.mwm"
+    ],
+    "sd_mwm_count": 15
+  },
+  "comaps_session_after_maps_ready": {
+    "open": true,
+    "native_loaded": true
+  },
+  "from_nashaugs": {
+    "query": "Nashaugsætra",
+    "mode": "name_search",
+    "applied_lat": 61.15114453349263,
+    "applied_lon": 9.843362494136102,
+    "applied_name": "Nashaugsætra, Oppland, Norway"
+  },
+  "via_fondsbu_name": {
+    "query": "Fondsbu",
+    "mode": "name_search",
+    "applied_lat": 61.375185952242354,
+    "applied_lon": 8.297396215031995,
+    "applied_name": "Fondsbu, Eidsbugarden, Oppland, Norway"
+  },
+  "to_hjelle_motell": {
+    "query": "Hjelle motell",
+    "mode": "name_search",
+    "applied_lat": 61.9146013412573,
+    "applied_lon": 7.111607693967272,
+    "applied_name": "Hjelle motell, Hjelle, Western Norway, Norway"
+  },
+  "waypoints_summary": "From: Nashaugsætra, Oppland, Norway | To: Hjelle motell, Hjelle, Western Norway, Norway | Via: Fondsbu, Eidsbugarden, Oppland, Norway",
+  "via_proof": {
+    "waypoints_summary": "From: Nashaugsætra, Oppland, Norway | To: Hjelle motell, Hjelle, Western Norway, Norway | Via: Fondsbu, Eidsbugarden, Oppland, Norway",
+    "applied_lat": 61.375185952242354,
+    "applied_lon": 8.297396215031995,
+    "applied_name": "Fondsbu, Eidsbugarden, Oppland, Norway",
+    "expected_name": "Fondsbu",
+    "expected_lat": 61.3751863,
+    "expected_lon": 8.2973974
+  },
+  "disk_listing_corridor_wait": {
+    "mwm_leaves": [
+      "Norway_Central",
+      "Norway_Hedmark",
+      "Norway_Hordaland",
+      "Norway_Oppland",
+      "Norway_Southern",
+      "Norway_Western"
+    ],
+    "mwm_version": "261115",
+    "placement": "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm (SD)",
+    "internal_mwm_files": [],
+    "internal_mwm_count": 0,
+    "sd_long_trip_packs": [
+      "elevation:16384",
+      "graph-cache:16384",
+      "navi.db:65536",
+      "region_meta.json:264"
+    ],
+    "sd_mwm_files": [
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Hordaland.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Central.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Hedmark.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Southern.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Oppland.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Western.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/World.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261105\/Norway_Western.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/WorldCoasts.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Hordaland.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Central.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Hedmark.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Southern.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Oppland.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Western.mwm"
+    ],
+    "sd_mwm_count": 15
+  },
+  "corridor_ready_before_plan": true,
+  "corridor_wait_ms": 11065,
+  "last_progress": {
+    "t_ms": 30813,
+    "status": "Østlandet (1 of 2)=Ready · Vestlandet (2 of 2)=Ready",
+    "corridor_ready": true,
+    "polyline_chars": 248325,
+    "distance_km": 244.90524828089738,
+    "report_has_pass": true,
+    "maneuver_count": 107
+  },
+  "disk_listing_plan_wait": {
+    "mwm_leaves": [
+      "Norway_Central",
+      "Norway_Hedmark",
+      "Norway_Hordaland",
+      "Norway_Oppland",
+      "Norway_Rogaland",
+      "Norway_Southern",
+      "Norway_Western"
+    ],
+    "mwm_version": "261115",
+    "placement": "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm (SD)",
+    "internal_mwm_files": [],
+    "internal_mwm_count": 0,
+    "sd_long_trip_packs": [
+      "elevation:16384",
+      "graph-cache:16384",
+      "navi.db:65536",
+      "region_meta.json:264"
+    ],
+    "sd_mwm_files": [
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Hordaland.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Central.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Hedmark.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Southern.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Oppland.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Western.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Rogaland.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/World.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261105\/Norway_Western.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/WorldCoasts.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Hordaland.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Central.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Hedmark.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Southern.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Oppland.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Western.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Rogaland.mwm"
+    ],
+    "sd_mwm_count": 17
+  },
+  "polyline_chars_saved": 248325,
+  "plan_snapshot": {
+    "distance_km": 244.90524828089738,
+    "report_snip": "TEST_KIND=PLAN_MWM_ROUTE\nPLANNER=mwm\nPASS\ndistance_km=244.905\neta_minutes=3476.4\nrouter_mode=Joints(likely)\nascent_m=7767.0\ndescent_m=8632.0\nbuild_s=2.779036659\ncomaps_route_code=OK\nvehicle_limits_ok=false\nvehicle_limits_partial=Norway_Oppland,Norway_Western\nroute_tunnel_count=0\nroute_tunnel_fp=\nroute_ferry_legs=1\nroute_ferry_fp=unnamed@29.22\ndatex_impacts=0; datex_block=0; datex_penalize=0\ndatex_mwm=plugin_off\nchunked_soft_breaks=true; break_interval_km=11.3; break_interval_h=2.67\nrest_place_count=21\nchunked_rest_pauses=21; break_pois_total=21\n",
+    "polyline_chars": 248325
+  },
+  "full_plan": {
+    "distance_km": 244.90524828089738,
+    "eta_minutes": 3476.4,
+    "maneuver_count": 107,
+    "maneuvers_json": "[{\"lat\":61.15621079368868,\"lon\":9.829425735990895,\"cum_m\":1052.29,\"kind\":\"left\",\"street\":\"Lenningsvegen (2442)\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre inn på Lenningsvegen (2442)\",\"text_en\":\"Turn left onto Lenningsvegen (2442)\",\"voice_nb\":\"Om 1.1 kilometer: Sving til venstre inn på Lenningsvegen (2442)\",\"voice_en\":\"In 1.1 kilometers: Turn left onto Lenningsvegen (2442)\"},{\"lat\":61.15575402248907,\"lon\":9.828291161569126,\"cum_m\":1136.9776,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 85 meter: Sving til høyre\",\"voice_en\":\"In 85 meters: Turn right\"},{\"lat\":61.15574237667802,\"lon\":9.826891048452921,\"cum_m\":1211.3189,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 74 meter: Sving til venstre\",\"voice_en\":\"In 74 meters: Turn left\"},{\"lat\":61.16293608119178,\"lon\":9.778989477299064,\"cum_m\":4046.3589,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 2.8 kilometer: Sving til venstre\",\"voice_en\":\"In 2.8 kilometers: Turn left\"},{\"lat\":61.1760151043043,\"lon\":9.690970105610546,\"cum_m\":9936.0089,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 5.9 kilometer: Sving til venstre\",\"voice_en\":\"In 5.9 kilometers: Turn left\"},{\"lat\":61.17916634818466,\"lon\":9.640842300957758,\"cum_m\":13052.3089,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 3.1 kilometer: Sving til høyre\",\"voice_en\":\"In 3.1 kilometers: Turn right\"},{\"lat\":61.18813344982182,\"lon\":9.640292448105583,\"cum_m\":14327.0589,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 1.3 kilometer: Sving til venstre\",\"voice_en\":\"In 1.3 kilometers: Turn left\"},{\"lat\":61.215437910700146,\"lon\":9.62757073065319,\"cum_m\":17985.9389,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 3.7 kilometer: Sving til venstre\",\"voice_en\":\"In 3.7 kilometers: Turn left\"},{\"lat\":61.21864203529103,\"lon\":9.628461224052757,\"cum_m\":18370.6649,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 385 meter: Sving til venstre\",\"voice_en\":\"In 385 meters: Turn left\"},{\"lat\":61.243086473278645,\"lon\":9.594775360783729,\"cum_m\":21940.5349,\"kind\":\"left\",\"street\":\"Liomseterveien\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre inn på Liomseterveien\",\"text_en\":\"Turn left onto Liomseterveien\",\"voice_nb\":\"Om 3.6 kilometer: Sving til venstre inn på Liomseterveien\",\"voice_en\":\"In 3.6 kilometers: Turn left onto Liomseterveien\"},{\"lat\":61.24473555632548,\"lon\":9.589979571029374,\"cum_m\":22241.9159,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 301 meter: Sving til høyre\",\"voice_en\":\"In 301 meters: Turn right\"},{\"lat\":61.24734191182176,\"lon\":9.58490751374444,\"cum_m\":22680.7489,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 439 meter: Sving til høyre\",\"voice_en\":\"In 439 meters: Turn right\"},{\"lat\":61.291069330606554,\"lon\":9.45583961498616,\"cum_m\":31712.8389,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 9.0 kilometer: Sving til venstre\",\"voice_en\":\"In 9.0 kilometers: Turn left\"},{\"lat\":61.291713537244334,\"lon\":9.424846689588179,\"cum_m\":33389.7289,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 1.7 kilometer: Sving til venstre\",\"voice_en\":\"In 1.7 kilometers: Turn left\"},{\"lat\":61.287398388806544,\"lon\":9.390602926839904,\"cum_m\":35489.9089,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 2.1 kilometer: Sving til venstre\",\"voice_en\":\"In 2.1 kilometers: Turn left\"},{\"lat\":61.28578504865936,\"lon\":9.387531797494972,\"cum_m\":35781.9489,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 292 meter: Sving til venstre\",\"voice_en\":\"In 292 meters: Turn left\"},{\"lat\":61.28177195639381,\"lon\":9.37961659863305,\"cum_m\":36431.193900000006,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 649 meter: Sving til høyre\",\"voice_en\":\"In 649 meters: Turn right\"},{\"lat\":61.284058218921125,\"lon\":9.327286700362606,\"cum_m\":39523.02390000001,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 3.1 kilometer: Sving til høyre\",\"voice_en\":\"In 3.1 kilometers: Turn right\"},{\"lat\":61.28414198524259,\"lon\":9.326060930833677,\"cum_m\":39614.327000000005,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 91 meter: Sving til venstre\",\"voice_en\":\"In 91 meters: Turn left\"},{\"lat\":61.28591649001713,\"lon\":9.312859097964008,\"cum_m\":40410.465000000004,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 796 meter: Sving til høyre\",\"voice_en\":\"In 796 meters: Turn right\"},{\"lat\":61.29641970967872,\"lon\":9.26857314458914,\"cum_m\":43299.605,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 2.9 kilometer: Sving til venstre\",\"voice_en\":\"In 2.9 kilometers: Turn left\"},{\"lat\":61.280936797557196,\"lon\":9.236064771086461,\"cum_m\":45838.645000000004,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 2.5 kilometer: Sving til venstre\",\"voice_en\":\"In 2.5 kilometers: Turn left\"},{\"lat\":61.277915605352156,\"lon\":9.231832245229413,\"cum_m\":46230.539000000004,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 392 meter: Sving til høyre\",\"voice_en\":\"In 392 meters: Turn right\"},{\"lat\":61.27715510588269,\"lon\":9.231019535891846,\"cum_m\":46427.031,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 196 meter: Sving til høyre\",\"voice_en\":\"In 196 meters: Turn right\"},{\"lat\":61.2773342760604,\"lon\":9.226095000103811,\"cum_m\":46766.435000000005,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 339 meter: Sving til venstre\",\"voice_en\":\"In 339 meters: Turn left\"},{\"lat\":61.27635333903803,\"lon\":9.221760550303458,\"cum_m\":47040.744000000006,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 274 meter: Sving til venstre\",\"voice_en\":\"In 274 meters: Turn left\"},{\"lat\":61.281045060141274,\"lon\":9.190555730391708,\"cum_m\":48989.314000000006,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 1.9 kilometer: Sving til venstre\",\"voice_en\":\"In 1.9 kilometers: Turn left\"},{\"lat\":61.28821533613255,\"lon\":9.160077789128394,\"cum_m\":50892.524000000005,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 1.9 kilometer: Sving til høyre\",\"voice_en\":\"In 1.9 kilometers: Turn right\"},{\"lat\":61.28885444729031,\"lon\":9.146556773383594,\"cum_m\":51506.586,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 614 meter: Sving til venstre\",\"voice_en\":\"In 614 meters: Turn left\"},{\"lat\":61.28799370583696,\"lon\":9.074711122175387,\"cum_m\":56094.796,\"kind\":\"left\",\"street\":\"Skredalen\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre inn på Skredalen\",\"text_en\":\"Turn left onto Skredalen\",\"voice_nb\":\"Om 4.6 kilometer: Sving til venstre inn på Skredalen\",\"voice_en\":\"In 4.6 kilometers: Turn left onto Skredalen\"},{\"lat\":61.28756074911655,\"lon\":9.07430879082014,\"cum_m\":56143.6198,\"kind\":\"right\",\"street\":\"Skredalen\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre inn på Skredalen\",\"text_en\":\"Turn right onto Skredalen\",\"voice_nb\":\"Sving til høyre inn på Skredalen\",\"voice_en\":\"Turn right onto Skredalen\"},{\"lat\":61.28446802741174,\"lon\":9.075134911202895,\"cum_m\":56500.2168,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 357 meter: Sving til venstre\",\"voice_en\":\"In 357 meters: Turn left\"},{\"lat\":61.27585963640738,\"lon\":9.06913212738283,\"cum_m\":57506.6468,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 1.0 kilometer: Sving til høyre\",\"voice_en\":\"In 1.0 kilometers: Turn right\"},{\"lat\":61.274370747267746,\"lon\":9.036326028677252,\"cum_m\":59567.6768,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 2.1 kilometer: Sving til høyre\",\"voice_en\":\"In 2.1 kilometers: Turn right\"},{\"lat\":61.28887506356261,\"lon\":9.000204719604568,\"cum_m\":62220.7868,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 2.7 kilometer: Sving til venstre\",\"voice_en\":\"In 2.7 kilometers: Turn left\"},{\"lat\":61.28571030724964,\"lon\":8.951581634220332,\"cum_m\":65198.7568,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 3.0 kilometer: Sving til høyre\",\"voice_en\":\"In 3.0 kilometers: Turn right\"},{\"lat\":61.294039013161346,\"lon\":8.900898612297311,\"cum_m\":68262.1668,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 3.1 kilometer: Sving til venstre\",\"voice_en\":\"In 3.1 kilometers: Turn left\"},{\"lat\":61.29051401387128,\"lon\":8.896135009051363,\"cum_m\":68728.45980000001,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 466 meter: Sving til høyre\",\"voice_en\":\"In 466 meters: Turn right\"},{\"lat\":61.29045861050244,\"lon\":8.89506212543742,\"cum_m\":68991.25880000001,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 263 meter: Sving til høyre\",\"voice_en\":\"In 263 meters: Turn right\"},{\"lat\":61.29653307167368,\"lon\":8.892465747091649,\"cum_m\":69731.0268,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 740 meter: Sving til høyre\",\"voice_en\":\"In 740 meters: Turn right\"},{\"lat\":61.327478449080814,\"lon\":8.79863134621553,\"cum_m\":77147.7868,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 7.4 kilometer: Sving til venstre\",\"voice_en\":\"In 7.4 kilometers: Turn left\"},{\"lat\":61.328514411675414,\"lon\":8.795423424209815,\"cum_m\":77361.4748,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 214 meter: Sving til venstre\",\"voice_en\":\"In 214 meters: Turn left\"},{\"lat\":61.32762901968472,\"lon\":8.793977713540016,\"cum_m\":77464.8768,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 103 meter: Sving til venstre\",\"voice_en\":\"In 103 meters: Turn left\"},{\"lat\":61.35510697088077,\"lon\":8.593560372245008,\"cum_m\":89786.3768,\"kind\":\"straight\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Ta fergen\",\"text_en\":\"Take the ferry\",\"voice_nb\":\"Om 12.3 kilometer: Ta fergen\",\"voice_en\":\"In 12.3 kilometers: Take the ferry\"},{\"lat\":61.37475419887252,\"lon\":8.29637965780779,\"cum_m\":106685.5768,\"kind\":\"straight\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Ta fergen\",\"text_en\":\"Take the ferry\",\"voice_nb\":\"Om 16.9 kilometer: Ta fergen\",\"voice_en\":\"In 16.9 kilometers: Take the ferry\"},{\"lat\":61.37465139957251,\"lon\":8.295859309255007,\"cum_m\":106721.2086,\"kind\":\"destination\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Du er fremme\",\"text_en\":\"You have arrived\",\"voice_nb\":\"Du er fremme\",\"voice_en\":\"You have arrived\"},{\"lat\":61.3746141347428,\"lon\":8.295693012294862,\"cum_m\":106732.5665,\"kind\":\"right\",\"street\":\"Eidsbugardvegen (252)\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre inn på Eidsbugardvegen (252)\",\"text_en\":\"Turn right onto Eidsbugardvegen (252)\",\"voice_nb\":\"Sving til høyre inn på Eidsbugardvegen (252)\",\"voice_en\":\"Turn right onto Eidsbugardvegen (252)\"},{\"lat\":61.37455630991912,\"lon\":8.295454295690746,\"cum_m\":106744.4025,\"kind\":\"right\",\"street\":\"Eidsbugardvegen (252)\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre inn på Eidsbugardvegen (252)\",\"text_en\":\"Turn right onto Eidsbugardvegen (252)\",\"voice_nb\":\"Sving til høyre inn på Eidsbugardvegen (252)\",\"voice_en\":\"Turn right onto Eidsbugardvegen (252)\"},{\"lat\":61.37337923026785,\"lon\":8.292184682877235,\"cum_m\":106962.52649999999,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 218 meter: Sving til høyre\",\"voice_en\":\"In 218 meters: Turn right\"},{\"lat\":61.37338694054073,\"lon\":8.290191801564333,\"cum_m\":107055.3118,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 93 meter: Sving til høyre\",\"voice_en\":\"In 93 meters: Turn right\"},{\"lat\":61.3723781636946,\"lon\":8.2858841738543,\"cum_m\":107359.3968,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 304 meter: Sving til høyre\",\"voice_en\":\"In 304 meters: Turn right\"},{\"lat\":61.37169834540381,\"lon\":8.279935034214958,\"cum_m\":107593.1238,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 234 meter: Sving til høyre\",\"voice_en\":\"In 234 meters: Turn right\"},{\"lat\":61.37152485443733,\"lon\":8.274726184269213,\"cum_m\":107976.1718,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 383 meter: Sving til høyre\",\"voice_en\":\"In 383 meters: Turn right\"},{\"lat\":61.39664146510245,\"lon\":8.148817927754038,\"cum_m\":116201.3718,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 8.2 kilometer: Sving til høyre\",\"voice_en\":\"In 8.2 kilometers: Turn right\"},{\"lat\":61.464709977695904,\"lon\":8.01464042078436,\"cum_m\":129507.9718,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 13.3 kilometer: Sving til høyre\",\"voice_en\":\"In 13.3 kilometers: Turn right\"},{\"lat\":61.47854997203907,\"lon\":8.007596939858757,\"cum_m\":131226.4518,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 1.7 kilometer: Sving til venstre\",\"voice_en\":\"In 1.7 kilometers: Turn left\"},{\"lat\":61.479825544933455,\"lon\":8.006682306577858,\"cum_m\":131438.7868,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 212 meter: Sving til høyre\",\"voice_en\":\"In 212 meters: Turn right\"},{\"lat\":61.52708092290929,\"lon\":8.019135803126801,\"cum_m\":137626.7168,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 6.2 kilometer: Sving til venstre\",\"voice_en\":\"In 6.2 kilometers: Turn left\"},{\"lat\":61.52778037776243,\"lon\":8.017110735305465,\"cum_m\":137766.9958,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 140 meter: Sving til høyre\",\"voice_en\":\"In 140 meters: Turn right\"},{\"lat\":61.52818188586675,\"lon\":8.015756219742855,\"cum_m\":137845.22890000002,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 78 meter: Sving til venstre\",\"voice_en\":\"In 78 meters: Turn left\"},{\"lat\":61.52946948991649,\"lon\":8.01190993198685,\"cum_m\":138032.6559,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 187 meter: Sving til venstre\",\"voice_en\":\"In 187 meters: Turn left\"},{\"lat\":61.52946948991649,\"lon\":8.01190993198685,\"cum_m\":138098.5822,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 66 meter: Sving til venstre\",\"voice_en\":\"In 66 meters: Turn left\"},{\"lat\":61.53593866887473,\"lon\":8.007146328740902,\"cum_m\":138814.0842,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 716 meter: Sving til høyre\",\"voice_en\":\"In 716 meters: Turn right\"},{\"lat\":61.55253502620769,\"lon\":7.989918500109894,\"cum_m\":141103.22420000003,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 2.3 kilometer: Sving til høyre\",\"voice_en\":\"In 2.3 kilometers: Turn right\"},{\"lat\":61.56571785973303,\"lon\":7.995781809060134,\"cum_m\":142918.28420000002,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 1.8 kilometer: Sving til venstre\",\"voice_en\":\"In 1.8 kilometers: Turn left\"},{\"lat\":61.590187051539644,\"lon\":7.977727860046372,\"cum_m\":146589.74420000002,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 3.7 kilometer: Sving til venstre\",\"voice_en\":\"In 3.7 kilometers: Turn left\"},{\"lat\":61.59050735791771,\"lon\":7.974085420177005,\"cum_m\":147053.16820000001,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 463 meter: Sving til venstre\",\"voice_en\":\"In 463 meters: Turn left\"},{\"lat\":61.59703909929227,\"lon\":7.951833814023672,\"cum_m\":148980.39820000003,\"kind\":\"right\",\"street\":\"Storvassvegen\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre inn på Storvassvegen\",\"text_en\":\"Turn right onto Storvassvegen\",\"voice_nb\":\"Om 1.9 kilometer: Sving til høyre inn på Storvassvegen\",\"voice_en\":\"In 1.9 kilometers: Turn right onto Storvassvegen\"},{\"lat\":61.597078650476796,\"lon\":7.951699703571933,\"cum_m\":148985.91360000003,\"kind\":\"left\",\"street\":\"Storvassvegen\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre inn på Storvassvegen\",\"text_en\":\"Turn left onto Storvassvegen\",\"voice_nb\":\"Sving til venstre inn på Storvassvegen\",\"voice_en\":\"Turn left onto Storvassvegen\"},{\"lat\":61.640085535443134,\"lon\":7.932457535955734,\"cum_m\":157070.00360000003,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 8.1 kilometer: Sving til venstre\",\"voice_en\":\"In 8.1 kilometers: Turn left\"},{\"lat\":61.64755452073263,\"lon\":7.89173355617919,\"cum_m\":159683.48360000004,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 2.6 kilometer: Sving til høyre\",\"voice_en\":\"In 2.6 kilometers: Turn right\"},{\"lat\":61.64073403156886,\"lon\":7.826470045942585,\"cum_m\":163732.86360000004,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 4.0 kilometer: Sving til venstre\",\"voice_en\":\"In 4.0 kilometers: Turn left\"},{\"lat\":61.64001800952462,\"lon\":7.820534317348404,\"cum_m\":164113.94660000005,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 381 meter: Sving til høyre\",\"voice_en\":\"In 381 meters: Turn right\"},{\"lat\":61.64117357425627,\"lon\":7.798985449962203,\"cum_m\":165377.58660000007,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 1.3 kilometer: Sving til venstre\",\"voice_en\":\"In 1.3 kilometers: Turn left\"},{\"lat\":61.64289601176876,\"lon\":7.786843089661318,\"cum_m\":166129.58260000008,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 752 meter: Sving til høyre\",\"voice_en\":\"In 752 meters: Turn right\"},{\"lat\":61.642400438616484,\"lon\":7.785300819466272,\"cum_m\":166230.94260000007,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 101 meter: Sving til venstre\",\"voice_en\":\"In 101 meters: Turn left\"},{\"lat\":61.64299028442566,\"lon\":7.7830236239956605,\"cum_m\":166373.91960000008,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 143 meter: Sving til høyre\",\"voice_en\":\"In 143 meters: Turn right\"},{\"lat\":61.64315462391065,\"lon\":7.78234234290079,\"cum_m\":166416.24920000008,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Sving til høyre\",\"voice_en\":\"Turn right\"},{\"lat\":61.64370114196286,\"lon\":7.777959613337799,\"cum_m\":166643.9902000001,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 228 meter: Sving til venstre\",\"voice_en\":\"In 228 meters: Turn left\"},{\"lat\":61.65246322075057,\"lon\":7.757553367000469,\"cum_m\":168189.01020000008,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 1.5 kilometer: Sving til høyre\",\"voice_en\":\"In 1.5 kilometers: Turn right\"},{\"lat\":61.65342474557135,\"lon\":7.757354883531889,\"cum_m\":168280.84980000008,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 92 meter: Sving til høyre\",\"voice_en\":\"In 92 meters: Turn right\"},{\"lat\":61.68856799413582,\"lon\":7.764623670016391,\"cum_m\":172547.49980000008,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 4.3 kilometer: Sving til høyre\",\"voice_en\":\"In 4.3 kilometers: Turn right\"},{\"lat\":61.80571683288924,\"lon\":7.707004455529187,\"cum_m\":189704.59980000008,\"kind\":\"left\",\"street\":\"Mysubyttvegen\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre inn på Mysubyttvegen\",\"text_en\":\"Turn left onto Mysubyttvegen\",\"voice_nb\":\"Om 17.2 kilometer: Sving til venstre inn på Mysubyttvegen\",\"voice_en\":\"In 17.2 kilometers: Turn left onto Mysubyttvegen\"},{\"lat\":61.79986414224972,\"lon\":7.620173302443106,\"cum_m\":194794.61980000007,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 5.1 kilometer: Sving til venstre\",\"voice_en\":\"In 5.1 kilometers: Turn left\"},{\"lat\":61.79969936868816,\"lon\":7.619465199257917,\"cum_m\":194818.79580000008,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Sving til høyre\",\"voice_en\":\"Turn right\"},{\"lat\":61.79972471852439,\"lon\":7.61807045055977,\"cum_m\":194917.25020000007,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 98 meter: Sving til høyre\",\"voice_en\":\"In 98 meters: Turn right\"},{\"lat\":61.80137368043569,\"lon\":7.607808318792337,\"cum_m\":195485.90920000008,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 569 meter: Sving til venstre\",\"voice_en\":\"In 569 meters: Turn left\"},{\"lat\":61.80299593936879,\"lon\":7.602956202648244,\"cum_m\":195824.05420000007,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 338 meter: Sving til venstre\",\"voice_en\":\"In 338 meters: Turn left\"},{\"lat\":61.810112587967375,\"lon\":7.588338163408167,\"cum_m\":197114.87420000008,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 1.3 kilometer: Sving til venstre\",\"voice_en\":\"In 1.3 kilometers: Turn left\"},{\"lat\":61.82394452938019,\"lon\":7.486714627494763,\"cum_m\":203788.09420000008,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 6.7 kilometer: Sving til høyre\",\"voice_en\":\"In 6.7 kilometers: Turn right\"},{\"lat\":61.89191647820711,\"lon\":7.532955911256039,\"cum_m\":216774.89420000007,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 13.0 kilometer: Sving til venstre\",\"voice_en\":\"In 13.0 kilometers: Turn left\"},{\"lat\":61.89425168106237,\"lon\":7.433805372072783,\"cum_m\":222509.55420000007,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 5.7 kilometer: Sving til venstre\",\"voice_en\":\"In 5.7 kilometers: Turn left\"},{\"lat\":61.892133831448305,\"lon\":7.378069068328045,\"cum_m\":225687.91420000006,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 3.2 kilometer: Sving til venstre\",\"voice_en\":\"In 3.2 kilometers: Turn left\"},{\"lat\":61.886408838554324,\"lon\":7.288161421478975,\"cum_m\":232153.61420000007,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 6.5 kilometer: Sving til høyre\",\"voice_en\":\"In 6.5 kilometers: Turn right\"},{\"lat\":61.88963417597154,\"lon\":7.279902899860588,\"cum_m\":232752.82320000007,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 599 meter: Sving til venstre\",\"voice_en\":\"In 599 meters: Turn left\"},{\"lat\":61.91472130220685,\"lon\":7.176077270329557,\"cum_m\":239768.89320000008,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 7.0 kilometer: Sving til venstre\",\"voice_en\":\"In 7.0 kilometers: Turn left\"},{\"lat\":61.91803203865309,\"lon\":7.1780540583882555,\"cum_m\":240694.23020000008,\"kind\":\"left\",\"street\":\"Strynevegen (15)\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre inn på Strynevegen (15)\",\"text_en\":\"Turn left onto Strynevegen (15)\",\"voice_nb\":\"Om 925 meter: Sving til venstre inn på Strynevegen (15)\",\"voice_en\":\"In 925 meters: Turn left onto Strynevegen (15)\"},{\"lat\":61.918808532478515,\"lon\":7.1563683983413,\"cum_m\":241829.33020000008,\"kind\":\"left\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre\",\"text_en\":\"Turn left\",\"voice_nb\":\"Om 1.1 kilometer: Sving til venstre\",\"voice_en\":\"In 1.1 kilometers: Turn left\"},{\"lat\":61.918808532478515,\"lon\":7.1563683983413,\"cum_m\":241838.6020100001,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Sving til høyre\",\"voice_en\":\"Turn right\"},{\"lat\":61.91920245351218,\"lon\":7.148407601925783,\"cum_m\":242259.9040100001,\"kind\":\"right\",\"street\":\"Strynevegen (15)\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre inn på Strynevegen (15)\",\"text_en\":\"Turn right onto Strynevegen (15)\",\"voice_nb\":\"Om 421 meter: Sving til høyre inn på Strynevegen (15)\",\"voice_en\":\"In 421 meters: Turn right onto Strynevegen (15)\"},{\"lat\":61.91920245351218,\"lon\":7.148407601925783,\"cum_m\":242268.3788000001,\"kind\":\"left\",\"street\":\"Strynevegen (15)\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre inn på Strynevegen (15)\",\"text_en\":\"Turn left onto Strynevegen (15)\",\"voice_nb\":\"Sving til venstre inn på Strynevegen (15)\",\"voice_en\":\"Turn left onto Strynevegen (15)\"},{\"lat\":61.91644489967354,\"lon\":7.130694293459442,\"cum_m\":243310.95880000008,\"kind\":\"right\",\"street\":\"Hjellevegen (5720)\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre inn på Hjellevegen (5720)\",\"text_en\":\"Turn right onto Hjellevegen (5720)\",\"voice_nb\":\"Om 1.0 kilometer: Sving til høyre inn på Hjellevegen (5720)\",\"voice_en\":\"In 1.0 kilometers: Turn right onto Hjellevegen (5720)\"},{\"lat\":61.9138335800342,\"lon\":7.121352159390966,\"cum_m\":243935.51980000007,\"kind\":\"left\",\"street\":\"Hjellevegen (5720)\",\"roundabout_exit\":null,\"text_nb\":\"Sving til venstre inn på Hjellevegen (5720)\",\"text_en\":\"Turn left onto Hjellevegen (5720)\",\"voice_nb\":\"Om 625 meter: Sving til venstre inn på Hjellevegen (5720)\",\"voice_en\":\"In 625 meters: Turn left onto Hjellevegen (5720)\"},{\"lat\":61.9146013412573,\"lon\":7.111607693967272,\"cum_m\":244768.16780000005,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 833 meter: Sving til høyre\",\"voice_en\":\"In 833 meters: Turn right\"},{\"lat\":61.9146013412573,\"lon\":7.111607693967272,\"cum_m\":244841.13400000005,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 73 meter: Sving til høyre\",\"voice_en\":\"In 73 meters: Turn right\"},{\"lat\":61.9146013412573,\"lon\":7.111607693967272,\"cum_m\":244899.31760000004,\"kind\":\"right\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Sving til høyre\",\"text_en\":\"Turn right\",\"voice_nb\":\"Om 58 meter: Sving til høyre\",\"voice_en\":\"In 58 meters: Turn right\"},{\"lat\":61.9146013412573,\"lon\":7.111607693967272,\"cum_m\":244905.26305000004,\"kind\":\"destination\",\"street\":\"null\",\"roundabout_exit\":null,\"text_nb\":\"Du er fremme\",\"text_en\":\"You have arrived\",\"voice_nb\":\"Du er fremme\",\"voice_en\":\"You have arrived\"}]",
+    "polyline_chars": 248325,
+    "report": "TEST_KIND=PLAN_MWM_ROUTE\nPLANNER=mwm\nPASS\ndistance_km=244.905\neta_minutes=3476.4\nrouter_mode=Joints(likely)\nascent_m=7767.0\ndescent_m=8632.0\nbuild_s=2.779036659\ncomaps_route_code=OK\nvehicle_limits_ok=false\nvehicle_limits_partial=Norway_Oppland,Norway_Western\nroute_tunnel_count=0\nroute_tunnel_fp=\nroute_ferry_legs=1\nroute_ferry_fp=unnamed@29.22\ndatex_impacts=0; datex_block=0; datex_penalize=0\ndatex_mwm=plugin_off\nchunked_soft_breaks=true; break_interval_km=11.3; break_interval_h=2.67\nrest_place_count=21\nchunked_rest_pauses=21; break_pois_total=21\n",
+    "route_plan_stats_json": "{\"route_tunnel_count\":0,\"route_tunnel_fp\":\"\",\"route_ferry_legs\":1,\"route_ferry_fp\":\"unnamed@29.22\",\"rest_place_count\":21,\"rest_place_names\":[\"Hiking rest\",\"Hiking rest\",\"Hiking rest\",\"Hiking rest\",\"Hiking rest\",\"Hiking rest\",\"Hiking rest\",\"Hiking rest\",\"Hiking rest\",\"Hiking rest\",\"Hiking rest\",\"Hiking rest\",\"Hiking rest\",\"Hiking rest\",\"Hiking rest\",\"Hiking rest\",\"Hiking rest\",\"Hiking rest\",\"Hiking rest\",\"Hiking rest\",\"Hiking rest\"],\"attraction_count\":0,\"attraction_by_type\":{},\"wild_camping_site_count\":12,\"wild_camping_status_kind\":\"OK\",\"wild_camping_status_message\":\"ok\",\"wild_camping_by_country\":{\"no\":12},\"wild_camping_by_subdivision\":{\"no-34\":12}}",
+    "break_pois_json": "[{\"name\":\"Hiking rest\",\"lat\":61.17857658297892,\"lon\":9.671145142274625,\"kind\":\"rest\",\"icon\":\"shelter\",\"along_km\":11.295},{\"name\":\"Hiking rest\",\"lat\":61.246716428384254,\"lon\":9.58565398411805,\"kind\":\"rest\",\"icon\":\"shelter\",\"along_km\":22.59},{\"name\":\"Hiking rest\",\"lat\":61.28957569557498,\"lon\":9.418551486506798,\"kind\":\"rest\",\"icon\":\"shelter\",\"along_km\":33.885},{\"name\":\"Hiking rest\",\"lat\":61.28475573017831,\"lon\":9.24506591097343,\"kind\":\"rest\",\"icon\":\"shelter\",\"along_km\":45.18},{\"name\":\"Hiking rest\",\"lat\":61.28502883363184,\"lon\":9.07507427539004,\"kind\":\"rest\",\"icon\":\"shelter\",\"along_km\":56.475},{\"name\":\"Hiking rest\",\"lat\":61.29282326411077,\"lon\":8.909550773750047,\"kind\":\"rest\",\"icon\":\"shelter\",\"along_km\":67.77},{\"name\":\"Hiking rest\",\"lat\":61.321576863544664,\"lon\":8.769962205639146,\"kind\":\"rest\",\"icon\":\"shelter\",\"along_km\":79.065},{\"name\":\"Hiking rest\",\"lat\":61.35261788238056,\"lon\":8.584920718071517,\"kind\":\"rest\",\"icon\":\"shelter\",\"along_km\":90.36},{\"name\":\"Hiking rest\",\"lat\":61.36474627509983,\"lon\":8.382267116718339,\"kind\":\"rest\",\"icon\":\"shelter\",\"along_km\":101.655},{\"name\":\"Hiking rest\",\"lat\":61.384022804618844,\"lon\":8.193012687199069,\"kind\":\"rest\",\"icon\":\"shelter\",\"along_km\":112.95},{\"name\":\"Hiking rest\",\"lat\":61.43921087894341,\"lon\":8.07131274104204,\"kind\":\"rest\",\"icon\":\"shelter\",\"along_km\":124.245},{\"name\":\"Hiking rest\",\"lat\":61.510091596863326,\"lon\":8.023210691632238,\"kind\":\"rest\",\"icon\":\"shelter\",\"along_km\":135.54},{\"name\":\"Hiking rest\",\"lat\":61.59053496173331,\"lon\":7.97762157300873,\"kind\":\"rest\",\"icon\":\"shelter\",\"along_km\":146.83499999999998},{\"name\":\"Hiking rest\",\"lat\":61.645497322065935,\"lon\":7.919652100509474,\"kind\":\"rest\",\"icon\":\"shelter\",\"along_km\":158.12999999999997},{\"name\":\"Hiking rest\",\"lat\":61.66259540886583,\"lon\":7.752499677261791,\"kind\":\"rest\",\"icon\":\"shelter\",\"along_km\":169.42499999999995},{\"name\":\"Hiking rest\",\"lat\":61.74456592830381,\"lon\":7.785123973057265,\"kind\":\"rest\",\"icon\":\"shelter\",\"along_km\":180.71999999999994},{\"name\":\"Hiking rest\",\"lat\":61.79783440303084,\"lon\":7.669257446696985,\"kind\":\"rest\",\"icon\":\"shelter\",\"along_km\":192.01499999999993},{\"name\":\"Hiking rest\",\"lat\":61.82255863004686,\"lon\":7.484415101546751,\"kind\":\"rest\",\"icon\":\"shelter\",\"along_km\":203.30999999999992},{\"name\":\"Hiking rest\",\"lat\":61.88060888451412,\"lon\":7.510928298212248,\"kind\":\"rest\",\"icon\":\"shelter\",\"along_km\":214.6049999999999},{\"name\":\"Hiking rest\",\"lat\":61.89179613508207,\"lon\":7.374496279226293,\"kind\":\"rest\",\"icon\":\"shelter\",\"along_km\":225.8999999999999},{\"name\":\"Hiking rest\",\"lat\":61.90354397207731,\"lon\":7.210245639955294,\"kind\":\"rest\",\"icon\":\"shelter\",\"along_km\":237.19499999999988}]",
+    "poi_lookahead_json": "{\"cone_m\":850.0,\"half_width_deg\":30.0,\"hits\":[]}",
+    "days_json": "[]"
+  },
+  "vestlandet_prompt_handled": true,
+  "ui_planned": true,
+  "ram_post_plan_mib": 522.14453125,
+  "nav_instruction_types": {
+    "left": 54,
+    "right": 49,
+    "straight": 2,
+    "destination": 2
+  },
+  "corridor_counts": {
+    "ferry_legs": 1,
+    "tunnels": 0,
+    "rest_places": 21,
+    "rest_place_names": [
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest",
+      "Hiking rest"
+    ],
+    "rest_places_detailed": [
+      {
+        "name": "Hiking rest",
+        "lat": 61.17857658297892,
+        "lon": 9.671145142274625,
+        "kind": "rest",
+        "icon": ""
+      },
+      {
+        "name": "Hiking rest",
+        "lat": 61.246716428384254,
+        "lon": 9.58565398411805,
+        "kind": "rest",
+        "icon": ""
+      },
+      {
+        "name": "Hiking rest",
+        "lat": 61.28957569557498,
+        "lon": 9.418551486506798,
+        "kind": "rest",
+        "icon": ""
+      },
+      {
+        "name": "Hiking rest",
+        "lat": 61.28475573017831,
+        "lon": 9.24506591097343,
+        "kind": "rest",
+        "icon": ""
+      },
+      {
+        "name": "Hiking rest",
+        "lat": 61.28502883363184,
+        "lon": 9.07507427539004,
+        "kind": "rest",
+        "icon": ""
+      },
+      {
+        "name": "Hiking rest",
+        "lat": 61.29282326411077,
+        "lon": 8.909550773750047,
+        "kind": "rest",
+        "icon": ""
+      },
+      {
+        "name": "Hiking rest",
+        "lat": 61.321576863544664,
+        "lon": 8.769962205639146,
+        "kind": "rest",
+        "icon": ""
+      },
+      {
+        "name": "Hiking rest",
+        "lat": 61.35261788238056,
+        "lon": 8.584920718071517,
+        "kind": "rest",
+        "icon": ""
+      },
+      {
+        "name": "Hiking rest",
+        "lat": 61.36474627509983,
+        "lon": 8.382267116718339,
+        "kind": "rest",
+        "icon": ""
+      },
+      {
+        "name": "Hiking rest",
+        "lat": 61.384022804618844,
+        "lon": 8.193012687199069,
+        "kind": "rest",
+        "icon": ""
+      },
+      {
+        "name": "Hiking rest",
+        "lat": 61.43921087894341,
+        "lon": 8.07131274104204,
+        "kind": "rest",
+        "icon": ""
+      },
+      {
+        "name": "Hiking rest",
+        "lat": 61.510091596863326,
+        "lon": 8.023210691632238,
+        "kind": "rest",
+        "icon": ""
+      },
+      {
+        "name": "Hiking rest",
+        "lat": 61.59053496173331,
+        "lon": 7.97762157300873,
+        "kind": "rest",
+        "icon": ""
+      },
+      {
+        "name": "Hiking rest",
+        "lat": 61.645497322065935,
+        "lon": 7.919652100509474,
+        "kind": "rest",
+        "icon": ""
+      },
+      {
+        "name": "Hiking rest",
+        "lat": 61.66259540886583,
+        "lon": 7.752499677261791,
+        "kind": "rest",
+        "icon": ""
+      },
+      {
+        "name": "Hiking rest",
+        "lat": 61.74456592830381,
+        "lon": 7.785123973057265,
+        "kind": "rest",
+        "icon": ""
+      },
+      {
+        "name": "Hiking rest",
+        "lat": 61.79783440303084,
+        "lon": 7.669257446696985,
+        "kind": "rest",
+        "icon": ""
+      },
+      {
+        "name": "Hiking rest",
+        "lat": 61.82255863004686,
+        "lon": 7.484415101546751,
+        "kind": "rest",
+        "icon": ""
+      },
+      {
+        "name": "Hiking rest",
+        "lat": 61.88060888451412,
+        "lon": 7.510928298212248,
+        "kind": "rest",
+        "icon": ""
+      },
+      {
+        "name": "Hiking rest",
+        "lat": 61.89179613508207,
+        "lon": 7.374496279226293,
+        "kind": "rest",
+        "icon": ""
+      },
+      {
+        "name": "Hiking rest",
+        "lat": 61.90354397207731,
+        "lon": 7.210245639955294,
+        "kind": "rest",
+        "icon": ""
+      }
+    ],
+    "attractions": 0,
+    "attraction_by_type": {},
+    "wild_camping_sites": 12,
+    "water_sources": [],
+    "water_source_count": 0
+  },
+  "km_per_day": [
+    {
+      "day": 1,
+      "hike_hours_soft_cap": 8,
+      "hike_hours": 8,
+      "km": 33.81501529594717
+    },
+    {
+      "day": 2,
+      "hike_hours_soft_cap": 8,
+      "hike_hours": 8,
+      "km": 33.81501529594717
+    },
+    {
+      "day": 3,
+      "hike_hours_soft_cap": 8,
+      "hike_hours": 8,
+      "km": 33.81501529594717
+    },
+    {
+      "day": 4,
+      "hike_hours_soft_cap": 8,
+      "hike_hours": 8,
+      "km": 33.81501529594717
+    },
+    {
+      "day": 5,
+      "hike_hours_soft_cap": 8,
+      "hike_hours": 8,
+      "km": 33.81501529594717
+    },
+    {
+      "day": 6,
+      "hike_hours_soft_cap": 8,
+      "hike_hours": 8,
+      "km": 33.81501529594717
+    },
+    {
+      "day": 7,
+      "hike_hours_soft_cap": 8,
+      "hike_hours": 8,
+      "km": 33.81501529594717
+    },
+    {
+      "day": 8,
+      "hike_hours_soft_cap": 8,
+      "hike_hours": 1.9400000000000048,
+      "km": 8.200141209267208
+    }
+  ],
+  "km_total": 244.90524828089738,
+  "estimated_stops": 21,
+  "installed_maps": {
+    "version": "261115",
+    "leaf_count": 7,
+    "sidecar_count": "7",
+    "leaves": [
+      "Norway_Central",
+      "Norway_Hedmark",
+      "Norway_Hordaland",
+      "Norway_Oppland",
+      "Norway_Rogaland",
+      "Norway_Southern",
+      "Norway_Western"
+    ],
+    "placement": "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm (SD)"
+  },
+  "disk_listing_after_plan": {
+    "mwm_leaves": [
+      "Norway_Central",
+      "Norway_Hedmark",
+      "Norway_Hordaland",
+      "Norway_Oppland",
+      "Norway_Rogaland",
+      "Norway_Southern",
+      "Norway_Western"
+    ],
+    "mwm_version": "261115",
+    "placement": "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm (SD)",
+    "internal_mwm_files": [],
+    "internal_mwm_count": 0,
+    "sd_long_trip_packs": [
+      "elevation:16384",
+      "graph-cache:16384",
+      "navi.db:65536",
+      "region_meta.json:264"
+    ],
+    "sd_mwm_files": [
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Hordaland.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Central.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Hedmark.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Southern.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Oppland.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Western.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/releases\/261115\/leaves\/Norway_Rogaland.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/World.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261105\/Norway_Western.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/WorldCoasts.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Hordaland.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Central.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Hedmark.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Southern.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Oppland.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Western.mwm",
+      "\/storage\/0000-0000\/Android\/data\/no.navi.app\/files\/mwm\/261115\/Norway_Rogaland.mwm"
+    ],
+    "sd_mwm_count": 17
+  },
+  "ram_during_replay_mib": 522.654296875,
+  "gps_replay_flag": "ok peak_pss_kb=549326\n",
+  "ram_final_mib": 522.689453125
+}

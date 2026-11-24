@@ -973,6 +973,179 @@ fn subsample_even<T: Clone>(items: &[T], max: usize) -> Vec<T> {
     out
 }
 
+/// True when Indexed CoMaps leaves (or the countries-list version link) exist
+/// under `{data_dir}/mwm` — enough for overnight probes without a planning PBF.
+fn mwm_leaves_present(data_dir: &Path) -> bool {
+    let root = data_dir.join("mwm");
+    if !root.join("World.mwm").is_file() {
+        return false;
+    }
+    let version = fs::read_to_string(root.join("active.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| {
+            v.get("version")
+                .and_then(|x| x.as_str())
+                .map(str::to_string)
+        });
+    let Some(ver) = version else {
+        return false;
+    };
+    let candidates = [
+        root.join("releases").join(&ver).join("leaves"),
+        root.join(&ver),
+    ];
+    for dir in &candidates {
+        if !dir.is_dir() {
+            continue;
+        }
+        if let Ok(rd) = fs::read_dir(dir) {
+            if rd.flatten().any(|e| {
+                e.path()
+                    .extension()
+                    .and_then(|x| x.to_str())
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("mwm"))
+            }) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Evenly spaced lat/lon probes along the CoMaps route polyline (no graph walk).
+fn mwm_route_probes_from_waypoints(waypoints: &[[f64; 2]], max_probes: usize) -> Vec<(f64, f64)> {
+    let pts: Vec<(f64, f64)> = waypoints.iter().map(|w| (w[0], w[1])).collect();
+    subsample_even(&pts, max_probes)
+}
+
+/// Overnight suggestions when Geofabrik / Ready packs are absent: seed the
+/// wasm guest from route waypoints on Indexed MWMs (buildings/glaciers optional).
+fn suggest_along_mwm_route_probes(
+    data_dir: &Path,
+    pack_dirs: &[PathBuf],
+    waypoints: &[[f64; 2]],
+    travel_profile: TravelProfile,
+    professional_driver: bool,
+    max_suggestions: u32,
+    started: Instant,
+) -> CampingCallResult {
+    let probes = mwm_route_probes_from_waypoints(waypoints, CAMPING_MAX_SEEDS * 2);
+    if probes.is_empty() {
+        return CampingCallResult {
+            kind: CampingCallKind::Unavailable,
+            message: "MWM route produced no overnight probes".into(),
+            elapsed_ms: started.elapsed().as_millis() as u64,
+            result_json: None,
+            peak_guest_memory_bytes: 0,
+        };
+    }
+    log::info!(
+        target: "NaviCamping",
+        "suggest_along_route via=mwm_route_probes probes={} waypoints={}",
+        probes.len(),
+        waypoints.len()
+    );
+
+    let t_bldg = Instant::now();
+    // Pack dirs may be empty on MWM-primary devices; geometry load is best-effort.
+    let (all_buildings, mut glacier_rings) =
+        load_overnight_geometry_near_probes(data_dir, pack_dirs, &probes);
+    let mut buildings = buildings_near_probes(&all_buildings, &probes, 0.008);
+    if buildings.len() > CAMPING_MAX_JOB_BUILDINGS {
+        buildings = subsample_even(&buildings, CAMPING_MAX_JOB_BUILDINGS);
+    }
+    let buildings_ms = t_bldg.elapsed().as_millis() as u64;
+
+    let t_admin = Instant::now();
+    let mut countries: Vec<(f64, f64, String)> = Vec::with_capacity(probes.len());
+    let mut subdivisions: Vec<(f64, f64, String)> = Vec::new();
+    for &(lat, lon) in &probes {
+        let ar = admin_region_at(lat, lon);
+        countries.push((lat, lon, ar.country_iso.unwrap_or_else(|| "unknown".into())));
+        if let Some(iso) = ar.subdivision_iso {
+            subdivisions.push((lat, lon, iso));
+        }
+    }
+    let admin_ms = t_admin.elapsed().as_millis() as u64;
+
+    let safety: OvernightSafety = (&load_safety(data_dir).unwrap_or_default()).into();
+    let max = if max_suggestions == 0 {
+        None
+    } else {
+        Some(max_suggestions as usize)
+    };
+
+    let t_ser = Instant::now();
+    if buildings.len() > CAMPING_MAX_SEEDS * 24 {
+        buildings = subsample_even(&buildings, CAMPING_MAX_SEEDS * 24);
+    }
+    if glacier_rings.len() > 32 {
+        glacier_rings = subsample_even(&glacier_rings, 32);
+    }
+    let job = serde_json::json!({
+        "probes": probes.iter().map(|&(la, lo)| [la, lo]).collect::<Vec<_>>(),
+        "max_suggestions": max,
+        "buildings": buildings,
+        "glaciers": glacier_rings,
+        "safety": safety,
+        "clock": serde_json::Value::Null,
+        "kv_ok": true,
+        "countries": countries,
+        "subdivisions": subdivisions,
+        "travel_mode": travel_mode_job_str(travel_profile),
+        "vehicle_class": vehicle_class_job_str(travel_profile),
+        "is_professional_driver_under_rest_rules": professional_driver,
+    });
+    let mut job_json = job.to_string();
+    const CAMPING_GUEST_JOB_MAX_BYTES: usize = 900_000;
+    if job_json.len() > CAMPING_GUEST_JOB_MAX_BYTES {
+        let mut compact = job.clone();
+        if let Some(obj) = compact.as_object_mut() {
+            obj.insert("glaciers".into(), serde_json::json!([]));
+            if let Some(b) = obj.get("buildings").and_then(|v| v.as_array()) {
+                let keep = subsample_even(b, CAMPING_MAX_SEEDS * 8);
+                obj.insert("buildings".into(), serde_json::Value::Array(keep));
+            }
+        }
+        job_json = compact.to_string();
+    }
+    let job_bytes = job_json.len();
+    let serialize_ms = t_ser.elapsed().as_millis() as u64;
+    let building_count = job
+        .get("buildings")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+
+    let t_guest = Instant::now();
+    let mut call = run_camping_guest(Some(job_json));
+    let guest_ms = t_guest.elapsed().as_millis() as u64;
+    let timing = serde_json::json!({
+        "graph": 0,
+        "junctions": 0,
+        "probe_walk": 0,
+        "buildings": buildings_ms,
+        "admin": admin_ms,
+        "serialize": serialize_ms,
+        "guest": guest_ms,
+        "cache_hit": false,
+        "mwm_route_probes": true,
+        "total": started.elapsed().as_millis() as u64,
+    });
+    log::info!(
+        target: "NaviCamping",
+        "suggest_along_route via=mwm_route_probes job_bytes={job_bytes} probes={} \
+         buildings={building_count} timing={timing}",
+        probes.len(),
+    );
+    // Keep via=wasmtime — CampingPluginApi.assertGuestPath requires the guest
+    // path; mwm_route_probes is recorded in timing_ms only (seed source).
+    call.result_json = merge_guest_meta(call.result_json, timing, call.peak_guest_memory_bytes);
+    call.elapsed_ms = started.elapsed().as_millis() as u64;
+    call
+}
+
 /// Discover overnight spots along the live nav corridor.
 /// Host: graph load, road∩track junctions, probe walk, nearby buildings.
 /// Guest: every rule, filter, and card decision via wasmtime.
@@ -1036,10 +1209,25 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
         };
     }
     let Some(pbf) = find_planning_pbf(&data_dir, &pack_dirs) else {
+        // MWM-primary long-trip: Indexed leaves + CoMaps route waypoints are enough
+        // to seed overnight probes. Pack PBF remains a fallback when present.
+        if mwm_leaves_present(&data_dir) && waypoints.len() >= 2 {
+            return suggest_along_mwm_route_probes(
+                &data_dir,
+                &pack_dirs,
+                &waypoints,
+                travel_profile,
+                professional_driver,
+                max_suggestions,
+                started,
+            );
+        }
         return CampingCallResult {
             kind: CampingCallKind::Unavailable,
             message: format!(
-                "no .osm.pbf under {} (or pack_dirs) for overnight corridor graph",
+                "no .osm.pbf under {} (or pack_dirs) for overnight corridor graph \
+                 and no Indexed MWM leaves under {}/mwm",
+                data_dir.display(),
                 data_dir.display()
             ),
             elapsed_ms: started.elapsed().as_millis() as u64,
@@ -1816,6 +2004,40 @@ mod geometry_cache_tests {
             "geometry key must not include travel/clock/residency: {k}"
         );
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn mwm_leaves_present_requires_world_and_leaf_mwm() {
+        let root = temp_dir();
+        let data = root.join("files");
+        let mwm = data.join("mwm");
+        let leaves = mwm.join("releases").join("261115").join("leaves");
+        fs::create_dir_all(&leaves).unwrap();
+        assert!(
+            !mwm_leaves_present(&data),
+            "missing World.mwm / active.json must be false"
+        );
+        fs::write(mwm.join("World.mwm"), b"world").unwrap();
+        fs::write(mwm.join("active.json"), br#"{"version":"261115"}"#).unwrap();
+        assert!(
+            !mwm_leaves_present(&data),
+            "World alone without leaf .mwm must be false"
+        );
+        fs::write(leaves.join("Germany_Lower Saxony.mwm"), b"leaf").unwrap();
+        assert!(
+            mwm_leaves_present(&data),
+            "Indexed leaves under releases/version/leaves must count"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn mwm_route_probes_subsample_waypoints_evenly() {
+        let wps: Vec<[f64; 2]> = (0..21).map(|i| [53.0 + i as f64 * 0.1, 10.0]).collect();
+        let probes = mwm_route_probes_from_waypoints(&wps, 5);
+        assert_eq!(probes.len(), 5);
+        assert_eq!(probes.first(), Some(&(53.0, 10.0)));
+        assert_eq!(probes.last(), Some(&(55.0, 10.0)));
     }
 
     #[test]

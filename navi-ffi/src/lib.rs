@@ -340,7 +340,7 @@ fn eco_for_travel_profile(profile: TravelProfile) -> EcoConfig {
     eco
 }
 
-fn ffi_vehicle_to_limits(v: &FfiVehicleLimits) -> Option<VehicleLimits> {
+pub(crate) fn ffi_vehicle_to_limits(v: &FfiVehicleLimits) -> Option<VehicleLimits> {
     if v.axle_weight_kg.is_none()
         && v.bogie_weight_kg.is_none()
         && v.height_m.is_none()
@@ -6460,6 +6460,7 @@ pub fn plan_hiking_route(
         "prefer_official_networks={prefer_official_networks}; prefer_pilgrim_routes={prefer_pilgrim_routes}\n"
     ));
     report.push_str("avoid_motorways=true (locked for hiking)\n");
+    report.push_str("avoid_tunnels=auto (hard-avoid unsafe; soft-avoid backup)\n");
     report.push_str(&format!("avoid_ferries={avoid_ferries}\n"));
     let use_networked_cabins = load_use_networked_cabins_near_cache(&PathBuf::from(&cache_dir));
     report.push_str(&format!("use_networked_cabins={use_networked_cabins}\n"));
@@ -6717,8 +6718,11 @@ pub fn plan_hiking_route(
         );
     }
 
+    // Hiking: HardAvoid omits unsafe tunnels; soft avoid remains a backup for
+    // leftover tunnel edges on older packs (no user toggle).
     let hike_opts = RouteOptions {
         avoid_ferries,
+        avoid_tunnels: true,
         ..RouteOptions::default()
     };
     let mut hybrid = match plan_hybrid_hiking_path_with_options(
@@ -8088,6 +8092,14 @@ pub fn eco_mode_toggleable(profile: TravelProfile) -> bool {
 #[uniffi::export]
 pub fn travel_profile_locks_avoid_motorways(profile: TravelProfile) -> bool {
     profile.to_core().locks_avoid_motorways()
+}
+
+/// Soft avoid-tunnels is never UI-locked. Hiking / bike / e-bike hide the
+/// toggle and rely on HardAvoid; this FFI helper stays for ABI compatibility
+/// and always returns false.
+#[uniffi::export]
+pub fn travel_profile_locks_avoid_tunnels(profile: TravelProfile) -> bool {
+    profile.to_core().locks_avoid_tunnels()
 }
 
 /// Default eco enabled for profile.
@@ -10480,6 +10492,12 @@ pub fn decide_region_acquisition(
         driver_break_core::pack_server::RegionSource::Server { generation, .. } => {
             (FfiRegionSourceKind::Server, generation.clone())
         }
+        // MWM handoff after rkyv retirement: report as Server so existing
+        // callers that only branch Server vs Local keep the non-Geofabrik path
+        // when execute_local_convert=false (decision_reason=mwm_ok).
+        driver_break_core::pack_server::RegionSource::Mwm {
+            catalog_version, ..
+        } => (FfiRegionSourceKind::Server, catalog_version.clone()),
         driver_break_core::pack_server::RegionSource::Local { .. } => {
             (FfiRegionSourceKind::Local, None)
         }
@@ -11787,13 +11805,36 @@ pub fn ensure_poi_lookahead_covering(
                     target: "NaviNative",
                     "poi_lookahead covering load failed at {lat:.4},{lon:.4}: {e:?}"
                 );
+                // Preserve any prior ingest (e.g. MWM CoMaps tourism seed) when packs are absent.
+                let existing = POI_LOOKAHEAD_STORE
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .as_ref()
+                    .map(|s| s.index.len() as u32)
+                    .unwrap_or(0);
                 return FfiPoiLookaheadLoadStats {
-                    records: 0,
+                    records: existing,
                     cone_m: POI_LOOKAHEAD_CONE_M,
                     half_width_deg: POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG,
                 };
             }
         };
+    // Empty pack hit must not wipe a non-empty seed (mwm-corridor-tourism).
+    if index.is_empty() {
+        let existing = POI_LOOKAHEAD_STORE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .map(|s| s.index.len() as u32)
+            .unwrap_or(0);
+        if existing > 0 {
+            return FfiPoiLookaheadLoadStats {
+                records: existing,
+                cone_m: POI_LOOKAHEAD_CONE_M,
+                half_width_deg: POI_LOOKAHEAD_CONE_HALF_WIDTH_DEG,
+            };
+        }
+    }
     let out = FfiPoiLookaheadLoadStats {
         records: index.len() as u32,
         cone_m: POI_LOOKAHEAD_CONE_M,

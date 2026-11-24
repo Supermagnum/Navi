@@ -1,0 +1,139 @@
+From: Navi
+Subject: [PATCH] navi: tag is_tunnel on CoMaps turns JSON
+
+Count contiguous highway/*/tunnel runs on MWM routes by looking up feature
+types behind each route segment (RoutingOptions has no Tunnel bit).
+
+---
+--- a/libs/routing/routes_builder/routes_builder.cpp
++++ b/libs/routing/routes_builder/routes_builder.cpp
+@@ -10,8 +10,12 @@
+ #include "storage/routing_helpers.hpp"
+ #include "storage/storage.hpp"
+ 
++#include "indexer/classificator.hpp"
+ #include "indexer/classificator_loader.hpp"
+ #include "indexer/data_source.hpp"
++#include "indexer/feature.hpp"
++#include "indexer/feature_data.hpp"
++#include "indexer/feature_decl.hpp"
+ #include "indexer/mwm_set.hpp"
+ 
+ #include "platform/country_file.hpp"
+@@ -37,11 +41,78 @@
+ #include <algorithm>
+ #include <cmath>
+ #include <limits>
++#include <map>
+ #include <sstream>
++#include <string>
++#include <utility>
+ #include <vector>
+ 
+ namespace
+ {
++/// True when the type path is highway/*/tunnel (not bridge).
++bool IsHighwayTunnelType(uint32_t type)
++{
++  if (ftype::GetLevel(type) != 3)
++    return false;
++
++  ClassifObject const * p = classif().GetRoot()->GetObject(ftype::GetValue(type, 0));
++  if (!p || p->GetName() != "highway")
++    return false;
++
++  p = p->GetObject(ftype::GetValue(type, 1));
++  if (!p)
++    return false;
++
++  p = p->GetObject(ftype::GetValue(type, 2));
++  return p && p->GetName() == "tunnel";
++}
++
++/// Look up highway/*/tunnel on the feature behind a route segment.
++bool IsTunnelSegment(FrozenDataSource & dataSource,
++                     std::shared_ptr<routing::NumMwmIds> const & numMwmIds,
++                     routing::Segment const & seg,
++                     std::map<std::pair<routing::NumMwmId, uint32_t>, bool> & cache)
++{
++  if (!numMwmIds || !seg.IsRealSegment())
++    return false;
++  auto const key = std::make_pair(seg.GetMwmId(), seg.GetFeatureId());
++  if (auto const it = cache.find(key); it != cache.end())
++    return it->second;
++
++  bool isTunnel = false;
++  try
++  {
++    auto const handle = dataSource.GetMwmHandleByCountryFile(numMwmIds->GetFile(seg.GetMwmId()));
++    if (handle.IsAlive())
++    {
++      FeaturesLoaderGuard guard(dataSource, handle.GetId());
++      if (auto ft = guard.GetFeatureByIndex(seg.GetFeatureId()))
++      {
++        feature::TypesHolder types(*ft);
++        for (uint32_t t : types)
++        {
++          if (IsHighwayTunnelType(t))
++          {
++            isTunnel = true;
++            break;
++          }
++        }
++      }
++    }
++  }
++  catch (std::exception const &)
++  {
++    // Feature lookup must never abort the router (std::length_error -> SIGABRT).
++    isTunnel = false;
++  }
++  catch (...)
++  {
++    isTunnel = false;
++  }
++  cache.emplace(key, isTunnel);
++  return isTunnel;
++}
++
+ void DumpPointDVector(std::vector<m2::PointD> const & points, FileWriter & writer)
+ {
+   WriteToSink(writer, points.size());
+@@ -403,8 +474,9 @@
+     };
+     // m_index is polyline point index (= segment index + 1). Scan the
+     // segments belonging to each step (prev point .. this point) so a ferry
+-    // leg is tagged even when the turn point itself sits on a non-ferry road.
++    // / tunnel leg is tagged even when the turn point itself sits elsewhere.
+     size_t prevPoint = 0;
++    std::map<std::pair<routing::NumMwmId, uint32_t>, bool> tunnelCache;
+     for (size_t i = 0; i < steps.size(); ++i)
+     {
+       auto const & s = steps[i];
+@@ -412,13 +484,16 @@
+         json << ',';
+       size_t const endPoint = std::min(static_cast<size_t>(s.m_index), segs.size());
+       bool isFerry = false;
++      bool isTunnel = false;
+       for (size_t si = prevPoint; si < endPoint; ++si)
+       {
+         if (segs[si].GetRoadTypes().Has(routing::RoutingOptions::Option::Ferry))
+-        {
+           isFerry = true;
++        if (m_dataSource &&
++            IsTunnelSegment(*m_dataSource, m_numMwmIds, segs[si].GetSegment(), tunnelCache))
++          isTunnel = true;
++        if (isFerry && isTunnel)
+           break;
+-        }
+       }
+       prevPoint = endPoint;
+       json << '{'
+@@ -429,6 +504,7 @@
+           << "\"turn\":\"" << DebugPrint(s.m_turn) << "\","
+           << "\"ped_turn\":\"" << DebugPrint(s.m_pedestrianTurn) << "\","
+           << "\"is_ferry\":" << (isFerry ? "true" : "false") << ','
++          << "\"is_tunnel\":" << (isTunnel ? "true" : "false") << ','
+           << "\"street\":\"";
+       escape(s.m_toRoad.m_name, json);
+       json << "\",\"ref\":\"";

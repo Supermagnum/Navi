@@ -117,7 +117,11 @@ object RegionReadiness {
                 }
 
         val skelProg = runCatching { corridorSkeletonProgressSnapshot() }.getOrNull()
-        val downloadLine = RegionDownloadBackground.uiLine()
+        val mwmPath = MwmMapDownloader.activeGeofabrikPath().trim().trim('/')
+        val downloadLine =
+            RegionDownloadBackground.uiLine().ifBlank {
+                MwmMapDownloader.uiLine()
+            }
         val placeLine =
             RegionDownloadBackground.placeIndexProgressLine().ifBlank {
                 PlaceIndexBackground.statusLine()
@@ -144,6 +148,7 @@ object RegionReadiness {
                                 PackRegionAvailability.regionIdsMatchForCatalog(it.key, id)
                             }?.value,
                     activePath = activePath,
+                    mwmPath = mwmPath,
                     downloadLine = downloadLine,
                     placeLine = placeLine,
                     skelProg = skelProg,
@@ -178,6 +183,7 @@ object RegionReadiness {
         installed: InstalledMaps.Region?,
         longTripState: LongTripCoordinator.State?,
         activePath: String,
+        mwmPath: String,
         downloadLine: String,
         placeLine: String,
         skelProg: uniffi.navi.FfiCorridorSkeletonProgress?,
@@ -189,13 +195,17 @@ object RegionReadiness {
         val isActive =
             activePath.isNotEmpty() &&
                 PackRegionAvailability.regionIdsMatchForCatalog(activePath, regionId)
+        val mwmActive =
+            mwmPath.isNotEmpty() &&
+                PackRegionAvailability.regionIdsMatchForCatalog(mwmPath, regionId) &&
+                MwmMapDownloader.isRunning()
+        val placeBusy =
+            looksLikePlacePrepare(placeLine) || looksLikePlacePrepare(downloadLine)
         val downloading =
-            isActive &&
-                RegionDownloadBackground.isRunning() &&
-                !placeLine.contains("Place index", ignoreCase = true) &&
-                !downloadLine.contains("Place index", ignoreCase = true)
+            (isActive && RegionDownloadBackground.isRunning() && !placeBusy) ||
+                mwmActive
         val indexing =
-            (isActive && placeLine.contains("Place index", ignoreCase = true)) ||
+            (isActive && placeBusy) ||
                 longTripState == LongTripCoordinator.State.Indexing ||
                 (
                     PlaceIndexBackground.isRunning() &&
@@ -240,6 +250,23 @@ object RegionReadiness {
 
         val (phase, pct, detail) =
             when {
+                // MWM long-trip marks the region Indexed once leaves are Ready.
+                // There is often no Geofabrik `.osm.pbf` install, so the PBF
+                // checks below would otherwise report "not downloaded".
+                longTripState == LongTripCoordinator.State.Indexed ->
+                    Triple(
+                        Phase.Ready,
+                        100,
+                        resources.getString(R.string.region_readiness_ready, name),
+                    )
+                longTripState == LongTripCoordinator.State.Installed &&
+                    installed == null &&
+                    MwmClientBootstrap.isEnabled() ->
+                    Triple(
+                        Phase.Ready,
+                        100,
+                        resources.getString(R.string.region_readiness_ready, name),
+                    )
                 skelOk && indexOk ->
                     Triple(
                         Phase.Ready,
@@ -311,5 +338,13 @@ object RegionReadiness {
         if (line.isBlank()) return null
         val m = Regex("""(\d{1,3})\s*%""").find(line) ?: return null
         return m.groupValues[1].toIntOrNull()?.coerceIn(0, 100)
+    }
+
+    private fun looksLikePlacePrepare(line: String): Boolean {
+        if (line.isBlank()) return false
+        val lower = line.lowercase()
+        return lower.contains("place index") ||
+            lower.contains("preparing search") ||
+            lower.startsWith("region ready")
     }
 }

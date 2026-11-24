@@ -138,6 +138,13 @@ impl Profile {
         )
     }
 
+    /// Soft avoid-tunnels is never locked: hiking / bike / e-bike keep unsafe
+    /// tunnels out via HardAvoid access rules, and motor profiles keep a user
+    /// toggle. Kept for ABI / call-site compatibility; always false.
+    pub fn locks_avoid_tunnels(self) -> bool {
+        false
+    }
+
     /// Motor profiles that expose avoid-ferry.
     pub fn supports_ferry_avoid(self) -> bool {
         self.supports_toll_ferry_avoid()

@@ -1,0 +1,341 @@
+DE	DB0ABG	Data courtesy of RadioID.net
+DE	DB0ABZ	Data courtesy of RadioID.net
+DE	DB0AFU	Data courtesy of RadioID.net
+DE	DB0AGM	Data courtesy of RadioID.net
+DE	DB0AL	Data courtesy of RadioID.net
+DE	DB0AMK	Data courtesy of RadioID.net
+DE	DB0ANT	Data courtesy of RadioID.net
+DE	DB0ATS	Data courtesy of RadioID.net
+DE	DB0BBW	Data courtesy of RadioID.net
+DE	DB0BHN	Data courtesy of RadioID.net
+DE	DB0BHV	Data courtesy of RadioID.net
+DE	DB0BNV	Data courtesy of RadioID.net
+DE	DB0BRV	Data courtesy of RadioID.net
+DE	DB0BUC	Data courtesy of RadioID.net
+DE	DB0BWL	Data courtesy of RadioID.net
+DE	DB0CEL	Data courtesy of RadioID.net
+DE	DB0DAN	Data courtesy of RadioID.net
+DE	DB0DBR	Data courtesy of RadioID.net
+DE	DB0DEL	Data courtesy of RadioID.net
+DE	DB0DIT	Data courtesy of RadioID.net
+DE	DB0DLR	Data courtesy of RadioID.net
+DE	DB0DMB	Data courtesy of RadioID.net
+DE	DB0DVR	Data courtesy of RadioID.net
+DE	DB0DWL	Data courtesy of RadioID.net
+DE	DB0EAT	Data courtesy of RadioID.net
+DE	DB0EWB	Data courtesy of RadioID.net
+DE	DB0FA	Data courtesy of RadioID.net
+DE	DB0FHS	Data courtesy of RadioID.net
+DE	DB0FS	Data courtesy of RadioID.net
+DE	DB0FTN	Data courtesy of RadioID.net
+DE	DB0GF	Data courtesy of RadioID.net
+DE	DB0HBP	Data courtesy of RadioID.net
+DE	DB0HCC	Data courtesy of RadioID.net
+DE	DB0HEI	Data courtesy of RadioID.net
+DE	DB0HEW	Data courtesy of RadioID.net
+DE	DB0HHH	Data courtesy of RadioID.net
+DE	DB0HHO	Data courtesy of RadioID.net
+DE	DB0HPA	Data courtesy of RadioID.net
+DE	DB0IL	Data courtesy of RadioID.net
+DE	DB0IRU	Data courtesy of RadioID.net
+DE	DB0KJA	Data courtesy of RadioID.net
+DE	DB0KPI	Data courtesy of RadioID.net
+DE	DB0KUA	Data courtesy of RadioID.net
+DE	DB0LAM	Data courtesy of RadioID.net
+DE	DB0LGH	Data courtesy of RadioID.net
+DE	DB0LWL	Data courtesy of RadioID.net
+DE	DB0MDW	Data courtesy of RadioID.net
+DE	DB0MIA	Data courtesy of RadioID.net
+DE	DB0NDR	Data courtesy of RadioID.net
+DE	DB0NPL	Data courtesy of RadioID.net
+DE	DB0OZ	Data courtesy of RadioID.net
+DE	DB0PC	Data courtesy of RadioID.net
+DE	DB0PR	Data courtesy of RadioID.net
+DE	DB0RDS	Data courtesy of RadioID.net
+DE	DB0RH	Data courtesy of RadioID.net
+DE	DB0RNG	Data courtesy of RadioID.net
+DE	DB0ROD	Data courtesy of RadioID.net
+DE	DB0ROE	Data courtesy of RadioID.net
+DE	DB0RTN	Data courtesy of RadioID.net
+DE	DB0SAR	Data courtesy of RadioID.net
+DE	DB0STH	Data courtesy of RadioID.net
+DE	DB0SZ	Data courtesy of RadioID.net
+DE	DB0TDR	Data courtesy of RadioID.net
+DE	DB0TEN	Data courtesy of RadioID.net
+DE	DB0TGM	Data courtesy of RadioID.net
+DE	DB0TVH	Data courtesy of RadioID.net
+DE	DB0UPS	Data courtesy of RadioID.net
+DE	DB0VC	Data courtesy of RadioID.net
+DE	DB0VER	Data courtesy of RadioID.net
+DE	DB0WD	Data courtesy of RadioID.net
+DE	DB0WL	Data courtesy of RadioID.net
+DE	DB0XJ	Data courtesy of RadioID.net
+DE	DB0XN	Data courtesy of RadioID.net
+DE	DB0XX	Data courtesy of RadioID.net
+DE	DH4HAV	Data courtesy of RadioID.net
+DE	DL1BH	Data courtesy of RadioID.net
+DE	DL9OBD	Data courtesy of RadioID.net
+DE	DM0FL	Data courtesy of RadioID.net
+DE	DM0HEI	Data courtesy of RadioID.net
+DE	DM0HL	Data courtesy of RadioID.net
+DE	DM0HMB	Data courtesy of RadioID.net
+DE	DM0HRO	Data courtesy of RadioID.net
+DE	DM0IZH	Data courtesy of RadioID.net
+DE	DM0JL	Data courtesy of RadioID.net
+DE	DM0KIL	Data courtesy of RadioID.net
+DE	DM0LUE	Data courtesy of RadioID.net
+DE	DM0NDR	Data courtesy of RadioID.net
+DE	DM0RUG	Data courtesy of RadioID.net
+DE	DM0SL	Data courtesy of RadioID.net
+DE	DM0SMW	Data courtesy of RadioID.net
+DE	DM0TR	Data courtesy of RadioID.net
+DE	DM0WL	Data courtesy of RadioID.net
+DE	DO0BN	Data courtesy of RadioID.net
+DE	DO0ELM	Data courtesy of RadioID.net
+DE	DO0HE	Data courtesy of RadioID.net
+DE	DO0HWI	Data courtesy of RadioID.net
+DE	DO0OHO	Data courtesy of RadioID.net
+DE	DO0RAM	Data courtesy of RadioID.net
+DE	DO0SDL	Data courtesy of RadioID.net
+DE	DO0SOC	Data courtesy of RadioID.net
+DE	DO0SZ	Data courtesy of RadioID.net
+DE	DO0TPB	Data courtesy of RadioID.net
+DE	DO1KBL	Data courtesy of RadioID.net
+DK	5P0NALS	Data courtesy of RadioID.net
+DK	5P1NALS	Data courtesy of RadioID.net
+DK	OZ0AMG	Data courtesy of RadioID.net
+DK	OZ0KAR	Data courtesy of RadioID.net
+DK	OZ0KEC	Data courtesy of RadioID.net
+DK	OZ0MOG	Data courtesy of RadioID.net
+DK	OZ0REA	Data courtesy of RadioID.net
+DK	OZ0REB	Data courtesy of RadioID.net
+DK	OZ0REC	Data courtesy of RadioID.net
+DK	OZ0REE	Data courtesy of RadioID.net
+DK	OZ0REF	Data courtesy of RadioID.net
+DK	OZ0REN	Data courtesy of RadioID.net
+DK	OZ15DMR	Data courtesy of RadioID.net
+DK	OZ16DMR	Data courtesy of RadioID.net
+DK	OZ18DMR	Data courtesy of RadioID.net
+DK	OZ19DMR	Data courtesy of RadioID.net
+DK	OZ20REQ	Data courtesy of RadioID.net
+DK	OZ21REQ	Data courtesy of RadioID.net
+DK	OZ22REQ	Data courtesy of RadioID.net
+DK	OZ2KAR	Data courtesy of RadioID.net
+DK	OZ2REF	Data courtesy of RadioID.net
+DK	OZ2REM	Data courtesy of RadioID.net
+DK	OZ2REN	Data courtesy of RadioID.net
+DK	OZ2RES	Data courtesy of RadioID.net
+DK	OZ2REX	Data courtesy of RadioID.net
+DK	OZ3KAR	Data courtesy of RadioID.net
+DK	OZ3REY	Data courtesy of RadioID.net
+DK	OZ4KAR	Data courtesy of RadioID.net
+DK	OZ4REF	Data courtesy of RadioID.net
+DK	OZ4REG	Data courtesy of RadioID.net
+DK	OZ5DMR	Data courtesy of RadioID.net
+DK	OZ6DMR	Data courtesy of RadioID.net
+DK	OZ6KAR	Data courtesy of RadioID.net
+DK	OZ6REE	Data courtesy of RadioID.net
+DK	OZ6REG	Data courtesy of RadioID.net
+DK	OZ7DMR	Data courtesy of RadioID.net
+DK	OZ7REX	Data courtesy of RadioID.net
+DK	OZ8EVA	Data courtesy of RadioID.net
+DK	OZ8HYT	Data courtesy of RadioID.net
+DK	OZ8KAR	Data courtesy of RadioID.net
+DK	OZ8REZ	Data courtesy of RadioID.net
+DK	OZ99FRH	Data courtesy of RadioID.net
+DK	OZ9RAE	Data courtesy of RadioID.net
+DK	OZ9REF	Data courtesy of RadioID.net
+NO	LA1HRR	© OpenStreetMap contributors
+NO	LA1KRR	© OpenStreetMap contributors
+NO	LA2BRR	© OpenStreetMap contributors
+NO	LA2DRR	© OpenStreetMap contributors
+NO	LA2FRR	© OpenStreetMap contributors
+NO	LA2HRR	© OpenStreetMap contributors
+NO	LA2JRR	© OpenStreetMap contributors
+NO	LA2KRR	LA5MR
+NO	LA2L	Data courtesy of RadioID.net
+NO	LA2L-10	© OpenStreetMap contributors
+NO	LA2LRR	Data courtesy of RadioID.net
+NO	LA2RRR	© OpenStreetMap contributors
+NO	LA2TRR	LA5MR
+NO	LA2XRR	© OpenStreetMap contributors
+NO	LA2YRR	© OpenStreetMap contributors
+NO	LA3BRR	Fylkesnettet
+NO	LA3DRR	© OpenStreetMap contributors
+NO	LA3ERR	© OpenStreetMap contributors
+NO	LA3FRR	© OpenStreetMap contributors
+NO	LA3GRR	Fylkesnettet
+NO	LA3JRR	© OpenStreetMap contributors
+NO	LA3KRR	© OpenStreetMap contributors
+NO	LA3NRR	© OpenStreetMap contributors
+NO	LA3RRR	© OpenStreetMap contributors
+NO	LA3SRR	Fylkesnettet
+NO	LA3VRR	© OpenStreetMap contributors
+NO	LA3XRR	Fylkesnettet
+NO	LA4URR	© OpenStreetMap contributors
+NO	LA5ARR	© OpenStreetMap contributors
+NO	LA5GR	Fylkesnettet
+NO	LA5HR	© OpenStreetMap contributors
+NO	LA5HRR	© OpenStreetMap contributors
+NO	LA5IR	© OpenStreetMap contributors
+NO	LA5JR	© OpenStreetMap contributors
+NO	LA5JRR	© OpenStreetMap contributors
+NO	LA5KR	© OpenStreetMap contributors
+NO	LA5MR	LA5MR
+NO	LA5OR	© OpenStreetMap contributors
+NO	LA5PR	© OpenStreetMap contributors
+NO	LA5QR	© OpenStreetMap contributors
+NO	LA5RR	© OpenStreetMap contributors
+NO	LA5SR	© OpenStreetMap contributors
+NO	LA5TRR	LA5MR
+NO	LA5YR	© OpenStreetMap contributors
+NO	LA6GR	© OpenStreetMap contributors
+NO	LA6HR	Fylkesnettet
+NO	LA6JRR	LA5MR
+NO	LA6LR	© OpenStreetMap contributors
+NO	LA6NR	LA5MR
+NO	LA6SR	Agder net
+NO	LA6SRR	© OpenStreetMap contributors
+NO	LA6WR	Bergen-voss
+NO	LA6YR	© OpenStreetMap contributors
+NO	LA6ZR	© OpenStreetMap contributors
+NO	LA7CR	© OpenStreetMap contributors
+NO	LA7FR	© OpenStreetMap contributors
+NO	LA7GR	© OpenStreetMap contributors
+NO	LA7GRR	© OpenStreetMap contributors
+NO	LA7KR	© OpenStreetMap contributors
+NO	LA7LR	© OpenStreetMap contributors
+NO	LA7OR	© OpenStreetMap contributors
+NO	LA7ORR	© OpenStreetMap contributors
+NO	LA7PR	© OpenStreetMap contributors
+NO	LA7RRA-B	© OpenStreetMap contributors
+NO	LA7SR	© OpenStreetMap contributors
+NO	LA7UR	© OpenStreetMap contributors
+NO	LA7XR	© OpenStreetMap contributors
+NO	LA8CR	© OpenStreetMap contributors
+NO	LA8ER	© OpenStreetMap contributors
+NO	LA8HR	© OpenStreetMap contributors
+NO	LA8KR	© OpenStreetMap contributors
+NO	LA8OR	© OpenStreetMap contributors
+NO	LA8RR	© OpenStreetMap contributors
+NO	LA9AR	© OpenStreetMap contributors
+NO	LA9DR	© OpenStreetMap contributors
+NO	LA9ER	© OpenStreetMap contributors
+NO	LA9JR	© OpenStreetMap contributors
+NO	LA9NR	© OpenStreetMap contributors
+NO	LA9XRR	© OpenStreetMap contributors
+NO	LD1BK	© OpenStreetMap contributors
+NO	LD1FA	© OpenStreetMap contributors
+NO	LD1FE	© OpenStreetMap contributors
+NO	LD1FL	© OpenStreetMap contributors
+NO	LD1FR	© OpenStreetMap contributors
+NO	LD1HQ	Data courtesy of RadioID.net
+NO	LD1MD	© OpenStreetMap contributors
+NO	LD1NR	© OpenStreetMap contributors
+NO	LD1OA	© OpenStreetMap contributors
+NO	LD1OE	© OpenStreetMap contributors
+NO	LD1OR	Data courtesy of RadioID.net
+NO	LD1OS	© OpenStreetMap contributors
+NO	LD1OT	© OpenStreetMap contributors
+NO	LD1SG	© OpenStreetMap contributors
+NO	LD2BI	© OpenStreetMap contributors
+NO	LD2EM	© OpenStreetMap contributors
+NO	LD2ER	© OpenStreetMap contributors
+NO	LD2FN	© OpenStreetMap contributors
+NO	LD2GB	© OpenStreetMap contributors
+NO	LD2GD	© OpenStreetMap contributors
+NO	LD2GF	© OpenStreetMap contributors
+NO	LD2GG	© OpenStreetMap contributors
+NO	LD2GI	© OpenStreetMap contributors
+NO	LD2GN	© OpenStreetMap contributors
+NO	LD2GO	© OpenStreetMap contributors
+NO	LD2GP	© OpenStreetMap contributors
+NO	LD2GR	© OpenStreetMap contributors
+NO	LD2GS	© OpenStreetMap contributors
+NO	LD2GU	© OpenStreetMap contributors
+NO	LD2HJ	Data courtesy of RadioID.net
+NO	LD2HT	© OpenStreetMap contributors
+NO	LD2JB	© OpenStreetMap contributors
+NO	LD2KF	© OpenStreetMap contributors
+NO	LD2KR	© OpenStreetMap contributors
+NO	LD2KS	© OpenStreetMap contributors
+NO	LD2LH	© OpenStreetMap contributors
+NO	LD2LK	© OpenStreetMap contributors
+NO	LD2OH	© OpenStreetMap contributors
+NO	LD2RK	© OpenStreetMap contributors
+NO	LD2TR	© OpenStreetMap contributors
+NO	LD2VR	© OpenStreetMap contributors
+NO	LD2WA	© OpenStreetMap contributors
+NO	LD2WB	© OpenStreetMap contributors
+NO	LD2WC	© OpenStreetMap contributors
+NO	LD2WD	© OpenStreetMap contributors
+NO	LD3BL	© OpenStreetMap contributors
+NO	LD3DD	© OpenStreetMap contributors
+NO	LD3DN	© OpenStreetMap contributors
+NO	LD3DP	Data courtesy of RadioID.net
+NO	LD3DV	© OpenStreetMap contributors
+NO	LD3GD	© OpenStreetMap contributors
+NO	LD3GE	© OpenStreetMap contributors
+NO	LD3GK	© OpenStreetMap contributors
+NO	LD3GL	© OpenStreetMap contributors
+NO	LD3GO	© OpenStreetMap contributors
+NO	LD3GT	© OpenStreetMap contributors
+NO	LD3HR	© OpenStreetMap contributors
+NO	LD3HS	© OpenStreetMap contributors
+NO	LD3HV	© OpenStreetMap contributors
+NO	LD3JS	© OpenStreetMap contributors
+NO	LD3KR	© OpenStreetMap contributors
+NO	LD3KS	© OpenStreetMap contributors
+NO	LD3LL	© OpenStreetMap contributors
+NO	LD3NM	© OpenStreetMap contributors
+NO	LD3RI	© OpenStreetMap contributors
+NO	LD3SH	© OpenStreetMap contributors
+NO	LD3SK	© OpenStreetMap contributors
+NO	LD3ST	© OpenStreetMap contributors
+NO	LD3TB	© OpenStreetMap contributors
+NO	LD3TD	© OpenStreetMap contributors
+NO	LD3TO	© OpenStreetMap contributors
+NO	LD3VL	© OpenStreetMap contributors
+NO	LD4RH	© OpenStreetMap contributors
+NO	LD4SH	© OpenStreetMap contributors
+NO	LD5BF	© OpenStreetMap contributors
+NO	LD5BH	© OpenStreetMap contributors
+NO	LD5VO	© OpenStreetMap contributors
+NO	LD6BE	© OpenStreetMap contributors
+NO	LD6FD	© OpenStreetMap contributors
+NO	LD6FR	© OpenStreetMap contributors
+NO	LD6HO	© OpenStreetMap contributors
+NO	LD6SA	© OpenStreetMap contributors
+NO	LD6SB	© OpenStreetMap contributors
+NO	LD6SG	© OpenStreetMap contributors
+NO	LD6SO	© OpenStreetMap contributors
+NO	LD7TO	© OpenStreetMap contributors
+SE	SA4BNA	Data courtesy of RadioID.net
+SE	SA6OPT	Data courtesy of RadioID.net
+SE	SA7BIK	Data courtesy of RadioID.net
+SE	SG6WAL	Data courtesy of RadioID.net
+SE	SK6AG	Data courtesy of RadioID.net
+SE	SK6DG	Data courtesy of RadioID.net
+SE	SK6DW	Data courtesy of RadioID.net
+SE	SK6EF	Data courtesy of RadioID.net
+SE	SK6IF	Data courtesy of RadioID.net
+SE	SK6QA	Data courtesy of RadioID.net
+SE	SK6RFP	Data courtesy of RadioID.net
+SE	SK6RKG	Data courtesy of RadioID.net
+SE	SK6RKI	Data courtesy of RadioID.net
+SE	SK6RP	Data courtesy of RadioID.net
+SE	SK7BQ	Data courtesy of RadioID.net
+SE	SK7DS	Data courtesy of RadioID.net
+SE	SK7RDS	Data courtesy of RadioID.net
+SE	SK7REE	Data courtesy of RadioID.net
+SE	SK7RGM	Data courtesy of RadioID.net
+SE	SK7RJL	Data courtesy of RadioID.net
+SE	SK7RMQ	Data courtesy of RadioID.net
+SE	SK7RNQ	Data courtesy of RadioID.net
+SE	SK7RPQ	Data courtesy of RadioID.net
+SE	SK7RQX	Data courtesy of RadioID.net
+SE	SK7RRV	Data courtesy of RadioID.net
+SE	SL6ZAQ	Data courtesy of RadioID.net
+SE	SL6ZYW	Data courtesy of RadioID.net
+SE	SM6TKT	Data courtesy of RadioID.net
+SE	SM7UVT	Data courtesy of RadioID.net

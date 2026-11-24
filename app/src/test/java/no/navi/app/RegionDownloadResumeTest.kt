@@ -160,7 +160,7 @@ class RegionDownloadResumeTest {
     @Test
     fun usable_status_prefix_unchanged() {
         assertTrue(
-            RegionDownloadBackground.USABLE_STATUS_PREFIX.startsWith("Place index ready"),
+            RegionDownloadBackground.USABLE_STATUS_PREFIX.startsWith("Region ready"),
         )
     }
 

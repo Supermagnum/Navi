@@ -364,7 +364,7 @@ implement the RF/mesh layer): [`plugins/lora-convoy-spec.md`](plugins/lora-convo
 | | |
 |---|---|
 | **Benefit** | Suggest legal wild-camping positions along a route where a broad right-to-roam exists (Norway *allemannsretten* and country-aware packs) |
-| **Docs** | [`plugins/right-to-roam-camping-spec.md`](plugins/right-to-roam-camping-spec.md) — intersection/track candidates, shared 150 m `SafetyConfig`, two-night plugin state, fire/foraging/leave-no-trace guidance, multi-country rules |
+| **Docs** | [`plugins/right-to-roam-camping-spec.md`](plugins/right-to-roam-camping-spec.md) — intersection/track candidates, shared 150 m `SafetyConfig`, two-night plugin state, fire/foraging/leave-no-trace guidance, multi-country rules. On **MWM-first long trips** without classic PBF seeds, the host uses denser corridor samples and the guest **`waypoint_fallback`** path so on-foot suggestions are not empty. |
 | **Host duties** | Expose route/junction hints, POI/area queries, safety config, admin region, clock; render suggestion cards + disclaimer |
 | **Guest duties** | Rank road∩track seeds, walk short distance along track, filter by country rules, persist two-night keys, assemble guidance text |
 | **Proposed caps** | `position_read`, `poi_query`, `route_read`, `safety_config_read`, `admin_region_read`, `clock_read`, `plugin_kv` / `storage`, `log` |

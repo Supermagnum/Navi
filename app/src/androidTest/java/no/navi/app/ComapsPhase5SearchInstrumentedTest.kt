@@ -2,12 +2,14 @@ package no.navi.app
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import app.organicmaps.sdk.util.Utils
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
@@ -34,6 +36,7 @@ import java.io.File
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Phase 5 offline search suite on device (Østlandet MWMs, flag ON).
@@ -248,6 +251,35 @@ class ComapsPhase5SearchInstrumentedTest {
         )
         val rank = rankOf(outcome.hits, JSONArray().put("Lillehammer"))
         assertTrue("Lillehammer top-3 (rank=$rank)", rank in 1..3)
+    }
+
+    /**
+     * Production [Utils.getStringIdByKey] may Toast on missing debug strings. Search
+     * JNI calls it off the main thread; Toast without a Looper aborts the process
+     * (seen on Samsung during [runSearchSuite]). Missing-key lookup must be safe
+     * on a worker thread.
+     */
+    @Test
+    fun missingStringIdToastSafeOffMainThread() {
+        assumeTrue("CoMaps Java SDK not packaged", ComapsDrape.sdkPackaged())
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val error = AtomicReference<Throwable?>(null)
+        val done = CountDownLatch(1)
+        Thread({
+            try {
+                Utils.getStringIdByKey(ctx, "navi_missing_string_id_for_toast_test_zzz")
+            } catch (t: Throwable) {
+                error.set(t)
+            } finally {
+                done.countDown()
+            }
+        }, "navi-utils-toast-off-main").start()
+        assertTrue("off-main Utils call timed out", done.await(10, TimeUnit.SECONDS))
+        // Give the posted Toast runnable a chance to run on the main looper.
+        val uiDone = CountDownLatch(1)
+        android.os.Handler(android.os.Looper.getMainLooper()).post { uiDone.countDown() }
+        assertTrue("main looper drain timed out", uiDone.await(5, TimeUnit.SECONDS))
+        assertNull("Utils toast must not crash off main: ${error.get()}", error.get())
     }
 
     @Test

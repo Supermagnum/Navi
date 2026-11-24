@@ -14,9 +14,15 @@ this file into navi-server from the Navi client PR — paste into
 1. **Download them with every release** (same `version` / checksum path as
    country leaves; no Navi sidecar).
 2. **Store them at the MWM storage root**, not under
-   `releases/{version}/leaves/`. CoMaps Android `GetAdditionalWorldScope` is
-   resource-scoped; registering World as a versioned country file without a
-   cross-mwm section breaks Joints cross-MWM routing.
+   `releases/{version}/leaves/`. Stock CoMaps `GetAdditionalWorldScope` is
+   resource-only (`r`). Navi quilt patch
+   `0011-navi-world-writable-scope.patch` widens it to **`wr`** so root
+   `World.mwm` / `WorldCoasts.mwm` are found for Framework/search without
+   treating them as versioned country leaves under `261105/` (those lack
+   cross-mwm sections and break Joints). Separately,
+   `0012-navi-routes-builder-skip-world.patch` skips registering World /
+   WorldCoasts in headless `RoutesBuilder` so mixed World+country graphs do
+   not yield `No route` / `build_s=0` on Car long-trip.
 3. **Record ownership** in a sibling pointer (e.g. `world-release.json` with
    `{"version":"261105"}`) that must match `active.json` before routing.
 4. **Switch atomically** with the leaf set: verify new World bytes in staging,

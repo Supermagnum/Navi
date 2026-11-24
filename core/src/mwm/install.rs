@@ -17,10 +17,10 @@ use super::catalog::MwmCatalog;
 use super::comaps::{
     discover_mirrors, fetch_and_verify_countries_txt, CountriesTxt, COMAPS_COUNTRIES_TXT_PUBKEY_HEX,
 };
-use super::download::{
-    download_leaf_set_with, fetch_current_catalog, DownloadProgress, LeafSetOptions,
-    MwmDownloadError,
+use super::comaps_fallback::{
+    catalog_snapshot_json, resolve_mwm_catalog, CatalogResolveSource, ResolvedCatalog,
 };
+use super::download::{download_leaf_set_with, DownloadProgress, LeafSetOptions, MwmDownloadError};
 use super::flag::mwm_client_enabled;
 use super::release::{
     activate_release, merge_staging_into_release, read_active_version, read_world_release,
@@ -90,22 +90,50 @@ pub fn installed_sidecar_count(data_dir: &Path, version: &str) -> usize {
         .unwrap_or(0)
 }
 
-fn leaf_present(release: &Path, countries: &CountriesTxt, catalog: &MwmCatalog, id: &str) -> bool {
+fn leaf_mwm_present(release: &Path, countries: &CountriesTxt, id: &str) -> bool {
     let Some(c) = countries.leaves.get(id) else {
         return false;
     };
-    let mwm_ok = fs::metadata(leaf_mwm_path(release, id))
+    fs::metadata(leaf_mwm_path(release, id))
         .map(|m| m.is_file() && m.len() == c.size)
-        .unwrap_or(false);
-    if !mwm_ok {
-        return false;
-    }
+        .unwrap_or(false)
+}
+
+fn leaf_sidecar_present(release: &Path, catalog: &MwmCatalog, id: &str) -> bool {
     match catalog.leaf(id) {
-        Some(l) if !l.no_sidecar => fs::metadata(leaf_sidecar_path(release, id))
-            .map(|m| m.is_file() && l.sidecar_bytes.map(|b| b == m.len()).unwrap_or(true))
-            .unwrap_or(false),
+        Some(l) if !l.no_sidecar => {
+            let path = leaf_sidecar_path(release, id);
+            let meta = match fs::metadata(&path) {
+                Ok(m) if m.is_file() => m,
+                _ => return false,
+            };
+            if let Some(b) = l.sidecar_bytes {
+                if meta.len() != b {
+                    return false;
+                }
+            }
+            // Prefer SHA when catalog carries one so same-size updates refresh.
+            if let Some(want) = l.sidecar_sha256.as_ref() {
+                return verify_sidecar_sha256(&path, want);
+            }
+            true
+        }
         _ => true,
     }
+}
+
+fn verify_sidecar_sha256(path: &Path, want_hex: &str) -> bool {
+    use sha2::{Digest, Sha256};
+    let Ok(bytes) = fs::read(path) else {
+        return false;
+    };
+    let got = Sha256::digest(&bytes);
+    let got_hex: String = got.iter().map(|b| format!("{b:02x}")).collect();
+    got_hex.eq_ignore_ascii_case(want_hex)
+}
+
+fn leaf_present(release: &Path, countries: &CountriesTxt, catalog: &MwmCatalog, id: &str) -> bool {
+    leaf_mwm_present(release, countries, id) && leaf_sidecar_present(release, catalog, id)
 }
 
 /// Process-wide guard: one leaf install / migration at a time (they share the staging tree).
@@ -131,6 +159,10 @@ impl Drop for InstallGuard {
 /// Install `wanted` leaves (and, for a new release, World + WorldCoasts and the leaves of the
 /// previous release). `cancel` stops the download (between leaves and inside a leaf, within about
 /// a quarter of a second) and keeps the staging tree for resume.
+///
+/// Catalog resolve: live navi → disk cache → CoMaps-direct (see [`resolve_mwm_catalog`]). Disk /
+/// CoMaps-direct soft-fail missing sidecars so maps still install; vehicle-limits honesty banners
+/// cover leaves without a matching sidecar.
 pub fn install_leaf_set(
     data_dir: &Path,
     navi_origin: &str,
@@ -141,8 +173,8 @@ pub fn install_leaf_set(
     if !mwm_client_enabled() {
         return Err(MwmDownloadError::Disabled);
     }
-    let catalog = fetch_current_catalog(navi_origin)?;
-    install_leaf_set_with_catalog(data_dir, navi_origin, &catalog, wanted, progress, cancel)
+    let resolved = resolve_mwm_catalog(navi_origin, Some(data_dir))?;
+    install_leaf_set_resolved(data_dir, navi_origin, &resolved, wanted, progress, cancel)
 }
 
 /// [`install_leaf_set`] against a catalog the caller already holds. A migration pins the catalog
@@ -155,11 +187,33 @@ pub fn install_leaf_set_with_catalog(
     progress: &mut DownloadProgress,
     cancel: Option<&AtomicBool>,
 ) -> Result<InstallReport, MwmDownloadError> {
+    let resolved = ResolvedCatalog {
+        catalog: catalog.clone(),
+        source: CatalogResolveSource::NaviServer,
+        raw_json: None,
+    };
+    install_leaf_set_resolved(data_dir, navi_origin, &resolved, wanted, progress, cancel)
+}
+
+fn install_leaf_set_resolved(
+    data_dir: &Path,
+    navi_origin: &str,
+    resolved: &ResolvedCatalog,
+    wanted: &[String],
+    progress: &mut DownloadProgress,
+    cancel: Option<&AtomicBool>,
+) -> Result<InstallReport, MwmDownloadError> {
     if !mwm_client_enabled() {
         return Err(MwmDownloadError::Disabled);
     }
     let _guard = InstallGuard::acquire()?;
-    let catalog = catalog.clone();
+    let catalog = &resolved.catalog;
+    let countries_sha = catalog.comaps.countries_txt_sha256.as_str();
+    let countries_bytes = catalog.comaps.countries_txt_bytes;
+    // CoMaps-direct / empty sha: verify signature only (no pinned digest from navi).
+    let expect_sha = (!countries_sha.is_empty()).then_some(countries_sha);
+    let expect_bytes = (countries_bytes > 0).then_some(countries_bytes);
+
     let discovery = discover_mirrors(
         &catalog.comaps.metaserver_url,
         &catalog.comaps.map_series,
@@ -171,13 +225,8 @@ pub fn install_leaf_set_with_catalog(
     } else {
         catalog.comaps.countries_txt_pubkey_hex.as_str()
     };
-    let countries = fetch_and_verify_countries_txt(
-        &discovery,
-        Some(&catalog.comaps.countries_txt_sha256),
-        Some(catalog.comaps.countries_txt_bytes),
-        pubkey,
-    )
-    .map_err(|e| MwmDownloadError::Other(format!("countries.txt: {e}")))?;
+    let countries = fetch_and_verify_countries_txt(&discovery, expect_sha, expect_bytes, pubkey)
+        .map_err(|e| MwmDownloadError::Other(format!("countries.txt: {e}")))?;
 
     for id in wanted {
         if catalog.leaf(id).is_none() {
@@ -217,7 +266,7 @@ pub fn install_leaf_set_with_catalog(
     };
     let mut to_download = Vec::new();
     for id in &want {
-        if same_release && leaf_present(&release, &countries, &catalog, id) {
+        if same_release && leaf_present(&release, &countries, catalog, id) {
             if wanted.contains(id) {
                 report.already_installed.push(id.clone());
             }
@@ -231,13 +280,16 @@ pub fn install_leaf_set_with_catalog(
         return Ok(report);
     }
 
+    let snapshot = catalog_snapshot_json(resolved)?;
     let opts = LeafSetOptions {
         include_world: need_world,
         cancel,
+        allow_missing_sidecar: resolved.source.allow_missing_sidecar(),
+        catalog_json: Some(snapshot.as_str()),
     };
     download_leaf_set_with(
         data_dir,
-        &catalog,
+        catalog,
         &countries,
         &discovery,
         navi_origin,

@@ -1,0 +1,380 @@
+From: Navi
+Subject: [PATCH] navi: non-motor tunnel access HardAvoid for ped/bike
+
+Deny car-only tunnels for Pedestrian/Bicycle estimators (x1e6) unless
+MWM types show yesfoot/yesbicycle, sidewalk, or footway/cycleway/path.
+Also emit tunnel_ok on turns JSON for soft-avoid / counting.
+
+---
+diff --git a/libs/routing/CMakeLists.txt b/libs/routing/CMakeLists.txt
+index c7b7557b4..2ed57148b 100644
+--- a/libs/routing/CMakeLists.txt
++++ b/libs/routing/CMakeLists.txt
+@@ -54,6 +54,7 @@ set(SRC
+   navi_wetland_cost.hpp
+   navi_vehicle_cost.cpp
+   navi_vehicle_cost.hpp
++  navi_tunnel_access.hpp
+   edge_estimator.hpp
+   fake_edges_container.hpp
+   fake_ending.cpp
+diff --git a/libs/routing/edge_estimator.cpp b/libs/routing/edge_estimator.cpp
+index e5a527098..f73a58ef8 100644
+--- a/libs/routing/edge_estimator.cpp
++++ b/libs/routing/edge_estimator.cpp
+@@ -1,6 +1,7 @@
+ #include "routing/edge_estimator.hpp"
+ #include "routing/navi_wetland_cost.hpp"
+ #include "routing/navi_vehicle_cost.hpp"
++#include "routing/navi_tunnel_access.hpp"
+ 
+ #include "routing/geometry.hpp"
+ #include "routing/latlon_with_altitude.hpp"
+@@ -633,7 +634,8 @@ public:
+     double const weight = CalcClimbSegment(purpose, segment, road,
+                             [purpose](double speedMpS, double tangent, geometry::Altitude altitude)
+     { return speedMpS / GetPedestrianClimbPenalty(purpose, tangent, altitude); });
+-    return navi_spike::ApplyWetlandCost(segment, weight);
++    // Navi: deny car-only tunnels for pedestrians (HardAvoid ×1e6).
++    return navi_spike::ApplyPedestrianTunnelAccessCost(road, navi_spike::ApplyWetlandCost(segment, weight));
+   }
+ };
+ 
+@@ -693,7 +695,8 @@ public:
+ 
+       return std::min(speedMpS, GetMaxWeightSpeedMpS());
+     });
+-    return navi_spike::ApplyWetlandCostForBike(segment, weight);
++    // Navi: deny car-only tunnels for bicycle / e-bike (HardAvoid ×1e6).
++    return navi_spike::ApplyBicycleTunnelAccessCost(road, navi_spike::ApplyWetlandCostForBike(segment, weight));
+   }
+ };
+ 
+diff --git a/libs/routing/geometry.cpp b/libs/routing/geometry.cpp
+index fd6488f9d..23a2cf6f6 100644
+--- a/libs/routing/geometry.cpp
++++ b/libs/routing/geometry.cpp
+@@ -1,11 +1,13 @@
+ #include "routing/geometry.hpp"
+ 
++#include "indexer/classificator.hpp"
++#include "indexer/feature_data.hpp"
++
+ #include "routing/city_roads.hpp"
+ #include "routing/maxspeeds.hpp"
+ 
+ #include "indexer/altitude_loader.hpp"
+ #include "indexer/feature.hpp"
+-#include "indexer/feature_data.hpp"
+ #include "indexer/feature_meta.hpp"
+ #include "indexer/feature_source.hpp"
+ #include "indexer/features_vector.hpp"
+@@ -151,6 +153,10 @@ RoadGeometry::RoadGeometry(bool oneWay, double weightSpeedKMpH, double etaSpeedK
+   , m_valid(true)
+   , m_isPassThroughAllowed(false)
+   , m_inCity(false)
++  , m_isTunnel(false)
++  , m_hasYesFoot(false)
++  , m_hasYesBicycle(false)
++  , m_hasSidewalkType(false)
+ {
+   ASSERT_GREATER(weightSpeedKMpH, 0.0, ());
+   ASSERT_GREATER(etaSpeedKMpH, 0.0, ());
+@@ -202,6 +208,41 @@ void RoadGeometry::Load(VehicleModelInterface const & vehicleModel, FeatureType
+     }
+   }
+ 
++  // Navi: detect highway/*/tunnel and foot/bicycle/sidewalk access from MWM types.
++  {
++    Classificator const & cl = classif();
++    uint32_t const yesFoot = cl.GetTypeByPath({"hwtag", "yesfoot"});
++    uint32_t const yesBicycle = cl.GetTypeByPath({"hwtag", "yesbicycle"});
++    uint32_t const sidewalkType = cl.GetTypeByPath({"highway", "footway", "sidewalk"});
++    m_isTunnel = false;
++    m_hasYesFoot = false;
++    m_hasYesBicycle = false;
++    m_hasSidewalkType = false;
++    for (uint32_t type : types)
++    {
++      if (type == yesFoot)
++        m_hasYesFoot = true;
++      if (type == yesBicycle)
++        m_hasYesBicycle = true;
++      if (type == sidewalkType)
++        m_hasSidewalkType = true;
++      if (ftype::GetLevel(type) == 3)
++      {
++        ClassifObject const * p = cl.GetRoot()->GetObject(ftype::GetValue(type, 0));
++        if (p && p->GetName() == "highway")
++        {
++          p = p->GetObject(ftype::GetValue(type, 1));
++          if (p)
++          {
++            p = p->GetObject(ftype::GetValue(type, 2));
++            if (p && p->GetName() == "tunnel")
++              m_isTunnel = true;
++          }
++        }
++      }
++    }
++  }
++
+   m_junctions.clear();
+   m_junctions.reserve(count);
+   for (size_t i = 0; i < count; ++i)
+diff --git a/libs/routing/geometry.hpp b/libs/routing/geometry.hpp
+index 3d062e64c..820721bb6 100644
+--- a/libs/routing/geometry.hpp
++++ b/libs/routing/geometry.hpp
+@@ -34,7 +34,16 @@ class RoadAttrsGetter;
+ class RoadGeometry final
+ {
+ public:
+-  RoadGeometry() : m_isOneWay(false), m_valid(false), m_isPassThroughAllowed(false), m_inCity(false) {}
++  RoadGeometry()
++    : m_isOneWay(false)
++    , m_valid(false)
++    , m_isPassThroughAllowed(false)
++    , m_inCity(false)
++    , m_isTunnel(false)
++    , m_hasYesFoot(false)
++    , m_hasYesBicycle(false)
++    , m_hasSidewalkType(false)
++  {}
+ 
+   /// Used in tests.
+   using Points = std::vector<m2::PointD>;
+@@ -50,6 +59,12 @@ public:
+   bool IsPassThroughAllowed() const { return m_isPassThroughAllowed; }
+   bool IsInCity() const { return m_inCity; }
+ 
++  // Navi: highway/*/tunnel + foot/bicycle/sidewalk access tags from feature types.
++  bool IsTunnel() const { return m_isTunnel; }
++  bool HasYesFoot() const { return m_hasYesFoot; }
++  bool HasYesBicycle() const { return m_hasYesBicycle; }
++  bool HasSidewalkType() const { return m_hasSidewalkType; }
++
+   LatLonWithAltitude const & GetJunction(uint32_t junctionId) const
+   {
+     ASSERT_LESS(junctionId, m_junctions.size(), ());
+@@ -96,6 +111,10 @@ private:
+   bool m_valid : 1;
+   bool m_isPassThroughAllowed : 1;
+   bool m_inCity : 1;
++  bool m_isTunnel : 1;
++  bool m_hasYesFoot : 1;
++  bool m_hasYesBicycle : 1;
++  bool m_hasSidewalkType : 1;
+ };
+ 
+ class GeometryLoader
+diff --git a/libs/routing/navi_tunnel_access.hpp b/libs/routing/navi_tunnel_access.hpp
+new file mode 100644
+index 000000000..815f47372
+--- /dev/null
++++ b/libs/routing/navi_tunnel_access.hpp
+@@ -0,0 +1,68 @@
++#pragma once
++// Navi non-motor tunnel access for CoMaps Pedestrian/Bicycle estimators.
++//
++// Product rule: hiking / bicycle / e-bike must not use a tunnel unless it has
++// at least one of:
++//   - hwtag|yesfoot (hiking) or hwtag|yesbicycle (bike)  [foot/bicycle=yes|designated]
++//   - a sidewalk type (highway|footway|sidewalk), or yesfoot from sidewalk=* encoding
++//   - highway = footway / cycleway / path
++// Otherwise HardAvoid ×1e6 (same pattern as wetland / vehicle limits).
++
++#include "routing/geometry.hpp"
++#include "routing/segment.hpp"
++
++#include "routing_common/vehicle_model.hpp"
++
++namespace navi_spike
++{
++
++inline constexpr double kTunnelHardAvoidMult = 1.0e6;
++
++inline bool IsPedestrianOrCyclePathHighway(std::optional<routing::HighwayType> hw)
++{
++  if (!hw)
++    return false;
++  using routing::HighwayType;
++  return *hw == HighwayType::HighwayFootway || *hw == HighwayType::HighwayCycleway ||
++         *hw == HighwayType::HighwayPath;
++}
++
++/** Hiking / pedestrian: yesfoot, sidewalk type, or footway/cycleway/path. */
++inline bool TunnelAllowedForPedestrian(routing::RoadGeometry const & road)
++{
++  if (!road.IsTunnel())
++    return true;
++  if (IsPedestrianOrCyclePathHighway(road.GetHighwayType()))
++    return true;
++  if (road.HasSidewalkType())
++    return true;
++  return road.HasYesFoot();
++}
++
++/** Bicycle / e-bike: yesbicycle, sidewalk type, or footway/cycleway/path. */
++inline bool TunnelAllowedForBicycle(routing::RoadGeometry const & road)
++{
++  if (!road.IsTunnel())
++    return true;
++  if (IsPedestrianOrCyclePathHighway(road.GetHighwayType()))
++    return true;
++  if (road.HasSidewalkType())
++    return true;
++  return road.HasYesBicycle();
++}
++
++inline double ApplyPedestrianTunnelAccessCost(routing::RoadGeometry const & road, double weightSeconds)
++{
++  if (TunnelAllowedForPedestrian(road))
++    return weightSeconds;
++  return weightSeconds * kTunnelHardAvoidMult;
++}
++
++inline double ApplyBicycleTunnelAccessCost(routing::RoadGeometry const & road, double weightSeconds)
++{
++  if (TunnelAllowedForBicycle(road))
++    return weightSeconds;
++  return weightSeconds * kTunnelHardAvoidMult;
++}
++
++}  // namespace navi_spike
+diff --git a/libs/routing/routes_builder/routes_builder.cpp b/libs/routing/routes_builder/routes_builder.cpp
+index fafedff98..df68ca9df 100644
+--- a/libs/routing/routes_builder/routes_builder.cpp
++++ b/libs/routing/routes_builder/routes_builder.cpp
+@@ -67,19 +67,25 @@ bool IsHighwayTunnelType(uint32_t type)
+   return p && p->GetName() == "tunnel";
+ }
+ 
+-/// Look up highway/*/tunnel on the feature behind a route segment.
+-bool IsTunnelSegment(FrozenDataSource & dataSource,
+-                     std::shared_ptr<routing::NumMwmIds> const & numMwmIds,
+-                     routing::Segment const & seg,
+-                     std::map<std::pair<routing::NumMwmId, uint32_t>, bool> & cache)
++struct TunnelAccessFlags
+ {
++  bool isTunnel = false;
++  bool tunnelOk = false;  // non-motor allow rule (footway/cycleway/path / yesfoot / yesbicycle / sidewalk)
++};
++
++/// Look up highway/*/tunnel + non-motor allow tags on the feature behind a route segment.
++TunnelAccessFlags LookupTunnelAccess(FrozenDataSource & dataSource,
++                                     std::shared_ptr<routing::NumMwmIds> const & numMwmIds,
++                                     routing::Segment const & seg,
++                                     std::map<std::pair<routing::NumMwmId, uint32_t>, TunnelAccessFlags> & cache)
++{
++  TunnelAccessFlags flags;
+   if (!numMwmIds || !seg.IsRealSegment())
+-    return false;
++    return flags;
+   auto const key = std::make_pair(seg.GetMwmId(), seg.GetFeatureId());
+   if (auto const it = cache.find(key); it != cache.end())
+     return it->second;
+ 
+-  bool isTunnel = false;
+   try
+   {
+     auto const handle = dataSource.GetMwmHandleByCountryFile(numMwmIds->GetFile(seg.GetMwmId()));
+@@ -89,28 +95,49 @@ bool IsTunnelSegment(FrozenDataSource & dataSource,
+       if (auto ft = guard.GetFeatureByIndex(seg.GetFeatureId()))
+       {
+         feature::TypesHolder types(*ft);
++        Classificator const & cl = classif();
++        uint32_t const yesFoot = cl.GetTypeByPath({"hwtag", "yesfoot"});
++        uint32_t const yesBicycle = cl.GetTypeByPath({"hwtag", "yesbicycle"});
++        uint32_t const sidewalkType = cl.GetTypeByPath({"highway", "footway", "sidewalk"});
++        uint32_t const footway = cl.GetTypeByPath({"highway", "footway"});
++        uint32_t const cycleway = cl.GetTypeByPath({"highway", "cycleway"});
++        uint32_t const path = cl.GetTypeByPath({"highway", "path"});
++        bool hasYesFoot = false;
++        bool hasYesBicycle = false;
++        bool hasSidewalkType = false;
++        bool isPathHighway = false;
+         for (uint32_t t : types)
+         {
+           if (IsHighwayTunnelType(t))
+-          {
+-            isTunnel = true;
+-            break;
+-          }
++            flags.isTunnel = true;
++          if (t == yesFoot)
++            hasYesFoot = true;
++          if (t == yesBicycle)
++            hasYesBicycle = true;
++          if (t == sidewalkType)
++            hasSidewalkType = true;
++          uint32_t trunc = t;
++          ftype::TruncValue(trunc, 2);
++          if (trunc == footway || trunc == cycleway || trunc == path)
++            isPathHighway = true;
+         }
++        // Turns JSON has no vehicle profile: mark OK when ANY non-motor allow signal is present.
++        flags.tunnelOk = flags.isTunnel &&
++                         (hasYesFoot || hasYesBicycle || hasSidewalkType || isPathHighway);
+       }
+     }
+   }
+   catch (std::exception const &)
+   {
+     // Feature lookup must never abort the router (std::length_error -> SIGABRT).
+-    isTunnel = false;
++    flags = {};
+   }
+   catch (...)
+   {
+-    isTunnel = false;
++    flags = {};
+   }
+-  cache.emplace(key, isTunnel);
+-  return isTunnel;
++  cache.emplace(key, flags);
++  return flags;
+ }
+ 
+ void DumpPointDVector(std::vector<m2::PointD> const & points, FileWriter & writer)
+@@ -476,7 +503,7 @@ RoutesBuilder::Result RoutesBuilder::Processor::operator()(Params const & params
+     // segments belonging to each step (prev point .. this point) so a ferry
+     // / tunnel leg is tagged even when the turn point itself sits elsewhere.
+     size_t prevPoint = 0;
+-    std::map<std::pair<routing::NumMwmId, uint32_t>, bool> tunnelCache;
++    std::map<std::pair<routing::NumMwmId, uint32_t>, TunnelAccessFlags> tunnelCache;
+     for (size_t i = 0; i < steps.size(); ++i)
+     {
+       auto const & s = steps[i];
+@@ -485,13 +512,21 @@ RoutesBuilder::Result RoutesBuilder::Processor::operator()(Params const & params
+       size_t const endPoint = std::min(static_cast<size_t>(s.m_index), segs.size());
+       bool isFerry = false;
+       bool isTunnel = false;
++      bool tunnelOk = false;
+       for (size_t si = prevPoint; si < endPoint; ++si)
+       {
+         if (segs[si].GetRoadTypes().Has(routing::RoutingOptions::Option::Ferry))
+           isFerry = true;
+-        if (m_dataSource &&
+-            IsTunnelSegment(*m_dataSource, m_numMwmIds, segs[si].GetSegment(), tunnelCache))
+-          isTunnel = true;
++        if (m_dataSource)
++        {
++          auto const ta = LookupTunnelAccess(*m_dataSource, m_numMwmIds, segs[si].GetSegment(), tunnelCache);
++          if (ta.isTunnel)
++          {
++            isTunnel = true;
++            if (ta.tunnelOk)
++              tunnelOk = true;
++          }
++        }
+         if (isFerry && isTunnel)
+           break;
+       }
+
+@@ -504,6 +539,7 @@ RoutesBuilder::Result RoutesBuilder::Processor::operator()(Params const & params
+           << "\"ped_turn\":\"" << DebugPrint(s.m_pedestrianTurn) << "\","
+           << "\"is_ferry\":" << (isFerry ? "true" : "false") << ','
+           << "\"is_tunnel\":" << (isTunnel ? "true" : "false") << ','
++          << "\"tunnel_ok\":" << ((isTunnel && tunnelOk) ? "true" : "false") << ','
+           << "\"street\":\"";

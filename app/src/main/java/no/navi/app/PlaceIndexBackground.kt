@@ -51,26 +51,31 @@ object PlaceIndexBackground {
     }
 
     fun statusLine(): String {
-        if (running.get()) {
-            val snap = runCatching { downloadProgressSnapshot() }.getOrNull()
-            if (snap != null && snap.label.isNotBlank()) {
-                val label = annotate(snap.label)
-                val tot = snap.unitsTotal
-                val done = snap.unitsDone
-                val pct =
-                    if (tot != null && tot > 0uL) {
-                        ((done.toDouble() * 100.0) / tot.toDouble()).toInt().coerceIn(0, 100)
-                    } else {
-                        null
+        val raw =
+            if (running.get()) {
+                val snap = runCatching { downloadProgressSnapshot() }.getOrNull()
+                if (snap != null && snap.label.isNotBlank()) {
+                    val label = annotate(snap.label)
+                    val tot = snap.unitsTotal
+                    val done = snap.unitsDone
+                    val pct =
+                        if (tot != null && tot > 0uL) {
+                            ((done.toDouble() * 100.0) / tot.toDouble()).toInt().coerceIn(0, 100)
+                        } else {
+                            null
+                        }
+                    when {
+                        pct != null && tot != null -> "$label $pct% ($done / $tot)"
+                        pct != null -> "$label $pct%"
+                        else -> label
                     }
-                return when {
-                    pct != null && tot != null -> "$label $pct% ($done / $tot)"
-                    pct != null -> "$label $pct%"
-                    else -> label
+                } else {
+                    lastStatus.get()
                 }
+            } else {
+                lastStatus.get()
             }
-        }
-        return lastStatus.get()
+        return IndexingUiCopy.sanitizeProgress(raw)
     }
 
     fun ensureStarted(
@@ -196,7 +201,7 @@ object PlaceIndexBackground {
                 if (dataDir != null && !rid.isNullOrBlank()) {
                     PlaceIndexReady.markReady(dataDir, rid)
                 }
-                lastStatus.set(annotate("Place index ready 100% (6 / 6)", rid.orEmpty()))
+                lastStatus.set(annotate("Region ready 100% (6 / 6)", rid.orEmpty()))
                 if (DownloadProgressClear.shouldClear(
                         regionRunning = RegionDownloadBackground.isRunning(),
                         placeIndexRunning = false,

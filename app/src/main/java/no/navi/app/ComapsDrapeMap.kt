@@ -196,6 +196,34 @@ internal fun parsePolylineLatLon(encoded: String): DoubleArray {
     return out.toDoubleArray()
 }
 
+/**
+ * Cap drape route geometry. A ~1550 km corridor can exceed 50k vertices; CoMaps'
+ * route renderer then aborts with `std::length_error: vector` on the backend
+ * thread. Keep endpoints; stride the middle. Full polyline stays in Navi state.
+ */
+internal const val DRAPE_ROUTE_MAX_POINTS = 8_000
+
+internal fun downsamplePolylineLatLon(
+    pts: DoubleArray,
+    maxPoints: Int = DRAPE_ROUTE_MAX_POINTS,
+): DoubleArray {
+    val n = pts.size / 2
+    if (n <= maxPoints || maxPoints < 2) return pts
+    val out = DoubleArray(maxPoints * 2)
+    val last = n - 1
+    for (i in 0 until maxPoints) {
+        val src =
+            if (i == maxPoints - 1) {
+                last
+            } else {
+                ((i.toLong() * last) / (maxPoints - 1)).toInt()
+            }
+        out[i * 2] = pts[src * 2]
+        out[i * 2 + 1] = pts[src * 2 + 1]
+    }
+    return out
+}
+
 /** Which CoMaps route style the planner's profile maps to (0 car, 1 pedestrian, 2 bicycle). */
 internal fun drapeRouteType(): Int = MwmProductionPlanner.lastRouteStyle
 
@@ -247,9 +275,17 @@ internal fun ComapsDrapeMap(
     // once. Keeps polling so maps installed later in this process start the drape live.
     LaunchedEffect(Unit) {
         while (isActive && !ready) {
+            val mapsOnDisk =
+                MwmDataDir.hasWorldMwm(MwmDataDir.resolve(context)) ||
+                    MwmMapDownloader.state.installedLeaves.isNotEmpty() ||
+                    ComapsSessionBootstrap.isOpen()
             when {
                 !MwmClientBootstrap.nativeLoaded -> note = "native"
-                !ComapsDrape.eligible() -> note = "nomaps"
+                !ComapsDrape.sdkPackaged() ->
+                    note = if (mapsOnDisk) "nodrape" else "nomaps"
+                !ComapsSessionBootstrap.isOpen() && !mapsOnDisk -> note = "nomaps"
+                !ComapsDrape.eligible() ->
+                    note = if (mapsOnDisk) "starting" else "nomaps"
                 else ->
                     when (ComapsDrape.ensureInitialized(context)) {
                         ComapsDrape.State.READY -> {
@@ -257,8 +293,9 @@ internal fun ComapsDrapeMap(
                             note = null
                         }
                         ComapsDrape.State.FAILED, ComapsDrape.State.UNAVAILABLE -> {
+                            // Keep polling: World.mwm may appear when the pack-volume
+                            // SD mounts after a cold-start empty-internal fallback.
                             note = "failed"
-                            return@LaunchedEffect
                         }
                         else -> note = "starting"
                     }
@@ -562,8 +599,11 @@ internal fun ComapsDrapeMap(
     // Route line (CoMaps route renderer: casing, direction arrows at turns, pattern per profile).
     // Not keyed on layerEpoch: that counter moves with every GPS fix, and clearing and re-adding the
     // route at fix rate made the line flicker or vanish while driving.
-    LaunchedEffect(state.polyline, state.routeSegmentsJson, ready) {
+    LaunchedEffect(state.polyline, state.routeSegmentsJson, ready, NaviMapTestHooks.skipComapsRouteRender) {
         backend.clearRoute()
+        // Instrumented long-trip campaigns: keep plan/GPS/CAT, skip drape RouteBuilder
+        // (GenerateJoinNormals length_error / SIGABRT on ~30k-point via corridors).
+        if (NaviMapTestHooks.skipComapsRouteRender) return@LaunchedEffect
         val (onPoly, offPoly) = splitRouteSegmentPolylines(state.routeSegmentsJson)
         val onPts =
             parsePolylineLatLon(
@@ -578,11 +618,19 @@ internal fun ComapsDrapeMap(
         val offPts = parsePolylineLatLon(offPoly)
         val type = drapeRouteType()
         if (onPts.size >= 4) {
-            val turns = MwmProductionPlanner.lastTurnPointIndices(state.polyline)
-            backend.addSubroute(onPts, type, turns)
+            val drawOn = downsamplePolylineLatLon(onPts)
+            // Turn arrow indices are for the full polyline; drop them when
+            // geometry was thinned so CoMaps does not index past drawOn.
+            val turns =
+                if (drawOn.size == onPts.size) {
+                    MwmProductionPlanner.lastTurnPointIndices(state.polyline)
+                } else {
+                    null
+                }
+            backend.addSubroute(drawOn, type, turns)
         }
         // Off-trail legs (hiking) are drawn dashed like a pedestrian route.
-        if (offPts.size >= 4) backend.addSubroute(offPts, 1, null)
+        if (offPts.size >= 4) backend.addSubroute(downsamplePolylineLatLon(offPts), 1, null)
     }
 
     // Start / via / end pins as CoMaps route points.
@@ -707,10 +755,11 @@ internal fun ComapsDrapeMap(
         NaviMapTestHooks.lastTrackOverlayCount = state.tracks.size
     }
 
-    // DATEX situations: marks (point) and lines (geometry).
+    // DATEX situations as drape bookmark pins (colored pin + road label; phase6b-proven).
+    // Do NOT draw DATEX geometry as drape tracks: SolidLineBuilder CapVertex can throw
+    // std::length_error on degenerate synth polylines and SIGABRT the process mid-sim.
     LaunchedEffect(datexEpoch, datexHud, ready) {
         val marks = ArrayList<DrapeMark>()
-        val lines = ArrayList<DrapeLine>()
         if (datexHud.overlayEnabled && datexHud.activeCount > 0) {
             val arr = runCatching { JSONArray(datexHud.activeJson) }.getOrNull() ?: JSONArray()
             for (i in 0 until arr.length()) {
@@ -719,28 +768,34 @@ internal fun ComapsDrapeMap(
                 val geom = o.optJSONArray("geometry")
                 var lat = o.optDouble("lat", Double.NaN)
                 var lon = o.optDouble("lon", Double.NaN)
-                if (geom != null && geom.length() > 0) {
-                    val flat = DoubleArray(geom.length() * 2)
-                    var n = 0
-                    for (k in 0 until geom.length()) {
-                        val p = geom.optJSONArray(k) ?: continue
-                        flat[2 * n] = p.optDouble(0)
-                        flat[2 * n + 1] = p.optDouble(1)
-                        n++
+                if ((!lat.isFinite() || !lon.isFinite()) && geom != null && geom.length() > 0) {
+                    val p = geom.optJSONArray(0)
+                    if (p != null) {
+                        lat = p.optDouble(0)
+                        lon = p.optDouble(1)
                     }
-                    if (n >= 1 && !lat.isFinite()) {
-                        lat = flat[0]
-                        lon = flat[1]
-                    }
-                    if (n >= 2) lines.add(DrapeLine(flat.copyOf(n * 2), 0xFFC62828.toInt(), 5f))
                 }
                 if (lat.isFinite() && lon.isFinite()) {
-                    marks.add(DrapeMark(lat, lon, label, DrapeIcon.NONE, DrapeColor.DEEP_ORANGE))
+                    // BookmarkIcon::None still draws the coloured pin + name (see phase6b
+                    // r_overlay_datex_z14). INFORMATION can miss the atlas on some builds.
+                    marks.add(
+                        DrapeMark(
+                            lat,
+                            lon,
+                            label.ifBlank { "DATEX" },
+                            DrapeIcon.NONE,
+                            DrapeColor.DEEP_ORANGE,
+                        ),
+                    )
                 }
             }
         }
         overlays.marks("navi-datex", marks)
-        overlays.lines("navi-datex-lines", lines)
+        overlays.lines("navi-datex-lines", emptyList())
+        NaviMapTestHooks.lastDatexDrapeMarkCount = marks.size
+        if (marks.isNotEmpty()) {
+            Log.i(TAG, "datex drape marks=${marks.size}")
+        }
     }
 
     // Weather symbols for the visible area (plugin + toggle gated, same Rust declutter as before).
@@ -766,6 +821,42 @@ internal fun ComapsDrapeMap(
                 )
             }
             delay(15_000L)
+        }
+    }
+
+    // Compose DATEX circles: guaranteed visible even if bookmark atlas pins are decluttered.
+    var datexScreenMarks by remember { mutableStateOf<List<Pair<Offset, Boolean>>>(emptyList()) }
+    LaunchedEffect(datexEpoch, datexHud, ready, state.cameraLat, state.cameraLon, state.cameraZoom) {
+        while (isActive) {
+            if (!ready || !datexHud.overlayEnabled || datexHud.activeCount <= 0) {
+                datexScreenMarks = emptyList()
+                NaviMapTestHooks.lastDatexComposeMarkCount = 0
+            } else {
+                val arr = runCatching { JSONArray(datexHud.activeJson) }.getOrNull() ?: JSONArray()
+                val projected = ArrayList<Pair<Offset, Boolean>>(arr.length())
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    var lat = o.optDouble("lat", Double.NaN)
+                    var lon = o.optDouble("lon", Double.NaN)
+                    if ((!lat.isFinite() || !lon.isFinite())) {
+                        val geom = o.optJSONArray("geometry")
+                        val p = geom?.optJSONArray(0)
+                        if (p != null) {
+                            lat = p.optDouble(0)
+                            lon = p.optDouble(1)
+                        }
+                    }
+                    if (!lat.isFinite() || !lon.isFinite()) continue
+                    val screen = latLonToScreenApprox(backend, lat, lon) ?: continue
+                    val block =
+                        o.optString("impact").equals("block", ignoreCase = true) ||
+                            o.optString("kind").contains("block", ignoreCase = true)
+                    projected.add(screen to block)
+                }
+                datexScreenMarks = projected
+                NaviMapTestHooks.lastDatexComposeMarkCount = projected.size
+            }
+            delay(POLL_MS)
         }
     }
 
@@ -866,6 +957,14 @@ internal fun ComapsDrapeMap(
                         }
                     },
         ) {
+            for ((pt, block) in datexScreenMarks) {
+                val fill = if (block) Color(0xFFC62828) else Color(0xFFE65100)
+                // Large high-contrast discs so emulator screenshots prove DATEX render.
+                drawCircle(Color(0xAA000000), radius = 34f, center = pt)
+                drawCircle(Color.White, radius = 28f, center = pt)
+                drawCircle(fill, radius = 22f, center = pt)
+                drawCircle(Color.White, radius = 7f, center = pt)
+            }
             if (holdProgress > 0f) {
                 val center = Offset(holdScreenX, holdScreenY)
                 val radius = 42f
@@ -886,6 +985,38 @@ internal fun ComapsDrapeMap(
             }
         }
     }
+}
+
+/** Project WGS84 onto the drape view via iterative screenToLatLon Jacobian steps. */
+internal fun latLonToScreenApprox(
+    backend: ComapsDrape.Backend,
+    lat: Double,
+    lon: Double,
+): Offset? {
+    val cam = backend.camera() ?: return null
+    val w = cam.widthPx.toFloat()
+    val h = cam.heightPx.toFloat()
+    if (w < 2f || h < 2f) return null
+    var x = w * 0.5f
+    var y = h * 0.5f
+    repeat(10) {
+        val here = backend.screenToLatLon(x, y) ?: return null
+        val right = backend.screenToLatLon(x + 8f, y) ?: return null
+        val down = backend.screenToLatLon(x, y + 8f) ?: return null
+        val dLonDx = (right.second - here.second) / 8.0
+        val dLatDx = (right.first - here.first) / 8.0
+        val dLonDy = (down.second - here.second) / 8.0
+        val dLatDy = (down.first - here.first) / 8.0
+        val det = dLonDx * dLatDy - dLatDx * dLonDy
+        if (abs(det) < 1e-18) return Offset(x, y)
+        val dLon = lon - here.second
+        val dLat = lat - here.first
+        x = (x + ((dLon * dLatDy - dLat * dLonDy) / det)).toFloat()
+        y = (y + ((dLat * dLonDx - dLon * dLatDx) / det)).toFloat()
+        if (x !in -w..2f * w || y !in -h..2f * h) return null
+    }
+    if (x !in 0f..w || y !in 0f..h) return null
+    return Offset(x, y)
 }
 
 private fun angleDiff(
@@ -916,6 +1047,7 @@ private fun DrapePlaceholder(
                     when (note) {
                         "failed" -> stringResource(R.string.drape_map_failed)
                         "starting" -> stringResource(R.string.drape_map_starting)
+                        "nodrape" -> stringResource(R.string.drape_maps_present_no_engine)
                         else -> stringResource(R.string.drape_no_maps_title)
                     },
                 style = MaterialTheme.typography.titleMedium,
@@ -929,6 +1061,12 @@ private fun DrapePlaceholder(
                 Button(onClick = onOpenMapDownloads, modifier = Modifier.padding(top = 12.dp)) {
                     Text(stringResource(R.string.drape_open_map_downloads))
                 }
+            } else if (note == "nodrape") {
+                Text(
+                    text = stringResource(R.string.drape_maps_present_no_engine_body),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
             } else if (!detail.isNullOrBlank()) {
                 Text(text = detail, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
             }

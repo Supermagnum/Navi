@@ -77,5 +77,5 @@ object OfflineIndexGate {
     }
 
     /** Stable status when a region has packs but no indexable leaf extract. */
-    const val CANNOT_INDEX_YET = "cannot index yet"
+    const val CANNOT_INDEX_YET = "waiting for map extract"
 }

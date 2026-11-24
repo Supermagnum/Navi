@@ -211,6 +211,7 @@ fn download_one_leaf(
     discovery: &ComapsDiscovery,
     navi_origin: &str,
     cancel: CancelFlag<'_>,
+    allow_missing_sidecar: bool,
 ) -> Result<LeafDownloadResult, MwmDownloadError> {
     let mwm_dest = leaf_mwm_path(staging, &leaf.id);
     let countries_leaf = countries
@@ -254,22 +255,51 @@ fn download_one_leaf(
     }
 
     let sc_dest = leaf_sidecar_path(staging, &leaf.id);
-    let sc_url = leaf
-        .sidecar_url
-        .as_ref()
-        .ok_or_else(|| MwmDownloadError::Other(format!("missing sidecar_url for {}", leaf.id)))?;
-    let sc_sha = leaf.sidecar_sha256.as_ref().ok_or_else(|| {
-        MwmDownloadError::Other(format!("missing sidecar_sha256 for {}", leaf.id))
-    })?;
-    let need_sc = !(sc_dest.is_file()
-        && leaf
-            .sidecar_bytes
-            .map(|b| fs::metadata(&sc_dest).map(|m| m.len()).unwrap_or(0) == b)
-            .unwrap_or(false));
-    if need_sc {
-        download_navi_file(navi_origin, sc_url, &sc_dest, cancel)?;
+    let sidecar_result = (|| -> Result<(), MwmDownloadError> {
+        let sc_url = leaf.sidecar_url.as_ref().ok_or_else(|| {
+            MwmDownloadError::Other(format!("missing sidecar_url for {}", leaf.id))
+        })?;
+        let sc_sha = leaf.sidecar_sha256.as_ref().ok_or_else(|| {
+            MwmDownloadError::Other(format!("missing sidecar_sha256 for {}", leaf.id))
+        })?;
+        // Re-fetch when missing, size changed, or catalog SHA no longer matches so
+        // same-release sidecar updates do not require re-downloading the MWM.
+        let need_sc = {
+            let meta_ok = sc_dest.is_file()
+                && leaf
+                    .sidecar_bytes
+                    .map(|b| fs::metadata(&sc_dest).map(|m| m.len()).unwrap_or(0) == b)
+                    .unwrap_or(true);
+            if !meta_ok {
+                true
+            } else {
+                verify_path_sha256(&sc_dest, leaf.sidecar_bytes, sc_sha).is_err()
+            }
+        };
+        if need_sc {
+            // Drop a stale same-size file so the downloader replaces it.
+            let _ = fs::remove_file(&sc_dest);
+            download_navi_file(navi_origin, sc_url, &sc_dest, cancel)?;
+        }
+        verify_path_sha256(&sc_dest, leaf.sidecar_bytes, sc_sha)?;
+        Ok(())
+    })();
+
+    if let Err(e) = sidecar_result {
+        if allow_missing_sidecar {
+            return Ok(LeafDownloadResult {
+                leaf_id: leaf.id.clone(),
+                mwm_path: mwm_dest,
+                sidecar_path: None,
+                fingerprint: FingerprintStatus::NoSidecar,
+                navi_layers_available: false,
+                warning: Some(format!(
+                    "sidecar unavailable (vehicle limits offline for this leaf): {e}"
+                )),
+            });
+        }
+        return Err(e);
     }
-    verify_path_sha256(&sc_dest, leaf.sidecar_bytes, sc_sha)?;
 
     let fp = leaf
         .fingerprint()
@@ -333,6 +363,13 @@ pub struct LeafSetOptions<'a> {
     /// Checked between leaves and before each leaf; when set the download stops with
     /// [`MwmDownloadError::Other`] `"cancelled"` and keeps the staging tree for resume.
     pub cancel: Option<&'a std::sync::atomic::AtomicBool>,
+    /// When true, a missing/unreachable Navi sidecar does not fail the leaf: the MWM is
+    /// kept and vehicle-limits honesty reports the leaf as unavailable. Used for disk-cache
+    /// / CoMaps-direct catalog fallback (never for a healthy live navi catalog).
+    pub allow_missing_sidecar: bool,
+    /// Full catalog JSON for `releases/{version}/catalog.json` (VL coverage store). When
+    /// `None`, serializes `catalog`.
+    pub catalog_json: Option<&'a str>,
 }
 
 impl Default for LeafSetOptions<'_> {
@@ -340,6 +377,8 @@ impl Default for LeafSetOptions<'_> {
         Self {
             include_world: true,
             cancel: None,
+            allow_missing_sidecar: false,
+            catalog_json: None,
         }
     }
 }
@@ -360,12 +399,14 @@ pub fn download_leaf_set_with(
     }
     let version = &catalog.version;
     let staging = begin_staging(data_dir, version)?;
-    // Snapshot catalog JSON as originally served when available via re-fetch;
-    // here we persist a minimal version marker for offline debugging.
-    fs::write(
-        catalog_snapshot_path(&staging),
-        format!("{{\"schema\":\"navi-mwm-catalog/v2\",\"version\":\"{version}\"}}\n"),
-    )?;
+    // Persist the full catalog so VehicleLimitsCoverageStore can read per-leaf
+    // `vehicle_limits_coverage` offline (never a version-only stub).
+    let snapshot = match opts.catalog_json {
+        Some(raw) => raw.to_string(),
+        None => serde_json::to_string(catalog)
+            .map_err(|e| MwmDownloadError::Other(format!("catalog snapshot: {e}")))?,
+    };
+    fs::write(catalog_snapshot_path(&staging), snapshot)?;
 
     let attr_rel = format!("{version}/attribution.json");
     let attr_md_rel = format!("{version}/ATTRIBUTION.md");
@@ -410,6 +451,7 @@ pub fn download_leaf_set_with(
             discovery,
             navi_origin,
             opts.cancel,
+            opts.allow_missing_sidecar,
         )?;
         progress.completed_leaves += 1;
         results.push(result);
@@ -593,6 +635,7 @@ mod tests {
                 ],
                 no_sidecar: false,
                 elevation_policy_version: Some(1),
+                vehicle_limits_coverage: None,
             };
             let r1 = install_leaf_bytes_for_test(&staging, &leaf, mwm, Some(b"side")).unwrap();
             assert!(r1.navi_layers_available);
@@ -628,6 +671,7 @@ mod tests {
                 shared_with_regions: vec![],
                 no_sidecar: false,
                 elevation_policy_version: Some(1),
+                vehicle_limits_coverage: None,
             };
             let r = install_leaf_bytes_for_test(&staging, &leaf, mwm, Some(b"side")).unwrap();
             assert!(!r.navi_layers_available);

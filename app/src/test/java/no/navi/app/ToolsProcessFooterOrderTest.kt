@@ -4,54 +4,50 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Stable Tools process-footer ordering (Part 4). Mirrors the buildList order in
- * MainActivity Tools HUD.
+ * Stable Tools process-footer ordering. Place-index / indexed-maps lines are
+ * intentionally omitted from the footer (MWM search/routing is built-in).
  */
 class ToolsProcessFooterOrderTest {
-    private fun orderedLines(
-        region: String,
-        pmtiles: String,
-        placeIndex: String,
-        indexedMaps: String,
-    ): List<String> =
-        buildList {
-            if (region.isNotBlank()) add(region)
-            if (pmtiles.isNotBlank()) add(pmtiles)
-            if (placeIndex.isNotBlank()) add(placeIndex)
-            if (indexedMaps.isNotBlank()) add(indexedMaps)
-        }
-
     @Test
-    fun order_is_region_then_pmtiles_then_place_then_indexed() {
+    fun order_is_region_then_pmtiles_only() {
+        val lines =
+            StatusUi.toolsVisibleLines(
+                regionDownloadProgress = "region A",
+                pmtilesProgress = "Writing map archive…",
+                placeIndexUiLine = "Preparing search: …",
+                indexedMapsUiLine = "Preparing maps: …",
+                toolsStatusRaw = "",
+            )
         assertEquals(
-            listOf("region A", "Writing map archive…", "Place index: …", "Indexed maps: …"),
-            orderedLines(
-                region = "region A",
-                pmtiles = "Writing map archive…",
-                placeIndex = "Place index: …",
-                indexedMaps = "Indexed maps: …",
+            listOf(
+                "region_download_progress" to "region A",
+                "pmtiles_progress" to "Writing map archive…",
             ),
+            lines,
         )
     }
 
     @Test
-    fun omitting_middle_keeps_relative_order() {
+    fun omitting_pmtiles_keeps_region() {
+        val lines =
+            StatusUi.toolsVisibleLines(
+                regionDownloadProgress = "Fetching packs…",
+                pmtilesProgress = "",
+                placeIndexUiLine = "",
+                indexedMapsUiLine = "Preparing maps: ready",
+                toolsStatusRaw = "",
+            )
         assertEquals(
-            listOf("Fetching packs…", "Indexed maps: ready"),
-            orderedLines(
-                region = "Fetching packs…",
-                pmtiles = "",
-                placeIndex = "",
-                indexedMaps = "Indexed maps: ready",
-            ),
+            listOf("region_download_progress" to "Fetching packs…"),
+            lines,
         )
     }
 
     @Test
     fun empty_means_ready_candidate() {
         assertEquals(
-            emptyList<String>(),
-            orderedLines("", "", "", ""),
+            emptyList<Pair<String, String>>(),
+            StatusUi.toolsVisibleLines("", "", "", "", ""),
         )
     }
 }

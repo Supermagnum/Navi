@@ -403,7 +403,7 @@ class Phase7MigrationInstrumentedTest {
     @Test
     fun k_reinstall_ostlandet_leaves() {
         assumeTrue(MwmClientBootstrap.isEnabled())
-        val regions = uniffi.navi.mwmListRegions(defaultPackServerBaseUrl())
+        val regions = uniffi.navi.mwmListRegions(defaultPackServerBaseUrl(), dataDir.absolutePath)
         val leaves = regions.regions.first { it.id == "europe_norway_ostlandet" }.leafIds
         val t0 = System.currentTimeMillis()
         val res = uniffi.navi.mwmInstallLeaves(dataDir.absolutePath, defaultPackServerBaseUrl(), leaves)

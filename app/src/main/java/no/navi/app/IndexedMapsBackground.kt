@@ -99,19 +99,11 @@ object IndexedMapsBackground {
                 } else {
                     lastStatus.get()
                 }
-            return "Indexed maps (background): $prog"
+            return IndexingUiCopy.sanitizeProgress("Preparing maps (background): $prog")
         }
-        // Idle: surface outdated / version_mismatch so Tools can offer update.
-        val st =
-            runCatching { indexedMapsStatus(pbf.absolutePath, dataDir.absolutePath).trim() }
-                .getOrDefault("")
-        return when (st) {
-            "outdated" ->
-                "Indexed maps: outdated pack format — tap Refresh to download the current pack (optional)"
-            "version_mismatch" ->
-                "Indexed maps: outdated / incompatible — tap Refresh to update"
-            else -> ""
-        }
+        // Idle: outdated packs are refreshed via Download region (no separate
+        // "indexed maps" chrome).
+        return ""
     }
 
     /**

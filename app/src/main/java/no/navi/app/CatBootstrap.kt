@@ -14,6 +14,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 object CatBootstrap {
     private val configured = AtomicBoolean(false)
 
+    /** On-device / SD folder for user-copied OpenRepeater (and similar) KML exports. */
+    const val REPEATER_DATA_DIR_NAME = "repeater-data"
+
+    /** Legacy drop folder name (pre-`repeater-data`); still scanned if present. */
+    const val LEGACY_REPEATER_DROP_DIR_NAME = "repeaters"
+
     fun ensureInitialized(context: Context) {
         if (!configured.compareAndSet(false, true)) return
         val filesDir = context.filesDir
@@ -65,7 +71,7 @@ object CatBootstrap {
         Log.i(
             "NaviCat",
             "reinstall guest name=$name version=$version " +
-                "was_marker=${marker.isFile} was_bytes=${wasmFile.length()} " +
+                "was_marker=${marker.isFile} was_size=${wasmFile.length()} " +
                 "asset_bytes=${assetWasm.size}",
         )
         val manifest =
@@ -80,34 +86,72 @@ object CatBootstrap {
     }
 
     /**
-     * App-owned drop folder. applicationId is `no.navi.app` with no suffix, so
-     * this is `Android/data/no.navi.app/files/repeaters`.
+     * User writeable drop folder for OpenRepeater / RepeaterBook-style KML exports.
+     * Prefer SD (`RemovableAppFiles`) when present; otherwise internal app files.
+     * Path example on SD:
+     * `Android/data/no.navi.app/files/repeater-data`.
      */
     fun repeaterDropDir(context: Context): File {
-        val base = context.getExternalFilesDir(null) ?: context.filesDir
-        return File(base, "repeaters")
+        val base = RemovableAppFiles.resolve(context)
+        return File(base, REPEATER_DATA_DIR_NAME)
+    }
+
+    /**
+     * Import directories to scan: primary [repeaterDropDir], plus legacy `repeaters`
+     * on the same volume and on primary external / internal if they still hold files.
+     */
+    fun repeaterImportDirs(context: Context): List<File> {
+        val primary = repeaterDropDir(context)
+        val out = LinkedHashSet<File>()
+        out.add(primary)
+        val bases = LinkedHashSet<File>()
+        bases.add(primary.parentFile ?: RemovableAppFiles.resolve(context))
+        context.getExternalFilesDir(null)?.let { bases.add(it) }
+        bases.add(context.filesDir)
+        for (base in bases) {
+            out.add(File(base, REPEATER_DATA_DIR_NAME))
+            out.add(File(base, LEGACY_REPEATER_DROP_DIR_NAME))
+        }
+        return out.filter { it.isDirectory || it == primary }
     }
 
     const val REPEATER_DROP_README: String =
-        "Put RepeaterBook exports here (KML/KMZ preferred; CSV accepted when it has valid latitude and longitude columns).\n" +
-            "Exports may be split across multiple files when repeaters are networked; do not assume one file per country.\n" +
-            "This folder is visible from a computer over USB (MTP) under Android/data/no.navi.app/files/repeaters.\n" +
+        "OpenRepeater / RepeaterBook KML import (no API — copy files yourself)\n" +
+            "================================================================\n" +
+            "\n" +
+            "1. Export repeaters as KML (or KMZ) from OpenRepeater (or RepeaterBook).\n" +
+            "2. Copy the files into this folder. Any file name is fine; do not overwrite\n" +
+            "   existing files — keep one file per export (e.g. Norway.kml, Sweden.kml).\n" +
+            "3. In Navi: enable the CAT plugin, open CAT tools, tap Update repeaters.\n" +
+            "\n" +
+            "Navi never contacts repeaterbook.com or OpenRepeater over the network for\n" +
+            "these files. You are responsible for complying with each site's terms.\n" +
             "Android deletes this folder when the app is uninstalled.\n" +
-            "The app does not contact repeaterbook.com. You are responsible for complying with RepeaterBook's terms.\n"
+            "USB/MTP path: Android/data/no.navi.app/files/repeater-data\n"
 
     private fun ensureRepeaterDrop(context: Context) {
         val dir = repeaterDropDir(context)
-        dir.mkdirs()
+        if (!dir.exists() && !dir.mkdirs()) {
+            Log.w("NaviCat", "could not create repeater-data at ${dir.absolutePath}")
+            return
+        }
+        // Ensure the directory is user-writable for MTP drops.
+        runCatching {
+            dir.setWritable(true, false)
+            dir.setReadable(true, false)
+        }
         val readme = File(dir, "README.txt")
-        if (!readme.isFile) {
-            readme.writeText(REPEATER_DROP_README)
+        val want = REPEATER_DROP_README
+        if (!readme.isFile || readme.readText() != want) {
+            readme.writeText(want)
             MediaScannerConnection.scanFile(
                 context,
-                arrayOf(readme.absolutePath),
-                arrayOf("text/plain"),
+                arrayOf(dir.absolutePath, readme.absolutePath),
+                arrayOf(null, "text/plain"),
                 null,
             )
         }
+        Log.i("NaviCat", "repeater-data ready at ${dir.absolutePath}")
     }
 
     private fun releaseLegacyRepeaterCsvGrants(context: Context) {

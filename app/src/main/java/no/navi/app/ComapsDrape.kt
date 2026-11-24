@@ -262,9 +262,21 @@ object ComapsDrape {
     /**
      * Initialise once, on the main thread. Safe to call repeatedly (e.g. from a
      * Compose effect); returns the state after the attempt.
+     *
+     * [State.FAILED] is not terminal: when `World.mwm` becomes visible later
+     * (SD pack volume mounts after a cold-start fallback to empty internal),
+     * the next call retries.
      */
     fun ensureInitialized(context: Context): State {
-        if (state == State.READY || state == State.FAILED) return state
+        if (state == State.READY) return state
+        if (state == State.FAILED) {
+            val world = java.io.File(MwmDataDir.mwmRoot(context), "World.mwm")
+            if (!world.isFile) return state
+            Log.i(TAG, "retrying drape init; World.mwm now at ${world.absolutePath}")
+            started.set(false)
+            state = State.IDLE
+            lastError = null
+        }
         val impl = backendRef
         if (impl == null) {
             state = State.UNAVAILABLE
@@ -290,6 +302,8 @@ object ComapsDrape {
         } else {
             state = State.FAILED
             lastError = err
+            // Allow another attempt once World / volume state changes.
+            started.set(false)
             Log.w(TAG, "drape unavailable: $err init_ms=$ms")
         }
         NaviMapTestHooks.drapeState = state.name

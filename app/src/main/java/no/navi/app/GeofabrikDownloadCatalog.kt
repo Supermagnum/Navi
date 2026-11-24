@@ -824,7 +824,7 @@ object GeofabrikDownloadCatalog {
                 iso = "se",
                 supportNote =
                     "Offline maps: Geofabrik publishes only the country extract; län chips install " +
-                        "pack-server regions and use the Sweden PBF for place index. " +
+                        "pack-server regions and use the Sweden PBF for search data. " +
                         "Truck HOS: EC 561 from GPS. Speed cameras: decline (not allow-listed).",
                 testTag = "chip_country_europe_sweden",
             ),
@@ -1151,6 +1151,27 @@ object GeofabrikDownloadCatalog {
 
     /** All pack-catalog leaf paths under `europe/germany` (for ready-pill coverage). */
     fun germanyPackLeafPaths(): List<String> = packCatalogLeafPaths("europe/germany")
+
+    /**
+     * Europe Geofabrik pack paths that long-trip / download chips may request:
+     * chip leaves when present, otherwise the country root (`europe/austria`, …).
+     * Includes `europe/great-britain` alongside United Kingdom.
+     */
+    fun europePackLeafPaths(): List<String> {
+        val out = linkedSetOf<String>()
+        for (country in countriesIn(GeofabrikContinent.Europe)) {
+            if (!country.path.startsWith("europe/")) continue
+            val leaves = packCatalogLeafPaths(country.path)
+            if (leaves.isEmpty()) {
+                out += country.path
+            } else {
+                out.addAll(leaves)
+                // Country root is also a valid download / corridor id.
+                out += country.path
+            }
+        }
+        return out.toList()
+    }
 
     val norwayRegions: List<Pair<String, String>> =
         listOf(

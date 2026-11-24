@@ -1,0 +1,29 @@
+From: Navi
+Subject: [PATCH] navi: skip World/WorldCoasts in RoutesBuilder registration
+
+Registering World overlays as CrossMwm leaves breaks LeapsOnly (build_s=0).
+
+---
+diff --git a/libs/routing/routes_builder/routes_builder.cpp b/libs/routing/routes_builder/routes_builder.cpp
+--- a/libs/routing/routes_builder/routes_builder.cpp
++++ b/libs/routing/routes_builder/routes_builder.cpp
+@@ -37,6 +37,8 @@
+ #include "base/scope_guard.hpp"
+ #include "base/timer.hpp"
+ 
++#include "defines.hpp"
++
+ #include <algorithm>
+ #include <cmath>
+ #include <limits>
+@@ -206,6 +208,12 @@ RoutesBuilder::RoutesBuilder(size_t threadsNumber) : m_threadPool(threadsNumber)
+     // Only maps from countries.txt should be used.
+     if (!m_cpg->GetStorageForTesting().IsLeaf(countryFile.GetName()))
+       continue;
++    // World / WorldCoasts overlays break LeapsOnly (build_s=0). Skip in headless router.
++    auto const & leafName = countryFile.GetName();
++    if (leafName == WORLD_FILE_NAME || leafName == WORLD_COASTS_FILE_NAME)
++      continue;
++
+     m_numMwmIds->RegisterFile(countryFile);
+     navi_spike::WetlandSidecar::SetMwmName(m_numMwmIds->GetId(countryFile), countryFile.GetName());

@@ -12,6 +12,7 @@
 //! | `wetland_edges` | Sorted `Vec<WetlandRecord>` + binary search | ~784 KiB (8 B × 98 082) |
 //! | `boardwalk_flags` | Sorted `Vec<BoardwalkRecord>` + binary search | ~1.7 KiB |
 //! | `elevation_overrides` | Sorted feature index + flat delta-encoded point buffer | ~6 B/point + 12 B/feature |
+//! | `vehicle_limits` | Sorted `Vec<VehicleLimitRecord>` + binary search | ~20 B × tagged segments |
 //! | `attribution` | Owned `String` (UTF-8 JSON) | ~100 KiB |
 //!
 //! Sorted vectors match the bake sort order and avoid HashMap overhead for the
@@ -39,6 +40,8 @@ pub const SECTION_WETLAND: &str = "wetland_edges";
 pub const SECTION_BOARDWALK: &str = "boardwalk_flags";
 /// Elevation overrides section.
 pub const SECTION_ELEVATION: &str = "elevation_overrides";
+/// Optional per-segment vehicle dimension caps.
+pub const SECTION_VEHICLE_LIMITS: &str = "vehicle_limits";
 /// Attribution JSON section.
 pub const SECTION_ATTRIBUTION: &str = "attribution";
 /// Soft wetland class.
@@ -48,6 +51,8 @@ pub const CLASS_HARD: u8 = 2;
 /// Elevation body magic `EL02` (little-endian).
 pub const ELEVATION_BODY_MAGIC_EL02: u32 = 0x3230_4C45;
 const RECORD_LEN: usize = 8;
+/// Fixed wire length of one `vehicle_limits` record.
+pub const VEHICLE_LIMIT_RECORD_LEN: usize = 20;
 /// Packed EL02 point: `u16` index delta + `u32` zigzag altitude delta.
 const ELEV_POINT_PACKED_LEN: usize = 6;
 
@@ -104,6 +109,34 @@ pub struct BoardwalkRecord {
     pub segment_index: u16,
     pub direction: u8,
     pub flag: u8,
+}
+
+/// One vehicle-limit record for a road segment (both travel directions).
+///
+/// Zero in a limit field means unknown / not tagged and must never block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct VehicleLimitRecord {
+    pub feature_id: u32,
+    pub segment_index: u16,
+    pub max_height_cm: u16,
+    pub max_width_cm: u16,
+    pub max_length_cm: u16,
+    /// Units of 10 kg (tonnes × 100).
+    pub max_weight_10kg: u16,
+    pub max_axleload_10kg: u16,
+    pub max_bogie_10kg: u16,
+}
+
+impl VehicleLimitRecord {
+    /// True when every limit field is zero.
+    pub fn is_empty(&self) -> bool {
+        self.max_height_cm == 0
+            && self.max_width_cm == 0
+            && self.max_length_cm == 0
+            && self.max_weight_10kg == 0
+            && self.max_axleload_10kg == 0
+            && self.max_bogie_10kg == 0
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -252,6 +285,7 @@ pub struct SidecarReader {
     wetland: Mutex<Option<Vec<WetlandRecord>>>,
     boardwalk: Mutex<Option<Vec<BoardwalkRecord>>>,
     elevation: Mutex<Option<ElevationIndex>>,
+    vehicle_limits: Mutex<Option<Vec<VehicleLimitRecord>>>,
     attribution: Mutex<Option<String>>,
 }
 
@@ -329,6 +363,7 @@ impl SidecarReader {
             wetland: Mutex::new(None),
             boardwalk: Mutex::new(None),
             elevation: Mutex::new(None),
+            vehicle_limits: Mutex::new(None),
             attribution: Mutex::new(None),
         })
     }
@@ -379,6 +414,33 @@ impl SidecarReader {
     pub fn boardwalk_records(&self) -> Result<Vec<BoardwalkRecord>, SidecarError> {
         self.ensure_boardwalk()?;
         Ok(self.boardwalk.lock().unwrap().clone().unwrap_or_default())
+    }
+
+    /// True when the directory lists a `vehicle_limits` section (may be empty).
+    pub fn has_vehicle_limits_section(&self) -> bool {
+        self.find_section(SECTION_VEHICLE_LIMITS).is_some()
+    }
+
+    pub fn vehicle_limit_records(&self) -> Result<Vec<VehicleLimitRecord>, SidecarError> {
+        self.ensure_vehicle_limits()?;
+        Ok(self
+            .vehicle_limits
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_default())
+    }
+
+    /// Lookup by `(feature_id, segment_index)`. Applies to both travel directions.
+    pub fn vehicle_limit(
+        &self,
+        feature_id: u32,
+        segment_index: u16,
+    ) -> Result<Option<VehicleLimitRecord>, SidecarError> {
+        self.ensure_vehicle_limits()?;
+        let guard = self.vehicle_limits.lock().unwrap();
+        let records = guard.as_ref().unwrap();
+        Ok(find_vehicle_limit(records, feature_id, segment_index).copied())
     }
 
     /// Absolute altitude in metres when an EL02 override exists.
@@ -434,17 +496,25 @@ impl SidecarReader {
         let wetland = self.wetland_records()?;
         let boardwalk = self.boardwalk_records()?;
         self.ensure_elevation()?;
-        let elev_guard = self.elevation.lock().unwrap();
-        let elevation = elev_guard.as_ref().unwrap();
+        // Drop the elevation lock before vehicle_limit_records(): that path
+        // may call maybe_release_logical(), which also locks elevation (and
+        // std::sync::Mutex is not reentrant — holding both deadlocks).
+        let (elevation_features, elevation_points) = {
+            let elev_guard = self.elevation.lock().unwrap();
+            let elevation = elev_guard.as_ref().unwrap();
+            (elevation.feature_count(), elevation.point_count_total())
+        };
         let soft = wetland.iter().filter(|r| r.class == CLASS_SOFT).count();
         let hard = wetland.iter().filter(|r| r.class == CLASS_HARD).count();
+        let vehicle_limits = self.vehicle_limit_records()?;
         Ok(InspectCounts {
             wetland_records: wetland.len(),
             soft_records: soft,
             hard_records: hard,
             boardwalk_records: boardwalk.len(),
-            elevation_features: elevation.feature_count(),
-            elevation_points: elevation.point_count_total(),
+            elevation_features,
+            elevation_points,
+            vehicle_limits_records: vehicle_limits.len(),
             sections: self
                 .header
                 .sections
@@ -515,6 +585,23 @@ impl SidecarReader {
         Ok(())
     }
 
+    fn ensure_vehicle_limits(&self) -> Result<(), SidecarError> {
+        let mut g = self.vehicle_limits.lock().unwrap();
+        if g.is_some() {
+            return Ok(());
+        }
+        match self.find_section(SECTION_VEHICLE_LIMITS) {
+            None => *g = Some(Vec::new()),
+            Some(_) => {
+                let raw = self.load_section_body(SECTION_VEHICLE_LIMITS)?;
+                *g = Some(parse_vehicle_limits_body(&raw)?);
+            }
+        }
+        drop(g);
+        self.maybe_release_logical();
+        Ok(())
+    }
+
     fn find_section(&self, name: &str) -> Option<&SectionInfo> {
         self.header.sections.iter().find(|s| s.name == name)
     }
@@ -552,6 +639,7 @@ impl SidecarReader {
         let warm = self.wetland.lock().unwrap().is_some()
             && self.boardwalk.lock().unwrap().is_some()
             && self.elevation.lock().unwrap().is_some()
+            && self.vehicle_limits.lock().unwrap().is_some()
             && self.attribution.lock().unwrap().is_some();
         if !warm {
             return;
@@ -572,6 +660,7 @@ pub struct InspectCounts {
     pub boardwalk_records: usize,
     pub elevation_features: usize,
     pub elevation_points: usize,
+    pub vehicle_limits_records: usize,
     pub sections: Vec<String>,
 }
 
@@ -618,6 +707,139 @@ fn find_boardwalk(
         })
         .ok()
         .map(|i| &records[i])
+}
+
+fn find_vehicle_limit(
+    records: &[VehicleLimitRecord],
+    feature_id: u32,
+    segment_index: u16,
+) -> Option<&VehicleLimitRecord> {
+    records
+        .binary_search_by(|r| (r.feature_id, r.segment_index).cmp(&(feature_id, segment_index)))
+        .ok()
+        .map(|i| &records[i])
+}
+
+/// Coverage header from a VL01 `vehicle_limits` body (defaults for legacy).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct VehicleLimitsCoverage {
+    pub tagged_ways: u32,
+    pub matched_ways: u32,
+    /// `round(match_rate * 1000)`.
+    pub match_rate_milli: u32,
+    pub non_numeric_no_limit: u32,
+    pub unknown_value: u32,
+    pub osm_data_date: String,
+    pub map_release: String,
+}
+
+impl VehicleLimitsCoverage {
+    pub fn match_rate(&self) -> f64 {
+        f64::from(self.match_rate_milli) / 1000.0
+    }
+
+    /// Default client threshold for treating a leaf as fully covered.
+    pub const DEFAULT_APPLY_THRESHOLD: f64 = 0.90;
+
+    pub fn meets_threshold(&self, threshold: f64) -> bool {
+        self.match_rate() + f64::EPSILON >= threshold
+    }
+}
+
+const VEHICLE_LIMITS_BODY_MAGIC: &[u8; 4] = b"VL01";
+
+fn parse_vehicle_limit_records(
+    data: &[u8],
+    mut off: usize,
+) -> Result<Vec<VehicleLimitRecord>, SidecarError> {
+    if off + 4 > data.len() {
+        return Err(SidecarError::RecordBodyCorrupt(
+            "vehicle_limits count truncated".into(),
+        ));
+    }
+    let count = read_u32(data, off)? as usize;
+    off += 4;
+    let need = off + count * VEHICLE_LIMIT_RECORD_LEN;
+    if data.len() != need {
+        return Err(SidecarError::RecordBodyCorrupt(format!(
+            "vehicle_limits len {} want {}",
+            data.len(),
+            need
+        )));
+    }
+    let mut out = Vec::with_capacity(count);
+    for _ in 0..count {
+        out.push(VehicleLimitRecord {
+            feature_id: read_u32(data, off)?,
+            segment_index: read_u16(data, off + 4)?,
+            max_height_cm: read_u16(data, off + 8)?,
+            max_width_cm: read_u16(data, off + 10)?,
+            max_length_cm: read_u16(data, off + 12)?,
+            max_weight_10kg: read_u16(data, off + 14)?,
+            max_axleload_10kg: read_u16(data, off + 16)?,
+            max_bogie_10kg: read_u16(data, off + 18)?,
+        });
+        off += VEHICLE_LIMIT_RECORD_LEN;
+    }
+    Ok(out)
+}
+
+/// Decode VL01 or legacy `vehicle_limits` body.
+pub fn parse_vehicle_limits_section(
+    data: &[u8],
+) -> Result<(VehicleLimitsCoverage, Vec<VehicleLimitRecord>), SidecarError> {
+    if data.len() < 4 {
+        return Err(SidecarError::RecordBodyCorrupt(
+            "vehicle_limits too short".into(),
+        ));
+    }
+    if data[..4] == *VEHICLE_LIMITS_BODY_MAGIC {
+        let mut off = 4;
+        if off + 20 > data.len() {
+            return Err(SidecarError::RecordBodyCorrupt(
+                "vehicle_limits VL01 coverage truncated".into(),
+            ));
+        }
+        let tagged_ways = read_u32(data, off)?;
+        off += 4;
+        let matched_ways = read_u32(data, off)?;
+        off += 4;
+        let match_rate_milli = read_u32(data, off)?;
+        off += 4;
+        let non_numeric_no_limit = read_u32(data, off)?;
+        off += 4;
+        let unknown_value = read_u32(data, off)?;
+        off += 4;
+        let osm_data_date = read_u16_str(data, &mut off)?;
+        let map_release = read_u16_str(data, &mut off)?;
+        let records = parse_vehicle_limit_records(data, off)?;
+        return Ok((
+            VehicleLimitsCoverage {
+                tagged_ways,
+                matched_ways,
+                match_rate_milli,
+                non_numeric_no_limit,
+                unknown_value,
+                osm_data_date,
+                map_release,
+            },
+            records,
+        ));
+    }
+    Ok((
+        VehicleLimitsCoverage::default(),
+        parse_vehicle_limit_records(data, 0)?,
+    ))
+}
+
+/// Decode the `vehicle_limits` section body (records only).
+pub fn parse_vehicle_limits_body(data: &[u8]) -> Result<Vec<VehicleLimitRecord>, SidecarError> {
+    Ok(parse_vehicle_limits_section(data)?.1)
+}
+
+/// Strict comparison used by the car estimator: block only when vehicle > limit.
+pub fn vehicle_exceeds_limit(vehicle: u16, limit: u16) -> bool {
+    limit != 0 && vehicle > limit
 }
 
 fn parse_wetland_body(data: &[u8]) -> Result<Vec<WetlandRecord>, SidecarError> {
@@ -1036,5 +1258,31 @@ mod tests {
         let r = SidecarReader::open_bytes(&zst).unwrap();
         assert!(r.boardwalk_records().unwrap().is_empty());
         assert!(r.elevation_features().unwrap().is_empty());
+        assert!(!r.has_vehicle_limits_section());
+        assert!(r.vehicle_limit_records().unwrap().is_empty());
+    }
+
+    #[test]
+    fn vehicle_limits_body_roundtrip_and_strict_compare() {
+        let mut body = Vec::new();
+        body.extend_from_slice(&1u32.to_le_bytes());
+        body.extend_from_slice(&42u32.to_le_bytes());
+        body.extend_from_slice(&3u16.to_le_bytes());
+        body.extend_from_slice(&0u16.to_le_bytes()); // reserved
+        body.extend_from_slice(&270u16.to_le_bytes());
+        body.extend_from_slice(&0u16.to_le_bytes());
+        body.extend_from_slice(&0u16.to_le_bytes());
+        body.extend_from_slice(&750u16.to_le_bytes());
+        body.extend_from_slice(&0u16.to_le_bytes());
+        body.extend_from_slice(&0u16.to_le_bytes());
+        let recs = parse_vehicle_limits_body(&body).unwrap();
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].feature_id, 42);
+        assert_eq!(recs[0].segment_index, 3);
+        assert_eq!(recs[0].max_height_cm, 270);
+        assert_eq!(recs[0].max_weight_10kg, 750);
+        assert!(vehicle_exceeds_limit(271, 270));
+        assert!(!vehicle_exceeds_limit(270, 270));
+        assert!(!vehicle_exceeds_limit(300, 0));
     }
 }

@@ -769,6 +769,8 @@ internal object IntegrityCheckingUniffiLib {
         uniffiCheckContractApiVersion(this)
         uniffiCheckApiChecksums(this)
     }
+
+    internal fun ensureInitialized() = Unit
     external fun uniffi_navi_checksum_func_apply_osm_update(
     ): Int
     external fun uniffi_navi_checksum_func_approach_appear_m(
@@ -1161,6 +1163,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_travel_profile_locks_avoid_motorways(
     ): Int
+    external fun uniffi_navi_checksum_func_travel_profile_locks_avoid_tunnels(
+    ): Int
     external fun uniffi_navi_checksum_func_travel_profile_menu_focus(
     ): Int
     external fun uniffi_navi_checksum_func_update_gps_fix(
@@ -1303,6 +1307,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_comaps_leaf_for_point(
     ): Int
+    external fun uniffi_navi_checksum_func_comaps_leaves_missing_vehicle_limits(
+    ): Int
     external fun uniffi_navi_checksum_func_comaps_native_available(
     ): Int
     external fun uniffi_navi_checksum_func_comaps_poi_category_mappings(
@@ -1346,6 +1352,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_comaps_session_set_optimize(
     ): Int
     external fun uniffi_navi_checksum_func_comaps_session_set_turns_locale(
+    ): Int
+    external fun uniffi_navi_checksum_func_comaps_session_set_vehicle(
     ): Int
     external fun uniffi_navi_checksum_func_comaps_session_snap_suggestion(
     ): Int
@@ -1460,6 +1468,8 @@ internal object UniffiLib {
         uniffiCallbackInterfaceSensorPlatform.register(this)
         
     }
+
+    internal fun ensureInitialized() = Unit
     external fun uniffi_navi_fn_clone_ffitrackstore(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
     external fun uniffi_navi_fn_free_ffitrackstore(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1906,6 +1916,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_travel_profile_locks_avoid_motorways(`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    external fun uniffi_navi_fn_func_travel_profile_locks_avoid_tunnels(`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
     external fun uniffi_navi_fn_func_travel_profile_menu_focus(`profile`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_navi_fn_func_update_gps_fix(`lat`: Double,`lon`: Double,`available`: Byte,`speedKmh`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -2048,6 +2060,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_comaps_leaf_for_point(`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_comaps_leaves_missing_vehicle_limits(`leafIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_comaps_native_available(uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     external fun uniffi_navi_fn_func_comaps_poi_category_mappings(uniffi_out_err: UniffiRustCallStatus, 
@@ -2092,6 +2106,8 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_navi_fn_func_comaps_session_set_turns_locale(`locale`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    external fun uniffi_navi_fn_func_comaps_session_set_vehicle(`limits`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_navi_fn_func_comaps_session_snap_suggestion(`profile`: RustBuffer.ByValue,`code`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`radiusM`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_comaps_set_platform_locked(`locked`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -2108,7 +2124,7 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_mwm_installed(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_navi_fn_func_mwm_list_regions(`naviOrigin`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    external fun uniffi_navi_fn_func_mwm_list_regions(`naviOrigin`: RustBuffer.ByValue,`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_mwm_migration_discard(`dataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
@@ -2859,6 +2875,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_travel_profile_locks_avoid_motorways() and 0xFFFF) != 40364) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_travel_profile_locks_avoid_tunnels() and 0xFFFF) != 31223) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_travel_profile_menu_focus() and 0xFFFF) != 26638) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -3072,6 +3091,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_comaps_leaf_for_point() and 0xFFFF) != 47602) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_comaps_leaves_missing_vehicle_limits() and 0xFFFF) != 22686) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_comaps_native_available() and 0xFFFF) != 20822) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -3138,6 +3160,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_comaps_session_set_turns_locale() and 0xFFFF) != 9442) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_comaps_session_set_vehicle() and 0xFFFF) != 62462) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_comaps_session_snap_suggestion() and 0xFFFF) != 44768) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -3162,7 +3187,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_mwm_installed() and 0xFFFF) != 65171) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if ((lib.uniffi_navi_checksum_func_mwm_list_regions() and 0xFFFF) != 46636) {
+    if ((lib.uniffi_navi_checksum_func_mwm_list_regions() and 0xFFFF) != 23808) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_mwm_migration_discard() and 0xFFFF) != 41547) {
@@ -3282,10 +3307,10 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
  * @suppress
  */
 public fun uniffiEnsureInitialized() {
-    IntegrityCheckingUniffiLib
-    // UniffiLib() initialized as objects are used, but we still need to explicitly
-    // reference it so initialization across crates works as expected.
-    UniffiLib
+    // Call arbitrary methods on IntegrityCheckingUniffiLib and UniffiLib to ensure that
+    // their init blocks run. This ensures initialization across crates works as expected.
+    IntegrityCheckingUniffiLib.ensureInitialized()
+    UniffiLib.ensureInitialized()
 }
 
 // Async support
@@ -12179,6 +12204,22 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     
 
         /**
+         * Soft avoid-tunnels is never UI-locked. Hiking / bike / e-bike hide the
+         * toggle and rely on HardAvoid; this FFI helper stays for ABI compatibility
+         * and always returns false.
+         */ fun `travelProfileLocksAvoidTunnels`(`profile`: TravelProfile): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_travel_profile_locks_avoid_tunnels(
+    
+        
+        FfiConverterTypeTravelProfile.lower(`profile`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Whether this profile appears as a primary travel-mode chip.
          */ fun `travelProfileMenuFocus`(`profile`: TravelProfile): kotlin.Boolean {
             return FfiConverterBoolean.lift(
@@ -13198,6 +13239,21 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     
 
         /**
+         * Among `leaf_ids`, those whose loaded sidecar has no `vehicle_limits` section (or no
+         * sidecar loaded). Used by the planner to decide honesty banners after a route.
+         */ fun `comapsLeavesMissingVehicleLimits`(`leafIds`: List<kotlin.String>): List<kotlin.String> {
+            return FfiConverterSequenceString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_leaves_missing_vehicle_limits(
+    
+        
+        FfiConverterSequenceString.lower(`leafIds`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Probe whether the CoMaps native core is linked into this build.
          */ fun `comapsNativeAvailable`(): kotlin.Boolean {
             return FfiConverterBoolean.lift(
@@ -13499,6 +13555,20 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     
 
         /**
+         * Install vehicle dimensions for the car estimator (truck / mobile home / car height).
+         * Pass a zeroed [`FfiVehicleLimits`] (all nulls) to clear.
+         */ fun `comapsSessionSetVehicle`(`limits`: FfiVehicleLimits)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_comaps_session_set_vehicle(
+    
+        
+        FfiConverterTypeFfiVehicleLimits.lower(`limits`),_status)
+}
+    
+    
+
+        /**
          * Nearest drivable road for the endpoint that failed with `code`. Returns
          * `found = false` for every code except `StartNotOnRoad` / `EndNotOnRoad`.
          * Never called by [`comaps_session_route`]; the app calls it after a failure
@@ -13609,14 +13679,16 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     
 
         /**
-         * Fetch the live catalog and list the downloadable regions (blocking network call).
-         */ fun `mwmListRegions`(`naviOrigin`: kotlin.String): FfiMwmRegionList {
+         * List downloadable regions (blocking). Prefers `data_dir`'s catalog cache, then
+         * live navi → CoMaps-direct so Tools stays populated on slow networks.
+         */ fun `mwmListRegions`(`naviOrigin`: kotlin.String, `dataDir`: kotlin.String?): FfiMwmRegionList {
             return FfiConverterTypeFfiMwmRegionList.lift(
     uniffiRustCall() { _status ->
     UniffiLib.uniffi_navi_fn_func_mwm_list_regions(
     
         
-        FfiConverterString.lower(`naviOrigin`),_status)
+        FfiConverterString.lower(`naviOrigin`),
+        FfiConverterOptionalString.lower(`dataDir`),_status)
 }
     )
     }

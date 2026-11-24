@@ -296,7 +296,9 @@ fun CatStatusSheet(
             )
             SelectionContainer {
                 Text(
-                    state.repeaterDropPath.ifBlank { "Android/data/no.navi.app/files/repeaters" },
+                    state.repeaterDropPath.ifBlank {
+                        "Android/data/no.navi.app/files/repeater-data"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.testTag("cat_repeater_drop_path"),
                 )

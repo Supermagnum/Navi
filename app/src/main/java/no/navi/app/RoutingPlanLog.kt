@@ -14,6 +14,25 @@ import java.io.File
 object RoutingPlanLog {
     const val TAG = "NaviRouting"
 
+    /** Last progress pushed for the live plan HUD (MWM soft-avoid has no native units). */
+    data class UiProgress(
+        val pct: Int,
+        val detail: String,
+    )
+
+    @Volatile
+    private var lastUiPct: Int = 0
+
+    @Volatile
+    private var lastUiDetail: String = ""
+
+    fun uiProgress(): UiProgress = UiProgress(lastUiPct, lastUiDetail)
+
+    fun clearUiProgress() {
+        lastUiPct = 0
+        lastUiDetail = ""
+    }
+
     fun start(
         profile: String,
         ecoEnabled: Boolean,
@@ -78,6 +97,8 @@ object RoutingPlanLog {
         detail: String = "",
     ) {
         val clamped = pct.coerceIn(0, 100)
+        lastUiPct = clamped
+        if (detail.isNotBlank()) lastUiDetail = detail
         val extra = if (detail.isBlank()) "" else " detail=$detail"
         Log.i(TAG, "planning_progress pct=$clamped eco=$ecoEnabled$extra")
     }
@@ -109,6 +130,7 @@ object RoutingPlanLog {
         NaviManeuverDump.dump(result)
         // Debug intent: restore cabin/bike settings snapshotted before the plan.
         restoreDebugIntentSettings()
+        clearUiProgress()
     }
 
     fun failed(
@@ -135,6 +157,7 @@ object RoutingPlanLog {
         RouteClimbSource.takeComaps()
         DiagnosticLog.logRoutePlanFailed(reason, result)
         restoreDebugIntentSettings()
+        clearUiProgress()
     }
 
     fun cancelled(
@@ -150,6 +173,7 @@ object RoutingPlanLog {
         RouteClimbSource.takeComaps()
         DiagnosticLog.logRoutePlanCancelled(reason, report)
         restoreDebugIntentSettings()
+        clearUiProgress()
     }
 
     private fun restoreDebugIntentSettings() {

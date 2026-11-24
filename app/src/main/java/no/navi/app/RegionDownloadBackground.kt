@@ -284,7 +284,7 @@ object RegionDownloadBackground {
     }
 
     /** Status prefix once packs, basemap, and place index have finished. */
-    const val USABLE_STATUS_PREFIX = "Place index ready"
+    const val USABLE_STATUS_PREFIX = "Region ready"
 
     enum class Phase {
         PACKS,
@@ -333,7 +333,7 @@ object RegionDownloadBackground {
     fun activeRegionPath(): String = activeRegionPath.get()
 
     /** Sticky place-index progress for the Tools footer (may be blank when idle). */
-    fun placeIndexProgressLine(): String = lastPlaceIndexLine.get()
+    fun placeIndexProgressLine(): String = IndexingUiCopy.sanitizeProgress(lastPlaceIndexLine.get())
 
     /**
      * Set [lastStatus] so the line always names the active region (and N-of-M
@@ -358,7 +358,7 @@ object RegionDownloadBackground {
                 RegionProgressMessages.annotate(message, id, seq?.first, seq?.second)
             }
         lastStatus.set(line)
-        if (line.contains("Place index", ignoreCase = true)) {
+        if (isPlaceIndexStatusLine(line)) {
             lastPlaceIndexLine.set(line)
         }
         if (line == "done" ||
@@ -373,13 +373,24 @@ object RegionDownloadBackground {
 
     private fun rememberPlaceIndexSnapshot() {
         val snap = formattedNativeSnapshot() ?: return
-        if (snap.first.contains("Place index", ignoreCase = true)) {
+        if (isPlaceIndexStatusLine(snap.first)) {
             lastPlaceIndexLine.set(snap.second)
         }
     }
 
+    /** True for legacy native "Place index" labels and the sanitized UI equivalents. */
+    private fun isPlaceIndexStatusLine(line: String): Boolean {
+        val lower = line.lowercase()
+        return lower.contains("place index") ||
+            lower.contains("preparing search") ||
+            lower.startsWith("region ready")
+    }
+
     /** Last successful region path (for UI style refresh after full `done`). */
     private val lastCompletedPath = AtomicReference("")
+
+    /** Set when an MWM handoff installed leaves; drained after the queue idles. */
+    private val pendingComapsSessionRefresh = AtomicBoolean(false)
 
     /**
      * Region path that became usable for routing/search (packs + place index)
@@ -509,29 +520,33 @@ object RegionDownloadBackground {
 
     fun isResuming(): Boolean = resuming.get()
 
-    fun statusLine(): String {
+    fun statusLine(): String = IndexingUiCopy.sanitizeProgress(statusLineRaw())
+
+    private fun statusLineRaw(): String {
         if (running.get()) {
             rememberPlaceIndexSnapshot()
             formattedNativeSnapshot()
-                ?.takeIf { it.first.contains("Place index", ignoreCase = true) }
+                ?.takeIf { isPlaceIndexStatusLine(it.first) }
                 ?.let { return it.second }
             lastPlaceIndexLine.get().takeIf { it.isNotBlank() }?.let { return it }
         }
         return lastStatus.get()
     }
 
-    fun uiLine(): String {
+    fun uiLine(): String = IndexingUiCopy.sanitizeProgress(uiLineRaw())
+
+    private fun uiLineRaw(): String {
         if (!running.get()) return lastStatus.get()
         rememberPlaceIndexSnapshot()
         val native = formattedNativeSnapshot()
-        if (native != null && native.first.contains("Place index", ignoreCase = true)) {
+        if (native != null && isPlaceIndexStatusLine(native.first)) {
             return native.second
         }
         // Prefer sticky place-index % over a clobbering DEM/pack label while indexing.
         val sticky = lastPlaceIndexLine.get()
         if (sticky.isNotBlank() &&
             (
-                lastStatus.get().contains("Place index", ignoreCase = true) ||
+                isPlaceIndexStatusLine(lastStatus.get()) ||
                     sticky.contains('%')
             )
         ) {
@@ -985,7 +1000,7 @@ object RegionDownloadBackground {
                     } else {
                         "Resuming download of ${job.geofabrikPath}…"
                     }
-                Phase.PLACE_INDEX -> "Resuming place index for ${job.geofabrikPath}…"
+                Phase.PLACE_INDEX -> "Resuming install for ${job.geofabrikPath}…"
                 Phase.BASEMAP -> "Resuming basemap for ${job.geofabrikPath}…"
             },
             job.geofabrikPath,
@@ -1360,6 +1375,28 @@ object RegionDownloadBackground {
             }
             runOneRegion(context, dataDir, next)
         }
+        refreshComapsSessionIfPending(context)
+    }
+
+    /** Re-register CoMaps leaves after MWM installs (once per drain, not per region). */
+    private fun refreshComapsSessionIfPending(context: Context) {
+        if (!pendingComapsSessionRefresh.compareAndSet(true, false)) return
+        val sessionOk =
+            runCatching {
+                ComapsSessionBootstrap.ensureOpen(context, force = true)
+            }.getOrDefault(false)
+        if (sessionOk) {
+            runCatching {
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    ComapsDrape.backend?.registerMaps()
+                }
+            }
+            Log.i(TAG, "MWM queue drain: CoMaps session reopened after leaf installs")
+        } else {
+            // Leave the flag set so a later drain / ensureStarted retries.
+            pendingComapsSessionRefresh.set(true)
+            Log.w(TAG, "MWM queue drain: CoMaps session reopen failed; will retry")
+        }
     }
 
     private suspend fun runOneRegion(
@@ -1492,12 +1529,21 @@ object RegionDownloadBackground {
             val decideT0 = phaseStart("pipeline.decide_acquisition")
             setStatus(appStr(context, R.string.status_fetching_pack_server))
             persistPhase(dataDir, url, filename, pathForDecision, Phase.PACKS)
+            // MWM installs under the app files dir (`…/mwm`), not the long-trip
+            // pack volume. When the client flag is on, prefer that root so a
+            // retired→MWM handoff lands where CoMaps reads leaves.
+            val acquisitionDataDir =
+                if (MwmClientBootstrap.isEnabled()) {
+                    NaviAppData.resolve(context).absolutePath
+                } else {
+                    packDir.absolutePath
+                }
             val decision =
                 runCatching {
                     decideRegionAcquisition(
                         regionId = pathForDecision,
                         packServerBaseUrl = null,
-                        dataDir = packDir.absolutePath,
+                        dataDir = acquisitionDataDir,
                     )
                 }.getOrElse { t ->
                     Log.i(
@@ -1522,6 +1568,42 @@ object RegionDownloadBackground {
                         "reason=${decision.reason} " +
                         "decide_region_acquisition_ms=$checkMs",
                 )
+                val mwmHandoff =
+                    !decision.executeLocalConvert &&
+                        (
+                            decision.dataSource == "mwm" ||
+                                decision.decisionReason == "mwm_ok"
+                        )
+                if (mwmHandoff) {
+                    val mwmPathT0 = phaseStart("pipeline.mwm_path")
+                    setStatus("Installing MWM maps…")
+                    if (geofabrikPath.isNotBlank()) {
+                        MapHudPrefs.saveGeofabrikPath(context, geofabrikPath)
+                    }
+                    // CoMaps routing uses installed leaves; no Geofabrik PBF.
+                    // Defer session reopen until the download queue drains so
+                    // we do not thrash registerMaps between corridor regions
+                    // (that raced with MWM catalog HTTP and soft-fell to PBF).
+                    pendingComapsSessionRefresh.set(true)
+                    // Stamp before InstalledMaps.refresh so syncStampFromIndex can
+                    // preserve this id (MWM regions never appear in PBF inventory).
+                    PlaceIndexReady.markReady(dataDir, pathForDecision)
+                    runCatching { MwmMapDownloader.refreshInstalled(context) }
+                    runCatching { InstalledMaps.refresh(context) }
+                    emitInstalledForRouting(pathForDecision)
+                    // mwm_indexed: CoMaps leaves ready; skip PBF BuildingRoutes.
+                    emitPhase(pathForDecision, "mwm_indexed")
+                    lastCompletedPath.set(pathForDecision)
+                    setStatus("done (MWM maps installed)")
+                    phaseEnd("pipeline.mwm_path", mwmPathT0)
+                    Log.i(
+                        TAG,
+                        "MWM handoff finished for $pathForDecision " +
+                            "(decision_reason=${decision.decisionReason}); " +
+                            "skipped Geofabrik PBF; comaps_session_refresh_pending=true",
+                    )
+                    return
+                }
                 if (!decision.executeLocalConvert) {
                     val packPathT0 = phaseStart("pipeline.pack_server_path")
                     setStatus(appStr(context, R.string.status_installing_packs, decision.dataSource))
@@ -1576,7 +1658,7 @@ object RegionDownloadBackground {
                         regionId = pathForDecision,
                     )
                     lastCompletedPath.set(pathForDecision)
-                    setStatus("done (packs installed; indexing in background)")
+                    setStatus("done (packs installed; preparing in background)")
                     phaseEnd("pipeline.pack_server_path", packPathT0)
                     Log.i(
                         TAG,
@@ -1636,7 +1718,7 @@ object RegionDownloadBackground {
                         runPlaceIndexLocal(dataDir, packDir, filename, pathForDecision)
                     }
                 if (!ok) {
-                    setStatus("done (place index failed)")
+                    setStatus("done (search data failed)")
                     lastCompletedPath.set(pathForDecision)
                     return
                 }
@@ -1707,7 +1789,7 @@ object RegionDownloadBackground {
                 // multi-hour local convert (same readiness as pack-server path).
                 persistPhase(dataDir, url, filename, basemapPath, Phase.PLACE_INDEX)
                 if (!runPlaceIndexLocal(dataDir, packDir, filename, basemapPath)) {
-                    setStatus("done (place index failed)")
+                    setStatus("done (search data failed)")
                     lastCompletedPath.set(basemapPath)
                     return
                 }
@@ -1874,7 +1956,7 @@ object RegionDownloadBackground {
                 "FAIL: place index unavailable on pack volume dir=${placeDir.absolutePath} " +
                     "(not building elsewhere)",
             )
-            setStatus("place index unavailable on pack volume")
+            setStatus("search data unavailable on pack volume")
             return false
         }
         Log.i(
@@ -1906,10 +1988,10 @@ object RegionDownloadBackground {
             return false
         }
         emitPhase(rid, "indexing")
-        setStatus("Place index: starting… 0% (0 / 6)")
+        setStatus("Preparing search… 0% (0 / 6)")
         if (PlaceIndexIntact.isIntact(placeDir, rid)) {
             Log.i(TAG, "place-index gate: $rid intact — skip rebuild")
-            setStatus("Place index ready 100% (6 / 6)")
+            setStatus("Region ready 100% (6 / 6)")
             emitPhase(rid, "indexed")
             PlaceIndexReady.markReady(placeDir, rid)
             InstalledMaps.refreshFromDirs(
@@ -1938,7 +2020,7 @@ object RegionDownloadBackground {
             }
         Log.i(TAG, "local-bake place index: ${placeReport.take(400)}")
         if (placeReport.contains("PASS")) {
-            setStatus("Place index ready 100% (6 / 6)")
+            setStatus("Region ready 100% (6 / 6)")
             emitPhase(rid, "indexed")
             PlaceIndexReady.markReady(placeDir, rid)
             InstalledMaps.refreshFromDirs(

@@ -1000,7 +1000,7 @@ mod tests {
     fn kml_rows_survive_a_server_generation() {
         let live = tempfile::tempdir().unwrap();
         let db_path = live.path().join("cat_repeaters.sqlite");
-        let drop = live.path().join("repeaters");
+        let drop = live.path().join("repeater-data");
         fs::create_dir(&drop).unwrap();
         fs::write(drop.join("la5mr.kml"), r#"<?xml version="1.0"?>
 <kml><Document><Placemark><name>LA5ARR</name>

@@ -30,6 +30,13 @@ object NaviMapTestHooks {
             localDemMapboxConversion = !value
         }
 
+    /**
+     * When true, MainActivity bumps `planKick` once (instrumented tests that
+     * cannot rely on Compose `btn_plan_route` alone after a long MWM wait).
+     */
+    @Volatile
+    var requestPlanKick: Boolean = false
+
     @Volatile
     var pendingRoute: uniffi.navi.CorridorRouteResult? = null
 
@@ -226,6 +233,15 @@ object NaviMapTestHooks {
     /** When true, MainActivity hides chrome so basemap/POI screenshots are unobstructed. */
     @Volatile
     var hideUiChrome: Boolean = false
+
+    /**
+     * When true, [ComapsDrapeMap] skips `addSubroute` for the active corridor polyline.
+     * Long via campaigns (Bevensen→Ottadal→Luster) otherwise SIGABRT in organicmaps
+     * `GenerateJoinNormals` / `std::length_error` while building the drape route line.
+     * Plan stats, polyline persistence, GPS replay, and CAT sampling still run.
+     */
+    @Volatile
+    var skipComapsRouteRender: Boolean = false
 
     /**
      * When true (and hideUiChrome is false), hide the search / tools panels but keep
@@ -620,6 +636,22 @@ object NaviMapTestHooks {
     @Volatile
     var lastRoutePlanStatsJson: String = "{}"
 
+    /**
+     * Epoch from [MwmProductionPlanner] after async look-ahead seed finishes.
+     * Campaigns waiting on [lastRoutePlanStatsJson] attraction_count should also
+     * wait until this advances past the plan's seed start when enrich is async.
+     */
+    @Volatile
+    var lookAheadSeedCompletedEpoch: Long = 0L
+
+    /**
+     * Accepted wild-camping sites from the latest suggestAlongRoute (0 until the
+     * camping LaunchedEffect finishes). Campaigns waiting only on attractions
+     * must also wait until this is > 0 when the camping plugin is on.
+     */
+    @Volatile
+    var lastWildCampingSiteCount: Int = 0
+
     /** Last planned soft-break / overnight POIs JSON (chunk finalize or in-leg). */
     @Volatile
     var lastBreakPoisJson: String = "[]"
@@ -998,6 +1030,42 @@ object NaviMapTestHooks {
 
     @Volatile
     var autoRerouteTriggeredCount: Int = 0
+
+    /** MWM DATEX Block avoidance changed the CoMaps geometry (plan-time). */
+    @Volatile
+    var datexMwmRerouteApplied: Boolean = false
+
+    @Volatile
+    var datexMwmRerouteBeforeKm: Double = 0.0
+
+    @Volatile
+    var datexMwmRerouteAfterKm: Double = 0.0
+
+    @Volatile
+    var datexMwmRerouteBeforePoly: String = ""
+
+    @Volatile
+    var datexMwmRerouteAfterPoly: String = ""
+
+    /** Instrumented: bump MainActivity DATEX refresh (clears 300s wait). */
+    @Volatile
+    var requestDatexRefresh: Boolean = false
+
+    /** Live count of DATEX drape bookmark pins (ComapsDrapeMap). */
+    @Volatile
+    var lastDatexDrapeMarkCount: Int = 0
+
+    /** Live count of DATEX Compose screen circles (ComapsDrapeMap). */
+    @Volatile
+    var lastDatexComposeMarkCount: Int = 0
+
+    /** Instrumented: force [startRerouteFromCurrent] from current GPS/sim position. */
+    @Volatile
+    var requestRerouteFromCurrent: Boolean = false
+
+    /** Ids of DATEX Blocks that already triggered an auto-reroute this session. */
+    @Volatile
+    var datexAutoRerouteBlockIds: String = ""
 
     @Volatile
     var simulatingActive: Boolean = false
