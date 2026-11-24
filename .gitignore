@@ -31,7 +31,6 @@ app/src/main/assets/comaps-data/
 third_party/comaps/
 # Local campaign brief scripts / trip prompts (not for commit).
 /test-trips/
-
 # Large Phase 3 device route artifacts (adb pull); do not commit GeoJSON dumps.
 test-artifacts/mwm-phase3/
 test-artifacts/mwm-phase4/
