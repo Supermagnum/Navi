@@ -336,6 +336,9 @@ object MwmProductionPlanner {
                 append("descent_m=${route.descentM}\n")
                 append("build_s=${route.buildTimeS}\n")
                 append("comaps_route_code=$codeName\n")
+                // Ferry / tunnel legs from CoMaps turns (`is_ferry` / `is_tunnel`), same
+                // tokens RoutePlanStats reads on the PBF path.
+                MwmRouteLegStats.appendReportTokens(this, route.turnsJson)
             }
         return CorridorRouteResult(
             report = report,
@@ -483,6 +486,10 @@ object MwmProductionPlanner {
         val instructions =
             runCatching { JSONArray(route.instructionsJson.ifBlank { "[]" }) }
                 .getOrElse { JSONArray() }
+        // Raw CoMaps turns keep is_tunnel; enriched instructions often drop it.
+        val turns =
+            runCatching { JSONArray(route.turnsJson.ifBlank { "[]" }) }
+                .getOrElse { JSONArray() }
         val maneuvers = JSONArray()
         val turnPoints = ArrayList<Int>()
         var along = 0.0
@@ -493,6 +500,9 @@ object MwmProductionPlanner {
             val idx = indexAtCum(cum, along)
             if (step.optString("kind") != "destination") turnPoints.add(idx)
             val p = pts.getOrNull(idx) ?: pts.lastOrNull()
+            val turn = turns.optJSONObject(j)
+            val isFerry = step.optBoolean("is_ferry", false) || (turn?.optBoolean("is_ferry", false) == true)
+            val isTunnel = turn?.optBoolean("is_tunnel", false) == true
             maneuvers.put(
                 JSONObject()
                     .put("lat", p?.lat ?: 0.0)
@@ -510,7 +520,9 @@ object MwmProductionPlanner {
                     ).put("text_nb", step.optString("text_nb", ""))
                     .put("text_en", step.optString("text_en", ""))
                     .put("voice_nb", step.optString("voice_nb", step.optString("voice", "")))
-                    .put("voice_en", step.optString("voice_en", step.optString("voice", ""))),
+                    .put("voice_en", step.optString("voice_en", step.optString("voice", "")))
+                    .put("is_ferry", isFerry)
+                    .put("is_tunnel", isTunnel),
             )
         }
         turnIdx = turnPoints.distinct().filter { it in 1 until pts.size }.toIntArray()
