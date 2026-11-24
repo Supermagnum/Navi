@@ -165,5 +165,4 @@ class MwmProductionPlannerTest {
         assertEquals(0, stats.tunnelCount)
         assertEquals(0, stats.ferryLegCount)
     }
-
 }

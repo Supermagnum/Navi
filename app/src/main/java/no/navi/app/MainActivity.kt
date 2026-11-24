@@ -1502,6 +1502,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     /** Last plan's `graph_ferry_edges=N`; null until a plan reports it. */
     var graphFerryEdges by remember { mutableStateOf<Int?>(null) }
     var routePlanStats by remember { mutableStateOf(RoutePlanStats()) }
+
     /**
      * Bumped on the main thread when [MwmProductionPlanner]'s async look-ahead
      * seed finishes so corridor attraction tallies re-query the ingest store.

@@ -1771,12 +1771,6 @@ object MwmProductionPlanner {
     }
 
     /**
-     * MWM plans previously skipped DATEX / soft-break / nearby-attractions that the
-     * `.rkyv` planner fills. Annotate the PASS report and break pins on the critical
-     * path; CoMaps look-ahead seeding runs asynchronously so short plans are not
-     * blocked by dozens of serial category searches.
-     */
-    /**
      * Soft-break / rest-place pins from installed MWM leaves (CoMaps search).
      * Prefer this over classic soft-break geometry when CoMaps search returns hits.
      */
@@ -1810,6 +1804,12 @@ object MwmProductionPlanner {
         result.report = sb.toString()
     }
 
+    /**
+     * MWM plans previously skipped DATEX / soft-break / nearby-attractions that the
+     * `.rkyv` planner fills. Annotate the PASS report and break pins on the critical
+     * path; CoMaps look-ahead seeding runs asynchronously so short plans are not
+     * blocked by dozens of serial category searches.
+     */
     private fun enrichMwmPlan(
         context: Context,
         profile: TravelProfile,
@@ -1820,10 +1820,15 @@ object MwmProductionPlanner {
         RoutingPlanLog.progress(80, ecoEnabled, detail = "mwm_enrich")
         val dataDir = NaviAppData.resolve(context)
         val samples = downsamplePolyline(base.routePolyline, maxPoints = 120)
+        val locale =
+            java.util.Locale
+                .getDefault()
+                .language
+                .ifBlank { "en" }
         enrichBreakPois(
             base,
             profile,
-            locale = java.util.Locale.getDefault().language.ifBlank { "en" },
+            locale = locale,
             stillActive = { true },
         )
         // Prefer DATEX lines from the avoid-pass refresh; never call datexRefreshJson twice.
