@@ -445,11 +445,13 @@ class PilgrimLongTripUiCampaignTest {
             // Accept only Hiking plans — Car+3 vias (~514 km) was a prior false PASS.
             val hikingPlan =
                 rep.contains("hiking", ignoreCase = true) ||
-                    (!rep.contains("profile=car", ignoreCase = true) &&
-                        !rep.contains("profile:car", ignoreCase = true) &&
-                        NaviMapTestHooks.lastPlanReport.lowercase().let {
-                            it.contains("hiking") || it.contains("foot")
-                        })
+                    (
+                        !rep.contains("profile=car", ignoreCase = true) &&
+                            !rep.contains("profile:car", ignoreCase = true) &&
+                            NaviMapTestHooks.lastPlanReport.lowercase().let {
+                                it.contains("hiking") || it.contains("foot")
+                            }
+                    )
             val etaHint =
                 runCatching { parseEtaMinutes(rep) }.getOrDefault(0.0)
             // Hiking Oslo→Trondheim ETA is days (thousands of minutes), not ~435 car minutes.
