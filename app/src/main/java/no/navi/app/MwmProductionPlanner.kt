@@ -234,10 +234,45 @@ object MwmProductionPlanner {
             RouteClimbSource.publishComaps(
                 RouteClimbSource.fromComaps(ascent, descent, elev.toString()),
             )
-            toCorridor(ok, endLat, endLon, profile)
+            val result = toCorridor(ok, endLat, endLon, profile)
+            enrichBreakPois(result, profile, turnsLocale) { !cancelled() }
+            result
         } finally {
             setMwmProductionPlannerActive(false)
         }
+    }
+
+    /**
+     * Soft-break / rest-place pins from installed MWM leaves (CoMaps search).
+     * Replaces the empty `breakPoisJson` placeholder from [toCorridor].
+     */
+    private fun enrichBreakPois(
+        result: CorridorRouteResult,
+        profile: TravelProfile,
+        locale: String,
+        stillActive: () -> Boolean,
+    ) {
+        if (!result.report.contains("PASS")) return
+        if (result.routePolyline.isBlank() || result.distanceKm < 1.0) return
+        val built =
+            runCatching {
+                MwmBreakPois.buildAlongPolyline(
+                    polyline = result.routePolyline,
+                    profile = profile,
+                    distanceKm = result.distanceKm,
+                    locale = locale,
+                    stillActive = stillActive,
+                )
+            }.getOrElse { e ->
+                Log.w(TAG, "mwm_break_pois failed: ${e.message}")
+                return
+            }
+        result.breakPoisJson = built.breakPoisJson
+        val sb = StringBuilder(result.report)
+        if (!result.report.contains("rest_place_count=")) {
+            MwmBreakPois.appendReportTokens(sb, built)
+        }
+        result.report = sb.toString()
     }
 
     /**
@@ -339,6 +374,7 @@ object MwmProductionPlanner {
                 // Ferry / tunnel legs from CoMaps turns (`is_ferry` / `is_tunnel`), same
                 // tokens RoutePlanStats reads on the PBF path.
                 MwmRouteLegStats.appendReportTokens(this, route.turnsJson)
+                // rest_place_count is filled by enrichBreakPois after toCorridor.
             }
         return CorridorRouteResult(
             report = report,
@@ -352,6 +388,7 @@ object MwmProductionPlanner {
             poiLon = endLon,
             poiName = "",
             poiIconKey = "",
+            // Populated by enrichBreakPois (MWM search) after a successful plan.
             breakPoisJson = "[]",
             daysJson = "[]",
             simSamplesJson = samples,

@@ -85,11 +85,28 @@ Compose `btn_plan_route` click used (`plan_compose_click_primary`). Prior HARD_S
 | Ferries | **0** |
 | Tunnels (`route_tunnel_count`) | **0** — PASS |
 | Wild camping sites | **12** (status OK; no=12; no-03:5, no-32:7) |
-| Rest places | **0** named (plan token empty) |
+| Rest places | **0** named (plan token empty) — **pre-fix** (see below) |
 | Attractions | **22** — tourism-attraction 14, tourism-viewpoint 8 |
 | Water sources | **Not enumerated** in plan report tokens (0 dedicated water fields) |
-| Break POIs JSON | empty `[]` |
+| Break POIs JSON | empty `[]` — **pre-fix** |
 | GPS replay | **ok** — 514.1 km along polyline; towns Oslo_Mariakirken, Pilegrimssenter_Oslo, Hamar, Rena, Amot_kirke, Trondheim_Nidaros; DATEX=0 |
+
+## Rest places fix (post-ART)
+
+The ART attempt above ran before MWM soft-break enrichment. Root cause:
+`MwmProductionPlanner` hard-coded `breakPoisJson="[]"` even when Ostlandet leaves
+contain cabin / shelter / picnic POIs (confirmed in-leaf: Gapahuk*, DNT names,
+Rondvassbu / Spiterstulen / Gjendebu / Glitterheim in Oppland; `types.txt` has
+`tourism|alpine_hut`, `wilderness_hut`, `picnic_site`, `amenity|shelter`).
+
+Fix: `MwmBreakPois` samples the MWM polyline and fills break POIs via CoMaps
+category/hotel + gapahuk/picnic search; planner report now emits
+`rest_place_count` / `mwm_break_pois=true`.
+
+Post-fix smoke (not a full Pilgrim re-run): Hamar→Lillehammer Hiking on device
+Ostlandet leaves — `MwmBreakPoisSmokeInstrumentedTest` **OK**,
+`rest_place_count=6`, named picnic/shelter pins with coords in `break_pois_json`.
+Full Oslo→Nidaros Pilgrim re-verification still pending.
 
 ## Crashes / memory / errors
 
