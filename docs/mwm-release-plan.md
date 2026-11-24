@@ -12,7 +12,7 @@ fallback toggle for end users; `.rkyv` is being retired.
 | G2 | Search parity (Everywhere context, per-query 21/21) + migration pause/resume | Met (PR #222) |
 | G3 | First mainline release with MWM as default (`0.5.0-beta` / versionCode 35). Note: CAT tags `v0.4.0-beta` / `v0.4.1-beta` are separate CAT-line builds; an earlier G3 draft reused the `0.4.0-beta` / 34 name by mistake and was renumbered. | **Met** 2026-11-17 — tag `v0.5.0-beta` (`3bdada4e6852ec01d3ef07eda86d3964b9167a36`); GitHub Release published |
 | G4 | Client `.rkyv` removal (PR #221), keeping Phase 7 migration that reads the old on-disk `.rkyv` region list | **Partial merged** (#221): flag forced ON, flag-OFF CI removed. MapLibre/pack loaders deletion tracked in #233. Keep migration + thin `.rkyv` detection + FTS5. |
-| G5 | Server `.rkyv` retirement after adoption near zero | **Next** — install weekly adoption timer on media; keep serving classic packs until measure shows near-zero `.rkyv` traffic for several weeks. |
+| G5 | Server `.rkyv` retirement after adoption near zero | **Next** — install weekly adoption timer on media; keep serving classic packs until measure shows near-zero `.rkyv` traffic for several weeks. |>>>>>>> tests
 
 ## 1. Client release steps (G3)
 

@@ -107,8 +107,8 @@ through the F-Droid client.
 **Install the signed release APK (sideload / testers).** Download and sideload
 [`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
 installable release APK** (upload keystore; not the debug build). Current
-`dev` sideload build: **0.5.0-beta** (`versionName` 0.5.0-beta,
-`versionCode` 35; matches `app/build.gradle.kts`). The F-Droid client index can
+`dev` sideload build: **0.5.1-beta** (`versionName` 0.5.1-beta,
+`versionCode` 36; matches `app/build.gradle.kts`). The F-Droid client index can
 lag behind that tag — see [F-Droid](#f-droid). Release process:
 [docs/RELEASING.md](docs/RELEASING.md). Download a tester build from the
 [`dev` branch](https://github.com/Supermagnum/Navi/tree/dev/compiled) when
@@ -268,10 +268,9 @@ Navi is on the main F-Droid index as package **`no.navi.app`**.
 Prefer the F-Droid client for install and updates. The **suggested** version on
 the package page can lag GitHub / `dev` sideloads: when last checked, the index
 and fdroiddata `master` were still **0.3.30-beta** (`versionCode` **33**) while
-`app/build.gradle.kts` on `dev`/`main` is **0.5.0-beta** (`versionCode` **35**).
-Committed [`compiled/navi-release.apk`](compiled/navi-release.apk) may still be
-the last published sideload (**0.3.30-beta** / **33**) until refreshed for this
-release. Sideload steps:
+`app/build.gradle.kts` on `dev`/`main` is **0.5.1-beta** (`versionCode` **36**);
+committed [`compiled/navi-release.apk`](compiled/navi-release.apk) is refreshed to match.
+Sideload steps:
 [Install a prebuilt APK](#install-a-prebuilt-apk).
 
 # Features
@@ -430,6 +429,25 @@ optional DEM on top of the pack payload (often another 1–2+ GiB for a large
 landsdel). Full country tables:
 [`docs/pbf-source-sizes.md`](docs/pbf-source-sizes.md),
 [`docs/coverage.md`](docs/coverage.md).
+
+### Long German trip disk usage (measured)
+
+**Bevensen → Dalsøren** MobileHome long-trip campaign (via Vågå, June 2026
+open-roads clock, MWM/CoMaps corridor). Nine regions Indexed:
+Niedersachsen, Schleswig-Holstein, Denmark, Skåne, Halland, Västra Götaland,
+Ostlandet, Sørlandet, Vestlandet. Evidence:
+[`docs/test-results/bevensen-mobilehome-campaign.md`](docs/test-results/bevensen-mobilehome-campaign.md)
+(ART `attempt_20261124_015755`).
+
+| Storage | Path | Size |
+|---|---|---|
+| Internal | `files/mwm` (CoMaps leaves for the corridor) | **2202 MB** (`mwm_mb=2202`) |
+| Internal | `files/long-trip-packs` (Geofabrik / pack-server) | **0 MB** (`packs_mb=0`) |
+| SD card | `long-trip-packs` | **1 MB** (`sd_packs_mb=1`) |
+
+MWM data dominated disk use; Geofabrik long-trip packs stayed effectively empty
+on this MWM path. Per-leaf byte breakdown was not recorded in that ART — only
+these SD / internal totals.
 
 ### Multi-region download order
 
@@ -1213,7 +1231,7 @@ debug-only package).
 
 | Artifact | Role |
 |---|---|
-| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64-v8a; refresh for `versionName` 0.5.0-beta / `versionCode` 35 when shipping; may still be 0.3.30-beta / 33 until then) |
+| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (`versionName` **0.5.1-beta** / `versionCode` **36**; arm64-v8a + x86_64) |
 | [`compiled/SHA256SUMS`](compiled/SHA256SUMS) | SHA-256 checksum for integrity checks |
 | [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc) | Detached GPG provenance signature (not Android APK signing) |
 
@@ -1326,8 +1344,8 @@ Debug installs use the Android **debug** keystore. A **release** package is what
 you sideload as release, hand to F-Droid-style checks, or smoke-test as an AAB.
 
 A prebuilt upload-key-signed release APK for testers is committed at
-[`compiled/navi-release.apk`](compiled/navi-release.apk) (target `versionName` 0.5.0-beta,
-`versionCode` 35; see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
+[`compiled/navi-release.apk`](compiled/navi-release.apk) (target `versionName` 0.5.1-beta,
+`versionCode` 36; see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
 
 1. **Native library** for every ABI you ship (store AABs usually need both):
 
@@ -1377,7 +1395,7 @@ adb shell am start -n no.navi.app/.MainActivity
    [`docs/android-api36-plan.md`](docs/android-api36-plan.md#aab-smoke-host).
 
 Current `versionName` / `versionCode` live in `app/build.gradle.kts`
-(**0.5.0-beta** / **35** at time of writing). Bump those before a tagged or
+(**0.5.1-beta** / **36** at time of writing). Bump those before a tagged or
 F-Droid release. F-Droid-style Podman reproducibility:
 [`tools/fdroid-check/README.md`](tools/fdroid-check/README.md). Full shared
 recipe: [`docs/android-build.md`](docs/android-build.md).

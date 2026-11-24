@@ -196,6 +196,34 @@ internal fun parsePolylineLatLon(encoded: String): DoubleArray {
     return out.toDoubleArray()
 }
 
+/**
+ * Cap drape route geometry. A ~1550 km corridor can exceed 50k vertices; CoMaps'
+ * route renderer then aborts with `std::length_error: vector` on the backend
+ * thread. Keep endpoints; stride the middle. Full polyline stays in Navi state.
+ */
+internal const val DRAPE_ROUTE_MAX_POINTS = 8_000
+
+internal fun downsamplePolylineLatLon(
+    pts: DoubleArray,
+    maxPoints: Int = DRAPE_ROUTE_MAX_POINTS,
+): DoubleArray {
+    val n = pts.size / 2
+    if (n <= maxPoints || maxPoints < 2) return pts
+    val out = DoubleArray(maxPoints * 2)
+    val last = n - 1
+    for (i in 0 until maxPoints) {
+        val src =
+            if (i == maxPoints - 1) {
+                last
+            } else {
+                ((i.toLong() * last) / (maxPoints - 1)).toInt()
+            }
+        out[i * 2] = pts[src * 2]
+        out[i * 2 + 1] = pts[src * 2 + 1]
+    }
+    return out
+}
+
 /** Which CoMaps route style the planner's profile maps to (0 car, 1 pedestrian, 2 bicycle). */
 internal fun drapeRouteType(): Int = MwmProductionPlanner.lastRouteStyle
 
@@ -590,11 +618,19 @@ internal fun ComapsDrapeMap(
         val offPts = parsePolylineLatLon(offPoly)
         val type = drapeRouteType()
         if (onPts.size >= 4) {
-            val turns = MwmProductionPlanner.lastTurnPointIndices(state.polyline)
-            backend.addSubroute(onPts, type, turns)
+            val drawOn = downsamplePolylineLatLon(onPts)
+            // Turn arrow indices are for the full polyline; drop them when
+            // geometry was thinned so CoMaps does not index past drawOn.
+            val turns =
+                if (drawOn.size == onPts.size) {
+                    MwmProductionPlanner.lastTurnPointIndices(state.polyline)
+                } else {
+                    null
+                }
+            backend.addSubroute(drawOn, type, turns)
         }
         // Off-trail legs (hiking) are drawn dashed like a pedestrian route.
-        if (offPts.size >= 4) backend.addSubroute(offPts, 1, null)
+        if (offPts.size >= 4) backend.addSubroute(downsamplePolylineLatLon(offPts), 1, null)
     }
 
     // Start / via / end pins as CoMaps route points.

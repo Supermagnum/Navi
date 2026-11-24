@@ -389,6 +389,9 @@ object RegionDownloadBackground {
     /** Last successful region path (for UI style refresh after full `done`). */
     private val lastCompletedPath = AtomicReference("")
 
+    /** Set when an MWM handoff installed leaves; drained after the queue idles. */
+    private val pendingComapsSessionRefresh = AtomicBoolean(false)
+
     /**
      * Region path that became usable for routing/search (packs + place index)
      * while basemap may still be downloading. Consumed once by the UI.
@@ -1372,6 +1375,28 @@ object RegionDownloadBackground {
             }
             runOneRegion(context, dataDir, next)
         }
+        refreshComapsSessionIfPending(context)
+    }
+
+    /** Re-register CoMaps leaves after MWM installs (once per drain, not per region). */
+    private fun refreshComapsSessionIfPending(context: Context) {
+        if (!pendingComapsSessionRefresh.compareAndSet(true, false)) return
+        val sessionOk =
+            runCatching {
+                ComapsSessionBootstrap.ensureOpen(context, force = true)
+            }.getOrDefault(false)
+        if (sessionOk) {
+            runCatching {
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    ComapsDrape.backend?.registerMaps()
+                }
+            }
+            Log.i(TAG, "MWM queue drain: CoMaps session reopened after leaf installs")
+        } else {
+            // Leave the flag set so a later drain / ensureStarted retries.
+            pendingComapsSessionRefresh.set(true)
+            Log.w(TAG, "MWM queue drain: CoMaps session reopen failed; will retry")
+        }
     }
 
     private suspend fun runOneRegion(
@@ -1504,12 +1529,21 @@ object RegionDownloadBackground {
             val decideT0 = phaseStart("pipeline.decide_acquisition")
             setStatus(appStr(context, R.string.status_fetching_pack_server))
             persistPhase(dataDir, url, filename, pathForDecision, Phase.PACKS)
+            // MWM installs under the app files dir (`…/mwm`), not the long-trip
+            // pack volume. When the client flag is on, prefer that root so a
+            // retired→MWM handoff lands where CoMaps reads leaves.
+            val acquisitionDataDir =
+                if (MwmClientBootstrap.isEnabled()) {
+                    NaviAppData.resolve(context).absolutePath
+                } else {
+                    packDir.absolutePath
+                }
             val decision =
                 runCatching {
                     decideRegionAcquisition(
                         regionId = pathForDecision,
                         packServerBaseUrl = null,
-                        dataDir = packDir.absolutePath,
+                        dataDir = acquisitionDataDir,
                     )
                 }.getOrElse { t ->
                     Log.i(
@@ -1534,6 +1568,42 @@ object RegionDownloadBackground {
                         "reason=${decision.reason} " +
                         "decide_region_acquisition_ms=$checkMs",
                 )
+                val mwmHandoff =
+                    !decision.executeLocalConvert &&
+                        (
+                            decision.dataSource == "mwm" ||
+                                decision.decisionReason == "mwm_ok"
+                        )
+                if (mwmHandoff) {
+                    val mwmPathT0 = phaseStart("pipeline.mwm_path")
+                    setStatus("Installing MWM maps…")
+                    if (geofabrikPath.isNotBlank()) {
+                        MapHudPrefs.saveGeofabrikPath(context, geofabrikPath)
+                    }
+                    // CoMaps routing uses installed leaves; no Geofabrik PBF.
+                    // Defer session reopen until the download queue drains so
+                    // we do not thrash registerMaps between corridor regions
+                    // (that raced with MWM catalog HTTP and soft-fell to PBF).
+                    pendingComapsSessionRefresh.set(true)
+                    // Stamp before InstalledMaps.refresh so syncStampFromIndex can
+                    // preserve this id (MWM regions never appear in PBF inventory).
+                    PlaceIndexReady.markReady(dataDir, pathForDecision)
+                    runCatching { MwmMapDownloader.refreshInstalled(context) }
+                    runCatching { InstalledMaps.refresh(context) }
+                    emitInstalledForRouting(pathForDecision)
+                    // mwm_indexed: CoMaps leaves ready; skip PBF BuildingRoutes.
+                    emitPhase(pathForDecision, "mwm_indexed")
+                    lastCompletedPath.set(pathForDecision)
+                    setStatus("done (MWM maps installed)")
+                    phaseEnd("pipeline.mwm_path", mwmPathT0)
+                    Log.i(
+                        TAG,
+                        "MWM handoff finished for $pathForDecision " +
+                            "(decision_reason=${decision.decisionReason}); " +
+                            "skipped Geofabrik PBF; comaps_session_refresh_pending=true",
+                    )
+                    return
+                }
                 if (!decision.executeLocalConvert) {
                     val packPathT0 = phaseStart("pipeline.pack_server_path")
                     setStatus(appStr(context, R.string.status_installing_packs, decision.dataSource))

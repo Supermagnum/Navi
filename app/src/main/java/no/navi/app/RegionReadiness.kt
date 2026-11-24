@@ -259,6 +259,14 @@ object RegionReadiness {
                         100,
                         resources.getString(R.string.region_readiness_ready, name),
                     )
+                longTripState == LongTripCoordinator.State.Installed &&
+                    installed == null &&
+                    MwmClientBootstrap.isEnabled() ->
+                    Triple(
+                        Phase.Ready,
+                        100,
+                        resources.getString(R.string.region_readiness_ready, name),
+                    )
                 skelOk && indexOk ->
                     Triple(
                         Phase.Ready,

@@ -16,6 +16,8 @@ use super::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PackDataSource {
     ServerDuckdns,
+    /// `.rkyv` catalog retired; region acquired via the MWM catalog/install path.
+    Mwm,
     LocalBake,
 }
 
@@ -23,6 +25,7 @@ impl PackDataSource {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::ServerDuckdns => "server-duckdns",
+            Self::Mwm => "mwm",
             Self::LocalBake => "local-bake",
         }
     }
@@ -41,6 +44,19 @@ pub enum RegionSource {
         /// Base URL of that host (no trailing slash).
         base_url: String,
     },
+    /// `.rkyv` packs retired — install CoMaps leaves from the MWM catalog.
+    Mwm {
+        region_id: String,
+        /// Pack host base (no trailing slash) — MWM origin for catalog/sidecars.
+        base_url: String,
+        /// Absolute URL of `/mwm/current.json` (or stub override).
+        mwm_catalog_url: String,
+        /// Catalog `region_to_leaves` key (`europe_norway_ostlandet`).
+        bake_id: String,
+        leaf_ids: Vec<String>,
+        catalog_version: Option<String>,
+        data_source: PackDataSource,
+    },
     /// Use Geofabrik (or equivalent) extract download + on-device convert.
     Local {
         reason: String,
@@ -53,13 +69,19 @@ impl RegionSource {
         matches!(self, Self::Server { .. })
     }
 
+    pub fn is_mwm(&self) -> bool {
+        matches!(self, Self::Mwm { .. })
+    }
+
     pub fn is_local(&self) -> bool {
         matches!(self, Self::Local { .. })
     }
 
     pub fn data_source(&self) -> PackDataSource {
         match self {
-            Self::Server { data_source, .. } | Self::Local { data_source, .. } => *data_source,
+            Self::Server { data_source, .. }
+            | Self::Mwm { data_source, .. }
+            | Self::Local { data_source, .. } => *data_source,
         }
     }
 }
@@ -161,11 +183,23 @@ pub fn leaf_stem_for_region_id(region_id: &str) -> String {
     format!("{leaf}-latest")
 }
 
+/// Map a Geofabrik-style path to the MWM `region_to_leaves` bake id
+/// (`europe/norway/ostlandet` → `europe_norway_ostlandet`,
+/// `europe/germany/schleswig-holstein` → `europe_germany_schleswig_holstein`).
+///
+/// MWM catalog keys use underscores only; Geofabrik paths may keep hyphens in
+/// the leaf segment. Normalize both `/` and `-` to `_`.
+pub fn region_id_to_mwm_bake_id(region_id: &str) -> String {
+    crate::routing::basemap::geofabrik_path_to_region_key(region_id).replace('-', "_")
+}
+
 /// Pure routing decision: no I/O. Unit-test without a network.
 ///
 /// - [`Connectivity::Ready`] + region present (exact, alias, or published
 ///   parent via [`resolve_area_to_catalog`]) -> [`RegionSource::Server`]
 /// - Ready but region and all parents missing / empty catalog -> [`RegionSource::Local`]
+/// - [`Connectivity::Retired`] -> [`RegionSource::Mwm`] shell (leaf ids filled by
+///   [`plan_region_acquisition`] after fetching the MWM catalog)
 /// - [`Connectivity::Unreachable`] -> Local
 ///
 /// On a catalog hit (including [`pack_catalog_region_id_aliases`] and parent
@@ -182,6 +216,19 @@ pub fn resolve_region_source(
         Connectivity::Unreachable { reason, .. } => RegionSource::Local {
             reason: format!("pack server unreachable, using local convert ({reason})"),
             data_source: PackDataSource::LocalBake,
+        },
+        Connectivity::Retired {
+            served_from,
+            mwm_catalog_absolute_url,
+            ..
+        } => RegionSource::Mwm {
+            region_id: region_id.clone(),
+            base_url: served_from.clone(),
+            mwm_catalog_url: mwm_catalog_absolute_url.clone(),
+            bake_id: region_id_to_mwm_bake_id(&region_id),
+            leaf_ids: Vec::new(),
+            catalog_version: None,
+            data_source: PackDataSource::Mwm,
         },
         Connectivity::Ready(catalog) if catalog.regions.is_empty() => RegionSource::Local {
             reason: "pack catalog empty / not published, using local convert".to_string(),
@@ -313,6 +360,21 @@ pub fn discover_pack_catalog(base_url_override: Option<&str>) -> PackCatalogSnap
                 unreachable_reason: None,
             }
         }
+        Connectivity::Retired {
+            served_from,
+            last_rkyv_generation,
+            mwm_catalog_absolute_url,
+            ..
+        } => PackCatalogSnapshot {
+            data_source: PackDataSource::Mwm,
+            // .rkyv regions are empty; pills use the MWM region list separately.
+            ready_region_ids: Vec::new(),
+            catalog_generation: last_rkyv_generation,
+            served_from: Some(served_from),
+            unreachable_reason: Some(format!(
+                "rkyv catalog retired; use MWM at {mwm_catalog_absolute_url}"
+            )),
+        },
         Connectivity::Unreachable { reason, .. } => PackCatalogSnapshot {
             data_source: PackDataSource::LocalBake,
             ready_region_ids: Vec::new(),
@@ -436,6 +498,229 @@ fn probe_catalog_with_timeout_retry(
     (connectivity, hop, connectivity_ms)
 }
 
+/// Fetch MWM catalog at `catalog_url`, resolve leaves for `region_id`, optionally install.
+///
+/// Soft-fails to a local-bake plan when the MWM catalog/server is unreachable or
+/// the region has no `region_to_leaves` mapping.
+fn plan_mwm_handoff(
+    region_id: &str,
+    base_url: &str,
+    mwm_catalog_url: &str,
+    data_dir: Option<&Path>,
+    connectivity_ms: f64,
+    t0: std::time::Instant,
+    catalog_generation: Option<String>,
+) -> RegionAcquisitionPlan {
+    use crate::mwm::{
+        install_leaf_set_with_catalog, mwm_client_enabled, parse_catalog_json, DownloadProgress,
+    };
+
+    if !mwm_client_enabled() {
+        let reason =
+            "rkyv catalog retired but MWM client disabled; using local convert".to_string();
+        return RegionAcquisitionPlan {
+            source: RegionSource::Local {
+                reason: reason.clone(),
+                data_source: PackDataSource::LocalBake,
+            },
+            execute_local_convert: true,
+            log_message: format!(
+                "source=local-bake {reason} connectivity_ms={connectivity_ms:.1} decision_reason=mwm_disabled"
+            ),
+            decision_reason: "mwm_disabled".into(),
+            catalog_generation,
+            data_source: PackDataSource::LocalBake,
+        };
+    }
+
+    crate::download::progress::set(0, None, "Fetching MWM catalog…");
+    let t_fetch = std::time::Instant::now();
+    // Transient body-decode / TLS blips after a CoMaps session reopen must not
+    // soft-fall to Geofabrik while the MWM host is healthy — retry a few times.
+    let catalog_text = {
+        const ATTEMPTS: u32 = 3;
+        let mut last_err = String::new();
+        let mut body: Option<String> = None;
+        for attempt in 1..=ATTEMPTS {
+            match crate::pack_server::http_get_text(
+                mwm_catalog_url,
+                std::time::Duration::from_secs(120),
+            ) {
+                Ok(t) => {
+                    body = Some(t);
+                    break;
+                }
+                Err(e) => {
+                    last_err = e.to_string();
+                    log::warn!(
+                        target: "NaviPack",
+                        "MWM catalog fetch attempt {attempt}/{ATTEMPTS} failed at \
+                         {mwm_catalog_url}: {last_err}"
+                    );
+                    if attempt < ATTEMPTS {
+                        std::thread::sleep(std::time::Duration::from_millis(
+                            250 * u64::from(attempt),
+                        ));
+                    }
+                }
+            }
+        }
+        match body {
+            Some(t) => t,
+            None => {
+                let reason = format!("MWM catalog unreachable at {mwm_catalog_url}: {last_err}");
+                log::warn!(target: "NaviPack", "{reason}");
+                return RegionAcquisitionPlan {
+                    source: RegionSource::Local {
+                        reason: reason.clone(),
+                        data_source: PackDataSource::LocalBake,
+                    },
+                    execute_local_convert: true,
+                    log_message: format!(
+                        "source=local-bake {reason} connectivity_ms={connectivity_ms:.1} \
+                         decision_reason=mwm_unreachable"
+                    ),
+                    decision_reason: "mwm_unreachable".into(),
+                    catalog_generation,
+                    data_source: PackDataSource::LocalBake,
+                };
+            }
+        }
+    };
+    let catalog = match parse_catalog_json(&catalog_text) {
+        Ok(c) => c,
+        Err(e) => {
+            let reason = format!("MWM catalog parse failed at {mwm_catalog_url}: {e}");
+            return RegionAcquisitionPlan {
+                source: RegionSource::Local {
+                    reason: reason.clone(),
+                    data_source: PackDataSource::LocalBake,
+                },
+                execute_local_convert: true,
+                log_message: format!(
+                    "source=local-bake {reason} connectivity_ms={connectivity_ms:.1} \
+                     decision_reason=mwm_malformed"
+                ),
+                decision_reason: "mwm_malformed".into(),
+                catalog_generation,
+                data_source: PackDataSource::LocalBake,
+            };
+        }
+    };
+
+    let bake_id = region_id_to_mwm_bake_id(region_id);
+    let mut leaf_ids: Vec<String> = catalog
+        .leaves_for_bake_id(&bake_id)
+        .map(|s| s.to_vec())
+        .unwrap_or_default();
+    // Parent bake-id walk (europe_germany_niedersachsen → europe_germany → europe).
+    if leaf_ids.is_empty() {
+        let mut cur = bake_id.clone();
+        while let Some(idx) = cur.rfind('_') {
+            cur.truncate(idx);
+            if let Some(leaves) = catalog.leaves_for_bake_id(&cur) {
+                if !leaves.is_empty() {
+                    leaf_ids = leaves.to_vec();
+                    break;
+                }
+            }
+            if !cur.contains('_') {
+                break;
+            }
+        }
+    }
+    if leaf_ids.is_empty() {
+        let reason = format!(
+            "region {region_id} (bake_id={bake_id}) not in MWM region_to_leaves; using local convert"
+        );
+        return RegionAcquisitionPlan {
+            source: RegionSource::Local {
+                reason: reason.clone(),
+                data_source: PackDataSource::LocalBake,
+            },
+            execute_local_convert: true,
+            log_message: format!(
+                "source=local-bake {reason} connectivity_ms={connectivity_ms:.1} \
+                 decision_reason=not_in_mwm_catalog"
+            ),
+            decision_reason: "not_in_mwm_catalog".into(),
+            catalog_generation: Some(catalog.version.clone()),
+            data_source: PackDataSource::LocalBake,
+        };
+    }
+
+    let source = RegionSource::Mwm {
+        region_id: region_id.to_string(),
+        base_url: base_url.to_string(),
+        mwm_catalog_url: mwm_catalog_url.to_string(),
+        bake_id: bake_id.clone(),
+        leaf_ids: leaf_ids.clone(),
+        catalog_version: Some(catalog.version.clone()),
+        data_source: PackDataSource::Mwm,
+    };
+
+    let Some(dir) = data_dir else {
+        let fetch_ms = t_fetch.elapsed().as_secs_f64() * 1000.0;
+        let total_ms = t0.elapsed().as_secs_f64() * 1000.0;
+        let log_message = format!(
+            "source=mwm rkyv catalog retired; MWM catalog {} ready for {region_id} \
+             bake_id={bake_id} leaves={} (no data_dir — install deferred) \
+             connectivity_ms={connectivity_ms:.1} fetch_ms={fetch_ms:.1} total_ms={total_ms:.1}",
+            catalog.version,
+            leaf_ids.len()
+        );
+        return RegionAcquisitionPlan {
+            source,
+            // Callers with a data_dir install; without one they must not Geofabrik.
+            execute_local_convert: false,
+            log_message,
+            decision_reason: "mwm_ok".into(),
+            catalog_generation: Some(catalog.version.clone()),
+            data_source: PackDataSource::Mwm,
+        };
+    };
+
+    crate::download::progress::set(0, None, &format!("Installing MWM maps for {region_id}…"));
+    let mut progress = DownloadProgress::default();
+    match install_leaf_set_with_catalog(dir, base_url, &catalog, &leaf_ids, &mut progress, None) {
+        Ok(report) => {
+            let fetch_ms = t_fetch.elapsed().as_secs_f64() * 1000.0;
+            let total_ms = t0.elapsed().as_secs_f64() * 1000.0;
+            let log_message = format!(
+                "source=mwm rkyv catalog retired; installed MWM leaves for {region_id} \
+                 bake_id={bake_id} version={} downloaded={} already={} \
+                 connectivity_ms={connectivity_ms:.1} fetch_ms={fetch_ms:.1} total_ms={total_ms:.1}",
+                report.version,
+                report.downloaded.len(),
+                report.already_installed.len()
+            );
+            RegionAcquisitionPlan {
+                source,
+                execute_local_convert: false,
+                log_message,
+                decision_reason: "mwm_ok".into(),
+                catalog_generation: Some(report.version),
+                data_source: PackDataSource::Mwm,
+            }
+        }
+        Err(e) => {
+            let reason = format!("MWM install failed for {region_id}: {e}");
+            log::warn!(target: "NaviPack", "{reason}");
+            RegionAcquisitionPlan {
+                source,
+                execute_local_convert: true,
+                log_message: format!(
+                    "source=local-bake {reason} — soft Geofabrik fallback \
+                     connectivity_ms={connectivity_ms:.1} decision_reason=mwm_install_error"
+                ),
+                decision_reason: "mwm_install_error".into(),
+                catalog_generation: Some(catalog.version),
+                data_source: PackDataSource::LocalBake,
+            }
+        }
+    }
+}
+
 /// Check the pack host (or `base_url_override`), resolve source,
 /// fetch packs into `data_dir` when Server, else fall back to local convert.
 ///
@@ -446,6 +731,11 @@ fn probe_catalog_with_timeout_retry(
 /// budget before local-bake. Confirmed misses (`not_in_catalog`) fall through
 /// immediately. Soft failures still set [`RegionAcquisitionPlan::execute_local_convert`]
 /// but [`RegionAcquisitionPlan::decision_reason`] distinguishes the cause.
+///
+/// When `/current.json` is the intentional retired stub, follows
+/// `mwm_catalog_url` and installs corridor leaves via the MWM path
+/// ([`decision_reason`](RegionAcquisitionPlan::decision_reason) = `mwm_ok`).
+/// Soft Geofabrik only if the MWM catalog/server is unreachable.
 pub fn plan_region_acquisition(
     region_id: &str,
     base_url_override: Option<&str>,
@@ -459,6 +749,34 @@ pub fn plan_region_acquisition(
         .map(|s| s.trim().trim_end_matches('/'))
         .filter(|s| !s.is_empty());
     let (connectivity, hop, connectivity_ms) = probe_catalog_with_timeout_retry(override_base);
+
+    if let Connectivity::Retired {
+        served_from,
+        mwm_catalog_absolute_url,
+        last_rkyv_generation,
+        ..
+    } = &connectivity
+    {
+        let plan = plan_mwm_handoff(
+            &region_id,
+            served_from,
+            mwm_catalog_absolute_url,
+            data_dir,
+            connectivity_ms,
+            t0,
+            last_rkyv_generation.clone(),
+        );
+        log::info!(
+            target: "NaviPack",
+            "plan_region_acquisition region={region_id} execute_local={} reason={} \
+             connectivity_ms={connectivity_ms:.1} data_dir={} (retired→mwm)",
+            plan.execute_local_convert,
+            plan.decision_reason,
+            data_dir.is_some()
+        );
+        log::info!(target: "NaviPack", "{}", plan.log_message);
+        return plan;
+    }
 
     let catalog_generation = connectivity.catalog().map(|c| c.catalog_generation.clone());
     let hop_for_resolve = hop.unwrap_or(PackDataSource::LocalBake);
@@ -521,6 +839,23 @@ pub fn plan_region_acquisition(
                     }
                 }
             }
+        }
+        RegionSource::Mwm {
+            base_url,
+            mwm_catalog_url,
+            ..
+        } => {
+            // resolve_region_source only builds the shell; install goes through
+            // plan_mwm_handoff (Retired short-circuit above normally covers this).
+            plan_mwm_handoff(
+                &region_id,
+                base_url,
+                mwm_catalog_url,
+                data_dir,
+                connectivity_ms,
+                t0,
+                catalog_generation,
+            )
         }
         RegionSource::Local { reason, .. } => {
             let total_ms = t0.elapsed().as_secs_f64() * 1000.0;
@@ -831,7 +1166,59 @@ mod tests {
                 assert_eq!(base_url, "https://navigate-me.duckdns.org");
             }
             RegionSource::Local { reason, .. } => panic!("expected Server: {reason}"),
+            RegionSource::Mwm { .. } => panic!("expected Server, got Mwm"),
         }
+    }
+
+    #[test]
+    fn resolve_retired_stub_hands_off_to_mwm() {
+        let fixture = include_str!("../../tests/fixtures/long_trip/current_retired.json");
+        let conn =
+            crate::pack_server::parse_current_json(fixture, "https://navigate-me.duckdns.org");
+        match resolve_region_source(
+            "europe/norway/ostlandet",
+            &conn,
+            PackDataSource::ServerDuckdns,
+        ) {
+            RegionSource::Mwm {
+                region_id,
+                base_url,
+                mwm_catalog_url,
+                bake_id,
+                data_source,
+                ..
+            } => {
+                assert_eq!(region_id, "europe/norway/ostlandet");
+                assert_eq!(base_url, "https://navigate-me.duckdns.org");
+                assert_eq!(
+                    mwm_catalog_url,
+                    "https://navigate-me.duckdns.org/mwm/current.json"
+                );
+                assert_eq!(bake_id, "europe_norway_ostlandet");
+                assert_eq!(data_source, PackDataSource::Mwm);
+            }
+            other => panic!("expected Mwm handoff, got {other:?}"),
+        }
+        // Must not be the empty-catalog / malformed → Local bake path.
+        assert!(
+            !matches!(
+                resolve_region_source("europe/denmark", &conn, PackDataSource::ServerDuckdns),
+                RegionSource::Local { .. }
+            ),
+            "retired stub must not resolve to Local/Geofabrik"
+        );
+        assert_eq!(
+            region_id_to_mwm_bake_id("europe/germany/niedersachsen"),
+            "europe_germany_niedersachsen"
+        );
+        assert_eq!(
+            region_id_to_mwm_bake_id("europe/germany/schleswig-holstein"),
+            "europe_germany_schleswig_holstein"
+        );
+        assert_eq!(
+            region_id_to_mwm_bake_id("europe/sweden/vastra-gotaland"),
+            "europe_sweden_vastra_gotaland"
+        );
     }
 
     #[test]
@@ -860,6 +1247,7 @@ mod tests {
                 assert_eq!(data_source, PackDataSource::LocalBake);
             }
             RegionSource::Server { .. } => panic!("missing region must be Local"),
+            RegionSource::Mwm { .. } => panic!("missing region must be Local, got Mwm"),
         }
     }
 
@@ -878,6 +1266,7 @@ mod tests {
                 assert_eq!(data_source, PackDataSource::LocalBake);
             }
             RegionSource::Server { .. } => panic!("unreachable must be Local"),
+            RegionSource::Mwm { .. } => panic!("unreachable must be Local, got Mwm"),
         }
     }
 
@@ -896,6 +1285,7 @@ mod tests {
                 );
             }
             RegionSource::Server { .. } => panic!("empty catalog must be Local"),
+            RegionSource::Mwm { .. } => panic!("empty Ready catalog must be Local, got Mwm"),
         }
     }
 
@@ -968,6 +1358,7 @@ mod tests {
                 assert_eq!(bytes, Some(42));
             }
             RegionSource::Local { reason, .. } => panic!("expected Server via alias: {reason}"),
+            RegionSource::Mwm { .. } => panic!("expected Server via alias, got Mwm"),
         }
         let ready = vec!["europe/sweden/vastra_gotaland".into()];
         assert!(path_covered_by_ready_ids(
@@ -1067,6 +1458,7 @@ mod tests {
             RegionSource::Local { reason, .. } => {
                 panic!("expected parent fallback to europe/denmark, got Local: {reason}")
             }
+            RegionSource::Mwm { .. } => panic!("expected Server parent fallback, got Mwm"),
         }
     }
 }

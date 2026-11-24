@@ -43,9 +43,10 @@ pub use acquisition::{
     discover_pack_catalog, ensure_indexed_packs_prefer_server, leaf_stem_for_region_id,
     normalize_region_id, pack_catalog_region_id_aliases, pack_server_base_url,
     pack_server_discovery_bases, path_covered_by_ready_ids, plan_region_acquisition,
-    region_ids_match_for_catalog, resolve_area_to_catalog, resolve_areas_to_catalog,
-    resolve_region_id_for_leaf, resolve_region_source, EnsureIndexedPacksResult,
-    PackCatalogSnapshot, PackDataSource, RegionAcquisitionPlan, RegionSource,
+    region_id_to_mwm_bake_id, region_ids_match_for_catalog, resolve_area_to_catalog,
+    resolve_areas_to_catalog, resolve_region_id_for_leaf, resolve_region_source,
+    EnsureIndexedPacksResult, PackCatalogSnapshot, PackDataSource, RegionAcquisitionPlan,
+    RegionSource,
 };
 pub use corridor_regions::{
     catalog_entries_from_ready_ids, ordered_regions_along_corridor, CatalogRegionEntry,
@@ -215,6 +216,19 @@ pub struct PackCatalog {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Connectivity {
     Ready(PackCatalog),
+    /// Host serves the intentional `.rkyv` retirement stub: empty regions, pointer
+    /// to the MWM catalog. Not a parse failure — callers must follow
+    /// [`Self::Retired::mwm_catalog_url`] instead of Geofabrik.
+    Retired {
+        /// Host base that served `/current.json` (no trailing slash).
+        served_from: String,
+        /// Relative or absolute URL from the stub (`mwm_catalog_url`).
+        mwm_catalog_url: String,
+        /// Absolute MWM catalog URL resolved against [`Self::Retired::served_from`].
+        mwm_catalog_absolute_url: String,
+        last_rkyv_generation: Option<String>,
+        message: Option<String>,
+    },
     /// Host unreachable, not published yet, bad JSON, non-2xx, etc.
     Unreachable {
         /// Structured failure class (network vs HTTP vs parse).
@@ -238,28 +252,41 @@ pub enum ConnectivityFailureKind {
 }
 
 impl Connectivity {
+    /// True when the pack host answered with a usable discovery document
+    /// ([`Self::Ready`] or [`Self::Retired`]).
     pub fn is_ready(&self) -> bool {
-        matches!(self, Self::Ready(_))
+        matches!(self, Self::Ready(_) | Self::Retired { .. })
     }
 
     pub fn catalog(&self) -> Option<&PackCatalog> {
         match self {
             Self::Ready(c) => Some(c),
-            Self::Unreachable { .. } => None,
+            Self::Retired { .. } | Self::Unreachable { .. } => None,
+        }
+    }
+
+    /// Retired-stub pointer, when discovery returned [`Self::Retired`].
+    pub fn retired_mwm_catalog_url(&self) -> Option<&str> {
+        match self {
+            Self::Retired {
+                mwm_catalog_absolute_url,
+                ..
+            } => Some(mwm_catalog_absolute_url.as_str()),
+            _ => None,
         }
     }
 
     pub fn failure_kind(&self) -> Option<ConnectivityFailureKind> {
         match self {
             Self::Unreachable { kind, .. } => Some(*kind),
-            Self::Ready(_) => None,
+            Self::Ready(_) | Self::Retired { .. } => None,
         }
     }
 
     pub fn reason(&self) -> Option<&str> {
         match self {
             Self::Unreachable { reason, .. } => Some(reason.as_str()),
-            Self::Ready(_) => None,
+            Self::Ready(_) | Self::Retired { .. } => None,
         }
     }
 }
@@ -291,6 +318,9 @@ pub fn region_catalog_status(conn: &Connectivity, region_id: &str) -> RegionCata
             kind: *kind,
             reason: reason.clone(),
         },
+        // .rkyv catalog retired — region is not published as packs; MWM handoff
+        // is handled by [`plan_region_acquisition`], not this helper.
+        Connectivity::Retired { .. } => RegionCatalogStatus::NotPublished { catalog_regions: 0 },
         Connectivity::Ready(catalog) => {
             if let Some(r) = catalog
                 .regions
@@ -328,9 +358,23 @@ struct CurrentRegion {
     manifest_url: Option<String>,
 }
 
+/// Schema id on the intentional `.rkyv` retirement stub.
+pub const RETIRED_CATALOG_SCHEMA: &str = "navi-rkyv-catalog-retired/1";
+
 fn current_json_url(base_url: &str) -> String {
     let base = base_url.trim().trim_end_matches('/');
     format!("{base}/current.json")
+}
+
+/// Join `base` + relative path, or return absolute `rel` unchanged.
+pub fn resolve_pack_relative_url(base_url: &str, rel_or_abs: &str) -> String {
+    let rel = rel_or_abs.trim();
+    if rel.starts_with("http://") || rel.starts_with("https://") {
+        return rel.trim_end_matches('/').to_string();
+    }
+    let base = base_url.trim().trim_end_matches('/');
+    let path = rel.trim_start_matches('/');
+    format!("{base}/{path}")
 }
 
 fn unreachable(kind: ConnectivityFailureKind, reason: impl Into<String>) -> Connectivity {
@@ -340,33 +384,76 @@ fn unreachable(kind: ConnectivityFailureKind, reason: impl Into<String>) -> Conn
     }
 }
 
-fn parse_current_json(body: &str, served_from: &str) -> Connectivity {
-    let served = served_from.trim().trim_end_matches('/').to_string();
-    // Phase-8 host stub: rkyv packs retired; `/current.json` points at MWM.
-    // Host answered — return Ready with an empty region list so UI never claims
-    // the pack server is offline/unreachable. MWM install uses /mwm/current.json.
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body) {
-        let retired = v.get("status").and_then(|s| s.as_str()) == Some("retired")
-            || v.get("schema")
-                .and_then(|s| s.as_str())
-                .is_some_and(|s| s.contains("retired"));
-        if retired {
-            let mwm = v
-                .get("mwm_catalog_url")
-                .and_then(|s| s.as_str())
-                .unwrap_or("/mwm/current.json");
-            log::info!(
-                target: "NaviPack",
-                "rkyv catalog retired on {served}; empty ready list; MWM at {mwm}"
-            );
-            return Connectivity::Ready(PackCatalog {
-                catalog_generation: "rkyv-retired".to_string(),
-                regions: Vec::new(),
-                served_from: served,
-            });
-        }
+fn json_str_field(v: &serde_json::Value, key: &str) -> Option<String> {
+    v.get(key)
+        .and_then(|x| x.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// Detect the intentional retirement stub without treating it as malformed.
+///
+/// Prefer `status: retired`, schema `navi-rkyv-catalog-retired/1`, or a present
+/// `mwm_catalog_url` (with empty / object `regions`).
+fn detect_retired_stub(
+    root: &serde_json::Value,
+) -> Option<(String, Option<String>, Option<String>)> {
+    let status = json_str_field(root, "status");
+    let schema = json_str_field(root, "schema");
+    let mwm_url = json_str_field(root, "mwm_catalog_url");
+    let retired_by_status = status
+        .as_deref()
+        .is_some_and(|s| s.eq_ignore_ascii_case("retired"));
+    let retired_by_schema = schema
+        .as_deref()
+        .is_some_and(|s| s == RETIRED_CATALOG_SCHEMA || s.contains("catalog-retired"));
+    let regions_empty_object = root
+        .get("regions")
+        .and_then(|r| r.as_object())
+        .is_some_and(|o| o.is_empty());
+    let retired_by_pointer = mwm_url.is_some() && (regions_empty_object || retired_by_status);
+    if !(retired_by_status || retired_by_schema || retired_by_pointer) {
+        return None;
     }
-    let parsed: CurrentJson = match serde_json::from_str(body) {
+    let url = mwm_url.unwrap_or_else(|| "/mwm/current.json".to_string());
+    Some((
+        url,
+        json_str_field(root, "last_rkyv_generation"),
+        json_str_field(root, "message"),
+    ))
+}
+
+/// Parse a `current.json` body. `pub(crate)` so acquisition unit tests can
+/// exercise the retired-stub fixture without HTTP.
+pub(crate) fn parse_current_json(body: &str, served_from: &str) -> Connectivity {
+    let served = served_from.trim().trim_end_matches('/').to_string();
+    let root: serde_json::Value = match serde_json::from_str(body) {
+        Ok(v) => v,
+        Err(e) => {
+            return unreachable(
+                ConnectivityFailureKind::Malformed,
+                format!("malformed current.json: {e}"),
+            )
+        }
+    };
+
+    if let Some((mwm_catalog_url, last_rkyv_generation, message)) = detect_retired_stub(&root) {
+        let mwm_catalog_absolute_url = resolve_pack_relative_url(&served, &mwm_catalog_url);
+        log::info!(
+            target: "NaviPack",
+            "parse_current_json retired stub served_from={served} mwm_catalog_url={mwm_catalog_url} \
+             absolute={mwm_catalog_absolute_url}"
+        );
+        return Connectivity::Retired {
+            served_from: served,
+            mwm_catalog_url,
+            mwm_catalog_absolute_url,
+            last_rkyv_generation,
+            message,
+        };
+    }
+
+    let parsed: CurrentJson = match serde_json::from_value(root) {
         Ok(v) => v,
         Err(e) => {
             return unreachable(
@@ -476,16 +563,27 @@ pub async fn check_connectivity_timed(base_url: &str, timeout: Duration) -> Conn
         Connectivity::Ready(c) => {
             log::info!(
                 target: "NaviPack",
-                "check_connectivity host={base} outcome=ready regions={} gen={} body_bytes={} ms={ms:.1}",
+                "check_connectivity host={base} outcome=ready regions={} body_bytes={} ms={ms:.1}",
                 c.regions.len(),
-                c.catalog_generation,
+                body.len()
+            );
+        }
+        Connectivity::Retired {
+            mwm_catalog_absolute_url,
+            ..
+        } => {
+            log::info!(
+                target: "NaviPack",
+                "check_connectivity host={base} outcome=retired mwm_catalog={mwm_catalog_absolute_url} \
+                 body_bytes={} ms={ms:.1}",
                 body.len()
             );
         }
         Connectivity::Unreachable { kind, reason } => {
             log::info!(
                 target: "NaviPack",
-                "check_connectivity host={base} outcome=unreachable kind={kind:?} reason={reason} body_bytes={} ms={ms:.1}",
+                "check_connectivity host={base} outcome=unreachable kind={kind:?} reason={reason} \
+                 body_bytes={} ms={ms:.1}",
                 body.len()
             );
         }
@@ -533,12 +631,17 @@ pub async fn check_connectivity_chain_timed(
     for (source, base) in bases {
         let t_hop = std::time::Instant::now();
         match check_connectivity_timed(base, timeout).await {
-            ready @ Connectivity::Ready(_) => {
+            ready @ (Connectivity::Ready(_) | Connectivity::Retired { .. }) => {
                 let hop_ms = t_hop.elapsed().as_secs_f64() * 1000.0;
                 let chain_ms = t_chain.elapsed().as_secs_f64() * 1000.0;
+                let outcome = match &ready {
+                    Connectivity::Retired { .. } => "retired",
+                    _ => "ready",
+                };
                 log::info!(
                     target: "NaviPack",
-                    "check_connectivity_chain selected={} ({}) hop_ms={hop_ms:.1} chain_ms={chain_ms:.1} timeout_ms={}",
+                    "check_connectivity_chain selected={} ({}) outcome={outcome} hop_ms={hop_ms:.1} \
+                     chain_ms={chain_ms:.1} timeout_ms={}",
                     source.as_str(),
                     base,
                     timeout.as_millis()
@@ -554,7 +657,7 @@ pub async fn check_connectivity_chain_timed(
                     base,
                     match &bad {
                         Connectivity::Unreachable { reason, .. } => reason.as_str(),
-                        Connectivity::Ready(_) => unreachable!(),
+                        Connectivity::Ready(_) | Connectivity::Retired { .. } => unreachable!(),
                     }
                 );
                 last = bad;
@@ -672,26 +775,7 @@ mod tests {
                 assert_eq!(c.regions[1].bytes, None);
             }
             Connectivity::Unreachable { reason, .. } => panic!("expected Ready, got {reason}"),
-        }
-    }
-
-    #[test]
-    fn retired_rkyv_catalog_is_ready_empty_not_offline() {
-        let json = r#"{
-            "schema": "navi-rkyv-catalog-retired/1",
-            "status": "retired",
-            "mwm_catalog_url": "/mwm/current.json",
-            "regions": {}
-        }"#;
-        match parse_current_json(json, "https://navigate-me.duckdns.org") {
-            Connectivity::Ready(c) => {
-                assert!(c.regions.is_empty(), "retired stub has no rkyv regions");
-                assert_eq!(c.catalog_generation, "rkyv-retired");
-                assert_eq!(c.served_from, "https://navigate-me.duckdns.org");
-            }
-            Connectivity::Unreachable { reason, .. } => {
-                panic!("retired stub must not look offline/unreachable: {reason}")
-            }
+            Connectivity::Retired { .. } => panic!("expected Ready, got Retired"),
         }
     }
 
@@ -721,6 +805,63 @@ mod tests {
                 );
             }
             Connectivity::Unreachable { reason, .. } => panic!("expected Ready, got {reason}"),
+            Connectivity::Retired { .. } => panic!("expected Ready, got Retired"),
+        }
+    }
+
+    #[test]
+    fn retired_stub_is_not_malformed() {
+        let json = r#"{
+  "schema": "navi-rkyv-catalog-retired/1",
+  "status": "retired",
+  "retired_at_utc": "2026-11-17T02:34:21Z",
+  "message": ".rkyv packs retired on this host; use the MWM catalog at /mwm/current.json",
+  "mwm_catalog_url": "/mwm/current.json",
+  "last_rkyv_generation": "20261108T043256Z-2232546-a45942b8",
+  "regions": {}
+}"#;
+        match parse_current_json(json, "https://navigate-me.duckdns.org") {
+            Connectivity::Retired {
+                served_from,
+                mwm_catalog_url,
+                mwm_catalog_absolute_url,
+                last_rkyv_generation,
+                message,
+            } => {
+                assert_eq!(served_from, "https://navigate-me.duckdns.org");
+                assert_eq!(mwm_catalog_url, "/mwm/current.json");
+                assert_eq!(
+                    mwm_catalog_absolute_url,
+                    "https://navigate-me.duckdns.org/mwm/current.json"
+                );
+                assert_eq!(
+                    last_rkyv_generation.as_deref(),
+                    Some("20261108T043256Z-2232546-a45942b8")
+                );
+                assert!(message.as_deref().unwrap_or("").contains("MWM catalog"));
+            }
+            other => panic!("expected Retired, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn retired_stub_via_mwm_pointer_without_status() {
+        let json = r#"{
+  "schema": "navi-rkyv-catalog-retired/1",
+  "mwm_catalog_url": "/mwm/current.json",
+  "regions": {}
+}"#;
+        match parse_current_json(json, "http://example.com/") {
+            Connectivity::Retired {
+                mwm_catalog_absolute_url,
+                ..
+            } => {
+                assert_eq!(
+                    mwm_catalog_absolute_url,
+                    "http://example.com/mwm/current.json"
+                );
+            }
+            other => panic!("expected Retired, got {other:?}"),
         }
     }
 
@@ -767,7 +908,9 @@ mod tests {
                 assert!(reason.contains("malformed"), "{reason}");
                 assert_eq!(kind, ConnectivityFailureKind::Malformed);
             }
-            Connectivity::Ready(_) => panic!("expected Unreachable"),
+            Connectivity::Ready(_) | Connectivity::Retired { .. } => {
+                panic!("expected Unreachable")
+            }
         }
     }
 
@@ -786,6 +929,7 @@ mod tests {
                 assert_eq!(c.regions[0].bytes, Some(99));
             }
             Connectivity::Unreachable { reason, .. } => panic!("expected Ready: {reason}"),
+            Connectivity::Retired { .. } => panic!("expected Ready, got Retired"),
         }
     }
 
@@ -800,7 +944,9 @@ mod tests {
                 );
                 assert_eq!(kind, ConnectivityFailureKind::HttpStatus(404));
             }
-            Connectivity::Ready(_) => panic!("404 must not be Ready"),
+            Connectivity::Ready(_) | Connectivity::Retired { .. } => {
+                panic!("404 must not be Ready/Retired")
+            }
         }
     }
 
@@ -811,7 +957,32 @@ mod tests {
             Connectivity::Unreachable { reason, .. } => {
                 assert!(!reason.is_empty());
             }
-            Connectivity::Ready(_) => panic!("bogus host must not be Ready"),
+            Connectivity::Ready(_) | Connectivity::Retired { .. } => {
+                panic!("bogus host must not be Ready")
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn mock_retired_stub_selects_mwm_pointer() {
+        let body = r#"{
+  "schema": "navi-rkyv-catalog-retired/1",
+  "status": "retired",
+  "mwm_catalog_url": "/mwm/current.json",
+  "regions": {}
+}"#;
+        let base = serve_once("HTTP/1.1 200 OK", body);
+        match check_connectivity(&base).await {
+            Connectivity::Retired {
+                mwm_catalog_absolute_url,
+                ..
+            } => {
+                assert!(
+                    mwm_catalog_absolute_url.ends_with("/mwm/current.json"),
+                    "{mwm_catalog_absolute_url}"
+                );
+            }
+            other => panic!("expected Retired, got {other:?}"),
         }
     }
 
@@ -835,6 +1006,7 @@ mod tests {
                 assert_eq!(c.regions[0].region_id, "europe/norway/ostlandet");
             }
             Connectivity::Unreachable { reason, .. } => panic!("expected Ready: {reason}"),
+            Connectivity::Retired { .. } => panic!("expected Ready, got Retired"),
         }
     }
 
@@ -859,6 +1031,16 @@ mod tests {
                     }
                 }
                 assert!(!c.catalog_generation.is_empty());
+            }
+            Connectivity::Retired {
+                mwm_catalog_absolute_url,
+                last_rkyv_generation,
+                ..
+            } => {
+                eprintln!("retired → MWM catalog at {mwm_catalog_absolute_url}");
+                if let Some(g) = last_rkyv_generation {
+                    eprintln!("last_rkyv_generation={g}");
+                }
             }
             Connectivity::Unreachable { reason, .. } => {
                 eprintln!("unreachable / not ready: {reason}");

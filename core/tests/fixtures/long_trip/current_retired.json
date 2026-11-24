@@ -1,0 +1,9 @@
+{
+  "schema": "navi-rkyv-catalog-retired/1",
+  "status": "retired",
+  "retired_at_utc": "2026-11-17T02:34:21Z",
+  "message": ".rkyv packs retired on this host; use the MWM catalog at /mwm/current.json",
+  "mwm_catalog_url": "/mwm/current.json",
+  "last_rkyv_generation": "20261108T043256Z-2232546-a45942b8",
+  "regions": {}
+}

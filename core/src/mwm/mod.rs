@@ -14,6 +14,7 @@ pub mod checksum;
 pub mod comaps;
 pub mod comaps_fallback;
 pub mod comaps_instructions;
+pub mod comaps_route_abi;
 pub mod comaps_router;
 pub mod comaps_search;
 pub mod comaps_snap;

@@ -973,54 +973,177 @@ fn subsample_even<T: Clone>(items: &[T], max: usize) -> Vec<T> {
     out
 }
 
-/// Off-carriageway probes when classic corridor graphs are missing (MWM-only).
-///
-/// Samples the polyline evenly and offsets ~180 m perpendicular so the guest
-/// is not evaluating the road centreline. Country packs still decide accept /
-/// decline via admin PIP + SafetyConfig.
-fn waypoint_fallback_probes(waypoints: &[[f64; 2]], max: usize) -> Vec<(f64, f64)> {
-    if waypoints.len() < 2 || max == 0 {
-        return Vec::new();
+/// True when Indexed CoMaps leaves (or the countries-list version link) exist
+/// under `{data_dir}/mwm` — enough for overnight probes without a planning PBF.
+fn mwm_leaves_present(data_dir: &Path) -> bool {
+    let root = data_dir.join("mwm");
+    if !root.join("World.mwm").is_file() {
+        return false;
     }
-    let samples = subsample_even(waypoints, max);
-    let mut out = Vec::with_capacity(samples.len());
-    for (i, w) in samples.iter().enumerate() {
-        let lat = w[0];
-        let lon = w[1];
-        let (alat, alon) = if i + 1 < samples.len() {
-            (samples[i + 1][0], samples[i + 1][1])
-        } else if i > 0 {
-            (samples[i - 1][0], samples[i - 1][1])
-        } else if waypoints.len() >= 2 {
-            (waypoints[1][0], waypoints[1][1])
-        } else {
-            (lat, lon)
-        };
-        out.push(offset_perpendicular_m(
-            lat,
-            lon,
-            alat - lat,
-            alon - lon,
-            180.0,
-        ));
+    let version = fs::read_to_string(root.join("active.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| {
+            v.get("version")
+                .and_then(|x| x.as_str())
+                .map(str::to_string)
+        });
+    let Some(ver) = version else {
+        return false;
+    };
+    let candidates = [
+        root.join("releases").join(&ver).join("leaves"),
+        root.join(&ver),
+    ];
+    for dir in &candidates {
+        if !dir.is_dir() {
+            continue;
+        }
+        if let Ok(rd) = fs::read_dir(dir) {
+            if rd.flatten().any(|e| {
+                e.path()
+                    .extension()
+                    .and_then(|x| x.to_str())
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("mwm"))
+            }) {
+                return true;
+            }
+        }
     }
-    out
+    false
 }
 
-/// Approximate local-metre perpendicular offset of `(lat, lon)`.
-fn offset_perpendicular_m(lat: f64, lon: f64, dlat: f64, dlon: f64, metres: f64) -> (f64, f64) {
-    let cos_lat = lat.to_radians().cos().max(0.2);
-    // Direction in local metres.
-    let east_m = dlon * 111_320.0 * cos_lat;
-    let north_m = dlat * 110_540.0;
-    let len = (east_m * east_m + north_m * north_m).sqrt();
-    let (pe, pn) = if len < 1.0 {
-        (metres, 0.0)
+/// Evenly spaced lat/lon probes along the CoMaps route polyline (no graph walk).
+fn mwm_route_probes_from_waypoints(waypoints: &[[f64; 2]], max_probes: usize) -> Vec<(f64, f64)> {
+    let pts: Vec<(f64, f64)> = waypoints.iter().map(|w| (w[0], w[1])).collect();
+    subsample_even(&pts, max_probes)
+}
+
+/// Overnight suggestions when Geofabrik / Ready packs are absent: seed the
+/// wasm guest from route waypoints on Indexed MWMs (buildings/glaciers optional).
+fn suggest_along_mwm_route_probes(
+    data_dir: &Path,
+    pack_dirs: &[PathBuf],
+    waypoints: &[[f64; 2]],
+    travel_profile: TravelProfile,
+    professional_driver: bool,
+    max_suggestions: u32,
+    started: Instant,
+) -> CampingCallResult {
+    let probes = mwm_route_probes_from_waypoints(waypoints, CAMPING_MAX_SEEDS * 2);
+    if probes.is_empty() {
+        return CampingCallResult {
+            kind: CampingCallKind::Unavailable,
+            message: "MWM route produced no overnight probes".into(),
+            elapsed_ms: started.elapsed().as_millis() as u64,
+            result_json: None,
+            peak_guest_memory_bytes: 0,
+        };
+    }
+    log::info!(
+        target: "NaviCamping",
+        "suggest_along_route via=mwm_route_probes probes={} waypoints={}",
+        probes.len(),
+        waypoints.len()
+    );
+
+    let t_bldg = Instant::now();
+    // Pack dirs may be empty on MWM-primary devices; geometry load is best-effort.
+    let (all_buildings, mut glacier_rings) =
+        load_overnight_geometry_near_probes(data_dir, pack_dirs, &probes);
+    let mut buildings = buildings_near_probes(&all_buildings, &probes, 0.008);
+    if buildings.len() > CAMPING_MAX_JOB_BUILDINGS {
+        buildings = subsample_even(&buildings, CAMPING_MAX_JOB_BUILDINGS);
+    }
+    let buildings_ms = t_bldg.elapsed().as_millis() as u64;
+
+    let t_admin = Instant::now();
+    let mut countries: Vec<(f64, f64, String)> = Vec::with_capacity(probes.len());
+    let mut subdivisions: Vec<(f64, f64, String)> = Vec::new();
+    for &(lat, lon) in &probes {
+        let ar = admin_region_at(lat, lon);
+        countries.push((lat, lon, ar.country_iso.unwrap_or_else(|| "unknown".into())));
+        if let Some(iso) = ar.subdivision_iso {
+            subdivisions.push((lat, lon, iso));
+        }
+    }
+    let admin_ms = t_admin.elapsed().as_millis() as u64;
+
+    let safety: OvernightSafety = (&load_safety(data_dir).unwrap_or_default()).into();
+    let max = if max_suggestions == 0 {
+        None
     } else {
-        // Rotate 90°: (e,n) → (-n, e)
-        (-north_m / len * metres, east_m / len * metres)
+        Some(max_suggestions as usize)
     };
-    (lat + pn / 110_540.0, lon + pe / (111_320.0 * cos_lat))
+
+    let t_ser = Instant::now();
+    if buildings.len() > CAMPING_MAX_SEEDS * 24 {
+        buildings = subsample_even(&buildings, CAMPING_MAX_SEEDS * 24);
+    }
+    if glacier_rings.len() > 32 {
+        glacier_rings = subsample_even(&glacier_rings, 32);
+    }
+    let job = serde_json::json!({
+        "probes": probes.iter().map(|&(la, lo)| [la, lo]).collect::<Vec<_>>(),
+        "max_suggestions": max,
+        "buildings": buildings,
+        "glaciers": glacier_rings,
+        "safety": safety,
+        "clock": serde_json::Value::Null,
+        "kv_ok": true,
+        "countries": countries,
+        "subdivisions": subdivisions,
+        "travel_mode": travel_mode_job_str(travel_profile),
+        "vehicle_class": vehicle_class_job_str(travel_profile),
+        "is_professional_driver_under_rest_rules": professional_driver,
+    });
+    let mut job_json = job.to_string();
+    const CAMPING_GUEST_JOB_MAX_BYTES: usize = 900_000;
+    if job_json.len() > CAMPING_GUEST_JOB_MAX_BYTES {
+        let mut compact = job.clone();
+        if let Some(obj) = compact.as_object_mut() {
+            obj.insert("glaciers".into(), serde_json::json!([]));
+            if let Some(b) = obj.get("buildings").and_then(|v| v.as_array()) {
+                let keep = subsample_even(b, CAMPING_MAX_SEEDS * 8);
+                obj.insert("buildings".into(), serde_json::Value::Array(keep));
+            }
+        }
+        job_json = compact.to_string();
+    }
+    let job_bytes = job_json.len();
+    let serialize_ms = t_ser.elapsed().as_millis() as u64;
+    let building_count = job
+        .get("buildings")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+
+    let t_guest = Instant::now();
+    let mut call = run_camping_guest(Some(job_json));
+    let guest_ms = t_guest.elapsed().as_millis() as u64;
+    let timing = serde_json::json!({
+        "graph": 0,
+        "junctions": 0,
+        "probe_walk": 0,
+        "buildings": buildings_ms,
+        "admin": admin_ms,
+        "serialize": serialize_ms,
+        "guest": guest_ms,
+        "cache_hit": false,
+        "mwm_route_probes": true,
+        "total": started.elapsed().as_millis() as u64,
+    });
+    log::info!(
+        target: "NaviCamping",
+        "suggest_along_route via=mwm_route_probes job_bytes={job_bytes} probes={} \
+         buildings={building_count} timing={timing}",
+        probes.len(),
+    );
+    // Keep via=wasmtime — CampingPluginApi.assertGuestPath requires the guest
+    // path; mwm_route_probes is recorded in timing_ms only (seed source).
+    call.result_json = merge_guest_meta(call.result_json, timing, call.peak_guest_memory_bytes);
+    call.elapsed_ms = started.elapsed().as_millis() as u64;
+    call
 }
 
 /// Discover overnight spots along the live nav corridor.
@@ -1085,32 +1208,40 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
             peak_guest_memory_bytes: 0,
         };
     }
-    let pbf_opt = find_planning_pbf(&data_dir, &pack_dirs);
-    // MWM-first LongTrip: regions Indexed from CoMaps leaves with no classic .osm.pbf.
-    // Skip the hard Unavailable gate and use waypoint_fallback probes below.
-    if let Some(ref pbf) = pbf_opt {
-        log::info!(
-            target: "NaviCamping",
-            "suggest_along_route planning_pbf={} pack_dirs={}",
-            pbf.display(),
-            pack_dirs.len()
-        );
-    } else {
-        log::info!(
-            target: "NaviCamping",
-            "suggest_along_route no classic pbf under {} pack_dirs={} — will try waypoint_fallback",
-            data_dir.display(),
-            pack_dirs.len()
-        );
-    }
-    let cache_key = match pbf_opt.as_ref() {
-        Some(pbf) => geometry_cache_key(&waypoints, pbf, &data_dir, &pack_dirs, max_suggestions),
-        None => format!(
-            "mwm_fallback|{:?}|{}|{max_suggestions}",
-            waypoints,
-            safety_geometry_fingerprint(&data_dir),
-        ),
+    let Some(pbf) = find_planning_pbf(&data_dir, &pack_dirs) else {
+        // MWM-primary long-trip: Indexed leaves + CoMaps route waypoints are enough
+        // to seed overnight probes. Pack PBF remains a fallback when present.
+        if mwm_leaves_present(&data_dir) && waypoints.len() >= 2 {
+            return suggest_along_mwm_route_probes(
+                &data_dir,
+                &pack_dirs,
+                &waypoints,
+                travel_profile,
+                professional_driver,
+                max_suggestions,
+                started,
+            );
+        }
+        return CampingCallResult {
+            kind: CampingCallKind::Unavailable,
+            message: format!(
+                "no .osm.pbf under {} (or pack_dirs) for overnight corridor graph \
+                 and no Indexed MWM leaves under {}/mwm",
+                data_dir.display(),
+                data_dir.display()
+            ),
+            elapsed_ms: started.elapsed().as_millis() as u64,
+            result_json: None,
+            peak_guest_memory_bytes: 0,
+        };
     };
+    log::info!(
+        target: "NaviCamping",
+        "suggest_along_route planning_pbf={} pack_dirs={}",
+        pbf.display(),
+        pack_dirs.len()
+    );
+    let cache_key = geometry_cache_key(&waypoints, &pbf, &data_dir, &pack_dirs, max_suggestions);
     let cached_geometry = {
         let guard = session_lock().lock().expect("camping session lock");
         guard
@@ -1154,88 +1285,67 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
     let mut segment_errors = 0u32;
     let step = CAMPING_SEGMENT_WAYPOINTS.max(2);
     let mut start = 0usize;
-    if let Some(ref pbf) = pbf_opt {
-        while start < waypoints.len() {
-            let end = (start + step).min(waypoints.len());
-            // Overlap one shared waypoint so segment joints are not skipped.
-            let seg_start = if start == 0 {
-                0
-            } else {
-                start.saturating_sub(1)
-            };
-            let chunk = &waypoints[seg_start..end];
-            if chunk.len() < 2 {
-                break;
-            }
-            let Some(seg_bbox) = corridor_bbox_from_waypoints(chunk) else {
-                start = end;
-                continue;
-            };
-            let route_points: Vec<(f64, f64)> = chunk.iter().map(|w| (w[0], w[1])).collect();
-            match try_load_graph_for_plan_corridor_with_pack_dirs(
-                &data_dir,
-                &pack_dirs,
-                &pbf,
-                routing_profile,
-                Some(seg_bbox),
-                Some(&route_points),
-                PlanEdgeClipMode::CorridorBand,
-            ) {
-                Ok(graph) => {
-                    let mut seg_seeds =
-                        find_road_track_junctions(&graph, chunk, CORRIDOR_SEED_RADIUS_M);
-                    if seg_seeds.len() > CAMPING_SEEDS_PER_SEGMENT {
-                        seg_seeds = subsample_even(&seg_seeds, CAMPING_SEEDS_PER_SEGMENT);
-                    }
-                    let walked = probe_along_tracks(&graph, &seg_seeds, DEFAULT_TRACK_WALK_M, None);
-                    drop(graph);
-                    for s in seg_seeds.drain(..) {
-                        seeds.push(s);
-                    }
-                    for p in walked {
-                        probes.push((p.lat, p.lon));
-                    }
-                }
-                Err(e) => {
-                    segment_errors += 1;
-                    // Info (not Warn): android_logger max is Info, so Warn never reaches logcat.
-                    log::info!(
-                        target: "NaviCamping",
-                        "corridor segment graph load failed seg=[{seg_start}..{end}) \
-                         bbox={seg_bbox:?} err={e:#}"
-                    );
-                }
-            }
-            start = end;
+    while start < waypoints.len() {
+        let end = (start + step).min(waypoints.len());
+        // Overlap one shared waypoint so segment joints are not skipped.
+        let seg_start = if start == 0 {
+            0
+        } else {
+            start.saturating_sub(1)
+        };
+        let chunk = &waypoints[seg_start..end];
+        if chunk.len() < 2 {
+            break;
         }
-    } // pbf_opt Some — classic corridor graph path
+        let Some(seg_bbox) = corridor_bbox_from_waypoints(chunk) else {
+            start = end;
+            continue;
+        };
+        let route_points: Vec<(f64, f64)> = chunk.iter().map(|w| (w[0], w[1])).collect();
+        match try_load_graph_for_plan_corridor_with_pack_dirs(
+            &data_dir,
+            &pack_dirs,
+            &pbf,
+            routing_profile,
+            Some(seg_bbox),
+            Some(&route_points),
+            PlanEdgeClipMode::CorridorBand,
+        ) {
+            Ok(graph) => {
+                let mut seg_seeds =
+                    find_road_track_junctions(&graph, chunk, CORRIDOR_SEED_RADIUS_M);
+                if seg_seeds.len() > CAMPING_SEEDS_PER_SEGMENT {
+                    seg_seeds = subsample_even(&seg_seeds, CAMPING_SEEDS_PER_SEGMENT);
+                }
+                let walked = probe_along_tracks(&graph, &seg_seeds, DEFAULT_TRACK_WALK_M, None);
+                drop(graph);
+                for s in seg_seeds.drain(..) {
+                    seeds.push(s);
+                }
+                for p in walked {
+                    probes.push((p.lat, p.lon));
+                }
+            }
+            Err(e) => {
+                segment_errors += 1;
+                // Info (not Warn): android_logger max is Info, so Warn never reaches logcat.
+                log::info!(
+                    target: "NaviCamping",
+                    "corridor segment graph load failed seg=[{seg_start}..{end}) \
+                     bbox={seg_bbox:?} err={e:#}"
+                );
+            }
+        }
+        start = end;
+    }
     let seeds_raw = seeds.len();
-    let mut probes_raw = probes.len();
+    let probes_raw = probes.len();
     seeds = subsample_even(&seeds, CAMPING_MAX_SEEDS);
     if probes.len() > CAMPING_MAX_SEEDS * 2 {
         probes = subsample_even(&probes, CAMPING_MAX_SEEDS * 2);
     }
     if probes.is_empty() {
         probes = seeds.iter().map(|s| (s.lat, s.lon)).collect();
-    }
-    // MWM / rkyv-retire path: LongTrip marks regions Indexed from CoMaps leaves
-    // without classic graph packs. Road∩track seeds then fail every segment.
-    // Fall back to densified corridor probes (slightly off-carriageway) so the
-    // wasm guest can still evaluate Tier-A packs (e.g. Norway) via admin PIP.
-    let mut used_waypoint_fallback = false;
-    if seeds.is_empty() && probes.is_empty() {
-        probes = waypoint_fallback_probes(&waypoints, CAMPING_MAX_SEEDS);
-        probes_raw = probes.len();
-        used_waypoint_fallback = !probes.is_empty();
-        if used_waypoint_fallback {
-            log::info!(
-                target: "NaviCamping",
-                "suggest_along_route waypoint_fallback probes={} segment_errors={segment_errors} \
-                 pack_dirs={} (classic corridor graphs unavailable)",
-                probes.len(),
-                pack_dirs.len()
-            );
-        }
     }
     let graph_ms = t_graph.elapsed().as_millis() as u64;
     let junction_ms = 0u64;
@@ -1347,8 +1457,7 @@ pub fn camping_plugin_suggest_along_route(max_suggestions: u32) -> CampingCallRe
     log::info!(
         target: "NaviCamping",
         "suggest_along_route via=wasmtime job_bytes={job_bytes} seeds_raw={seeds_raw} \
-         probes_raw={probes_raw} probes={} buildings={} waypoint_fallback={used_waypoint_fallback} \
-         first_lat={:.4} last_lat={:.4} timing={timing}",
+         probes_raw={probes_raw} probes={} buildings={} first_lat={:.4} last_lat={:.4} timing={timing}",
         probes.len(),
         buildings.len(),
         probes.first().map(|p| p.0).unwrap_or(0.0),
@@ -1898,20 +2007,37 @@ mod geometry_cache_tests {
     }
 
     #[test]
-    fn waypoint_fallback_offsets_off_corridor() {
-        // Elsa-ish northbound sample: two points ~1 km apart.
-        let wps = [[69.9741435, 29.6337571], [69.9650000, 29.6200000]];
-        let probes = waypoint_fallback_probes(&wps, 4);
-        assert_eq!(probes.len(), 2);
-        for (i, &(plat, plon)) in probes.iter().enumerate() {
-            let dlat = (plat - wps[i][0]) * 110_540.0;
-            let dlon = (plon - wps[i][1]) * 111_320.0 * wps[i][0].to_radians().cos();
-            let dist = (dlat * dlat + dlon * dlon).sqrt();
-            assert!(
-                (160.0..200.0).contains(&dist),
-                "probe {i} offset {dist} m from corridor"
-            );
-        }
+    fn mwm_leaves_present_requires_world_and_leaf_mwm() {
+        let root = temp_dir();
+        let data = root.join("files");
+        let mwm = data.join("mwm");
+        let leaves = mwm.join("releases").join("261115").join("leaves");
+        fs::create_dir_all(&leaves).unwrap();
+        assert!(
+            !mwm_leaves_present(&data),
+            "missing World.mwm / active.json must be false"
+        );
+        fs::write(mwm.join("World.mwm"), b"world").unwrap();
+        fs::write(mwm.join("active.json"), br#"{"version":"261115"}"#).unwrap();
+        assert!(
+            !mwm_leaves_present(&data),
+            "World alone without leaf .mwm must be false"
+        );
+        fs::write(leaves.join("Germany_Lower Saxony.mwm"), b"leaf").unwrap();
+        assert!(
+            mwm_leaves_present(&data),
+            "Indexed leaves under releases/version/leaves must count"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn mwm_route_probes_subsample_waypoints_evenly() {
+        let wps: Vec<[f64; 2]> = (0..21).map(|i| [53.0 + i as f64 * 0.1, 10.0]).collect();
+        let probes = mwm_route_probes_from_waypoints(&wps, 5);
+        assert_eq!(probes.len(), 5);
+        assert_eq!(probes.first(), Some(&(53.0, 10.0)));
+        assert_eq!(probes.last(), Some(&(55.0, 10.0)));
     }
 
     #[test]

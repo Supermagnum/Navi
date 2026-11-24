@@ -3,22 +3,25 @@
 Date: **2026-11-23** (Europe/Oslo). Device: Samsung **SM-P613** serial
 **`R52TB0JQEDE`** (arm64-v8a). App `no.navi.app` **0.5.1-beta**
 (`versionCode` **36**), debug APK sha256
-`c9f5210fcec88e503bad0a9a04659c9ef02624a08c9a694354553d4461dc097a`
-(includes async look-ahead seed + MainActivity re-tally fix). **Not** added to
-CI. Instrumentation driver `CarRaufossBergenUiCampaignTest` drove the real UI;
-ADB was used only for GPS mock (`cmd location` test provider) + synthetic DATEX
-and read-only monitoring. Host: `/tmp/raufoss_bergen_samsung_host.py`.
-Artifacts: `/tmp/raufoss-bergen-samsung/attempt_20261123_110059/`.
+`c9f5210fcec88e503bad0a9a04659c9ef02624a08c9a694354553d4461dc097a`.
+Branch for this report: **`tests`**. **Not** added to CI. No app or plugin
+code was changed for this run.
+
+Instrumentation driver `CarRaufossBergenUiCampaignTest` (already installed
+test APK) drove the real UI. ADB was used only for GPS mock (`cmd location`
+test provider) + synthetic DATEX file inject and read-only monitoring
+(logcat, dumpsys meminfo, file listings). Host:
+`/tmp/raufoss_bergen_samsung_host.py`.
+Artifacts: `/tmp/raufoss-bergen-samsung/attempt_20261123_114019/`.
 
 Download path: **Tools → Offline maps → Choose region**
-(`btn_mwm_regions` / `btn_mwm_install_europe_norway_ostlandet`). Geofabrik
-coverage dialogs were dismissed so planning stayed on the MWM path. Regions
-were UI-deleted via Map storage before any download or plan. Østlandet first;
-Vestlandet accepted when the app offered missing-maps download.
+(`btn_mwm_regions` / `btn_mwm_install_europe_norway_ostlandet`). Regions
+were UI-deleted via Map storage before any download or plan. Østlandet
+first; Vestlandet accepted when the app offered missing-maps download.
 
-No bridges, land hops, ferries, or road segments were forced. Wild camping off.
-Long trip off. DATEX on. Nearby attractions on. Car profile. Soft daily budget
-6.0 h; soft break 1.5 h / 15 min; eco on; avoid toll/ferries off.
+No bridges, land hops, ferries, or road segments were forced. Wild camping
+off. Long trip off. DATEX on. Nearby attractions on. Car profile. Soft daily
+budget 6.0 h; soft break 1.5 h / 15 min; eco on; avoid toll/ferries off.
 
 ---
 
@@ -30,7 +33,7 @@ Long trip off. DATEX on. Nearby attractions on. Car profile. Soft daily budget
 | Driving time | **~6.5 h** (389.4 min) | 3–8 h | yes |
 | Instructions | **28** maneuvers | 1–170 | yes |
 | Plan | **found** (`ui_planned=true`, bands all ok) | found | yes |
-| Tunnels | **3** (`route_tunnel_count=3`) | >= 1 on corridor | yes |
+| Tunnels | **3** (`route_tunnel_count=3`) | reported | yes |
 | Ferries | **0** | reported | yes |
 | Rest places | **4** soft-break pins (1.5 h) | soft-break spacing | yes |
 | Wild camping sites | **0** | plugin off | yes |
@@ -38,13 +41,15 @@ Long trip off. DATEX on. Nearby attractions on. Car profile. Soft daily budget
 | DATEX inject | **yes** — 5 synth sits + mid Block | 3–6 | yes |
 | DATEX apply | **yes** — `datex_impacts=5` (`datex_block=1`, `datex_penalize=4`) | Block+penalize | yes |
 | DATEX render | **yes** — `datex_render.ok=true`, `drape_marks=5`, `compose_marks=1` | markers/HUD | yes |
-| Mid-sim | **yes** — `rerouted=true` / `auto_reroute_count=1`; mid snap on corridor | mid inject | yes |
-| JUnit | **OK (1 test)** in 634.4 s (`NaviAndroidTestRunner`) | pass without closing app | yes |
+| Mid-sim | **yes** — `rerouted=true` / `auto_reroute_count=1` | mid inject | yes |
+| JUnit | **OK (1 test)** in 635.3 s (`NaviAndroidTestRunner`) | pass | yes |
 
-Attractions proof (async seed + re-tally): host logcat
-`mwm_attractions seeded=16` → `look-ahead seed done epoch=1` →
-`NaviAttractions: lookahead tally attraction_count=7 types=2 seed_epoch=1`.
-Patched enumerations in `files/long-trip-ui-report/route-result.json`.
+Attractions proof: logcat
+`NaviAttractions: lookahead tally attraction_count=7 types=2 … seed_epoch=1`.
+Enumerations in `files/long-trip-ui-report/route-result.json`.
+
+After instrumentation finished, the process was not left in the foreground
+(launcher resumed). MainActivity was started again so the app remains open.
 
 ---
 
@@ -78,12 +83,21 @@ Active install version **261115**, placement
 
 **UI delete via Map storage before plan; redownload Østlandet first.**
 
+Deleted leaves (UI): `Norway_Central`, `Norway_Hedmark`, `Norway_Oppland`,
+`Norway_Southern`, `Norway_Hordaland`, `Norway_Western`.
+
 ### Download order and disk usage
 
 | Order | Region / leaf | Result | Disk |
 |---|---|---|---|
-| 1 | `europe_norway_ostlandet` | ok in **93046 ms**; 6 leaves + 6 sidecars @ **261115** | pack under `releases/261115` |
-| 1a–1f | Norway_Central / Hedmark / Hordaland / Oppland / Southern / Western | leaves | ~160M / 98M / 86M / 96M / 238M / 132M |
+| 1 | `europe_norway_ostlandet` | ok in **98981 ms**; 6 leaves + 6 sidecars @ **261115** | pack under `releases/261115` |
+| 1a | Norway_Central | leaf | ~160M |
+| 1b | Norway_Hedmark | leaf | ~98M |
+| 1c | Norway_Hordaland | leaf | ~86M |
+| 1d | Norway_Oppland | leaf | ~96M |
+| 1e | Norway_Southern | leaf | ~238M |
+| 1f | Norway_Western | leaf | ~132M |
+| — | sidecars (all 6) | ok | ~4.1M |
 | 2 | `europe_norway_vestlandet` | `vestlandet_prompt_handled=true` | corridor leaves already present |
 | — | `files/mwm` total | — | **~1.6G** |
 
@@ -101,6 +115,8 @@ Active install version **261115**, placement
 | Soft breaks | 4 Rest stop pins |
 | Attractions | **7** (5 attraction, 2 artwork) |
 | Tunnels | **3** — `Vinjadalen@210.39\|Arnavegen@77.83\|Nygårdstangen viadukt@22.69` |
+| Ferries | **0** |
+| Wild camping sites | **0** |
 
 ### Rest places (name + coordinates)
 
@@ -142,8 +158,9 @@ Total **428.532 km**. Soft daily cap 6.0 h proportional to 389.4 min ETA:
 
 ### Fuel stops (report-only estimate)
 
-Report-only (planner unimplemented): **0** stops at 500–600 mi range with
-100 km margin, starting full tank.
+Report-only (planner unimplemented; see `plugins/safety-resupply.md`):
+**0** stops at 500–600 mi range with 100 km margin, starting full tank.
+Usable range (~804–966 km minus 100 km margin) exceeds 428.5 km.
 
 ### DATEX
 
@@ -154,22 +171,12 @@ Report-only (planner unimplemented): **0** stops at 500–600 mi range with
 | Rendered? | yes — drape_marks=5 |
 | Mid-sim? | yes — mid snap ~60.798,10.426; rerouted=true |
 
-### RAM
+### RAM (dumpsys meminfo, read-only)
 
 | Phase | MiB |
 |---|---|
-| Before | ~352.6 |
-| Post plan | ~927.3 |
-
----
-
-## App fix verified
-
-Async look-ahead seed (`mwm_enrich_lookahead=async`) previously left
-`attraction_count=0` because MainActivity tallied once before ingest finished.
-Fix: notify on seed completion and re-run the isotropic corridor tally
-(`seed_epoch=1` → count=7). Campaign wait now waits for
-`lookAheadSeedCompletedEpoch` before recording enumerations.
+| Before | ~342.6 |
+| Post plan | ~879.4 |
 
 ---
 
@@ -177,5 +184,5 @@ Fix: notify on seed completion and re-run the isotropic corridor tally
 
 Device `files/raufoss-bergen-ui/report.json` and
 `files/long-trip-ui-report/route-result.json` (enumerations with attractions=7).
-Host copy under `/tmp/raufoss-bergen-samsung/attempt_20261123_110059/`.
-Instrumentation: `OK (1 test)`, 634.4 s. **Not** wired into CI.
+Host copy under `/tmp/raufoss-bergen-samsung/attempt_20261123_114019/`.
+Instrumentation: `OK (1 test)`, 635.3 s. **Not** wired into CI.

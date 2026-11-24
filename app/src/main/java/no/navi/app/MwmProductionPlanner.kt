@@ -580,6 +580,8 @@ object MwmProductionPlanner {
                 append("build_s=${route.buildTimeS}\n")
                 append("comaps_route_code=$codeName\n")
                 append(vehicleLimitsReportLines(missing, partial))
+                // Ferry / tunnel legs from CoMaps turns (`is_ferry` / `is_tunnel`).
+                MwmRouteLegStats.appendReportTokens(this, route.turnsJson)
             }
         return CorridorRouteResult(
             report = report,
@@ -1774,6 +1776,40 @@ object MwmProductionPlanner {
      * path; CoMaps look-ahead seeding runs asynchronously so short plans are not
      * blocked by dozens of serial category searches.
      */
+    /**
+     * Soft-break / rest-place pins from installed MWM leaves (CoMaps search).
+     * Prefer this over classic soft-break geometry when CoMaps search returns hits.
+     */
+    private fun enrichBreakPois(
+        result: CorridorRouteResult,
+        profile: TravelProfile,
+        locale: String,
+        stillActive: () -> Boolean,
+    ) {
+        if (!result.report.contains("PASS")) return
+        if (result.routePolyline.isBlank() || result.distanceKm < 1.0) return
+        val built =
+            runCatching {
+                MwmBreakPois.buildAlongPolyline(
+                    polyline = result.routePolyline,
+                    profile = profile,
+                    distanceKm = result.distanceKm,
+                    locale = locale,
+                    stillActive = stillActive,
+                )
+            }.getOrElse { e ->
+                Log.w(TAG, "mwm_break_pois failed: ${e.message}")
+                return
+            }
+        if (built.breakPoisJson == "[]" || built.breakPoisJson.isBlank()) return
+        result.breakPoisJson = built.breakPoisJson
+        val sb = StringBuilder(result.report)
+        if (!result.report.contains("rest_place_count=")) {
+            MwmBreakPois.appendReportTokens(sb, built)
+        }
+        result.report = sb.toString()
+    }
+
     private fun enrichMwmPlan(
         context: Context,
         profile: TravelProfile,
@@ -1784,6 +1820,12 @@ object MwmProductionPlanner {
         RoutingPlanLog.progress(80, ecoEnabled, detail = "mwm_enrich")
         val dataDir = NaviAppData.resolve(context)
         val samples = downsamplePolyline(base.routePolyline, maxPoints = 120)
+        enrichBreakPois(
+            base,
+            profile,
+            locale = java.util.Locale.getDefault().language.ifBlank { "en" },
+            stillActive = { true },
+        )
         // Prefer DATEX lines from the avoid-pass refresh; never call datexRefreshJson twice.
         val reusedDatex = pendingDatexAnnotateExtra
         pendingDatexAnnotateExtra = null
@@ -1793,8 +1835,17 @@ object MwmProductionPlanner {
                 reusedDatex != null -> reusedDatex
                 else -> annotateDatex(context, dataDir, samples)
             }
-        val (breaksJson, restExtra) =
+        val (softBreaksJson, softRestExtra) =
             softBreakPoisJson(dataDir, profile, base.routePolyline, base.distanceKm, base.etaMinutes)
+        val mwmBreaks = base.breakPoisJson
+        val useMwmBreaks = mwmBreaks.isNotBlank() && mwmBreaks != "[]"
+        val breaksJson = if (useMwmBreaks) mwmBreaks else softBreaksJson
+        val restExtra =
+            if (useMwmBreaks && base.report.contains("rest_place_count=")) {
+                ""
+            } else {
+                softRestExtra
+            }
         // Tunnel / ferry runs come from CoMaps turns_json (is_tunnel / is_ferry).
         val pathExtra = annotatePathFlagsFromTurns(base)
         // Look-ahead store seed only — attraction counts stay cone-only (MainActivity).
@@ -1870,6 +1921,10 @@ object MwmProductionPlanner {
     private var lastTurnsJson: String = "[]"
 
     private fun annotatePathFlagsFromTurns(base: CorridorRouteResult): String {
+        // toCorridor may already have appended MwmRouteLegStats tokens.
+        if (base.report.contains("route_tunnel_count=") || base.report.contains("route_ferry_legs=")) {
+            return ""
+        }
         val turns =
             runCatching { JSONArray(lastTurnsJson.ifBlank { "[]" }) }.getOrElse { JSONArray() }
         val source =

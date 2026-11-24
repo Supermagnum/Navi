@@ -600,6 +600,16 @@ object LongTripCoordinator {
         packDir: File,
         placeIndexDataDir: File,
     ): Boolean {
+        // Retired→MWM handoff marks the ready stamp without place-index rows
+        // ([PlaceIndexReady.isReady] stays false by design). Trust the stamp so
+        // enable() does not re-queue and flip the UI to Downloading / missing.
+        if (MwmClientBootstrap.isEnabled() &&
+            PlaceIndexReady.hasReadyStamp(placeIndexDataDir, regionId)
+        ) {
+            states[regionId] = State.Indexed
+            refreshStatusLine()
+            return true
+        }
         if (!PackRegionAvailability.localBakeReady(packDir, regionId)) {
             return false
         }
@@ -637,8 +647,24 @@ object LongTripCoordinator {
                     else -> Unit
                 }
             }
-            phase == "downloading" -> plan.states[key] = State.Downloading
-            phase == "installed" -> plan.states[key] = State.Installed
+            phase == "downloading" -> {
+                // Never regress Indexed/Installed: provisional queue jobs emit
+                // "downloading" before mwm_ok; a re-enable must not flap the UI.
+                when (plan.states[key]) {
+                    State.Indexed,
+                    State.Installed,
+                    State.Indexing,
+                    State.BuildingRoutes,
+                    -> Unit
+                    else -> plan.states[key] = State.Downloading
+                }
+            }
+            phase == "installed" -> {
+                when (plan.states[key]) {
+                    State.Indexed -> Unit
+                    else -> plan.states[key] = State.Installed
+                }
+            }
             phase == "indexing" -> {
                 // Show Indexing in the status line while place-index runs.
                 // Planning waits for Indexed, so Installed may move to Indexing.
@@ -646,6 +672,11 @@ object LongTripCoordinator {
                 if (cur != State.Indexed && cur != State.BuildingRoutes) {
                     plan.states[key] = State.Indexing
                 }
+            }
+            phase == "mwm_indexed" -> {
+                // Retired→MWM handoff: CoMaps leaves are routing-ready; no PBF
+                // corridor skeleton. Skip BuildingRoutes.
+                plan.states[key] = State.Indexed
             }
             phase == "indexed" -> {
                 // Place index done — BuildingRoutes until corridor skeleton ready.

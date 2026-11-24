@@ -248,7 +248,7 @@ dependencies {
     androidTestImplementation(composeBom)
 
     implementation("androidx.activity:activity-compose:1.9.3")
-    implementation("androidx.appcompat:appcompat:1.7.1")
+    implementation("androidx.appcompat:appcompat:1.8.0")
     implementation("androidx.core:core-ktx:1.19.1")
     implementation("androidx.core:core-splashscreen:1.2.0")
     implementation("androidx.compose.ui:ui")
@@ -259,7 +259,7 @@ dependencies {
     implementation("com.github.luben:zstd-jni:1.5.7-28")
     implementation("net.java.dev.jna:jna:5.19.1@aar")
     // MapLibre still packaged until Phase 8 deletion completes (dead on MWM-only path).
-    implementation("org.maplibre.gl:android-sdk:13.6.1")
+    implementation("org.maplibre.gl:android-sdk:13.7.1")
     // CoMaps drape (Java/res/assets of the pinned checkout, no CMake): see comaps-sdk/.
     if (rootProject.findProject(":comaps-sdk") != null) {
         implementation(project(":comaps-sdk"))
@@ -282,7 +282,7 @@ dependencies {
     androidTestImplementation("androidx.test:rules:1.7.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
-    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.4.0")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.4.1")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 

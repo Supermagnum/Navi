@@ -39,9 +39,10 @@ waiving the crawl over restarting injection.
 | Plan | **found** (`ui_planned=true`, `ELSA_PLAN_OK`) | found | yes |
 | Rest places / soft breaks | **17** (`rest_place_count=17`, `break_poi_count=17`, chunked soft) | rests found | yes |
 | Wild camping | **64** accepted on-foot (`kind=OK`); route-result enum also lists **80** by country | > 0 | yes |
-| Attractions | **4** (`tourism-attraction` 3, `tourism-viewpoint` 1) | several | yes |
+| Attractions | **4** total — by type: `tourism-attraction` **3**, `tourism-viewpoint` **1** | several | yes |
 | Ferries | **0** legs | reported | yes |
-| Tunnels | **5** | reported | yes |
+| Tunnels (app enum) | **5** (road-name fp; includes bridge label) | reported | yes |
+| Tunnels (OSM along corridor) | **25** named/lokket on Østlandet (~21.1 km) | report required | yes (geojson) |
 | Soft DATEX injects (timed replay) | **4** of 6 staged soft Penalize sits fired before abort | soft DATEX count | yes (partial crawl) |
 | DATEX on finished plan report | `datex_impacts=0` (`block=0`, `penalize=0`); enrich `datex_lines=3`; XML parse warning | honest | see DATEX |
 | GPS town crawl / town screenshots | **waived** (device noise) | not required | n/a |
@@ -106,7 +107,7 @@ Kept plan (`ELSA_PLAN_OK` 13:18:40):
 - Build ~**90.7 s**; `comaps_route_code=OK`; `terminate=ok`
 - Ascent **17757.5 m** / descent **17156.5 m**
 - Vehicle limits: `vehicle_limits_ok=false`, partial note `Finland_Northern Finland`
-- Ferries **0**; tunnels **5** (`Perämerentie`, `Hamarvegen`, `Drammensbrua`, `E 134`, `Gomsrudveien`)
+- Ferries **0**; app tunnels **5** (`Perämerentie`, `Hamarvegen`, `Drammensbrua`, `E 134`, `Gomsrudveien`) — see **Tunnels** for OSM re-derivation
 
 ### Rest places (chunked soft)
 
@@ -124,9 +125,98 @@ Route-result enumerations also report **80** sites by country
 
 ### Attractions
 
-**4** total — `tourism-attraction` **3**, `tourism-viewpoint` **1**. Sample
-hits near origin include Elsa's caravan & galleri, Harald R., Bugøynes
-plantelivsfredning, Utsiktspunkt.
+Recovered from campaign ART
+`report/device_report_final_pre_overwrite.json` / plan enumerations
+(`attempt_20261123_122404`; host ART dir no longer on `/tmp`). Verify note
+`internal/elsa-sjuvasslia-doc-verify-commit.md`: attractions **4**, by_type
+**3+1**.
+
+| Field | Value | Result |
+|---|---|---|
+| `attraction_count` | **4** | PASS (several) |
+| By type | `tourism-attraction` **3**, `tourism-viewpoint` **1** | complete |
+| Pref | Nearby attractions **on** | — |
+
+#### By type
+
+| Type | Count |
+|---|---:|
+| tourism-attraction | 3 |
+| tourism-viewpoint | 1 |
+| **Total** | **4** |
+
+#### Named hits (complete set from campaign report)
+
+All four hits documented on the kept plan (near-origin cone samples):
+
+| # | Name | Type (inferred from by_type mix) |
+|---|---|---|
+| 1 | Elsa's caravan & galleri | tourism-attraction |
+| 2 | Harald R. | tourism-attraction |
+| 3 | Bugøynes plantelivsfredning | tourism-attraction |
+| 4 | Utsiktspunkt | tourism-viewpoint |
+
+Full per-hit `hits_snip` JSON was not preserved after ART `/tmp` eviction;
+totals and per-type counts above are the complete enumerated numbers from the
+pre-overwrite device report.
+
+### Tunnels
+
+| Source | Value |
+|---|---|
+| App / plan enum `route_tunnel_count` | **5** |
+| App `route_tunnel_fp` labels | `Perämerentie`, `Hamarvegen`, `Drammensbrua`, `E 134`, `Gomsrudveien` |
+| **OSM-along-corridor (post-ART)** | **25** named/lokket tunnels (~**21.1 km**) on Østlandet — table below |
+
+**App fp caveat:** labels are road/bridge names from the MWM report path
+(`Drammensbrua` is a bridge, not an OSM tunnel). Same class of MWM
+instrumentation quirk as Bevensen (sibling owns tunnel-token fix). Do **not**
+treat the five labels as a complete OSM tunnel inventory.
+
+**Independent re-derivation (docs only, no app code change):** Campaign ART
+polyline (**35 426** pts) is gone from `/tmp`. Used
+`geojson-routes/elsa-sjuvass.geojson` (**33 911** pts, **1944.2 km** — same
+Bugøynes → Sjuvasslia corridor the report compared to the kept plan). Matched
+Geofabrik PBFs under `navi-gate/packs-fu38-nogav`
+(`nord-norge`, `finland`, `sweden`, `ostlandet`) for ways with `tunnel=*` and
+`highway` in motorway/trunk/primary (+ links). Named tunnels / lokket kept if
+sampled nodes lie along the corridor (mean distance ≤150 m after merge);
+dual-carriageway length ≈ summed way lengths / 2. FI / SE / nord-norge
+returned **0** hits on this coarse geojson chord (corridor inland samples
+often far from carriageways); Østlandet returned the inventory below. Live
+plan was ~4.7% longer than this geojson — OSM count is a lower bound for the
+Østlandet spine, not a claim that FI/SE had zero tunnels on the live MWM
+polyline.
+
+**OSM tunnel count: 25** (approx. total length **~21.1 km**).
+
+| along_km | ~length_km | Name | Approx. location |
+|---:|---:|---|---|
+| 1692.8 | 0.04 | Leirettunnelen | south of Elverum |
+| 1714.5 | 0.09 | Byrotunnelen | toward Hamar |
+| 1739.5 | 0.68 | Espatunnelen | E 6 Espa |
+| 1750.6 | 2.33 | Morskogstunnelen | E 6 |
+| 1755.9 | 0.63 | Korslundtunnelen | E 6 |
+| 1766.7 | 1.17 | Eidsvolltunnelen | E 6 Eidsvoll |
+| 1783.1 | 0.04 | Elstadmolokket | E 6 |
+| 1786.9 | 0.06 | Hauerseterlokket | E 6 |
+| 1830.3 | 0.83 | Vålerengtunnelen | Oslo |
+| 1830.7 | 1.74 | Operatunnelen / Svartdalstunnelen | Oslo |
+| 1831.4 | 1.98 | Operatunnelen / Ekebergtunnelen | Oslo |
+| 1832.8 | 1.74 | Operatunnelen / Bjørvikatunnelen | Oslo |
+| 1833.9 | 0.16 | Bjørvikatunnelen | Oslo |
+| 1834.1 | 1.91 | Operatunnelen / Festningstunnelen | Oslo |
+| 1835.3 | 0.65 | Operatunnelen | Oslo |
+| 1836.3 | 0.12 | Framnestunnelen | Oslo west |
+| 1838.4 | 0.18 | Sjølysttunnelen | Oslo west |
+| 1841.0 | 0.32 | Lysakerlokket | Lysaker |
+| 1841.7 | 0.25 | Teleplanlokket | Bærum |
+| 1842.4 | 0.45 | Stabekklokket | Stabekk |
+| 1847.6 | 0.17 | Sandviksåstunnelen | Sandvika |
+| 1848.1 | 1.68 | Bjørnegårdtunnelen | E 18 |
+| 1867.3 | 0.81 | Fosskolltunnelen | toward Drammen |
+| 1874.1 | 1.22 | Bragernestunnelen | Drammen |
+| 1876.2 | 1.88 | Strømsåstunnelen | Drammen / E 18 |
 
 ### Fuel (report-only)
 
@@ -222,3 +312,8 @@ from the canned KML chord).
 - Fuel stops: formula only.
 - A later instrument restart began rewriting device `report.json` after the
   preserved pull; numbers above are from the successful plan ART / pre-overwrite pull.
+- Attractions: complete **total + per-type** recovered; per-hit `hits_snip`
+  JSON lost with ART `/tmp` eviction (four names kept from the written report).
+- Tunnels: app enum **5** with non-tunnel road/bridge labels; OSM re-derivation
+  used geojson corridor (ART polyline gone) — **25** on Østlandet; FI/SE/nord-norge
+  **0** on that coarse chord (not proof the live MWM plan had none there).

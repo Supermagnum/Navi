@@ -10492,6 +10492,12 @@ pub fn decide_region_acquisition(
         driver_break_core::pack_server::RegionSource::Server { generation, .. } => {
             (FfiRegionSourceKind::Server, generation.clone())
         }
+        // MWM handoff after rkyv retirement: report as Server so existing
+        // callers that only branch Server vs Local keep the non-Geofabrik path
+        // when execute_local_convert=false (decision_reason=mwm_ok).
+        driver_break_core::pack_server::RegionSource::Mwm {
+            catalog_version, ..
+        } => (FfiRegionSourceKind::Server, catalog_version.clone()),
         driver_break_core::pack_server::RegionSource::Local { .. } => {
             (FfiRegionSourceKind::Local, None)
         }
