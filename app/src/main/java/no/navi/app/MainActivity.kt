@@ -2422,30 +2422,20 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
             }
             return@LaunchedEffect
         }
+        val sampleCap = 6
         val samples =
-            if (routeSamples.size <= 8) {
+            if (routeSamples.size <= sampleCap) {
                 routeSamples
             } else {
-                val step = (routeSamples.size / 8).coerceAtLeast(1)
-                routeSamples.filterIndexed { idx, _ -> idx % step == 0 }.take(8)
+                val step = (routeSamples.size / sampleCap).coerceAtLeast(1)
+                routeSamples.filterIndexed { idx, _ -> idx % step == 0 }.take(sampleCap)
             }
         val packDirs = longTripPackDirsJson()
         val jsons =
             withContext(Dispatchers.IO) {
+                // Sequential: CoMaps search viewport/locale is process-global.
                 val out = ArrayList<String>(samples.size)
-                for (i in samples.indices) {
-                    val s = samples[i]
-                    val heading =
-                        if (i + 1 < samples.size) {
-                            headingBetweenDeg(
-                                s.lat,
-                                s.lon,
-                                samples[i + 1].lat,
-                                samples[i + 1].lon,
-                            )
-                        } else {
-                            null
-                        }
+                for (s in samples) {
                     val raw =
                         runCatching {
                             val cover =
@@ -2462,12 +2452,19 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                         dataDir.absolutePath,
                                         pbf.absolutePath,
                                     )
+                                } else {
+                                    // MWM-primary: Indexed leaves, no Geofabrik PBF.
+                                    ComapsSearchBridge.seedPoiLookaheadFromTourism(
+                                        s.lat,
+                                        s.lon,
+                                    )
                                 }
                             }
+                            // Isotropic membership for plan tally (heading cone is HUD-only).
                             uniffi.navi.poiLookaheadQueryJson(
                                 s.lat,
                                 s.lon,
-                                heading,
+                                null,
                                 true,
                                 poiLookaheadStrictHoursUnknown,
                             )
@@ -3115,6 +3112,8 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                         dataDir.absolutePath,
                                         pbf.absolutePath,
                                     )
+                                } else {
+                                    ComapsSearchBridge.seedPoiLookaheadFromTourism(lat, lon)
                                 }
                             }
                             uniffi.navi.poiLookaheadQueryJson(
@@ -4126,10 +4125,28 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
         planNotice = ""
     }
 
+    // Instrumented tests may set requestPlanKick when Compose click misses.
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            if (NaviMapTestHooks.requestPlanKick) {
+                NaviMapTestHooks.requestPlanKick = false
+                ferryPreparingRetries = 0
+                skeletonPreparingRetries = 0
+                planKick += 1
+            }
+            delay(500)
+        }
+    }
+
     // Keep outside hideSearch: reopening Route must not re-fire planning
     // when planKick is already > 0 from an earlier Plan route / Load.
     LaunchedEffect(planKick) {
         if (planKick == 0) return@LaunchedEffect
+        android.util.Log.i(
+            "NaviRouting",
+            "plan_kick=$planKick longTrip=$longTripEnabled profile=$profile " +
+                "from=${fromPoint?.name} to=${toPoint.name} vias=${viaPoints.size}",
+        )
 
         fun refusePlan(
             reason: String,
@@ -4212,12 +4229,25 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                 pts
                     .filter { it.lat != 0.0 || it.lon != 0.0 }
                     .map { it.lat to it.lon }
-            if (tripWps.size >= 2) {
+            // HARD RULE companion: if the corridor is already Indexed/Installed
+            // (e.g. UI test acquired MWM leaves first), do not re-enter enable()
+            // — that resets states to Needed and can hang on corridor UniFFI /
+            // re-enqueue while Plan is supposed to run.
+            val alreadyReady =
+                LongTripCoordinator.corridorReadyForPlanning() &&
+                    LongTripCoordinator.currentPlan()?.regionsInOrder?.isNotEmpty() == true
+            if (tripWps.size >= 2 && !alreadyReady) {
                 longTripStatusLine =
                     withContext(Dispatchers.IO) {
                         LongTripCoordinator.enable(context, tripWps)
                     }
                 status = longTripStatusLine.ifBlank { status }
+            } else if (alreadyReady) {
+                longTripStatusLine = LongTripCoordinator.statusLine()
+                android.util.Log.i(
+                    "NaviRouting",
+                    "plan_skip_reenable corridor already ready; line=$longTripStatusLine",
+                )
             }
             // Wait until corridor graph packs load. Place-index is not a plan gate.
             while (isActive && !LongTripCoordinator.corridorPacksReady()) {

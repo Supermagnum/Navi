@@ -131,6 +131,12 @@ object ComapsDrapeBootstrap : ComapsDrape.Backend {
 
                     override fun onRenderingInitializationFinished() {
                         Log.i(TAG, "rendering initialisation finished")
+                        // Pre-installed leaves live under {writable}/{countriesListVer}/;
+                        // Framework init only auto-registers World/WorldCoasts. Scan now
+                        // so cities/streets/rivers draw without waiting for a new download.
+                        runCatching { NaviDrape.nativeRegisterMaps() }
+                            .onSuccess { Log.i(TAG, "registerMaps after rendering init") }
+                            .onFailure { Log.w(TAG, "registerMaps after rendering init failed", it) }
                     }
                 },
                 { Log.w(TAG, "drape reports unsupported graphics (no GLES3 / Vulkan)") },

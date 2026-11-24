@@ -162,6 +162,9 @@ object ComapsSessionBootstrap {
             if (!force && key == openKey) return true
             linkActiveRelease(root, version)
             if (!stageResources(ctx, root)) return false
+            // Re-link after staging: assets may refresh countries.txt "v", which
+            // is the directory name CoMaps Storage / drape scan for local leaves.
+            linkActiveRelease(root, version)
             // Search address/type strings need Platform Context (Utils JNI). The
             // drape Framework also sets this, but search can run before the map
             // surface is ready — set it here so cold Everywhere queries get
@@ -220,28 +223,67 @@ object ComapsSessionBootstrap {
 
     private fun isSymlink(f: File): Boolean = runCatching { OsConstants.S_ISLNK(Os.lstat(f.path).st_mode) }.getOrDefault(false)
 
-    /** `{root}/{ver}` -> `releases/{ver}/leaves`; drops links to other versions. */
+    /**
+     * Expose active release leaves at `{root}/{countriesListVer}/`.
+     *
+     * CoMaps Storage / drape load `countries.txt` from APK assets (`GetReader`
+     * scope `rw` prefers resources), so `m_currentVersion` is the SDK `"v"`
+     * (e.g. 261105) even when `active.json` is a newer release (261115). Local
+     * maps are scanned only under `{writable}/{m_currentVersion}/`.
+     *
+     * Link **that** version name to `releases/{active}/leaves`. Do not also
+     * link the active id when it differs — RoutesBuilder registers every
+     * version dir and CHECK-aborts on `VersionTooOld` for the duplicate.
+     */
     private fun linkActiveRelease(
         root: File,
         version: String,
     ) {
+        val target = "releases/$version/leaves"
+        val countriesListVer = readCountriesListVersion(File(root, "countries.txt"))
+        val linkName = countriesListVer ?: version
         root.listFiles()?.forEach { f ->
-            if (f.name != version && VERSION_DIR.matches(f.name) && isSymlink(f)) {
+            if (f.name != linkName && VERSION_DIR.matches(f.name) && isSymlink(f)) {
                 runCatching { f.delete() }
             }
         }
-        val link = File(root, version)
-        val target = "releases/$version/leaves"
+        ensureVersionSymlink(root, linkName, target)
+        if (countriesListVer != null && countriesListVer != version) {
+            Log.i(
+                TAG,
+                "linked countries-list version $countriesListVer -> $target " +
+                    "(active release=$version; not dual-linking active id)",
+            )
+        }
+    }
+
+    private fun ensureVersionSymlink(
+        root: File,
+        name: String,
+        target: String,
+    ) {
+        val link = File(root, name)
         if (isSymlink(link)) {
             if (runCatching { Os.readlink(link.path) }.getOrNull() == target) return
             link.delete()
         } else if (link.exists()) {
-            Log.w(TAG, "${link.absolutePath} is a real path; not linking releases/$version/leaves")
+            Log.w(TAG, "${link.absolutePath} is a real path; not linking $target")
             return
         }
         runCatching { Os.symlink(target, link.path) }
             .onFailure { Log.w(TAG, "symlink ${link.path} -> $target failed", it) }
     }
+
+    /** CoMaps `countries.txt` top-level `"v"` (storage local-maps directory name). */
+    private fun readCountriesListVersion(countriesTxt: File): String? =
+        runCatching {
+            if (!countriesTxt.isFile) return@runCatching null
+            val v = JSONObject(countriesTxt.readText()).optInt("v", -1)
+            if (v < 0) null else v.toString()
+        }.getOrNull()
+
+    /** Test-only: parse countries-list version without opening a session. */
+    internal fun readCountriesListVersionForTest(countriesTxt: File): String? = readCountriesListVersion(countriesTxt)
 
     /** Copy `assets/comaps-data` next to World.mwm once per app install/update. */
     private fun stageResources(

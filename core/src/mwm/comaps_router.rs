@@ -374,6 +374,9 @@ mod ffi {
         lon: f64,
     }
 
+    /// Must match `NaviComapsRouteResult` in `navi_comaps.h` / liborganicmaps.so.
+    /// Missing `vehicle_segments_json` made C++ `memset`/`free_route` overrun the
+    /// Rust stack buffer (SIGSEGV at free_route+74).
     #[repr(C)]
     struct NaviComapsRouteResult {
         code: c_int,
@@ -389,7 +392,14 @@ mod ffi {
         elevation_json: *mut c_char,
         router_mode: *mut c_char,
         speed_limits_json: *mut c_char,
+        vehicle_segments_json: *mut c_char,
     }
+
+    // x86_64 / aarch64: enum+pad + 3×f64 + 2×ptr/usize + 2×ptr + 2×f64 + 4×ptr = 112.
+    const _: () = assert!(std::mem::size_of::<NaviComapsRouteResult>() == 112);
+    const _: () = assert!(std::mem::offset_of!(NaviComapsRouteResult, points) == 0x20);
+    const _: () =
+        assert!(std::mem::offset_of!(NaviComapsRouteResult, vehicle_segments_json) == 0x68);
 
     pub fn set_platform_locked(locked: bool) {
         unsafe { navi_comaps_set_platform_locked(if locked { 1 } else { 0 }) };
@@ -596,6 +606,14 @@ mod ffi {
         Ok(n)
     }
 
+    /// Copy a C string without taking ownership (caller still frees via free_route).
+    fn take_c_string(p: *mut c_char) -> Option<String> {
+        if p.is_null() {
+            return None;
+        }
+        Some(unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned())
+    }
+
     pub fn route(
         profile: ComapsProfile,
         from: ComapsLatLon,
@@ -620,6 +638,7 @@ mod ffi {
             elevation_json: ptr::null_mut(),
             router_mode: ptr::null_mut(),
             speed_limits_json: ptr::null_mut(),
+            vehicle_segments_json: ptr::null_mut(),
         };
         unsafe {
             navi_comaps_route(profile_i, from.lat, from.lon, to.lat, to.lon, &mut out);
@@ -630,6 +649,7 @@ mod ffi {
         let build_time_s = out.build_time_s;
         let ascent_m = out.ascent_m;
         let descent_m = out.descent_m;
+        // Copy owned strings/points out, then free C allocations via the matching ABI.
         let mut points = Vec::new();
         if !out.points.is_null() && out.point_count > 0 {
             let slice = unsafe { std::slice::from_raw_parts(out.points, out.point_count) };
@@ -638,44 +658,17 @@ mod ffi {
                 lon: p.lon,
             }));
         }
-        let error_message = if out.error_message.is_null() {
-            None
-        } else {
-            Some(
-                unsafe { CStr::from_ptr(out.error_message) }
-                    .to_string_lossy()
-                    .into_owned(),
-            )
-        };
-        let turns_json = if out.turns_json.is_null() {
-            "[]".to_string()
-        } else {
-            unsafe { CStr::from_ptr(out.turns_json) }
-                .to_string_lossy()
-                .into_owned()
-        };
-        let elevation_json = if out.elevation_json.is_null() {
-            "[]".to_string()
-        } else {
-            unsafe { CStr::from_ptr(out.elevation_json) }
-                .to_string_lossy()
-                .into_owned()
-        };
-        let router_mode = if out.router_mode.is_null() {
-            "Unknown".to_string()
-        } else {
-            unsafe { CStr::from_ptr(out.router_mode) }
-                .to_string_lossy()
-                .into_owned()
-        };
-        let speed_limits_json = if out.speed_limits_json.is_null() {
-            "[]".to_string()
-        } else {
-            unsafe { CStr::from_ptr(out.speed_limits_json) }
-                .to_string_lossy()
-                .into_owned()
-        };
-        unsafe { navi_comaps_free_route(&mut out) };
+        let error_message = take_c_string(out.error_message);
+        let turns_json = take_c_string(out.turns_json).unwrap_or_else(|| "[]".to_string());
+        let elevation_json = take_c_string(out.elevation_json).unwrap_or_else(|| "[]".to_string());
+        let router_mode = take_c_string(out.router_mode).unwrap_or_else(|| "Unknown".to_string());
+        let speed_limits_json =
+            take_c_string(out.speed_limits_json).unwrap_or_else(|| "[]".to_string());
+        // vehicle_segments_json is consumed only by free_route (post-route guard lives in C++).
+        let _ = out.vehicle_segments_json;
+        unsafe {
+            navi_comaps_free_route(&mut out);
+        }
         let instructions_json = crate::mwm::comaps_instructions::enrich_turns_json(&turns_json)
             .unwrap_or_else(|_| "[]".to_string());
         Ok(ComapsRoute {

@@ -240,6 +240,23 @@ object RegionReadiness {
 
         val (phase, pct, detail) =
             when {
+                // Long-trip Indexed is authoritative (retired→MWM handoff never
+                // appears in InstalledMaps PBF inventory — without this, the
+                // panel flips Downloading → "not downloaded" after mwm_indexed).
+                longTripState == LongTripCoordinator.State.Indexed ->
+                    Triple(
+                        Phase.Ready,
+                        100,
+                        resources.getString(R.string.region_readiness_ready, name),
+                    )
+                longTripState == LongTripCoordinator.State.Installed &&
+                    installed == null &&
+                    MwmClientBootstrap.isEnabled() ->
+                    Triple(
+                        Phase.Ready,
+                        100,
+                        resources.getString(R.string.region_readiness_ready, name),
+                    )
                 skelOk && indexOk ->
                     Triple(
                         Phase.Ready,

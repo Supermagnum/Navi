@@ -769,6 +769,8 @@ internal object IntegrityCheckingUniffiLib {
         uniffiCheckContractApiVersion(this)
         uniffiCheckApiChecksums(this)
     }
+
+    internal fun ensureInitialized() = Unit
     external fun uniffi_navi_checksum_func_apply_osm_update(
     ): Int
     external fun uniffi_navi_checksum_func_approach_appear_m(
@@ -1460,6 +1462,8 @@ internal object UniffiLib {
         uniffiCallbackInterfaceSensorPlatform.register(this)
         
     }
+
+    internal fun ensureInitialized() = Unit
     external fun uniffi_navi_fn_clone_ffitrackstore(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
     external fun uniffi_navi_fn_free_ffitrackstore(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -3282,10 +3286,10 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
  * @suppress
  */
 public fun uniffiEnsureInitialized() {
-    IntegrityCheckingUniffiLib
-    // UniffiLib() initialized as objects are used, but we still need to explicitly
-    // reference it so initialization across crates works as expected.
-    UniffiLib
+    // Call arbitrary methods on IntegrityCheckingUniffiLib and UniffiLib to ensure that
+    // their init blocks run. This ensures initialization across crates works as expected.
+    IntegrityCheckingUniffiLib.ensureInitialized()
+    UniffiLib.ensureInitialized()
 }
 
 // Async support

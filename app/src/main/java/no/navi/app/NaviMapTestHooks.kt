@@ -30,6 +30,13 @@ object NaviMapTestHooks {
             localDemMapboxConversion = !value
         }
 
+    /**
+     * When true, MainActivity bumps `planKick` once (instrumented tests that
+     * cannot rely on Compose `btn_plan_route` alone after a long MWM wait).
+     */
+    @Volatile
+    var requestPlanKick: Boolean = false
+
     @Volatile
     var pendingRoute: uniffi.navi.CorridorRouteResult? = null
 

@@ -70,6 +70,9 @@ typedef struct NaviComapsRouteResult {
   /* JSON int array, one entry per polyline segment (i = segment between point i and i+1):
    * posted maxspeed km/h, -1 untagged / not applicable, -2 explicitly unlimited. May be NULL. */
   char * speed_limits_json;
+  /* JSON array of {mwm,fid,seg,name,lat,lon} for vehicle_limits post-route guard. May be NULL.
+   * Must stay last: Rust FFI mirrors this layout; a missing field caused free_route SIGSEGV. */
+  char * vehicle_segments_json;
 } NaviComapsRouteResult;
 
 /* storage_path: directory containing CoMaps data/ + writable maps dir with .mwm.

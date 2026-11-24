@@ -5,6 +5,12 @@ Real slim snapshot of the navigate-me pack catalog (`generation` /
 `created_unix` preserved), filtered to regions needed for long-trip tests.
 Pack `bytes` fields are from that live catalog pull (not invented).
 
+## current_retired.json
+Shape of the live intentional `.rkyv` retirement stub
+(`schema: navi-rkyv-catalog-retired/1`, `status: retired`, empty `regions: {}`,
+`mwm_catalog_url: /mwm/current.json`). Clients must hand off to the MWM
+catalog — not treat this as malformed or empty-catalog Geofabrik fallback.
+
 ## ors_*.geojson
 **SYNTHETIC.** Hand-drawn densified polylines shaped like ORS GeoJSON so
 parser / corridor / adjacency tests compile offline. They are **not**

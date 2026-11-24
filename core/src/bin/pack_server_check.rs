@@ -72,6 +72,25 @@ fn main() {
                 }
             }
         }
+        Connectivity::Retired {
+            served_from,
+            mwm_catalog_absolute_url,
+            last_rkyv_generation,
+            message,
+            ..
+        } => {
+            let src = hop.map(|h| h.as_str()).unwrap_or("mwm");
+            println!("status=retired source={src}");
+            println!("served_from={served_from}");
+            println!("mwm_catalog={mwm_catalog_absolute_url}");
+            if let Some(g) = last_rkyv_generation {
+                println!("last_rkyv_generation={g}");
+            }
+            if let Some(m) = message {
+                println!("message={m}");
+            }
+            println!("handoff=MWM catalog (not Geofabrik)");
+        }
         Connectivity::Unreachable { reason, .. } => {
             println!("status=unreachable / not ready source=local-bake");
             println!("reason={reason}");

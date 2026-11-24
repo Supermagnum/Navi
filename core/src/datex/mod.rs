@@ -730,13 +730,15 @@ fn resolve_datex_host(
             "discovery chain failed: {}",
             match &conn {
                 pack_server::Connectivity::Unreachable { reason, .. } => reason.as_str(),
-                pack_server::Connectivity::Ready(_) => "unknown",
+                pack_server::Connectivity::Ready(_)
+                | pack_server::Connectivity::Retired { .. } => "unknown",
             }
         );
         return Ok(None);
     };
     let base = match &conn {
         pack_server::Connectivity::Ready(c) => c.served_from.clone(),
+        pack_server::Connectivity::Retired { served_from, .. } => served_from.clone(),
         pack_server::Connectivity::Unreachable { .. } => return Ok(None),
     };
 

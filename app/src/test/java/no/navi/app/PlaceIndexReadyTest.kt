@@ -225,6 +225,30 @@ class PlaceIndexReadyTest {
     }
 
     @Test
+    fun sync_preserves_stamp_only_mwm_regions_absent_from_installed_maps() {
+        val dir =
+            File.createTempFile("place-ready-mwm-stamp", "dir").apply {
+                delete()
+                mkdirs()
+            }
+        try {
+            // No Geofabrik manifests: InstalledMaps will not inventory corridor ids.
+            PlaceIndexReady.markReady(dir, "europe/germany/niedersachsen")
+            PlaceIndexReady.markReady(dir, "europe/denmark")
+            assertTrue(PlaceIndexReady.hasReadyStamp(dir, "europe/germany/niedersachsen"))
+            InstalledMaps.refreshFromDirs(dir, emptyList(), placeIndexDir = dir)
+            assertTrue(
+                "MWM stamp must survive empty intact rewrite",
+                PlaceIndexReady.hasReadyStamp(dir, "europe/germany/niedersachsen"),
+            )
+            assertTrue(PlaceIndexReady.hasReadyStamp(dir, "europe/denmark"))
+        } finally {
+            InstalledMaps.clearForTests()
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun clear_ready_stamp_only_drops_stamp_without_requiring_db() {
         val dir =
             File.createTempFile("place-ready-stamp", "dir").apply {
