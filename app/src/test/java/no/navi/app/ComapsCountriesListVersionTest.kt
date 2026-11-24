@@ -17,15 +17,14 @@ class ComapsCountriesListVersionTest {
 
     @Test
     fun reads_top_level_v_from_countries_txt() {
-        val f = tmp.newFile("countries.txt")
-        f.writeText("""{"id":"Countries","v":261105,"g":[]}""")
-        assertEquals("261105", ComapsSessionBootstrap.readCountriesListVersionForTest(f))
+        File(tmp.root, "countries.txt").writeText("""{"id":"Countries","v":261105,"g":[]}""")
+        assertEquals("261105", ComapsSessionBootstrap.readCountriesListVersion(tmp.root))
     }
 
     @Test
     fun missing_or_invalid_returns_null() {
-        val empty = tmp.newFile("empty.txt").also { it.writeText("{}") }
-        assertNull(ComapsSessionBootstrap.readCountriesListVersionForTest(empty))
-        assertNull(ComapsSessionBootstrap.readCountriesListVersionForTest(File(tmp.root, "absent.txt")))
+        File(tmp.root, "countries.txt").writeText("{}")
+        assertNull(ComapsSessionBootstrap.readCountriesListVersion(tmp.root))
+        assertNull(ComapsSessionBootstrap.readCountriesListVersion(File(tmp.root, "absent_dir")))
     }
 }
