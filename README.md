@@ -268,10 +268,9 @@ Navi is on the main F-Droid index as package **`no.navi.app`**.
 Prefer the F-Droid client for install and updates. The **suggested** version on
 the package page can lag GitHub / `dev` sideloads: when last checked, the index
 and fdroiddata `master` were still **0.3.30-beta** (`versionCode` **33**) while
-`app/build.gradle.kts` on `dev`/`main` is **0.5.0-beta** (`versionCode` **35**).
-Committed [`compiled/navi-release.apk`](compiled/navi-release.apk) may still be
-the last published sideload (**0.3.30-beta** / **33**) until refreshed for this
-release. Sideload steps:
+`app/build.gradle.kts` and committed
+[`compiled/navi-release.apk`](compiled/navi-release.apk) are **0.5.0-beta**
+(`versionCode` **35**). Sideload steps:
 [Install a prebuilt APK](#install-a-prebuilt-apk).
 
 # Features
@@ -430,6 +429,25 @@ optional DEM on top of the pack payload (often another 1–2+ GiB for a large
 landsdel). Full country tables:
 [`docs/pbf-source-sizes.md`](docs/pbf-source-sizes.md),
 [`docs/coverage.md`](docs/coverage.md).
+
+### Long German trip disk usage (measured)
+
+**Bevensen → Dalsøren** MobileHome long-trip campaign (via Vågå, June 2026
+open-roads clock, MWM/CoMaps corridor). Nine regions Indexed:
+Niedersachsen, Schleswig-Holstein, Denmark, Skåne, Halland, Västra Götaland,
+Ostlandet, Sørlandet, Vestlandet. Evidence:
+[`docs/test-results/bevensen-mobilehome-campaign.md`](docs/test-results/bevensen-mobilehome-campaign.md)
+(ART `attempt_20261124_015755`).
+
+| Storage | Path | Size |
+|---|---|---|
+| Internal | `files/mwm` (CoMaps leaves for the corridor) | **2202 MB** (`mwm_mb=2202`) |
+| Internal | `files/long-trip-packs` (Geofabrik / pack-server) | **0 MB** (`packs_mb=0`) |
+| SD card | `long-trip-packs` | **1 MB** (`sd_packs_mb=1`) |
+
+MWM data dominated disk use; Geofabrik long-trip packs stayed effectively empty
+on this MWM path. Per-leaf byte breakdown was not recorded in that ART — only
+these SD / internal totals.
 
 ### Multi-region download order
 
@@ -1212,7 +1230,7 @@ debug-only package).
 
 | Artifact | Role |
 |---|---|
-| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (arm64-v8a; refresh for `versionName` 0.5.0-beta / `versionCode` 35 when shipping; may still be 0.3.30-beta / 33 until then) |
+| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (`versionName` **0.5.0-beta** / `versionCode` **35**; arm64-v8a + x86_64) |
 | [`compiled/SHA256SUMS`](compiled/SHA256SUMS) | SHA-256 checksum for integrity checks |
 | [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc) | Detached GPG provenance signature (not Android APK signing) |
 
