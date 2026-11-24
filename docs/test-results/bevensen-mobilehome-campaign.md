@@ -11,7 +11,7 @@ June 2026 open-roads retest (guest clock `2026-06-01T08:00` CEST). Source ART: `
 | Via | Vågå / Ottadal `61.8691419, 9.1055130` |
 | Planner | MWM (`PLANNER=mwm`, `comaps_route_code=OK`) |
 | PASS_UI | `dist=1425.907 etaMin=1023.4 man=58 datex=false wild=114 attractions=22` |
-| **Tunnels** | **0** enumerated (see §6) |
+| **Tunnels** | App enum **0**; OSM-along-route **29** named/carriageway (see §6) |
 
 ---
 
@@ -24,7 +24,7 @@ June 2026 open-roads retest (guest clock `2026-06-01T08:00` CEST). Source ART: `
 | Maneuvers / instructions | **58** | 55–100 | **PASS** |
 | Wild camping sites | **114** | several / >0 | **PASS** |
 | Attractions | **22** | several / >0 | **PASS** |
-| Tunnels (enumerated) | **0** | report required; names if any | **0 counted** (see §6) |
+| Tunnels (enumerated) | App **0** / OSM **29** | report required; names if any | **App counter gap**; geometry has tunnels (see §6) |
 
 **Overall:** **FAIL** solely on distance band. Version/tag not bumped (distance still out of band). This file is that placement under `docs/test-results/`.
 
@@ -91,18 +91,54 @@ Avoid-ferries: off (default). Eco UI ON; router log for finished plan: `eco=fals
 
 ## 6. Tunnels
 
-**Tunnel count: 0.** No tunnel names.
-
 | Source | Value |
 |---|---|
 | `report/route-result.json` → `enumerations.route_tunnel_count` | **0** |
-| `enumerations.route_tunnel_fp` | empty (no named-tunnel fingerprint) |
+| `enumerations.route_tunnel_fp` | empty |
 | Maneuver dump footer `route_tunnel_count` | **null** (field not filled on dump path) |
 | Instruction streets / `text_en` / `text_nb` | no “tunnel” / “Tunnel” in any of 58 maneuvers |
-| `bad-luster` KML/JSON | geometry only; no tunnel name attributes used here |
 | Plan settings | `avoid_tunnels=false` (`NaviRouting plan_settings`) |
+| **OSM-along-route (post-ART)** | **29** tunnels (~36.5 km approx.) — see table below |
 
-**Explanation:** Enumeration and instructions agree on **zero tunnels**. This is measured, not omitted. Geometry was not independently scanned for unnamed OSM tunnel ways; if such tunnels exist on the polyline they are outside this campaign’s tunnel counter.
+**Why the app reported 0:** This run used `PLANNER=mwm` / `TEST_KIND=PLAN_MWM_ROUTE`. The MWM/CoMaps plan report string has **no** `route_tunnel_count` / `route_tunnel_fp` tokens (only distance, ETA, ascent, `comaps_route_code`, …). `RoutePlanStats` then defaults missing tokens to **0** / empty — the same class of instrumentation gap as ferry legs (ferry present in maneuvers, `route_ferry_legs=0`). Tunnel legs are produced by the **local PBF graph** path (`path_tunnel_legs` on `is_tunnel` edges), which this MWM plan did not populate. Maneuver text also never names tunnels, so the campaign counter stayed at 0 even though the polyline crosses many OSM `tunnel=*` carriageways.
+
+**Independent re-derivation (docs only, no app code change):** ART polyline `report/route-polyline.txt` matched offline against Geofabrik PBFs (`ostlandet`, `vestlandet`, `sweden`, `denmark` under `navi-gate/packs-fu38-nogav`). Kept ways with `tunnel=*` and `highway` in motorway/trunk/primary (+ links) whose geometry runs **along** the route (not short underpass crossings). Named tunnels (`tunnel` / `lokket` / `tunneln` in `name`) if ≥25% sampled nodes within ~150 m of the polyline; long unnamed carriageway tunnels if length ≥500 m and tightly along-route. Dual-carriageway length ≈ summed way lengths / 2.
+
+**OSM tunnel count: 29** (approx. total length **~36.5 km**).
+
+| along_km | ~length_km | Name | Approx. location |
+|---:|---:|---|---|
+| 391.3 | 4.74 | Øresundsmotorvejen | Øresund fixed-link tunnel section (DK→SE) |
+| 698.3 | 0.54 | Tingstadstunneln | Göteborg / E 6 |
+| 826.0 | 0.25 | Gerumsbergstunneln | Bohuslän E 6 |
+| 888.4 | 0.05 | Busgårdlokket | E 6 SE Norway |
+| 903.7 | 0.10 | Galteryggtunnelen | E 6 |
+| 904.2 | 0.86 | Eidettunnelen | E 6 |
+| 939.7 | 0.89 | Follotunnelen | E 6 Follo |
+| 958.7 | 0.92 | Smiehagen tunnel | E 6 |
+| 960.2 | 0.12 | Vassumtunnelen | E 6 |
+| 960.5 | 3.83 | Nordbytunnelen | E 6 |
+| 965.9 | 3.62 | Nøstvettunnelen | E 6 |
+| 984.0 | 0.16 | Ryentunnelen | Oslo approach |
+| 985.6 | 0.28 | Brynstunnelen | Oslo / Bryn |
+| 1029.7 | 0.06 | Hauerseterlokket | E 6 north of Oslo |
+| 1033.5 | 0.04 | Elstadmolokket | E 6 |
+| 1048.7 | 1.17 | Eidsvolltunnelen | E 6 Eidsvoll |
+| 1060.2 | 0.63 | Korslundtunnelen | E 6 |
+| 1063.6 | 2.33 | Morskogstunnelen | E 6 |
+| 1076.4 | 0.68 | Espatunnelen | E 6 Espa |
+| 1132.9 | 0.33 | Skarpsnotunnelen | E 6 toward Lillehammer |
+| 1163.2 | 0.23 | Jernbanetorgtunnelen | Lillehammer area |
+| 1163.4 | 0.29 | Sorgendalstunnelen | Lillehammer / E 6 |
+| 1164.9 | 0.21 | Mosoddentunnelen | north of Lillehammer |
+| 1187.1 | 3.85 | Øyertunnelen | Gudbrandsdalen E 6 |
+| 1227.5 | 4.29 | Hundorptunnelen | Gudbrandsdalen E 6 |
+| 1248.1 | 3.76 | Teigkamptunnelen | Gudbrandsdalen E 6 |
+| 1314.1 | 0.52 | Byrebergtunnelen | Ottadalen Rv 15 (near via Vågå) |
+| 1417.2 | 1.20 | Gullringtunnelen | Rv 55 toward Dalsøren |
+| 1420.4 | 0.56 | Ottatunnelen | Rv 55 near destination |
+
+**Note:** Same pattern as §5 Ferries — do **not** claim “zero tunnels on the corridor” from the app counter alone. The polyline crosses E 6 / Øresund / Rv 55 tunnel infrastructure; the MWM enumeration path failed to report them.
 
 ---
 
@@ -250,6 +286,7 @@ Hard rule 12 prefers ADB side-effects limited to **GPS + DATEX**. CAT was brough
 1. **Distance out of band** — primary FAIL (1425.907 < 1461.3).
 2. **DATEX XML parse_failed** — severity/validity tag mismatch; `datex=false` on PASS_UI.
 3. **Ferry enumeration null/0** vs ferry instructions present (Rodby–Puttgarden).
+3b. **Tunnel enumeration 0** on MWM plan vs OSM-along-route **29** tunnels on the polyline (see §6).
 4. **Geofabrik path wipe UI** — `delete_region_fail` / missing `field_geofabrik_path` (non-fatal; MWM corridor still Indexed).
 5. **Eco:** UI eco ON; finished plan log `eco=false`.
 6. **Rule 14** (`logs/rule14_violation.txt`): `am instrument` start/finish caused AM “Force stopping no.navi.app” (runner lifecycle). Harness did not call `am force-stop`. Pre-run install can also close the package.
