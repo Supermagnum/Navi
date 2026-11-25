@@ -5993,8 +5993,9 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             tripEta = null,
                             tripRemainingDurationS =
                                 driveHud.tripEtaMinutes?.times(60.0),
-                            restActive = driveHud.breakRemindersEnabled &&
-                                mapState.polyline.isNotBlank(),
+                            restActive =
+                                driveHud.breakRemindersEnabled &&
+                                    mapState.polyline.isNotBlank(),
                             restMinutesToBreak = driveHud.minutesToBreak,
                             routePolyline = mapState.polyline,
                             roadSignWarningJson =
