@@ -18,6 +18,8 @@
 //! | `route_destination_read` | None | No destination assumed |
 //! | `sensor_availability` | empty | No sensor features offered |
 //! | `sensor_read` | Unavailable, no sample | Never a zero reading |
+//! | `nav_guidance_read` | idle `route_active=false` | Cluster guest publishes null maneuver / fuel |
+//! | `vehicle_signal_publish` | log sink | Host records payload; no USB/Kuksa yet |
 
 use navi_plugin_host::{
     FilePluginKv, HostApi, LayerStatus, PluginKvStatus, PoiWrite, Position, SensorKind,
@@ -114,6 +116,44 @@ fn sensors_default_unavailable_never_zero() {
         assert_eq!(v.status, SensorStatus::Unavailable);
         assert!(v.sample.is_none());
     }
+}
+
+#[test]
+fn nav_guidance_default_is_idle_no_route() {
+    let h = EmptyHost;
+    let json = h.nav_guidance_read();
+    assert!(json.contains("navi.guidance.v1"), "{json}");
+    assert!(json.contains("\"route_active\":false"), "{json}");
+    assert!(json.contains("\"maneuver\":null"), "{json}");
+    assert!(json.contains("\"l_per_scandinavian_mil\":null"), "{json}");
+    assert!(json.contains("\"l_per_us_mile\":null"), "{json}");
+}
+
+#[test]
+fn vehicle_signal_publish_default_is_log_sink() {
+    struct LogHost {
+        lines: Vec<String>,
+    }
+    impl HostApi for LogHost {
+        fn position(&self) -> Option<Position> {
+            None
+        }
+        fn poi_query(&self, _: f64, _: f64, _: f64) -> Vec<PoiWrite> {
+            Vec::new()
+        }
+        fn poi_write(&mut self, _: PoiWrite) -> Result<(), String> {
+            Ok(())
+        }
+        fn log(&mut self, m: &str) {
+            self.lines.push(m.to_string());
+        }
+    }
+    let mut h = LogHost { lines: Vec::new() };
+    h.vehicle_signal_publish(r#"{"schema":"navi.cluster.v1","route_active":false}"#)
+        .unwrap();
+    assert_eq!(h.lines.len(), 1);
+    assert!(h.lines[0].starts_with("vehicle_signal_publish:"));
+    assert!(h.lines[0].contains("navi.cluster.v1"));
 }
 
 #[test]

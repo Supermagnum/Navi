@@ -1,15 +1,17 @@
 # External dashboards, instrument clusters, and head units
 
-**Status:** integration **design** is in-tree; a live USB export service is
-**not shipped** yet. This page tells integrators what Navi can supply, which
-fields are ready in the app today, and how a cable-connected dashboard or
-cluster is intended to receive them.
+**Status:** HostApi caps + reference WASM guest (`instrument-cluster`) +
+**log sink** are in-tree; a live USB / Kuksa export service is **not shipped**
+yet. This page tells integrators what Navi can supply, which fields are ready
+in the app today, and how a cable-connected dashboard or cluster is intended
+to receive them.
 
 **Implementation tracking:** [GitHub issue #259](https://github.com/Supermagnum/Navi/issues/259).
 
 | Spec / source | Role |
 |---|---|
-| [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) | Planned export plugin (VSS / Kuksa.val + `navi.cluster.v1` JSON) |
+| [`plugins/instrument-cluster/`](../plugins/instrument-cluster/) | Reference WASM guest (`instrument-cluster`) — guidance → `navi.cluster.v1` via log sink |
+| [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) | Export plugin detail (VSS / Kuksa.val + `navi.cluster.v1` JSON) |
 | [`plugins.md`](plugins.md) — USB / Bluetooth | Host-mediated accessory I/O (USB-serial / AOA required for cable) |
 | [`approach-instructions.md`](approach-instructions.md) | Next maneuver, icon, distance (implemented on the map) |
 | [`plugins/imu-plugin.md`](plugins/imu-plugin.md) | Pitch / roll / heading (implemented, opt-in) |
@@ -45,7 +47,9 @@ accessory); guests never talk to the wire directly.
 | Speed, eco, next maneuver, icon, distance on Navi’s own HUD | **Implemented** |
 | IMU pitch / roll / tilt-compensated heading | **Implemented** (opt-in plugin) |
 | `navi.cluster.v1` / VSS field list | **Specified** |
-| HostApi `nav_guidance_read` / `vehicle_signal_publish` | **Specified** — not in the ABI yet |
+| HostApi `nav_guidance_read` / `vehicle_signal_publish` | **In ABI** — default guidance is idle; default publish is a **log sink** |
+| Reference guest `plugins/instrument-cluster` | **Scaffolded** — reads guidance, publishes `navi.cluster.v1` (fuel leaves null) |
+| Live HUD → guidance snapshot on device | **Not wired** yet (embedder still uses HostApi default idle doc) |
 | USB accessory open/read/write for clusters | **Specified** in [`plugins.md`](plugins.md); CAT already uses host USB-serial as a pattern |
 | Live USB stream of cluster JSON / VSS | **Not shipped** |
 | Fuel L / Scandinavian mil and L / US mile on the export bus | **Not implemented** (reserved below; do not invent values in plugins) |

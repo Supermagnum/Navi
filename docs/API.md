@@ -274,17 +274,22 @@ Implemented capabilities today (`plugin-host/src/abi.rs`):
 | `poi_query` | `poi_query(lat, lon, radius_m)` | Nearby POIs |
 | `poi_write` | `poi_write(poi)` | Upsert POI |
 | `log` | `log(message)` | Host-visible log line |
+| `nav_guidance_read` | `nav_guidance_read()` | Guidance snapshot for cluster export (default: idle) |
+| `vehicle_signal_publish` | `vehicle_signal_publish(json)` | Publish `navi.cluster.v1` / VSS batch (default: log sink) |
 
-Guest wrappers: `plugin-sdk` (`host_log`, `host_position`, `host_poi_query`, …).
+Guest wrappers: `plugin-sdk` (`host_log`, `host_position`, `host_poi_query`,
+`host_nav_guidance_read`, `host_vehicle_signal_publish`, …).
 
 **Not implemented yet** (roadmap only — see [`plugins.md`](plugins.md)
-capability sketch): `track_upsert`, `weather_read`, `incident_*`, `cat_vfo_set`,
-`ecu_read`, `voice_speak` / `voice_pack_query`, `route_read`, `nav_guidance_read`,
-`vehicle_signal_publish`, i18n, `warning_event_subscribe`, `alert_sound_play` /
-`alert_sound_catalog`, `road_speed_state_read` (speed + applicable limit + HUD
-overspeed flag for
+capability sketch): `track_upsert`, `incident_*`, `ecu_read`,
+`voice_speak` / `voice_pack_query`, i18n, `warning_event_subscribe`,
+`alert_sound_play` / `alert_sound_catalog`, `road_speed_state_read` (speed +
+applicable limit + HUD overspeed flag for
 [`plugins/adaptive-speed-warning-spec.md`](plugins/adaptive-speed-warning-spec.md)),
-etc. Specs under `docs/plugins/`.
+etc. Specs under `docs/plugins/`. Live USB/Kuksa sinks for
+`vehicle_signal_publish` and on-device guidance assembly for
+`nav_guidance_read` are still open (see
+[`external-dashboards-clusters.md`](external-dashboards-clusters.md)).
 
 Guests must not open raw network or WASI filesystem; pack downloads are
 host/Tools actions.

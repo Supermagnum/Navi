@@ -56,6 +56,8 @@ extern "C" {
     fn cat_network_follow(req_ptr: u32, req_len: u32, out_ptr: u32, out_cap: u32) -> i32;
     fn sensor_availability(out_ptr: u32, out_cap: u32) -> i32;
     fn sensor_read(kind: u32, out_ptr: u32, out_cap: u32) -> i32;
+    fn nav_guidance_read(out_ptr: u32, out_cap: u32) -> i32;
+    fn vehicle_signal_publish(ptr: u32, len: u32) -> i32;
     fn plugin_kv_status() -> i32;
     fn host_nop();
 }
@@ -321,6 +323,24 @@ pub fn host_sensor_read(kind: u32, out: &mut [u8]) -> usize {
         sensor_read(kind, out.as_mut_ptr() as u32, out.len() as u32),
         out
     )
+}
+
+/// UTF-8 JSON guidance snapshot for cluster export (`nav_guidance_read`).
+pub fn host_nav_guidance_read(out: &mut [u8]) -> usize {
+    host_json_buf!(
+        nav_guidance_read(out.as_mut_ptr() as u32, out.len() as u32),
+        out
+    )
+}
+
+/// Publish a UTF-8 JSON batch (`navi.cluster.v1` or VSS paths) via the host sink.
+pub fn host_vehicle_signal_publish(json: &str) -> Result<(), i32> {
+    let rc = unsafe { vehicle_signal_publish(json.as_ptr() as u32, json.len() as u32) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(rc)
+    }
 }
 
 /// `true` when the host backs `plugin_kv` (`plugin_kv` capability).
