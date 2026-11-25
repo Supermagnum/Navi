@@ -120,10 +120,29 @@ pub fn checksum_for_file(checksums_text: &str, filename: &str) -> Option<String>
     None
 }
 
+/// Hard cap on decompressed navi-server repeater payloads (decompression-bomb guard).
+pub const ZST_DECOMPRESSED_MAX: usize = 32 * 1024 * 1024;
+
+/// Decompress zstd with [`ZST_DECOMPRESSED_MAX`].
 pub fn decompress_zst(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
+    decompress_zst_capped(bytes, ZST_DECOMPRESSED_MAX)
+}
+
+/// Decompress zstd, refusing to write more than `max_out` bytes.
+pub fn decompress_zst_capped(bytes: &[u8], max_out: usize) -> anyhow::Result<Vec<u8>> {
     let mut dec = zstd::stream::read::Decoder::new(std::io::Cursor::new(bytes))?;
     let mut out = Vec::new();
-    std::io::Read::read_to_end(&mut dec, &mut out)?;
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = std::io::Read::read(&mut dec, &mut buf)?;
+        if n == 0 {
+            break;
+        }
+        if out.len().saturating_add(n) > max_out {
+            anyhow::bail!("zstd decompressed size exceeds {max_out} bytes");
+        }
+        out.extend_from_slice(&buf[..n]);
+    }
     Ok(out)
 }
 
@@ -739,6 +758,14 @@ mod tests {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../testdata/cat/server_mirror")
             .join(name)
+    }
+
+    #[test]
+    fn zst_decompress_rejects_over_cap() {
+        let payload = vec![b'x'; 8 * 1024];
+        let zst = zstd::stream::encode_all(payload.as_slice(), 3).unwrap();
+        assert!(decompress_zst_capped(&zst, 1024).is_err());
+        assert_eq!(decompress_zst_capped(&zst, 16 * 1024).unwrap(), payload);
     }
 
     #[test]

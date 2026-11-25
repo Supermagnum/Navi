@@ -1,0 +1,6 @@
+# Fuzz-only nightly pin (see docs/fuzzing.md). Does not affect the repo-root
+# rust-toolchain.toml used for normal builds.
+[toolchain]
+channel = "nightly-2026-06-15"
+components = ["llvm-tools-preview"]
+profile = "minimal"

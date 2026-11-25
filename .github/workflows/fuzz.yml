@@ -1,0 +1,103 @@
+# Fuzzing / input-hardening (issue #167) — dispatch only; not a required merge check.
+#
+# Trigger: Actions → Fuzzing → Run workflow.
+# Does not run on push/PR. Failure here does not fail .github/workflows/ci.yml.
+#
+# Uses nightly only for cargo-fuzz / libFuzzer. Normal builds stay on the pinned
+# 1.98 toolchain in rust-toolchain.toml.
+
+name: Fuzzing
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration_seconds:
+        description: "Seconds to run each fuzz target"
+        required: true
+        default: "60"
+        type: string
+      targets:
+        description: "Comma-separated targets, or 'all'"
+        required: true
+        default: "all"
+        type: string
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz:
+    name: cargo-fuzz (${{ github.event.inputs.duration_seconds }}s)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+
+      # Pin a nightly that builds the workspace (rust-version 1.98) and still
+      # compiles filetime 0.2.x. Floating tip nightly has broken fs_set_times.
+      - name: Install pinned nightly + llvm-tools (fuzz only)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-06-15
+          components: llvm-tools-preview
+
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libssl-dev clang
+
+      - name: Cache Cargo (fuzz)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "fuzz -> fuzz/target"
+          shared-key: fuzz-nightly
+          cache-targets: true
+
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+
+      - name: Resolve target list
+        id: list
+        run: |
+          set -euo pipefail
+          ALL="gpx_import datex_situation gaia_decode dump_caps_gate anytone_channel_csv repeater_current_json zst_decompress"
+          REQ="${{ github.event.inputs.targets }}"
+          if [ "$REQ" = "all" ] || [ -z "$REQ" ]; then
+            echo "targets=$ALL" >> "$GITHUB_OUTPUT"
+          else
+            echo "targets=$(echo "$REQ" | tr ',' ' ')" >> "$GITHUB_OUTPUT"
+          fi
+          echo "duration=${{ github.event.inputs.duration_seconds }}" >> "$GITHUB_OUTPUT"
+
+      - name: Run fuzz targets
+        working-directory: fuzz
+        run: |
+          set -euo pipefail
+          DUR="${{ steps.list.outputs.duration }}"
+          mkdir -p artifacts
+          fail=0
+          for t in ${{ steps.list.outputs.targets }}; do
+            echo "::group::fuzz $t (${DUR}s)"
+            if ! cargo +nightly-2026-06-15 fuzz run "$t" -- -max_total_time="$DUR" -timeout=10; then
+              echo "::error::fuzz target $t failed"
+              fail=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "$fail"
+
+      - name: Upload crash artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: |
+            fuzz/artifacts/
+          if-no-files-found: ignore
+          retention-days: 14

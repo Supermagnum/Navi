@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="OsmAnd" xmlns="http://www.topografix.com/GPX/1/1" xmlns:osmand="https://osmand.net">
+  <trk>
+    <name>Planned in OsmAnd</name>
+    <trkseg>
+      <trkpt lat="61.000000" lon="9.000000"/>
+      <trkpt lat="61.001000" lon="9.001000"/>
+    </trkseg>
+    <extensions>
+      <osmand:route><osmand:segment id="1" length="150" startTrkptIdx="0"/></osmand:route>
+    </extensions>
+  </trk>
+  <extensions>
+    <osmand:route><osmand:segment id="2" length="150" startTrkptIdx="0"/></osmand:route>
+  </extensions>
+</gpx>

@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<gpx version="1.0" creator="Legacy device" xmlns="http://www.topografix.com/GPX/1/0">
+  <name>Old school</name>
+  <wpt lat="60.390000" lon="5.320000"><name>Bergen</name><sym>City</sym></wpt>
+  <rte>
+    <name>Old route</name>
+    <rtept lat="60.390000" lon="5.320000"/>
+    <rtept lat="60.400000" lon="5.330000"/>
+  </rte>
+  <trk>
+    <name>Old track</name>
+    <trkseg>
+      <trkpt lat="60.390000" lon="5.320000"><ele>10</ele><time>2005-06-01T10:00:00Z</time></trkpt>
+      <trkpt lat="60.395000" lon="5.325000"><ele>20</ele><time>2005-06-01T10:05:00Z</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>
