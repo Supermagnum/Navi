@@ -30,9 +30,16 @@ object CountryPolysWarm {
                         .onFailure { e -> Log.w(TAG, "warm failed", e) }
                         .getOrDefault(0uL)
                 finished.set(true)
+                // countryPolysReady() can throw NoClassDefFoundError if UniffiLib
+                // <clinit> already failed (e.g. native ABI skew). Keep this daemon
+                // thread from turning a caught warm failure into FATAL EXCEPTION.
+                val ready =
+                    runCatching { uniffi.navi.countryPolysReady() }
+                        .onFailure { e -> Log.w(TAG, "ready check failed", e) }
+                        .getOrDefault(false)
                 Log.i(
                     TAG,
-                    "warm done bytes=$bytes ready=${uniffi.navi.countryPolysReady()} " +
+                    "warm done bytes=$bytes ready=$ready " +
                         "ms=${SystemClock.elapsedRealtime() - t0}",
                 )
             },
