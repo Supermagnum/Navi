@@ -73,6 +73,14 @@ USB NDJSON) or to the Kuksa/VSS TCP bridge.
 | **/dev/dash (DevDash)** | [devdash-project/devdash](https://github.com/devdash-project/devdash) | Qt 6 / QML dual cluster + head-unit framework (Jetson or desktop). Add an `IProtocolAdapter` that parses `navi.cluster.v1` UDP/NDJSON into the DataBroker. |
 | **FIS-Display** | [Supermagnum/FIS-Display](https://github.com/Supermagnum/FIS-Display) | VW Passat B6 FIS/MFA via Pico 2 W + 3LB. Historically Navit D-Bus → serial; with Navi, map `maneuver.*` / speed / eco from `navi.cluster.v1` into the same host→Pico serial lines. |
 
+### Platforms and signal buses
+
+| Project | Link | Fit with Navi |
+|---|---|---|
+| **Eclipse Kuksa** | [eclipse.org/kuksa](https://www.eclipse.org/kuksa/) · [kuksa-databroker](https://github.com/eclipse-kuksa/kuksa-databroker) | Primary VSS path: Navi’s Kuksa/VSS TCP bridge (`navi.vss.batch.v1`) plus [`scripts/cluster-kuksa-bridge.py`](../scripts/cluster-kuksa-bridge.py) can feed a Kuksa.val databroker. Spec: [`instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md). |
+| **Automotive Grade Linux (AGL)** | [automotivelinux.org](https://www.automotivelinux.org/) · [docs](https://docs.automotivelinux.org/) | Target HMI/IVI stack that consumes VSS via Kuksa.val. Navi exports VSS-compatible signals; it does **not** package as an AGL `afm` app (see AGL scope in the cluster spec). |
+| **COVESA VSS** | [Vehicle Signal Specification](https://covesa.global/vehicle-signal-specification/) · [GitHub](https://github.com/COVESA/vehicle_signal_specification) | Catalog Navi pins (**v4.0**) plus overlay [`plugins/vss/Vehicle.Private.Navi.vspec`](plugins/vss/Vehicle.Private.Navi.vspec). |
+
 Also see the in-tree VSS overlay
 [`plugins/vss/Vehicle.Private.Navi.vspec`](plugins/vss/Vehicle.Private.Navi.vspec)
 and bridge helper [`scripts/cluster-kuksa-bridge.py`](../scripts/cluster-kuksa-bridge.py).
@@ -368,3 +376,6 @@ maneuvers apply unchanged.
 | [OpenCluster](https://github.com/emdzej/opencluster) | ESP32 LVGL cluster (example above) |
 | [DevDash](https://github.com/devdash-project/devdash) | Qt dual-display dashboard framework |
 | [FIS-Display](https://github.com/Supermagnum/FIS-Display) | VW Passat B6 FIS via Pico + 3LB |
+| [Eclipse Kuksa](https://www.eclipse.org/kuksa/) / [kuksa-databroker](https://github.com/eclipse-kuksa/kuksa-databroker) | VSS databroker for the primary export path |
+| [Automotive Grade Linux](https://www.automotivelinux.org/) | IVI/HMI stack that consumes Kuksa/VSS |
+| [COVESA VSS](https://covesa.global/vehicle-signal-specification/) | Vehicle Signal Specification catalog |

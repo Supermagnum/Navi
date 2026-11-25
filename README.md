@@ -185,7 +185,7 @@ checklist above and file an issue; you do not need to write code.
     - [DATEX NPRA client](docs/plugins/datex-npra-client.md) — not implemented (legacy sketch; unused by APK)
     - [Weather overlay](docs/plugins/weather-plugin.md) — implemented (opt-in)
     - [Weather icons reference](docs/plugins/weather-icons-reference.md) — reference (assets shipped with weather)
-    - [External dashboards / clusters / head units (USB)](docs/external-dashboards-clusters.md) — OpenCluster / DevDash / FIS-Display links + setup example
+    - [External dashboards / clusters / head units (USB)](docs/external-dashboards-clusters.md) — OpenCluster / DevDash / FIS-Display / Kuksa / AGL links + setup example
     - [Instrument cluster (AGL) spec](docs/plugins/instrument-cluster-agl-spec.md) — complete (USB AOA / JSON-UDP / Kuksa TCP bridge)
     - [Animated icons](docs/plugins/animated-icons-spec.md) — not implemented
     - [CAT radio plugin](#cat-radio-plugin) — implemented (opt-in; Hamlib + Benshi; never transmits)

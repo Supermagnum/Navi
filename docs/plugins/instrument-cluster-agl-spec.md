@@ -17,9 +17,11 @@ VSS overlay: [`vss/Vehicle.Private.Navi.vspec`](vss/Vehicle.Private.Navi.vspec)
 (pinned base catalog **VSS v4.0**).
 
 This plugin **exports** Navi’s own navigation state outward to open-source
-instrument clusters and Automotive Grade Linux (AGL) environments. It is **not**
-an ECU / vehicle-input path ([`ECU.md`](../ECU.md) remains separate and deferred)
-and **not** a full AGL Application Framework packaging effort (see § AGL scope).
+instrument clusters and
+[Automotive Grade Linux (AGL)](https://www.automotivelinux.org/) environments.
+It is **not** an ECU / vehicle-input path ([`ECU.md`](../ECU.md) remains
+separate and deferred) and **not** a full AGL Application Framework packaging
+effort (see § AGL scope).
 
 ---
 
@@ -138,7 +140,8 @@ References:
 
 - [COVESA Vehicle Signal Specification](https://covesa.global/vehicle-signal-specification/)
 - [COVESA/vehicle_signal_specification](https://github.com/COVESA/vehicle_signal_specification)
-- Eclipse Kuksa.val databroker (gRPC / VISS-style clients)
+- [Eclipse Kuksa](https://www.eclipse.org/kuksa/) — [kuksa-databroker](https://github.com/eclipse-kuksa/kuksa-databroker) (gRPC / VISS-style clients)
+- [Automotive Grade Linux](https://www.automotivelinux.org/) — [docs](https://docs.automotivelinux.org/)
 
 ### Standard VSS paths (use when they fit)
 
@@ -453,12 +456,14 @@ but separate projects.
 
 ---
 
-## Related dashboards
+## Related dashboards and platforms
 
 For integrator links and a worked OpenCluster-style setup (Navi JSON-UDP/USB →
-bridge → CAN gauges), plus DevDash and FIS-Display notes, see
+bridge → CAN gauges), plus DevDash, FIS-Display, Kuksa, and AGL notes, see
 [`external-dashboards-clusters.md`](../external-dashboards-clusters.md#related-open-source-dashboards):
 
 - [OpenCluster](https://github.com/emdzej/opencluster)
 - [DevDash](https://github.com/devdash-project/devdash)
 - [FIS-Display](https://github.com/Supermagnum/FIS-Display)
+- [Eclipse Kuksa](https://www.eclipse.org/kuksa/) / [kuksa-databroker](https://github.com/eclipse-kuksa/kuksa-databroker)
+- [Automotive Grade Linux](https://www.automotivelinux.org/)
