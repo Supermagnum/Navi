@@ -450,3 +450,15 @@ but separate projects.
    bridge host/port (default **off** / log / loopback).
 7. [x] Tests: Vallset-style children-zone / tagged `109` publish then clear
    after hide; opted-out cameras never appear; live UDP/Kuksa TCP sink tests.
+
+---
+
+## Related dashboards
+
+For integrator links and a worked OpenCluster-style setup (Navi JSON-UDP/USB →
+bridge → CAN gauges), plus DevDash and FIS-Display notes, see
+[`external-dashboards-clusters.md`](../external-dashboards-clusters.md#related-open-source-dashboards):
+
+- [OpenCluster](https://github.com/emdzej/opencluster)
+- [DevDash](https://github.com/devdash-project/devdash)
+- [FIS-Display](https://github.com/Supermagnum/FIS-Display)
