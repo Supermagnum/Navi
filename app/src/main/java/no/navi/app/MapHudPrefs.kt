@@ -52,6 +52,10 @@ object MapHudPrefs {
     private const val KEY_CAT_PLUGIN_ENABLED = "cat_plugin_enabled"
     private const val KEY_CLUSTER_PLUGIN_ENABLED = "cluster_plugin_enabled"
     private const val KEY_CLUSTER_SINK_KIND = "cluster_sink_kind"
+    private const val KEY_CLUSTER_UDP_HOST = "cluster_json_udp_host"
+    private const val KEY_CLUSTER_UDP_PORT = "cluster_json_udp_port"
+    private const val KEY_CLUSTER_KUKSA_HOST = "cluster_kuksa_host"
+    private const val KEY_CLUSTER_KUKSA_PORT = "cluster_kuksa_port"
     private const val KEY_CAT_RIG_MODEL = "cat_rig_model"
     private const val KEY_CAT_BAUD_RATE = "cat_baud_rate"
     private const val KEY_CAT_BACKEND = "cat_backend"
@@ -1014,6 +1018,30 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_CLUSTER_SINK_KIND, raw)
+            .apply()
+    }
+
+    fun loadClusterEndpoints(context: Context): uniffi.navi.ClusterEndpointsFfi {
+        val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        return uniffi.navi.ClusterEndpointsFfi(
+            jsonUdpHost = p.getString(KEY_CLUSTER_UDP_HOST, "127.0.0.1") ?: "127.0.0.1",
+            jsonUdpPort = p.getInt(KEY_CLUSTER_UDP_PORT, 8765).toUInt(),
+            kuksaHost = p.getString(KEY_CLUSTER_KUKSA_HOST, "127.0.0.1") ?: "127.0.0.1",
+            kuksaPort = p.getInt(KEY_CLUSTER_KUKSA_PORT, 55556).toUInt(),
+        )
+    }
+
+    fun saveClusterEndpoints(
+        context: Context,
+        endpoints: uniffi.navi.ClusterEndpointsFfi,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_CLUSTER_UDP_HOST, endpoints.jsonUdpHost)
+            .putInt(KEY_CLUSTER_UDP_PORT, endpoints.jsonUdpPort.toInt())
+            .putString(KEY_CLUSTER_KUKSA_HOST, endpoints.kuksaHost)
+            .putInt(KEY_CLUSTER_KUKSA_PORT, endpoints.kuksaPort.toInt())
             .apply()
     }
 

@@ -1,7 +1,8 @@
 # Instrument cluster / AGL export plugin (specification)
 
-**Status:** caps + guest + sinks + Android session in-tree; live USB open /
-Kuksa.val gRPC remain host follow-ups.  
+**Status:** **complete** for the in-tree export path (guest, assembly, USB AOA
+NDJSON, JSON-UDP, Kuksa/VSS TCP bridge + settings). Optional: a separate feeder
+may forward the TCP bridge into a full Kuksa.val gRPC databroker.  
 **Path:** `docs/plugins/instrument-cluster-agl-spec.md`  
 **Architecture:** WASM guest via `plugin-host` / `plugin-sdk` and
 capability-gated `HostApi` ([`plugins.md`](../plugins.md)).
@@ -439,16 +440,13 @@ but separate projects.
    Android `ClusterPluginRuntime` push each fix.
 3. [x] Reference WASM guest (`plugins/instrument-cluster`): read snapshot →
    `vehicle_signal_publish` (`navi.cluster.v1`) each call; host sinks log /
-   NDJSON / Kuksa path map / JSON-UDP record.
-4. [x] Host backends behind `ClusterSink`: `LogSink`, `NdjsonBufferSink` (USB
-   framing), `KuksaPathLogSink`, `JsonUdpRecordSink`. Live USB open / Kuksa gRPC
-   client still plug into these buffers.
+   USB NDJSON / Kuksa TCP / JSON-UDP.
+4. [x] Host backends behind `ClusterSink`: `LogSink`, `NdjsonBufferSink` +
+   Android USB accessory writer, `KuksaLiveSink` (TCP `navi.vss.batch.v1`),
+   `JsonUdpLiveSink`. Bridge helper: `scripts/cluster-kuksa-bridge.py`.
 5. [x] Document pinned VSS catalog version (**v4.0**) + overlay
    [`vss/Vehicle.Private.Navi.vspec`](vss/Vehicle.Private.Navi.vspec).
-6. [x] User settings: enable plugin + sink kind (default **off** / log);
-   databroker URL / JSON port fields remain future when a live network sink
-   lands.
+6. [x] User settings: enable plugin, sink kind, JSON-UDP host/port, Kuksa
+   bridge host/port (default **off** / log / loopback).
 7. [x] Tests: Vallset-style children-zone / tagged `109` publish then clear
-   after hide; opted-out cameras never appear
-   (`navi-ffi` `vallset_109_publishes_then_clears_and_opted_out_camera_ignored`,
-   `cluster_guidance` unit tests).
+   after hide; opted-out cameras never appear; live UDP/Kuksa TCP sink tests.

@@ -25,8 +25,9 @@ pub use cluster_guidance::{
     assemble_nav_guidance_v1, idle_nav_guidance_v1, merge_primary_warning, GuidanceAssemblyInput,
 };
 pub use cluster_sink::{
-    cluster_json_to_vss_updates, ClusterSink, ClusterSinkKind, JsonUdpRecordSink, KuksaPathLogSink,
-    LogSink, NdjsonBufferSink,
+    cluster_json_to_vss_updates, default_json_udp_endpoint, default_kuksa_endpoint,
+    ClusterEndpoint, ClusterSink, ClusterSinkEndpoints, ClusterSinkKind, JsonUdpLiveSink,
+    KuksaLiveSink, LogSink, NdjsonBufferSink,
 };
 pub use file_kv::{FileKvHostApi, FilePluginKv, EPHEMERAL_KEY_PREFIX};
 pub use host::{

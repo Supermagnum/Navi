@@ -7,7 +7,8 @@
 # stock Navigation branches do not cover.
 #
 # Host mapping: `plugin-host` `cluster_json_to_vss_updates` /
-# `KuksaPathLogSink`. Live Kuksa.val gRPC write is still a host backend swap.
+# `KuksaLiveSink` (TCP `navi.vss.batch.v1`). Optional feeder:
+# `scripts/cluster-kuksa-bridge.py` → Kuksa.val gRPC databroker.
 #
 
 Vehicle.Private.Navi:

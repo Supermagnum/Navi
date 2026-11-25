@@ -1,11 +1,10 @@
 # External dashboards, instrument clusters, and head units
 
-**Status:** HostApi caps, reference WASM guest (`instrument-cluster`), guidance
-assembly, selectable sinks (log / USB NDJSON buffer / Kuksa path log / JSON-UDP
-record), and an opt-in Android session are in-tree. Opening a live USB cable or
-talking to a real Kuksa.val databroker is still a host follow-up on top of those
-buffers. This page tells integrators what Navi can supply and how a
-cable-connected dashboard is intended to receive it.
+**Status:** **Shipped** — HostApi caps, `instrument-cluster` guest, guidance
+assembly, opt-in Android session, USB accessory NDJSON writer, live JSON-UDP,
+and a Kuksa/VSS TCP bridge (`navi.vss.batch.v1`, default `127.0.0.1:55556`) with
+host/port settings. Use `scripts/cluster-kuksa-bridge.py` (or your own feeder)
+to forward bridge lines into a Kuksa.val databroker if needed.
 
 **Implementation tracking:** [GitHub issue #259](https://github.com/Supermagnum/Navi/issues/259).
 
@@ -51,8 +50,9 @@ accessory); guests never talk to the wire directly.
 | HostApi `nav_guidance_read` / `vehicle_signal_publish` | **In ABI** — assembly + selectable sinks |
 | Reference guest `plugins/instrument-cluster` | **Shipped** (staged into APK assets; opt-in, default off) |
 | Live HUD → guidance snapshot on device | **Wired** via `ClusterPluginRuntime` + `cluster_assemble_guidance_json` |
-| USB accessory open/read/write for clusters | NDJSON buffer + drain API ready; OS USB open still follows [`plugins.md`](plugins.md) / CAT pattern |
-| Live USB stream / live Kuksa.val gRPC | **Buffer/path-log ready; cable/databroker client not shipped** |
+| USB accessory open/read/write for clusters | **Shipped** — AOA permission + NDJSON write (`ClusterUsbExporter`) |
+| Live JSON-UDP | **Shipped** (configurable host/port, default loopback `:8765`) |
+| Kuksa / VSS | **Shipped** as TCP bridge (`navi.vss.batch.v1`); optional feeder → gRPC databroker |
 | Fuel L / Scandinavian mil and L / US mile on the export bus | **Not implemented** (reserved below; do not invent values in plugins) |
 
 Until the export sink ships, integrators can prototype against the JSON schema

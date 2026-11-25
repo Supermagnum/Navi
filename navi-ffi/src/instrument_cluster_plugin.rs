@@ -3,8 +3,8 @@
 //! Default OFF. When enabled, the host pushes a `navi.guidance.v1` snapshot
 //! (assembled from the same HUD / warning helpers as the map), ticks the
 //! `instrument-cluster` WASM guest, and routes `vehicle_signal_publish` through
-//! a selectable [`ClusterSink`] (log / USB NDJSON buffer / Kuksa path log /
-//! JSON-UDP record). Guests never open sockets.
+//! a selectable [`ClusterSink`] (log / USB NDJSON buffer / live Kuksa TCP /
+//! live JSON-UDP). Guests never open sockets.
 
 use std::collections::HashSet;
 use std::fs;
@@ -13,8 +13,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
 use navi_plugin_host::{
-    assemble_nav_guidance_v1, cranelift_abi_supported, idle_nav_guidance_v1, merge_primary_warning,
-    plugin_set_enabled, CallOutcome, Capability, ClusterSink, ClusterSinkKind,
+    assemble_nav_guidance_v1, cranelift_abi_supported, default_json_udp_endpoint,
+    default_kuksa_endpoint, idle_nav_guidance_v1, merge_primary_warning, plugin_set_enabled,
+    CallOutcome, Capability, ClusterEndpoint, ClusterSink, ClusterSinkEndpoints, ClusterSinkKind,
     GuidanceAssemblyInput, HostApi, PluginEnableStore, PluginError, PluginHost, PluginLimits,
     PoiWrite, Position,
 };
@@ -24,6 +25,7 @@ const PLUGIN_NAME: &str = "instrument-cluster";
 const ENABLE_FILE: &str = "plugin_enable.json";
 const PLUGINS_REL: &str = "plugins";
 const SINK_PREF_FILE: &str = "cluster_sink_kind.txt";
+const ENDPOINT_PREF_FILE: &str = "cluster_endpoints.json";
 
 #[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClusterCallKind {
@@ -41,6 +43,7 @@ pub struct ClusterTickResult {
     pub kind: ClusterCallKind,
     pub message: String,
     pub last_publish_json: Option<String>,
+    pub sink_error: Option<String>,
     pub elapsed_ms: u64,
 }
 
@@ -76,20 +79,30 @@ impl From<ClusterSinkKind> for ClusterSinkKindFfi {
 
 struct SharedSink {
     kind: ClusterSinkKind,
+    endpoints: ClusterSinkEndpoints,
     inner: Box<dyn ClusterSink>,
     last_publish: Option<String>,
+    last_sink_error: Option<String>,
     /// USB NDJSON lines drained by the Android host when a port is open.
     usb_outbox: Vec<String>,
 }
 
 impl SharedSink {
-    fn new(kind: ClusterSinkKind) -> Self {
+    fn new(kind: ClusterSinkKind, endpoints: ClusterSinkEndpoints) -> Self {
         Self {
             kind,
-            inner: kind.boxed_default(),
+            inner: kind.boxed_with_endpoints(&endpoints),
+            endpoints,
             last_publish: None,
+            last_sink_error: None,
             usb_outbox: Vec::new(),
         }
+    }
+
+    fn rebuild(&mut self) {
+        self.inner = self.kind.boxed_with_endpoints(&self.endpoints);
+        self.last_publish = None;
+        self.last_sink_error = None;
     }
 }
 
@@ -114,11 +127,58 @@ impl Session {
         self.files_dir.join(SINK_PREF_FILE)
     }
 
+    fn endpoint_pref_path(&self) -> PathBuf {
+        self.files_dir.join(ENDPOINT_PREF_FILE)
+    }
+
     fn is_enabled(&self) -> bool {
         PluginEnableStore::open(self.enable_path())
             .ok()
             .is_some_and(|s| s.is_enabled(PLUGIN_NAME))
     }
+}
+
+fn load_endpoints(path: &std::path::Path) -> ClusterSinkEndpoints {
+    let Ok(raw) = fs::read_to_string(path) else {
+        return ClusterSinkEndpoints::default();
+    };
+    let Ok(v) = serde_json::from_str::<Value>(&raw) else {
+        return ClusterSinkEndpoints::default();
+    };
+    let mut endpoints = ClusterSinkEndpoints::default();
+    if let Some(host) = v
+        .pointer("/json_udp/host")
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.is_empty())
+    {
+        endpoints.json_udp.host = host.to_string();
+    }
+    if let Some(port) = v.pointer("/json_udp/port").and_then(|x| x.as_u64()) {
+        if port > 0 && port <= u16::MAX as u64 {
+            endpoints.json_udp.port = port as u16;
+        }
+    }
+    if let Some(host) = v
+        .pointer("/kuksa/host")
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.is_empty())
+    {
+        endpoints.kuksa.host = host.to_string();
+    }
+    if let Some(port) = v.pointer("/kuksa/port").and_then(|x| x.as_u64()) {
+        if port > 0 && port <= u16::MAX as u64 {
+            endpoints.kuksa.port = port as u16;
+        }
+    }
+    endpoints
+}
+
+fn save_endpoints(path: &std::path::Path, endpoints: &ClusterSinkEndpoints) -> Result<(), String> {
+    let body = serde_json::json!({
+        "json_udp": {"host": endpoints.json_udp.host, "port": endpoints.json_udp.port},
+        "kuksa": {"host": endpoints.kuksa.host, "port": endpoints.kuksa.port},
+    });
+    fs::write(path, body.to_string()).map_err(|e| format!("write endpoints: {e}"))
 }
 
 fn session_lock() -> &'static Mutex<Option<Session>> {
@@ -190,15 +250,29 @@ impl HostApi for ClusterHostApi {
 
     fn vehicle_signal_publish(&mut self, payload_json: &str) -> Result<(), String> {
         let mut sink = self.sink.lock().map_err(|e| e.to_string())?;
-        sink.inner.publish_cluster_json(payload_json)?;
         sink.last_publish = Some(payload_json.to_string());
         if sink.kind == ClusterSinkKind::UsbNdjson {
+            // Always queue for the Android USB writer; buffer sink is authoritative.
+            let _ = sink.inner.publish_cluster_json(payload_json);
             let line = payload_json.trim().replace(['\n', '\r'], " ");
             if !line.is_empty() {
                 sink.usb_outbox.push(line);
             }
+            sink.last_sink_error = None;
+            return Ok(());
         }
-        Ok(())
+        match sink.inner.publish_cluster_json(payload_json) {
+            Ok(()) => {
+                sink.last_sink_error = None;
+                Ok(())
+            }
+            Err(e) => {
+                // Accept the publish for the guest (no fuel burn loop on offline
+                // sinks); surface the transport error to the host UI.
+                sink.last_sink_error = Some(e);
+                Ok(())
+            }
+        }
     }
 }
 
@@ -250,12 +324,13 @@ pub fn cluster_plugin_configure(files_dir: String) -> String {
     crate::init_native_logging();
     let files_dir = PathBuf::from(files_dir);
     let sink_kind = load_sink_kind(&files_dir.join(SINK_PREF_FILE));
+    let endpoints = load_endpoints(&files_dir.join(ENDPOINT_PREF_FILE));
     let mut guard = session_lock().lock().expect("cluster session lock");
     *guard = Some(Session {
         files_dir,
         host: None,
         guidance_json: Arc::new(Mutex::new(idle_nav_guidance_v1())),
-        sink: Arc::new(Mutex::new(SharedSink::new(sink_kind))),
+        sink: Arc::new(Mutex::new(SharedSink::new(sink_kind, endpoints))),
         session_disable_reason: None,
     });
     "OK".into()
@@ -317,7 +392,9 @@ pub fn cluster_plugin_set_sink_kind(kind: ClusterSinkKindFfi) -> String {
     if let Err(e) = fs::write(session.sink_pref_path(), kind.as_str()) {
         return format!("FAIL: persist sink: {e}");
     }
-    *session.sink.lock().expect("sink") = SharedSink::new(kind);
+    let mut sink = session.sink.lock().expect("sink");
+    sink.kind = kind;
+    sink.rebuild();
     format!("OK: {}", kind.as_str())
 }
 
@@ -328,6 +405,74 @@ pub fn cluster_plugin_get_sink_kind() -> ClusterSinkKindFfi {
         .as_ref()
         .and_then(|s| s.sink.lock().ok().map(|g| ClusterSinkKindFfi::from(g.kind)))
         .unwrap_or(ClusterSinkKindFfi::Log)
+}
+
+/// Configure live JSON-UDP and Kuksa bridge endpoints (persisted).
+#[uniffi::export]
+pub fn cluster_plugin_set_endpoints(
+    json_udp_host: String,
+    json_udp_port: u32,
+    kuksa_host: String,
+    kuksa_port: u32,
+) -> String {
+    if json_udp_port == 0 || json_udp_port > u16::MAX as u32 {
+        return "FAIL: json_udp_port out of range".into();
+    }
+    if kuksa_port == 0 || kuksa_port > u16::MAX as u32 {
+        return "FAIL: kuksa_port out of range".into();
+    }
+    let mut guard = session_lock().lock().expect("cluster session lock");
+    let Some(session) = guard.as_mut() else {
+        return "FAIL: not configured".into();
+    };
+    let endpoints = ClusterSinkEndpoints {
+        json_udp: ClusterEndpoint::new(
+            if json_udp_host.trim().is_empty() {
+                default_json_udp_endpoint().host
+            } else {
+                json_udp_host.trim().to_string()
+            },
+            json_udp_port as u16,
+        ),
+        kuksa: ClusterEndpoint::new(
+            if kuksa_host.trim().is_empty() {
+                default_kuksa_endpoint().host
+            } else {
+                kuksa_host.trim().to_string()
+            },
+            kuksa_port as u16,
+        ),
+    };
+    if let Err(e) = save_endpoints(&session.endpoint_pref_path(), &endpoints) {
+        return format!("FAIL: {e}");
+    }
+    let mut sink = session.sink.lock().expect("sink");
+    sink.endpoints = endpoints;
+    sink.rebuild();
+    "OK".into()
+}
+
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct ClusterEndpointsFfi {
+    pub json_udp_host: String,
+    pub json_udp_port: u32,
+    pub kuksa_host: String,
+    pub kuksa_port: u32,
+}
+
+#[uniffi::export]
+pub fn cluster_plugin_get_endpoints() -> ClusterEndpointsFfi {
+    let guard = session_lock().lock().expect("cluster session lock");
+    let endpoints = guard
+        .as_ref()
+        .and_then(|s| s.sink.lock().ok().map(|g| g.endpoints.clone()))
+        .unwrap_or_default();
+    ClusterEndpointsFfi {
+        json_udp_host: endpoints.json_udp.host,
+        json_udp_port: endpoints.json_udp.port as u32,
+        kuksa_host: endpoints.kuksa.host,
+        kuksa_port: endpoints.kuksa.port as u32,
+    }
 }
 
 /// Push the latest HUD guidance snapshot (full `navi.guidance.v1` JSON).
@@ -424,27 +569,37 @@ pub fn cluster_assemble_guidance_json(
 #[uniffi::export]
 pub fn cluster_plugin_tick() -> ClusterTickResult {
     let started = Instant::now();
-    let done = |kind: ClusterCallKind, message: String, last: Option<String>| ClusterTickResult {
-        kind,
-        message,
-        last_publish_json: last,
-        elapsed_ms: started.elapsed().as_millis() as u64,
-    };
+    let done =
+        |kind: ClusterCallKind, message: String, last: Option<String>, sink_err: Option<String>| {
+            ClusterTickResult {
+                kind,
+                message,
+                last_publish_json: last,
+                sink_error: sink_err,
+                elapsed_ms: started.elapsed().as_millis() as u64,
+            }
+        };
 
     let (host, guidance, sink) = {
         let mut guard = session_lock().lock().expect("cluster session lock");
         let Some(session) = guard.as_mut() else {
-            return done(ClusterCallKind::Unavailable, "not configured".into(), None);
+            return done(
+                ClusterCallKind::Unavailable,
+                "not configured".into(),
+                None,
+                None,
+            );
         };
         if !session.is_enabled() {
             return done(
                 ClusterCallKind::Disabled,
                 "instrument-cluster is off".into(),
                 None,
+                None,
             );
         }
         if let Some(reason) = &session.session_disable_reason {
-            return done(ClusterCallKind::Disabled, reason.clone(), None);
+            return done(ClusterCallKind::Disabled, reason.clone(), None, None);
         }
         match ensure_loaded(session) {
             Ok(host) => (
@@ -452,7 +607,7 @@ pub fn cluster_plugin_tick() -> ClusterTickResult {
                 Arc::clone(&session.guidance_json),
                 Arc::clone(&session.sink),
             ),
-            Err((kind, message)) => return done(kind, message, None),
+            Err((kind, message)) => return done(kind, message, None, None),
         }
     };
 
@@ -461,16 +616,20 @@ pub fn cluster_plugin_tick() -> ClusterTickResult {
         sink: Arc::clone(&sink),
     };
     let result = host.call(Box::new(api));
-    let last = sink.lock().ok().and_then(|g| g.last_publish.clone());
+    let (last, sink_err) = sink
+        .lock()
+        .ok()
+        .map(|g| (g.last_publish.clone(), g.last_sink_error.clone()))
+        .unwrap_or((None, None));
 
     let (kind, message) = match result {
         Ok(outcome) => map_outcome(outcome),
         Err(err) => map_plugin_error(err),
     };
     match kind {
-        ClusterCallKind::Ok => done(kind, message, last),
+        ClusterCallKind::Ok => done(kind, message, last, sink_err),
         ClusterCallKind::Error | ClusterCallKind::Unavailable | ClusterCallKind::Disabled => {
-            done(kind, message, None)
+            done(kind, message, None, sink_err)
         }
         _ => {
             if let Some(session) = session_lock()
@@ -481,7 +640,7 @@ pub fn cluster_plugin_tick() -> ClusterTickResult {
                 session.session_disable_reason = Some(message.clone());
                 session.host = None;
             }
-            done(kind, message, None)
+            done(kind, message, None, sink_err)
         }
     }
 }

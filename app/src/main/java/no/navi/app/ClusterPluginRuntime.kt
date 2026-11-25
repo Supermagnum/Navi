@@ -15,14 +15,17 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import uniffi.navi.ClusterCallKind
+import uniffi.navi.ClusterEndpointsFfi
 import uniffi.navi.ClusterSinkKindFfi
 import uniffi.navi.clusterAssembleGuidanceJson
 import uniffi.navi.clusterPluginConfigure
 import uniffi.navi.clusterPluginDrainUsbNdjson
+import uniffi.navi.clusterPluginGetEndpoints
 import uniffi.navi.clusterPluginGetSinkKind
 import uniffi.navi.clusterPluginInstallGuest
 import uniffi.navi.clusterPluginIsEnabled
 import uniffi.navi.clusterPluginSetEnabled
+import uniffi.navi.clusterPluginSetEndpoints
 import uniffi.navi.clusterPluginSetGuidanceJson
 import uniffi.navi.clusterPluginSetSinkKind
 import uniffi.navi.clusterPluginTick
@@ -87,8 +90,13 @@ data class ClusterHudSnapshot(
 data class ClusterPluginUiState(
     val enabled: Boolean = false,
     val sinkKind: ClusterSinkKindFfi = ClusterSinkKindFfi.LOG,
+    val jsonUdpHost: String = "127.0.0.1",
+    val jsonUdpPort: Int = 8765,
+    val kuksaHost: String = "127.0.0.1",
+    val kuksaPort: Int = 55556,
     val message: String? = null,
     val lastPublishPreview: String? = null,
+    val usbStatus: String? = null,
     val initialized: Boolean = false,
 )
 
@@ -116,6 +124,7 @@ object ClusterPluginRuntime {
         owner: LifecycleOwner,
     ) {
         val app = context.applicationContext
+        ClusterUsbExporter.attach(app)
         owner.lifecycle.addObserver(
             LifecycleEventObserver { _, event ->
                 when (event) {
@@ -138,12 +147,14 @@ object ClusterPluginRuntime {
             clusterPluginSetEnabled(enabled)
             val sink = MapHudPrefs.loadClusterSinkKind(context)
             clusterPluginSetSinkKind(sink)
-            _ui.value =
-                ClusterPluginUiState(
-                    enabled = clusterPluginIsEnabled(),
-                    sinkKind = clusterPluginGetSinkKind(),
-                    initialized = true,
-                )
+            val endpoints = MapHudPrefs.loadClusterEndpoints(context)
+            clusterPluginSetEndpoints(
+                endpoints.jsonUdpHost,
+                endpoints.jsonUdpPort.toUInt(),
+                endpoints.kuksaHost,
+                endpoints.kuksaPort.toUInt(),
+            )
+            refreshUiFromNative()
             reconcile()
         } catch (e: Exception) {
             initFailed(e)
@@ -171,7 +182,7 @@ object ClusterPluginRuntime {
     ): String {
         MapHudPrefs.saveClusterPluginEnabled(context, enabled)
         val result = clusterPluginSetEnabled(enabled)
-        _ui.value = _ui.value.copy(enabled = clusterPluginIsEnabled(), message = result)
+        refreshUiFromNative(message = result)
         reconcile()
         return result
     }
@@ -182,8 +193,52 @@ object ClusterPluginRuntime {
     ): String {
         MapHudPrefs.saveClusterSinkKind(context, kind)
         val result = clusterPluginSetSinkKind(kind)
-        _ui.value = _ui.value.copy(sinkKind = clusterPluginGetSinkKind(), message = result)
+        refreshUiFromNative(message = result)
         return result
+    }
+
+    fun setEndpoints(
+        context: Context,
+        jsonUdpHost: String,
+        jsonUdpPort: Int,
+        kuksaHost: String,
+        kuksaPort: Int,
+    ): String {
+        MapHudPrefs.saveClusterEndpoints(
+            context,
+            ClusterEndpointsFfi(
+                jsonUdpHost = jsonUdpHost,
+                jsonUdpPort = jsonUdpPort.toUInt(),
+                kuksaHost = kuksaHost,
+                kuksaPort = kuksaPort.toUInt(),
+            ),
+        )
+        val result =
+            clusterPluginSetEndpoints(
+                jsonUdpHost,
+                jsonUdpPort.toUInt(),
+                kuksaHost,
+                kuksaPort.toUInt(),
+            )
+        refreshUiFromNative(message = result)
+        return result
+    }
+
+    private fun refreshUiFromNative(message: String? = _ui.value.message) {
+        val ep = clusterPluginGetEndpoints()
+        _ui.value =
+            ClusterPluginUiState(
+                enabled = clusterPluginIsEnabled(),
+                sinkKind = clusterPluginGetSinkKind(),
+                jsonUdpHost = ep.jsonUdpHost,
+                jsonUdpPort = ep.jsonUdpPort.toInt(),
+                kuksaHost = ep.kuksaHost,
+                kuksaPort = ep.kuksaPort.toInt(),
+                message = message,
+                lastPublishPreview = _ui.value.lastPublishPreview,
+                usbStatus = ClusterUsbExporter.statusLine(),
+                initialized = true,
+            )
     }
 
     private fun setStarted(started: Boolean) {
@@ -248,22 +303,30 @@ object ClusterPluginRuntime {
             clusterPluginSetGuidanceJson(guidance)
             val tick = clusterPluginTick()
             val preview = tick.lastPublishJson?.take(120)
+            val transportMsg = tick.sinkError
             val msg =
-                when (tick.kind) {
-                    ClusterCallKind.OK -> null
-                    else -> tick.message
+                when {
+                    tick.kind != ClusterCallKind.OK -> tick.message
+                    transportMsg != null -> transportMsg
+                    else -> null
                 }
+            if (clusterPluginGetSinkKind() == ClusterSinkKindFfi.USB_NDJSON) {
+                val lines = clusterPluginDrainUsbNdjson()
+                ClusterUsbExporter.writeLines(lines)
+            }
+            val ep = clusterPluginGetEndpoints()
             _ui.value =
                 _ui.value.copy(
                     message = msg,
                     lastPublishPreview = preview,
                     enabled = clusterPluginIsEnabled(),
                     sinkKind = clusterPluginGetSinkKind(),
+                    jsonUdpHost = ep.jsonUdpHost,
+                    jsonUdpPort = ep.jsonUdpPort.toInt(),
+                    kuksaHost = ep.kuksaHost,
+                    kuksaPort = ep.kuksaPort.toInt(),
+                    usbStatus = ClusterUsbExporter.statusLine(),
                 )
-            // USB outbox is available for a future serial writer; drain so it does not grow.
-            if (clusterPluginGetSinkKind() == ClusterSinkKindFfi.USB_NDJSON) {
-                clusterPluginDrainUsbNdjson()
-            }
             delay(TICK_MS)
         }
     }

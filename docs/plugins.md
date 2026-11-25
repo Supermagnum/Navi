@@ -391,7 +391,7 @@ implement the RF/mesh layer): [`plugins/lora-convoy-spec.md`](plugins/lora-convo
 | **Host duties** | Assemble guidance + **merged warning** snapshot (same UniFFI / merge order as map chrome); implement Kuksa.val / loopback JSON / log sinks; user opt-in; never grant raw sockets to WASM |
 | **Guest duties** | Decide what/when to publish; call `vehicle_signal_publish`; enforce no-route clear for rest fields and clear warning leaves when chrome is hidden |
 | **Caps** | `nav_guidance_read`, `vehicle_signal_publish`, `position_read`, `log` |
-| **Notes** | Guest + guidance assembly + `ClusterSink` backends + opt-in Android session are in-tree (default off). Live USB cable open / Kuksa.val gRPC client remain follow-ups on the NDJSON / path-log buffers. Export only (not ECU in; not alert audio). Not an AGL `afm` / Wayland packaging effort. |
+| **Notes** | **Complete** (default off): guest, guidance assembly, USB AOA NDJSON, JSON-UDP, Kuksa/VSS TCP bridge + endpoint settings. Optional `scripts/cluster-kuksa-bridge.py` feeds a full databroker. Export only (not ECU in; not alert audio). Not an AGL `afm` / Wayland packaging effort. |
 
 ### 10. UI language / translation (`i18n` / `ui_translation`)
 

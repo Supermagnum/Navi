@@ -1307,6 +1307,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_cluster_plugin_drain_usb_ndjson(
     ): Int
+    external fun uniffi_navi_checksum_func_cluster_plugin_get_endpoints(
+    ): Int
     external fun uniffi_navi_checksum_func_cluster_plugin_get_sink_kind(
     ): Int
     external fun uniffi_navi_checksum_func_cluster_plugin_install_guest(
@@ -1316,6 +1318,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_navi_checksum_func_cluster_plugin_last_publish_json(
     ): Int
     external fun uniffi_navi_checksum_func_cluster_plugin_set_enabled(
+    ): Int
+    external fun uniffi_navi_checksum_func_cluster_plugin_set_endpoints(
     ): Int
     external fun uniffi_navi_checksum_func_cluster_plugin_set_guidance_json(
     ): Int
@@ -2082,6 +2086,8 @@ internal object UniffiLib {
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cluster_plugin_drain_usb_ndjson(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cluster_plugin_get_endpoints(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cluster_plugin_get_sink_kind(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cluster_plugin_install_guest(`manifestJson`: RustBuffer.ByValue,`wasmBytes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -2091,6 +2097,8 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_cluster_plugin_last_publish_json(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cluster_plugin_set_enabled(`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cluster_plugin_set_endpoints(`jsonUdpHost`: RustBuffer.ByValue,`jsonUdpPort`: Int,`kuksaHost`: RustBuffer.ByValue,`kuksaPort`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_cluster_plugin_set_guidance_json(`guidanceJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -3135,6 +3143,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if ((lib.uniffi_navi_checksum_func_cluster_plugin_drain_usb_ndjson() and 0xFFFF) != 53142) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if ((lib.uniffi_navi_checksum_func_cluster_plugin_get_endpoints() and 0xFFFF) != 57178) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if ((lib.uniffi_navi_checksum_func_cluster_plugin_get_sink_kind() and 0xFFFF) != 44203) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -3148,6 +3159,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_cluster_plugin_set_enabled() and 0xFFFF) != 2586) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cluster_plugin_set_endpoints() and 0xFFFF) != 467) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_cluster_plugin_set_guidance_json() and 0xFFFF) != 64906) {
@@ -5470,12 +5484,62 @@ public object FfiConverterTypeCampingClockSnapshot: FfiConverterRustBuffer<Campi
 
 
 
+data class ClusterEndpointsFfi (
+    var `jsonUdpHost`: kotlin.String
+    , 
+    var `jsonUdpPort`: kotlin.UInt
+    , 
+    var `kuksaHost`: kotlin.String
+    , 
+    var `kuksaPort`: kotlin.UInt
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeClusterEndpointsFfi: FfiConverterRustBuffer<ClusterEndpointsFfi> {
+    override fun read(buf: ByteBuffer): ClusterEndpointsFfi {
+        return ClusterEndpointsFfi(
+            FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ClusterEndpointsFfi) = (
+            FfiConverterString.allocationSize(value.`jsonUdpHost`) +
+            FfiConverterUInt.allocationSize(value.`jsonUdpPort`) +
+            FfiConverterString.allocationSize(value.`kuksaHost`) +
+            FfiConverterUInt.allocationSize(value.`kuksaPort`)
+    )
+
+    override fun write(value: ClusterEndpointsFfi, buf: ByteBuffer) {
+            FfiConverterString.write(value.`jsonUdpHost`, buf)
+            FfiConverterUInt.write(value.`jsonUdpPort`, buf)
+            FfiConverterString.write(value.`kuksaHost`, buf)
+            FfiConverterUInt.write(value.`kuksaPort`, buf)
+    }
+}
+
+
+
 data class ClusterTickResult (
     var `kind`: ClusterCallKind
     , 
     var `message`: kotlin.String
     , 
     var `lastPublishJson`: kotlin.String?
+    , 
+    var `sinkError`: kotlin.String?
     , 
     var `elapsedMs`: kotlin.ULong
     
@@ -5497,6 +5561,7 @@ public object FfiConverterTypeClusterTickResult: FfiConverterRustBuffer<ClusterT
             FfiConverterTypeClusterCallKind.read(buf),
             FfiConverterString.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
             FfiConverterULong.read(buf),
         )
     }
@@ -5505,6 +5570,7 @@ public object FfiConverterTypeClusterTickResult: FfiConverterRustBuffer<ClusterT
             FfiConverterTypeClusterCallKind.allocationSize(value.`kind`) +
             FfiConverterString.allocationSize(value.`message`) +
             FfiConverterOptionalString.allocationSize(value.`lastPublishJson`) +
+            FfiConverterOptionalString.allocationSize(value.`sinkError`) +
             FfiConverterULong.allocationSize(value.`elapsedMs`)
     )
 
@@ -5512,6 +5578,7 @@ public object FfiConverterTypeClusterTickResult: FfiConverterRustBuffer<ClusterT
             FfiConverterTypeClusterCallKind.write(value.`kind`, buf)
             FfiConverterString.write(value.`message`, buf)
             FfiConverterOptionalString.write(value.`lastPublishJson`, buf)
+            FfiConverterOptionalString.write(value.`sinkError`, buf)
             FfiConverterULong.write(value.`elapsedMs`, buf)
     }
 }
@@ -13495,6 +13562,16 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     )
     }
     
+ fun `clusterPluginGetEndpoints`(): ClusterEndpointsFfi {
+            return FfiConverterTypeClusterEndpointsFfi.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cluster_plugin_get_endpoints(
+    
+        _status)
+}
+    )
+    }
+    
  fun `clusterPluginGetSinkKind`(): ClusterSinkKindFfi {
             return FfiConverterTypeClusterSinkKindFfi.lift(
     uniffiRustCall() { _status ->
@@ -13553,6 +13630,23 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
     
         
         FfiConverterBoolean.lower(`enabled`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Configure live JSON-UDP and Kuksa bridge endpoints (persisted).
+         */ fun `clusterPluginSetEndpoints`(`jsonUdpHost`: kotlin.String, `jsonUdpPort`: kotlin.UInt, `kuksaHost`: kotlin.String, `kuksaPort`: kotlin.UInt): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cluster_plugin_set_endpoints(
+    
+        
+        FfiConverterString.lower(`jsonUdpHost`),
+        FfiConverterUInt.lower(`jsonUdpPort`),
+        FfiConverterString.lower(`kuksaHost`),
+        FfiConverterUInt.lower(`kuksaPort`),_status)
 }
     )
     }

@@ -23,6 +23,10 @@
         android:name="android.hardware.type.automotive"
         android:required="false" />
 
+    <uses-feature
+        android:name="android.hardware.usb.accessory"
+        android:required="false" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -83,6 +87,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.APP_MAPS" />
             </intent-filter>
+            <!-- Instrument cluster USB accessory (AOA) attach. -->
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED"
+                android:resource="@xml/usb_accessory_filter" />
         </activity>
 
         <provider
