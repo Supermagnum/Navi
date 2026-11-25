@@ -178,7 +178,7 @@ checklist above and file an issue; you do not need to write code.
 11. [Code inspection / CI tests](#code-inspection--ci-tests)
 12. [Plugins](#plugins)
     - [i18n / UI languages](docs/plugins/i18n-translation-spec.md) — not implemented
-    - [Right-to-roam camping](docs/plugins/right-to-roam-camping-spec.md) — not implemented
+    - [Right-to-roam camping](docs/plugins/right-to-roam-camping-spec.md) — implemented (opt-in; purple map pins)
     - [Safety resupply](docs/plugins/safety-resupply.md) — not implemented
     - [Traffic information](docs/plugins/traffic-information.md) — not implemented (research)
     - [DATEX road situations](docs/plugins/datex-plugin.md) — implemented (opt-in, Norway/NPRA)
@@ -301,6 +301,7 @@ Sideload steps:
 | **Off-route / reroute** | Sustained deviation shows **Off route**; motor profiles auto-replan from the live position only when From is empty or was set with **Use GPS** / My position. A typed or picked From stays sticky (never GPS-overwritten by auto-replan), even within 1 km of the fix. Hiking prompts first. | Done |
 | **Cancel planning** | While **Planning route…** or **Recalculating route…** is shown, **Cancel** stops the in-flight native plan. Recalc cancel keeps the original route. | Done |
 | **Breaks & rest** | Reminds you when a break is due and can suggest stops. Cars use hours between breaks; hiking/cycling use rest distances; trucks use legal driving-time rules where known. What is searched and used as pause POIs: [`docs/poi.md`](docs/poi.md). | Done |
+| **Wild camping (purple pins)** | Opt-in under Drive settings as **Right-to-roam camping** / **Allemannsrett camping** (off by default). After a route is planned, accepted wild-camping suggestions appear as **purple pins** on the map (informational guidance, not legal advice; country packs may decline). **They are hidden when the toggle is off** — pins clear and no new suggestions run. These pins are **not** CAT radio repeaters (repeaters are not drawn on the map). Spec: [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md). | Done |
 | **Drive bars** | Top: altitude (cutout-aware padding; metres, or feet in the US unit profile). Bottom: zoom, live GPS speed, posted limit when known, break timer, trip ETA, current street, eco leaf. Speed and distance follow **Display units**. Speed line turns the error colour when GPS speed is over the applicable limit (display only — not a spoken nag). | Done |
 | **Display units** | Drive settings: **Metric** (km, km/h), **US** (ft / mi, mph, altitude ft), or **UK** (yd then mi, mph, altitude m). First install infers once from SIM/network country (GB → UK, US/LR/MM → US, else metric; emulators stay metric). The chips always override; the choice is never re-inferred on travel. Internal values stay metric. | Done |
 | **GPS follow** | Map follows you by default. Pan away, then tap **Recenter**. | Done |
@@ -320,7 +321,7 @@ Sideload steps:
 | **Diagnostic logging** | **Tools → Diagnostic logging** (off by default). When on, writes a dated session log under **Internal storage → Documents → debug** (`navi_session_*.log`) for copy over USB/MTP — no adb required. Covers GPS, camera, toggles, route plan/stages, eco, POIs, pauses, instructions, fuel, system. Not uploaded. **Export diagnostic log** shares the latest file. Detail: [Settings → Tools](#tools-downloads-and-diagnostic-logging) and [`docs/debugging.md`](docs/debugging.md#3b-diagnostic-session-log-on-device-file). | Done |
 | **Weather overlay (HUD)** | **Map → Plugins → Weather overlay** (also under **Tools → Plugins**; off by default). Opt-in MET Norway → Open-Meteo fetch with SQLite cache, fill-style Meteocons icons, stale labeling when offline/throttled. Host UniFFI path; product does not yet link the WASM plugin-host. | Done |
 | **Weather symbols on map** | Nested **Show weather symbols on map** under Plugins (off by default; inert unless Weather overlay is on). `place:city` only at MapLibre zoom ≤ 8; max 10 symbols; 56 px min spacing; nearest-to-viewport-center priority. Town/village tiers and corridor overlay not shipped. | Done |
-| **Plugins** | A safe sandbox for future add-ons exists; most product plugins are not shipped yet. Weather and **Nearby attractions** use the host UniFFI path today (see rows above). **IMU** and **CAT radio** are opt-in (see rows above). **DATEX** road situations (opt-in, default OFF) use the navi-server feed — **Norway / NPRA only** today. | Host ready |
+| **Plugins** | A safe sandbox for future add-ons exists; several product plugins ship opt-in (default OFF). Weather, **Nearby attractions**, **IMU**, **CAT radio**, **DATEX** (Norway / NPRA only), and **Right-to-roam camping** (purple map pins; hidden when off) — see rows above. | Host ready |
 
 **Hardware note:** Real-device checks include Samsung Galaxy Tab S6 Lite
 (**SM-P613**) and Google Pixel 9a. Car head units still need more real-world
@@ -736,6 +737,13 @@ labelled as membership-required. Membership does **not** grant entry — it only
 changes overnight preference. The bottom-bar **Breaks** toggle only shows or
 hides the reminder — it does not invent a new rest law.
 
+**Purple pins (wild camping).** When **Right-to-roam camping** is on in Drive
+settings and a route is planned, the camping plugin may place **purple pins**
+for accepted wild-camping suggestions along the corridor. Turn the toggle **off**
+and those pins are **hidden** (cleared from the map; suggestions do not run).
+Purple pins are not radio/CAT markers — amateur repeaters are looked up for
+tuning only and are not drawn as map pins.
+
 **Map bars.** Tap the top bar for map/display settings. Tap the bottom status
 area for drive/vehicle settings (mode, break interval, fuel, e-bike, and so on).
 The bottom bar also shows **live GPS speed / posted limit** when a fix
@@ -904,7 +912,8 @@ conditions.
   are ready; otherwise the slower PBF fallback) — see [Known issues](#known-issues)
   and [`docs/route-simulation.md`](docs/route-simulation.md#guidance).
 - Wild-camping distance defaults follow a Norway-oriented “right to roam” idea
-  and **may not apply in other countries**.
+  and **may not apply in other countries**. On the map, accepted suggestions are
+  the **purple pins**; they appear only while **Right-to-roam camping** is on.
 - Hiking overnight exclusion (buildings / glaciers) uses the downloaded OSM
   region and barrier pack, not the visual basemap tiles — those can disagree;
   see [Known issues](#known-issues).
@@ -1135,7 +1144,7 @@ Guest overview: [`plugins/CATS-plugin/README.md`](plugins/CATS-plugin/README.md)
 | Spec | Topic | Status |
 |---|---|---|
 | [`docs/plugins/i18n-translation-spec.md`](docs/plugins/i18n-translation-spec.md) | Future UI languages (English-only today). Translator table: [`translations.csv`](docs/plugins/translations.csv); context: [`translations-context.md`](docs/plugins/translations-context.md) | **Not implemented** |
-| [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Wild-camping suggestions (plugin, not core) | **Not implemented** |
+| [`docs/plugins/right-to-roam-camping-spec.md`](docs/plugins/right-to-roam-camping-spec.md) | Wild-camping suggestions (plugin, not core). Accepted sites show as **purple pins** on the map; **hidden when Right-to-roam camping is off**. Not CAT repeaters. | **Implemented** (opt-in) |
 | [`docs/plugins/safety-resupply.md`](docs/plugins/safety-resupply.md) | Fuel/water resupply ideas | **Not implemented** |
 | [`docs/plugins/traffic-information.md`](docs/plugins/traffic-information.md) | Traffic data sourcing research (DATEX II limits, RTL-SDR TMC/TPEG) | **Not implemented** (research) |
 | [`docs/plugins/datex-plugin.md`](docs/plugins/datex-plugin.md) | DATEX road situations via navi-server (**Norway / NPRA only** today; default OFF). How to enable services + poll cadence on the server | **Implemented** (opt-in) |
