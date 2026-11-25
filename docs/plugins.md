@@ -386,7 +386,7 @@ implement the RF/mesh layer): [`plugins/lora-convoy-spec.md`](plugins/lora-convo
 | | |
 |---|---|
 | **Benefit** | Export Navi nav state (speed, limit, overspeed chrome, next maneuver, ETA, break timing, eco, polyline, **and merged approach warnings** — road signs, children-zone proximity, speed cameras, seasonal closures) to open-source clusters and AGL via VSS/Kuksa.val, with a simple JSON fallback |
-| **Docs** | [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) — VSS mapping + `Vehicle.Private.Navi.*` (including `Warning.*`), `navi.cluster.v1` JSON, host-mediated publish, AGL scope boundary |
+| **Docs** | Integrator guide: [`external-dashboards-clusters.md`](../external-dashboards-clusters.md). Spec: [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) — VSS mapping + `Vehicle.Private.Navi.*` (including `Warning.*`), `navi.cluster.v1` JSON, host-mediated **USB** publish, AGL scope boundary |
 | **Host duties** | Assemble guidance + **merged warning** snapshot (same UniFFI / merge order as map chrome); implement Kuksa.val / loopback JSON / log sinks; user opt-in; never grant raw sockets to WASM |
 | **Guest duties** | Decide what/when to publish; call `vehicle_signal_publish`; enforce no-route clear for rest fields and clear warning leaves when chrome is hidden |
 | **Proposed caps** | `nav_guidance_read` (new), `vehicle_signal_publish` (new), `position_read`, `log` |
