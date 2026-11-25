@@ -10671,8 +10671,9 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             modifier = Modifier.testTag("tools_camping_legal_note"),
                         )
                         // Continent → Country → Region download pills (classic Geofabrik hierarchy).
-                        // Shown for MWM drape too so Tools keeps the same download-pill flow;
-                        // PMTiles / DEM / OSM-update controls below stay classic-only.
+                        // Shown for MWM drape too so Tools keeps the same download-pill flow.
+                        // Mapterhorn DEM download stays on this path; PMTiles URL and OSM-update
+                        // controls below stay classic-only.
                         Text(stringResource(R.string.ui_region), style = MaterialTheme.typography.titleSmall)
                         if (!mwmDrapeMap) {
                             Text(
@@ -11015,6 +11016,99 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                     ),
                                 )
                             }
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        val path = selectedGeofabrikPath.trim().trim('/')
+                                        if (path.isEmpty()) {
+                                            status = "Select a Geofabrik path first."
+                                            return@launch
+                                        }
+                                        DownloadProgressClear.clearIfIdle()
+                                        toolsProcessReady = false
+                                        status = "Extracting Mapterhorn DEM for $path..."
+                                        val job =
+                                            withContext(Dispatchers.IO) {
+                                                uniffi.navi.pmtilesQueueDemRegion(
+                                                    dataDir.absolutePath,
+                                                    path,
+                                                )
+                                            }
+                                        if (job.id.isBlank() || job.status.startsWith("failed")) {
+                                            status = "DEM queue failed: ${job.status}"
+                                            return@launch
+                                        }
+                                        pmtilesJobId = job.id
+                                        pmtilesProgress = "Downloading terrain DEM… 0%"
+                                        downloadPolling = true
+                                        val done =
+                                            withContext(Dispatchers.IO) {
+                                                pmtilesRunJob(dataDir.absolutePath, job.id)
+                                            }
+                                        downloadPolling = false
+                                        pmtilesProgress =
+                                            formatProgressPct(
+                                                done.bytesReceived,
+                                                done.totalBytes,
+                                                "Downloading terrain DEM…",
+                                            )
+                                        status = "DEM ${done.status}: ${done.localPath}"
+                                        if (done.status == "completed") {
+                                            MapHudPrefs.rememberDownloadedPmtilesRegion(
+                                                context,
+                                                done.regionKey.ifBlank {
+                                                    File(done.localPath).nameWithoutExtension
+                                                },
+                                            )
+                                            offlineIntegrity = OfflineDataIntegrity.inspect(context, dataDir)
+                                            styleEpoch += 1
+                                            pmtilesProgress = ""
+                                            pmtilesJobId = null
+                                            toolsProcessReady = true
+                                        }
+                                    }
+                                },
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .testTag("btn_download_dem"),
+                            ) {
+                                Text(stringResource(R.string.tools_download_dem))
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(
+                                    onClick = {
+                                        pmtilesJobId?.let { id ->
+                                            pmtilesPauseJob(id)
+                                            status = "PMTiles paused"
+                                        }
+                                    },
+                                    enabled = pmtilesJobId != null,
+                                    modifier = Modifier.testTag("btn_pmtiles_pause"),
+                                ) { Text(stringResource(R.string.ui_pause)) }
+                                TextButton(
+                                    onClick = {
+                                        val id = pmtilesJobId ?: return@TextButton
+                                        // Only clear the pause flag — do not start a second run_job
+                                        // (that raced the paused extract and prevented resume).
+                                        pmtilesResumeJob(id)
+                                        status = "PMTiles resuming…"
+                                        downloadPolling = true
+                                    },
+                                    enabled = pmtilesJobId != null,
+                                    modifier = Modifier.testTag("btn_pmtiles_resume"),
+                                ) { Text(stringResource(R.string.ui_resume)) }
+                                TextButton(
+                                    onClick = {
+                                        pmtilesJobId?.let { id ->
+                                            pmtilesCancelJob(id)
+                                            status = "PMTiles cancel requested"
+                                        }
+                                    },
+                                    enabled = pmtilesJobId != null,
+                                    modifier = Modifier.testTag("btn_pmtiles_cancel"),
+                                ) { Text(stringResource(R.string.action_cancel)) }
+                            }
                             if (!mwmDrapeMap) {
                                 Button(
                                     onClick = {
@@ -11102,99 +11196,6 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                     ) {
                                         Text(stringResource(R.string.ui_restore_staged_offline_maps))
                                     }
-                                }
-                                Button(
-                                    onClick = {
-                                        scope.launch {
-                                            val path = selectedGeofabrikPath.trim().trim('/')
-                                            if (path.isEmpty()) {
-                                                status = "Select a Geofabrik path first."
-                                                return@launch
-                                            }
-                                            DownloadProgressClear.clearIfIdle()
-                                            toolsProcessReady = false
-                                            status = "Extracting Mapterhorn DEM for $path..."
-                                            val job =
-                                                withContext(Dispatchers.IO) {
-                                                    uniffi.navi.pmtilesQueueDemRegion(
-                                                        dataDir.absolutePath,
-                                                        path,
-                                                    )
-                                                }
-                                            if (job.id.isBlank() || job.status.startsWith("failed")) {
-                                                status = "DEM queue failed: ${job.status}"
-                                                return@launch
-                                            }
-                                            pmtilesJobId = job.id
-                                            pmtilesProgress = "Downloading terrain DEM… 0%"
-                                            downloadPolling = true
-                                            val done =
-                                                withContext(Dispatchers.IO) {
-                                                    pmtilesRunJob(dataDir.absolutePath, job.id)
-                                                }
-                                            downloadPolling = false
-                                            pmtilesProgress =
-                                                formatProgressPct(
-                                                    done.bytesReceived,
-                                                    done.totalBytes,
-                                                    "Downloading terrain DEM…",
-                                                )
-                                            status = "DEM ${done.status}: ${done.localPath}"
-                                            if (done.status == "completed") {
-                                                MapHudPrefs.rememberDownloadedPmtilesRegion(
-                                                    context,
-                                                    done.regionKey.ifBlank {
-                                                        File(done.localPath).nameWithoutExtension
-                                                    },
-                                                )
-                                                offlineIntegrity = OfflineDataIntegrity.inspect(context, dataDir)
-                                                styleEpoch += 1
-                                                pmtilesProgress = ""
-                                                pmtilesJobId = null
-                                                toolsProcessReady = true
-                                            }
-                                        }
-                                    },
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .testTag("btn_download_dem"),
-                                ) {
-                                    Text(stringResource(R.string.tools_download_dem))
-                                }
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    TextButton(
-                                        onClick = {
-                                            pmtilesJobId?.let { id ->
-                                                pmtilesPauseJob(id)
-                                                status = "PMTiles paused"
-                                            }
-                                        },
-                                        enabled = pmtilesJobId != null,
-                                        modifier = Modifier.testTag("btn_pmtiles_pause"),
-                                    ) { Text(stringResource(R.string.ui_pause)) }
-                                    TextButton(
-                                        onClick = {
-                                            val id = pmtilesJobId ?: return@TextButton
-                                            // Only clear the pause flag — do not start a second run_job
-                                            // (that raced the paused extract and prevented resume).
-                                            pmtilesResumeJob(id)
-                                            status = "PMTiles resuming…"
-                                            downloadPolling = true
-                                        },
-                                        enabled = pmtilesJobId != null,
-                                        modifier = Modifier.testTag("btn_pmtiles_resume"),
-                                    ) { Text(stringResource(R.string.ui_resume)) }
-                                    TextButton(
-                                        onClick = {
-                                            pmtilesJobId?.let { id ->
-                                                pmtilesCancelJob(id)
-                                                status = "PMTiles cancel requested"
-                                            }
-                                        },
-                                        enabled = pmtilesJobId != null,
-                                        modifier = Modifier.testTag("btn_pmtiles_cancel"),
-                                    ) { Text(stringResource(R.string.action_cancel)) }
                                 }
                                 Text(
                                     stringResource(R.string.ui_osm_updates_pack_server_first_geofabrik_if_unreachable_opt_i),
@@ -11321,7 +11322,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                         },
                                     )
                                 }
-                            } // !mwmDrapeMap classic PMTiles / DEM / OSM-update controls
+                            } // !mwmDrapeMap classic PMTiles URL / OSM-update controls
                         } // download-pill hierarchy (Continent → Country → Region)
                         Text(stringResource(R.string.tools_diagnostics), style = MaterialTheme.typography.titleSmall)
                         Row(
