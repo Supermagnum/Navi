@@ -1,0 +1,6 @@
+Caps dump for model: 2201
+Model name: BetaRig
+Backend status: Beta
+Can set Repeater Shift: Y
+Can set Repeater Offset: Y
+Can set CTCSS Tone: Y

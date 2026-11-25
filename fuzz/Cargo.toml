@@ -1,0 +1,73 @@
+[package]
+name = "navi-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+[dependencies.driver-break-core]
+path = "../core"
+
+[dependencies.navi-cat]
+path = "../navi-cat"
+
+# Isolate from the workspace so cargo-fuzz can use nightly without
+# rebuilding the pinned 1.98 workspace members as a unit.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "gpx_import"
+path = "fuzz_targets/gpx_import.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "datex_situation"
+path = "fuzz_targets/datex_situation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gaia_decode"
+path = "fuzz_targets/gaia_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dump_caps_gate"
+path = "fuzz_targets/dump_caps_gate.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "anytone_channel_csv"
+path = "fuzz_targets/anytone_channel_csv.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "repeater_current_json"
+path = "fuzz_targets/repeater_current_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "zst_decompress"
+path = "fuzz_targets/zst_decompress.rs"
+test = false
+doc = false
+bench = false
+
+

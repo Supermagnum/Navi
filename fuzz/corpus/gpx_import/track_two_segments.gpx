@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="navi-test" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Two segment hike</name>
+  </metadata>
+  <trk>
+    <name>Day 1</name>
+    <trkseg>
+      <trkpt lat="60.000000" lon="10.000000"><ele>100.0</ele><time>2026-01-01T08:00:00Z</time></trkpt>
+      <trkpt lat="60.001000" lon="10.000000"><ele>108.0</ele><time>2026-01-01T08:01:00Z</time></trkpt>
+      <trkpt lat="60.002000" lon="10.001000"><ele>118.0</ele><time>2026-01-01T08:02:00Z</time></trkpt>
+    </trkseg>
+    <trkseg>
+      <trkpt lat="60.010000" lon="10.010000"><ele>130.0</ele></trkpt>
+      <trkpt lat="60.011000" lon="10.010000"><ele>125.0</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

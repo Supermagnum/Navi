@@ -1,0 +1,5 @@
+Caps dump for model: 4401
+Model name: NoTone
+Backend status: Stable
+Can set Repeater Shift: Y
+Can set Repeater Offset: Y
