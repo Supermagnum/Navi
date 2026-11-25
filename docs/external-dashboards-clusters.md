@@ -1,10 +1,11 @@
 # External dashboards, instrument clusters, and head units
 
-**Status:** HostApi caps + reference WASM guest (`instrument-cluster`) +
-**log sink** are in-tree; a live USB / Kuksa export service is **not shipped**
-yet. This page tells integrators what Navi can supply, which fields are ready
-in the app today, and how a cable-connected dashboard or cluster is intended
-to receive them.
+**Status:** HostApi caps, reference WASM guest (`instrument-cluster`), guidance
+assembly, selectable sinks (log / USB NDJSON buffer / Kuksa path log / JSON-UDP
+record), and an opt-in Android session are in-tree. Opening a live USB cable or
+talking to a real Kuksa.val databroker is still a host follow-up on top of those
+buffers. This page tells integrators what Navi can supply and how a
+cable-connected dashboard is intended to receive it.
 
 **Implementation tracking:** [GitHub issue #259](https://github.com/Supermagnum/Navi/issues/259).
 
@@ -47,11 +48,11 @@ accessory); guests never talk to the wire directly.
 | Speed, eco, next maneuver, icon, distance on Navi’s own HUD | **Implemented** |
 | IMU pitch / roll / tilt-compensated heading | **Implemented** (opt-in plugin) |
 | `navi.cluster.v1` / VSS field list | **Specified** |
-| HostApi `nav_guidance_read` / `vehicle_signal_publish` | **In ABI** — default guidance is idle; default publish is a **log sink** |
-| Reference guest `plugins/instrument-cluster` | **Scaffolded** — reads guidance, publishes `navi.cluster.v1` (fuel leaves null) |
-| Live HUD → guidance snapshot on device | **Not wired** yet (embedder still uses HostApi default idle doc) |
-| USB accessory open/read/write for clusters | **Specified** in [`plugins.md`](plugins.md); CAT already uses host USB-serial as a pattern |
-| Live USB stream of cluster JSON / VSS | **Not shipped** |
+| HostApi `nav_guidance_read` / `vehicle_signal_publish` | **In ABI** — assembly + selectable sinks |
+| Reference guest `plugins/instrument-cluster` | **Shipped** (staged into APK assets; opt-in, default off) |
+| Live HUD → guidance snapshot on device | **Wired** via `ClusterPluginRuntime` + `cluster_assemble_guidance_json` |
+| USB accessory open/read/write for clusters | NDJSON buffer + drain API ready; OS USB open still follows [`plugins.md`](plugins.md) / CAT pattern |
+| Live USB stream / live Kuksa.val gRPC | **Buffer/path-log ready; cable/databroker client not shipped** |
 | Fuel L / Scandinavian mil and L / US mile on the export bus | **Not implemented** (reserved below; do not invent values in plugins) |
 
 Until the export sink ships, integrators can prototype against the JSON schema

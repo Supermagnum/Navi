@@ -1,8 +1,9 @@
 # Instrument cluster / AGL export plugin (specification)
 
-**Status:** specification only — not implemented.  
+**Status:** caps + guest + sinks + Android session in-tree; live USB open /
+Kuksa.val gRPC remain host follow-ups.  
 **Path:** `docs/plugins/instrument-cluster-agl-spec.md`  
-**Architecture:** planned WASM guest via `plugin-host` / `plugin-sdk` and
+**Architecture:** WASM guest via `plugin-host` / `plugin-sdk` and
 capability-gated `HostApi` ([`plugins.md`](../plugins.md)).
 **System requirements** (all plugins): user **enable/disable** toggle; any
 device link (e.g. USB serial to a cluster, Bluetooth to a companion display)
@@ -11,6 +12,8 @@ uses host-mediated **USB** / **Bluetooth**
 [USB/Bluetooth](../plugins.md#external-device-io--usb-and-bluetooth-required)).
 
 Plugin id: **`instrument-cluster`** (crate `navi-plugin-instrument-cluster`).
+VSS overlay: [`vss/Vehicle.Private.Navi.vspec`](vss/Vehicle.Private.Navi.vspec)
+(pinned base catalog **VSS v4.0**).
 
 This plugin **exports** Navi’s own navigation state outward to open-source
 instrument clusters and Automotive Grade Linux (AGL) environments. It is **not**
@@ -431,18 +434,21 @@ but separate projects.
 1. [x] Add `Capability::{NavGuidanceRead, VehicleSignalPublish}` + HostApi methods +
    linker wiring; extend isolation tests (deny without grant; allow with mock
    log sink). Guest id: `instrument-cluster`.
-2. [ ] Host: assemble `nav_guidance_read` snapshot from Android/Linux sensor +
-   active route + guidance + rest HUD inputs + **merged approach warning**
-   (road sign / children proximity / camera / closure) + HUD overspeed
-   (respect `route_active`, jurisdiction, camera opt-in).
+2. [x] Host: assemble `nav_guidance_read` snapshot from HUD + **merged approach
+   warning** (`cluster_assemble_guidance_json` / `merge_primary_warning`) +
+   Android `ClusterPluginRuntime` push each fix.
 3. [x] Reference WASM guest (`plugins/instrument-cluster`): read snapshot →
-   `vehicle_signal_publish` (`navi.cluster.v1`) each call; host default logs
-   paths. Warning leaf mapping still depends on a real guidance snapshot (item 2).
-4. [ ] Host backends behind a trait: `LogSink` (default done), then `KuksaSink`,
-   then USB / `JsonUdpSink` / `JsonWsSink`.
-5. [ ] Document pinned VSS catalog version + overlay `.vspec` for
-   `Vehicle.Private.Navi.*` (including Warning.*).
-6. [ ] User settings: enable plugin, choose sink, databroker URL / JSON port;
-   default **off**.
-7. [ ] Tests: Vallset-style children-zone / tagged `109` fixtures publish
-   `warning` then clear to `null` after hide; opted-out cameras never appear.
+   `vehicle_signal_publish` (`navi.cluster.v1`) each call; host sinks log /
+   NDJSON / Kuksa path map / JSON-UDP record.
+4. [x] Host backends behind `ClusterSink`: `LogSink`, `NdjsonBufferSink` (USB
+   framing), `KuksaPathLogSink`, `JsonUdpRecordSink`. Live USB open / Kuksa gRPC
+   client still plug into these buffers.
+5. [x] Document pinned VSS catalog version (**v4.0**) + overlay
+   [`vss/Vehicle.Private.Navi.vspec`](vss/Vehicle.Private.Navi.vspec).
+6. [x] User settings: enable plugin + sink kind (default **off** / log);
+   databroker URL / JSON port fields remain future when a live network sink
+   lands.
+7. [x] Tests: Vallset-style children-zone / tagged `109` publish then clear
+   after hide; opted-out cameras never appear
+   (`navi-ffi` `vallset_109_publishes_then_clears_and_opted_out_camera_ignored`,
+   `cluster_guidance` unit tests).

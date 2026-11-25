@@ -1,0 +1,149 @@
+#
+# Navi private VSS overlay for instrument-cluster export.
+#
+# Pin: COVESA VSS catalog **v4.0** as the base for standard leaves
+# (`Vehicle.Speed`, `Vehicle.CurrentLocation.*`). This overlay adds
+# `Vehicle.Private.Navi.*` for guidance / warning / rest / eco fields that
+# stock Navigation branches do not cover.
+#
+# Host mapping: `plugin-host` `cluster_json_to_vss_updates` /
+# `KuksaPathLogSink`. Live Kuksa.val gRPC write is still a host backend swap.
+#
+
+Vehicle.Private.Navi:
+  type: branch
+  description: Navi navigation export (not ECU inbound).
+
+Vehicle.Private.Navi.Route:
+  type: branch
+
+Vehicle.Private.Navi.Route.Active:
+  datatype: boolean
+  type: sensor
+  description: True when an active corridor is published.
+
+Vehicle.Private.Navi.Route.Polyline:
+  datatype: string
+  type: sensor
+  description: Optional down-sampled lat,lon;lat,lon corridor encoding.
+
+Vehicle.Private.Navi.Guidance:
+  type: branch
+
+Vehicle.Private.Navi.Guidance.NextManeuver:
+  type: branch
+
+Vehicle.Private.Navi.Guidance.NextManeuver.Type:
+  datatype: string
+  type: sensor
+  description: Wire id (turn_right, straight, roundabout, …).
+
+Vehicle.Private.Navi.Guidance.NextManeuver.DistanceM:
+  datatype: float
+  type: sensor
+  unit: m
+  description: Metres to next maneuver.
+
+Vehicle.Private.Navi.Guidance.NextManeuver.StreetName:
+  datatype: string
+  type: sensor
+
+Vehicle.Private.Navi.Guidance.NextManeuver.IconKey:
+  datatype: string
+  type: sensor
+  description: Navit nav_* icon key (no SVG bytes).
+
+Vehicle.Private.Navi.Trip:
+  type: branch
+
+Vehicle.Private.Navi.Trip.Eta:
+  datatype: string
+  type: sensor
+  description: ISO-8601 ETA when known.
+
+Vehicle.Private.Navi.Trip.RemainingDurationS:
+  datatype: float
+  type: sensor
+  unit: s
+
+Vehicle.Private.Navi.Trip.RemainingDistanceM:
+  datatype: float
+  type: sensor
+  unit: m
+
+Vehicle.Private.Navi.Rest:
+  type: branch
+
+Vehicle.Private.Navi.Rest.Active:
+  datatype: boolean
+  type: sensor
+  description: False when no route or break reminders off.
+
+Vehicle.Private.Navi.Rest.MinutesToBreak:
+  datatype: float
+  type: sensor
+  unit: min
+
+Vehicle.Private.Navi.Rest.DistanceToBreakM:
+  datatype: float
+  type: sensor
+  unit: m
+
+Vehicle.Private.Navi.Eco:
+  type: branch
+
+Vehicle.Private.Navi.Eco.Enabled:
+  datatype: boolean
+  type: sensor
+
+Vehicle.Private.Navi.Eco.Profile:
+  datatype: string
+  type: sensor
+  description: Travel profile label (Car, Truck, …).
+
+Vehicle.Private.Navi.Speed:
+  type: branch
+
+Vehicle.Private.Navi.Speed.Overspeed:
+  datatype: boolean
+  type: sensor
+  description: HUD overspeed gate (not adaptive spoken tiers).
+
+Vehicle.Private.Navi.Warning:
+  type: branch
+
+Vehicle.Private.Navi.Warning.Active:
+  datatype: boolean
+  type: sensor
+
+Vehicle.Private.Navi.Warning.Category:
+  datatype: string
+  type: sensor
+  description: road_sign | children_proximity | speed_camera_point | speed_camera_section | seasonal_closure.
+
+Vehicle.Private.Navi.Warning.Phase:
+  datatype: string
+  type: sensor
+  description: appear | urgency.
+
+Vehicle.Private.Navi.Warning.DistanceM:
+  datatype: float
+  type: sensor
+  unit: m
+
+Vehicle.Private.Navi.Warning.Code:
+  datatype: string
+  type: sensor
+
+Vehicle.Private.Navi.Warning.IconKey:
+  datatype: string
+  type: sensor
+
+Vehicle.Private.Navi.Warning.Label:
+  datatype: string
+  type: sensor
+
+Vehicle.Private.Navi.Warning.Source:
+  datatype: string
+  type: sensor
+  description: traffic_sign | children_proximity | …

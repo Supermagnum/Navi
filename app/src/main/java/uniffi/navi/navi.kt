@@ -1301,6 +1301,28 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_imu_plugin_tick(
     ): Int
+    external fun uniffi_navi_checksum_func_cluster_assemble_guidance_json(
+    ): Int
+    external fun uniffi_navi_checksum_func_cluster_plugin_configure(
+    ): Int
+    external fun uniffi_navi_checksum_func_cluster_plugin_drain_usb_ndjson(
+    ): Int
+    external fun uniffi_navi_checksum_func_cluster_plugin_get_sink_kind(
+    ): Int
+    external fun uniffi_navi_checksum_func_cluster_plugin_install_guest(
+    ): Int
+    external fun uniffi_navi_checksum_func_cluster_plugin_is_enabled(
+    ): Int
+    external fun uniffi_navi_checksum_func_cluster_plugin_last_publish_json(
+    ): Int
+    external fun uniffi_navi_checksum_func_cluster_plugin_set_enabled(
+    ): Int
+    external fun uniffi_navi_checksum_func_cluster_plugin_set_guidance_json(
+    ): Int
+    external fun uniffi_navi_checksum_func_cluster_plugin_set_sink_kind(
+    ): Int
+    external fun uniffi_navi_checksum_func_cluster_plugin_tick(
+    ): Int
     external fun uniffi_navi_checksum_func_comaps_category_keys(
     ): Int
     external fun uniffi_navi_checksum_func_comaps_category_query(
@@ -2053,6 +2075,28 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_imu_plugin_set_enabled(`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_imu_plugin_tick(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cluster_assemble_guidance_json(`routeActive`: Byte,`lat`: RustBuffer.ByValue,`lon`: RustBuffer.ByValue,`headingDeg`: RustBuffer.ByValue,`speedKmh`: RustBuffer.ByValue,`hAccM`: RustBuffer.ByValue,`speedLimitKmh`: RustBuffer.ByValue,`overspeed`: Byte,`maneuverType`: RustBuffer.ByValue,`maneuverIconKey`: RustBuffer.ByValue,`maneuverDistanceM`: RustBuffer.ByValue,`maneuverStreetName`: RustBuffer.ByValue,`ecoEnabled`: Byte,`ecoProfile`: RustBuffer.ByValue,`tripEta`: RustBuffer.ByValue,`tripRemainingDurationS`: RustBuffer.ByValue,`tripRemainingDistanceM`: RustBuffer.ByValue,`restActive`: Byte,`restMinutesToBreak`: RustBuffer.ByValue,`restDistanceToBreakM`: RustBuffer.ByValue,`attitudeYawDeg`: RustBuffer.ByValue,`attitudeRollDeg`: RustBuffer.ByValue,`attitudePitchDeg`: RustBuffer.ByValue,`attitudeHeadingDeg`: RustBuffer.ByValue,`imuCalibrated`: RustBuffer.ByValue,`routePolyline`: RustBuffer.ByValue,`roadSignWarningJson`: RustBuffer.ByValue,`childrenWarningJson`: RustBuffer.ByValue,`cameraWarningJson`: RustBuffer.ByValue,`camerasOptedIn`: Byte,`ts`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cluster_plugin_configure(`filesDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cluster_plugin_drain_usb_ndjson(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cluster_plugin_get_sink_kind(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cluster_plugin_install_guest(`manifestJson`: RustBuffer.ByValue,`wasmBytes`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cluster_plugin_is_enabled(uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    external fun uniffi_navi_fn_func_cluster_plugin_last_publish_json(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cluster_plugin_set_enabled(`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cluster_plugin_set_guidance_json(`guidanceJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cluster_plugin_set_sink_kind(`kind`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_cluster_plugin_tick(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_comaps_category_keys(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -3080,6 +3124,39 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_imu_plugin_tick() and 0xFFFF) != 13373) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cluster_assemble_guidance_json() and 0xFFFF) != 29949) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cluster_plugin_configure() and 0xFFFF) != 14328) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cluster_plugin_drain_usb_ndjson() and 0xFFFF) != 53142) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cluster_plugin_get_sink_kind() and 0xFFFF) != 44203) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cluster_plugin_install_guest() and 0xFFFF) != 7775) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cluster_plugin_is_enabled() and 0xFFFF) != 61694) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cluster_plugin_last_publish_json() and 0xFFFF) != 38750) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cluster_plugin_set_enabled() and 0xFFFF) != 2586) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cluster_plugin_set_guidance_json() and 0xFFFF) != 64906) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cluster_plugin_set_sink_kind() and 0xFFFF) != 41496) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_cluster_plugin_tick() and 0xFFFF) != 33257) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_comaps_category_keys() and 0xFFFF) != 58683) {
@@ -5388,6 +5465,54 @@ public object FfiConverterTypeCampingClockSnapshot: FfiConverterRustBuffer<Campi
             FfiConverterUInt.write(value.`day`, buf)
             FfiConverterString.write(value.`timezone`, buf)
             FfiConverterLong.write(value.`unixSecs`, buf)
+    }
+}
+
+
+
+data class ClusterTickResult (
+    var `kind`: ClusterCallKind
+    , 
+    var `message`: kotlin.String
+    , 
+    var `lastPublishJson`: kotlin.String?
+    , 
+    var `elapsedMs`: kotlin.ULong
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeClusterTickResult: FfiConverterRustBuffer<ClusterTickResult> {
+    override fun read(buf: ByteBuffer): ClusterTickResult {
+        return ClusterTickResult(
+            FfiConverterTypeClusterCallKind.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ClusterTickResult) = (
+            FfiConverterTypeClusterCallKind.allocationSize(value.`kind`) +
+            FfiConverterString.allocationSize(value.`message`) +
+            FfiConverterOptionalString.allocationSize(value.`lastPublishJson`) +
+            FfiConverterULong.allocationSize(value.`elapsedMs`)
+    )
+
+    override fun write(value: ClusterTickResult, buf: ByteBuffer) {
+            FfiConverterTypeClusterCallKind.write(value.`kind`, buf)
+            FfiConverterString.write(value.`message`, buf)
+            FfiConverterOptionalString.write(value.`lastPublishJson`, buf)
+            FfiConverterULong.write(value.`elapsedMs`, buf)
     }
 }
 
@@ -8069,6 +8194,81 @@ public object FfiConverterTypeCampingCallKind: FfiConverterRustBuffer<CampingCal
 
 
 
+enum class ClusterCallKind {
+    
+    OK,
+    DISABLED,
+    UNAVAILABLE,
+    ERROR,
+    FUEL_EXHAUSTED,
+    TIMEOUT,
+    MEMORY_EXCEEDED;
+
+    
+
+
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeClusterCallKind: FfiConverterRustBuffer<ClusterCallKind> {
+    override fun read(buf: ByteBuffer) = try {
+        ClusterCallKind.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: ClusterCallKind) = 4UL
+
+    override fun write(value: ClusterCallKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
+enum class ClusterSinkKindFfi {
+    
+    LOG,
+    USB_NDJSON,
+    KUKSA,
+    JSON_UDP;
+
+    
+
+
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeClusterSinkKindFfi: FfiConverterRustBuffer<ClusterSinkKindFfi> {
+    override fun read(buf: ByteBuffer) = try {
+        ClusterSinkKindFfi.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: ClusterSinkKindFfi) = 4UL
+
+    override fun write(value: ClusterSinkKindFfi, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
 enum class FfiCategoryCoverage {
     
     FULL,
@@ -8550,6 +8750,38 @@ public object FfiConverterOptionalDouble: FfiConverterRustBuffer<kotlin.Double?>
         } else {
             buf.put(1)
             FfiConverterDouble.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalBoolean: FfiConverterRustBuffer<kotlin.Boolean?> {
+    override fun read(buf: ByteBuffer): kotlin.Boolean? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterBoolean.read(buf)
+    }
+
+    override fun allocationSize(value: kotlin.Boolean?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterBoolean.allocationSize(value)
+        }
+    }
+
+    override fun write(value: kotlin.Boolean?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterBoolean.write(value, buf)
         }
     }
 }
@@ -13186,6 +13418,180 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
             return FfiConverterTypeImuTickResult.lift(
     uniffiRustCall() { _status ->
     UniffiLib.uniffi_navi_fn_func_imu_plugin_tick(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Assemble guidance from HUD pieces + UniFFI warning JSON blobs.
+         */ fun `clusterAssembleGuidanceJson`(`routeActive`: kotlin.Boolean, `lat`: kotlin.Double?, `lon`: kotlin.Double?, `headingDeg`: kotlin.Double?, `speedKmh`: kotlin.Double?, `hAccM`: kotlin.Double?, `speedLimitKmh`: kotlin.Double?, `overspeed`: kotlin.Boolean, `maneuverType`: kotlin.String?, `maneuverIconKey`: kotlin.String?, `maneuverDistanceM`: kotlin.Double?, `maneuverStreetName`: kotlin.String?, `ecoEnabled`: kotlin.Boolean, `ecoProfile`: kotlin.String?, `tripEta`: kotlin.String?, `tripRemainingDurationS`: kotlin.Double?, `tripRemainingDistanceM`: kotlin.Double?, `restActive`: kotlin.Boolean, `restMinutesToBreak`: kotlin.Double?, `restDistanceToBreakM`: kotlin.Double?, `attitudeYawDeg`: kotlin.Double?, `attitudeRollDeg`: kotlin.Double?, `attitudePitchDeg`: kotlin.Double?, `attitudeHeadingDeg`: kotlin.Double?, `imuCalibrated`: kotlin.Boolean?, `routePolyline`: kotlin.String, `roadSignWarningJson`: kotlin.String, `childrenWarningJson`: kotlin.String, `cameraWarningJson`: kotlin.String, `camerasOptedIn`: kotlin.Boolean, `ts`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cluster_assemble_guidance_json(
+    
+        
+        FfiConverterBoolean.lower(`routeActive`),
+        FfiConverterOptionalDouble.lower(`lat`),
+        FfiConverterOptionalDouble.lower(`lon`),
+        FfiConverterOptionalDouble.lower(`headingDeg`),
+        FfiConverterOptionalDouble.lower(`speedKmh`),
+        FfiConverterOptionalDouble.lower(`hAccM`),
+        FfiConverterOptionalDouble.lower(`speedLimitKmh`),
+        FfiConverterBoolean.lower(`overspeed`),
+        FfiConverterOptionalString.lower(`maneuverType`),
+        FfiConverterOptionalString.lower(`maneuverIconKey`),
+        FfiConverterOptionalDouble.lower(`maneuverDistanceM`),
+        FfiConverterOptionalString.lower(`maneuverStreetName`),
+        FfiConverterBoolean.lower(`ecoEnabled`),
+        FfiConverterOptionalString.lower(`ecoProfile`),
+        FfiConverterOptionalString.lower(`tripEta`),
+        FfiConverterOptionalDouble.lower(`tripRemainingDurationS`),
+        FfiConverterOptionalDouble.lower(`tripRemainingDistanceM`),
+        FfiConverterBoolean.lower(`restActive`),
+        FfiConverterOptionalDouble.lower(`restMinutesToBreak`),
+        FfiConverterOptionalDouble.lower(`restDistanceToBreakM`),
+        FfiConverterOptionalDouble.lower(`attitudeYawDeg`),
+        FfiConverterOptionalDouble.lower(`attitudeRollDeg`),
+        FfiConverterOptionalDouble.lower(`attitudePitchDeg`),
+        FfiConverterOptionalDouble.lower(`attitudeHeadingDeg`),
+        FfiConverterOptionalBoolean.lower(`imuCalibrated`),
+        FfiConverterString.lower(`routePolyline`),
+        FfiConverterString.lower(`roadSignWarningJson`),
+        FfiConverterString.lower(`childrenWarningJson`),
+        FfiConverterString.lower(`cameraWarningJson`),
+        FfiConverterBoolean.lower(`camerasOptedIn`),
+        FfiConverterOptionalString.lower(`ts`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Bind the cluster session to the app files dir. Safe to call more than once.
+         */ fun `clusterPluginConfigure`(`filesDir`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cluster_plugin_configure(
+    
+        
+        FfiConverterString.lower(`filesDir`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Drain NDJSON lines queued for USB write (empty when sink is not usb_ndjson).
+         */ fun `clusterPluginDrainUsbNdjson`(): List<kotlin.String> {
+            return FfiConverterSequenceString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cluster_plugin_drain_usb_ndjson(
+    
+        _status)
+}
+    )
+    }
+    
+ fun `clusterPluginGetSinkKind`(): ClusterSinkKindFfi {
+            return FfiConverterTypeClusterSinkKindFfi.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cluster_plugin_get_sink_kind(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Install or replace the guest under `filesDir/plugins/instrument-cluster/`.
+         */ fun `clusterPluginInstallGuest`(`manifestJson`: kotlin.String, `wasmBytes`: kotlin.ByteArray): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cluster_plugin_install_guest(
+    
+        
+        FfiConverterString.lower(`manifestJson`),
+        FfiConverterByteArray.lower(`wasmBytes`),_status)
+}
+    )
+    }
+    
+ fun `clusterPluginIsEnabled`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cluster_plugin_is_enabled(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Last published cluster JSON (any sink), if any.
+         */ fun `clusterPluginLastPublishJson`(): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cluster_plugin_last_publish_json(
+    
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Enable / disable via [`PluginEnableStore`] (default OFF).
+         */ fun `clusterPluginSetEnabled`(`enabled`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cluster_plugin_set_enabled(
+    
+        
+        FfiConverterBoolean.lower(`enabled`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Push the latest HUD guidance snapshot (full `navi.guidance.v1` JSON).
+         */ fun `clusterPluginSetGuidanceJson`(`guidanceJson`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cluster_plugin_set_guidance_json(
+    
+        
+        FfiConverterString.lower(`guidanceJson`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Select the host sink (`log` default). Persisted under filesDir.
+         */ fun `clusterPluginSetSinkKind`(`kind`: ClusterSinkKindFfi): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cluster_plugin_set_sink_kind(
+    
+        
+        FfiConverterTypeClusterSinkKindFfi.lower(`kind`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Run one guest tick (publish through the selected sink).
+         */ fun `clusterPluginTick`(): ClusterTickResult {
+            return FfiConverterTypeClusterTickResult.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_cluster_plugin_tick(
     
         _status)
 }

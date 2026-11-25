@@ -299,6 +299,8 @@ class MainActivity : ComponentActivity() {
         ).start()
         // IMU plugin: native setup runs off-main; sensors tick only while started and enabled.
         ImuPluginRuntime.attach(this, this)
+        // Instrument cluster: opt-in export guest; ticks while enabled and started.
+        ClusterPluginRuntime.attach(this, this)
         // The z0-z6 PMTiles world overview belongs to the MapLibre map; the MWM path draws World.mwm.
         if (!ComapsDrape.isMwmMapPath()) WorldOverviewDownload.ensure(this)
         setContent {
@@ -5964,6 +5966,54 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     NaviMapTestHooks.lastRouteSchoolPoiCount =
                         runCatching { org.json.JSONArray(routeSchoolPoisJsonRef.get()).length() }
                             .getOrDefault(0)
+                    ClusterPluginRuntime.publishHud(
+                        ClusterHudSnapshot(
+                            routeActive = mapState.polyline.isNotBlank() && !snap.offRoute,
+                            lat = loc.latitude,
+                            lon = loc.longitude,
+                            headingDeg = loc.bearing.takeIf { it.isFinite() }?.toDouble(),
+                            speedKmh = driveHud.currentSpeedKmh,
+                            hAccM = loc.accuracy.takeIf { it.isFinite() && it > 0f }?.toDouble(),
+                            speedLimitKmh = driveHud.currentSpeedLimitKmh,
+                            overspeed = driveHud.overspeed,
+                            maneuverType =
+                                clusterManeuverTypeFromIcon(
+                                    approachGuidance.iconKey.takeIf { approachGuidance.active },
+                                ),
+                            maneuverIconKey =
+                                approachGuidance.iconKey.takeIf { approachGuidance.active },
+                            maneuverDistanceM =
+                                approachGuidance.distanceM.takeIf {
+                                    approachGuidance.active && it.isFinite()
+                                },
+                            maneuverStreetName =
+                                approachGuidance.nextStreet.takeIf { approachGuidance.active },
+                            ecoEnabled = driveHud.ecoActive,
+                            ecoProfile = profile.name,
+                            tripEta = null,
+                            tripRemainingDurationS =
+                                driveHud.tripEtaMinutes?.times(60.0),
+                            restActive = driveHud.breakRemindersEnabled &&
+                                mapState.polyline.isNotBlank(),
+                            restMinutesToBreak = driveHud.minutesToBreak,
+                            routePolyline = mapState.polyline,
+                            roadSignWarningJson =
+                                if (roadSignWarning.active) finalRoadSignJson else "{}",
+                            childrenWarningJson = schoolFallbackJson,
+                            cameraWarningJson =
+                                if (speedCameraWarning.active) {
+                                    uniffi.navi.nearestSpeedCameraWarningJson(
+                                        speedCamerasJson,
+                                        loc.latitude,
+                                        loc.longitude,
+                                        true,
+                                    )
+                                } else {
+                                    "{}"
+                                },
+                            camerasOptedIn = speedCameraOptIn,
+                        ),
+                    )
                     if (!snap.offRoute) routeNotJoinedRef.set(false)
                     val offAction =
                         offRouteCoordinator.onFix(
@@ -6152,6 +6202,25 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                     NaviMapTestHooks.lastSchoolProximityWarningJson = schoolFallbackJson
                     NaviMapTestHooks.lastLiveHazardConeM =
                         runCatching { uniffi.navi.liveHazardConeM() }.getOrDefault(300.0)
+                    ClusterPluginRuntime.publishHud(
+                        ClusterHudSnapshot(
+                            routeActive = false,
+                            lat = loc.latitude,
+                            lon = loc.longitude,
+                            headingDeg = headingDeg,
+                            speedKmh = driveHud.currentSpeedKmh,
+                            hAccM = loc.accuracy.takeIf { it.isFinite() && it > 0f }?.toDouble(),
+                            speedLimitKmh = driveHud.currentSpeedLimitKmh,
+                            overspeed = driveHud.overspeed,
+                            ecoEnabled = driveHud.ecoActive,
+                            ecoProfile = profile.name,
+                            roadSignWarningJson =
+                                if (roadSignWarning.active) finalRoadSignJson else "{}",
+                            childrenWarningJson = schoolFallbackJson,
+                            cameraWarningJson = if (speedCameraWarning.active) camJson else "{}",
+                            camerasOptedIn = speedCameraOptIn,
+                        ),
+                    )
                     if (!roadSignWarning.active) {
                         val pbf = resolveRegionPbf()
                         val skipGraph =

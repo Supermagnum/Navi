@@ -186,7 +186,7 @@ checklist above and file an issue; you do not need to write code.
     - [Weather overlay](docs/plugins/weather-plugin.md) — implemented (opt-in)
     - [Weather icons reference](docs/plugins/weather-icons-reference.md) — reference (assets shipped with weather)
     - [External dashboards / clusters / head units (USB)](docs/external-dashboards-clusters.md) — design (export not shipped)
-    - [Instrument cluster (AGL) spec](docs/plugins/instrument-cluster-agl-spec.md) — caps + guest + log sink; USB/Kuksa not shipped
+    - [Instrument cluster (AGL) spec](docs/plugins/instrument-cluster-agl-spec.md) — guest + sinks + Android session; live USB/Kuksa client follow-up
     - [Animated icons](docs/plugins/animated-icons-spec.md) — not implemented
     - [CAT radio plugin](#cat-radio-plugin) — implemented (opt-in; Hamlib + Benshi; never transmits)
     - [CAT radio control](docs/CAT.md) — full spec
@@ -1152,8 +1152,8 @@ Guest overview: [`plugins/CATS-plugin/README.md`](plugins/CATS-plugin/README.md)
 | [`docs/plugins/datex-npra-client.md`](docs/plugins/datex-npra-client.md) | NPRA DATEX II v3.1 pull client sketch (access, Basic Auth, endpoints; **not** used by the product APK — credentials stay on navi-server) | **Not implemented** (legacy sketch) |
 | [`docs/plugins/weather-plugin.md`](docs/plugins/weather-plugin.md) | Weather overlay — HUD chip + optional city map symbols (host UniFFI; WASM guest scaffolded, not linked into the product APK) | **Implemented** (opt-in) |
 | [`docs/plugins/weather-icons-reference.md`](docs/plugins/weather-icons-reference.md) | What each weather icon slug means (fill style) | **Reference** (assets shipped with weather) |
-| [`docs/external-dashboards-clusters.md`](docs/external-dashboards-clusters.md) | How to integrate external dashboards, instrument clusters, and head units over **USB** (speed, maneuver + icon, distance, eco, IMU yaw/roll/heading; fuel L/mil reserved) | **Partial** (caps + `instrument-cluster` guest + log sink; USB not shipped) |
-| [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | VSS / Kuksa.val + `navi.cluster.v1` export plugin detail | **Partial** (guest scaffolded; USB/Kuksa not shipped) |
+| [`docs/external-dashboards-clusters.md`](docs/external-dashboards-clusters.md) | How to integrate external dashboards, instrument clusters, and head units over **USB** (speed, maneuver + icon, distance, eco, IMU yaw/roll/heading; fuel L/mil reserved) | **Partial** (guest + sinks + opt-in Android session; live USB/Kuksa client follow-up) |
+| [`docs/plugins/instrument-cluster-agl-spec.md`](docs/plugins/instrument-cluster-agl-spec.md) | VSS / Kuksa.val + `navi.cluster.v1` export plugin detail | **Partial** (overlay + sinks; live databroker client follow-up) |
 | [`docs/plugins/animated-icons-spec.md`](docs/plugins/animated-icons-spec.md) | Animated icons | **Not implemented** |
 | [`docs/CAT.md`](docs/CAT.md) | CAT radio control — Hamlib `RigBackend` (TCP `rigctld` + FFI), native Benshi, `CatStatusSheet` model/baud, never auto-TX; licence: *You may listen, but do not transmit without an amateur radio licence.* See **What is tested** in that doc. | **Implemented** (opt-in) |
 | [`plugins/CATS-plugin/`](plugins/CATS-plugin/) | CATS WASM guest — repeater select / auto-tune / network follow under wasmtime (`plugin.json` name `cat`) | **Implemented** (opt-in) |

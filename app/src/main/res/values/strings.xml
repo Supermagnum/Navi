@@ -4,6 +4,10 @@
     <string name="via_point_n_of_m_reached">Via point %1$d of %2$d reached</string>
     <string name="cat_licence_listen_only">You may listen, but do not transmit without an amateur radio licence.</string>
     <string name="cat_plugin_toggle_label">CAT</string>
+    <string name="cluster_plugin_toggle_label">Instrument cluster export</string>
+    <string name="cluster_plugin_purpose">Exports guidance (speed, maneuver, warnings, eco) to a host sink for USB / Kuksa / JSON. Off by default. Fuel economy leaves stay null until core publishes them.</string>
+    <string name="cluster_sink_label">Export sink</string>
+    <string name="cluster_sink_cycle">Cycle sink</string>
     <string name="cat_update_repeaters">Update repeaters</string>
     <string name="cat_update_repeaters_hint">Downloads from navi-server only (plain HTTPS). No background fetch. RepeaterBook appears when the server publishes it.</string>
     <string name="approach_off_route">Off route</string>

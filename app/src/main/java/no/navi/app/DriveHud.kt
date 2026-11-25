@@ -729,6 +729,7 @@ fun PluginSettingsSection(
             )
         }
         ImuPluginPanel()
+        ClusterPluginPanel()
     }
 }
 
