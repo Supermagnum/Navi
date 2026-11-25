@@ -50,6 +50,12 @@ object MapHudPrefs {
     private const val KEY_CAMPING_RESIDENCY_COUNTRY = "camping_residency_country"
     private const val KEY_CAMPING_PROFESSIONAL_DRIVER = "camping_professional_driver"
     private const val KEY_CAT_PLUGIN_ENABLED = "cat_plugin_enabled"
+    private const val KEY_CLUSTER_PLUGIN_ENABLED = "cluster_plugin_enabled"
+    private const val KEY_CLUSTER_SINK_KIND = "cluster_sink_kind"
+    private const val KEY_CLUSTER_UDP_HOST = "cluster_json_udp_host"
+    private const val KEY_CLUSTER_UDP_PORT = "cluster_json_udp_port"
+    private const val KEY_CLUSTER_KUKSA_HOST = "cluster_kuksa_host"
+    private const val KEY_CLUSTER_KUKSA_PORT = "cluster_kuksa_port"
     private const val KEY_CAT_RIG_MODEL = "cat_rig_model"
     private const val KEY_CAT_BAUD_RATE = "cat_baud_rate"
     private const val KEY_CAT_BACKEND = "cat_backend"
@@ -110,6 +116,12 @@ object MapHudPrefs {
 
     /** CATS / CAT radio plugin — defaults OFF (opt-in). */
     const val CAT_PLUGIN_DEFAULT_ENABLED = false
+
+    /** Instrument cluster export — defaults OFF (opt-in). */
+    const val CLUSTER_PLUGIN_DEFAULT_ENABLED = false
+
+    /** Default host sink for cluster publish (`log`). */
+    const val CLUSTER_SINK_KIND_DEFAULT = "log"
 
     /**
      * Default Hamlib model: NET rigctl (remote / emulator TCP path).
@@ -958,6 +970,78 @@ object MapHudPrefs {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_CAT_PLUGIN_ENABLED, enabled)
+            .apply()
+    }
+
+    fun loadClusterPluginEnabled(context: Context): Boolean =
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_CLUSTER_PLUGIN_ENABLED, CLUSTER_PLUGIN_DEFAULT_ENABLED)
+
+    fun saveClusterPluginEnabled(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_CLUSTER_PLUGIN_ENABLED, enabled)
+            .apply()
+    }
+
+    fun loadClusterSinkKind(context: Context): uniffi.navi.ClusterSinkKindFfi {
+        val raw =
+            context
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(KEY_CLUSTER_SINK_KIND, CLUSTER_SINK_KIND_DEFAULT)
+                ?: CLUSTER_SINK_KIND_DEFAULT
+        return when (raw) {
+            "usb_ndjson", "usb", "ndjson" -> uniffi.navi.ClusterSinkKindFfi.USB_NDJSON
+            "kuksa", "vss" -> uniffi.navi.ClusterSinkKindFfi.KUKSA
+            "json_udp", "udp", "ws", "json_ws" -> uniffi.navi.ClusterSinkKindFfi.JSON_UDP
+            else -> uniffi.navi.ClusterSinkKindFfi.LOG
+        }
+    }
+
+    fun saveClusterSinkKind(
+        context: Context,
+        kind: uniffi.navi.ClusterSinkKindFfi,
+    ) {
+        val raw =
+            when (kind) {
+                uniffi.navi.ClusterSinkKindFfi.LOG -> "log"
+                uniffi.navi.ClusterSinkKindFfi.USB_NDJSON -> "usb_ndjson"
+                uniffi.navi.ClusterSinkKindFfi.KUKSA -> "kuksa"
+                uniffi.navi.ClusterSinkKindFfi.JSON_UDP -> "json_udp"
+            }
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_CLUSTER_SINK_KIND, raw)
+            .apply()
+    }
+
+    fun loadClusterEndpoints(context: Context): uniffi.navi.ClusterEndpointsFfi {
+        val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        return uniffi.navi.ClusterEndpointsFfi(
+            jsonUdpHost = p.getString(KEY_CLUSTER_UDP_HOST, "127.0.0.1") ?: "127.0.0.1",
+            jsonUdpPort = p.getInt(KEY_CLUSTER_UDP_PORT, 8765).toUInt(),
+            kuksaHost = p.getString(KEY_CLUSTER_KUKSA_HOST, "127.0.0.1") ?: "127.0.0.1",
+            kuksaPort = p.getInt(KEY_CLUSTER_KUKSA_PORT, 55556).toUInt(),
+        )
+    }
+
+    fun saveClusterEndpoints(
+        context: Context,
+        endpoints: uniffi.navi.ClusterEndpointsFfi,
+    ) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_CLUSTER_UDP_HOST, endpoints.jsonUdpHost)
+            .putInt(KEY_CLUSTER_UDP_PORT, endpoints.jsonUdpPort.toInt())
+            .putString(KEY_CLUSTER_KUKSA_HOST, endpoints.kuksaHost)
+            .putInt(KEY_CLUSTER_KUKSA_PORT, endpoints.kuksaPort.toInt())
             .apply()
     }
 

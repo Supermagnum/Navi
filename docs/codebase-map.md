@@ -159,7 +159,7 @@ next maneuver”).
 | Compose chrome | `RoadSignWarningBox.kt`, speed-camera box in `MainActivity.kt` |
 | Merge / host wiring | `MainActivity.kt` (corridor when progress tracker set; cone when null; explicit sign outranks proximity) |
 | Alert tones (planned) | [`plugins/custom-alert-sounds-spec.md`](plugins/custom-alert-sounds-spec.md) |
-| Cluster / dashboard USB export (planned) | [`external-dashboards-clusters.md`](external-dashboards-clusters.md), [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) |
+| Cluster / dashboard USB export | `plugins/instrument-cluster` + USB AOA / JSON-UDP / Kuksa TCP bridge — [`external-dashboards-clusters.md`](external-dashboards-clusters.md), [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) |
 
 ### Break countdown / trip ETA
 

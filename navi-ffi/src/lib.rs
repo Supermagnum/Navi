@@ -71,6 +71,8 @@ mod cat_plugin;
 pub use cat_plugin::*;
 mod imu_plugin;
 pub use imu_plugin::*;
+mod instrument_cluster_plugin;
+pub use instrument_cluster_plugin::*;
 
 /// One native `plan_car_route` at a time (second Activity / am start must not
 /// spawn a second planner thread).

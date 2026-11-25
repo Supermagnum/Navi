@@ -1,8 +1,10 @@
 # Instrument cluster / AGL export plugin (specification)
 
-**Status:** specification only — not implemented.  
+**Status:** **complete** for the in-tree export path (guest, assembly, USB AOA
+NDJSON, JSON-UDP, Kuksa/VSS TCP bridge + settings). Optional: a separate feeder
+may forward the TCP bridge into a full Kuksa.val gRPC databroker.  
 **Path:** `docs/plugins/instrument-cluster-agl-spec.md`  
-**Architecture:** planned WASM guest via `plugin-host` / `plugin-sdk` and
+**Architecture:** WASM guest via `plugin-host` / `plugin-sdk` and
 capability-gated `HostApi` ([`plugins.md`](../plugins.md)).
 **System requirements** (all plugins): user **enable/disable** toggle; any
 device link (e.g. USB serial to a cluster, Bluetooth to a companion display)
@@ -10,12 +12,16 @@ uses host-mediated **USB** / **Bluetooth**
 ([`plugins.md` — enable/disable](../plugins.md#enable--disable-required),
 [USB/Bluetooth](../plugins.md#external-device-io--usb-and-bluetooth-required)).
 
-Working title / id suggestion: `instrument_cluster` / `agl_signal_export`.
+Plugin id: **`instrument-cluster`** (crate `navi-plugin-instrument-cluster`).
+VSS overlay: [`vss/Vehicle.Private.Navi.vspec`](vss/Vehicle.Private.Navi.vspec)
+(pinned base catalog **VSS v4.0**).
 
 This plugin **exports** Navi’s own navigation state outward to open-source
-instrument clusters and Automotive Grade Linux (AGL) environments. It is **not**
-an ECU / vehicle-input path ([`ECU.md`](../ECU.md) remains separate and deferred)
-and **not** a full AGL Application Framework packaging effort (see § AGL scope).
+instrument clusters and
+[Automotive Grade Linux (AGL)](https://www.automotivelinux.org/) environments.
+It is **not** an ECU / vehicle-input path ([`ECU.md`](../ECU.md) remains
+separate and deferred) and **not** a full AGL Application Framework packaging
+effort (see § AGL scope).
 
 ---
 
@@ -134,7 +140,8 @@ References:
 
 - [COVESA Vehicle Signal Specification](https://covesa.global/vehicle-signal-specification/)
 - [COVESA/vehicle_signal_specification](https://github.com/COVESA/vehicle_signal_specification)
-- Eclipse Kuksa.val databroker (gRPC / VISS-style clients)
+- [Eclipse Kuksa](https://www.eclipse.org/kuksa/) — [kuksa-databroker](https://github.com/eclipse-kuksa/kuksa-databroker) (gRPC / VISS-style clients)
+- [Automotive Grade Linux](https://www.automotivelinux.org/) — [docs](https://docs.automotivelinux.org/)
 
 ### Standard VSS paths (use when they fit)
 
@@ -369,7 +376,7 @@ Example `plugin.json`:
 
 ```json
 {
-  "name": "instrument_cluster",
+  "name": "instrument-cluster",
   "version": "0.1.0",
   "entry": "plugin_main",
   "capabilities": [
@@ -378,8 +385,8 @@ Example `plugin.json`:
     "nav_guidance_read",
     "vehicle_signal_publish"
   ],
-  "fuel_limit": 5000000,
-  "timeout_ms": 500,
+  "fuel_limit": 8000000,
+  "timeout_ms": 800,
   "wasm": "plugin.wasm"
 }
 ```
@@ -389,9 +396,9 @@ speed, route guidance, and **approach warnings** (road signs, children-zone
 proximity, speed cameras when opted in) to a **user-configured** local
 databroker / JSON endpoint. No silent grant.
 
-Until `vehicle_signal_publish` and `nav_guidance_read` exist on
-`Capability` / HostApi, this guest **cannot** load — add the enum variants and
-imports first ([`plugins.md`](../plugins.md) capability sketch).
+`nav_guidance_read` / `vehicle_signal_publish` are on `Capability` / HostApi
+(default idle guidance + log sink). Live USB/Kuksa sinks and on-device guidance
+assembly remain open checklist items.
 
 ---
 
@@ -426,22 +433,37 @@ but separate projects.
 
 ---
 
-## Implementation checklist (when picked up)
+## Implementation checklist
 
-1. Add `Capability::{NavGuidanceRead, VehicleSignalPublish}` + HostApi methods +
+1. [x] Add `Capability::{NavGuidanceRead, VehicleSignalPublish}` + HostApi methods +
    linker wiring; extend isolation tests (deny without grant; allow with mock
-   log sink).
-2. Host: assemble `nav_guidance_read` snapshot from Android/Linux sensor +
-   active route + guidance + rest HUD inputs + **merged approach warning**
-   (road sign / children proximity / camera / closure) + HUD overspeed
-   (respect `route_active`, jurisdiction, camera opt-in).
-3. Reference WASM guest: read snapshot → `vehicle_signal_publish` batch each
-   call (including `Vehicle.Private.Navi.Warning.*`); host logs paths.
-4. Host backends behind a trait: `LogSink`, then `KuksaSink`, then `JsonUdpSink`
-   / `JsonWsSink`.
-5. Document pinned VSS catalog version + overlay `.vspec` for
-   `Vehicle.Private.Navi.*` (including Warning.*).
-6. User settings: enable plugin, choose sink, databroker URL / JSON port;
-   default **off**.
-7. Tests: Vallset-style children-zone / tagged `109` fixtures publish
-   `warning` then clear to `null` after hide; opted-out cameras never appear.
+   log sink). Guest id: `instrument-cluster`.
+2. [x] Host: assemble `nav_guidance_read` snapshot from HUD + **merged approach
+   warning** (`cluster_assemble_guidance_json` / `merge_primary_warning`) +
+   Android `ClusterPluginRuntime` push each fix.
+3. [x] Reference WASM guest (`plugins/instrument-cluster`): read snapshot →
+   `vehicle_signal_publish` (`navi.cluster.v1`) each call; host sinks log /
+   USB NDJSON / Kuksa TCP / JSON-UDP.
+4. [x] Host backends behind `ClusterSink`: `LogSink`, `NdjsonBufferSink` +
+   Android USB accessory writer, `KuksaLiveSink` (TCP `navi.vss.batch.v1`),
+   `JsonUdpLiveSink`. Bridge helper: `scripts/cluster-kuksa-bridge.py`.
+5. [x] Document pinned VSS catalog version (**v4.0**) + overlay
+   [`vss/Vehicle.Private.Navi.vspec`](vss/Vehicle.Private.Navi.vspec).
+6. [x] User settings: enable plugin, sink kind, JSON-UDP host/port, Kuksa
+   bridge host/port (default **off** / log / loopback).
+7. [x] Tests: Vallset-style children-zone / tagged `109` publish then clear
+   after hide; opted-out cameras never appear; live UDP/Kuksa TCP sink tests.
+
+---
+
+## Related dashboards and platforms
+
+For integrator links and a worked OpenCluster-style setup (Navi JSON-UDP/USB →
+bridge → CAN gauges), plus DevDash, FIS-Display, Kuksa, and AGL notes, see
+[`external-dashboards-clusters.md`](../external-dashboards-clusters.md#related-open-source-dashboards):
+
+- [OpenCluster](https://github.com/emdzej/opencluster)
+- [DevDash](https://github.com/devdash-project/devdash)
+- [FIS-Display](https://github.com/Supermagnum/FIS-Display)
+- [Eclipse Kuksa](https://www.eclipse.org/kuksa/) / [kuksa-databroker](https://github.com/eclipse-kuksa/kuksa-databroker)
+- [Automotive Grade Linux](https://www.automotivelinux.org/)

@@ -754,6 +754,35 @@ fn install_imports(
         )?;
     }
 
+    if allowed.contains(&Capability::NavGuidanceRead) {
+        linker.func_wrap(
+            "navi",
+            "nav_guidance_read",
+            |mut caller: Caller<'_, StoreData>,
+             out_ptr: u32,
+             out_cap: u32|
+             -> wasmtime::Result<i32> {
+                let json = caller.data().api.nav_guidance_read();
+                let written = write_guest_bytes(&mut caller, out_ptr, out_cap, json.as_bytes())?;
+                Ok(written as i32)
+            },
+        )?;
+    }
+
+    if allowed.contains(&Capability::VehicleSignalPublish) {
+        linker.func_wrap(
+            "navi",
+            "vehicle_signal_publish",
+            |mut caller: Caller<'_, StoreData>, ptr: u32, len: u32| -> wasmtime::Result<i32> {
+                let raw = read_guest_string(&mut caller, ptr, len)?;
+                match caller.data_mut().api.vehicle_signal_publish(&raw) {
+                    Ok(()) => Ok(0),
+                    Err(_) => Ok(1),
+                }
+            },
+        )?;
+    }
+
     // Always provide a no-op alloc helper so guests can request scratch space
     // without WASI. Guests that ship their own allocator ignore this.
     linker.func_wrap(

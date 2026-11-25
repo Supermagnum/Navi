@@ -3210,6 +3210,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "navi-plugin-instrument-cluster"
+version = "0.1.0"
+dependencies = [
+ "navi-plugin-sdk",
+ "wee_alloc",
+]
+
+[[package]]
 name = "navi-plugin-log-hello"
 version = "0.1.0"
 dependencies = [

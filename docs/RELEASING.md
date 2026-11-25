@@ -268,6 +268,7 @@ Builds:
       - test -f ../app/src/main/assets/plugins/right_to_roam_camping/plugin.wasm
       - test -f ../app/src/main/assets/plugins/imu/plugin.wasm
       - test -f ../app/src/main/assets/plugins/cat/plugin.wasm
+      - test -f ../app/src/main/assets/plugins/instrument-cluster/plugin.wasm
       - test -f ../app/src/main/res/font/liberation_sans.ttf
       - sha256sum ../app/src/main/jniLibs/arm64-v8a/libnavi.so ../app/src/main/jniLibs/x86_64/libnavi.so
       - sha256sum ../app/src/main/jniLibs/arm64-v8a/libhamlib.so ../app/src/main/jniLibs/x86_64/libhamlib.so
@@ -275,6 +276,7 @@ Builds:
       - strings ../app/src/main/jniLibs/arm64-v8a/libnavi.so | grep -F 'native Benshi'
       - sha256sum ../app/src/main/assets/plugins/right_to_roam_camping/plugin.wasm
         ../app/src/main/assets/plugins/imu/plugin.wasm ../app/src/main/assets/plugins/cat/plugin.wasm
+        ../app/src/main/assets/plugins/instrument-cluster/plugin.wasm
     ndk: r27c
 
 MaintainerNotes: |

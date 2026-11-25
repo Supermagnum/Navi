@@ -91,6 +91,7 @@ snapshots into the core; WASM guests must not get raw sockets.
 | `plugins/CATS-plugin/` | CAT / CATS WASM guest — repeater select / auto-tune / network follow ([`CAT.md`](CAT.md)); host is `navi-cat` + `navi-hamlib-sys` |
 | `plugins/weather/` | Weather plugin — Meteocons assets + guest scaffold; product HUD/map use host UniFFI ([`plugins/weather-plugin.md`](plugins/weather-plugin.md)) |
 | `plugins/imu/` | IMU guest (pitch / tilt / compass, mount calibration, display) on `sensors_read`; engine in `plugins/imu/engine`; staged into the APK by `scripts/build-plugin-wasm.sh` and fed by the Android `SensorManager` backend via `navi-ffi` (`imu_plugin_*`), default OFF ([`plugins/imu-plugin.md`](plugins/imu-plugin.md)) |
+| `plugins/instrument-cluster/` | Cluster export guest (`instrument-cluster`): `nav_guidance_read` → `navi.cluster.v1` via `vehicle_signal_publish`; host sinks: log / USB AOA NDJSON / JSON-UDP / Kuksa TCP bridge ([`external-dashboards-clusters.md`](external-dashboards-clusters.md)) |
 | `plugins/datex/` | DATEX guest scaffold; host client in `driver-break-core::datex` ([`plugins/datex-plugin.md`](plugins/datex-plugin.md)) |
 
 ## Manifest (`plugin.json`)
@@ -381,16 +382,16 @@ implement the RF/mesh layer): [`plugins/lora-convoy-spec.md`](plugins/lora-convo
 | **Proposed caps** | `position_read`, `poi_query`, `route_read`, `fuel_config_read`, `plugin_kv` / `storage`, `weather_read` (optional), `log` |
 | **Notes** | Spec only — not implemented. Distinct from core `SafetyConfig` (POI radii / overnight distances). Conservative guidance, not a supply guarantee. |
 
-### 9. Instrument cluster / AGL signal export (`instrument_cluster`)
+### 9. Instrument cluster / AGL signal export (`instrument-cluster`)
 
 | | |
 |---|---|
 | **Benefit** | Export Navi nav state (speed, limit, overspeed chrome, next maneuver, ETA, break timing, eco, polyline, **and merged approach warnings** — road signs, children-zone proximity, speed cameras, seasonal closures) to open-source clusters and AGL via VSS/Kuksa.val, with a simple JSON fallback |
-| **Docs** | Integrator guide: [`external-dashboards-clusters.md`](../external-dashboards-clusters.md). Spec: [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) — VSS mapping + `Vehicle.Private.Navi.*` (including `Warning.*`), `navi.cluster.v1` JSON, host-mediated **USB** publish, AGL scope boundary |
+| **Docs** | Integrator guide: [`external-dashboards-clusters.md`](../external-dashboards-clusters.md) (OpenCluster / DevDash / FIS-Display / Kuksa / AGL links + setup example). Spec: [`plugins/instrument-cluster-agl-spec.md`](plugins/instrument-cluster-agl-spec.md) — VSS mapping + `Vehicle.Private.Navi.*` (including `Warning.*`), `navi.cluster.v1` JSON, host-mediated **USB** publish, AGL scope boundary |
 | **Host duties** | Assemble guidance + **merged warning** snapshot (same UniFFI / merge order as map chrome); implement Kuksa.val / loopback JSON / log sinks; user opt-in; never grant raw sockets to WASM |
 | **Guest duties** | Decide what/when to publish; call `vehicle_signal_publish`; enforce no-route clear for rest fields and clear warning leaves when chrome is hidden |
-| **Proposed caps** | `nav_guidance_read` (new), `vehicle_signal_publish` (new), `position_read`, `log` |
-| **Notes** | Spec only — not implemented. Export only (not ECU in; not alert audio). Not an AGL `afm` / Wayland packaging effort. |
+| **Caps** | `nav_guidance_read`, `vehicle_signal_publish`, `position_read`, `log` |
+| **Notes** | **Complete** (default off): guest, guidance assembly, USB AOA NDJSON, JSON-UDP, Kuksa/VSS TCP bridge + endpoint settings. Optional `scripts/cluster-kuksa-bridge.py` feeds a full databroker. Export only (not ECU in; not alert audio). Not an AGL `afm` / Wayland packaging effort. |
 
 ### 10. UI language / translation (`i18n` / `ui_translation`)
 

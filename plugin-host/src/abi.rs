@@ -30,6 +30,10 @@ pub enum Capability {
     CatVfoSet,
     CatNetworkFollow,
     SensorsRead,
+    /// Active route / maneuver / eco / warning snapshot for cluster export.
+    NavGuidanceRead,
+    /// Ask host to publish VSS path/values or a `navi.cluster.v1` JSON document.
+    VehicleSignalPublish,
 }
 
 impl Capability {
@@ -57,6 +61,8 @@ impl Capability {
             Self::CatVfoSet => "cat_vfo_set",
             Self::CatNetworkFollow => "cat_network_follow",
             Self::SensorsRead => "sensors_read",
+            Self::NavGuidanceRead => "nav_guidance_read",
+            Self::VehicleSignalPublish => "vehicle_signal_publish",
         }
     }
 
@@ -84,6 +90,8 @@ impl Capability {
             "cat_vfo_set" => Some(Self::CatVfoSet),
             "cat_network_follow" => Some(Self::CatNetworkFollow),
             "sensors_read" | "sensors" => Some(Self::SensorsRead),
+            "nav_guidance_read" => Some(Self::NavGuidanceRead),
+            "vehicle_signal_publish" => Some(Self::VehicleSignalPublish),
             _ => None,
         }
     }
@@ -113,6 +121,8 @@ impl Capability {
             Self::CatVfoSet,
             Self::CatNetworkFollow,
             Self::SensorsRead,
+            Self::NavGuidanceRead,
+            Self::VehicleSignalPublish,
         ]
     }
 }
@@ -528,6 +538,24 @@ pub trait HostApi: Send + Sync {
         let _ = kind;
         SensorReadView::default()
     }
+
+    /// UTF-8 JSON guidance snapshot for instrument-cluster export.
+    ///
+    /// Default: idle / no-route document (`route_active=false`, null maneuver /
+    /// trip / rest / warning). Embedders must assemble real HUD state.
+    fn nav_guidance_read(&self) -> String {
+        r#"{"schema":"navi.guidance.v1","route_active":false,"position":null,"speed_limit_kmh":null,"overspeed":false,"maneuver":null,"warning":null,"trip":null,"rest":null,"eco":{"enabled":false,"profile":null},"attitude":null,"fuel":{"l_per_scandinavian_mil":null,"l_per_us_mile":null},"route":{"polyline":""}}"#.into()
+    }
+
+    /// Publish a UTF-8 JSON batch (`navi.cluster.v1` document or VSS path list).
+    ///
+    /// Default: log-only sink (records via [`HostApi::log`]). Real USB / Kuksa
+    /// backends override this. Returns `Ok(())` when accepted.
+    fn vehicle_signal_publish(&mut self, payload_json: &str) -> Result<(), String> {
+        let preview: String = payload_json.chars().take(240).collect();
+        self.log(&format!("vehicle_signal_publish: {preview}"));
+        Ok(())
+    }
 }
 
 /// In-memory KV used by tests and simple host embeds.
@@ -562,6 +590,23 @@ mod tests {
             Some(Capability::SensorsRead)
         );
         assert_eq!(Capability::parse("sensors"), Some(Capability::SensorsRead));
+    }
+
+    #[test]
+    fn cluster_capabilities_parse() {
+        assert_eq!(
+            Capability::parse("nav_guidance_read"),
+            Some(Capability::NavGuidanceRead)
+        );
+        assert_eq!(
+            Capability::parse("vehicle_signal_publish"),
+            Some(Capability::VehicleSignalPublish)
+        );
+        assert_eq!(Capability::NavGuidanceRead.as_str(), "nav_guidance_read");
+        assert_eq!(
+            Capability::VehicleSignalPublish.as_str(),
+            "vehicle_signal_publish"
+        );
     }
 
     #[test]

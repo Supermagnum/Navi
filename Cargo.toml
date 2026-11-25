@@ -18,6 +18,7 @@ members = [
     "plugins/poi-lookahead",
     "plugins/imu",
     "plugins/imu/engine",
+    "plugins/instrument-cluster",
     "plugins/right-to-roam-camping",
     "plugins/right-to-roam-camping/engine",
     "plugins/CATS-plugin",

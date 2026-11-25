@@ -1,0 +1,14 @@
+{
+  "name": "instrument-cluster",
+  "version": "0.1.0",
+  "entry": "plugin_main",
+  "capabilities": [
+    "log",
+    "position_read",
+    "nav_guidance_read",
+    "vehicle_signal_publish"
+  ],
+  "fuel_limit": 8000000,
+  "timeout_ms": 800,
+  "wasm": "plugin.wasm"
+}
