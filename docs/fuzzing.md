@@ -1,8 +1,9 @@
 # Fuzzing and input hardening (issue #167)
 
-Coverage-guided fuzzing for parsers that read external data. This is **not**
-part of the automatic PR / merge CI (`.github/workflows/ci.yml`). Run it by
-hand when you want a longer look at crash surface.
+Coverage-guided fuzzing for parsers that read external data. Safe Rust/Kotlin
+rule out memory corruption, but malformed input can still panic, OOM, hang, or
+mis-parse. This document is the living map of targets, caps, fallback rules,
+and known limits.
 
 Issue: [Supermagnum/Navi#167](https://github.com/Supermagnum/Navi/issues/167).
 
@@ -18,13 +19,8 @@ tip nightly has broken `filetime` / `fs_set_times` against our dependency set.
 rustup install nightly-2026-06-15
 cargo +nightly-2026-06-15 install cargo-fuzz
 cd fuzz
-cargo +nightly-2026-06-15 fuzz run gpx_import -- -max_total_time=60
-```
-
-List targets:
-
-```bash
 cargo +nightly-2026-06-15 fuzz list
+cargo +nightly-2026-06-15 fuzz run gpx_import -- -max_total_time=60
 ```
 
 Minimize a crash:
@@ -34,73 +30,142 @@ cargo +nightly-2026-06-15 fuzz cmin <target>
 cargo +nightly-2026-06-15 fuzz tmin <target> artifacts/<target>/crash-<hash>
 ```
 
-Commit a minimized reproducer under the normal test suite (not only under
+Commit a minimized reproducer under the **normal** test suite (not only under
 `fuzz/artifacts/`).
 
-## CI (user-triggered only)
+## CI
 
 Workflow: `.github/workflows/fuzz.yml` (**Fuzzing**).
 
-- Trigger: Actions → Fuzzing → Run workflow (`workflow_dispatch` only).
-- Inputs: `duration_seconds` (default `60`), `targets` (`all` or a
-  comma-separated list).
-- Not a required status check. Failure does not fail automatic CI.
-- No `push` / `pull_request` / `schedule` triggers.
-
-## Current targets
-
-| Target | Crate / API | Seeds |
+| Trigger | Duration | Notes |
 |---|---|---|
-| `gpx_import` | `driver_break_core::import::gpx_import::parse_gpx_bytes` | `core/tests/fixtures/gpx/` |
-| `datex_situation` | `driver_break_core::datex::parse_situation_publication` | `core/tests/fixtures/datex/` |
-| `gaia_decode` | `navi_cat::benshi::codec::{gaia_decode,parse_body}` | hand-made GAIA frames |
-| `dump_caps_gate` | `navi_cat::gate_from_dump_caps` | `navi-cat/tests/fixtures/dump_caps/` |
-| `anytone_channel_csv` | `decode_cps_bytes` + `import_anytone_channel_csv` | `testdata/cat/anytone/` |
-| `repeater_current_json` | `navi_cat::mirror::parse_current` | minimal JSON |
-| `zst_decompress` | `navi_cat::mirror::decompress_zst_capped` (1 MiB harness cap) | tiny zst + garbage |
+| `pull_request` / `push` to `dev`/`main`/`fuzz` | **60 s** per target | Advisory (`continue-on-error`); uploads crash artifacts |
+| `schedule` (nightly) | **1800 s** per target; MWM/sidecar/pack targets run twice | Long campaign |
+| `workflow_dispatch` | Configurable | Manual |
 
-Seed corpora live under `fuzz/corpus/<target>/` and are committed (small).
+Normal merge CI (`.github/workflows/ci.yml`) still uses the pinned stable
+toolchain only. Fuzz failures on PR do not block merge by themselves; treat
+artifacts as must-fix.
 
-## Size caps (chosen so far)
+## Target inventory
+
+### CAT / radio (`navi-cat`)
+
+| Target | API | Notes |
+|---|---|---|
+| `gaia_decode` | `gaia_decode` + `parse_body` | Split/concat frames |
+| `benshi_rf_ch` | `ChannelRecord::from_reply` + encode round-trip | 25-byte RF channel |
+| `benshi_settings_patch` | `SettingsBlock` + `write_payload_channel_a_only` | Asserts VFO-B fingerprint preserved when re-parsed |
+| `benshi_dev_info` | `DevInfo::from_reply` | |
+| `benshi_ht_status` | `HtStatus::from_reply` | |
+| `benshi_freq_mode_notif` | `FreqModeStatusNotif::from_event_body` | Notification type 14 |
+| `dump_caps_gate` | `gate_from_dump_caps` | Fail-closed gating |
+| `rigctld_reply` | `parse_rigctld_reply` / `parse_rigctld_simple_value` | Extended `RPRT n` |
+
+### Repeater data
+
+| Target | API | Notes |
+|---|---|---|
+| `anytone_channel_csv` | `decode_cps_bytes` + `import_anytone_channel_csv` | UTF-8 / Windows-1252 path |
+| `repeater_csv_bytes` | `repeaterbook::parse_csv_bytes` | Ragged rows / huge fields |
+| `repeater_current_json` | `mirror::parse_current` | |
+| `repeater_checksums` | `checksum_for_file` | `checksums.sha256` lines |
+| `zst_decompress` | `decompress_zst_capped` | Decompression-bomb guard |
+| `parse_mhz` | `normalize_mhz_str` / `parse_mhz` | `-0,6 Mhz`, `88.5hz` |
+| `maidenhead` | `maidenhead_to_latlon` | 2–8 char locators |
+| `osm_repeater_relation_xml` | `import_osm_relation_xml` | Tag soup |
+| `repeater_kml_point` | `parse_kml_point` | Rejects `0,0` / NaN |
+
+### Maps — in-tree (Navi sidecar / catalog / packs)
+
+**Important:** CoMaps `.mwm` container / feature / routing / search binary
+readers live in **CoMaps C++** (`liborganicmaps`), not in Rust. In-tree
+`core/src/mwm/` covers catalog, download, fingerprint, and the **NVSC sidecar**.
+Corrupt `.mwm` files fail inside CoMaps; Navi does **not** implement a
+per-corrupt-MWM “fall back to PBF for the same region” enum (classic `.rkyv` /
+PBF is a separate kill-switch / pack path).
+
+| Target | API | Notes |
+|---|---|---|
+| `mwm_sidecar` | `SidecarReader::open_bytes` | Caps: 64 MiB decompress, 256 sections |
+| `mwm_catalog_json` | `parse_catalog_json` | `navi-mwm-catalog/v2` |
+| `mwm_countries_txt` | `parse_countries_txt` | Signature fail-closed separately |
+| `navi_manifest_json` | `NaviManifest` serde | Pack manifest |
+| `flat_graph_pack` | `load_graph_pack` | Tempfile + mmap; wrong magic / truncated |
+| `pbf_extract_gate` | `pbf_is_real_extract` | Stub / BlobHeader gating |
+
+### Shared OSM tag parsers
+
+| Target | API |
+|---|---|
+| `osm_maxspeed` | `parse_maxspeed_kmh`, `parse_metric`, `is_tunnel_tag`, `classify_surface_tags` |
+| `osm_conditional_maxspeed` | `conditional_maxspeed_kmh_at` |
+
+### Other parsers
+
+| Target | API |
+|---|---|
+| `gpx_import` | `parse_gpx_bytes` |
+| `datex_situation` | `parse_situation_publication` |
+| `plugin_manifest` | `PluginManifest::from_json_str` |
+
+### Plugin host (misbehaving guest)
+
+Not a libFuzzer binary: `plugin-host/tests/isolation.rs` stages
+`busy-loop`, `trap-guest`, and `memory-bomb` WASM fixtures. Host must stay up
+(`FuelExhausted` / `Timeout` / `MemoryExceeded` / classified trap). Defaults:
+5e6 fuel, 250 ms epoch, 16 MiB memory.
+
+### Kotlin
+
+| Check | Where |
+|---|---|
+| Malformed JSON / random blobs | `ExternalJsonHardeningTest` (JVM unit test) |
+| CSV parse | Covered in Rust (`anytone_channel_csv` / `repeater_csv_bytes`); SAF drop path is filesystem |
+| UniFFI panic surface | Generated `InternalException("Rust panic")`; app uses `runCatching` widely — instrumented panic→exception check is build-config dependent |
+
+## Size caps
 
 | Input | Cap | Where |
 |---|---|---|
 | GPX import (app) | 40 MiB | Kotlin `GpxImport.MAX_BYTES` |
 | GPX fuzz harness | 4 MiB | `fuzz_targets/gpx_import.rs` |
 | DATEX XML harness | 2 MiB | `fuzz_targets/datex_situation.rs` |
-| GAIA buffer harness | 64 KiB | `fuzz_targets/gaia_decode.rs` |
-| Repeater zst decompress | **32 MiB** | `navi_cat::mirror::ZST_DECOMPRESSED_MAX` |
-| ZST fuzz harness | 1 MiB out | `fuzz_targets/zst_decompress.rs` |
+| GAIA / Benshi harness | 64 KiB | harnesses |
+| Repeater zst (product) | **32 MiB** | `ZST_DECOMPRESSED_MAX` |
+| ZST fuzz harness out | 1 MiB | `zst_decompress` |
+| Sidecar decompress | **64 MiB** | `SIDECAR_DECOMPRESSED_MAX` |
+| Sidecar section_count | **256** | `SIDECAR_MAX_SECTIONS` |
+| rigctld reply | **1 MiB** | `RIGCTLD_REPLY_MAX_BYTES` |
+| Flat graph pack fuzz file | 4 MiB | harness |
 
-## Hardening done in this slice
+## Hardening checklist
 
-- `decompress_zst` / `decompress_zst_capped`: refuses to expand past
-  `ZST_DECOMPRESSED_MAX` (decompression-bomb guard for navi-server repeater
-  payloads).
-- Fuzz harnesses bail early on oversized inputs so libFuzzer cannot OOM the
-  runner before the parser runs.
+| Item | Status |
+|---|---|
+| Typed errors on parser paths (no silent `unwrap` in new APIs) | Done for extracted APIs; ongoing for legacy paths |
+| Checked length/offset arithmetic on sidecar directory | Done (`Truncated` / `TooManySections`) |
+| Decompress caps (repeater zst + sidecar zstd) | Done |
+| Max sizes for frames / CSV / JSON / packs (harness + product where noted) | Partial — see table |
+| Recursion/depth limits for OSM XML / JSON | Open for custom XML lite |
+| MWM format version up front | Sidecar `FORMAT_VERSION`; CoMaps `.mwm` version inside native |
+| mmap bounds | Pack load validates preamble / lengths; CoMaps mmap is native |
+| Fallback decision once per region | Classic pack vs MWM is flag/catalog based — documented; no half-MWM/half-PBF merge in Rust |
+| FFI panic → Kotlin exception | UniFFI CALL_PANIC path; release-android may abort — known limit |
+| wasmtime fuel / epoch / memory | Enforced; isolation tests green |
+| Kotlin catch around Rust / JSON | Pattern + `ExternalJsonHardeningTest` |
+| Review unsafe / C deps (hamlib, sqlite, zstd) | Ongoing; zstd paths capped |
 
-## Local 1-hour campaign (2026-11-25)
+## Local campaigns
 
-All seven targets ran in parallel for ~3600 s on a 24-core / 31 GiB host
-(`nightly-2026-06-15`, `--jobs 2`). Result: **0** oom / timeout / crash on
-every target; batch exit 0. Full table:
-[`docs/test-results/fuzzing-issue-167.md`](test-results/fuzzing-issue-167.md).
+Prior 1-hour campaign (seven original targets, 2026-11-25):
+[`docs/test-results/fuzzing-issue-167.md`](test-results/fuzzing-issue-167.md) —
+**PASS**, 0 crash/oom/timeout.
 
-## Still open (from #167)
-
-Not yet covered here; track on the issue:
-
-- MWM container / feature / routing / search-section readers and MWM→PBF
-  fallback target
-- Structure-aware MWM fuzzer
-- PBF blob / string-table / dense-node paths
-- Pack/manifest readers, OSM tag parsers shared by both paths
-- Plugin-host HostApi decoding + misbehaving WASM guest
-- Kotlin / Jazzer (CSV SAF import, settings JSON, UniFFI exception surface)
-- Full hardening checklist (varint caps, trie depth limits, mmap bounds, FFI
-  panic strategy tests)
-- Multi-hour local campaigns and crash→regression promotion workflow
+Expanded target set (this branch): run at least **1 hour** per target locally
+before calling the slice done; weight **`mwm_sidecar`**, **`flat_graph_pack`**,
+**`mwm_catalog_json`**, **`mwm_countries_txt`** to **≥ 4 hours** each. Record
+results under `docs/test-results/`.
 
 ## Known limits
 
@@ -109,6 +174,8 @@ Not yet covered here; track on the issue:
   `fuzz/rust-toolchain.toml` pins `nightly-2026-06-15`.
 - After a local run, libFuzzer grows `fuzz/corpus/<target>/`. Do **not**
   commit the whole grown corpus without `cargo fuzz cmin`; keep seeds small.
-- `anytone_channel_csv` opens an in-memory SQLite DB per input; slower than
-  pure parsers.
-- No Kotlin / Jazzer job yet.
+- `anytone_channel_csv` / OSM XML importers open SQLite; slower than pure
+  parsers.
+- CoMaps `.mwm` binary format is **out of tree** for cargo-fuzz; structure-aware
+  MWM and true MWM→PBF fallback targets require CoMaps harnesses or a Rust port.
+- No full Jazzer Gradle job yet (Kotlin uses property/unit hardening tests).

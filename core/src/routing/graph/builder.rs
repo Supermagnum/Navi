@@ -3171,7 +3171,7 @@ pub(crate) fn is_truthy_tag(raw: &str) -> bool {
 
 /// OSM `tunnel=*` — any non-empty value other than `no` (covers `yes`,
 /// `building_passage`, `culvert`, …).
-pub(crate) fn is_tunnel_tag(raw: &str) -> bool {
+pub fn is_tunnel_tag(raw: &str) -> bool {
     let t = raw.trim();
     !t.is_empty() && !t.eq_ignore_ascii_case("no")
 }
@@ -3277,7 +3277,9 @@ fn directed_access(edge: &Edge, profile: RoutingProfile) -> (bool, bool) {
     }
 }
 
-fn parse_metric(raw: &str) -> Option<f64> {
+/// Parse OSM dimension/weight tags (`maxweight`, `maxheight`, …) into SI units.
+/// Public for fuzz harnesses and shared tag decoding.
+pub fn parse_metric(raw: &str) -> Option<f64> {
     let s = raw.trim().to_lowercase();
     if s.is_empty()
         || matches!(
