@@ -1,0 +1,1 @@
+Map day and night now follow sunrise and sunset at your location by default, so the map stays light in daylight even when the phone UI is dark. You can still switch to matching the system theme in map settings.

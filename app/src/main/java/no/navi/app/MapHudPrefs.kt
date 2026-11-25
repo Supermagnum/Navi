@@ -355,15 +355,18 @@ object MapHudPrefs {
             .getString("drape_graphics_api", null)
             ?.takeIf { it == "Vulkan" || it == "OpenGLES3" }
 
-    /** Map day/night source: `system` (default) or `auto_sun` (sunrise / sunset at the current position). */
+    /**
+     * Map day/night source. Default is sunrise/sunset at the current position so daylight
+     * keeps the light map even when the phone UI is in dark mode; `system` is opt-in.
+     */
     fun loadDrapeDayNight(context: Context): DrapeDayNight =
         when (
             context
                 .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .getString("drape_day_night", "system")
+                .getString("drape_day_night", "auto_sun")
         ) {
-            "auto_sun" -> DrapeDayNight.AUTO_SUN
-            else -> DrapeDayNight.SYSTEM
+            "system" -> DrapeDayNight.SYSTEM
+            else -> DrapeDayNight.AUTO_SUN
         }
 
     fun saveDrapeDayNight(

@@ -427,15 +427,18 @@ internal fun ComapsDrapeMap(
                 val st = stateRef.get()
                 val night =
                     NaviMapTestHooks.drapeNightOverride
-                        ?: when (nightRef.get()) {
-                            DrapeDayNight.SYSTEM -> systemNightRef.get()
-                            DrapeDayNight.AUTO_SUN ->
-                                if (st.gpsLat != 0.0 || st.gpsLon != 0.0) {
-                                    !backend.isDayAt(st.gpsLat, st.gpsLon, System.currentTimeMillis() / 1000L)
-                                } else {
-                                    systemNightRef.get()
-                                }
-                        }
+                        ?: resolveDrapeNight(
+                            mode = nightRef.get(),
+                            systemNight = systemNightRef.get(),
+                            gpsLat = st.gpsLat,
+                            gpsLon = st.gpsLon,
+                            utcSeconds = System.currentTimeMillis() / 1000L,
+                            isDayAt = backend::isDayAt,
+                            hourOfDay =
+                                java.util.Calendar
+                                    .getInstance()
+                                    .get(java.util.Calendar.HOUR_OF_DAY),
+                        )
                 if (night != lastNight || backend.isNight() != night) {
                     backend.setNight(night)
                     lastNight = night

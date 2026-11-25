@@ -6,8 +6,40 @@ import android.view.View
 import androidx.lifecycle.LifecycleOwner
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** Map day/night source: the system setting, or sunrise / sunset at the current position. */
+/**
+ * Map day/night source.
+ *
+ * Default is [AUTO_SUN]: daylight at the GPS position (or local clock when there is no fix)
+ * uses the light map style. [SYSTEM] mirrors the Android UI night setting and is opt-in.
+ */
 enum class DrapeDayNight { SYSTEM, AUTO_SUN }
+
+/**
+ * Whether the drape should use the dark map style for [mode].
+ *
+ * [AUTO_SUN] uses CoMaps sunrise/sunset at [gpsLat]/[gpsLon] when a fix exists; otherwise
+ * a coarse local-hour day window (07–17 inclusive), matching Organic Maps' no-location fallback —
+ * not the system UI theme, so a phone left in dark mode still gets a day map in daylight.
+ */
+internal fun resolveDrapeNight(
+    mode: DrapeDayNight,
+    systemNight: Boolean,
+    gpsLat: Double,
+    gpsLon: Double,
+    utcSeconds: Long,
+    isDayAt: (lat: Double, lon: Double, utcSeconds: Long) -> Boolean,
+    hourOfDay: Int,
+): Boolean =
+    when (mode) {
+        DrapeDayNight.SYSTEM -> systemNight
+        DrapeDayNight.AUTO_SUN ->
+            if (gpsLat != 0.0 || gpsLon != 0.0) {
+                !isDayAt(gpsLat, gpsLon, utcSeconds)
+            } else {
+                // CoMaps ThemeSwitcher: day when hour is strictly between 6 and 18.
+                !(hourOfDay > 6 && hourOfDay < 18)
+            }
+    }
 
 /**
  * Phase 6b: with the MWM client flag ON and the pinned CoMaps Java SDK (`:comaps-sdk`)
