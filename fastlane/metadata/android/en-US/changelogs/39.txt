@@ -1,0 +1,1 @@
+Fixes a startup crash from a mismatched native library after recent map updates. Tools again offers Download terrain DEM (Mapterhorn) for offline hillshade and elevation contours.

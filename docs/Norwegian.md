@@ -26,8 +26,8 @@ oppdateringer via F-Droid-klienten.
 **Installer den signerte release-APK-en (sideload / testere).** Last ned og
 sideloade [`compiled/navi-release.apk`](../compiled/navi-release.apk) — en
 **riktig signert, installerbar release-APK** (upload-nøkkel; ikke debug-bygget).
-Gjeldende `dev`-sideload: **0.5.3-beta** (`versionName` 0.5.3-beta,
-`versionCode` 38; matcher `app/build.gradle.kts`). F-Droid-klientens foreslåtte
+Gjeldende `dev`-sideload: **0.5.4-beta** (`versionName` 0.5.4-beta,
+`versionCode` 39; matcher `app/build.gradle.kts`). F-Droid-klientens foreslåtte
 versjon kan ligge bak — se [F-Droid](#f-droid). Last ned fra
 [`dev`-grenen](https://github.com/Supermagnum/Navi/tree/dev/compiled)
 (siste testerbygg).
@@ -140,8 +140,8 @@ Navi ligger på hovedindeksen til F-Droid som pakke **`no.navi.app`**.
 Bruk F-Droid-klienten når du kan. **Foreslått** versjon på pakkesiden kan
 ligge bak GitHub / `dev`-sideload: ved siste sjekk var indeksen og
 fdroiddata `master` fortsatt **0.3.30-beta** (`versionCode` **33**), mens
-`app/build.gradle.kts` på `dev`/`main` er **0.5.3-beta** (`versionCode`
-**38**). Committet [`compiled/navi-release.apk`](../compiled/navi-release.apk)
+`app/build.gradle.kts` på `dev`/`main` er **0.5.4-beta** (`versionCode`
+**39**). Committet [`compiled/navi-release.apk`](../compiled/navi-release.apk)
 er oppdatert til å matche. Sideload-steg:
 [Installer en forhåndsbygd APK](#installer-en-forhåndsbygd-apk).
 
@@ -708,7 +708,7 @@ eller bare debug).
 
 | Fil | Rolle |
 |---|---|
-| [`compiled/navi-release.apk`](../compiled/navi-release.apk) | **Installer denne** — signert release-APK (`versionName` **0.5.3-beta** / `versionCode` **38**; arm64-v8a + x86_64) |
+| [`compiled/navi-release.apk`](../compiled/navi-release.apk) | **Installer denne** — signert release-APK (`versionName` **0.5.4-beta** / `versionCode` **39**; arm64-v8a + x86_64) |
 | [`compiled/SHA256SUMS`](../compiled/SHA256SUMS) | SHA-256-sjekksum for integritet |
 | [`compiled/SHA256SUMS.asc`](../compiled/SHA256SUMS.asc) | Løsrevet GPG-proveniens (ikke Android APK-signering) |
 
