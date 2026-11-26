@@ -273,6 +273,9 @@ internal fun ComapsDrapeMap(
 
     // Bring-up: wait for the headless session (maps installed), then init Platform + Framework
     // once. Keeps polling so maps installed later in this process start the drape live.
+    // When maps are already on disk but the session is not open, periodically retry ensureOpen
+    // so a one-shot false negative (e.g. incomplete AssetManager.list after force-stop) cannot
+    // leave the UI stuck on "Starter kartmotoren ..." forever.
     LaunchedEffect(Unit) {
         while (isActive && !ready) {
             val mapsOnDisk =
@@ -284,6 +287,13 @@ internal fun ComapsDrapeMap(
                 !ComapsDrape.sdkPackaged() ->
                     note = if (mapsOnDisk) "nodrape" else "nomaps"
                 !ComapsSessionBootstrap.isOpen() && !mapsOnDisk -> note = "nomaps"
+                !ComapsSessionBootstrap.isOpen() && mapsOnDisk -> {
+                    note = "starting"
+                    withContext(Dispatchers.IO) {
+                        runCatching { ComapsSessionBootstrap.ensureOpen(context, force = false) }
+                            .onFailure { Log.w(TAG, "session ensureOpen retry failed", it) }
+                    }
+                }
                 !ComapsDrape.eligible() ->
                     note = if (mapsOnDisk) "starting" else "nomaps"
                 else ->
