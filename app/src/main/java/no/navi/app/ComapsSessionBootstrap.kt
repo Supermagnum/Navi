@@ -502,24 +502,49 @@ object ComapsSessionBootstrap {
                 .orEmpty()
                 .filter { it != "MANIFEST.txt" }
         // Drape build: the SDK's root assets are the single copy; SDK-less builds stage comaps-data.
-        val rootNames =
-            ctx.assets
-                .list("")
-                .orEmpty()
-                .toSet()
+        // AssetManager.list("") is not a reliable full inventory (after force-stop it can return
+        // e.g. root=14 of 15). Never gate solely on that list — probe each required entry.
         val fromRoot = legacy.isEmpty()
-        val names = if (fromRoot) ROOT_ASSETS.filter { it in rootNames } else legacy
-        if (names.isEmpty() || (fromRoot && names.size < ROOT_ASSETS.size)) {
-            Log.w(TAG, "skip: CoMaps resources missing in the APK (comaps-data=${legacy.size}, root=${names.size})")
+        val names = if (fromRoot) ROOT_ASSETS else legacy
+        if (names.isEmpty()) {
+            Log.w(TAG, "skip: CoMaps resources missing in the APK (comaps-data empty)")
             return false
+        }
+        if (fromRoot) {
+            val listed =
+                ctx.assets
+                    .list("")
+                    .orEmpty()
+                    .toSet()
+            val listedCount = ROOT_ASSETS.count { it in listed }
+            if (listedCount < ROOT_ASSETS.size) {
+                Log.i(
+                    TAG,
+                    "AssetManager.list(\"\") incomplete root=$listedCount of ${ROOT_ASSETS.size}; " +
+                        "probing each required asset",
+                )
+            }
         }
         val assetBase = if (fromRoot) "" else "$ASSET_DIR/"
         val current = runCatching { stampFile.readText() }.getOrNull() == stamp
-        val missing =
-            names.any { n ->
-                File(root, n).let { if (it.isDirectory) it.list().isNullOrEmpty() else !it.isFile || it.length() == 0L }
+
+        fun stagedOk(n: String): Boolean =
+            File(root, n).let { dest ->
+                if (dest.isDirectory) !dest.list().isNullOrEmpty() else dest.isFile && dest.length() > 0L
             }
-        if (current && !missing) return true
+        val missing = names.filterNot(::stagedOk)
+        if (current && missing.isEmpty()) return true
+        // Stamp match: keep already-staged files; only require APK assets for what is still missing.
+        val needFromApk = if (current) missing else names
+        val absent = needFromApk.filter { name -> !assetAvailable(ctx, "$assetBase$name") }
+        if (absent.isNotEmpty()) {
+            Log.w(
+                TAG,
+                "skip: CoMaps resources missing in the APK (comaps-data=${legacy.size}, " +
+                    "need=${needFromApk.size}, absent=${absent.joinToString()})",
+            )
+            return false
+        }
         return runCatching {
             for (name in names) copyAsset(ctx, "$assetBase$name", File(root, name), skipExisting = current)
             stampFile.writeText(stamp)
@@ -528,6 +553,22 @@ object ComapsSessionBootstrap {
             Log.w(TAG, "staging $ASSET_DIR into ${root.absolutePath} failed", it)
             false
         }
+    }
+
+    /**
+     * True when [assetPath] opens as a file or lists as a non-empty directory.
+     * Prefer this over [android.content.res.AssetManager.list] of the APK root.
+     */
+    private fun assetAvailable(
+        ctx: Context,
+        assetPath: String,
+    ): Boolean {
+        val children = runCatching { ctx.assets.list(assetPath) }.getOrNull()
+        if (!children.isNullOrEmpty()) return true
+        return runCatching {
+            ctx.assets.open(assetPath).use { }
+            true
+        }.getOrDefault(false)
     }
 
     /** Copies an asset file or (recursively) directory; directories such as `countries-strings`. */
