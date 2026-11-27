@@ -7,6 +7,47 @@ use std::time::Duration;
 use crate::gating::{gate_from_dump_caps, GateDecision};
 use crate::types::{RigBackend, RigError, ShiftDir, VfoState};
 
+/// Hard cap on a single accumulated rigctld reply (body + `RPRT` line).
+pub const RIGCTLD_REPLY_MAX_BYTES: usize = 1024 * 1024;
+
+/// Parse an extended-protocol rigctld reply buffer that ends with `RPRT n`.
+///
+/// Pure function for fuzzing and unit tests; does not touch the network.
+pub fn parse_rigctld_reply(raw: &[u8]) -> Result<String, RigError> {
+    if raw.len() > RIGCTLD_REPLY_MAX_BYTES {
+        return Err(RigError::Protocol("rigctld reply too large".into()));
+    }
+    let text = String::from_utf8_lossy(raw);
+    let mut body = String::new();
+    let mut rprt = None;
+    for line in text.lines() {
+        if let Some(rest) = line.trim().strip_prefix("RPRT ") {
+            rprt = Some(rest.parse::<i32>().unwrap_or(-999));
+            break;
+        }
+        body.push_str(line);
+        body.push('\n');
+    }
+    match rprt {
+        Some(0) => Ok(body),
+        Some(n) => Err(RigError::Rprt(n)),
+        None => Err(RigError::Protocol("missing RPRT".into())),
+    }
+}
+
+/// Extract the primary value from an extended `get_*` body (colon-separated).
+pub fn parse_rigctld_simple_value(body: &str) -> String {
+    for line in body.lines() {
+        if let Some((_, v)) = line.split_once(':') {
+            let v = v.trim();
+            if !v.is_empty() && !line.trim_start().starts_with("get_") {
+                return v.to_string();
+            }
+        }
+    }
+    body.trim().to_string()
+}
+
 pub struct TcpRigBackend {
     stream: Option<TcpStream>,
     #[allow(dead_code)]
@@ -102,8 +143,7 @@ impl TcpRigBackend {
                 .try_clone()
                 .map_err(|e| RigError::Io(e.to_string()))?,
         );
-        let mut body = String::new();
-        let mut rprt = None;
+        let mut raw = Vec::new();
         loop {
             let mut l = String::new();
             let n = reader
@@ -112,17 +152,16 @@ impl TcpRigBackend {
             if n == 0 {
                 break;
             }
-            if let Some(rest) = l.trim().strip_prefix("RPRT ") {
-                rprt = Some(rest.parse::<i32>().unwrap_or(-999));
+            raw.extend_from_slice(l.as_bytes());
+            if l.trim().starts_with("RPRT ") {
                 break;
             }
-            body.push_str(&l);
+            // Bound reply accumulation so a chatty peer cannot grow forever.
+            if raw.len() > RIGCTLD_REPLY_MAX_BYTES {
+                return Err(RigError::Protocol("rigctld reply too large".into()));
+            }
         }
-        match rprt {
-            Some(0) => Ok(body),
-            Some(n) => Err(RigError::Rprt(n)),
-            None => Err(RigError::Protocol("missing RPRT".into())),
-        }
+        parse_rigctld_reply(&raw)
     }
 
     fn refresh_gate(&mut self) -> Result<(), RigError> {
@@ -156,15 +195,35 @@ impl TcpRigBackend {
     fn read_simple(&mut self, cmd: &str) -> Result<String, RigError> {
         let body = self.cmd_raw(cmd)?;
         // Extended replies look like: get_freq:\nFrequency: 145725000\n
-        for line in body.lines() {
-            if let Some((_, v)) = line.split_once(':') {
-                let v = v.trim();
-                if !v.is_empty() && !line.trim_start().starts_with("get_") {
-                    return Ok(v.to_string());
-                }
-            }
-        }
-        Ok(body.trim().to_string())
+        Ok(parse_rigctld_simple_value(&body))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_rprt_ok_body() {
+        let raw = b"get_freq:\nFrequency: 145500000\nRPRT 0\n";
+        let body = parse_rigctld_reply(raw).unwrap();
+        assert_eq!(parse_rigctld_simple_value(&body), "145500000");
+    }
+
+    #[test]
+    fn parse_rprt_error() {
+        assert!(matches!(
+            parse_rigctld_reply(b"RPRT -1\n"),
+            Err(RigError::Rprt(-1))
+        ));
+    }
+
+    #[test]
+    fn parse_missing_rprt() {
+        assert!(matches!(
+            parse_rigctld_reply(b"Frequency: 1\n"),
+            Err(RigError::Protocol(_))
+        ));
     }
 }
 

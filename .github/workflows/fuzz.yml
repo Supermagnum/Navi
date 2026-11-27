@@ -1,8 +1,6 @@
-# Fuzzing / input-hardening (issue #167) — dispatch only; not a required merge check.
+# Fuzzing / input-hardening (issue #167).
 #
-# Trigger: Actions → Fuzzing → Run workflow.
-# Does not run on push/PR. Failure here does not fail .github/workflows/ci.yml.
-#
+# Manual only (`workflow_dispatch`). Does not run on push, PR, or schedule.
 # Uses nightly only for cargo-fuzz / libFuzzer. Normal builds stay on the pinned
 # 1.98 toolchain in rust-toolchain.toml.
 
@@ -23,27 +21,36 @@ on:
         type: string
 
 concurrency:
-  group: fuzz-${{ github.ref }}
+  group: fuzz-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
+  ALL_TARGETS: >-
+    gpx_import datex_situation gaia_decode dump_caps_gate anytone_channel_csv
+    repeater_current_json zst_decompress benshi_rf_ch benshi_settings_patch
+    benshi_dev_info benshi_ht_status benshi_freq_mode_notif rigctld_reply
+    repeater_checksums parse_mhz maidenhead osm_repeater_relation_xml
+    repeater_csv_bytes repeater_kml_point mwm_sidecar mwm_catalog_json
+    mwm_countries_txt navi_manifest_json pbf_extract_gate osm_maxspeed
+    osm_conditional_maxspeed plugin_manifest flat_graph_pack
 
 jobs:
   fuzz:
-    name: cargo-fuzz (${{ github.event.inputs.duration_seconds }}s)
+    name: cargo-fuzz
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 720
     steps:
       - uses: actions/checkout@v7
 
-      # Pin a nightly that builds the workspace (rust-version 1.98) and still
-      # compiles filetime 0.2.x. Floating tip nightly has broken fs_set_times.
       - name: Install pinned nightly + llvm-tools (fuzz only)
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2026-06-15
           components: llvm-tools-preview
+          # Explicit gnu host: taiki-e cargo-fuzz is often a musl binary, and
+          # cargo-fuzz then defaults --target to musl, which breaks ASan.
+          targets: x86_64-unknown-linux-gnu
 
       - name: System deps
         run: |
@@ -62,18 +69,20 @@ jobs:
         with:
           tool: cargo-fuzz
 
-      - name: Resolve target list
+      - name: Resolve target list and duration
         id: list
         run: |
           set -euo pipefail
-          ALL="gpx_import datex_situation gaia_decode dump_caps_gate anytone_channel_csv repeater_current_json zst_decompress"
+          ALL="${{ env.ALL_TARGETS }}"
+          DUR="${{ github.event.inputs.duration_seconds }}"
           REQ="${{ github.event.inputs.targets }}"
+          if [ -z "${DUR:-}" ]; then DUR=60; fi
           if [ "$REQ" = "all" ] || [ -z "$REQ" ]; then
             echo "targets=$ALL" >> "$GITHUB_OUTPUT"
           else
             echo "targets=$(echo "$REQ" | tr ',' ' ')" >> "$GITHUB_OUTPUT"
           fi
-          echo "duration=${{ github.event.inputs.duration_seconds }}" >> "$GITHUB_OUTPUT"
+          echo "duration=$DUR" >> "$GITHUB_OUTPUT"
 
       - name: Run fuzz targets
         working-directory: fuzz
@@ -82,9 +91,13 @@ jobs:
           DUR="${{ steps.list.outputs.duration }}"
           mkdir -p artifacts
           fail=0
+          # Force gnu: taiki-e's cargo-fuzz binary is musl-linked, so its
+          # default --target becomes x86_64-unknown-linux-musl and ASan fails.
+          TRIPLE="x86_64-unknown-linux-gnu"
           for t in ${{ steps.list.outputs.targets }}; do
             echo "::group::fuzz $t (${DUR}s)"
-            if ! cargo +nightly-2026-06-15 fuzz run "$t" -- -max_total_time="$DUR" -timeout=10; then
+            if ! cargo +nightly-2026-06-15 fuzz run "$t" --target "$TRIPLE" -- \
+                -max_total_time="$DUR" -timeout=10 -rss_limit_mb=2048; then
               echo "::error::fuzz target $t failed"
               fail=1
             fi
@@ -96,7 +109,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: fuzz-artifacts
+          name: fuzz-artifacts-${{ github.run_id }}
           path: |
             fuzz/artifacts/
           if-no-files-found: ignore
