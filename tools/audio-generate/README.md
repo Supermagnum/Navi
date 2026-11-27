@@ -134,16 +134,47 @@ Per-language YAML: [`phrases/<lang>.yaml`](phrases/).
 | Other langs | `--draft-phrases` → `reviewed: false` from OSRM/Valhalla cache |
 
 Generation refuses unreviewed YAML unless `--allow-unreviewed` (writes under
-`unreviewed/`). Languages with **no** OSRM/Valhalla template refuse drafting.
+`build/sounds/unreviewed/<language>/`). Per-clip partial review may still use
+`<gender>/unreviewed/` under a reviewed pack. Languages with **no** OSRM/Valhalla
+template refuse drafting.
+
+**Review gate:** `reviewed: true` in phrase YAML is only valid after
+`--apply-review`, which writes `phrases/review_records/<lang>.json` (sheet
+SHA-256 + timestamp). Agents must not set `reviewed: true` manually. English
+uses a committed `hand_authored` bootstrap record.
 
 Native review workflow:
 
 ```bash
 navi-voicegen --draft-phrases --lang nb
-navi-voicegen --review-sheet --lang nb   # → build/review/norwegian/review-sheet.tsv
-# edit TSV (set reviewed=yes, fix text)
+navi-voicegen --review-sheet --lang nb   # → build/review/norwegian/review.{md,csv}
+# edit TSV/CSV (set reviewed=yes, fix text)
 navi-voicegen --apply-review build/review/norwegian/review-sheet.tsv
 ```
+
+### Pack modes (nb and others)
+
+`--mode auto|fragment|whole_phrase|hybrid` selects the **generation plan** bias
+(voice-guidance.md §6). Manifest `pack_style` reflects the **current clip
+inventory** (fragment keys in YAML until native sign-off). Compare modes without
+generating hybrid/whole packs yet:
+
+```bash
+navi-voicegen --pack-mode-report --lang nb
+navi-voicegen --dry-run --lang nb --mode hybrid
+```
+
+### Assembled sentence audition (fragment concat A/B)
+
+After an unreviewed fragment pack exists under `build/sounds/unreviewed/`:
+
+```bash
+navi-voicegen --assembled-audition --lang nb --gender both
+# → build/audition/norwegian/assembled/<gender>/ and whole/<gender>/ plus INDEX.md
+```
+
+Inter-clip gap defaults to **120 ms** (silent insert; no crossfade) — see
+`assembled-meta.json`.
 
 **Gendered languages:** phrase text uses masculine / gender-neutral imperatives
 regardless of `male`/`female` folder (plugins.md / voice-guidance §6).
@@ -177,6 +208,8 @@ ffmpeg two-pass style chain on each clip:
 --draft-phrases
 --review-sheet
 --apply-review FILE
+--assembled-audition
+--pack-mode-report
 --allow-unreviewed
 --voice-ref-male PATH
 --voice-ref-female PATH

@@ -8,6 +8,8 @@ from pathlib import Path
 
 from navi_voicegen.deps import SystemDepsError, ensure_system_deps
 from navi_voicegen.draft_phrases import draft_language
+from navi_voicegen.assembled_audition import run_assembled_audition
+from navi_voicegen.pack_plan import format_mode_report
 from navi_voicegen.review_sheet import apply_review_sheet, write_review_sheet
 from navi_voicegen.generate import GenerateOptions, generate_packs
 from navi_voicegen.languages import iter_tier_matrix, resolve_language_codes
@@ -64,6 +66,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--review-sheet",
         action="store_true",
         help="Write build/review/<language>/review-sheet.tsv from phrases/<lang>.yaml",
+    )
+    p.add_argument(
+        "--assembled-audition",
+        action="store_true",
+        help="Concat fragment clips + synthesize whole phrases (build/audition/<folder>/assembled|whole)",
+    )
+    p.add_argument(
+        "--pack-mode-report",
+        action="store_true",
+        help="Print deterministic dry-run clip counts/sizes for fragment|hybrid|whole_phrase",
     )
     p.add_argument(
         "--apply-review",
@@ -181,6 +193,31 @@ def main(argv: list[str] | None = None) -> int:
     if args.apply_review is not None:
         path = apply_review_sheet(args.apply_review)
         print(f"Applied review: {path}")
+        return 0
+
+    if args.pack_mode_report:
+        for code in lang_codes:
+            print(format_mode_report(code))
+        return 0
+
+    if args.assembled_audition:
+        try:
+            ensure_system_deps(for_generate=True)
+        except SystemDepsError as exc:
+            print("\n".join(exc.messages), file=sys.stderr)
+            return 2
+        for code in lang_codes:
+            result = run_assembled_audition(
+                code,
+                genders=tuple(_genders(args.gender)),
+                device=args.device,
+                fmt=args.format,
+                seed=args.seed,
+                dry_run=args.dry_run,
+            )
+            print(f"Assembled audition index: {result.index_path} (gap_ms={result.gap_ms})")
+        if args.dry_run:
+            return 0
         return 0
 
     if args.review_sheet:

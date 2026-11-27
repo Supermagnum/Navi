@@ -15,6 +15,19 @@ def test_unreviewed_subfolder():
     assert p == Path("/tmp/out/norwegian/female/unreviewed/left.mp3")
 
 
+def test_unreviewed_pack_quarantine():
+    root = Path("/tmp/out")
+    p = clip_path(
+        root,
+        "norwegian",
+        "male",
+        "left",
+        "opus",
+        unreviewed_pack=True,
+    )
+    assert p == Path("/tmp/out/unreviewed/norwegian/male/left.opus")
+
+
 def test_default_out_under_repo_build():
     out = default_out_dir()
     assert out.name == "sounds"

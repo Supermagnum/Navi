@@ -20,22 +20,35 @@ def default_out_dir() -> Path:
     return repo_root() / "build" / "sounds"
 
 
+def language_pack_dir(
+    out_root: Path,
+    language_folder: str,
+    *,
+    unreviewed_pack: bool = False,
+) -> Path:
+    """Published packs live under out_root/<folder>/; quarantined under out_root/unreviewed/<folder>/."""
+    if unreviewed_pack:
+        return out_root / "unreviewed" / language_folder
+    return out_root / language_folder
+
+
 def clip_path(
     out_root: Path,
     language_folder: str,
-  gender: str,
+    gender: str,
     concept_key: str,
     ext: str,
     *,
     unreviewed: bool = False,
+    unreviewed_pack: bool = False,
     persona: bool = False,
 ) -> Path:
     if gender not in VALID_GENDERS:
         raise ValueError(f"Invalid gender folder: {gender!r}")
     if persona:
         gender = "persona"
-    base = out_root / language_folder / gender
-    if unreviewed:
+    base = language_pack_dir(out_root, language_folder, unreviewed_pack=unreviewed_pack) / gender
+    if unreviewed and not unreviewed_pack:
         base = base / "unreviewed"
     return base / f"{concept_key}.{ext}"
 

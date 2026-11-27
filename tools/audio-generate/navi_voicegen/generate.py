@@ -15,7 +15,8 @@ from navi_voicegen.engines.chatterbox_engine import (
 from navi_voicegen.engines.persona_engine import require_persona_args
 from navi_voicegen.languages import SPECS, resolve_pack_style
 from navi_voicegen.manifest_out import ClipRecord, sha256_file, write_language_manifest
-from navi_voicegen.paths import clip_path, default_out_dir, state_hash_path
+from navi_voicegen.pack_plan import inventory_pack_style
+from navi_voicegen.paths import clip_path, default_out_dir, language_pack_dir, state_hash_path
 from navi_voicegen.phrases import load_phrase_file
 from navi_voicegen.postprocess import encode_clip
 from navi_voicegen.state import load_state, phrase_inputs_hash, save_state, should_skip
@@ -123,8 +124,11 @@ def generate_packs(opts: GenerateOptions) -> list[Path]:
             )
 
         pack_style = resolve_pack_style(spec, opts.mode)
-        lang_dir = opts.out_dir / spec.folder
-        state_path = state_hash_path(opts.out_dir, spec.folder)
+        unreviewed_pack = (
+            opts.allow_unreviewed and not phrase_file.reviewed_file
+        )
+        lang_dir = language_pack_dir(opts.out_dir, spec.folder, unreviewed_pack=unreviewed_pack)
+        state_path = lang_dir / ".navi-voicegen-state.json"
         state = load_state(state_path)
         lock = json.loads(
             (Path(__file__).resolve().parents[1] / "lock" / "manifest.json").read_text(encoding="utf-8")
@@ -182,7 +186,8 @@ def generate_packs(opts: GenerateOptions) -> list[Path]:
                     gender,
                     entry.concept_key,
                     ext,
-                    unreviewed=not entry.reviewed,
+                    unreviewed=not entry.reviewed and not unreviewed_pack,
+                    unreviewed_pack=unreviewed_pack,
                     persona=opts.persona,
                 )
                 state_key = f"{gender}/{entry.concept_key}"
@@ -237,11 +242,12 @@ def generate_packs(opts: GenerateOptions) -> list[Path]:
         if opts.dry_run:
             continue
 
+        manifest_style = inventory_pack_style(phrase_file)
         man = write_language_manifest(
             lang_dir,
             language_folder=spec.folder,
             lang_code=lang_code,
-            pack_style=pack_style.value,
+            pack_style=manifest_style,
             clips=all_records,
             authoring=authoring,
             template_source=phrase_file.template_source,
