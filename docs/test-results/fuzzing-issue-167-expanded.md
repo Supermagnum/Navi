@@ -47,9 +47,11 @@ Input (hex): `36 00 27 40 32 3a 30 30 2d 30 36 2d 34 30 3b …`
 panics under fuzz / debug-assertion builds even though `FromStr` would
 otherwise return `Err`.
 
-**Fix:** `oh_condition_matches_at` wraps `OpeningHours::from_str` in
-`catch_unwind` and treats panics as unparseable (`None`). Regression test
-`oh_malformed_hour_minutes_does_not_panic`.
+**Fix:** decline unsafe OH syntax before calling the crate (no `/` interval
+syntax / control bytes — the panic site is `6:00-06:40/24:00` extracted
+after `@`), plus `catch_unwind` for unwind panic builds. Regression test
+`oh_malformed_hour_minutes_does_not_panic`. libFuzzer ASan uses
+`panic=abort`, so the pre-filter is what keeps the target crash-free.
 
 ## Operational note
 

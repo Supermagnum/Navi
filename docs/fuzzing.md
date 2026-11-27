@@ -166,8 +166,8 @@ Expanded campaign (2026-11-25 → 2026-11-27, Europe/Oslo):
 [`docs/test-results/fuzzing-issue-167-expanded.md`](test-results/fuzzing-issue-167-expanded.md) —
 1 h on all remaining targets + 4 h on `mwm_sidecar` / `flat_graph_pack`.
 Almost all **PASS**; one real finding in `osm_conditional_maxspeed`
-(opening-hours-syntax panic) — fixed via `catch_unwind` in
-`oh_condition_matches_at` plus regression test.
+(opening-hours-syntax panic on `/` interval syntax) — fixed via
+safe-character pre-filter + `catch_unwind`, plus regression test.
 
 ## Known limits
 
