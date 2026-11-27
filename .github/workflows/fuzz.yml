@@ -63,6 +63,9 @@ jobs:
         with:
           toolchain: nightly-2026-06-15
           components: llvm-tools-preview
+          # Explicit gnu host: taiki-e cargo-fuzz is often a musl binary, and
+          # cargo-fuzz then defaults --target to musl, which breaks ASan.
+          targets: x86_64-unknown-linux-gnu
 
       - name: System deps
         run: |
@@ -126,9 +129,13 @@ jobs:
           DUR="${{ steps.list.outputs.duration }}"
           mkdir -p artifacts
           fail=0
+          # Force gnu: taiki-e's cargo-fuzz binary is musl-linked, so its
+          # default --target becomes x86_64-unknown-linux-musl and ASan fails.
+          TRIPLE="x86_64-unknown-linux-gnu"
           for t in ${{ steps.list.outputs.targets }}; do
             echo "::group::fuzz $t (${DUR}s)"
-            if ! cargo +nightly-2026-06-15 fuzz run "$t" -- -max_total_time="$DUR" -timeout=10 -rss_limit_mb=2048; then
+            if ! cargo +nightly-2026-06-15 fuzz run "$t" --target "$TRIPLE" -- \
+                -max_total_time="$DUR" -timeout=10 -rss_limit_mb=2048; then
               echo "::error::fuzz target $t failed"
               fail=1
             fi
