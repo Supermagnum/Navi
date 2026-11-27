@@ -8,6 +8,7 @@ from pathlib import Path
 
 from navi_voicegen.deps import SystemDepsError, ensure_system_deps
 from navi_voicegen.draft_phrases import draft_language
+from navi_voicegen.review_sheet import apply_review_sheet, write_review_sheet
 from navi_voicegen.generate import GenerateOptions, generate_packs
 from navi_voicegen.languages import iter_tier_matrix, resolve_language_codes
 from navi_voicegen.paths import default_out_dir
@@ -53,6 +54,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--checkpoint-license-confirmed", action="store_true")
     p.add_argument("--suffix", default=None, help="Optional persona sentence-ending suffix clip text")
     p.add_argument("--draft-phrases", action="store_true", help="Draft phrases/*.yaml from template cache")
+    p.add_argument(
+        "--review-sheet",
+        action="store_true",
+        help="Write build/review/<language>/review-sheet.tsv from phrases/<lang>.yaml",
+    )
+    p.add_argument(
+        "--apply-review",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="Apply native edits from a review-sheet TSV back into phrases/<lang>.yaml",
+    )
     p.add_argument("--allow-unreviewed", action="store_true")
     p.add_argument("--voice-ref-male", type=Path, default=None)
     p.add_argument("--voice-ref-female", type=Path, default=None)
@@ -131,7 +144,13 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         for code in lang_codes:
             fetch_voices([code], genders=tuple(_genders(args.gender)))
-            summary = run_audition(code, device=args.device, fmt=args.format, seed=args.seed)
+            summary = run_audition(
+                code,
+                genders=tuple(_genders(args.gender)),
+                device=args.device,
+                fmt=args.format,
+                seed=args.seed,
+            )
             print(f"Audition summary: {summary.summary_path} (device={summary.device})")
         if not args.dry_run:
             return 0
@@ -144,6 +163,22 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(exc, file=sys.stderr)
         return 2
+
+    if args.apply_review is not None:
+        path = apply_review_sheet(args.apply_review)
+        print(f"Applied review: {path}")
+        return 0
+
+    if args.review_sheet:
+        try:
+            ensure_system_deps(for_generate=False)
+        except SystemDepsError as exc:
+            print("\n".join(exc.messages), file=sys.stderr)
+            return 2
+        for code in lang_codes:
+            path = write_review_sheet(code)
+            print(f"Wrote review sheet: {path}")
+        return 0
 
     if args.draft_phrases:
         try:

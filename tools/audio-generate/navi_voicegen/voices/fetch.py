@@ -14,7 +14,12 @@ from navi_voicegen.voices.config import (
     language_voice_config,
     load_voices_yaml,
 )
+from navi_voicegen.voices.commonvoice import resolve_commonvoice_local
+from navi_voicegen.voices.licence import validate_librivox_language, validate_voice_blob
+from navi_voicegen.voices.lj_speech import ensure_lj_wav
 from navi_voicegen.voices.process import download_url, make_reference_wav
+from navi_voicegen.voices.quality import analyze_audio
+from navi_voicegen.voices.sprakbanken import resolve_sprakbanken_download
 
 
 def voice_cache_root() -> Path:
@@ -49,7 +54,51 @@ def _ext_from_url(url: str) -> str:
     return "bin"
 
 
+def _raw_candidate_blob(lang: str, gender: str, candidate_id: str) -> dict:
+    raw = load_voices_yaml()
+    return ((raw.get("languages") or {}).get(lang, {}).get(gender, {}).get("candidates") or {})[
+        candidate_id
+    ]
+
+
+def _materialize_download(
+    lang: str,
+    gender: str,
+    cand: VoiceCandidate,
+    download_dest: Path,
+    *,
+    force: bool,
+) -> None:
+    if download_dest.is_file() and not force:
+        return
+    kind = cand.fetch_kind
+    if kind == "http":
+        download_url(cand.source_url, download_dest)
+        return
+    if kind == "sprakbanken":
+        member = cand.sprakbanken_member or "channel_1/2187.wav"
+        cat = cand.catalogue_id or "sbr-15"
+        resolve_sprakbanken_download(cat, member, download_dest)
+        return
+    if kind == "lj_speech":
+        wav_id = cand.lj_wav_id or "LJ001-0001"
+        src = ensure_lj_wav(wav_id)
+        download_dest.parent.mkdir(parents=True, exist_ok=True)
+        download_dest.write_bytes(src.read_bytes())
+        return
+    if kind == "commonvoice":
+        clip = cand.commonvoice_clip_id or cand.candidate_id
+        resolve_commonvoice_local(lang, gender, clip, download_dest)
+        return
+    raise SystemExit(f"Unknown fetch_kind={kind!r} for {lang}/{gender}/{cand.candidate_id}")
+
+
 def fetch_candidate(lang: str, gender: str, cand: VoiceCandidate, *, force: bool = False) -> FetchReport:
+    raw_blob = _raw_candidate_blob(lang, gender, cand.candidate_id)
+    validate_voice_blob(raw_blob, candidate_id=cand.candidate_id)
+    if cand.archive_language:
+        validate_librivox_language(cand.archive_language, lang)
+
     base = candidate_cache_dir(lang, gender, cand.candidate_id)
     ref = processed_ref_path(lang, gender, cand.candidate_id)
     prov_path = provenance_json_path(lang, gender, cand.candidate_id)
@@ -58,22 +107,36 @@ def fetch_candidate(lang: str, gender: str, cand: VoiceCandidate, *, force: bool
         prov = json.loads(prov_path.read_text(encoding="utf-8"))
         return FetchReport(lang, gender, cand.candidate_id, ref, prov)
 
-    ext = _ext_from_url(cand.source_url)
+    if cand.fetch_kind == "http":
+        ext = _ext_from_url(cand.source_url)
+    elif cand.fetch_kind == "sprakbanken":
+        ext = "wav"
+    elif cand.fetch_kind == "lj_speech":
+        ext = "wav"
+    else:
+        ext = "bin"
     download_dest = base / f"download.{ext}"
 
-    if not download_dest.is_file() or force:
-        download_url(cand.source_url, download_dest)
+    _materialize_download(lang, gender, cand, download_dest, force=force)
     got = sha256_file(download_dest)
-    if got != cand.download_sha256.lower():
+    placeholder = "0" * 64
+    if cand.download_sha256.lower() != placeholder and got != cand.download_sha256.lower():
         raise SystemExit(
             f"SHA-256 mismatch for {lang}/{gender}/{cand.candidate_id}: "
             f"expected {cand.download_sha256}, got {got}"
+        )
+    if cand.download_sha256.lower() == placeholder:
+        print(
+            f"note: pin download_sha256 for {lang}/{gender}/{cand.candidate_id} after verifying local "
+            f"Språkbanken clip (got {got})",
+            flush=True,
         )
 
     start, end = cand.time_range
     make_reference_wav(download_dest, ref, start_s=start, end_s=end)
 
     ref_sha = sha256_file(ref)
+    quality = analyze_audio(ref)
     prov = {
         "lang_code": lang,
         "gender": gender,
@@ -87,11 +150,19 @@ def fetch_candidate(lang: str, gender: str, cand: VoiceCandidate, *, force: bool
         "licence": cand.licence,
         "licence_url": cand.licence_url,
         "attribution": cand.attribution,
+        "catalogue_id": cand.catalogue_id,
+        "catalogue_url": cand.catalogue_url,
         "time_range_seconds": {"start": start, "end": end},
         "download_sha256": got,
         "ref_wav_sha256": ref_sha,
         "ref_wav_path": str(ref.relative_to(tool_root())),
+        "quality": quality.to_dict(),
     }
+    if quality.flags:
+        print(
+            f"quality flags {lang}/{gender}/{cand.candidate_id}: {', '.join(quality.flags)}",
+            flush=True,
+        )
     prov_path.write_text(json.dumps(prov, indent=2) + "\n", encoding="utf-8")
     return FetchReport(lang, gender, cand.candidate_id, ref, prov)
 
@@ -121,7 +192,10 @@ def fetch_voices(
                 continue
             for cid, cand in list(gcfg.candidates.items())[:max_candidates]:
                 print(f"fetch {lang}/{gender}/{cid} …", flush=True)
-                reports.append(fetch_candidate(lang, gender, cand, force=force))
+                try:
+                    reports.append(fetch_candidate(lang, gender, cand, force=force))
+                except SystemExit as exc:
+                    print(str(exc), flush=True)
     return reports
 
 

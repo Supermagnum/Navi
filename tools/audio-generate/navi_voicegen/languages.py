@@ -155,6 +155,18 @@ def iter_tier_matrix() -> Iterable[tuple[str, LanguageSpec, str]]:
         yield code, spec, status
 
 
+def language_folder_table() -> list[tuple[str, str, int, str | None]]:
+    """Return (iso_code, sounds_folder, tier, chatterbox_id) for docs/CLI."""
+    rows: list[tuple[str, str, int, str | None]] = []
+    for code, spec in sorted(SPECS.items()):
+        rows.append((code, spec.folder, spec.tier, spec.chatterbox_id))
+    return rows
+
+
+def folder_name_for(lang_code: str) -> str:
+    return SPECS[lang_code].folder
+
+
 def resolve_pack_style(spec: LanguageSpec, mode: str) -> PackStyle:
     if mode == "fragment":
         return PackStyle.FRAGMENT

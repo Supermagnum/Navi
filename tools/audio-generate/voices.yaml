@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 
 # Five neutral navigation-style phrases used by `navi-voicegen --audition --lang CODE`.
 audition_test_phrases:
@@ -21,9 +21,12 @@ languages:
       selected: walden_gord
       selection_reason: >
         Solo male LibriVox reader (Gord Mackenzie); calm pacing and steady tone in audition
-        on navigation test phrases.
+        on navigation test phrases. LibriVox archive language verified eng.
       candidates:
         walden_gord:
+          fetch_kind: http
+          archive_language: eng
+          intended_lang_code: en
           source_url: https://archive.org/download/walden_librivox/walden_c01_p02_64kb.mp3
           source_page: https://archive.org/details/walden_librivox
           dataset: LibriVox
@@ -33,11 +36,14 @@ languages:
           licence: public-domain
           licence_url: https://librivox.org/pages/public-domain/
           attribution: null
+          sample_rate_hz: 44100
           time_range:
             start_seconds: 90
             end_seconds: 108
           download_sha256: 82e7eb8c047cd384931834a5e0a1470b3609f59e2f0d51779f66ed1201dce623
         dracula_ch2:
+          fetch_kind: http
+          archive_language: eng
           source_url: https://archive.org/download/dracula_librivox/dracula_02_stoker_64kb.mp3
           source_page: https://archive.org/details/dracula_librivox
           dataset: LibriVox
@@ -58,6 +64,8 @@ languages:
         audition phrases.
       candidates:
         pride_klett:
+          fetch_kind: http
+          archive_language: eng
           source_url: https://archive.org/download/prideandprejudice_1005_librivox/prideandprejudice_01_austen_64kb.mp3
           source_page: https://archive.org/details/prideandprejudice_1005_librivox
           dataset: LibriVox
@@ -71,7 +79,26 @@ languages:
             start_seconds: 75
             end_seconds: 93
           download_sha256: aa7339960c90bed4c57ffe144c96b7a8ef4de482d6505d19906bb50248fe6f0c
+        lj001_0001:
+          fetch_kind: lj_speech
+          lj_wav_id: LJ001-0001
+          source_url: https://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2
+          source_page: https://keithito.com/projects/LJSpeech-Dataset/
+          dataset: LJ Speech
+          book_or_corpus: LJ Speech 1.1 (public domain)
+          speaker_id: LJ (single female speaker)
+          gender_source: dataset documentation
+          licence: public-domain
+          licence_url: https://keithito.com/projects/LJSpeech-Dataset/
+          attribution: null
+          sample_rate_hz: 22050
+          time_range:
+            start_seconds: 0
+            end_seconds: 9.5
+          download_sha256: 4d2bd83ff0f7fe33491b03193abdf623f1b4cc2d8103972b33638d3607d86dc5
         pride_savage:
+          fetch_kind: http
+          archive_language: eng
           source_url: https://archive.org/download/pride_prejudice_krs_librivox/pride_and_prejudice_03_austen_64kb.mp3
           source_page: https://archive.org/details/pride_prejudice_krs_librivox
           dataset: LibriVox
@@ -85,63 +112,45 @@ languages:
             start_seconds: 60
             end_seconds: 78
           download_sha256: b970034f8a1baf54e2c9a7b3f46d970d0eb18cb2435201720cb1f44b061acd83
-        pride_coleman:
-          source_url: https://archive.org/download/solo_pride_librivox/prideandprejudice_05-06_austen_apc_64kb.mp3
-          source_page: https://archive.org/details/solo_pride_librivox
-          dataset: LibriVox
-          book_or_corpus: "Pride and Prejudice (Jane Austen), version 2"
-          speaker_id: Annie Coleman
-          gender_source: LibriVox solo reader credit
-          licence: public-domain
-          licence_url: https://librivox.org/pages/public-domain/
-          attribution: null
-          time_range:
-            start_seconds: 45
-            end_seconds: 63
-          download_sha256: 1fe59968a17a591372749971be7da89c00e30c810e47a3c41d9c6e80ee564188
 
   nb:
     male:
-      selected: folktales_02
+      selected: sbr15_eastern_male
       selection_reason: >
-        Pending native review of phrases/nb.yaml; folktale reader is a calm solo male voice
-        suitable for audition comparison.
+        Archive metadata for norwegischevolksmahrchenii_2509_librivox is language=deu (German read,
+        not Norwegian) — removed. Default nb male is Språkbanken NST Speech Synthesis sbr-15:
+        one Eastern Bokmål male studio speaker at 22 kHz (CC-0). Requires local Språkbanken cache
+        or archive extract (see README).
       candidates:
-        folktales_02:
-          source_url: https://archive.org/download/norwegischevolksmahrchenii_2509_librivox/norwegischevolksmahrchenii_02_asbjornsen_64kb.mp3
-          source_page: https://archive.org/details/norwegischevolksmahrchenii_2509_librivox
-          dataset: LibriVox
-          book_or_corpus: "Norwegische Volksmährchen II (Asbjørnsen & Moe)"
-          speaker_id: "LibriVox volunteer (Norwegian)"
-          gender_source: LibriVox recording metadata (solo male narrator)
-          licence: public-domain
-          licence_url: https://librivox.org/pages/public-domain/
+        sbr15_eastern_male:
+          fetch_kind: sprakbanken
+          catalogue_id: sbr-15
+          catalogue_url: https://www.nb.no/sprakbanken/en/resource-catalogue/oai-nb-no-sbr-15/
+          corpus: NST Speech Synthesis
+          dataset: Språkbanken / NST
+          book_or_corpus: NST Norwegian Bokmål TTS (single male speaker)
+          speaker_id: NST eastern Bokmål male (studio)
+          gender_source: NST documentation (one male speaker)
+          dialect: Eastern Norwegian Bokmål
+          licence: cc0
+          licence_url: https://creativecommons.org/publicdomain/zero/1.0/
           attribution: null
+          sample_rate_hz: 22000
+          sprakbanken_member: channel_1/2187.wav
           time_range:
-            start_seconds: 80
-            end_seconds: 98
-          download_sha256: b825a43854a9633fec7b1b5cad09934278fefa7d851be4c93aaa9484e865fdd6
-        folktales_03:
-          source_url: https://archive.org/download/norwegischevolksmahrchenii_2509_librivox/norwegischevolksmahrchenii_03_asbjornsen_64kb.mp3
-          source_page: https://archive.org/details/norwegischevolksmahrchenii_2509_librivox
-          dataset: LibriVox
-          book_or_corpus: "Norwegische Volksmährchen II (Asbjørnsen & Moe)"
-          speaker_id: "LibriVox volunteer (Norwegian)"
-          gender_source: LibriVox recording metadata (solo male narrator)
-          licence: public-domain
-          licence_url: https://librivox.org/pages/public-domain/
-          attribution: null
-          time_range:
-            start_seconds: 70
-            end_seconds: 88
-          download_sha256: 39f6519918f3670ee1e5b7594d2390a5509c4472390733304990eb9f204f62a6
+            start_seconds: 0
+            end_seconds: 15
+          download_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
     female:
       selected: siste_viking_01
       selection_reason: >
-        Kathrine Engan solo Norwegian LibriVox read; default for nb audition until phrases
-        are native-reviewed.
+        Kathrine Engan solo Norwegian LibriVox read; only Norwegian-language LibriVox title on
+        Archive (language=nor). Default for nb audition until phrases/nb.yaml is native-reviewed.
       candidates:
         siste_viking_01:
+          fetch_kind: http
+          archive_language: nor
+          intended_lang_code: nb
           source_url: https://archive.org/download/densisteviking_2001_librivox/viking_norsk_01_bojer_64kb.mp3
           source_page: https://archive.org/details/densisteviking_2001_librivox
           dataset: LibriVox
@@ -156,6 +165,9 @@ languages:
             end_seconds: 118
           download_sha256: 2d5db3d8997708276c0376aea011facc47740717561c7c2f71ea769394ed59b9
         siste_viking_03:
+          fetch_kind: http
+          archive_language: nor
+          intended_lang_code: nb
           source_url: https://archive.org/download/densisteviking_2001_librivox/viking_norsk_03_bojer_64kb.mp3
           source_page: https://archive.org/details/densisteviking_2001_librivox
           dataset: LibriVox
@@ -169,3 +181,85 @@ languages:
             start_seconds: 90
             end_seconds: 108
           download_sha256: 66f209768545038da7044fc33e4484eafbe5c181db1d25e3c4e72bf81adedfe8
+
+  fr:
+    male:
+      status: blocked
+      reason: Tier 1 LibriVox / corpus audition not catalogued yet; add PD named readers.
+    female:
+      status: blocked
+      reason: Tier 1 LibriVox / corpus audition not catalogued yet.
+
+  de:
+    male:
+      status: blocked
+      reason: Tier 1 LibriVox / corpus audition not catalogued yet.
+    female:
+      status: blocked
+      reason: Tier 1 LibriVox / corpus audition not catalogued yet.
+
+  ru:
+    male:
+      status: blocked
+      reason: Tier 1 voice references pending curated LibriVox / CC corpus.
+    female:
+      status: blocked
+      reason: Tier 1 voice references pending curated LibriVox / CC corpus.
+
+  ar:
+    male:
+      status: blocked
+      reason: Tier 1 voice references pending curated CC corpus.
+    female:
+      status: blocked
+      reason: Tier 1 voice references pending curated CC corpus.
+
+  zh:
+    male:
+      status: blocked
+      reason: Tier 1 voice references pending curated CC corpus.
+    female:
+      status: blocked
+      reason: Tier 1 voice references pending curated CC corpus.
+
+  ja:
+    male:
+      status: blocked
+      reason: Tier 1 voice references pending curated LibriVox / CC corpus.
+    female:
+      status: blocked
+      reason: Tier 1 voice references pending curated LibriVox / CC corpus.
+
+  uk:
+    male:
+      status: blocked
+      reason: Tier 1 voice references pending curated LibriVox / CC corpus.
+    female:
+      status: blocked
+      reason: Tier 1 voice references pending curated LibriVox / CC corpus.
+
+  hi:
+    male:
+      status: blocked
+      reason: Tier 1 voice references pending Valhalla template + CC voice refs.
+    female:
+      status: blocked
+      reason: Tier 1 voice references pending Valhalla template + CC voice refs.
+
+  sv:
+    male:
+      status: blocked
+      reason: >
+        Chatterbox supports sv. Curate Språkbanken NST Swedish Speech Synthesis (sbr-18, CC-0)
+        or LibriVox sv after licence verification — catalogue download not automated yet.
+    female:
+      status: blocked
+      reason: Chatterbox supports sv; add LibriVox / Språkbanken female candidate after catalogue audit.
+
+  da:
+    male:
+      status: blocked
+      reason: Chatterbox supports da; NST Danish family corpora need Språkbanken licence audit.
+    female:
+      status: blocked
+      reason: Chatterbox supports da; voice refs not catalogued.

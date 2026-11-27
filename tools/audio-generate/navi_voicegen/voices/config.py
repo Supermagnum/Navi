@@ -25,7 +25,16 @@ class VoiceCandidate:
     attribution: str | None
     time_range: tuple[float, float]
     download_sha256: str
-    max_candidates: bool = True
+    fetch_kind: str = "http"
+    catalogue_id: str | None = None
+    catalogue_url: str | None = None
+    sprakbanken_member: str | None = None
+    lj_wav_id: str | None = None
+    commonvoice_clip_id: str | None = None
+    archive_language: str | None = None
+    intended_lang_code: str | None = None
+    sample_rate_hz: int | None = None
+    dialect: str | None = None
 
 
 @dataclass(frozen=True)
@@ -62,19 +71,30 @@ def _parse_candidate(cid: str, blob: dict[str, Any]) -> VoiceCandidate:
     end = float(tr.get("end_seconds", start + 15))
     if end - start < 10 or end - start > 25:
         pass  # authoring may tune; fetch validates after trim
+    sr = blob.get("sample_rate_hz")
     return VoiceCandidate(
         candidate_id=cid,
-        source_url=str(blob["source_url"]),
-        source_page=str(blob["source_page"]),
+        source_url=str(blob.get("source_url") or blob.get("catalogue_url") or ""),
+        source_page=str(blob.get("source_page") or blob.get("catalogue_url") or ""),
         dataset=str(blob["dataset"]),
-        book_or_corpus=str(blob.get("book_or_corpus") or blob.get("book") or ""),
+        book_or_corpus=str(blob.get("book_or_corpus") or blob.get("book") or blob.get("corpus") or ""),
         speaker_id=str(blob["speaker_id"]),
-        gender_source=str(blob["gender_source"]),
+        gender_source=str(blob.get("gender_source") or ""),
         licence=str(blob["licence"]),
         licence_url=str(blob.get("licence_url") or ""),
         attribution=blob.get("attribution"),
         time_range=(start, end),
         download_sha256=str(blob["download_sha256"]).lower(),
+        fetch_kind=str(blob.get("fetch_kind") or "http"),
+        catalogue_id=blob.get("catalogue_id"),
+        catalogue_url=blob.get("catalogue_url"),
+        sprakbanken_member=blob.get("sprakbanken_member"),
+        lj_wav_id=blob.get("lj_wav_id"),
+        commonvoice_clip_id=blob.get("commonvoice_clip_id"),
+        archive_language=blob.get("archive_language"),
+        intended_lang_code=blob.get("intended_lang_code"),
+        sample_rate_hz=int(sr) if sr is not None else None,
+        dialect=blob.get("dialect"),
     )
 
 

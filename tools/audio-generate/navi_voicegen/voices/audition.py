@@ -57,7 +57,7 @@ def run_audition(
     lcfg = language_voice_config(lang_code)
     raw = load_voices_yaml()
     lines: list[str] = [
-        f"# Audition summary — {lang_code}",
+        f"# Audition summary — {lang_code} (`{spec.folder}/`)",
         "",
         f"- generated_at: {datetime.now(timezone.utc).isoformat()}",
         f"- device: {resolved}",
@@ -90,9 +90,14 @@ def run_audition(
         lines.append("")
 
         for cid, cand in list(gcfg.candidates.items())[:max_candidates]:
-            fetch_candidate(lang_code, gender, cand)
+            try:
+                fetch_candidate(lang_code, gender, cand)
+            except SystemExit as exc:
+                lines.append(f"- **skip `{cid}`**: {exc}")
+                lines.append("")
+                continue
             ref = processed_ref_path(lang_code, gender, cid)
-            out_dir = audition_root() / lang_code / gender / cid
+            out_dir = audition_root() / spec.folder / gender / cid
             out_dir.mkdir(parents=True, exist_ok=True)
             meta_entries: list[dict] = []
             for idx, text in enumerate(phrases, start=1):
@@ -138,6 +143,6 @@ def run_audition(
             lines.append("")
 
     audition_root().mkdir(parents=True, exist_ok=True)
-    summary = audition_root() / lang_code / "SUMMARY.md"
+    summary = audition_root() / spec.folder / "SUMMARY.md"
     summary.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return AuditionSummary(lang_code, summary, resolved)

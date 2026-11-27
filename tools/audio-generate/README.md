@@ -17,6 +17,33 @@ navi-voicegen --dry-run --lang en --gender male
 
 Default output: repo-root `build/sounds/` (gitignored).
 
+## Language codes vs pack folders (`voice-guidance.md` §3)
+
+Use **ISO-style codes** in CLI flags and `voices.yaml` (`nb`, `en`, …). Published packs use **folder names** below.
+
+| Code | `build/sounds/` folder | Tier | Chatterbox `language_id` |
+|------|------------------------|------|---------------------------|
+| en | english | 1 | en |
+| fr | french | 1 | fr |
+| de | german | 1 | de |
+| ru | russian | 1 | ru |
+| ar | arabic | 1 | ar |
+| zh | chinese | 1 | zh |
+| ja | japanese | 1 | ja |
+| uk | ukrainian | 1 | uk |
+| hi | hindi | 1 | hi |
+| nb | norwegian | 2 | no |
+| sv | swedish | 2 | sv |
+| da | danish | 2 | da |
+| fi | finnish | 2 | fi |
+| pl | polish | 2 | pl |
+| nl | dutch | 2 | nl |
+| tr | turkish | 2 | tr |
+
+Aliases: `--lang norwegian` → `nb`, `--lang english` → `en`. Audition output lives under `build/audition/<folder>/…` (not the ISO code).
+
+`navi-voicegen --list-languages` prints the authoritative matrix including Tier 3 codes.
+
 ## System dependencies (no sudo from the tool)
 
 Required on the host:
@@ -40,10 +67,16 @@ scraping.
 - **Allowed:** public domain, CC0, CC-BY, CC-BY-SA with attribution recorded.
 - **Not allowed:** NC/research-only/unclear licences, YouTube/podcasts/commercial TTS
   output, identifiable celebrity/character scraping.
-- **Preference order:** LibriVox (PD) → Mozilla Common Voice (CC0; **requires account
-  terms** — if login is needed, the CLI prints the exact file and stops that source) →
-  LJ Speech (PD, English female) → other explicit CC0/CC-BY datasets (e.g. VCTK
-  CC-BY 4.0).
+- **Preference order:** Språkbanken / NST studio CC-0 (nb/sv/da when verified on
+  [Nasjonalbiblioteket catalogue pages](https://www.nb.no/sprakbanken/en/resource-catalogue/)) →
+  LibriVox (PD, **verify archive `language` metadata** — e.g. `norwegischevolksmahrchenii`
+  is `deu`, not Norwegian) → Mozilla Common Voice (CC0; **requires account
+  terms** — place clips under `cache/commonvoice/<lang>/` manually) →
+  LJ Speech (PD, English female; auto-download via `--fetch-voices` when listed in
+  `voices.yaml`) → other explicit CC0/CC-BY datasets.
+- **Norwegian male default:** Språkbanken **sbr-15** (22 kHz Eastern Bokmål male).
+  Place `channel_1/<utterance>.wav` under `cache/sprakbanken/sbr-15/` or drop the
+  official archive under `cache/sprakbanken/archives/sbr-15.zip` before `--fetch-voices --lang nb`.
 - If no acceptable clip exists for a language/gender, pack generation stops for that
   gender (see `voices.yaml` `status: blocked` when added).
 
@@ -52,7 +85,7 @@ scraping.
 ```bash
 navi-voicegen --setup-only          # venv, templates, fetch voices.yaml langs
 navi-voicegen --fetch-voices --lang en
-navi-voicegen --audition --lang en  # build/audition/<lang>/… + SUMMARY.md
+navi-voicegen --audition --lang en  # build/audition/<folder>/… + SUMMARY.md
 navi-voicegen --lang en --gender both --seed 42
 ```
 
@@ -102,6 +135,15 @@ Per-language YAML: [`phrases/<lang>.yaml`](phrases/).
 Generation refuses unreviewed YAML unless `--allow-unreviewed` (writes under
 `unreviewed/`). Languages with **no** OSRM/Valhalla template refuse drafting.
 
+Native review workflow:
+
+```bash
+navi-voicegen --draft-phrases --lang nb
+navi-voicegen --review-sheet --lang nb   # → build/review/norwegian/review-sheet.tsv
+# edit TSV (set reviewed=yes, fix text)
+navi-voicegen --apply-review build/review/norwegian/review-sheet.tsv
+```
+
 **Gendered languages:** phrase text uses masculine / gender-neutral imperatives
 regardless of `male`/`female` folder (plugins.md / voice-guidance §6).
 
@@ -131,6 +173,8 @@ ffmpeg two-pass style chain on each clip:
 --dry-run
 --force
 --draft-phrases
+--review-sheet
+--apply-review FILE
 --allow-unreviewed
 --voice-ref-male PATH
 --voice-ref-female PATH
