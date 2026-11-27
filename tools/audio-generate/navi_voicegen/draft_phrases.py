@@ -10,18 +10,58 @@ from navi_voicegen.languages import SPECS
 from navi_voicegen.paths import tool_root
 from navi_voicegen.phrases import PhraseEntry, PhraseFile, phrases_dir, write_phrase_file
 
-# English concept seeds mapped to typical OSRM instruction tokens / words.
+# voice-guidance.md §5 concept keys → search hints in flattened OSRM/Valhalla strings.
 CONCEPT_OSRM_HINTS: dict[str, list[str]] = {
-    "left": ["left", "turn left"],
-    "right": ["right", "turn right"],
-    "straight": ["straight", "continue"],
-    "roundabout": ["roundabout"],
-    "u_turn": ["u-turn", "uturn"],
-    "exit": ["exit"],
-    "merge": ["merge"],
-    "arrive": ["arrive", "destination"],
-    "meters": ["meters", "metres"],
-    "kilometers": ["kilometers", "kilometres"],
+    "roundabout": ["roundabout", "rundkjøring"],
+    "first": ["first", "første", "1."],
+    "second": ["second", "andre", "2."],
+    "third": ["third", "tredje", "3."],
+    "cross": ["cross", "kryss"],
+    "left": ["turn left", "til venstre", "left"],
+    "right": ["turn right", "til høyre", "right"],
+    "u_turn": ["u-turn", "uturn", "u-sving"],
+    "straight": ["straight", "rett frem", "continue straight"],
+    "continue": ["continue", "fortsett"],
+    "exit": ["take the exit", "ta avkjørsel"],
+    "merge": ["merge", "flett"],
+    "keep_left": ["keep left", "hold til venstre"],
+    "keep_right": ["keep right", "hold til høyre"],
+    "arrive": ["you have arrived", "du har ankommet", "arrive"],
+    "destination": ["destination", "destinasjon"],
+    "zero": ["zero", "null"],
+    "one": [" one", "én", "en "],
+    "two": [" two", "to "],
+    "three": [" three", "tre "],
+    "four": ["four", "fire"],
+    "five": ["five", "fem"],
+    "six": ["six", "seks"],
+    "seven": ["seven", "syv", "sju"],
+    "eight": ["eight", "åtte"],
+    "nine": ["nine", "ni"],
+    "ten": ["ten", "ti"],
+    "eleven": ["eleven", "elleve"],
+    "twelve": ["twelve", "tolv"],
+    "thirteen": ["thirteen", "tretten"],
+    "fourteen": ["fourteen", "fjorten"],
+    "fifteen": ["fifteen", "femten"],
+    "sixteen": ["sixteen", "seksten"],
+    "seventeen": ["seventeen", "sytten"],
+    "eighteen": ["eighteen", "atten"],
+    "nineteen": ["nineteen", "nitten"],
+    "twenty": ["twenty", "tjue"],
+    "thirty": ["thirty", "tretti"],
+    "forty": ["forty", "førti"],
+    "fifty": ["fifty", "femti"],
+    "sixty": ["sixty", "seksti"],
+    "seventy": ["seventy", "sytti"],
+    "eighty": ["eighty", "åtti"],
+    "ninety": ["ninety", "nitti"],
+    "hundred": ["hundred", "hundre"],
+    "thousand": ["thousand", "tusen"],
+    "meters": ["meters", "metres", " meter"],
+    "kilometers": ["kilometers", "kilometres", "kilometer"],
+    "in": ["in ", "om "],
+    "then": ["then", "deretter", "så"],
 }
 
 
@@ -55,7 +95,11 @@ def _flatten_strings(obj, out: list[str]) -> None:
 
 
 def _pick_phrase(strings: list[str], hints: list[str]) -> str | None:
-    lowered = [(s, s.lower()) for s in strings if s.strip()]
+    lowered = [
+        (s, s.lower())
+        for s in strings
+        if s.strip() and "<" not in s and "{" not in s
+    ]
     for hint in hints:
         for original, low in lowered:
             if hint in low:

@@ -1,0 +1,206 @@
+lang_code: nb
+language_folder: norwegian
+reviewed: true
+template_source: valhalla
+template_commit: 4d8b2061b566412ce61eb8a2001b7cfa2392356a
+phrases:
+  roundabout:
+    text: Rundkjøring
+    reviewed: true
+    pack_style: fragment
+  first:
+    text: Første
+    reviewed: true
+    pack_style: fragment
+  second:
+    text: Andre
+    reviewed: true
+    pack_style: fragment
+  third:
+    text: Tredje
+    reviewed: true
+    pack_style: fragment
+  cross:
+    text: Kryss
+    reviewed: true
+    pack_style: fragment
+  left:
+    text: Ta til venstre
+    reviewed: true
+    pack_style: fragment
+  right:
+    text: Ta til høyre
+    reviewed: true
+    pack_style: fragment
+  u_turn:
+    text: Ta en U-sving
+    reviewed: true
+    pack_style: fragment
+  straight:
+    text: Fortsett rett frem
+    reviewed: true
+    pack_style: fragment
+  continue:
+    text: Fortsett
+    reviewed: true
+    pack_style: fragment
+  exit:
+    text: Ta avkjørselen
+    reviewed: true
+    pack_style: fragment
+  merge:
+    text: Flett
+    reviewed: true
+    pack_style: fragment
+  keep_left:
+    text: Hold til venstre
+    reviewed: true
+    pack_style: fragment
+  keep_right:
+    text: Hold til høyre
+    reviewed: true
+    pack_style: fragment
+  arrive:
+    text: Du har ankommet
+    reviewed: true
+    pack_style: fragment
+  destination:
+    text: Du har ankommet destinasjonen
+    reviewed: true
+    pack_style: fragment
+  zero:
+    text: Null
+    reviewed: true
+    pack_style: fragment
+  one:
+    text: Én
+    reviewed: true
+    pack_style: fragment
+  two:
+    text: To
+    reviewed: true
+    pack_style: fragment
+  three:
+    text: Tre
+    reviewed: true
+    pack_style: fragment
+  four:
+    text: Fire
+    reviewed: true
+    pack_style: fragment
+  five:
+    text: Fem
+    reviewed: true
+    pack_style: fragment
+  six:
+    text: Seks
+    reviewed: true
+    pack_style: fragment
+  seven:
+    text: Syv
+    reviewed: true
+    pack_style: fragment
+  eight:
+    text: Åtte
+    reviewed: true
+    pack_style: fragment
+  nine:
+    text: Ni
+    reviewed: true
+    pack_style: fragment
+  ten:
+    text: Ti
+    reviewed: true
+    pack_style: fragment
+  eleven:
+    text: Elleve
+    reviewed: true
+    pack_style: fragment
+  twelve:
+    text: Tolv
+    reviewed: true
+    pack_style: fragment
+  thirteen:
+    text: Tretten
+    reviewed: true
+    pack_style: fragment
+  fourteen:
+    text: Fjorten
+    reviewed: true
+    pack_style: fragment
+  fifteen:
+    text: Femten
+    reviewed: true
+    pack_style: fragment
+  sixteen:
+    text: Seksten
+    reviewed: true
+    pack_style: fragment
+  seventeen:
+    text: Sytten
+    reviewed: true
+    pack_style: fragment
+  eighteen:
+    text: Atten
+    reviewed: true
+    pack_style: fragment
+  nineteen:
+    text: Nitten
+    reviewed: true
+    pack_style: fragment
+  twenty:
+    text: Tjue
+    reviewed: true
+    pack_style: fragment
+  thirty:
+    text: Tretti
+    reviewed: true
+    pack_style: fragment
+  forty:
+    text: Førti
+    reviewed: true
+    pack_style: fragment
+  fifty:
+    text: Femti
+    reviewed: true
+    pack_style: fragment
+  sixty:
+    text: Seksti
+    reviewed: true
+    pack_style: fragment
+  seventy:
+    text: Sytti
+    reviewed: true
+    pack_style: fragment
+  eighty:
+    text: Åtti
+    reviewed: true
+    pack_style: fragment
+  ninety:
+    text: Nitti
+    reviewed: true
+    pack_style: fragment
+  hundred:
+    text: Hundre
+    reviewed: true
+    pack_style: fragment
+  thousand:
+    text: Tusen
+    reviewed: true
+    pack_style: fragment
+  meters:
+    text: Meter
+    reviewed: true
+    pack_style: fragment
+  kilometers:
+    text: Kilometer
+    reviewed: true
+    pack_style: fragment
+  in:
+    text: Om
+    reviewed: true
+    pack_style: fragment
+  then:
+    text: Deretter
+    reviewed: true
+    pack_style: fragment
