@@ -162,10 +162,12 @@ Prior 1-hour campaign (seven original targets, 2026-11-25):
 [`docs/test-results/fuzzing-issue-167.md`](test-results/fuzzing-issue-167.md) —
 **PASS**, 0 crash/oom/timeout.
 
-Expanded target set (this branch): run at least **1 hour** per target locally
-before calling the slice done; weight **`mwm_sidecar`**, **`flat_graph_pack`**,
-**`mwm_catalog_json`**, **`mwm_countries_txt`** to **≥ 4 hours** each. Record
-results under `docs/test-results/`.
+Expanded campaign (2026-11-25 → 2026-11-27, Europe/Oslo):
+[`docs/test-results/fuzzing-issue-167-expanded.md`](test-results/fuzzing-issue-167-expanded.md) —
+1 h on all remaining targets + 4 h on `mwm_sidecar` / `flat_graph_pack`.
+Almost all **PASS**; one real finding in `osm_conditional_maxspeed`
+(opening-hours-syntax panic) — fixed via `catch_unwind` in
+`oh_condition_matches_at` plus regression test.
 
 ## Known limits
 

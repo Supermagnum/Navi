@@ -56,10 +56,17 @@ pub fn clause_access_token(clause: &str) -> Option<&str> {
 /// Whether an OH condition string matches (is "open") at `dt`.
 ///
 /// `None` = unparseable — caller must decline the clause.
+///
+/// The `opening-hours` crate can `debug_assert!` / panic on some malformed
+/// inputs (`GrammarLogic` "implementation error"). Catch that so fuzzing and
+/// debug builds never turn bad OSM tags into process death.
 pub fn oh_condition_matches_at(condition: &str, dt: NaiveDateTime) -> Option<bool> {
-    match OpeningHours::from_str(condition) {
-        Ok(oh) => Some(oh.is_open(dt)),
-        Err(_) => None,
+    let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        OpeningHours::from_str(condition)
+    }));
+    match parsed {
+        Ok(Ok(oh)) => Some(oh.is_open(dt)),
+        Ok(Err(_)) | Err(_) => None,
     }
 }
 
@@ -228,4 +235,19 @@ mod tests {
         assert_eq!(conditional_maxspeed_kmh_at(raw, early), Some(50.0));
         assert_eq!(conditional_maxspeed_kmh_at(raw, midday), None);
     }
+
+    /// Regression: libFuzzer found a panic in opening-hours-syntax 2.1.6
+    /// (`GrammarLogic { rule: hour_minutes, invariant: "cannot be empty" }`).
+    #[test]
+    fn oh_malformed_hour_minutes_does_not_panic() {
+        let crash = b"6\x00'@2:00-06-40;Mo-;,@6:00-06:40/24:00;";
+        let s = String::from_utf8_lossy(crash);
+        let dt = NaiveDate::from_ymd_opt(2026, 6, 15)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        assert_eq!(oh_condition_matches_at(&s, dt), None);
+        assert_eq!(conditional_maxspeed_kmh_at(&s, dt), None);
+    }
+
 }
