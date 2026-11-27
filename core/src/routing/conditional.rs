@@ -249,5 +249,4 @@ mod tests {
         assert_eq!(oh_condition_matches_at(&s, dt), None);
         assert_eq!(conditional_maxspeed_kmh_at(&s, dt), None);
     }
-
 }
