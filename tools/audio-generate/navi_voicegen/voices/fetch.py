@@ -77,7 +77,7 @@ def _materialize_download(
         return
     if kind == "sprakbanken":
         member = cand.sprakbanken_member or "channel_1/2187.wav"
-        cat = cand.catalogue_id or "sbr-15"
+        cat = cand.catalogue_id or "sbr-14"
         resolve_sprakbanken_download(cat, member, download_dest)
         return
     if kind == "lj_speech":

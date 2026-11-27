@@ -16,6 +16,7 @@ from navi_voicegen.setup_env import setup_only
 from navi_voicegen.voices.audition import run_audition
 from navi_voicegen.voices.config import load_voices_yaml
 from navi_voicegen.voices.fetch import fetch_voices
+from navi_voicegen.voices.sprakbanken_corpus import fetch_sprakbanken_sbr14
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -28,6 +29,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--fetch-voices",
         action="store_true",
         help="Download/verify voice refs from voices.yaml into gitignored cache",
+    )
+    p.add_argument(
+        "--fetch-corpus",
+        metavar="ID",
+        help="Download a pinned corpus into gitignored cache (e.g. sprakbanken-sbr14)",
     )
     p.add_argument(
         "--audition",
@@ -127,6 +133,14 @@ def main(argv: list[str] | None = None) -> int:
             pass
         elif not args.draft_phrases and not args.dry_run:
             return 0
+
+    if args.fetch_corpus:
+        corpus = args.fetch_corpus.strip().lower()
+        if corpus != "sprakbanken-sbr14":
+            print(f"Unknown --fetch-corpus {args.fetch_corpus!r}", file=sys.stderr)
+            return 2
+        fetch_sprakbanken_sbr14()
+        return 0
 
     if args.fetch_voices and not args.setup_only:
         return _run_fetch(args)

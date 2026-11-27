@@ -9,6 +9,10 @@ from pathlib import Path
 
 from navi_voicegen.paths import tool_root
 from navi_voicegen.voices.process import sha256_file
+from navi_voicegen.voices.sprakbanken_corpus import (
+    CATALOGUE_URL as SBR14_CATALOGUE_URL,
+    resolve_sbr14_member_path,
+)
 
 SPRAKBANKEN_ROOT = tool_root() / "cache" / "sprakbanken"
 
@@ -21,7 +25,12 @@ def sprakbanken_instructions(catalogue_id: str, *, member: str) -> str:
         f"  {SPRAKBANKEN_ROOT / 'archives' / catalogue_id}.zip\n"
         f"  {SPRAKBANKEN_ROOT / 'archives' / catalogue_id}.tar.gz\n"
         "Catalogue page (verify CC-0 before use): "
-        f"https://www.nb.no/sprakbanken/en/resource-catalogue/oai-nb-no-{catalogue_id}/\n"
+        + (
+            SBR14_CATALOGUE_URL
+            if catalogue_id == "sbr-14"
+            else f"https://www.nb.no/sprakbanken/en/resource-catalogue/oai-nb-no-{catalogue_id}/"
+        )
+        + "\n"
         "Do not use NPSC / Stortinget parliamentary corpora."
     )
 
@@ -62,6 +71,13 @@ def _maybe_extract_member(catalogue_id: str, member: str, dest_wav: Path) -> boo
 
 
 def resolve_sprakbanken_download(catalogue_id: str, member: str, download_dest: Path) -> None:
+    if catalogue_id == "sbr-14":
+        hit = resolve_sbr14_member_path(member)
+        if hit is not None and hit.is_file():
+            download_dest.parent.mkdir(parents=True, exist_ok=True)
+            if download_dest.resolve() != hit.resolve():
+                shutil.copy2(hit, download_dest)
+            return
     cached = SPRAKBANKEN_ROOT / catalogue_id / member
     if cached.is_file():
         download_dest.parent.mkdir(parents=True, exist_ok=True)

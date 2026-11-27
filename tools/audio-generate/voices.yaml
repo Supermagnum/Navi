@@ -115,37 +115,76 @@ languages:
 
   nb:
     male:
-      selected: sbr15_eastern_male
+      selected: sbr14_male_076_mbo
       selection_reason: >
-        Archive metadata for norwegischevolksmahrchenii_2509_librivox is language=deu (German read,
-        not Norwegian) — removed. Default nb male is Språkbanken NST Speech Synthesis sbr-15:
-        one Eastern Bokmål male studio speaker at 22 kHz (CC-0). Requires local Språkbanken cache
-        or archive extract (see README).
+        Språkbanken NST Norwegian Dictation (sbr-14, 22.05 kHz PCM CC-0). sbr-15 catalogue URL
+        returns 404 / resource removed — do not use. Default nb male: train speaker 076_mbo,
+        ~17 s concat of consecutive utterances (pitch shortlist + studio quality). Fetch corpus with
+        `navi-voicegen --fetch-corpus sprakbanken-sbr14` before `--fetch-voices --lang nb`.
       candidates:
-        sbr15_eastern_male:
+        sbr14_male_076_mbo:
           fetch_kind: sprakbanken
-          catalogue_id: sbr-15
-          catalogue_url: https://www.nb.no/sprakbanken/en/resource-catalogue/oai-nb-no-sbr-15/
-          corpus: NST Speech Synthesis
+          catalogue_id: sbr-14
+          catalogue_url: https://www.nb.no/sprakbanken/ressurskatalog/en/oai-nb-no-sbr-14/
+          corpus: NST Norwegian Dictation 22 kHz
           dataset: Språkbanken / NST
-          book_or_corpus: NST Norwegian Bokmål TTS (single male speaker)
-          speaker_id: NST eastern Bokmål male (studio)
-          gender_source: NST documentation (one male speaker)
-          dialect: Eastern Norwegian Bokmål
+          book_or_corpus: NST Norwegian Dictation (train speaker 076_mbo)
+          speaker_id: "076_mbo"
+          gender_source: librosa YIN pitch median ~91 Hz (male shortlist)
+          dialect: Eastern Norwegian Bokmål (NST studio dictation)
           licence: cc0
           licence_url: https://creativecommons.org/publicdomain/zero/1.0/
           attribution: null
-          sample_rate_hz: 22000
-          sprakbanken_member: channel_1/2187.wav
+          sample_rate_hz: 22050
+          sprakbanken_member: refs/sbr14_male_076_mbo_ref.wav
           time_range:
             start_seconds: 0
             end_seconds: 15
-          download_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+          download_sha256: 7266703ac18e577d810d037af30c995568dd04f476d5ea9a96eb9701a85f0c4e
+        sbr14_male_068_abr:
+          fetch_kind: sprakbanken
+          catalogue_id: sbr-14
+          catalogue_url: https://www.nb.no/sprakbanken/ressurskatalog/en/oai-nb-no-sbr-14/
+          corpus: NST Norwegian Dictation 22 kHz
+          dataset: Språkbanken / NST
+          book_or_corpus: NST Norwegian Dictation (train speaker 068_abr)
+          speaker_id: "068_abr"
+          gender_source: librosa YIN pitch median ~90 Hz (male shortlist)
+          dialect: Eastern Norwegian Bokmål (NST studio dictation)
+          licence: cc0
+          licence_url: https://creativecommons.org/publicdomain/zero/1.0/
+          attribution: null
+          sample_rate_hz: 22050
+          sprakbanken_member: refs/sbr14_male_068_abr_ref.wav
+          time_range:
+            start_seconds: 0
+            end_seconds: 12
+          download_sha256: 5f4bfb9809c61f1e071bf3fb75d536eebf9aff300d50a06feb6368ce2e48eead
+        sbr14_male_022_mhe:
+          fetch_kind: sprakbanken
+          catalogue_id: sbr-14
+          catalogue_url: https://www.nb.no/sprakbanken/ressurskatalog/en/oai-nb-no-sbr-14/
+          corpus: NST Norwegian Dictation 22 kHz
+          dataset: Språkbanken / NST
+          book_or_corpus: NST Norwegian Dictation (train speaker 022_mhe)
+          speaker_id: "022_mhe"
+          gender_source: librosa YIN pitch median (male shortlist)
+          dialect: Eastern Norwegian Bokmål (NST studio dictation)
+          licence: cc0
+          licence_url: https://creativecommons.org/publicdomain/zero/1.0/
+          attribution: null
+          sample_rate_hz: 22050
+          sprakbanken_member: refs/sbr14_male_022_mhe_ref.wav
+          time_range:
+            start_seconds: 0
+            end_seconds: 14
+          download_sha256: c4a5a0b2040a8888f05bbd8328817f19b1a2cfd24890f24515df9d8d7174893c
     female:
       selected: siste_viking_01
       selection_reason: >
-        Kathrine Engan solo Norwegian LibriVox read; only Norwegian-language LibriVox title on
-        Archive (language=nor). Default for nb audition until phrases/nb.yaml is native-reviewed.
+        Kathrine Engan solo Norwegian LibriVox read (language=nor) remains default nb female for
+        packs. Audition also includes up to two sbr-14 Eastern Bokmål studio speakers (pitch
+        shortlist); corpus is predominantly male dictation voices.
       candidates:
         siste_viking_01:
           fetch_kind: http
@@ -164,23 +203,44 @@ languages:
             start_seconds: 100
             end_seconds: 118
           download_sha256: 2d5db3d8997708276c0376aea011facc47740717561c7c2f71ea769394ed59b9
-        siste_viking_03:
-          fetch_kind: http
-          archive_language: nor
-          intended_lang_code: nb
-          source_url: https://archive.org/download/densisteviking_2001_librivox/viking_norsk_03_bojer_64kb.mp3
-          source_page: https://archive.org/details/densisteviking_2001_librivox
-          dataset: LibriVox
-          book_or_corpus: "Den siste viking (Johan Bojer)"
-          speaker_id: Kathrine Engan
-          gender_source: LibriVox solo reader credit
-          licence: public-domain
-          licence_url: https://librivox.org/pages/public-domain/
+        sbr14_female_013_tal:
+          fetch_kind: sprakbanken
+          catalogue_id: sbr-14
+          catalogue_url: https://www.nb.no/sprakbanken/ressurskatalog/en/oai-nb-no-sbr-14/
+          corpus: NST Norwegian Dictation 22 kHz
+          dataset: Språkbanken / NST
+          book_or_corpus: NST Norwegian Dictation (train speaker 013_tal)
+          speaker_id: "013_tal"
+          gender_source: librosa YIN pitch median ~160 Hz (female shortlist)
+          dialect: Eastern Norwegian Bokmål (NST studio dictation)
+          licence: cc0
+          licence_url: https://creativecommons.org/publicdomain/zero/1.0/
           attribution: null
+          sample_rate_hz: 22050
+          sprakbanken_member: refs/sbr14_female_013_tal_ref.wav
           time_range:
-            start_seconds: 90
-            end_seconds: 108
-          download_sha256: 66f209768545038da7044fc33e4484eafbe5c181db1d25e3c4e72bf81adedfe8
+            start_seconds: 0
+            end_seconds: 15
+          download_sha256: 3a638acd90e5717ce68819d486805774749b417d38d8e30bba344e2bb374a830
+        sbr14_female_test_epa:
+          fetch_kind: sprakbanken
+          catalogue_id: sbr-14
+          catalogue_url: https://www.nb.no/sprakbanken/ressurskatalog/en/oai-nb-no-sbr-14/
+          corpus: NST Norwegian Dictation 22 kHz
+          dataset: Språkbanken / NST
+          book_or_corpus: NST Norwegian Dictation (test speaker epa)
+          speaker_id: "666_Test_01_epa"
+          gender_source: librosa YIN pitch median ~162 Hz (female shortlist)
+          dialect: Eastern Norwegian Bokmål (NST studio dictation)
+          licence: cc0
+          licence_url: https://creativecommons.org/publicdomain/zero/1.0/
+          attribution: null
+          sample_rate_hz: 22050
+          sprakbanken_member: refs/sbr14_female_test_epa_ref.wav
+          time_range:
+            start_seconds: 0
+            end_seconds: 15
+          download_sha256: 8f2a1942b76f483bdfcc8171ed2d8383f2e177c410a4ef36df8ad300b65023d7
 
   fr:
     male:

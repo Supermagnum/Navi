@@ -74,9 +74,10 @@ scraping.
   terms** — place clips under `cache/commonvoice/<lang>/` manually) →
   LJ Speech (PD, English female; auto-download via `--fetch-voices` when listed in
   `voices.yaml`) → other explicit CC0/CC-BY datasets.
-- **Norwegian male default:** Språkbanken **sbr-15** (22 kHz Eastern Bokmål male).
-  Place `channel_1/<utterance>.wav` under `cache/sprakbanken/sbr-15/` or drop the
-  official archive under `cache/sprakbanken/archives/sbr-15.zip` before `--fetch-voices --lang nb`.
+- **Norwegian male default:** Språkbanken **sbr-14** (NST Norwegian Dictation, 22.05 kHz PCM, CC-0).
+  Run `navi-voicegen --fetch-corpus sprakbanken-sbr14` (resumable download + safe extract under
+  `cache/sprakbanken/sbr-14/`), then `--fetch-voices --lang nb`. **sbr-15** is no longer available
+  (catalogue 404) — do not use.
 - If no acceptable clip exists for a language/gender, pack generation stops for that
   gender (see `voices.yaml` `status: blocked` when added).
 
@@ -160,6 +161,7 @@ ffmpeg two-pass style chain on each clip:
 
 ```
 --setup-only
+--fetch-corpus ID   (e.g. sprakbanken-sbr14)
 --fetch-voices
 --audition
 --lang CODE|tier1|tier2|tier3|all   (default en)

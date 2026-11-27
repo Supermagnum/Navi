@@ -655,7 +655,7 @@ consistent with this file’s documentation-not-built status.
 |---|---|
 | Recorded-voice folder contract | Specified here; authoring CLI emits `build/sounds/` layout |
 | Offline clip authoring CLI (`navi-voicegen`) | Implemented under `tools/audio-generate/` (authoring only; no playback) |
-| Voice ref catalogue + fetch/audition | `tools/audio-generate/voices.yaml`; LibriVox verified PD; nb male **sbr-15** (Språkbanken CC-0, local cache) replaces German LibriVox folktales |
+| Voice ref catalogue + fetch/audition | `tools/audio-generate/voices.yaml`; LibriVox verified PD; nb male **sbr-14** (Språkbanken NST Dictation CC-0; `navi-voicegen --fetch-corpus sprakbanken-sbr14`) — **sbr-15** unavailable |
 | Native phrase review (draft → TSV → apply) | `--draft-phrases`, `--review-sheet`, `--apply-review` → `build/review/<language>/` |
 | English phrase inventory (reviewed YAML) | `tools/audio-generate/phrases/en.yaml` |
 | Norwegian phrase inventory | Draft from Valhalla `nb-NO` only after `--draft-phrases`; **not** generated in-repo until native review |

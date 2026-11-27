@@ -23,9 +23,10 @@ def test_language_voice_config_selected():
 def test_nb_male_default_is_sprakbanken_not_german_librivox():
     raw = load_voices_yaml()
     male = raw["languages"]["nb"]["male"]
-    assert male["selected"] == "sbr15_eastern_male"
+    assert male["selected"] == "sbr14_male_076_mbo"
     assert "folktales_02" not in (male.get("candidates") or {})
-    sbr = male["candidates"]["sbr15_eastern_male"]
+    assert "sbr-15" not in str(male.get("candidates") or {})
+    sbr = male["candidates"]["sbr14_male_076_mbo"]
     assert sbr["fetch_kind"] == "sprakbanken"
-    assert sbr["catalogue_id"] == "sbr-15"
+    assert sbr["catalogue_id"] == "sbr-14"
     assert sbr["licence"] == "cc0"
