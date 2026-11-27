@@ -19,6 +19,9 @@ from navi_voicegen.paths import clip_path, default_out_dir, state_hash_path
 from navi_voicegen.phrases import load_phrase_file
 from navi_voicegen.postprocess import encode_clip
 from navi_voicegen.state import load_state, phrase_inputs_hash, save_state, should_skip
+from navi_voicegen.voices.config import language_voice_config
+from navi_voicegen.voices.fetch import write_pack_attribution
+from navi_voicegen.voices.resolve import resolve_voice_ref_path
 
 
 DEFAULT_VOICE_REF_DIRS = {
@@ -47,18 +50,18 @@ class GenerateOptions:
     checkpoint_license_confirmed: bool
 
 
-def _voice_ref_for(gender: str, opts: GenerateOptions) -> Path | None:
+def _voice_ref_for(lang_code: str, gender: str, opts: GenerateOptions) -> tuple[Path | None, dict | None]:
+    override = opts.voice_ref_male if gender == "male" else opts.voice_ref_female
+    ref, prov = resolve_voice_ref_path(lang_code, gender, override=override)
+    if ref is not None:
+        return ref, prov
     if gender == "male":
-        if opts.voice_ref_male and opts.voice_ref_male.is_file():
-            return opts.voice_ref_male
         default = Path(__file__).resolve().parents[1] / DEFAULT_VOICE_REF_DIRS["male"]
-        return default if default.is_file() else None
+        return (default, None) if default.is_file() else (None, None)
     if gender == "female":
-        if opts.voice_ref_female and opts.voice_ref_female.is_file():
-            return opts.voice_ref_female
         default = Path(__file__).resolve().parents[1] / DEFAULT_VOICE_REF_DIRS["female"]
-        return default if default.is_file() else None
-    return None
+        return (default, None) if default.is_file() else (None, None)
+    return None, None
 
 
 def _apply_suffix(text: str, suffix: str | None) -> str:
@@ -136,14 +139,28 @@ def generate_packs(opts: GenerateOptions) -> list[Path]:
         }
 
         all_records: list[ClipRecord] = []
+        voice_provenance: dict[str, dict] = {}
 
         for gender in opts.genders:
-            ref = _voice_ref_for(gender, opts)
+            ref, prov = _voice_ref_for(lang_code, gender, opts)
             if ref is None and not opts.dry_run:
-                raise SystemExit(
-                    f"No voice reference for gender={gender!r}. "
-                    f"Provide --voice-ref-{gender} PATH (no downloading)."
+                try:
+                    lcfg = language_voice_config(lang_code)
+                    gcfg = lcfg.male if gender == "male" else lcfg.female
+                    blocked = gcfg.blocked_reason if gcfg else None
+                except (FileNotFoundError, KeyError):
+                    blocked = None
+                hint = (
+                    f" voices.yaml blocked: {blocked}"
+                    if blocked
+                    else f" run --fetch-voices --lang {lang_code}"
                 )
+                raise SystemExit(
+                    f"No voice reference for lang={lang_code!r} gender={gender!r}.{hint} "
+                    f"Or provide --voice-ref-{gender} PATH."
+                )
+            if prov:
+                voice_provenance[gender] = prov
 
             entry_tuple = [
                 (e.concept_key, e.text, e.reviewed) for e in phrase_file.entries
@@ -229,6 +246,9 @@ def generate_packs(opts: GenerateOptions) -> list[Path]:
             authoring=authoring,
             template_source=phrase_file.template_source,
             template_commit=phrase_file.template_commit,
+            voice_provenance=voice_provenance or None,
         )
+        if voice_provenance:
+            write_pack_attribution(spec.folder, list(voice_provenance.values()), out_dir=opts.out_dir)
         manifests.append(man)
     return manifests

@@ -101,6 +101,7 @@ testdata/cat/local/
 build/sounds/
 tools/audio-generate/.venv/
 tools/audio-generate/cache/
+build/audition/
 tools/audio-generate/lock/install-record.json
 tools/audio-generate/**/__pycache__/
 tools/audio-generate/.pytest_cache/

@@ -12,6 +12,9 @@ from navi_voicegen.generate import GenerateOptions, generate_packs
 from navi_voicegen.languages import iter_tier_matrix, resolve_language_codes
 from navi_voicegen.paths import default_out_dir
 from navi_voicegen.setup_env import setup_only
+from navi_voicegen.voices.audition import run_audition
+from navi_voicegen.voices.config import load_voices_yaml
+from navi_voicegen.voices.fetch import fetch_voices
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -20,6 +23,16 @@ def build_parser() -> argparse.ArgumentParser:
         description="Author offline Navi turn-by-turn voice clip packs (no runtime TTS).",
     )
     p.add_argument("--setup-only", action="store_true", help="Install venv, deps, template caches")
+    p.add_argument(
+        "--fetch-voices",
+        action="store_true",
+        help="Download/verify voice refs from voices.yaml into gitignored cache",
+    )
+    p.add_argument(
+        "--audition",
+        action="store_true",
+        help="Synthesize audition clips for up to 3 candidates per gender (see voices.yaml)",
+    )
     p.add_argument("--lang", default="en", help="Language code, folder alias, tier1|tier2|tier3|all")
     p.add_argument("--list-languages", action="store_true", help="Print tier matrix and Chatterbox coverage")
     p.add_argument("--gender", default="both", choices=("male", "female", "both"))
@@ -52,6 +65,30 @@ def _genders(arg: str) -> list[str]:
     return [arg]
 
 
+def _langs_for_voice_ops(args: argparse.Namespace) -> list[str]:
+    if args.lang != "en":
+        return resolve_language_codes(args.lang)
+    catalog = list((load_voices_yaml().get("languages") or {}).keys())
+    return catalog if catalog else ["en"]
+
+
+def _run_fetch(args: argparse.Namespace) -> int:
+    try:
+        lang_codes = _langs_for_voice_ops(args) if args.setup_only and not args.audition else resolve_language_codes(args.lang)
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    try:
+        ensure_system_deps(for_generate=False)
+    except SystemDepsError as exc:
+        print("\n".join(exc.messages), file=sys.stderr)
+        return 2
+    reports = fetch_voices(lang_codes, genders=tuple(_genders(args.gender)))
+    for r in reports:
+        print(f"Voice ref ready: {r.ref_wav}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
@@ -70,6 +107,36 @@ def main(argv: list[str] | None = None) -> int:
         except SystemDepsError as exc:
             print("\n".join(exc.messages), file=sys.stderr)
             return 2
+        rc = _run_fetch(args)
+        if rc != 0:
+            return rc
+        if args.audition or args.fetch_voices:
+            pass
+        elif not args.draft_phrases and not args.dry_run:
+            return 0
+
+    if args.fetch_voices and not args.setup_only:
+        return _run_fetch(args)
+
+    if args.audition:
+        try:
+            lang_codes = resolve_language_codes(args.lang)
+        except ValueError as exc:
+            print(exc, file=sys.stderr)
+            return 2
+        try:
+            ensure_system_deps(for_generate=True)
+        except SystemDepsError as exc:
+            print("\n".join(exc.messages), file=sys.stderr)
+            return 2
+        for code in lang_codes:
+            fetch_voices([code], genders=tuple(_genders(args.gender)))
+            summary = run_audition(code, device=args.device, fmt=args.format, seed=args.seed)
+            print(f"Audition summary: {summary.summary_path} (device={summary.device})")
+        if not args.dry_run:
+            return 0
+
+    if args.setup_only and not args.audition and not args.draft_phrases and not args.dry_run:
         return 0
 
     try:

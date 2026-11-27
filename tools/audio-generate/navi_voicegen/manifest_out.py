@@ -39,6 +39,7 @@ def write_language_manifest(
     authoring: dict[str, Any],
     template_source: str | None,
     template_commit: str | None,
+    voice_provenance: dict[str, Any] | None = None,
 ) -> Path:
     total_bytes = sum(c.bytes for c in clips)
     man = {
@@ -52,6 +53,7 @@ def write_language_manifest(
         "authoring": authoring,
         "template_source": template_source,
         "template_commit": template_commit,
+        "voice_provenance": voice_provenance,
         "clips": [
             {
                 "concept_key": c.concept_key,

@@ -110,9 +110,12 @@ is offline only (Chatterbox Multilingual, Style-Bert-VITS2, or human recording)
 
 **Authoring tool (branch `audio-generate`):** [`tools/audio-generate/README.md`](../tools/audio-generate/README.md)
 (`navi-voicegen`) installs a local venv, sparse-clones OSRM / Valhalla phrase
-templates into a gitignored cache, and writes packs under `build/sounds/` by
-default. English phrases are hand-reviewed in-repo; other languages draft from
-templates then require native review before ship.
+templates into a gitignored cache, fetches PD/CC voice references from
+[`tools/audio-generate/voices.yaml`](../tools/audio-generate/voices.yaml) into a gitignored cache
+(`--fetch-voices`), and writes packs under `build/sounds/` by default. CC-BY
+references require `ATTRIBUTION.txt` in the published language folder. English
+phrases are hand-reviewed in-repo; other languages draft from templates then
+require native review before ship.
 
 ### Authoring paths
 

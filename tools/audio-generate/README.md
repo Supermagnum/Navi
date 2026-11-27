@@ -29,23 +29,47 @@ Required on the host:
 
 If anything is missing, the CLI prints exact install commands for your distro and exits.
 
-## Voice references (rights are your responsibility)
+## Voice references (curated public sources)
 
-Chatterbox Multilingual uses **your** reference wav for each voice-actor folder:
+Chatterbox Multilingual needs a short reference wav per voice-actor folder. The
+tool downloads **only** clips catalogued in [`voices.yaml`](voices.yaml) — no ad-hoc
+scraping.
+
+### Licence rules (hard)
+
+- **Allowed:** public domain, CC0, CC-BY, CC-BY-SA with attribution recorded.
+- **Not allowed:** NC/research-only/unclear licences, YouTube/podcasts/commercial TTS
+  output, identifiable celebrity/character scraping.
+- **Preference order:** LibriVox (PD) → Mozilla Common Voice (CC0; **requires account
+  terms** — if login is needed, the CLI prints the exact file and stops that source) →
+  LJ Speech (PD, English female) → other explicit CC0/CC-BY datasets (e.g. VCTK
+  CC-BY 4.0).
+- If no acceptable clip exists for a language/gender, pack generation stops for that
+  gender (see `voices.yaml` `status: blocked` when added).
+
+### Fetch and audition
 
 ```bash
-navi-voicegen --lang en \
-  --voice-ref-male /path/to/male-ref.wav \
-  --voice-ref-female /path/to/female-ref.wav \
-  --seed 42
+navi-voicegen --setup-only          # venv, templates, fetch voices.yaml langs
+navi-voicegen --fetch-voices --lang en
+navi-voicegen --audition --lang en  # build/audition/<lang>/… + SUMMARY.md
+navi-voicegen --lang en --gender both --seed 42
 ```
 
-The tool **never downloads** voice samples. Optional defaults:
+Downloads land in gitignored `tools/audio-generate/cache/voice-refs/`. Processed
+`ref.wav` files are verified against pinned `download_sha256` in `voices.yaml`.
 
-- `tools/audio-generate/voice-refs/male.wav`
-- `tools/audio-generate/voice-refs/female.wav`
+Optional local overrides still work:
 
-Only use references you have rights to clone/redistribute in generated packs.
+```bash
+navi-voicegen --voice-ref-male /path/to/male-ref.wav --voice-ref-female /path.wav
+```
+
+### Shipping packs
+
+Published packs must ship **`build/sounds/<language>/ATTRIBUTION.txt`** when any
+CC-BY voice reference was used. `manifest.json` includes a `voice_provenance` block
+per gender (source URL, dataset, speaker, licence).
 
 ## Engines
 
@@ -94,6 +118,8 @@ ffmpeg two-pass style chain on each clip:
 
 ```
 --setup-only
+--fetch-voices
+--audition
 --lang CODE|tier1|tier2|tier3|all   (default en)
 --list-languages
 --gender male|female|both
