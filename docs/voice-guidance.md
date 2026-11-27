@@ -108,6 +108,12 @@ Planning estimates for disk cost of shipped **static** clip packs. Generation
 is offline only (Chatterbox Multilingual, Style-Bert-VITS2, or human recording)
 — never on-device.
 
+**Authoring tool (branch `audio-generate`):** [`tools/audio-generate/README.md`](../tools/audio-generate/README.md)
+(`navi-voicegen`) installs a local venv, sparse-clones OSRM / Valhalla phrase
+templates into a gitignored cache, and writes packs under `build/sounds/` by
+default. English phrases are hand-reviewed in-repo; other languages draft from
+templates then require native review before ship.
+
 ### Authoring paths
 
 | Path | Typical inventory | When to use |
@@ -386,6 +392,10 @@ They are **not** embedded engines in the APK today, and Navi’s on-screen
 approach box does **not** render these full sentences (icon + distance + street
 name only — [`approach-instructions.md`](approach-instructions.md)).
 
+`navi-voicegen --draft-phrases` reads the same catalogs from a gitignored sparse
+clone (see [`tools/audio-generate/README.md`](../tools/audio-generate/README.md));
+it does not embed OSRM/Valhalla in the APK.
+
 ### Preferred sources
 
 | Source | License / notes | Checked inventory (2026-11-01) |
@@ -640,7 +650,9 @@ consistent with this file’s documentation-not-built status.
 
 | Item | Status |
 |---|---|
-| Recorded-voice folder contract | Specified here; tree not created |
+| Recorded-voice folder contract | Specified here; authoring CLI emits `build/sounds/` layout |
+| Offline clip authoring CLI (`navi-voicegen`) | Implemented under `tools/audio-generate/` (authoring only; no playback) |
+| English phrase inventory (reviewed YAML) | `tools/audio-generate/phrases/en.yaml` |
 | Fragment key list | Minimum set documented; connectors TBD with assembly |
 | Per-language concat vs whole phrases | Process + default bias locked in [§6](#6-localization); per-language native sign-off still **open** until first pack |
 | UI locale vs voice pack language | Independent settings recommended ([§6](#6-localization)); neither voice setting implemented yet |

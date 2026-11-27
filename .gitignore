@@ -96,3 +96,15 @@ testdata/cat/local/
 # Local OpenRepeater / RepeaterBook KML drops (device mirror / examples). Never commit.
 /repeater-data/
 /repeater-data/**
+
+# Voice clip authoring (tools/audio-generate) — never commit outputs
+build/sounds/
+tools/audio-generate/.venv/
+tools/audio-generate/cache/
+tools/audio-generate/lock/install-record.json
+tools/audio-generate/**/__pycache__/
+tools/audio-generate/.pytest_cache/
+tools/audio-generate/voice-refs/*.wav
+tools/audio-generate/**/*.wav
+tools/audio-generate/**/*.opus
+tools/audio-generate/**/*.mp3

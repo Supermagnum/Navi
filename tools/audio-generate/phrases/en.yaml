@@ -1,0 +1,206 @@
+lang_code: en
+language_folder: english
+reviewed: true
+template_source: hand-written
+template_commit: null
+phrases:
+  roundabout:
+    text: Roundabout
+    reviewed: true
+    pack_style: fragment
+  first:
+    text: First
+    reviewed: true
+    pack_style: fragment
+  second:
+    text: Second
+    reviewed: true
+    pack_style: fragment
+  third:
+    text: Third
+    reviewed: true
+    pack_style: fragment
+  cross:
+    text: Cross
+    reviewed: true
+    pack_style: fragment
+  left:
+    text: Turn left
+    reviewed: true
+    pack_style: fragment
+  right:
+    text: Turn right
+    reviewed: true
+    pack_style: fragment
+  u_turn:
+    text: Make a U-turn
+    reviewed: true
+    pack_style: fragment
+  straight:
+    text: Continue straight
+    reviewed: true
+    pack_style: fragment
+  continue:
+    text: Continue
+    reviewed: true
+    pack_style: fragment
+  exit:
+    text: Take the exit
+    reviewed: true
+    pack_style: fragment
+  merge:
+    text: Merge
+    reviewed: true
+    pack_style: fragment
+  keep_left:
+    text: Keep left
+    reviewed: true
+    pack_style: fragment
+  keep_right:
+    text: Keep right
+    reviewed: true
+    pack_style: fragment
+  arrive:
+    text: You have arrived
+    reviewed: true
+    pack_style: fragment
+  destination:
+    text: At your destination
+    reviewed: true
+    pack_style: fragment
+  zero:
+    text: Zero
+    reviewed: true
+    pack_style: fragment
+  one:
+    text: One
+    reviewed: true
+    pack_style: fragment
+  two:
+    text: Two
+    reviewed: true
+    pack_style: fragment
+  three:
+    text: Three
+    reviewed: true
+    pack_style: fragment
+  four:
+    text: Four
+    reviewed: true
+    pack_style: fragment
+  five:
+    text: Five
+    reviewed: true
+    pack_style: fragment
+  six:
+    text: Six
+    reviewed: true
+    pack_style: fragment
+  seven:
+    text: Seven
+    reviewed: true
+    pack_style: fragment
+  eight:
+    text: Eight
+    reviewed: true
+    pack_style: fragment
+  nine:
+    text: Nine
+    reviewed: true
+    pack_style: fragment
+  ten:
+    text: Ten
+    reviewed: true
+    pack_style: fragment
+  eleven:
+    text: Eleven
+    reviewed: true
+    pack_style: fragment
+  twelve:
+    text: Twelve
+    reviewed: true
+    pack_style: fragment
+  thirteen:
+    text: Thirteen
+    reviewed: true
+    pack_style: fragment
+  fourteen:
+    text: Fourteen
+    reviewed: true
+    pack_style: fragment
+  fifteen:
+    text: Fifteen
+    reviewed: true
+    pack_style: fragment
+  sixteen:
+    text: Sixteen
+    reviewed: true
+    pack_style: fragment
+  seventeen:
+    text: Seventeen
+    reviewed: true
+    pack_style: fragment
+  eighteen:
+    text: Eighteen
+    reviewed: true
+    pack_style: fragment
+  nineteen:
+    text: Nineteen
+    reviewed: true
+    pack_style: fragment
+  twenty:
+    text: Twenty
+    reviewed: true
+    pack_style: fragment
+  thirty:
+    text: Thirty
+    reviewed: true
+    pack_style: fragment
+  forty:
+    text: Forty
+    reviewed: true
+    pack_style: fragment
+  fifty:
+    text: Fifty
+    reviewed: true
+    pack_style: fragment
+  sixty:
+    text: Sixty
+    reviewed: true
+    pack_style: fragment
+  seventy:
+    text: Seventy
+    reviewed: true
+    pack_style: fragment
+  eighty:
+    text: Eighty
+    reviewed: true
+    pack_style: fragment
+  ninety:
+    text: Ninety
+    reviewed: true
+    pack_style: fragment
+  hundred:
+    text: Hundred
+    reviewed: true
+    pack_style: fragment
+  thousand:
+    text: Thousand
+    reviewed: true
+    pack_style: fragment
+  meters:
+    text: Meters
+    reviewed: true
+    pack_style: fragment
+  kilometers:
+    text: Kilometers
+    reviewed: true
+    pack_style: fragment
+  in:
+    text: In
+    reviewed: true
+    pack_style: fragment
+  then:
+    text: Then
+    reviewed: true
+    pack_style: fragment

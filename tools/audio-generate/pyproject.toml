@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "navi-voicegen"
+version = "0.1.0"
+description = "Offline authoring CLI for Navi turn-by-turn voice clip packs"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+  "PyYAML>=6.0.2",
+]
+
+[project.optional-dependencies]
+engines = [
+  "chatterbox-tts==0.1.7",
+  "numpy>=1.26,<3",
+  "torch>=2.6.0",
+  "torchaudio>=2.6.0",
+]
+
+[project.scripts]
+navi-voicegen = "navi_voicegen.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["navi_voicegen*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

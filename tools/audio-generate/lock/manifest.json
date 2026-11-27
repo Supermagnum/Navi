@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "navi_voicegen": "0.1.0",
+  "python_requires": ">=3.11",
+  "engines": {
+    "chatterbox-tts": {
+      "pypi_version": "0.1.7",
+      "github": "https://github.com/resemble-ai/chatterbox",
+      "default_checkpoint": "ChatterboxMultilingualTTS t3_model=v3",
+      "role": "default turn-by-turn clip synthesis"
+    },
+    "style-bert-vits2": {
+      "github": "https://github.com/litagin02/Style-Bert-VITS2",
+      "install": "manual; not auto-downloaded",
+      "role": "optional persona packs only; requires --persona-checkpoint"
+    }
+  },
+  "phrase_template_clones": {
+    "osrm-text-instructions": {
+      "url": "https://github.com/Project-OSRM/osrm-text-instructions.git",
+      "path_in_cache": "osrm-text-instructions",
+      "sparse_paths": ["languages/translations"],
+      "license": "BSD-2-Clause"
+    },
+    "valhalla": {
+      "url": "https://github.com/valhalla/valhalla.git",
+      "path_in_cache": "valhalla",
+      "sparse_paths": ["locales"],
+      "license": "MIT"
+    }
+  },
+  "postprocess": {
+    "loudnorm_i_lufs": -16.0,
+    "loudnorm_lra": 7.0,
+    "loudnorm_tp_db": -1.5,
+    "channels": 1,
+    "default_codec": "opus",
+    "opus_bitrate_kbps": 32,
+    "mp3_bitrate_kbps": 64
+  }
+}

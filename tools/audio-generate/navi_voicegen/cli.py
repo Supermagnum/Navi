@@ -1,0 +1,130 @@
+"""navi-voicegen CLI entry."""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+from navi_voicegen.deps import SystemDepsError, ensure_system_deps
+from navi_voicegen.draft_phrases import draft_language
+from navi_voicegen.generate import GenerateOptions, generate_packs
+from navi_voicegen.languages import iter_tier_matrix, resolve_language_codes
+from navi_voicegen.paths import default_out_dir
+from navi_voicegen.setup_env import setup_only
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="navi-voicegen",
+        description="Author offline Navi turn-by-turn voice clip packs (no runtime TTS).",
+    )
+    p.add_argument("--setup-only", action="store_true", help="Install venv, deps, template caches")
+    p.add_argument("--lang", default="en", help="Language code, folder alias, tier1|tier2|tier3|all")
+    p.add_argument("--list-languages", action="store_true", help="Print tier matrix and Chatterbox coverage")
+    p.add_argument("--gender", default="both", choices=("male", "female", "both"))
+    p.add_argument(
+        "--mode",
+        default="auto",
+        choices=("auto", "fragment", "whole_phrase", "hybrid"),
+        help="Pack style; auto follows voice-guidance.md §6 bias",
+    )
+    p.add_argument("--format", default="opus", choices=("opus", "mp3"))
+    p.add_argument("--out", type=Path, default=None, help="Output root (default: build/sounds/)")
+    p.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"))
+    p.add_argument("--seed", type=int, default=None)
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--force", action="store_true", help="Regenerate even when input hash matches")
+    p.add_argument("--persona", action="store_true", help="Persona pack (Style-Bert-VITS2; opt-in)")
+    p.add_argument("--persona-checkpoint", type=Path, default=None)
+    p.add_argument("--checkpoint-license-confirmed", action="store_true")
+    p.add_argument("--suffix", default=None, help="Optional persona sentence-ending suffix clip text")
+    p.add_argument("--draft-phrases", action="store_true", help="Draft phrases/*.yaml from template cache")
+    p.add_argument("--allow-unreviewed", action="store_true")
+    p.add_argument("--voice-ref-male", type=Path, default=None)
+    p.add_argument("--voice-ref-female", type=Path, default=None)
+    return p
+
+
+def _genders(arg: str) -> list[str]:
+    if arg == "both":
+        return ["male", "female"]
+    return [arg]
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+
+    if args.list_languages:
+        print("code\ttier\tfolder\tchatterbox\tdefault_pack_style\ttemplate")
+        for code, spec, cb in iter_tier_matrix():
+            print(
+                f"{code}\t{spec.tier}\t{spec.folder}\t{cb}\t"
+                f"{spec.pack_style_default.value}\t{spec.template_source}:{spec.template_tag}"
+            )
+        return 0
+
+    if args.setup_only:
+        try:
+            setup_only()
+        except SystemDepsError as exc:
+            print("\n".join(exc.messages), file=sys.stderr)
+            return 2
+        return 0
+
+    try:
+        lang_codes = resolve_language_codes(args.lang)
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 2
+
+    if args.draft_phrases:
+        try:
+            ensure_system_deps(for_generate=False)
+        except SystemDepsError as exc:
+            print("\n".join(exc.messages), file=sys.stderr)
+            return 2
+        for code in lang_codes:
+            path = draft_language(code)
+            print(f"Wrote draft phrases: {path}")
+        return 0
+
+    if not args.dry_run:
+        try:
+            ensure_system_deps(for_generate=True)
+        except SystemDepsError as exc:
+            print("\n".join(exc.messages), file=sys.stderr)
+            return 2
+
+    out = args.out or default_out_dir()
+    opts = GenerateOptions(
+        lang_codes=lang_codes,
+        genders=_genders(args.gender),
+        out_dir=out,
+        device=args.device,
+        fmt=args.format,
+        mode=args.mode,
+        seed=args.seed,
+        dry_run=args.dry_run,
+        force=args.force,
+        allow_unreviewed=args.allow_unreviewed,
+        suffix=args.suffix,
+        voice_ref_male=args.voice_ref_male,
+        voice_ref_female=args.voice_ref_female,
+        persona=args.persona,
+        persona_checkpoint=args.persona_checkpoint,
+        checkpoint_license_confirmed=args.checkpoint_license_confirmed,
+    )
+    try:
+        manifests = generate_packs(opts)
+    except SystemExit as exc:
+        print(exc, file=sys.stderr)
+        return 2
+
+    for m in manifests:
+        print(f"Wrote manifest: {m}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
