@@ -15,6 +15,7 @@ pub mod ffi;
 pub mod follow_program;
 pub mod gating;
 pub mod importers;
+pub mod maidenhead;
 pub mod mirror;
 pub mod program;
 pub mod repeater;
@@ -31,9 +32,12 @@ pub use follow_program::{
     RetryPolicy, VFO_PROGRAM_ATTEMPTS, VFO_RETRY_PAUSE,
 };
 pub use gating::{gate_from_dump_caps, GateDecision, GateStatus};
+pub use maidenhead::maidenhead_to_latlon;
 pub use program::{program_vfo1_verified, ProgramError, ProgramRequest, ReportedVfo};
 pub use repeater::{AccessTone, RepeaterDb, RepeaterSite, RepeaterSource};
-pub use tcp::TcpRigBackend;
+pub use tcp::{
+    parse_rigctld_reply, parse_rigctld_simple_value, TcpRigBackend, RIGCTLD_REPLY_MAX_BYTES,
+};
 pub use types::{RigBackend, RigError, ShiftDir, VfoState};
 
 /// Shared entry used by HostApi embedders.

@@ -16,6 +16,20 @@ path = "../core"
 [dependencies.navi-cat]
 path = "../navi-cat"
 
+[dependencies.navi-plugin-host]
+path = "../plugin-host"
+
+[dependencies.serde_json]
+version = "1"
+
+[dependencies.tempfile]
+version = "3"
+
+[dependencies.chrono]
+version = "0.4"
+default-features = false
+features = ["std"]
+
 # Isolate from the workspace so cargo-fuzz can use nightly without
 # rebuilding the pinned 1.98 workspace members as a unit.
 [workspace]
@@ -70,4 +84,149 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "benshi_rf_ch"
+path = "fuzz_targets/benshi_rf_ch.rs"
+test = false
+doc = false
+bench = false
 
+[[bin]]
+name = "benshi_settings_patch"
+path = "fuzz_targets/benshi_settings_patch.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "benshi_dev_info"
+path = "fuzz_targets/benshi_dev_info.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "benshi_ht_status"
+path = "fuzz_targets/benshi_ht_status.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "benshi_freq_mode_notif"
+path = "fuzz_targets/benshi_freq_mode_notif.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rigctld_reply"
+path = "fuzz_targets/rigctld_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "repeater_checksums"
+path = "fuzz_targets/repeater_checksums.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_mhz"
+path = "fuzz_targets/parse_mhz.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "maidenhead"
+path = "fuzz_targets/maidenhead.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "osm_repeater_relation_xml"
+path = "fuzz_targets/osm_repeater_relation_xml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "repeater_csv_bytes"
+path = "fuzz_targets/repeater_csv_bytes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "repeater_kml_point"
+path = "fuzz_targets/repeater_kml_point.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mwm_sidecar"
+path = "fuzz_targets/mwm_sidecar.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mwm_catalog_json"
+path = "fuzz_targets/mwm_catalog_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mwm_countries_txt"
+path = "fuzz_targets/mwm_countries_txt.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "navi_manifest_json"
+path = "fuzz_targets/navi_manifest_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pbf_extract_gate"
+path = "fuzz_targets/pbf_extract_gate.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "osm_maxspeed"
+path = "fuzz_targets/osm_maxspeed.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "osm_conditional_maxspeed"
+path = "fuzz_targets/osm_conditional_maxspeed.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "plugin_manifest"
+path = "fuzz_targets/plugin_manifest.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "flat_graph_pack"
+path = "fuzz_targets/flat_graph_pack.rs"
+test = false
+doc = false
+bench = false

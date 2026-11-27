@@ -59,12 +59,21 @@ const ELEV_POINT_PACKED_LEN: usize = 6;
 /// Sections that must appear in the directory for a usable Navi sidecar.
 pub const REQUIRED_SECTIONS: &[&str] = &[SECTION_WETLAND, SECTION_ATTRIBUTION];
 
+/// Hard cap on outer zstd expansion (decompression-bomb guard).
+pub const SIDECAR_DECOMPRESSED_MAX: usize = 64 * 1024 * 1024;
+/// Hard cap on directory entries so `section_count` cannot drive huge allocations.
+pub const SIDECAR_MAX_SECTIONS: usize = 256;
+
 #[derive(Debug, Error)]
 pub enum SidecarError {
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
     #[error("zstd: {0}")]
     Zstd(String),
+    #[error("decompressed sidecar exceeds {SIDECAR_DECOMPRESSED_MAX} bytes")]
+    DecompressedTooLarge,
+    #[error("sidecar section_count {0} exceeds max {SIDECAR_MAX_SECTIONS}")]
+    TooManySections(usize),
     #[error("bad magic")]
     BadMagic,
     #[error("unsupported format_version {0} (client supports {FORMAT_VERSION})")]
@@ -322,6 +331,9 @@ impl SidecarReader {
         off += 8;
         let section_count = read_u32(&logical, off)? as usize;
         off += 4;
+        if section_count > SIDECAR_MAX_SECTIONS {
+            return Err(SidecarError::TooManySections(section_count));
+        }
 
         let mut sections = Vec::with_capacity(section_count);
         for _ in 0..section_count {
@@ -1008,7 +1020,22 @@ pub fn zigzag_decode_i32(v: u32) -> i32 {
 }
 
 fn zstd_decompress(data: &[u8]) -> Result<Vec<u8>, SidecarError> {
-    zstd::stream::decode_all(data).map_err(|e| SidecarError::Zstd(e.to_string()))
+    let mut decoder =
+        zstd::stream::read::Decoder::new(data).map_err(|e| SidecarError::Zstd(e.to_string()))?;
+    let mut out = Vec::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = std::io::Read::read(&mut decoder, &mut buf)
+            .map_err(|e| SidecarError::Zstd(e.to_string()))?;
+        if n == 0 {
+            break;
+        }
+        if out.len().saturating_add(n) > SIDECAR_DECOMPRESSED_MAX {
+            return Err(SidecarError::DecompressedTooLarge);
+        }
+        out.extend_from_slice(&buf[..n]);
+    }
+    Ok(out)
 }
 
 fn sha256_32(bytes: &[u8]) -> [u8; 32] {
@@ -1284,5 +1311,24 @@ mod tests {
         assert!(vehicle_exceeds_limit(271, 270));
         assert!(!vehicle_exceeds_limit(270, 270));
         assert!(!vehicle_exceeds_limit(300, 0));
+    }
+
+    #[test]
+    fn rejects_too_many_sections() {
+        let mut logical = Vec::new();
+        logical.extend_from_slice(MAGIC);
+        logical.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
+        // generator_tag / generator_sha empty u16 strings
+        logical.extend_from_slice(&0u16.to_le_bytes());
+        logical.extend_from_slice(&0u16.to_le_bytes());
+        logical.extend_from_slice(&[0u8; 32]); // mwm sha
+        logical.extend_from_slice(&0u64.to_le_bytes()); // mwm size
+        let count = (SIDECAR_MAX_SECTIONS as u32).saturating_add(1);
+        logical.extend_from_slice(&count.to_le_bytes());
+        let outer = zstd::stream::encode_all(logical.as_slice(), 1).unwrap();
+        assert!(matches!(
+            SidecarReader::open_bytes(&outer),
+            Err(SidecarError::TooManySections(_))
+        ));
     }
 }

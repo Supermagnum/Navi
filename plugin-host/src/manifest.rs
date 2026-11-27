@@ -39,11 +39,9 @@ fn default_wasm() -> String {
 }
 
 impl PluginManifest {
-    pub fn from_path(path: &Path) -> Result<Self> {
-        let text = fs::read_to_string(path)
-            .with_context(|| format!("read plugin manifest {}", path.display()))?;
-        let manifest: Self = serde_json::from_str(&text)
-            .with_context(|| format!("parse plugin manifest {}", path.display()))?;
+    /// Parse and validate a `plugin.json` document (fuzz / tests / loaders).
+    pub fn from_json_str(text: &str) -> Result<Self> {
+        let manifest: Self = serde_json::from_str(text).context("parse plugin manifest JSON")?;
         if manifest.name.trim().is_empty() {
             bail!("plugin manifest missing name");
         }
@@ -56,6 +54,13 @@ impl PluginManifest {
             }
         }
         Ok(manifest)
+    }
+
+    pub fn from_path(path: &Path) -> Result<Self> {
+        let text = fs::read_to_string(path)
+            .with_context(|| format!("read plugin manifest {}", path.display()))?;
+        Self::from_json_str(&text)
+            .with_context(|| format!("parse plugin manifest {}", path.display()))
     }
 
     pub fn capability_set(&self) -> HashSet<Capability> {

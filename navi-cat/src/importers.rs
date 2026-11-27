@@ -526,6 +526,9 @@ fn way_centroid(way: &XmlEl, nodes: &HashMap<String, XmlEl>) -> (Option<f64>, Op
     )
 }
 
+/// Nesting depth ceiling for the OSM XML lite parser (stack / DoS guard).
+const XML_LITE_MAX_DEPTH: usize = 64;
+
 /// Tiny non-validating XML parser for OSM API 0.6 documents (no namespaces).
 fn xml_lite_parse(xml: &str) -> Result<XmlEl, String> {
     let bytes = xml.as_bytes();
@@ -535,7 +538,10 @@ fn xml_lite_parse(xml: &str) -> Result<XmlEl, String> {
             *i += 1;
         }
     }
-    fn parse_el(bytes: &[u8], i: &mut usize) -> Result<XmlEl, String> {
+    fn parse_el(bytes: &[u8], i: &mut usize, depth: usize) -> Result<XmlEl, String> {
+        if depth > XML_LITE_MAX_DEPTH {
+            return Err("xml nesting too deep".into());
+        }
         skip_ws(bytes, i);
         if *i >= bytes.len() || bytes[*i] != b'<' {
             return Err("expected <".into());
@@ -549,8 +555,11 @@ fn xml_lite_parse(xml: &str) -> Result<XmlEl, String> {
             while *i < bytes.len() && bytes[*i] != b'>' {
                 *i += 1;
             }
+            if *i >= bytes.len() {
+                return Err("truncated pi/comment".into());
+            }
             *i += 1;
-            return parse_el(bytes, i);
+            return parse_el(bytes, i, depth);
         }
         let start = *i;
         while *i < bytes.len() && bytes[*i].is_ascii_alphanumeric() {
@@ -559,6 +568,9 @@ fn xml_lite_parse(xml: &str) -> Result<XmlEl, String> {
         let name = std::str::from_utf8(&bytes[start..*i])
             .map_err(|e| e.to_string())?
             .to_string();
+        if name.is_empty() {
+            return Err("empty element name".into());
+        }
         let mut attrs = HashMap::new();
         loop {
             while *i < bytes.len() && bytes[*i].is_ascii_whitespace() {
@@ -578,6 +590,7 @@ fn xml_lite_parse(xml: &str) -> Result<XmlEl, String> {
                         text: String::new(),
                     });
                 }
+                return Err("malformed self-close".into());
             }
             if bytes[*i] == b'>' {
                 *i += 1;
@@ -586,6 +599,9 @@ fn xml_lite_parse(xml: &str) -> Result<XmlEl, String> {
             let k0 = *i;
             while *i < bytes.len() && bytes[*i] != b'=' {
                 *i += 1;
+            }
+            if *i >= bytes.len() {
+                return Err("truncated attr name".into());
             }
             let key = std::str::from_utf8(&bytes[k0..*i])
                 .map_err(|e| e.to_string())?
@@ -599,6 +615,9 @@ fn xml_lite_parse(xml: &str) -> Result<XmlEl, String> {
             let v0 = *i;
             while *i < bytes.len() && bytes[*i] != b'"' {
                 *i += 1;
+            }
+            if *i >= bytes.len() {
+                return Err("truncated attr value".into());
             }
             let val = std::str::from_utf8(&bytes[v0..*i])
                 .map_err(|e| e.to_string())?
@@ -617,11 +636,13 @@ fn xml_lite_parse(xml: &str) -> Result<XmlEl, String> {
                 while *i < bytes.len() && bytes[*i] != b'>' {
                     *i += 1;
                 }
-                *i += 1;
+                if *i < bytes.len() {
+                    *i += 1;
+                }
                 break;
             }
             if *i < bytes.len() && bytes[*i] == b'<' {
-                children.push(parse_el(bytes, i)?);
+                children.push(parse_el(bytes, i, depth + 1)?);
             } else if *i < bytes.len() {
                 let t0 = *i;
                 while *i < bytes.len() && bytes[*i] != b'<' {
@@ -639,7 +660,7 @@ fn xml_lite_parse(xml: &str) -> Result<XmlEl, String> {
             text,
         })
     }
-    parse_el(bytes, &mut i)
+    parse_el(bytes, &mut i, 0)
 }
 
 /// Always disabled until written RepeaterBook API permission exists.
@@ -668,5 +689,15 @@ mod tests {
         let dir = ensure_cat_import_dir(tmp.path()).unwrap();
         assert!(dir.is_dir());
         assert!(dir.ends_with("cat/import"));
+    }
+
+    /// Regression: libFuzzer found a panic on malformed self-close (`<rel*`).
+    #[test]
+    fn xml_lite_malformed_self_close_is_error_not_panic() {
+        let raw = b"<osm><rel*\x00\" v=\"n<osetwoRk\"/";
+        let xml = String::from_utf8_lossy(raw);
+        let db = RepeaterDb::open_memory().unwrap();
+        assert!(import_osm_relation_xml(&db, &xml).is_err());
+        assert!(xml_lite_parse(&xml).is_err());
     }
 }

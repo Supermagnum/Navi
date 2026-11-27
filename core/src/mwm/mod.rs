@@ -107,7 +107,8 @@ pub use sidecar::{
     InspectCounts, SidecarError, SidecarHeader, SidecarReader, VehicleLimitRecord,
     VehicleLimitsCoverage, WetlandRecord, CLASS_HARD, CLASS_SOFT, ELEVATION_BODY_MAGIC_EL02,
     FORMAT_VERSION, MAGIC, REQUIRED_SECTIONS, SECTION_ATTRIBUTION, SECTION_BOARDWALK,
-    SECTION_ELEVATION, SECTION_VEHICLE_LIMITS, SECTION_WETLAND, VEHICLE_LIMIT_RECORD_LEN,
+    SECTION_ELEVATION, SECTION_VEHICLE_LIMITS, SECTION_WETLAND, SIDECAR_DECOMPRESSED_MAX,
+    SIDECAR_MAX_SECTIONS, VEHICLE_LIMIT_RECORD_LEN,
 };
 pub use storage::{
     active_path, attribution_json_path, attribution_md_path, catalog_snapshot_path, leaf_mwm_path,

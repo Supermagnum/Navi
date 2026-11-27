@@ -1,0 +1,1 @@
+Fuzz coverage expansion (#167): more cargo-fuzz targets, opening-hours hardening, and CI gnu-host fix.
