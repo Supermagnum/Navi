@@ -1,7 +1,0 @@
-PyYAML>=6.0.2
-
-[engines]
-chatterbox-tts==0.1.7
-numpy<3,>=1.26
-torch>=2.6.0
-torchaudio>=2.6.0

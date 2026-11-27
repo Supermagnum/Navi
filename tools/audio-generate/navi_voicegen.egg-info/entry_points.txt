@@ -1,2 +1,0 @@
-[console_scripts]
-navi-voicegen = navi_voicegen.cli:main

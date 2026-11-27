@@ -108,3 +108,5 @@ tools/audio-generate/voice-refs/*.wav
 tools/audio-generate/**/*.wav
 tools/audio-generate/**/*.opus
 tools/audio-generate/**/*.mp3
+tools/audio-generate/*.egg-info/
+tools/audio-generate/navi_voicegen.egg-info/
