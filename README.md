@@ -15,42 +15,39 @@ https://github.com/Supermagnum/Navi/blob/dev/docs/crates.md
 # NOTE !
 
 Navi does not currently ship with a ready-made international routing database
-the way many commercial GPS / head-unit products do (those usually include
-precomputed indexes from the vendor). On the **pack-server path** (green pills),
-a full region download still needs pack fetch + Geofabrik extract + offline
-basemap + on-device **place index** — typically about **20–22 minutes** for a
-large landsdel such as Østlandet on the reference tablet, or about **5 minutes**
-for a small region such as Luxembourg. On the **local-bake path** (blue pills /
-server down), add on-device routing-pack convert as well (Østlandet convert
-alone is on the order of **~7–11 minutes**). These are **current baseline
-measurements**, not guarantees — see
+the way many commercial GPS / head-unit products do. After install, open
+**Tools** and **download the map regions you need**. Current product builds
+use the **CoMaps / MWM** path: region download installs offline CoMaps leaf
+maps (`.mwm`) and related Navi sidecars from CoMaps mirrors and the Navi
+catalog; routing and map display then work offline. That is a **network fetch
+of prebuilt leaves**, not tens of minutes of on-device indexing.
+
+**Baseline, not a guarantee** (Samsung Galaxy Tab S6 Lite, SM-P613, Wi-Fi):
+
+- **Østlandet** full leaf set: about **99 seconds** (six leaves + sidecars,
+  2026-11-23) — see
+  [`docs/test-results/raufoss-bergen.md`](docs/test-results/raufoss-bergen.md)
+- Smaller regions are often **under a minute** on good Wi-Fi; large
+  multi-region corridors scale with leaf count and bytes (for example a
+  nine-region German trip corridor used about **2.2 GB** of MWM on disk —
+  [`docs/test-results/bevensen-mobilehome-campaign.md`](docs/test-results/bevensen-mobilehome-campaign.md))
+
+Downloads and updates can look quiet in Tools while leaves are transferring —
+**be patient**; they start automatically once you confirm the region. More
+context: [`docs/mwm-phase8-rkyv-retire.md`](docs/mwm-phase8-rkyv-retire.md),
+[`docs/mwm-phase7-migration.md`](docs/mwm-phase7-migration.md),
+[Known issues](#known-issues).
+
+The older **~20–22 minute** Østlandet and **~5 minute** Luxembourg totals
+below under
 [Download and place-index timing (measured)](#download-and-place-index-timing-measured)
-and [Known issues](#known-issues). It must be done when you **download or
-update** map data for your region. These steps can look stuck in Tools —
-**be patient**, but they start automatic.
+were for the classic pack-server / Geofabrik / on-device place-index path
+(September 2026). That path is **not** the default first-run experience
+anymore; keep those numbers only as historical reference for the legacy
+pipeline still in the tree.
 
-In **Tools**, region chips (pills) show how the download will run:
-
-- **Green pills** — the region is published on the pack server (or already
-  indexed on the device). **Download region** is green and installs published
-  routing packs first, then still fetches a real Geofabrik extract and builds
-  the **place index** on device (search). That place-index step is still
-  minutes of work; leave the app alone until status shows done.
-- **Blue / default pills** — the path is **not** on the pack server or the
-  server is down. The button reads **Download region + build place index**
-  and falls back to a full **local bake**: Geofabrik PBF download, on-device
-  pack convert, and place index (the slower path).
-
-**Fallback chain** (automatic; you do not pick hosts by hand): try the public
-pack host
-([navi-server](https://github.com/Supermagnum/navi-server/tree/main) /
-navigate-me.duckdns.org). If it does not answer or the region is missing,
-Navi uses Geofabrik + on-device convert (`local-bake`). Same idea if a pack
-fetch fails mid-download (network, checksum, etc.). Details:
-[`docs/pack-server-client.md`](docs/pack-server-client.md).
-
-Precomputed town-to-town corridors and globe disk ballparks (packs from live
-`current.json`, plus optional highway OD caches):
+Precomputed town-to-town corridors and globe disk ballparks (legacy packs /
+optional highway OD caches):
 [`docs/precomputed-index-and-route-cache.md`](docs/precomputed-index-and-route-cache.md).
 
 Estimated server space needed (includes **measured** pack / ops figures, not
@@ -371,6 +368,10 @@ extract/job. A selected Geofabrik path in the picker alone is not enough.
 was running on an empty install.)
 
 ### Download and place-index timing (measured)
+
+**Historical — classic pack-server path only.** Current first-run timing is
+the CoMaps / MWM leaf fetch in [NOTE](#note-); figures below are kept for the
+legacy Geofabrik + place-index pipeline.
 
 **Baseline, not a guarantee.** Numbers below were measured on a Samsung Galaxy
 Tab S6 Lite (**SM-P613**, serial R52TB0JQEDE), Wi-Fi, pack-server path
