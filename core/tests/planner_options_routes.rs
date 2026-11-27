@@ -457,6 +457,258 @@ fn avoid_tunnels_prefers_surface_detour_but_keeps_tunnel_only_path() {
     assert!(forced.0.contains(&NodeId(2)));
 }
 
+/// Hiking (Foot): car-grade tunnels are hard-avoided at route cost time even when
+/// `avoid_tunnels` is off — matches foot graph bake + `edge_travel_cost` backup.
+#[test]
+fn foot_hiking_hard_avoids_primary_tunnel() {
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.01),
+        node(3, 60.0, 10.02),
+        node(4, 60.01, 10.01),
+    ] {
+        nodes.insert(id, n);
+    }
+    let mut ab = edge("ab", 1, 2, 60.0, 10.0, 60.0, 10.01, 100.0, "primary");
+    ab.is_tunnel = true;
+    let mut bc = edge("bc", 2, 3, 60.0, 10.01, 60.0, 10.02, 100.0, "primary");
+    bc.is_tunnel = true;
+    let ad = edge("ad", 1, 4, 60.0, 10.0, 60.01, 10.01, 250.0, "path");
+    let dc = edge("dc", 4, 3, 60.01, 10.01, 60.0, 10.02, 250.0, "path");
+    let graph = RouteGraph::from_parts(nodes, vec![ab, bc, ad, dc], RoutingProfile::Foot);
+
+    let tunnel_shortcut = graph.shortest_path(NodeId(1), NodeId(3), false).unwrap();
+    assert!(
+        !tunnel_shortcut.0.contains(&NodeId(2)),
+        "foot must not use motor-grade tunnel corridor: {:?}",
+        tunnel_shortcut.0
+    );
+    assert!(tunnel_shortcut.0.contains(&NodeId(4)));
+}
+
+/// Hiking planner always passes `avoid_tunnels: true`; foot-legal tunnels still route
+/// but lose to a surface/path detour when one exists.
+#[test]
+fn foot_hiking_soft_avoid_tunnels_prefers_path_detour() {
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.01),
+        node(3, 60.0, 10.02),
+        node(4, 60.01, 10.01),
+    ] {
+        nodes.insert(id, n);
+    }
+    let mut ab = edge("ab", 1, 2, 60.0, 10.0, 60.0, 10.01, 100.0, "footway");
+    ab.is_tunnel = true;
+    let mut bc = edge("bc", 2, 3, 60.0, 10.01, 60.0, 10.02, 100.0, "footway");
+    bc.is_tunnel = true;
+    let ad = edge("ad", 1, 4, 60.0, 10.0, 60.01, 10.01, 250.0, "path");
+    let dc = edge("dc", 4, 3, 60.01, 10.01, 60.0, 10.02, 250.0, "path");
+    let graph = RouteGraph::from_parts(nodes, vec![ab, bc, ad, dc], RoutingProfile::Foot);
+
+    let through_tunnel = graph.shortest_path(NodeId(1), NodeId(3), false).unwrap();
+    assert!(
+        through_tunnel.0.contains(&NodeId(2)),
+        "without soft avoid foot may use legal footway tunnel: {:?}",
+        through_tunnel.0
+    );
+
+    let hike_opts = RouteOptions {
+        avoid_tunnels: true,
+        ..Default::default()
+    };
+    let surface = graph
+        .shortest_path_with_options(NodeId(1), NodeId(3), false, &hike_opts)
+        .unwrap();
+    assert!(
+        !surface.0.contains(&NodeId(2)),
+        "hiking soft-avoid tunnels should prefer path detour: {:?}",
+        surface.0
+    );
+    assert_ne!(through_tunnel.0, surface.0);
+}
+
+/// Pilgrim-route toggle (same soft pref as official networks) on a Foot graph.
+#[test]
+fn foot_pilgrim_route_preference_chooses_marked_ways() {
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.02),
+        node(3, 60.01, 10.01),
+    ] {
+        nodes.insert(id, n);
+    }
+    // Direct 100 m vs pilgrim 120+120 m; ×NON_NETWORK_PENALTY on shortcut → pilgrim wins.
+    let shortcut = edge("99", 1, 2, 60.0, 10.0, 60.0, 10.02, 100.0, "path");
+    let pilgrim_a = edge("501", 1, 3, 60.0, 10.0, 60.01, 10.01, 120.0, "path");
+    let pilgrim_b = edge("502", 3, 2, 60.01, 10.01, 60.0, 10.02, 120.0, "path");
+    let mut graph = RouteGraph::from_parts(
+        nodes,
+        vec![shortcut, pilgrim_a, pilgrim_b],
+        RoutingProfile::Foot,
+    );
+
+    let plain = graph.shortest_path(NodeId(1), NodeId(2), false).unwrap();
+    assert_eq!(plain.0, vec![NodeId(1), NodeId(2)]);
+
+    let mut pilgrim_ways = HashSet::new();
+    pilgrim_ways.insert(501);
+    pilgrim_ways.insert(502);
+    apply_official_network_preference(&mut graph, &pilgrim_ways);
+    let preferred = graph.shortest_path(NodeId(1), NodeId(2), false).unwrap();
+    assert_eq!(
+        preferred.0,
+        vec![NodeId(1), NodeId(3), NodeId(2)],
+        "prefer_pilgrim_routes should favour pilgrim member ways"
+    );
+}
+
+// `prefer_pilgrim_routes` is hiking-only (`plan_hiking_route`, UI
+// `toggle_prefer_pilgrim_routes`). Cycling / e-bike use official cycle networks;
+// motorcycle uses the car planner — no pilgrim preference at plan time for those
+// profiles (see internal hiking-tunnel-pilgrim-research.md).
+
+/// Cycling (+ e-bike): same HardAvoid as foot for motor-grade tunnels
+/// (`Profile::CyclingElectric` → `RoutingProfile::Bicycle`).
+#[test]
+fn bicycle_hard_avoids_primary_tunnel() {
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.01),
+        node(3, 60.0, 10.02),
+        node(4, 60.01, 10.01),
+    ] {
+        nodes.insert(id, n);
+    }
+    let mut ab = edge("ab", 1, 2, 60.0, 10.0, 60.0, 10.01, 100.0, "primary");
+    ab.is_tunnel = true;
+    let mut bc = edge("bc", 2, 3, 60.0, 10.01, 60.0, 10.02, 100.0, "primary");
+    bc.is_tunnel = true;
+    let ad = edge("ad", 1, 4, 60.0, 10.0, 60.01, 10.01, 250.0, "cycleway");
+    let dc = edge("dc", 4, 3, 60.01, 10.01, 60.0, 10.02, 250.0, "cycleway");
+    let graph = RouteGraph::from_parts(nodes, vec![ab, bc, ad, dc], RoutingProfile::Bicycle);
+
+    let tunnel_shortcut = graph.shortest_path(NodeId(1), NodeId(3), false).unwrap();
+    assert!(
+        !tunnel_shortcut.0.contains(&NodeId(2)),
+        "bicycle must not use motor-grade tunnel corridor: {:?}",
+        tunnel_shortcut.0
+    );
+    assert!(tunnel_shortcut.0.contains(&NodeId(4)));
+}
+
+/// Auto-safe cycling profiles pass `avoid_tunnels: true` in the app; legal cycleway
+/// tunnels still route but lose to a surface detour when one exists.
+#[test]
+fn bicycle_soft_avoid_tunnels_prefers_cycleway_detour() {
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.01),
+        node(3, 60.0, 10.02),
+        node(4, 60.01, 10.01),
+    ] {
+        nodes.insert(id, n);
+    }
+    let mut ab = edge("ab", 1, 2, 60.0, 10.0, 60.0, 10.01, 100.0, "cycleway");
+    ab.is_tunnel = true;
+    let mut bc = edge("bc", 2, 3, 60.0, 10.01, 60.0, 10.02, 100.0, "cycleway");
+    bc.is_tunnel = true;
+    let ad = edge("ad", 1, 4, 60.0, 10.0, 60.01, 10.01, 250.0, "path");
+    let dc = edge("dc", 4, 3, 60.01, 10.01, 60.0, 10.02, 250.0, "path");
+    let graph = RouteGraph::from_parts(nodes, vec![ab, bc, ad, dc], RoutingProfile::Bicycle);
+
+    let through_tunnel = graph.shortest_path(NodeId(1), NodeId(3), false).unwrap();
+    assert!(
+        through_tunnel.0.contains(&NodeId(2)),
+        "without soft avoid bicycle may use legal cycleway tunnel: {:?}",
+        through_tunnel.0
+    );
+
+    let bike_opts = RouteOptions {
+        avoid_tunnels: true,
+        ..Default::default()
+    };
+    let surface = graph
+        .shortest_path_with_options(NodeId(1), NodeId(3), false, &bike_opts)
+        .unwrap();
+    assert!(
+        !surface.0.contains(&NodeId(2)),
+        "cycling soft-avoid tunnels should prefer path detour: {:?}",
+        surface.0
+    );
+    assert_ne!(through_tunnel.0, surface.0);
+}
+
+#[test]
+fn cycling_electric_uses_bicycle_routing_profile() {
+    assert!(matches!(
+        RoutingProfile::from(Profile::CyclingElectric),
+        RoutingProfile::Bicycle
+    ));
+    assert!(matches!(
+        RoutingProfile::from(Profile::Cycling),
+        RoutingProfile::Bicycle
+    ));
+}
+
+/// Motorcycle / motorcycle-electric plan on the car graph; soft avoid is user-toggleable
+/// (same cost model as [`avoid_tunnels_prefers_surface_detour_but_keeps_tunnel_only_path`]).
+#[test]
+fn motorcycle_routing_soft_avoid_tunnels_prefers_surface_detour() {
+    let mut nodes = HashMap::new();
+    for (id, n) in [
+        node(1, 60.0, 10.0),
+        node(2, 60.0, 10.01),
+        node(3, 60.0, 10.02),
+        node(4, 60.01, 10.01),
+    ] {
+        nodes.insert(id, n);
+    }
+    let mut ab = edge("ab", 1, 2, 60.0, 10.0, 60.0, 10.01, 100.0, "primary");
+    ab.is_tunnel = true;
+    let mut bc = edge("bc", 2, 3, 60.0, 10.01, 60.0, 10.02, 100.0, "primary");
+    bc.is_tunnel = true;
+    let ad = edge("ad", 1, 4, 60.0, 10.0, 60.01, 10.01, 250.0, "secondary");
+    let dc = edge("dc", 4, 3, 60.01, 10.01, 60.0, 10.02, 250.0, "secondary");
+    // Profile::Motorcycle | MotorcycleElectric → RoutingProfile::Car (product routing).
+    let graph = RouteGraph::from_parts(nodes, vec![ab, bc, ad, dc], RoutingProfile::Car);
+
+    let with_tunnel = graph.shortest_path(NodeId(1), NodeId(3), false).unwrap();
+    assert!(with_tunnel.0.contains(&NodeId(2)));
+
+    let avoid = graph
+        .shortest_path_with_options(
+            NodeId(1),
+            NodeId(3),
+            false,
+            &RouteOptions {
+                avoid_tunnels: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(
+        !avoid.0.contains(&NodeId(2)),
+        "motorcycle (car graph) soft avoid tunnels should take surface path: {:?}",
+        avoid.0
+    );
+    assert_ne!(with_tunnel.0, avoid.0);
+
+    assert!(matches!(
+        RoutingProfile::from(Profile::Motorcycle),
+        RoutingProfile::Car
+    ));
+    assert!(matches!(
+        RoutingProfile::from(Profile::MotorcycleElectric),
+        RoutingProfile::Car
+    ));
+}
+
 #[test]
 fn avoid_ferry_changes_planned_route() {
     let mut nodes = HashMap::new();
