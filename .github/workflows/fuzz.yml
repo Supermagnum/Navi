@@ -1,21 +1,12 @@
 # Fuzzing / input-hardening (issue #167).
 #
-# - pull_request / push: short per-target smoke (default 60s), advisory (continue-on-error)
-# - schedule (nightly): longer runs; MWM-related targets weighted higher
-# - workflow_dispatch: manual with custom duration/targets
-#
+# Manual only (`workflow_dispatch`). Does not run on push, PR, or schedule.
 # Uses nightly only for cargo-fuzz / libFuzzer. Normal builds stay on the pinned
 # 1.98 toolchain in rust-toolchain.toml.
 
 name: Fuzzing
 
 on:
-  pull_request:
-  push:
-    branches: [dev, main, fuzz]
-  schedule:
-    # 03:17 Europe/Oslo ≈ 02:17 UTC
-    - cron: "17 2 * * *"
   workflow_dispatch:
     inputs:
       duration_seconds:
@@ -43,18 +34,12 @@ env:
     repeater_csv_bytes repeater_kml_point mwm_sidecar mwm_catalog_json
     mwm_countries_txt navi_manifest_json pbf_extract_gate osm_maxspeed
     osm_conditional_maxspeed plugin_manifest flat_graph_pack
-  # Heavier weight on map/sidecar/pack targets for nightly.
-  NIGHTLY_WEIGHT_TARGETS: >-
-    mwm_sidecar mwm_catalog_json mwm_countries_txt flat_graph_pack
-    pbf_extract_gate navi_manifest_json
 
 jobs:
   fuzz:
     name: cargo-fuzz
     runs-on: ubuntu-latest
-    # Nightly can run many targets for ~30–60 min each; keep a high ceiling.
     timeout-minutes: 720
-    continue-on-error: ${{ github.event_name != 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -89,37 +74,14 @@ jobs:
         run: |
           set -euo pipefail
           ALL="${{ env.ALL_TARGETS }}"
-          case "${{ github.event_name }}" in
-            schedule)
-              DUR=1800
-              # Prefer weighted targets first, then the rest once.
-              WEIGHT="${{ env.NIGHTLY_WEIGHT_TARGETS }}"
-              REST=""
-              for t in $ALL; do
-                skip=0
-                for w in $WEIGHT; do
-                  if [ "$t" = "$w" ]; then skip=1; break; fi
-                done
-                if [ "$skip" -eq 0 ]; then REST="$REST $t"; fi
-              done
-              # Run weighted targets twice (≈ 60 min each wall if sequential).
-              echo "targets=$WEIGHT $WEIGHT $REST" >> "$GITHUB_OUTPUT"
-              ;;
-            workflow_dispatch)
-              DUR="${{ github.event.inputs.duration_seconds }}"
-              REQ="${{ github.event.inputs.targets }}"
-              if [ "$REQ" = "all" ] || [ -z "$REQ" ]; then
-                echo "targets=$ALL" >> "$GITHUB_OUTPUT"
-              else
-                echo "targets=$(echo "$REQ" | tr ',' ' ')" >> "$GITHUB_OUTPUT"
-              fi
-              ;;
-            *)
-              DUR=60
-              echo "targets=$ALL" >> "$GITHUB_OUTPUT"
-              ;;
-          esac
+          DUR="${{ github.event.inputs.duration_seconds }}"
+          REQ="${{ github.event.inputs.targets }}"
           if [ -z "${DUR:-}" ]; then DUR=60; fi
+          if [ "$REQ" = "all" ] || [ -z "$REQ" ]; then
+            echo "targets=$ALL" >> "$GITHUB_OUTPUT"
+          else
+            echo "targets=$(echo "$REQ" | tr ',' ' ')" >> "$GITHUB_OUTPUT"
+          fi
           echo "duration=$DUR" >> "$GITHUB_OUTPUT"
 
       - name: Run fuzz targets

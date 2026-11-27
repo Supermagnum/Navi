@@ -39,9 +39,7 @@ Workflow: `.github/workflows/fuzz.yml` (**Fuzzing**).
 
 | Trigger | Duration | Notes |
 |---|---|---|
-| `pull_request` / `push` to `dev`/`main`/`fuzz` | **60 s** per target | Advisory (`continue-on-error`); uploads crash artifacts |
-| `schedule` (nightly) | **1800 s** per target; MWM/sidecar/pack targets run twice | Long campaign |
-| `workflow_dispatch` | Configurable | Manual |
+| `workflow_dispatch` only | Configurable (`duration_seconds`, `targets`) | Manual — no push / PR / schedule triggers |
 
 Normal merge CI (`.github/workflows/ci.yml`) still uses the pinned stable
 toolchain only. Fuzz failures on PR do not block merge by themselves; treat
