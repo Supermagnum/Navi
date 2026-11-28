@@ -905,6 +905,10 @@ object NaviMapTestHooks {
     @Volatile
     var requestStartRouteSimulation: Boolean = false
 
+    /** One-shot: open Nearby services and force an offline search (tablet harness). */
+    @Volatile
+    var requestNearbyServicesTest: Boolean = false
+
     /** Request stop of debug route simulation. */
     @Volatile
     var requestStopRouteSimulation: Boolean = false
@@ -991,7 +995,7 @@ object NaviMapTestHooks {
     fun replayHooksEnabled(): Boolean = BuildConfig.DEBUG || BuildConfig.BUILD_TYPE == "releasetest"
 
     /** Live GPS is dropped only while replay hooks are enabled and the flag is set. */
-    fun shouldIgnoreLiveGpsFixes(): Boolean = replayHooksEnabled() && ignoreLiveGpsFixes
+    fun shouldIgnoreLiveGpsFixes(): Boolean = ignoreLiveGpsFixes && (replayHooksEnabled() || heldDebugGpsLatLon != null)
 
     /** Last map GPS mark (after applyFix); for off-route assertions. */
     @Volatile
@@ -1164,7 +1168,8 @@ object NaviMapTestHooks {
         lat: Double,
         lon: Double,
     ) {
-        if (!replayHooksEnabled()) return
+        // Debug/releasetest always; release only when Nearby-services tablet harness is armed.
+        if (!replayHooksEnabled() && !requestNearbyServicesTest) return
         if (!lat.isFinite() || !lon.isFinite()) return
         heldDebugGpsLatLon = lat to lon
         ignoreLiveGpsFixes = true

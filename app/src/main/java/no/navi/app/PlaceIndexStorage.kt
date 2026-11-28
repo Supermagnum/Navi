@@ -139,6 +139,15 @@ object PlaceIndexStorage {
                 candidates.add(cand)
             }
         }
+        // Primary external app-files is skipped by NaviStorageVolumes.list (long-trip
+        // picker), but operators may seed place_index.db there via adb push.
+        for (dir in context.getExternalFilesDirs(null).orEmpty()) {
+            if (dir == null) continue
+            val cand = File(dir, DB_NAME)
+            if (cand.isFile && cand.length() >= PlaceIndexIntact.MIN_DB_BYTES) {
+                candidates.add(cand)
+            }
+        }
         val internal = File(NaviAppData.resolve(context), DB_NAME)
         if (internal.isFile && internal.length() >= PlaceIndexIntact.MIN_DB_BYTES) {
             candidates.add(internal)

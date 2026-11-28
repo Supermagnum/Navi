@@ -160,6 +160,14 @@ object InstalledMaps {
             if (!vol.mounted) continue
             extras.add(vol.id to File(app, LongTripPackStorage.PACKS_SUBDIR))
         }
+        // Primary emulated external is omitted from NaviStorageVolumes.list (picker),
+        // but sideloaded / legacy packs still land under getExternalFilesDirs()[0].
+        context.getExternalFilesDirs(null)?.firstOrNull()?.let { primary ->
+            val packs = File(primary, LongTripPackStorage.PACKS_SUBDIR)
+            if (extras.none { it.second.absolutePath == packs.absolutePath }) {
+                extras.add("primary_external" to packs)
+            }
+        }
         refreshFromDirs(internal, extras, placeIndexDir, PlaceIndexStorage.locationSummary(context))
     }
 

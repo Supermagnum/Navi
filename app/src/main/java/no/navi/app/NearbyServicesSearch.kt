@@ -10,8 +10,7 @@ const val NEARBY_SERVICES_RADIUS_M = 150_000.0
 /** Re-run search when the fix has moved at least this far. */
 const val NEARBY_SERVICES_REFRESH_MOVE_M = 1_000.0
 
-fun allNearbyServiceCategories(): Set<FfiNearbyServiceCategory> =
-    FfiNearbyServiceCategory.entries.toSet()
+fun allNearbyServiceCategories(): Set<FfiNearbyServiceCategory> = FfiNearbyServiceCategory.entries.toSet()
 
 /**
  * Offline nearby-services query. Call from [Dispatchers.IO] only.
@@ -57,4 +56,31 @@ fun nearbyServicesGapMessage(
         R.string.nearby_services_region_gap,
         labels.joinToString(", "),
     )
+}
+
+fun logNearbyServicesResult(
+    label: String,
+    lat: Double,
+    lon: Double,
+    result: FfiNearbyServicesResult,
+) {
+    android.util.Log.i(
+        "NearbyServices",
+        "RESULT label=$label lat=$lat lon=$lon query_ms=${result.queryTimeMs} " +
+            "hits=${result.hits.size} missing=${result.missingRegions.joinToString("|")}",
+    )
+    val byCat = result.hits.groupBy { it.category }
+    for (cat in FfiNearbyServiceCategory.entries) {
+        val top = byCat[cat].orEmpty().sortedBy { it.distanceM }.take(5)
+        for ((i, h) in top.withIndex()) {
+            android.util.Log.i(
+                "NearbyServices",
+                "TOP5 label=$label cat=${cat.name} i=$i name=${h.name} " +
+                    "dist_m=${"%.1f".format(h.distanceM)} compass=${h.compass} kind=${h.kind}",
+            )
+        }
+        if (top.isEmpty()) {
+            android.util.Log.i("NearbyServices", "TOP5 label=$label cat=${cat.name} (none)")
+        }
+    }
 }
