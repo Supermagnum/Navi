@@ -8166,7 +8166,6 @@ pub fn nearby_services(
     }
 }
 
-
 #[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FfiTollPolicy {
     Allow,
