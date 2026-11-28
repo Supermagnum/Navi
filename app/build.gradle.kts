@@ -44,8 +44,8 @@ android {
         minSdk = 26
         targetSdk = 36
         // F-Droid: bump versionCode for each tagged release.
-        versionCode = 41
-        versionName = "0.5.6-beta"
+        versionCode = 42
+        versionName = "0.5.7-beta"
         testInstrumentationRunner = "no.navi.app.NaviAndroidTestRunner"
         // Phase 8 / G4: MWM client always ON (no classic MapLibre / `.rkyv` product path).
         buildConfigField("boolean", "MWM_CLIENT_ENABLED", "true")

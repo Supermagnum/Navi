@@ -104,7 +104,7 @@ through the F-Droid client.
 **Install the signed release APK (sideload / testers).** Download and sideload
 [`compiled/navi-release.apk`](compiled/navi-release.apk) — a **properly signed,
 installable release APK** (upload keystore; not the debug build). Current
-`dev` sideload build: **0.5.6-beta** (`versionName` 0.5.6-beta,
+`dev` sideload build: **0.5.7-beta** (`versionName` 0.5.7-beta,
 `versionCode` 41; matches `app/build.gradle.kts`). The F-Droid client index can
 lag behind that tag — see [F-Droid](#f-droid). Release process:
 [docs/RELEASING.md](docs/RELEASING.md). Download a tester build from the
@@ -266,7 +266,7 @@ Navi is on the main F-Droid index as package **`no.navi.app`**.
 Prefer the F-Droid client for install and updates. The **suggested** version on
 the package page can lag GitHub / `dev` sideloads: when last checked, the index
 and fdroiddata `master` were still **0.3.30-beta** (`versionCode` **33**) while
-`app/build.gradle.kts` on `dev`/`main` is **0.5.6-beta** (`versionCode` **41**);
+`app/build.gradle.kts` on `dev`/`main` is **0.5.7-beta** (`versionCode` **42**);
 committed [`compiled/navi-release.apk`](compiled/navi-release.apk) is refreshed to match.
 Sideload steps:
 [Install a prebuilt APK](#install-a-prebuilt-apk).
@@ -1243,7 +1243,7 @@ debug-only package).
 
 | Artifact | Role |
 |---|---|
-| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (`versionName` **0.5.6-beta** / `versionCode` **41**; arm64-v8a + x86_64) |
+| [`compiled/navi-release.apk`](compiled/navi-release.apk) | **Install this** — signed release APK (`versionName` **0.5.7-beta** / `versionCode` **42**; arm64-v8a + x86_64) |
 | [`compiled/SHA256SUMS`](compiled/SHA256SUMS) | SHA-256 checksum for integrity checks |
 | [`compiled/SHA256SUMS.asc`](compiled/SHA256SUMS.asc) | Detached GPG provenance signature (not Android APK signing) |
 
@@ -1356,7 +1356,7 @@ Debug installs use the Android **debug** keystore. A **release** package is what
 you sideload as release, hand to F-Droid-style checks, or smoke-test as an AAB.
 
 A prebuilt upload-key-signed release APK for testers is committed at
-[`compiled/navi-release.apk`](compiled/navi-release.apk) (target `versionName` 0.5.6-beta,
+[`compiled/navi-release.apk`](compiled/navi-release.apk) (target `versionName` 0.5.7-beta,
 `versionCode` 41; see [Install a prebuilt APK](#install-a-prebuilt-apk)). To rebuild locally:
 
 1. **Native library** for every ABI you ship (store AABs usually need both):
@@ -1407,7 +1407,7 @@ adb shell am start -n no.navi.app/.MainActivity
    [`docs/android-api36-plan.md`](docs/android-api36-plan.md#aab-smoke-host).
 
 Current `versionName` / `versionCode` live in `app/build.gradle.kts`
-(**0.5.6-beta** / **41** at time of writing). Bump those before a tagged or
+(**0.5.7-beta** / **42** at time of writing). Bump those before a tagged or
 F-Droid release. F-Droid-style Podman reproducibility:
 [`tools/fdroid-check/README.md`](tools/fdroid-check/README.md). Full shared
 recipe: [`docs/android-build.md`](docs/android-build.md).

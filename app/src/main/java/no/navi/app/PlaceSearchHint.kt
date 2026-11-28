@@ -1,5 +1,45 @@
 package no.navi.app
 
+import android.content.Context
+import uniffi.navi.mwmInstalled
+
+/**
+ * Offline place search on MWM builds uses CoMaps over installed `.mwm` leaves;
+ * missing `place_index.db` is expected and must not block the search UI.
+ */
+fun offlineMwmPlaceSearchReady(
+    mwmClientEnabled: Boolean,
+    comapsSearchEnabled: Boolean,
+    countryMapsExposed: Boolean,
+    mwmLeafIds: Collection<String>,
+): Boolean =
+    mwmClientEnabled &&
+        comapsSearchEnabled &&
+        (countryMapsExposed || mwmLeafIds.isNotEmpty())
+
+fun offlineMwmPlaceSearchReady(context: Context): Boolean {
+    val dataDir = NaviAppData.resolve(context).absolutePath
+    val leaves = runCatching { mwmInstalled(dataDir).leafIds }.getOrDefault(emptyList())
+    return offlineMwmPlaceSearchReady(
+        MwmClientBootstrap.isEnabled(),
+        ComapsSearchBridge.enabled(),
+        ComapsSessionBootstrap.countryMapsExposed(context),
+        leaves,
+    )
+}
+
+/** Strip FTS file problems from search hints when CoMaps/MWM search is the active backend. */
+fun ftsPlaceIndexProblemForSearchUi(
+    placeIndexProblem: String?,
+    offlineMwmReady: Boolean,
+): String? {
+    if (placeIndexProblem == null || !offlineMwmReady) return placeIndexProblem
+    return when (placeIndexProblem) {
+        "pack volume unavailable" -> placeIndexProblem
+        else -> null
+    }
+}
+
 /**
  * Place-search copy when the FTS index is empty or still building.
  * Distinct from a genuine zero-hit query on a populated index.
@@ -10,6 +50,7 @@ fun placeSearchBuildingMessage(
     indexRunning: Boolean,
     onlineAvailable: Boolean = false,
     indexProblem: String? = null,
+    offlineMwmReady: Boolean = false,
 ): String? {
     if (indexProblem != null) {
         return if (onlineAvailable || !hitsEmpty) {
@@ -20,10 +61,18 @@ fun placeSearchBuildingMessage(
     }
     if (!hitsEmpty) return null
     return when {
+        onlineAvailable && !indexHasEntries && offlineMwmReady ->
+            "No local name match in downloaded maps — showing online results (Nominatim)."
         onlineAvailable && !indexHasEntries ->
             "No offline search data yet — showing online results (Nominatim)."
         onlineAvailable && indexHasEntries ->
             "No local match — showing online results (Nominatim)."
+        offlineMwmReady && indexHasEntries ->
+            "No local name match in downloaded maps. Turn on Online place search in Map settings, " +
+                "or download the region that contains this place."
+        offlineMwmReady ->
+            "No local name match in downloaded maps — turn on Online place search in Map settings, " +
+                "or enter coordinates / tap the map"
         indexHasEntries ->
             "No offline match. Turn on Online place search in Map settings, " +
                 "or download the region that contains this place."

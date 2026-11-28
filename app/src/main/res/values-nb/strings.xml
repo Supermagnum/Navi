@@ -511,7 +511,7 @@
     <string name="waypoint_unset">(ikke satt)</string>
     <string name="waypoint_none">(ingen)</string>
     <string name="waypoints_summary">Fra: %1$s  |  Til: %2$s  |  Via: %3$s</string>
-    <string name="online_place_search_explanation">Søk sendes til en nettbasert OpenStreetMap-tjeneste når dette er på. Frakoblet søk i installerte regioner påvirkes ikke og er alltid tilgjengelig.</string>
+    <string name="online_place_search_explanation">Søk sendes til en nettbasert OpenStreetMap-tjeneste når dette er på. Frakoblet navnesøk bruker fortsatt nedlastede kartdata (MWM-regioner).</string>
     <string name="hud_eta_off">ETA av</string>
     <string name="hud_eta_minutes">ETA %.0f min</string>
     <string name="hud_eta_unknown">ETA --</string>
