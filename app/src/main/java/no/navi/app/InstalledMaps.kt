@@ -160,7 +160,14 @@ object InstalledMaps {
             if (!vol.mounted) continue
             extras.add(vol.id to File(app, LongTripPackStorage.PACKS_SUBDIR))
         }
-        refreshFromDirs(internal, extras, placeIndexDir, PlaceIndexStorage.locationSummary(context))
+        val ignoreFtsFileProblems = offlineMwmPlaceSearchReady(context)
+        refreshFromDirs(
+            internal,
+            extras,
+            placeIndexDir,
+            PlaceIndexStorage.locationSummary(context),
+            ignoreFtsFileProblemsForSearch = ignoreFtsFileProblems,
+        )
     }
 
     fun refreshFromDirs(
@@ -168,6 +175,7 @@ object InstalledMaps {
         packRoots: List<Pair<String, File>>,
         placeIndexDir: File? = internalDataDir,
         placeIndexLocationLine: String? = null,
+        ignoreFtsFileProblemsForSearch: Boolean = false,
     ) {
         val byId = linkedMapOf<String, Region>()
         val scanned = LinkedHashSet<String>()
@@ -190,10 +198,16 @@ object InstalledMaps {
         addWorldOverview(internalDataDir, byId)
         val indexUnavailable =
             placeIndexDir == null || placeIndexLocationLine?.contains("UNAVAILABLE") == true
-        val problem =
+        val rawProblem =
             when {
                 indexUnavailable || placeIndexDir == null -> "pack volume unavailable"
                 else -> PlaceIndexIntact.fileProblem(placeIndexDir)
+            }
+        val problem =
+            if (ignoreFtsFileProblemsForSearch && rawProblem != null && rawProblem != "pack volume unavailable") {
+                null
+            } else {
+                rawProblem
             }
         val missing =
             byId.values.mapNotNull { r ->

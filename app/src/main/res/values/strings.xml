@@ -520,7 +520,7 @@
     <string name="waypoint_unset">(unset)</string>
     <string name="waypoint_none">(none)</string>
     <string name="waypoints_summary">From: %1$s  |  To: %2$s  |  Via: %3$s</string>
-    <string name="online_place_search_explanation">Searches are sent to an online OpenStreetMap service when this is on. Offline search from installed regions is unaffected and always available.</string>
+    <string name="online_place_search_explanation">Searches are sent to an online OpenStreetMap service when this is on. Offline name search still uses your downloaded map data (MWM regions).</string>
     <string name="hud_eta_off">ETA off</string>
     <string name="hud_eta_minutes">ETA %.0f min</string>
     <string name="hud_eta_unknown">ETA --</string>

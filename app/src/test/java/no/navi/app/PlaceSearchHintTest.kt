@@ -8,6 +8,52 @@ import org.junit.Test
 
 class PlaceSearchHintTest {
     @Test
+    fun mwmReadyWhenComapsEnabledAndLeavesPresent() {
+        assertTrue(
+            offlineMwmPlaceSearchReady(
+                mwmClientEnabled = true,
+                comapsSearchEnabled = true,
+                countryMapsExposed = false,
+                mwmLeafIds = listOf("Norway_Ostlandet"),
+            ),
+        )
+        assertFalse(
+            offlineMwmPlaceSearchReady(
+                mwmClientEnabled = true,
+                comapsSearchEnabled = false,
+                countryMapsExposed = true,
+                mwmLeafIds = emptyList(),
+            ),
+        )
+    }
+
+    @Test
+    fun ftsProblemIgnoredForMwmExceptPackVolume() {
+        assertNull(ftsPlaceIndexProblemForSearchUi("file missing", offlineMwmReady = true))
+        assertEquals(
+            "pack volume unavailable",
+            ftsPlaceIndexProblemForSearchUi("pack volume unavailable", offlineMwmReady = true),
+        )
+        assertEquals(
+            "file missing",
+            ftsPlaceIndexProblemForSearchUi("file missing", offlineMwmReady = false),
+        )
+    }
+
+    @Test
+    fun mwmEmptyHitUsesDownloadedMapsCopy() {
+        val msg =
+            placeSearchBuildingMessage(
+                hitsEmpty = true,
+                indexHasEntries = false,
+                indexRunning = false,
+                offlineMwmReady = true,
+            )!!
+        assertTrue(msg.contains("downloaded maps", ignoreCase = true))
+        assertFalse(msg.contains("file missing", ignoreCase = true))
+    }
+
+    @Test
     fun saysOfflineSearchUnavailableWhenIndexFileUnusable() {
         val offline =
             placeSearchBuildingMessage(

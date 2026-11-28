@@ -1,0 +1,1 @@
+Offline place search on downloaded MWM regions no longer reports a missing place-index file when map data is installed; search uses CoMaps over your `.mwm` leaves.

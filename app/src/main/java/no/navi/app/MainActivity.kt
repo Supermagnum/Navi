@@ -7338,8 +7338,14 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             val placeQ = split.placeQuery.ifBlank { trimmed }
                             val countryIso = split.countryIso
                             val dbPath = resolvePlaceIndexDb().absolutePath
+                            val mwmOfflineReady = offlineMwmPlaceSearchReady(context)
+                            val skipFts = mwmOfflineReady && !java.io.File(dbPath).isFile
                             val hasEntries =
-                                runCatching { placeIndexHasEntries(dbPath) }.getOrDefault(false)
+                                if (skipFts) {
+                                    false
+                                } else {
+                                    runCatching { placeIndexHasEntries(dbPath) }.getOrDefault(false)
+                                }
                             ensureActive()
                             // MWM flag ON and a CoMaps session: prefer CoMaps hits and merge the
                             // place_index FTS hits into them. Empty (flag off, no session after
@@ -7369,42 +7375,50 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                             val comapsHits = if (comapsOutcome.notReady) emptyList() else comapsOutcome.hits
                             ensureActive()
                             val rawHits =
-                                runCatching {
-                                    val lat = mapState.cameraLat
-                                    val lon = mapState.cameraLon
-                                    if (lat != null &&
-                                        lon != null &&
-                                        lat.isFinite() &&
-                                        lon.isFinite() &&
-                                        !(lat == 0.0 && lon == 0.0)
-                                    ) {
-                                        searchPlacesBiased(
-                                            dbPath,
-                                            placeQ,
-                                            80u,
-                                            lat,
-                                            lon,
-                                            visibleSearchRegion(),
+                                if (skipFts) {
+                                    emptyList<uniffi.navi.PlaceHit>()
+                                } else {
+                                    runCatching {
+                                        val lat = mapState.cameraLat
+                                        val lon = mapState.cameraLon
+                                        if (lat != null &&
+                                            lon != null &&
+                                            lat.isFinite() &&
+                                            lon.isFinite() &&
+                                            !(lat == 0.0 && lon == 0.0)
+                                        ) {
+                                            searchPlacesBiased(
+                                                dbPath,
+                                                placeQ,
+                                                80u,
+                                                lat,
+                                                lon,
+                                                visibleSearchRegion(),
+                                            )
+                                        } else {
+                                            searchPlaces(dbPath, placeQ, 80u)
+                                        }
+                                    }.getOrElse { e ->
+                                        listOf(
+                                            uniffi.navi.PlaceHit(
+                                                osmId = 0,
+                                                name = "Search data error: ${e.message}",
+                                                kind = "index:error",
+                                                lat = 0.0,
+                                                lon = 0.0,
+                                                subArea = "",
+                                                municipality = "",
+                                                regionId = "",
+                                            ),
                                         )
-                                    } else {
-                                        searchPlaces(dbPath, placeQ, 80u)
                                     }
-                                }.getOrElse { e ->
-                                    listOf(
-                                        uniffi.navi.PlaceHit(
-                                            osmId = 0,
-                                            name = "Search data error: ${e.message}",
-                                            kind = "index:error",
-                                            lat = 0.0,
-                                            lon = 0.0,
-                                            subArea = "",
-                                            municipality = "",
-                                            regionId = "",
-                                        ),
-                                    )
                                 }
                             val indexErr = rawHits.firstOrNull { it.kind == "index:error" }
-                            if (indexErr != null && comapsHits.isEmpty()) {
+                            val propagateFtsError =
+                                indexErr != null &&
+                                    comapsHits.isEmpty() &&
+                                    (!mwmOfflineReady || comapsOutcome.notReady)
+                            if (propagateFtsError) {
                                 return@withContext PlaceSearchOutcome(
                                     hits = emptyList(),
                                     hasEntries = hasEntries,
@@ -7507,6 +7521,7 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                         }
                     hits = outcome.hits
                     searchUsedOnline = outcome.usedOnline
+                    val offlineMwmReady = offlineMwmPlaceSearchReady(context)
                     searchIndexHint =
                         if (outcome.comapsNotReady) {
                             // Readiness timeout: clear message; clearing the box cancels sooner.
@@ -7520,7 +7535,12 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                                     onlineAvailable =
                                         outcome.usedOnline ||
                                             (outcome.hits.isEmpty() && outcome.onlineOk),
-                                    indexProblem = InstalledMaps.current()?.placeIndexProblem,
+                                    indexProblem =
+                                        ftsPlaceIndexProblemForSearchUi(
+                                            InstalledMaps.current()?.placeIndexProblem,
+                                            offlineMwmReady,
+                                        ),
+                                    offlineMwmReady = offlineMwmReady,
                                 ).orEmpty()
                                     .ifBlank {
                                         placeSearchNoWholeMatchHint(
