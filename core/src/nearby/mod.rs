@@ -19,6 +19,7 @@
 use std::collections::HashSet;
 use std::time::Instant;
 
+use crate::long_trip::{distance_m_to_region, regions_within_radius_m};
 use crate::routing::basemap::{bbox_covers_point, region_bbox};
 use crate::search::NameIndex;
 use crate::tracks::haversine_km;
@@ -89,12 +90,9 @@ impl NearbyServiceCategory {
     }
 
     pub fn from_kind(kind: &str) -> Option<Self> {
-        for cat in Self::ALL {
-            if cat.osm_kinds().iter().any(|k| *k == kind) {
-                return Some(cat);
-            }
-        }
-        None
+        Self::ALL
+            .into_iter()
+            .find(|&cat| cat.osm_kinds().contains(&kind))
     }
 }
 
@@ -213,30 +211,63 @@ pub fn catalog_regions_intersecting_bbox(
     out
 }
 
-/// Regions that intersect the circle but are absent from `installed`.
+/// Regions whose **outline** reaches the search circle but are absent from `installed`.
+///
+/// Uses compiled adjacency rings (not AABBs), sorted by ascending distance so the
+/// UI's short gap list names the nearest missing packs first (e.g. Värmland before
+/// a far AABB false-positive).
 pub fn missing_regions_for_circle(
     lat: f64,
     lon: f64,
     radius_m: f64,
     installed: &[String],
 ) -> Vec<String> {
-    let (min_lat, min_lon, max_lat, max_lon) = radius_bbox(lat, lon, radius_m);
+    missing_regions_for_circle_with_distances(lat, lon, radius_m, installed)
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect()
+}
+
+/// Like [`missing_regions_for_circle`], but keeps the polygon distance (metres).
+pub fn missing_regions_for_circle_with_distances(
+    lat: f64,
+    lon: f64,
+    radius_m: f64,
+    installed: &[String],
+) -> Vec<(String, f64)> {
     let installed_norm: HashSet<String> = installed
         .iter()
         .map(|s| normalize_region_id(s))
         .filter(|s| !s.is_empty())
         .collect();
-    catalog_regions_intersecting_bbox(min_lat, min_lon, max_lat, max_lon)
-        .into_iter()
+    let catalog: HashSet<String> = crate::routing::basemap::nearby_service_catalog_paths()
         .filter(|path| {
+            !path.starts_with("test/")
+                && *path != "europe/norway"
+                && *path != "europe/sweden"
+                && *path != "europe/finland"
+        })
+        .map(normalize_region_id)
+        .collect();
+    regions_within_radius_m(lat, lon, radius_m)
+        .into_iter()
+        .filter(|(path, _)| {
             let n = normalize_region_id(path);
+            if !catalog.contains(&n) {
+                return false;
+            }
             !installed_norm.contains(&n)
                 && !installed_norm.iter().any(|i| {
                     i == &n || n.starts_with(&format!("{i}/")) || i.starts_with(&format!("{n}/"))
                 })
         })
-        .map(|p| p.to_string())
+        .map(|(path, dist_m)| (path.to_string(), dist_m))
         .collect()
+}
+
+/// Shortest distance from a fix to a catalog region outline (metres).
+pub fn distance_m_to_catalog_region(lat: f64, lon: f64, region_id: &str) -> Option<f64> {
+    distance_m_to_region(lat, lon, region_id)
 }
 
 fn normalize_region_id(id: &str) -> String {
@@ -245,7 +276,7 @@ fn normalize_region_id(id: &str) -> String {
 
 fn kind_allowed(kind: &str, categories: &[NearbyServiceCategory]) -> Option<NearbyServiceCategory> {
     let cat = NearbyServiceCategory::from_kind(kind)?;
-    if categories.is_empty() || categories.iter().any(|c| *c == cat) {
+    if categories.is_empty() || categories.contains(&cat) {
         Some(cat)
     } else {
         None
@@ -358,6 +389,7 @@ impl NameIndex {
             ))
         })?;
 
+        #[allow(clippy::type_complexity)]
         let mut raw: Vec<(i64, String, String, f64, f64, String, String, String)> = Vec::new();
         for r in rows {
             raw.push(r?);
@@ -546,18 +578,108 @@ mod tests {
     }
 
     #[test]
-    fn missing_regions_reports_vestlandet_when_only_ostlandet_installed() {
-        let missing = missing_regions_for_circle(
-            60.546,
-            11.219,
+    fn missing_regions_use_polygons_and_include_varmland_near_espa() {
+        let espa = (60.5621914, 11.2561239);
+        let raufoss = (60.7261, 10.6130);
+        let installed = ["europe/norway/ostlandet".to_string()];
+        let espa_gaps = missing_regions_for_circle_with_distances(
+            espa.0,
+            espa.1,
             NEARBY_SERVICES_RADIUS_M,
-            &["europe/norway/ostlandet".into()],
+            &installed,
+        );
+        let raufoss_gaps = missing_regions_for_circle_with_distances(
+            raufoss.0,
+            raufoss.1,
+            NEARBY_SERVICES_RADIUS_M,
+            &installed,
         );
         assert!(
-            missing.iter().any(|r| r.contains("vestlandet")),
-            "expected Vestlandet in missing, got {missing:?}"
+            espa_gaps.iter().any(|(r, _)| r.contains("varmland")),
+            "expected Värmland in Espa gaps, got {espa_gaps:?}"
         );
-        assert!(!missing.iter().any(|r| r.ends_with("/ostlandet")));
+        assert!(
+            raufoss_gaps.iter().any(|(r, _)| r.contains("varmland")),
+            "expected Värmland in Raufoss gaps, got {raufoss_gaps:?}"
+        );
+        for (label, gaps) in [("espa", &espa_gaps), ("raufoss", &raufoss_gaps)] {
+            for (id, dist_m) in gaps {
+                assert!(
+                    *dist_m <= NEARBY_SERVICES_RADIUS_M + 1.0,
+                    "{label} false gap {id} at {dist_m} m"
+                );
+            }
+            assert!(!gaps.iter().any(|(r, _)| r.ends_with("/ostlandet")));
+            assert!(
+                !gaps.iter().any(|(r, _)| r.ends_with("/sorlandet")),
+                "{label} Sørlandet is outside 150 km: {gaps:?}"
+            );
+            assert!(
+                !gaps.iter().any(|(r, _)| r.ends_with("/jamtland")),
+                "{label} Jämtland is outside 150 km: {gaps:?}"
+            );
+        }
+        assert!(
+            raufoss_gaps.iter().any(|(r, _)| r.ends_with("/vestlandet")),
+            "Raufoss should still list Vestlandet (~131 km): {raufoss_gaps:?}"
+        );
+        assert!(
+            !espa_gaps.iter().any(|(r, _)| r.ends_with("/vestlandet")),
+            "Espa should not list Vestlandet (~171 km): {espa_gaps:?}"
+        );
+    }
+
+    #[test]
+    fn polygon_distances_for_historical_espa_gap_names() {
+        let installed = ["europe/norway/ostlandet".to_string()];
+        for (label, lat, lon, historical) in [
+            (
+                "espa",
+                60.5621914,
+                11.2561239,
+                [
+                    "europe/norway/sorlandet",
+                    "europe/sweden/dalarna",
+                    "europe/sweden/jamtland",
+                    "europe/sweden/varmland",
+                    "europe/norway/vestlandet",
+                ]
+                .as_slice(),
+            ),
+            (
+                "raufoss",
+                60.7261,
+                10.6130,
+                [
+                    "europe/norway/sorlandet",
+                    "europe/norway/vestlandet",
+                    "europe/sweden/dalarna",
+                    "europe/sweden/varmland",
+                    "europe/sweden/jamtland",
+                ]
+                .as_slice(),
+            ),
+        ] {
+            eprintln!("==== {label} historical polygon distances ====");
+            for id in historical {
+                let d = distance_m_to_catalog_region(lat, lon, id);
+                eprintln!("{id} distance_m={d:?}");
+            }
+            let gaps = missing_regions_for_circle_with_distances(
+                lat,
+                lon,
+                NEARBY_SERVICES_RADIUS_M,
+                &installed,
+            );
+            eprintln!("{label} corrected gaps: {gaps:?}");
+            assert!(gaps
+                .iter()
+                .all(|(_, d)| *d <= NEARBY_SERVICES_RADIUS_M + 1.0));
+            assert!(
+                gaps.iter().any(|(r, _)| r.contains("varmland")),
+                "{label} missing Värmland: {gaps:?}"
+            );
+        }
     }
 
     #[test]

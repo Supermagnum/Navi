@@ -283,6 +283,125 @@ fn graph() -> &'static Graph {
     G.get_or_init(|| decode_asset(ASSET).expect("region_adjacency.bin decode"))
 }
 
+/// Local metres per degree at `lat` (equirectangular).
+fn metres_per_deg(lat: f64) -> (f64, f64) {
+    let m_lat = 111_320.0;
+    let m_lon = 111_320.0 * lat.to_radians().cos().abs().max(0.2);
+    (m_lat, m_lon)
+}
+
+/// Shortest distance in metres from a point to a lon/lat segment (equirectangular).
+fn dist_point_to_segment_m(
+    lat: f64,
+    lon: f64,
+    a_lon: f64,
+    a_lat: f64,
+    b_lon: f64,
+    b_lat: f64,
+) -> f64 {
+    let (m_lat, m_lon) = metres_per_deg(lat);
+    let ax = (a_lon - lon) * m_lon;
+    let ay = (a_lat - lat) * m_lat;
+    let bx = (b_lon - lon) * m_lon;
+    let by = (b_lat - lat) * m_lat;
+    let abx = bx - ax;
+    let aby = by - ay;
+    let ab2 = abx * abx + aby * aby;
+    let t = if ab2 <= f64::EPSILON {
+        0.0
+    } else {
+        ((-ax) * abx + (-ay) * aby) / ab2
+    }
+    .clamp(0.0, 1.0);
+    let cx = ax + t * abx;
+    let cy = ay + t * aby;
+    (cx * cx + cy * cy).sqrt()
+}
+
+fn distance_m_to_ring(lat: f64, lon: f64, ring: &Ring) -> f64 {
+    if lon >= ring.min_lon
+        && lon <= ring.max_lon
+        && lat >= ring.min_lat
+        && lat <= ring.max_lat
+        && point_in_ring(&ring.pts, lon, lat)
+    {
+        return 0.0;
+    }
+    if ring.pts.len() < 2 {
+        return f64::INFINITY;
+    }
+    let mut best = f64::INFINITY;
+    for i in 0..ring.pts.len().saturating_sub(1) {
+        let (alon, alat) = ring.pts[i];
+        let (blon, blat) = ring.pts[i + 1];
+        best = best.min(dist_point_to_segment_m(lat, lon, alon, alat, blon, blat));
+    }
+    best
+}
+
+fn distance_m_to_region_geom(lat: f64, lon: f64, region: &Region) -> f64 {
+    if region.rings.is_empty() {
+        // Outline missing: fall back to AABB distance (never 0 unless inside box).
+        if lon >= region.min_lon
+            && lon <= region.max_lon
+            && lat >= region.min_lat
+            && lat <= region.max_lat
+        {
+            return 0.0;
+        }
+        let clamp_lon = lon.clamp(region.min_lon, region.max_lon);
+        let clamp_lat = lat.clamp(region.min_lat, region.max_lat);
+        return haversine_km(lat, lon, clamp_lat, clamp_lon) * 1000.0;
+    }
+    if region_covers(region, lat, lon) {
+        return 0.0;
+    }
+    region
+        .rings
+        .iter()
+        .map(|r| distance_m_to_ring(lat, lon, r))
+        .fold(f64::INFINITY, f64::min)
+}
+
+/// Shortest distance in metres from `(lat, lon)` to the region's outline.
+///
+/// Returns `0` when the point is inside a ring. `None` when the id is unknown.
+pub fn distance_m_to_region(lat: f64, lon: f64, region_id: &str) -> Option<f64> {
+    let g = graph();
+    let id = normalize_region_id(region_id);
+    let region = g.regions.iter().find(|r| r.id == id)?;
+    Some(distance_m_to_region_geom(lat, lon, region))
+}
+
+/// Catalog regions whose outline is within `radius_m` of `(lat, lon)`.
+///
+/// Sorted by ascending distance. Uses compiled adjacency rings (Geofabrik /
+/// Natural Earth), not region AABBs — so oversized bounding boxes do not create
+/// false Nearby-services gaps.
+pub fn regions_within_radius_m(lat: f64, lon: f64, radius_m: f64) -> Vec<(&'static str, f64)> {
+    let radius_m = radius_m.max(0.0);
+    let g = graph();
+    // Coarse reject with padded AABB before ring distance.
+    let lat_pad = (radius_m / 111_320.0) + 0.05;
+    let lon_pad = (radius_m / (111_320.0 * lat.to_radians().cos().abs().max(0.2))) + 0.05;
+    let mut out: Vec<(&'static str, f64)> = Vec::new();
+    for (i, region) in g.regions.iter().enumerate() {
+        if region.max_lat < lat - lat_pad
+            || region.min_lat > lat + lat_pad
+            || region.max_lon < lon - lon_pad
+            || region.min_lon > lon + lon_pad
+        {
+            continue;
+        }
+        let d = distance_m_to_region_geom(lat, lon, region);
+        if d.is_finite() && d <= radius_m {
+            out.push((g.id_static[i], d));
+        }
+    }
+    out.sort_by(|a, b| a.1.total_cmp(&b.1).then_with(|| a.0.cmp(b.0)));
+    out
+}
+
 /// Number of regions in the compiled adjacency asset.
 pub fn adjacency_region_count() -> usize {
     graph().regions.len()

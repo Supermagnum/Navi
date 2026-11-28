@@ -44,8 +44,9 @@ pub use nav::{
     APPROACH_HIDE_M, APPROACH_URGENCY_M,
 };
 pub use nearby::{
-    bearing_deg as nearby_bearing_deg, compass_from_bearing, format_nearby_distance,
-    merge_nearby_hits, missing_regions_for_circle, NearbyServiceCategory, NearbyServiceHit,
+    bearing_deg as nearby_bearing_deg, compass_from_bearing, distance_m_to_catalog_region,
+    format_nearby_distance, merge_nearby_hits, missing_regions_for_circle,
+    missing_regions_for_circle_with_distances, NearbyServiceCategory, NearbyServiceHit,
     NearbyServicesQuery, NearbyServicesResult, NEARBY_SERVICES_RADIUS_M,
 };
 pub use poi::{CorridorBand, PoiCategory, PoiIndex, PoiRecord};
