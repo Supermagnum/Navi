@@ -159,6 +159,8 @@ import uniffi.navi.loadCarRestSettings
 import uniffi.navi.loadTruckRestSettings
 import uniffi.navi.loadVehicleLimits
 import uniffi.navi.nearbyPlaces
+import uniffi.navi.FfiNearbyServiceCategory
+import uniffi.navi.FfiNearbyServiceHit
 import uniffi.navi.osmWeeklyReminderDue
 import uniffi.navi.placeIndexHasEntries
 import uniffi.navi.planProgressClear
@@ -1679,6 +1681,17 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
     var campingSuggestResult by remember { mutableStateOf<CampingSuggestResult?>(null) }
     var campingSuggestStatus by remember { mutableStateOf<CampingSuggestStatus?>(null) }
     var showCampingSheet by remember { mutableStateOf(false) }
+    var showNearbyServices by remember { mutableStateOf(false) }
+    var nearbyServicesBusy by remember { mutableStateOf(false) }
+    var nearbyServiceHits by remember { mutableStateOf<List<FfiNearbyServiceHit>>(emptyList()) }
+    var nearbyServiceCategories by remember {
+        mutableStateOf(allNearbyServiceCategories())
+    }
+    var nearbyServicesGap by remember { mutableStateOf("") }
+    var nearbyServicesQueryMs by remember { mutableStateOf(0L) }
+    var nearbyServicesSearchLat by remember { mutableStateOf(Double.NaN) }
+    var nearbyServicesSearchLon by remember { mutableStateOf(Double.NaN) }
+    var nearbyServicesJob by remember { mutableStateOf<Job?>(null) }
     var campingSessionDisableMessage by remember { mutableStateOf<String?>(null) }
     var hideChrome by remember { mutableStateOf(false) }
     var lastCatFollowTickMs by remember { mutableStateOf(0L) }
@@ -3392,11 +3405,91 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
         }
     }
 
+
+    fun runNearbyServicesSearch(force: Boolean = false) {
+        val lat = mapState.gpsLat
+        val lon = mapState.gpsLon
+        val hasGps = lat.isFinite() && lon.isFinite() && (lat != 0.0 || lon != 0.0)
+        if (!hasGps) {
+            nearbyServiceHits = emptyList()
+            nearbyServicesGap = ""
+            nearbyServicesQueryMs = 0L
+            nearbyServicesBusy = false
+            return
+        }
+        if (!force &&
+            nearbyServicesSearchLat.isFinite() &&
+            nearbyServicesSearchLon.isFinite()
+        ) {
+            val moved =
+                haversineMApprox(
+                    nearbyServicesSearchLat,
+                    nearbyServicesSearchLon,
+                    lat,
+                    lon,
+                )
+            if (moved < NEARBY_SERVICES_REFRESH_MOVE_M && nearbyServiceHits.isNotEmpty()) {
+                return
+            }
+        }
+        nearbyServicesJob?.cancel()
+        nearbyServicesBusy = true
+        val cats = nearbyServiceCategories.toList()
+        val dbPath = resolvePlaceIndexDb().absolutePath
+        nearbyServicesJob =
+            scope.launch {
+                val outcome =
+                    withContext(Dispatchers.IO) {
+                        val installed =
+                            PackRegionAvailability
+                                .installedPackRegionIds(
+                                    InstalledMaps.current()?.regions?.values.orEmpty(),
+                                ).toList()
+                        runCatching {
+                            queryNearbyServices(
+                                indexDbPath = dbPath,
+                                lat = lat,
+                                lon = lon,
+                                categories = cats,
+                                installedRegions = installed,
+                            )
+                        }
+                    }
+                if (!isActive) return@launch
+                outcome
+                    .onSuccess { res ->
+                        nearbyServiceHits = res.hits
+                        nearbyServicesGap =
+                            nearbyServicesGapMessage(res.missingRegions, context.resources)
+                        nearbyServicesQueryMs = res.queryTimeMs.toLong()
+                        nearbyServicesSearchLat = lat
+                        nearbyServicesSearchLon = lon
+                    }.onFailure {
+                        nearbyServiceHits = emptyList()
+                        nearbyServicesGap = ""
+                        nearbyServicesQueryMs = 0L
+                    }
+                nearbyServicesBusy = false
+            }
+    }
+
     fun resolvePlaceIndexDb(): File =
         PlaceIndexStorage.resolveDb(context)
             ?: placeIndexDbForWrite()
 
     fun resolveRegionPbf(): File? = RouteReplan.resolvePbf(dataDir)
+
+    LaunchedEffect(showNearbyServices, nearbyServiceCategories) {
+        if (showNearbyServices) {
+            runNearbyServicesSearch(force = true)
+        }
+    }
+
+    LaunchedEffect(showNearbyServices, mapState.gpsLat, mapState.gpsLon) {
+        if (showNearbyServices) {
+            runNearbyServicesSearch(force = false)
+        }
+    }
 
     LaunchedEffect(mapState.gpsLat, mapState.gpsLon) {
         // Never call native country_iso_at here: cold-loading Natural Earth on a
@@ -8005,6 +8098,74 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                         .padding(top = 120.dp, start = 10.dp, end = 10.dp),
             )
         }
+        if (!hideChrome && showNearbyServices) {
+            val hasGps =
+                mapState.gpsLat.isFinite() &&
+                    mapState.gpsLon.isFinite() &&
+                    (mapState.gpsLat != 0.0 || mapState.gpsLon != 0.0)
+            NearbyServicesSheet(
+                hits = nearbyServiceHits,
+                selected = nearbyServiceCategories,
+                onToggleCategory = { cat ->
+                    nearbyServiceCategories =
+                        nearbyServiceCategories.toMutableSet().also { set ->
+                            if (!set.add(cat)) {
+                                set.remove(cat)
+                            }
+                            if (set.isEmpty()) {
+                                set.addAll(allNearbyServiceCategories())
+                            }
+                        }
+                },
+                missingRegionsMessage = nearbyServicesGap,
+                noGpsMessage =
+                    if (hasGps) {
+                        null
+                    } else {
+                        context.getString(R.string.nearby_services_no_gps)
+                    },
+                busy = nearbyServicesBusy,
+                queryTimeMs = nearbyServicesQueryMs,
+                onClose = { showNearbyServices = false },
+                onSelect = { hit ->
+                    val place =
+                        PlaceHit(
+                            osmId = hit.osmId,
+                            name = hit.name,
+                            kind = hit.kind,
+                            lat = hit.lat,
+                            lon = hit.lon,
+                            subArea = hit.subArea,
+                            municipality = hit.municipality,
+                            regionId = hit.regionId,
+                        )
+                    applyHit(place, target = SearchTarget.To)
+                    showNearbyServices = false
+                },
+                onRouteHere = { hit ->
+                    val place =
+                        PlaceHit(
+                            osmId = hit.osmId,
+                            name = hit.name,
+                            kind = hit.kind,
+                            lat = hit.lat,
+                            lon = hit.lon,
+                            subArea = hit.subArea,
+                            municipality = hit.municipality,
+                            regionId = hit.regionId,
+                        )
+                    applyHit(place, target = SearchTarget.To)
+                    showNearbyServices = false
+                    planKick += 1
+                },
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 88.dp)
+                        .zIndex(3f),
+            )
+        }
+
         if (
             !hideChrome &&
             campingPluginEnabled &&
@@ -10450,6 +10611,16 @@ private fun NaviMapScreen(configurationRevision: Int = 0) {
                         if (mwmDrapeMap || MwmClientBootstrap.isEnabled()) {
                             MwmMapsSection()
                             GpxImportButton()
+                        }
+                        TextButton(
+                            onClick = {
+                                showNearbyServices = true
+                                showTools = false
+                                runNearbyServicesSearch(force = true)
+                            },
+                            modifier = Modifier.testTag("btn_nearby_services"),
+                        ) {
+                            Text(stringResource(R.string.nearby_services_open))
                         }
                         PluginSettingsSection(
                             weatherPluginEnabled = weatherPluginEnabled,

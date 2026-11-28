@@ -19,6 +19,7 @@ pub mod import;
 pub mod long_trip;
 pub mod mwm;
 pub mod nav;
+pub mod nearby;
 pub mod pack_server;
 pub mod poi;
 pub mod routing;
@@ -41,6 +42,11 @@ pub use nav::{
     current_road_label, format_altitude_m, format_distance_m, format_speed_kmh,
     prefer_street_label, ApproachPhase, ManeuverKind, NavGuidance, APPROACH_APPEAR_M,
     APPROACH_HIDE_M, APPROACH_URGENCY_M,
+};
+pub use nearby::{
+    bearing_deg as nearby_bearing_deg, compass_from_bearing, format_nearby_distance,
+    merge_nearby_hits, missing_regions_for_circle, NearbyServiceCategory, NearbyServiceHit,
+    NearbyServicesQuery, NearbyServicesResult, NEARBY_SERVICES_RADIUS_M,
 };
 pub use poi::{CorridorBand, PoiCategory, PoiIndex, PoiRecord};
 pub use routing::elevation::{ElevationCache, ElevationDownloader, ElevationJob, ElevationService};

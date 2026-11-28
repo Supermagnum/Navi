@@ -648,4 +648,21 @@
     <string name="gpx_navigating">Følger sporet %1$s (%2$s)</string>
     <string name="gpx_route_to_start_set">Rute til starten av %1$s</string>
     <string name="mwm_mig_status_no_space">Ikke nok ledig plass til neste kartfil. Frigjør plass og prøv igjen; filene som allerede er lastet ned beholdes.</string>
+
+    <!-- Nearby services -->
+    <string name="nearby_services_title">Tjenester i nærheten</string>
+    <string name="nearby_services_open">Tjenester i nærheten</string>
+    <string name="nearby_services_searching">Søker i offline-kart…</string>
+    <string name="nearby_services_empty">Ingen treff innen 150 km i installerte kart.</string>
+    <string name="nearby_services_no_gps">Ingen GPS-posisjon ennå. Slå på stedstjenester for å søke etter tjenester i nærheten.</string>
+    <string name="nearby_services_route_here">Rute hit</string>
+    <string name="nearby_services_query_ms">Funnet på %1$d ms</string>
+    <string name="nearby_services_region_gap">%1$s er ikke installert — resultatene kan være ufullstendige</string>
+    <string name="nearby_cat_gas_station">Bensinstasjon</string>
+    <string name="nearby_cat_cafe">Kafé</string>
+    <string name="nearby_cat_fast_food">Hurtigmat</string>
+    <string name="nearby_cat_hospital">Sykehus</string>
+    <string name="nearby_cat_car_repair">Bilverksted</string>
+    <string name="nearby_cat_hotel_motel">Hotell / motell</string>
+    <string name="nearby_cat_doctor">Lege</string>
 </resources>

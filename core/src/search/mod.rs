@@ -914,6 +914,11 @@ pub struct NameIndex {
 }
 
 impl NameIndex {
+    /// Crate-local SQLite handle for nearby-services and similar readers.
+    pub(crate) fn sqlite(&self) -> &Connection {
+        &self.conn
+    }
+
     pub fn open_in_memory() -> SqlResult<Self> {
         let conn = Connection::open_in_memory()?;
         Self::migrate(&conn)?;
@@ -3189,6 +3194,10 @@ fn classify_named<'a>(
             "highway" => kind = format!("highway:{v}"),
             "amenity" => kind = format!("amenity:{v}"),
             "shop" => kind = format!("shop:{v}"),
+            // craft / healthcare: used by Nearby services (car_repair, doctor, hospital).
+            // Only apply when kind is still the default so amenity/shop/tourism win.
+            "craft" if kind == "named" => kind = format!("craft:{v}"),
+            "healthcare" if kind == "named" => kind = format!("healthcare:{v}"),
             // Plain named footprints (building=* + name=*) — not amenity/shop.
             // Amenity/shop/place above win when present so POIs stay classified.
             "building" if !v.eq_ignore_ascii_case("no") => is_building = true,

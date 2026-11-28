@@ -285,6 +285,15 @@ pub fn catalog_leaf_bboxes_under(country_path: &str) -> Vec<(&'static str, [f64;
         .collect()
 }
 
+/// Catalog paths used when detecting Nearby-services coverage gaps (landsdel +
+/// pack leaves). Excludes coarse planet-scale tables that would false-positive.
+pub fn nearby_service_catalog_paths() -> impl Iterator<Item = &'static str> {
+    NORWAY_LANDSDEL
+        .iter()
+        .map(|(p, _)| *p)
+        .chain(PACK_LEAF_PATH_BBOX.iter().map(|(p, _)| *p))
+}
+
 /// True when [path] is an exact entry in the pack bbox / Norway landsdel tables
 /// (no parent-walk).
 pub fn is_exact_catalog_path(path: &str) -> bool {

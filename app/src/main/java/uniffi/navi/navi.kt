@@ -975,6 +975,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Int
     external fun uniffi_navi_checksum_func_nearby_places(
     ): Int
+    external fun uniffi_navi_checksum_func_nearby_services(
+    ): Int
     external fun uniffi_navi_checksum_func_nearest_road_sign_warning_json(
     ): Int
     external fun uniffi_navi_checksum_func_nearest_school_proximity_warning_json(
@@ -1753,6 +1755,8 @@ internal object UniffiLib {
     external fun uniffi_navi_fn_func_named_buildings_in_bbox(`indexDbPath`: RustBuffer.ByValue,`minLat`: Double,`minLon`: Double,`maxLat`: Double,`maxLon`: Double,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_nearby_places(`indexDbPath`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`radiusM`: Double,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    external fun uniffi_navi_fn_func_nearby_services(`indexDbPath`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,`radiusM`: Double,`categories`: RustBuffer.ByValue,`installedRegions`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_navi_fn_func_nearest_road_sign_warning_json(`signsJson`: RustBuffer.ByValue,`lat`: Double,`lon`: Double,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -2643,6 +2647,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_nearby_places() and 0xFFFF) != 60451) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if ((lib.uniffi_navi_checksum_func_nearby_services() and 0xFFFF) != 35360) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if ((lib.uniffi_navi_checksum_func_nearest_road_sign_warning_json() and 0xFFFF) != 26222) {
@@ -6749,6 +6756,142 @@ public object FfiConverterTypeFfiMwmRegionList: FfiConverterRustBuffer<FfiMwmReg
 
 
 
+data class FfiNearbyServiceHit (
+    var `osmId`: kotlin.Long
+    , 
+    var `name`: kotlin.String
+    , 
+    var `category`: FfiNearbyServiceCategory
+    , 
+    var `kind`: kotlin.String
+    , 
+    var `lat`: kotlin.Double
+    , 
+    var `lon`: kotlin.Double
+    , 
+    var `distanceM`: kotlin.Double
+    , 
+    var `bearingDeg`: kotlin.Double
+    , 
+    var `compass`: kotlin.String
+    , 
+    var `distanceLabel`: kotlin.String
+    , 
+    var `regionId`: kotlin.String
+    , 
+    var `subArea`: kotlin.String
+    , 
+    var `municipality`: kotlin.String
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiNearbyServiceHit: FfiConverterRustBuffer<FfiNearbyServiceHit> {
+    override fun read(buf: ByteBuffer): FfiNearbyServiceHit {
+        return FfiNearbyServiceHit(
+            FfiConverterLong.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterTypeFfiNearbyServiceCategory.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterDouble.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiNearbyServiceHit) = (
+            FfiConverterLong.allocationSize(value.`osmId`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterTypeFfiNearbyServiceCategory.allocationSize(value.`category`) +
+            FfiConverterString.allocationSize(value.`kind`) +
+            FfiConverterDouble.allocationSize(value.`lat`) +
+            FfiConverterDouble.allocationSize(value.`lon`) +
+            FfiConverterDouble.allocationSize(value.`distanceM`) +
+            FfiConverterDouble.allocationSize(value.`bearingDeg`) +
+            FfiConverterString.allocationSize(value.`compass`) +
+            FfiConverterString.allocationSize(value.`distanceLabel`) +
+            FfiConverterString.allocationSize(value.`regionId`) +
+            FfiConverterString.allocationSize(value.`subArea`) +
+            FfiConverterString.allocationSize(value.`municipality`)
+    )
+
+    override fun write(value: FfiNearbyServiceHit, buf: ByteBuffer) {
+            FfiConverterLong.write(value.`osmId`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterTypeFfiNearbyServiceCategory.write(value.`category`, buf)
+            FfiConverterString.write(value.`kind`, buf)
+            FfiConverterDouble.write(value.`lat`, buf)
+            FfiConverterDouble.write(value.`lon`, buf)
+            FfiConverterDouble.write(value.`distanceM`, buf)
+            FfiConverterDouble.write(value.`bearingDeg`, buf)
+            FfiConverterString.write(value.`compass`, buf)
+            FfiConverterString.write(value.`distanceLabel`, buf)
+            FfiConverterString.write(value.`regionId`, buf)
+            FfiConverterString.write(value.`subArea`, buf)
+            FfiConverterString.write(value.`municipality`, buf)
+    }
+}
+
+
+
+data class FfiNearbyServicesResult (
+    var `hits`: List<FfiNearbyServiceHit>
+    , 
+    var `missingRegions`: List<kotlin.String>
+    , 
+    var `queryTimeMs`: kotlin.ULong
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiNearbyServicesResult: FfiConverterRustBuffer<FfiNearbyServicesResult> {
+    override fun read(buf: ByteBuffer): FfiNearbyServicesResult {
+        return FfiNearbyServicesResult(
+            FfiConverterSequenceTypeFfiNearbyServiceHit.read(buf),
+            FfiConverterSequenceString.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiNearbyServicesResult) = (
+            FfiConverterSequenceTypeFfiNearbyServiceHit.allocationSize(value.`hits`) +
+            FfiConverterSequenceString.allocationSize(value.`missingRegions`) +
+            FfiConverterULong.allocationSize(value.`queryTimeMs`)
+    )
+
+    override fun write(value: FfiNearbyServicesResult, buf: ByteBuffer) {
+            FfiConverterSequenceTypeFfiNearbyServiceHit.write(value.`hits`, buf)
+            FfiConverterSequenceString.write(value.`missingRegions`, buf)
+            FfiConverterULong.write(value.`queryTimeMs`, buf)
+    }
+}
+
+
+
 /**
  * Pack-host catalog snapshot for region-pill availability coloring.
  */
@@ -8530,6 +8673,48 @@ public object FfiConverterTypeFfiIconTheme: FfiConverterRustBuffer<FfiIconTheme>
 
 
 /**
+ * Nearby services category (gas, cafe, hospital, …).
+ */
+
+enum class FfiNearbyServiceCategory {
+    
+    GAS_STATION,
+    CAFE,
+    FAST_FOOD,
+    HOSPITAL,
+    CAR_REPAIR,
+    HOTEL_MOTEL,
+    DOCTOR;
+
+    
+
+
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiNearbyServiceCategory: FfiConverterRustBuffer<FfiNearbyServiceCategory> {
+    override fun read(buf: ByteBuffer) = try {
+        FfiNearbyServiceCategory.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FfiNearbyServiceCategory) = 4UL
+
+    override fun write(value: FfiNearbyServiceCategory, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
  * Pack-server vs local Geofabrik routing for region acquisition.
  */
 
@@ -9307,6 +9492,34 @@ public object FfiConverterSequenceTypeFfiMwmRegion: FfiConverterRustBuffer<List<
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeFfiNearbyServiceHit: FfiConverterRustBuffer<List<FfiNearbyServiceHit>> {
+    override fun read(buf: ByteBuffer): List<FfiNearbyServiceHit> {
+        val len = buf.getInt()
+        return List<FfiNearbyServiceHit>(len) {
+            FfiConverterTypeFfiNearbyServiceHit.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiNearbyServiceHit>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiNearbyServiceHit.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiNearbyServiceHit>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiNearbyServiceHit.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeFfiPmtilesJob: FfiConverterRustBuffer<List<FfiPmtilesJob>> {
     override fun read(buf: ByteBuffer): List<FfiPmtilesJob> {
         val len = buf.getInt()
@@ -9493,6 +9706,34 @@ public object FfiConverterSequenceTypeWaterPoiAlongRoute: FfiConverterRustBuffer
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeWaterPoiAlongRoute.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFfiNearbyServiceCategory: FfiConverterRustBuffer<List<FfiNearbyServiceCategory>> {
+    override fun read(buf: ByteBuffer): List<FfiNearbyServiceCategory> {
+        val len = buf.getInt()
+        return List<FfiNearbyServiceCategory>(len) {
+            FfiConverterTypeFfiNearbyServiceCategory.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiNearbyServiceCategory>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiNearbyServiceCategory.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiNearbyServiceCategory>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiNearbyServiceCategory.write(it, buf)
         }
     }
 }
@@ -11058,6 +11299,29 @@ public object FfiConverterSequenceSequenceOptionalString: FfiConverterRustBuffer
         FfiConverterDouble.lower(`lat`),
         FfiConverterDouble.lower(`lon`),
         FfiConverterDouble.lower(`radiusM`),
+        FfiConverterUInt.lower(`limit`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Offline nearby services within `radius_m` (default 150 km when <= 0).
+         *
+         * Reads `place_index.db` only — never waits on missing regions. Pass installed
+         * Geofabrik paths so the result can list coverage gaps (e.g. Vestlandet).
+         */ fun `nearbyServices`(`indexDbPath`: kotlin.String, `lat`: kotlin.Double, `lon`: kotlin.Double, `radiusM`: kotlin.Double, `categories`: List<FfiNearbyServiceCategory>, `installedRegions`: List<kotlin.String>, `limit`: kotlin.UInt): FfiNearbyServicesResult {
+            return FfiConverterTypeFfiNearbyServicesResult.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_navi_fn_func_nearby_services(
+    
+        
+        FfiConverterString.lower(`indexDbPath`),
+        FfiConverterDouble.lower(`lat`),
+        FfiConverterDouble.lower(`lon`),
+        FfiConverterDouble.lower(`radiusM`),
+        FfiConverterSequenceTypeFfiNearbyServiceCategory.lower(`categories`),
+        FfiConverterSequenceString.lower(`installedRegions`),
         FfiConverterUInt.lower(`limit`),_status)
 }
     )

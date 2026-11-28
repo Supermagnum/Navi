@@ -657,4 +657,21 @@
     <string name="gpx_navigating">Following the track %1$s (%2$s)</string>
     <string name="gpx_route_to_start_set">Route to the start of %1$s</string>
     <string name="mwm_mig_status_no_space">Not enough free space for the next map file. Free up space and try again; the files already downloaded are kept.</string>
+
+    <!-- Nearby services -->
+    <string name="nearby_services_title">Nearby services</string>
+    <string name="nearby_services_open">Nearby services</string>
+    <string name="nearby_services_searching">Searching offline maps…</string>
+    <string name="nearby_services_empty">No matching places within 150 km in installed maps.</string>
+    <string name="nearby_services_no_gps">No GPS fix yet. Turn on location to search nearby services.</string>
+    <string name="nearby_services_route_here">Route here</string>
+    <string name="nearby_services_query_ms">Found in %1$d ms</string>
+    <string name="nearby_services_region_gap">%1$s not installed — results may be incomplete</string>
+    <string name="nearby_cat_gas_station">Gas station</string>
+    <string name="nearby_cat_cafe">Café</string>
+    <string name="nearby_cat_fast_food">Fast food</string>
+    <string name="nearby_cat_hospital">Hospital</string>
+    <string name="nearby_cat_car_repair">Car repair</string>
+    <string name="nearby_cat_hotel_motel">Hotel / motel</string>
+    <string name="nearby_cat_doctor">Doctor</string>
 </resources>

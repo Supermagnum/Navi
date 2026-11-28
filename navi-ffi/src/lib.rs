@@ -8029,6 +8029,144 @@ pub fn nearby_places(
         .collect()
 }
 
+/// Nearby services category (gas, cafe, hospital, …).
+#[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FfiNearbyServiceCategory {
+    GasStation,
+    Cafe,
+    FastFood,
+    Hospital,
+    CarRepair,
+    HotelMotel,
+    Doctor,
+}
+
+impl From<FfiNearbyServiceCategory> for driver_break_core::NearbyServiceCategory {
+    fn from(c: FfiNearbyServiceCategory) -> Self {
+        match c {
+            FfiNearbyServiceCategory::GasStation => Self::GasStation,
+            FfiNearbyServiceCategory::Cafe => Self::Cafe,
+            FfiNearbyServiceCategory::FastFood => Self::FastFood,
+            FfiNearbyServiceCategory::Hospital => Self::Hospital,
+            FfiNearbyServiceCategory::CarRepair => Self::CarRepair,
+            FfiNearbyServiceCategory::HotelMotel => Self::HotelMotel,
+            FfiNearbyServiceCategory::Doctor => Self::Doctor,
+        }
+    }
+}
+
+impl From<driver_break_core::NearbyServiceCategory> for FfiNearbyServiceCategory {
+    fn from(c: driver_break_core::NearbyServiceCategory) -> Self {
+        match c {
+            driver_break_core::NearbyServiceCategory::GasStation => Self::GasStation,
+            driver_break_core::NearbyServiceCategory::Cafe => Self::Cafe,
+            driver_break_core::NearbyServiceCategory::FastFood => Self::FastFood,
+            driver_break_core::NearbyServiceCategory::Hospital => Self::Hospital,
+            driver_break_core::NearbyServiceCategory::CarRepair => Self::CarRepair,
+            driver_break_core::NearbyServiceCategory::HotelMotel => Self::HotelMotel,
+            driver_break_core::NearbyServiceCategory::Doctor => Self::Doctor,
+        }
+    }
+}
+
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiNearbyServiceHit {
+    pub osm_id: i64,
+    pub name: String,
+    pub category: FfiNearbyServiceCategory,
+    pub kind: String,
+    pub lat: f64,
+    pub lon: f64,
+    pub distance_m: f64,
+    pub bearing_deg: f64,
+    pub compass: String,
+    pub distance_label: String,
+    pub region_id: String,
+    pub sub_area: String,
+    pub municipality: String,
+}
+
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct FfiNearbyServicesResult {
+    pub hits: Vec<FfiNearbyServiceHit>,
+    pub missing_regions: Vec<String>,
+    pub query_time_ms: u64,
+}
+
+/// Offline nearby services within `radius_m` (default 150 km when <= 0).
+///
+/// Reads `place_index.db` only — never waits on missing regions. Pass installed
+/// Geofabrik paths so the result can list coverage gaps (e.g. Vestlandet).
+#[uniffi::export]
+pub fn nearby_services(
+    index_db_path: String,
+    lat: f64,
+    lon: f64,
+    radius_m: f64,
+    categories: Vec<FfiNearbyServiceCategory>,
+    installed_regions: Vec<String>,
+    limit: u32,
+) -> FfiNearbyServicesResult {
+    let Ok(idx) = driver_break_core::search::NameIndex::open_readonly(Path::new(&index_db_path))
+    else {
+        let missing = driver_break_core::missing_regions_for_circle(
+            lat,
+            lon,
+            if radius_m > 0.0 {
+                radius_m
+            } else {
+                driver_break_core::NEARBY_SERVICES_RADIUS_M
+            },
+            &installed_regions,
+        );
+        return FfiNearbyServicesResult {
+            hits: Vec::new(),
+            missing_regions: missing,
+            query_time_ms: 0,
+        };
+    };
+    let cats: Vec<_> = categories.into_iter().map(Into::into).collect();
+    let q = driver_break_core::NearbyServicesQuery {
+        lat,
+        lon,
+        radius_m,
+        categories: cats,
+        installed_regions,
+        limit: limit.max(1) as usize,
+    };
+    let Ok(res) = idx.nearby_services(&q) else {
+        return FfiNearbyServicesResult {
+            hits: Vec::new(),
+            missing_regions: Vec::new(),
+            query_time_ms: 0,
+        };
+    };
+    FfiNearbyServicesResult {
+        hits: res
+            .hits
+            .into_iter()
+            .map(|h| FfiNearbyServiceHit {
+                osm_id: h.osm_id,
+                name: h.name,
+                category: h.category.into(),
+                kind: h.kind,
+                lat: h.lat,
+                lon: h.lon,
+                distance_m: h.distance_m,
+                bearing_deg: h.bearing_deg,
+                compass: h.compass,
+                distance_label: driver_break_core::format_nearby_distance(h.distance_m),
+                region_id: h.region_id,
+                sub_area: h.sub_area,
+                municipality: h.municipality,
+            })
+            .collect(),
+        missing_regions: res.missing_regions,
+        query_time_ms: res.query_time_ms,
+    }
+}
+
+
 #[derive(uniffi::Enum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FfiTollPolicy {
     Allow,
