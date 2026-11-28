@@ -13,18 +13,23 @@ qc_retries_default: 3
 asr:
   en:
     backend: faster-whisper
-    model: large-v3
-    # int8_float16 on CUDA when VRAM is tight; float16 if it fits; cpu int8 fallback
+    # medium fits 8GB with headroom; large-v3 often OOMs beside other CUDA work
+    model: medium
     compute_type_cuda: int8_float16
     compute_type_cpu: int8
   nb:
-    backend: nb-whisper
-    model: NbAiLab/nb-whisper-large
+    backend: faster-whisper
+    model: medium
+    # NbAiLab/nb-whisper-large is Apache-2.0 but too large for 8GB alongside other
+    # CUDA users; prefer medium + CPU fallback. Set NB_WHISPER=1 to force nb-whisper.
+    preferred_nb_whisper: NbAiLab/nb-whisper-large
     fallback_backend: faster-whisper
-    fallback_model: large-v3
+    fallback_model: medium
+    compute_type_cuda: int8_float16
+    compute_type_cpu: int8
   default:
     backend: faster-whisper
-    model: large-v3
+    model: medium
     force_language: true
     language_id_check: true
 

@@ -80,8 +80,12 @@ def _speech_regions(
 
 
 def keep_first_utterance(wav_in: Path, wav_out: Path, cfg: dict) -> None:
-    """Drop trailing speech islands (e.g. last-resort \"now\" pad after a gap)."""
-    if cfg.get("first_utterance_trim", True) is False:
+    """Drop trailing speech islands (e.g. last-resort \"now\" pad after a gap).
+
+    Disabled by default — aggressive island detection was truncating valid short
+    Norwegian fragments. Enable via lock postprocess.first_utterance_trim=true.
+    """
+    if cfg.get("first_utterance_trim", False) is False:
         wav_out.write_bytes(wav_in.read_bytes())
         return
 

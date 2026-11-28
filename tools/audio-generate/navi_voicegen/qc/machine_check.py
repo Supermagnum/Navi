@@ -85,13 +85,14 @@ def back_translate(text: str, src_lang: str, cfg: dict[str, Any]) -> tuple[str, 
     if "nllb" in model_id.lower():
         return "", ["NLLB is CC-BY-NC-4.0 — not used"]
     try:
-        from transformers import pipeline
+        from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
-        pipe = pipeline("translation", model=model_id)
-        out = pipe(text)
-        if isinstance(out, list) and out:
-            return str(out[0].get("translation_text") or out[0]), notes
-        return str(out), notes
+        tok = AutoTokenizer.from_pretrained(model_id)
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_id)
+        batch = tok(text, return_tensors="pt", truncation=True)
+        gen = model.generate(**batch, max_new_tokens=128)
+        out = tok.decode(gen[0], skip_special_tokens=True)
+        return out.strip(), notes
     except Exception as exc:  # noqa: BLE001
         # Deterministic offline stub for tests / missing models: identity-ish echo
         notes.append(f"MT unavailable ({exc}); using heuristic gloss")

@@ -73,9 +73,14 @@ def measure(path: Path) -> FfmpegMetrics:
             check=False,
         )
         err = proc.stderr
-        m = re.search(r"I:\s*([-\d.]+)\s*LUFS", err)
-        if m:
-            integrated = float(m.group(1))
+        # Prefer the summary line ("    I:         -19.1 LUFS"), not early -70 placeholders.
+        matches = re.findall(r"^\s*I:\s*([-\d.]+)\s*LUFS", err, flags=re.MULTILINE)
+        if matches:
+            integrated = float(matches[-1])
+        else:
+            m = re.search(r"I:\s*([-\d.]+)\s*LUFS", err)
+            if m:
+                integrated = float(m.group(1))
         m = re.search(r"Peak:\s*([-\d.]+)\s*dBFS", err)
         if m:
             true_peak = float(m.group(1))

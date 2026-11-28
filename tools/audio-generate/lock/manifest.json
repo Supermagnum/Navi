@@ -114,9 +114,9 @@
     "silence_stop_duration_s": 0.18,
     "silence_threshold_db": -40.0,
     "silence_stop_periods": 1,
-    "first_utterance_trim": true,
+    "first_utterance_trim": false,
     "first_utterance_rms": 0.02,
-    "first_utterance_gap_s": 0.12,
-    "first_utterance_pad_s": 0.05
+    "first_utterance_gap_s": 0.18,
+    "first_utterance_pad_s": 0.08
   }
 }

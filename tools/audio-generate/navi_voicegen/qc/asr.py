@@ -133,14 +133,38 @@ def transcribe_clip(
                 backend, model = str(fb), str(fm)
 
         if backend in ("faster-whisper", "whisper"):
-            result = _faster_whisper(
-                audio,
-                model_name=model,
-                language=whisper_lang if lang_asr.get("force_language", True) else None,
-                prefer_cuda=prefer_cuda,
-                compute_cuda=str(lang_asr.get("compute_type_cuda") or asr_cfg.get("default", {}).get("compute_type_cuda") or "int8_float16"),
-                compute_cpu=str(lang_asr.get("compute_type_cpu") or "int8"),
-            )
+            try:
+                result = _faster_whisper(
+                    audio,
+                    model_name=model,
+                    language=whisper_lang if lang_asr.get("force_language", True) else None,
+                    prefer_cuda=prefer_cuda,
+                    compute_cuda=str(
+                        lang_asr.get("compute_type_cuda")
+                        or asr_cfg.get("default", {}).get("compute_type_cuda")
+                        or "int8_float16"
+                    ),
+                    compute_cpu=str(lang_asr.get("compute_type_cpu") or "int8"),
+                )
+            except Exception as cuda_exc:  # noqa: BLE001
+                notes.append(f"CUDA/ASR retry on CPU after: {cuda_exc}")
+                # Drop any cached CUDA model that may be pinning VRAM
+                _model_cache.clear()
+                try:
+                    import torch
+
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                except Exception:
+                    pass
+                result = _faster_whisper(
+                    audio,
+                    model_name=model,
+                    language=whisper_lang if lang_asr.get("force_language", True) else None,
+                    prefer_cuda=False,
+                    compute_cuda="int8",
+                    compute_cpu=str(lang_asr.get("compute_type_cpu") or "int8"),
+                )
             result.notes.extend(notes)
             return result
 

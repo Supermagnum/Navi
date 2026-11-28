@@ -193,17 +193,47 @@ def run_qc_references(lang_code: str | None = None) -> list[Path]:
                 ref = None
             if ref is None or not ref.is_file():
                 continue
-            row = evaluate_clip(
-                lang_code=code if code in ("en", "nb") else "en",
-                concept_key=f"ref_{gender}",
-                expected="reference",  # refs have no phrase; quality/VAD oriented
-                audio=ref,
-                gender=gender,
-                cfg=cfg,
-            )
-            # Reference-specific: mark FAIL on severe noise
-            if row["status"] == "FAIL":
-                row["reasons"].append("reference FAIL — do not use for generation")
+            # Refs have no expected phrase — score ffmpeg/quality/VAD only.
+            from navi_voicegen.qc.ffmpeg_metrics import measure
+            from navi_voicegen.qc.quality import score_quality
+            from navi_voicegen.qc.vad import speech_regions
+            from navi_voicegen.qc.config import thresholds_for
+
+            thr = thresholds_for(code if code in ("en", "nb") else "en", cfg)
+            ff = measure(ref)
+            qual = score_quality(ref)
+            regions = speech_regions(ref)
+            reasons: list[str] = []
+            status = "PASS"
+            nf = ff.noise_floor_dbfs
+            if nf is not None and nf > float(thr.get("noise_floor_dbfs_fail", -35)):
+                status = "FAIL"
+                reasons.append(f"noise floor {nf:.1f} dBFS")
+            elif nf is not None and nf > float(thr.get("noise_floor_dbfs_warn", -45)):
+                status = "WARN"
+                reasons.append(f"noise floor {nf:.1f} dBFS")
+            if (ff.clipped_samples or 0) > 0:
+                status = "FAIL"
+                reasons.append(f"clipped samples {ff.clipped_samples}")
+            if not regions:
+                status = "FAIL" if status != "PASS" else "WARN"
+                reasons.append("no VAD speech regions detected")
+            if status == "FAIL":
+                reasons.append("reference FAIL — do not use for generation")
+            try:
+                rel = ref.relative_to(repo_root()).as_posix()
+            except ValueError:
+                rel = ref.as_posix()
+            row = {
+                "concept_key": f"ref_{gender}",
+                "gender": gender,
+                "path": rel,
+                "ffmpeg": ff.to_dict(),
+                "quality": qual.to_dict(),
+                "vad_regions": [{"start_s": r.start_s, "end_s": r.end_s} for r in regions],
+                "status": status,
+                "reasons": reasons or ["ok"],
+            }
             rows.append(row)
         if not rows:
             continue
