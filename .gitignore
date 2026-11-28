@@ -111,3 +111,6 @@ tools/audio-generate/**/*.opus
 tools/audio-generate/**/*.mp3
 tools/audio-generate/*.egg-info/
 tools/audio-generate/navi_voicegen.egg-info/
+
+build/qc/
+build/review/

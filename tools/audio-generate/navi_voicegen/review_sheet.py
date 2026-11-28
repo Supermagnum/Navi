@@ -150,7 +150,15 @@ def apply_review_sheet(sheet_path: Path) -> Path:
             updated.append(e)
 
     reviewed_all = all(e.reviewed for e in updated)
-    new_pf = replace(pf, entries=updated, reviewed_file=reviewed_all)
+    new_pf = replace(
+        pf,
+        entries=updated,
+        reviewed_file=reviewed_all,
+        review_status="reviewed" if reviewed_all else pf.review_status,
+    )
+    # machine_checked is never promoted by apply-review unless every row is marked reviewed
+    if not reviewed_all and new_pf.review_status == "reviewed":
+        new_pf = replace(new_pf, review_status="unreviewed")
     out = phrases_dir() / f"{lang_guess}.yaml"
     write_phrase_file(out, new_pf)
     write_review_record(lang_guess, sheet_path=sheet_path)

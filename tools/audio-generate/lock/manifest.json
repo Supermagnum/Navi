@@ -15,6 +15,78 @@
       "role": "optional persona packs only; requires --persona-checkpoint"
     }
   },
+  "qc": {
+    "generate_languages": ["en", "nb"],
+    "asr": {
+      "faster-whisper": {
+        "pypi_version": "1.2.1",
+        "license": "MIT",
+        "models": {
+          "large-v3": {
+            "id": "Systran/faster-whisper-large-v3",
+            "license": "MIT",
+            "role": "default multilingual / English ASR"
+          }
+        }
+      },
+      "nb-whisper": {
+        "model_id": "NbAiLab/nb-whisper-large",
+        "license": "Apache-2.0",
+        "role": "Norwegian Bokmål ASR; fallback faster-whisper large-v3"
+      },
+      "openai-whisper-large-v3": {
+        "id": "openai/whisper-large-v3",
+        "license": "Apache-2.0",
+        "role": "underlying weights / reference"
+      }
+    },
+    "alignment": {
+      "whisperx": {
+        "status": "optional",
+        "license": "BSD-4-Clause",
+        "note": "Used when installed; otherwise VAD+duration fallback"
+      },
+      "silero-vad": {
+        "pypi_version": "6.3",
+        "license": "MIT"
+      }
+    },
+    "quality": {
+      "torchaudio-squim": {
+        "via": "torchaudio.pipelines.SQUIM_OBJECTIVE",
+        "license": "BSD-style (PyTorch)",
+        "status": "wired when torchaudio available"
+      },
+      "dnsmos": {
+        "source": "microsoft/DNS-Challenge",
+        "license": "CC-BY-4.0",
+        "status": "skipped unless speechmos helper present"
+      },
+      "nisqa": {
+        "license": "MIT",
+        "status": "skipped unless nisqa package installed"
+      },
+      "brouhaha": {
+        "license": "MIT",
+        "status": "skipped unless brouhaha package installed"
+      }
+    },
+    "mt": {
+      "opus-mt-mul-en": {
+        "model_id": "Helsinki-NLP/opus-mt-mul-en",
+        "license": "Apache-2.0",
+        "role": "machine-check back-translation only"
+      },
+      "nllb": {
+        "model_id": "facebook/nllb-200-distilled-600M",
+        "license": "CC-BY-NC-4.0",
+        "status": "NOT USED (non-commercial)"
+      }
+    },
+    "metrics": {
+      "jiwer": {"pypi_version": "4.0.0", "license": "Apache-2.0 (PyPI classifiers / project)"}
+    }
+  },
   "phrase_template_clones": {
     "osrm-text-instructions": {
       "url": "https://github.com/Project-OSRM/osrm-text-instructions.git",
@@ -36,6 +108,15 @@
     "channels": 1,
     "default_codec": "opus",
     "opus_bitrate_kbps": 32,
-    "mp3_bitrate_kbps": 64
+    "mp3_bitrate_kbps": 64,
+    "silence_trim": true,
+    "silence_start_duration_s": 0.05,
+    "silence_stop_duration_s": 0.18,
+    "silence_threshold_db": -40.0,
+    "silence_stop_periods": 1,
+    "first_utterance_trim": true,
+    "first_utterance_rms": 0.02,
+    "first_utterance_gap_s": 0.12,
+    "first_utterance_pad_s": 0.05
   }
 }

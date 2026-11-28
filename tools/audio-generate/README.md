@@ -235,3 +235,38 @@ pytest
 - Bitchin' Betty / alert / overspeed phrase families
 - On-device playback crates
 - Committing generated audio, models, venvs, or template clones
+
+## Automated audio QC
+
+Authoring-time only (`--qc`, `--qc-references`, `--qc-audition`). Nothing here ships in the app.
+
+### What it catches
+
+| Check | Catches |
+|---|---|
+| ASR round-trip (WER/CER) | Extra / missing / wrong words (e.g. trailing English "now") |
+| Word timing / VAD | Leading/trailing bleed, multi-region single-word clips, assembled merge/long gaps |
+| ffmpeg ebur128 / silencedetect / astats | Wrong loudness, clipping, silence, noise floor |
+| TorchAudio Squim (when available) | Objective STOI/PESQ/SI-SDR estimates |
+| DNSMOS / NISQA / Brouhaha | Optional; skipped cleanly if not installed |
+
+Short single-word clips (≤2 syllables): ASR mismatch alone is **WARN** (listen), not FAIL, unless timing/VAD also fails.
+
+### Thresholds
+
+See [`qc.yaml`](qc.yaml). Per-language overrides live under `language_overrides`.
+
+### Generation allowlist
+
+Only **en** and **nb** may be synthesised this round (`generate_languages` in `qc.yaml`). Other `--lang` values for generation, audition, or `--qc-retries` refuse.
+
+### Machine-check vs native review
+
+`--machine-check` back-translates phrases (OPUS-MT, Apache-2.0) for operator understanding and runs script/maneuver checks. It **cannot** judge naturalness, register, or prosody. `review_status: machine_checked` is never treated as native `reviewed`; only `--apply-review` with your marked sheet sets `reviewed: true`.
+
+### Reports
+
+- `build/qc/<folder>/report.md` — PASS/WARN/FAIL summary (worst first)
+- `build/qc/<folder>/<gender>/report.json` — per-clip metrics
+- `build/review/<folder>/machine_check.md` — machine-check table
+

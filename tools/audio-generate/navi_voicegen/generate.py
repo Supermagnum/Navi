@@ -49,6 +49,8 @@ class GenerateOptions:
     persona: bool
     persona_checkpoint: Path | None
     checkpoint_license_confirmed: bool
+    run_qc: bool = True
+    qc_retries: int = 3
 
 
 def _voice_ref_for(lang_code: str, gender: str, opts: GenerateOptions) -> tuple[Path | None, dict | None]:
@@ -80,6 +82,8 @@ def generate_packs(opts: GenerateOptions) -> list[Path]:
     if opts.persona:
         raise SystemExit("Persona engine scaffold only; use default Chatterbox path for turn-by-turn.")
 
+    from navi_voicegen.qc.config import assert_generate_allowed
+
     device = resolve_device(opts.device)
     if device == "cpu":
         print("warning: running Chatterbox on CPU — expect slow synthesis", flush=True)
@@ -96,6 +100,7 @@ def generate_packs(opts: GenerateOptions) -> list[Path]:
     ext = "opus" if opts.fmt == "opus" else "mp3"
 
     for lang_code in opts.lang_codes:
+        assert_generate_allowed(lang_code, action="generation")
         spec = SPECS[lang_code]
         if spec.chatterbox_id is None:
             raise SystemExit(
@@ -116,18 +121,28 @@ def generate_packs(opts: GenerateOptions) -> list[Path]:
                 f"author en.yaml by hand or run --draft-phrases --lang {lang_code}"
             ) from None
 
+        if phrase_file.review_status == "machine_checked":
+            # Lower-confidence packs — never treated as native-reviewed.
+            phrase_file = phrase_file  # noqa: PLW0127 — clarity for reviewers
         unreviewed = phrase_file.unreviewed_entries()
-        if unreviewed and not phrase_file.reviewed_file and not opts.allow_unreviewed:
+        if unreviewed and not phrase_file.is_natively_reviewed and not opts.allow_unreviewed:
             raise SystemExit(
-                f"{lang_code} has {len(unreviewed)} unreviewed phrases; "
-                "pass --allow-unreviewed to emit clips under unreviewed/"
+                f"{lang_code} has {len(unreviewed)} unreviewed phrases "
+                f"(review_status={phrase_file.review_status!r}); "
+                "pass --allow-unreviewed to emit clips under unreviewed/ "
+                "(or machine_checked/ when review_status=machine_checked)."
             )
 
         pack_style = resolve_pack_style(spec, opts.mode)
+        machine_checked_pack = phrase_file.review_status == "machine_checked"
         unreviewed_pack = (
-            opts.allow_unreviewed and not phrase_file.reviewed_file
+            (opts.allow_unreviewed and not phrase_file.is_natively_reviewed)
+            or machine_checked_pack
         )
-        lang_dir = language_pack_dir(opts.out_dir, spec.folder, unreviewed_pack=unreviewed_pack)
+        if machine_checked_pack:
+            lang_dir = opts.out_dir / "machine_checked" / spec.folder
+        else:
+            lang_dir = language_pack_dir(opts.out_dir, spec.folder, unreviewed_pack=unreviewed_pack)
         state_path = lang_dir / ".navi-voicegen-state.json"
         state = load_state(state_path)
         lock = json.loads(
@@ -256,5 +271,30 @@ def generate_packs(opts: GenerateOptions) -> list[Path]:
         )
         if voice_provenance:
             write_pack_attribution(spec.folder, list(voice_provenance.values()), out_dir=opts.out_dir)
+        # Stamp review_status on manifest
+        try:
+            import json as _json
+
+            payload = _json.loads(man.read_text(encoding="utf-8"))
+            payload["review_status"] = phrase_file.review_status
+            man.write_text(_json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        except Exception:
+            pass
         manifests.append(man)
+
+        if opts.run_qc and not opts.dry_run:
+            from navi_voicegen.qc.retries import qc_with_retries
+
+            report = qc_with_retries(
+                lang_code,
+                genders=opts.genders,
+                out_root=opts.out_dir,
+                retries=opts.qc_retries,
+                seed=opts.seed,
+                device=device,
+                fmt=opts.fmt,
+                voice_ref_male=opts.voice_ref_male,
+                voice_ref_female=opts.voice_ref_female,
+            )
+            print(f"QC report: {report}", flush=True)
     return manifests

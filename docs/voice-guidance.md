@@ -656,10 +656,12 @@ consistent with this file’s documentation-not-built status.
 | Recorded-voice folder contract | Specified here; authoring CLI emits `build/sounds/` layout |
 | Offline clip authoring CLI (`navi-voicegen`) | Implemented under `tools/audio-generate/` (authoring only; no playback) |
 | Voice ref catalogue + fetch/audition | `tools/audio-generate/voices.yaml`; LibriVox verified PD; nb male **sbr-14** (Språkbanken NST Dictation CC-0; `navi-voicegen --fetch-corpus sprakbanken-sbr14`) — **sbr-15** unavailable |
-| Native phrase review (draft → TSV → apply) | `--draft-phrases`, `--review-sheet`, `--apply-review` → `build/review/<language>/`; gate: `phrases/review_records/<lang>.json` |
+| Native phrase review (draft → TSV → apply) | `--draft-phrases`, `--review-sheet` / `--export-review-sheet`, `--apply-review` → `build/review/<language>/`; gate: `phrases/review_records/<lang>.json` |
 | Assembled fragment audition (A/B vs whole phrase) | `navi-voicegen --assembled-audition` → `build/audition/<language>/INDEX.md` |
+| Automated audio QC | `navi-voicegen --qc` / `--qc-references` / `--qc-audition`; thresholds in `tools/audio-generate/qc.yaml`; reports under `build/qc/` (gitignored). QC never sets `reviewed: true`. |
+| Machine-check for non-reviewable languages | `navi-voicegen --machine-check --lang X` → `build/review/<folder>/machine_check.md`. Status `review_status: machine_checked` is **lower confidence** than native review and is **never** treated as `reviewed` ([§6](#6-localization)/[§7](#7-phrase-translation-source) process note). |
 | English phrase inventory (reviewed YAML) | `tools/audio-generate/phrases/en.yaml` |
-| Norwegian phrase inventory | `phrases/nb.yaml` proposed Bokmål text, **`reviewed: false`**; pack under `build/sounds/unreviewed/norwegian/` only |
+| Norwegian phrase inventory | `phrases/nb.yaml` Bokmål text with **`reviewed: true`** / `review_status: reviewed` after native `--apply-review` |
 | Norwegian pack style sign-off | **Open** — `nb.yaml` `pack_style: null` until native review picks fragment / hybrid / whole |
 | Tier 1 + sv/da voice refs in `voices.yaml` | **en** + **nb** female LibriVox catalogued; tier 1 / sv / da blocked pending corpus audit (see README folder table) |
 | Measured English pack bytes | **not published** — regenerate locally with `navi-voicegen --lang en --gender both` |

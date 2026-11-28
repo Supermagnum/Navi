@@ -14,15 +14,43 @@ class ChatterboxUnavailable(RuntimeError):
 _model_cache: dict[str, Any] = {}
 
 # Upstream Chatterbox 0.1.7 alignment crash on a few one-token fragments.
+# Prefer phonetic/spelling aliases over padding with an extra spoken English word.
 _SYNTH_TEXT_ALIASES: dict[str, str] = {"One": "Wun", "In": "inn", "Then": "Den"}
+
+# Soft, non-lexical fallbacks if the bare token still trips alignment.
+_SHORT_TOKEN_FALLBACKS: tuple[str, ...] = (".", "…", ",")
+
+
+def _synth_candidates(text: str) -> list[str]:
+    """Ordered synthesis strings.
+
+    Never prefer English \" now\" — it is audible on number fragments. Keep it only as a
+    last-resort pad after punctuation fails; postprocess keeps the first speech island so
+    a separated trailing pad word is discarded.
+    """
+    primary = _SYNTH_TEXT_ALIASES.get(text, text)
+    candidates = [primary]
+    if primary != text:
+        candidates.append(text)
+
+    short = " " not in primary and len(primary) <= 6
+    if short:
+        for suffix in _SHORT_TOKEN_FALLBACKS:
+            candidates.append(f"{primary}{suffix}")
+        # Last resorts: multi-token pads that usually avoid IndexError.
+        candidates.append(f"{primary} now")
+        candidates.append(f"{primary} {primary}")
+
+    out: list[str] = []
+    for item in candidates:
+        if item not in out:
+            out.append(item)
+    return out
 
 
 def _synth_input(text: str) -> str:
-    if text in _SYNTH_TEXT_ALIASES:
-        return _SYNTH_TEXT_ALIASES[text]
-    if " " not in text and len(text) <= 6:
-        return f"{text} now"
-    return text
+    """Primary synth string (first candidate). Kept for tests and call sites."""
+    return _synth_candidates(text)[0]
 
 
 def supported_language_ids() -> set[str]:
@@ -99,21 +127,26 @@ def synthesize_wav(
     kwargs: dict[str, Any] = {"language_id": language_id}
     if voice_ref is not None:
         kwargs["audio_prompt_path"] = str(voice_ref)
-    synth_text = _synth_input(text)
+
+    candidates = _synth_candidates(text)
+    seed_bumps = (0, 1, 7, 13)
     last_err: Exception | None = None
-    for attempt, bump in enumerate((0, 1, 7, 13)):
-        try:
-            if seed is not None:
-                torch.manual_seed(seed + bump)
-            wav = model.generate(synth_text, **kwargs)
-            last_err = None
+    wav = None
+    for synth_text in candidates:
+        for bump in seed_bumps:
+            try:
+                if seed is not None:
+                    torch.manual_seed(seed + bump)
+                wav = model.generate(synth_text, **kwargs)
+                last_err = None
+                break
+            except IndexError as exc:
+                last_err = exc
+        if last_err is None:
             break
-        except IndexError as exc:
-            last_err = exc
-            if attempt >= 3:
-                raise
-    if last_err is not None:
-        raise last_err
+    if last_err is not None or wav is None:
+        raise last_err if last_err is not None else RuntimeError("synthesis produced no audio")
+
     out = Path(tempfile.mkstemp(suffix=".wav")[1])
     ta.save(str(out), wav, model.sr)
     return out

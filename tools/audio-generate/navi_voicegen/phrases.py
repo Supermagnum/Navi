@@ -20,6 +20,9 @@ class PhraseEntry:
     alternatives: list[str] | None = None
 
 
+VALID_REVIEW_STATUS = frozenset({"unreviewed", "machine_checked", "reviewed"})
+
+
 @dataclass
 class PhraseFile:
     lang_code: str
@@ -29,9 +32,15 @@ class PhraseFile:
     template_commit: str | None
     entries: list[PhraseEntry]
     pack_style: str | None = None  # TBD until native review picks fragment / hybrid / whole
+    review_status: str = "unreviewed"
 
     def unreviewed_entries(self) -> list[PhraseEntry]:
         return [e for e in self.entries if not e.reviewed]
+
+    @property
+    def is_natively_reviewed(self) -> bool:
+        """Only native --apply-review counts; machine_checked never does."""
+        return self.review_status == "reviewed" and self.reviewed_file
 
 
 def phrases_dir() -> Path:
@@ -47,7 +56,15 @@ def load_phrase_file(lang_code: str) -> PhraseFile:
     for concept_key, body in raw.get("phrases", {}).items():
         if not isinstance(body, dict):
             raise ValueError(f"{path}: phrase {concept_key!r} must be a mapping")
-        text = str(body["text"])
+        raw_text = body.get("text")
+        if raw_text is None:
+            raise ValueError(
+                f"{path}: phrase {concept_key!r} has null text — "
+                f'quote YAML strings like text: "null" when the spoken word is null'
+            )
+        text = str(raw_text).strip()
+        if not text:
+            raise ValueError(f"{path}: phrase {concept_key!r} has empty text")
         reviewed = bool(body.get("reviewed", raw.get("reviewed", False)))
         pack_style = body.get("pack_style")
         alts = body.get("alternatives")
@@ -64,14 +81,25 @@ def load_phrase_file(lang_code: str) -> PhraseFile:
                 alternatives=alts,
             )
         )
+    reviewed_file = bool(raw.get("reviewed", False))
+    review_status = str(raw.get("review_status") or ("reviewed" if reviewed_file else "unreviewed"))
+    if review_status not in VALID_REVIEW_STATUS:
+        raise ValueError(f"{path}: invalid review_status {review_status!r}")
+    # machine_checked must never imply reviewed:true
+    if review_status == "machine_checked":
+        reviewed_file = False
+    if reviewed_file and review_status != "reviewed":
+        review_status = "reviewed"
+
     pf = PhraseFile(
         lang_code=str(raw.get("lang_code", lang_code)),
         language_folder=str(raw["language_folder"]),
-        reviewed_file=bool(raw.get("reviewed", False)),
+        reviewed_file=reviewed_file,
         template_source=raw.get("template_source"),
         template_commit=raw.get("template_commit"),
         entries=entries,
         pack_style=raw.get("pack_style"),
+        review_status=review_status,
     )
     from navi_voicegen.review_gate import assert_review_gate
 
@@ -80,10 +108,16 @@ def load_phrase_file(lang_code: str) -> PhraseFile:
 
 
 def write_phrase_file(path: Path, phrase_file: PhraseFile) -> None:
+    status = phrase_file.review_status
+    if phrase_file.reviewed_file:
+        status = "reviewed"
+    elif status == "reviewed":
+        status = "unreviewed"
     data: dict[str, Any] = {
         "lang_code": phrase_file.lang_code,
         "language_folder": phrase_file.language_folder,
-        "reviewed": phrase_file.reviewed_file,
+        "reviewed": phrase_file.reviewed_file and status == "reviewed",
+        "review_status": status,
         "template_source": phrase_file.template_source,
         "template_commit": phrase_file.template_commit,
         "phrases": {},

@@ -1,13 +1,13 @@
 lang_code: nb
 language_folder: norwegian
-reviewed: false
-pack_style: null
+reviewed: true
+review_status: reviewed
 template_source: valhalla
 template_commit: 4d8b2061b566412ce61eb8a2001b7cfa2392356a
 phrases:
   roundabout:
     text: rundkjøring
-    reviewed: false
+    reviewed: true
     pack_style: fragment
     valhalla_original: rundkjøringen
     change_reason: Fragment noun stem vs Valhalla definite in full sentences
@@ -17,7 +17,7 @@ phrases:
     - rundkjøringen
   first:
     text: første
-    reviewed: false
+    reviewed: true
     pack_style: fragment
     valhalla_original: første
     change_reason: Ordinal for avkjørsel templates
@@ -27,7 +27,7 @@ phrases:
     - første avkjørsel
   second:
     text: andre
-    reviewed: false
+    reviewed: true
     pack_style: fragment
     valhalla_original: andre
     change_reason: Ordinal fragment
@@ -36,7 +36,7 @@ phrases:
     - andre
   third:
     text: tredje
-    reviewed: false
+    reviewed: true
     pack_style: fragment
     valhalla_original: tredje
     change_reason: Ordinal fragment
@@ -45,12 +45,12 @@ phrases:
     - tredje
   cross:
     text: Kryss
-    reviewed: false
+    reviewed: true
     pack_style: fragment
     valhalla_original: Kryss
   left:
     text: ta til venstre
-    reviewed: false
+    reviewed: true
     pack_style: fragment
     valhalla_original: Ta til venstre
     change_reason: Valhalla relative-direction templates use Ta til
@@ -59,7 +59,7 @@ phrases:
     - Ta til venstre
   right:
     text: ta til høyre
-    reviewed: false
+    reviewed: true
     pack_style: fragment
     valhalla_original: Ta til høyre
     change_reason: Valhalla relative-direction templates use Ta til
@@ -68,21 +68,21 @@ phrases:
     - Ta til høyre
   u_turn:
     text: Ta en U-sving
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   straight:
     text: Fortsett rett frem
-    reviewed: false
+    reviewed: true
     pack_style: fragment
     valhalla_original: rett frem
   continue:
     text: Fortsett
-    reviewed: false
+    reviewed: true
     pack_style: fragment
     valhalla_original: Fortsett.
   exit:
     text: ta avkjørselen
-    reviewed: false
+    reviewed: true
     pack_style: fragment
     valhalla_original: Ta avkjørselen
     change_reason: Imperative aligned with Valhalla exit wording
@@ -92,7 +92,7 @@ phrases:
     - avkjørsel
   merge:
     text: Flett
-    reviewed: false
+    reviewed: true
     pack_style: fragment
     valhalla_original: Flett.
     change_reason: Fragment stem; Valhalla merge templates use longer phrases
@@ -104,29 +104,29 @@ phrases:
     - Flett mot
   keep_left:
     text: Hold til venstre
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   keep_right:
     text: Hold til høyre
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   arrive:
     text: Du har ankommet
-    reviewed: false
+    reviewed: true
     pack_style: fragment
     valhalla_original: Du har ankommet destinasjonen.
   destination:
     text: Du har ankommet destinasjonen
-    reviewed: false
+    reviewed: true
     pack_style: fragment
     valhalla_original: Du har ankommet destinasjonen.
   zero:
-    text: null
-    reviewed: false
+    text: 'null'
+    reviewed: true
     pack_style: fragment
   one:
-    text: én
-    reviewed: false
+    text: en
+    reviewed: true
     pack_style: fragment
     valhalla_original: én
     change_reason: Counting form; alt en/ett for gendered distance templates
@@ -136,120 +136,120 @@ phrases:
     - ett
   two:
     text: To
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   three:
     text: Tre
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   four:
     text: Fire
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   five:
     text: Fem
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   six:
     text: Seks
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   seven:
     text: Syv
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   eight:
     text: Åtte
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   nine:
     text: Ni
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   ten:
     text: Ti
-    reviewed: false
+    reviewed: true
     pack_style: fragment
     valhalla_original: terrengsykkelstien
   eleven:
     text: Elleve
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   twelve:
     text: Tolv
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   thirteen:
     text: Tretten
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   fourteen:
     text: Fjorten
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   fifteen:
     text: Femten
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   sixteen:
     text: Seksten
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   seventeen:
     text: Sytten
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   eighteen:
     text: Atten
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   nineteen:
     text: Nitten
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   twenty:
     text: Tjue
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   thirty:
     text: Tretti
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   forty:
     text: Førti
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   fifty:
     text: Femti
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   sixty:
     text: Seksti
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   seventy:
     text: Sytti
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   eighty:
     text: Åtti
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   ninety:
     text: Nitti
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   hundred:
     text: Hundre
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   thousand:
     text: Tusen
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   meters:
     text: meter
-    reviewed: false
+    reviewed: true
     pack_style: fragment
     valhalla_original: meter
     change_reason: Lowercase unit when concatenated after numbers
@@ -258,7 +258,7 @@ phrases:
     - meter
   kilometers:
     text: kilometer
-    reviewed: false
+    reviewed: true
     pack_style: fragment
     valhalla_original: kilometer
     change_reason: Lowercase unit mid-sentence for concat
@@ -267,9 +267,9 @@ phrases:
     - kilometer
   in:
     text: Om
-    reviewed: false
+    reviewed: true
     pack_style: fragment
   then:
     text: Deretter
-    reviewed: false
+    reviewed: true
     pack_style: fragment

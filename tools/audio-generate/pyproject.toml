@@ -20,6 +20,11 @@ engines = [
   "torch>=2.6.0",
   "torchaudio>=2.6.0",
 ]
+qc = [
+  "faster-whisper>=1.1.0",
+  "jiwer>=3.0.0",
+  "silero-vad>=5.1",
+]
 
 [project.scripts]
 navi-voicegen = "navi_voicegen.cli:main"

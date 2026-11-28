@@ -17,6 +17,8 @@ def test_en_hand_authored_record_passes():
     load_phrase_file("en")
 
 
-def test_nb_unreviewed_loads():
+def test_nb_reviewed_loads_with_record():
     pf = load_phrase_file("nb")
-    assert pf.reviewed_file is False
+    assert pf.reviewed_file is True
+    assert pf.review_status == "reviewed"
+    assert pf.is_natively_reviewed is True

@@ -1,0 +1,89 @@
+# Authoring-time audio QC thresholds (navi-voicegen --qc).
+# Defaults aim to catch extra/bleed words and obvious noise without failing
+# every short number fragment (ASR is unreliable on ≤2-syllable clips).
+
+schema_version: 1
+
+generate_languages:
+  - en
+  - nb
+
+qc_retries_default: 3
+
+asr:
+  en:
+    backend: faster-whisper
+    model: large-v3
+    # int8_float16 on CUDA when VRAM is tight; float16 if it fits; cpu int8 fallback
+    compute_type_cuda: int8_float16
+    compute_type_cpu: int8
+  nb:
+    backend: nb-whisper
+    model: NbAiLab/nb-whisper-large
+    fallback_backend: faster-whisper
+    fallback_model: large-v3
+  default:
+    backend: faster-whisper
+    model: large-v3
+    force_language: true
+    language_id_check: true
+
+alignment:
+  # Prefer WhisperX word timestamps when available; else VAD + duration only.
+  en: whisperx
+  nb: whisperx
+  # Languages without a verified aligner fall back to vad_duration.
+  default: vad_duration
+
+thresholds:
+  wer_fail: 0.35
+  wer_warn: 0.15
+  cer_fail: 0.35
+  cer_warn: 0.15
+  # zh/ja use CER as primary
+  cer_primary_langs: [zh, ja]
+  trailing_bleed_ms: 120
+  leading_bleed_ms: 120
+  assembled_merge_gap_ms: 40
+  assembled_long_gap_ms: 600
+  duration_tolerance: 0.40
+  short_clip_max_syllables: 2
+  # ffmpeg / loudness
+  target_lufs: -16.0
+  lufs_tolerance: 3.5
+  max_true_peak_dbtp: -1.0
+  min_leading_silence_ms: 20
+  max_leading_silence_ms: 350
+  min_trailing_silence_ms: 40
+  max_trailing_silence_ms: 450
+  noise_floor_dbfs_warn: -45
+  noise_floor_dbfs_fail: -35
+  # DNSMOS BAK (higher is cleaner). Used only when DNSMOS is available under a
+  # clear open licence; otherwise ffmpeg noise-floor substitutes.
+  dnsmos_bak_warn: 3.5
+  dnsmos_bak_fail: 2.8
+  nisqa_noi_warn: 3.5
+  nisqa_noi_fail: 2.8
+  brouhaha_snr_warn: 15.0
+  brouhaha_snr_fail: 8.0
+  multi_speech_region_fail: true
+
+language_overrides:
+  nb:
+    # NB-Whisper is strong on Bokmål; keep same WER but slightly looser CER.
+    cer_warn: 0.18
+  zh:
+    wer_fail: 1.0
+    cer_fail: 0.25
+  ja:
+    wer_fail: 1.0
+    cer_fail: 0.25
+  ar:
+    # Diacritic-stripped compare; keep moderate WER.
+    wer_warn: 0.20
+
+machine_check:
+  mt_backend: opus-mt
+  # NLLB is CC-BY-NC-4.0 — do not use.
+  mt_model: Helsinki-NLP/opus-mt-mul-en
+  require_maneuver_tokens: true

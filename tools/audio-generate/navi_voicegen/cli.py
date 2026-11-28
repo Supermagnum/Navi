@@ -87,6 +87,38 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--allow-unreviewed", action="store_true")
     p.add_argument("--voice-ref-male", type=Path, default=None)
     p.add_argument("--voice-ref-female", type=Path, default=None)
+    p.add_argument("--qc", action="store_true", help="Run QC on existing generated clips")
+    p.add_argument(
+        "--qc-audition",
+        action="store_true",
+        help="Run QC on build/audition/<folder>/ (assembled/ + whole/)",
+    )
+    p.add_argument(
+        "--qc-references",
+        action="store_true",
+        help="Run QC on cached voice reference clips",
+    )
+    p.add_argument(
+        "--qc-retries",
+        type=int,
+        default=3,
+        help="Regeneration attempts on FAIL during/after QC (en/nb only; default 3)",
+    )
+    p.add_argument(
+        "--no-qc",
+        action="store_true",
+        help="Skip automatic QC after generation",
+    )
+    p.add_argument(
+        "--machine-check",
+        action="store_true",
+        help="Text (+ audio if present) machine-check; writes machine_check.md",
+    )
+    p.add_argument(
+        "--export-review-sheet",
+        action="store_true",
+        help="Alias of --review-sheet (includes machine-check columns when present)",
+    )
     return p
 
 
@@ -163,12 +195,15 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as exc:
             print(exc, file=sys.stderr)
             return 2
+        from navi_voicegen.qc.config import assert_generate_allowed
+
         try:
             ensure_system_deps(for_generate=True)
         except SystemDepsError as exc:
             print("\n".join(exc.messages), file=sys.stderr)
             return 2
         for code in lang_codes:
+            assert_generate_allowed(code, action="audition")
             fetch_voices([code], genders=tuple(_genders(args.gender)))
             summary = run_audition(
                 code,
@@ -195,6 +230,79 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Applied review: {path}")
         return 0
 
+    if args.qc or args.qc_audition or args.qc_references or args.machine_check:
+        from navi_voicegen.qc.config import assert_generate_allowed, load_qc_config
+        from navi_voicegen.qc.machine_check import run_machine_check, tier1_codes_with_phrases_or_templates
+        from navi_voicegen.qc.retries import qc_with_retries
+        from navi_voicegen.qc.runner import run_qc_audition, run_qc_pack, run_qc_references
+
+        cfg = load_qc_config()
+        if args.qc_references:
+            argv_list = argv if argv is not None else sys.argv[1:]
+            lang_explicit = any(
+                a == "--lang" or a.startswith("--lang=") for a in argv_list
+            )
+            if lang_explicit:
+                ref_langs = lang_codes
+            else:
+                ref_langs = ["en", "nb"]
+            for code in ref_langs:
+                for path in run_qc_references(code):
+                    print(f"QC references: {path}")
+            if not args.qc and not args.qc_audition and not args.machine_check:
+                return 0
+
+        if args.qc:
+            for code in lang_codes:
+                if args.qc_retries and args.qc_retries > 0:
+                    try:
+                        assert_generate_allowed(code, action="qc-retries")
+                        path = qc_with_retries(
+                            code,
+                            genders=_genders(args.gender),
+                            out_root=args.out or default_out_dir(),
+                            retries=args.qc_retries,
+                            seed=args.seed,
+                            device=args.device,
+                            fmt=args.format,
+                            voice_ref_male=args.voice_ref_male,
+                            voice_ref_female=args.voice_ref_female,
+                        )
+                    except SystemExit:
+                        path = run_qc_pack(code, genders=_genders(args.gender), out_root=args.out)
+                else:
+                    path = run_qc_pack(code, genders=_genders(args.gender), out_root=args.out)
+                print(f"QC pack: {path}")
+            if not args.qc_audition and not args.machine_check:
+                return 0
+
+        if args.qc_audition:
+            for code in lang_codes:
+                path = run_qc_audition(code)
+                print(f"QC audition: {path}")
+            if not args.machine_check:
+                return 0
+
+        if args.machine_check:
+            targets = lang_codes
+            # Convenience: --machine-check --lang tier1 drafts missing phrase files text-only
+            if args.lang in ("tier1", "all"):
+                from navi_voicegen.draft_phrases import draft_language
+
+                targets = tier1_codes_with_phrases_or_templates()
+                for code in targets:
+                    phrase = Path(__file__).resolve().parents[1] / "phrases" / f"{code}.yaml"
+                    if not phrase.is_file():
+                        try:
+                            draft_language(code)
+                        except Exception as exc:  # noqa: BLE001
+                            print(f"draft {code} skipped: {exc}", file=sys.stderr)
+            for code in targets:
+                # Audio machine-check only when clips exist; never synthesise here.
+                path = run_machine_check(code, cfg=cfg, with_audio=True)
+                print(f"Machine-check: {path}")
+            return 0
+
     if args.pack_mode_report:
         for code in lang_codes:
             print(format_mode_report(code))
@@ -220,7 +328,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         return 0
 
-    if args.review_sheet:
+    if args.review_sheet or args.export_review_sheet:
         try:
             ensure_system_deps(for_generate=False)
         except SystemDepsError as exc:
@@ -267,6 +375,8 @@ def main(argv: list[str] | None = None) -> int:
         persona=args.persona,
         persona_checkpoint=args.persona_checkpoint,
         checkpoint_license_confirmed=args.checkpoint_license_confirmed,
+        run_qc=not args.no_qc,
+        qc_retries=args.qc_retries,
     )
     try:
         manifests = generate_packs(opts)
