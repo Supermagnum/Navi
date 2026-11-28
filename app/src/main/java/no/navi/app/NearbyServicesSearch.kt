@@ -59,15 +59,31 @@ fun nearbyServicesGapMessage(
 }
 
 fun logNearbyServicesResult(
+    runId: String,
     label: String,
     lat: Double,
     lon: Double,
     result: FfiNearbyServicesResult,
+    wallMs: Long,
+    installedLookupMs: Long,
+    uiMs: Long,
 ) {
+    val rid = runId.ifBlank { "-" }
     android.util.Log.i(
         "NearbyServices",
-        "RESULT label=$label lat=$lat lon=$lon query_ms=${result.queryTimeMs} " +
-            "hits=${result.hits.size} missing=${result.missingRegions.joinToString("|")}",
+        "RESULT run_id=$rid label=$label lat=$lat lon=$lon " +
+            "query_ms=${result.queryTimeMs} open_index_ms=${result.openIndexMs} " +
+            "bbox_ms=${result.bboxMs} distance_sort_ms=${result.distanceSortMs} " +
+            "gap_ms=${result.gapMs} installed_lookup_ms=$installedLookupMs " +
+            "ui_ms=$uiMs wall_ms=$wallMs hits=${result.hits.size} " +
+            "missing=${result.missingRegions.joinToString("|")}",
+    )
+    android.util.Log.i(
+        "NearbyServices",
+        "PHASE run_id=$rid label=$label open_index_ms=${result.openIndexMs} " +
+            "bbox_ms=${result.bboxMs} distance_sort_ms=${result.distanceSortMs} " +
+            "gap_ms=${result.gapMs} installed_lookup_ms=$installedLookupMs " +
+            "ui_ms=$uiMs query_ms=${result.queryTimeMs} wall_ms=$wallMs",
     )
     val byCat = result.hits.groupBy { it.category }
     for (cat in FfiNearbyServiceCategory.entries) {
@@ -75,12 +91,15 @@ fun logNearbyServicesResult(
         for ((i, h) in top.withIndex()) {
             android.util.Log.i(
                 "NearbyServices",
-                "TOP5 label=$label cat=${cat.name} i=$i name=${h.name} " +
+                "TOP5 run_id=$rid label=$label cat=${cat.name} i=$i name=${h.name} " +
                     "dist_m=${"%.1f".format(h.distanceM)} compass=${h.compass} kind=${h.kind}",
             )
         }
         if (top.isEmpty()) {
-            android.util.Log.i("NearbyServices", "TOP5 label=$label cat=${cat.name} (none)")
+            android.util.Log.i(
+                "NearbyServices",
+                "TOP5 run_id=$rid label=$label cat=${cat.name} (none)",
+            )
         }
     }
 }

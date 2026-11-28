@@ -44,6 +44,7 @@ fun NearbyServicesHost(
     var searchLat by remember { mutableStateOf(Double.NaN) }
     var searchLon by remember { mutableStateOf(Double.NaN) }
     var searchJob by remember { mutableStateOf<Job?>(null) }
+    var suppressAutoSearchUntilMs by remember { mutableStateOf(0L) }
 
     fun runSearch(
         force: Boolean,
@@ -55,8 +56,12 @@ fun NearbyServicesHost(
         val lat = overrideLat ?: gpsLat.takeUnless { it == 0.0 && gpsLon == 0.0 } ?: held?.first ?: gpsLat
         val lon = overrideLon ?: gpsLon.takeUnless { gpsLat == 0.0 && it == 0.0 } ?: held?.second ?: gpsLon
         val hasGps = lat.isFinite() && lon.isFinite() && (lat != 0.0 || lon != 0.0)
+        val runId = NaviMapTestHooks.nearbyServicesRunId
         if (!hasGps) {
-            android.util.Log.w("NearbyServices", "search skipped: no GPS label=$label")
+            android.util.Log.w(
+                "NearbyServices",
+                "search skipped: no GPS run_id=${runId.ifBlank { "-" }} label=$label",
+            )
             hits = emptyList()
             gap = ""
             queryMs = 0L
@@ -73,14 +78,16 @@ fun NearbyServicesHost(
         busy = true
         val cats = categories.toList()
         val dbPath = placeIndexDbPath
+        val wallStarted = System.nanoTime()
         android.util.Log.i(
             "NearbyServices",
-            "search start label=$label lat=$lat lon=$lon db=$dbPath",
+            "search start run_id=${runId.ifBlank { "-" }} label=$label lat=$lat lon=$lon db=$dbPath",
         )
         searchJob =
             scope.launch {
                 val outcome =
                     withContext(Dispatchers.IO) {
+                        val installedStarted = System.nanoTime()
                         val installed =
                             PackRegionAvailability
                                 .installedPackRegionIds(
@@ -90,36 +97,57 @@ fun NearbyServicesHost(
                                         ?.values
                                         .orEmpty(),
                                 ).toList()
+                        val installedLookupMs =
+                            ((System.nanoTime() - installedStarted) / 1_000_000L).coerceAtLeast(0L)
                         android.util.Log.i(
                             "NearbyServices",
-                            "search installed=${installed.joinToString("|").ifEmpty { "(none)" }}",
+                            "search installed run_id=${runId.ifBlank { "-" }} " +
+                                "label=$label regions=${installed.joinToString("|").ifEmpty { "(none)" }}",
                         )
-                        runCatching {
-                            queryNearbyServices(
-                                indexDbPath = dbPath,
-                                lat = lat,
-                                lon = lon,
-                                categories = cats,
-                                installedRegions = installed,
-                            )
-                        }
+                        val queryStarted = System.nanoTime()
+                        val queried =
+                            runCatching {
+                                queryNearbyServices(
+                                    indexDbPath = dbPath,
+                                    lat = lat,
+                                    lon = lon,
+                                    categories = cats,
+                                    installedRegions = installed,
+                                )
+                            }
+                        queried.map { res -> Triple(res, installedLookupMs, queryStarted) }
                     }
                 if (!isActive) return@launch
+                val uiStarted = System.nanoTime()
                 outcome
-                    .onSuccess { res ->
+                    .onSuccess { (res, installedLookupMs, _) ->
                         hits = res.hits
                         gap = nearbyServicesGapMessage(res.missingRegions, context.resources)
                         queryMs = res.queryTimeMs.toLong()
                         searchLat = lat
                         searchLon = lon
+                        val uiMs = ((System.nanoTime() - uiStarted) / 1_000_000L).coerceAtLeast(0L)
+                        val wallMs = ((System.nanoTime() - wallStarted) / 1_000_000L).coerceAtLeast(0L)
                         if (gap.isNotEmpty()) {
-                            android.util.Log.i("NearbyServices", "GAP label=$label msg=$gap")
+                            android.util.Log.i(
+                                "NearbyServices",
+                                "GAP run_id=${runId.ifBlank { "-" }} label=$label msg=$gap",
+                            )
                         }
-                        logNearbyServicesResult(label = label, lat = lat, lon = lon, result = res)
+                        logNearbyServicesResult(
+                            runId = runId,
+                            label = label,
+                            lat = lat,
+                            lon = lon,
+                            result = res,
+                            wallMs = wallMs,
+                            installedLookupMs = installedLookupMs,
+                            uiMs = uiMs,
+                        )
                     }.onFailure { err ->
                         android.util.Log.e(
                             "NearbyServices",
-                            "search failed label=$label: ${err.message}",
+                            "search failed run_id=${runId.ifBlank { "-" }} label=$label: ${err.message}",
                             err,
                         )
                         hits = emptyList()
@@ -135,6 +163,8 @@ fun NearbyServicesHost(
             delay(250)
             if (NaviMapTestHooks.requestNearbyServicesTest) {
                 NaviMapTestHooks.requestNearbyServicesTest = false
+                // Avoid competing gps auto-searches while the harness owns the run.
+                suppressAutoSearchUntilMs = System.currentTimeMillis() + 15_000L
                 onVisibleChange(true)
                 var waited = 0
                 while (waited < 60) {
@@ -158,11 +188,15 @@ fun NearbyServicesHost(
     }
 
     LaunchedEffect(visible, categories) {
-        if (visible) runSearch(force = true)
+        if (!visible) return@LaunchedEffect
+        if (System.currentTimeMillis() < suppressAutoSearchUntilMs) return@LaunchedEffect
+        runSearch(force = true)
     }
 
     LaunchedEffect(visible, gpsLat, gpsLon) {
-        if (visible) runSearch(force = false)
+        if (!visible) return@LaunchedEffect
+        if (System.currentTimeMillis() < suppressAutoSearchUntilMs) return@LaunchedEffect
+        runSearch(force = false)
     }
 
     if (!hideChrome && visible) {

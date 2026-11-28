@@ -133,7 +133,14 @@ pub struct NearbyServicesResult {
     pub hits: Vec<NearbyServiceHit>,
     /// Catalog leaf regions that intersect the search circle but are not installed.
     pub missing_regions: Vec<String>,
+    /// Total core query time (bbox + distance/sort + gap), excluding DB open.
     pub query_time_ms: u64,
+    /// SQL kind+bbox pre-filter (prepare + scan into rows).
+    pub bbox_ms: u64,
+    /// Haversine distance filter, bearing, sort, truncate.
+    pub distance_sort_ms: u64,
+    /// Missing-region catalog intersection for gap messaging.
+    pub gap_ms: u64,
 }
 
 /// Initial bearing from `(lat1, lon1)` to `(lat2, lon2)`, degrees \[0, 360).
@@ -327,6 +334,7 @@ impl NameIndex {
             )
         };
 
+        let bbox_started = Instant::now();
         let mut stmt = conn.prepare(&sql)?;
         let mut bind: Vec<rusqlite::types::Value> = kinds
             .iter()
@@ -350,9 +358,15 @@ impl NameIndex {
             ))
         })?;
 
-        let mut scored: Vec<(f64, NearbyServiceHit)> = Vec::new();
+        let mut raw: Vec<(i64, String, String, f64, f64, String, String, String)> = Vec::new();
         for r in rows {
-            let (osm_id, name, kind, lat, lon, sub_area, municipality, region_id) = r?;
+            raw.push(r?);
+        }
+        let bbox_ms = bbox_started.elapsed().as_millis() as u64;
+
+        let dist_started = Instant::now();
+        let mut scored: Vec<(f64, NearbyServiceHit)> = Vec::new();
+        for (osm_id, name, kind, lat, lon, sub_area, municipality, region_id) in raw {
             let Some(category) = kind_allowed(&kind, &categories) else {
                 continue;
             };
@@ -383,12 +397,19 @@ impl NameIndex {
         scored.sort_by(|a, b| a.0.total_cmp(&b.0));
         scored.truncate(limit);
         let hits: Vec<NearbyServiceHit> = scored.into_iter().map(|(_, h)| h).collect();
+        let distance_sort_ms = dist_started.elapsed().as_millis() as u64;
+
+        let gap_started = Instant::now();
         let missing =
             missing_regions_for_circle(query.lat, query.lon, radius_m, &query.installed_regions);
+        let gap_ms = gap_started.elapsed().as_millis() as u64;
         Ok(NearbyServicesResult {
             hits,
             missing_regions: missing,
             query_time_ms: started.elapsed().as_millis() as u64,
+            bbox_ms,
+            distance_sort_ms,
+            gap_ms,
         })
     }
 }

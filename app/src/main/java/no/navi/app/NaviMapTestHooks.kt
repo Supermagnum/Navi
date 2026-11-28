@@ -909,6 +909,10 @@ object NaviMapTestHooks {
     @Volatile
     var requestNearbyServicesTest: Boolean = false
 
+    /** Correlates NearbyServices log lines for one tablet metric run. */
+    @Volatile
+    var nearbyServicesRunId: String = ""
+
     /** Request stop of debug route simulation. */
     @Volatile
     var requestStopRouteSimulation: Boolean = false

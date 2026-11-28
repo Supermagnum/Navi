@@ -8090,7 +8090,25 @@ pub struct FfiNearbyServiceHit {
 pub struct FfiNearbyServicesResult {
     pub hits: Vec<FfiNearbyServiceHit>,
     pub missing_regions: Vec<String>,
+    /// Core query (bbox + distance/sort + gap), excluding DB open.
     pub query_time_ms: u64,
+    /// `NameIndex::open_readonly` wall time.
+    pub open_index_ms: u64,
+    pub bbox_ms: u64,
+    pub distance_sort_ms: u64,
+    pub gap_ms: u64,
+}
+
+fn empty_nearby_services_result(missing: Vec<String>) -> FfiNearbyServicesResult {
+    FfiNearbyServicesResult {
+        hits: Vec::new(),
+        missing_regions: missing,
+        query_time_ms: 0,
+        open_index_ms: 0,
+        bbox_ms: 0,
+        distance_sort_ms: 0,
+        gap_ms: 0,
+    }
 }
 
 /// Offline nearby services within `radius_m` (default 150 km when <= 0).
@@ -8107,6 +8125,7 @@ pub fn nearby_services(
     installed_regions: Vec<String>,
     limit: u32,
 ) -> FfiNearbyServicesResult {
+    let open_started = std::time::Instant::now();
     let Ok(idx) = driver_break_core::search::NameIndex::open_readonly(Path::new(&index_db_path))
     else {
         let missing = driver_break_core::missing_regions_for_circle(
@@ -8119,12 +8138,9 @@ pub fn nearby_services(
             },
             &installed_regions,
         );
-        return FfiNearbyServicesResult {
-            hits: Vec::new(),
-            missing_regions: missing,
-            query_time_ms: 0,
-        };
+        return empty_nearby_services_result(missing);
     };
+    let open_index_ms = open_started.elapsed().as_millis() as u64;
     let cats: Vec<_> = categories.into_iter().map(Into::into).collect();
     let q = driver_break_core::NearbyServicesQuery {
         lat,
@@ -8135,11 +8151,7 @@ pub fn nearby_services(
         limit: limit.max(1) as usize,
     };
     let Ok(res) = idx.nearby_services(&q) else {
-        return FfiNearbyServicesResult {
-            hits: Vec::new(),
-            missing_regions: Vec::new(),
-            query_time_ms: 0,
-        };
+        return empty_nearby_services_result(Vec::new());
     };
     FfiNearbyServicesResult {
         hits: res
@@ -8163,6 +8175,10 @@ pub fn nearby_services(
             .collect(),
         missing_regions: res.missing_regions,
         query_time_ms: res.query_time_ms,
+        open_index_ms,
+        bbox_ms: res.bbox_ms,
+        distance_sort_ms: res.distance_sort_ms,
+        gap_ms: res.gap_ms,
     }
 }
 

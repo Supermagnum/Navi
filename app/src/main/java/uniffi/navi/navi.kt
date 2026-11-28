@@ -6854,7 +6854,21 @@ data class FfiNearbyServicesResult (
     , 
     var `missingRegions`: List<kotlin.String>
     , 
+    /**
+     * Core query (bbox + distance/sort + gap), excluding DB open.
+     */
     var `queryTimeMs`: kotlin.ULong
+    , 
+    /**
+     * `NameIndex::open_readonly` wall time.
+     */
+    var `openIndexMs`: kotlin.ULong
+    , 
+    var `bboxMs`: kotlin.ULong
+    , 
+    var `distanceSortMs`: kotlin.ULong
+    , 
+    var `gapMs`: kotlin.ULong
     
 ){
     
@@ -6874,19 +6888,31 @@ public object FfiConverterTypeFfiNearbyServicesResult: FfiConverterRustBuffer<Ff
             FfiConverterSequenceTypeFfiNearbyServiceHit.read(buf),
             FfiConverterSequenceString.read(buf),
             FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterULong.read(buf),
         )
     }
 
     override fun allocationSize(value: FfiNearbyServicesResult) = (
             FfiConverterSequenceTypeFfiNearbyServiceHit.allocationSize(value.`hits`) +
             FfiConverterSequenceString.allocationSize(value.`missingRegions`) +
-            FfiConverterULong.allocationSize(value.`queryTimeMs`)
+            FfiConverterULong.allocationSize(value.`queryTimeMs`) +
+            FfiConverterULong.allocationSize(value.`openIndexMs`) +
+            FfiConverterULong.allocationSize(value.`bboxMs`) +
+            FfiConverterULong.allocationSize(value.`distanceSortMs`) +
+            FfiConverterULong.allocationSize(value.`gapMs`)
     )
 
     override fun write(value: FfiNearbyServicesResult, buf: ByteBuffer) {
             FfiConverterSequenceTypeFfiNearbyServiceHit.write(value.`hits`, buf)
             FfiConverterSequenceString.write(value.`missingRegions`, buf)
             FfiConverterULong.write(value.`queryTimeMs`, buf)
+            FfiConverterULong.write(value.`openIndexMs`, buf)
+            FfiConverterULong.write(value.`bboxMs`, buf)
+            FfiConverterULong.write(value.`distanceSortMs`, buf)
+            FfiConverterULong.write(value.`gapMs`, buf)
     }
 }
 

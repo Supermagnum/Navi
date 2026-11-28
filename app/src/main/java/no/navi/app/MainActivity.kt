@@ -409,7 +409,15 @@ class MainActivity : ComponentActivity() {
         }
         if (intent.getBooleanExtra("navi_nearby_services_test", false)) {
             NaviMapTestHooks.requestNearbyServicesTest = true
-            android.util.Log.i("NearbyServices", "navi_nearby_services_test armed")
+            val runId =
+                intent.getStringExtra("navi_nearby_run_id")?.trim().orEmpty().ifEmpty {
+                    "run-${System.currentTimeMillis()}"
+                }
+            NaviMapTestHooks.nearbyServicesRunId = runId
+            android.util.Log.i(
+                "NearbyServices",
+                "navi_nearby_services_test armed run_id=$runId",
+            )
         }
         if (intent.getBooleanExtra("navi_clear_gps", false)) {
             NaviMapTestHooks.clearDebugGpsInject()
